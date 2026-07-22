@@ -31,7 +31,7 @@ func TestReadEndpointJSONShapes(t *testing.T) {
 			want: map[string]any{
 				"status":            "healthy",
 				"service":           "Signer",
-				"protocol_version":  map[string]any{"major": float64(1), "minor": float64(0)},
+				"protocol_version":  map[string]any{"major": float64(2), "minor": float64(0)},
 				"build_version":     version.String(),
 				"signer_locked":     false,
 				"ready_for_signing": true,
@@ -48,7 +48,7 @@ func TestReadEndpointJSONShapes(t *testing.T) {
 			want: map[string]any{
 				"identity_id":           "default",
 				"node_role":             "signer",
-				"protocol_version":      map[string]any{"major": float64(1), "minor": float64(0)},
+				"protocol_version":      map[string]any{"major": float64(2), "minor": float64(0)},
 				"build_version":         version.String(),
 				"state":                 "unlocked",
 				"signer_locked":         false,

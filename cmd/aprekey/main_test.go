@@ -43,13 +43,25 @@ func TestGenerateInspectVerify(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &generated); err != nil {
 		t.Fatalf("decode generate output: %v\n%s", err, stdout.String())
 	}
-	if filepath.Ext(generated.ArtifactPath) != artifact.BundleExtension {
-		t.Fatalf("artifact path = %q", generated.ArtifactPath)
+	var generatedFields map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &generatedFields); err != nil {
+		t.Fatalf("decode generate output fields: %v", err)
+	}
+	if len(generatedFields) != 2 || generatedFields["schema"] == nil || generatedFields["reference"] == nil {
+		t.Fatalf("generate output fields = %v, want schema and reference only", generatedFields)
+	}
+	if generated.Schema != "aplane.bounded-admin-generate-result.v1" {
+		t.Fatalf("generate schema = %q", generated.Schema)
+	}
+	artifactPath := filepath.Join(directory, generated.Reference.WitnessKeyID+artifact.BundleExtension)
+	referencePath := filepath.Join(directory, generated.Reference.WitnessKeyID+artifact.ReferenceExtension)
+	if _, err := os.Stat(referencePath); err != nil {
+		t.Fatalf("stat generated reference: %v", err)
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	if exitCode := app.run([]string{"inspect", generated.ArtifactPath}); exitCode != 0 {
+	if exitCode := app.run([]string{"inspect", artifactPath}); exitCode != 0 {
 		t.Fatalf("inspect exit code = %d, stderr = %s", exitCode, stderr.String())
 	}
 	var inspected artifact.PublicReference
@@ -64,7 +76,7 @@ func TestGenerateInspectVerify(t *testing.T) {
 	stderr.Reset()
 	verifyPassphrase := []byte("test passphrase")
 	app.readPassphrase = passphraseSequence(t, verifyPassphrase)
-	if exitCode := app.run([]string{"verify", generated.ArtifactPath}); exitCode != 0 {
+	if exitCode := app.run([]string{"verify", artifactPath}); exitCode != 0 {
 		t.Fatalf("verify exit code = %d, stderr = %s", exitCode, stderr.String())
 	}
 	if !allZero(verifyPassphrase) {

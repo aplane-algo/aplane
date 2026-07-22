@@ -82,6 +82,9 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	if len(txns) == 0 {
 		return nil, nil, fmt.Errorf("no transactions provided")
 	}
+	if s.algod == nil {
+		return nil, nil, fmt.Errorf("algod client not configured")
+	}
 	if opts.Ctx == nil {
 		opts.Ctx = context.Background()
 	}
@@ -114,10 +117,6 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	signedDummyHex, err := signGuardedDummies(dummyTxns)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	if opts.Simulate {
-		return s.simulateGuardedGroup(plannedTxns, groupBytesHex, signedDummyHex, len(txns), targets, guardedTargetsByIndex, opts, w)
 	}
 
 	userSignatures, userRequestIDs, err := s.requestUserComponentSignatures(opts.Ctx, groupBytesHex, targets)
@@ -177,12 +176,17 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	if err != nil {
 		return nil, nil, err
 	}
-	signedBytes, _, submittedTxns, err := decodeGuardedSignedGroup(assemblyResp.SignedGroup)
+	signedBytes, signedObjects, submittedTxns, err := decodeGuardedSignedGroup(assemblyResp.SignedGroup)
 	if err != nil {
 		return nil, nil, err
 	}
 	if err := verifyAssembledAgainstFrozen(groupBytesHex, submittedTxns); err != nil {
 		return nil, nil, err
+	}
+	if opts.Simulate {
+		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(opts.Ctx, signedObjects, s.algod, w)
+		writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
+		return txIDs, submittedTxns, simErr
 	}
 
 	txIDs, err := signing.SubmitTransactionsWithContext(opts.Ctx, signedBytes, s.algod, opts.WaitForConfirmation, w)
@@ -221,60 +225,6 @@ func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 // assembled later via /sign/assemble. Returns signed-transaction hex keyed by
 // group index. When there are no non-guarded originals (the all-guarded case)
 // it makes no signer call.
-// simulateGuardedGroup runs the contained guarded simulation flow: sentry
-// component signatures are collected as usual, but user component signatures
-// are produced inside the signer via POST /simulate/guarded and never reach
-// this client. Only simulation results come back.
-func (s *Signer) simulateGuardedGroup(plannedTxns []types.Transaction, groupBytesHex, signedDummyHex []string, originalCount int, targets []guardedTarget, guardedTargetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
-	sentrySignatures, sentryRequestIDs, err := s.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, targets)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	signRequests, _, err := s.buildGroupSignRequests(plannedTxns, groupBytesHex, originalCount, guardedTargetsByIndex, opts)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	simReq := signerapi.GuardedSimulateRequest{
-		Requests:    signRequests,
-		Targets:     make([]signerapi.GuardedSimulateTarget, 0, len(targets)),
-		Passthrough: make([]signerapi.GuardedPassthroughItem, 0, len(signedDummyHex)),
-	}
-	for _, target := range targets {
-		sentrySig, ok := sentrySignatures[target.Index]
-		if !ok {
-			return nil, nil, fmt.Errorf("sentry endpoint returned no signature for target index %d", target.Index)
-		}
-		simReq.Targets = append(simReq.Targets, signerapi.GuardedSimulateTarget{
-			TargetIndex:           target.Index,
-			GuardedAccount:        target.Account,
-			SentrySignature:       sentrySig,
-			SentrySourceRequestID: sentryRequestIDs[target.requestKey()],
-		})
-	}
-	for i, signedHex := range signedDummyHex {
-		simReq.Passthrough = append(simReq.Passthrough, signerapi.GuardedPassthroughItem{
-			TargetIndex:  originalCount + i,
-			SignedTxnHex: signedHex,
-		})
-	}
-
-	_, _ = fmt.Fprintln(w, "[GUARDED] Contained simulation: user component signatures stay inside the signer")
-	resp, err := s.conn.RequestGuardedSimulateWithContext(opts.Ctx, simReq)
-	if err != nil {
-		return nil, nil, err
-	}
-	if resp.Output != "" {
-		_, _ = fmt.Fprintln(w, resp.Output)
-	}
-	writeGuardedSubmittedTransactions(opts.TxnWriter, plannedTxns, resp.TxIDs, originalCount)
-	if resp.Failed {
-		return resp.TxIDs, plannedTxns, signing.ErrSimulationFailed
-	}
-	return resp.TxIDs, plannedTxns, nil
-}
-
 // buildGroupSignRequests builds the per-position /sign request array for the
 // frozen guarded group: dummies as foreign placeholders, guarded targets as
 // foreign entries with lsig_size hints, and non-guarded originals in sign

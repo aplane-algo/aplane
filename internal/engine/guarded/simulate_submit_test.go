@@ -9,30 +9,54 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
-	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
-
-	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// newGuardedSimulateTestServer serves the signer-and-sentry surface a
-// contained guarded simulation needs: /keys and sentry-role /sign/component
-// (self-signer fallback), plus /simulate/guarded. Any user-role component
-// request is counted and rejected — the contained flow must never ask the
-// wire for user component signatures.
-func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey []byte, captured *signerapi.GuardedSimulateRequest, userRoleCalls, simulateCalls *atomic.Int32, respond func(req signerapi.GuardedSimulateRequest) signerapi.GuardedSimulateResponse) *httptest.Server {
+type guardedSimulationCapture struct {
+	userRoleCalls     atomic.Int32
+	sentryRoleCalls   atomic.Int32
+	assembleCalls     atomic.Int32
+	signerSimulateHit atomic.Int32
+
+	mu             sync.Mutex
+	assembly       signerapi.GuardedAssemblyRequest
+	assembledGroup []string
+}
+
+func (c *guardedSimulationCapture) setAssembly(req signerapi.GuardedAssemblyRequest, signed []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.assembly = req
+	c.assembledGroup = append([]string(nil), signed...)
+}
+
+func (c *guardedSimulationCapture) snapshot() (signerapi.GuardedAssemblyRequest, []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.assembly, append([]string(nil), c.assembledGroup...)
+}
+
+// newGuardedExecutableTestServer serves the normal guarded signing surface.
+// It intentionally exposes no signer simulation behavior.
+func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *guardedSimulationCapture) *httptest.Server {
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
@@ -42,6 +66,7 @@ func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey 
 	if err != nil {
 		t.Fatalf("Witness Key ID: %v", err)
 	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
@@ -60,14 +85,13 @@ func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey 
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.Role == signerapi.ComponentSignRoleUser {
-			userRoleCalls.Add(1)
-			http.Error(w, "user component signing must stay inside the signer during simulation", http.StatusBadRequest)
-			return
-		}
-		group, err := canonical.DecodeGroupHex(req.GroupBytesHex)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		switch req.Role {
+		case signerapi.ComponentSignRoleUser:
+			capture.userRoleCalls.Add(1)
+		case signerapi.ComponentSignRoleSentry:
+			capture.sentryRoleCalls.Add(1)
+		default:
+			http.Error(w, "unexpected component role", http.StatusBadRequest)
 			return
 		}
 		resp := signerapi.ComponentSignResponse{
@@ -76,55 +100,100 @@ func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey 
 			Signatures:   make([]signerapi.ComponentSignature, 0, len(req.TargetIndices)),
 		}
 		for _, index := range req.TargetIndices {
-			msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
-			signature, err := signerops.New(nil).Sign(privateKey, msg[:])
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
 			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
 				TargetIndex:     index,
 				SignatureScheme: witness.Falcon1024V1,
-				Signature:       hex.EncodeToString(signature),
+				Signature:       hex.EncodeToString([]byte{byte(index + 1)}),
 			})
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	})
-	mux.HandleFunc("/simulate/guarded", func(w http.ResponseWriter, r *http.Request) {
-		simulateCalls.Add(1)
-		var req signerapi.GuardedSimulateRequest
+	mux.HandleFunc("/sign/assemble", func(w http.ResponseWriter, r *http.Request) {
+		capture.assembleCalls.Add(1)
+		var req signerapi.GuardedAssemblyRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		*captured = req
-		_ = json.NewEncoder(w).Encode(respond(req))
+		if err := req.Validate(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		group, err := canonical.DecodeGroupHex(req.GroupBytesHex)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		signed := make([]string, len(group.Entries))
+		for i, entry := range group.Entries {
+			signed[i] = hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: entry.Txn}))
+		}
+		capture.setAssembly(req, signed)
+		_ = json.NewEncoder(w).Encode(signerapi.GuardedAssemblyResponse{
+			RequestID:   req.RequestID,
+			SignedGroup: signed,
+		})
+	})
+	mux.HandleFunc("/simulate", func(w http.ResponseWriter, r *http.Request) {
+		capture.signerSimulateHit.Add(1)
+		http.NotFound(w, r)
+	})
+	mux.HandleFunc("/simulate/guarded", func(w http.ResponseWriter, r *http.Request) {
+		capture.signerSimulateHit.Add(1)
+		http.NotFound(w, r)
 	})
 	return httptest.NewServer(mux)
 }
 
-func TestSignAndSubmitGroupSimulateUsesContainedGuardedEndpoint(t *testing.T) {
-	publicKey, privateKey := testFalconSentryKeypair(t, 0x71)
+func newGuardedAlgodSimulationClient(t *testing.T, failure string, captured *models.SimulateRequest) (*algod.Client, func()) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/transactions/simulate" {
+			t.Fatalf("algod path = %s, want /v2/transactions/simulate", r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read simulate request: %v", err)
+		}
+		if err := msgpack.Decode(body, captured); err != nil {
+			t.Fatalf("decode simulate request: %v", err)
+		}
+		result := models.SimulateTransactionGroupResult{
+			FailureMessage: failure,
+			TxnResults:     make([]models.SimulateTransactionResult, len(captured.TxnGroups[0].Txns)),
+		}
+		if failure != "" {
+			result.FailedAt = []uint64{0}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(models.SimulateResponse{
+			LastRound: 9,
+			TxnGroups: []models.SimulateTransactionGroupResult{result},
+		})
+	}))
+	client, err := algod.MakeClient(server.URL, "")
+	if err != nil {
+		server.Close()
+		t.Fatalf("MakeClient() error = %v", err)
+	}
+	return client, server.Close
+}
+
+func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
+	publicKey, _ := testFalconSentryKeypair(t, 0x71)
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
-	var captured signerapi.GuardedSimulateRequest
-	var userRoleCalls, simulateCalls atomic.Int32
-	server := newGuardedSimulateTestServer(t, sentryHex, privateKey, &captured, &userRoleCalls, &simulateCalls, func(req signerapi.GuardedSimulateRequest) signerapi.GuardedSimulateResponse {
-		txIDs := make([]string, len(req.Requests))
-		for i := range txIDs {
-			txIDs[i] = "SIMID" + string(rune('A'+i))
-		}
-		return signerapi.GuardedSimulateResponse{
-			RequestID: req.RequestID,
-			TxIDs:     txIDs,
-			Output:    "SIMULATION-REPORT",
-		}
-	})
-	defer server.Close()
+	capture := &guardedSimulationCapture{}
+	signerServer := newGuardedExecutableTestServer(t, sentryHex, capture)
+	defer signerServer.Close()
+	var simulateReq models.SimulateRequest
+	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "", &simulateReq)
+	defer closeAlgod()
 
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
-	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
+	s.algod = algodClient
 
 	var out bytes.Buffer
 	txIDs, submitted, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{
@@ -135,59 +204,61 @@ func TestSignAndSubmitGroupSimulateUsesContainedGuardedEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignAndSubmitGroup(simulate) error = %v", err)
 	}
-	if simulateCalls.Load() != 1 {
-		t.Fatalf("/simulate/guarded calls = %d, want 1", simulateCalls.Load())
+	if capture.userRoleCalls.Load() != 1 || capture.sentryRoleCalls.Load() != 1 {
+		t.Fatalf("component calls user/sentry = %d/%d, want 1/1", capture.userRoleCalls.Load(), capture.sentryRoleCalls.Load())
 	}
-	if userRoleCalls.Load() != 0 {
-		t.Fatalf("user-role /sign/component calls = %d, want 0 during contained simulation", userRoleCalls.Load())
+	if capture.assembleCalls.Load() != 1 {
+		t.Fatalf("/sign/assemble calls = %d, want 1", capture.assembleCalls.Load())
 	}
-	if len(txIDs) == 0 || len(submitted) == 0 {
-		t.Fatalf("simulate returned %d txIDs / %d txns, want non-empty", len(txIDs), len(submitted))
+	if capture.signerSimulateHit.Load() != 0 {
+		t.Fatalf("signer simulation calls = %d, want 0", capture.signerSimulateHit.Load())
 	}
-	if !strings.Contains(out.String(), "SIMULATION-REPORT") {
-		t.Fatalf("output = %q, want simulation report", out.String())
+	if len(txIDs) != len(submitted) || len(submitted) == 0 {
+		t.Fatalf("simulate returned %d txIDs / %d txns, want matching non-empty results", len(txIDs), len(submitted))
+	}
+	if len(simulateReq.TxnGroups) != 1 || len(simulateReq.TxnGroups[0].Txns) != len(submitted) {
+		t.Fatalf("algod simulate group = %#v, want %d transactions", simulateReq.TxnGroups, len(submitted))
+	}
+	if simulateReq.AllowEmptySignatures || simulateReq.FixSigners {
+		t.Fatal("guarded signed simulation enabled empty-signature overrides")
 	}
 
-	if len(captured.Targets) != 1 {
-		t.Fatalf("captured targets = %#v, want 1", captured.Targets)
+	assembly, assembledHex := capture.snapshot()
+	if len(assembly.Targets) != 1 || assembly.Targets[0].UserSignature == "" || assembly.Targets[0].SentrySignature == "" {
+		t.Fatalf("assembly targets = %#v, want executable user+sentry signatures", assembly.Targets)
 	}
-	target := captured.Targets[0]
-	if target.TargetIndex != 0 || target.GuardedAccount != txn.Sender.String() || target.SentrySignature == "" {
-		t.Fatalf("captured target = %#v, want guarded position 0 with sentry signature", target)
+	if len(assembledHex) != len(simulateReq.TxnGroups[0].Txns) {
+		t.Fatalf("assembled/simulated lengths = %d/%d", len(assembledHex), len(simulateReq.TxnGroups[0].Txns))
 	}
-	if len(captured.Requests) < 1 {
-		t.Fatal("captured requests empty")
-	}
-	dummyCount := len(captured.Requests) - 1
-	if len(captured.Passthrough) != dummyCount {
-		t.Fatalf("captured passthrough = %d, want one per dummy (%d)", len(captured.Passthrough), dummyCount)
-	}
-	for _, passthrough := range captured.Passthrough {
-		if passthrough.TargetIndex < 1 || passthrough.SignedTxnHex == "" {
-			t.Fatalf("captured passthrough entry = %#v, want signed dummy position", passthrough)
+	for i, signedHex := range assembledHex {
+		want, err := hex.DecodeString(signedHex)
+		if err != nil {
+			t.Fatalf("decode assembled position %d: %v", i, err)
 		}
+		if got := msgpack.Encode(simulateReq.TxnGroups[0].Txns[i]); !bytes.Equal(got, want) {
+			t.Fatalf("simulated position %d differs from assembled signed bytes", i)
+		}
+	}
+	if !strings.Contains(out.String(), "Simulation successful") {
+		t.Fatalf("output = %q, want simulation success", out.String())
 	}
 }
 
 func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
-	publicKey, privateKey := testFalconSentryKeypair(t, 0x72)
+	publicKey, _ := testFalconSentryKeypair(t, 0x72)
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(3), testAddress(4), "guarded")
 
-	var captured signerapi.GuardedSimulateRequest
-	var userRoleCalls, simulateCalls atomic.Int32
-	server := newGuardedSimulateTestServer(t, sentryHex, privateKey, &captured, &userRoleCalls, &simulateCalls, func(req signerapi.GuardedSimulateRequest) signerapi.GuardedSimulateResponse {
-		return signerapi.GuardedSimulateResponse{
-			RequestID: req.RequestID,
-			TxIDs:     []string{"SIMFAIL"},
-			Output:    "logic eval error",
-			Failed:    true,
-		}
-	})
-	defer server.Close()
+	capture := &guardedSimulationCapture{}
+	signerServer := newGuardedExecutableTestServer(t, sentryHex, capture)
+	defer signerServer.Close()
+	var simulateReq models.SimulateRequest
+	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "logic eval error", &simulateReq)
+	defer closeAlgod()
 
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
-	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
+	s.algod = algodClient
 
 	var out bytes.Buffer
 	_, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{
@@ -198,7 +269,34 @@ func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
 	if !errors.Is(err, signing.ErrSimulationFailed) {
 		t.Fatalf("SignAndSubmitGroup(simulate) error = %v, want ErrSimulationFailed", err)
 	}
+	if capture.userRoleCalls.Load() != 1 || capture.assembleCalls.Load() != 1 {
+		t.Fatalf("user/assemble calls = %d/%d, want 1/1", capture.userRoleCalls.Load(), capture.assembleCalls.Load())
+	}
 	if !strings.Contains(out.String(), "logic eval error") {
 		t.Fatalf("output = %q, want failure report", out.String())
+	}
+}
+
+func TestSignAndSubmitGroupRejectsNilAlgodBeforeComponentSigning(t *testing.T) {
+	publicKey, _ := testFalconSentryKeypair(t, 0x73)
+	sentryHex := hex.EncodeToString(publicKey)
+	txn := testPaymentTxn(t, testAddress(5), testAddress(6), "guarded")
+
+	capture := &guardedSimulationCapture{}
+	signerServer := newGuardedExecutableTestServer(t, sentryHex, capture)
+	defer signerServer.Close()
+	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
+
+	_, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{
+		Ctx:      context.Background(),
+		Simulate: true,
+		Out:      io.Discard,
+	})
+	if err == nil || !strings.Contains(err.Error(), "algod client not configured") {
+		t.Fatalf("SignAndSubmitGroup(nil algod) error = %v, want algod configuration error", err)
+	}
+	if capture.userRoleCalls.Load() != 0 || capture.sentryRoleCalls.Load() != 0 || capture.assembleCalls.Load() != 0 {
+		t.Fatalf("signer calls user/sentry/assemble = %d/%d/%d, want 0/0/0", capture.userRoleCalls.Load(), capture.sentryRoleCalls.Load(), capture.assembleCalls.Load())
 	}
 }

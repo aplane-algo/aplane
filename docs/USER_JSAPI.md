@@ -97,6 +97,11 @@ through normal signer approval and policy boundaries.
 | `simulate()` | Boolean simulation mode state |
 | `waitForTx(txid, rounds = 5)` | Waits for confirmation; returns `true` |
 
+Simulation mode requests ordinary executable signatures and normal signer
+approval, then routes the exact signed group from the client to algod
+simulation instead of submission. Use `plan(requests)` when inspection without
+signing or approval is required.
+
 Example:
 
 ```javascript

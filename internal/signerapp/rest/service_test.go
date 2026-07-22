@@ -43,7 +43,6 @@ import (
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -81,23 +80,20 @@ func init() {
 }
 
 type stubSigningService struct {
-	gotIdentityID      string
-	gotReq             signerapi.GroupSignRequest
-	gotBoundedAdmin    signerapi.BoundedAdminRequest
-	gotComponent       signerapi.ComponentSignRequest
-	gotAssembly        signerapi.GuardedAssemblyRequest
-	gotGuardedSimulate signerapi.GuardedSimulateRequest
-	gotSession         *keystore.KeySession
-	gotCtx             context.Context
-	result             *signersigning.SignGroupResult
-	boundedAdmin       *signersigning.BoundedAdminResult
-	component          *signersigning.ComponentSignResult
-	assembly           *signersigning.GuardedAssemblyResult
-	guardedSimulate    *signersigning.GuardedSimulateAssembly
-	err                *signersigning.ServiceError
-	componentErr       *signersigning.ServiceError
-	assemblyErr        *signersigning.ServiceError
-	guardedSimulateErr *signersigning.ServiceError
+	gotIdentityID   string
+	gotReq          signerapi.GroupSignRequest
+	gotBoundedAdmin signerapi.BoundedAdminRequest
+	gotComponent    signerapi.ComponentSignRequest
+	gotAssembly     signerapi.GuardedAssemblyRequest
+	gotSession      *keystore.KeySession
+	gotCtx          context.Context
+	result          *signersigning.SignGroupResult
+	boundedAdmin    *signersigning.BoundedAdminResult
+	component       *signersigning.ComponentSignResult
+	assembly        *signersigning.GuardedAssemblyResult
+	err             *signersigning.ServiceError
+	componentErr    *signersigning.ServiceError
+	assemblyErr     *signersigning.ServiceError
 }
 
 func (s *stubSigningService) PrepareBoundedAdminWithContext(ctx context.Context, identityID string, req signerapi.BoundedAdminRequest, session *keystore.KeySession) (*signersigning.BoundedAdminResult, *signersigning.ServiceError) {
@@ -111,14 +107,6 @@ func (s *stubSigningService) PrepareBoundedAdminWithContext(ctx context.Context,
 type testContextKey string
 
 func (s *stubSigningService) SignGroupWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession) (*signersigning.SignGroupResult, *signersigning.ServiceError) {
-	s.gotCtx = ctx
-	s.gotIdentityID = identityID
-	s.gotReq = req
-	s.gotSession = session
-	return s.result, s.err
-}
-
-func (s *stubSigningService) SignGroupForSimulationWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession) (*signersigning.SignGroupResult, *signersigning.ServiceError) {
 	s.gotCtx = ctx
 	s.gotIdentityID = identityID
 	s.gotReq = req
@@ -140,32 +128,6 @@ func (s *stubSigningService) AssembleGuardedWithContext(ctx context.Context, ide
 	s.gotAssembly = req
 	s.gotSession = session
 	return s.assembly, s.assemblyErr
-}
-
-func (s *stubSigningService) AssembleGuardedForSimulationWithContext(ctx context.Context, identityID string, req signerapi.GuardedSimulateRequest, session *keystore.KeySession) (*signersigning.GuardedSimulateAssembly, *signersigning.ServiceError) {
-	s.gotCtx = ctx
-	s.gotIdentityID = identityID
-	s.gotGuardedSimulate = req
-	s.gotSession = session
-	return s.guardedSimulate, s.guardedSimulateErr
-}
-
-func rejectAllSimulateDeps(t *testing.T) Dependencies {
-	t.Helper()
-	return Dependencies{
-		NewSigningService: func(*identity.Runtime) SigningService {
-			t.Fatal("NewSigningService should not be called")
-			return nil
-		},
-		EncodeTxnHex: func(types.Transaction) string {
-			t.Fatal("EncodeTxnHex should not be called")
-			return ""
-		},
-		SimulateSignedGroup: func(context.Context, []types.SignedTxn) ([]string, string, bool, *signersigning.ServiceError) {
-			t.Fatal("SimulateSignedGroup should not be called")
-			return nil, "", false, nil
-		},
-	}
 }
 
 func setupIdentityRuntime(t *testing.T, unlocked bool) *identity.Runtime {
@@ -428,206 +390,6 @@ func TestServicePlanShapesResponse(t *testing.T) {
 	}
 	if resp.Mutations == nil || resp.Mutations.DummiesAdded != 1 || !resp.Mutations.GroupIDChanged {
 		t.Fatalf("Mutations = %#v, want dummy/group mutation report", resp.Mutations)
-	}
-}
-
-func TestServiceSimulateSignsInternallyAndOmitsSignedBytes(t *testing.T) {
-	ir := setupIdentityRuntime(t, true)
-	txn := types.Transaction{Header: types.Header{Sender: types.Address{1}, Fee: 1000}}
-	stub := &stubSigningService{
-		result: &signersigning.SignGroupResult{
-			Signed: []string{hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))},
-			Mutations: &signerapi.MutationReport{
-				OriginalCount: 1,
-				FinalCount:    1,
-			},
-		},
-	}
-	svc := Service{
-		Deps: Dependencies{
-			NewSigningService: func(got *identity.Runtime) SigningService {
-				if got != ir {
-					t.Fatalf("runtime = %p, want %p", got, ir)
-				}
-				return stub
-			},
-			EncodeTxnHex: func(got types.Transaction) string {
-				if got.Fee != txn.Fee {
-					t.Fatalf("encoded txn fee = %d, want %d", got.Fee, txn.Fee)
-				}
-				return "TXfinal"
-			},
-			SimulateSignedGroup: func(ctx context.Context, got []types.SignedTxn) ([]string, string, bool, *signersigning.ServiceError) {
-				if len(got) != 1 || got[0].Txn.Fee != txn.Fee {
-					t.Fatalf("signed group = %#v, want signed txn fee %d", got, txn.Fee)
-				}
-				return []string{"TXID"}, "simulation output\n", false, nil
-			},
-		},
-	}
-
-	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "ADDR"}}}
-	ctx := context.WithValue(context.Background(), testContextKey("simulate"), "ctx")
-	resp, err := svc.Simulate(ctx, ir, req)
-	if err != nil {
-		t.Fatalf("Simulate() error = %v", err)
-	}
-	if stub.gotSession == nil {
-		t.Fatal("Simulate() passed nil session")
-	}
-	if stub.gotCtx != ctx {
-		t.Fatal("Simulate() did not pass caller context to signing service")
-	}
-	if len(resp.TxIDs) != 1 || resp.TxIDs[0] != "TXID" {
-		t.Fatalf("TxIDs = %#v, want [TXID]", resp.TxIDs)
-	}
-	if len(resp.Transactions) != 1 || resp.Transactions[0] != "TXfinal" {
-		t.Fatalf("Transactions = %#v, want [TXfinal]", resp.Transactions)
-	}
-	if resp.Output != "simulation output\n" {
-		t.Fatalf("Output = %q, want simulation output", resp.Output)
-	}
-	if resp.Mutations == nil || resp.Mutations.FinalCount != 1 {
-		t.Fatalf("Mutations = %#v, want populated report", resp.Mutations)
-	}
-}
-
-func TestServiceSimulateGuardedAssemblesInternallyAndOmitsSignedBytes(t *testing.T) {
-	ir := setupIdentityRuntime(t, true)
-	txn := types.Transaction{Header: types.Header{Sender: types.Address{2}, Fee: 2000}}
-	stub := &stubSigningService{
-		guardedSimulate: &signersigning.GuardedSimulateAssembly{
-			RequestID:   "gsim-rest",
-			SignedGroup: []string{hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))},
-		},
-	}
-	svc := Service{
-		Deps: Dependencies{
-			NewSigningService: func(got *identity.Runtime) SigningService {
-				if got != ir {
-					t.Fatalf("runtime = %p, want %p", got, ir)
-				}
-				return stub
-			},
-			EncodeTxnHex: func(got types.Transaction) string {
-				if got.Fee != txn.Fee {
-					t.Fatalf("encoded txn fee = %d, want %d", got.Fee, txn.Fee)
-				}
-				return "TXfinal"
-			},
-			SimulateSignedGroup: func(ctx context.Context, got []types.SignedTxn) ([]string, string, bool, *signersigning.ServiceError) {
-				if len(got) != 1 || got[0].Txn.Fee != txn.Fee {
-					t.Fatalf("signed group = %#v, want assembled txn fee %d", got, txn.Fee)
-				}
-				return []string{"GTXID"}, "guarded simulation output\n", false, nil
-			},
-		},
-	}
-
-	req := signerapi.GuardedSimulateRequest{
-		RequestID: "gsim-rest",
-		Requests:  []signerapi.SignRequest{{TxnBytesHex: "5458aa"}},
-		Targets: []signerapi.GuardedSimulateTarget{{
-			TargetIndex:     0,
-			GuardedAccount:  "GUARDED",
-			SentrySignature: "aa",
-		}},
-	}
-	ctx := context.WithValue(context.Background(), testContextKey("simulate-guarded"), "ctx")
-	resp, err := svc.SimulateGuarded(ctx, ir, req)
-	if err != nil {
-		t.Fatalf("SimulateGuarded() error = %v", err)
-	}
-	if stub.gotSession == nil {
-		t.Fatal("SimulateGuarded() passed nil session")
-	}
-	if stub.gotGuardedSimulate.RequestID != "gsim-rest" {
-		t.Fatalf("signing service request = %#v, want gsim-rest", stub.gotGuardedSimulate)
-	}
-	if resp.RequestID != "gsim-rest" {
-		t.Fatalf("RequestID = %q, want gsim-rest", resp.RequestID)
-	}
-	if len(resp.TxIDs) != 1 || resp.TxIDs[0] != "GTXID" {
-		t.Fatalf("TxIDs = %#v, want [GTXID]", resp.TxIDs)
-	}
-	if len(resp.Transactions) != 1 || resp.Transactions[0] != "TXfinal" {
-		t.Fatalf("Transactions = %#v, want unsigned final txns", resp.Transactions)
-	}
-	if resp.Output != "guarded simulation output\n" {
-		t.Fatalf("Output = %q, want guarded simulation output", resp.Output)
-	}
-}
-
-func TestServiceSimulateGuardedRejectsSentryRole(t *testing.T) {
-	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
-	svc := Service{Deps: rejectAllSimulateDeps(t)}
-
-	_, err := svc.SimulateGuarded(context.Background(), ir, signerapi.GuardedSimulateRequest{})
-	if err == nil || err.Kind != signersigning.ErrorForbidden {
-		t.Fatalf("SimulateGuarded() error = %#v, want forbidden", err)
-	}
-}
-
-func TestServiceSimulateRejectsDecommissionedRuntime(t *testing.T) {
-	ir := setupIdentityRuntime(t, true)
-	if err := ir.Decommission(); err != nil {
-		t.Fatalf("Decommission() error = %v", err)
-	}
-	svc := Service{Deps: rejectAllSimulateDeps(t)}
-
-	_, err := svc.Simulate(context.Background(), ir, signerapi.GroupSignRequest{})
-	if err == nil || err.Kind != signersigning.ErrorForbidden {
-		t.Fatalf("Simulate() error = %#v, want forbidden", err)
-	}
-	if !strings.Contains(err.Message, "decommissioned") {
-		t.Fatalf("Simulate() error message = %q, want decommissioned reason", err.Message)
-	}
-}
-
-func TestServiceSimulateRejectsLockedRuntime(t *testing.T) {
-	ir := setupIdentityRuntime(t, false)
-	svc := Service{Deps: rejectAllSimulateDeps(t)}
-
-	_, err := svc.Simulate(context.Background(), ir, signerapi.GroupSignRequest{})
-	if err == nil || err.Kind != signersigning.ErrorLocked {
-		t.Fatalf("Simulate() error = %#v, want locked", err)
-	}
-	if err.HTTPStatus() != 403 {
-		t.Fatalf("Simulate() locked status = %d, want 403", err.HTTPStatus())
-	}
-	if err.Message != "signer is locked" {
-		t.Fatalf("Simulate() error message = %q, want signer is locked", err.Message)
-	}
-}
-
-func TestServiceSimulateRejectsForeignPlaceholders(t *testing.T) {
-	ir := setupIdentityRuntime(t, true)
-	stub := &stubSigningService{
-		result: &signersigning.SignGroupResult{
-			Signed: []string{""},
-			Mutations: &signerapi.MutationReport{
-				ForeignCount: 1,
-			},
-		},
-	}
-	svc := Service{
-		Deps: Dependencies{
-			NewSigningService: func(got *identity.Runtime) SigningService { return stub },
-			EncodeTxnHex:      func(txn types.Transaction) string { return "TXfinal" },
-			SimulateSignedGroup: func(ctx context.Context, got []types.SignedTxn) ([]string, string, bool, *signersigning.ServiceError) {
-				t.Fatal("SimulateSignedGroup called for foreign placeholder")
-				return nil, "", false, nil
-			},
-		},
-	}
-
-	_, err := svc.Simulate(context.Background(), ir, signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "ADDR"}}})
-	if err == nil {
-		t.Fatal("Simulate() error = nil, want foreign placeholder rejection")
-		return
-	}
-	if err.Kind != signersigning.ErrorBadRequest || !strings.Contains(err.Message, "foreign placeholder") {
-		t.Fatalf("Simulate() error = %#v, want foreign placeholder bad request", err)
 	}
 }
 
@@ -1540,9 +1302,6 @@ func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 	}
 	if _, err := (Service{}).Plan(sentryOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "planning") {
 		t.Fatalf("Plan(sentry node) error = %#v, want forbidden node role error", err)
-	}
-	if _, err := (Service{}).Simulate(context.Background(), sentryOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "simulation") {
-		t.Fatalf("Simulate(sentry node) error = %#v, want forbidden node role error", err)
 	}
 	userReq := signerapi.ComponentSignRequest{Role: signerapi.ComponentSignRoleUser}
 	if _, err := (Service{}).SignComponent(context.Background(), sentryOnly, userReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "user component signing") {

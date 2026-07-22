@@ -40,7 +40,7 @@ strictly needed for the covered predicates above:
 - Cryptographic correctness (Ed25519, Falcon, signature validity).
 - Algorand transaction layout, msgpack decode, group-ID computation.
 - LogicSig budget, fee adjustment, group-ID regrouping.
-- `/simulate` boundary (separate module if/when needed).
+- Post-signing client routing to algod submission or simulation.
 - Approval coordinator: always-review tier, operator decisions,
   timeouts.
 - Lifecycle leases, decommission, identity routing.

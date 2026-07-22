@@ -82,25 +82,7 @@ func (s *Service) SignGroupWithContext(ctx context.Context, identityID string, r
 	if planHasBoundedAdminKeyOperation(plan) {
 		return nil, boundedAdminRequired()
 	}
-	return s.signGroupWithPlanContext(ctx, identityID, req, session, plan, false)
-}
-
-func (s *Service) SignGroupForSimulationWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession) (*SignGroupResult, *ServiceError) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if s.Planner == nil || s.Executor == nil {
-		return nil, internal("signing service not fully configured")
-	}
-
-	plan, err := s.Planner.PlanGroup(identityID, req)
-	if err != nil {
-		return nil, err
-	}
-	if planHasBoundedAdminKeyOperation(plan) {
-		return nil, boundedAdminRequired()
-	}
-	return s.signGroupWithPlanContext(ctx, identityID, req, session, plan, true)
+	return s.signGroupWithPlanContext(ctx, identityID, req, session, plan)
 }
 
 func (s *Service) PrepareBoundedAdminWithContext(ctx context.Context, identityID string, request signerapi.BoundedAdminRequest, session *keystore.KeySession) (*BoundedAdminResult, *ServiceError) {
@@ -119,7 +101,7 @@ func (s *Service) PrepareBoundedAdminWithContext(ctx context.Context, identityID
 	if validationErr != nil {
 		return nil, validationErr
 	}
-	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, req, plan, false)
+	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, req, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
@@ -169,7 +151,7 @@ func (s *Service) signComponentWithSession(ctx context.Context, identityID strin
 		if err := s.preflightGuardedAccountKeyMetadata(identityID, plan.ComponentKey); err != nil {
 			return nil, err
 		}
-		reviewRuleID, gateErr := s.gateUserComponentSigning(ctx, identityID, plan, false)
+		reviewRuleID, gateErr := s.gateUserComponentSigning(ctx, identityID, plan)
 		if gateErr != nil {
 			return nil, gateErr
 		}
@@ -236,10 +218,10 @@ func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID str
 	return assembleDecodedGuarded(ctx, req, group, session)
 }
 
-func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession, plan *PlanResult, simulation bool) (*SignGroupResult, *ServiceError) {
+func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession, plan *PlanResult) (*SignGroupResult, *ServiceError) {
 	allTxns := plan.AllTxns
 	txns := allTxns[:len(req.Requests)]
-	alwaysReviewRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, req, plan, simulation)
+	alwaysReviewRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, req, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
@@ -252,9 +234,7 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID strin
 
 	console := consoleOf(s.Console)
 	s.logSummary(req, plan, execResult.SignedTxns, console)
-	if !simulation {
-		s.logSuccessfulSignatures(identityID, req, plan, txns, alwaysReviewRuleID)
-	}
+	s.logSuccessfulSignatures(identityID, req, plan, txns, alwaysReviewRuleID)
 
 	return &SignGroupResult{
 		Signed:    execResult.SignedTxns,
@@ -262,7 +242,7 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID strin
 	}, nil
 }
 
-func (s *Service) approveGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, plan *PlanResult, simulation bool) (string, func(), *ServiceError) {
+func (s *Service) approveGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, plan *PlanResult) (string, func(), *ServiceError) {
 	allTxns := plan.AllTxns
 	txns := allTxns[:len(req.Requests)]
 
@@ -276,13 +256,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, identityID st
 
 	console.Println("\n" + strings.Repeat("-", 60))
 	if isGroup {
-		if simulation {
-			console.Println("GROUP SIMULATION SIGNATURE REQUEST")
-		} else {
-			console.Println("GROUP SIGNATURE REQUEST")
-		}
-	} else if simulation {
-		console.Println("SIMULATION SIGNATURE REQUEST")
+		console.Println("GROUP SIGNATURE REQUEST")
 	} else {
 		console.Println("SIGNATURE REQUEST")
 	}
@@ -296,7 +270,6 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, identityID st
 		PassthroughIndices:   plan.PassthroughIndices,
 		ForeignIndices:       plan.ForeignIndices,
 		IsGroup:              isGroup,
-		Simulation:           simulation,
 		AuthKeys:             authPolicyKeysFromRequest(req, plan),
 		KnownAddresses:       s.knownAddresses(identityID, plan),
 		RoutingExemptIndices: routingExemptIndicesForPlan(plan, allTxns),

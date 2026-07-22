@@ -21,8 +21,8 @@ Order is by recommended write order for the remaining backlog.
 
 ## Pending Test Coverage
 
-**Model drift: signer-domain gating of user components and contained guarded
-simulation.**
+**Model drift: signer-domain gating of user components and client-routed
+guarded simulation.**
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md) and the
 TLA+ sign-boundary/guarded-assembly models predate two behaviors that are now
 implemented and unit-tested but not yet modeled:
@@ -30,15 +30,16 @@ implemented and unit-tested but not yet modeled:
 - user-role `/sign/component` runs the signer-domain approval gates (hard
   rejection, always-review, operator approval) before component signing
   (`internal/signerapp/signing/component_gate.go`),
-- `/simulate/guarded` produces user component signatures in-process with
-  simulation gate semantics and never releases them or assembled bytes
-  (`internal/signerapp/signing/guarded_simulate.go`).
+- guarded simulation runs ordinary user and sentry component signing plus
+  `/sign/assemble`, then sends the released executable group from the client to
+  algod simulation (`internal/engine/guarded/submit.go`).
 
 The models remain sound for what they cover (assembly invariants, two-party
-signature requirements); they under-approximate the gate sequence. A future
-audit pass should extend the guarded signing model with the gate states and
-add the containment invariant: no submittable guarded bytes exit the signer
-unless the user gate approved a non-simulation request.
+signature requirements); they under-approximate the gate sequence and the
+post-assembly client route. A future audit pass should extend the guarded
+signing model with the gate states and assert that every released guarded group
+passed the same user gate regardless of whether the client submits or
+simulates it.
 
 **Model drift: SSH authentication boundary.**
 The runtime now authenticates normal SSH connections with verified public-key

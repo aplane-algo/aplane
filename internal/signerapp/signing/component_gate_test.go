@@ -355,32 +355,6 @@ func TestSignComponentUserRolePreflightRejectsUnknownKeyBeforePrompt(t *testing.
 	}
 }
 
-func TestGateUserComponentSigningSimulationSkipsPrompt(t *testing.T) {
-	sender := types.Address{36}.String()
-	receiver := types.Address{37}.String()
-	txns := groupedPaymentTransactions(t, sender, receiver)
-
-	plan, err := PrepareComponentSigning(userComponentGateRequest(t, sender, txns, []int{0, 1}))
-	if err != nil {
-		t.Fatalf("PrepareComponentSigning() error = %v", err)
-	}
-
-	audit := &testAuditLogger{}
-	prompt := &componentGatePrompt{approve: false}
-	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{}, sender)
-
-	ruleID, gateErr := svc.gateUserComponentSigning(componentGateContext(), "default", plan, true)
-	if gateErr != nil {
-		t.Fatalf("gateUserComponentSigning(simulation) error = %v", gateErr)
-	}
-	if ruleID != "" {
-		t.Fatalf("gateUserComponentSigning(simulation) ruleID = %q, want empty", ruleID)
-	}
-	if prompt.calls != 0 {
-		t.Fatalf("prompt calls = %d, want 0 for simulation", prompt.calls)
-	}
-}
-
 func componentGateContext() context.Context {
 	return context.Background()
 }

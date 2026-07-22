@@ -4,7 +4,6 @@
 package daemon
 
 import (
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -17,9 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
-	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
-	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
@@ -123,104 +119,6 @@ func TestPlanAndSignProduceMatchingCanonicalTransactionForEd25519(t *testing.T) 
 
 	if got := encodeTxnToHex(stxn.Txn); got != planResp.Transactions[0] {
 		t.Fatalf("signed canonical txn mismatch:\nplan=%s\nsign=%s", planResp.Transactions[0], got)
-	}
-}
-
-func TestPlanAndSimulateProduceMatchingCanonicalTransactionsForEd25519(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-
-	server.config.UserAutoApprove = true
-	server.registry.Get(auth.DefaultIdentityID).Config().SetUserAutoApprove(true)
-
-	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
-	genW := httptest.NewRecorder()
-	server.handleAdminGenerate(genW, requestWithIdentity(http.MethodPost, "/admin/generate", genBody))
-	if genW.Code != http.StatusOK {
-		t.Fatalf("generate failed: %d: %s", genW.Code, genW.Body.String())
-	}
-
-	var genResp AdminGenerateResponse
-	decodeResponse(t, genW, &genResp)
-
-	if err := reloadKeysForTest(server); err != nil {
-		t.Fatalf("reloadKeysForTest() error = %v", err)
-	}
-	ir := server.registry.Get(auth.DefaultIdentityID)
-	ir.SnapshotKeySession().InitializeSession()
-
-	sp := types.SuggestedParams{
-		Fee:             types.MicroAlgos(1000),
-		GenesisHash:     testnetGenesisHashBytes(t),
-		GenesisID:       "testnet-v1.0",
-		FirstRoundValid: 100,
-		LastRoundValid:  200,
-	}
-
-	txn, err := transaction.MakePaymentTxn(
-		genResp.Address,
-		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-		12345,
-		[]byte("plan-simulate-parity"),
-		"",
-		sp,
-	)
-	if err != nil {
-		t.Fatalf("MakePaymentTxn() error = %v", err)
-	}
-
-	reqBody := signerapi.GroupSignRequest{
-		Requests: []signerapi.SignRequest{{
-			AuthAddress: genResp.Address,
-			TxnBytesHex: encodeTxnToHex(txn),
-		}},
-	}
-	reqJSON, err := json.Marshal(reqBody)
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
-	}
-
-	planW := httptest.NewRecorder()
-	server.handlePlan(planW, requestWithIdentity(http.MethodPost, "/plan", reqJSON))
-	if planW.Code != http.StatusOK {
-		t.Fatalf("/plan failed: %d: %s", planW.Code, planW.Body.String())
-	}
-
-	var planResp signerapi.GroupPlanResponse
-	decodeResponse(t, planW, &planResp)
-	if planResp.Error != "" {
-		t.Fatalf("/plan returned error: %s", planResp.Error)
-	}
-
-	svc := signerrest.Service{
-		Deps: signerrest.Dependencies{
-			NewSigningService: func(got *identity.Runtime) signerrest.SigningService {
-				if got != ir {
-					t.Fatalf("runtime = %p, want %p", got, ir)
-				}
-				return server.newSigningServiceForIdentityWithAudit(got, nil)
-			},
-			EncodeTxnHex: encodeTxnToHex,
-			SimulateSignedGroup: func(ctx context.Context, got []types.SignedTxn) ([]string, string, bool, *signersigning.ServiceError) {
-				if len(got) != 1 {
-					t.Fatalf("SimulateSignedGroup signed count = %d, want 1", len(got))
-				}
-				return []string{algocrypto.GetTxID(got[0].Txn)}, "simulation stub\n", false, nil
-			},
-		},
-	}
-	simResp, simErr := svc.Simulate(context.Background(), ir, reqBody)
-	if simErr != nil {
-		t.Fatalf("Simulate() error = %v", simErr)
-	}
-	if simResp.Error != "" {
-		t.Fatalf("Simulate() response error = %q", simResp.Error)
-	}
-	if !reflect.DeepEqual(planResp.Transactions, simResp.Transactions) {
-		t.Fatalf("transactions mismatch:\n/plan     = %#v\n/simulate = %#v", planResp.Transactions, simResp.Transactions)
-	}
-	if !reflect.DeepEqual(planResp.Mutations, simResp.Mutations) {
-		t.Fatalf("mutations mismatch:\n/plan     = %#v\n/simulate = %#v", planResp.Mutations, simResp.Mutations)
 	}
 }
 

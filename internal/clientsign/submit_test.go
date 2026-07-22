@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -22,7 +24,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -66,9 +67,13 @@ func TestSignAndSubmitViaGroupRejectsForeignPlaceholders(t *testing.T) {
 	})}
 
 	authCache := cache.NewAuthAddressCache()
+	algodClient, err := algod.MakeClient("http://algod.test", "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
 
 	txns := []types.Transaction{{Header: types.Header{Sender: types.Address{1}}}}
-	_, _, err := SignAndSubmitViaGroup(txns, &authCache, signerClient, nil, SubmitOptions{Out: io.Discard})
+	_, _, err = SignAndSubmitViaGroup(txns, &authCache, signerClient, algodClient, SubmitOptions{Out: io.Discard})
 	if err == nil {
 		t.Fatal("expected foreign placeholder error, got nil")
 	}
@@ -94,23 +99,26 @@ func TestSignAndSubmitViaGroupIncludesAppCallMetadata(t *testing.T) {
 			t.Fatalf("AppCallInfo = %#v, want abi method metadata", req.Requests[0].AppCallInfo)
 		}
 		resp := signerapi.GroupSignResponse{
-			Signed: []string{signedTxnHex(types.Transaction{
-				Header: types.Header{Sender: types.Address{1}},
-			})},
+			Signed:    []string{""},
+			Mutations: &signerapi.MutationReport{ForeignCount: 1},
 		}
 		return jsonResponse(r, http.StatusOK, resp)
 	})}
 
 	authCache := cache.NewAuthAddressCache()
+	algodClient, err := algod.MakeClient("http://algod.test", "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
 
 	txns := []types.Transaction{{Header: types.Header{Sender: types.Address{1}}}}
-	_, _, _ = SignAndSubmitViaGroup(txns, &authCache, signerClient, nil, SubmitOptions{
+	_, _, _ = SignAndSubmitViaGroup(txns, &authCache, signerClient, algodClient, SubmitOptions{
 		Out:         io.Discard,
 		AppCallInfo: []*signerapi.AppCallInfo{{Mode: "abi", Method: "increment(uint64)"}},
 	})
 }
 
-func TestSignAndSubmitViaGroupSimulateUsesSignerSimulateEndpoint(t *testing.T) {
+func TestSignAndSubmitViaGroupSimulateSignsThenUsesClientAlgod(t *testing.T) {
 	var signerPaths []string
 	simulatedTxn := types.Transaction{
 		Header: types.Header{
@@ -121,65 +129,125 @@ func TestSignAndSubmitViaGroupSimulateUsesSignerSimulateEndpoint(t *testing.T) {
 	signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		signerPaths = append(signerPaths, r.URL.Path)
-		if r.URL.Path == "/plan" {
-			t.Fatal("simulate path called /plan; want /simulate")
-		}
-		if r.URL.Path == "/sign" {
-			t.Fatal("simulate path called /sign; want /simulate")
-		}
-		if r.URL.Path != "/simulate" {
+		if r.URL.Path != "/sign" {
 			return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})
 		}
-		resp := signerapi.GroupSimulateResponse{
-			TxIDs:        []string{"SIMTXID"},
-			Transactions: []string{txnutil.EncodeWithPrefixHex(simulatedTxn)},
-			Output:       "simulation output\n",
-		}
-		return jsonResponse(r, http.StatusOK, resp)
+		return jsonResponse(r, http.StatusOK, signerapi.GroupSignResponse{
+			Signed: []string{signedTxnHex(simulatedTxn)},
+		})
 	})}
+
+	var simulateReq models.SimulateRequest
+	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/transactions/simulate" {
+			t.Fatalf("algod path = %s, want /v2/transactions/simulate", r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read simulate request: %v", err)
+		}
+		if err := msgpack.Decode(body, &simulateReq); err != nil {
+			t.Fatalf("decode simulate request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(models.SimulateResponse{
+			LastRound: 7,
+			TxnGroups: []models.SimulateTransactionGroupResult{{
+				TxnResults: []models.SimulateTransactionResult{{}},
+			}},
+		}); err != nil {
+			t.Fatalf("encode simulate response: %v", err)
+		}
+	}))
+	defer algodServer.Close()
+	algodClient, err := algod.MakeClient(algodServer.URL, "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
 
 	authCache := cache.NewAuthAddressCache()
 	txns := []types.Transaction{{Header: types.Header{Sender: types.Address{1}}}}
 	var out bytes.Buffer
-	txIDs, submitted, err := SignAndSubmitViaGroup(txns, &authCache, signerClient, nil, SubmitOptions{
+	txIDs, submitted, err := SignAndSubmitViaGroup(txns, &authCache, signerClient, algodClient, SubmitOptions{
 		Out:      &out,
 		Simulate: true,
 	})
 	if err != nil {
 		t.Fatalf("SignAndSubmitViaGroup() error = %v", err)
 	}
-	if len(signerPaths) != 1 || signerPaths[0] != "/simulate" {
-		t.Fatalf("signer paths = %v, want [/simulate]", signerPaths)
+	signCalls := 0
+	for _, path := range signerPaths {
+		if path == "/simulate" {
+			t.Fatalf("signer paths = %v, must not call /simulate", signerPaths)
+		}
+		if path == "/sign" {
+			signCalls++
+		}
 	}
-	if len(txIDs) != 1 || txIDs[0] != "SIMTXID" {
-		t.Fatalf("txIDs = %v, want [SIMTXID]", txIDs)
+	if signCalls != 1 {
+		t.Fatalf("signer paths = %v, want one /sign call", signerPaths)
+	}
+	wantTxID := sdkcrypto.GetTxID(simulatedTxn)
+	if len(txIDs) != 1 || txIDs[0] != wantTxID {
+		t.Fatalf("txIDs = %v, want [%s]", txIDs, wantTxID)
 	}
 	if len(submitted) != 1 || submitted[0].Fee != simulatedTxn.Fee {
 		t.Fatalf("submitted = %#v, want simulated txn fee %d", submitted, simulatedTxn.Fee)
 	}
-	if !strings.Contains(out.String(), "simulation output") {
-		t.Fatalf("output = %q, want simulation output", out.String())
+	if simulateReq.AllowEmptySignatures || simulateReq.FixSigners {
+		t.Fatalf("signed simulation overrides = allow-empty:%t fix-signers:%t, want false", simulateReq.AllowEmptySignatures, simulateReq.FixSigners)
+	}
+	if len(simulateReq.TxnGroups) != 1 || len(simulateReq.TxnGroups[0].Txns) != 1 {
+		t.Fatalf("simulate groups = %#v, want one signed transaction", simulateReq.TxnGroups)
+	}
+	wantSigned, err := hex.DecodeString(signedTxnHex(simulatedTxn))
+	if err != nil {
+		t.Fatalf("decode expected signed transaction: %v", err)
+	}
+	if got := msgpack.Encode(simulateReq.TxnGroups[0].Txns[0]); !bytes.Equal(got, wantSigned) {
+		t.Fatalf("algod received signed bytes %x, want %x", got, wantSigned)
+	}
+	if !strings.Contains(out.String(), "Simulation successful") {
+		t.Fatalf("output = %q, want simulation success", out.String())
 	}
 }
 
 func TestSignAndSubmitViaGroupSimulateFailureReturnsSentinel(t *testing.T) {
+	var signCalls int
+	txn := types.Transaction{Header: types.Header{Sender: types.Address{1}}}
 	signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/simulate" {
+		if r.URL.Path != "/sign" {
 			return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})
 		}
-		resp := signerapi.GroupSimulateResponse{
-			TxIDs:        []string{"SIMTXID"},
-			Transactions: []string{txnutil.EncodeWithPrefixHex(types.Transaction{Header: types.Header{Sender: types.Address{1}}})},
-			Output:       "Simulation FAILED\n",
-			Failed:       true,
-		}
-		return jsonResponse(r, http.StatusOK, resp)
+		signCalls++
+		return jsonResponse(r, http.StatusOK, signerapi.GroupSignResponse{
+			Signed: []string{signedTxnHex(txn)},
+		})
 	})}
+	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/transactions/simulate" {
+			t.Fatalf("algod path = %s, want /v2/transactions/simulate", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(models.SimulateResponse{
+			LastRound: 7,
+			TxnGroups: []models.SimulateTransactionGroupResult{{
+				FailureMessage: "rejected by test",
+				FailedAt:       []uint64{0},
+			}},
+		}); err != nil {
+			t.Fatalf("encode simulate response: %v", err)
+		}
+	}))
+	defer algodServer.Close()
+	algodClient, err := algod.MakeClient(algodServer.URL, "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
 
 	authCache := cache.NewAuthAddressCache()
-	txns := []types.Transaction{{Header: types.Header{Sender: types.Address{1}}}}
-	_, _, err := SignAndSubmitViaGroup(txns, &authCache, signerClient, nil, SubmitOptions{
+	_, _, err = SignAndSubmitViaGroup([]types.Transaction{txn}, &authCache, signerClient, algodClient, SubmitOptions{
 		Out:      io.Discard,
 		Simulate: true,
 	})
@@ -189,11 +257,16 @@ func TestSignAndSubmitViaGroupSimulateFailureReturnsSentinel(t *testing.T) {
 	if !errors.Is(err, signing.ErrSimulationFailed) {
 		t.Fatalf("error = %q, want simulation failure sentinel", err)
 	}
+	if signCalls != 1 {
+		t.Fatalf("/sign calls = %d, want 1", signCalls)
+	}
 }
 
-func TestSignAndSubmitViaGroupRejectsNilAlgodAfterSigning(t *testing.T) {
+func TestSignAndSubmitViaGroupRejectsNilAlgodBeforeSigning(t *testing.T) {
+	var signCalls int
 	signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		signCalls++
 		if r.URL.Path != "/sign" {
 			return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})
 		}
@@ -214,6 +287,9 @@ func TestSignAndSubmitViaGroupRejectsNilAlgodAfterSigning(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "algod client not configured") {
 		t.Fatalf("error = %q, want algod client error", err)
+	}
+	if signCalls != 0 {
+		t.Fatalf("/sign calls = %d, want 0", signCalls)
 	}
 }
 
