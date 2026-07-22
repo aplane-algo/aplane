@@ -1,8 +1,11 @@
-# Key-Type Resolution: The Three Axes
+# Key Types, Authorization Contracts, and Resolution Axes
 
-This document explains how the codebase answers questions about a key type, and
-**why** there are three separate mechanisms rather than one. Read this before
-changing their boundaries (see [Why not collapse them](#why-not-collapse-them)).
+This document explains how APlane composes key types, account-authorization
+forms, LogicSig policy contracts, auxiliary authorities, signing flows, and
+provider implementations. It also explains how the codebase answers questions
+about a key type, and **why** there are three separate resolution mechanisms
+rather than one. Read this before changing their boundaries (see
+[Why not collapse them](#why-not-collapse-them)).
 
 `docs/ARCH_LSIG_PROVIDER.md` is the detailed registry reference; it covers one of
 the three axes below (Resolve). This document is the cross-cutting view.
@@ -13,6 +16,154 @@ A "key type" (e.g. `aplane.falcon1024.v1`, `aplane.corridor.v1`,
 `aplane.falcon1024-sentry1024.v1`) is asked three different *kinds* of
 question, and each kind uses a different mechanism because each is callable from
 a different place.
+
+## Protocol dimensions and terminology
+
+APlane uses several independently versioned dimensions to describe one signing
+authority. They answer different questions and must not be inferred from one
+another merely because two dimensions currently use the same string.
+
+| Dimension | Question it answers | Examples | Source of truth |
+|---|---|---|---|
+| **Key type** | What durable kind of account or witness key is this? | `ed25519`, `aplane.falcon1024.v1`, `aplane.corridor.v1` | Stored `key_type`; provider/template definition |
+| **Account authorization type** | What protocol-level mechanism authorizes the account? | native signature, DSA LogicSig, generic LogicSig | Key category and stored key material |
+| **Authorization contract** | Which reusable, versioned on-chain envelope and metadata vocabulary constrain this LogicSig? | `bounded1` | Template `bounded.contract` and durable `bounded_authorization.contract` |
+| **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, timelock, dedicated corridor TEAL | Full key-type provider/template plus behavior parameters |
+| **Base key type** | Which private signing primitive produces the account's DSA signature arguments? | `aplane.falcon1024.v1`, `aplane.ed25519.v1` | Stored `base_key_type` and composed provider definition |
+| **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | sentry witness, external contract-admin witness | Embedded public key, durable metadata, and custody-specific message contract |
+| **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `sentry1` | Signer-advertised `signing_flow` |
+| **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/bounded-admin` then `aprekey` | Flow contract, transaction classification, and HTTP DTOs |
+| **Provider and routing family** | Which registered implementation performs keygen, derivation, signing, or assembly? | composed provider routed through `aplane.falcon1024`; dedicated guarded provider | Provider registry and `RoutingFamily()` |
+| **Principal authorization** | May the authenticated caller invoke this operation on the target identity/resource? | `sign.request`, `sign.component`, `sign.assemble` | Principal/group/grant model and HTTP/admin enforcement point |
+| **Signer policy domain** | Which off-chain rules gate release of a signature that the key and on-chain program could produce? | client-signing policy, sentry policy | Node role, `policy.yaml`, and the selected policy key |
+| **Network context** | Which configured network and network-scoped policy apply to the transaction? | `mainnet`, `voi_mainnet`, `localnet` | Transaction `GenesisHash` resolved to a network context token |
+
+The terms are related, but none is a synonym for another:
+
+- A **key type** is the stable, user-visible and durable identity of a key
+  definition. It fixes the provider/template behavior that created the key.
+- An **authorization contract** is a reusable versioned contract used by one or
+  more key types. `bounded1` is currently the only bounded-authorization
+  contract. Many key types may instantiate it with different profiles and
+  behavior parameters.
+- A **profile** is the concrete policy compiled for a key type or key instance.
+  A bounded profile cannot widen the bounded envelope; a dedicated compiled
+  policy owns its complete program outside that reusable bounded contract.
+- An **auxiliary authority** is not automatically an account key or a policy.
+  Its enrollment names a role, message domain, custody boundary, and the paths
+  on which its signature is required.
+- A **signing flow** is a wire-routing capability, not an on-chain program.
+  Clients select it from inventory and must fail closed on unknown values.
+- An **endpoint choreography** is the transaction-path-specific sequence inside
+  a flow. One key-level flow can have more than one path: a bounded spend uses
+  ordinary `/sign`, while an admin-key rekey uses `/sign/bounded-admin` and
+  external completion.
+- A **provider** is an implementation mechanism. Changing registry ownership or
+  routing does not by itself change a key type, authorization contract, or
+  signing flow, although behavior-visible changes may require versioning those
+  contracts.
+
+The word **contract** has three related but distinct uses in APlane:
+
+- An **authorization contract**, such as `bounded1`, is an on-chain LogicSig
+  behavior and its canonical durable metadata vocabulary.
+- A **wire or storage contract** is a compatibility-bearing DTO, file shape, or
+  behavioral guarantee documented in `ARCH_CONTRACTS.md`.
+- A **message or transcript contract** is an exact cryptographic encoding and
+  domain, such as `APLANE_SENTRY_V1` or `APLANE_BOUNDED_ADMIN_AUTH_V1`.
+
+Likewise, account authorization is distinct from principal authorization and
+signer policy. The account key and LogicSig determine what can authorize the
+Algorand account; the grant model determines who may call an APlane endpoint;
+signer or sentry policy determines whether that permitted call may release a
+signature for the particular transaction.
+
+`bounded1` currently appears in two dimensions: it is both the bounded
+authorization-contract identifier and the signing-flow label advertised by
+bounded keys. Those values are equal by contract, but the dimensions remain
+distinct. The contract identifier selects canonical on-chain and durable
+metadata semantics; the flow label tells the client how to route a request.
+Likewise, `sentry1` is a signing-flow label, while `APLANE_SENTRY_V1` is the
+cryptographic component-message domain used by that flow. Neither is a key
+type.
+
+### How the dimensions compose
+
+For a generated account key, the relationship is:
+
+```text
+full key_type
+  -> account authorization type
+  -> provider/template and optional base_key_type
+  -> optional reusable authorization contract and concrete profile
+  -> optional auxiliary authority enrollments
+  -> rendered bytecode + durable instance signing metadata
+  -> inventory signing_flow and size/routing metadata
+  -> client endpoint choreography for the classified transaction path
+  -> authentication + principal authorization + signer policy gates
+  -> signature release and final on-chain program enforcement
+```
+
+The full `key_type` remains the durable account identity throughout this chain.
+The stored bytecode and versioned signing metadata, not the currently installed
+template, are authoritative for signing an existing LogicSig key. Inventory is
+a projection of that authority for clients; it does not replace the key file or
+the on-chain program.
+
+Runtime selection follows these rules:
+
+1. The effective signer or `AuthAddr` selects the account key instance.
+2. Its full `key_type` and durable metadata select account behavior and the
+   implementation needed by the signer.
+3. Signer inventory projects a `signing_flow`; the client routes on that field,
+   not on key-type naming conventions, `base_key_type`, or provider family.
+4. Transaction classification may choose a path-specific choreography inside
+   the flow, such as bounded spend versus external-admin rekey.
+5. HTTP principal authorization decides whether the caller may invoke the
+   endpoint. Signer or sentry policy independently decides whether the specific
+   transaction may receive a signature.
+6. Assembly verifies signatures, argument placement, canonical transaction
+   bytes, and the effective authorizer. The LogicSig program remains the final
+   on-chain authority.
+
+An auxiliary-authority overlay may be combined with a policy form only when an
+explicit account contract, durable metadata shape, and signing flow define the
+combination. The combination must not be inferred from a key-type substring or
+from the presence of a witness key alone.
+
+### Worked compositions
+
+| Key type | Account authorization | Contract/profile | Base primitive | Auxiliary authority | Advertised flow and choreography |
+|---|---|---|---|---|---|
+| `ed25519` | Native | none | Ed25519, self-owned | none | empty flow; `/sign` |
+| `aplane.falcon1024.v1` | DSA LogicSig | plain DSA | Falcon-1024, self-owned | none | empty flow; `/sign` |
+| `aplane.falcon1024-allowlist.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient allowlist | `aplane.falcon1024.v1` | none | `bounded1`; spend/rekey through `/sign` as permitted by the profile |
+| `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient/asset/amount allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
+| `aplane.falcon1024-sentry1024.v1` | DSA LogicSig | dedicated guarded verifier | `aplane.falcon1024.v1` | signer-custodied Falcon sentry witness | `sentry1`; user `/sign/component`, sentry `/sign/component`, then `/sign/assemble` |
+| `aplane.corridor.v1` | DSA LogicSig | dedicated compiled corridor policy | `aplane.falcon1024.v1` | signer-custodied Falcon sentry witness | `sentry1`; component signing followed by guarded assembly |
+| `aplane.htlc.v1` | Generic LogicSig | generic TEAL HTLC policy | none | none | empty flow; ordinary LogicSig assembly through `/sign` |
+
+The examples describe the currently implemented architecture. A future change
+that composes dimensions differently must update the relevant contract and flow
+rather than silently teaching clients to infer a new combination.
+
+### Independent version boundaries
+
+Version the dimension whose compatibility contract changes:
+
+| Change | Version boundary |
+|---|---|
+| Concrete program behavior or key-definition semantics | New `key_type` version |
+| Bounded envelope, canonical profile, argument-source vocabulary, or admin transcript | New bounded authorization contract, such as `bounded2`, and affected key types |
+| Client/server component ordering, required endpoints, or assembly DTO semantics | New `signing_flow` label |
+| Cryptographic message shape | New message-domain version and every program/flow that verifies it |
+| Template syntax without changing an existing key's durable behavior | Template schema version |
+| Durable key signing metadata shape | `signing_metadata_version` |
+| HTTP or SDK payload shape | Versioned endpoint/DTO contract according to `ARCH_CONTRACTS.md` |
+
+These versions may advance independently. A key type version must still pin the
+complete behavior it relies on, and compatibility-bearing changes commonly
+require advancing more than one dimension together.
 
 ## Authorization object ontology
 
@@ -258,6 +409,15 @@ resolution mechanism.
 
 ## See also
 
+- `docs/ARCH_CONTRACTS.md` — compatibility-bearing identifiers, DTOs, storage,
+  and message contracts.
+- `docs/ARCH_BOUNDED_DSA.md` — the `bounded1` authorization contract and its
+  profile, metadata, and path semantics.
+- `docs/ARCH_AUTHORIZATION.md` — principal/group/grant authorization for API
+  and admin operations.
+- `docs/ARCH_POLICY.md` — signer and sentry policy domains that gate signature
+  release.
+- `docs/ARCH_NETWORKS.md` — network context and genesis-hash resolution.
 - `docs/ARCH_LSIG_PROVIDER.md` — the Resolve-axis registry, in detail.
 - `docs/ARCH_SENTRY.md` — the guarded/sentry account choreography.
 - `docs/DEV_KEYTYPES.md` — how to add a key type (where these axes become
