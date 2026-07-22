@@ -197,11 +197,27 @@ func TestBoundedAuthorizationMetadataSnapshotsSentryContract(t *testing.T) {
 		},
 	}
 	provider := newBoundedTestProvider(profile)
-	if _, err := provider.GenerateTEAL(
+	teal, err := provider.GenerateTEAL(
 		[]byte{0x01},
 		map[string]string{BoundedSentryPublicKeyParameter: strings.Repeat("42", boundedmeta.SentryPublicKeySizeV1)},
-	); err == nil || !strings.Contains(err.Error(), "TEAL gate is not implemented") {
-		t.Fatalf("GenerateTEAL() error = %v, want fail-closed sentry composer gate", err)
+	)
+	if err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+	assertOrderedMarkers(t, teal,
+		boundedSpendLabel+":",
+		"// Sentry-authorized pure spend",
+		"pushbytes 0x41504c414e455f53454e5452595f5631\npushbytes 0x02\nconcat\ntxn TxID\nconcat\nsha512_256",
+		"arg 1\npushbytes 0x"+strings.Repeat("42", boundedmeta.SentryPublicKeySizeV1)+"\nfalcon_verify\nassert",
+		"b "+boundedLayer3Label,
+		boundedLayer3Label+":",
+		"// LAYER3_TEST_POLICY",
+	)
+	if strings.Index(teal, boundedRekeyLabel+":") >= strings.Index(teal, "// Sentry-authorized pure spend") {
+		t.Fatalf("rekey path is not dispatched before the sentry-only spend gate:\n%s", teal)
+	}
+	if _, err := provider.BuildArgs([]byte{1, 2, 3, 4}, nil); err == nil || !strings.Contains(err.Error(), boundedmeta.SentrySignatureSlot) {
+		t.Fatalf("BuildArgs() error = %v, want required sentry-slot rejection", err)
 	}
 	spendingPublicKey := bytes.Repeat([]byte{0x31}, boundedmeta.SentryPublicKeySizeV1)
 	sentryPublicKey := bytes.Repeat([]byte{0x42}, boundedmeta.SentryPublicKeySizeV1)
@@ -301,6 +317,71 @@ func TestBoundedSpendingRekeyCanRequireLayer3(t *testing.T) {
 	spend := strings.Index(teal, boundedSpendLabel+":")
 	if rekey < 0 || spend < 0 || rekey >= spend || !strings.Contains(teal[rekey:spend], "b "+boundedSpendLabel) {
 		t.Fatalf("Layer-3-gated rekey does not branch through spending policy:\n%s", teal)
+	}
+}
+
+func TestBoundedSentrySpendingRekeyBypassesSentryGate(t *testing.T) {
+	profile := &BoundedAuthorizationProfile{
+		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		AdminOperations: []AdminOperationSpec{{
+			Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpendingKey, PolicyGate: AdminPolicyGateLayer3,
+		}},
+		Sentry: &boundedmeta.SentryAuthorization{
+			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		},
+	}
+	provider := newBoundedTestProvider(profile)
+	teal, err := provider.GenerateTEAL([]byte{1}, map[string]string{
+		BoundedSentryPublicKeyParameter: strings.Repeat("42", boundedmeta.SentryPublicKeySizeV1),
+	})
+	if err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+	rekey := strings.Index(teal, boundedRekeyLabel+":")
+	spend := strings.Index(teal, boundedSpendLabel+":")
+	layer3 := strings.Index(teal, boundedLayer3Label+":")
+	if rekey < 0 || spend <= rekey || layer3 <= spend {
+		t.Fatalf("bounded sentry regions are out of order:\n%s", teal)
+	}
+	if !strings.Contains(teal[rekey:spend], "b "+boundedLayer3Label) || strings.Contains(teal[rekey:spend], "b "+boundedSpendLabel) {
+		t.Fatalf("spending-key rekey does not bypass sentry gate:\n%s", teal[rekey:spend])
+	}
+}
+
+func TestBoundedSentryAdminKeyUsesSlotAfterSentry(t *testing.T) {
+	profile := &BoundedAuthorizationProfile{
+		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		AdminOperations: []AdminOperationSpec{{
+			Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdminKey, PolicyGate: AdminPolicyGateNone,
+		}},
+		Sentry: &boundedmeta.SentryAuthorization{
+			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		},
+	}
+	provider := newBoundedTestProvider(profile)
+	sentryKey := strings.Repeat("42", boundedmeta.SentryPublicKeySizeV1)
+	adminKey := strings.Repeat("24", BoundedAdminPublicKeySize)
+	teal, err := provider.GenerateTEAL([]byte{1}, map[string]string{
+		BoundedSentryPublicKeyParameter: sentryKey,
+		BoundedAdminPublicKeyParameter:  adminKey,
+	})
+	if err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+	metadata := provider.BoundedAuthorizationMetadata()
+	if got := metadata.ArgumentLayout; len(got) != 3 || got[1].Source != boundedmeta.ArgSourceSentry || got[2].Source != boundedmeta.ArgSourceAdmin {
+		t.Fatalf("ArgumentLayout = %#v, want base/sentry/admin", got)
+	}
+	if !strings.Contains(teal, "arg 1\npushbytes 0x"+sentryKey+"\nfalcon_verify") || !strings.Contains(teal, "arg 2\npushbytes 0x"+adminKey+"\nfalcon_verify") {
+		t.Fatalf("sentry/admin verification does not use frozen slots:\n%s", teal)
+	}
+	if _, err := provider.GenerateTEAL([]byte{1}, map[string]string{
+		BoundedSentryPublicKeyParameter: adminKey,
+		BoundedAdminPublicKeyParameter:  adminKey,
+	}); err == nil || !strings.Contains(err.Error(), "must differ from the contract-admin key") {
+		t.Fatalf("GenerateTEAL() collision error = %v", err)
 	}
 }
 

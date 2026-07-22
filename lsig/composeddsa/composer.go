@@ -331,7 +331,7 @@ func (c *ComposedDSA) buildBoundedSpendArgs(signatureArgs, runtimeArgs [][]byte)
 			}
 			value = signatureArgs[baseIndex]
 			baseIndex++
-		case boundedmeta.ArgSourceDerived, boundedmeta.ArgSourceAdmin:
+		case boundedmeta.ArgSourceDerived, boundedmeta.ArgSourceSentry, boundedmeta.ArgSourceAdmin:
 			// BuildArgs has no transaction context or external admin authority.
 			// Keep interior slots explicit so later runtime values retain their
 			// frozen indexes; unused trailing slots are trimmed below.
@@ -441,9 +441,6 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	boundedProfile, _, err := c.validateBoundedConfig()
 	if err != nil {
 		return "", err
-	}
-	if boundedProfile != nil && boundedProfile.Sentry != nil {
-		return "", fmt.Errorf("bounded sentry TEAL gate is not implemented")
 	}
 
 	if len(publicKey) != c.ops.PublicKeySize() {

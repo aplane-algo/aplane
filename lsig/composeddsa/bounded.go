@@ -431,6 +431,26 @@ func (c *ComposedDSA) validatedAdminPublicKey(spendingPublicKey []byte, params m
 	return adminPublicKey, nil
 }
 
+func (c *ComposedDSA) validatedSentryPublicKey(spendingPublicKey []byte, params map[string]string) ([]byte, error) {
+	sentryPublicKey, err := decodeHexParameter(params[BoundedSentryPublicKeyParameter], BoundedSentryPublicKeyParameter, boundedmeta.SentryPublicKeySizeV1)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Equal(sentryPublicKey, spendingPublicKey) {
+		return nil, fmt.Errorf("bounded sentry witness key must differ from the spending key")
+	}
+	if c.bounded != nil && boundedRequiresAdminKey(c.bounded) {
+		adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
+		if err != nil {
+			return nil, err
+		}
+		if bytes.Equal(sentryPublicKey, adminPublicKey) {
+			return nil, fmt.Errorf("bounded sentry witness key must differ from the contract-admin key")
+		}
+	}
+	return sentryPublicKey, nil
+}
+
 func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata, error) {
 	profile, layout, err := c.validateBoundedConfig()
 	if err != nil {

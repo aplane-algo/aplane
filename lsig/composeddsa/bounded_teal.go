@@ -9,12 +9,15 @@ import (
 	"strings"
 
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	sentrymessage "github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 )
 
 const (
 	boundedRekeyLabel  = "__aplane_bounded1_rekey"
 	boundedSpendLabel  = "__aplane_bounded1_spend"
+	boundedLayer3Label = "__aplane_bounded1_layer3"
 	boundedAcceptLabel = "__aplane_bounded1_accept"
 	boundedPayLabel    = "__aplane_bounded1_effect_pay"
 	boundedAxferLabel  = "__aplane_bounded1_effect_axfer"
@@ -88,14 +91,71 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 			b.WriteString(adminTEAL)
 		}
 		if operation.PolicyGate == AdminPolicyGateLayer3 {
-			b.WriteString("b " + boundedSpendLabel + "\n\n")
+			if profile.Sentry != nil {
+				b.WriteString("b " + boundedLayer3Label + "\n\n")
+			} else {
+				b.WriteString("b " + boundedSpendLabel + "\n\n")
+			}
 		} else {
 			b.WriteString("b " + boundedAcceptLabel + "\n\n")
 		}
 	}
 
 	b.WriteString(boundedSpendLabel + ":\n")
+	if profile.Sentry != nil {
+		sentryTEAL, err := c.renderSentryAuthorization(publicKey, params, metadata)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(sentryTEAL)
+		b.WriteString("b " + boundedLayer3Label + "\n\n")
+		b.WriteString(boundedLayer3Label + ":\n")
+	}
 	return b.String(), nil
+}
+
+func (c *ComposedDSA) renderSentryAuthorization(publicKey []byte, params map[string]string, metadata *boundedmeta.Metadata) (string, error) {
+	if metadata == nil || metadata.Sentry == nil {
+		return "", fmt.Errorf("bounded sentry metadata is required")
+	}
+	sentryPublicKey, err := c.validatedSentryPublicKey(publicKey, params)
+	if err != nil {
+		return "", err
+	}
+	sentryArgIndex := -1
+	for _, slot := range metadata.ArgumentLayout {
+		if slot.Source == boundedmeta.ArgSourceSentry {
+			sentryArgIndex = slot.Index
+			break
+		}
+	}
+	if sentryArgIndex < 0 {
+		return "", fmt.Errorf("bounded sentry argument slot is missing")
+	}
+	return fmt.Sprintf(`// Sentry-authorized pure spend
+arg %d
+len
+pushint 0
+>
+assert
+arg %d
+len
+pushint %d
+<=
+assert
+pushbytes 0x%s
+pushbytes 0x%02x
+concat
+txn TxID
+concat
+sha512_256
+arg %d
+pushbytes 0x%s
+falcon_verify
+assert
+`, sentryArgIndex, sentryArgIndex, metadata.Sentry.SignatureMaxSize,
+		hex.EncodeToString([]byte(sentrymessage.DomainTagV1)), byte(sentrymessage.RoleSentry),
+		sentryArgIndex, hex.EncodeToString(sentryPublicKey)), nil
 }
 
 func writeSpendEffectDecision(b *strings.Builder, allowed bool) {
