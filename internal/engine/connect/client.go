@@ -115,19 +115,6 @@ func (s *ConnectionState) RequestGroupPlanWithContext(ctx context.Context, reque
 	return client.RequestGroupPlanWithContext(ctx, requests)
 }
 
-// RequestGroupSimulate sends group simulation requests to Signer.
-func (s *ConnectionState) RequestGroupSimulate(requests []signerapi.SignRequest) (*signerapi.GroupSimulateResponse, error) {
-	return s.RequestGroupSimulateWithContext(context.Background(), requests)
-}
-
-func (s *ConnectionState) RequestGroupSimulateWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSimulateResponse, error) {
-	client, err := s.signerClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.RequestGroupSimulateWithContext(ctx, requests)
-}
-
 // RequestGroupSign sends group signing requests to Signer.
 func (s *ConnectionState) RequestGroupSign(requests []signerapi.SignRequest) (*signerapi.GroupSignResponse, error) {
 	return s.RequestGroupSignWithContext(context.Background(), requests)
@@ -161,16 +148,6 @@ func (s *ConnectionState) RequestComponentSignWithContext(ctx context.Context, r
 		return nil, err
 	}
 	return client.RequestComponentSignWithContext(ctx, req)
-}
-
-// RequestGuardedSimulateWithContext sends a contained guarded simulation
-// request to Signer; only simulation results come back, never signed bytes.
-func (s *ConnectionState) RequestGuardedSimulateWithContext(ctx context.Context, req signerapi.GuardedSimulateRequest) (*signerapi.GuardedSimulateResponse, error) {
-	client, err := s.signerClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.RequestGuardedSimulateWithContext(ctx, req)
 }
 
 // RequestGuardedAssemble sends a guarded assembly request to Signer.

@@ -23,7 +23,7 @@ import (
 // as the policy key for each target position. Every non-target group position
 // is a foreign leg this signer does not sign but the operator still reviews.
 // It returns the matched always-review rule ID for approval audit events.
-func (s *Service) gateUserComponentSigning(ctx context.Context, identityID string, plan *ComponentSignPlan, simulation bool) (string, *ServiceError) {
+func (s *Service) gateUserComponentSigning(ctx context.Context, identityID string, plan *ComponentSignPlan) (string, *ServiceError) {
 	if plan == nil || plan.Group == nil {
 		return "", internal("component sign plan is nil")
 	}
@@ -53,11 +53,7 @@ func (s *Service) gateUserComponentSigning(ctx context.Context, identityID strin
 	groupDesc, firstValid, lastValid := buildComponentApprovalDescription(plan, allTxns, targetIndices, s.GenerateTxnDescriptionFromTxn)
 
 	console.Println("\n" + strings.Repeat("-", 60))
-	if simulation {
-		console.Println("GUARDED COMPONENT SIMULATION REQUEST")
-	} else {
-		console.Println("GUARDED COMPONENT SIGNATURE REQUEST")
-	}
+	console.Println("GUARDED COMPONENT SIGNATURE REQUEST")
 	console.Println(strings.Repeat("=", 60))
 	console.Println(groupDesc)
 	console.Sync()
@@ -67,7 +63,6 @@ func (s *Service) gateUserComponentSigning(ctx context.Context, identityID strin
 		EvalCount:      len(allTxns),
 		ForeignIndices: foreignIndices,
 		IsGroup:        len(allTxns) > 1,
-		Simulation:     simulation,
 		AuthKeys:       authKeys,
 		KnownAddresses: s.knownAddresses(identityID, nil),
 		LogRejection: func(reason string) {

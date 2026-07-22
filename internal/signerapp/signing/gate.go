@@ -24,9 +24,6 @@ type gateInput struct {
 	PassthroughIndices map[int]bool
 	ForeignIndices     map[int]bool
 	IsGroup            bool
-	// Simulation skips review and operator approval: the caller guarantees the
-	// resulting signatures never leave the signer.
-	Simulation bool
 	// AuthKeys[i] selects the policy key override for position i ("" or short
 	// slice selects the identity-wide config).
 	AuthKeys             []string
@@ -46,8 +43,8 @@ type gateInput struct {
 }
 
 // runApprovalGates runs the shared signer-domain gate sequence: hard policy
-// rejection, always-review rules, simulation auto-approval, auto-approval
-// rules, then the operator approval fallback. It returns the matched
+// rejection, always-review rules, auto-approval rules, then the operator
+// approval fallback. It returns the matched
 // always-review rule ID for approval audit events ("" when none matched).
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
@@ -70,8 +67,6 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 	}
 
 	switch {
-	case in.Simulation:
-		console.Println("[SIMULATE] Auto-approved inside Signer; signed bytes will not be returned")
 	case alwaysReview:
 		if err := in.RequestOperatorApproval(ctx, alwaysReviewRuleID); err != nil {
 			return alwaysReviewRuleID, err

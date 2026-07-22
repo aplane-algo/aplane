@@ -35,9 +35,8 @@ func (fs *Signer) restServiceWithAudit(keyAudit keyadmin.AuditLogger, signingAud
 			NewSigningService: func(ir *identity.Runtime) signerrest.SigningService {
 				return fs.newSigningServiceForIdentityWithAudit(ir, signingAudit)
 			},
-			PlanGroup:           fs.planGroupWithAudit(signingAudit),
-			EncodeTxnHex:        encodeTxnToHex,
-			SimulateSignedGroup: fs.simulateSignedGroup,
+			PlanGroup:    fs.planGroupWithAudit(signingAudit),
+			EncodeTxnHex: encodeTxnToHex,
 			KeyAdmin: keyadmin.Service{
 				AuditLog: keyAudit,
 				MutationLock: func(identityID string) keyadmin.Locker {

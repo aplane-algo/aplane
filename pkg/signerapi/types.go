@@ -275,19 +275,6 @@ type GroupPlanResponse struct {
 	Error        string          `json:"error,omitempty"`
 }
 
-// GroupSimulateResponse is the response from the /simulate endpoint.
-// The signer signs internally, submits the signed group to algod simulate, and
-// returns only unsigned planned transactions plus diagnostic output. Signed
-// transaction bytes are intentionally not part of this contract.
-type GroupSimulateResponse struct {
-	TxIDs        []string        `json:"tx_ids,omitempty"`       // Transaction IDs for the simulated group
-	Transactions []string        `json:"transactions,omitempty"` // TX-prefixed hex-encoded unsigned txns (final group)
-	Mutations    *MutationReport `json:"mutations,omitempty"`    // Modifications made by server planning
-	Output       string          `json:"output,omitempty"`       // Human-readable simulation report
-	Failed       bool            `json:"failed,omitempty"`       // True when algod simulate returned an execution failure
-	Error        string          `json:"error,omitempty"`
-}
-
 // ErrorResponse is the standard HTTP error body for non-2xx signer responses.
 // Code carries a stable machine-readable classification (see error_codes.go);
 // clients should branch on Code, never on Error message text. Code may be
