@@ -286,8 +286,11 @@ func rejectLocalGuardedPassthrough(ctx context.Context, stxn types.SignedTxn, ta
 		if km == nil {
 			continue // not held by this signer — a legitimate foreign passthrough
 		}
-		if keytypes.IsGuardedAccountKeyType(km.Type) {
-			return badRequest(fmt.Sprintf("passthrough index %d is a guarded account; it must be signed through component assembly, not passthrough", targetIndex))
+		isGuarded := keytypes.IsGuardedAccountKeyType(km.Type)
+		isBoundedSentry := km.BoundedAuthorization != nil && km.BoundedAuthorization.Sentry != nil
+		zeroLoadedKeyMaterial(km)
+		if isGuarded || isBoundedSentry {
+			return badRequest(fmt.Sprintf("passthrough index %d requires component assembly and cannot be supplied as passthrough", targetIndex))
 		}
 	}
 	return nil

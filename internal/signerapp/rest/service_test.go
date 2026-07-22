@@ -80,20 +80,34 @@ func init() {
 }
 
 type stubSigningService struct {
-	gotIdentityID   string
-	gotReq          signerapi.GroupSignRequest
-	gotBoundedAdmin signerapi.BoundedAdminRequest
-	gotComponent    signerapi.ComponentSignRequest
-	gotAssembly     signerapi.GuardedAssemblyRequest
-	gotSession      *keystore.KeySession
-	gotCtx          context.Context
-	result          *signersigning.SignGroupResult
-	boundedAdmin    *signersigning.BoundedAdminResult
-	component       *signersigning.ComponentSignResult
-	assembly        *signersigning.GuardedAssemblyResult
-	err             *signersigning.ServiceError
-	componentErr    *signersigning.ServiceError
-	assemblyErr     *signersigning.ServiceError
+	gotIdentityID       string
+	gotReq              signerapi.GroupSignRequest
+	gotBoundedAdmin     signerapi.BoundedAdminRequest
+	gotComponent        signerapi.ComponentSignRequest
+	gotAssembly         signerapi.GuardedAssemblyRequest
+	gotBoundedComponent signerapi.BoundedComponentRequest
+	gotBoundedAssembly  signerapi.BoundedAssemblyRequest
+	gotSession          *keystore.KeySession
+	gotCtx              context.Context
+	result              *signersigning.SignGroupResult
+	boundedAdmin        *signersigning.BoundedAdminResult
+	component           *signersigning.ComponentSignResult
+	assembly            *signersigning.GuardedAssemblyResult
+	boundedComponent    *signersigning.BoundedComponentResult
+	boundedAssembly     *signersigning.BoundedAssemblyResult
+	err                 *signersigning.ServiceError
+	componentErr        *signersigning.ServiceError
+	assemblyErr         *signersigning.ServiceError
+}
+
+func (s *stubSigningService) PrepareBoundedComponentWithContext(ctx context.Context, identityID string, req signerapi.BoundedComponentRequest, session *keystore.KeySession) (*signersigning.BoundedComponentResult, *signersigning.ServiceError) {
+	s.gotCtx, s.gotIdentityID, s.gotBoundedComponent, s.gotSession = ctx, identityID, req, session
+	return s.boundedComponent, s.err
+}
+
+func (s *stubSigningService) AssembleBoundedWithContext(ctx context.Context, identityID string, req signerapi.BoundedAssemblyRequest, session *keystore.KeySession) (*signersigning.BoundedAssemblyResult, *signersigning.ServiceError) {
+	s.gotCtx, s.gotIdentityID, s.gotBoundedAssembly, s.gotSession = ctx, identityID, req, session
+	return s.boundedAssembly, s.assemblyErr
 }
 
 func (s *stubSigningService) PrepareBoundedAdminWithContext(ctx context.Context, identityID string, req signerapi.BoundedAdminRequest, session *keystore.KeySession) (*signersigning.BoundedAdminResult, *signersigning.ServiceError) {
@@ -354,6 +368,34 @@ func TestServiceAssembleGuardedDelegates(t *testing.T) {
 	}
 	if resp.RequestID != "asm-1" || len(resp.SignedGroup) != 1 || resp.SignedGroup[0] != "signed" {
 		t.Fatalf("AssembleGuarded() response = %#v", resp)
+	}
+}
+
+func TestServiceBoundedSentryEndpointsDelegate(t *testing.T) {
+	ir := setupIdentityRuntime(t, true)
+	stub := &stubSigningService{
+		boundedComponent: &signersigning.BoundedComponentResult{
+			RequestID: "bcmp-1", Transactions: []string{"TXaa"},
+			Components: []signerapi.BoundedBaseComponent{{TargetIndex: 0, BoundedAccount: "ACCOUNT", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: witness.Falcon1024V1}},
+		},
+		boundedAssembly: &signersigning.BoundedAssemblyResult{RequestID: "basm-1", SignedGroup: []string{"signed"}},
+	}
+	svc := Service{Deps: Dependencies{NewSigningService: func(*identity.Runtime) SigningService { return stub }}}
+	componentReq := signerapi.BoundedComponentRequest{RequestID: "bcmp-1", Requests: []signerapi.SignRequest{{AuthAddress: "ACCOUNT", TxnBytesHex: "TXaa"}}}
+	componentResp, err := svc.PrepareBoundedComponent(t.Context(), ir, componentReq)
+	if err != nil {
+		t.Fatalf("PrepareBoundedComponent() error = %v", err)
+	}
+	if stub.gotBoundedComponent.RequestID != componentReq.RequestID || stub.gotSession == nil || len(componentResp.Components) != 1 {
+		t.Fatalf("bounded component delegation = %#v / %#v", stub.gotBoundedComponent, componentResp)
+	}
+	assemblyReq := signerapi.BoundedAssemblyRequest{RequestID: "basm-1", GroupBytesHex: []string{"TXaa"}, Targets: []signerapi.BoundedAssemblyTarget{{TargetIndex: 0}}}
+	assemblyResp, err := svc.AssembleBounded(t.Context(), ir, assemblyReq)
+	if err != nil {
+		t.Fatalf("AssembleBounded() error = %v", err)
+	}
+	if stub.gotBoundedAssembly.RequestID != assemblyReq.RequestID || stub.gotSession == nil || assemblyResp.SignedGroup[0] != "signed" {
+		t.Fatalf("bounded assembly delegation = %#v / %#v", stub.gotBoundedAssembly, assemblyResp)
 	}
 }
 

@@ -159,6 +159,22 @@ func TestErrorEnvelopeJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			name: "bounded_component_method_not_allowed",
+			invoke: func(w *httptest.ResponseRecorder) {
+				server.handleBoundedComponent(w, requestWithIdentity(http.MethodGet, "/sign/bounded-component", nil))
+			},
+			wantStatus: http.StatusMethodNotAllowed,
+			want:       map[string]any{"error": "Method not allowed", "code": "bad_request"},
+		},
+		{
+			name: "bounded_assemble_method_not_allowed",
+			invoke: func(w *httptest.ResponseRecorder) {
+				server.handleBoundedAssemble(w, requestWithIdentity(http.MethodGet, "/sign/bounded-assemble", nil))
+			},
+			wantStatus: http.StatusMethodNotAllowed,
+			want:       map[string]any{"error": "Method not allowed", "code": "bad_request"},
+		},
+		{
 			name: "sign_assemble_method_not_allowed",
 			invoke: func(w *httptest.ResponseRecorder) {
 				server.handleSignAssemble(w, requestWithIdentity(http.MethodGet, "/sign/assemble", nil))
