@@ -366,6 +366,30 @@ planning/argument-assembly and guarded simulation surfaces were already
 tracked there before this review. No spec guard diverged from code; no
 invariant weakened.
 
+**Drift review (2026-07-22, HEAD `26a5dff3`).** Re-checked after 11 commits —
+the client-side signed-simulation change (PR #13) plus documentation-only
+commits. All 13 standard and 11 deep TLC runs pass at the recorded metrics;
+`metrics.json` is untouched in the window. Only two anchored areas moved,
+both in PR #13, and both correspond: the sign boundary lost its
+simulation-only authorization path (the `Simulation` gate branch,
+`SignGroupForSimulationWithContext`, and the signer `/simulate` endpoints are
+fully removed; mode validation, foreign/passthrough output rules, and verdict
+precedence are untouched), and the plugin presign flow now routes the signed
+group to client-side algod simulation (the plugin model contains no reference
+to the removed branch, so nothing went stale). The approval-coordinator
+fairness assumption that the ApprovalWait timer always eventually fires
+strengthened rather than weakened: the removed simulation branch was the one
+path that bypassed delivered-request approval. PR #13 updated
+`sign_boundary.tla`'s scope note (comment-only; state space unchanged),
+[FORMAL_TXN_PLANNING_MODEL.md](FORMAL_TXN_PLANNING_MODEL.md), traceability,
+and correctly inverted the guarded-simulation containment gap in
+[FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md) to "every released guarded group
+passed the same user gate regardless of submit or simulate."
+`pkg/signerapi/sentry.go` survives with the component-sign DTOs (only the
+simulate DTOs were deleted), so the A11 anchor remains valid. Approval,
+session-ownership, lifecycle, and guarded-assembly areas had no commits.
+Nothing required correction in this pass.
+
 ### Milestone status
 
 | Milestone | Status | Notes |
