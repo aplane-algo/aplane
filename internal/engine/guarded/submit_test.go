@@ -22,6 +22,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
@@ -156,6 +157,41 @@ func TestGuardedTargetsDispatchBoundedOutsideSentryFlow(t *testing.T) {
 	}
 	if len(targets) != 0 {
 		t.Fatalf("guardedTargets() = %#v, want no sentry targets", targets)
+	}
+}
+
+func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
+	bounded := testAddress(1).String()
+	plain := testAddress(2).String()
+	sentryHex := testSentryPublicKeyHex(0xd6)
+	s, sc := newTestSigner(t, func(c *cache.SignerCache) {
+		c.AddAddress(bounded, "test.bounded-sentry.v1")
+		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowBoundedSentry1)
+		c.SetSentryComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
+		c.SetSentryPublicKeyForAddress(bounded, sentryHex)
+		c.SetLsigSize(bounded, 4000)
+		c.AddAddress(plain, "aplane.falcon1024.v1")
+		c.SetLsigSize(plain, 1700)
+	})
+	txns := []types.Transaction{
+		testPaymentTxn(t, testAddress(1), testAddress(3), "bounded"),
+		testPaymentTxn(t, testAddress(2), testAddress(3), "plain"),
+	}
+	targets, err := s.guardedTargets(txns)
+	if err != nil || len(targets) != 1 || targets[0].Flow != signerapi.SigningFlowBoundedSentry1 {
+		t.Fatalf("guardedTargets() = %#v, %v", targets, err)
+	}
+	requests := s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{
+		LsigArgsMap: []map[string][]byte{{"preimage": {0xaa}}, nil},
+	})
+	if mode, _ := requests[0].Mode(); mode != signerapi.RequestModeSign || requests[0].AuthAddress != bounded || requests[0].LsigArgs["preimage"] != "aa" {
+		t.Fatalf("bounded request = %#v", requests[0])
+	}
+	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign || requests[1].LsigSize != 1700 {
+		t.Fatalf("plain context request = %#v", requests[1])
+	}
+	if sc.SigningFlowForAddress(bounded) != signerapi.SigningFlowBoundedSentry1 || !s.HasGuardedEffectiveSigner(txns) {
+		t.Fatal("bounded-sentry flow did not enter guarded orchestration")
 	}
 }
 

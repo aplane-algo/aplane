@@ -35,6 +35,26 @@ type BoundedComponentResponse struct {
 	Mutations    *MutationReport        `json:"mutations,omitempty"`
 }
 
+func (r BoundedComponentResponse) Validate() error {
+	if err := validateSignRequestID(r.RequestID); err != nil || r.RequestID == "" {
+		return fmt.Errorf("request_id is invalid or empty")
+	}
+	if len(r.Transactions) == 0 || len(r.Components) == 0 {
+		return fmt.Errorf("transactions and components are required")
+	}
+	seen := make(map[int]bool, len(r.Components))
+	for i, component := range r.Components {
+		if component.TargetIndex < 0 || component.TargetIndex >= len(r.Transactions) || seen[component.TargetIndex] {
+			return fmt.Errorf("component %d has invalid or duplicate target_index", i+1)
+		}
+		seen[component.TargetIndex] = true
+		if component.BoundedAccount == "" || len(component.BaseSignatures) == 0 || component.AssemblyReceipt == "" || component.SignatureScheme == "" {
+			return fmt.Errorf("component %d is incomplete", i+1)
+		}
+	}
+	return nil
+}
+
 type BoundedAssemblyRequest struct {
 	RequestID     string                   `json:"request_id,omitempty"`
 	GroupBytesHex []string                 `json:"group_bytes_hex"`
@@ -56,6 +76,21 @@ type BoundedAssemblyTarget struct {
 type BoundedAssemblyResponse struct {
 	RequestID   string   `json:"request_id"`
 	SignedGroup []string `json:"signed_group"`
+}
+
+func (r BoundedAssemblyResponse) Validate() error {
+	if err := validateSignRequestID(r.RequestID); err != nil || r.RequestID == "" {
+		return fmt.Errorf("request_id is invalid or empty")
+	}
+	if len(r.SignedGroup) == 0 {
+		return fmt.Errorf("signed_group is empty")
+	}
+	for i, signed := range r.SignedGroup {
+		if signed == "" {
+			return fmt.Errorf("signed_group[%d] is empty", i)
+		}
+	}
+	return nil
 }
 
 func (r BoundedAssemblyRequest) Validate() error {

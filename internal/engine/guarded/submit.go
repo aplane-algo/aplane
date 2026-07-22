@@ -29,6 +29,7 @@ type guardedTarget struct {
 	Account                string
 	SentryComponentKeyType string
 	SentryPublicKey        string
+	Flow                   string
 }
 
 type sentryRequestKey struct {
@@ -47,6 +48,7 @@ const (
 	flowRoutePlain flowRoute = iota
 	// flowRouteGuarded routes through sentry component orchestration.
 	flowRouteGuarded
+	flowRouteBoundedSentry
 	// flowRouteUnknown fails closed: the client must be upgraded. Unknown
 	// labels still enter guarded routing so guardedTargets rejects them
 	// explicitly instead of silently falling through to ordinary signing.
@@ -59,6 +61,8 @@ func routeForSigningFlow(flow string) flowRoute {
 		return flowRoutePlain
 	case signerapi.SigningFlowSentry1:
 		return flowRouteGuarded
+	case signerapi.SigningFlowBoundedSentry1:
+		return flowRouteBoundedSentry
 	default:
 		return flowRouteUnknown
 	}
@@ -99,6 +103,21 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	}
 	if len(targets) == 0 {
 		return nil, nil, fmt.Errorf("guarded signing selected with no guarded effective signers")
+	}
+	hasBoundedSentry, hasLegacyGuarded := false, false
+	for _, target := range targets {
+		switch target.Flow {
+		case signerapi.SigningFlowBoundedSentry1:
+			hasBoundedSentry = true
+		case signerapi.SigningFlowSentry1:
+			hasLegacyGuarded = true
+		}
+	}
+	if hasBoundedSentry {
+		if hasLegacyGuarded {
+			return nil, nil, fmt.Errorf("cannot mix sentry1 and bounded-sentry1 targets in one group")
+		}
+		return s.signAndSubmitBoundedSentryGroup(txns, targets, opts, w)
 	}
 	guardedTargetsByIndex := make(map[int]guardedTarget, len(targets))
 	for _, target := range targets {
@@ -195,6 +214,130 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	}
 	writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
 	return txIDs, submittedTxns, nil
+}
+
+func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targets []guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
+	targetsByIndex := make(map[int]guardedTarget, len(targets))
+	for _, target := range targets {
+		targetsByIndex[target.Index] = target
+	}
+	requests := s.buildBoundedComponentRequests(txns, targetsByIndex, opts)
+	componentResp, err := s.conn.RequestBoundedComponentWithContext(opts.Ctx, signerapi.BoundedComponentRequest{Requests: requests})
+	if err != nil {
+		return nil, nil, fmt.Errorf("bounded base component signing failed: %w", err)
+	}
+	group, err := canonical.DecodeGroupHex(componentResp.Transactions)
+	if err != nil {
+		return nil, nil, fmt.Errorf("signer returned invalid bounded canonical group: %w", err)
+	}
+	if len(group.Entries) < len(txns) {
+		return nil, nil, fmt.Errorf("signer returned %d bounded group positions, want at least %d", len(group.Entries), len(txns))
+	}
+	plannedTxns := make([]types.Transaction, len(group.Entries))
+	for i, entry := range group.Entries {
+		plannedTxns[i] = entry.Txn
+	}
+	groupBytesHex := append([]string(nil), componentResp.Transactions...)
+	components := make(map[int]signerapi.BoundedBaseComponent, len(componentResp.Components))
+	for _, component := range componentResp.Components {
+		target, ok := targetsByIndex[component.TargetIndex]
+		if !ok || component.BoundedAccount != target.Account {
+			return nil, nil, fmt.Errorf("signer returned unexpected bounded component target %d", component.TargetIndex)
+		}
+		if _, duplicate := components[component.TargetIndex]; duplicate {
+			return nil, nil, fmt.Errorf("signer returned duplicate bounded component target %d", component.TargetIndex)
+		}
+		components[component.TargetIndex] = component
+	}
+	for _, target := range targets {
+		if _, ok := components[target.Index]; !ok {
+			return nil, nil, fmt.Errorf("signer returned no bounded component for target index %d", target.Index)
+		}
+	}
+
+	// User policy and operator approval completed before this point. Only now
+	// may the client disclose the frozen group to the sentry endpoint.
+	sentrySignatures, sentryRequestIDs, err := s.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, targets)
+	if err != nil {
+		return nil, nil, err
+	}
+	signedDummyHex, err := signGuardedDummies(plannedTxns[len(txns):])
+	if err != nil {
+		return nil, nil, err
+	}
+	nonGuardedSignedHex, err := s.requestNonGuardedSignatures(opts.Ctx, plannedTxns, groupBytesHex, len(txns), targetsByIndex, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	assemblyReq := signerapi.BoundedAssemblyRequest{
+		GroupBytesHex: groupBytesHex,
+		Targets:       make([]signerapi.BoundedAssemblyTarget, 0, len(targets)),
+		Passthrough:   make([]signerapi.GuardedPassthroughItem, 0, len(nonGuardedSignedHex)+len(signedDummyHex)),
+	}
+	for _, target := range targets {
+		component := components[target.Index]
+		sentrySignature, ok := sentrySignatures[target.Index]
+		if !ok {
+			return nil, nil, fmt.Errorf("sentry endpoint returned no signature for target index %d", target.Index)
+		}
+		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.BoundedAssemblyTarget{
+			TargetIndex: target.Index, BoundedAccount: target.Account,
+			BaseSignatures: component.BaseSignatures, RuntimeArgs: component.RuntimeArgs,
+			AssemblyReceipt: component.AssemblyReceipt, BaseSourceRequestID: componentResp.RequestID,
+			SentrySignature: sentrySignature, SentrySourceRequestID: sentryRequestIDs[target.requestKey()],
+		})
+	}
+	for index, signedHex := range nonGuardedSignedHex {
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{TargetIndex: index, SignedTxnHex: signedHex})
+	}
+	for i, signedHex := range signedDummyHex {
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{TargetIndex: len(txns) + i, SignedTxnHex: signedHex})
+	}
+	assemblyResp, err := s.conn.RequestBoundedAssembleWithContext(opts.Ctx, assemblyReq)
+	if err != nil {
+		return nil, nil, fmt.Errorf("bounded-sentry assembly failed: %w", err)
+	}
+	signedBytes, signedObjects, submittedTxns, err := decodeGuardedSignedGroup(assemblyResp.SignedGroup)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := verifyAssembledAgainstFrozen(groupBytesHex, submittedTxns); err != nil {
+		return nil, nil, err
+	}
+	if opts.Simulate {
+		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(opts.Ctx, signedObjects, s.algod, w)
+		writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
+		return txIDs, submittedTxns, simErr
+	}
+	txIDs, err := signing.SubmitTransactionsWithContext(opts.Ctx, signedBytes, s.algod, opts.WaitForConfirmation, w)
+	if err != nil {
+		return txIDs, submittedTxns, err
+	}
+	writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
+	return txIDs, submittedTxns, nil
+}
+
+func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions) []signerapi.SignRequest {
+	requests := make([]signerapi.SignRequest, len(txns))
+	for i, txn := range txns {
+		txnHex := txnutil.EncodeWithPrefixHex(txn)
+		if target, ok := targetsByIndex[i]; ok {
+			requests[i] = signerapi.SignRequest{AuthAddress: target.Account, TxnSender: target.Sender, TxnBytesHex: txnHex}
+			if i < len(opts.LsigArgsMap) && opts.LsigArgsMap[i] != nil {
+				requests[i].LsigArgs = make(map[string]string, len(opts.LsigArgsMap[i]))
+				for name, value := range opts.LsigArgsMap[i] {
+					requests[i].LsigArgs[name] = hex.EncodeToString(value)
+				}
+			}
+			if i < len(opts.AppCallInfo) {
+				requests[i].AppCallInfo = opts.AppCallInfo[i]
+			}
+			continue
+		}
+		effectiveSigner := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
+		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex, LsigSize: s.cache.LsigSize(effectiveSigner)}
+	}
+	return requests
 }
 
 // verifyAssembledAgainstFrozen pins the client's frozen-bytes invariant at the
@@ -312,7 +455,7 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 		switch routeForSigningFlow(flow) {
 		case flowRoutePlain:
 			continue
-		case flowRouteGuarded:
+		case flowRouteGuarded, flowRouteBoundedSentry:
 		default:
 			return nil, fmt.Errorf("account %s requires signing flow %q, which this client does not support; upgrade the client", account, flow)
 		}
@@ -334,6 +477,7 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 			Account:                account,
 			SentryComponentKeyType: sentryComponentKeyType,
 			SentryPublicKey:        canonicalPublicKey,
+			Flow:                   flow,
 		})
 	}
 	return targets, nil

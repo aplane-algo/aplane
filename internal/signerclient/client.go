@@ -504,6 +504,64 @@ func (c *Client) RequestBoundedAdminWithContext(ctx context.Context, operation s
 	return &partial, nil
 }
 
+func (c *Client) RequestBoundedComponentWithContext(ctx context.Context, reqBody signerapi.BoundedComponentRequest) (*signerapi.BoundedComponentResponse, error) {
+	if reqBody.RequestID == "" {
+		requestID, err := newSignRequestID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create bounded component request ID: %w", err)
+		}
+		reqBody.RequestID = requestID
+	}
+	if err := reqBody.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid bounded component request: %w", err)
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal bounded component request: %w", err)
+	}
+	var result signerapi.BoundedComponentResponse
+	err = c.postSignApprovalRequest(ctx, "/sign/bounded-component", reqBody.RequestID, body, func(resp *http.Response) error {
+		if err := json.NewDecoder(io.LimitReader(resp.Body, 2*1024*1024)).Decode(&result); err != nil {
+			return fmt.Errorf("failed to decode bounded component response: %w", err)
+		}
+		if err := result.Validate(); err != nil {
+			return err
+		}
+		if result.RequestID != reqBody.RequestID {
+			return fmt.Errorf("bounded component response request_id does not match request")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) RequestBoundedAssembleWithContext(ctx context.Context, reqBody signerapi.BoundedAssemblyRequest) (*signerapi.BoundedAssemblyResponse, error) {
+	if reqBody.RequestID == "" {
+		requestID, err := newSignRequestID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create bounded assembly request ID: %w", err)
+		}
+		reqBody.RequestID = requestID
+	}
+	if err := reqBody.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid bounded assembly request: %w", err)
+	}
+	result, err := doJSON[signerapi.BoundedAssemblyResponse](c, ctx, "POST", "/sign/bounded-assemble", reqBody, guardedAssemblyTimeout, "failed to make request to Signer")
+	if err != nil {
+		return nil, err
+	}
+	if err := result.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid bounded assembly response: %w", err)
+	}
+	if result.RequestID != reqBody.RequestID {
+		return nil, fmt.Errorf("bounded assembly response request_id does not match request")
+	}
+	return result, nil
+}
+
 // RequestComponentSign sends a role-specific component-signing request to
 // /sign/component.
 //
