@@ -525,7 +525,7 @@ func (c *Client) RequestBoundedComponentWithContext(ctx context.Context, reqBody
 			return fmt.Errorf("failed to decode bounded component response: %w", err)
 		}
 		if err := result.Validate(); err != nil {
-			return err
+			return fmt.Errorf("invalid bounded component response: %w", err)
 		}
 		if result.RequestID != reqBody.RequestID {
 			return fmt.Errorf("bounded component response request_id does not match request")

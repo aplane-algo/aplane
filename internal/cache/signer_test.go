@@ -389,6 +389,7 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 		{Name: "preimage", Type: "bytes", Required: true},
 	})
 	original.SetSentryPublicKeyForAddress("ADDR2", "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a")
+	original.SetBoundedMaxFeeForAddress("ADDR2", 10_000)
 	original.Locked = true
 
 	// Save
@@ -422,6 +423,9 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	if got, ok := loaded.SentryPublicKeyForAddress("ADDR2"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
 		t.Errorf("ADDR2 sentry public key = %q/%v, want persisted value", got, ok)
 	}
+	if got, ok := loaded.BoundedMaxFeeForAddress("ADDR2"); !ok || got != 10_000 {
+		t.Errorf("ADDR2 bounded max fee = %d/%v, want 10000/true", got, ok)
+	}
 	if loaded.Locked {
 		t.Error("Locked should not persist across save/load")
 	}
@@ -441,6 +445,17 @@ func TestSignerCache_SentryPublicKeyHelpers(t *testing.T) {
 	cache.SetSentryPublicKeyForAddress("ADDR1", "")
 	if got, ok := cache.SentryPublicKeyForAddress("ADDR1"); ok || got != "" {
 		t.Fatalf("SentryPublicKeyForAddress(cleared) = %q/%v, want empty false", got, ok)
+	}
+}
+
+func TestSignerCache_BoundedMaxFeePreservesZero(t *testing.T) {
+	cache := NewSignerCache()
+	if _, ok := cache.BoundedMaxFeeForAddress("ADDR1"); ok {
+		t.Fatal("BoundedMaxFeeForAddress(empty) found value")
+	}
+	cache.SetBoundedMaxFeeForAddress("ADDR1", 0)
+	if got, ok := cache.BoundedMaxFeeForAddress("ADDR1"); !ok || got != 0 {
+		t.Fatalf("BoundedMaxFeeForAddress() = %d/%v, want 0/true", got, ok)
 	}
 }
 

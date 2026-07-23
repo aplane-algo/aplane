@@ -31,6 +31,7 @@ type guardedTarget struct {
 	SentryComponentKeyType string
 	SentryPublicKey        string
 	Flow                   string
+	BoundedMaxFee          uint64
 }
 
 type sentryRequestKey struct {
@@ -241,6 +242,9 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	if err := validateBoundedComponentPlan(txns, plannedTxns, componentResp.Mutations); err != nil {
 		return nil, nil, err
 	}
+	if err := validateBoundedTargetFees(plannedTxns, targets); err != nil {
+		return nil, nil, err
+	}
 	groupBytesHex := append([]string(nil), componentResp.Transactions...)
 	components := make(map[int]signerapi.BoundedBaseComponent, len(componentResp.Components))
 	for _, component := range componentResp.Components {
@@ -399,6 +403,16 @@ func validateBoundedComponentPlan(original, planned []types.Transaction, mutatio
 			feeModified[index] = struct{}{}
 		}
 	}
+	if mutations != nil && mutations.GroupIDChanged && appended == 0 && len(feeModified) == 0 {
+		var zero types.Digest
+		requiresAssignment := false
+		for i := range original {
+			requiresAssignment = requiresAssignment || original[i].Group == zero
+		}
+		if !requiresAssignment {
+			return fmt.Errorf("signer changed an existing bounded group ID without a fee or membership mutation")
+		}
+	}
 	totalFeeDelta := uint64(0)
 	for i := range original {
 		want := original[i]
@@ -422,6 +436,18 @@ func validateBoundedComponentPlan(original, planned []types.Transaction, mutatio
 	}
 	if err := validateGuardedDummies(planned[len(original):]); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateBoundedTargetFees(planned []types.Transaction, targets []guardedTarget) error {
+	for _, target := range targets {
+		if target.Index < 0 || target.Index >= len(planned) {
+			return fmt.Errorf("bounded target index %d is outside planned group", target.Index)
+		}
+		if fee := uint64(planned[target.Index].Fee); fee > target.BoundedMaxFee {
+			return fmt.Errorf("bounded target %d fee %d exceeds advertised max_fee %d", target.Index, fee, target.BoundedMaxFee)
+		}
 	}
 	return nil
 }
@@ -538,6 +564,14 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 		if err != nil {
 			return nil, fmt.Errorf("guarded account %s has invalid sentry_public_key metadata: %w", account, err)
 		}
+		var boundedMaxFee uint64
+		if flow == signerapi.SigningFlowBoundedSentry1 {
+			var found bool
+			boundedMaxFee, found = s.cache.BoundedMaxFee(account)
+			if !found {
+				return nil, fmt.Errorf("bounded account %s is missing max_fee metadata; run keys refresh", account)
+			}
+		}
 		targets = append(targets, guardedTarget{
 			Index:                  i,
 			Sender:                 sender,
@@ -545,6 +579,7 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 			SentryComponentKeyType: sentryComponentKeyType,
 			SentryPublicKey:        canonicalPublicKey,
 			Flow:                   flow,
+			BoundedMaxFee:          boundedMaxFee,
 		})
 	}
 	return targets, nil

@@ -22,6 +22,7 @@ func NewSignerCache() SignerCache {
 		SigningFlows:            make(map[string]string),
 		SentryComponentKeyTypes: make(map[string]string),
 		SentryPublicKeys:        make(map[string]string),
+		BoundedMaxFees:          make(map[string]uint64),
 	}
 	return cache
 }
@@ -73,6 +74,7 @@ func (cache *SignerCache) RemoveAddress(address string) {
 	delete(cache.SigningFlows, address)
 	delete(cache.SentryComponentKeyTypes, address)
 	delete(cache.SentryPublicKeys, address)
+	delete(cache.BoundedMaxFees, address)
 }
 
 // Count returns the number of addresses in the cache
@@ -209,6 +211,25 @@ func (cache *SignerCache) SetSentryPublicKeyForAddress(address, publicKeyHex str
 		return
 	}
 	cache.SentryPublicKeys[address] = publicKeyHex
+}
+
+// BoundedMaxFeeForAddress returns the on-chain fee ceiling advertised for a
+// bounded account. The boolean distinguishes a valid zero ceiling from
+// missing metadata.
+func (cache *SignerCache) BoundedMaxFeeForAddress(address string) (uint64, bool) {
+	if cache.BoundedMaxFees == nil {
+		return 0, false
+	}
+	value, ok := cache.BoundedMaxFees[address]
+	return value, ok
+}
+
+// SetBoundedMaxFeeForAddress stores the advertised bounded fee ceiling.
+func (cache *SignerCache) SetBoundedMaxFeeForAddress(address string, maxFee uint64) {
+	if cache.BoundedMaxFees == nil {
+		cache.BoundedMaxFees = make(map[string]uint64)
+	}
+	cache.BoundedMaxFees[address] = maxFee
 }
 
 // GetSigningArgs returns the key-file signing args schema for a LogicSig address.

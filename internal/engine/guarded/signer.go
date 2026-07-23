@@ -35,6 +35,9 @@ type SignerCacheView interface {
 	// SentryPublicKey returns the sentry public key embedded in a guarded
 	// account's LogicSig, as advertised in inventory.
 	SentryPublicKey(address string) (string, bool)
+	// BoundedMaxFee returns the advertised on-chain fee ceiling for a bounded
+	// account.
+	BoundedMaxFee(address string) (uint64, bool)
 	// LsigSize returns the post-signing LogicSig program+args budget for an
 	// address, or 0 if unknown.
 	LsigSize(address string) int

@@ -170,6 +170,7 @@ func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
 		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowBoundedSentry1)
 		c.SetSentryComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
 		c.SetSentryPublicKeyForAddress(bounded, sentryHex)
+		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
 		c.SetLsigSize(bounded, 4000)
 		c.AddAddress(plain, "aplane.falcon1024.v1")
 		c.SetLsigSize(plain, 1700)
@@ -181,6 +182,9 @@ func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
 	targets, err := s.guardedTargets(txns)
 	if err != nil || len(targets) != 1 || targets[0].Flow != signerapi.SigningFlowBoundedSentry1 {
 		t.Fatalf("guardedTargets() = %#v, %v", targets, err)
+	}
+	if targets[0].BoundedMaxFee != 10_000 {
+		t.Fatalf("bounded max fee = %d, want 10000", targets[0].BoundedMaxFee)
 	}
 	requests := s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{
 		LsigArgsMap: []map[string][]byte{{"preimage": {0xaa}}, nil},
@@ -490,6 +494,9 @@ func (v testCacheView) SentryComponentKeyType(address string) (string, bool) {
 func (v testCacheView) SentryPublicKey(address string) (string, bool) {
 	return v.c.SentryPublicKeyForAddress(address)
 }
+func (v testCacheView) BoundedMaxFee(address string) (uint64, bool) {
+	return v.c.BoundedMaxFeeForAddress(address)
+}
 func (v testCacheView) LsigSize(address string) int { return v.c.GetLsigSize(address) }
 
 // newTestSigner builds a Signer over a populated signer cache, a fresh
@@ -761,6 +768,27 @@ func TestValidateBoundedComponentPlan(t *testing.T) {
 		}
 		if _, err := signGuardedDummies(badPlanned[1:]); err == nil || !strings.Contains(err.Error(), "canonical guarded budget dummy") {
 			t.Fatalf("signGuardedDummies() error = %v, want dummy-shape rejection", err)
+		}
+	})
+	t.Run("gratuitous existing group change", func(t *testing.T) {
+		grouped := original
+		grouped.Group = types.Digest{0x31}
+		regrouped := grouped
+		regrouped.Group = types.Digest{0x32}
+		report := &signerapi.MutationReport{
+			GroupIDChanged: true, OriginalCount: 1, FinalCount: 1,
+		}
+		if err := validateBoundedComponentPlan([]types.Transaction{grouped}, []types.Transaction{regrouped}, report); err == nil ||
+			!strings.Contains(err.Error(), "existing bounded group ID") {
+			t.Fatalf("error = %v, want gratuitous regrouping rejection", err)
+		}
+	})
+	t.Run("fee exceeds advertised ceiling", func(t *testing.T) {
+		if err := validateBoundedTargetFees(
+			[]types.Transaction{plannedOriginal},
+			[]guardedTarget{{Index: 0, BoundedMaxFee: uint64(plannedOriginal.Fee) - 1}},
+		); err == nil || !strings.Contains(err.Error(), "exceeds advertised max_fee") {
+			t.Fatalf("error = %v, want max_fee rejection", err)
 		}
 	})
 }

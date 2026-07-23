@@ -274,6 +274,7 @@ func TestPopulateSignerCacheReadsBoundedSentryMetadata(t *testing.T) {
 		SigningFlow:            signerapi.SigningFlowBoundedSentry1,
 		SentryComponentKeyType: "aplane.witness-falcon1024.v1",
 		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+			MaxFee: 10_000,
 			Sentry: &signerapi.BoundedSentryAuthorizationInfo{PublicKeyHex: "abcd"},
 		},
 	}})
@@ -282,6 +283,9 @@ func TestPopulateSignerCacheReadsBoundedSentryMetadata(t *testing.T) {
 	}
 	if got := state.SignerCache.SigningFlowForAddress("BOUNDED"); got != signerapi.SigningFlowBoundedSentry1 {
 		t.Fatalf("bounded sentry flow = %q", got)
+	}
+	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("BOUNDED"); !ok || got != 10_000 {
+		t.Fatalf("bounded max fee = %d/%v", got, ok)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -141,9 +142,9 @@ func (s *Service) logBoundedComponentsApproved(identityID string, req signerapi.
 func signBoundedBaseComponent(ctx context.Context, req signerapi.BoundedComponentRequest, plan *PlanResult, targetIndex int, session componentKeyGetter) (signerapi.BoundedBaseComponent, *ServiceError) {
 	item := plan.BoundedItems[targetIndex]
 	account := req.Requests[targetIndex].AuthAddress
-	keyMaterial, err := session.GetKeyWithContext(ctx, account)
-	if err != nil {
-		return signerapi.BoundedBaseComponent{}, internal(fmt.Sprintf("failed to load bounded spending key: %v", err))
+	keyMaterial, loadErr := loadBoundedKeyMaterial(ctx, session, account, "bounded spending key")
+	if loadErr != nil {
+		return signerapi.BoundedBaseComponent{}, loadErr
 	}
 	defer zeroLoadedKeyMaterial(keyMaterial)
 	if integrityErr := verifyBoundedPlanIntegrity(item, keyMaterial); integrityErr != nil {
@@ -211,6 +212,9 @@ func (s *Service) AssembleBoundedWithContext(ctx context.Context, identityID str
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, canceledSignRequest(err)
+	}
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
@@ -248,10 +252,28 @@ func (s *Service) AssembleBoundedWithContext(ctx context.Context, identityID str
 	return &BoundedAssemblyResult{RequestID: req.RequestID, SignedGroup: signedGroup}, nil
 }
 
-func assembleBoundedTarget(ctx context.Context, target signerapi.BoundedAssemblyTarget, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
-	keyMaterial, err := session.GetKeyWithContext(ctx, target.BoundedAccount)
+func loadBoundedKeyMaterial(ctx context.Context, session componentKeyGetter, account, label string) (*coresigning.KeyMaterial, *ServiceError) {
+	keyMaterial, err := session.GetKeyWithContext(ctx, account)
 	if err != nil {
-		return "", internal(fmt.Sprintf("failed to load bounded account key: %v", err))
+		switch {
+		case errors.Is(err, keystore.ErrStoreLocked):
+			return nil, lockedError()
+		case errors.Is(err, keystore.ErrKeyNotFound):
+			return nil, badRequest(fmt.Sprintf("%s %q not found", label, account))
+		default:
+			return nil, internal(fmt.Sprintf("failed to load %s: %v", label, err))
+		}
+	}
+	if keyMaterial == nil {
+		return nil, internal(fmt.Sprintf("loaded %s material is nil", label))
+	}
+	return keyMaterial, nil
+}
+
+func assembleBoundedTarget(ctx context.Context, target signerapi.BoundedAssemblyTarget, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
+	keyMaterial, loadErr := loadBoundedKeyMaterial(ctx, session, target.BoundedAccount, "bounded account key")
+	if loadErr != nil {
+		return "", loadErr
 	}
 	defer zeroLoadedKeyMaterial(keyMaterial)
 	metadata := keyMaterial.BoundedAuthorization

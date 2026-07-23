@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -51,6 +52,34 @@ func TestPrepareBoundedComponentRejectsNilSessionBeforePlanning(t *testing.T) {
 	)
 	if err == nil || err.Kind != ErrorInternal || err.Message != "key session is nil" {
 		t.Fatalf("PrepareBoundedComponentWithContext() error = %#v, want immediate nil-session rejection", err)
+	}
+}
+
+func TestLoadBoundedKeyMaterialMapsExpectedErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		kind ErrorKind
+	}{
+		{name: "locked", err: keystore.ErrStoreLocked, kind: ErrorLocked},
+		{name: "not found", err: keystore.ErrKeyNotFound, kind: ErrorBadRequest},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, got := loadBoundedKeyMaterial(t.Context(), &componentKeyTestSession{err: test.err}, "ACCOUNT", "bounded account key")
+			if got == nil || got.Kind != test.kind {
+				t.Fatalf("loadBoundedKeyMaterial() error = %#v, want kind %s", got, test.kind)
+			}
+		})
+	}
+}
+
+func TestAssembleBoundedRejectsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := (&Service{}).AssembleBoundedWithContext(ctx, "default", signerapi.BoundedAssemblyRequest{}, nil)
+	if err == nil || err.Kind != ErrorUnavailable {
+		t.Fatalf("AssembleBoundedWithContext() error = %#v, want canceled request", err)
 	}
 }
 

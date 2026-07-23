@@ -46,6 +46,10 @@ func (v guardedSignerCacheView) SentryPublicKey(address string) (string, bool) {
 	return v.core.signerCacheSentryPublicKey(address)
 }
 
+func (v guardedSignerCacheView) BoundedMaxFee(address string) (uint64, bool) {
+	return v.core.signerCacheBoundedMaxFee(address)
+}
+
 func (v guardedSignerCacheView) LsigSize(address string) int {
 	return v.core.signerCacheLsigSize(address)
 }

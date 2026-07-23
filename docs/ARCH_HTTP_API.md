@@ -230,8 +230,8 @@ normalized durable bounded metadata, and sorted runtime arguments under
 released base component into a different account, metadata instance, or
 runtime-argument set. The client must complete this user-side call before it
 requests the sentry signature.
-Bounded-component request IDs are correlation fields only and are not live
-`/sign/cancel` handles.
+Bounded-component request IDs identify live approval requests and may be
+supplied to `/sign/cancel` while the request is pending.
 
 `/sign/component` request (`signerapi.ComponentSignRequest`):
 
@@ -327,8 +327,9 @@ sentry.
 `/sign/cancel` withdraws a live synchronous `/sign` request. It is idempotent
 for client behavior. A valid, authenticated cancel request returns `200` with
 `success:true`; cancellation miss is represented in `state`, not as an HTTP
-error. `/sign/component`, `/sign/assemble`, `/sign/bounded-component`, and
-`/sign/bounded-assemble` request IDs are not live cancel handles and return
+error. `/sign/bounded-component` uses the same live cancellation lifecycle as
+`/sign`. `/sign/component`, `/sign/assemble`, and `/sign/bounded-assemble`
+request IDs are correlation fields rather than live cancel handles and return
 `not_found` if supplied to `/sign/cancel`.
 
 Cancel response states:
