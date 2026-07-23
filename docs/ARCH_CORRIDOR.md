@@ -26,6 +26,18 @@ Changing one dimension does not reinterpret the others. In particular,
 `bounded-sentry1` is the client/server choreography used to obtain a complete
 spend signature.
 
+### V1 compatibility ratification
+
+This schema-v2 bounded template is the first supported
+`aplane.corridor.v1`. Earlier development catalog entries used a compiled
+guarded provider with different TEAL, address derivation, and choreography;
+they were pre-release artifacts and do not define a durable Corridor
+compatibility contract. No account generated from that provider is supported
+as a production Corridor account. Developer or LocalNet instances must be
+discarded or decommissioned and recreated from this template. The key type,
+canonical program, metadata, and `bounded-sentry1` flow documented here become
+the Corridor v1 compatibility baseline.
+
 ## Accepted Transactions
 
 Every accepted path requires the Falcon spending signature and

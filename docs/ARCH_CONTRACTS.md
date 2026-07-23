@@ -154,6 +154,12 @@ account.
 aliases; bounded admin operations use `POST /sign/bounded-admin` and the
 bounded1 DTOs defined below.
 
+This release is the first supported `bounded1` contract. Earlier repository
+vectors and developer-generated keys were pre-release and are not
+compatibility-bearing; such keys must be recreated. The canonical profile and
+goldens below, including the optional-sentry presence encoding, establish the
+v1 baseline.
+
 Bounded1 uses TEAL v12 and admits only pure payments, pure asset transfers,
 asset opt-ins, plus an optional pure `pay` rekey. Asset opt-in is a distinct
 effect (`AssetAmount == 0` and `AssetReceiver == Sender`), so permission to

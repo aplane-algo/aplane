@@ -7,6 +7,12 @@ composed schema v2, durable signing metadata, inventory projection,
 contract-admin ceremony, framework-owned fixed allowlist, and static Layer-3
 argument layout are implemented.
 
+This is the first supported release of `bounded1`. Canonical encodings and
+golden vectors that existed only in development branches before this release
+were not a compatibility contract; preview or LocalNet keys derived from those
+encodings must be recreated. The encodings and vectors in this document are
+the v1 compatibility baseline.
+
 ## Purpose and Authority
 
 A bounded authorization contract is a stateless LogicSig program that
