@@ -1,0 +1,109 @@
+# Bounded Sentry Machine-Checkable Model
+
+> Status: TLC checked with `MaxTargets = 1`; the recorded standard run generated
+> 99,584 distinct reachable states at depth 4 and found no counterexamples for
+> `Safety`. The deep run uses `MaxTargets = 4` and covers 398,336 states.
+
+This model checks the security-bearing order and final acceptance boundary of
+the `bounded-sentry1` choreography. It complements the legacy guarded assembly
+model: bounded sentry releases an ordinary bounded base signature first,
+requests the sentry only after signer policy and operator approval, and then
+uses a distinct bounded assembly endpoint to derive and place the declared
+arguments. Its external-admin path deliberately bypasses the sentry.
+
+The spec lives at [formal/bounded_sentry.tla](formal/bounded_sentry.tla).
+
+## What it covers
+
+| Invariant | Meaning | TLA+ predicate |
+|---|---|---|
+| BS1 | User signer policy, approval, and base release precede every sentry request | `BS1_UserFirst` |
+| BS2 | External-admin completion never requests or consumes a sentry | `BS2_AdminBypassesSentry` |
+| BS3 | Spend output requires valid base and sentry authorities | `BS3_SpendAuthoritiesVerified` |
+| BS4 | Exact target coverage and path-valid argument sources gate output | `BS4_DeclaredArgumentsOnly` |
+| BS5 | Passthrough and canonical transaction bytes remain bound | `BS5_CanonicalGroupBound` |
+| BS6 | Invalid or signer-gate-rejected paths cannot output | `BS6_InvalidNeverOutputs` |
+| BS7 | Failure returns no partial group | `BS7_AtomicOutput` |
+
+## What TLC actually verifies
+
+`Init` enumerates every combination of path (`spend`, `admin`, or invalid),
+group target count, finalized-plan and classification outcomes, signer policy
+and approval decisions, signature validity, metadata stability, exact target
+coverage, argument-source/path-mask validity, derived-argument success,
+passthrough validity, and canonical-byte binding.
+
+TLC then explores the real stage order:
+
+```text
+planned -> base_released -> sentry_released -> output
+       \-> admin_partial --------------------> output
+       \-> rejected
+```
+
+The transition predicates transcribe the relevant decision boundaries in
+`internal/engine/guarded/submit.go` and
+`internal/signerapp/signing/bounded_sentry.go`. Unlike the one-shot assembly
+models, the depth-4 state graph checks that the sentry transition is not
+reachable before a successful base release and that the admin branch never
+enters it.
+
+Validation outcomes are intentionally abstract booleans. The model checks that
+the implementation consumes each outcome at the correct gate; it does not
+prove Falcon cryptography, msgpack canonicalization, Merkle proof construction,
+or generated TEAL.
+
+## Mutation expectations
+
+- Allowing `SentryStep` from `planned` violates `BS1_UserFirst`.
+- Routing `admin_partial` through `SentryStep` violates
+  `BS2_AdminBypassesSentry`.
+- Removing either signature conjunct from `AssembleStep` violates
+  `BS3_SpendAuthoritiesVerified`.
+- Removing source-layout, coverage, or byte-binding conjuncts violates BS4 or
+  BS5.
+- Setting output on a failed branch violates BS6 or BS7.
+
+The checked model passes both standard and deep bounds.
+
+## Modeling choices and limits
+
+- `MaxTargets` bounds the number of locally assembled targets. Validation
+  outcomes are group-wide: a false value means at least one target failed.
+  Concrete duplicate, missing-index, and per-target signature cases remain in
+  Go tests.
+- `sourceLayout` abstracts the complete bounded slot contract: base,
+  derived/runtime, sentry, and admin sources plus their path masks. The Go
+  implementation and compiler tests verify the concrete order and slot sizes.
+- The admin branch represents `/sign/bounded-admin` plus external completion.
+  It requires base and admin signatures but intentionally ignores sentry policy,
+  sentry signatures, and spend-only derived arguments.
+- Liveness is not claimed. Sentry and approval availability fail closed; the
+  model is concerned with what may be released, not eventual completion.
+
+## How to check
+
+```sh
+make formal-test
+make formal-test-deep
+```
+
+For the focused runs:
+
+```sh
+java -jar tla2tools.jar -config docs/formal/bounded_sentry.cfg \
+  docs/formal/bounded_sentry.tla
+java -jar tla2tools.jar -config docs/formal/bounded_sentry_deep.cfg \
+  docs/formal/bounded_sentry.tla
+```
+
+## Linking back
+
+- Architecture: [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md),
+  [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md), and
+  [ARCH_SENTRY.md](ARCH_SENTRY.md).
+- Legacy guarded assembly: [FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md](FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md).
+- Traceability: BS1-BS7 in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
+- Concrete tests: `internal/signerapp/signing/bounded_sentry_test.go`,
+  `internal/engine/guarded/submit_test.go`, and
+  `internal/engine/guarded/simulate_submit_test.go`.

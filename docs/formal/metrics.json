@@ -50,6 +50,11 @@
     "depth": 1
   },
   {
+    "spec": "bounded_sentry",
+    "distinct_states": 99584,
+    "depth": 4
+  },
+  {
     "spec": "approval_coordinator",
     "cfg": "approval_coordinator_liveness",
     "distinct_states": 833,

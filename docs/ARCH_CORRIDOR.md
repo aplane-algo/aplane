@@ -116,4 +116,5 @@ planning for this profile.
 
 For shared definitions, see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md),
 [ARCH_SENTRY.md](ARCH_SENTRY.md), [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md),
-and [ARCH_HTTP_API.md](ARCH_HTTP_API.md).
+[ARCH_HTTP_API.md](ARCH_HTTP_API.md), and the machine-checked choreography in
+[FORMAL_TLA_BOUNDED_SENTRY_MODEL.md](FORMAL_TLA_BOUNDED_SENTRY_MODEL.md).

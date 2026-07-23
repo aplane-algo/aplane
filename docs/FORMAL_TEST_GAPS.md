@@ -39,7 +39,9 @@ signature requirements); they under-approximate the gate sequence and the
 post-assembly client route. A future audit pass should extend the guarded
 signing model with the gate states and assert that every released guarded group
 passed the same user gate regardless of whether the client submits or
-simulates it.
+simulates it. This gap is limited to the legacy `sentry1` choreography;
+`bounded-sentry1` user-first ordering, assembly, and simulation routing are
+covered by [formal/bounded_sentry.tla](formal/bounded_sentry.tla).
 
 **Model drift: SSH authentication boundary.**
 The runtime now authenticates normal SSH connections with verified public-key
@@ -58,21 +60,18 @@ decommission's lock-interacting steps are modeled), so no modeled invariant is
 affected; a future lock-state model must include this generation-counter
 transition.
 
-**Model drift: bounded DSA planning and argument assembly.**
-The signing-boundary and transaction-planning models predate bounded1's closed
-effect classifier, post-fee-pooling revalidation, path-specific LogicSig
-argument slots, and external contract-admin partial flow. The implementation
-has independent Go/compiled-TEAL behavior tests and planner/executor integrity
-tests, but no TLA+ model currently represents the invariant that classification
-occurs once at the finalized plan boundary and execution can only assemble the
-planned path from its declared argument sources. Any future signing-authority
-model must include that boundary and must treat derived, runtime, and admin
-slots as distinct authorities.
-
 Otherwise, no actionable test gaps remain. Per-invariant status lives in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The lifecycle L4-L7
 audit is closed by the explicit lease-release and writer-pending tests
 named in the L4 and L5 rows.
+
+The former bounded DSA planning/argument-assembly drift entry is closed by
+[formal/bounded_sentry.tla](formal/bounded_sentry.tla): its BS1-BS7 transition
+system covers finalized classification, signer gates, user-first sentry
+routing, exact target coverage, source/path-mask assembly, canonical bytes,
+the external-admin bypass, and atomic failure. Concrete effect classification,
+slot encodings, Merkle derivation, and TEAL remain verified by Go/compiler tests
+rather than abstracted as cryptographic or byte-level TLC claims.
 
 The guarded signing audit added
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md) and
