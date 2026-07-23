@@ -9,7 +9,9 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
@@ -19,6 +21,11 @@ const (
 	// policy. It compiles all membership checks inline and uses no runtime
 	// witness or signer-generated argument.
 	Layer3PolicyFixedAllowlist = "fixed_allowlist"
+
+	// Layer3PolicyMerkleAllowlist is the framework-owned bounded1 spending
+	// policy for large recipient sets. Membership is proven by a fixed-size,
+	// signer-derived Merkle witness.
+	Layer3PolicyMerkleAllowlist = "merkle_allowlist"
 
 	// BoundedInlineListMax is the audited maximum for each framework-owned
 	// inline membership list.
@@ -64,11 +71,15 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	if policy == nil {
 		return nil
 	}
-	if policy.Policy != Layer3PolicyFixedAllowlist {
+	if policy.Policy != Layer3PolicyFixedAllowlist && policy.Policy != Layer3PolicyMerkleAllowlist {
 		return fmt.Errorf("unsupported policy %q", policy.Policy)
 	}
 	if profile == nil {
 		return fmt.Errorf("framework-owned Layer-3 policy requires bounded1")
+	}
+	if policy.Policy == Layer3PolicyMerkleAllowlist &&
+		(policy.AssetIDsParameter != "" || policy.MaxPaymentAmountParameter != "" || policy.MaxAssetAmountParameter != "") {
+		return fmt.Errorf("merkle_allowlist supports only recipients_parameter")
 	}
 
 	byName := make(map[string]lsigprovider.ParameterDef, len(params))
@@ -76,16 +87,20 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 		byName[param.Name] = param
 	}
 	used := make(map[string]struct{}, len(params))
-	if err := requireLayer3Parameter(byName, used, policy.RecipientsParameter, "recipients_parameter", "address[]", true, true); err != nil {
+	listMax := BoundedInlineListMax
+	if policy.Policy == Layer3PolicyMerkleAllowlist {
+		listMax = merkleallowlist.MaxItems
+	}
+	if err := requireLayer3Parameter(byName, used, policy.RecipientsParameter, "recipients_parameter", "address[]", true, true, listMax); err != nil {
 		return err
 	}
-	if err := requireLayer3Parameter(byName, used, policy.AssetIDsParameter, "asset_ids_parameter", "uint64[]", false, true); err != nil {
+	if err := requireLayer3Parameter(byName, used, policy.AssetIDsParameter, "asset_ids_parameter", "uint64[]", false, true, BoundedInlineListMax); err != nil {
 		return err
 	}
-	if err := requireLayer3Parameter(byName, used, policy.MaxPaymentAmountParameter, "max_payment_amount_parameter", "uint64", false, false); err != nil {
+	if err := requireLayer3Parameter(byName, used, policy.MaxPaymentAmountParameter, "max_payment_amount_parameter", "uint64", false, false, 0); err != nil {
 		return err
 	}
-	if err := requireLayer3Parameter(byName, used, policy.MaxAssetAmountParameter, "max_asset_amount_parameter", "uint64", false, false); err != nil {
+	if err := requireLayer3Parameter(byName, used, policy.MaxAssetAmountParameter, "max_asset_amount_parameter", "uint64", false, false, 0); err != nil {
 		return err
 	}
 	for _, param := range params {
@@ -97,7 +112,7 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	allowsPay := profileAllowsSpendEffect(profile, txeffects.SpendEffectPay)
 	allowsAxfer := profileAllowsSpendEffect(profile, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn)
 	if boundedRekeyUsesLayer3(profile) && !allowsPay {
-		return fmt.Errorf("fixed_allowlist Layer-3-gated rekey requires pay in spend_effects")
+		return fmt.Errorf("%s Layer-3-gated rekey requires pay in spend_effects", policy.Policy)
 	}
 	if !allowsPay && policy.MaxPaymentAmountParameter != "" {
 		return fmt.Errorf("max_payment_amount_parameter requires pay in spend_effects")
@@ -108,7 +123,7 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	return nil
 }
 
-func requireLayer3Parameter(byName map[string]lsigprovider.ParameterDef, used map[string]struct{}, name, field, wantType string, required, list bool) error {
+func requireLayer3Parameter(byName map[string]lsigprovider.ParameterDef, used map[string]struct{}, name, field, wantType string, required, list bool, listMax int) error {
 	if name == "" {
 		if required {
 			return fmt.Errorf("%s is required", field)
@@ -129,8 +144,8 @@ func requireLayer3Parameter(byName map[string]lsigprovider.ParameterDef, used ma
 		if param.MinItems < 1 {
 			return fmt.Errorf("%s parameter %q must set min_items >= 1", field, name)
 		}
-		if param.MaxItems < 1 || param.MaxItems > BoundedInlineListMax {
-			return fmt.Errorf("%s parameter %q max_items must be between 1 and %d", field, name, BoundedInlineListMax)
+		if param.MaxItems < 1 || param.MaxItems > listMax {
+			return fmt.Errorf("%s parameter %q max_items must be between 1 and %d", field, name, listMax)
 		}
 	}
 	used[name] = struct{}{}
@@ -151,6 +166,9 @@ func profileAllowsSpendEffect(profile *BoundedAuthorizationProfile, wanted ...tx
 func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {
 	if err := validateLayer3Policy(c.layer3, c.paramsWithoutAdminKey(), profile); err != nil {
 		return "", err
+	}
+	if c.layer3.Policy == Layer3PolicyMerkleAllowlist {
+		return c.renderMerkleAllowlist(params, profile)
 	}
 	if c.layer3.Policy != Layer3PolicyFixedAllowlist {
 		return "", fmt.Errorf("unsupported Layer-3 policy %q", c.layer3.Policy)
@@ -199,10 +217,78 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 	return b.String(), nil
 }
 
+func (c *ComposedDSA) renderMerkleAllowlist(params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {
+	root, err := merkleallowlist.RootHexFromRecipientsParam(params[c.layer3.RecipientsParameter])
+	if err != nil {
+		return "", fmt.Errorf("compute recipient Merkle root: %w", err)
+	}
+	layout, err := c.validatedSignatureArgLayout()
+	if err != nil {
+		return "", err
+	}
+	proofIndex := -1
+	for i, arg := range c.derivedArgs {
+		if arg.Kind == boundedmeta.DerivedArgMerkleProof && arg.Parameter == c.layer3.RecipientsParameter {
+			proofIndex = layout.Count + i
+			break
+		}
+	}
+	if proofIndex < 0 {
+		return "", fmt.Errorf("merkle proof argument has no bounded argument slot")
+	}
+
+	var b strings.Builder
+	b.WriteString("// === framework-owned Merkle allowlist ===\n")
+	if profileAllowsSpendEffect(profile, txeffects.SpendEffectPay) {
+		b.WriteString("txn TypeEnum\npushint 1\n==\nbnz __aplane_bounded1_merkle_pay\n")
+	}
+	if profileAllowsSpendEffect(profile, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn) {
+		b.WriteString("txn TypeEnum\npushint 4\n==\nbnz __aplane_bounded1_merkle_axfer\n")
+	}
+	b.WriteString("err\n\n")
+	if profileAllowsSpendEffect(profile, txeffects.SpendEffectPay) {
+		b.WriteString("__aplane_bounded1_merkle_pay:\ntxn Receiver\ntxn Sender\n==\nbnz __aplane_bounded1_merkle_done\ntxn Receiver\ncallsub __aplane_bounded1_merkle_verify\nassert\nb __aplane_bounded1_merkle_done\n\n")
+	}
+	if profileAllowsSpendEffect(profile, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn) {
+		b.WriteString("__aplane_bounded1_merkle_axfer:\ntxn AssetReceiver\ntxn Sender\n==\nbnz __aplane_bounded1_merkle_done\ntxn AssetReceiver\ncallsub __aplane_bounded1_merkle_verify\nassert\nb __aplane_bounded1_merkle_done\n\n")
+	}
+	b.WriteString("__aplane_bounded1_merkle_verify:\n")
+	b.WriteString(fmt.Sprintf("arg %d\nlen\npushint %d\n==\nassert\n", proofIndex, merkleallowlist.ProofSize))
+	b.WriteString("pushbytes 0x00\nswap\nconcat\nsha256\n")
+	for offset := 0; offset < merkleallowlist.ProofSize; offset += 32 {
+		b.WriteString(fmt.Sprintf("arg %d\npushint %d\npushint 32\nextract3\ncallsub __aplane_bounded1_merkle_combine\n", proofIndex, offset))
+	}
+	b.WriteString("pushbytes 0x" + root + "\n==\nretsub\n\n")
+	b.WriteString("__aplane_bounded1_merkle_combine:\ndup2\nb<\nbnz __aplane_bounded1_merkle_ordered\nswap\n__aplane_bounded1_merkle_ordered:\nconcat\npushbytes 0x01\nswap\nconcat\nsha256\nretsub\n\n")
+	b.WriteString("__aplane_bounded1_merkle_done:\n")
+	return b.String(), nil
+}
+
+func (c *ComposedDSA) validateFrameworkLayer3Arguments() error {
+	if c.layer3 == nil {
+		return nil
+	}
+	switch c.layer3.Policy {
+	case Layer3PolicyFixedAllowlist:
+		if len(c.derivedArgs) != 0 {
+			return fmt.Errorf("fixed_allowlist does not accept derived arguments")
+		}
+	case Layer3PolicyMerkleAllowlist:
+		if len(c.derivedArgs) != 1 {
+			return fmt.Errorf("merkle_allowlist requires exactly one derived Merkle proof argument")
+		}
+		arg := c.derivedArgs[0]
+		if arg.Kind != boundedmeta.DerivedArgMerkleProof || arg.Parameter != c.layer3.RecipientsParameter || arg.MaxSize != boundedmeta.MerkleProofSize {
+			return fmt.Errorf("merkle_allowlist derived argument must be a %d-byte %s for parameter %q", boundedmeta.MerkleProofSize, boundedmeta.DerivedArgMerkleProof, c.layer3.RecipientsParameter)
+		}
+	}
+	return nil
+}
+
 func (c *ComposedDSA) paramsWithoutAdminKey() []lsigprovider.ParameterDef {
 	params := make([]lsigprovider.ParameterDef, 0, len(c.params))
 	for _, param := range c.params {
-		if param.Name != BoundedAdminPublicKeyParameter {
+		if param.Name != BoundedAdminPublicKeyParameter && param.Name != BoundedSentryPublicKeyParameter {
 			params = append(params, param)
 		}
 	}

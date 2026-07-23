@@ -41,7 +41,6 @@ func TestGetGeneratorRequiresExactSentryKeyTypeRegistration(t *testing.T) {
 	tests := []string{
 		witness.Falcon1024V1,
 		keytypes.GuardedFalcon1024Sentry1024V1,
-		keytypes.CorridorV1,
 	}
 	for _, keyType := range tests {
 		t.Run(keyType, func(t *testing.T) {

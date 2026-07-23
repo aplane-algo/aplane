@@ -100,6 +100,36 @@ func TestFixedAllowlistPolicyRejectsUnsafeSchema(t *testing.T) {
 	}
 }
 
+func TestMerkleAllowlistPolicyRequiresClosedProofContract(t *testing.T) {
+	profile := fixedAllowlistTestProfile()
+	policy := &Layer3Policy{Policy: Layer3PolicyMerkleAllowlist, RecipientsParameter: "recipients"}
+	params := []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 65536}}
+	if err := validateLayer3Policy(policy, params, profile); err != nil {
+		t.Fatalf("validateLayer3Policy() error = %v", err)
+	}
+
+	withExtraConstraint := *policy
+	withExtraConstraint.MaxPaymentAmountParameter = "limit"
+	err := validateLayer3Policy(&withExtraConstraint, append(params, lsigprovider.ParameterDef{Name: "limit", Type: "uint64"}), profile)
+	if err == nil || !strings.Contains(err.Error(), "supports only recipients_parameter") {
+		t.Fatalf("validateLayer3Policy(extra constraint) error = %v", err)
+	}
+
+	provider := &ComposedDSA{
+		layer3: policy,
+		derivedArgs: []boundedmeta.DerivedArg{{
+			Name: "proof", Kind: boundedmeta.DerivedArgMerkleProof, Parameter: "recipients", MaxSize: boundedmeta.MerkleProofSize,
+		}},
+	}
+	if err := provider.validateFrameworkLayer3Arguments(); err != nil {
+		t.Fatalf("validateFrameworkLayer3Arguments() error = %v", err)
+	}
+	provider.derivedArgs = nil
+	if err := provider.validateFrameworkLayer3Arguments(); err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("validateFrameworkLayer3Arguments(no proof) error = %v", err)
+	}
+}
+
 func TestFixedAllowlistPolicyRejectsLayer3GatedRekeyWithoutPay(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
 		Contract:     BoundedContractV1,

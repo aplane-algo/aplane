@@ -158,11 +158,6 @@ func TestVerifySignableKeysRejectsSentryKeyTypes(t *testing.T) {
 			keyType: keytypes.GuardedFalcon1024Sentry1024V1,
 			want:    guardedAccountSignRejectMessage,
 		},
-		{
-			name:    "corridor account",
-			keyType: keytypes.CorridorV1,
-			want:    guardedAccountSignRejectMessage,
-		},
 	}
 
 	for _, tt := range tests {

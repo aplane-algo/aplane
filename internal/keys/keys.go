@@ -15,8 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
-	"github.com/aplane-algo/aplane/internal/merkleallowlist"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -409,7 +407,7 @@ func IsGenericKey(category string) bool {
 }
 
 func dsaLogicSigArgBudgetForKey(keyType, baseKeyType string) int {
-	return cryptoSignatureSizeForKey(keyType, baseKeyType) + signerGeneratedDSAArgSizeForKey(keyType)
+	return cryptoSignatureSizeForKey(keyType, baseKeyType)
 }
 
 func cryptoSignatureSizeForKey(keyType, baseKeyType string) int {
@@ -420,15 +418,6 @@ func cryptoSignatureSizeForKey(keyType, baseKeyType string) int {
 		return logicsigdsa.GetCryptoSignatureSize(baseKeyType)
 	}
 	return 0
-}
-
-func signerGeneratedDSAArgSizeForKey(keyType string) int {
-	switch strings.ToLower(strings.TrimSpace(keyType)) {
-	case keytypes.CorridorV1:
-		return merkleallowlist.ProofSize
-	default:
-		return 0
-	}
 }
 
 // logicSigAddress computes the LogicSig address from bytecode.

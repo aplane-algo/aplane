@@ -14,7 +14,6 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
@@ -24,7 +23,6 @@ import (
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
-	"github.com/aplane-algo/aplane/lsig/corridor"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -38,13 +36,10 @@ import (
 
 func init() {
 	falcon1024guarded.RegisterClient()
-	corridor.RegisterClient()
 }
 
 var (
-	_ ComponentPacker           = (*corridor.Provider)(nil)
-	_ AssemblyExtraArgsProvider = (*corridor.Provider)(nil)
-	_ ComponentPacker           = (*falcon1024guarded.Provider)(nil)
+	_ ComponentPacker = (*falcon1024guarded.Provider)(nil)
 )
 
 func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
@@ -975,94 +970,6 @@ func TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup(t *testi
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil || keyMaterial.PublicKey != nil {
 		t.Fatalf("key material was not zeroed after assembly: %#v", keyMaterial)
-	}
-}
-
-func TestAssembleDecodedGuardedBuildsCorridorProofArg(t *testing.T) {
-	sentryPublicKey, sentryPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x64}, 64))
-	if err != nil {
-		t.Fatalf("GenerateKeypair(sentry) error = %v", err)
-	}
-	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x65}, 64))
-	if err != nil {
-		t.Fatalf("GenerateKeypair(user) error = %v", err)
-	}
-	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0xde, 0xad}
-	guardedAccount := logicSigAddressForTest(t, bytecode)
-	recipient := types.Address{66}
-	recipients := strings.Join([]string{recipient.String(), types.Address{67}.String()}, ",")
-	root, err := merkleallowlist.RootFromRecipientsParam(recipients)
-	if err != nil {
-		t.Fatalf("RootFromRecipientsParam() error = %v", err)
-	}
-	txn := paymentTransaction(t, guardedAccount, recipient.String(), 14)
-	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
-	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
-	if decodeErr != nil {
-		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
-	}
-
-	userMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
-	userSignature, err := signerops.New(nil).Sign(userPrivateKey, userMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(user) error = %v", err)
-	}
-	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	sentrySignature, err := signerops.New(nil).Sign(sentryPrivateKey, sentryMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(sentry) error = %v", err)
-	}
-
-	keyMaterial := &coresigning.KeyMaterial{
-		Type:        keytypes.CorridorV1,
-		Category:    keys.CategoryDSALsig,
-		BaseKeyType: corridor.BaseKeyType,
-		PublicKey:   append([]byte(nil), userPublicKey...),
-		Bytecode:    append([]byte(nil), bytecode...),
-		Parameters: map[string]string{
-			keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey),
-			corridor.ParamRecipients:          recipients,
-		},
-		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
-		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
-	}
-	session := &componentKeyTestSession{key: keyMaterial}
-
-	result, signErr := assembleDecodedGuarded(context.Background(), signerapi.GuardedAssemblyRequest{
-		RequestID:     "asm-corridor",
-		GroupBytesHex: groupBytesHex,
-		Targets: []signerapi.GuardedAssemblyTarget{{
-			TargetIndex:     0,
-			GuardedAccount:  guardedAccount,
-			UserSignature:   hex.EncodeToString(userSignature),
-			SentrySignature: hex.EncodeToString(sentrySignature),
-		}},
-	}, group, session)
-	if signErr != nil {
-		t.Fatalf("assembleDecodedGuarded() error = %v", signErr)
-	}
-	if len(result.SignedGroup) != 1 {
-		t.Fatalf("SignedGroup len = %d, want 1", len(result.SignedGroup))
-	}
-	signedTargetBytes, err := hex.DecodeString(result.SignedGroup[0])
-	if err != nil {
-		t.Fatalf("DecodeString(signed target) error = %v", err)
-	}
-	var signedTarget types.SignedTxn
-	if err := msgpack.Decode(signedTargetBytes, &signedTarget); err != nil {
-		t.Fatalf("Decode(signed target) error = %v", err)
-	}
-	if len(signedTarget.Lsig.Args) != 3 {
-		t.Fatalf("LogicSig args len = %d, want 3", len(signedTarget.Lsig.Args))
-	}
-	if !bytes.Equal(signedTarget.Lsig.Args[0], userSignature) {
-		t.Fatalf("LogicSig arg 0 = %x, want user signature %x", signedTarget.Lsig.Args[0], userSignature)
-	}
-	if !bytes.Equal(signedTarget.Lsig.Args[1], sentrySignature) {
-		t.Fatalf("LogicSig arg 1 = %x, want sentry signature %x", signedTarget.Lsig.Args[1], sentrySignature)
-	}
-	if !merkleallowlist.Verify(recipient, signedTarget.Lsig.Args[2], root) {
-		t.Fatal("LogicSig arg 2 is not a valid Merkle proof for recipient")
 	}
 }
 

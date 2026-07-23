@@ -38,6 +38,7 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 		assetIDs[i] = fmt.Sprintf("%d", i+1)
 	}
 	adminKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
+	sentryKey := bytes.Repeat([]byte{0x41}, boundedmeta.SentryPublicKeySizeV1)
 	tests := []struct {
 		name       string
 		publicKey  []byte
@@ -55,6 +56,11 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 			"max_payment_amount": "18446744073709551615", "max_asset_amount": "18446744073709551615",
 			composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),
 		}, bytecode: 5312, spend: 6592, admin: 7872, group: 8},
+		{name: "aplane.corridor.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{
+			"recipients": recipients[0],
+			composeddsa.BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryKey),
+			composeddsa.BoundedAdminPublicKeyParameter:  hex.EncodeToString(adminKey),
+		}, bytecode: 5940, spend: 9012, admin: 8500, group: 10},
 	}
 
 	for _, test := range tests {
@@ -92,7 +98,9 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 			maxSize := spend
 			if metadata.RequiresAdminKey() {
 				admin = metadata.LogicSigSizeForPath(boundedmeta.PathAdminRekey)
-				maxSize = admin
+				if admin > maxSize {
+					maxSize = admin
+				}
 			}
 			group := (maxSize + 999) / 1000
 			if len(bytecode) != test.bytecode || spend != test.spend || admin != test.admin || group != test.group {

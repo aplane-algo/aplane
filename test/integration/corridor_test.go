@@ -14,7 +14,9 @@ import (
 	internallsig "github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
-	"github.com/aplane-algo/aplane/lsig/corridor"
+	"github.com/aplane-algo/aplane/library/templates"
+	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
@@ -23,7 +25,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-const corridorExecutionGroupSize = 16
+const corridorExecutionGroupSize = 10
 
 func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 	if harness.IntegrationNetwork() != harness.IntegrationNetworkLocalnet {
@@ -116,9 +118,6 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 	if err := funder.FundMicroAlgosAndWait(rekeyAccount.address, 200_000); err != nil {
 		t.Fatalf("failed to fund corridor rekey account %s: %v", rekeyAccount.address, err)
 	}
-	t.Cleanup(func() {
-		bestEffortCloseRekeyedAccount(t, testnet, rekeyAccount.address, funder.GetAddress(), rekeyTarget.PrivateKey)
-	})
 
 	t.Run("malformed rekey with nonzero amount fails", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 1, "corridor-deny-rekey-amount")
@@ -142,11 +141,11 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
 	})
 
-	t.Run("pure rekey self payment succeeds without proof", func(t *testing.T) {
+	t.Run("pure rekey without contract-admin proof fails", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 0, "corridor-allow-rekey")
 		txn.RekeyTo = rekeyTarget.Address
-		rawGroup, txid := rekeyAccount.signGroup(t, txn, nil, nil)
-		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
+		rawGroup, _ := rekeyAccount.signGroup(t, txn, nil, nil)
+		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
 	})
 }
 
@@ -156,7 +155,7 @@ type corridorExecutionAccount struct {
 	recipientsParam   string
 	userPrivateKey    []byte
 	sentryPrivateKey  []byte
-	signatureProvider *corridor.Provider
+	signatureProvider *composeddsa.ComposedDSA
 }
 
 func newCorridorExecutionAccount(t *testing.T, testnet *harness.TestnetConfig, recipients []types.Address) corridorExecutionAccount {
@@ -174,17 +173,34 @@ func newCorridorExecutionAccount(t *testing.T, testnet *harness.TestnetConfig, r
 	if err != nil {
 		t.Fatalf("failed to generate corridor sentry keypair: %v", err)
 	}
+	adminPublicKey, _, err := ops.GenerateKeypair(randomFalconSeed(t))
+	if err != nil {
+		t.Fatalf("failed to generate corridor admin keypair: %v", err)
+	}
 
 	recipientStrings := make([]string, len(recipients))
 	for i, recipient := range recipients {
 		recipientStrings[i] = recipient.String()
 	}
 	recipientsParam := strings.Join(recipientStrings, ",")
-	provider := corridor.NewProviderV1()
+	falcon1024.RegisterClient()
+	templateData, err := templates.ReadFile("aplane.corridor.v1.yaml")
+	if err != nil {
+		t.Fatalf("failed to read Corridor template: %v", err)
+	}
+	spec, err := composeddsa.ParseTemplateSpec(templateData)
+	if err != nil {
+		t.Fatalf("failed to parse Corridor template: %v", err)
+	}
+	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		t.Fatalf("failed to build Corridor provider: %v", err)
+	}
 	provider.SetAlgodClient(testnet.Client)
 	derived, err := provider.DeriveLsigWithSalt(context.Background(), userPublicKey, map[string]string{
-		corridor.ParamRecipients:      recipientsParam,
-		corridor.ParamSentryPublicKey: hex.EncodeToString(sentryPublicKey),
+		"recipients": recipientsParam,
+		composeddsa.BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryPublicKey),
+		composeddsa.BoundedAdminPublicKeyParameter:  hex.EncodeToString(adminPublicKey),
 	})
 	if err != nil {
 		t.Fatalf("failed to derive corridor LogicSig: %v", err)
@@ -248,19 +264,17 @@ func (a corridorExecutionAccount) signGroup(t *testing.T, targetTxn types.Transa
 		t.Fatalf("corridor transaction ID length %d, want %d", len(txidBytes), len(txid))
 	}
 	copy(txid[:], txidBytes)
-	userSignature := a.signComponent(t, message.RoleUser, txid, a.userPrivateKey)
-	sentrySignature := a.signComponent(t, message.RoleSentry, txid, a.sentryPrivateKey)
-	packed, err := corridor.PackComponentSignatures(userSignature, sentrySignature)
+	userSignature, err := signerops.New(nil).Sign(a.userPrivateKey, txid[:])
 	if err != nil {
-		t.Fatalf("failed to pack corridor component signatures: %v", err)
+		t.Fatalf("failed to sign corridor base message: %v", err)
 	}
-	args, err := a.signatureProvider.BuildArgs(packed, nil)
+	sentrySignature := a.signComponent(t, message.RoleSentry, txid, a.sentryPrivateKey)
+	args, err := a.signatureProvider.BuildArgs(userSignature, nil)
 	if err != nil {
 		t.Fatalf("failed to build corridor LogicSig args: %v", err)
 	}
-	if len(proof) > 0 {
-		args = append(args, append([]byte(nil), proof...))
-	}
+	args = append(args, append([]byte(nil), proof...))
+	args = append(args, sentrySignature)
 	if mutateArgs != nil {
 		args = mutateArgs(args)
 	}

@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	"github.com/aplane-algo/aplane/lsig/corridor"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
@@ -34,7 +33,6 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 
 	libraryVisible := catalogKeyTypes(keytypecatalog.LibraryVisible())
 	wantLibraryVisible := []string{
-		"aplane.corridor.v1",
 		"aplane.ed25519.v1",
 		"aplane.falcon1024-sentry1024.v1",
 	}
@@ -63,6 +61,7 @@ func TestCanonicalBundledTemplateInventory(t *testing.T) {
 	}
 	sort.Strings(got)
 	want := []string{
+		"aplane.corridor.v1.yaml",
 		"aplane.falcon1024-allowlist-alock.v1.yaml",
 		"aplane.falcon1024-allowlist.v1.yaml",
 		"aplane.falcon1024-allowlist.v2.yaml",
@@ -86,6 +85,7 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 	RegisterClient()
 
 	for _, keyType := range []string{
+		"aplane.corridor.v1",
 		"aplane.htlc.v1",
 		"aplane.falcon1024-allowlist.v1",
 		"aplane.falcon1024-allowlist.v2",
@@ -107,7 +107,6 @@ func TestRegisterClientMarksLibraryVisible(t *testing.T) {
 
 	libraryGatedKeyTypes := []string{
 		falcon1024guarded.KeyTypeV1,
-		corridor.KeyTypeV1,
 		ed25519lsig.KeyTypeV1,
 	}
 

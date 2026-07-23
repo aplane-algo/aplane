@@ -1,0 +1,40 @@
+schema_version: 2
+derivation_version: 2
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: aplane
+family: corridor
+version: 1
+display_name: "Corridor"
+description: "Bounded Falcon-1024 account with sentry authorization and a Merkle recipient allowlist."
+
+bounded:
+  contract: bounded1
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  admin_operations:
+    - kind: rekey
+      authorization: admin_key
+      policy_gate: none
+  sentry:
+    contract: sentry1
+    required_on: [spend]
+  layer3:
+    policy: merkle_allowlist
+    recipients_parameter: recipients
+  derived_args:
+    - name: merkle_proof
+      kind: merkle_allowlist_proof
+      parameter: recipients
+      max_size: 512
+
+parameters:
+  - name: recipients
+    label: "Allowed Recipients"
+    description: "Comma-separated Algorand addresses that may receive payments or asset transfers."
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 65536
+    placeholder: "ADDR1, ADDR2, ADDR3"

@@ -137,31 +137,6 @@ func TestResolveCreationParamsForBoundedProvider(t *testing.T) {
 	}
 }
 
-func TestResolveCreationParamsPreservesCorridorRecipients(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	pub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
-	if _, err := Import(paths, "default", "falcon-sentry", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
-		t.Fatalf("Import() error = %v", err)
-	}
-
-	resolved, err := ResolveCreationParams(paths, "default", keytypes.CorridorV1, map[string]string{
-		ParamSentryName: "falcon-sentry",
-		"recipients":    "RECIPIENTS",
-	})
-	if err != nil {
-		t.Fatalf("ResolveCreationParams() error = %v", err)
-	}
-	if got := resolved[keytypes.ParameterSentryPublicKey]; got != strings.Repeat("cd", falconfamily.PublicKeySize) {
-		t.Fatalf("sentry_public_key = %q, want imported Falcon public key", got)
-	}
-	if got := resolved["recipients"]; got != "RECIPIENTS" {
-		t.Fatalf("recipients = %q, want preserved", got)
-	}
-	if _, ok := resolved[ParamSentryName]; ok {
-		t.Fatalf("resolved params still contain %s: %#v", ParamSentryName, resolved)
-	}
-}
-
 func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 	_, err := ResolveCreationParams(storepaths.NewPaths(t.TempDir()), "default", keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		ParamSentryName:                   "lab-sentry",

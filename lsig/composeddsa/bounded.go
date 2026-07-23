@@ -565,6 +565,9 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 	if c.layer3 != nil && strings.TrimSpace(c.tealSuffix) != "" {
 		return nil, SignatureArgLayout{}, fmt.Errorf("framework-owned bounded Layer-3 policy must not include author TEAL")
 	}
+	if err := c.validateFrameworkLayer3Arguments(); err != nil {
+		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 arguments: %w", err)
+	}
 	if err := validateLayer3Policy(c.layer3, c.paramsWithoutAdminKey(), profile); err != nil {
 		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 policy: %w", err)
 	}

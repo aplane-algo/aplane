@@ -16,28 +16,29 @@ import (
 )
 
 const (
-	ContractV1                 = "bounded1"
-	AdminPublicKeyParameter    = "bounded_admin_public_key"
-	Layer3PolicyCustom         = "custom"
-	Layer3PolicyFixedAllowlist = "fixed_allowlist"
-	AdminOperationRekey        = "rekey"
-	AdminAuthorizationSpend    = "spending_key"
-	AdminAuthorizationAdmin    = "admin_key"
-	PolicyGateNone             = "none"
-	PolicyGateLayer3           = "layer3"
-	SpendEffectPay             = "pay"
-	SpendEffectAxfer           = "axfer"
-	SpendEffectAssetOptIn      = "asset_opt_in"
-	SentryContractV1           = "sentry1"
-	SentryPublicKeyParameter   = "sentry_public_key"
-	SentrySignatureSlot        = "sentry_signature"
-	SentryComponentKeyTypeV1   = witness.Falcon1024V1
-	SentryPublicKeySizeV1      = witness.Falcon1024PublicKeySize
-	SentrySignatureMaxSizeV1   = witness.Falcon1024SignatureSize
-	FalconAdminPublicKeySize   = witness.Falcon1024PublicKeySize
-	FalconAdminSignatureSize   = witness.Falcon1024SignatureSize
-	ProgramBindingSize         = 32
-	MaximumProfileFee          = 10_000
+	ContractV1                  = "bounded1"
+	AdminPublicKeyParameter     = "bounded_admin_public_key"
+	Layer3PolicyCustom          = "custom"
+	Layer3PolicyFixedAllowlist  = "fixed_allowlist"
+	Layer3PolicyMerkleAllowlist = "merkle_allowlist"
+	AdminOperationRekey         = "rekey"
+	AdminAuthorizationSpend     = "spending_key"
+	AdminAuthorizationAdmin     = "admin_key"
+	PolicyGateNone              = "none"
+	PolicyGateLayer3            = "layer3"
+	SpendEffectPay              = "pay"
+	SpendEffectAxfer            = "axfer"
+	SpendEffectAssetOptIn       = "asset_opt_in"
+	SentryContractV1            = "sentry1"
+	SentryPublicKeyParameter    = "sentry_public_key"
+	SentrySignatureSlot         = "sentry_signature"
+	SentryComponentKeyTypeV1    = witness.Falcon1024V1
+	SentryPublicKeySizeV1       = witness.Falcon1024PublicKeySize
+	SentrySignatureMaxSizeV1    = witness.Falcon1024SignatureSize
+	FalconAdminPublicKeySize    = witness.Falcon1024PublicKeySize
+	FalconAdminSignatureSize    = witness.Falcon1024SignatureSize
+	ProgramBindingSize          = 32
+	MaximumProfileFee           = 10_000
 )
 
 // SignatureArgLayout is the durable maximum shape of the spending signature
@@ -190,7 +191,7 @@ func (metadata *Metadata) ValidateProfile() error {
 	if metadata.MaxFee > MaximumProfileFee {
 		return fmt.Errorf("max_fee %d exceeds bounded1 ceiling %d", metadata.MaxFee, MaximumProfileFee)
 	}
-	if metadata.Layer3Policy != Layer3PolicyCustom && metadata.Layer3Policy != Layer3PolicyFixedAllowlist {
+	if metadata.Layer3Policy != Layer3PolicyCustom && metadata.Layer3Policy != Layer3PolicyFixedAllowlist && metadata.Layer3Policy != Layer3PolicyMerkleAllowlist {
 		return fmt.Errorf("unsupported bounded1 layer3_policy %q", metadata.Layer3Policy)
 	}
 	if err := ValidateSpendEffects(metadata.SpendEffects); err != nil {
@@ -207,6 +208,12 @@ func (metadata *Metadata) ValidateProfile() error {
 	}
 	if err := validateArgumentLayout(metadata); err != nil {
 		return err
+	}
+	if metadata.Layer3Policy == Layer3PolicyFixedAllowlist && len(metadata.DerivedArgs) != 0 {
+		return fmt.Errorf("fixed_allowlist must not declare derived arguments")
+	}
+	if metadata.Layer3Policy == Layer3PolicyMerkleAllowlist && len(metadata.DerivedArgs) != 1 {
+		return fmt.Errorf("merkle_allowlist requires exactly one derived Merkle proof argument")
 	}
 	return nil
 }

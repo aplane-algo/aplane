@@ -24,7 +24,6 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
-	"github.com/aplane-algo/aplane/lsig/corridor"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -55,11 +54,6 @@ func RegisterClient() {
 			Family:       falcon1024guarded.FamilyName,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, falcon1024guarded.RegisterClient)
-		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      corridor.KeyTypeV1,
-			Family:       corridor.FamilyName,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, corridor.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      ed25519lsig.KeyTypeV1,
 			Family:       ed25519lsig.FamilyName,

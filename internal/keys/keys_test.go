@@ -17,8 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/merkleallowlist"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -605,12 +603,6 @@ func TestScanKeysDirectoryWithMasterKeyLoadsGenericUnderDerivedAddress(t *testin
 	}
 	if _, ok := report.Keys[address]; !ok {
 		t.Fatalf("derived address %s not loaded", address)
-	}
-}
-
-func TestSignerGeneratedDSAArgSizeIncludesCorridorProofBudget(t *testing.T) {
-	if got := signerGeneratedDSAArgSizeForKey(keytypes.CorridorV1); got != merkleallowlist.ProofSize {
-		t.Fatalf("signerGeneratedDSAArgSizeForKey(corridor) = %d, want %d", got, merkleallowlist.ProofSize)
 	}
 }
 

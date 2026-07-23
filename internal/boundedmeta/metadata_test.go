@@ -66,6 +66,7 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 		{name: "duplicate spend", mutate: func(m *Metadata) { m.SpendEffects = []string{"pay", "pay"} }, want: "duplicate spend effect"},
 		{name: "fee ceiling", mutate: func(m *Metadata) { m.MaxFee = MaximumProfileFee + 1 }, want: "exceeds"},
 		{name: "unknown Layer-3 policy", mutate: func(m *Metadata) { m.Layer3Policy = "open" }, want: "layer3_policy"},
+		{name: "Merkle policy without proof", mutate: func(m *Metadata) { m.Layer3Policy = Layer3PolicyMerkleAllowlist }, want: "exactly one"},
 		{name: "missing policy gate", mutate: func(m *Metadata) {
 			m.AdminOperations = []AdminOperation{{Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend}}
 		}, want: "unsupported policy gate"},

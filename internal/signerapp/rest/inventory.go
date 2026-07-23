@@ -65,6 +65,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			keyInfo.Parameters = guardedAccountParameters(keyType, summary.Parameters)
 		}
 		if summary.BoundedAuthorization != nil {
+			keyInfo.Parameters = cloneInventoryParameters(summary.Parameters)
 			keyInfo.SigningFlow = boundedSigningFlow(summary.BoundedAuthorization)
 			if summary.BoundedAuthorization.Sentry != nil {
 				keyInfo.SentryComponentKeyType = summary.BoundedAuthorization.Sentry.ComponentKeyType
@@ -83,7 +84,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 	return keyList
 }
 
-func guardedAccountParameters(keyType string, parameters map[string]string) map[string]string {
+func guardedAccountParameters(_ string, parameters map[string]string) map[string]string {
 	sentryPublicKey := parameters[keytypes.ParameterSentryPublicKey]
 	if sentryPublicKey == "" {
 		return nil
@@ -91,8 +92,16 @@ func guardedAccountParameters(keyType string, parameters map[string]string) map[
 	out := map[string]string{
 		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 	}
-	if keyType == keytypes.CorridorV1 && parameters["recipients"] != "" {
-		out["recipients"] = parameters["recipients"]
+	return out
+}
+
+func cloneInventoryParameters(parameters map[string]string) map[string]string {
+	if len(parameters) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(parameters))
+	for name, value := range parameters {
+		out[name] = value
 	}
 	return out
 }
