@@ -47,6 +47,8 @@ GUARDED_ADDRESS=""
 CORRIDOR_ADDRESS=""
 CORRIDOR_ALLOWED_ADDRESS=""
 CORRIDOR_BLOCKED_ADDRESS=""
+CORRIDOR_ADMIN_KEY=""
+CORRIDOR_ADMIN_PUBLIC_KEY=""
 SDK_REPO="${APLANE_SDKS_REPO:-${APLANE_SDK_REPO:-}}"
 SDK_SOURCE_DIR=""
 SDK_CONTAINER_DIR="/home/$TEST_USER/src/aplanesdk-python"
@@ -77,11 +79,14 @@ the Docker network. All APlane nodes use the shared LocalNet algod endpoint.
 The client runs a client-only install plus apadmin, points endpoints.yaml at the
 signer container DNS name, adds the sentry endpoint through apshell, requests
 API tokens for both nodes, generates a sentry key through the sentry
-endpoint, syncs the sentry key to the signer, enables guarded Falcon/Falcon and
-corridor key types, and verifies apshell can create, fund, and validate guarded,
-corridor, and plain Falcon accounts against the shared LocalNet. It then
+endpoint, syncs the sentry key to the signer, enables guarded Falcon/Falcon,
+imports the optional Corridor template, and verifies apshell can create, fund,
+and validate guarded, Corridor, and plain Falcon accounts against the shared
+LocalNet. It then
 submits the same guarded 0 ALGO self-send with SDK preparation and guarded
-signing helpers. By default the Python SDK comes from the local aplanesdk repo;
+signing helpers. The Corridor flow also proves that sentry loss blocks spend
+while its external admin can still rekey the account. By default the Python SDK
+comes from the local aplanesdk repo;
 with --release-install, Python comes from PyPI and TypeScript comes from npm.
 EOF
 }
@@ -1110,14 +1115,56 @@ enable_guarded_keytype() {
     printf '%s\n' "$out"
 }
 
-enable_corridor_keytype() {
+import_corridor_template() {
     local out
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore keytype enable aplane.corridor.v1 2>&1")"; then
+        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore template import \
+        /home/$TEST_USER/aplane/apsigner/library/templates/aplane.corridor.v1.yaml 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to enable corridor key type on signer"
+        die "failed to import Corridor template on signer"
     fi
     printf '%s\n' "$out"
+}
+
+generate_corridor_admin_key() {
+    local admin_dir="/home/$TEST_USER/aplane/bounded-admin"
+    local exp_file out
+    docker_exec_as_tester "$CLIENT_CONTAINER" "mkdir -p '$admin_dir' && chmod 700 '$admin_dir'"
+
+    exp_file="$(mktemp)"
+    cat > "$exp_file" <<EXPECT_SCRIPT
+#!/usr/bin/env expect -f
+set timeout 180
+spawn bash -lc ". /home/$TEST_USER/aplane/apclient/apenv.sh && exec aprekey generate --out '$admin_dir'"
+expect {
+  "Bounded-admin key passphrase:" { send "$TEST_PASSPHRASE\r" }
+  timeout { exit 1 }
+}
+expect {
+  "Confirm bounded-admin key passphrase:" { send "$TEST_PASSPHRASE\r" }
+  timeout { exit 2 }
+}
+expect eof
+set result [wait]
+exit [lindex \$result 3]
+EXPECT_SCRIPT
+    docker cp "$exp_file" "$CLIENT_CONTAINER:/tmp/generate-corridor-admin.exp"
+    rm -f "$exp_file"
+    docker_exec "$CLIENT_CONTAINER" chmod 700 /tmp/generate-corridor-admin.exp
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/generate-corridor-admin.exp
+
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" "expect /tmp/generate-corridor-admin.exp 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to generate external Corridor admin key"
+    fi
+    printf '%s\n' "$out"
+
+    CORRIDOR_ADMIN_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -- '$admin_dir'/*.wit; \
+        [ \$# -eq 1 ] && [ -f \"\$1\" ] && printf '%s' \"\$1\"")"
+    [ -n "$CORRIDOR_ADMIN_KEY" ] || die "could not locate generated Corridor admin artifact"
+    CORRIDOR_ADMIN_PUBLIC_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        aprekey inspect '$CORRIDOR_ADMIN_KEY' | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"public_key_hex\"])'")"
+    [ -n "$CORRIDOR_ADMIN_PUBLIC_KEY" ] || die "could not read generated Corridor admin public key"
 }
 
 generate_guarded_key() {
@@ -1137,13 +1184,15 @@ generate_guarded_key() {
 
 generate_corridor_key() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    [ -n "$CORRIDOR_ADMIN_PUBLIC_KEY" ] || die "Corridor admin public key is not set"
     CORRIDOR_ALLOWED_ADDRESS="$(localnet_account_address 1)"
     CORRIDOR_BLOCKED_ADDRESS="$(localnet_account_address 2)"
     [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "could not find corridor allowed LocalNet account"
     [ -n "$CORRIDOR_BLOCKED_ADDRESS" ] || die "could not find corridor blocked LocalNet account"
     [ "$CORRIDOR_ALLOWED_ADDRESS" != "$CORRIDOR_BLOCKED_ADDRESS" ] || die "corridor allowed and blocked addresses resolved to the same account"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.corridor.v1 sentry=%s recipients=%s\n' '$SENTRY_COMPONENT_KEY' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/generate-corridor.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.corridor.v1 sentry=%s bounded_admin_public_key=%s recipients=%s\n' \
+        '$SENTRY_COMPONENT_KEY' '$CORRIDOR_ADMIN_PUBLIC_KEY' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/generate-corridor.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-corridor.script 2>&1")"; then
@@ -1308,6 +1357,62 @@ validate_corridor_blocked_send_fails() {
         || die "corridor blocked send did not report allowlist rejection"
 }
 
+validate_corridor_send_after_sentry_delete_fails() {
+    [ -n "$CORRIDOR_ADDRESS" ] || die "Corridor address is not set"
+    [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "Corridor allowed address is not set"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nsend 0 algo from %s to %s note=corridor-missing-sentry\n' \
+        '$CORRIDOR_ADDRESS' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/send-corridor-missing-sentry.script"
+    local out
+    out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/send-corridor-missing-sentry.script 2>&1" || true)"
+    printf '%s\n' "$out"
+    if printf '%s\n' "$out" | grep -q 'Transaction submitted:'; then
+        die "Corridor send unexpectedly submitted after sentry key deletion"
+    fi
+    printf '%s\n' "$out" | grep -q 'did not advertise Witness Key ID' \
+        || die "Corridor send failure did not report the missing sentry key"
+}
+
+rekey_corridor_without_sentry() {
+    [ -n "$CORRIDOR_ADDRESS" ] || die "Corridor address is not set"
+    [ -n "$FALCON_ADDRESS" ] || die "Falcon rekey target is not set"
+    [ -n "$CORRIDOR_ADMIN_KEY" ] || die "Corridor admin artifact is not set"
+
+    local exp_file out
+    exp_file="$(mktemp)"
+    cat > "$exp_file" <<EXPECT_SCRIPT
+#!/usr/bin/env expect -f
+set timeout 240
+spawn bash -lc ". /home/$TEST_USER/aplane/apclient/apenv.sh && exec aprekey rekey --client-data /home/$TEST_USER/aplane/apclient --network localnet --key '$CORRIDOR_ADMIN_KEY' '$CORRIDOR_ADDRESS' to '$FALCON_ADDRESS'"
+expect {
+  -re {Authorize this rekey with the contract-admin key.*} { send "y\r" }
+  timeout { exit 1 }
+}
+expect {
+  "Bounded-admin key passphrase:" { send "$TEST_PASSPHRASE\r" }
+  timeout { exit 2 }
+}
+expect eof
+set result [wait]
+exit [lindex \$result 3]
+EXPECT_SCRIPT
+    docker cp "$exp_file" "$CLIENT_CONTAINER:/tmp/rekey-corridor.exp"
+    rm -f "$exp_file"
+    docker_exec "$CLIENT_CONTAINER" chmod 700 /tmp/rekey-corridor.exp
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/rekey-corridor.exp
+
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" "expect /tmp/rekey-corridor.exp 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "external Corridor admin rekey failed while sentry key was unavailable"
+    fi
+    printf '%s\n' "$out"
+    printf '%s\n' "$out" | grep -q 'Governed rekey transaction submitted:' \
+        || die "Corridor admin rekey output did not include submission marker"
+    printf '%s\n' "$out" | grep -q 'Transaction confirmed' \
+        || die "Corridor admin rekey did not confirm"
+}
+
 delete_sentry_component_key() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
@@ -1446,8 +1551,8 @@ main() {
     log "Enabling guarded Falcon/Falcon sentry key type on signer"
     enable_guarded_keytype
 
-    log "Enabling corridor key type on signer"
-    enable_corridor_keytype
+    log "Importing optional Corridor template on signer"
+    import_corridor_template
 
     log "Starting signer-side approver for token bootstrap"
     start_signer_apapprover
@@ -1488,6 +1593,9 @@ main() {
 
     log "Syncing sentry key to signer"
     sync_sentry_key_to_signer
+
+    log "Generating external Corridor admin key on client"
+    generate_corridor_admin_key
 
     log "Generating guarded Falcon/Falcon sentry account through client/signer flow"
     generate_guarded_key
@@ -1540,6 +1648,12 @@ main() {
 
     log "Verifying guarded validation fails after sentry key deletion"
     validate_guarded_self_send_after_sentry_delete_fails
+
+    log "Verifying Corridor spend fails after sentry key deletion"
+    validate_corridor_send_after_sentry_delete_fails
+
+    log "Rekeying Corridor through its external admin while sentry is unavailable"
+    rekey_corridor_without_sentry
 
     log "Shutting down nodes"
     shutdown_nodes
