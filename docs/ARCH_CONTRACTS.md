@@ -634,13 +634,6 @@ is pointed at a supported in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader with guidance that the file
 may have been written by a newer version or may contain a typo.
 
-The Go loader accepts top-level `manual_approval` as an inverse compatibility
-alias:
-`manual_approval:true` maps to `user_auto_approve:false`, and
-`manual_approval:false` maps to `user_auto_approve:true`. If both fields are
-present, they must agree under that inverse mapping. Canonical configs use only
-`user_auto_approve`.
-
 Process-global settings live in `config.yaml`. Identity-scoped settings live in `identities/<identity>/config.yaml` and nil means inherit from process defaults. `decommissioned:true` disables the identity.
 
 Signer policy participates in the ordered approval engine.

@@ -86,65 +86,20 @@ func TestLoadServerConfigUserAutoApprove(t *testing.T) {
 	}
 }
 
-func TestLoadServerConfigAcceptsLegacyManualApproval(t *testing.T) {
+func TestLoadServerConfigRejectsManualApproval(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name         string
-		config       string
-		wantAuto     bool
-		wantErr      bool
-		wantErrPiece string
-	}{
-		{
-			name:     "manual true means auto approve false",
-			config:   "manual_approval: true\n",
-			wantAuto: false,
-		},
-		{
-			name:     "manual false means auto approve true",
-			config:   "manual_approval: false\n",
-			wantAuto: true,
-		},
-		{
-			name:     "consistent with current field",
-			config:   "manual_approval: true\nuser_auto_approve: false\n",
-			wantAuto: false,
-		},
-		{
-			name:         "conflicts with current field",
-			config:       "manual_approval: true\nuser_auto_approve: true\n",
-			wantErr:      true,
-			wantErrPiece: "manual_approval is deprecated and conflicts with user_auto_approve",
-		},
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("manual_approval: true\n"), 0o640); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(tt.config), 0o640); err != nil {
-				t.Fatalf("WriteFile: %v", err)
-			}
-
-			cfg, err := LoadServerConfig(dir)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("LoadServerConfig error = nil")
-				}
-				if !strings.Contains(err.Error(), tt.wantErrPiece) {
-					t.Fatalf("LoadServerConfig error = %q, want %q", err, tt.wantErrPiece)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("LoadServerConfig: %v", err)
-			}
-			if cfg.UserAutoApprove != tt.wantAuto {
-				t.Fatalf("user_auto_approve = %v, want %v", cfg.UserAutoApprove, tt.wantAuto)
-			}
-		})
+	_, err := LoadServerConfig(dir)
+	if err == nil {
+		t.Fatal("LoadServerConfig error = nil, want unknown-field rejection")
+	}
+	if !strings.Contains(err.Error(), `unknown field "manual_approval"`) {
+		t.Fatalf("LoadServerConfig error = %q, want manual_approval unknown-field guidance", err)
 	}
 }
 
