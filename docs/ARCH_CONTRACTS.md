@@ -539,19 +539,14 @@ IPC failure semantics:
 | Token provisioning approval | yes | no | yes | no |
 | Admin settings | yes | no | no | no |
 | Policy editor | yes | no | no | no |
-| Scalar policy settings editor | limited | no | no | no |
 | Async notifications | yes | limited | limited | no |
 
 `appass` edits config offline; it is outside the live IPC surface.
 
-`apadmin` uses the shared full-document policy editor. The scalar compatibility
-payload is intentionally limited:
-it can mutate the admin-projected settings exposed by `get_policy_settings`,
-`update_policy_setting`, and `update_policy_asa_amounts`, including scalar
-policy toggles other than clawback controls, max fee, and network-scoped
-transfer guard thresholds. YAML-only fields such as `reject_clawback` and
-`key_overrides` are handled through canonical policy YAML, not through that
-scalar compatibility payload.
+`apadmin` uses the shared full-document policy editor. Policy reads,
+validation, and mutation use canonical policy YAML through
+`get_policy_snapshot`, `validate_policy`, and `replace_policy`; there is no
+parallel scalar policy RPC surface.
 
 These client capabilities describe the product surface for the product
 identity. Backend admin routing is identity-scoped internally; `apadmin`,

@@ -42,15 +42,9 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeGetAdminSettings:   typed("get admin settings", func(s *Session, m *protocol.GetAdminSettingsMessage) { s.HandleGetAdminSettings(m.ID) }),
 	protocol.MsgTypeUpdateAdminSetting: typed("update admin setting", (*Session).HandleUpdateAdminSetting),
 
-	protocol.MsgTypeGetPolicySettings:      typed("get policy settings", func(s *Session, m *protocol.GetPolicySettingsMessage) { s.HandleGetPolicySettings(m.ID) }),
-	protocol.MsgTypeGetPolicySnapshot:      typed("get policy snapshot", (*Session).HandleGetPolicySnapshot),
-	protocol.MsgTypeReplacePolicy:          typed("replace policy", (*Session).HandleReplacePolicy),
-	protocol.MsgTypeValidatePolicy:         typed("validate policy", (*Session).HandleValidatePolicy),
-	protocol.MsgTypeUpdatePolicySetting:    typed("update policy setting", (*Session).HandleUpdatePolicySetting),
-	protocol.MsgTypeUpdatePolicyASAAmounts: typed("update policy asa amounts", (*Session).HandleUpdatePolicyASAAmounts),
-
-	protocol.MsgTypeSearchASAMetadata:  typed("search asa metadata", (*Session).HandleSearchASAMetadata),
-	protocol.MsgTypeResolveASAMetadata: typed("resolve asa metadata", (*Session).HandleResolveASAMetadata),
+	protocol.MsgTypeGetPolicySnapshot: typed("get policy snapshot", (*Session).HandleGetPolicySnapshot),
+	protocol.MsgTypeReplacePolicy:     typed("replace policy", (*Session).HandleReplacePolicy),
+	protocol.MsgTypeValidatePolicy:    typed("validate policy", (*Session).HandleValidatePolicy),
 
 	protocol.MsgTypeListKeys:      typed("list keys", func(s *Session, m *protocol.ListKeysMessage) { s.HandleListKeys(m.ID) }),
 	protocol.MsgTypeGetKeyDetails: typed("get key details", (*Session).HandleGetKeyDetails),

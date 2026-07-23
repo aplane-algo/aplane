@@ -74,7 +74,8 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 					Kind: protocol.MessageKindRequest,
 					Type: protocol.MsgTypeAuth,
 				},
-				Passphrase: protocol.NewSensitiveBytes(string(testPassphrase)),
+				Passphrase:      protocol.NewSensitiveBytes(string(testPassphrase)),
+				ProtocolVersion: testAdminProtocolVersion(),
 			})
 
 			rawAuth := readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthResult)
@@ -141,7 +142,8 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 			Kind: protocol.MessageKindRequest,
 			Type: protocol.MsgTypeAuth,
 		},
-		Passphrase: protocol.NewSensitiveBytes(string(testPassphrase)),
+		Passphrase:      protocol.NewSensitiveBytes(string(testPassphrase)),
+		ProtocolVersion: testAdminProtocolVersion(),
 	})
 
 	rawAuth := readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthResult)

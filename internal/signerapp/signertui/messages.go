@@ -67,26 +67,16 @@ const (
 	MsgTypeSignerLocked        = protocol.MsgTypeSignerLocked
 
 	// Admin settings message types
-	MsgTypeGetAdminSettings          = protocol.MsgTypeGetAdminSettings
-	MsgTypeAdminSettings             = protocol.MsgTypeAdminSettings
-	MsgTypeUpdateAdminSetting        = protocol.MsgTypeUpdateAdminSetting
-	MsgTypeUpdateAdminSettingResult  = protocol.MsgTypeUpdateAdminSettingResult
-	MsgTypeGetPolicySettings         = protocol.MsgTypeGetPolicySettings
-	MsgTypePolicySettings            = protocol.MsgTypePolicySettings
-	MsgTypeGetPolicySnapshot         = protocol.MsgTypeGetPolicySnapshot
-	MsgTypePolicySnapshot            = protocol.MsgTypePolicySnapshot
-	MsgTypeReplacePolicy             = protocol.MsgTypeReplacePolicy
-	MsgTypeReplacePolicyResult       = protocol.MsgTypeReplacePolicyResult
-	MsgTypeValidatePolicy            = protocol.MsgTypeValidatePolicy
-	MsgTypeValidatePolicyResult      = protocol.MsgTypeValidatePolicyResult
-	MsgTypeUpdatePolicySetting       = protocol.MsgTypeUpdatePolicySetting
-	MsgTypeUpdatePolicySettingResult = protocol.MsgTypeUpdatePolicySettingResult
-	MsgTypeUpdatePolicyASAAmounts    = protocol.MsgTypeUpdatePolicyASAAmounts
-	MsgTypeUpdatePolicyASAResult     = protocol.MsgTypeUpdatePolicyASAResult
-	MsgTypeSearchASAMetadata         = protocol.MsgTypeSearchASAMetadata
-	MsgTypeASAMetadataResults        = protocol.MsgTypeASAMetadataResults
-	MsgTypeResolveASAMetadata        = protocol.MsgTypeResolveASAMetadata
-	MsgTypeASAMetadataResult         = protocol.MsgTypeASAMetadataResult
+	MsgTypeGetAdminSettings         = protocol.MsgTypeGetAdminSettings
+	MsgTypeAdminSettings            = protocol.MsgTypeAdminSettings
+	MsgTypeUpdateAdminSetting       = protocol.MsgTypeUpdateAdminSetting
+	MsgTypeUpdateAdminSettingResult = protocol.MsgTypeUpdateAdminSettingResult
+	MsgTypeGetPolicySnapshot        = protocol.MsgTypeGetPolicySnapshot
+	MsgTypePolicySnapshot           = protocol.MsgTypePolicySnapshot
+	MsgTypeReplacePolicy            = protocol.MsgTypeReplacePolicy
+	MsgTypeReplacePolicyResult      = protocol.MsgTypeReplacePolicyResult
+	MsgTypeValidatePolicy           = protocol.MsgTypeValidatePolicy
+	MsgTypeValidatePolicyResult     = protocol.MsgTypeValidatePolicyResult
 
 	// Client displacement message types
 	MsgTypeClientExists    = protocol.MsgTypeClientExists
@@ -160,23 +150,12 @@ type (
 	AdminSettingsMessage                = protocol.AdminSettingsMessage
 	UpdateAdminSettingMessage           = protocol.UpdateAdminSettingMessage
 	UpdateAdminSettingResultMessage     = protocol.UpdateAdminSettingResultMessage
-	GetPolicySettingsMessage            = protocol.GetPolicySettingsMessage
-	PolicySettingsMessage               = protocol.PolicySettingsMessage
 	GetPolicySnapshotMessage            = protocol.GetPolicySnapshotMessage
 	PolicySnapshotMessage               = protocol.PolicySnapshotMessage
 	ReplacePolicyMessage                = protocol.ReplacePolicyMessage
 	ReplacePolicyResultMessage          = protocol.ReplacePolicyResultMessage
 	ValidatePolicyMessage               = protocol.ValidatePolicyMessage
 	ValidatePolicyResultMessage         = protocol.ValidatePolicyResultMessage
-	UpdatePolicySettingMessage          = protocol.UpdatePolicySettingMessage
-	UpdatePolicySettingResultMessage    = protocol.UpdatePolicySettingResultMessage
-	UpdatePolicyASAAmountsMessage       = protocol.UpdatePolicyASAAmountsMessage
-	UpdatePolicyASAResultMessage        = protocol.UpdatePolicyASAAmountsResultMessage
-	SearchASAMetadataMessage            = protocol.SearchASAMetadataMessage
-	ASAMetadataResultsMessage           = protocol.ASAMetadataResultsMessage
-	ResolveASAMetadataMessage           = protocol.ResolveASAMetadataMessage
-	ASAMetadataResultMessage            = protocol.ASAMetadataResultMessage
-	ASAMetadataInfo                     = protocol.ASAMetadataInfo
 )
 
 func CurrentAdminProtocolVersion() ProtocolVersion {

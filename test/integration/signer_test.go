@@ -361,7 +361,7 @@ func TestOperatorApprovalRejectionReturnsForbiddenWithNoSignedOutput(t *testing.
 	token := readSignerToken(t, signerd)
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
-	mustUpdateIPCPolicySetting(t, ipcClient, "reject_asset_close", "false")
+	mustReplaceIPCPolicySetting(t, ipcClient, "reject_asset_close", false)
 
 	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", address)
@@ -445,7 +445,7 @@ func TestPolicyHardRejectSkipsApprovalAndReturnsForbidden(t *testing.T) {
 
 	policyClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer policyClient.Close()
-	mustUpdateIPCPolicySetting(t, policyClient, "reject_foreign_rekey", "true")
+	mustReplaceIPCPolicySetting(t, policyClient, "reject_foreign_rekey", true)
 
 	approvalClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer approvalClient.Close()
@@ -523,7 +523,7 @@ func TestPolicyHardRejectCloseRemainderSkipsApprovalAndReturnsForbidden(t *testi
 
 	policyClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer policyClient.Close()
-	mustUpdateIPCPolicySetting(t, policyClient, "reject_close_remainder", "true")
+	mustReplaceIPCPolicySetting(t, policyClient, "reject_close_remainder", true)
 
 	approvalClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer approvalClient.Close()
@@ -913,7 +913,7 @@ func TestAssetCloseTransferEmitsWarningAndSignsAfterApproval(t *testing.T) {
 
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
-	mustUpdateIPCPolicySetting(t, ipcClient, "reject_asset_close", "false")
+	mustReplaceIPCPolicySetting(t, ipcClient, "reject_asset_close", false)
 
 	sp, err := testnet.GetSuggestedParams()
 	if err != nil {
@@ -1144,7 +1144,7 @@ func TestPolicyHardRejectAssetCloseSkipsApprovalAndReturnsForbidden(t *testing.T
 
 	policyClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer policyClient.Close()
-	mustUpdateIPCPolicySetting(t, policyClient, "reject_asset_close", "true")
+	mustReplaceIPCPolicySetting(t, policyClient, "reject_asset_close", true)
 
 	approvalClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer approvalClient.Close()
@@ -2538,9 +2538,11 @@ func authenticateOrDisplaceIPCClient(ipcClient *transport.IPCClient, passphrase 
 
 		switch base.Type {
 		case protocol.MsgTypeAuthRequired:
+			protocolVersion := protocol.CurrentAdminProtocolVersion()
 			authMsg := protocol.AuthMessage{
-				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAuth},
-				Passphrase:  protocol.NewSensitiveBytes(passphrase),
+				BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuth},
+				Passphrase:      protocol.NewSensitiveBytes(passphrase),
+				ProtocolVersion: &protocolVersion,
 			}
 			if err := ipcClient.WriteJSON(authMsg); err != nil {
 				return fmt.Errorf("failed to send auth message: %w", err)
@@ -2632,36 +2634,8 @@ func mustRejectIPCSignRequest(t *testing.T, ipcClient *transport.IPCClient, requ
 	}
 }
 
-func mustUpdateIPCPolicySetting(t *testing.T, ipcClient *transport.IPCClient, key, value string) {
-	t.Helper()
-
-	respBytes, err := ipcClient.SendAndReceive(protocol.UpdatePolicySettingMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeUpdatePolicySetting,
-			ID:   fmt.Sprintf("policy-%d", time.Now().UnixNano()),
-		},
-		Key:   key,
-		Value: value,
-	}, 10*time.Second)
-	if err != nil {
-		t.Fatalf("failed to update policy setting %s: %v", key, err)
-	}
-
-	var result protocol.UpdatePolicySettingResultMessage
-	if err := json.Unmarshal(respBytes, &result); err != nil {
-		t.Fatalf("failed to parse policy-setting result: %v", err)
-	}
-	if !result.Success {
-		t.Fatalf("policy update %s=%s failed: %s", key, value, result.Error)
-	}
-	if result.Key != key || result.Value != value {
-		t.Fatalf("policy update echoed key/value = %s/%s, want %s/%s", result.Key, result.Value, key, value)
-	}
-}
-
-// mustReplaceIPCPolicySetting sets one top-level policy field through
-// whole-policy YAML replacement, the supported mutation path for YAML-only
-// settings such as reject_clawback that update_policy_setting rejects.
+// mustReplaceIPCPolicySetting sets one top-level policy field through the
+// supported whole-policy YAML replacement path.
 func mustReplaceIPCPolicySetting(t *testing.T, ipcClient *transport.IPCClient, key string, value any) {
 	t.Helper()
 

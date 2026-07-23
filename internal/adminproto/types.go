@@ -189,26 +189,6 @@ type UpdateAdminSettingRequest struct {
 	Value string
 }
 
-// PolicySettings is the admin-domain view of current policy settings.
-type PolicySettings struct {
-	RejectForeignRekey          bool
-	RejectCloseRemainder        bool
-	RejectAssetClose            bool
-	RejectClawback              bool
-	AlwaysReviewWarnings        bool
-	AutoApproveSelfNoOpTransfer bool
-	MaxFeeMicroAlgos            string
-	ReviewAlgoPayments          map[string]string
-	MaxAlgoPayments             map[string]string
-	PolicyNetworks              []string
-	ReviewASAAmounts            map[string]string
-	MaxASAAmounts               map[string]string
-	PolicyASAMetadata           map[string][]ASAMetadataInfo
-	MaxASAAmountsMainnet        string
-	MaxASAAmountsTestnet        string
-	MaxASAAmountsBetanet        string
-}
-
 // PolicyTarget identifies which policy document an admin policy operation uses.
 type PolicyTarget string
 
@@ -265,69 +245,6 @@ type ValidatePolicyResult struct {
 	IdentityID string
 	Code       string
 	Error      string
-}
-
-const (
-	PolicySettingRejectForeignRekey          = "reject_foreign_rekey"
-	PolicySettingRejectCloseRemainder        = "reject_close_remainder"
-	PolicySettingRejectAssetClose            = "reject_asset_close"
-	PolicySettingRejectClawback              = "reject_clawback"
-	PolicySettingAlwaysReviewWarnings        = "always_review_warnings"
-	PolicySettingAutoApproveSelfNoOpTransfer = "auto_approve_self_noop_transfer"
-	PolicySettingMaxFeeMicroAlgos            = "max_fee_microalgos"
-	PolicySettingMaxASAAmountsMainnet        = "max_asa_amounts_mainnet"
-	PolicySettingMaxASAAmountsTestnet        = "max_asa_amounts_testnet"
-	PolicySettingMaxASAAmountsBetanet        = "max_asa_amounts_betanet"
-)
-
-// UpdatePolicySettingRequest is the admin-domain request to change one policy setting.
-type UpdatePolicySettingRequest struct {
-	Key   string
-	Value string
-}
-
-// UpdatePolicyASAAmountsRequest is the admin-domain request to replace network-scoped transfer guards.
-type UpdatePolicyASAAmountsRequest struct {
-	ReviewASAAmounts   map[string]string
-	MaxASAAmounts      map[string]string
-	ReviewAlgoPayments map[string]string
-	MaxAlgoPayments    map[string]string
-	Mainnet            string
-	Testnet            string
-	Betanet            string
-}
-
-type ASAMetadataInfo struct {
-	AssetID  uint64
-	Name     string
-	UnitName string
-	Decimals uint64
-	Source   string
-}
-
-type SearchASAMetadataRequest struct {
-	Network string
-	Query   string
-}
-
-type ASAMetadataResults struct {
-	Network string
-	Query   string
-	Results []ASAMetadataInfo
-	Code    string
-	Error   string
-}
-
-type ResolveASAMetadataRequest struct {
-	Network string
-	AssetID uint64
-}
-
-type ASAMetadataResult struct {
-	Network string
-	Asset   ASAMetadataInfo
-	Code    string
-	Error   string
 }
 
 // GenerateKeyRequest is the admin-domain request to generate a key.

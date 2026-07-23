@@ -130,10 +130,6 @@ func (s signerAdminServices) UpdateAdminSetting(ir *identity.Runtime, req adminp
 	return s.adminApp().UpdateAdminSetting(ir, req)
 }
 
-func (s signerAdminServices) BuildPolicySettings(ir *identity.Runtime) adminproto.PolicySettings {
-	return s.adminApp().BuildPolicySettings(ir)
-}
-
 func (s signerAdminServices) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
 	return s.adminApp().BuildPolicySnapshot(ir, target)
 }
@@ -144,22 +140,6 @@ func (s signerAdminServices) ReplacePolicy(ir *identity.Runtime, req adminproto.
 
 func (s signerAdminServices) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
 	return s.adminApp().ValidatePolicy(ir, req)
-}
-
-func (s signerAdminServices) UpdatePolicySetting(ir *identity.Runtime, req adminproto.UpdatePolicySettingRequest) error {
-	return s.adminApp().UpdatePolicySetting(ir, req)
-}
-
-func (s signerAdminServices) UpdatePolicyASAAmounts(ir *identity.Runtime, req adminproto.UpdatePolicyASAAmountsRequest) error {
-	return s.adminApp().UpdatePolicyASAAmounts(ir, req)
-}
-
-func (s signerAdminServices) SearchASAMetadata(ir *identity.Runtime, req adminproto.SearchASAMetadataRequest) adminproto.ASAMetadataResults {
-	return s.adminApp().SearchASAMetadata(ir, req)
-}
-
-func (s signerAdminServices) ResolveASAMetadata(ir *identity.Runtime, req adminproto.ResolveASAMetadataRequest) adminproto.ASAMetadataResult {
-	return s.adminApp().ResolveASAMetadata(ir, req)
 }
 
 func (s signerAdminServices) ListKeys(ir *identity.Runtime) ([]adminproto.KeyInfo, error) {

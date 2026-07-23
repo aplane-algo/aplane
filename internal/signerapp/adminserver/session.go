@@ -397,7 +397,7 @@ func (s *Session) SetPreboundIdentityID(identityID string) {
 
 func validateAdminProtocolVersion(clientVersion *protocol.ProtocolVersion) (bool, string) {
 	if clientVersion == nil {
-		return true, ""
+		return false, "admin protocol version is required"
 	}
 	if clientVersion.Major != protocol.AdminProtocolVersionMajor {
 		return false, fmt.Sprintf("admin protocol major version mismatch: client=%d server=%d",

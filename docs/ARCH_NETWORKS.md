@@ -214,47 +214,17 @@ Symbol search is intentionally local-cache only. It does not query algod by
 symbol or name. If more than one cached ASA has the same unit name, the client
 must ask the operator to choose by numeric ASA ID.
 
-The guided policy editor exposes the YAML `transfer_policy` route table rather
-than the scalar threshold-map editor. `apadmin` uses the shared editor online
-through the admin protocol; `appolicy` uses it offline. Threshold-map fields
-and their admin protocol messages remain accepted compatibility inputs.
+The guided policy editor exposes the YAML `transfer_policy` route table.
+`apadmin` uses the shared editor online through the admin protocol; `appolicy`
+uses it offline. Threshold-map fields remain part of the YAML policy grammar,
+but have no separate scalar admin RPC.
 
 ## Admin Protocol
 
-Admin IPC uses map-based transfer guard policy shapes:
-
-```json
-{
-  "type": "update_policy_asa_amounts",
-  "review_algo_payments": {
-    "voi_mainnet": "5"
-  },
-  "max_algo_payments": {
-    "voi_mainnet": "10"
-  },
-  "review_asa_amounts": {
-    "voi_mainnet": "123456:1"
-  },
-  "max_asa_amounts": {
-    "voi_mainnet": "123456:5"
-  }
-}
-```
-
-`review_algo_payments` and `max_algo_payments` values are ALGO display-unit
-strings on the wire and are persisted as raw microAlgos. `review_asa_amounts`
-and `max_asa_amounts` values are ASA display-unit strings on the wire and are
-persisted as raw asset units.
-
-The editable transfer policy network list is server-provided. `apsigner` derives it
-from signer `networks.<token>.algod` entries whose `server` value is non-empty, and
-publishes it as `policy_settings.policy_networks`. The admin UI should not
-hard-code `mainnet`, `testnet`, or `betanet`; those tokens appear only when
-configured on the signer.
-
-For compatibility, the protocol also accepts and emits fixed fields for
-`mainnet`, `testnet`, and `betanet` for ASA deny thresholds. New code should
-use the map fields.
+Admin IPC reads, validates, and replaces the complete policy YAML document
+through `get_policy_snapshot`, `validate_policy`, and `replace_policy`.
+Network context tokens remain opaque YAML map keys; the admin UI must not
+hard-code `mainnet`, `testnet`, or `betanet`.
 
 The exact message contracts are documented in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).

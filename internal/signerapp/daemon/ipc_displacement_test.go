@@ -200,7 +200,8 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 			Kind: protocol.MessageKindRequest,
 			Type: protocol.MsgTypeAuth,
 		},
-		Passphrase: protocol.NewSensitiveBytes("wrong-passphrase"),
+		Passphrase:      protocol.NewSensitiveBytes("wrong-passphrase"),
+		ProtocolVersion: testAdminProtocolVersion(),
 	})
 
 	rawAuth := readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthResult)
@@ -294,7 +295,8 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 			Kind: protocol.MessageKindRequest,
 			Type: protocol.MsgTypeAuth,
 		},
-		Passphrase: protocol.NewSensitiveBytes(string(testPassphrase)),
+		Passphrase:      protocol.NewSensitiveBytes(string(testPassphrase)),
+		ProtocolVersion: testAdminProtocolVersion(),
 	})
 
 	rawAuth := readAdminMessageType(t, newClient, newReader, protocol.MsgTypeAuthResult)
