@@ -28,7 +28,7 @@ another merely because two dimensions currently use the same string.
 | **Key type** | What durable kind of account or witness key is this? | `ed25519`, `aplane.falcon1024.v1`, `aplane.corridor.v1` | Stored `key_type`; provider/template definition |
 | **Account authorization type** | What protocol-level mechanism authorizes the account? | native signature, DSA LogicSig, generic LogicSig | Key category and stored key material |
 | **Authorization contract** | Which reusable, versioned on-chain envelope and metadata vocabulary constrain this LogicSig? | `bounded1` | Template `bounded.contract` and durable `bounded_authorization.contract` |
-| **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, timelock, dedicated corridor TEAL | Full key-type provider/template plus behavior parameters |
+| **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, timelock, Corridor composition | Full key-type provider/template plus behavior parameters |
 | **Base key type** | Which private signing primitive produces the account's DSA signature arguments? | `aplane.falcon1024.v1`, `aplane.ed25519.v1` | Stored `base_key_type` and composed provider definition |
 | **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | sentry witness, external contract-admin witness | Embedded public key, durable metadata, and custody-specific message contract |
 | **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `sentry1` | Signer-advertised `signing_flow` |
@@ -78,12 +78,13 @@ Algorand account; the grant model determines who may call an APlane endpoint;
 signer or sentry policy determines whether that permitted call may release a
 signature for the particular transaction.
 
-`bounded1` currently appears in two dimensions: it is both the bounded
-authorization-contract identifier and the signing-flow label advertised by
-bounded keys. Those values are equal by contract, but the dimensions remain
-distinct. The contract identifier selects canonical on-chain and durable
-metadata semantics; the flow label tells the client how to route a request.
-Likewise, `sentry1` is a signing-flow label, while `APLANE_SENTRY_V1` is the
+`bounded1` is always the bounded authorization-contract identifier and is also
+the signing-flow label for bounded profiles that need no online sentry. A
+sentry-enabled bounded profile keeps `contract: bounded1` but advertises the
+distinct `bounded-sentry1` choreography. The contract identifier selects
+canonical on-chain and durable metadata semantics; the flow label tells the
+client how to route a request. Likewise, `sentry1` is a signing-flow label and
+an embedded bounded sentry contract value, while `APLANE_SENTRY_V1` is the
 cryptographic component-message domain used by that flow. Neither is a key
 type.
 
@@ -140,7 +141,7 @@ from the presence of a witness key alone.
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient allowlist | `aplane.falcon1024.v1` | none | `bounded1`; spend/rekey through `/sign` as permitted by the profile |
 | `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient/asset/amount allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
 | `aplane.falcon1024-sentry1024.v1` | DSA LogicSig | dedicated guarded verifier | `aplane.falcon1024.v1` | signer-custodied Falcon sentry witness | `sentry1`; user `/sign/component`, sentry `/sign/component`, then `/sign/assemble` |
-| `aplane.corridor.v1` | DSA LogicSig | dedicated compiled corridor policy | `aplane.falcon1024.v1` | signer-custodied Falcon sentry witness | `sentry1`; component signing followed by guarded assembly |
+| `aplane.corridor.v1` | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist | `aplane.falcon1024.v1` | signer-custodied Falcon sentry on spend; distinct external Falcon admin on rekey | `bounded-sentry1`; `/sign/bounded-component`, sentry `/sign/component`, then `/sign/bounded-assemble` |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL HTLC policy | none | none | empty flow; ordinary LogicSig assembly through `/sign` |
 
 The examples describe the currently implemented architecture. A future change
@@ -199,7 +200,8 @@ DSA LogicSig policy categories are:
   effect and argument contract.
 - **Custom DSA policy**: schema-v1 composed policy authored directly as TEAL.
 - **Dedicated compiled policy**: provider-owned LogicSig policy outside the
-  composed-template schema, such as `aplane.corridor.v1`.
+  composed-template schema, such as the legacy
+  `aplane.falcon1024-sentry1024.v1` guarded verifier.
 
 Schema-v1 custom policy remains a fully supported expert mode. "Expert" is a
 documentation description, not a feature gate, warning requirement, or reduced
@@ -240,7 +242,7 @@ Examples of the composed ontology:
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | none |
 | `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external Falcon witness enrolled as contract admin for rekey |
 | `aplane.falcon1024-sentry1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | signer-custodied Falcon witness enrolled as sentry |
-| `aplane.corridor.v1` | DSA LogicSig | dedicated compiled corridor policy | signer-custodied Falcon witness enrolled as sentry |
+| `aplane.corridor.v1` | DSA LogicSig | Bounded DSA (`bounded1`) with framework Merkle policy | signer-custodied Falcon sentry on spend plus external Falcon contract admin on rekey |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 
 ## Resolution, classification, and behavior
@@ -339,13 +341,10 @@ is the right shape here.
 - Core: `LSigProvider` / `SigningProvider` / `MnemonicProvider`
   (`internal/lsigprovider/provider.go`), `LogicSigDSA`
   (`internal/logicsigdsa/dsa.go`).
-- Guarded-account assembly hooks
+- Dedicated guarded-account assembly hook
   (`internal/signerapp/signing/component_assemble.go`):
   - `ComponentPacker.PackComponentSignatures(user, sentry)` — pack the verified
     component signatures into the opaque blob.
-  - `AssemblyExtraArgsProvider.AssemblyExtraArgs(txn, params)` — append extra
-    LogicSig args computed from the target transaction (corridor's recipient
-    Merkle proof). Providers that don't implement it append nothing.
 
 The assembler resolves the provider, then asks it to behave — no `switch` on key
 type:
@@ -355,8 +354,12 @@ provider := lsigprovider.Get(keyMaterial.Type)        // Resolve
 packer, ok := provider.(ComponentPacker)              // Behave: capability query
 if !ok { /* fail closed */ }
 packed, _ := packer.PackComponentSignatures(u, s)     // Behave: call
-// ... AssemblyExtraArgsProvider queried the same way
 ```
+
+Bounded-sentry assembly does not use a key-type-specific capability hook. It
+reads the durable bounded argument-source contract and dispatches derived
+arguments by the closed `kind` vocabulary; Corridor's Merkle proof is therefore
+a `bounded1` behavior, not a Corridor provider method.
 
 ---
 
@@ -371,7 +374,7 @@ guarded/sentry accounts: a guarded provider's `BaseKeyType` is
 `aplane.falcon1024.v1`, but that is its *component-signing primitive*, not its
 routing authority — the guarded account owns its own keygen, mnemonic-handler
 registration, and metadata under its own family (this is internal handler
-routing only; guarded/corridor accounts still report
+routing only; dedicated guarded accounts still report
 `SupportsMnemonicImport() == false`, i.e. no user mnemonic import). Routing
 metadata by `BaseKeyType` would return Falcon's metadata (wrong signature size) for
 guarded keys. `BaseKeyType` cannot express the delegate-vs-self distinction;

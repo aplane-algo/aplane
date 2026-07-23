@@ -330,10 +330,9 @@ re-check green under TLC at the recorded state counts (2,628 / 64 / 84,096 /
 48 / 196 / 47,304 / 226); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
 re-validated across all 65 invariants (six stale code/line anchors corrected,
 no invariant lost its test); and two code changes since the snapshot were
-reconciled — the third guarded account key type `aplane.corridor.v1` (now named
-in [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md), with its
-recipient-corridor and rekey restrictions scoped out as LogicSig-program/sentry-
-policy semantics) and the plugin `presign-plan` / `pregrouped-signed` group-mode
+reconciled — the then-guarded account key type `aplane.corridor.v1` (since
+migrated to the separately tested `bounded-sentry1` choreography) and the plugin
+`presign-plan` / `pregrouped-signed` group-mode
 flows (named in Non-Goals; `presign-plan` plugin slots are modeled as foreign
 slots in [FORMAL_TXN_PLANNING_MODEL.md](FORMAL_TXN_PLANNING_MODEL.md)). No
 invariant changed; coverage milestones (M3 companion models, the unmodeled

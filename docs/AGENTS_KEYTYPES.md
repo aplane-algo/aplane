@@ -27,10 +27,9 @@ custom policy. Shipped templates, compiled providers, and installed template key
 types are compatibility boundaries. Changing the behavior of an existing key
 type such as `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, or
 `aplane.falcon1024-allowlist-alock.v1` can break existing keys and backups. The
-guarded sentry and corridor providers
-(`aplane.falcon1024-sentry1024.v1`, `aplane.corridor.v1`) are Go-defined
-compiled providers, not authorable as YAML; the bundled
-`aplane.falcon1024-allowlist.v2` Merkle allowlist is likewise a built-in.
+guarded sentry provider (`aplane.falcon1024-sentry1024.v1`) is Go-defined.
+`aplane.corridor.v1` and `aplane.falcon1024-allowlist.v2` are shipped,
+versioned YAML templates and remain compatibility boundaries.
 
 Installing a user-loaded template with `apstore template import` requires the
 identity master passphrase through the local daemon IPC session. An AI
@@ -124,8 +123,9 @@ For bounded1 work, read
   runtime-argument, signer-derived-argument, and path-specific slot layout;
   signing, inventory, backup, and restore use that stored snapshot rather than
   the installed YAML;
-- `/keys` and `/keytypes` advertise `signing_flow: bounded1`; every client must
-  dispatch empty, `sentry1`, and `bounded1` explicitly and reject unknown flows;
+- `/keys` and `/keytypes` advertise `signing_flow: bounded1` or
+  `bounded-sentry1` from durable metadata; every client must dispatch empty,
+  `sentry1`, `bounded1`, and `bounded-sentry1` explicitly and reject unknown flows;
 - the implementation manifest and independent protocol inventory remain
   separate completeness controls; and
 - schema v1 rejects `bounded`, while schema v2 rejects unknown and duplicate

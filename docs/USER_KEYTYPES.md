@@ -23,8 +23,9 @@ authorities:
 
 DSA LogicSigs may use a **plain** signature-only program, a **bounded1** policy,
 an expert-mode **custom** schema-v1 composed policy, or a dedicated compiled
-provider policy such as Corridor. Sentry guarding is an additional authority,
-not a DSA policy category.
+provider policy. Sentry guarding is an additional authority, not a DSA policy
+category. Corridor is a bounded1 template that composes this sentry authority;
+it is not a dedicated compiled policy.
 
 | Auxiliary authority type | Meaning |
 |---|---|
@@ -126,8 +127,14 @@ Enable a library-visible compiled provider:
 apstore -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
 ```
 
-Other library-visible compiled providers include the guarded account key types
-`aplane.falcon1024-sentry1024.v1` and `aplane.corridor.v1`.
+Another library-visible compiled provider is the guarded account key type
+`aplane.falcon1024-sentry1024.v1`. Corridor is installed through the template
+library instead:
+
+```bash
+apstore -d $APSIGNER_DATA template import library/templates/aplane.corridor.v1.yaml
+```
+
 `aplane.ed25519.v1` is the LogicSig-wrapped Ed25519 provider; native
 `ed25519` remains default-enabled and does not need this activation step.
 After activation, `aplane.ed25519.v1` also supports mnemonic import.

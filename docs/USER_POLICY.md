@@ -163,10 +163,9 @@ Network-specific address sets are not accepted for rekey policy. The target
 transaction must be a pure 0 ALGO self-payment with non-zero `RekeyTo` and no
 close remainder.
 
-For `aplane.corridor.v1`, ordinary transfers remain bounded on-chain by the
-compiled recipient corridor. Rekey targets are not checked against that
-corridor; they rely on sentry key secrecy and the effective
-`rekey_policy.allowed` edges.
+`rekey_policy` applies to dedicated `sentry1` guarded accounts. Corridor v1's
+sentry is spend-only; its pure rekey instead requires the separate offline
+contract-admin witness and does not contact the sentry.
 
 ## Basic Example
 

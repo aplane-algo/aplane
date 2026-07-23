@@ -28,8 +28,10 @@ coverage.
 | `GET` | `/keytypes` | yes | no (but template-backed types appear only after unlock) |
 | `POST` | `/sign` | yes | yes |
 | `POST` | `/sign/bounded-admin` | yes | yes |
+| `POST` | `/sign/bounded-component` | yes | yes |
 | `POST` | `/sign/component` | yes | yes |
 | `POST` | `/sign/assemble` | yes | yes |
+| `POST` | `/sign/bounded-assemble` | yes | yes |
 | `POST` | `/sign/cancel` | yes | no |
 | `POST` | `/plan` | yes | yes |
 | `POST` | `/admin/generate` | yes | yes |
@@ -38,7 +40,8 @@ coverage.
 
 Method enforcement:
 
-- `/sign`, `/sign/bounded-admin`, `/sign/component`, `/sign/assemble`, `/sign/cancel`, `/plan`,
+- `/sign`, `/sign/bounded-admin`, `/sign/bounded-component`, `/sign/component`,
+  `/sign/assemble`, `/sign/bounded-assemble`, `/sign/cancel`, `/plan`,
   `/status`, `/admin/generate`,
   `/admin/sentries/sync`, and `/admin/keys` enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
@@ -86,8 +89,10 @@ Timeout behavior:
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
   mutations including `/admin/sentries/sync` 60 seconds, `/plan` 60 seconds,
-  `/sign/component` 2 minutes for sentry-role requests, `/sign/assemble` 2
-  minutes, and `/sign` based on approval wait. User-role `/sign/component` requests can
+  `/sign/component` 2 minutes for sentry-role requests, `/sign/assemble` and
+  `/sign/bounded-assemble` 2 minutes, and `/sign` or
+  `/sign/bounded-component` based on approval wait. User-role
+  `/sign/component` requests can
   block on operator approval and use the same approval-aware deadline as
   `/sign`.
 - caller-provided contexts with earlier deadlines are preserved.
@@ -150,8 +155,10 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
   It never loads a contract-admin private key and never returns the partial
   through `signed[]`.
 - Apsigner has no simulation endpoint or simulation request mode. Full
-  simulation obtains an executable group through ordinary `/sign` and, for
-  guarded groups, ordinary `/sign/component` and `/sign/assemble`. The client
+  simulation obtains an executable group through ordinary `/sign`; guarded
+  groups use `/sign/component` and `/sign/assemble`, while bounded-sentry
+  groups use `/sign/bounded-component`, `/sign/component`, and
+  `/sign/bounded-assemble`. The client
   then sends the exact returned group to its configured algod simulate
   endpoint. Apsigner cannot distinguish this from a request whose result will
   be submitted, so policy, review, approval, signing, and audit semantics are
@@ -182,7 +189,9 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 - server-added dummy slots appear as appended signed dummy transactions.
 - Admin-key bounded operations are rejected with `code:"bounded_admin_required"`;
   pure spends and explicitly spending-key-authorized rekeys return complete
-  base-argument LogicSigs from `/sign`.
+  base-argument LogicSigs from `/sign` only when no sentry is required.
+- Sentry-enabled bounded spends are rejected as a bad request; they must use
+  the `bounded-sentry1` choreography below.
 
 `/sign/bounded-admin` request (`signerapi.BoundedAdminRequest`) carries optional
 `request_id`, `operation:"rekey"`, and shared `requests[]`. V1 requires exactly
@@ -203,6 +212,24 @@ foreign, or unrelated signable entries. The signer may append budget dummies.
 The response is not submission-ready. `message_hex` and every other derived
 authorization field must be recomputed by the completing helper from the
 finalized transaction, durable metadata, and program contract.
+
+`/sign/bounded-component` request (`signerapi.BoundedComponentRequest`) carries
+optional `request_id` and the shared `requests[]`. It plans and finalizes one
+bounded-sentry group, applies signer policy and operator approval, and releases
+base signature arguments only for sentry-enabled pure spends. The response
+contains `request_id`, finalized TX-prefixed `transactions[]`, optional
+`mutations`, and `components[]`. Each component carries `target_index`,
+`bounded_account`, `base_signatures[]`, canonical `runtime_args`, an
+`assembly_receipt`, and `signature_scheme`.
+
+The Falcon-signed assembly receipt commits to the bounded account, target TxID,
+normalized durable bounded metadata, and sorted runtime arguments under
+`APLANE_BOUNDED_SENTRY_ASSEMBLY_V1`. It prevents a client from transplanting a
+released base component into a different account, metadata instance, or
+runtime-argument set. The client must complete this user-side call before it
+requests the sentry signature.
+Bounded-component request IDs are correlation fields only and are not live
+`/sign/cancel` handles.
 
 `/sign/component` request (`signerapi.ComponentSignRequest`):
 
@@ -268,6 +295,23 @@ If the request omits `request_id`, apsigner returns a generated opaque ID.
 Assembly request IDs are response/audit correlation fields only and are not
 cancelable through `/sign/cancel`.
 
+`/sign/bounded-assemble` request (`signerapi.BoundedAssemblyRequest`) carries
+optional `request_id`, the frozen `group_bytes_hex[]`, `targets[]`, and optional
+guarded-format `passthrough[]`. Each target carries `target_index`,
+`bounded_account`, the exact `base_signatures[]`, `runtime_args`, and
+`assembly_receipt` returned by `/sign/bounded-component`, plus the sentry
+signature returned by sentry-role `/sign/component`; source request IDs are
+optional correlation fields. The response is
+`signerapi.BoundedAssemblyResponse` with `request_id` and aligned
+`signed_group[]`.
+
+Bounded assembly reloads durable metadata, checks it against the receipt,
+verifies the base and sentry signatures against the frozen TxID, derives only
+declared signer-generated arguments, validates every source/path mask and
+maximum, verifies the LogicSig address and authorizer, and returns the final
+submittable bytes. Contract-admin paths never use this endpoint or contact the
+sentry.
+
 `/sign/cancel` request (`signerapi.CancelSignRequest`):
 
 - `request_id`
@@ -281,9 +325,9 @@ cancelable through `/sign/cancel`.
 `/sign/cancel` withdraws a live synchronous `/sign` request. It is idempotent
 for client behavior. A valid, authenticated cancel request returns `200` with
 `success:true`; cancellation miss is represented in `state`, not as an HTTP
-error. `/sign/component` and `/sign/assemble` request IDs are not live cancel
-handles in the current MVP and return `not_found` if supplied to
-`/sign/cancel`.
+error. `/sign/component`, `/sign/assemble`, `/sign/bounded-component`, and
+`/sign/bounded-assemble` request IDs are not live cancel handles and return
+`not_found` if supplied to `/sign/cancel`.
 
 Cancel response states:
 
@@ -332,12 +376,15 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - `count`
 - `keys[]` with `address`, `public_key_hex`, `key_type`
 - optional `signing_flow`: explicit signing choreography label. `sentry1`
-  selects guarded component signing, `bounded1` selects transaction-aware
-  LogicSig routing, and empty means ordinary `/sign`. Clients dispatch these
-  cases explicitly and fail closed on labels they do not implement.
+  selects legacy guarded component signing, `bounded1` selects bounded routing
+  without an online sentry, `bounded-sentry1` selects the user-first bounded
+  component/sentry/assembly flow, and empty means ordinary `/sign`. Clients
+  dispatch these cases explicitly and fail closed on labels they do not
+  implement.
 - optional `sentry_component_key_type`: the sentry component key type used by
-  this key's `signing_flow` (e.g. for `sentry1`)
-- optional `bounded_authorization`: present for `signing_flow: bounded1`.
+  this key's `signing_flow` (for `sentry1` or `bounded-sentry1`)
+- optional `bounded_authorization`: present for `signing_flow: bounded1` and
+  `bounded-sentry1`.
   It contains `contract`, `base_signature_arg_layout`,
   `spend_effects`, `max_fee`, `admin_operations` (including each operation's
   `policy_gate`), `runtime_args`, `derived_args`, the path-specific

@@ -37,7 +37,7 @@ included as normal user-account operations.
 | `aplane.falcon1024-allowlist-alock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-sentry1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| `aplane.corridor.v1` | C | C | C | Y | C | N | N | N | N | N | C |
+| `aplane.corridor.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
 
 ## Capability Columns
@@ -87,18 +87,14 @@ included as normal user-account operations.
   sentry component signature is separate from this table: current sentry
   authorization is transfer-route based, rejects non-transfer sentry targets,
   and rejects rekey by default.
-- `aplane.corridor.v1` also requires guarded signing assembly, but unlike the
-  plain guarded providers its on-chain LogicSig restricts spending to a
-  recipient corridor. After both the user and sentry component signatures
-  verify, `pay` and `axfer` are allowed only when the receiver is self or a
-  recipient proven with a signer-generated 512-byte fixed-depth Merkle proof
-  against the root derived from the key-file recipient list; close destinations
-  must be zero or the just-validated receiver. Clawback-shaped `axfer`
-  (non-zero `AssetSender`) is denied, and non-transfer transaction types are
-  rejected. Rekey is allowed only as a pure 0-ALGO self-payment carrying the
-  rekey, and the sentry's off-chain rekey policy decides whether a specific
-  sender → rekey-target edge is authorized before issuing the sentry component
-  signature.
+- `aplane.corridor.v1` is a bounded-sentry template. Its on-chain LogicSig
+  requires the Falcon spending signature and sentry signature for every spend,
+  then permits `pay` and `axfer` only when the receiver is self or is proven by
+  a signer-derived 512-byte fixed-depth Merkle proof against the key-file
+  recipient list. Close and clawback fields and non-transfer transaction types
+  are rejected. Rekey is only the bounded pure 0-ALGO self-payment form and
+  requires the distinct offline Falcon contract-admin signature; the sentry is
+  forbidden on that path.
 - `aplane.htlc.v1` allows claim paths to the configured recipient before
   timeout with the configured preimage, refund paths to the configured refund
   address after timeout, and approved ASA opt-in for configured

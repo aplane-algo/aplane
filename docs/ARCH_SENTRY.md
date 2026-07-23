@@ -25,14 +25,14 @@ transaction bytes.
 
 ## Roles And Boundaries
 
-Bounded contract administration is not a sentry role.
-Bounded accounts advertise the distinct `bounded1` signing flow, use no sentry
-key discovery, and never call `/sign/component`, `/sign/assemble`, or the
-guarded flow. Apsigner produces a spending partial through
-`/sign/bounded-admin`; the separately held `.wit` authority is
-applied by `aprekey`. Both roles use the witness key form, but the
-custodians expose disjoint signature domains. An individual keypair should
-never be enrolled in both roles.
+Bounded contract administration is not a sentry role. A bounded profile may
+independently declare a sentry spend gate and an external contract-admin rekey
+authority. The former uses the `bounded-sentry1` online flow and a
+signer-custodied `.sen` witness; the latter uses `/sign/bounded-admin`,
+`aprekey`, and a separately held `.wit` artifact without contacting a sentry.
+Both authorities use the witness key form, but their custody and signature
+domains are disjoint. An individual keypair should never be enrolled in both
+roles.
 
 Every signer data root has one root `node.yaml` role:
 
@@ -95,29 +95,18 @@ They name both the account DSA and the required sentry DSA.
 Current guarded account key types:
 
 - `aplane.falcon1024-sentry1024.v1`
-- `aplane.corridor.v1`
 
 A guarded account key file stores the resolved sentry public key and embeds
 that same public key in its LogicSig bytecode. Generation may accept a public
 Sentry reference by Witness Key ID, but the durable guarded key stores the
 resolved public key.
 
-`aplane.corridor.v1` is always Falcon-1024 for both the user component key and
-the sentry component key. In addition to `sentry_public_key`, its key file
-stores `recipients`, an `address[]` creation parameter compiled into a Merkle
-root in the LogicSig. During `/sign/assemble`, the signer appends the recipient
-Merkle proof as LogicSig arg 2 for non-self `pay` and `axfer` targets. Pure
-0 ALGO self-payment rekeys use no proof; they are authorized by sentry
-`rekey_policy` before the sentry component signature is issued.
-
-This is an intentional split in enforcement boundaries. Corridor transfers
-have an on-chain floor: even if both the user component key and sentry component
-key are compromised, value can move only to recipients in the compiled Merkle
-root. Corridor rekeys are different: the LogicSig enforces only the pure rekey
-transaction shape, while the allowed rekey target is authorized off-chain by
-the sentry key plus sentry `rekey_policy`. A compromised sentry key with a
-matching user component signature can therefore authorize any target that the
-effective sentry policy permits.
+`aplane.corridor.v1` is not a dedicated guarded key-type class. It is an
+optional schema-v2 composed template whose durable metadata combines the
+`bounded1` authorization contract, the `sentry1` spend gate, a framework Merkle
+recipient policy, and an external-admin pure rekey. It therefore advertises
+`signing_flow: bounded-sentry1`, not `sentry1`, and is discovered from metadata
+rather than a key-type switch. See [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md).
 
 Guarded account identity is the guarded account `key_type`, not the base
 signing primitive. The stored `base_key_type` names the private signing
@@ -126,13 +115,19 @@ does not make the base provider responsible for guarded metadata, creation
 parameters, TEAL, sentry reference resolution, or final LogicSig argument
 assembly.
 
-Guarded accounts and sentry keys are never signed through raw
+Dedicated guarded accounts and sentry keys are never signed through raw
 `/sign`:
 
 - guarded account keys use `/sign/component` with role `user`, then
   `/sign/assemble`,
 - sentry keys use `/sign/component` with role `sentry`,
 - ordinary `/sign` rejects all guarded account key types and sentry key types.
+
+Sentry-enabled bounded spends are also rejected by ordinary `/sign`. They use
+`/sign/bounded-component` for the approved base component,
+sentry-role `/sign/component` for the witness signature, and
+`/sign/bounded-assemble` for source-aware final assembly. Their external-admin
+rekey path remains `/sign/bounded-admin` and never contacts the sentry.
 
 This preserves the two-party invariant: a guarded account requires both a user
 component signature and a sentry component signature. The endpoint split is
@@ -249,11 +244,12 @@ hex.
 
 Runtime guarded-send routing works like this:
 
-1. Signer inventory labels the guarded account key with
-   `signing_flow: sentry1`, its `sentry_component_key_type`, and the required
-   sentry public key. The client routes on the flow label (key-type strings
-   are opaque to the client) and fails fast on flow labels it does not
-   implement.
+1. Signer inventory labels a dedicated guarded account with
+   `signing_flow: sentry1`, or a sentry-enabled bounded account with
+   `signing_flow: bounded-sentry1`. Both expose their
+   `sentry_component_key_type` and required sentry public key. The client routes
+   on the flow label (key-type strings are opaque to the client) and fails fast
+   on flow labels it does not implement.
 2. The client builds an in-memory map from endpoint `published_sentries`.
 3. The client selects the sentry endpoint that advertises that public key.
 4. Before requesting a sentry component signature, the client verifies the
@@ -296,6 +292,27 @@ The submit flow is:
 8. Route the exact assembled group to algod submission or client-side
    simulation.
 
+## Bounded-Sentry Transaction Flow
+
+For `bounded-sentry1`, the client uses a distinct user-first choreography:
+
+1. Resolve the bounded target from `signing_flow` and durable inventory.
+2. Send the group to `/sign/bounded-component`. The signer finalizes grouping
+   and fees, runs bounded classification, policy, and operator approval, then
+   returns frozen transactions, base signature args, runtime args, and an
+   assembly receipt.
+3. Route those exact frozen transactions to the sentry endpoint and request a
+   sentry-role `/sign/component` signature.
+4. Return the base component, receipt, sentry signature, and exact group to the
+   user signer through `/sign/bounded-assemble`.
+5. The signer verifies all sources, derives declared Merkle proofs, constructs
+   the metadata-declared argument layout, and returns the executable group.
+
+The client never asks the sentry first. It rejects a group that mixes
+`sentry1` and `bounded-sentry1` targets because those flows have distinct user
+component and assembly contracts. Non-target positions are carried as exact
+passthrough signed bytes in the final assembly request.
+
 ## Guarded Simulation
 
 Guarded simulation follows the complete flow above. The user signer runs
@@ -319,15 +336,14 @@ LogicSig budget.
 
 ## Assembly Invariants
 
-Assembly is the main server-side backstop for guarded signing. It verifies:
+Assembly is the main server-side backstop for sentry signing. Dedicated guarded
+assembly verifies:
 
 - the requested guarded key is a local guarded account key,
 - the user component signature verifies for role `user` and the target txid,
 - the sentry component signature verifies for role `sentry` and the target
   txid against the sentry public key embedded in the guarded account key,
 - packed LogicSig arguments match the guarded template's expected layout,
-- provider-generated LogicSig arguments, such as corridor Merkle proofs, match
-  the guarded account key type and target transaction,
 - the resulting LogicSig address equals the guarded account,
 - passthrough signed bytes match the canonical transaction IDs,
 - when `txn.Sender != guarded_account`, the signed transaction carries
@@ -336,6 +352,13 @@ Assembly is the main server-side backstop for guarded signing. It verifies:
 These checks are safety-relevant. Supporting guarded authorizers is not a
 loosening of the two-party invariant; it replaces a sender-equality shortcut
 with explicit authorizer semantics.
+
+Bounded-sentry assembly additionally verifies the spending-key assembly
+receipt, equality of planned and loaded durable metadata, the frozen base
+argument layout, the sentry slot and path mask, every runtime and derived
+argument source, and the final bounded LogicSig address. It derives Merkle
+proofs from stored public parameters; clients cannot supply a derived or sentry
+slot through ordinary LogicSig arguments.
 
 ## Sentry Policy
 
@@ -356,13 +379,13 @@ mechanism produced the user component signature.
 Sentry transfer policy is a positive authorization surface. Supported target
 movements include direct transfers that policy routing can evaluate. Target
 shapes that cannot be represented as supported sentry movements fail closed.
-For rekeys, `reject_rekey:true` remains a coarse deny-all switch. If it is not
-set, a non-zero `RekeyTo` is authorized only when the transaction is a pure
-0 ALGO self-payment and `rekey_policy.allowed` contains a matching
-sender-to-target edge. Missing `rekey_policy` still fails closed.
-Unlike corridor transfer destinations, rekey targets are not constrained by the
-on-chain recipient Merkle root; they rest on sentry key secrecy and the
-sentry-domain `rekey_policy`.
+For dedicated `sentry1` rekeys, `reject_rekey:true` remains a coarse deny-all
+switch. If it is not set, a non-zero `RekeyTo` is authorized only when the
+transaction is a pure 0 ALGO self-payment and `rekey_policy.allowed` contains a
+matching sender-to-target edge. Missing `rekey_policy` still fails closed.
+Bounded sentry v1 deliberately gates spends only; its spending-key and
+external-admin rekey paths forbid the sentry slot and do not evaluate sentry
+rekey policy.
 
 See [ARCH_POLICY.md](ARCH_POLICY.md) for the rule inventory, domain-specific
 schema constraints, route behavior, and reject/review/approve mapping.
@@ -460,23 +483,26 @@ Primary packages and files:
 - `internal/sentry/verify`: component signature verification (signer-side
   only).
 - `internal/sentry/sentryrefs`: public sentry reference catalog.
-- `internal/signerapp/signing`: component request planning, sentry policy
+- `internal/signerapp/signing`: component and bounded-component planning, sentry policy
   evaluation, signer-domain approval gates for user components (`gate.go`,
   `component_gate.go`), user/sentry component signing, assembly, and `/sign`
   rejection gates.
 - `internal/signerapp/rest`: REST service methods backing `/sign/component`,
-  `/sign/assemble`, `/keys`, `/keytypes`, and
+  `/sign/assemble`, `/sign/bounded-component`, `/sign/bounded-assemble`,
+  `/keys`, `/keytypes`, and
   `/admin/sentries/sync`.
 - `internal/signerapp/daemon`: HTTP runtime (`http_runtime.go`) that registers
   these routes on the signer mux and dispatches them to the `rest` service
   methods.
-- `internal/engine`: guarded transaction orchestration and sentry endpoint
-  resolution.
+- `internal/engine`: guarded and bounded-sentry transaction orchestration and
+  sentry endpoint resolution.
 - `internal/config`: endpoint registry parsing and derived sentry endpoint map.
 - `internal/apshellapp`: endpoint commands and sentry discovery workflows.
 - `lsig/falcon1024_guarded`: guarded LogicSig provider and template behavior.
-- `lsig/corridor`: always-sentry corridor LogicSig provider requiring both a
-  user component signature and a Falcon-1024 sentry signature.
+- `lsig/composeddsa`: optional bounded sentry composition and framework-owned
+  fixed/Merkle Layer-3 policies.
+- `library/templates/aplane.corridor.v1.yaml`: the canonical optional Corridor
+  profile source.
 - `cmd/apstore/sentry.go`: public sentry export/import/list/show/remove.
 - `cmd/appolicy`: signer-to-sentry policy conversion and offline validation.
 

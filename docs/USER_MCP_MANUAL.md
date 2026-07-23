@@ -183,10 +183,10 @@ component role, while standalone `.wit` instances may serve contract admin.
 | `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | bundled, installed+enabled on new identities |
 | `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | optional template |
 | `aplane.falcon1024-allowlist-alock.v1` | bounded dsa_lsig (admin-protected rekey) | optional template |
+| `aplane.corridor.v1` | bounded-sentry dsa_lsig (Merkle spend corridor, admin-protected rekey) | optional template |
 | `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | optional template |
 | `aplane.htlc.v1` | generic_lsig | optional template |
 | `aplane.falcon1024-sentry1024.v1` | guarded dsa_lsig | library-visible |
-| `aplane.corridor.v1` | guarded corridor dsa_lsig | library-visible |
 | `aplane.witness-falcon1024.v1` | witness key | sentry node `.sen` custody or external `.wit` custody |
 
 **Always call `keytypes` to see what the connected signer actually exposes** —

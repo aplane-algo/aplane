@@ -31,7 +31,8 @@ a current-format key.
 Bounded1 is the framework-enforced execution contract used by every bundled
 composed DSA template. Read [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before
 changing schema-v2 composed templates, transaction-effect classification,
-argument slots, Falcon contract-admin signing, or `signing_flow: bounded1`.
+argument slots, Falcon contract-admin signing, or the `bounded1` /
+`bounded-sentry1` signing flows.
 Admin-capable account files contain the spending key and immutable public
 contract-admin metadata; private admin material exists only in the external
 `.wit` artifact. Never copy that private key into account
@@ -108,8 +109,8 @@ means unsalted, explicit `derivation_version: 1` means generated marker,
 explicit `derivation_version: 2` means trailing dead-code `bytecblock`,
 `aplane.falcon1024.v1` uses the Algorand Foundation reference-compatible fixed
 `bytecblock` preamble, and `aplane.ed25519.v1` uses a fixed `bytecblock`
-preamble, while the guarded sentry and corridor providers
-(`aplane.falcon1024-sentry1024.v1`, `aplane.corridor.v1`) use the
+preamble, while the dedicated guarded sentry provider
+(`aplane.falcon1024-sentry1024.v1`) uses the
 stack-neutral `pushbytes` marker preamble
 (`lsigsalt.StylePushbytes`). User template TEAL cannot choose salt style, must remain relocatable,
 and must not depend on absolute constant-block layout or numeric `bytec`/`intc`
@@ -163,14 +164,13 @@ Go-defined key types:
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | default-enabled | `lsig/falcon1024/v1/standard.go` |
 | `aplane.witness-falcon1024.v1` | Witness key (sentry custody or external contract-admin custody) | Go-defined | default-enabled on sentry nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.falcon1024-sentry1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
-| `aplane.corridor.v1` | Guarded-account DSA LogicSig provider with recipient corridor and sentry-authorized rekey path | Go-defined | library-visible | `lsig/corridor` |
 | `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ed25519lsig` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: `ed25519`, `aplane.falcon1024.v1`, and
 `aplane.witness-falcon1024.v1` are default-enabled, while
-`aplane.falcon1024-sentry1024.v1`, `aplane.corridor.v1`, and
+`aplane.falcon1024-sentry1024.v1` and
 `aplane.ed25519.v1` are library-visible and not available for generation until
 the current identity enables them from the library. `aplane.ed25519.v1` is the Ed25519
 LogicSig DSA provider, distinct from the native `ed25519` signing key. See
@@ -226,6 +226,7 @@ Bundled YAML templates, if installed:
 | `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
 | `aplane.falcon1024-allowlist-alock.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-allowlist-alock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist-alock.v1.{json,template}` |
 | `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
+| `aplane.corridor.v1` | Bounded1 composed DSA template with sentry-gated spend | `apstore template import library/templates/aplane.corridor.v1.yaml` | `identities/<identity>/keytypes/aplane.corridor.v1.{json,template}` |
 
 These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed into

@@ -13,6 +13,7 @@ Before making architectural, protocol, storage, or refactor-sensitive changes, r
 - `docs/ARCH_NETWORKS.md`: network context tokens, genesis-hash mapping, and network-scoped policy behavior
 - `docs/ARCH_SENTRY.md`: guarded signing and sentry node architecture, sentry keys, endpoint routing, and assembly invariants
 - `docs/ARCH_BOUNDED_DSA.md`: bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
+- `docs/ARCH_CORRIDOR.md`: Corridor v1 composition, custody roles, bounded-sentry choreography, close behavior, and compiler budgets
 
 Before generating or modifying key types or LogicSig templates, also read:
 
@@ -322,6 +323,7 @@ See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility detai
 - `ARCH_POLICY.md`: Current signer policy verdict model and rule inventory
 - `ARCH_NETWORKS.md`: Network context token and genesis-hash mapping architecture
 - `ARCH_SENTRY.md`: Guarded signing and sentry node architecture
+- `ARCH_CORRIDOR.md`: Corridor v1 bounded-sentry profile architecture
 - `ARCH_APP_INTERACTION.md`: App interaction, app-local vs signer-managed action boundaries, and token/caller model
 - `ARCH_LSIG_PROVIDER.md`: LogicSig provider, template, salting, and registration architecture
 - `ARCH_PLUGINS.md`: Plugin system architecture
