@@ -140,3 +140,13 @@ func TestBoundedAdminRequiredEmitsContractedCode(t *testing.T) {
 		t.Fatalf("HTTPStatus() = %d, want 400", err.HTTPStatus())
 	}
 }
+
+func TestBoundedSentryRequiredEmitsContractedCode(t *testing.T) {
+	err := boundedSentryRequired()
+	if err.Code() != signerapi.ErrCodeBoundedSentryRequired {
+		t.Fatalf("Code() = %q, want %q", err.Code(), signerapi.ErrCodeBoundedSentryRequired)
+	}
+	if err.HTTPStatus() != 400 {
+		t.Fatalf("HTTPStatus() = %d, want 400", err.HTTPStatus())
+	}
+}

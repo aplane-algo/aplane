@@ -320,7 +320,7 @@ func TestBoundedSpendingRekeyCanRequireLayer3(t *testing.T) {
 	}
 }
 
-func TestBoundedSentrySpendingRekeyBypassesSentryGate(t *testing.T) {
+func TestBoundedSentryRejectsSpendingKeyAuthorizedRekey(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
 		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
 		AdminOperations: []AdminOperationSpec{{
@@ -332,20 +332,11 @@ func TestBoundedSentrySpendingRekeyBypassesSentryGate(t *testing.T) {
 		},
 	}
 	provider := newBoundedTestProvider(profile)
-	teal, err := provider.GenerateTEAL([]byte{1}, map[string]string{
+	_, err := provider.GenerateTEAL([]byte{1}, map[string]string{
 		BoundedSentryPublicKeyParameter: strings.Repeat("42", boundedmeta.SentryPublicKeySizeV1),
 	})
-	if err != nil {
-		t.Fatalf("GenerateTEAL() error = %v", err)
-	}
-	rekey := strings.Index(teal, boundedRekeyLabel+":")
-	spend := strings.Index(teal, boundedSpendLabel+":")
-	layer3 := strings.Index(teal, boundedLayer3Label+":")
-	if rekey < 0 || spend <= rekey || layer3 <= spend {
-		t.Fatalf("bounded sentry regions are out of order:\n%s", teal)
-	}
-	if !strings.Contains(teal[rekey:spend], "b "+boundedLayer3Label) || strings.Contains(teal[rekey:spend], "b "+boundedSpendLabel) {
-		t.Fatalf("spending-key rekey does not bypass sentry gate:\n%s", teal[rekey:spend])
+	if err == nil || !strings.Contains(err.Error(), "do not support spending-key-authorized rekey") {
+		t.Fatalf("GenerateTEAL() error = %v, want bounded-sentry spending-rekey rejection", err)
 	}
 }
 

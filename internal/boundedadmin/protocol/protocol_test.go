@@ -131,21 +131,31 @@ func TestRequestHashGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = "ab6db6b741e03ed790b8c32821343f147a7f8be230a4437ab4300ab62b56cd17"
+	const want = "1bf9fde102002de2f7efab179fed6b609e1fff65477618315852010b00a95507"
 	if value := fmt.Sprintf("%x", got); value != want {
 		t.Fatalf("RequestHash() = %s, want %s", value, want)
 	}
 }
 
+func TestNewRequestUsesCurrentSchema(t *testing.T) {
+	request, err := NewRequest(testRequestPayload())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Schema != RequestSchemaV2 {
+		t.Fatalf("NewRequest() schema = %q, want %q", request.Schema, RequestSchemaV2)
+	}
+}
+
 func TestValidateRequestRejectsObsoleteSchema(t *testing.T) {
-	err := ValidateEnvelope(Request{Schema: "aplane.governed-rekey-request.v1"})
+	err := ValidateEnvelope(Request{Schema: "aplane.bounded-admin-request.v1"})
 	if ErrorCode(err) != ErrorUnsupportedRequestSchema {
 		t.Fatalf("ErrorCode() = %q, want %q", ErrorCode(err), ErrorUnsupportedRequestSchema)
 	}
 }
 
 func TestDecodeRequestAndResponseAreStrictAndBounded(t *testing.T) {
-	if _, err := DecodeRequest(strings.NewReader(`{"schema":"aplane.bounded-admin-request.v1","unknown":true}`)); err == nil || !strings.Contains(err.Error(), "unknown field") {
+	if _, err := DecodeRequest(strings.NewReader(`{"schema":"aplane.bounded-admin-request.v2","unknown":true}`)); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("DecodeRequest() error = %v, want unknown-field rejection", err)
 	}
 	if _, err := DecodeResponse(bytes.NewReader(make([]byte, MaxResponseBytes+1))); err == nil {

@@ -75,6 +75,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `cache_refresh` | store mutated but the signer key cache failed to refresh | `500` |
 | `internal` | unexpected server-side failure | `500` |
 | `bounded_admin_required` | admin-key bounded operation sent to ordinary `/sign` | `400` |
+| `bounded_sentry_required` | sentry-gated bounded spend sent to ordinary `/sign` | `400` |
 
 An empty `code` means the server predates code support or the failure had no
 specific classification. New codes may be added; existing values must not change
@@ -190,8 +191,9 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 - Admin-key bounded operations are rejected with `code:"bounded_admin_required"`;
   pure spends and explicitly spending-key-authorized rekeys return complete
   base-argument LogicSigs from `/sign` only when no sentry is required.
-- Sentry-enabled bounded spends are rejected as a bad request; they must use
-  the `bounded-sentry1` choreography below.
+- Sentry-enabled bounded spends are rejected with
+  `code:"bounded_sentry_required"`; they must use the `bounded-sentry1`
+  choreography below.
 
 `/sign/bounded-admin` request (`signerapi.BoundedAdminRequest`) carries optional
 `request_id`, `operation:"rekey"`, and shared `requests[]`. V1 requires exactly

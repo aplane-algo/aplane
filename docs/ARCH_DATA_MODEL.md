@@ -366,7 +366,7 @@ rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
   `.wit.json` sidecar.
 - Separated ceremonies use short-lived non-secret files
   `.apbounded-admin-request` / `.apbounded-admin-signature` (schemas
-  `aplane.bounded-admin-request.v1` / `aplane.bounded-admin-signature.v1`)
+  `aplane.bounded-admin-request.v2` / `aplane.bounded-admin-signature.v1`)
   owned by `internal/boundedadmin/protocol` and
   `internal/apboundedadminapp`.
 - Signer and `apstore` must not import, decrypt, back up, or restore private

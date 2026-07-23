@@ -94,14 +94,15 @@ const (
 	BoundedAdminOperationRekey  = pub.BoundedAdminOperationRekey
 	BoundedAdminPartialSchemaV1 = pub.BoundedAdminPartialSchemaV1
 
-	ErrCodeBadRequest           = pub.ErrCodeBadRequest
-	ErrCodeUnauthorized         = pub.ErrCodeUnauthorized
-	ErrCodeForbidden            = pub.ErrCodeForbidden
-	ErrCodeLocked               = pub.ErrCodeLocked
-	ErrCodeNotFound             = pub.ErrCodeNotFound
-	ErrCodeInvalidPassphrase    = pub.ErrCodeInvalidPassphrase
-	ErrCodeUnavailable          = pub.ErrCodeUnavailable
-	ErrCodeCacheRefresh         = pub.ErrCodeCacheRefresh
-	ErrCodeBoundedAdminRequired = pub.ErrCodeBoundedAdminRequired
-	ErrCodeInternal             = pub.ErrCodeInternal
+	ErrCodeBadRequest            = pub.ErrCodeBadRequest
+	ErrCodeUnauthorized          = pub.ErrCodeUnauthorized
+	ErrCodeForbidden             = pub.ErrCodeForbidden
+	ErrCodeLocked                = pub.ErrCodeLocked
+	ErrCodeNotFound              = pub.ErrCodeNotFound
+	ErrCodeInvalidPassphrase     = pub.ErrCodeInvalidPassphrase
+	ErrCodeUnavailable           = pub.ErrCodeUnavailable
+	ErrCodeCacheRefresh          = pub.ErrCodeCacheRefresh
+	ErrCodeBoundedAdminRequired  = pub.ErrCodeBoundedAdminRequired
+	ErrCodeBoundedSentryRequired = pub.ErrCodeBoundedSentryRequired
+	ErrCodeInternal              = pub.ErrCodeInternal
 )

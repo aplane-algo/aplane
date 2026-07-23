@@ -203,6 +203,13 @@ func (metadata *Metadata) ValidateProfile() error {
 	if err := ValidateSentryAuthorizationProfile(metadata.Sentry); err != nil {
 		return err
 	}
+	if metadata.Sentry != nil {
+		for _, operation := range metadata.AdminOperations {
+			if operation.Authorization == AdminAuthorizationSpend {
+				return fmt.Errorf("bounded sentry profiles do not support spending-key-authorized %s", operation.Kind)
+			}
+		}
+	}
 	if err := ValidateSignatureLayout(metadata.BaseSignatureArgLayout); err != nil {
 		return err
 	}

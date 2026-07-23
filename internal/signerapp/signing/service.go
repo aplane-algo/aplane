@@ -83,7 +83,7 @@ func (s *Service) SignGroupWithContext(ctx context.Context, identityID string, r
 		return nil, boundedAdminRequired()
 	}
 	if planHasBoundedSentrySpend(plan) {
-		return nil, badRequest("this key requires the bounded-sentry signing flow: use POST /sign/bounded-component then POST /sign/bounded-assemble")
+		return nil, boundedSentryRequired()
 	}
 	return s.signGroupWithPlanContext(ctx, identityID, req, session, plan)
 }

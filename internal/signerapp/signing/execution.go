@@ -156,7 +156,7 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 	if keyMaterial.BoundedAuthorization != nil && keyMaterial.BoundedAuthorization.Sentry != nil {
 		keyType := keyMaterial.Type
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, keyType, badRequest("this key requires the bounded-sentry signing flow: use POST /sign/bounded-component then POST /sign/bounded-assemble")
+		return nil, keyType, boundedSentryRequired()
 	}
 
 	if isGenericKeyMaterial(keyMaterial) {

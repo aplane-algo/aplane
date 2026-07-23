@@ -25,6 +25,11 @@ witnesses, but an individual keypair should never be enrolled in both roles.
    pure spend, and for a spending-key rekey only when its operation declares
    `policy_gate: layer3`.
 
+Sentry-enabled bounded1 profiles are spend-gated profiles and may not declare
+a spending-key-authorized rekey. V1 rejects that combination during template,
+profile, and durable-metadata validation; recovery for a sentry-enabled
+profile must use an external contract-admin rekey.
+
 For profile `P`:
 
 ```text

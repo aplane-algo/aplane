@@ -320,6 +320,12 @@ Its address and asset lists are inline, canonical, and independently capped at
 allowlist's `spend_effects`. Omitting `bounded.layer3` selects contained custom
 author TEAL.
 
+A profile with `bounded.sentry` may not declare a
+`spending_key`-authorized rekey. The combination would bypass the spend-only
+sentry gate and is not routable through `bounded-sentry1`; schema-v2 template
+and durable metadata validation reject it. Sentry-enabled profiles use
+`admin_key` rekey for recovery.
+
 V1 also supports `policy: merkle_allowlist`. It accepts only a required
 `recipients_parameter` bound to `address[]` with 1-65,536 entries and requires
 exactly one 512-byte `merkle_allowlist_proof` derived argument for that same
@@ -421,7 +427,10 @@ closed. Apshell and apconsole have no contract-admin artifact workflow.
 
 `prepare-rekey` and `prepare-unrekey` perform signer planning, policy, approval,
 group finalization, and spending-partial creation, then write a strict
-`aplane.bounded-admin-request.v1` to `.apbounded-admin-request`. Offline `sign`
+`aplane.bounded-admin-request.v2` to `.apbounded-admin-request`. V2 adds the
+optional sentry authorization record to the request-hash transcript; V1
+requests are rejected with `unsupported_request_schema` so version-skewed
+offline helpers fail explicitly rather than reporting a generic hash mismatch. Offline `sign`
 validates the request and writes `aplane.bounded-admin-signature.v1` to
 `.apbounded-admin-signature`. Networked `complete` consumes the pair and submits
 without contacting apsigner or replanning.

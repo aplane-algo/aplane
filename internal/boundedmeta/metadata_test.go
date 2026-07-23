@@ -171,6 +171,13 @@ func TestMetadataValidateSentryAuthorization(t *testing.T) {
 	if err := badPath.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "exactly [spend]") {
 		t.Fatalf("ValidateProfile() error = %v, want path rejection", err)
 	}
+	spendingRekey := Clone(metadata)
+	spendingRekey.AdminOperations = []AdminOperation{{
+		Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend, PolicyGate: PolicyGateLayer3,
+	}}
+	if err := spendingRekey.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "do not support spending-key-authorized rekey") {
+		t.Fatalf("ValidateProfile() error = %v, want bounded-sentry spending-rekey rejection", err)
+	}
 }
 
 func TestMetadataEqual(t *testing.T) {

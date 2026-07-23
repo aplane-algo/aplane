@@ -743,6 +743,11 @@ key exists only in a `.wit` artifact; losing all copies removes
 the admin-key rekey path but does not stop policy-compliant spending. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
+Do not combine a bounded sentry gate with a spending-key-authorized rekey.
+That rekey would bypass the spend-only sentry authority and has no
+`bounded-sentry1` signing route. V1 validation rejects the combination;
+sentry-enabled bounded recovery must use an external contract-admin key.
+
 #### Guarded Sentry Provider
 
 APlane ships the Go-defined, library-visible guarded sentry account provider

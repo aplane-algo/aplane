@@ -383,9 +383,11 @@ For dedicated `sentry1` rekeys, `reject_rekey:true` remains a coarse deny-all
 switch. If it is not set, a non-zero `RekeyTo` is authorized only when the
 transaction is a pure 0 ALGO self-payment and `rekey_policy.allowed` contains a
 matching sender-to-target edge. Missing `rekey_policy` still fails closed.
-Bounded sentry v1 deliberately gates spends only; its spending-key and
-external-admin rekey paths forbid the sentry slot and do not evaluate sentry
-rekey policy.
+Bounded sentry v1 deliberately gates spends only. Sentry-enabled bounded
+profiles reject spending-key-authorized rekey at definition and durable
+metadata validation, because that path would bypass sentry control and has no
+bounded-sentry1 endpoint choreography. Their external-admin rekey path forbids
+the sentry slot and does not evaluate sentry rekey policy.
 
 See [ARCH_POLICY.md](ARCH_POLICY.md) for the rule inventory, domain-specific
 schema constraints, route behavior, and reject/review/approve mapping.
