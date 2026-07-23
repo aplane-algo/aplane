@@ -377,6 +377,11 @@ teal: int 1
 			want: "field mystery not found",
 		},
 		{
+			name: "unknown nested sentry field",
+			yaml: "schema_version: 2\nbounded:\n  sentry:\n    contract: sentry1\n    mystery: true\n",
+			want: "field mystery not found",
+		},
+		{
 			name: "duplicate nested field",
 			yaml: "schema_version: 2\nbounded:\n  contract: bounded1\n  contract: bounded1\n",
 			want: "duplicate field",
@@ -402,6 +407,103 @@ teal: int 1
 		t.Run(tt.name, func(t *testing.T) {
 			spec, err := ParseTemplateSpec([]byte(tt.yaml))
 			if err == nil && tt.name == "v2 bounded required" {
+				err = ValidateTemplateSpec(spec)
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestComposedSchemaV2BuildsBoundedSentryProfile(t *testing.T) {
+	RegisterBase(BaseRegistration{
+		BaseKeyType:       "aplane.falcon1024.v1",
+		FamilyName:        "falcon1024",
+		Version:           1,
+		Ops:               boundedTestOps{},
+		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+	})
+	spec, err := ParseTemplateSpec([]byte(`
+schema_version: 2
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: aplane
+family: bounded-sentry-test
+version: 1
+display_name: Bounded Sentry Test
+bounded:
+  contract: bounded1
+  spend_effects: [pay]
+  max_fee: 10000
+  sentry:
+    contract: sentry1
+    required_on: [spend]
+teal: |
+  int 1
+  assert
+`))
+	if err != nil {
+		t.Fatalf("ParseTemplateSpec() error = %v", err)
+	}
+	provider, err := NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
+	}
+	params := provider.CreationParams()
+	if len(params) != 1 || params[0].Name != BoundedSentryPublicKeyParameter || params[0].MaxLength != boundedmeta.SentryPublicKeySizeV1*2 {
+		t.Fatalf("CreationParams() = %#v, want injected sentry public key", params)
+	}
+	metadata := provider.BoundedAuthorizationMetadata()
+	if metadata == nil || metadata.Sentry == nil || metadata.Sentry.Contract != boundedmeta.SentryContractV1 {
+		t.Fatalf("BoundedAuthorizationMetadata() = %#v", metadata)
+	}
+	if got := metadata.ArgumentLayout; len(got) != 2 || got[1].Source != boundedmeta.ArgSourceSentry || got[1].Paths.Spend != boundedmeta.ArgRequired {
+		t.Fatalf("ArgumentLayout = %#v, want base/sentry layout", got)
+	}
+}
+
+func TestComposedSchemaV2RejectsInvalidBoundedSentry(t *testing.T) {
+	RegisterBase(BaseRegistration{
+		BaseKeyType:       "aplane.falcon1024.v1",
+		FamilyName:        "falcon1024",
+		Version:           1,
+		Ops:               boundedTestOps{},
+		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+	})
+	registerTemplateTestBase("test.non-falcon-bounded-sentry.v1")
+	base := `
+schema_version: 2
+template_type: composed
+base_key_type: %s
+template_mode: strict
+publisher: test
+family: invalid-bounded-sentry
+version: 1
+display_name: Invalid Bounded Sentry
+bounded:
+  contract: bounded1
+  spend_effects: [pay]
+  max_fee: 10000
+  sentry:
+    contract: %s
+    required_on: [%s]
+teal: |
+  int 1
+  assert
+`
+	tests := []struct {
+		name, baseKeyType, contract, requiredOn, want string
+	}{
+		{name: "contract", baseKeyType: "aplane.falcon1024.v1", contract: "sentry2", requiredOn: "spend", want: "unsupported bounded sentry contract"},
+		{name: "path", baseKeyType: "aplane.falcon1024.v1", contract: "sentry1", requiredOn: "spending_rekey", want: "exactly [spend]"},
+		{name: "base", baseKeyType: "test.non-falcon-bounded-sentry.v1", contract: "sentry1", requiredOn: "spend", want: "requires base_key_type"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, err := ParseTemplateSpec([]byte(fmt.Sprintf(base, tt.baseKeyType, tt.contract, tt.requiredOn)))
+			if err == nil {
 				err = ValidateTemplateSpec(spec)
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.want) {

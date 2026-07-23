@@ -22,11 +22,13 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -241,6 +243,82 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Simulation successful") {
 		t.Fatalf("output = %q, want simulation success", out.String())
+	}
+}
+
+func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
+	publicKey, _ := testFalconSentryKeypair(t, 0x72)
+	sentryHex := hex.EncodeToString(publicKey)
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded-sentry")
+	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	events := make([]string, 0, 3)
+	appendEvent := func(event string) {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, event)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: componentSelector, PublicKeyHex: sentryHex, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}})
+	})
+	mux.HandleFunc("/sign/bounded-component", func(w http.ResponseWriter, r *http.Request) {
+		appendEvent("base")
+		var req signerapi.BoundedComponentRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.BoundedComponentResponse{
+			RequestID: req.RequestID, Transactions: []string{txnutil.EncodeWithPrefixHex(txn)},
+			Components: []signerapi.BoundedBaseComponent{{TargetIndex: 0, BoundedAccount: txn.Sender.String(), BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
+		})
+	})
+	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, r *http.Request) {
+		appendEvent("sentry")
+		var req signerapi.ComponentSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.ComponentSignResponse{RequestID: req.RequestID, ComponentKey: req.ComponentKey, Signatures: []signerapi.ComponentSignature{{TargetIndex: 0, Signature: "cc", SignatureScheme: witness.Falcon1024V1}}})
+	})
+	mux.HandleFunc("/sign/bounded-assemble", func(w http.ResponseWriter, r *http.Request) {
+		appendEvent("assemble")
+		var req signerapi.BoundedAssemblyRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))
+		_ = json.NewEncoder(w).Encode(signerapi.BoundedAssemblyResponse{RequestID: req.RequestID, SignedGroup: []string{signed}})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	var simulateReq models.SimulateRequest
+	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "", &simulateReq)
+	defer closeAlgod()
+	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
+		account := txn.Sender.String()
+		c.AddAddress(account, "test.bounded-sentry.v1")
+		c.SetSigningFlowForAddress(account, signerapi.SigningFlowBoundedSentry1)
+		c.SetSentryComponentKeyTypeForAddress(account, witness.Falcon1024V1)
+		c.SetSentryPublicKeyForAddress(account, sentryHex)
+		c.SetBoundedMaxFeeForAddress(account, 10_000)
+		c.SetLsigSize(account, 4000)
+	})
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.algod = algodClient
+	if _, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard}); err != nil {
+		t.Fatalf("SignAndSubmitGroup() error = %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Join(events, ",") != "base,sentry,assemble" {
+		t.Fatalf("bounded-sentry event order = %v, want base, sentry, assemble", events)
 	}
 }
 

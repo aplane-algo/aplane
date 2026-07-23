@@ -80,20 +80,34 @@ func init() {
 }
 
 type stubSigningService struct {
-	gotIdentityID   string
-	gotReq          signerapi.GroupSignRequest
-	gotBoundedAdmin signerapi.BoundedAdminRequest
-	gotComponent    signerapi.ComponentSignRequest
-	gotAssembly     signerapi.GuardedAssemblyRequest
-	gotSession      *keystore.KeySession
-	gotCtx          context.Context
-	result          *signersigning.SignGroupResult
-	boundedAdmin    *signersigning.BoundedAdminResult
-	component       *signersigning.ComponentSignResult
-	assembly        *signersigning.GuardedAssemblyResult
-	err             *signersigning.ServiceError
-	componentErr    *signersigning.ServiceError
-	assemblyErr     *signersigning.ServiceError
+	gotIdentityID       string
+	gotReq              signerapi.GroupSignRequest
+	gotBoundedAdmin     signerapi.BoundedAdminRequest
+	gotComponent        signerapi.ComponentSignRequest
+	gotAssembly         signerapi.GuardedAssemblyRequest
+	gotBoundedComponent signerapi.BoundedComponentRequest
+	gotBoundedAssembly  signerapi.BoundedAssemblyRequest
+	gotSession          *keystore.KeySession
+	gotCtx              context.Context
+	result              *signersigning.SignGroupResult
+	boundedAdmin        *signersigning.BoundedAdminResult
+	component           *signersigning.ComponentSignResult
+	assembly            *signersigning.GuardedAssemblyResult
+	boundedComponent    *signersigning.BoundedComponentResult
+	boundedAssembly     *signersigning.BoundedAssemblyResult
+	err                 *signersigning.ServiceError
+	componentErr        *signersigning.ServiceError
+	assemblyErr         *signersigning.ServiceError
+}
+
+func (s *stubSigningService) PrepareBoundedComponentWithContext(ctx context.Context, identityID string, req signerapi.BoundedComponentRequest, session *keystore.KeySession) (*signersigning.BoundedComponentResult, *signersigning.ServiceError) {
+	s.gotCtx, s.gotIdentityID, s.gotBoundedComponent, s.gotSession = ctx, identityID, req, session
+	return s.boundedComponent, s.err
+}
+
+func (s *stubSigningService) AssembleBoundedWithContext(ctx context.Context, identityID string, req signerapi.BoundedAssemblyRequest, session *keystore.KeySession) (*signersigning.BoundedAssemblyResult, *signersigning.ServiceError) {
+	s.gotCtx, s.gotIdentityID, s.gotBoundedAssembly, s.gotSession = ctx, identityID, req, session
+	return s.boundedAssembly, s.assemblyErr
 }
 
 func (s *stubSigningService) PrepareBoundedAdminWithContext(ctx context.Context, identityID string, req signerapi.BoundedAdminRequest, session *keystore.KeySession) (*signersigning.BoundedAdminResult, *signersigning.ServiceError) {
@@ -357,6 +371,34 @@ func TestServiceAssembleGuardedDelegates(t *testing.T) {
 	}
 }
 
+func TestServiceBoundedSentryEndpointsDelegate(t *testing.T) {
+	ir := setupIdentityRuntime(t, true)
+	stub := &stubSigningService{
+		boundedComponent: &signersigning.BoundedComponentResult{
+			RequestID: "bcmp-1", Transactions: []string{"TXaa"},
+			Components: []signerapi.BoundedBaseComponent{{TargetIndex: 0, BoundedAccount: "ACCOUNT", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: witness.Falcon1024V1}},
+		},
+		boundedAssembly: &signersigning.BoundedAssemblyResult{RequestID: "basm-1", SignedGroup: []string{"signed"}},
+	}
+	svc := Service{Deps: Dependencies{NewSigningService: func(*identity.Runtime) SigningService { return stub }}}
+	componentReq := signerapi.BoundedComponentRequest{RequestID: "bcmp-1", Requests: []signerapi.SignRequest{{AuthAddress: "ACCOUNT", TxnBytesHex: "TXaa"}}}
+	componentResp, err := svc.PrepareBoundedComponent(t.Context(), ir, componentReq)
+	if err != nil {
+		t.Fatalf("PrepareBoundedComponent() error = %v", err)
+	}
+	if stub.gotBoundedComponent.RequestID != componentReq.RequestID || stub.gotSession == nil || len(componentResp.Components) != 1 {
+		t.Fatalf("bounded component delegation = %#v / %#v", stub.gotBoundedComponent, componentResp)
+	}
+	assemblyReq := signerapi.BoundedAssemblyRequest{RequestID: "basm-1", GroupBytesHex: []string{"TXaa"}, Targets: []signerapi.BoundedAssemblyTarget{{TargetIndex: 0}}}
+	assemblyResp, err := svc.AssembleBounded(t.Context(), ir, assemblyReq)
+	if err != nil {
+		t.Fatalf("AssembleBounded() error = %v", err)
+	}
+	if stub.gotBoundedAssembly.RequestID != assemblyReq.RequestID || stub.gotSession == nil || assemblyResp.SignedGroup[0] != "signed" {
+		t.Fatalf("bounded assembly delegation = %#v / %#v", stub.gotBoundedAssembly, assemblyResp)
+	}
+}
+
 func TestServicePlanShapesResponse(t *testing.T) {
 	ir := setupIdentityRuntime(t, true)
 	svc := Service{
@@ -476,7 +518,6 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 		"ed25519",
 		witness.Falcon1024V1,
 		keytypes.GuardedFalcon1024Sentry1024V1,
-		keytypes.CorridorV1,
 	}, nil)
 	byType := make(map[string]signerapi.KeyTypeInfo, len(infos))
 	for _, info := range infos {
@@ -485,7 +526,6 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 
 	guarded := map[string]string{
 		keytypes.GuardedFalcon1024Sentry1024V1: witness.Falcon1024V1,
-		keytypes.CorridorV1:                    witness.Falcon1024V1,
 	}
 	for keyType, wantComponent := range guarded {
 		info, ok := byType[keyType]
@@ -541,6 +581,32 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 	}
 }
 
+func TestBuildKeyTypesServesBoundedSentryMetadata(t *testing.T) {
+	const keyType = "test.rest-bounded-sentry.v1"
+	profile := &composeddsa.BoundedAuthorizationProfile{
+		Contract: composeddsa.BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 2_000,
+		Sentry: &boundedmeta.SentryAuthorization{
+			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		},
+	}
+	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: profile})
+	infos := Service{}.buildKeyTypes([]string{keyType}, nil)
+	if len(infos) != 1 {
+		t.Fatalf("buildKeyTypes() returned %d rows", len(infos))
+	}
+	info := infos[0]
+	if info.SigningFlow != signerapi.SigningFlowBoundedSentry1 || info.SentryComponentKeyType != witness.Falcon1024V1 {
+		t.Fatalf("bounded sentry routing = %#v", info)
+	}
+	if info.BoundedAuthorization == nil || info.BoundedAuthorization.Sentry == nil {
+		t.Fatalf("bounded sentry metadata = %#v", info.BoundedAuthorization)
+	}
+	if got := info.CreationParams; len(got) != 1 || got[0].Name != boundedmeta.SentryPublicKeyParameter {
+		t.Fatalf("creation params = %#v, want raw sentry public key before reference projection", got)
+	}
+}
+
 func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 	metadata := &boundedmeta.Metadata{
 		Contract:                boundedmeta.ContractV1,
@@ -582,16 +648,28 @@ func TestGuardedAccountParametersProjection(t *testing.T) {
 		t.Fatalf("guardedAccountParameters() reused mutable map: %#v", again)
 	}
 
-	corridor := guardedAccountParameters(keytypes.CorridorV1, map[string]string{
-		keytypes.ParameterSentryPublicKey: sentryPublicKey,
-		"recipients":                      "RECIPIENT",
-	})
-	if corridor["recipients"] != "RECIPIENT" {
-		t.Fatalf("guardedAccountParameters(corridor) = %#v, want recipients projected", corridor)
-	}
-
 	if empty := guardedAccountParameters(keytypes.GuardedFalcon1024Sentry1024V1, nil); empty != nil {
 		t.Fatalf("guardedAccountParameters(nil) = %#v, want nil", empty)
+	}
+}
+
+func TestBoundedAccountParametersProjection(t *testing.T) {
+	got := boundedAccountParameters(map[string]string{
+		"recipients": "ADDR1,ADDR2",
+		composeddsa.BoundedSentryPublicKeyParameter: "sentry-public",
+		composeddsa.BoundedAdminPublicKeyParameter:  "admin-public",
+		"future_sensitive_parameter":                "must-not-leak",
+	})
+	if len(got) != 3 || got["recipients"] != "ADDR1,ADDR2" ||
+		got[composeddsa.BoundedSentryPublicKeyParameter] != "sentry-public" ||
+		got[composeddsa.BoundedAdminPublicKeyParameter] != "admin-public" {
+		t.Fatalf("boundedAccountParameters() = %#v, want reviewed public projection", got)
+	}
+	if _, ok := got["future_sensitive_parameter"]; ok {
+		t.Fatalf("boundedAccountParameters() projected unreviewed parameter: %#v", got)
+	}
+	if empty := boundedAccountParameters(nil); empty != nil {
+		t.Fatalf("boundedAccountParameters(nil) = %#v, want nil", empty)
 	}
 }
 
@@ -716,59 +794,61 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	}
 }
 
-func TestServiceKeyTypesForIdentityKeepsCorridorRecipientsWithSentryReference(t *testing.T) {
+func TestServiceKeyTypesUsesSentryReferenceForBoundedProvider(t *testing.T) {
 	ir := setupIdentityRuntime(t, false)
-	publicKey := strings.Repeat("ab", falconfamily.PublicKeySize)
+	publicKey := strings.Repeat("7d", falconfamily.PublicKeySize)
 	publicKeyBytes, err := hex.DecodeString(publicKey)
 	if err != nil {
-		t.Fatalf("DecodeString() error = %v", err)
+		t.Fatal(err)
 	}
 	componentKey, err := witness.ID(witness.Falcon1024V1, publicKeyBytes)
 	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
+		t.Fatal(err)
 	}
 	env, err := sentryrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("NewExportEnvelope() error = %v", err)
+		t.Fatal(err)
 	}
 	data, err := json.Marshal(env)
 	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
+		t.Fatal(err)
 	}
-	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "falcon-sentry", data); err != nil {
-		t.Fatalf("Import() error = %v", err)
+	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "bounded-sentry", data); err != nil {
+		t.Fatal(err)
 	}
+
+	const keyType = "test.rest-reference-bounded-sentry.v1"
+	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
+		Contract: composeddsa.BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Sentry: &boundedmeta.SentryAuthorization{
+			Contract: boundedmeta.SentryContractV1, ComponentKeyType: witness.Falcon1024V1,
+			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		},
+	}})
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
-		KeyType: keytypes.CorridorV1,
-		Source:  keytypestate.SourceCompiled,
-		State:   keytypestate.StateEnabled,
+		KeyType: keyType, Source: keytypestate.SourceCompiled, State: keytypestate.StateEnabled,
 	}); err != nil {
-		t.Fatalf("Put() error = %v", err)
+		t.Fatal(err)
 	}
 
 	resp, svcErr := Service{}.KeyTypesForIdentity(ir)
 	if svcErr != nil {
 		t.Fatalf("KeyTypesForIdentity() error = %v", svcErr)
 	}
-	var params []signerapi.CreationParamInfo
 	for _, info := range resp.KeyTypes {
-		if info.KeyType == keytypes.CorridorV1 {
-			params = info.CreationParams
-			break
+		if info.KeyType != keyType {
+			continue
 		}
+		if info.SigningFlow != signerapi.SigningFlowBoundedSentry1 || len(info.CreationParams) != 1 {
+			t.Fatalf("bounded sentry key type = %#v", info)
+		}
+		param := info.CreationParams[0]
+		if param.Name != sentryrefs.ParamSentryName || len(param.Options) != 1 || param.Options[0] != componentKey {
+			t.Fatalf("bounded sentry selector = %#v", param)
+		}
+		return
 	}
-	if len(params) != 2 {
-		t.Fatalf("CreationParams = %#v, want recipients plus sentry selector", params)
-	}
-	if params[0].Name != "recipients" || params[0].Type != "address[]" {
-		t.Fatalf("first corridor param = %#v, want recipients address[]", params[0])
-	}
-	if params[1].Name != sentryrefs.ParamSentryName || params[1].Type != "select" {
-		t.Fatalf("second corridor param = %#v, want select sentry", params[1])
-	}
-	if len(params[1].Options) != 1 || params[1].Options[0] != componentKey || params[1].Default != componentKey {
-		t.Fatalf("sentry options/default = %#v/%q, want Witness Key ID %s", params[1].Options, params[1].Default, componentKey)
-	}
+	t.Fatalf("KeyTypesForIdentity() missing %s", keyType)
 }
 
 func TestServiceKeyTypesIncludesActivatedCompiledProvider(t *testing.T) {
@@ -1141,12 +1221,20 @@ func (p restTestDSAProvider) KeyType() string { return p.keyType }
 func (p restTestDSAProvider) RoutingFamily() string {
 	return strings.TrimSuffix(p.keyType, "-v1")
 }
-func (p restTestDSAProvider) Version() int                                { return 1 }
-func (p restTestDSAProvider) Category() string                            { return lsigprovider.CategoryDSALsig }
-func (p restTestDSAProvider) DisplayName() string                         { return "REST Test DSA" }
-func (p restTestDSAProvider) Description() string                         { return "Test provider" }
-func (p restTestDSAProvider) DisplayColor() string                        { return "" }
-func (p restTestDSAProvider) CreationParams() []lsigprovider.ParameterDef { return nil }
+func (p restTestDSAProvider) Version() int         { return 1 }
+func (p restTestDSAProvider) Category() string     { return lsigprovider.CategoryDSALsig }
+func (p restTestDSAProvider) DisplayName() string  { return "REST Test DSA" }
+func (p restTestDSAProvider) Description() string  { return "Test provider" }
+func (p restTestDSAProvider) DisplayColor() string { return "" }
+func (p restTestDSAProvider) CreationParams() []lsigprovider.ParameterDef {
+	if p.bounded != nil && p.bounded.Sentry != nil {
+		return []lsigprovider.ParameterDef{{
+			Name: boundedmeta.SentryPublicKeyParameter, Type: "bytes", Required: true,
+			MaxLength: boundedmeta.SentryPublicKeySizeV1 * 2,
+		}}
+	}
+	return nil
+}
 func (p restTestDSAProvider) ValidateCreationParams(map[string]string) error {
 	return nil
 }
@@ -1170,6 +1258,16 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, false),
 		MaxFee:                 p.bounded.MaxFee,
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
+	}
+	if p.bounded.Sentry != nil {
+		sentry := *p.bounded.Sentry
+		sentry.RequiredOn = append([]string(nil), p.bounded.Sentry.RequiredOn...)
+		metadata.Sentry = &sentry
+		metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
+			Index: 1, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry,
+			MaxSize: boundedmeta.SentrySignatureMaxSizeV1,
+			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
+		})
 	}
 	for _, spendType := range p.bounded.SpendEffects {
 		metadata.SpendEffects = append(metadata.SpendEffects, string(spendType))

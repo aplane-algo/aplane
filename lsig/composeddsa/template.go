@@ -47,8 +47,8 @@ func ValidateTemplateSpec(spec *TemplateSpec) error {
 		return fmt.Errorf("base_key_type %q is not registered as composable", spec.BaseKeyType)
 	}
 	for _, parameter := range spec.Parameters {
-		if parameter.Name == BoundedAdminPublicKeyParameter {
-			return fmt.Errorf("parameter %q is framework-injected and cannot be declared by the author", BoundedAdminPublicKeyParameter)
+		if parameter.Name == BoundedAdminPublicKeyParameter || isBoundedSentryReservedName(parameter.Name) {
+			return fmt.Errorf("parameter %q is framework-injected or reserved and cannot be declared by the author", parameter.Name)
 		}
 	}
 	if spec.SchemaVersion < 2 {
@@ -61,6 +61,9 @@ func ValidateTemplateSpec(spec *TemplateSpec) error {
 		}
 		if _, err := boundedProfileFromTemplate(spec.Bounded); err != nil {
 			return err
+		}
+		if spec.Bounded.Sentry != nil && spec.BaseKeyType != "aplane.falcon1024.v1" {
+			return fmt.Errorf("bounded.sentry requires base_key_type %q", "aplane.falcon1024.v1")
 		}
 		if len(spec.RuntimeArgs) != 0 {
 			return fmt.Errorf("composed schema_version 2 runtime_args must be declared inside bounded")
@@ -145,6 +148,9 @@ func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, pa
 		}
 	}
 	for _, arg := range spec.RuntimeArgs {
+		if isBoundedSentryReservedName(arg.Name) {
+			return fmt.Errorf("bounded.runtime_args argument name %q uses reserved sentry namespace", arg.Name)
+		}
 		if arg.Name == "" || (arg.Type != "bytes" && arg.Type != "string" && arg.Type != "uint64") {
 			return fmt.Errorf("bounded.runtime_args contains invalid argument %q", arg.Name)
 		}
@@ -180,6 +186,9 @@ func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, pa
 		}
 	}
 	for _, arg := range spec.DerivedArgs {
+		if isBoundedSentryReservedName(arg.Name) {
+			return fmt.Errorf("bounded.derived_args argument name %q uses reserved sentry namespace", arg.Name)
+		}
 		if arg.Name == "" || arg.Kind != boundedmeta.DerivedArgMerkleProof || arg.Parameter == "" || arg.MaxSize != boundedmeta.MerkleProofSize {
 			return fmt.Errorf("bounded.derived_args contains invalid argument %q", arg.Name)
 		}
@@ -234,6 +243,14 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 	profile := &BoundedAuthorizationProfile{
 		Contract: spec.Contract,
 		MaxFee:   *spec.MaxFee,
+	}
+	if spec.Sentry != nil {
+		profile.Sentry = &boundedmeta.SentryAuthorization{
+			Contract:         spec.Sentry.Contract,
+			ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1,
+			RequiredOn:       append([]string(nil), spec.Sentry.RequiredOn...),
+		}
 	}
 	for _, effect := range spec.SpendEffects {
 		switch effect {

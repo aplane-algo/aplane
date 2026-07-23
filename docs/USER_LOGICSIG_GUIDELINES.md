@@ -743,17 +743,25 @@ key exists only in a `.wit` artifact; losing all copies removes
 the admin-key rekey path but does not stop policy-compliant spending. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
-#### Guarded Sentry Providers
+Do not combine a bounded sentry gate with a spending-key-authorized rekey.
+That rekey would bypass the spend-only sentry authority and has no
+`bounded-sentry1` signing route. V1 validation rejects the combination;
+sentry-enabled bounded recovery must use an external contract-admin key.
 
-APlane also ships Go-defined, library-visible guarded sentry account providers:
-`aplane.falcon1024-sentry1024.v1` and `aplane.corridor.v1`. These require
-the guarded signing assembly flow (a user component signature plus a sentry
-component signature). For the plain guarded provider, the on-chain LogicSig does not restrict transaction shape
-once both signatures verify, so the sentry policy is the spending boundary.
-`aplane.corridor.v1` additionally embeds a recipient-corridor allowlist and a
-sentry-authorized rekey path in its LogicSig. See
+#### Guarded Sentry Provider
+
+APlane ships the Go-defined, library-visible guarded sentry account provider
+`aplane.falcon1024-sentry1024.v1`. It requires the guarded signing assembly
+flow (a user component signature plus a sentry component signature). Its
+on-chain LogicSig does not restrict transaction shape once both signatures
+verify, so sentry policy is the spending boundary.
+
+`aplane.corridor.v1` is instead an optional schema-v2 bounded template. It
+requires a sentry signature only on bounded spend paths, applies a
+framework-owned Merkle recipient policy, and reserves pure rekey for a distinct
+offline contract-admin witness. Its flow is `bounded-sentry1`. See
 [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for the per-operation matrix
-and [ARCH_SENTRY.md](ARCH_SENTRY.md) for the guarded-signing model.
+and [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md) for its complete contract.
 
 ### Template Library
 

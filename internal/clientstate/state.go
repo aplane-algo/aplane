@@ -163,6 +163,7 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 	s.SignerCache.SigningFlows = make(map[string]string)
 	s.SignerCache.SentryComponentKeyTypes = make(map[string]string)
 	s.SignerCache.SentryPublicKeys = make(map[string]string)
+	s.SignerCache.BoundedMaxFees = make(map[string]uint64)
 	s.SignerCache.Locked = false
 	s.SignerCache.BindStore(s.CacheStore)
 	for _, keyInfo := range keys {
@@ -180,8 +181,15 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 		if keyInfo.SentryComponentKeyType != "" {
 			s.SignerCache.SetSentryComponentKeyTypeForAddress(keyInfo.Address, keyInfo.SentryComponentKeyType)
 		}
-		if sentryPublicKey := keyInfo.Parameters[keytypes.ParameterSentryPublicKey]; sentryPublicKey != "" {
+		sentryPublicKey := keyInfo.Parameters[keytypes.ParameterSentryPublicKey]
+		if sentryPublicKey == "" && keyInfo.BoundedAuthorization != nil && keyInfo.BoundedAuthorization.Sentry != nil {
+			sentryPublicKey = keyInfo.BoundedAuthorization.Sentry.PublicKeyHex
+		}
+		if sentryPublicKey != "" {
 			s.SignerCache.SetSentryPublicKeyForAddress(keyInfo.Address, sentryPublicKey)
+		}
+		if keyInfo.BoundedAuthorization != nil {
+			s.SignerCache.SetBoundedMaxFeeForAddress(keyInfo.Address, keyInfo.BoundedAuthorization.MaxFee)
 		}
 		if len(keyInfo.SigningArgs) > 0 {
 			signingArgs := make([]cache.SigningArgInfo, len(keyInfo.SigningArgs))

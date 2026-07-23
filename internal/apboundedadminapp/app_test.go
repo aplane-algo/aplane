@@ -53,7 +53,7 @@ func TestCompleteUsesPreparedCeremonyWithoutReplanning(t *testing.T) {
 		},
 	}
 	prepared := &Prepared{Request: boundedprotocol.Request{
-		Schema: boundedprotocol.RequestSchemaV1,
+		Schema: boundedprotocol.RequestSchemaV2,
 		Payload: boundedprotocol.RequestPayload{
 			CurrentAuthAddress: "CURRENT",
 		},

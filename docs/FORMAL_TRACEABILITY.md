@@ -112,7 +112,7 @@ Source: [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md)
 | ID | Status | Source § | Code anchor | Test anchor | Notes |
 |---|---|---|---|---|---|
 | A1 | implemented | A1 | `internal/sentry/message/message.go`; `internal/signerapp/signing/component.go::PrepareComponentSigning` | `internal/signerapp/signing/component_test.go::TestPrepareComponentSigningUsesSentryRoleDomain`; `::TestAssembleDecodedGuardedRejectsWrongUserSignature` | Role byte separates user and sentry signatures for the same target txid. Machine-checked in `guarded_assembly.tla` (`A1_RoleDomainSeparation`). |
-| A2 | implemented | A2 | `internal/signerapp/signing/sentry_gate.go`; `internal/signerapp/signing/execution.go` | `internal/signerapp/signing/execution_test.go::TestExecutorRejectsSentryKeyTypesBeforeSessionLoad`; `::TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup` | Covers both sentry key types and all three guarded account key types (incl. `aplane.corridor.v1`). |
+| A2 | implemented | A2 | `internal/signerapp/signing/sentry_gate.go`; `internal/signerapp/signing/execution.go` | `internal/signerapp/signing/execution_test.go::TestExecutorRejectsSentryKeyTypesBeforeSessionLoad`; `::TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup` | Covers witness keys and the dedicated guarded account key type; bounded-sentry ordinary-sign rejection is tested separately. |
 | A3 | implemented | A3 | `internal/signerapp/signing/component_sign.go::signPreparedUserComponents`; `::loadGuardedAccountSigningKey` | `internal/signerapp/signing/component_test.go::TestSignPreparedUserComponentsSignsGuardedAccountMessages`; `::TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages` | User component signing proves `component_key` is a local guarded account key; sender may differ and is bound by assembly. |
 | A4 | implemented | A4 | `internal/signerapp/signing/service.go::SignComponentWithContext`; `internal/signerapp/signing/sentry_policy.go`; `internal/policy` | `internal/signerapp/signing/component_test.go::TestSignComponentSentryRequiresPolicyBeforeKeyLoad`; `::TestSignComponentSentryRejectsNonTransferBeforeKeyLoad`; `::TestSignComponentSentryRejectsRouteMissBeforeKeyLoad`; `::TestSignComponentSentryRejectsInheritedReviewRouteMissBeforeKeyLoad`; `::TestSignComponentSentryRejectsRekeyBeforeKeyLoad` | Sentry policy is deterministic: no review and no operator default. |
 | A5 | implemented | A5 | `internal/signerapp/signing/component_sign.go::loadSentryComponentKey`; `internal/witness` | `internal/signerapp/signing/component_test.go::TestSignPreparedSentryComponentsRejectsWrongKeyType`; `::TestLoadSentryComponentKeyRejectsMismatchedPublicPrivateKey`; `::TestSignPreparedSentryComponentsSignsFalcon1024Messages` | Witness Key ID, category, key type, and public/private pair must agree. |
@@ -126,6 +126,20 @@ Source: [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md)
 | A13 | implemented | A13 | `internal/keyclass/keyclass.go`; `internal/signerapp/keyadmin/service.go`; `internal/signerapp/templates/reload.go`; `internal/signerapp/rest/role.go` | `internal/keyclass/keyclass_test.go::TestNodeRoleAllowsKeyType`; `::TestValidateKeyTypesAllowedForNodeRoleReportsConflicts`; `internal/signerapp/keyadmin/service_test.go::TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole`; `::TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole`; `internal/signerapp/templates/reload_test.go::TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish`; `internal/signerapp/rest/service_test.go::TestServiceNodeRoleGatesEndpointRoles` | Node role gates generation/import, REST role dispatch, and reload-time publication. |
 | A14 | implemented | A14 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget`; `::validateAssembledGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | Assembly verifies the assembled signed txn matches the canonical txid and carries `AuthAddr == guarded_account` when sender differs. Machine-checked in `guarded_assembly.tla` (`A14_AssembledTxnBound`). |
 | A15 | implemented | A15 | `internal/signerapp/rest/inventory.go::BuildKeyInfoList`; `::buildKeyTypes`; `internal/engine/guarded/submit.go::HasGuardedEffectiveSigner`; `::guardedTargets` | `internal/signerapp/rest/service_test.go::TestBuildKeyTypesServesSigningFlowMetadata`; `internal/engine/guarded/submit_test.go::TestGuardedTargetsRejectUnsupportedSigningFlow`; `test/arch/signingflow_test.go::TestClientPackagesRouteOnSigningFlow` | Daemon serves `signing_flow`/`sentry_component_key_type` in inventory; clients route on the flow label, fail fast on unknown flows, and the arch test pins client packages off compiled guarded key-type switches. |
+
+## Bounded Sentry Model
+
+Source: [FORMAL_TLA_BOUNDED_SENTRY_MODEL.md](FORMAL_TLA_BOUNDED_SENTRY_MODEL.md)
+
+| ID | Status | Source § | Code anchor | Test anchor | Notes |
+|---|---|---|---|---|---|
+| BS1 | implemented | BS1 | `internal/engine/guarded/submit.go::signAndSubmitBoundedSentryGroup`; `internal/signerapp/signing/bounded_sentry.go::PrepareBoundedComponentWithContext` | `internal/engine/guarded/simulate_submit_test.go::TestBoundedSentrySimulateUsesUserFirstChoreography`; `internal/signerapp/signing/bounded_sentry_test.go::TestValidateBoundedComponentPlanRequiresSentrySpend` | User policy and operator approval complete before the client requests a sentry. Machine-checked in `bounded_sentry.tla` (`BS1_UserFirst`). |
+| BS2 | implemented | BS2 | `internal/signerapp/signing/bounded_admin.go`; `internal/apboundedadminapp/app.go` | `internal/signerapp/signing/bounded_admin_test.go::TestValidateBoundedAdminPlanRequiresNarrowTypedPath`; `internal/apboundedadminapp/app_test.go::TestExecuteRekeyCoordinatesExternalSignature` | External-admin completion has no sentry transition. Machine-checked in `bounded_sentry.tla` (`BS2_AdminBypassesSentry`). |
+| BS3 | implemented | BS3 | `internal/signerapp/signing/bounded_sentry.go::assembleBoundedTarget` | `internal/signerapp/signing/bounded_sentry_test.go::TestAssembleBoundedTargetVerifiesBothAuthorities` | Spend assembly verifies both authorities against durable metadata. Machine-checked in `bounded_sentry.tla` (`BS3_SpendAuthoritiesVerified`). |
+| BS4 | implemented | BS4 | `internal/signerapp/signing/bounded_sentry.go::AssembleBoundedWithContext`; bounded argument assembly in `internal/signerapp/signing/execution.go` | `internal/engine/guarded/submit_test.go::TestCollectComponentSignaturesRejectsMalformedResponses`; `internal/signerapp/signing/execution_test.go::TestAssembleBoundedArgsPreservesInteriorEmptySlots` | Exact target coverage and source/path masks gate assembly; derived inputs remain signer-owned. Machine-checked in `bounded_sentry.tla` (`BS4_DeclaredArgumentsOnly`). |
+| BS5 | implemented | BS5 | `internal/engine/guarded/submit.go::verifyAssembledAgainstFrozen`; `internal/signerapp/signing/bounded_sentry.go::AssembleBoundedWithContext` | `internal/engine/guarded/submit_test.go::TestVerifyAssembledAgainstFrozen`; `internal/signerapp/signing/bounded_sentry_test.go::TestBoundedAssemblyReceiptBindsRuntimeAndMetadata` | Receipt, passthrough, and final bytes bind the frozen plan. Machine-checked in `bounded_sentry.tla` (`BS5_CanonicalGroupBound`). |
+| BS6 | implemented | BS6 | `internal/signerapp/signing/bounded_sentry.go::validateBoundedComponentPlan`; ordinary-sign rejection in `internal/signerapp/signing/service.go` | `internal/signerapp/signing/bounded_sentry_test.go::TestValidateBoundedComponentPlanRequiresSentrySpend` | Invalid, admin, and non-spend shapes cannot enter bounded-sentry spend output. Machine-checked in `bounded_sentry.tla` (`BS6_InvalidNeverOutputs`). |
+| BS7 | implemented | BS7 | `internal/signerapp/signing/bounded_sentry.go::AssembleBoundedWithContext`; `internal/engine/guarded/submit.go::signAndSubmitBoundedSentryGroup` | `internal/signerapp/signing/bounded_sentry_test.go::TestAssembleBoundedTargetVerifiesBothAuthorities`; `internal/engine/guarded/simulate_submit_test.go::TestBoundedSentrySimulateUsesUserFirstChoreography` | Every failed stage returns no signed group; only final assembly reaches submission/simulation. Machine-checked in `bounded_sentry.tla` (`BS7_AtomicOutput`). |
 
 ## Approval Coordinator Model
 
@@ -409,6 +423,31 @@ Validated by mutation tests: dropping the role check from `Verifies`
 (cross-role replay) and dropping the passthrough txid comparison each
 violate `Safety` in an initial state.
 
+### Bounded sentry module
+
+[formal/bounded_sentry.tla](formal/bounded_sentry.tla) (see
+[FORMAL_TLA_BOUNDED_SENTRY_MODEL.md](FORMAL_TLA_BOUNDED_SENTRY_MODEL.md))
+machine-checks the combined planning and assembly choreography. It is a
+depth-4 transition system covering user-side base release, the later sentry
+request/release, final bounded assembly, and the sentry-free external-admin
+branch. TLC generated 99,584 distinct states with no counterexamples. Target
+count is intentionally absent: the predicates are group-wide, so a
+target-count field only duplicated states without adding coverage.
+
+| Invariant | TLA+ predicate |
+|---|---|
+| BS1 (user first) | `BS1_UserFirst` |
+| BS2 (admin bypasses sentry) | `BS2_AdminBypassesSentry` |
+| BS3 (both spend authorities verified) | `BS3_SpendAuthoritiesVerified` |
+| BS4 (declared arguments only) | `BS4_DeclaredArgumentsOnly` |
+| BS5 (canonical group bound) | `BS5_CanonicalGroupBound` |
+| BS6 (invalid path cannot output) | `BS6_InvalidNeverOutputs` |
+| BS7 (atomic output) | `BS7_AtomicOutput` |
+
+The named invariants are constructed to expose early sentry routing, sentry use
+on admin, omitted signature verification, omitted source/coverage/byte checks,
+and partial output as counterexamples.
+
 ### Plugin signing module
 
 [formal/plugin_signing.tla](formal/plugin_signing.tla) (see
@@ -452,16 +491,17 @@ The following invariants have no TLA+ representation yet:
   winner-picking rule instead of skip-and-warn.
 - A2-A5, A9-A13, A15 (guarded signing: component-sign-time checks, endpoint
   routing, client shape checks, identity mode). A1/A6/A7/A8/A14 are
-  machine-checked in `guarded_assembly.tla`.
+  machine-checked in `guarded_assembly.tla`. The separate bounded-sentry
+  planning and assembly path is machine-checked in `bounded_sentry.tla`.
 - AP1-AP3 (approval coordinator) are modeled by construction rather than as
   predicates; AP4-AP7 and L8 are machine-checked in `approval_coordinator.tla`.
 
 Lifecycle-aware composition has shipped as
 [formal/lifecycle_composition.tla](formal/lifecycle_composition.tla) (above).
 With the signing-authority surface resolved by decision, the remaining
-candidates are the M3 backlog English models (LogicSig budget,
-template/bytecode generation) and a sentry component-sign-time module
-(A3-A5) if one is ever needed.
+candidates are the M3 backlog English models (LogicSig budget and
+template/bytecode generation) and a legacy guarded sentry
+component-sign-time module (A3-A5) if one is ever needed.
 
 ## Update Workflow
 

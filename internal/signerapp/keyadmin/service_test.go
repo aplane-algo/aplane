@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +23,9 @@ import (
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	internalkeygen "github.com/aplane-algo/aplane/internal/keygen"
@@ -38,6 +41,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
@@ -241,6 +245,82 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 				t.Fatalf("generated audit = %#v, want component address", audit.generated)
 			}
 		})
+	}
+}
+
+func TestServiceGenerateBoundedSentryFromReference(t *testing.T) {
+	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lsigprovider.ConfigureAlgodClient(client)
+	ir := setupIdentityRuntime(t)
+	const keyType = "test.falcon1024-bounded-sentry-keyadmin.v1"
+	spec, err := composeddsa.ParseTemplateSpec([]byte(`
+schema_version: 2
+derivation_version: 2
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: test
+family: falcon1024-bounded-sentry-keyadmin
+version: 1
+display_name: Bounded Sentry Keyadmin Test
+bounded:
+  contract: bounded1
+  spend_effects: [pay]
+  max_fee: 10000
+  sentry:
+    contract: sentry1
+    required_on: [spend]
+teal: |
+  pushint 1
+  assert
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logicsigdsa.RegisterIfAbsent(provider)
+	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+		KeyType: keyType, Source: keytypestate.SourceYAMLComposed, State: keytypestate.StateEnabled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sentryPublicKey := bytes.Repeat([]byte{0x61}, falconfamily.PublicKeySize)
+	componentKey, err := witness.ID(witness.Falcon1024V1, sentryPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference, err := sentryrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, hex.EncodeToString(sentryPublicKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	referenceJSON, err := json.Marshal(reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "bounded-sentry", referenceJSON); err != nil {
+		t.Fatal(err)
+	}
+
+	result, svcErr := Service{}.GenerateKey(context.Background(), ir, keyType, map[string]string{
+		sentryrefs.ParamSentryName: "bounded-sentry",
+	}, nil)
+	if svcErr != nil {
+		t.Fatalf("GenerateKey() error = %#v", svcErr)
+	}
+	summary := ir.KeyStore().GetSigningSummary()[result.Address]
+	if summary.Parameters[boundedmeta.SentryPublicKeyParameter] != hex.EncodeToString(sentryPublicKey) {
+		t.Fatalf("stored parameters = %#v", summary.Parameters)
+	}
+	if summary.BoundedAuthorization == nil || summary.BoundedAuthorization.Sentry == nil ||
+		summary.BoundedAuthorization.Sentry.ComponentKeyID != componentKey {
+		t.Fatalf("stored bounded sentry metadata = %#v", summary.BoundedAuthorization)
 	}
 }
 

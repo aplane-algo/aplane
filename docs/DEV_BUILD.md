@@ -63,7 +63,6 @@ aplane/
 │   ├── falcon1024/           # Falcon-1024 DSA provider
 │   ├── ed25519lsig/          # Ed25519 LogicSig DSA provider
 │   ├── falcon1024_guarded/   # Falcon/Falcon guarded LogicSig provider
-│   ├── corridor/             # Falcon/Falcon corridor provider
 │   ├── generictemplate/      # YAML-backed generic LogicSig providers
 │   └── composeddsa/          # DSA + TEAL-suffix composition helpers
 ├── library/templates/        # KeyType Library YAML sources

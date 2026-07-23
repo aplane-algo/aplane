@@ -16,22 +16,29 @@ import (
 )
 
 const (
-	ContractV1                 = "bounded1"
-	AdminPublicKeyParameter    = "bounded_admin_public_key"
-	Layer3PolicyCustom         = "custom"
-	Layer3PolicyFixedAllowlist = "fixed_allowlist"
-	AdminOperationRekey        = "rekey"
-	AdminAuthorizationSpend    = "spending_key"
-	AdminAuthorizationAdmin    = "admin_key"
-	PolicyGateNone             = "none"
-	PolicyGateLayer3           = "layer3"
-	SpendEffectPay             = "pay"
-	SpendEffectAxfer           = "axfer"
-	SpendEffectAssetOptIn      = "asset_opt_in"
-	FalconAdminPublicKeySize   = witness.Falcon1024PublicKeySize
-	FalconAdminSignatureSize   = witness.Falcon1024SignatureSize
-	ProgramBindingSize         = 32
-	MaximumProfileFee          = 10_000
+	ContractV1                  = "bounded1"
+	AdminPublicKeyParameter     = "bounded_admin_public_key"
+	Layer3PolicyCustom          = "custom"
+	Layer3PolicyFixedAllowlist  = "fixed_allowlist"
+	Layer3PolicyMerkleAllowlist = "merkle_allowlist"
+	AdminOperationRekey         = "rekey"
+	AdminAuthorizationSpend     = "spending_key"
+	AdminAuthorizationAdmin     = "admin_key"
+	PolicyGateNone              = "none"
+	PolicyGateLayer3            = "layer3"
+	SpendEffectPay              = "pay"
+	SpendEffectAxfer            = "axfer"
+	SpendEffectAssetOptIn       = "asset_opt_in"
+	SentryContractV1            = "sentry1"
+	SentryPublicKeyParameter    = "sentry_public_key"
+	SentrySignatureSlot         = "sentry_signature"
+	SentryComponentKeyTypeV1    = witness.Falcon1024V1
+	SentryPublicKeySizeV1       = witness.Falcon1024PublicKeySize
+	SentrySignatureMaxSizeV1    = witness.Falcon1024SignatureSize
+	FalconAdminPublicKeySize    = witness.Falcon1024PublicKeySize
+	FalconAdminSignatureSize    = witness.Falcon1024SignatureSize
+	ProgramBindingSize          = 32
+	MaximumProfileFee           = 10_000
 )
 
 // SignatureArgLayout is the durable maximum shape of the spending signature
@@ -60,21 +67,35 @@ type RuntimeArg struct {
 	MaxSize     int    `json:"max_size"`
 }
 
+// SentryAuthorization is the durable sentry spend-authorization contract for
+// one bounded key. PublicKeyHex and ComponentKeyID are instance fields filled
+// during key generation; the remaining fields are present in template-level
+// inventory metadata as well.
+type SentryAuthorization struct {
+	Contract         string   `json:"contract"`
+	ComponentKeyType string   `json:"component_key_type"`
+	PublicKeyHex     string   `json:"public_key,omitempty"`
+	ComponentKeyID   string   `json:"component_key_id,omitempty"`
+	SignatureMaxSize int      `json:"signature_max_size"`
+	RequiredOn       []string `json:"required_on"`
+}
+
 // Metadata is the complete non-secret signing contract for one bounded key.
 type Metadata struct {
-	Contract                string             `json:"contract"`
-	BaseSignatureArgLayout  SignatureArgLayout `json:"base_signature_arg_layout"`
-	SpendEffects            []string           `json:"spend_effects"`
-	MaxFee                  uint64             `json:"max_fee"`
-	AdminOperations         []AdminOperation   `json:"admin_operations"`
-	RuntimeArgs             []RuntimeArg       `json:"runtime_args"`
-	DerivedArgs             []DerivedArg       `json:"derived_args"`
-	ArgumentLayout          []ArgumentSlot     `json:"argument_layout"`
-	Layer3Policy            string             `json:"layer3_policy"`
-	AdminPublicKeyHex       string             `json:"admin_public_key,omitempty"`
-	AdminKeyID              string             `json:"admin_key_id,omitempty"`
-	ProgramBindingHex       string             `json:"program_binding,omitempty"`
-	PostSigningLogicSigSize int                `json:"post_signing_lsig_size"`
+	Contract                string               `json:"contract"`
+	BaseSignatureArgLayout  SignatureArgLayout   `json:"base_signature_arg_layout"`
+	SpendEffects            []string             `json:"spend_effects"`
+	MaxFee                  uint64               `json:"max_fee"`
+	AdminOperations         []AdminOperation     `json:"admin_operations"`
+	Sentry                  *SentryAuthorization `json:"sentry,omitempty"`
+	RuntimeArgs             []RuntimeArg         `json:"runtime_args"`
+	DerivedArgs             []DerivedArg         `json:"derived_args"`
+	ArgumentLayout          []ArgumentSlot       `json:"argument_layout"`
+	Layer3Policy            string               `json:"layer3_policy"`
+	AdminPublicKeyHex       string               `json:"admin_public_key,omitempty"`
+	AdminKeyID              string               `json:"admin_key_id,omitempty"`
+	ProgramBindingHex       string               `json:"program_binding,omitempty"`
+	PostSigningLogicSigSize int                  `json:"post_signing_lsig_size"`
 }
 
 // Clone returns a deep copy suitable for crossing cache and API boundaries.
@@ -86,6 +107,11 @@ func Clone(metadata *Metadata) *Metadata {
 	cloned.BaseSignatureArgLayout.MaxSizes = slices.Clone(metadata.BaseSignatureArgLayout.MaxSizes)
 	cloned.SpendEffects = slices.Clone(metadata.SpendEffects)
 	cloned.AdminOperations = slices.Clone(metadata.AdminOperations)
+	if metadata.Sentry != nil {
+		sentry := *metadata.Sentry
+		sentry.RequiredOn = slices.Clone(metadata.Sentry.RequiredOn)
+		cloned.Sentry = &sentry
+	}
 	cloned.RuntimeArgs = slices.Clone(metadata.RuntimeArgs)
 	cloned.DerivedArgs = slices.Clone(metadata.DerivedArgs)
 	cloned.ArgumentLayout = slices.Clone(metadata.ArgumentLayout)
@@ -123,6 +149,7 @@ func (metadata *Metadata) Equal(other *Metadata) bool {
 		slices.Equal(metadata.SpendEffects, other.SpendEffects) &&
 		metadata.MaxFee == other.MaxFee &&
 		slices.Equal(metadata.AdminOperations, other.AdminOperations) &&
+		equalSentryAuthorization(metadata.Sentry, other.Sentry) &&
 		slices.Equal(metadata.RuntimeArgs, other.RuntimeArgs) &&
 		slices.Equal(metadata.DerivedArgs, other.DerivedArgs) &&
 		slices.Equal(metadata.ArgumentLayout, other.ArgumentLayout) &&
@@ -145,6 +172,9 @@ func (metadata *Metadata) Validate() error {
 	if err := validateAdminMetadata(metadata, metadata.RequiresAdminKey()); err != nil {
 		return err
 	}
+	if err := validateSentryMetadata(metadata.Sentry); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -161,7 +191,7 @@ func (metadata *Metadata) ValidateProfile() error {
 	if metadata.MaxFee > MaximumProfileFee {
 		return fmt.Errorf("max_fee %d exceeds bounded1 ceiling %d", metadata.MaxFee, MaximumProfileFee)
 	}
-	if metadata.Layer3Policy != Layer3PolicyCustom && metadata.Layer3Policy != Layer3PolicyFixedAllowlist {
+	if metadata.Layer3Policy != Layer3PolicyCustom && metadata.Layer3Policy != Layer3PolicyFixedAllowlist && metadata.Layer3Policy != Layer3PolicyMerkleAllowlist {
 		return fmt.Errorf("unsupported bounded1 layer3_policy %q", metadata.Layer3Policy)
 	}
 	if err := ValidateSpendEffects(metadata.SpendEffects); err != nil {
@@ -170,11 +200,79 @@ func (metadata *Metadata) ValidateProfile() error {
 	if err := ValidateAdminOperations(metadata.AdminOperations); err != nil {
 		return err
 	}
+	if err := ValidateSentryAuthorizationProfile(metadata.Sentry); err != nil {
+		return err
+	}
+	if metadata.Sentry != nil {
+		for _, operation := range metadata.AdminOperations {
+			if operation.Authorization == AdminAuthorizationSpend {
+				return fmt.Errorf("bounded sentry profiles do not support spending-key-authorized %s", operation.Kind)
+			}
+		}
+	}
 	if err := ValidateSignatureLayout(metadata.BaseSignatureArgLayout); err != nil {
 		return err
 	}
 	if err := validateArgumentLayout(metadata); err != nil {
 		return err
+	}
+	if metadata.Layer3Policy == Layer3PolicyFixedAllowlist && len(metadata.DerivedArgs) != 0 {
+		return fmt.Errorf("fixed_allowlist must not declare derived arguments")
+	}
+	if metadata.Layer3Policy == Layer3PolicyMerkleAllowlist && len(metadata.DerivedArgs) != 1 {
+		return fmt.Errorf("merkle_allowlist requires exactly one derived Merkle proof argument")
+	}
+	return nil
+}
+
+func equalSentryAuthorization(a, b *SentryAuthorization) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Contract == b.Contract &&
+		a.ComponentKeyType == b.ComponentKeyType &&
+		a.PublicKeyHex == b.PublicKeyHex &&
+		a.ComponentKeyID == b.ComponentKeyID &&
+		a.SignatureMaxSize == b.SignatureMaxSize &&
+		slices.Equal(a.RequiredOn, b.RequiredOn)
+}
+
+// ValidateSentryAuthorizationProfile checks definition-level sentry fields.
+// Instance public-key fields are validated by Metadata.Validate after key
+// generation.
+func ValidateSentryAuthorizationProfile(sentry *SentryAuthorization) error {
+	if sentry == nil {
+		return nil
+	}
+	if sentry.Contract != SentryContractV1 {
+		return fmt.Errorf("unsupported bounded sentry contract %q", sentry.Contract)
+	}
+	if sentry.ComponentKeyType != SentryComponentKeyTypeV1 {
+		return fmt.Errorf("unsupported bounded sentry component key type %q", sentry.ComponentKeyType)
+	}
+	if sentry.SignatureMaxSize != SentrySignatureMaxSizeV1 {
+		return fmt.Errorf("bounded sentry signature_max_size %d invalid (expected %d)", sentry.SignatureMaxSize, SentrySignatureMaxSizeV1)
+	}
+	if len(sentry.RequiredOn) != 1 || sentry.RequiredOn[0] != PathSpend {
+		return fmt.Errorf("bounded sentry required_on must be exactly [%s]", PathSpend)
+	}
+	return nil
+}
+
+func validateSentryMetadata(sentry *SentryAuthorization) error {
+	if sentry == nil {
+		return nil
+	}
+	publicKey, err := DecodeCanonicalHex("sentry public_key", sentry.PublicKeyHex, SentryPublicKeySizeV1, SentryPublicKeySizeV1)
+	if err != nil {
+		return err
+	}
+	wantKeyID, err := witness.ID(sentry.ComponentKeyType, publicKey)
+	if err != nil {
+		return err
+	}
+	if sentry.ComponentKeyID != wantKeyID {
+		return fmt.Errorf("sentry component_key_id does not match public_key")
 	}
 	return nil
 }

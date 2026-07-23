@@ -328,6 +328,8 @@ sends those exact bytes to the client-configured algod simulation endpoint.
 The signer cannot tell whether released signatures will be simulated or
 submitted. Guarded simulation similarly completes ordinary component signing
 and `/sign/assemble` before the client routes the assembled group to algod.
+Bounded-sentry simulation completes `/sign/bounded-component`, sentry-role
+`/sign/component`, and `/sign/bounded-assemble` over the same frozen group.
 
 ---
 
@@ -857,6 +859,21 @@ This design achieves **true client key-type agnosticism**: clients never need to
 
 ---
 
+## Bounded-Sentry Spend Flow
+
+For inventory rows with `signing_flow: bounded-sentry1`, the client must:
+
+1. call `POST /sign/bounded-component` on the user signer, which finalizes the
+   group and applies signer policy/operator approval before returning base args
+   and the assembly receipt;
+2. request the sentry-role signature over those exact finalized bytes with
+   `POST /sign/component`;
+3. call `POST /sign/bounded-assemble` on the user signer with both components;
+4. submit or simulate the exact returned signed group.
+
+Ordinary `/sign` rejects these spends. Contract-admin rekey remains a separate
+flow and never contacts the sentry.
+
 ## Bounded Contract-Admin Rekey Flow
 
 An admin-key bounded profile keeps pure spending on `/sign`, but routes a pure
@@ -894,7 +911,9 @@ ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
 Bounded LogicSig DSA is the transaction-aware case: pure spends and
 spending-key rekeys use their declared base, derived, and runtime argument
 slots, while an admin-key rekey uses a signer partial plus an externally
-completed Falcon contract-admin slot.
+completed Falcon contract-admin slot. A sentry-enabled bounded spend inserts
+the sentry source between Layer-3 and admin slots and uses the user-first
+bounded component choreography above.
 
 ---
 

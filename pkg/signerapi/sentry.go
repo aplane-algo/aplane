@@ -55,11 +55,14 @@ type GuardedAssemblyRequest struct {
 // GuardedAssemblyTarget carries one guarded-account group position plus its
 // user and sentry component signatures.
 type GuardedAssemblyTarget struct {
-	TargetIndex           int      `json:"target_index"`
-	GuardedAccount        string   `json:"guarded_account"`
-	UserSignature         string   `json:"user_signature"`
-	UserSourceRequestID   string   `json:"user_source_request_id,omitempty"`
-	SentrySignature       string   `json:"sentry_signature"`
+	TargetIndex    int    `json:"target_index"`
+	GuardedAccount string `json:"guarded_account"`
+	UserSignature  string `json:"user_signature"`
+	// UserSourceRequestID is informational correlation metadata only; assembly
+	// authorization is bound by the signatures and frozen group bytes.
+	UserSourceRequestID string `json:"user_source_request_id,omitempty"`
+	SentrySignature     string `json:"sentry_signature"`
+	// SentrySourceRequestID is informational correlation metadata only.
 	SentrySourceRequestID string   `json:"sentry_source_request_id,omitempty"`
 	RuntimeArgs           []string `json:"runtime_args,omitempty"`
 }

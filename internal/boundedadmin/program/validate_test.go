@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
+	sentrymessage "github.com/aplane-algo/aplane/internal/sentry/message"
 )
 
 type testProgramBuilder struct {
@@ -94,13 +95,26 @@ func testExpectedProgramWithLayer3(t *testing.T, layer3 func(*testProgramBuilder
 }
 
 func testExpectedProgramWithAdminArg(t *testing.T, adminArgIndex int, layer3 func(*testProgramBuilder)) ([]byte, Expected) {
+	return testExpectedProgramWithOptions(t, adminArgIndex, false, layer3)
+}
+
+func testExpectedSentryProgram(t *testing.T) ([]byte, Expected) {
+	return testExpectedProgramWithOptions(t, 2, true, func(b *testProgramBuilder) {
+		b.pushInt(1)
+		b.branch(0x42, "accept")
+	})
+}
+
+func testExpectedProgramWithOptions(t *testing.T, adminArgIndex int, withSentry bool, layer3 func(*testProgramBuilder)) ([]byte, Expected) {
 	t.Helper()
 	spendingKey := make([]byte, 1793)
 	adminKey := make([]byte, 1793)
+	sentryKey := make([]byte, 1793)
 	binding := make([]byte, 32)
 	for i := range spendingKey {
 		spendingKey[i] = 0x11
 		adminKey[i] = 0x22
+		sentryKey[i] = 0x44
 	}
 	for i := range binding {
 		binding[i] = 0x33
@@ -201,12 +215,37 @@ func testExpectedProgramWithAdminArg(t *testing.T, adminArgIndex int, layer3 fun
 	b.branch(0x42, "accept")
 	// Opaque Layer 3 has no return and reaches the shared accept block.
 	b.label("spend")
+	if withSentry {
+		sentryArgIndex := adminArgIndex - 1
+		b.arg(sentryArgIndex)
+		b.op(0x15)
+		b.pushInt(0)
+		b.op(0x0d)
+		b.op(0x44)
+		b.arg(sentryArgIndex)
+		b.op(0x15)
+		b.pushInt(1280)
+		b.op(0x0e)
+		b.op(0x44)
+		b.pushBytes([]byte(sentrymessage.DomainTagV1))
+		b.pushBytes([]byte{byte(sentrymessage.RoleSentry)})
+		b.op(0x50)
+		b.op(0x31, 23)
+		b.op(0x50)
+		b.op(0x03)
+		b.arg(sentryArgIndex)
+		b.pushBytes(sentryKey)
+		b.op(0x85)
+		b.op(0x44)
+		b.branch(0x42, "layer3")
+		b.label("layer3")
+	}
 	layer3(b)
 	b.label("accept")
 	b.pushInt(1)
 	b.op(0x43)
 
-	return b.finish(t), Expected{
+	expected := Expected{
 		SpendingPublicKey: spendingKey,
 		AdminPublicKey:    adminKey,
 		ProgramBinding:    binding,
@@ -215,6 +254,11 @@ func testExpectedProgramWithAdminArg(t *testing.T, adminArgIndex int, layer3 fun
 		MaxFee:            10_000,
 		SpendEffects:      []string{"pay", "axfer", "asset_opt_in"},
 	}
+	if withSentry {
+		expected.SentryPublicKey = sentryKey
+		expected.SentryArgIndex = adminArgIndex - 1
+	}
+	return b.finish(t), expected
 }
 
 func TestValidateAcceptsArg3AdminSlot(t *testing.T) {
@@ -285,6 +329,31 @@ func TestValidateAcceptsFrozenStructure(t *testing.T) {
 	program, expected := testExpectedProgram(t)
 	if err := Validate(program, expected); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidateAcceptsFrozenSentryStructure(t *testing.T) {
+	program, expected := testExpectedSentryProgram(t)
+	if err := Validate(program, expected); err != nil {
+		t.Fatalf("Validate() rejected bounded sentry structure: %v", err)
+	}
+
+	wrongKey := expected
+	wrongKey.SentryPublicKey = append([]byte(nil), expected.SentryPublicKey...)
+	wrongKey.SentryPublicKey[0] ^= 0xff
+	if err := Validate(program, wrongKey); err == nil || !strings.Contains(err.Error(), "sentry verification region") {
+		t.Fatalf("Validate() error = %v, want sentry-key rejection", err)
+	}
+}
+
+func TestValidateRejectsUnreportedSentryStructure(t *testing.T) {
+	program, expected := testExpectedSentryProgram(t)
+	expected.SentryPublicKey = nil
+	expected.SentryArgIndex = 0
+
+	err := Validate(program, expected)
+	if err == nil || !strings.Contains(err.Error(), "present without sentry metadata") {
+		t.Fatalf("Validate() error = %v, want unreported sentry rejection", err)
 	}
 }
 

@@ -91,6 +91,12 @@ func (e *Core) signerCacheSentryPublicKey(address string) (string, bool) {
 	return e.SignerCache.SentryPublicKeyForAddress(address)
 }
 
+func (e *Core) signerCacheBoundedMaxFee(address string) (uint64, bool) {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	return e.SignerCache.BoundedMaxFeeForAddress(address)
+}
+
 func (e *Core) signerCacheSigningFlow(address string) string {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()

@@ -612,6 +612,44 @@ func TestRequestBoundedAdmin_Success(t *testing.T) {
 	}
 }
 
+func TestRequestBoundedSentryEndpoints(t *testing.T) {
+	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/sign/bounded-component":
+			var got signerapi.BoundedComponentRequest
+			if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+				t.Fatal(err)
+			}
+			return mockResponse(http.StatusOK, jsonBody(t, signerapi.BoundedComponentResponse{
+				RequestID: got.RequestID, Transactions: []string{"5458aa"},
+				Components: []signerapi.BoundedBaseComponent{{TargetIndex: 0, BoundedAccount: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
+			})), nil
+		case "/sign/bounded-assemble":
+			var got signerapi.BoundedAssemblyRequest
+			if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+				t.Fatal(err)
+			}
+			return mockResponse(http.StatusOK, jsonBody(t, signerapi.BoundedAssemblyResponse{RequestID: got.RequestID, SignedGroup: []string{"ccdd"}})), nil
+		default:
+			t.Fatalf("unexpected request path %q", req.URL.Path)
+			return nil, nil
+		}
+	})
+	c.cacheApprovalWaitSeconds(60)
+	component, err := c.RequestBoundedComponentWithContext(t.Context(), signerapi.BoundedComponentRequest{Requests: []signerapi.SignRequest{{AuthAddress: "ADDR1", TxnBytesHex: "5458aa"}}})
+	if err != nil || len(component.Components) != 1 {
+		t.Fatalf("RequestBoundedComponentWithContext() = %#v, %v", component, err)
+	}
+	assembly, err := c.RequestBoundedAssembleWithContext(t.Context(), signerapi.BoundedAssemblyRequest{
+		GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.BoundedAssemblyTarget{{
+			TargetIndex: 0, BoundedAccount: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SentrySignature: "cc",
+		}},
+	})
+	if err != nil || len(assembly.SignedGroup) != 1 {
+		t.Fatalf("RequestBoundedAssembleWithContext() = %#v, %v", assembly, err)
+	}
+}
+
 func TestRequestGroupSign_ErrorField(t *testing.T) {
 	resp := signerapi.GroupSignResponse{Error: "rejected by policy"}
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {

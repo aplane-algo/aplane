@@ -345,8 +345,9 @@ response handling, token rotation, or policy/settings changes.
 
 Enforced callsites:
 
-- `internal/signerapp/daemon/http_runtime.go` wraps HTTP `/sign`, `/sign/component`,
-  `/sign/assemble`, `/plan`, `/status`,
+- `internal/signerapp/daemon/http_runtime.go` wraps HTTP `/sign`,
+  `/sign/component`, `/sign/assemble`, `/sign/bounded-component`,
+  `/sign/bounded-assemble`, `/sign/bounded-admin`, `/plan`, `/status`,
   `/keys`, `/keytypes`, `/admin/generate`, `/admin/sentries/sync`, and
   `/admin/keys` with
   `requireAuth`. `/admin/sentries/sync` uses `sentries.sync` because it

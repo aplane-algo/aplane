@@ -41,6 +41,7 @@ type SignerCache struct {
 	SigningFlows            map[string]string           `json:"signing_flows,omitempty"`              // address -> signing choreography label (e.g. "sentry1"); empty = plain /sign
 	SentryComponentKeyTypes map[string]string           `json:"sentry_component_key_types,omitempty"` // address -> sentry component key type for signing_flow "sentry1"
 	SentryPublicKeys        map[string]string           `json:"sentry_public_keys,omitempty"`         // address -> embedded sentry public key hex
+	BoundedMaxFees          map[string]uint64           `json:"bounded_max_fees,omitempty"`           // address -> bounded authorization max_fee
 	Locked                  bool                        `json:"-"`                                    // True if signer reported 403 (locked) on last /keys check
 	store                   *Store
 }

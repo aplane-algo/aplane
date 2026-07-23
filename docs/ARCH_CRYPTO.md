@@ -29,7 +29,7 @@ The cryptographic subsystem is split across these packages:
 |---|---|
 | Native signing | `internal/signing`, `internal/signing/ed25519` |
 | LogicSig provider interfaces, registry, and salting | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
-| Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/corridor`, `lsig/composeddsa`, `lsig/generictemplate` |
+| Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/composeddsa`, `lsig/generictemplate` |
 | Algorithm metadata, keygen, mnemonics | `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Key-type visibility and state | `internal/keytypecatalog`, `internal/keytypestate` |
 | Encrypted key/template persistence | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/templatestore`, `internal/templatelibrary` |
@@ -109,14 +109,14 @@ Built-in and bundled key types include:
 
 - native `ed25519`
 - plain DSA LogicSigs `aplane.falcon1024.v1` and `aplane.ed25519.v1`
-- Falcon-only sentry accounts `aplane.falcon1024-sentry1024.v1`
-  and `aplane.corridor.v1`
+- the Falcon-only dedicated sentry account `aplane.falcon1024-sentry1024.v1`
 - the Falcon witness key `aplane.witness-falcon1024.v1`, used under separate
   sentry and contract-admin custody capabilities
 - the generic `aplane.htlc.v1` template
 - bounded Falcon templates: `aplane.falcon1024-allowlist.v1`,
   `aplane.falcon1024-allowlist.v2`, `aplane.falcon1024-timelock.v1`, and
-  `aplane.falcon1024-allowlist-alock.v1`
+  `aplane.falcon1024-allowlist-alock.v1`, plus the bounded-sentry
+  `aplane.corridor.v1`
 
 Creation parameters are part of the provider boundary. `internal/lsigprovider`
 owns shared parameter metadata and normalization helpers used by UI adapters,
@@ -146,7 +146,6 @@ Built-in LogicSig DSA providers live under `lsig/`. The compiled providers are:
 |---|---|---|
 | `aplane.falcon1024.v1` | `falcon1024` | default-enabled |
 | `aplane.falcon1024-sentry1024.v1` | `falcon1024-sentry1024` | library-visible |
-| `aplane.corridor.v1` | `corridor` | library-visible |
 | `aplane.ed25519.v1` | `aplane.ed25519` | library-visible |
 
 These providers implement the unified `internal/lsigprovider.SigningProvider`
@@ -233,8 +232,8 @@ Identity-scoped key type enable/disable metadata is owned by
 `internal/keytypestate`. State records live under
 `identities/<identity>/keytypes/<key_type>.json` via
 `internal/storepaths.Paths.KeyTypeRecord()`. They make compiled
-library-visible providers such as `aplane.falcon1024-sentry1024.v1`,
-`aplane.corridor.v1`, and `aplane.ed25519.v1` available to that identity for key type discovery and
+library-visible providers such as `aplane.falcon1024-sentry1024.v1` and
+`aplane.ed25519.v1` available to that identity for key type discovery and
 generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
 gated separately by the provider's explicit mnemonic-import capability.
 Installed YAML templates use the same record with `source:"yaml_generic"` or

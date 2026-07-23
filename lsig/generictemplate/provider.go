@@ -74,9 +74,18 @@ type BoundedAuthorizationSpec struct {
 	SpendEffects    []string                    `yaml:"spend_effects"`
 	MaxFee          *uint64                     `yaml:"max_fee"`
 	AdminOperations []TransactionAdminOperation `yaml:"admin_operations"`
+	Sentry          *BoundedSentrySpec          `yaml:"sentry"`
 	Layer3          *TransactionLayer3Spec      `yaml:"layer3"`
 	RuntimeArgs     []BoundedRuntimeArgSpec     `yaml:"runtime_args"`
 	DerivedArgs     []BoundedDerivedArgSpec     `yaml:"derived_args"`
+}
+
+// BoundedSentrySpec enables the frozen sentry1 spend authorization gate.
+// RequiredOn is deliberately a list even though v1 accepts only [spend], so a
+// future contract revision cannot silently reinterpret the existing shape.
+type BoundedSentrySpec struct {
+	Contract   string   `yaml:"contract"`
+	RequiredOn []string `yaml:"required_on"`
 }
 
 // BoundedRuntimeArgSpec declares caller-supplied data and every path on which

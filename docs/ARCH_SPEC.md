@@ -9,6 +9,7 @@
 > For network context tokens and transaction genesis-hash mapping, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
 > For guarded signing and sentry node architecture, see [ARCH_SENTRY.md](ARCH_SENTRY.md).
 > For bounded authorization contracts and external contract-admin custody, see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
+> For the canonical Corridor v1 bounded-sentry profile, see [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md).
 
 ## Table of Contents
 
@@ -1116,9 +1117,11 @@ declares `policy_gate: layer3`; it can narrow but never broaden the envelope.
 
 The one bounded1 contract admin primitive is the Falcon-1024 witness key. The
 signer retains the spending key and public contract-admin metadata; the private
-admin witness remains in standalone `.wit` custody. Admin-key rekey uses the explicit
-`signing_flow: bounded1` and `POST /sign/bounded-admin`, never ordinary caller
-runtime args or sentry assembly. Spending-key rekey remains possible only when
+admin witness remains in standalone `.wit` custody. Admin-key rekey uses
+`POST /sign/bounded-admin`, never ordinary caller runtime args or sentry
+assembly. Sentry-enabled spend profiles advertise
+`signing_flow: bounded-sentry1` and use bounded component assembly; their admin
+rekey still bypasses the sentry. Spending-key rekey remains possible only when
 the profile explicitly selects it and always receives forced operator review.
 Planning owns the single finalized-transaction classification boundary after
 fee pooling. The executor checks the selected path and loaded durable metadata
@@ -1128,7 +1131,8 @@ derived, and runtime argument slots; undeclared caller arguments and hybrid
 effects fail closed.
 
 `aplane.falcon1024-allowlist-alock.v1` is the framework-owned fixed-list
-profile. External key generation and ceremonies are owned by
+profile. `aplane.corridor.v1` composes the framework Merkle policy with a
+sentry spend gate and external-admin rekey. External key generation and ceremonies are owned by
 `aprekey`; apshell and apconsole do not handle private contract-admin
 artifacts. The normative field inventory, canonical encodings, vectors,
 schema, normal forms, and custody contract are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
@@ -1594,8 +1598,9 @@ The repo uses:
   `docs/formal/metrics.json`. It covers `sign_boundary`,
   `policy_precedence`, `composition`, `lifecycle`, `approval_coordinator`,
   `approval_composition`, `lifecycle_composition`, `session_ownership`,
-  `guarded_assembly`, and `plugin_signing`, plus liveness configurations for
-  `approval_coordinator`, `lifecycle`, and `lifecycle_composition`.
+  `guarded_assembly`, `bounded_sentry`, and `plugin_signing`, plus liveness
+  configurations for `approval_coordinator`, `lifecycle`, and
+  `lifecycle_composition`.
   `make formal-test-deep` uses `docs/formal/metrics_deep.json` for larger
   pre-release or scheduled bounds. Both targets run
   `formal-copy-sync-check` first and require `tla2tools.jar` through
@@ -1789,7 +1794,7 @@ Product-level boundaries:
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/service.go`, `internal/signerapp/backupadmin/limiter.go`, `internal/backup/*.go` |
-| LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/lsig/wrapper.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/corridor/provider.go`, `lsig/corridor/register.go`, `lsig/corridor/signerreg/register.go`, `lsig/sentryaccount/sentryaccount.go`, `internal/boundedadmin/message/message.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
+| LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/lsig/wrapper.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `library/templates/aplane.corridor.v1.yaml`, `lsig/sentryaccount/sentryaccount.go`, `internal/boundedadmin/message/message.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
 | LocalNet Setup | `cmd/aplocalnet/main.go`, `internal/aplocalnet/setup.go`, `plugins/algokit-localnet/algokit-localnet.go`, `plugins/algokit-localnet/manifest.json` |

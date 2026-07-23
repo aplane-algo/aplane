@@ -66,6 +66,7 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 		{name: "duplicate spend", mutate: func(m *Metadata) { m.SpendEffects = []string{"pay", "pay"} }, want: "duplicate spend effect"},
 		{name: "fee ceiling", mutate: func(m *Metadata) { m.MaxFee = MaximumProfileFee + 1 }, want: "exceeds"},
 		{name: "unknown Layer-3 policy", mutate: func(m *Metadata) { m.Layer3Policy = "open" }, want: "layer3_policy"},
+		{name: "Merkle policy without proof", mutate: func(m *Metadata) { m.Layer3Policy = Layer3PolicyMerkleAllowlist }, want: "exactly one"},
 		{name: "missing policy gate", mutate: func(m *Metadata) {
 			m.AdminOperations = []AdminOperation{{Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend}}
 		}, want: "unsupported policy gate"},
@@ -115,6 +116,67 @@ func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 	}
 	if got, want := metadata.LogicSigSizeForPath(PathAdminRekey), 10+64+FalconAdminSignatureSize; got != want {
 		t.Fatalf("admin-rekey size = %d, want %d", got, want)
+	}
+}
+
+func TestMetadataValidateSentryAuthorization(t *testing.T) {
+	publicKey := bytes.Repeat([]byte{0x6b}, SentryPublicKeySizeV1)
+	componentKeyID, err := witness.ID(SentryComponentKeyTypeV1, publicKey)
+	if err != nil {
+		t.Fatalf("witness.ID() error = %v", err)
+	}
+	metadata := &Metadata{
+		Contract:               ContractV1,
+		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+		SpendEffects:           []string{SpendEffectPay},
+		MaxFee:                 1_000,
+		Layer3Policy:           Layer3PolicyCustom,
+		Sentry: &SentryAuthorization{
+			Contract: SentryContractV1, ComponentKeyType: SentryComponentKeyTypeV1,
+			PublicKeyHex: hex.EncodeToString(publicKey), ComponentKeyID: componentKeyID,
+			SignatureMaxSize: SentrySignatureMaxSizeV1, RequiredOn: []string{PathSpend},
+		},
+		ArgumentLayout: []ArgumentSlot{
+			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 1280, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, AdminRekey: ArgRequired}},
+			{Index: 1, Name: SentrySignatureSlot, Source: ArgSourceSentry, MaxSize: SentrySignatureMaxSizeV1, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden}},
+		},
+		PostSigningLogicSigSize: 100 + 1280 + SentrySignatureMaxSizeV1,
+	}
+	if err := metadata.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if got, want := metadata.LogicSigSizeForPath(PathSpend), metadata.PostSigningLogicSigSize; got != want {
+		t.Fatalf("spend size = %d, want %d", got, want)
+	}
+	if got, want := metadata.LogicSigSizeForPath(PathSpendingRekey), 100+1280; got != want {
+		t.Fatalf("spending-rekey size = %d, want %d", got, want)
+	}
+
+	cloned := Clone(metadata)
+	if !metadata.Equal(cloned) || cloned.Sentry == metadata.Sentry {
+		t.Fatalf("Clone() did not deep-copy sentry metadata: %#v", cloned.Sentry)
+	}
+	cloned.Sentry.RequiredOn[0] = PathAdminRekey
+	if metadata.Equal(cloned) {
+		t.Fatal("sentry RequiredOn change not detected")
+	}
+
+	badID := Clone(metadata)
+	badID.Sentry.ComponentKeyID = strings.Repeat("A", len(componentKeyID))
+	if err := badID.Validate(); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("Validate() error = %v, want sentry key-ID mismatch", err)
+	}
+	badPath := Clone(metadata)
+	badPath.Sentry.RequiredOn = []string{PathSpendingRekey}
+	if err := badPath.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "exactly [spend]") {
+		t.Fatalf("ValidateProfile() error = %v, want path rejection", err)
+	}
+	spendingRekey := Clone(metadata)
+	spendingRekey.AdminOperations = []AdminOperation{{
+		Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend, PolicyGate: PolicyGateLayer3,
+	}}
+	if err := spendingRekey.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "do not support spending-key-authorized rekey") {
+		t.Fatalf("ValidateProfile() error = %v, want bounded-sentry spending-rekey rejection", err)
 	}
 }
 
@@ -172,7 +234,7 @@ func TestMetadataEqual(t *testing.T) {
 // TestMetadataEqualCoversAllFields forces Equal to be updated when the
 // Metadata struct grows a field: bump the count only alongside Equal.
 func TestMetadataEqualCoversAllFields(t *testing.T) {
-	if n := reflect.TypeOf(Metadata{}).NumField(); n != 13 {
+	if n := reflect.TypeOf(Metadata{}).NumField(); n != 14 {
 		t.Fatalf("Metadata has %d fields; update Equal and this count together", n)
 	}
 }

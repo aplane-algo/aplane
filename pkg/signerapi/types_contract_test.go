@@ -148,6 +148,10 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"group_sign_response_mutated.json", assertContractRoundTrip[GroupSignResponse]},
 		{"bounded_admin_request.json", assertContractRoundTrip[BoundedAdminRequest]},
 		{"bounded_admin_partial_response.json", assertContractRoundTrip[BoundedAdminPartialResponse]},
+		{"bounded_component_request.json", assertContractRoundTrip[BoundedComponentRequest]},
+		{"bounded_component_response.json", assertContractRoundTrip[BoundedComponentResponse]},
+		{"bounded_assembly_request.json", assertContractRoundTrip[BoundedAssemblyRequest]},
+		{"bounded_assembly_response.json", assertContractRoundTrip[BoundedAssemblyResponse]},
 		{"group_plan_response_mutated.json", assertContractRoundTrip[GroupPlanResponse]},
 		{"error_response.json", assertContractRoundTrip[ErrorResponse]},
 		{"keys_response_guarded.json", assertContractRoundTrip[KeysResponse]},
@@ -244,6 +248,7 @@ func signerAPIErrorCodes(t *testing.T) []string {
 		ErrCodeCacheRefresh,
 		ErrCodeInternal,
 		ErrCodeBoundedAdminRequired,
+		ErrCodeBoundedSentryRequired,
 	}
 }
 

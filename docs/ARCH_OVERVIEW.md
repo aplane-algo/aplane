@@ -239,7 +239,6 @@ aplane/
 │   │   ├── derivation/, family/, keygen/, keys/, signing/
 │   │   └── v1/                    # v1 standard provider, ops, composer, templates
 │   ├── falcon1024_guarded/        # Guarded Falcon-1024 (user + sentry) LogicSig provider
-│   ├── corridor/                  # Always-sentry corridor LogicSig provider
 │   ├── sentryaccount/             # Shared client-safe guarded/sentry account helpers
 │   ├── ed25519lsig/               # Ed25519 LogicSig DSA base for composed templates
 │   ├── composeddsa/               # Generic ComposedDSA composer
@@ -418,6 +417,7 @@ See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for headless configurati
 - [ARCH_ENGINE.md](ARCH_ENGINE.md) - Engine layer details
 - [ARCH_SENTRY.md](ARCH_SENTRY.md) - Guarded signing and sentry node architecture
 - [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) - Bounded DSA contracts, effect model, and external contract-admin ceremonies
+- [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md) - Corridor v1 bounded-sentry composition and lifecycle
 - [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) - Transaction signing flow details
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md) - Provider layer details (DSA algorithms)
 - [DEV_KEYTYPES.md](DEV_KEYTYPES.md) - key type and LogicSig template development guide

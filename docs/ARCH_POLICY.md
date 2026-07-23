@@ -232,9 +232,8 @@ Sentry semantics:
 - `rekey_policy` is the positive authorization surface for non-zero `RekeyTo`
   transactions when `reject_rekey` is absent or false. It authorizes only pure
   0 ALGO self-payment rekeys whose sender and target match an allowed edge.
-  For corridor accounts, this authorization is off-chain sentry policy: the
-  on-chain recipient corridor still bounds ordinary transfers, but it does not
-  bound the rekey target.
+  Bounded-sentry v1 does not invoke sentry policy for rekeys; its sentry slot
+  is spend-only and forbidden on administrative paths.
 
 Both policy domains are validated by schema, not by the identity's current key
 inventory. A sentry node can carry sentry-domain `policy.yaml` before an
@@ -314,9 +313,9 @@ ownership: when true, any non-zero `RekeyTo` rejects. When it is absent or
 false, the sentry still fails closed unless `rekey_policy.allowed` authorizes
 the exact sender-to-target edge and the target transaction is a pure 0 ALGO
 self-payment with no close remainder.
-For corridor accounts, the recipient Merkle root is an on-chain transfer
-constraint, not a rekey-target constraint. Rekey target safety depends on
-sentry key secrecy and the effective sentry-domain `rekey_policy`.
+This sentry-domain rekey surface applies to dedicated `sentry1` guarded
+accounts. Corridor v1 uses a distinct external contract-admin witness for its
+bounded pure-rekey path and never asks sentry policy to authorize that target.
 
 Network-scoped rules derive transaction network identity from `GenesisHash`,
 not `GenesisID`. Unknown genesis hashes fail closed when a network-scoped rule

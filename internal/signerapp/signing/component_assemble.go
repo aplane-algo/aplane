@@ -19,7 +19,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 
@@ -28,16 +27,11 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// ComponentPacker and AssemblyExtraArgsProvider are BEHAVE-axis capability hooks
+// ComponentPacker is a BEHAVE-axis capability hook
 // (see docs/ARCH_KEYTYPE_AXES.md): assembly resolves the provider for a key type,
-// then type-asserts these to ask it to behave — no switch on key type. A provider
-// that does not implement AssemblyExtraArgsProvider simply appends no extra args.
+// then type-asserts it to ask it to behave — no switch on key type.
 type ComponentPacker interface {
 	PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error)
-}
-
-type AssemblyExtraArgsProvider interface {
-	AssemblyExtraArgs(txn types.Transaction, params map[string]string) ([][]byte, error)
 }
 
 func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRequest, group *canonical.Group, session componentKeyGetter) (*GuardedAssemblyResult, *ServiceError) {
@@ -146,18 +140,13 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 	if buildErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d signatures invalid: %v", target.TargetIndex, buildErr))
 	}
-	providerArgs, err := guardedAssemblyProviderArgs(target, entry, keyMaterial, signatureProvider)
-	if err != nil {
-		return "", err
-	}
 	runtimeArgs, err := orderedAssemblyRuntimeArgs(target, keyMaterial.SigningArgs)
 	if err != nil {
 		return "", err
 	}
 
-	lsigArgs := make([][]byte, 0, len(signatureArgs)+len(providerArgs)+len(runtimeArgs))
+	lsigArgs := make([][]byte, 0, len(signatureArgs)+len(runtimeArgs))
 	lsigArgs = append(lsigArgs, signatureArgs...)
-	lsigArgs = append(lsigArgs, providerArgs...)
 	lsigArgs = append(lsigArgs, runtimeArgs...)
 	lsigAcct := algocrypto.LogicSigAccount{
 		Lsig: types.LogicSig{
@@ -201,21 +190,6 @@ func validateAssembledGuardedTarget(target signerapi.GuardedAssemblyTarget, entr
 		))
 	}
 	return nil
-}
-
-func guardedAssemblyProviderArgs(target signerapi.GuardedAssemblyTarget, entry canonical.Txn, keyMaterial *coresigning.KeyMaterial, provider lsigprovider.LSigProvider) ([][]byte, *ServiceError) {
-	if keyMaterial == nil {
-		return nil, nil
-	}
-	augmenter, ok := provider.(AssemblyExtraArgsProvider)
-	if !ok {
-		return nil, nil
-	}
-	args, err := augmenter.AssemblyExtraArgs(entry.Txn, keyMaterial.Parameters)
-	if err != nil {
-		return nil, badRequest(fmt.Sprintf("target index %d %v", target.TargetIndex, err))
-	}
-	return args, nil
 }
 
 func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.GuardedPassthroughItem, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
@@ -286,8 +260,11 @@ func rejectLocalGuardedPassthrough(ctx context.Context, stxn types.SignedTxn, ta
 		if km == nil {
 			continue // not held by this signer — a legitimate foreign passthrough
 		}
-		if keytypes.IsGuardedAccountKeyType(km.Type) {
-			return badRequest(fmt.Sprintf("passthrough index %d is a guarded account; it must be signed through component assembly, not passthrough", targetIndex))
+		isGuarded := keytypes.IsGuardedAccountKeyType(km.Type)
+		isBoundedSentry := km.BoundedAuthorization != nil && km.BoundedAuthorization.Sentry != nil
+		zeroLoadedKeyMaterial(km)
+		if isGuarded || isBoundedSentry {
+			return badRequest(fmt.Sprintf("passthrough index %d requires component assembly and cannot be supplied as passthrough", targetIndex))
 		}
 	}
 	return nil

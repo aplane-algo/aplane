@@ -82,6 +82,9 @@ func (s *Service) SignGroupWithContext(ctx context.Context, identityID string, r
 	if planHasBoundedAdminKeyOperation(plan) {
 		return nil, boundedAdminRequired()
 	}
+	if planHasBoundedSentrySpend(plan) {
+		return nil, boundedSentryRequired()
+	}
 	return s.signGroupWithPlanContext(ctx, identityID, req, session, plan)
 }
 

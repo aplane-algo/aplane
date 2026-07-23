@@ -630,9 +630,9 @@ New identities default to:
 - `auto_approve_self_noop_transfer: false`
 - other guards unset / disabled
 
-For corridor accounts, `rekey_policy` authorizes rekey targets off-chain. The
-compiled corridor recipient list bounds ordinary transfers, not future rekey
-targets.
+`rekey_policy` applies to dedicated `sentry1` guarded accounts. Corridor v1's
+sentry is spend-only; its pure rekey uses the separate offline contract-admin
+witness and does not evaluate sentry policy.
 
 ### Example
 

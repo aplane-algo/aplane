@@ -81,9 +81,12 @@ Canonical forms:
   framework-owned bounded1 allowlist. Its spending key and contract admin key
   are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
   admin-key algorithm selector.
-- guarded account key types name both the account DSA and the sentry DSA,
-  currently `aplane.falcon1024-sentry1024.v1`; `aplane.corridor.v1`
-  is the Falcon-1024-only corridor shorthand.
+- the dedicated guarded account key type
+  `aplane.falcon1024-sentry1024.v1` names both its account DSA and sentry DSA.
+  `aplane.corridor.v1` is instead an optional schema-v2 composed template: its
+  durable `bounded_authorization` metadata declares `bounded1`, a `sentry1`
+  spend gate, and the framework Merkle allowlist policy. Clients must not infer
+  those dimensions from the key-type string.
 
 Witness key records carry no role field. Enrollment assigns the role and
 custody assigns signing capability: networked signer custody may produce only
@@ -151,6 +154,12 @@ account.
 aliases; bounded admin operations use `POST /sign/bounded-admin` and the
 bounded1 DTOs defined below.
 
+This release is the first supported `bounded1` contract. Earlier repository
+vectors and developer-generated keys were pre-release and are not
+compatibility-bearing; such keys must be recreated. The canonical profile and
+goldens below, including the optional-sentry presence encoding, establish the
+v1 baseline.
+
 Bounded1 uses TEAL v12 and admits only pure payments, pure asset transfers,
 asset opt-ins, plus an optional pure `pay` rekey. Asset opt-in is a distinct
 effect (`AssetAmount == 0` and `AssetReceiver == Sender`), so permission to
@@ -177,6 +186,9 @@ u32(spend_effect_count) || field(each effect in pay,axfer,asset_opt_in order) ||
 u64(max_fee) ||
 u32(admin_operation_count) ||
 field(kind) || field(authorization) || field(policy_gate) per admin operation in rekey order ||
+u32(sentry_present) ||
+if present: field("sentry1") || field("aplane.witness-falcon1024.v1") ||
+u32(1280) || u32(1) || field("spend") ||
 field(layer3_policy) ||
 u32(base_signature_arg_count) || u32(each base maximum) ||
 u32(derived_arg_count) || field/name/kind/parameter/maximum records ||
@@ -199,8 +211,9 @@ values participate. A missing or explicitly empty optional parameter uses a
 zero-length `canonical_value`, distinct from explicit zero, false, or an empty
 list. The separately bound injected
 `bounded_admin_public_key`, display/provenance data, paths, and per-request
-runtime values do not. Static runtime/derived declarations and path masks are
-part of the canonical profile above.
+runtime values do not. A sentry-enabled profile does include its injected
+`sentry_public_key` behavior parameter. Static runtime/derived declarations and
+path masks are part of the canonical profile above.
 
 The sole bounded1 contract admin primitive is Falcon-1024. Its public key is
 exactly 1,793 bytes and its signature is non-empty and at most 1,280 bytes. The
@@ -242,6 +255,24 @@ SHA512_256(
 )
 ```
 
+For `bounded-sentry1`, the user signer also returns a Falcon-signed assembly
+receipt. With `field` as above, `metadata_json` equal to JSON encoding of the
+normalized durable `bounded_authorization` structure, and runtime arguments
+sorted by name, its message is:
+
+```text
+SHA512_256(
+  field("APLANE_BOUNDED_SENTRY_ASSEMBLY_V1") ||
+  field(bounded_account) ||
+  field(transaction_id) ||
+  field(SHA512_256(metadata_json)) ||
+  u32(runtime_arg_count) || field(name) || field(value) || ...
+)
+```
+
+Assembly verifies this receipt with the bounded spending public key before it
+accepts the base component or sentry signature.
+
 For the complete vector inputs in `ARCH_BOUNDED_DSA.md`, the frozen outputs are:
 
 ```text
@@ -249,20 +280,25 @@ Contract Admin Key ID:
 MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
-0a5e99e840a2e70f3b22653dbb438c39fa3f4f57d0a5f08fca2cc6afba198336
+23aebf3166f64d6a0e6467d0fde647191094907f733c60fb946129d7cc828509
 
 admin_message:
-290c8f4a249f53973889e356a1a2974c04de33d892d615ac6b94180051ea75c9
+324dfa8eee495b7f4ddaa67f640c906184beb49abfd304d1336be233e84998b6
 ```
 
 Argument slots are statically ordered as base signatures, signer-derived Layer
-3 values, caller runtime Layer 3 values, and the optional admin signature.
+3 values, caller runtime Layer 3 values, the optional sentry signature, and the
+optional admin signature.
 Each slot has a frozen index, maximum, source, and path mask. Interior unused
 Layer 3 slots are explicit empty values; only trailing unused slots may be
 omitted. An admin-key partial omits the admin slot, and external completion pads
 to and fills the metadata-declared admin index. Ordinary `/sign` rejects
-caller-supplied contract-admin or signer-derived values. The frozen flow label
-is `bounded1` and the typed partial endpoint is `POST /sign/bounded-admin`.
+caller-supplied contract-admin, sentry, or signer-derived values. The frozen
+flow labels are `bounded1` for profiles without a sentry and
+`bounded-sentry1` for profiles with the sentry spend gate. The typed admin
+partial endpoint remains `POST /sign/bounded-admin`; bounded-sentry spend uses
+`POST /sign/bounded-component`, sentry-role `POST /sign/component`, and
+`POST /sign/bounded-assemble` in that order.
 
 Signer planning classifies for initial path sizing, finalizes grouping, dummy,
 and fee mutations, then validates the finalized transaction at the single
@@ -281,7 +317,7 @@ user namespace `bounded_` and composer label namespace `__aplane_bounded1_`.
 Layer 3 slots. V1 supports caller runtime values with explicit maximum/exact
 length contracts and the signer-derived `merkle_allowlist_proof` primitive.
 The optional typed `bounded.layer3` object selects a framework-owned policy. V1 supports
-only `policy: fixed_allowlist`, with parameter references
+`policy: fixed_allowlist`, with parameter references
 `recipients_parameter`, optional `asset_ids_parameter`, optional
 `max_payment_amount_parameter`, and optional
 `max_asset_amount_parameter`. A framework-owned policy rejects author `teal`.
@@ -289,6 +325,18 @@ Its address and asset lists are inline, canonical, and independently capped at
 30 entries. A Layer-3-gated spending-key rekey requires `pay` in the fixed
 allowlist's `spend_effects`. Omitting `bounded.layer3` selects contained custom
 author TEAL.
+
+A profile with `bounded.sentry` may not declare a
+`spending_key`-authorized rekey. The combination would bypass the spend-only
+sentry gate and is not routable through `bounded-sentry1`; schema-v2 template
+and durable metadata validation reject it. Sentry-enabled profiles use
+`admin_key` rekey for recovery.
+
+V1 also supports `policy: merkle_allowlist`. It accepts only a required
+`recipients_parameter` bound to `address[]` with 1-65,536 entries and requires
+exactly one 512-byte `merkle_allowlist_proof` derived argument for that same
+parameter. The composer computes the fixed-depth root and emits the complete
+proof verifier; author TEAL, asset filters, and amount options are forbidden.
 
 ### External Contract Admin Artifact Contract
 
@@ -385,7 +433,10 @@ closed. Apshell and apconsole have no contract-admin artifact workflow.
 
 `prepare-rekey` and `prepare-unrekey` perform signer planning, policy, approval,
 group finalization, and spending-partial creation, then write a strict
-`aplane.bounded-admin-request.v1` to `.apbounded-admin-request`. Offline `sign`
+`aplane.bounded-admin-request.v2` to `.apbounded-admin-request`. V2 adds the
+optional sentry authorization record to the request-hash transcript; V1
+requests are rejected with `unsupported_request_schema` so version-skewed
+offline helpers fail explicitly rather than reporting a generic hash mismatch. Offline `sign`
 validates the request and writes `aplane.bounded-admin-signature.v1` to
 `.apbounded-admin-signature`. Networked `complete` consumes the pair and submits
 without contacting apsigner or replanning.
@@ -995,6 +1046,7 @@ The bundled templates that ship under `library/templates/` are:
 | `aplane.falcon1024-allowlist.v2` | Falcon-1024 allowlist using a fixed-depth Merkle root with signer-generated proofs |
 | `aplane.htlc.v1` | Hash time-locked contract |
 | `aplane.falcon1024-allowlist-alock.v1` | Falcon-1024 bounded allowlist whose pure rekey additionally requires an external Falcon admin signature |
+| `aplane.corridor.v1` | Optional bounded Falcon profile with a Merkle recipient allowlist, sentry-authorized spends, and external-admin pure rekey |
 
 Only `aplane.falcon1024-allowlist.v1` is installed and enabled by default for
 new signer stores; the rest are available to install from the library.
@@ -1194,7 +1246,10 @@ Bounded signing-metadata version 2 additionally requires the canonical
   require `none`
 - `runtime_args` and `derived_args`: canonical declarations, possibly empty
 - `argument_layout`: complete ordered slots with source, maximum, and all path masks
-- `layer3_policy`: exactly `custom` or `fixed_allowlist`
+- `layer3_policy`: exactly `custom`, `fixed_allowlist`, or `merkle_allowlist`
+- optional `sentry`: contract, witness key type, resolved public key and Witness
+  Key ID, maximum signature size, and exact `[spend]` path; its argument slot
+  source is `sentry`
 - `admin_public_key`, `admin_key_id`, and `program_binding` when an operation
   uses `authorization: admin_key`; the key ID must derive from that public key,
   and the public key must equal `parameters.bounded_admin_public_key`
@@ -1414,15 +1469,17 @@ Human list output treats the Witness Key ID as the primary identifier
 and shows generated endpoint-synced names only in detailed JSON views.
 
 The library is a generation convenience and trust-input inventory for the user
-signer. When generating a guarded account, callers may provide
+signer. When generating a dedicated guarded account or a sentry-enabled bounded
+template, callers may provide
 `sentry=<witness-key-id>` instead of `sentry_public_key=<hex>`.
 `sentry=<name>` is also accepted as a compatibility input. The signer resolves the
 Witness Key ID or name to `public_key_hex`, verifies that the reference key type
-matches the guarded-account key type's required sentry key type,
+matches the definition's required sentry key type,
 rejects requests that provide both forms, and persists the resolved
-`sentry_public_key` plus any other guarded-account creation parameters in the
-key file. For example, `aplane.corridor.v1` also persists its recipient
-corridor list.
+`sentry_public_key` plus the template's other creation parameters in the key
+file. `aplane.corridor.v1`, for example, persists its public recipient list and
+complete bounded metadata; later signing does not require the YAML source to
+remain installed.
 
 Identity-scoped `/keytypes` metadata may expose imported references as a
 creation parameter named `sentry` with `type:"select"` and `options[]`

@@ -22,8 +22,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
+	internallsig "github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
@@ -156,6 +158,45 @@ func TestGuardedTargetsDispatchBoundedOutsideSentryFlow(t *testing.T) {
 	}
 	if len(targets) != 0 {
 		t.Fatalf("guardedTargets() = %#v, want no sentry targets", targets)
+	}
+}
+
+func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
+	bounded := testAddress(1).String()
+	plain := testAddress(2).String()
+	sentryHex := testSentryPublicKeyHex(0xd6)
+	s, sc := newTestSigner(t, func(c *cache.SignerCache) {
+		c.AddAddress(bounded, "test.bounded-sentry.v1")
+		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowBoundedSentry1)
+		c.SetSentryComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
+		c.SetSentryPublicKeyForAddress(bounded, sentryHex)
+		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
+		c.SetLsigSize(bounded, 4000)
+		c.AddAddress(plain, "aplane.falcon1024.v1")
+		c.SetLsigSize(plain, 1700)
+	})
+	txns := []types.Transaction{
+		testPaymentTxn(t, testAddress(1), testAddress(3), "bounded"),
+		testPaymentTxn(t, testAddress(2), testAddress(3), "plain"),
+	}
+	targets, err := s.guardedTargets(txns)
+	if err != nil || len(targets) != 1 || targets[0].Flow != signerapi.SigningFlowBoundedSentry1 {
+		t.Fatalf("guardedTargets() = %#v, %v", targets, err)
+	}
+	if targets[0].BoundedMaxFee != 10_000 {
+		t.Fatalf("bounded max fee = %d, want 10000", targets[0].BoundedMaxFee)
+	}
+	requests := s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{
+		LsigArgsMap: []map[string][]byte{{"preimage": {0xaa}}, nil},
+	})
+	if mode, _ := requests[0].Mode(); mode != signerapi.RequestModeSign || requests[0].AuthAddress != bounded || requests[0].LsigArgs["preimage"] != "aa" {
+		t.Fatalf("bounded request = %#v", requests[0])
+	}
+	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign || requests[1].LsigSize != 1700 {
+		t.Fatalf("plain context request = %#v", requests[1])
+	}
+	if sc.SigningFlowForAddress(bounded) != signerapi.SigningFlowBoundedSentry1 || !s.HasGuardedEffectiveSigner(txns) {
+		t.Fatal("bounded-sentry flow did not enter guarded orchestration")
 	}
 }
 
@@ -453,6 +494,9 @@ func (v testCacheView) SentryComponentKeyType(address string) (string, bool) {
 func (v testCacheView) SentryPublicKey(address string) (string, bool) {
 	return v.c.SentryPublicKeyForAddress(address)
 }
+func (v testCacheView) BoundedMaxFee(address string) (uint64, bool) {
+	return v.c.BoundedMaxFeeForAddress(address)
+}
 func (v testCacheView) LsigSize(address string) int { return v.c.GetLsigSize(address) }
 
 // newTestSigner builds a Signer over a populated signer cache, a fresh
@@ -665,4 +709,86 @@ func TestVerifyAssembledAgainstFrozen(t *testing.T) {
 	if err := verifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA, txnA}); err == nil {
 		t.Fatal("substituted transaction: expected error, got nil")
 	}
+}
+
+func TestValidateBoundedComponentPlan(t *testing.T) {
+	original := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded")
+	plannedOriginal := original
+	plannedOriginal.Fee += 1_000
+	plannedOriginal.Group = types.Digest{0x44}
+	dummies, err := internallsig.CreateDummyTransactions(1, suggestedParamsFromTxn(original))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dummies[0].Group = plannedOriginal.Group
+	planned := []types.Transaction{plannedOriginal, dummies[0]}
+	mutations := &signerapi.MutationReport{
+		DummiesAdded: 1, GroupIDChanged: true, FeesModified: []int{0},
+		TotalFeesDelta: 1_000, OriginalCount: 1, FinalCount: 2,
+	}
+
+	if err := validateBoundedComponentPlan([]types.Transaction{original}, planned, mutations); err != nil {
+		t.Fatalf("valid plan: unexpected error %v", err)
+	}
+
+	t.Run("wrong counts", func(t *testing.T) {
+		bad := *mutations
+		bad.OriginalCount = 2
+		if err := validateBoundedComponentPlan([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "original_count") {
+			t.Fatalf("error = %v, want original_count rejection", err)
+		}
+	})
+	t.Run("unreported original mutation", func(t *testing.T) {
+		badPlanned := append([]types.Transaction(nil), planned...)
+		badPlanned[0].Receiver = testAddress(3)
+		if err := validateBoundedComponentPlan([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "unreported fields") {
+			t.Fatalf("error = %v, want original mutation rejection", err)
+		}
+	})
+	t.Run("unreported fee mutation", func(t *testing.T) {
+		bad := *mutations
+		bad.FeesModified = nil
+		bad.TotalFeesDelta = 0
+		if err := validateBoundedComponentPlan([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "unreported fields") {
+			t.Fatalf("error = %v, want fee mutation rejection", err)
+		}
+	})
+	t.Run("wrong fee delta", func(t *testing.T) {
+		bad := *mutations
+		bad.TotalFeesDelta++
+		if err := validateBoundedComponentPlan([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "total_fees_delta") {
+			t.Fatalf("error = %v, want fee delta rejection", err)
+		}
+	})
+	t.Run("non-dummy appended transaction", func(t *testing.T) {
+		badPlanned := append([]types.Transaction(nil), planned...)
+		badPlanned[1].Amount = 1
+		if err := validateBoundedComponentPlan([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical guarded budget dummy") {
+			t.Fatalf("error = %v, want dummy-shape rejection", err)
+		}
+		if _, err := signGuardedDummies(badPlanned[1:]); err == nil || !strings.Contains(err.Error(), "canonical guarded budget dummy") {
+			t.Fatalf("signGuardedDummies() error = %v, want dummy-shape rejection", err)
+		}
+	})
+	t.Run("gratuitous existing group change", func(t *testing.T) {
+		grouped := original
+		grouped.Group = types.Digest{0x31}
+		regrouped := grouped
+		regrouped.Group = types.Digest{0x32}
+		report := &signerapi.MutationReport{
+			GroupIDChanged: true, OriginalCount: 1, FinalCount: 1,
+		}
+		if err := validateBoundedComponentPlan([]types.Transaction{grouped}, []types.Transaction{regrouped}, report); err == nil ||
+			!strings.Contains(err.Error(), "existing bounded group ID") {
+			t.Fatalf("error = %v, want gratuitous regrouping rejection", err)
+		}
+	})
+	t.Run("fee exceeds advertised ceiling", func(t *testing.T) {
+		if err := validateBoundedTargetFees(
+			[]types.Transaction{plannedOriginal},
+			[]guardedTarget{{Index: 0, BoundedMaxFee: uint64(plannedOriginal.Fee) - 1}},
+		); err == nil || !strings.Contains(err.Error(), "exceeds advertised max_fee") {
+			t.Fatalf("error = %v, want max_fee rejection", err)
+		}
+	})
 }

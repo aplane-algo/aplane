@@ -330,10 +330,9 @@ re-check green under TLC at the recorded state counts (2,628 / 64 / 84,096 /
 48 / 196 / 47,304 / 226); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
 re-validated across all 65 invariants (six stale code/line anchors corrected,
 no invariant lost its test); and two code changes since the snapshot were
-reconciled — the third guarded account key type `aplane.corridor.v1` (now named
-in [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md), with its
-recipient-corridor and rekey restrictions scoped out as LogicSig-program/sentry-
-policy semantics) and the plugin `presign-plan` / `pregrouped-signed` group-mode
+reconciled — the then-guarded account key type `aplane.corridor.v1` (since
+migrated to the separately tested `bounded-sentry1` choreography) and the plugin
+`presign-plan` / `pregrouped-signed` group-mode
 flows (named in Non-Goals; `presign-plan` plugin slots are modeled as foreign
 slots in [FORMAL_TXN_PLANNING_MODEL.md](FORMAL_TXN_PLANNING_MODEL.md)). No
 invariant changed; coverage milestones (M3 companion models, the unmodeled
@@ -390,6 +389,17 @@ simulate DTOs were deleted), so the A11 anchor remains valid. Approval,
 session-ownership, lifecycle, and guarded-assembly areas had no commits.
 Nothing required correction in this pass.
 
+**Bounded-sentry extension (2026-07-22).** The `bounded-sentry1` implementation
+adds `bounded_sentry.tla`, a depth-4 transition model for user-first base
+release, sentry request/release, final bounded assembly, and the separate
+sentry-free external-admin branch. BS1-BS7 are anchored in
+[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), and the former bounded DSA
+planning/argument-assembly drift entry is closed in
+[FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md). All 14 standard and 11 deep TLC runs
+pass at recorded metrics; the new standard cell covers 99,584 distinct states.
+The model has no deep target-count variant because its predicates are
+group-wide and that input only duplicated identical states.
+
 ### Milestone status
 
 | Milestone | Status | Notes |
@@ -397,7 +407,7 @@ Nothing required correction in this pass.
 | M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
 | M3: Deferred Companion English Models | In progress | Approval coordinator and cooperative/plugin signing delivered (`FORMAL_APPROVAL_COORDINATOR_MODEL.md`, `FORMAL_PLUGIN_SIGNING_MODEL.md`). LogicSig budget and template/bytecode generation models still pending. |
-| M4: Machine-Checkable Model | First wave complete | Ten TLA+ modules shipped. ~32 of 81 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam, `lifecycle_composition.tla` the end-to-end lifecycle gate, `approval_coordinator.tla` carries the first liveness check (`Progress` under fairness), `session_ownership.tla` guards the admin unlock-ownership invariant, `guarded_assembly.tla` the component-assembly checks (A1/A6/A7/A8/A14), and `plugin_signing.tla` the plugin trust boundary (PS2-PS7). The signing-authority S-series is unmodeled **by decision** (see FORMAL_TRACEABILITY.md "Unmodeled invariants"). |
+| M4: Machine-Checkable Model | First wave complete | Eleven TLA+ modules shipped. ~39 of 88 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam, `lifecycle_composition.tla` the end-to-end lifecycle gate, `approval_coordinator.tla` carries the first liveness check (`Progress` under fairness), `session_ownership.tla` guards the admin unlock-ownership invariant, `guarded_assembly.tla` checks legacy component assembly, `bounded_sentry.tla` checks user-first bounded assembly and the sentry-free admin branch (BS1-BS7), and `plugin_signing.tla` checks the plugin trust boundary (PS2-PS7). The signing-authority S-series is unmodeled **by decision** (see FORMAL_TRACEABILITY.md "Unmodeled invariants"). |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
 Machine-checked invariants by module:
@@ -413,6 +423,7 @@ Machine-checked invariants by module:
 | `lifecycle_composition.tla` | L4-L7 + lifecycle-output seam (decommission => no output); Progress (liveness, no-symmetry config: 392 states) | 226 | 12 |
 | `session_ownership.tla` | SO1, SO2 (admin unlock ownership: no stranded unlock), state consistency | 90 | 8 |
 | `guarded_assembly.tla` | A1, A6, A7, A8, A14, no-partial-output (component assembly verification) | 270,920 | 1 |
+| `bounded_sentry.tla` | BS1-BS7 (user-first ordering, authority/source/byte checks, atomic output, admin sentry bypass) | 99,584 | 4 |
 | `plugin_signing.tla` | PS2-PS7 (plugin trust boundary: digest, review fail-closed, plan preservation, byte match, approval gates) | 3,852 | 1 |
 
 Not yet machine-checked: S1-S13 (entire signing-authority surface), the guarded
@@ -422,7 +433,7 @@ P1-P3, P8-P10, L1-L3, L9-L11.
 
 ### Verification methodology by module
 
-The ten shipped modules are not all the same kind of check, and the
+The eleven shipped modules are not all the same kind of check, and the
 distinction matters when judging what TLC has and has not done:
 
 - **`sign_boundary.tla`, `policy_precedence.tla`, `composition.tla`,
@@ -444,9 +455,11 @@ distinction matters when judging what TLC has and has not done:
   temporal properties.
 
 - **`lifecycle.tla`, `approval_coordinator.tla`, `lifecycle_composition.tla`,
-  and `session_ownership.tla`** are temporal-transition specs with real
+  `session_ownership.tla`, and `bounded_sentry.tla`** are temporal-transition specs with real
   `Next` relations and genuine state-space exploration across action
-  interleavings. `lifecycle.tla` races two signer processes and one admin
+  sequences or interleavings. `bounded_sentry.tla` explores the depth-4
+  base-release, sentry-release/skip, and final-output sequence; the other four
+  explore concurrent state machines. `lifecycle.tla` races two signer processes and one admin
   over a writer-priority RWMutex (depth 10); its L5 mutation test (removing
   the `readers = {}` guard from `AdminAcquireWrite`) confirms it would catch
   a lock-ordering regression. `approval_coordinator.tla` interleaves several
@@ -580,6 +593,7 @@ java -jar ~/tla/tla2tools.jar -config docs/formal/approval_composition.cfg docs/
 java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle_composition.cfg docs/formal/lifecycle_composition.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/session_ownership.cfg    docs/formal/session_ownership.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/guarded_assembly.cfg     docs/formal/guarded_assembly.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/bounded_sentry.cfg      docs/formal/bounded_sentry.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/plugin_signing.cfg       docs/formal/plugin_signing.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/approval_coordinator_liveness.cfg docs/formal/approval_coordinator.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle_liveness.cfg    docs/formal/lifecycle.tla
@@ -631,7 +645,7 @@ next slices are:
   property class.
 
 The previous operational cleanup is complete: `docs/formal/states/` is ignored,
-and the Formal Models CI job runs all ten shipped TLC modules (plus three
+and the Formal Models CI job runs all eleven shipped TLC modules (plus three
 liveness configs) through `make formal-test`, which also verifies the
 recorded state counts/depths against `docs/formal/metrics.json`. The TLC jar
 is vendored at `.tools/tla2tools.jar` (provenance and update procedure in

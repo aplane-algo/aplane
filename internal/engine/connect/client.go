@@ -137,6 +137,22 @@ func (s *ConnectionState) RequestBoundedAdminWithContext(ctx context.Context, op
 	return client.RequestBoundedAdminWithContext(ctx, operation, requests)
 }
 
+func (s *ConnectionState) RequestBoundedComponentWithContext(ctx context.Context, req signerapi.BoundedComponentRequest) (*signerapi.BoundedComponentResponse, error) {
+	client, err := s.signerClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.RequestBoundedComponentWithContext(ctx, req)
+}
+
+func (s *ConnectionState) RequestBoundedAssembleWithContext(ctx context.Context, req signerapi.BoundedAssemblyRequest) (*signerapi.BoundedAssemblyResponse, error) {
+	client, err := s.signerClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.RequestBoundedAssembleWithContext(ctx, req)
+}
+
 // RequestComponentSign sends a component-signing request to Signer.
 func (s *ConnectionState) RequestComponentSign(req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
 	return s.RequestComponentSignWithContext(context.Background(), req)

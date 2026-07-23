@@ -153,6 +153,11 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, keyType, err
 	}
+	if keyMaterial.BoundedAuthorization != nil && keyMaterial.BoundedAuthorization.Sentry != nil {
+		keyType := keyMaterial.Type
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, keyType, boundedSentryRequired()
+	}
 
 	if isGenericKeyMaterial(keyMaterial) {
 		return e.signGenericLSig(txn, authAddr, txnSender, lsigArgs, keyMaterial, identityID)
@@ -489,6 +494,10 @@ func boundedDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMater
 }
 
 func assembleBoundedArgs(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs, derivedArgs [][]byte) ([][]byte, *ServiceError) {
+	return assembleBoundedArgsWithSentry(metadata, item, baseArgs, derivedArgs, nil)
+}
+
+func assembleBoundedArgsWithSentry(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs, derivedArgs [][]byte, sentrySignature []byte) ([][]byte, *ServiceError) {
 	args := make([][]byte, len(metadata.ArgumentLayout))
 	baseIndex, derivedIndex := 0, 0
 	for _, slot := range metadata.ArgumentLayout {
@@ -508,6 +517,8 @@ func assembleBoundedArgs(metadata *boundedmeta.Metadata, item *boundedPlanItem, 
 			derivedIndex++
 		case boundedmeta.ArgSourceRuntime:
 			value = item.RuntimeArgs[slot.Name]
+		case boundedmeta.ArgSourceSentry:
+			value = sentrySignature
 		case boundedmeta.ArgSourceAdmin:
 			value = nil
 		default:

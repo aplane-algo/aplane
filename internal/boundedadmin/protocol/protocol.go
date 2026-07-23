@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	RequestSchemaV1  = "aplane.bounded-admin-request.v1"
+	RequestSchemaV2  = "aplane.bounded-admin-request.v2"
 	ResponseSchemaV1 = "aplane.bounded-admin-signature.v1"
 
-	requestHashDomainV1 = "APLANE_BOUNDED_ADMIN_REQUEST_V1"
+	requestHashDomainV2 = "APLANE_BOUNDED_ADMIN_REQUEST_V2"
 
 	ErrorUnsupportedRequestSchema  = "unsupported_request_schema"
 	ErrorUnsupportedResponseSchema = "unsupported_response_schema"
@@ -84,17 +84,17 @@ func NewRequest(payload RequestPayload) (Request, error) {
 	if err != nil {
 		return Request{}, err
 	}
-	request := Request{Schema: RequestSchemaV1, Payload: payload, RequestHashHex: fmt.Sprintf("%x", hash[:])}
+	request := Request{Schema: RequestSchemaV2, Payload: payload, RequestHashHex: fmt.Sprintf("%x", hash[:])}
 	if err := ValidateEnvelope(request); err != nil {
 		return Request{}, err
 	}
 	return request, nil
 }
 
-// RequestHash computes the frozen length-prefixed request transcript.
+// RequestHash computes the V2 frozen length-prefixed request transcript.
 func RequestHash(payload RequestPayload) ([sha512.Size256]byte, error) {
 	var encoded []byte
-	encoded = boundedmeta.AppendField(encoded, []byte(requestHashDomainV1))
+	encoded = boundedmeta.AppendField(encoded, []byte(requestHashDomainV2))
 	encoded = boundedmeta.AppendField(encoded, []byte(payload.Network))
 	encoded = boundedmeta.AppendField(encoded, []byte(payload.GenesisHashHex))
 	encoded = boundedmeta.AppendField(encoded, []byte(payload.CurrentAuthAddress))
@@ -124,6 +124,15 @@ func RequestHash(payload RequestPayload) ([sha512.Size256]byte, error) {
 		encoded = boundedmeta.AppendField(encoded, []byte(effect))
 	}
 	encoded = boundedmeta.AppendUint64(encoded, metadata.MaxFee)
+	if metadata.Sentry == nil {
+		encoded = boundedmeta.AppendUint32(encoded, 0)
+	} else {
+		encoded = boundedmeta.AppendUint32(encoded, 1)
+		encoded = boundedmeta.AppendField(encoded, []byte(metadata.Sentry.ComponentKeyType))
+		encoded = boundedmeta.AppendField(encoded, []byte(metadata.Sentry.PublicKeyHex))
+		encoded = boundedmeta.AppendField(encoded, []byte(metadata.Sentry.ComponentKeyID))
+		encoded = boundedmeta.AppendUint32(encoded, uint32(metadata.Sentry.SignatureArgIndex))
+	}
 	encoded = appendMutation(encoded, partial.Mutations)
 	return sha512.Sum512_256(encoded), nil
 }
@@ -131,7 +140,7 @@ func RequestHash(payload RequestPayload) ([sha512.Size256]byte, error) {
 // ValidateEnvelope validates the request schema and payload hash without
 // interpreting or verifying the contained bounded authorization.
 func ValidateEnvelope(request Request) error {
-	if request.Schema != RequestSchemaV1 {
+	if request.Schema != RequestSchemaV2 {
 		return &Error{Code: ErrorUnsupportedRequestSchema, Err: fmt.Errorf("unsupported bounded-admin request schema %q", request.Schema)}
 	}
 	wantHash, err := RequestHash(request.Payload)

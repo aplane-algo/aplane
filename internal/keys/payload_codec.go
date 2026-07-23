@@ -520,6 +520,24 @@ func validateLogicSigFields(p *Payload) error {
 				return incompatibleKeyFormat("bounded_authorization admin public key does not match parameters.%s", boundedmeta.AdminPublicKeyParameter)
 			}
 		}
+		if p.BoundedAuthorization.Sentry != nil {
+			parameterPublicKey, err := decodeCanonicalHex(boundedmeta.SentryPublicKeyParameter, p.Parameters[boundedmeta.SentryPublicKeyParameter])
+			if err != nil {
+				return err
+			}
+			metadataPublicKey, err := boundedmeta.DecodeCanonicalHex(
+				"bounded sentry public key",
+				p.BoundedAuthorization.Sentry.PublicKeyHex,
+				boundedmeta.SentryPublicKeySizeV1,
+				boundedmeta.SentryPublicKeySizeV1,
+			)
+			if err != nil {
+				return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
+			}
+			if !bytes.Equal(parameterPublicKey, metadataPublicKey) {
+				return incompatibleKeyFormat("bounded_authorization sentry public key does not match parameters.%s", boundedmeta.SentryPublicKeyParameter)
+			}
+		}
 		if len(p.SigningArgs) != 0 {
 			return incompatibleKeyFormat("bounded1 forbids caller-supplied signing_args")
 		}

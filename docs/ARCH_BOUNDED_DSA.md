@@ -7,6 +7,12 @@ composed schema v2, durable signing metadata, inventory projection,
 contract-admin ceremony, framework-owned fixed allowlist, and static Layer-3
 argument layout are implemented.
 
+This is the first supported release of `bounded1`. Canonical encodings and
+golden vectors that existed only in development branches before this release
+were not a compatibility contract; preview or LocalNet keys derived from those
+encodings must be recreated. The encodings and vectors in this document are
+the v1 compatibility baseline.
+
 ## Purpose and Authority
 
 A bounded authorization contract is a stateless LogicSig program that
@@ -24,6 +30,11 @@ witnesses, but an individual keypair should never be enrolled in both roles.
 3. **Layer 3 policy:** author or framework policy runs only for an admitted
    pure spend, and for a spending-key rekey only when its operation declares
    `policy_gate: layer3`.
+
+Sentry-enabled bounded1 profiles are spend-gated profiles and may not declare
+a spending-key-authorized rekey. V1 rejects that combination during template,
+profile, and durable-metadata validation; recovery for a sentry-enabled
+profile must use an external contract-admin rekey.
 
 For profile `P`:
 
@@ -57,11 +68,12 @@ is a complete value-spending policy.
 | Maximum compiled `max_fee` | 10,000 microAlgos |
 | Layer-3 arguments | declared static runtime and signer-derived slots |
 | Signer-derived primitive | fixed-depth Merkle allowlist proof (512 bytes) |
-| Framework Layer-3 policy | `fixed_allowlist` |
+| Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist` |
 | Inline recipient/asset maximum | 30 entries per list |
-| Flow label | `bounded1` |
+| Flow labels | `bounded1` without a sentry; `bounded-sentry1` with a spend sentry |
+| Online sentry endpoints | `POST /sign/bounded-component`, `POST /sign/component`, `POST /sign/bounded-assemble` |
 | Admin endpoint | `POST /sign/bounded-admin` |
-| Bundled composed templates | six schema-v2 profiles listed below |
+| Bundled composed templates | five schema-v2 profiles listed below |
 
 `bounded1` has no admin-key algorithm selector. `authorization: admin_key`
 always means the profile's single Falcon-1024 contract admin key. Supporting
@@ -96,6 +108,7 @@ a Falcon contract admin key:
 | Policy cell | Bytecode | Spend bytes | Admin-rekey bytes | Required group |
 |---|---:|---:|---:|---:|
 | fixed allowlist, audited maximum | 5,312 | 6,592 | 7,872 | 8 |
+| Corridor Merkle+sentry | 5,940 | 9,012 | 8,500 | 10 |
 
 At one protected LogicSig transaction, required pooled fee is `8 * min_fee`.
 The 10,000 microAlgo profile ceiling accepts minimum fees through 1,250
@@ -117,6 +130,7 @@ effect surface:
 | `aplane.falcon1024-allowlist.v2` | fixed-depth Merkle recipient allowlist | spending key; no Layer 3 gate | optional signer-derived `merkle_proof` on spend |
 | `aplane.falcon1024-timelock.v1` | `FirstValid >= unlock_round` | spending key; Layer 3 required | none |
 | `aplane.falcon1024-allowlist-alock.v1` | inline recipient/asset/amount allowlist | external Falcon admin key | trailing admin signature |
+| `aplane.corridor.v1` | framework Merkle recipient allowlist plus sentry spend gate | external Falcon admin key | Merkle proof, sentry signature, trailing admin signature |
 
 Every profile rejects close, clawback, hybrid rekey, and non-transfer types.
 The timelock intentionally prevents emergency spending-key rekey until its
@@ -132,9 +146,11 @@ Compiler-backed maximum-path measurements are frozen by
 | Falcon Merkle allowlist | 2,188 | 3,980 | n/a | 4 |
 | Falcon timelock | 1,947 | 3,227 | n/a | 4 |
 | Falcon rekey-locked allowlist | 5,312 | 6,592 | 7,872 | 8 |
+| Corridor | 5,940 | 9,012 | 8,500 | 10 |
 
-At the 10,000 microAlgo ceiling, the largest group remains viable through a
-1,250 microAlgo network minimum fee.
+At the 10,000 microAlgo ceiling, Corridor's ten-transaction group is viable at
+the current 1,000 microAlgo network minimum fee. The planner rejects higher
+minimum fees for this profile before releasing a signature.
 
 ## Effect Model
 
@@ -217,6 +233,10 @@ canonical_bounded_profile =
   u32(count(admin_operations)) ||
     field(operation_0.kind) || field(operation_0.authorization) ||
     field(operation_0.policy_gate) || ... ||
+  u32(sentry_present) ||
+    if present: field("sentry1") ||
+      field("aplane.witness-falcon1024.v1") || u32(1280) ||
+      u32(1) || field("spend") ||
   field(layer3_policy) ||
   u32(base_signature_arg_count) || u32(base_arg_0_max) || ... ||
   u32(count(derived_args)) || canonical_derived_args ||
@@ -230,7 +250,8 @@ use frozen order `rekey`. Duplicates are invalid. Empty spend sets are invalid.
 authorized independently from `axfer`. `max_fee` must be present and no greater
 than 10,000. The Layer 3 identity, argument declarations, maximum sizes, frozen
 indexes, sources, and path masks are security-bearing and therefore part of
-the canonical profile.
+the canonical profile. `sentry_present` is exactly zero or one. The initial
+optional sentry contract has the single ordered path list `[spend]`.
 
 ### Canonical behavior parameters
 
@@ -244,7 +265,9 @@ canonical_behavior_parameters =
 ```
 
 Only behavior-bearing account-creation values are included, in parameter
-definition order. The framework-injected `bounded_admin_public_key` is excluded
+definition order. A sentry-enabled profile includes the framework-injected
+`sentry_public_key`; the program binding must therefore commit to the resolved
+sentry key. The framework-injected `bounded_admin_public_key` is excluded
 because the program binding carries it separately. Display metadata, file
 paths, runtime values, and policy provenance are excluded.
 
@@ -344,10 +367,10 @@ contract_admin_key_id:
   MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
-  0a5e99e840a2e70f3b22653dbb438c39fa3f4f57d0a5f08fca2cc6afba198336
+  23aebf3166f64d6a0e6467d0fde647191094907f733c60fb946129d7cc828509
 
 admin_message:
-  290c8f4a249f53973889e356a1a2974c04de33d892d615ac6b94180051ea75c9
+  324dfa8eee495b7f4ddaa67f640c906184beb49abfd304d1336be233e84998b6
 ```
 
 Whitespace and line wrapping above are presentation only. Code tests decode
@@ -418,6 +441,13 @@ A spending-key rekey with `policy_gate: layer3` requires `pay` in
 `spend_effects`, because a pure rekey is payment-shaped and must enter the
 framework policy's payment branch.
 
+`merkle_allowlist` is also composer-owned and accepts only a required
+`address[]` recipients parameter with 1-65,536 entries. It requires exactly one
+512-byte `merkle_allowlist_proof` derived argument bound to that parameter,
+computes the fixed-depth root during program generation, and verifies the
+proof for every non-self payment or asset receiver. It accepts no asset-ID or
+amount options and rejects author TEAL.
+
 `bounded_admin_public_key` is injected by the framework and cannot be declared
 by the author. User parameters, variables, runtime args, and references using
 the `bounded_` prefix reject. Author labels and executable references using
@@ -427,7 +457,8 @@ composer-owned pure-spend boundary.
 ## Signature Arguments and Durable Metadata
 
 The static slot order is base signatures, signer-derived Layer 3 arguments,
-caller runtime Layer 3 arguments, then an optional external admin signature.
+caller runtime Layer 3 arguments, an optional sentry signature, then an
+optional external admin signature.
 Every slot stores an index, source, maximum size, and required/optional/
 forbidden rule for spend, spending-key rekey, and admin-key rekey paths.
 
@@ -451,26 +482,33 @@ and maximum post-signing LogicSig size.
 
 Non-bounded LogicSig keys use `signing_metadata_version: 1`. Bounded keys use
 `signing_metadata_version: 2` and require the canonical
-`bounded_authorization` object. The closed `layer3_policy` value is `custom` or
-`fixed_allowlist`; declared runtime and derived arguments and their complete
+`bounded_authorization` object. The closed `layer3_policy` value is `custom`,
+`fixed_allowlist`, or `merkle_allowlist`; declared runtime and derived arguments and their complete
 slot masks are persisted. Top-level `signing_args` are ignored for bounded
 keys. Scan, load, backup, and restore consume the stored object without
 consulting the installed template.
 
 ## Routing and Approval
 
-`/keys` and `/keytypes` advertise `signing_flow: bounded1` and a typed
+`/keys` and `/keytypes` advertise `signing_flow: bounded1` for profiles without
+a sentry and `signing_flow: bounded-sentry1` for profiles whose durable
+metadata contains `sentry.contract: sentry1`. Both expose the same typed
 `bounded_authorization` object. `/keytypes` exposes definition-level
 profile and base-layout capabilities. `/keys` additionally exposes the
 instance Contract Admin Key ID, program binding, and maximum post-signing
 LogicSig size. Clients route:
 
-- pure spend to ordinary `/sign`;
+- non-sentry pure spend to ordinary `/sign`;
+- sentry-gated pure spend through user-first `/sign/bounded-component`, sentry
+  `/sign/component`, then signer `/sign/bounded-assemble`;
 - spending-key rekey to ordinary `/sign` with forced review;
 - Falcon-admin rekey to `POST /sign/bounded-admin` and external completion; and
 - malformed, hybrid, disabled, or unknown effects to local rejection.
 
-Signer-side classification is authoritative. Unknown flow labels fail closed.
+Ordinary `/sign` rejects a sentry-gated bounded spend because it cannot finish
+that flow alone. The client must not combine `sentry1` and `bounded-sentry1`
+targets in one group. Signer-side classification is authoritative. Unknown
+flow labels fail closed.
 Every bounded admin operation triggers the stable unconditional
 `bounded_admin_operation_requires_review` rule before blanket or self-no-op
 autoapproval, regardless of warning configuration. A client intent to simulate

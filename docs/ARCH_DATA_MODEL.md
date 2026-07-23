@@ -307,13 +307,18 @@ Durable signing metadata includes:
 - optional `template_fingerprint`,
 - creation parameters and timestamps.
 
-Guarded account keys are DSA LogicSig keys whose stored bytecode embeds a
-sentry public key (for example `aplane.falcon1024-sentry1024.v1` and
-`aplane.corridor.v1`). They are not accepted by `/sign`; the client must use the
+Dedicated guarded account keys are DSA LogicSig keys whose stored bytecode
+embeds a sentry public key (currently `aplane.falcon1024-sentry1024.v1`). They
+are not accepted by `/sign`; the client must use the
 guarded flow: user `/sign/component`, sentry `/sign/component`, user
 `/sign/assemble`, then algod submit. Inventory advertises
 `signing_flow: sentry1` for those keys. Sentry witness keys are selected by an uppercase,
 52-character txid-shaped Witness Key ID and are not Algorand spending accounts.
+
+Bounded keys with durable `bounded_authorization.sentry` use the distinct
+`bounded-sentry1` flow. Corridor v1 is the first such template. Their spend
+path uses `/sign/bounded-component`, sentry-role `/sign/component`, and
+`/sign/bounded-assemble`; their admin path remains `/sign/bounded-admin`.
 
 Decrypted key payloads are parsed through `internal/keys.ParsePayload` and
 written through `internal/keys.MarshalPayload`. The v1 payload vocabulary is
@@ -343,16 +348,17 @@ and `/keytypes` generation metadata uses `runtime_args`.
 
 ### Bounded Authorization And External Contract Admin
 
-Bounded1 is a separate signing choreography from plain `/sign` and from
-sentry/guarded assembly. Normative field inventory, encodings, and custody
+Bounded1 is an authorization contract used by both `bounded1` and
+`bounded-sentry1` signing choreographies. Normative field inventory, encodings, and custody
 rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). From a data-model perspective:
 
 - Durable non-secret capability is stored on the account key as
   `bounded_authorization` (signing metadata version 2), owned by
   `internal/boundedmeta` and assembled by `lsig/composeddsa` at generation.
-- Inventory advertises `signing_flow: bounded1` so clients route admin-key
-  rekeys to `POST /sign/bounded-admin` rather than ordinary runtime args.
+- Inventory advertises `signing_flow: bounded1` without a sentry or
+  `bounded-sentry1` with a sentry. Admin-key rekeys always route to
+  `POST /sign/bounded-admin` rather than ordinary runtime args or sentry assembly.
 - The spending key remains signer-managed (`.key`). The Falcon contract-admin
   private material is **not** a signer-managed credential: it lives in a
   standalone encrypted `.wit` bundle (`aplane.witness-key-bundle.v1`) owned by
@@ -360,7 +366,7 @@ rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
   `.wit.json` sidecar.
 - Separated ceremonies use short-lived non-secret files
   `.apbounded-admin-request` / `.apbounded-admin-signature` (schemas
-  `aplane.bounded-admin-request.v1` / `aplane.bounded-admin-signature.v1`)
+  `aplane.bounded-admin-request.v2` / `aplane.bounded-admin-signature.v1`)
   owned by `internal/boundedadmin/protocol` and
   `internal/apboundedadminapp`.
 - Signer and `apstore` must not import, decrypt, back up, or restore private

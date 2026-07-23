@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
+	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
 func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
@@ -65,7 +66,11 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			keyInfo.Parameters = guardedAccountParameters(keyType, summary.Parameters)
 		}
 		if summary.BoundedAuthorization != nil {
-			keyInfo.SigningFlow = signerapi.SigningFlowBounded1
+			keyInfo.Parameters = boundedAccountParameters(summary.Parameters)
+			keyInfo.SigningFlow = boundedSigningFlow(summary.BoundedAuthorization)
+			if summary.BoundedAuthorization.Sentry != nil {
+				keyInfo.SentryComponentKeyType = summary.BoundedAuthorization.Sentry.ComponentKeyType
+			}
 			keyInfo.BoundedAuthorization = boundedInfo(summary.BoundedAuthorization)
 		}
 		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = keys.CompareTemplateFingerprint(keyType, summary.TemplateFingerprint)
@@ -80,7 +85,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 	return keyList
 }
 
-func guardedAccountParameters(keyType string, parameters map[string]string) map[string]string {
+func guardedAccountParameters(_ string, parameters map[string]string) map[string]string {
 	sentryPublicKey := parameters[keytypes.ParameterSentryPublicKey]
 	if sentryPublicKey == "" {
 		return nil
@@ -88,8 +93,33 @@ func guardedAccountParameters(keyType string, parameters map[string]string) map[
 	out := map[string]string{
 		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 	}
-	if keyType == keytypes.CorridorV1 && parameters["recipients"] != "" {
-		out["recipients"] = parameters["recipients"]
+	return out
+}
+
+// boundedInventoryParameterNames is the explicit public projection of current
+// bounded creation parameters. Adding a new stored parameter does not expose it
+// through /keys unless its public status is reviewed here.
+var boundedInventoryParameterNames = []string{
+	"recipients",
+	"asset_ids",
+	"max_payment_amount",
+	"max_asset_amount",
+	"unlock_round",
+	composeddsa.BoundedSentryPublicKeyParameter,
+	composeddsa.BoundedAdminPublicKeyParameter,
+}
+
+func boundedAccountParameters(parameters map[string]string) map[string]string {
+	var out map[string]string
+	for _, name := range boundedInventoryParameterNames {
+		value, ok := parameters[name]
+		if !ok {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string)
+		}
+		out[name] = value
 	}
 	return out
 }
@@ -206,7 +236,10 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			info.Description = provider.Description()
 			if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
 				if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil {
-					info.SigningFlow = signerapi.SigningFlowBounded1
+					info.SigningFlow = boundedSigningFlow(metadata)
+					if metadata.Sentry != nil {
+						info.SentryComponentKeyType = metadata.Sentry.ComponentKeyType
+					}
 					info.BoundedAuthorization = boundedInfo(metadata)
 				}
 			}
@@ -311,6 +344,13 @@ type boundedInventoryProvider interface {
 	BoundedAuthorizationMetadata() *boundedmeta.Metadata
 }
 
+func boundedSigningFlow(metadata *boundedmeta.Metadata) string {
+	if metadata != nil && metadata.Sentry != nil {
+		return signerapi.SigningFlowBoundedSentry1
+	}
+	return signerapi.SigningFlowBounded1
+}
+
 func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorizationInfo {
 	if metadata == nil {
 		return nil
@@ -327,6 +367,14 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 		AdminKeyID:              metadata.AdminKeyID,
 		ProgramBindingHex:       metadata.ProgramBindingHex,
 		PostSigningLogicSigSize: metadata.PostSigningLogicSigSize,
+	}
+	if metadata.Sentry != nil {
+		info.Sentry = &signerapi.BoundedSentryAuthorizationInfo{
+			Contract: metadata.Sentry.Contract, ComponentKeyType: metadata.Sentry.ComponentKeyType,
+			PublicKeyHex: metadata.Sentry.PublicKeyHex, ComponentKeyID: metadata.Sentry.ComponentKeyID,
+			SignatureMaxSize: metadata.Sentry.SignatureMaxSize,
+			RequiredOn:       append([]string(nil), metadata.Sentry.RequiredOn...),
+		}
 	}
 	for _, arg := range metadata.DerivedArgs {
 		info.DerivedArgs = append(info.DerivedArgs, signerapi.BoundedDerivedArgInfo{
@@ -394,8 +442,8 @@ func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeI
 	}
 
 	for i := range infos {
-		componentType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(infos[i].KeyType)
-		if !ok {
+		componentType := infos[i].SentryComponentKeyType
+		if componentType == "" {
 			continue
 		}
 		componentIDs := componentIDsByType[componentType]

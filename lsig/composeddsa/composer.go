@@ -134,6 +134,9 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 	if boundedRequiresAdminKey(bounded) && !hasParameter(params, BoundedAdminPublicKeyParameter) {
 		params = append(params, boundedAdminPublicKeyParameterDef())
 	}
+	if bounded != nil && bounded.Sentry != nil && !hasParameter(params, BoundedSentryPublicKeyParameter) {
+		params = append(params, boundedSentryPublicKeyParameterDef())
+	}
 	return &ComposedDSA{
 		keyType:            cfg.KeyType,
 		baseKeyType:        cfg.BaseKeyType,
@@ -328,7 +331,7 @@ func (c *ComposedDSA) buildBoundedSpendArgs(signatureArgs, runtimeArgs [][]byte)
 			}
 			value = signatureArgs[baseIndex]
 			baseIndex++
-		case boundedmeta.ArgSourceDerived, boundedmeta.ArgSourceAdmin:
+		case boundedmeta.ArgSourceDerived, boundedmeta.ArgSourceSentry, boundedmeta.ArgSourceAdmin:
 			// BuildArgs has no transaction context or external admin authority.
 			// Keep interior slots explicit so later runtime values retain their
 			// frozen indexes; unused trailing slots are trimmed below.

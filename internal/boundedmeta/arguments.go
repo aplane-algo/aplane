@@ -13,6 +13,7 @@ const (
 	ArgSourceBaseSignature = "base_signature"
 	ArgSourceDerived       = "derived"
 	ArgSourceRuntime       = "runtime"
+	ArgSourceSentry        = "sentry"
 	ArgSourceAdmin         = "admin"
 
 	ArgRequired  = "required"
@@ -106,7 +107,8 @@ func validateArgumentLayout(metadata *Metadata) error {
 		ArgSourceBaseSignature: 0,
 		ArgSourceDerived:       1,
 		ArgSourceRuntime:       2,
-		ArgSourceAdmin:         3,
+		ArgSourceSentry:        3,
+		ArgSourceAdmin:         4,
 	}
 	lastSource := -1
 	baseCount := 0
@@ -137,6 +139,7 @@ func validateArgumentLayout(metadata *Metadata) error {
 	seenDerived := make(map[string]struct{}, len(derivedNames))
 	seenRuntime := make(map[string]struct{}, len(runtimeNames))
 	adminSlots := 0
+	sentrySlots := 0
 	for i, slot := range metadata.ArgumentLayout {
 		if slot.Index != i {
 			return fmt.Errorf("argument slot %d has non-canonical index %d", i, slot.Index)
@@ -195,6 +198,12 @@ func validateArgumentLayout(metadata *Metadata) error {
 				}
 			}
 			seenRuntime[slot.Name] = struct{}{}
+		case ArgSourceSentry:
+			sentrySlots++
+			if slot.Name != SentrySignatureSlot || metadata.Sentry == nil || slot.MaxSize != metadata.Sentry.SignatureMaxSize ||
+				slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgForbidden || slot.Paths.AdminRekey != ArgForbidden {
+				return fmt.Errorf("bounded sentry signature slot must be spend-only and match sentry metadata")
+			}
 		case ArgSourceAdmin:
 			adminSlots++
 			if i != len(metadata.ArgumentLayout)-1 || slot.Name != "admin_signature" || slot.MaxSize != FalconAdminSignatureSize ||
@@ -215,6 +224,13 @@ func validateArgumentLayout(metadata *Metadata) error {
 	}
 	if adminSlots != wantAdminSlots {
 		return fmt.Errorf("argument layout has %d admin slots, want %d", adminSlots, wantAdminSlots)
+	}
+	wantSentrySlots := 0
+	if metadata.Sentry != nil {
+		wantSentrySlots = 1
+	}
+	if sentrySlots != wantSentrySlots {
+		return fmt.Errorf("argument layout has %d sentry slots, want %d", sentrySlots, wantSentrySlots)
 	}
 	return nil
 }
