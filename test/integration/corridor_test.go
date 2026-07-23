@@ -189,6 +189,13 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 			return rekeyAccount.adminRekeyArgs(t, args[0], txid)
 		})
 		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
+		accountInfo, err := testnet.Client.AccountInformation(rekeyAccount.address).Do(context.Background())
+		if err != nil {
+			t.Fatalf("read rekeyed Corridor account: %v", err)
+		}
+		if accountInfo.AuthAddr != rekeyTarget.Address.String() {
+			t.Fatalf("Corridor auth address = %q, want %q", accountInfo.AuthAddr, rekeyTarget.Address.String())
+		}
 		t.Cleanup(func() {
 			bestEffortCloseRekeyedAccount(t, testnet, rekeyAccount.address, funder.GetAddress(), rekeyTarget.PrivateKey)
 		})
@@ -549,8 +556,13 @@ func submitCorridorGroupExpectSuccess(t *testing.T, testnet *harness.TestnetConf
 
 func submitCorridorGroupExpectFailure(t *testing.T, testnet *harness.TestnetConfig, rawGroup []byte) {
 	t.Helper()
-	if _, err := testnet.Client.SendRawTransaction(rawGroup).Do(context.Background()); err == nil {
+	_, err := testnet.Client.SendRawTransaction(rawGroup).Do(context.Background())
+	if err == nil {
 		t.Fatal("corridor group unexpectedly submitted successfully")
+	}
+	lower := strings.ToLower(err.Error())
+	if !strings.Contains(lower, "rejected by logic") && !strings.Contains(lower, "logic eval") {
+		t.Fatalf("corridor group failed for a non-LogicSig reason: %v", err)
 	}
 }
 

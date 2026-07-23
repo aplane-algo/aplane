@@ -92,10 +92,9 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 		}
 		if operation.PolicyGate == AdminPolicyGateLayer3 {
 			if profile.Sentry != nil {
-				b.WriteString("b " + boundedLayer3Label + "\n\n")
-			} else {
-				b.WriteString("b " + boundedSpendLabel + "\n\n")
+				return "", fmt.Errorf("sentry-enabled bounded profiles cannot gate rekey through Layer 3")
 			}
+			b.WriteString("b " + boundedSpendLabel + "\n\n")
 		} else {
 			b.WriteString("b " + boundedAcceptLabel + "\n\n")
 		}

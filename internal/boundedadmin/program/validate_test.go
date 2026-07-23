@@ -346,6 +346,17 @@ func TestValidateAcceptsFrozenSentryStructure(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsUnreportedSentryStructure(t *testing.T) {
+	program, expected := testExpectedSentryProgram(t)
+	expected.SentryPublicKey = nil
+	expected.SentryArgIndex = 0
+
+	err := Validate(program, expected)
+	if err == nil || !strings.Contains(err.Error(), "present without sentry metadata") {
+		t.Fatalf("Validate() error = %v, want unreported sentry rejection", err)
+	}
+}
+
 func TestValidateAllowsLayer3DenyBranches(t *testing.T) {
 	program, expected := testExpectedProgram(t)
 	// Replace Layer 3's constant predicate with err. The shared accept branch

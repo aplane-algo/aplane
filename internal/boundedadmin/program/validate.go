@@ -213,6 +213,8 @@ func Validate(bytecode []byte, expected Expected) error {
 		if !targetOK || layer3At != spendAt+len(sentryGate) || layer3At >= acceptAt {
 			return fmt.Errorf("bounded1 sentry verification does not reach the Layer-3 boundary")
 		}
+	} else if matchesFrameworkSentryGateAt(parsed.instructions, spendAt) {
+		return fmt.Errorf("bounded1 sentry verification region is present without sentry metadata")
 	}
 	if err := validateLayer3ControlFlow(parsed, layer3At, acceptAt); err != nil {
 		return fmt.Errorf("bounded1 Layer-3 control flow is invalid: %w", err)
@@ -593,6 +595,32 @@ func bytesValue(value []byte) pattern {
 		decoded, err := hex.DecodeString(got)
 		return err == nil && bytes.Equal(decoded, value) && got == want
 	}
+}
+
+func matchesFrameworkSentryGateAt(instructions []instruction, at int) bool {
+	anyArg := func(inst instruction) bool {
+		return inst.name == "arg" && len(inst.args) == 1
+	}
+	anyBytes := func(inst instruction) bool {
+		return inst.name == "pushbytes" && len(inst.args) == 1
+	}
+	gate := []pattern{
+		anyArg, exact("len"), intValue(0), exact(">"), exact("assert"),
+		anyArg, exact("len"), intValue(uint64(boundedmeta.SentrySignatureMaxSizeV1)), exact("<="), exact("assert"),
+		bytesValue([]byte(sentrymessage.DomainTagV1)), bytesValue([]byte{byte(sentrymessage.RoleSentry)}), exact("concat"),
+		exact("txn", "TxID"), exact("concat"), exact("sha512_256"),
+		anyArg, anyBytes, exact("falcon_verify"), exact("assert"), branch("b"),
+	}
+	if !matchesAt(instructions, at, gate) {
+		return false
+	}
+	firstArg := instructions[at].args[0]
+	if instructions[at+5].args[0] != firstArg || instructions[at+16].args[0] != firstArg {
+		return false
+	}
+	rawKey := strings.TrimPrefix(strings.ToLower(instructions[at+17].args[0]), "0x")
+	key, err := hex.DecodeString(rawKey)
+	return err == nil && len(key) == boundedmeta.SentryPublicKeySizeV1
 }
 
 func matchesAt(instructions []instruction, at int, patterns []pattern) bool {
