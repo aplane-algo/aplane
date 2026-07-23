@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	internallsig "github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
@@ -150,12 +151,12 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 }
 
 type corridorExecutionAccount struct {
-	address           string
-	bytecode          []byte
-	recipientsParam   string
-	userPrivateKey    []byte
-	sentryPrivateKey  []byte
-	signatureProvider *composeddsa.ComposedDSA
+	address          string
+	bytecode         []byte
+	recipientsParam  string
+	userPrivateKey   []byte
+	sentryPrivateKey []byte
+	metadata         *boundedmeta.Metadata
 }
 
 func newCorridorExecutionAccount(t *testing.T, testnet *harness.TestnetConfig, recipients []types.Address) corridorExecutionAccount {
@@ -197,22 +198,27 @@ func newCorridorExecutionAccount(t *testing.T, testnet *harness.TestnetConfig, r
 		t.Fatalf("failed to build Corridor provider: %v", err)
 	}
 	provider.SetAlgodClient(testnet.Client)
-	derived, err := provider.DeriveLsigWithSalt(context.Background(), userPublicKey, map[string]string{
+	params := map[string]string{
 		"recipients": recipientsParam,
 		composeddsa.BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryPublicKey),
 		composeddsa.BoundedAdminPublicKeyParameter:  hex.EncodeToString(adminPublicKey),
-	})
+	}
+	derived, err := provider.DeriveLsigWithSalt(context.Background(), userPublicKey, params)
 	if err != nil {
 		t.Fatalf("failed to derive corridor LogicSig: %v", err)
 	}
+	metadata, err := provider.BuildBoundedAuthorizationMetadata(userPublicKey, params, derived.Bytecode)
+	if err != nil {
+		t.Fatalf("failed to build Corridor bounded metadata: %v", err)
+	}
 
 	return corridorExecutionAccount{
-		address:           derived.Address.String(),
-		bytecode:          derived.Bytecode,
-		recipientsParam:   recipientsParam,
-		userPrivateKey:    userPrivateKey,
-		sentryPrivateKey:  sentryPrivateKey,
-		signatureProvider: provider,
+		address:          derived.Address.String(),
+		bytecode:         derived.Bytecode,
+		recipientsParam:  recipientsParam,
+		userPrivateKey:   userPrivateKey,
+		sentryPrivateKey: sentryPrivateKey,
+		metadata:         metadata,
 	}
 }
 
@@ -269,12 +275,7 @@ func (a corridorExecutionAccount) signGroup(t *testing.T, targetTxn types.Transa
 		t.Fatalf("failed to sign corridor base message: %v", err)
 	}
 	sentrySignature := a.signComponent(t, message.RoleSentry, txid, a.sentryPrivateKey)
-	args, err := a.signatureProvider.BuildArgs(userSignature, nil)
-	if err != nil {
-		t.Fatalf("failed to build corridor LogicSig args: %v", err)
-	}
-	args = append(args, append([]byte(nil), proof...))
-	args = append(args, sentrySignature)
+	args := a.spendArgs(t, userSignature, proof, sentrySignature)
 	if mutateArgs != nil {
 		args = mutateArgs(args)
 	}
@@ -298,6 +299,52 @@ func (a corridorExecutionAccount) signGroup(t *testing.T, targetTxn types.Transa
 		rawGroup = append(rawGroup, signedDummy...)
 	}
 	return rawGroup, algocrypto.GetTxID(targetTxn)
+}
+
+func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, sentrySignature []byte) [][]byte {
+	t.Helper()
+	if a.metadata == nil {
+		t.Fatal("Corridor bounded metadata is missing")
+	}
+	args := make([][]byte, len(a.metadata.ArgumentLayout))
+	baseIndex, derivedIndex := 0, 0
+	baseValues := [][]byte{baseSignature}
+	derivedValues := [][]byte{proof}
+	for _, slot := range a.metadata.ArgumentLayout {
+		var value []byte
+		switch slot.Source {
+		case boundedmeta.ArgSourceBaseSignature:
+			if baseIndex >= len(baseValues) {
+				t.Fatalf("Corridor base slot %q has no test value", slot.Name)
+			}
+			value = baseValues[baseIndex]
+			baseIndex++
+		case boundedmeta.ArgSourceDerived:
+			if derivedIndex >= len(derivedValues) {
+				t.Fatalf("Corridor derived slot %q has no test value", slot.Name)
+			}
+			value = derivedValues[derivedIndex]
+			derivedIndex++
+		case boundedmeta.ArgSourceSentry:
+			value = sentrySignature
+		case boundedmeta.ArgSourceAdmin:
+			value = nil
+		default:
+			t.Fatalf("Corridor test does not support argument source %q", slot.Source)
+		}
+		if value == nil {
+			value = []byte{}
+		}
+		args[slot.Index] = append([]byte(nil), value...)
+	}
+	if baseIndex != len(baseValues) || derivedIndex != len(derivedValues) {
+		t.Fatalf("Corridor argument layout consumed base/derived values %d/%d and %d/%d",
+			baseIndex, len(baseValues), derivedIndex, len(derivedValues))
+	}
+	for len(args) > 0 && len(args[len(args)-1]) == 0 {
+		args = args[:len(args)-1]
+	}
+	return args
 }
 
 func (a corridorExecutionAccount) signComponent(t *testing.T, role message.Role, txid types.Digest, privateKey []byte) []byte {
