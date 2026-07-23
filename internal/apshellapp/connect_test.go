@@ -82,19 +82,6 @@ func TestConnectConfiguredRequiresDefaultSignerEndpoint(t *testing.T) {
 	}
 }
 
-func TestRequestTokenConfiguredRequiresDefaultSignerEndpoint(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-
-	app := New(eng, config.DefaultConfig(), t.TempDir())
-	_, err = app.RequestTokenConfigured(context.Background(), nil)
-	if err == nil || !strings.Contains(err.Error(), "usage: request-token") {
-		t.Fatalf("RequestTokenConfigured() error = %v, want usage error", err)
-	}
-}
-
 func TestDecorateConnectResult(t *testing.T) {
 	result := &ConnectResult{
 		Port:     1234,

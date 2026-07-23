@@ -27,9 +27,12 @@ type Options struct {
 
 // Prereqs describes an enrolled client configuration ready for signer-facing use.
 type Prereqs struct {
-	DataDir string
-	Config  config.Config
-	Token   string
+	DataDir      string
+	Config       config.Config
+	EndpointName string
+	Endpoint     config.ClientEndpointConfig
+	SSH          config.ClientEndpointSSH
+	Token        string
 }
 
 // LoadEnrolledClient validates that the client is already enrolled for a
@@ -44,22 +47,16 @@ func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 		return nil, fmt.Errorf("invalid client configuration for %s: %w", opts.Product, err)
 	}
 	registry := cfg.ClientEndpointsOrDefault()
-	_, endpoint, ok := registry.DefaultEndpoint()
+	alias, endpoint, ok := registry.DefaultEndpoint()
 	if !ok {
 		return nil, fmt.Errorf("%s requires a default signer endpoint in %s/endpoints.yaml; %s", opts.Product, dataDir, opts.MissingSSHHint)
 	}
-	host, sshPort, err := config.ClientEndpointSSHHostPort(endpoint)
+	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("%s default signer endpoint is invalid: %w", opts.Product, err)
 	}
-	cfg.LegacySSH = &config.SSHClientConfig{
-		Host:           host,
-		Port:           sshPort,
-		IdentityFile:   endpoint.IdentityFile,
-		KnownHostsPath: endpoint.KnownHostsPath,
-	}
 
-	tokenPath := endpoint.TokenFile
+	tokenPath := endpointSSH.TokenFile
 	if tokenPath == "" {
 		tokenPath, _ = tokenfile.GetApshellTokenPathForDataDir(dataDir)
 	}
@@ -71,19 +68,22 @@ func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 		return nil, fmt.Errorf("%s requires an enrolled client token at %s; %s", opts.Product, tokenPath, opts.MissingTokenHint)
 	}
 
-	if err := requireKnownHost(cfg, opts); err != nil {
+	if err := requireKnownHost(endpointSSH, opts); err != nil {
 		return nil, err
 	}
 
 	return &Prereqs{
-		DataDir: dataDir,
-		Config:  cfg,
-		Token:   token,
+		DataDir:      dataDir,
+		Config:       cfg,
+		EndpointName: alias,
+		Endpoint:     endpoint,
+		SSH:          endpointSSH,
+		Token:        token,
 	}, nil
 }
 
-func requireKnownHost(cfg config.Config, opts Options) error {
-	knownHostsPath := cfg.LegacySSH.KnownHostsPath
+func requireKnownHost(endpointSSH config.ClientEndpointSSH, opts Options) error {
+	knownHostsPath := endpointSSH.KnownHostsPath
 	callback, err := knownhosts.New(knownHostsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -97,8 +97,8 @@ func requireKnownHost(cfg config.Config, opts Options) error {
 		return fmt.Errorf("failed to prepare known_hosts check: %w", err)
 	}
 
-	address := net.JoinHostPort(cfg.LegacySSH.Host, strconv.Itoa(cfg.LegacySSH.Port))
-	remote := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: cfg.LegacySSH.Port}
+	address := net.JoinHostPort(endpointSSH.Host, strconv.Itoa(endpointSSH.Port))
+	remote := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: endpointSSH.Port}
 	err = callback(address, remote, dummyKey)
 	if err == nil {
 		return fmt.Errorf("%s known_hosts entry for %s matches an invalid placeholder key; remove it from %s and trust the real signer host key", opts.Product, address, knownHostsPath)

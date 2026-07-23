@@ -1136,7 +1136,7 @@ func mustClientSSHHostPort(t *testing.T) (string, int) {
 	return sshCfg.Host, sshCfg.Port
 }
 
-func mustLoadClientSSHConfig(t *testing.T) config.SSHClientConfig {
+func mustLoadClientSSHConfig(t *testing.T) config.ClientEndpointSSH {
 	t.Helper()
 
 	_, sshCfg := mustLoadDefaultSignerEndpoint(t)
@@ -1150,7 +1150,7 @@ func mustLoadDefaultSignerEndpointOnly(t *testing.T) config.ClientEndpointConfig
 	return endpoint
 }
 
-func mustLoadDefaultSignerEndpoint(t *testing.T) (config.ClientEndpointConfig, config.SSHClientConfig) {
+func mustLoadDefaultSignerEndpoint(t *testing.T) (config.ClientEndpointConfig, config.ClientEndpointSSH) {
 	t.Helper()
 
 	cfg := mustLoadClientConfig(t)
@@ -1161,15 +1161,9 @@ func mustLoadDefaultSignerEndpoint(t *testing.T) (config.ClientEndpointConfig, c
 	if endpoint.Role != config.ClientEndpointRoleSigner {
 		t.Fatalf("default endpoint %q role = %q, want signer", alias, endpoint.Role)
 	}
-	host, port, err := config.ClientEndpointSSHHostPort(endpoint)
+	sshCfg, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {
 		t.Fatalf("default endpoint %q has invalid SSH URL: %v", alias, err)
-	}
-	sshCfg := config.SSHClientConfig{
-		Host:           host,
-		Port:           port,
-		IdentityFile:   endpoint.IdentityFile,
-		KnownHostsPath: endpoint.KnownHostsPath,
 	}
 	return endpoint, sshCfg
 }
@@ -1184,12 +1178,12 @@ func mustLoadClientConfig(t *testing.T) config.Config {
 	return cfg
 }
 
-func requestTokenViaEngine(t *testing.T, eng *engine.Engine, sshCfg config.SSHClientConfig, ipcClient *transport.IPCClient, hostKeyApproval func(host string, fingerprint string) (bool, error)) (string, error) {
+func requestTokenViaEngine(t *testing.T, eng *engine.Engine, sshCfg config.ClientEndpointSSH, ipcClient *transport.IPCClient, hostKeyApproval func(host string, fingerprint string) (bool, error)) (string, error) {
 	t.Helper()
 	return requestTokenViaEngineWithIdentity(t, eng, sshCfg, sshCfg.IdentityFile, ipcClient, hostKeyApproval)
 }
 
-func requestTokenViaEngineWithIdentity(t *testing.T, eng *engine.Engine, sshCfg config.SSHClientConfig, identityFile string, ipcClient *transport.IPCClient, hostKeyApproval func(host string, fingerprint string) (bool, error)) (string, error) {
+func requestTokenViaEngineWithIdentity(t *testing.T, eng *engine.Engine, sshCfg config.ClientEndpointSSH, identityFile string, ipcClient *transport.IPCClient, hostKeyApproval func(host string, fingerprint string) (bool, error)) (string, error) {
 	t.Helper()
 
 	var (

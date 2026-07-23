@@ -3,7 +3,10 @@
 
 package apshellapp
 
-import "github.com/aplane-algo/aplane/internal/tokenfile"
+import (
+	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/tokenfile"
+)
 
 // StartupConnectDecision reports the app-layer startup decision for signer connectivity.
 func (a *App) StartupConnectDecision() *StartupConnectDecision {
@@ -21,16 +24,12 @@ func (a *App) StartupConnectDecision() *StartupConnectDecision {
 	}
 
 	if ok {
-		host, sshPort, err := sshEndpointHostPort(endpoint)
+		endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 		if err == nil {
-			signerPort := endpoint.SignerPort
-			if signerPort == 0 {
-				signerPort = a.Config.LegacySignerPort
-			}
 			decision.HasSSHConfig = true
-			decision.Host = host
-			decision.SSHPort = sshPort
-			decision.SignerPort = signerPort
+			decision.Host = endpointSSH.Host
+			decision.SSHPort = endpointSSH.Port
+			decision.SignerPort = endpointSSH.SignerPort
 		}
 	}
 

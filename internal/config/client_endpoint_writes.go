@@ -41,37 +41,41 @@ func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, b
 
 // CheckSupportedClientEndpointConfig rejects legacy config.yaml endpoint
 // routing. Endpoint routing must be written explicitly in endpoints.yaml;
-// startup does not materialize or rewrite routes from top-level ssh settings.
+// startup does not materialize or rewrite routes from top-level settings.
 func CheckSupportedClientEndpointConfig(dataDir string) error {
-	hasSSH, err := clientConfigHasTopLevelSSH(dataDir)
+	legacyField, err := clientConfigLegacyRoutingField(dataDir)
 	if err != nil {
 		return err
 	}
-	if hasSSH {
-		return fmt.Errorf("%w: config.yaml contains legacy top-level ssh signer routing; automatic endpoint-routing migration is unsupported, remove the ssh block and write signer routing in %s", ErrUnsupportedClientEndpointConfig, ClientEndpointsFile)
+	if legacyField != "" {
+		return fmt.Errorf("%w: config.yaml contains legacy top-level %s signer routing; automatic endpoint-routing migration is unsupported, remove %s and write signer routing in %s", ErrUnsupportedClientEndpointConfig, legacyField, legacyField, ClientEndpointsFile)
 	}
 	_, _, err = LoadStoredClientEndpointRegistry(dataDir)
 	return err
 }
 
-func clientConfigHasTopLevelSSH(dataDir string) (bool, error) {
+func clientConfigLegacyRoutingField(dataDir string) (string, error) {
 	path := GetConfigPath(dataDir)
 	if path == "" {
-		return false, nil
+		return "", nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return "", nil
 		}
-		return false, fmt.Errorf("failed to read %s: %w", path, err)
+		return "", fmt.Errorf("failed to read %s: %w", path, err)
 	}
 	var raw map[string]any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return false, nil
+		return "", nil
 	}
-	_, ok := raw["ssh"]
-	return ok, nil
+	for _, field := range []string{"ssh", "signer_port"} {
+		if _, ok := raw[field]; ok {
+			return field, nil
+		}
+	}
+	return "", nil
 }
 
 func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointRegistry) error {

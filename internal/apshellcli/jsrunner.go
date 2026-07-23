@@ -19,25 +19,15 @@ import (
 type jsRunnerListenFunc func(network, address string) (net.Listener, error)
 
 // runJSScriptMode runs a JavaScript script file.
-func runJSScriptMode(network string, config config.Config, dataDir string, scriptPath string) {
+func runJSScriptMode(network string, cfg config.Config, dataDir string, scriptPath string) {
 	// Initialize Engine
-	eng, err := engine.NewInitializedEngine(network, &config, dataDir)
+	eng, err := engine.NewInitializedEngine(network, &cfg, dataDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to initialize engine: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Auto-connect to Signer via SSH tunnel (best-effort)
-	if config.LegacySSH != nil {
-		token, _ := tokenfile.LoadApshellTokenFromDataDir(dataDir)
-		if token != "" {
-			localPort, portErr := jsRunnerFindAvailablePort()
-			if portErr == nil {
-				target := fmt.Sprintf("%s (ssh:%d, signer:%d)", config.LegacySSH.Host, config.LegacySSH.Port, config.LegacySignerPort)
-				_, _ = eng.ConnectWithTunnel(target, config.LegacySSH.Host, config.LegacySSH.Port, localPort, config.LegacySignerPort, token, config.LegacySSH.IdentityFile, config.LegacySSH.KnownHostsPath, nil, nil)
-			}
-		}
-	}
+	autoConnectJSEngine(eng, cfg, dataDir)
 
 	// Read script from file or stdin
 	var content []byte
@@ -65,25 +55,15 @@ func runJSScriptMode(network string, config config.Config, dataDir string, scrip
 }
 
 // runJSExpression runs a single JavaScript expression.
-func runJSExpression(network string, config config.Config, dataDir string, expr string) {
+func runJSExpression(network string, cfg config.Config, dataDir string, expr string) {
 	// Initialize Engine
-	eng, err := engine.NewInitializedEngine(network, &config, dataDir)
+	eng, err := engine.NewInitializedEngine(network, &cfg, dataDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to initialize engine: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Auto-connect to Signer via SSH tunnel (best-effort)
-	if config.LegacySSH != nil {
-		token, _ := tokenfile.LoadApshellTokenFromDataDir(dataDir)
-		if token != "" {
-			localPort, portErr := jsRunnerFindAvailablePort()
-			if portErr == nil {
-				target := fmt.Sprintf("%s (ssh:%d, signer:%d)", config.LegacySSH.Host, config.LegacySSH.Port, config.LegacySignerPort)
-				_, _ = eng.ConnectWithTunnel(target, config.LegacySSH.Host, config.LegacySSH.Port, localPort, config.LegacySignerPort, token, config.LegacySSH.IdentityFile, config.LegacySSH.KnownHostsPath, nil, nil)
-			}
-		}
-	}
+	autoConnectJSEngine(eng, cfg, dataDir)
 
 	// Create runner and execute
 	runner := scripting.NewGojaRunner(eng)
@@ -106,6 +86,42 @@ func runJSExpression(network string, config config.Config, dataDir string, expr 
 			fmt.Println(result.Value)
 		}
 	}
+}
+
+func autoConnectJSEngine(eng *engine.Engine, cfg config.Config, dataDir string) {
+	_, endpoint, ok := cfg.ClientEndpointsOrDefault().DefaultEndpoint()
+	if !ok {
+		return
+	}
+	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
+	if err != nil {
+		return
+	}
+	tokenPath := endpointSSH.TokenFile
+	if tokenPath == "" {
+		tokenPath, _ = tokenfile.GetApshellTokenPathForDataDir(dataDir)
+	}
+	token, _ := tokenfile.ReadToken(tokenPath)
+	if token == "" {
+		return
+	}
+	localPort, err := jsRunnerFindAvailablePort()
+	if err != nil {
+		return
+	}
+	target := fmt.Sprintf("%s (ssh:%d, signer:%d)", endpointSSH.Host, endpointSSH.Port, endpointSSH.SignerPort)
+	_, _ = eng.ConnectWithTunnel(
+		target,
+		endpointSSH.Host,
+		endpointSSH.Port,
+		localPort,
+		endpointSSH.SignerPort,
+		token,
+		endpointSSH.IdentityFile,
+		endpointSSH.KnownHostsPath,
+		nil,
+		nil,
+	)
 }
 
 // jsRunnerFindAvailablePort finds an available local port for the SSH tunnel.

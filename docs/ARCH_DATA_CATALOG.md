@@ -138,7 +138,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Client data root | authoritative root | `APCLIENT_DATA` | shell/bootstrap path context | `internal/clientdata`, `internal/bootstrap/shell` | Required for apshell; mutation lock protects shared local state. |
-| Client config | authoritative config | `APCLIENT_DATA/config.yaml` | `config.Config` network/theme/polling state | `internal/config`, `internal/bootstrap/shell` | Does not own signer routing; top-level `ssh:` signer routing is rejected. |
+| Client config | authoritative config | `APCLIENT_DATA/config.yaml` | `config.Config` network/theme/polling state | `internal/config`, `internal/bootstrap/shell` | Does not own signer routing; top-level `ssh:` and `signer_port:` routing is rejected. |
 | Endpoint registry | authoritative routing config | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry` | `internal/config`, `internal/apshellapp` | `schema_version:1`; role is `signer` or `sentry`; at most one signer endpoint. |
 | Endpoint alias | local identifier | map key under `endpoints` | endpoint lookup by alias | `internal/config`, `internal/apshellapp` | ASCII letters, digits, `.`, `_`, `-`; aliases are local, not exported. |
 | Endpoint record | authoritative routing record | `endpoints.<alias>` | endpoint connection profile | `internal/config`, `internal/engine/connect` | URL, signer/local ports, token file, identity file, known hosts resolve relative to `APCLIENT_DATA`. |

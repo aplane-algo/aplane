@@ -598,8 +598,9 @@ connect [endpoint-alias]
 
 With no arguments, `connect` opens the default signer endpoint from
 `$APCLIENT_DATA/endpoints.yaml`. Passing an endpoint alias connects to that
-named profile. This release does not support top-level `ssh:` signer routing in
-client `config.yaml`; write signer routing in `endpoints.yaml`.
+named profile. This release does not support top-level `ssh:` or
+`signer_port:` routing in client `config.yaml`; write signer routing in
+`endpoints.yaml`.
 
 **Examples:**
 ```
@@ -635,26 +636,35 @@ This is useful before connecting to a different endpoint in scripts.
 Request an API token from the Signer over SSH.
 
 ```
-request-token <host> [--ssh-port <port>]
-request-token --endpoint <alias>
 request-token
+request-token --endpoint <alias>
 ```
 
 The command always uses the client SSH key and known-hosts path from the
 selected endpoint profile. With no arguments, it uses the default endpoint.
 With `--endpoint`, it saves the token to that endpoint's token file.
+The selected endpoint also supplies the SSH URL, signer REST port, and token
+destination.
 
 **Examples:**
 ```
 request-token
 request-token --endpoint main
-request-token 192.168.1.100
-request-token 192.168.1.100 --ssh-port 2222
+request-token --endpoint local-sentry
 ```
 
 **Note:** An operator using local `apadmin` must approve the request on the server.
-After approval, `apshell` saves the new token and immediately attempts to connect
-to the signer with it.
+After approval, `apshell` saves the new token. It immediately attempts to
+connect only when the selected endpoint is the default signer; sentry
+enrollment leaves the primary signer connection unchanged.
+
+The positional one-off host form is no longer supported. Import or configure
+the endpoint first, then request its token:
+
+```text
+endpoints import --alias main --role signer signer.endpoint.json
+request-token
+```
 
 The same default signer endpoint and endpoint token obtained here can also be used by remote `apadmin`:
 

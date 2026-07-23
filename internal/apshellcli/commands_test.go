@@ -4,11 +4,43 @@
 package apshellcli
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
+	"github.com/aplane-algo/aplane/internal/config"
 )
+
+func TestRequestTokenRejectsPositionalHost(t *testing.T) {
+	r := &REPLState{}
+	err := r.cmdRequestToken([]string{"signer.example"}, nil)
+	if err == nil {
+		t.Fatal("cmdRequestToken() error = nil, want endpoint-only usage error")
+	}
+	if got := err.Error(); got != "usage: request-token [--endpoint <alias>]" {
+		t.Fatalf("cmdRequestToken() error = %q", got)
+	}
+	if strings.Contains(err.Error(), "<host>") {
+		t.Fatalf("cmdRequestToken() retained positional host usage: %v", err)
+	}
+}
+
+func TestTokenEnrollmentAutoConnectsOnlyDefaultSigner(t *testing.T) {
+	registry := config.ClientEndpointRegistry{
+		Default: "primary",
+		Endpoints: map[string]config.ClientEndpointConfig{
+			"primary": {Role: config.ClientEndpointRoleSigner},
+			"sentry":  {Role: config.ClientEndpointRoleSentry},
+		},
+	}
+	if !shouldAutoConnectAfterEnrollment(registry, "primary") {
+		t.Fatal("default signer enrollment should auto-connect")
+	}
+	if shouldAutoConnectAfterEnrollment(registry, "sentry") {
+		t.Fatal("sentry enrollment should not auto-connect")
+	}
+}
 
 // TestCommandRegistration verifies all expected commands are registered
 func TestCommandRegistration(t *testing.T) {

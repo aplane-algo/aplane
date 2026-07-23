@@ -212,7 +212,8 @@ For a sentry node:
 `request-token` creates the client SSH key if it is missing, then waits for an
 operator to approve enrollment in `apadmin` or `apapprover`.
 After approval, the shell saves the token for the selected endpoint and
-immediately attempts to connect.
+immediately attempts to connect only when that endpoint is the default signer.
+Sentry enrollment leaves the primary signer connection unchanged.
 
 ### Multiple local instances
 
