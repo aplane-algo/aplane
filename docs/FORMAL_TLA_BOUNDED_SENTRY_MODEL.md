@@ -1,8 +1,8 @@
 # Bounded Sentry Machine-Checkable Model
 
-> Status: TLC checked with `MaxTargets = 1`; the recorded standard run generated
-> 99,584 distinct reachable states at depth 4 and found no counterexamples for
-> `Safety`. The deep run uses `MaxTargets = 4` and covers 398,336 states.
+> Status: TLC checked over every abstract input combination; the recorded run
+> generated 99,584 distinct reachable states at depth 4 and found no
+> counterexamples for `Safety`.
 
 This model checks the security-bearing order and final acceptance boundary of
 the `bounded-sentry1` choreography. It complements the legacy guarded assembly
@@ -28,10 +28,10 @@ The spec lives at [formal/bounded_sentry.tla](formal/bounded_sentry.tla).
 ## What TLC actually verifies
 
 `Init` enumerates every combination of path (`spend`, `admin`, or invalid),
-group target count, finalized-plan and classification outcomes, signer policy
-and approval decisions, signature validity, metadata stability, exact target
-coverage, argument-source/path-mask validity, derived-argument success,
-passthrough validity, and canonical-byte binding.
+finalized-plan and classification outcomes, signer policy and approval
+decisions, signature validity, metadata stability, exact target coverage,
+argument-source/path-mask validity, derived-argument success, passthrough
+validity, and canonical-byte binding.
 
 TLC then explores the real stage order:
 
@@ -64,14 +64,15 @@ or generated TEAL.
   BS5.
 - Setting output on a failed branch violates BS6 or BS7.
 
-The checked model passes both standard and deep bounds.
+The checked model passes its standard exhaustive run.
 
 ## Modeling choices and limits
 
-- `MaxTargets` bounds the number of locally assembled targets. Validation
-  outcomes are group-wide: a false value means at least one target failed.
-  Concrete duplicate, missing-index, and per-target signature cases remain in
-  Go tests.
+- Validation outcomes are group-wide: a false value means at least one target
+  failed. Concrete duplicate, missing-index, and per-target signature cases
+  remain in Go tests. The model deliberately has no target-count input because
+  it would only duplicate identical abstract states without adding a
+  per-target invariant.
 - `sourceLayout` abstracts the complete bounded slot contract: base,
   derived/runtime, sentry, and admin sources plus their path masks. The Go
   implementation and compiler tests verify the concrete order and slot sizes.
@@ -85,15 +86,12 @@ The checked model passes both standard and deep bounds.
 
 ```sh
 make formal-test
-make formal-test-deep
 ```
 
 For the focused runs:
 
 ```sh
 java -jar tla2tools.jar -config docs/formal/bounded_sentry.cfg \
-  docs/formal/bounded_sentry.tla
-java -jar tla2tools.jar -config docs/formal/bounded_sentry_deep.cfg \
   docs/formal/bounded_sentry.tla
 ```
 

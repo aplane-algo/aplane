@@ -23,16 +23,12 @@ it does not prove Falcon, msgpack, Merkle proofs, or TEAL semantics.
 
 Unlike the one-shot guarded_assembly model, this is a transition system. TLC
 explores the base-release, sentry-release, bounded assembly, and external-admin
-completion stages. MaxTargets bounds the group target count but validation
-outcomes are group-wide: a false value means at least one target failed.
+completion stages. Validation outcomes are group-wide: a false value means at
+least one target failed.
 
 See FORMAL_TLA_BOUNDED_SENTRY_MODEL.md for the prose companion.
 *)
-EXTENDS Naturals, TLC
-
-CONSTANTS MaxTargets
-
-ASSUME MaxTargets \in Nat /\ MaxTargets >= 1
+EXTENDS TLC
 
 ----------------------------------------------------------------------------
 (* Inputs and state *)
@@ -40,7 +36,6 @@ ASSUME MaxTargets \in Nat /\ MaxTargets >= 1
 Path == {"spend", "admin", "invalid"}
 
 Input == [
-    targetCount  : 1..MaxTargets,
     path         : Path,
     finalized    : BOOLEAN,
     classified   : BOOLEAN,

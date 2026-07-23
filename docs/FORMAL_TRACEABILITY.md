@@ -430,8 +430,9 @@ violate `Safety` in an initial state.
 machine-checks the combined planning and assembly choreography. It is a
 depth-4 transition system covering user-side base release, the later sentry
 request/release, final bounded assembly, and the sentry-free external-admin
-branch. TLC checked under `MaxTargets = 1`, generating 99,584 distinct states
-with no counterexamples; the deep `MaxTargets = 4` run covers 398,336 states.
+branch. TLC generated 99,584 distinct states with no counterexamples. Target
+count is intentionally absent: the predicates are group-wide, so a
+target-count field only duplicated states without adding coverage.
 
 | Invariant | TLA+ predicate |
 |---|---|

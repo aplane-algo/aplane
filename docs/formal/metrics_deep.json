@@ -48,12 +48,6 @@
     "depth": 1
   },
   {
-    "spec": "bounded_sentry",
-    "cfg": "bounded_sentry_deep",
-    "distinct_states": 398336,
-    "depth": 4
-  },
-  {
     "spec": "approval_coordinator",
     "cfg": "approval_coordinator_liveness_deep",
     "distinct_states": 6174,

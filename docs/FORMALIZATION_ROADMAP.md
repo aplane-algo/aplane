@@ -395,9 +395,10 @@ release, sentry request/release, final bounded assembly, and the separate
 sentry-free external-admin branch. BS1-BS7 are anchored in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), and the former bounded DSA
 planning/argument-assembly drift entry is closed in
-[FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md). All 14 standard and 12 deep TLC runs
-pass at recorded metrics; the new standard/deep cells cover 99,584 and 398,336
-distinct states respectively.
+[FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md). All 14 standard and 11 deep TLC runs
+pass at recorded metrics; the new standard cell covers 99,584 distinct states.
+The model has no deep target-count variant because its predicates are
+group-wide and that input only duplicated identical states.
 
 ### Milestone status
 

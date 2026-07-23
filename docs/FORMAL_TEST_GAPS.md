@@ -40,8 +40,11 @@ post-assembly client route. A future audit pass should extend the guarded
 signing model with the gate states and assert that every released guarded group
 passed the same user gate regardless of whether the client submits or
 simulates it. This gap is limited to the legacy `sentry1` choreography;
-`bounded-sentry1` user-first ordering, assembly, and simulation routing are
-covered by [formal/bounded_sentry.tla](formal/bounded_sentry.tla).
+`bounded-sentry1` user-first ordering and assembly are covered by
+[formal/bounded_sentry.tla](formal/bounded_sentry.tla). Its simulation route is
+covered by the concrete Go test
+`TestBoundedSentrySimulateUsesUserFirstChoreography`; the TLA+ model does not
+represent client submission or simulation transport.
 
 **Model drift: SSH authentication boundary.**
 The runtime now authenticates normal SSH connections with verified public-key
