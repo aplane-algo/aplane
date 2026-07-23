@@ -400,7 +400,7 @@ type BoundedArgumentSlotInfo struct {
 type BoundedSentryAuthorizationInfo struct {
 	Contract         string   `json:"contract"`
 	ComponentKeyType string   `json:"component_key_type"`
-	PublicKeyHex     string   `json:"public_key,omitempty"`
+	PublicKeyHex     string   `json:"public_key_hex,omitempty"`
 	ComponentKeyID   string   `json:"component_key_id,omitempty"`
 	SignatureMaxSize int      `json:"signature_max_size"`
 	RequiredOn       []string `json:"required_on"`
@@ -435,8 +435,8 @@ type KeyTypeInfo struct {
 	MnemonicWordCount      int                       `json:"mnemonic_word_count"`
 	MnemonicImport         bool                      `json:"mnemonic_import"`
 	MnemonicScheme         string                    `json:"mnemonic_scheme"`
-	SigningFlow            string                    `json:"signing_flow,omitempty"`              // signing choreography label (e.g. "sentry1"); empty = plain /sign
-	SentryComponentKeyType string                    `json:"sentry_component_key_type,omitempty"` // sentry component key type for signing_flow "sentry1"
+	SigningFlow            string                    `json:"signing_flow,omitempty"`              // signing choreography label (for example "sentry1" or "bounded-sentry1"); empty = plain /sign
+	SentryComponentKeyType string                    `json:"sentry_component_key_type,omitempty"` // sentry component key type for sentry-backed signing flows
 	BoundedAuthorization   *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
 	CreationParams         []CreationParamInfo       `json:"creation_params"`
 	RuntimeArgs            []RuntimeArgInfo          `json:"runtime_args"`
@@ -502,8 +502,8 @@ type KeyInfo struct {
 	Address                  string                    `json:"address"`
 	PublicKeyHex             string                    `json:"public_key_hex"`
 	KeyType                  string                    `json:"key_type"`
-	SigningFlow              string                    `json:"signing_flow,omitempty"`              // signing choreography label (e.g. "sentry1"); empty = plain /sign
-	SentryComponentKeyType   string                    `json:"sentry_component_key_type,omitempty"` // sentry component key type for signing_flow "sentry1"
+	SigningFlow              string                    `json:"signing_flow,omitempty"`              // signing choreography label (for example "sentry1" or "bounded-sentry1"); empty = plain /sign
+	SentryComponentKeyType   string                    `json:"sentry_component_key_type,omitempty"` // sentry component key type for sentry-backed signing flows
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
 	LsigSize                 int                       `json:"lsig_size,omitempty"` // Spend-path LogicSig size for group budget calculation (bytecode + crypto sig args); excludes the bounded contract-admin signature, which only the /sign/bounded-admin choreography attaches and the signer budgets itself
 	IsGenericLsig            bool                      `json:"is_generic_lsig,omitempty"`
