@@ -17,8 +17,7 @@ import (
 //
 // Returns the signed transaction as a types.SignedTxn.
 func SignDummyTransaction(txn types.Transaction) (types.SignedTxn, error) {
-	dummyLSig := types.LogicSig{Logic: EmbeddedDummyTealTok, Args: nil}
-	_, signedBytes, err := crypto.SignLogicSigTransaction(dummyLSig, txn)
+	signedBytes, err := signDummyTransactionBytes(txn)
 	if err != nil {
 		return types.SignedTxn{}, fmt.Errorf("failed to sign dummy transaction: %w", err)
 	}
@@ -29,6 +28,15 @@ func SignDummyTransaction(txn types.Transaction) (types.SignedTxn, error) {
 	}
 
 	return stxn, nil
+}
+
+func dummyLogicSig() types.LogicSig {
+	return types.LogicSig{Logic: EmbeddedDummyTealTok}
+}
+
+func signDummyTransactionBytes(txn types.Transaction) ([]byte, error) {
+	_, signedBytes, err := crypto.SignLogicSigTransaction(dummyLogicSig(), txn)
+	return signedBytes, err
 }
 
 // SignWithRawKey signs a transaction using a raw Ed25519 private key.

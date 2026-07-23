@@ -1,18 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package lsig provides transaction wrapping utilities for large post-quantum signatures.
-//
-// Post-quantum signatures (e.g., Falcon ~1280 bytes) exceed Algorand's 1000-byte
-// LogicSig limit per transaction. This package provides dummy transaction wrapping
-// to spread the signature cost across multiple transactions in a group.
-//
-// For cryptographic operations (signing, key generation, derivation), use
-// internal/logicsigdsa instead.
-package lsig
+package signing
 
 import (
-	_ "embed"
 	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -20,16 +11,12 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-//go:embed dummy.teal.tok
-var EmbeddedDummyTealTok []byte
-
 // TxLsigBudget is Algorand's LogicSig pool budget contribution per transaction in a group
 const TxLsigBudget = 1000
 
 // DummyAddress returns the address authorized by the embedded dummy LogicSig.
 func DummyAddress() (types.Address, error) {
-	dummyLSig := types.LogicSig{Logic: EmbeddedDummyTealTok, Args: nil}
-	lsigAcct := crypto.LogicSigAccount{Lsig: dummyLSig}
+	lsigAcct := crypto.LogicSigAccount{Lsig: dummyLogicSig()}
 	return lsigAcct.Address()
 }
 
@@ -75,11 +62,10 @@ func SignDummyTransactions(dummyTxns []types.Transaction) ([][]byte, error) {
 		return nil, nil
 	}
 
-	dummyLSig := types.LogicSig{Logic: EmbeddedDummyTealTok, Args: nil}
 	signedDummies := make([][]byte, len(dummyTxns))
 
 	for i, txn := range dummyTxns {
-		_, signedBytes, err := crypto.SignLogicSigTransaction(dummyLSig, txn)
+		signedBytes, err := signDummyTransactionBytes(txn)
 		if err != nil {
 			return nil, fmt.Errorf("failed to sign dummy txn %d: %w", i+1, err)
 		}

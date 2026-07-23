@@ -9,7 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
-	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 
@@ -137,10 +136,10 @@ func calculateDummies(console Console, snapshot PlannerIdentitySnapshot, identit
 		}
 	}
 
-	currentBudget := len(txns) * lsig.TxLsigBudget
+	currentBudget := len(txns) * txsigning.TxLsigBudget
 	if totalLsigBytes > currentBudget {
 		extraBudgetNeeded := totalLsigBytes - currentBudget
-		dummiesNeeded = (extraBudgetNeeded + lsig.TxLsigBudget - 1) / lsig.TxLsigBudget
+		dummiesNeeded = (extraBudgetNeeded + txsigning.TxLsigBudget - 1) / txsigning.TxLsigBudget
 	}
 
 	const maxGroupSize = 16
@@ -156,7 +155,7 @@ func calculateDummies(console Console, snapshot PlannerIdentitySnapshot, identit
 	}
 
 	consoleOf(console).Printf("[GROUP] LSig budget: %d bytes needed, %d bytes available (%d txns x %d)\n",
-		totalLsigBytes, currentBudget, len(txns), lsig.TxLsigBudget)
+		totalLsigBytes, currentBudget, len(txns), txsigning.TxLsigBudget)
 	if dummiesNeeded > 0 {
 		consoleOf(console).Printf("[GROUP] Need %d dummy transaction(s) for additional budget\n", dummiesNeeded)
 	}
@@ -259,7 +258,7 @@ func buildFinalGroup(deps PlannerDeps, console Console, txns []types.Transaction
 		}
 
 		var createErr error
-		dummyTxns, createErr = lsig.CreateDummyTransactions(dummiesNeeded, sp)
+		dummyTxns, createErr = txsigning.CreateDummyTransactions(dummiesNeeded, sp)
 		if createErr != nil {
 			return nil, nil, feeInfo, false, internal(fmt.Sprintf("failed to create dummy transactions: %v", createErr))
 		}

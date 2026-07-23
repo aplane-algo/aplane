@@ -12,9 +12,9 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	internallsig "github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
+	internallsig "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"

@@ -16,7 +16,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
-	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -685,11 +684,11 @@ func (s *Signer) planGuardedGroup(txns []types.Transaction, targets []guardedTar
 		}
 	}
 
-	currentBudget := len(planned) * lsig.TxLsigBudget
+	currentBudget := len(planned) * signing.TxLsigBudget
 	dummiesNeeded := 0
 	if totalLsigBytes > currentBudget {
 		extraBudgetNeeded := totalLsigBytes - currentBudget
-		dummiesNeeded = (extraBudgetNeeded + lsig.TxLsigBudget - 1) / lsig.TxLsigBudget
+		dummiesNeeded = (extraBudgetNeeded + signing.TxLsigBudget - 1) / signing.TxLsigBudget
 	}
 	if len(planned)+dummiesNeeded > 16 {
 		return nil, nil, fmt.Errorf("guarded group would be %d transactions (max 16) after adding %d LogicSig-budget dummies", len(planned)+dummiesNeeded, dummiesNeeded)
@@ -713,7 +712,7 @@ func (s *Signer) planGuardedGroup(txns []types.Transaction, targets []guardedTar
 	if dummiesNeeded > 0 {
 		sp := suggestedParamsFromTxn(planned[0])
 		var err error
-		dummyTxns, err = lsig.CreateDummyTransactions(dummiesNeeded, sp)
+		dummyTxns, err = signing.CreateDummyTransactions(dummiesNeeded, sp)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create guarded dummy transactions: %w", err)
 		}
@@ -770,7 +769,7 @@ func signGuardedDummies(dummyTxns []types.Transaction) ([]string, error) {
 	if err := validateGuardedDummies(dummyTxns); err != nil {
 		return nil, err
 	}
-	signedDummies, err := lsig.SignDummyTransactions(dummyTxns)
+	signedDummies, err := signing.SignDummyTransactions(dummyTxns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign guarded dummy transactions: %w", err)
 	}
@@ -782,7 +781,7 @@ func signGuardedDummies(dummyTxns []types.Transaction) ([]string, error) {
 }
 
 func validateGuardedDummies(dummyTxns []types.Transaction) error {
-	dummyAddress, err := lsig.DummyAddress()
+	dummyAddress, err := signing.DummyAddress()
 	if err != nil {
 		return fmt.Errorf("failed to derive guarded dummy address: %w", err)
 	}

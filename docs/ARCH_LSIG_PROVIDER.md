@@ -96,10 +96,9 @@ key's stored LogicSig bytecode before the archive is admitted.
 Filtered views into the registry are provided by `internal/genericlsig` (Template
 interface) and `internal/logicsigdsa` (LogicSigDSA interface). Shared off-curve
 LogicSig salting lives in `internal/lsigsalt`. Shared LogicSig dummy transaction
-construction and the `TxLsigBudget` constant live in `internal/lsig/`;
-dummy-fee calculation and signer planning live in `internal/signing/` and
-`internal/signerapp/signing/`. The single registration entry point is
-`lsig/all.go`.
+construction, the `TxLsigBudget` constant, and dummy-fee calculation live in
+`internal/signing/`; signer planning lives in `internal/signerapp/signing/`.
+The single registration entry point is `lsig/all.go`.
 
 ## Package Summary
 
@@ -121,8 +120,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/keytypestate` | Identity-scoped state records for library-visible compiled providers and installed templates |
 | `internal/templatelibrary` | Optional library list/install workflow |
 | `internal/templatestore` | Encrypted template file storage |
-| `internal/lsig` | Dummy transaction construction and LogicSig budget constant |
-| `internal/signing` | Dummy fee distribution and transaction signing helpers |
+| `internal/signing` | Dummy transaction construction, LogicSig budget and fee distribution, and transaction signing helpers |
 | `lsig/composeddsa` | Generic runtime-compiled LogicSig composer used by DSA-backed composed templates, and parser/provider builder for composed DSA YAML templates |
 | `lsig/falcon1024` | Falcon-1024 DSA base provider; `v1/composer.go` is the Falcon-specific wrapper over `lsig/composeddsa` |
 | `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider |
