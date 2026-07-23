@@ -63,14 +63,18 @@ type BoundedAssemblyRequest struct {
 }
 
 type BoundedAssemblyTarget struct {
-	TargetIndex           int               `json:"target_index"`
-	BoundedAccount        string            `json:"bounded_account"`
-	BaseSignatures        []string          `json:"base_signatures"`
-	RuntimeArgs           map[string]string `json:"runtime_args,omitempty"`
-	AssemblyReceipt       string            `json:"assembly_receipt"`
-	BaseSourceRequestID   string            `json:"base_source_request_id,omitempty"`
-	SentrySignature       string            `json:"sentry_signature"`
-	SentrySourceRequestID string            `json:"sentry_source_request_id,omitempty"`
+	TargetIndex     int               `json:"target_index"`
+	BoundedAccount  string            `json:"bounded_account"`
+	BaseSignatures  []string          `json:"base_signatures"`
+	RuntimeArgs     map[string]string `json:"runtime_args,omitempty"`
+	AssemblyReceipt string            `json:"assembly_receipt"`
+	// BaseSourceRequestID is informational correlation metadata only; the
+	// assembly receipt binds authorization to the account, transaction,
+	// metadata, and runtime arguments.
+	BaseSourceRequestID string `json:"base_source_request_id,omitempty"`
+	SentrySignature     string `json:"sentry_signature"`
+	// SentrySourceRequestID is informational correlation metadata only.
+	SentrySourceRequestID string `json:"sentry_source_request_id,omitempty"`
 }
 
 type BoundedAssemblyResponse struct {

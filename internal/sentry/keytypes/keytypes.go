@@ -14,7 +14,7 @@ const (
 	GuardedFalcon1024Sentry1024V1 = "aplane.falcon1024-sentry1024.v1"
 
 	// ParameterSentryPublicKey is the durable creation parameter that records
-	// the sentry witness public key embedded in a guarded account LogicSig.
+	// the sentry witness public key embedded in a sentry-backed LogicSig.
 	ParameterSentryPublicKey = "sentry_public_key"
 )
 

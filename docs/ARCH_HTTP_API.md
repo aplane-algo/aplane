@@ -411,6 +411,11 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
   account LogicSig bytecode. Its key family and size are determined by the
   guarded account `key_type`. SDK consumers must treat this as signer-owned
   metadata, not as proof of remote sentry endpoint ownership.
+  Bounded rows expose only the reviewed public parameter projection used by
+  the bundled profiles (`recipients`, asset/amount limits, `unlock_round`, and
+  framework sentry/admin public keys). Newly stored bounded parameters are
+  omitted until explicitly classified as public; `/keys` never defaults to
+  exposing the complete stored creation-parameter map.
 - optional `template_provenance_status`, `template_provenance_note`; these are
   informational, version-aware comparisons between stored key template
   provenance and the registered local definition, not signing gates. The

@@ -81,6 +81,9 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	if s.Planner == nil || s.Approval == nil || s.Executor == nil {
 		return nil, internal("signing service not fully configured")
 	}
+	if session == nil {
+		return nil, internal("key session is nil")
+	}
 	plan, err := s.Planner.PlanGroup(identityID, req.GroupSignRequest())
 	if err != nil {
 		return nil, err
@@ -94,9 +97,6 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 		return nil, gateErr
 	}
 	defer release()
-	if session == nil {
-		return nil, internal("key session is nil")
-	}
 	req.RequestID = guardedRequestID("bcmp", req.RequestID)
 	components := make([]signerapi.BoundedBaseComponent, 0, len(targets))
 	for _, targetIndex := range targets {

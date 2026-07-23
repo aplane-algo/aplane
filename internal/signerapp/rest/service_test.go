@@ -653,6 +653,26 @@ func TestGuardedAccountParametersProjection(t *testing.T) {
 	}
 }
 
+func TestBoundedAccountParametersProjection(t *testing.T) {
+	got := boundedAccountParameters(map[string]string{
+		"recipients": "ADDR1,ADDR2",
+		composeddsa.BoundedSentryPublicKeyParameter: "sentry-public",
+		composeddsa.BoundedAdminPublicKeyParameter:  "admin-public",
+		"future_sensitive_parameter":                "must-not-leak",
+	})
+	if len(got) != 3 || got["recipients"] != "ADDR1,ADDR2" ||
+		got[composeddsa.BoundedSentryPublicKeyParameter] != "sentry-public" ||
+		got[composeddsa.BoundedAdminPublicKeyParameter] != "admin-public" {
+		t.Fatalf("boundedAccountParameters() = %#v, want reviewed public projection", got)
+	}
+	if _, ok := got["future_sensitive_parameter"]; ok {
+		t.Fatalf("boundedAccountParameters() projected unreviewed parameter: %#v", got)
+	}
+	if empty := boundedAccountParameters(nil); empty != nil {
+		t.Fatalf("boundedAccountParameters(nil) = %#v, want nil", empty)
+	}
+}
+
 func TestServiceKeyTypesIncludesNativeAndFalconSentry(t *testing.T) {
 	keyTypes := Service{}.buildKeyTypes(keymgmt.GetValidKeyTypes(), nil)
 	if len(keyTypes) == 0 {

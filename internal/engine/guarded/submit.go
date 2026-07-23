@@ -4,6 +4,7 @@
 package guarded
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -237,6 +238,9 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	for i, entry := range group.Entries {
 		plannedTxns[i] = entry.Txn
 	}
+	if err := validateBoundedComponentPlan(txns, plannedTxns, componentResp.Mutations); err != nil {
+		return nil, nil, err
+	}
 	groupBytesHex := append([]string(nil), componentResp.Transactions...)
 	components := make(map[int]signerapi.BoundedBaseComponent, len(componentResp.Components))
 	for _, component := range componentResp.Components {
@@ -355,6 +359,69 @@ func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 		if got := txnutil.EncodeWithPrefixHex(txn); got != groupBytesHex[i] {
 			return fmt.Errorf("assembled transaction %d does not match the frozen canonical bytes", i)
 		}
+	}
+	return nil
+}
+
+// validateBoundedComponentPlan permits only the planner's contracted
+// mutations to original positions: reported fee pooling and group-ID
+// assignment. Appended positions must be canonical budget dummies.
+func validateBoundedComponentPlan(original, planned []types.Transaction, mutations *signerapi.MutationReport) error {
+	if len(planned) < len(original) {
+		return fmt.Errorf("signer returned %d bounded group positions, want at least %d", len(planned), len(original))
+	}
+	appended := len(planned) - len(original)
+	if mutations == nil {
+		if appended != 0 {
+			return fmt.Errorf("signer appended %d bounded group positions without a mutation report", appended)
+		}
+	} else {
+		if mutations.OriginalCount != len(original) {
+			return fmt.Errorf("bounded mutation original_count %d does not match request count %d", mutations.OriginalCount, len(original))
+		}
+		if mutations.FinalCount != len(planned) {
+			return fmt.Errorf("bounded mutation final_count %d does not match returned count %d", mutations.FinalCount, len(planned))
+		}
+		if mutations.DummiesAdded != appended {
+			return fmt.Errorf("bounded mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
+		}
+	}
+
+	feeModified := make(map[int]struct{})
+	if mutations != nil {
+		for _, index := range mutations.FeesModified {
+			if index < 0 || index >= len(original) {
+				return fmt.Errorf("bounded mutation fee index %d is outside original positions", index)
+			}
+			if _, duplicate := feeModified[index]; duplicate {
+				return fmt.Errorf("bounded mutation fee index %d is duplicated", index)
+			}
+			feeModified[index] = struct{}{}
+		}
+	}
+	totalFeeDelta := uint64(0)
+	for i := range original {
+		want := original[i]
+		got := planned[i]
+		if mutations != nil && mutations.GroupIDChanged {
+			want.Group = got.Group
+		}
+		if _, ok := feeModified[i]; ok {
+			if got.Fee < want.Fee {
+				return fmt.Errorf("bounded mutation decreased fee at original position %d", i)
+			}
+			totalFeeDelta += uint64(got.Fee - want.Fee)
+			want.Fee = got.Fee
+		}
+		if !bytes.Equal(txnutil.EncodeWithPrefix(want), txnutil.EncodeWithPrefix(got)) {
+			return fmt.Errorf("signer changed unreported fields at bounded original position %d", i)
+		}
+	}
+	if mutations != nil && uint64(mutations.TotalFeesDelta) != totalFeeDelta {
+		return fmt.Errorf("bounded mutation total_fees_delta %d does not match observed delta %d", mutations.TotalFeesDelta, totalFeeDelta)
+	}
+	if err := validateGuardedDummies(planned[len(original):]); err != nil {
+		return err
 	}
 	return nil
 }
@@ -665,6 +732,9 @@ func encodeGroupHex(txns []types.Transaction) []string {
 }
 
 func signGuardedDummies(dummyTxns []types.Transaction) ([]string, error) {
+	if err := validateGuardedDummies(dummyTxns); err != nil {
+		return nil, err
+	}
 	signedDummies, err := lsig.SignDummyTransactions(dummyTxns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign guarded dummy transactions: %w", err)
@@ -674,6 +744,21 @@ func signGuardedDummies(dummyTxns []types.Transaction) ([]string, error) {
 		signedHex[i] = hex.EncodeToString(signed)
 	}
 	return signedHex, nil
+}
+
+func validateGuardedDummies(dummyTxns []types.Transaction) error {
+	dummyAddress, err := lsig.DummyAddress()
+	if err != nil {
+		return fmt.Errorf("failed to derive guarded dummy address: %w", err)
+	}
+	for i, txn := range dummyTxns {
+		if txn.Type != types.PaymentTx || txn.Sender != dummyAddress || txn.Receiver != dummyAddress ||
+			txn.Amount != 0 || txn.Fee != 0 || len(txn.Note) != 1 || txn.Note[0] != byte(i) ||
+			!txn.RekeyTo.IsZero() || !txn.CloseRemainderTo.IsZero() {
+			return fmt.Errorf("signer-appended transaction %d is not a canonical guarded budget dummy", i)
+		}
+	}
+	return nil
 }
 
 func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesHex []string, targets []guardedTarget) (map[int]string, map[string]string, error) {

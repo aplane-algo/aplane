@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
+	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
 func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
@@ -65,7 +66,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			keyInfo.Parameters = guardedAccountParameters(keyType, summary.Parameters)
 		}
 		if summary.BoundedAuthorization != nil {
-			keyInfo.Parameters = cloneInventoryParameters(summary.Parameters)
+			keyInfo.Parameters = boundedAccountParameters(summary.Parameters)
 			keyInfo.SigningFlow = boundedSigningFlow(summary.BoundedAuthorization)
 			if summary.BoundedAuthorization.Sentry != nil {
 				keyInfo.SentryComponentKeyType = summary.BoundedAuthorization.Sentry.ComponentKeyType
@@ -95,12 +96,29 @@ func guardedAccountParameters(_ string, parameters map[string]string) map[string
 	return out
 }
 
-func cloneInventoryParameters(parameters map[string]string) map[string]string {
-	if len(parameters) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(parameters))
-	for name, value := range parameters {
+// boundedInventoryParameterNames is the explicit public projection of current
+// bounded creation parameters. Adding a new stored parameter does not expose it
+// through /keys unless its public status is reviewed here.
+var boundedInventoryParameterNames = []string{
+	"recipients",
+	"asset_ids",
+	"max_payment_amount",
+	"max_asset_amount",
+	"unlock_round",
+	composeddsa.BoundedSentryPublicKeyParameter,
+	composeddsa.BoundedAdminPublicKeyParameter,
+}
+
+func boundedAccountParameters(parameters map[string]string) map[string]string {
+	var out map[string]string
+	for _, name := range boundedInventoryParameterNames {
+		value, ok := parameters[name]
+		if !ok {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string)
+		}
 		out[name] = value
 	}
 	return out

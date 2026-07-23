@@ -41,6 +41,19 @@ func TestValidateBoundedComponentPlanRequiresSentrySpend(t *testing.T) {
 	}
 }
 
+func TestPrepareBoundedComponentRejectsNilSessionBeforePlanning(t *testing.T) {
+	svc := &Service{Planner: &Planner{}, Approval: &ApprovalService{}, Executor: &Executor{}}
+	_, err := svc.PrepareBoundedComponentWithContext(
+		t.Context(),
+		"default",
+		signerapi.BoundedComponentRequest{},
+		nil,
+	)
+	if err == nil || err.Kind != ErrorInternal || err.Message != "key session is nil" {
+		t.Fatalf("PrepareBoundedComponentWithContext() error = %#v, want immediate nil-session rejection", err)
+	}
+}
+
 func TestBoundedAssemblyReceiptBindsRuntimeAndMetadata(t *testing.T) {
 	metadata := boundedSentryTestMetadata(t, bytes.Repeat([]byte{0x42}, boundedmeta.SentryPublicKeySizeV1))
 	txID := bytes.Repeat([]byte{0x43}, 32)
