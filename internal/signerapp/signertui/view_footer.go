@@ -41,7 +41,9 @@ func (m Model) viewFooterText() string {
 		}
 		return "Enter: Preview | Esc: Back"
 	case ViewRestorePreview:
-		return "Space: Toggle | a: Select all | o: Toggle overwrite | Enter: Restore | Esc: Back"
+		return "Space: Toggle | a: Select all | o: Toggle overwrite | Enter: Recover | Esc: Back"
+	case ViewRestoreReview:
+		return "up/down: Select acknowledgement | space: Toggle | enter: Activate | esc: Leave inactive"
 	case ViewRestoreDisplay:
 		return "up/down: Select | Enter/Esc: Back"
 	case ViewGenerateForm:

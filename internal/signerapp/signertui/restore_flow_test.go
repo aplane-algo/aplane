@@ -106,17 +106,40 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 		t.Fatal("restore submit cmd = nil, want restore command")
 	}
 
-	m, _ = updateForTest(t, m, RestoreBackupResultMsg{
-		ArchivePath: archivePath,
-		Success:     true,
-		Restored: []RestoreKeyInfo{{
-			Address: "NEWADDR",
-			KeyType: "ed25519",
+	restoreID := "0123456789abcdef0123456789abcdef"
+	m, cmd = updateForTest(t, m, RecoverBackupResultMsg{
+		Success:   true,
+		RestoreID: restoreID,
+	})
+	if m.viewState != ViewRestoring || cmd == nil {
+		t.Fatalf("after recovery result viewState=%v cmd=%v", m.viewState, cmd)
+	}
+	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
+		Success:                 true,
+		RestoreID:               restoreID,
+		State:                   "recovered",
+		DestinationApprovalMode: "manual_default",
+		PolicyComparison:        "different",
+		ReviewToken:             strings.Repeat("a", 64),
+	}})
+	if m.viewState != ViewRestoreReview {
+		t.Fatalf("after review viewState = %v, want ViewRestoreReview", m.viewState)
+	}
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	m, cmd = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.viewState != ViewRestoring || cmd == nil {
+		t.Fatalf("after activation submit viewState=%v cmd=%v", m.viewState, cmd)
+	}
+	m, _ = updateForTest(t, m, ActivateRecoveredResultMsg{Result: ActivateRecoveredResultMessage{
+		Success: true,
+		Activated: []RecoveredReviewEntry{{
+			Selector: "NEWADDR",
+			KeyType:  "ed25519",
 		}},
 		KeyCount: 1,
-	})
+	}})
 	if m.viewState != ViewRestoreDisplay {
-		t.Fatalf("after restore result viewState = %v, want ViewRestoreDisplay", m.viewState)
+		t.Fatalf("after activation result viewState = %v, want ViewRestoreDisplay", m.viewState)
 	}
 	if !m.restore.result.Success || len(m.restore.result.Restored) != 1 {
 		t.Fatalf("restoreResult = %+v, want successful one-key result", m.restore.result)
@@ -125,6 +148,51 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.viewState != ViewKeyList {
 		t.Fatalf("after closing result viewState = %v, want ViewKeyList", m.viewState)
+	}
+}
+
+func TestRestoreReviewForegroundsAutoApproveBeforeSeparateAcknowledgements(t *testing.T) {
+	m := Model{
+		viewState: ViewRestoring,
+		restore: restoreState{
+			restoreID: "0123456789abcdef0123456789abcdef",
+		},
+	}
+	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
+		Success:                  true,
+		RestoreID:                m.restore.restoreID,
+		State:                    "recovered",
+		DestinationApprovalMode:  "auto_approve_fallback",
+		UnattendedSigningWarning: "you are activating into an auto-approving identity",
+		PolicyComparison:         "different",
+		ReviewToken:              strings.Repeat("b", 64),
+		SecurityChanges: []RecoveryPolicyChange{{
+			Category:    "hard_rejects",
+			Path:        "reject_rekey",
+			Source:      "true",
+			Destination: "false",
+		}},
+	}})
+	rendered := m.renderRestoreReview()
+	warningIndex := strings.Index(rendered, "auto-approving identity")
+	changeIndex := strings.Index(rendered, "reject_rekey")
+	ackIndex := strings.Index(rendered, "Required acknowledgements")
+	if warningIndex < 0 || changeIndex < 0 || ackIndex < 0 ||
+		warningIndex > ackIndex || changeIndex > ackIndex {
+		t.Fatalf("security review order is wrong:\n%s", rendered)
+	}
+
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.viewState != ViewRestoreReview ||
+		!strings.Contains(m.restore.previewError, "Separately acknowledge") {
+		t.Fatalf("enter without unattended ack state=%v error=%q", m.viewState, m.restore.previewError)
+	}
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.viewState != ViewRestoring || cmd == nil {
+		t.Fatalf("fully acknowledged activation state=%v cmd=%v", m.viewState, cmd)
 	}
 }
 

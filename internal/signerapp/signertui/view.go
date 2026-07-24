@@ -385,6 +385,8 @@ func (m Model) renderViewContent() string {
 		content = m.renderRestorePreview()
 	case ViewRestoring:
 		content = m.renderRestoring()
+	case ViewRestoreReview:
+		content = m.renderRestoreReview()
 	case ViewRestoreDisplay:
 		content = m.renderRestoreDisplay()
 	case ViewImportForm:

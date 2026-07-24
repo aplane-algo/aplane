@@ -381,6 +381,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case RecoverBackupResultMsg:
+		m.clearRestorePassphrase()
+		if !msg.Success {
+			m.restore.result = RestoreBackupResultMessage{
+				ArchivePath: m.restore.archivePath,
+				Success:     false,
+				Error:       msg.Error,
+			}
+			m.viewState = ViewRestoreDisplay
+			return m, m.waitForMessageCmd()
+		}
+		m.restore.restoreID = msg.RestoreID
+		return m, tea.Batch(m.sendReviewRecoveredCmd(msg.RestoreID), m.waitForMessageCmd())
+
+	case ReviewRecoveredResultMsg:
+		if !msg.Result.Success {
+			m.restore.result = RestoreBackupResultMessage{
+				ArchivePath: m.restore.archivePath,
+				Success:     false,
+				Error:       msg.Result.Error,
+			}
+			m.viewState = ViewRestoreDisplay
+			return m, m.waitForMessageCmd()
+		}
+		m.restore.review = msg.Result
+		m.restore.reviewFocus = 0
+		m.restore.policyAcknowledged = false
+		m.restore.unattendedAcknowledged = false
+		m.restore.previewError = ""
+		m.viewState = ViewRestoreReview
+		return m, m.waitForMessageCmd()
+
+	case ActivateRecoveredResultMsg:
+		restored := make([]RestoreKeyInfo, len(msg.Result.Activated))
+		for i, entry := range msg.Result.Activated {
+			restored[i] = RestoreKeyInfo{
+				Address: entry.Selector,
+				KeyType: entry.KeyType,
+			}
+		}
+		m.restore.result = RestoreBackupResultMessage{
+			ArchivePath: m.restore.archivePath,
+			Success:     msg.Result.Success,
+			Restored:    restored,
+			KeyCount:    msg.Result.KeyCount,
+			Error:       msg.Result.Error,
+		}
+		m.restore.displaySelectedKey = 0
+		m.restore.displayScrollOffset = 0
+		m.viewState = ViewRestoreDisplay
+		cmds := []tea.Cmd{m.waitForMessageCmd()}
+		if msg.Result.Success {
+			cmds = append(cmds, m.sendListKeysCmd(), m.sendListKeyTypesCmd())
+		}
+		return m, tea.Batch(cmds...)
+
 	case ImportResultMsg:
 		if msg.Success {
 			m.lastError = ""
@@ -685,6 +741,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRestorePassphraseKeys(msg)
 	case ViewRestorePreview:
 		return m.handleRestorePreviewKeys(msg)
+	case ViewRestoreReview:
+		return m.handleRestoreReviewKeys(msg)
 	case ViewRestoreDisplay:
 		return m.handleRestoreDisplayKeys(msg)
 	case ViewGenerateDisplay:

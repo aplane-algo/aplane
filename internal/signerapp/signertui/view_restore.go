@@ -189,6 +189,85 @@ func (m Model) renderRestoring() string {
 	return m.renderPopup(70, sb.String())
 }
 
+func (m Model) renderRestoreReview() string {
+	review := m.restore.review
+	var sb strings.Builder
+	popupWidth := m.popupWidth(118)
+	sb.WriteString(titleStyle.Render("Recovered Activation Review"))
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("Restore ID: %s\n", review.RestoreID))
+	sb.WriteString(fmt.Sprintf("Destination approval mode: %s\n", review.DestinationApprovalMode))
+	if review.UnattendedSigningWarning != "" {
+		sb.WriteString(warningStyle.Render(review.UnattendedSigningWarning))
+		sb.WriteString("\n")
+	}
+	sb.WriteString(fmt.Sprintf("Policy comparison: %s\n\n", review.PolicyComparison))
+	sb.WriteString(subtitleStyle.Render("Security-bearing policy differences"))
+	sb.WriteString("\n")
+	if len(review.SecurityChanges) == 0 {
+		sb.WriteString("  none\n")
+	}
+	for _, change := range review.SecurityChanges {
+		scope := change.Selector
+		if scope == "" {
+			scope = "default"
+		}
+		sb.WriteString(fmt.Sprintf("  [%s] %s %s\n", change.Category, scope, change.Path))
+		sb.WriteString(fmt.Sprintf("    source: %s\n", change.Source))
+		sb.WriteString(fmt.Sprintf("    destination: %s\n", change.Destination))
+	}
+	for _, unknown := range review.UnknownSourceSettings {
+		sb.WriteString(fmt.Sprintf("  [unknown source] %s\n", unknown))
+	}
+	if len(review.ActiveConflicts) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(warningStyle.Render("Active credential conflicts"))
+		sb.WriteString("\n")
+		for _, conflict := range review.ActiveConflicts {
+			sb.WriteString(fmt.Sprintf("  %s (%s, %s)\n", conflict.Selector, conflict.Category, conflict.KeyType))
+		}
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString(subtitleStyle.Render("Required acknowledgements"))
+	sb.WriteString("\n")
+	policyLine := checkboxLine(m.restore.policyAcknowledged, "I acknowledge the destination policy transition")
+	if m.restore.reviewFocus == 0 {
+		policyLine = selectedStyle.Render("> " + policyLine)
+	} else {
+		policyLine = "  " + policyLine
+	}
+	sb.WriteString(policyLine)
+	sb.WriteString("\n")
+	if review.DestinationApprovalMode == "auto_approve_fallback" {
+		unattendedLine := checkboxLine(
+			m.restore.unattendedAcknowledged,
+			"I acknowledge activation into an auto-approving identity",
+		)
+		if m.restore.reviewFocus == 1 {
+			unattendedLine = selectedStyle.Render("> " + unattendedLine)
+		} else {
+			unattendedLine = "  " + unattendedLine
+		}
+		sb.WriteString(unattendedLine)
+		sb.WriteString("\n")
+	}
+	if m.restore.previewError != "" {
+		sb.WriteString("\n")
+		sb.WriteString(errorStyle.Render(m.restore.previewError))
+		sb.WriteString("\n")
+	}
+	return m.renderPopup(popupWidth, sb.String())
+}
+
+func checkboxLine(checked bool, label string) string {
+	marker := "[ ]"
+	if checked {
+		marker = "[x]"
+	}
+	return marker + " " + label
+}
+
 func (m Model) renderRestoreDisplay() string {
 	result := m.restore.result
 	popupWidth := m.popupWidth(110)

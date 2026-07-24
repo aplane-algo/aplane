@@ -450,6 +450,31 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 					Error:       restoreResult.Error,
 				})
 
+			case MsgTypeRecoverBackupResult:
+				var recovered RecoverBackupResultMessage
+				if err := json.Unmarshal(line, &recovered); err != nil {
+					continue
+				}
+				c.emit(sessionID, RecoverBackupResultMsg{
+					Success:   recovered.Success,
+					RestoreID: recovered.RestoreID,
+					Error:     recovered.Error,
+				})
+
+			case MsgTypeReviewRecoveredResult:
+				var review ReviewRecoveredResultMessage
+				if err := json.Unmarshal(line, &review); err != nil {
+					continue
+				}
+				c.emit(sessionID, ReviewRecoveredResultMsg{Result: review})
+
+			case MsgTypeActivateRecoveredResult:
+				var activated ActivateRecoveredResultMessage
+				if err := json.Unmarshal(line, &activated); err != nil {
+					continue
+				}
+				c.emit(sessionID, ActivateRecoveredResultMsg{Result: activated})
+
 			case MsgTypeDeleteResult:
 				var delResult DeleteResultMessage
 				if err := json.Unmarshal(line, &delResult); err != nil {
@@ -905,6 +930,50 @@ func (c *IPCClient) SendRestoreBackup(archivePath string, addresses []string, ov
 	return c.sendMessage(msg)
 }
 
+// SendRecoverBackup publishes selected archive entries as one inactive batch.
+func (c *IPCClient) SendRecoverBackup(archivePath string, addresses []string, exportPassphrase []byte) error {
+	passphrase := SensitiveBytes(append([]byte(nil), exportPassphrase...))
+	defer passphrase.Zero()
+	return c.sendMessage(RecoverBackupMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeRecoverBackup,
+			ID:   fmt.Sprintf("recover-backup-%d", time.Now().UnixNano()),
+		},
+		ArchivePath:      archivePath,
+		Addresses:        append([]string(nil), addresses...),
+		ExportPassphrase: passphrase,
+	})
+}
+
+// SendReviewRecovered requests the current destination-bound activation review.
+func (c *IPCClient) SendReviewRecovered(restoreID string) error {
+	return c.sendMessage(ReviewRecoveredMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeReviewRecovered,
+			ID:   fmt.Sprintf("review-recovered-%d", time.Now().UnixNano()),
+		},
+		RestoreID: restoreID,
+	})
+}
+
+// SendActivateRecovered submits the exact reviewed intent and acknowledgements.
+func (c *IPCClient) SendActivateRecovered(
+	restoreID, reviewToken string,
+	policyAcknowledged, unattendedAcknowledged, replaceExisting bool,
+) error {
+	return c.sendMessage(ActivateRecoveredMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeActivateRecovered,
+			ID:   fmt.Sprintf("activate-recovered-%d", time.Now().UnixNano()),
+		},
+		RestoreID:                    restoreID,
+		ReviewToken:                  reviewToken,
+		AcknowledgePolicyTransition:  policyAcknowledged,
+		AcknowledgeUnattendedSigning: unattendedAcknowledged,
+		ReplaceExisting:              replaceExisting,
+	})
+}
+
 // SendGenerateKeyWithParams sends a request to generate a new key with parameters
 // Used for generic LogicSigs like timelock that require additional configuration
 func (c *IPCClient) SendGenerateKeyWithParams(keyType, name string, params map[string]string) error {
@@ -964,7 +1033,7 @@ func (m Model) sendPreviewRestoreCmd(archivePath string, exportPassphrase []byte
 	}
 }
 
-func (m Model) sendRestoreBackupCmd(archivePath string, addresses []string, overwrite bool, exportPassphrase []byte) tea.Cmd {
+func (m Model) sendRecoverBackupCmd(archivePath string, addresses []string, exportPassphrase []byte) tea.Cmd {
 	passphrase := cloneBytes(exportPassphrase)
 	selectedAddresses := append([]string(nil), addresses...)
 	return func() tea.Msg {
@@ -972,11 +1041,32 @@ func (m Model) sendRestoreBackupCmd(archivePath string, addresses []string, over
 		if m.adminClient == nil {
 			return ErrorMsg{Error: fmt.Errorf("not connected")}
 		}
-		if err := m.adminClient.SendRestoreBackup(archivePath, selectedAddresses, overwrite, passphrase); err != nil {
+		if err := m.adminClient.SendRecoverBackup(archivePath, selectedAddresses, passphrase); err != nil {
 			return ErrorMsg{Error: err}
 		}
 		return nil
 	}
+}
+
+func (m Model) sendReviewRecoveredCmd(restoreID string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.SendReviewRecovered(restoreID)
+	})
+}
+
+func (m Model) sendActivateRecoveredCmd(
+	restoreID, reviewToken string,
+	policyAcknowledged, unattendedAcknowledged, replaceExisting bool,
+) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.SendActivateRecovered(
+			restoreID,
+			reviewToken,
+			policyAcknowledged,
+			unattendedAcknowledged,
+			replaceExisting,
+		)
+	})
 }
 
 // SendGenerateKeyWithParamsCmd returns a tea.Cmd that sends a generate key request with parameters

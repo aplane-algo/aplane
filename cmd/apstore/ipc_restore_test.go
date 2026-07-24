@@ -174,14 +174,23 @@ func TestCmdBackupImportUsesManagedBackupDir(t *testing.T) {
 	}
 }
 
-func TestCmdRestoreApplyManagedPreviewsBeforeApply(t *testing.T) {
+func TestCmdRestoreApplyManagedRecoversReviewsAndActivates(t *testing.T) {
+	restoreID := "0123456789abcdef0123456789abcdef"
 	fake := &fakeApstoreAdminRequester{
-		previewResult: protocol.RestorePreviewMessage{
-			Keys: []protocol.RestoreKeyInfo{{Address: "ADDR", KeyType: "ed25519"}},
+		recoverResult: protocol.RecoverBackupResultMessage{
+			Success:    true,
+			RestoreID:  restoreID,
+			EntryCount: 1,
 		},
-		restoreResult: protocol.RestoreBackupResultMessage{
+		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
+			Success:                 true,
+			RestoreID:               restoreID,
+			State:                   "recovered",
+			DestinationApprovalMode: "manual_default",
+			ReviewToken:             strings.Repeat("a", 64),
+		},
+		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{
 			Success:  true,
-			Restored: []protocol.RestoreKeyInfo{{Address: "ADDR", KeyType: "ed25519"}},
 			KeyCount: 1,
 		},
 	}
@@ -193,25 +202,30 @@ func TestCmdRestoreApplyManagedPreviewsBeforeApply(t *testing.T) {
 		t.Fatalf("cmdRestoreApplyManaged() error = %v", err)
 	}
 
-	wantRequests := []string{protocol.MsgTypePreviewRestore, protocol.MsgTypeRestoreBackup}
+	wantRequests := []string{
+		protocol.MsgTypeRecoverBackup,
+		protocol.MsgTypeReviewRecovered,
+		protocol.MsgTypeActivateRecovered,
+	}
 	if strings.Join(fake.requests, ",") != strings.Join(wantRequests, ",") {
 		t.Fatalf("requests = %v, want %v", fake.requests, wantRequests)
 	}
-	if fake.restoreRequest.ArchivePath != "restore-source.tar.gz" {
-		t.Fatalf("restore archive = %q, want restore-source.tar.gz", fake.restoreRequest.ArchivePath)
+	if fake.recoverRequest.ArchivePath != "restore-source.tar.gz" {
+		t.Fatalf("recover archive = %q, want restore-source.tar.gz", fake.recoverRequest.ArchivePath)
 	}
-	if len(fake.restoreRequest.Addresses) != 1 || fake.restoreRequest.Addresses[0] != "ADDR" {
-		t.Fatalf("restore addresses = %v, want [ADDR]", fake.restoreRequest.Addresses)
+	if len(fake.recoverRequest.Addresses) != 1 || fake.recoverRequest.Addresses[0] != "ADDR" {
+		t.Fatalf("recover addresses = %v, want [ADDR]", fake.recoverRequest.Addresses)
 	}
-	if !fake.restoreRequest.Overwrite {
-		t.Fatal("restore overwrite = false, want true")
+	if !fake.recoveredActivateRequest.ReplaceExisting ||
+		!fake.recoveredActivateRequest.AcknowledgePolicyTransition {
+		t.Fatalf("activate request = %+v, want replace and policy acknowledgement", fake.recoveredActivateRequest)
 	}
 }
 
-func TestCmdRestoreApplyManagedStopsWhenPreviewFails(t *testing.T) {
+func TestCmdRestoreApplyManagedStopsWhenRecoveryFails(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
-		previewResult: protocol.RestorePreviewMessage{
-			Code:  protocol.ResultCodeRestorePreviewFailed,
+		recoverResult: protocol.RecoverBackupResultMessage{
+			Code:  protocol.ResultCodeRecoverBackupFailed,
 			Error: "bad backup",
 		},
 	}
@@ -221,12 +235,12 @@ func TestCmdRestoreApplyManagedStopsWhenPreviewFails(t *testing.T) {
 		return cmdRestoreApplyManaged([]string{"restore-source.tar.gz"})
 	})
 	if err == nil {
-		t.Fatal("cmdRestoreApplyManaged() error = nil, want preview failure")
+		t.Fatal("cmdRestoreApplyManaged() error = nil, want recovery failure")
 	}
 	if !strings.Contains(err.Error(), "bad backup") {
 		t.Fatalf("cmdRestoreApplyManaged() error = %v, want bad backup", err)
 	}
-	wantRequests := []string{protocol.MsgTypePreviewRestore}
+	wantRequests := []string{protocol.MsgTypeRecoverBackup}
 	if strings.Join(fake.requests, ",") != strings.Join(wantRequests, ",") {
 		t.Fatalf("requests = %v, want %v", fake.requests, wantRequests)
 	}
@@ -234,7 +248,7 @@ func TestCmdRestoreApplyManagedStopsWhenPreviewFails(t *testing.T) {
 
 func TestCmdRestoreApplyManagedStopsWhenBackupArchiveMissing(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
-		previewResult: protocol.RestorePreviewMessage{
+		recoverResult: protocol.RecoverBackupResultMessage{
 			Code:  "backup_not_found",
 			Error: "backup archive not found",
 		},
@@ -250,8 +264,97 @@ func TestCmdRestoreApplyManagedStopsWhenBackupArchiveMissing(t *testing.T) {
 	if !strings.Contains(err.Error(), "backup archive not found") {
 		t.Fatalf("cmdRestoreApplyManaged() error = %v, want missing archive context", err)
 	}
-	wantRequests := []string{protocol.MsgTypePreviewRestore}
+	wantRequests := []string{protocol.MsgTypeRecoverBackup}
 	if strings.Join(fake.requests, ",") != strings.Join(wantRequests, ",") {
 		t.Fatalf("requests = %v, want %v", fake.requests, wantRequests)
+	}
+}
+
+func TestCmdRestoreApplyRequiresSeparateUnattendedSigningAcknowledgement(t *testing.T) {
+	restoreID := "0123456789abcdef0123456789abcdef"
+	fake := &fakeApstoreAdminRequester{
+		recoverResult: protocol.RecoverBackupResultMessage{
+			Success:   true,
+			RestoreID: restoreID,
+		},
+		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
+			Success:                  true,
+			RestoreID:                restoreID,
+			State:                    "recovered",
+			DestinationApprovalMode:  "auto_approve_fallback",
+			UnattendedSigningWarning: "you are activating into an auto-approving identity",
+			ReviewToken:              strings.Repeat("a", 64),
+		},
+		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{Success: true},
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	if err := withTestStdin("export-passphrase\ny\ny\n", func() error {
+		return cmdRestoreApplyManaged([]string{"restore-source.tar.gz"})
+	}); err != nil {
+		t.Fatalf("cmdRestoreApplyManaged() error = %v", err)
+	}
+	if !fake.recoveredActivateRequest.AcknowledgePolicyTransition ||
+		!fake.recoveredActivateRequest.AcknowledgeUnattendedSigning {
+		t.Fatalf("activation acknowledgements = %+v", fake.recoveredActivateRequest)
+	}
+}
+
+func TestCmdRestoreActivateResumesOnlyRecordedIntent(t *testing.T) {
+	restoreID := "0123456789abcdef0123456789abcdef"
+	fake := &fakeApstoreAdminRequester{
+		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
+			Success:                     true,
+			RestoreID:                   restoreID,
+			State:                       "activation_incomplete",
+			DestinationApprovalMode:     "manual_default",
+			ReviewToken:                 strings.Repeat("b", 64),
+			AcknowledgePolicyTransition: true,
+		},
+		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{Success: true},
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	if err := withTestStdin("y\n", func() error {
+		return cmdRestoreActivateRecovered([]string{restoreID})
+	}); err != nil {
+		t.Fatalf("cmdRestoreActivateRecovered() error = %v", err)
+	}
+	wantRequests := []string{protocol.MsgTypeReviewRecovered, protocol.MsgTypeActivateRecovered}
+	if strings.Join(fake.requests, ",") != strings.Join(wantRequests, ",") {
+		t.Fatalf("requests = %v, want %v", fake.requests, wantRequests)
+	}
+	if fake.recoveredActivateRequest.ReviewToken != strings.Repeat("b", 64) ||
+		!fake.recoveredActivateRequest.AcknowledgePolicyTransition {
+		t.Fatalf("resume request = %+v", fake.recoveredActivateRequest)
+	}
+}
+
+func TestCmdRestoreRollbackAndPurgeUseExplicitOperations(t *testing.T) {
+	restoreID := "0123456789abcdef0123456789abcdef"
+	rollbackFake := &fakeApstoreAdminRequester{
+		recoveredRollbackResult: protocol.RollbackRecoveredResultMessage{Success: true},
+	}
+	withFakeApstoreAdminClient(t, rollbackFake)
+	if err := withTestStdin("y\n", func() error {
+		return cmdRestoreRollbackRecovered(restoreID)
+	}); err != nil {
+		t.Fatalf("cmdRestoreRollbackRecovered() error = %v", err)
+	}
+	if len(rollbackFake.requests) != 1 || rollbackFake.requests[0] != protocol.MsgTypeRollbackRecovered {
+		t.Fatalf("rollback requests = %v", rollbackFake.requests)
+	}
+
+	purgeFake := &fakeApstoreAdminRequester{
+		recoveredPurgeResult: protocol.PurgeRecoveredResultMessage{Success: true},
+	}
+	withFakeApstoreAdminClient(t, purgeFake)
+	if err := withTestStdin("y\n", func() error {
+		return cmdRestorePurgeRecovered(restoreID)
+	}); err != nil {
+		t.Fatalf("cmdRestorePurgeRecovered() error = %v", err)
+	}
+	if len(purgeFake.requests) != 1 || purgeFake.requests[0] != protocol.MsgTypePurgeRecovered {
+		t.Fatalf("purge requests = %v", purgeFake.requests)
 	}
 }

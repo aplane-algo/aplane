@@ -16,22 +16,28 @@ const (
 	MsgTypeAuthResult   = protocol.MsgTypeAuthResult
 
 	// Signer state message types
-	MsgTypeUnlock              = protocol.MsgTypeUnlock
-	MsgTypeUnlockResult        = protocol.MsgTypeUnlockResult
-	MsgTypeLockIdentity        = protocol.MsgTypeLockIdentity
-	MsgTypeLockIdentityResult  = protocol.MsgTypeLockIdentityResult
-	MsgTypeBackup              = protocol.MsgTypeBackup
-	MsgTypeBackupResult        = protocol.MsgTypeBackupResult
-	MsgTypeListBackups         = protocol.MsgTypeListBackups
-	MsgTypeBackupsList         = protocol.MsgTypeBackupsList
-	MsgTypePreviewRestore      = protocol.MsgTypePreviewRestore
-	MsgTypeRestorePreview      = protocol.MsgTypeRestorePreview
-	MsgTypeRestoreBackup       = protocol.MsgTypeRestoreBackup
-	MsgTypeRestoreBackupResult = protocol.MsgTypeRestoreBackupResult
-	MsgTypeSignRequest         = protocol.MsgTypeSignRequest
-	MsgTypeSignResponse        = protocol.MsgTypeSignResponse
-	MsgTypeStatus              = protocol.MsgTypeStatus
-	MsgTypeError               = protocol.MsgTypeError
+	MsgTypeUnlock                  = protocol.MsgTypeUnlock
+	MsgTypeUnlockResult            = protocol.MsgTypeUnlockResult
+	MsgTypeLockIdentity            = protocol.MsgTypeLockIdentity
+	MsgTypeLockIdentityResult      = protocol.MsgTypeLockIdentityResult
+	MsgTypeBackup                  = protocol.MsgTypeBackup
+	MsgTypeBackupResult            = protocol.MsgTypeBackupResult
+	MsgTypeListBackups             = protocol.MsgTypeListBackups
+	MsgTypeBackupsList             = protocol.MsgTypeBackupsList
+	MsgTypePreviewRestore          = protocol.MsgTypePreviewRestore
+	MsgTypeRestorePreview          = protocol.MsgTypeRestorePreview
+	MsgTypeRestoreBackup           = protocol.MsgTypeRestoreBackup
+	MsgTypeRestoreBackupResult     = protocol.MsgTypeRestoreBackupResult
+	MsgTypeRecoverBackup           = protocol.MsgTypeRecoverBackup
+	MsgTypeRecoverBackupResult     = protocol.MsgTypeRecoverBackupResult
+	MsgTypeReviewRecovered         = protocol.MsgTypeReviewRecovered
+	MsgTypeReviewRecoveredResult   = protocol.MsgTypeReviewRecoveredResult
+	MsgTypeActivateRecovered       = protocol.MsgTypeActivateRecovered
+	MsgTypeActivateRecoveredResult = protocol.MsgTypeActivateRecoveredResult
+	MsgTypeSignRequest             = protocol.MsgTypeSignRequest
+	MsgTypeSignResponse            = protocol.MsgTypeSignResponse
+	MsgTypeStatus                  = protocol.MsgTypeStatus
+	MsgTypeError                   = protocol.MsgTypeError
 
 	// Token provisioning message types
 	MsgTypeTokenProvisioningRequest     = protocol.MsgTypeTokenProvisioningRequest
@@ -108,6 +114,14 @@ type (
 	RestorePreviewMessage               = protocol.RestorePreviewMessage
 	RestoreBackupMessage                = protocol.RestoreBackupMessage
 	RestoreBackupResultMessage          = protocol.RestoreBackupResultMessage
+	RecoverBackupMessage                = protocol.RecoverBackupMessage
+	RecoverBackupResultMessage          = protocol.RecoverBackupResultMessage
+	ReviewRecoveredMessage              = protocol.ReviewRecoveredMessage
+	ReviewRecoveredResultMessage        = protocol.ReviewRecoveredResultMessage
+	ActivateRecoveredMessage            = protocol.ActivateRecoveredMessage
+	ActivateRecoveredResultMessage      = protocol.ActivateRecoveredResultMessage
+	RecoveredReviewEntry                = protocol.RecoveredReviewEntry
+	RecoveryPolicyChange                = protocol.RecoveryPolicyChange
 	SignRequestMessage                  = protocol.SignRequestMessage
 	SignRequestCanceledMessage          = protocol.SignRequestCanceledMessage
 	SignResponseMessage                 = protocol.SignResponseMessage

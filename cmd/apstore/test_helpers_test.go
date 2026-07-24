@@ -57,6 +57,12 @@ type fakeApstoreAdminRequester struct {
 	requests                 []string
 	previewResult            protocol.RestorePreviewMessage
 	restoreResult            protocol.RestoreBackupResultMessage
+	recoverResult            protocol.RecoverBackupResultMessage
+	recoveredListResult      protocol.RecoveredListMessage
+	recoveredReviewResult    protocol.ReviewRecoveredResultMessage
+	recoveredActivateResult  protocol.ActivateRecoveredResultMessage
+	recoveredRollbackResult  protocol.RollbackRecoveredResultMessage
+	recoveredPurgeResult     protocol.PurgeRecoveredResultMessage
 	backupResult             protocol.BackupResultMessage
 	listBackupsResult        protocol.BackupsListMessage
 	deleteBackupResult       protocol.DeleteBackupResultMessage
@@ -68,6 +74,8 @@ type fakeApstoreAdminRequester struct {
 	deactivateResult         protocol.DeactivateKeyTypeResultMessage
 	changePassphraseResult   protocol.ChangeStorePassphraseResultMessage
 	restoreRequest           protocol.RestoreBackupMessage
+	recoverRequest           protocol.RecoverBackupMessage
+	recoveredActivateRequest protocol.ActivateRecoveredMessage
 	backupRequest            protocol.BackupMessage
 	deleteBackupRequest      protocol.DeleteBackupMessage
 	showTemplateRequest      protocol.ShowInstalledTemplateMessage
@@ -124,6 +132,56 @@ func (f *fakeApstoreAdminRequester) request(msg any, out any) error {
 			return errors.New("restore backup output has unexpected type")
 		}
 		*result = f.restoreResult
+		return nil
+	case protocol.RecoverBackupMessage:
+		f.requests = append(f.requests, typed.Type)
+		f.recoverRequest = typed
+		result, ok := out.(*protocol.RecoverBackupResultMessage)
+		if !ok {
+			return errors.New("recover backup output has unexpected type")
+		}
+		*result = f.recoverResult
+		return nil
+	case protocol.ListRecoveredMessage:
+		f.requests = append(f.requests, typed.Type)
+		result, ok := out.(*protocol.RecoveredListMessage)
+		if !ok {
+			return errors.New("list recovered output has unexpected type")
+		}
+		*result = f.recoveredListResult
+		return nil
+	case protocol.ReviewRecoveredMessage:
+		f.requests = append(f.requests, typed.Type)
+		result, ok := out.(*protocol.ReviewRecoveredResultMessage)
+		if !ok {
+			return errors.New("review recovered output has unexpected type")
+		}
+		*result = f.recoveredReviewResult
+		return nil
+	case protocol.ActivateRecoveredMessage:
+		f.requests = append(f.requests, typed.Type)
+		f.recoveredActivateRequest = typed
+		result, ok := out.(*protocol.ActivateRecoveredResultMessage)
+		if !ok {
+			return errors.New("activate recovered output has unexpected type")
+		}
+		*result = f.recoveredActivateResult
+		return nil
+	case protocol.RollbackRecoveredMessage:
+		f.requests = append(f.requests, typed.Type)
+		result, ok := out.(*protocol.RollbackRecoveredResultMessage)
+		if !ok {
+			return errors.New("rollback recovered output has unexpected type")
+		}
+		*result = f.recoveredRollbackResult
+		return nil
+	case protocol.PurgeRecoveredMessage:
+		f.requests = append(f.requests, typed.Type)
+		result, ok := out.(*protocol.PurgeRecoveredResultMessage)
+		if !ok {
+			return errors.New("purge recovered output has unexpected type")
+		}
+		*result = f.recoveredPurgeResult
 		return nil
 	case protocol.ListInstalledTemplatesMessage:
 		f.requests = append(f.requests, typed.Type)

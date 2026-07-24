@@ -13,7 +13,7 @@ import (
 
 func cmdRestoreManaged(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore restore <preview|apply>")
+		return fmt.Errorf("usage: apstore restore <preview|apply|list|review|activate|rollback|purge>")
 	}
 	switch args[0] {
 	case "preview":
@@ -23,8 +23,30 @@ func cmdRestoreManaged(args []string) error {
 		return cmdRestorePreviewManaged(args[1])
 	case "apply":
 		return cmdRestoreApplyManaged(args[1:])
+	case "list":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: apstore restore list")
+		}
+		return cmdRestoreListRecovered()
+	case "review":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: apstore restore review <restore-id>")
+		}
+		return cmdRestoreReviewRecovered(args[1])
+	case "activate":
+		return cmdRestoreActivateRecovered(args[1:])
+	case "rollback":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: apstore restore rollback <restore-id>")
+		}
+		return cmdRestoreRollbackRecovered(args[1])
+	case "purge":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: apstore restore purge <restore-id>")
+		}
+		return cmdRestorePurgeRecovered(args[1])
 	default:
-		return fmt.Errorf("usage: apstore restore <preview|apply>")
+		return fmt.Errorf("usage: apstore restore <preview|apply|list|review|activate|rollback|purge>")
 	}
 }
 
@@ -84,33 +106,241 @@ func cmdRestoreApplyManaged(args []string) error {
 	}
 	defer client.close()
 
-	preview, err := requestRestorePreview(client, name, exportPassphrase)
+	var recoveredResult protocol.RecoverBackupResultMessage
+	err = client.request(protocol.RecoverBackupMessage{
+		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRecoverBackup, ID: newApstoreRequestID("restore-recover")},
+		ArchivePath:      name,
+		Addresses:        addresses,
+		ExportPassphrase: protocol.SensitiveBytes(exportPassphrase),
+	}, &recoveredResult)
 	if err != nil {
 		return err
 	}
-	if err := renderRestorePreviewResult(preview); err != nil {
+	if !recoveredResult.Success {
+		return resultError("backup recovery failed", recoveredResult.Code, recoveredResult.Error)
+	}
+	logInfof("recovered inactive batch: %s (%d entries)", recoveredResult.RestoreID, recoveredResult.EntryCount)
+	return reviewAndActivateRecovered(client, recoveredResult.RestoreID, overwrite)
+}
+
+func cmdRestoreListRecovered() error {
+	client, err := newApstoreAdminClientForCommand()
+	if err != nil {
 		return err
 	}
-	if !confirmYesNo("Apply restore through apsigner?") {
-		return fmt.Errorf("restore cancelled")
+	defer client.close()
+	var result protocol.RecoveredListMessage
+	if err := client.request(protocol.ListRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListRecovered, ID: newApstoreRequestID("restore-list")},
+	}, &result); err != nil {
+		return err
 	}
+	if result.Error != "" {
+		return resultError("list recovered batches failed", result.Code, result.Error)
+	}
+	if len(result.Batches) == 0 {
+		logInfof("no inactive recovered batches")
+		return nil
+	}
+	for _, batch := range result.Batches {
+		fmt.Printf("%s  %d entries  %s  %s\n",
+			batch.RestoreID,
+			batch.EntryCount,
+			batch.SourcePolicyStatus,
+			batch.ArchiveName,
+		)
+	}
+	return nil
+}
 
-	var result protocol.RestoreBackupResultMessage
-	err = client.request(protocol.RestoreBackupMessage{
-		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: newApstoreRequestID("restore-apply")},
-		ArchivePath:      name,
-		Addresses:        addresses,
-		Overwrite:        overwrite,
-		ExportPassphrase: protocol.SensitiveBytes(exportPassphrase),
+func cmdRestoreReviewRecovered(restoreID string) error {
+	client, err := newApstoreAdminClientForCommand()
+	if err != nil {
+		return err
+	}
+	defer client.close()
+	review, err := requestRecoveredReview(client, restoreID)
+	if err != nil {
+		return err
+	}
+	printRecoveredReview(review)
+	return nil
+}
+
+func cmdRestoreActivateRecovered(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: apstore restore activate <restore-id> [--replace-existing]")
+	}
+	restoreID := args[0]
+	replaceExisting := false
+	for _, arg := range args[1:] {
+		if arg != "--replace-existing" {
+			return fmt.Errorf("unknown restore activate option: %s", arg)
+		}
+		replaceExisting = true
+	}
+	client, err := newApstoreAdminClientForCommand()
+	if err != nil {
+		return err
+	}
+	defer client.close()
+	return reviewAndActivateRecovered(client, restoreID, replaceExisting)
+}
+
+func cmdRestoreRollbackRecovered(restoreID string) error {
+	if !confirmYesNo("Roll back this incomplete activation to its exact prior state?") {
+		return fmt.Errorf("rollback cancelled")
+	}
+	client, err := newApstoreAdminClientForCommand()
+	if err != nil {
+		return err
+	}
+	defer client.close()
+	var result protocol.RollbackRecoveredResultMessage
+	if err := client.request(protocol.RollbackRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRollbackRecovered, ID: newApstoreRequestID("restore-rollback")},
+		RestoreID:   restoreID,
+	}, &result); err != nil {
+		return err
+	}
+	if !result.Success {
+		return resultError("recovered activation rollback failed", result.Code, result.Error)
+	}
+	logInfof("rolled back incomplete activation: %s", restoreID)
+	return nil
+}
+
+func cmdRestorePurgeRecovered(restoreID string) error {
+	if !confirmYesNo("Permanently purge this inactive recovered batch?") {
+		return fmt.Errorf("purge cancelled")
+	}
+	client, err := newApstoreAdminClientForCommand()
+	if err != nil {
+		return err
+	}
+	defer client.close()
+	var result protocol.PurgeRecoveredResultMessage
+	if err := client.request(protocol.PurgeRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePurgeRecovered, ID: newApstoreRequestID("restore-purge")},
+		RestoreID:   restoreID,
+	}, &result); err != nil {
+		return err
+	}
+	if !result.Success {
+		return resultError("purge recovered batch failed", result.Code, result.Error)
+	}
+	logInfof("purged inactive recovered batch: %s", restoreID)
+	return nil
+}
+
+func reviewAndActivateRecovered(
+	client apstoreAdminRequester,
+	restoreID string,
+	replaceExisting bool,
+) error {
+	review, err := requestRecoveredReview(client, restoreID)
+	if err != nil {
+		return err
+	}
+	printRecoveredReview(review)
+	if review.State == "activation_incomplete" {
+		if replaceExisting != review.ReplaceExisting {
+			return fmt.Errorf("resume options must match recorded replace_existing=%t", review.ReplaceExisting)
+		}
+		if !confirmYesNo("Resume the exact recorded activation?") {
+			return fmt.Errorf("activation resume cancelled")
+		}
+		return activateRecovered(client, review, review.ReplaceExisting)
+	}
+	if len(review.ActiveConflicts) > 0 && !replaceExisting {
+		return fmt.Errorf("%d active credential conflict(s); review and retry with --replace-existing", len(review.ActiveConflicts))
+	}
+	if !confirmYesNo("I acknowledge the destination policy transition and want to activate?") {
+		return fmt.Errorf("activation cancelled; recovered batch %s remains inactive", restoreID)
+	}
+	unattendedAck := false
+	if review.DestinationApprovalMode == string("auto_approve_fallback") {
+		if !confirmYesNo("I acknowledge this identity can sign unattended?") {
+			return fmt.Errorf("activation cancelled; recovered batch %s remains inactive", restoreID)
+		}
+		unattendedAck = true
+	}
+	review.AcknowledgePolicyTransition = true
+	review.AcknowledgeUnattendedSigning = unattendedAck
+	return activateRecovered(client, review, replaceExisting)
+}
+
+func requestRecoveredReview(
+	client apstoreAdminRequester,
+	restoreID string,
+) (protocol.ReviewRecoveredResultMessage, error) {
+	var review protocol.ReviewRecoveredResultMessage
+	err := client.request(protocol.ReviewRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeReviewRecovered, ID: newApstoreRequestID("restore-review")},
+		RestoreID:   restoreID,
+	}, &review)
+	if err != nil {
+		return review, err
+	}
+	if !review.Success {
+		return review, resultError("review recovered batch failed", review.Code, review.Error)
+	}
+	return review, nil
+}
+
+func activateRecovered(
+	client apstoreAdminRequester,
+	review protocol.ReviewRecoveredResultMessage,
+	replaceExisting bool,
+) error {
+	var result protocol.ActivateRecoveredResultMessage
+	err := client.request(protocol.ActivateRecoveredMessage{
+		BaseMessage:                  protocol.BaseMessage{Type: protocol.MsgTypeActivateRecovered, ID: newApstoreRequestID("restore-activate")},
+		RestoreID:                    review.RestoreID,
+		ReviewToken:                  review.ReviewToken,
+		AcknowledgePolicyTransition:  review.AcknowledgePolicyTransition,
+		AcknowledgeUnattendedSigning: review.AcknowledgeUnattendedSigning,
+		ReplaceExisting:              replaceExisting,
 	}, &result)
 	if err != nil {
 		return err
 	}
-	printRestoreResult(result)
 	if !result.Success {
-		return resultError("restore failed", result.Code, result.Error)
+		return resultError("activate recovered batch failed", result.Code, result.Error)
+	}
+	logInfof("activated recovered batch: %s", review.RestoreID)
+	if result.KeyCount > 0 {
+		logInfof("key count: %d", result.KeyCount)
 	}
 	return nil
+}
+
+func printRecoveredReview(review protocol.ReviewRecoveredResultMessage) {
+	logInfof("recovery state: %s", review.State)
+	logInfof("destination approval mode: %s", review.DestinationApprovalMode)
+	if review.UnattendedSigningWarning != "" {
+		logWarnf("%s", review.UnattendedSigningWarning)
+	}
+	logInfof("policy comparison: %s", review.PolicyComparison)
+	for _, change := range review.SecurityChanges {
+		scope := change.Selector
+		if scope == "" {
+			scope = "default"
+		}
+		fmt.Printf("  [%s] %s %s: %s -> %s\n",
+			change.Category,
+			scope,
+			change.Path,
+			change.Source,
+			change.Destination,
+		)
+	}
+	for _, unknown := range review.UnknownSourceSettings {
+		fmt.Printf("  [unknown source] %s\n", unknown)
+	}
+	for _, conflict := range review.ActiveConflicts {
+		logWarnf("active conflict: %s (%s, %s)", conflict.Selector, conflict.Category, conflict.KeyType)
+	}
 }
 
 func requestRestorePreview(client apstoreAdminRequester, name string, exportPassphrase []byte) (protocol.RestorePreviewMessage, error) {
@@ -173,35 +403,5 @@ func printRestorePreview(result protocol.RestorePreviewMessage) {
 		} else {
 			logErrorf("%s", item.Error)
 		}
-	}
-}
-
-func printRestoreResult(result protocol.RestoreBackupResultMessage) {
-	for _, key := range result.Restored {
-		label := key.Address
-		if key.KeyType != "" {
-			label += " (" + displayKeyType(key.KeyType) + ")"
-		}
-		logInfof("restored: %s", label)
-	}
-	for _, key := range result.Skipped {
-		logWarnf("skipped %s: %s", key.Address, key.Error)
-	}
-	for _, item := range result.Errors {
-		if item.Address != "" {
-			logErrorf("%s: %s", item.Address, item.Error)
-		} else {
-			logErrorf("%s", item.Error)
-		}
-	}
-	for _, item := range result.Warnings {
-		if item.Address != "" {
-			logWarnf("%s: %s", item.Address, item.Warning)
-		} else {
-			logWarnf("%s", item.Warning)
-		}
-	}
-	if result.KeyCount > 0 {
-		logInfof("key count: %d", result.KeyCount)
 	}
 }

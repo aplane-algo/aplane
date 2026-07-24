@@ -41,6 +41,11 @@ func (m *Model) resetRestoreFlow(clearBackups bool) {
 	m.restore.previewScrollOffset = 0
 	m.restore.previewError = ""
 	m.restore.overwrite = false
+	m.restore.restoreID = ""
+	m.restore.review = ReviewRecoveredResultMessage{}
+	m.restore.reviewFocus = 0
+	m.restore.policyAcknowledged = false
+	m.restore.unattendedAcknowledged = false
 	m.restore.displaySelectedKey = 0
 	m.restore.displayScrollOffset = 0
 	m.restore.result = RestoreBackupResultMessage{}

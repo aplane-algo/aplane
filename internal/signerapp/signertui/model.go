@@ -39,6 +39,7 @@ const (
 	ViewRestorePassphrase  // Enter export passphrase before previewing restore metadata
 	ViewRestorePreview     // Select keys to restore from a backup archive
 	ViewRestoring          // Loading state while restoring backup keys
+	ViewRestoreReview      // Review destination security state and acknowledge activation
 	ViewRestoreDisplay     // Shows backup restore result
 	ViewDeleteConfirm      // Delete confirmation dialog
 	ViewDeleting           // Loading state while deleting
@@ -155,24 +156,29 @@ type backupState struct {
 
 // restoreState is the backup browse/preview/restore flow.
 type restoreState struct {
-	backups             []BackupInfo
-	backupsLoaded       bool
-	selectedBackup      int
-	backupScrollOffset  int
-	archivePath         string
-	passphrase          []byte
-	passphraseError     string
-	previewing          bool
-	previewKeys         []RestoreKeyInfo
-	previewErrors       []RestoreError
-	selected            map[string]bool
-	selectedKey         int
-	previewScrollOffset int
-	previewError        string
-	overwrite           bool
-	displaySelectedKey  int
-	displayScrollOffset int
-	result              RestoreBackupResultMessage
+	backups                []BackupInfo
+	backupsLoaded          bool
+	selectedBackup         int
+	backupScrollOffset     int
+	archivePath            string
+	passphrase             []byte
+	passphraseError        string
+	previewing             bool
+	previewKeys            []RestoreKeyInfo
+	previewErrors          []RestoreError
+	selected               map[string]bool
+	selectedKey            int
+	previewScrollOffset    int
+	previewError           string
+	overwrite              bool
+	restoreID              string
+	review                 ReviewRecoveredResultMessage
+	reviewFocus            int
+	policyAcknowledged     bool
+	unattendedAcknowledged bool
+	displaySelectedKey     int
+	displayScrollOffset    int
+	result                 RestoreBackupResultMessage
 }
 
 // formsState covers the generate and import forms, their parameter modals,
@@ -519,6 +525,23 @@ type RestoreBackupResultMsg struct {
 	Warnings    []RestoreWarning
 	KeyCount    int
 	Error       string
+}
+
+// RecoverBackupResultMsg is sent when an inactive recovered batch is created.
+type RecoverBackupResultMsg struct {
+	Success   bool
+	RestoreID string
+	Error     string
+}
+
+// ReviewRecoveredResultMsg carries the security-first activation review.
+type ReviewRecoveredResultMsg struct {
+	Result ReviewRecoveredResultMessage
+}
+
+// ActivateRecoveredResultMsg is sent when reviewed activation completes.
+type ActivateRecoveredResultMsg struct {
+	Result ActivateRecoveredResultMessage
 }
 
 // ImportResultMsg is sent when key import completes

@@ -3,7 +3,11 @@
 
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"fmt"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func (m Model) openRestoreList() (tea.Model, tea.Cmd) {
 	m.resetRestoreFlow(true)
@@ -162,11 +166,59 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		restoreCmd := m.sendRestoreBackupCmd(m.restore.archivePath, addresses, m.restore.overwrite, m.restore.passphrase)
+		restoreCmd := m.sendRecoverBackupCmd(m.restore.archivePath, addresses, m.restore.passphrase)
 		m.clearRestorePassphrase()
 		m.restore.previewError = ""
 		m.viewState = ViewRestoring
 		return m, tea.Batch(restoreCmd, m.waitForMessageCmd())
+	}
+	return m, nil
+}
+
+func (m Model) handleRestoreReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	requiresUnattended := m.restore.review.DestinationApprovalMode == "auto_approve_fallback"
+	switch msg.String() {
+	case "q", "esc":
+		m.restore.previewError = fmt.Sprintf(
+			"Recovered batch %s remains inactive",
+			m.restore.restoreID,
+		)
+		m.viewState = ViewRestorePreview
+	case "up", "k", "down", "j", "tab":
+		if requiresUnattended {
+			if m.restore.reviewFocus == 0 {
+				m.restore.reviewFocus = 1
+			} else {
+				m.restore.reviewFocus = 0
+			}
+		}
+	case " ":
+		if m.restore.reviewFocus == 0 {
+			m.restore.policyAcknowledged = !m.restore.policyAcknowledged
+		} else if requiresUnattended {
+			m.restore.unattendedAcknowledged = !m.restore.unattendedAcknowledged
+		}
+	case "enter":
+		if !m.restore.policyAcknowledged {
+			m.restore.previewError = "Acknowledge the destination policy transition before activation"
+			return m, nil
+		}
+		if requiresUnattended && !m.restore.unattendedAcknowledged {
+			m.restore.previewError = "Separately acknowledge unattended signing before activation"
+			return m, nil
+		}
+		m.restore.previewError = ""
+		m.viewState = ViewRestoring
+		return m, tea.Batch(
+			m.sendActivateRecoveredCmd(
+				m.restore.restoreID,
+				m.restore.review.ReviewToken,
+				m.restore.policyAcknowledged,
+				m.restore.unattendedAcknowledged,
+				m.restore.overwrite,
+			),
+			m.waitForMessageCmd(),
+		)
 	}
 	return m, nil
 }
