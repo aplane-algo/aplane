@@ -71,7 +71,7 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 				composeddsa.AdminOperationSpec{Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationAdminKey, PolicyGate: composeddsa.AdminPolicyGateNone},
 			),
 			bytecode: 3854, spendSize: 5134, adminSize: 6414, groupSize: 7,
-			address: "4HV46PEVAWHB4DTQFSSHBMTLNIWI7CCYM6RR32CIVA2C4SODR6JJQ5NITE",
+			address: "A3R7NECDSYRQFPNJP4EO4GMDCDGC2AOCI7RS55JGZ3UHNKZZPPFPSQUJCI",
 		},
 	}
 	spendingPublicKey := bytes.Repeat([]byte{0x21}, family.PublicKeySize)
@@ -127,13 +127,17 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 	baseTxn := func(note string) types.Transaction {
 		return boundedPaymentTxn(t, mustSuggestedParams(t, network), account.address, funder.GetAddress(), 1_000, note)
 	}
+	assetTxn := func(note string) types.Transaction {
+		return corridorAssetTransferTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, assetID, note)
+	}
 	tests := []struct {
-		name         string
-		build        func() types.Transaction
-		mutate       func(*types.Transaction)
-		includeAdmin bool
-		wantShape    txeffects.Shape
-		wantAccept   bool
+		name           string
+		build          func() types.Transaction
+		mutate         func(*types.Transaction)
+		includeAdmin   bool
+		classifierOnly bool
+		wantShape      txeffects.Shape
+		wantAccept     bool
 	}{
 		{name: "pure payment spend", wantShape: txeffects.ShapePureSpend, wantAccept: true},
 		{name: "foreign payment receiver", mutate: func(txn *types.Transaction) { txn.Receiver = other.Address }, wantShape: txeffects.ShapePureSpend},
@@ -146,15 +150,24 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 		{name: "fee at profile ceiling", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFeeV1) }, wantShape: txeffects.ShapePureSpend, wantAccept: true},
 		{name: "fee above profile", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFeeV1 + 1) }, wantShape: txeffects.ShapePureSpend},
 		{name: "close remainder", mutate: func(txn *types.Transaction) { txn.CloseRemainderTo = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
-		{name: "asset close", mutate: func(txn *types.Transaction) { txn.AssetCloseTo = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
-		{name: "clawback", mutate: func(txn *types.Transaction) { txn.AssetSender = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
-		{name: "denied keyreg type", mutate: func(txn *types.Transaction) { txn.Type = types.KeyRegistrationTx }, wantShape: txeffects.ShapeDeniedType},
-		{name: "denied asset config type", mutate: func(txn *types.Transaction) { txn.Type = types.AssetConfigTx }, wantShape: txeffects.ShapeDeniedType},
-		{name: "denied asset freeze type", mutate: func(txn *types.Transaction) { txn.Type = types.AssetFreezeTx }, wantShape: txeffects.ShapeDeniedType},
-		{name: "denied application type", mutate: func(txn *types.Transaction) { txn.Type = types.ApplicationCallTx }, wantShape: txeffects.ShapeDeniedType},
-		{name: "denied state proof type", mutate: func(txn *types.Transaction) { txn.Type = types.StateProofTx }, wantShape: txeffects.ShapeDeniedType},
-		{name: "denied heartbeat type", mutate: func(txn *types.Transaction) { txn.Type = types.HeartbeatTx }, wantShape: txeffects.ShapeDeniedType},
-		{name: "unknown type", mutate: func(txn *types.Transaction) { txn.Type = "future" }, wantShape: txeffects.ShapeDeniedType},
+		{name: "asset close", build: func() types.Transaction { return assetTxn("bounded-agreement-asset-close") }, mutate: func(txn *types.Transaction) { txn.AssetCloseTo = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
+		{name: "clawback", build: func() types.Transaction { return assetTxn("bounded-agreement-clawback") }, mutate: func(txn *types.Transaction) { txn.AssetSender = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
+		{
+			name: "denied keyreg type", wantShape: txeffects.ShapeDeniedType,
+			build: func() types.Transaction {
+				txn := baseTxn("bounded-agreement-denied-keyreg-type")
+				txn.Type = types.KeyRegistrationTx
+				txn.PaymentTxnFields = types.PaymentTxnFields{}
+				txn.Nonparticipation = true
+				return txn
+			},
+		},
+		{name: "denied asset config type", mutate: func(txn *types.Transaction) { txn.Type = types.AssetConfigTx }, classifierOnly: true, wantShape: txeffects.ShapeDeniedType},
+		{name: "denied asset freeze type", mutate: func(txn *types.Transaction) { txn.Type = types.AssetFreezeTx }, classifierOnly: true, wantShape: txeffects.ShapeDeniedType},
+		{name: "denied application type", mutate: func(txn *types.Transaction) { txn.Type = types.ApplicationCallTx }, classifierOnly: true, wantShape: txeffects.ShapeDeniedType},
+		{name: "denied state proof type", mutate: func(txn *types.Transaction) { txn.Type = types.StateProofTx }, classifierOnly: true, wantShape: txeffects.ShapeDeniedType},
+		{name: "denied heartbeat type", mutate: func(txn *types.Transaction) { txn.Type = types.HeartbeatTx }, classifierOnly: true, wantShape: txeffects.ShapeDeniedType},
+		{name: "unknown type", mutate: func(txn *types.Transaction) { txn.Type = "future" }, classifierOnly: true, wantShape: txeffects.ShapeDeniedType},
 		{
 			name: "rekey plus amount", includeAdmin: true, wantShape: txeffects.ShapeHybrid,
 			mutate: func(txn *types.Transaction) {
@@ -214,6 +227,13 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 			if classifierAccept != test.wantAccept {
 				t.Fatalf("classifier/profile acceptance = %v, test expectation = %v", classifierAccept, test.wantAccept)
 			}
+			// Algod rejects these transaction types during structural or
+			// protocol validation before their LogicSig can execute. Their
+			// closed-set classification is covered here; keyreg provides the
+			// executable denied-type agreement case.
+			if test.classifierOnly {
+				return
+			}
 			rawGroup, txid := account.signGroup(t, txn, test.includeAdmin)
 			if test.wantAccept {
 				submitCorridorGroupExpectSuccess(t, network, rawGroup, txid)
@@ -237,7 +257,12 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 	t.Run("all danger-effect combinations", func(t *testing.T) {
 		for mask := 1; mask < 16; mask++ {
 			t.Run(fmt.Sprintf("mask-%04b", mask), func(t *testing.T) {
-				txn := boundedPaymentTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, fmt.Sprintf("bounded-effects-%04b", mask))
+				var txn types.Transaction
+				if mask&12 != 0 {
+					txn = corridorAssetTransferTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, assetID, fmt.Sprintf("bounded-effects-%04b", mask))
+				} else {
+					txn = boundedPaymentTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, fmt.Sprintf("bounded-effects-%04b", mask))
+				}
 				if mask&1 != 0 {
 					txn.RekeyTo = target.Address
 				}
@@ -259,6 +284,17 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 				}
 				if classification.Shape != wantShape {
 					t.Fatalf("classifier shape = %q, want %q", classification.Shape, wantShape)
+				}
+				// CloseRemainderTo is payment-only, AssetCloseTo and
+				// AssetSender are asset-transfer-only, and an asset cannot be
+				// closed by a clawback transaction. Keep those impossible
+				// combinations as classifier coverage without claiming that
+				// algod can execute them.
+				hasPaymentClose := mask&2 != 0
+				hasAssetEffect := mask&12 != 0
+				hasAssetCloseAndClawback := mask&12 == 12
+				if (hasPaymentClose && hasAssetEffect) || hasAssetCloseAndClawback {
+					return
 				}
 				rawGroup, _ := account.signGroup(t, txn, mask != 1)
 				submitCorridorGroupExpectFailure(t, network, rawGroup)

@@ -858,13 +858,19 @@ write_sdk_data_dir() {
         chmod 700 '$data_dir/.ssh' && \
         chmod 600 '$data_dir/.ssh/id_ed25519' '$data_dir/.ssh/known_hosts' '$data_dir/aplane.token' && \
         cat > '$data_dir/config.yaml' <<YAML
-endpoint:
-  signer_port: $signer_port
-  ssh:
-    host: $host
-    port: $ssh_port
+schema_version: 1
+YAML
+        cat > '$data_dir/endpoints.yaml' <<YAML
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://$host:$ssh_port
+    signer_port: $signer_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
 YAML"
 }
 
