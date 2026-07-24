@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/storepass"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -182,6 +183,77 @@ func TestRecoverAndListRecoveredFailWithoutMasterKey(t *testing.T) {
 	}
 }
 
+func TestRecoveredBatchSurvivesPassphraseRotationAndActivation(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{
+		Deps: backupServiceTestDeps{
+			paths:   paths,
+			limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+		},
+	}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	roleBytes, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, time.Unix(1_700_000_000, 0))
+	if err != nil {
+		t.Fatalf("SaveInitial(node role) error = %v", err)
+	}
+	if err := ir.WithMasterKey(func(masterKey []byte) error {
+		return noderole.SaveIdentitySidecarWithMasterKey(
+			paths,
+			auth.DefaultIdentityID,
+			roleBytes,
+			masterKey,
+			time.Unix(1_700_000_000, 0),
+		)
+	}); err != nil {
+		t.Fatalf("SaveIdentitySidecarWithMasterKey() error = %v", err)
+	}
+
+	recoveredResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoveredResult.Success {
+		t.Fatalf("RecoverBackup() = %+v", recoveredResult)
+	}
+
+	newPassphrase := []byte("backup-admin-rotated-passphrase")
+	rotation, err := storepass.Rotate(
+		paths,
+		auth.DefaultIdentityID,
+		append([]byte(nil), backupAdminTestPassphrase...),
+		newPassphrase,
+		storepass.RotateOptions{},
+	)
+	if err != nil {
+		t.Fatalf("storepass.Rotate() error = %v", err)
+	}
+	if rotation.RecoveredFilesMigrated != 2 {
+		t.Fatalf("RecoveredFilesMigrated = %d, want batch plus entry", rotation.RecoveredFilesMigrated)
+	}
+	if _, err := ir.KeyStore().InitializeMasterKey(newPassphrase); err != nil {
+		t.Fatalf("InitializeMasterKey(rotated passphrase) error = %v", err)
+	}
+
+	review := service.ReviewRecovered(ir, recoveredResult.RestoreID)
+	if !review.Success {
+		t.Fatalf("ReviewRecovered(after rotation) = %+v", review)
+	}
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoveredResult.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+	if !activated.Success {
+		t.Fatalf("ActivateRecovered(after rotation) = %+v", activated)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)); err != nil {
+		t.Fatalf("active key after rotated activation stat error = %v", err)
+	}
+}
+
 func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
@@ -333,6 +405,58 @@ func TestActivateRecoveredRequiresCurrentReviewAndAcknowledgements(t *testing.T)
 	}
 	if got := reloads.Load(); got != 1 {
 		t.Fatalf("reload count = %d, want 1", got)
+	}
+}
+
+func TestSentryRecoveryPublishesWitnessMetadataOnlyOnActivation(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, componentKey := writeRecoverableSentryArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{
+		Deps: backupServiceTestDeps{
+			paths:   paths,
+			limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+		},
+	}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntimeForRole(t, paths, &reloads, noderole.RoleSentry, false)
+	installBackupAdminPolicyForRole(t, ir, paths, &policy.StoredConfig{}, noderole.RoleSentry)
+
+	recoveredResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoveredResult.Success {
+		t.Fatalf("RecoverBackup(sentry) = %+v", recoveredResult)
+	}
+	if _, err := os.Stat(keys.SentryCredentialFilePath(paths, auth.DefaultIdentityID, componentKey)); !os.IsNotExist(err) {
+		t.Fatalf("active sentry credential before activation stat error = %v, want not found", err)
+	}
+	metadataPath := keys.WitnessPublicMetadataPath(paths, auth.DefaultIdentityID, componentKey)
+	if _, err := os.Stat(metadataPath); !os.IsNotExist(err) {
+		t.Fatalf("witness metadata before activation stat error = %v, want not found", err)
+	}
+
+	review := service.ReviewRecovered(ir, recoveredResult.RestoreID)
+	if !review.Success {
+		t.Fatalf("ReviewRecovered(sentry) = %+v", review)
+	}
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoveredResult.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+	if !activated.Success {
+		t.Fatalf("ActivateRecovered(sentry) = %+v", activated)
+	}
+	if _, err := os.Stat(keys.SentryCredentialFilePath(paths, auth.DefaultIdentityID, componentKey)); err != nil {
+		t.Fatalf("active sentry credential stat error = %v", err)
+	}
+	env, ok, err := keys.ReadWitnessPublicMetadata(paths, auth.DefaultIdentityID, componentKey)
+	if err != nil {
+		t.Fatalf("ReadWitnessPublicMetadata() error = %v", err)
+	}
+	if !ok || env.WitnessKeyID != componentKey {
+		t.Fatalf("witness metadata = %+v, ok %v, want component %s", env, ok, componentKey)
 	}
 }
 
@@ -664,6 +788,19 @@ func writeMalformedManagedArchive(t *testing.T, paths storepaths.Paths, identity
 }
 
 func writeRecoverableManagedArchive(t *testing.T, paths storepaths.Paths, identityID string) (string, string) {
+	return writeRecoverableArchiveForRole(t, paths, identityID, noderole.RoleSigner)
+}
+
+func writeRecoverableSentryArchive(t *testing.T, paths storepaths.Paths, identityID string) (string, string) {
+	return writeRecoverableArchiveForRole(t, paths, identityID, noderole.RoleSentry)
+}
+
+func writeRecoverableArchiveForRole(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+	role noderole.Role,
+) (string, string) {
 	t.Helper()
 
 	root := t.TempDir()
@@ -671,30 +808,43 @@ func writeRecoverableManagedArchive(t *testing.T, paths storepaths.Paths, identi
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll(apb) error = %v", err)
 	}
-	address, keyJSON := keystest.Ed25519KeyJSON(t)
+	var selector string
+	var keyJSON []byte
+	switch role {
+	case noderole.RoleSigner:
+		selector, keyJSON = keystest.Ed25519KeyJSON(t)
+	case noderole.RoleSentry:
+		selector, keyJSON = keystest.SentryComponentFalcon1024KeyJSON(t, 0xcd)
+	default:
+		t.Fatalf("unsupported archive role %q", role)
+	}
 	defer crypto.ZeroBytes(keyJSON)
 	encrypted, err := crypto.EncryptStandalone(keyJSON, []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("EncryptStandalone() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(keysDir, address+".apb"), encrypted, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(keysDir, selector+".apb"), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(apb) error = %v", err)
 	}
-	if err := backup.WriteManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0)); err != nil {
+	if err := backup.WriteManifest(root, role, time.Unix(1_700_000_000, 0)); err != nil {
 		t.Fatalf("WriteManifest() error = %v", err)
 	}
 	policyDir := filepath.Join(root, "policy")
 	if err := os.MkdirAll(policyDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll(policy) error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), []byte("reject_foreign_rekey: true\n"), 0o600); err != nil {
+	sourcePolicy := []byte("{}\n")
+	if role == noderole.RoleSigner {
+		sourcePolicy = []byte("reject_foreign_rekey: true\n")
+	}
+	if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), sourcePolicy, 0o600); err != nil {
 		t.Fatalf("WriteFile(source policy) error = %v", err)
 	}
 	archivePath := backup.BuildManagedArchivePath(paths, identityID, "recover-service")
 	if err := backup.CreateTarGzArchive(root, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}
-	return archivePath, address
+	return archivePath, selector
 }
 
 func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *identity.Runtime {
@@ -705,6 +855,22 @@ func testUnlockedBackupIdentityRuntimeWithAutoApprove(
 	t *testing.T,
 	paths storepaths.Paths,
 	reloads *atomic.Int64,
+	userAutoApprove bool,
+) *identity.Runtime {
+	return testUnlockedBackupIdentityRuntimeForRole(
+		t,
+		paths,
+		reloads,
+		noderole.RoleSigner,
+		userAutoApprove,
+	)
+}
+
+func testUnlockedBackupIdentityRuntimeForRole(
+	t *testing.T,
+	paths storepaths.Paths,
+	reloads *atomic.Int64,
+	role noderole.Role,
 	userAutoApprove bool,
 ) *identity.Runtime {
 	t.Helper()
@@ -721,7 +887,7 @@ func testUnlockedBackupIdentityRuntimeWithAutoApprove(
 		KeyStore:        keyStore,
 		KeyPaths:        paths,
 		Authenticator:   auth.NewTokenAuthenticator("token"),
-		NodeRole:        noderole.RoleSigner,
+		NodeRole:        role,
 		UserAutoApprove: &userAutoApprove,
 	})
 	ir.SetReloadFunc(func(string, []byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
@@ -738,6 +904,16 @@ func installBackupAdminPolicy(
 	paths storepaths.Paths,
 	stored *policy.StoredConfig,
 ) {
+	installBackupAdminPolicyForRole(t, ir, paths, stored, noderole.RoleSigner)
+}
+
+func installBackupAdminPolicyForRole(
+	t *testing.T,
+	ir *identity.Runtime,
+	paths storepaths.Paths,
+	stored *policy.StoredConfig,
+	role noderole.Role,
+) {
 	t.Helper()
 	if err := ir.WithMasterKey(func(masterKey []byte) error {
 		return policy.SaveStoredConfigWithMasterKey(
@@ -750,9 +926,18 @@ func installBackupAdminPolicy(
 	}); err != nil {
 		t.Fatalf("SaveStoredConfigWithMasterKey() error = %v", err)
 	}
-	effective, err := stored.ApplySigning(nil)
+	var effective *policy.Config
+	var err error
+	switch role {
+	case noderole.RoleSigner:
+		effective, err = stored.ApplySigning(nil)
+	case noderole.RoleSentry:
+		effective, err = stored.ApplySentry(nil)
+	default:
+		t.Fatalf("unsupported policy role %q", role)
+	}
 	if err != nil {
-		t.Fatalf("ApplySigning() error = %v", err)
+		t.Fatalf("apply %s policy error = %v", role, err)
 	}
 	ir.SetPolicyState(stored, effective)
 }

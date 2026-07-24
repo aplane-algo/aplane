@@ -226,6 +226,19 @@ func TestIPCManagedBackupPreviewAndRestore(t *testing.T) {
 	if activeMsgs := activeRecorder.messages(t); len(activeMsgs) != 0 {
 		t.Fatalf("active notification count after recovery = %d, want 0", len(activeMsgs))
 	}
+	reloadReport, err := ir.Reload()
+	if err != nil {
+		t.Fatalf("Reload() with inactive recovered batch error = %v", err)
+	}
+	if reloadReport == nil || reloadReport.KeyCount != 0 {
+		t.Fatalf("Reload() report = %+v, want no active keys", reloadReport)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); !os.IsNotExist(err) {
+		t.Fatalf("recovered key became active after full runtime rescan: %v", err)
+	}
+	if activeMsgs := activeRecorder.messages(t); len(activeMsgs) != 1 {
+		t.Fatalf("active notification count after explicit rescan = %d, want 1", len(activeMsgs))
+	}
 
 	reviewRecorder := &ipcJSONRecorderConn{}
 	reviewSession := newBoundTestSession(ipcServer, reviewRecorder, ir)
@@ -270,14 +283,14 @@ func TestIPCManagedBackupPreviewAndRestore(t *testing.T) {
 	}
 
 	activeMsgs := activeRecorder.messages(t)
-	if len(activeMsgs) != 1 {
-		t.Fatalf("active notification count = %d, want 1 keys_changed notification", len(activeMsgs))
+	if len(activeMsgs) != 2 {
+		t.Fatalf("active notification count = %d, want rescan plus activation notifications", len(activeMsgs))
 	}
-	if !reflectJSONSubset(activeMsgs[0], map[string]any{
+	if !reflectJSONSubset(activeMsgs[1], map[string]any{
 		"kind": string(protocol.MessageKindNotification),
 		"type": protocol.MsgTypeKeysChanged,
 	}) {
-		t.Fatalf("active notification mismatch: %#v", activeMsgs[0])
+		t.Fatalf("activation notification mismatch: %#v", activeMsgs[1])
 	}
 }
 
