@@ -78,6 +78,23 @@ func (p Paths) KeysDir(identityID string) string {
 	return filepath.Join(p.IdentityDir(identityID), "keys")
 }
 
+func (p Paths) RecoveredRootDir(identityID string) string {
+	return filepath.Join(p.IdentityDir(identityID), "recovered")
+}
+
+func (p Paths) RecoveredBatchDir(identityID, restoreID string) string {
+	validatePathComponent("restore ID", restoreID)
+	return filepath.Join(p.RecoveredRootDir(identityID), restoreID)
+}
+
+func (p Paths) RecoveredBatchEntriesDir(identityID, restoreID string) string {
+	return filepath.Join(p.RecoveredBatchDir(identityID, restoreID), "entries")
+}
+
+func (p Paths) RecoveredBatchMetadataPath(identityID, restoreID string) string {
+	return filepath.Join(p.RecoveredBatchDir(identityID, restoreID), "batch.enc")
+}
+
 func (p Paths) DeletedDir(identityID string) string {
 	return filepath.Join(p.IdentityDir(identityID), "deleted")
 }
