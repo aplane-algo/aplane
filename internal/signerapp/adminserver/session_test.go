@@ -54,68 +54,85 @@ type stubServices struct {
 	verifyCalls  int
 	unlockCalls  int
 
-	listLibraryCalls       int
-	installLibraryCalls    int
-	listInstalledCalls     int
-	showInstalledCalls     int
-	showLibraryCalls       int
-	importInstalledCalls   int
-	removeInstalledCalls   int
-	activateKeyTypeCalls   int
-	deactivateKeyTypeCalls int
-	listKeyTypesCalls      int
-	generateKeyCalls       int
-	importKeyCalls         int
-	backupCalls            int
-	listBackupsCalls       int
-	deleteBackupCalls      int
-	changePassphraseCalls  int
-	previewRestoreCalls    int
-	restoreBackupCalls     int
-	policySnapshotCalls    int
-	replacePolicyCalls     int
-	validatePolicyCalls    int
-	lastInstallTemplate    adminproto.InstallLibraryTemplateRequest
-	lastShowInstalled      adminproto.ShowInstalledTemplateRequest
-	lastShowLibrary        adminproto.ShowLibraryTemplateRequest
-	lastImportInstalled    adminproto.ImportInstalledTemplateRequest
-	lastRemoveInstalled    adminproto.RemoveInstalledTemplateRequest
-	lastActivateKeyType    adminproto.ActivateKeyTypeRequest
-	lastDeactivateKeyType  adminproto.DeactivateKeyTypeRequest
-	lastGenerateKeyContext context.Context
-	lastGenerateKey        adminproto.GenerateKeyRequest
-	lastImportKey          adminproto.ImportKeyRequest
-	lastBackupRequest      adminproto.BackupIdentityRequest
-	lastDeleteBackup       adminproto.DeleteBackupRequest
-	lastInitializeStore    adminproto.InitializeStoreRequest
-	lastChangePassphrase   adminproto.ChangeStorePassphraseRequest
-	lastPreviewRestore     adminproto.PreviewRestoreRequest
-	lastRestoreBackup      adminproto.RestoreBackupRequest
-	lastPolicySnapshot     adminproto.PolicyTarget
-	lastReplacePolicy      adminproto.ReplacePolicyRequest
-	lastValidatePolicy     adminproto.ValidatePolicyRequest
-	listLibraryResult      adminproto.ListLibraryTemplatesResult
-	installResult          adminproto.InstallLibraryTemplateResult
-	listInstalledResult    adminproto.ListInstalledTemplatesResult
-	showInstalledResult    adminproto.ShowInstalledTemplateResult
-	showLibraryResult      adminproto.ShowLibraryTemplateResult
-	importInstalledResult  adminproto.ImportInstalledTemplateResult
-	removeInstalledResult  adminproto.RemoveInstalledTemplateResult
-	activateResult         adminproto.ActivateKeyTypeResult
-	deactivateResult       adminproto.DeactivateKeyTypeResult
-	keyTypesResult         adminproto.ListKeyTypesResult
-	generateKeyResult      adminproto.GenerateKeyResult
-	importKeyResult        adminproto.ImportKeyResult
-	backupResult           adminproto.BackupIdentityResult
-	listBackupsResult      adminproto.ListBackupsResult
-	deleteBackupResult     adminproto.DeleteBackupResult
-	initializeStoreResult  adminproto.InitializeStoreResult
-	changePassphraseResult adminproto.ChangeStorePassphraseResult
-	previewRestoreResult   adminproto.RestorePreviewResult
-	restoreBackupResult    adminproto.RestoreBackupResult
-	policySnapshotResult   adminproto.PolicySnapshot
-	replacePolicyResult    adminproto.PolicySnapshot
-	validatePolicyResult   adminproto.ValidatePolicyResult
+	listLibraryCalls        int
+	installLibraryCalls     int
+	listInstalledCalls      int
+	showInstalledCalls      int
+	showLibraryCalls        int
+	importInstalledCalls    int
+	removeInstalledCalls    int
+	activateKeyTypeCalls    int
+	deactivateKeyTypeCalls  int
+	listKeyTypesCalls       int
+	generateKeyCalls        int
+	importKeyCalls          int
+	backupCalls             int
+	listBackupsCalls        int
+	deleteBackupCalls       int
+	changePassphraseCalls   int
+	previewRestoreCalls     int
+	restoreBackupCalls      int
+	recoverBackupCalls      int
+	listRecoveredCalls      int
+	reviewRecoveredCalls    int
+	activateRecoveredCalls  int
+	rollbackRecoveredCalls  int
+	purgeRecoveredCalls     int
+	policySnapshotCalls     int
+	replacePolicyCalls      int
+	validatePolicyCalls     int
+	lastInstallTemplate     adminproto.InstallLibraryTemplateRequest
+	lastShowInstalled       adminproto.ShowInstalledTemplateRequest
+	lastShowLibrary         adminproto.ShowLibraryTemplateRequest
+	lastImportInstalled     adminproto.ImportInstalledTemplateRequest
+	lastRemoveInstalled     adminproto.RemoveInstalledTemplateRequest
+	lastActivateKeyType     adminproto.ActivateKeyTypeRequest
+	lastDeactivateKeyType   adminproto.DeactivateKeyTypeRequest
+	lastGenerateKeyContext  context.Context
+	lastGenerateKey         adminproto.GenerateKeyRequest
+	lastImportKey           adminproto.ImportKeyRequest
+	lastBackupRequest       adminproto.BackupIdentityRequest
+	lastDeleteBackup        adminproto.DeleteBackupRequest
+	lastInitializeStore     adminproto.InitializeStoreRequest
+	lastChangePassphrase    adminproto.ChangeStorePassphraseRequest
+	lastPreviewRestore      adminproto.PreviewRestoreRequest
+	lastRestoreBackup       adminproto.RestoreBackupRequest
+	lastRecoverBackup       adminproto.RecoverBackupRequest
+	lastReviewRestoreID     string
+	lastActivateRecovered   adminproto.ActivateRecoveredRequest
+	lastRollbackRecovered   adminproto.RollbackRecoveredRequest
+	lastPurgeRecovered      adminproto.PurgeRecoveredRequest
+	lastPolicySnapshot      adminproto.PolicyTarget
+	lastReplacePolicy       adminproto.ReplacePolicyRequest
+	lastValidatePolicy      adminproto.ValidatePolicyRequest
+	listLibraryResult       adminproto.ListLibraryTemplatesResult
+	installResult           adminproto.InstallLibraryTemplateResult
+	listInstalledResult     adminproto.ListInstalledTemplatesResult
+	showInstalledResult     adminproto.ShowInstalledTemplateResult
+	showLibraryResult       adminproto.ShowLibraryTemplateResult
+	importInstalledResult   adminproto.ImportInstalledTemplateResult
+	removeInstalledResult   adminproto.RemoveInstalledTemplateResult
+	activateResult          adminproto.ActivateKeyTypeResult
+	deactivateResult        adminproto.DeactivateKeyTypeResult
+	keyTypesResult          adminproto.ListKeyTypesResult
+	generateKeyResult       adminproto.GenerateKeyResult
+	importKeyResult         adminproto.ImportKeyResult
+	backupResult            adminproto.BackupIdentityResult
+	listBackupsResult       adminproto.ListBackupsResult
+	deleteBackupResult      adminproto.DeleteBackupResult
+	initializeStoreResult   adminproto.InitializeStoreResult
+	changePassphraseResult  adminproto.ChangeStorePassphraseResult
+	previewRestoreResult    adminproto.RestorePreviewResult
+	restoreBackupResult     adminproto.RestoreBackupResult
+	recoverBackupResult     adminproto.RecoverBackupResult
+	listRecoveredResult     adminproto.ListRecoveredResult
+	reviewRecoveredResult   adminproto.ReviewRecoveredResult
+	activateRecoveredResult adminproto.ActivateRecoveredResult
+	rollbackRecoveredResult adminproto.RollbackRecoveredResult
+	purgeRecoveredResult    adminproto.PurgeRecoveredResult
+	policySnapshotResult    adminproto.PolicySnapshot
+	replacePolicyResult     adminproto.PolicySnapshot
+	validatePolicyResult    adminproto.ValidatePolicyResult
 }
 
 func (s *stubServices) ProductIdentityRuntime() *identity.Runtime { return s.runtime }
@@ -253,6 +270,39 @@ func (s *stubServices) RestoreBackup(ir *identity.Runtime, req adminproto.Restor
 		ExportPassphrase: append([]byte(nil), req.ExportPassphrase...),
 	}
 	return s.restoreBackupResult
+}
+func (s *stubServices) RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBackupRequest) adminproto.RecoverBackupResult {
+	s.recoverBackupCalls++
+	s.lastRecoverBackup = adminproto.RecoverBackupRequest{
+		ArchivePath:      req.ArchivePath,
+		Addresses:        append([]string(nil), req.Addresses...),
+		ExportPassphrase: append([]byte(nil), req.ExportPassphrase...),
+	}
+	return s.recoverBackupResult
+}
+func (s *stubServices) ListRecovered(ir *identity.Runtime) adminproto.ListRecoveredResult {
+	s.listRecoveredCalls++
+	return s.listRecoveredResult
+}
+func (s *stubServices) ReviewRecovered(ir *identity.Runtime, restoreID string) adminproto.ReviewRecoveredResult {
+	s.reviewRecoveredCalls++
+	s.lastReviewRestoreID = restoreID
+	return s.reviewRecoveredResult
+}
+func (s *stubServices) ActivateRecovered(ir *identity.Runtime, req adminproto.ActivateRecoveredRequest) adminproto.ActivateRecoveredResult {
+	s.activateRecoveredCalls++
+	s.lastActivateRecovered = req
+	return s.activateRecoveredResult
+}
+func (s *stubServices) RollbackRecovered(ir *identity.Runtime, req adminproto.RollbackRecoveredRequest) adminproto.RollbackRecoveredResult {
+	s.rollbackRecoveredCalls++
+	s.lastRollbackRecovered = req
+	return s.rollbackRecoveredResult
+}
+func (s *stubServices) PurgeRecovered(ir *identity.Runtime, req adminproto.PurgeRecoveredRequest) adminproto.PurgeRecoveredResult {
+	s.purgeRecoveredCalls++
+	s.lastPurgeRecovered = req
+	return s.purgeRecoveredResult
 }
 func (s *stubServices) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibraryTemplatesResult {
 	s.listLibraryCalls++

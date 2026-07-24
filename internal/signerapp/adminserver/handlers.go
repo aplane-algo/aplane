@@ -319,6 +319,118 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 	_ = s.WriteJSON(ProtocolRestoreBackupResultMessage(msg.ID, result))
 }
 
+func (s *Session) HandleRecoverBackup(msg *protocol.RecoverBackupMessage) {
+	ir := s.requireUnlockedRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	exportPassphrase := msg.ExportPassphrase.Clone()
+	defer zeroBytes(exportPassphrase)
+	defer msg.ExportPassphrase.Zero()
+	result := s.backupServices.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      msg.ArchivePath,
+		Addresses:        append([]string(nil), msg.Addresses...),
+		ExportPassphrase: exportPassphrase,
+	})
+	_ = s.WriteJSON(ProtocolRecoverBackupResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleListRecovered(requestID string) {
+	ir := s.requireUnlockedRuntime(requestID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(requestID, "", "backup service unavailable")
+		return
+	}
+	_ = s.WriteJSON(ProtocolRecoveredListMessage(requestID, s.backupServices.ListRecovered(ir)))
+}
+
+func (s *Session) HandleReviewRecovered(msg *protocol.ReviewRecoveredMessage) {
+	ir := s.requireUnlockedRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	result := s.backupServices.ReviewRecovered(ir, msg.RestoreID)
+	_ = s.WriteJSON(ProtocolReviewRecoveredResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleActivateRecovered(msg *protocol.ActivateRecoveredMessage) {
+	ir := s.requireUnlockedRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	result := s.backupServices.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                    msg.RestoreID,
+		ReviewToken:                  msg.ReviewToken,
+		AcknowledgePolicyTransition:  msg.AcknowledgePolicyTransition,
+		AcknowledgeUnattendedSigning: msg.AcknowledgeUnattendedSigning,
+		ReplaceExisting:              msg.ReplaceExisting,
+	})
+	_ = s.WriteJSON(ProtocolActivateRecoveredResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleRollbackRecovered(msg *protocol.RollbackRecoveredMessage) {
+	ir := s.requireUnlockedRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	result := s.backupServices.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{
+		RestoreID: msg.RestoreID,
+	})
+	_ = s.WriteJSON(ProtocolRollbackRecoveredResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandlePurgeRecovered(msg *protocol.PurgeRecoveredMessage) {
+	ir := s.requireUnlockedRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	result := s.backupServices.PurgeRecovered(ir, adminproto.PurgeRecoveredRequest{
+		RestoreID: msg.RestoreID,
+	})
+	_ = s.WriteJSON(ProtocolPurgeRecoveredResultMessage(msg.ID, result))
+}
+
 func (s *Session) HandleListKeys(requestID string) {
 	ir := s.requireUnlockedRuntime(requestID)
 	if ir == nil {

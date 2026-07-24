@@ -212,6 +212,141 @@ func ProtocolRestoreBackupResultMessage(id string, result adminproto.RestoreBack
 	}
 }
 
+func ProtocolRecoverBackupResultMessage(id string, result adminproto.RecoverBackupResult) protocol.RecoverBackupResultMessage {
+	return protocol.RecoverBackupResultMessage{
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeRecoverBackupResult, ID: id},
+		Success:         result.Success,
+		RestoreID:       result.RestoreID,
+		ArchiveName:     result.ArchiveName,
+		ArchiveChecksum: result.ArchiveChecksum,
+		EntryCount:      result.EntryCount,
+		Code:            result.Code,
+		Error:           result.Error,
+	}
+}
+
+func ProtocolRecoveredListMessage(id string, result adminproto.ListRecoveredResult) protocol.RecoveredListMessage {
+	batches := make([]protocol.RecoveredBatchInfo, len(result.Batches))
+	for i, batch := range result.Batches {
+		batches[i] = protocol.RecoveredBatchInfo{
+			RestoreID:          batch.RestoreID,
+			CreatedAt:          batch.CreatedAt,
+			ArchiveName:        batch.ArchiveName,
+			ArchiveChecksum:    batch.ArchiveChecksum,
+			SourceNodeRole:     batch.SourceNodeRole,
+			SourcePolicyStatus: batch.SourcePolicyStatus,
+			SourcePolicySHA256: batch.SourcePolicySHA256,
+			EntryCount:         batch.EntryCount,
+		}
+	}
+	return protocol.RecoveredListMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRecoveredList, ID: id},
+		Batches:     batches,
+		Code:        result.Code,
+		Error:       result.Error,
+	}
+}
+
+func ProtocolReviewRecoveredResultMessage(id string, result adminproto.ReviewRecoveredResult) protocol.ReviewRecoveredResultMessage {
+	return protocol.ReviewRecoveredResultMessage{
+		BaseMessage:                  protocol.BaseMessage{Type: protocol.MsgTypeReviewRecoveredResult, ID: id},
+		Success:                      result.Success,
+		RestoreID:                    result.RestoreID,
+		State:                        result.State,
+		ArchiveChecksum:              result.ArchiveChecksum,
+		SourceNodeRole:               result.SourceNodeRole,
+		SourcePolicyStatus:           result.SourcePolicyStatus,
+		SourcePolicySHA256:           result.SourcePolicySHA256,
+		DestinationPolicySHA256:      result.DestinationPolicySHA256,
+		DestinationApprovalMode:      string(result.DestinationApprovalMode),
+		UnattendedSigningWarning:     result.UnattendedSigningWarning,
+		PolicyComparison:             result.PolicyComparison,
+		SecurityChanges:              protocolRecoveryPolicyChanges(result.SecurityChanges),
+		ChangedPaths:                 append([]string(nil), result.ChangedPaths...),
+		UnknownSourceSettings:        append([]string(nil), result.UnknownSourceSettings...),
+		Entries:                      protocolRecoveredReviewEntries(result.Entries),
+		ActiveConflicts:              protocolRecoveredActiveConflicts(result.ActiveConflicts),
+		ReviewToken:                  result.ReviewToken,
+		AcknowledgePolicyTransition:  result.AcknowledgePolicyTransition,
+		AcknowledgeUnattendedSigning: result.AcknowledgeUnattendedSigning,
+		ReplaceExisting:              result.ReplaceExisting,
+		Code:                         result.Code,
+		Error:                        result.Error,
+	}
+}
+
+func ProtocolActivateRecoveredResultMessage(id string, result adminproto.ActivateRecoveredResult) protocol.ActivateRecoveredResultMessage {
+	return protocol.ActivateRecoveredResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeActivateRecoveredResult, ID: id},
+		Success:     result.Success,
+		RestoreID:   result.RestoreID,
+		Activated:   protocolRecoveredReviewEntries(result.Activated),
+		KeyCount:    result.KeyCount,
+		Code:        result.Code,
+		Error:       result.Error,
+	}
+}
+
+func ProtocolRollbackRecoveredResultMessage(id string, result adminproto.RollbackRecoveredResult) protocol.RollbackRecoveredResultMessage {
+	return protocol.RollbackRecoveredResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRollbackRecoveredResult, ID: id},
+		Success:     result.Success,
+		RestoreID:   result.RestoreID,
+		KeyCount:    result.KeyCount,
+		Code:        result.Code,
+		Error:       result.Error,
+	}
+}
+
+func ProtocolPurgeRecoveredResultMessage(id string, result adminproto.PurgeRecoveredResult) protocol.PurgeRecoveredResultMessage {
+	return protocol.PurgeRecoveredResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePurgeRecoveredResult, ID: id},
+		Success:     result.Success,
+		RestoreID:   result.RestoreID,
+		Code:        result.Code,
+		Error:       result.Error,
+	}
+}
+
+func protocolRecoveredReviewEntries(items []adminproto.RecoveredReviewEntry) []protocol.RecoveredReviewEntry {
+	out := make([]protocol.RecoveredReviewEntry, len(items))
+	for i, item := range items {
+		out[i] = protocol.RecoveredReviewEntry{
+			Selector: item.Selector,
+			Category: item.Category,
+			KeyType:  item.KeyType,
+		}
+	}
+	return out
+}
+
+func protocolRecoveredActiveConflicts(items []adminproto.RecoveredActiveConflict) []protocol.RecoveredActiveConflict {
+	out := make([]protocol.RecoveredActiveConflict, len(items))
+	for i, item := range items {
+		out[i] = protocol.RecoveredActiveConflict{
+			Selector: item.Selector,
+			Category: item.Category,
+			KeyType:  item.KeyType,
+			SHA256:   item.SHA256,
+		}
+	}
+	return out
+}
+
+func protocolRecoveryPolicyChanges(items []adminproto.RecoveryPolicyChange) []protocol.RecoveryPolicyChange {
+	out := make([]protocol.RecoveryPolicyChange, len(items))
+	for i, item := range items {
+		out[i] = protocol.RecoveryPolicyChange{
+			Category:    item.Category,
+			Selector:    item.Selector,
+			Path:        item.Path,
+			Source:      item.Source,
+			Destination: item.Destination,
+		}
+	}
+	return out
+}
+
 func ProtocolKeysListMessage(id string, keys []adminproto.KeyInfo) protocol.KeysListMessage {
 	return protocol.KeysListMessage{
 		BaseMessage: protocol.BaseMessage{

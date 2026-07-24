@@ -5,9 +5,10 @@ package adminserver
 
 import (
 	"encoding/json"
-	"github.com/aplane-algo/aplane/internal/adminproto"
+	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -137,6 +138,116 @@ func TestBackupRestoreMessagesDispatchToBackupServices(t *testing.T) {
 	}
 	if len(restoreResult.Warnings) != 1 || restoreResult.Warnings[0].KeyType != "test.timed-policy.v1" {
 		t.Fatalf("restore warnings = %+v, want test.timed-policy.v1 warning", restoreResult.Warnings)
+	}
+}
+
+func TestRecoveredLifecycleMessagesDispatchToBackupServices(t *testing.T) {
+	ir := identity.New(identity.Config{
+		ID:            auth.DefaultIdentityID,
+		Authenticator: auth.NewTokenAuthenticator("token"),
+	})
+	ir.SetUnlocked()
+	restoreID := "0123456789abcdef0123456789abcdef"
+	reviewToken := strings.Repeat("a", 64)
+	svc := &stubServices{
+		recoverBackupResult: adminproto.RecoverBackupResult{
+			Success:   true,
+			RestoreID: restoreID,
+		},
+		listRecoveredResult: adminproto.ListRecoveredResult{
+			Batches: []adminproto.RecoveredBatchInfo{{
+				RestoreID:  restoreID,
+				EntryCount: 1,
+			}},
+		},
+		reviewRecoveredResult: adminproto.ReviewRecoveredResult{
+			Success:     true,
+			RestoreID:   restoreID,
+			ReviewToken: reviewToken,
+		},
+		activateRecoveredResult: adminproto.ActivateRecoveredResult{Success: true},
+		rollbackRecoveredResult: adminproto.RollbackRecoveredResult{Success: true},
+		purgeRecoveredResult:    adminproto.PurgeRecoveredResult{Success: true},
+	}
+	conn := &queueConn{}
+	session := NewSession(conn, svc.backupDeps())
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	dispatchAdminMessage(t, session, protocol.RecoverBackupMessage{
+		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRecoverBackup, ID: "recover-1"},
+		ArchivePath:      "backup.tar.gz",
+		Addresses:        []string{"ADDR1"},
+		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
+	})
+	dispatchAdminMessage(t, session, protocol.ListRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListRecovered, ID: "list-recovered-1"},
+	})
+	dispatchAdminMessage(t, session, protocol.ReviewRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeReviewRecovered, ID: "review-1"},
+		RestoreID:   restoreID,
+	})
+	dispatchAdminMessage(t, session, protocol.ActivateRecoveredMessage{
+		BaseMessage:                  protocol.BaseMessage{Type: protocol.MsgTypeActivateRecovered, ID: "activate-1"},
+		RestoreID:                    restoreID,
+		ReviewToken:                  reviewToken,
+		AcknowledgePolicyTransition:  true,
+		AcknowledgeUnattendedSigning: true,
+		ReplaceExisting:              true,
+	})
+	dispatchAdminMessage(t, session, protocol.RollbackRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRollbackRecovered, ID: "rollback-1"},
+		RestoreID:   restoreID,
+	})
+	dispatchAdminMessage(t, session, protocol.PurgeRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePurgeRecovered, ID: "purge-1"},
+		RestoreID:   restoreID,
+	})
+
+	if svc.recoverBackupCalls != 1 ||
+		svc.listRecoveredCalls != 1 ||
+		svc.reviewRecoveredCalls != 1 ||
+		svc.activateRecoveredCalls != 1 ||
+		svc.rollbackRecoveredCalls != 1 ||
+		svc.purgeRecoveredCalls != 1 {
+		t.Fatalf("recovery service calls = recover %d list %d review %d activate %d rollback %d purge %d",
+			svc.recoverBackupCalls,
+			svc.listRecoveredCalls,
+			svc.reviewRecoveredCalls,
+			svc.activateRecoveredCalls,
+			svc.rollbackRecoveredCalls,
+			svc.purgeRecoveredCalls,
+		)
+	}
+	if string(svc.lastRecoverBackup.ExportPassphrase) != "export-passphrase" ||
+		svc.lastReviewRestoreID != restoreID ||
+		!svc.lastActivateRecovered.AcknowledgePolicyTransition ||
+		!svc.lastActivateRecovered.AcknowledgeUnattendedSigning ||
+		!svc.lastActivateRecovered.ReplaceExisting {
+		t.Fatalf("projected recovery requests = recover %+v review %q activate %+v",
+			svc.lastRecoverBackup,
+			svc.lastReviewRestoreID,
+			svc.lastActivateRecovered,
+		)
+	}
+	wantTypes := []string{
+		protocol.MsgTypeRecoverBackupResult,
+		protocol.MsgTypeRecoveredList,
+		protocol.MsgTypeReviewRecoveredResult,
+		protocol.MsgTypeActivateRecoveredResult,
+		protocol.MsgTypeRollbackRecoveredResult,
+		protocol.MsgTypePurgeRecoveredResult,
+	}
+	if len(conn.writes) != len(wantTypes) {
+		t.Fatalf("response count = %d, want %d", len(conn.writes), len(wantTypes))
+	}
+	for i, wantType := range wantTypes {
+		var base protocol.BaseMessage
+		if err := json.Unmarshal(conn.writes[i], &base); err != nil {
+			t.Fatalf("unmarshal response %d: %v", i, err)
+		}
+		if base.Type != wantType {
+			t.Fatalf("response %d type = %q, want %q", i, base.Type, wantType)
+		}
 	}
 }
 
