@@ -652,10 +652,10 @@ through `appolicy` or `apstore policy`.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
 sentry overrides are keyed by Witness Key ID. These overrides apply to
-policy phases but are not projected through the scalar compatibility
-policy-settings IPC. They can be changed through authenticated full-document `replace_policy`,
-or by direct/offline YAML editing followed by `appolicy` or `apstore policy`
-signing before the signer will trust the edited document.
+policy phases and can be changed through authenticated full-document
+`replace_policy`, or by direct/offline YAML editing followed by `appolicy` or
+`apstore policy` signing before the signer will trust the edited document.
+There is no scalar policy-settings IPC.
 
 Validation:
 
@@ -938,7 +938,8 @@ Additional client-state notes:
 - `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then signer `config.yaml` `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
 - `apshell endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]` manually creates or replaces a `role: sentry` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--sentryport` is stored as the endpoint `signer_port` REST port used behind SSH sentry endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover sentry keys, copy tokens, or establish SSH host trust.
-- `apshell endpoints sync-sentries [--dry-run] [--yes]` scans configured `sentry` endpoints with authenticated `/keys`, extracts sentry-key `public_key_hex` values, validates each `component_key` Witness Key ID, and atomically rebuilds endpoint-local `published_sentries` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_sentries` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and Witness Key ID validation failures are hard errors and leave files unchanged. After discovery, the command prints Witness Key IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public sentry reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered sentries selectable from signer-side key generation clients such as `apadmin`.
+- `apshell endpoints discover-sentries [--dry-run]` scans configured `sentry` endpoints with authenticated `/keys`, extracts sentry-key `public_key_hex` values, validates each `component_key` Witness Key ID, and atomically rebuilds endpoint-local `published_sentries` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_sentries` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and Witness Key ID validation failures are hard errors and leave files unchanged. Discovery is local-only and does not require or update a connected primary signer.
+- `apshell endpoints sync-sentries [--dry-run] [--yes]` performs the same endpoint discovery, then prints Witness Key IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public sentry reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered sentries selectable from signer-side key generation clients such as `apadmin`.
 - `apshell endpoints sentries` lists the local endpoint-discovered sentry inventory by endpoint alias, Witness Key ID, and key type without calling remote endpoints.
 - `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. Human endpoint output identifies sentries by Witness Key ID and must not print raw sentry public keys. `show` is local-only, does not call `/keys`, and includes `last_seen_at` for that endpoint's published sentries; `delete` refuses to remove the signer endpoint or an endpoint with published sentries still referenced by derived runtime routing.
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
@@ -1811,11 +1812,11 @@ Client-signing and sentry component `transfer_policy` are both persisted in
 the normal policy load path and by `apstore policy check/sign/verify`.
 `appolicy` auto-targets the node-role domain and `--target signer|sentry`
 can explicitly select a domain for offline
-work; `apadmin` uses the node-role target online through admin IPC. Transfer
-policy is not projected through mutable admin IPC policy settings; guided edits
-use the shared full-document editor and are saved as whole-document YAML
-replacements. The `appolicy --yaml` / `--save` CLI path remains the scriptable
-offline editor for byte-preserving route-table edits.
+work; `apadmin` uses the node-role target online through admin IPC. There is no
+scalar policy-settings IPC; guided edits use the shared full-document editor
+and are saved as whole-document YAML replacements. The `appolicy --yaml` /
+`--save` CLI path remains the scriptable offline editor for byte-preserving
+route-table edits.
 Route matches are allow-to-continue, not approvals.
 
 Transaction-level hard policy skips passthrough and foreign slots because those

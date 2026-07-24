@@ -348,8 +348,8 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 
 	mustRegister(registry, &command.Command{
 		Name:        "endpoints",
-		Usage:       "endpoints list | endpoints show <alias> | endpoints sentries | endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run] | endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json> | endpoints sync-sentries [--dry-run] [--yes] | endpoints default <alias> | endpoints delete <alias>",
-		Description: "Manage client-local signer endpoint profiles",
+		Usage:       endpointsUsage,
+		Description: "Manage client-local signer and sentry endpoint profiles",
 		Category:    command.CategoryRemote,
 		Handler:     command.NewInternalHandler(r.cmdEndpoints),
 	})

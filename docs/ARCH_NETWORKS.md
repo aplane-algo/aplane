@@ -178,26 +178,13 @@ txn.GenesisHash -> resolver -> network token -> review_asa_amounts[token] / max_
 Unknown genesis hashes fail closed before a transaction can use the wrong policy
 bucket.
 
-### ASA Threshold Compatibility Contract
+### ASA Threshold Editing Contract
 
-The scalar admin policy protocol accepts display input:
-
-```text
-asset_id:amount, asset_id:amount
-```
-
-Examples:
-
-```text
-10458941:5
-10458941:5, 753507995:10
-```
-
-ASA IDs are required for entry and persistence. ASA unit names are not unique on
-chain, so symbols are labels only; they are never authoritative policy
-identifiers. Compatibility clients may accept symbol input as a convenience
-search over the signer-local ASA metadata cache, but the selected result must
-become a numeric ASA ID before the policy update is sent.
+The guided policy editor accepts ASA amount thresholds in display units.
+Concrete ASA guards may be entered with a numeric ASA ID or by selecting a
+unique symbol from the signer-local ASA metadata cache; the selected result is
+persisted as a numeric ASA ID. ASA unit names are not unique on chain, so
+symbols are labels only and are never authoritative policy identifiers.
 
 The signer maintains a signer-wide ASA metadata cache under the signer data
 directory. Built-in ASA metadata is the starter content for this same cache
@@ -211,8 +198,8 @@ operator entered the value. Configured guards render back as numeric ASA IDs wit
 display-unit amounts and cache-backed symbols when metadata is available.
 
 Symbol search is intentionally local-cache only. It does not query algod by
-symbol or name. If more than one cached ASA has the same unit name, the client
-must ask the operator to choose by numeric ASA ID.
+symbol or name. If more than one cached ASA has the same unit name, the editor
+requires the operator to choose by numeric ASA ID.
 
 The guided policy editor exposes the YAML `transfer_policy` route table.
 `apadmin` uses the shared editor online through the admin protocol; `appolicy`

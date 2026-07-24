@@ -797,9 +797,8 @@ check|sign|verify` operates on the active node-role policy. `appolicy`
 auto-targets the policy domain from `node.yaml`; `--target signer|sentry`
 can explicitly select a domain for standalone-file review, while store-backed
 role-incompatible targets fail closed. `apadmin` uses the same node-role target
-selection online. Transfer policy is not projected through the mutable admin IPC policy
-settings payload; the shared full-document editor renders and saves it through
-canonical YAML.
+selection online. There is no scalar policy-settings IPC. The shared
+full-document editor renders and saves transfer policy through canonical YAML.
 
 `appolicy` is the local offline policy editor. In production mode it defaults
 to `--target auto`, reads root `node.yaml`, and edits `policy.yaml` using the
@@ -948,4 +947,5 @@ Implementation source of truth:
 - `internal/signerapp/signing/always_review.go`: Always Review evaluation.
 - `internal/signerapp/signing/approval.go`: approval prompts and operator default behavior.
 - `internal/signerapp/signing/service.go`: phase ordering.
-- `internal/signerapp/admin/service.go`: compatibility admin policy read/write service.
+- `internal/signerapp/admin/service.go`: admin policy snapshot, validation, and
+  whole-document replacement service.

@@ -16,6 +16,16 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 )
 
+const endpointsUsage = "endpoints list | " +
+	"endpoints show <alias> | " +
+	"endpoints sentries | " +
+	"endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run] | " +
+	"endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json> | " +
+	"endpoints discover-sentries [--dry-run] | " +
+	"endpoints sync-sentries [--dry-run] [--yes] | " +
+	"endpoints default <alias> | " +
+	"endpoints delete <alias>"
+
 func (r *REPLState) cmdNetwork(args []string, _ interface{}) error {
 	return setNetwork(r, args)
 }
@@ -59,7 +69,7 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints sentries | endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run] | endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json> | endpoints sync-sentries [--dry-run] [--yes] | endpoints default <alias> | endpoints delete <alias>")
+		return fmt.Errorf("usage: %s", endpointsUsage)
 	}
 	switch args[0] {
 	case "list":

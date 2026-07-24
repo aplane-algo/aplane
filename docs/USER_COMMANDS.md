@@ -684,6 +684,7 @@ endpoints show <alias>
 endpoints sentries
 endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]
 endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>
+endpoints discover-sentries [--dry-run]
 endpoints sync-sentries [--dry-run] [--yes]
 endpoints default <alias>
 endpoints delete <alias>
@@ -706,12 +707,16 @@ behind that endpoint. It writes routing only. Tokens are still obtained with
 `request-token --endpoint <alias>`, and SSH host trust still uses the known-hosts
 flow.
 
-`endpoints sync-sentries` queries configured sentry endpoints using their
-endpoint token files, refreshes local endpoint-published sentry inventory,
-prints Witness Key IDs for confirmation, and then syncs the public
-sentry references into the connected signer identity. Temporarily unavailable
-sentry endpoints are skipped and keep their previous local inventory;
-authentication failures and malformed endpoint metadata fail closed.
+`endpoints discover-sentries` queries configured sentry endpoints using their
+endpoint token files and refreshes local endpoint-published sentry inventory.
+It is local-only and does not require or update a connected primary signer.
+Temporarily unavailable sentry endpoints are skipped and keep their previous
+local inventory; authentication failures and malformed endpoint metadata fail
+closed.
+
+`endpoints sync-sentries` performs the same discovery, prints Witness Key IDs
+for confirmation, and then syncs the public sentry references into the connected
+signer identity.
 
 `endpoints sentries` lists the local endpoint-discovered sentry inventory by
 endpoint alias, Witness Key ID, and key type without calling remote endpoints.
@@ -725,6 +730,7 @@ endpoints create --alias local-sentry --endpoint ssh://127.0.0.1:2223 --sentrypo
 request-token --endpoint main
 request-token --endpoint local-sentry
 connect main
+endpoints discover-sentries
 endpoints sync-sentries
 endpoints sentries
 endpoints list

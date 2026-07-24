@@ -24,7 +24,9 @@ The project uses a layered testing approach:
 
 1. **Unit Tests**: Fast, isolated tests for individual components (Go test framework)
 2. **API Contract Tests**: Golden fixture compatibility tests for signer API wire surfaces
-3. **Architecture Tests**: Repository layering and signing-flow guard tests under `test/arch`
+3. **Architecture Tests**: Layering, guarded-surface, signing-flow,
+   bounded-vocabulary, key-type inventory, managed-credential, and
+   witness-boundary guards under `test/arch`
 4. **Integration Tests**: End-to-end tests against an explicitly selected Algorand network profile, either public testnet or a running AlgoKit LocalNet (Go test framework)
 5. **Docker Install Smoke Tests**: Local and Systemd installer/uninstaller checks
 6. **REPL Tests**: Interactive command-line testing for user workflows (manual)
@@ -732,7 +734,11 @@ Contract decoding policy:
 
 ## Docker Install Smoke Tests
 
-The installer smoke tests build or consume a release tarball and run it inside Ubuntu containers. They validate packaging, install layouts, uninstall behavior, and the live-daemon gates that prevent replacing files while a signer is running.
+The Docker smoke tests build or consume a release tarball and run it inside
+Ubuntu containers. The local four-node path validates the installed product
+across signer, sentry, client/admin, and LocalNet nodes. The systemd path
+focuses on packaging, install and uninstall behavior, and the live-daemon gate
+that prevents replacing files while a signer is running.
 
 When a smoke script builds its own tarball, `--version` is an archive label and
 defaults to `docker-smoke`, producing names such as
@@ -742,16 +748,34 @@ is derived from `install.sh`'s minimum supported upgrade version with a
 installer gate with comparable metadata.
 
 ```bash
-# Local, rootless install mode in a non-systemd container
+# Four-node local build using rootless APlane installs
 make docker-local-test
+
+# Four-node test using published APlane and SDK packages
+make docker-local-release-test
 
 # Systemd install mode in a systemd container
 make docker-systemd-test
 ```
 
-`make docker-local-test` uses the Docker local install smoke path. It verifies the rootless layout, bundled binaries including `approbe`, `appass --check`, token request approval through `apapprover`, `apshell status`, the live-signer install gate, stopped in-place upgrade state preservation, installed-uninstaller behavior, and uninstall state preservation.
+`make docker-local-test` runs `scripts/docker-local-four-node-smoke.sh`. It
+starts signer, sentry, client/admin, and AlgoKit-style LocalNet algod/KMD
+containers on one Docker network. It verifies local install layouts, shared
+LocalNet reachability, SSH token provisioning for signer and sentry endpoints,
+sentry enrollment and discovery, guarded signing, Corridor allowlist and
+external-admin behavior, and guarded preparation/signing through a local Python
+SDK checkout.
+
+`make docker-local-release-test` runs the same topology and product assertions,
+but installs APlane from GitHub release assets, Python from PyPI, and TypeScript
+from npm. It also exercises guarded signing through both published SDKs.
 
 `make docker-systemd-test` uses `scripts/docker-systemd-smoke.sh`. It verifies `/usr/local/bin` and `/var/lib/apsigner` layout, systemd service status, memory-locking unit settings, `appass --check`, token request approval, the active-service install gate, stopped in-place systemd upgrade state preservation, and uninstall signer-state preservation.
+
+The older focused single-container rootless lifecycle smoke remains available
+as `scripts/docker-local-smoke.sh`. Invoke it directly when testing
+`approbe`-gated reinstall, stopped in-place upgrade, installed uninstaller, and
+state-preservation behavior; no Make target currently selects that script.
 
 ## REPL Testing
 

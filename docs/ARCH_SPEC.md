@@ -164,7 +164,7 @@ Documentation notes:
 | Layer | Packages |
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/signerapp/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
-| Engine | `internal/apshellapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
+| Engine | `internal/apshellapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
@@ -547,10 +547,13 @@ role-incompatible targets fail closed. Direct edits to `policy.yaml` are checked
 and signed with `apstore policy`. Admin IPC policy messages are
 target-aware (`signer|sentry`), validate replacements before writing, use
 `expected_current_sha256` for optimistic concurrency, write the YAML plus a
-fresh sidecar, and update the bound runtime immediately on success. The limited
-admin policy settings payload is a scalar compatibility projection; YAML-only
-fields such as `key_overrides` are edited through the shared full-document
-editor and are visible in canonical YAML snapshots.
+fresh sidecar, and update the bound runtime immediately on success. The policy
+admin surface reads, validates, and replaces only complete YAML documents
+through `get_policy_snapshot`, `validate_policy`, and `replace_policy`,
+including YAML-only fields such as `key_overrides`. There is no scalar
+policy-settings IPC. Separate admin-settings IPC reports identity/process
+configuration and status and mutates only its documented writable settings; it
+does not project policy fields.
 
 The policy document may contain YAML-only `key_overrides`; during normal
 signing, the effective policy is selected by signing auth address, not by
@@ -561,7 +564,7 @@ Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
 
-Scalar ASA threshold editing uses signer-wide ASA metadata under `cache/<network>_asa_cache.json` in the signer data directory. Signer code reaches this cache through `internal/signerapp/asametadata.Store`, not by treating it as APCLIENT_DATA cache state. This metadata is shared by all identities because ASA metadata is public chain state, not identity-private state. Built-in ASA metadata is starter data for the same effective cache model; successful live algod lookups for numeric ASA IDs are persisted to the signed cache. Enforcement remains raw-unit and numeric-ASA-ID based, so the metadata cache is not authoritative for requiring review, accepting, or rejecting transactions.
+ASA amount-threshold editing in display units uses signer-wide ASA metadata under `cache/<network>_asa_cache.json` in the signer data directory. Signer code reaches this cache through `internal/signerapp/asametadata.Store`, not by treating it as APCLIENT_DATA cache state. This metadata is shared by all identities because ASA metadata is public chain state, not identity-private state. Built-in ASA metadata is starter data for the same effective cache model; successful live algod lookups for numeric ASA IDs are persisted to the signed cache. Enforcement remains raw-unit and numeric-ASA-ID based, so the metadata cache is not authoritative for requiring review, accepting, or rejecting transactions.
 
 LocalNet setup is owned by `aplocalnet` (`cmd/aplocalnet` plus
 `internal/aplocalnet`). It is an operator-run setup utility, not a long-running
@@ -1044,7 +1047,7 @@ First-class built-in command families include:
 - alias/set commands: `alias`, `sets`
 - rekey commands: `rekey`, `unrekey`
 - signer/key-management commands: `keys`, `keytypes`, `generate`, `delete`
-- config/toggle/connectivity/session commands: `network`, `write`, `verbose`, `simulate`, `config`, `connect`, `request-token`, `clear`/`cls`, `quit`/`exit`/`q`
+- config/toggle/connectivity/session commands: `network`, `write`, `verbose`, `simulate`, `config`, `connect`, `disconnect`, `request-token`, `endpoints`, `clear`/`cls`, `quit`/`exit`/`q`
 - scripting/plugin commands: `script`, `js`, `jssave`, `jslist`
 
 Command handling constraints:
@@ -1363,15 +1366,16 @@ Operator handoff and manual endpoint setup use two paths:
 - SSH host trust remains owned by the existing known-hosts flow.
 
 Sentry inventory is discovered explicitly with
-`apshell endpoints sync-sentries`. It queries authenticated `/keys` on
+`apshell endpoints discover-sentries`. It queries authenticated `/keys` on
 configured sentry endpoints, validates Witness Key ID metadata, and rebuilds
-reachable endpoints' `published_sentries` inventory. Temporarily unavailable
-or locked endpoints preserve their prior local inventory; authentication
-failures, malformed responses, duplicate public keys across endpoints, and
-Witness Key ID validation errors are hard failures that leave files unchanged.
-After discovery, the command prints Witness Key IDs and asks before syncing the
-public inventory into the connected signer identity's sentry reference
-library for generation-time selection.
+reachable endpoints' local `published_sentries` inventory without requiring a
+connected primary signer. Temporarily unavailable or locked endpoints preserve
+their prior local inventory; authentication failures, malformed responses,
+duplicate public keys across endpoints, and Witness Key ID validation errors
+are hard failures that leave files unchanged. `apshell endpoints
+sync-sentries` performs the same discovery, then prints Witness Key IDs and
+asks before syncing the public inventory into the connected signer identity's
+sentry reference library for generation-time selection.
 
 Runtime guarded-send routing maps the embedded sentry public key to the
 endpoint whose `published_sentries` contains that key. If no explicit mapping

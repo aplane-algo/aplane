@@ -187,6 +187,7 @@ aplane/
 │   ├── signerapp/signertui/       # Shared signer administration TUI package
 │   ├── engine/                    # Reusable client mechanics and transaction operations
 │   ├── engine/connect/            # Remote signer connection and signer-facing HTTP
+│   ├── engine/guarded/            # Guarded and bounded client orchestration
 │   ├── clientstate/               # Client-side alias/set/cache mutation ownership
 │   ├── cache/                     # Disk-backed client caches
 │   ├── addressbook/, refname/      # Address resolution and persisted alias/set name rules
@@ -312,10 +313,21 @@ signing / passthrough flows when they need explicit control over a multi-party
 workflow. Apsigner does not distinguish simulation from submission; both use
 ordinary signing policy, approval, and audit behavior.
 
-**Endpoints:**
-- `POST /sign` — Sign transactions (supports sign, passthrough, and foreign-context modes)
-- `POST /sign/cancel` — Cancel a pending manual approval prompt by `/sign` request ID
-- `POST /plan` — Preview group building (dummies, fees, group ID) without signing
+**Signing endpoints (summary):**
+- Ordinary: `POST /sign` signs transactions in sign, passthrough, and
+  foreign-context modes; `POST /sign/cancel` cancels a pending manual approval
+  prompt by `/sign` request ID; `POST /plan` previews group building without
+  signing.
+- Guarded: `POST /sign/component` produces sentry components and
+  `POST /sign/assemble` assembles guarded-account signed groups.
+- Bounded: `POST /sign/bounded-admin` prepares external contract-admin
+  partials, `POST /sign/bounded-component` produces approved bounded base
+  components, and `POST /sign/bounded-assemble` assembles bounded-sentry signed
+  groups.
+
+See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the full REST inventory and wire
+contracts, [ARCH_SENTRY.md](ARCH_SENTRY.md) for guarded choreography, and
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) for bounded choreography.
 
 **Multi-party signing:** Transactions can be marked as **foreign** (`txn_bytes_hex` without `auth_address`) to include them in group building without signing. This works on both `/plan` and `/sign`: `/plan` returns canonical unsigned transactions, while `/sign` returns `""` in foreign positions and signed bytes only for signer-owned or passthrough positions. An optional `lsig_size` hint enables correct dummy calculation for the other party's key type. See [`ARCH_TXNFLOW.md`](ARCH_TXNFLOW.md) for details.
 

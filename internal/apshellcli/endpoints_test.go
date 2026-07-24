@@ -83,6 +83,26 @@ func TestParseEndpointCreateSentryArgsAcceptsHyphenatedPortFlag(t *testing.T) {
 	}
 }
 
+func TestEndpointsUsageListsDiscoverSentries(t *testing.T) {
+	state := &REPLState{}
+	registry := state.initCommandRegistry()
+	cmd, ok := registry.Lookup("endpoints")
+	if !ok {
+		t.Fatal("endpoints command is not registered")
+	}
+	if !strings.Contains(cmd.Usage, "endpoints discover-sentries [--dry-run]") {
+		t.Fatalf("endpoints registry usage = %q, want discover-sentries", cmd.Usage)
+	}
+
+	err := state.cmdEndpoints(nil, nil)
+	if err == nil {
+		t.Fatal("cmdEndpoints() error = nil, want usage")
+	}
+	if !strings.Contains(err.Error(), "endpoints discover-sentries [--dry-run]") {
+		t.Fatalf("cmdEndpoints() error = %q, want discover-sentries", err)
+	}
+}
+
 func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKeyHex := strings.Repeat("ab", witness.Falcon1024PublicKeySize)
