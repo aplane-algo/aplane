@@ -143,6 +143,24 @@ func (r Restorer) RecoverEntry(entry *InspectedBackupEntry, masterKey []byte) (*
 	}, nil
 }
 
+// ApplyRecoveredEntry applies one already validated recovered entry to active
+// storage. The caller must establish durable rollback intent before calling
+// this method.
+func (r Restorer) ApplyRecoveredEntry(entry *recovered.Entry, masterKey []byte) (string, error) {
+	if entry == nil {
+		return "", fmt.Errorf("recovered entry is nil")
+	}
+	inspected := &InspectedBackupEntry{
+		Selector:     entry.Selector,
+		Category:     entry.Category,
+		KeyType:      entry.KeyType,
+		KeyJSON:      entry.KeyJSON,
+		TemplateYAML: entry.TemplateYAML,
+		TemplateType: entry.TemplateType,
+	}
+	return r.applyInspectedBackupEntry(inspected, masterKey)
+}
+
 // RecoverManagedBackup decrypts selected entries from one identity-managed
 // archive and atomically publishes an inactive destination-encrypted batch.
 // An empty selectors slice recovers every entry in the archive.

@@ -36,3 +36,21 @@ func RegularFileSHA256(path string) (string, int64, error) {
 	}
 	return hex.EncodeToString(hash.Sum(nil)), size, nil
 }
+
+// ReadRegularFile reads one regular file and returns its permission bits.
+// Server binaries use the Linux/Darwin implementation, which rejects
+// final-component symlinks atomically.
+func ReadRegularFile(path string) ([]byte, os.FileMode, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, 0, fmt.Errorf("path is not a regular file: %s", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	return data, info.Mode().Perm(), nil
+}
