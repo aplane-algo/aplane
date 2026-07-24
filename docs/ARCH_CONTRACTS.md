@@ -330,13 +330,19 @@ A profile with `bounded.sentry` may not declare a
 `spending_key`-authorized rekey. The combination would bypass the spend-only
 sentry gate and is not routable through `bounded-sentry1`; schema-v2 template
 and durable metadata validation reject it. Sentry-enabled profiles use
-`admin_key` rekey for recovery.
+`admin_key` rekey to escape a failed sentry or replace the current program.
+That path requires both the base spending signature and the external admin
+signature; the admin key cannot recover a lost spending key.
 
 V1 also supports `policy: merkle_allowlist`. It accepts only a required
 `recipients_parameter` bound to `address[]` with 1-65,536 entries and requires
 exactly one 512-byte `merkle_allowlist_proof` derived argument for that same
 parameter. The composer computes the fixed-depth root and emits the complete
 proof verifier; author TEAL, asset filters, and amount options are forbidden.
+Recipients are unique raw address public keys sorted ascending; leaves,
+padding, commutative internal-node hashing, and bottom-up proof ordering are
+defined normatively in
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
 
 ### External Contract Admin Artifact Contract
 

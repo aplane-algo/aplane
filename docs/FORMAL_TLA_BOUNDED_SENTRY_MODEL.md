@@ -4,12 +4,19 @@
 > generated 99,584 distinct reachable states at depth 4 and found no
 > counterexamples for `Safety`.
 
-This model checks the security-bearing order and final acceptance boundary of
-the `bounded-sentry1` choreography. It complements the legacy guarded assembly
-model: bounded sentry releases an ordinary bounded base signature first,
-requests the sentry only after signer policy and operator approval, and then
-uses a distinct bounded assembly endpoint to derive and place the declared
-arguments. Its external-admin path deliberately bypasses the sentry.
+This model checks the first-party client's stage order and the security-bearing
+final acceptance boundary of the `bounded-sentry1` choreography. It
+complements the legacy guarded assembly model: first-party orchestration
+releases an ordinary bounded base signature, requests the sentry only after
+signer policy and operator approval, and then uses a distinct bounded assembly
+endpoint to derive and place the declared arguments. Its external-admin path
+deliberately bypasses the sentry.
+
+BS1 is an orchestration property, not a sentry-endpoint authorization claim.
+The sentry endpoint does not receive or verify the prior base component, and a
+direct client may request a sentry component first. Such a component cannot
+produce spend output without the independently verified base authority modeled
+by BS3.
 
 The spec lives at [formal/bounded_sentry.tla](formal/bounded_sentry.tla).
 
@@ -17,7 +24,7 @@ The spec lives at [formal/bounded_sentry.tla](formal/bounded_sentry.tla).
 
 | Invariant | Meaning | TLA+ predicate |
 |---|---|---|
-| BS1 | User signer policy, approval, and base release precede every sentry request | `BS1_UserFirst` |
+| BS1 | In the modeled first-party flow, user policy, approval, and base release precede the sentry request | `BS1_UserFirst` |
 | BS2 | External-admin completion never requests or consumes a sentry | `BS2_AdminBypassesSentry` |
 | BS3 | Spend output requires valid base and sentry authorities | `BS3_SpendAuthoritiesVerified` |
 | BS4 | Exact target coverage and path-valid argument sources gate output | `BS4_DeclaredArgumentsOnly` |
@@ -44,9 +51,10 @@ planned -> base_released -> sentry_released -> output
 The transition predicates transcribe the relevant decision boundaries in
 `internal/engine/guarded/submit.go` and
 `internal/signerapp/signing/bounded_sentry.go`. Unlike the one-shot assembly
-models, the depth-4 state graph checks that the sentry transition is not
-reachable before a successful base release and that the admin branch never
-enters it.
+models, the depth-4 state graph checks that the first-party orchestration's
+sentry transition is not reachable before a successful base release and that
+the admin branch never enters it. It does not model arbitrary direct calls to
+the sentry endpoint.
 
 Validation outcomes are intentionally abstract booleans. The model checks that
 the implementation consumes each outcome at the correct gate; it does not

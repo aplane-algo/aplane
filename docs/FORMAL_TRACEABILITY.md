@@ -436,7 +436,7 @@ target-count field only duplicated states without adding coverage.
 
 | Invariant | TLA+ predicate |
 |---|---|
-| BS1 (user first) | `BS1_UserFirst` |
+| BS1 (first-party user-first choreography) | `BS1_UserFirst` |
 | BS2 (admin bypasses sentry) | `BS2_AdminBypassesSentry` |
 | BS3 (both spend authorities verified) | `BS3_SpendAuthoritiesVerified` |
 | BS4 (declared arguments only) | `BS4_DeclaredArgumentsOnly` |

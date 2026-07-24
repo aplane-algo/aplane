@@ -38,6 +38,11 @@ discarded or decommissioned and recreated from this template. The key type,
 canonical program, metadata, and `bounded-sentry1` flow documented here become
 the Corridor v1 compatibility baseline.
 
+The complete sentry-bearing profile encoding, behavior parameters, Merkle
+root/proof, argument masks, program binding, and admin transcript are frozen
+together in
+[bounded1 Golden vector 2](ARCH_BOUNDED_DSA.md#golden-vector-2-corridor).
+
 ## Accepted Transactions
 
 Every accepted path requires the Falcon spending signature and
@@ -53,6 +58,10 @@ parameter. Self receivers bypass proof verification. Every spend also requires
 the enrolled sentry's Falcon signature over the `APLANE_SENTRY_V1` sentry-role
 TxID message.
 
+Root construction, recipient canonicalization, duplicate rejection, padding,
+node hashing, and proof order are frozen by the
+[bounded1 Merkle allowlist compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
+
 Corridor rejects close remainder, asset close, clawback, hybrid rekey+spend,
 unsupported transaction types, missing or malformed proofs, missing sentry
 authorization, and arguments supplied from the wrong source.
@@ -60,6 +69,8 @@ authorization, and arguments supplied from the wrong source.
 The only administrative operation is the bounded pure-rekey normal form. It
 requires the spending signature plus the distinct external contract-admin
 signature. It does not require or permit a sentry signature or Merkle proof.
+The admin witness is therefore a rekey co-authorizer, not an independent
+spending-key recovery key.
 
 ## Custody and Generation
 
@@ -80,6 +91,17 @@ The repository YAML is an install source only. Fresh signer identities do not
 enable Corridor by default; operators import and enable it through the normal
 KeyType Library workflow before generation.
 
+The custody consequences are asymmetric:
+
+- a stolen spending key cannot rekey the account without the admin witness;
+- the spending key plus the admin witness can rekey away from an unavailable
+  or compromised sentry or replace the current Corridor program;
+- the admin witness cannot recover an account after the spending key is lost.
+
+Operators must therefore back up the spending key and admin witness as distinct
+required authorities rather than treating the admin witness as a substitute
+for spending-key recovery.
+
 ## Spend Choreography
 
 The frozen online flow is:
@@ -93,14 +115,26 @@ client -> algod         submit or simulate exact signed group
 
 The first call finalizes group bytes and fees, applies user-signer policy and
 operator approval, and releases the base signature args plus a spending-key
-assembly receipt. Only then may the client contact the sentry. Final assembly
+assembly receipt. First-party clients contact the sentry only after that
+release. The sentry endpoint does not verify a prior base component, so this
+order is client choreography for audit quality, efficiency, and predictable
+operator UX rather than a sentry-enforced security property. Final assembly
 verifies the base signature, receipt, sentry signature, durable metadata,
 source/path masks, derived Merkle proof, frozen TxID, LogicSig address, and
 authorizer binding.
 
-Ordinary `/sign` rejects Corridor spends, and the client rejects groups mixing
-`sentry1` and `bounded-sentry1` targets. Contract-admin rekey uses
-`/sign/bounded-admin` plus `aprekey` and never contacts the sentry.
+Ordinary `/sign` rejects Corridor spends. First-party clients reject groups
+mixing `sentry1` and `bounded-sentry1` targets because they do not implement a
+combined assembly workflow; this is not a signer-side whole-group prohibition.
+Contract-admin rekey uses `/sign/bounded-admin` plus `aprekey` and never
+contacts the sentry.
+
+The sentry component is transaction-scoped: it binds the sentry role and TxID,
+not the Corridor account, authorizer, or program binding. Final assembly and
+the LogicSig perform those account/program checks. Reusing one sentry key
+across Corridor accounts therefore creates a shared transaction-policy domain;
+per-authorizer sentry policy would require a new component-message and LogicSig
+version. See [ARCH_SENTRY.md](ARCH_SENTRY.md#component-message).
 
 ## Close and Decommission
 
@@ -110,6 +144,10 @@ two-step governance action:
 1. use the bounded contract-admin ceremony to pure-rekey the account to a
    successor authorizer; then
 2. use that successor authorizer to close the ALGO account or asset positions.
+
+Step 1 requires both the existing spending key and the contract-admin witness.
+It can escape a failed sentry or current policy, but it cannot recover a lost
+spending key.
 
 `CloseRemainderTo`, `AssetCloseTo`, and `AssetSender` remain zero on every
 transaction authorized by Corridor itself.

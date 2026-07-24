@@ -746,7 +746,12 @@ the admin-key rekey path but does not stop policy-compliant spending. See
 Do not combine a bounded sentry gate with a spending-key-authorized rekey.
 That rekey would bypass the spend-only sentry authority and has no
 `bounded-sentry1` signing route. V1 validation rejects the combination;
-sentry-enabled bounded recovery must use an external contract-admin key.
+escaping a failed sentry requires an external contract-admin rekey.
+
+The external admin key is not an independent recovery key. The rekey still
+requires the spending signature. Losing the spending key is fatal even when
+the admin witness survives; operators must back up both authorities
+independently.
 
 #### Guarded Sentry Provider
 
@@ -819,7 +824,8 @@ the template's Layer 3 condition.
 The account cannot be rekeyed before the unlock round, including as an
 emergency response to spending-key compromise. This preserves the timelock as
 an authority condition; use the external-admin allowlist or a reviewed custom
-policy when an earlier independent recovery path is required.
+policy when an earlier separately co-authorized rekey path is required. The
+external-admin path still requires the spending key.
 
 ##### `aplane.falcon1024-allowlist.v2`
 
@@ -828,11 +834,15 @@ policy when an earlier independent recovery path is required.
 
 This template stores the public receiver allowlist in the encrypted key file
 and commits the LogicSig to a fixed-depth Merkle root derived from that list.
-The root is built from unique address public keys sorted ascending, with leaves
-`sha256(0x00 || pubkey)`, padding to 65,536 leaves with `sha256(0x00)`, and
-internal nodes `sha256(0x01 || min(left,right) || max(left,right))`. For a
-non-self destination, the signer generates the 512-byte proof and appends it to
-the LogicSig arguments; callers do not pass `arg:proof`.
+Duplicate public keys are rejected. The root is built from the remaining
+address public keys sorted ascending, with leaves `sha256(0x00 || pubkey)`,
+padding to 65,536 leaves with `sha256(0x00)`, and internal nodes
+`sha256(0x01 || min(left,right) || max(left,right))`. For a non-self
+destination, the signer generates the 512-byte proof as sixteen 32-byte
+siblings ordered from the leaf upward and appends it to the LogicSig arguments;
+callers do not pass `arg:proof`. Child hashes are sorted at each level, so the
+proof contains no direction bits. See the normative
+[Merkle compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
 
 Payment and asset receivers may be the sender itself without a proof. The
 bounded envelope rejects payment close, asset close, clawback, all non-transfer

@@ -157,12 +157,17 @@ signer policy still cannot move funds the sentry policy refuses, and a
 compromised client credential cannot drive guarded sends past the signer's
 review rules or operator approval.
 
-Gate ordering is user-first: the sentry only evaluates
-requests the user side has already committed to, so submit-flow sentry audit
-records correspond to user-approved transactions, and sentry component
-signatures are not issued for requests an operator later denies. Simulation
-uses this same ordering and the same gates because the assembled result is an
-executable signed group.
+First-party client choreography is user-first: it completes the user-side gate
+and obtains the user or bounded base component before requesting a sentry
+component. This avoids sentry work and ordinary first-party audit events for
+transactions the user signer rejects, and it gives submission and simulation
+the same predictable operator flow.
+
+The sentry endpoint does not receive or verify the prior user component. A
+client that calls sentry-role `/sign/component` directly can ask the sentry to
+evaluate the transaction first. The resulting sentry component is not spending
+authority by itself: final assembly and the on-chain program still require the
+matching user or base spending signature and all account/program checks.
 
 The guarded key is validated against signer inventory metadata — no key
 decryption — before the gates run, so a rejected request or an operator prompt
@@ -294,7 +299,8 @@ The submit flow is:
 
 ## Bounded-Sentry Transaction Flow
 
-For `bounded-sentry1`, the client uses a distinct user-first choreography:
+For `bounded-sentry1`, the first-party client uses a distinct user-first
+choreography:
 
 1. Resolve the bounded target from `signing_flow` and durable inventory.
 2. Send the group to `/sign/bounded-component`. The signer finalizes grouping
@@ -308,9 +314,12 @@ For `bounded-sentry1`, the client uses a distinct user-first choreography:
 5. The signer verifies all sources, derives declared Merkle proofs, constructs
    the metadata-declared argument layout, and returns the executable group.
 
-The client never asks the sentry first. It rejects a group that mixes
-`sentry1` and `bounded-sentry1` targets because those flows have distinct user
-component and assembly contracts. Non-target positions are carried as exact
+The first-party client does not ask the sentry first. It also rejects a group
+that mixes `sentry1` and `bounded-sentry1` targets because those flows have
+distinct component and assembly contracts. These are client orchestration
+constraints, not sentry-endpoint or signer-side whole-group security checks.
+Signer endpoints validate the targets they sign or assemble; they do not infer
+the flow of foreign group positions. Non-target positions are carried as exact
 passthrough signed bytes in the final assembly request.
 
 ## Guarded Simulation

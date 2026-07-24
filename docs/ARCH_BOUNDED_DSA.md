@@ -17,10 +17,11 @@ the v1 compatibility baseline.
 
 A bounded authorization contract is a stateless LogicSig program that
 defines the complete transaction envelope accepted for an account. Its
-contract admin key is an independent witness key in standalone custody that
-authorizes a named administrative operation. It is not Algorand Governance,
-the `apadmin` client, or an ASA manager key. The key form is shared with sentry
-witnesses, but an individual keypair should never be enrolled in both roles.
+contract admin key is a separately custodied witness key that co-authorizes a
+named administrative operation with the base spending key. It is not an
+independent spending-key recovery key, Algorand Governance, the `apadmin`
+client, or an ASA manager key. The key form is shared with sentry witnesses,
+but an individual keypair should never be enrolled in both roles.
 
 `bounded1` has three ordered regions:
 
@@ -33,8 +34,10 @@ witnesses, but an individual keypair should never be enrolled in both roles.
 
 Sentry-enabled bounded1 profiles are spend-gated profiles and may not declare
 a spending-key-authorized rekey. V1 rejects that combination during template,
-profile, and durable-metadata validation; recovery for a sentry-enabled
-profile must use an external contract-admin rekey.
+profile, and durable-metadata validation. Escaping a failed or compromised
+sentry therefore uses an external contract-admin rekey, which still requires
+the base spending signature. Loss of the spending key is not recoverable
+through the contract-admin path.
 
 For profile `P`:
 
@@ -148,8 +151,9 @@ effect surface:
 
 Every profile rejects close, clawback, hybrid rekey, and non-transfer types.
 The timelock intentionally prevents emergency spending-key rekey until its
-Layer 3 condition passes. The rekey-locked allowlist is the independent
-recovery option when that tradeoff is unsuitable.
+Layer 3 condition passes. The rekey-locked allowlist provides a separately
+co-authorized rekey path when that tradeoff is unsuitable, but that path still
+requires the spending key.
 
 Compiler-backed maximum-path measurements are frozen by
 `TestBundledBoundedCompiledBudgetMatrix`:
@@ -404,6 +408,177 @@ Whitespace and line wrapping above are presentation only. Code tests decode
 the frozen canonical profile and behavior hexadecimal strings in
 `TestBoundedGoldenVector`; that test is authoritative for every byte.
 
+### Golden vector 2: Corridor
+
+The integrated Corridor vector uses the shipped
+`aplane.corridor.v1` template and these deterministic inputs:
+
+```text
+full_key_type: aplane.corridor.v1
+base_key_type: aplane.falcon1024.v1
+teal_version: 12
+spending_public_key: 1,793 bytes of 0x11
+sentry_public_key: 1,793 bytes of 0x22
+falcon_admin_public_key: 1,793 bytes of 0x33
+recipient input order:
+  EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI
+  CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM
+transaction_id: 32 bytes of 0x44
+sentry_present: 1
+corridor_selected_proof_recipient:
+  EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI
+corridor_canonical_first_recipient:
+  CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM
+```
+
+The deliberately reversed recipient input confirms that behavior-parameter
+normalization and Merkle construction use the canonical ascending order. The
+frozen argument layout is:
+
+| Index | Name | Source | Max bytes | Spend | Spending rekey | Admin rekey |
+|---:|---|---|---:|---|---|---|
+| 0 | `base_signature_0` | `base_signature` | 1280 | `required` | `required` | `required` |
+| 1 | `merkle_proof` | `derived` | 512 | `optional` | `forbidden` | `forbidden` |
+| 2 | `sentry_signature` | `sentry` | 1280 | `required` | `forbidden` | `forbidden` |
+| 3 | `admin_signature` | `admin` | 1280 | `forbidden` | `forbidden` | `required` |
+
+Expected canonical encodings:
+
+```text
+corridor_canonical_bounded_profile_length: 588
+corridor_canonical_bounded_profile_hex:
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
+  08626f756e646564310000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
+  65790000000961646d696e5f6b6579000000046e6f6e65000000010000000773
+  656e747279310000001c61706c616e652e7769746e6573732d66616c636f6e31
+  3032342e76310000050000000001000000057370656e64000000106d65726b6c
+  655f616c6c6f776c6973740000000100000500000000010000000c6d65726b6c
+  655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f70726f6f
+  660000000a726563697069656e74730000020000000000000000040000000000
+  000010626173655f7369676e61747572655f300000000e626173655f7369676e
+  6174757265000005000000000872657175697265640000000872657175697265
+  64000000087265717569726564000000010000000c6d65726b6c655f70726f6f
+  66000000076465726976656400000200000000086f7074696f6e616c00000009
+  666f7262696464656e00000009666f7262696464656e00000002000000107365
+  6e7472795f7369676e61747572650000000673656e7472790000050000000008
+  726571756972656400000009666f7262696464656e00000009666f7262696464
+  656e000000030000000f61646d696e5f7369676e61747572650000000561646d
+  696e0000050000000009666f7262696464656e00000009666f7262696464656e
+  000000087265717569726564
+
+corridor_canonical_behavior_parameters_length: 1979
+corridor_canonical_behavior_parameters_hex:
+  0000002541504c414e455f424f554e4445445f4245484156494f525f50415241
+  4d45544552535f5631000000020000000a726563697069656e74730000000961
+  6464726573735b5d0000004c0000000200000020111111111111111111111111
+  1111111111111111111111111111111111111111000000202222222222222222
+  2222222222222222222222222222222222222222222222220000001173656e74
+  72795f7075626c69635f6b657900000005627974657300000701222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222222222
+  222222222222222222222222222222222222222222222222222222
+
+corridor_canonical_behavior_parameters_sha256:
+  8291e71b954d6b4815fd82f8a7dbb93e4a5124990e265b9c1a3a3c8060a7d64a
+```
+
+Expected authority, Merkle, binding, and transcript values:
+
+```text
+corridor_sentry_key_id:
+  MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
+
+corridor_contract_admin_key_id:
+  WCM6OW66SGGHSCTSAYDHOUGOPEXJLK2YPFQVUSWX6UASKCWRC4DQ
+
+corridor_merkle_root:
+  ea4421efa4bc1d9d5bfaf9d578e25655591bd27af8658bf94eee1687ec9c5d8d
+
+corridor_merkle_proof_hex:
+  4635e1fa62a599a7880a8d14a56f720a1d40f6e5448ab5a5e39bedc8bd87fa8e
+  fe43d66afa4a9a5c4f9c9da89f4ffb52635c8f342e7ffb731d68e36c5982072a
+  deb82e155954d6be14592c66ccf7a1ece193eeebcdabaf747b91f44519f09f47
+  2960044c62f2354e945e8d78fdd220a05f2c0879f24df6f11ef5cc26b5270a0e
+  4cfabc48c6898a30b1b5d12dda8e09a96e9ea17e80f4b2a050b8a8b4803fbd43
+  7162ed848f19740e53766ce01ac099523b099d593e0782ddbc5296eece50ec50
+  2be3cf0551cc6936d461e3dc43f3c4bf50cbee1bc091925254e879f4e7665e94
+  12db5262a5500d2516b8f82362d2a87278d20f712ff1fce2019d42ecba17241d
+  1a1a9265f869676c206824aa7bfc2fe8c7fe34691dddfb35797b6a321f977dfc
+  6e0bb8243e268be3d2fa3ce83234b2f850c85162bd0fced30e919e069bd52df7
+  0162892fa669b555682d4c5666f42c98f230e76406d646e6dbbcefb5d311e047
+  fd5593f0bfde08caa41745a8a6b2d5dcaea03a5867e8432a995bea3a1fd4df56
+  7bbcd27ae0b8f5d7c013dc6d13a2e586b58f83eac62aa62aa56f332288ad8bf4
+  d6c82f90e341cc36aa0fb5f8d03bbb3e6d5148eb56fcf79eb415574aee7fa99a
+  e2b649c4fa703c323fc2c929ad269dfdd150bde6862d9bcebe966244b983f20f
+  48c12a8dd675e9dcd3c63141fbfde6d11056c392b4379c3bbdc79a8511d0e65b
+
+corridor_bounded_program_binding:
+  4da9e512e48629601b5065850ef7514023251363d4664cfe9b941a108c6dd837
+
+corridor_admin_message:
+  f4ff0b4c08ca085cea41db660f91952225428f474f169ad2cf3ebfcdbf14073e
+```
+
+Whitespace and line wrapping are presentation only.
+`TestCorridorGoldenVector` derives every value from the shipped template and
+production canonicalization functions, verifies the frozen constants, and
+requires this document to contain the exact profile, behavior, proof, slot
+masks, binding, and transcript.
+
 ## YAML Contract
 
 Schema v1 describes the existing non-bounded composed layout and rejects a
@@ -475,6 +650,41 @@ computes the fixed-depth root during program generation, and verifies the
 proof for every non-self payment or asset receiver. It accepts no asset-ID or
 amount options and rejects author TEAL.
 
+### Merkle Allowlist Compatibility Contract
+
+The `bounded1` Merkle root and proof bytes are compatibility-bearing. Given the
+`recipients` address list, implementations must use this exact algorithm:
+
+1. Decode every Algorand address to its raw 32-byte public key. The list must
+   contain 1 through 65,536 entries.
+2. Reject duplicate public keys, then sort the unique public keys in ascending
+   byte order. Duplicate input is invalid, so there is no duplicate proof
+   selection rule.
+3. Create a depth-16 tree with exactly 65,536 leaves. Place the sorted
+   recipients in leaves `0` through `N-1`.
+4. A recipient leaf is
+   `SHA256(0x00 || recipient_public_key)`.
+5. The empty-leaf value is `SHA256(0x00)`. Fill leaves `N` through `65,535`
+   with that value.
+6. An internal node is
+   `SHA256(0x01 || min(left_hash, right_hash) || max(left_hash, right_hash))`,
+   where `min` and `max` use ascending byte order.
+7. Repeat the internal-node operation for sixteen levels. The sole remaining
+   hash is the root compiled into the LogicSig.
+8. A membership proof is the sibling at each level, beginning with the leaf
+   sibling and proceeding upward to the root. Concatenate the sixteen 32-byte
+   hashes in that order for exactly 512 bytes.
+9. Verification starts with the recipient leaf and combines each proof hash in
+   order using the same internal-node function. No index or direction bits are
+   encoded or consumed because every child pair is canonicalized with
+   `min`/`max`.
+
+A non-member has no proof. The separate bounded transaction rule permits a
+self receiver without a proof; that exception does not change root
+construction. `internal/merkleallowlist` owns the implementation, and
+`TestMerkleAllowlistCompatibilityVector` freezes a deterministic root and
+proof.
+
 `bounded_admin_public_key` is injected by the framework and cannot be declared
 by the author. User parameters, variables, runtime args, and references using
 the `bounded_` prefix reject. Author labels and executable references using
@@ -526,16 +736,19 @@ instance Contract Admin Key ID, program binding, and maximum post-signing
 LogicSig size. Clients route:
 
 - non-sentry pure spend to ordinary `/sign`;
-- sentry-gated pure spend through user-first `/sign/bounded-component`, sentry
-  `/sign/component`, then signer `/sign/bounded-assemble`;
+- sentry-gated pure spend through the first-party client's user-first
+  `/sign/bounded-component`, sentry `/sign/component`, then signer
+  `/sign/bounded-assemble` choreography;
 - spending-key rekey to ordinary `/sign` with forced review;
 - Falcon-admin rekey to `POST /sign/bounded-admin` and external completion; and
 - malformed, hybrid, disabled, or unknown effects to local rejection.
 
 Ordinary `/sign` rejects a sentry-gated bounded spend because it cannot finish
-that flow alone. The client must not combine `sentry1` and `bounded-sentry1`
-targets in one group. Signer-side classification is authoritative. Unknown
-flow labels fail closed.
+that flow alone. First-party clients do not support combining `sentry1` and
+`bounded-sentry1` targets in one group because their assembly contracts differ;
+this is a client orchestration limit, not a signer-side whole-group flow
+invariant. Signer-side classification remains authoritative for each target it
+signs or assembles. Unknown flow labels fail closed.
 Every bounded admin operation triggers the stable unconditional
 `bounded_admin_operation_requires_review` rule before blanket or self-no-op
 autoapproval, regardless of warning configuration. A client intent to simulate
