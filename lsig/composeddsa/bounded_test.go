@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -114,24 +115,44 @@ func TestBoundedGoldenVector(t *testing.T) {
 	if got := hex.EncodeToString(message[:]); got != wantMessage {
 		t.Fatalf("admin message = %s, want %s", got, wantMessage)
 	}
-	assertBoundedGoldenVectorDocumentation(t, fullKeyType, wantKeyID, wantBinding, wantMessage)
+	assertBoundedGoldenVectorDocumentation(
+		t,
+		fullKeyType,
+		wantKeyID,
+		wantProfile,
+		wantBehavior,
+		wantBinding,
+		wantMessage,
+	)
 }
 
-func assertBoundedGoldenVectorDocumentation(t *testing.T, fullKeyType, adminKeyID, binding, message string) {
+func assertBoundedGoldenVectorDocumentation(
+	t *testing.T,
+	fullKeyType,
+	adminKeyID,
+	profile,
+	behavior,
+	binding,
+	message string,
+) {
 	t.Helper()
 	docPath := filepath.Join("..", "..", "docs", "ARCH_BOUNDED_DSA.md")
 	doc, err := os.ReadFile(docPath)
 	if err != nil {
 		t.Fatalf("read bounded architecture document: %v", err)
 	}
+	compactDoc := strings.Join(strings.Fields(string(doc)), "")
 	for label, value := range map[string]string{
-		"full_key_type":           fullKeyType,
-		"contract_admin_key_id":   adminKeyID,
-		"bounded_program_binding": binding,
-		"admin_message":           message,
+		"full_key_type":                        fullKeyType,
+		"canonical_bounded_profile_length":     strconv.Itoa(len(profile) / 2),
+		"canonical_bounded_profile_hex":        profile,
+		"canonical_behavior_parameters_length": strconv.Itoa(len(behavior) / 2),
+		"canonical_behavior_parameters_hex":    behavior,
+		"contract_admin_key_id":                adminKeyID,
+		"bounded_program_binding":              binding,
+		"admin_message":                        message,
 	} {
-		if !strings.Contains(string(doc), label+":\n  "+value) &&
-			!strings.Contains(string(doc), label+": "+value) {
+		if !strings.Contains(compactDoc, label+":"+value) {
 			t.Fatalf("%s does not document golden %s %q", docPath, label, value)
 		}
 	}
