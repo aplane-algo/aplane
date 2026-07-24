@@ -746,7 +746,12 @@ the admin-key rekey path but does not stop policy-compliant spending. See
 Do not combine a bounded sentry gate with a spending-key-authorized rekey.
 That rekey would bypass the spend-only sentry authority and has no
 `bounded-sentry1` signing route. V1 validation rejects the combination;
-sentry-enabled bounded recovery must use an external contract-admin key.
+escaping a failed sentry requires an external contract-admin rekey.
+
+The external admin key is not an independent recovery key. The rekey still
+requires the spending signature. Losing the spending key is fatal even when
+the admin witness survives; operators must back up both authorities
+independently.
 
 #### Guarded Sentry Provider
 
@@ -819,7 +824,8 @@ the template's Layer 3 condition.
 The account cannot be rekeyed before the unlock round, including as an
 emergency response to spending-key compromise. This preserves the timelock as
 an authority condition; use the external-admin allowlist or a reviewed custom
-policy when an earlier independent recovery path is required.
+policy when an earlier separately co-authorized rekey path is required. The
+external-admin path still requires the spending key.
 
 ##### `aplane.falcon1024-allowlist.v2`
 

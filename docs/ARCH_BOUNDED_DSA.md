@@ -17,10 +17,11 @@ the v1 compatibility baseline.
 
 A bounded authorization contract is a stateless LogicSig program that
 defines the complete transaction envelope accepted for an account. Its
-contract admin key is an independent witness key in standalone custody that
-authorizes a named administrative operation. It is not Algorand Governance,
-the `apadmin` client, or an ASA manager key. The key form is shared with sentry
-witnesses, but an individual keypair should never be enrolled in both roles.
+contract admin key is a separately custodied witness key that co-authorizes a
+named administrative operation with the base spending key. It is not an
+independent spending-key recovery key, Algorand Governance, the `apadmin`
+client, or an ASA manager key. The key form is shared with sentry witnesses,
+but an individual keypair should never be enrolled in both roles.
 
 `bounded1` has three ordered regions:
 
@@ -33,8 +34,10 @@ witnesses, but an individual keypair should never be enrolled in both roles.
 
 Sentry-enabled bounded1 profiles are spend-gated profiles and may not declare
 a spending-key-authorized rekey. V1 rejects that combination during template,
-profile, and durable-metadata validation; recovery for a sentry-enabled
-profile must use an external contract-admin rekey.
+profile, and durable-metadata validation. Escaping a failed or compromised
+sentry therefore uses an external contract-admin rekey, which still requires
+the base spending signature. Loss of the spending key is not recoverable
+through the contract-admin path.
 
 For profile `P`:
 
@@ -148,8 +151,9 @@ effect surface:
 
 Every profile rejects close, clawback, hybrid rekey, and non-transfer types.
 The timelock intentionally prevents emergency spending-key rekey until its
-Layer 3 condition passes. The rekey-locked allowlist is the independent
-recovery option when that tradeoff is unsuitable.
+Layer 3 condition passes. The rekey-locked allowlist provides a separately
+co-authorized rekey path when that tradeoff is unsuitable, but that path still
+requires the spending key.
 
 Compiler-backed maximum-path measurements are frozen by
 `TestBundledBoundedCompiledBudgetMatrix`:
@@ -526,16 +530,19 @@ instance Contract Admin Key ID, program binding, and maximum post-signing
 LogicSig size. Clients route:
 
 - non-sentry pure spend to ordinary `/sign`;
-- sentry-gated pure spend through user-first `/sign/bounded-component`, sentry
-  `/sign/component`, then signer `/sign/bounded-assemble`;
+- sentry-gated pure spend through the first-party client's user-first
+  `/sign/bounded-component`, sentry `/sign/component`, then signer
+  `/sign/bounded-assemble` choreography;
 - spending-key rekey to ordinary `/sign` with forced review;
 - Falcon-admin rekey to `POST /sign/bounded-admin` and external completion; and
 - malformed, hybrid, disabled, or unknown effects to local rejection.
 
 Ordinary `/sign` rejects a sentry-gated bounded spend because it cannot finish
-that flow alone. The client must not combine `sentry1` and `bounded-sentry1`
-targets in one group. Signer-side classification is authoritative. Unknown
-flow labels fail closed.
+that flow alone. First-party clients do not support combining `sentry1` and
+`bounded-sentry1` targets in one group because their assembly contracts differ;
+this is a client orchestration limit, not a signer-side whole-group flow
+invariant. Signer-side classification remains authoritative for each target it
+signs or assembles. Unknown flow labels fail closed.
 Every bounded admin operation triggers the stable unconditional
 `bounded_admin_operation_requires_review` rule before blanket or self-no-op
 autoapproval, regardless of warning configuration. A client intent to simulate
