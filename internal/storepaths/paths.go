@@ -116,6 +116,18 @@ func (p Paths) RecoveredBatchMetadataPath(identityID, restoreID string) string {
 	return filepath.Join(p.RecoveredBatchDir(identityID, restoreID), "batch.enc")
 }
 
+func (p Paths) RecoveredActivationDir(identityID, restoreID string) string {
+	return filepath.Join(p.RecoveredBatchDir(identityID, restoreID), "activation")
+}
+
+func (p Paths) RecoveredActivationJournalPath(identityID, restoreID string) string {
+	return filepath.Join(p.RecoveredActivationDir(identityID, restoreID), "journal.enc")
+}
+
+func (p Paths) RecoveredActivationRollbackPath(identityID, restoreID string) string {
+	return filepath.Join(p.RecoveredActivationDir(identityID, restoreID), "rollback.enc")
+}
+
 func (p Paths) DeletedDir(identityID string) string {
 	return filepath.Join(p.IdentityDir(identityID), "deleted")
 }

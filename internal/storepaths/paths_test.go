@@ -76,6 +76,15 @@ func TestRecoveredPathsAreIdentityScoped(t *testing.T) {
 	if got := paths.RecoveredBatchMetadataPath("default", restoreID); got != filepath.Join(wantBatch, "batch.enc") {
 		t.Fatalf("RecoveredBatchMetadataPath() = %q", got)
 	}
+	if got := paths.RecoveredActivationDir("default", restoreID); got != filepath.Join(wantBatch, "activation") {
+		t.Fatalf("RecoveredActivationDir() = %q", got)
+	}
+	if got := paths.RecoveredActivationJournalPath("default", restoreID); got != filepath.Join(wantBatch, "activation", "journal.enc") {
+		t.Fatalf("RecoveredActivationJournalPath() = %q", got)
+	}
+	if got := paths.RecoveredActivationRollbackPath("default", restoreID); got != filepath.Join(wantBatch, "activation", "rollback.enc") {
+		t.Fatalf("RecoveredActivationRollbackPath() = %q", got)
+	}
 }
 
 func TestRecoveredBatchPathsRejectInvalidRestoreIDs(t *testing.T) {
