@@ -300,6 +300,175 @@ func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing
 	}
 }
 
+func TestActivateRecoveredRequiresCurrentReviewAndAcknowledgements(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntimeWithAutoApprove(t, paths, &reloads, true)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if !review.Success {
+		t.Fatalf("ReviewRecovered() = %+v", review)
+	}
+
+	stale := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoverResult.RestoreID,
+		ReviewToken:                 strings.Repeat("0", 64),
+		AcknowledgePolicyTransition: true,
+	})
+	if stale.Code != protocol.ResultCodeActivationReviewStale {
+		t.Fatalf("ActivateRecovered(stale).Code = %q, want %q", stale.Code, protocol.ResultCodeActivationReviewStale)
+	}
+	missingPolicyAck := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
+	})
+	if missingPolicyAck.Code != protocol.ResultCodeActivationAckRequired {
+		t.Fatalf("ActivateRecovered(no policy ack).Code = %q", missingPolicyAck.Code)
+	}
+	missingUnattendedAck := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoverResult.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+	if missingUnattendedAck.Code != protocol.ResultCodeActivationAckRequired {
+		t.Fatalf("ActivateRecovered(no unattended ack).Code = %q", missingUnattendedAck.Code)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)); !os.IsNotExist(err) {
+		t.Fatalf("active key before acknowledged activation stat error = %v, want not found", err)
+	}
+	if got := reloads.Load(); got != 0 {
+		t.Fatalf("reload count before activation = %d, want 0", got)
+	}
+
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                    recoverResult.RestoreID,
+		ReviewToken:                  review.ReviewToken,
+		AcknowledgePolicyTransition:  true,
+		AcknowledgeUnattendedSigning: true,
+	})
+	if !activated.Success || len(activated.Activated) != 1 {
+		t.Fatalf("ActivateRecovered() = %+v", activated)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)); err != nil {
+		t.Fatalf("active key stat error = %v", err)
+	}
+	if _, err := os.Stat(paths.RecoveredBatchDir(auth.DefaultIdentityID, recoverResult.RestoreID)); !os.IsNotExist(err) {
+		t.Fatalf("completed recovered batch stat error = %v, want not found", err)
+	}
+	if got := reloads.Load(); got != 1 {
+		t.Fatalf("reload count = %d, want 1", got)
+	}
+}
+
+func TestActivateRecoveredRollsBackWhenReloadFails(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	ir.SetReloadFunc(func(string, []byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		if reloads.Add(1) == 1 {
+			return nil, errors.New("injected activation reload failure")
+		}
+		return &signertemplates.ReloadReport{}, nil
+	})
+
+	result := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoverResult.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+	if result.Code != protocol.ResultCodeRecoveredActivationFailed ||
+		!strings.Contains(result.Error, "prior state was restored") {
+		t.Fatalf("ActivateRecovered() = %+v, want restored failure", result)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)); !os.IsNotExist(err) {
+		t.Fatalf("rolled-back active key stat error = %v, want not found", err)
+	}
+	if _, err := os.Stat(paths.RecoveredActivationDir(auth.DefaultIdentityID, recoverResult.RestoreID)); !os.IsNotExist(err) {
+		t.Fatalf("activation marker stat error = %v, want not found", err)
+	}
+	if _, err := os.Stat(paths.RecoveredBatchDir(auth.DefaultIdentityID, recoverResult.RestoreID)); err != nil {
+		t.Fatalf("recovered batch after rollback stat error = %v", err)
+	}
+	if got := reloads.Load(); got != 2 {
+		t.Fatalf("reload count = %d, want failed activation plus rollback reload", got)
+	}
+}
+
+func TestActivateRecoveredRequiresExplicitConflictReplacement(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if err := os.MkdirAll(paths.KeysDir(auth.DefaultIdentityID), 0o750); err != nil {
+		t.Fatalf("MkdirAll(keys) error = %v", err)
+	}
+	activePath := keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)
+	original := []byte("prior encrypted credential")
+	if err := os.WriteFile(activePath, original, 0o600); err != nil {
+		t.Fatalf("WriteFile(active conflict) error = %v", err)
+	}
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if len(review.ActiveConflicts) != 1 {
+		t.Fatalf("ReviewRecovered().ActiveConflicts = %+v, want one", review.ActiveConflicts)
+	}
+
+	rejected := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoverResult.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+	if rejected.Code != protocol.ResultCodeActivationConflict {
+		t.Fatalf("ActivateRecovered(no replace).Code = %q", rejected.Code)
+	}
+	got, err := os.ReadFile(activePath)
+	if err != nil || string(got) != string(original) {
+		t.Fatalf("active conflict after rejection = %q, %v", got, err)
+	}
+
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoverResult.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+		ReplaceExisting:             true,
+	})
+	if !activated.Success {
+		t.Fatalf("ActivateRecovered(replace) = %+v", activated)
+	}
+	got, err = os.ReadFile(activePath)
+	if err != nil || string(got) == string(original) {
+		t.Fatalf("active credential was not replaced: bytes=%q error=%v", got, err)
+	}
+}
+
 func writeMalformedManagedArchive(t *testing.T, paths storepaths.Paths, identityID, label string) string {
 	t.Helper()
 

@@ -285,6 +285,41 @@ type ReviewRecoveredResult struct {
 	Error                    string
 }
 
+// ActivateRecoveredRequest binds activation to one reviewed destination
+// state and records each security-sensitive operator acknowledgement.
+type ActivateRecoveredRequest struct {
+	RestoreID                    string
+	ReviewToken                  string
+	AcknowledgePolicyTransition  bool
+	AcknowledgeUnattendedSigning bool
+	ReplaceExisting              bool
+}
+
+// ActivateRecoveredResult describes credentials made active by one atomic
+// activation attempt.
+type ActivateRecoveredResult struct {
+	Success   bool
+	RestoreID string
+	Activated []RecoveredReviewEntry
+	KeyCount  int
+	Code      string
+	Error     string
+}
+
+// RollbackRecoveredRequest identifies one incomplete activation to reverse.
+type RollbackRecoveredRequest struct {
+	RestoreID string
+}
+
+// RollbackRecoveredResult reports restoration of the pre-activation state.
+type RollbackRecoveredResult struct {
+	Success   bool
+	RestoreID string
+	KeyCount  int
+	Code      string
+	Error     string
+}
+
 // UpdateAdminSettingRequest is the admin-domain request to change one setting.
 type UpdateAdminSettingRequest struct {
 	Key   string
