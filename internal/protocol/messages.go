@@ -16,12 +16,12 @@ const (
 )
 
 const (
-	AdminProtocolVersionMajor = 1
+	AdminProtocolVersionMajor = 2
 	AdminProtocolVersionMinor = 0
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
-// the auth hello. It is diagnostic; only explicit major mismatches are rejected.
+// the auth hello. Clients must provide a matching major version.
 type ProtocolVersion struct {
 	Major int `json:"major"`
 	Minor int `json:"minor"`
@@ -112,26 +112,16 @@ const (
 	MsgTypeSignerLocked = "signer_locked" // Sent when signer locks
 
 	// Admin settings message types
-	MsgTypeGetAdminSettings          = "get_admin_settings"           // Client → server: request current settings
-	MsgTypeAdminSettings             = "admin_settings"               // Server → client: current settings
-	MsgTypeUpdateAdminSetting        = "update_admin_setting"         // Client → server: change a setting
-	MsgTypeUpdateAdminSettingResult  = "update_admin_setting_result"  // Server → client: result
-	MsgTypeGetPolicySettings         = "get_policy_settings"          // Client → server: request current policy settings
-	MsgTypePolicySettings            = "policy_settings"              // Server → client: current policy settings
-	MsgTypeGetPolicySnapshot         = "get_policy_snapshot"          // Client → server: request active read-only policy snapshot
-	MsgTypePolicySnapshot            = "policy_snapshot"              // Server → client: active read-only policy snapshot
-	MsgTypeReplacePolicy             = "replace_policy"               // Client → server: wholesale replace policy.yaml
-	MsgTypeReplacePolicyResult       = "replace_policy_result"        // Server → client: replacement result and active snapshot
-	MsgTypeValidatePolicy            = "validate_policy"              // Client → server: validate policy YAML without writing
-	MsgTypeValidatePolicyResult      = "validate_policy_result"       // Server → client: validation result
-	MsgTypeUpdatePolicySetting       = "update_policy_setting"        // Client → server: change a policy setting
-	MsgTypeUpdatePolicySettingResult = "update_policy_setting_result" // Server → client: result
-	MsgTypeUpdatePolicyASAAmounts    = "update_policy_asa_amounts"    // Client → server: atomically change transfer guards
-	MsgTypeUpdatePolicyASAResult     = "update_policy_asa_result"     // Server → client: result
-	MsgTypeSearchASAMetadata         = "search_asa_metadata"          // Client → server: search signer ASA metadata cache
-	MsgTypeASAMetadataResults        = "asa_metadata_results"         // Server → client: ASA metadata search result
-	MsgTypeResolveASAMetadata        = "resolve_asa_metadata"         // Client → server: resolve ASA metadata by numeric ID
-	MsgTypeASAMetadataResult         = "asa_metadata_result"          // Server → client: ASA metadata resolution result
+	MsgTypeGetAdminSettings         = "get_admin_settings"          // Client → server: request current settings
+	MsgTypeAdminSettings            = "admin_settings"              // Server → client: current settings
+	MsgTypeUpdateAdminSetting       = "update_admin_setting"        // Client → server: change a setting
+	MsgTypeUpdateAdminSettingResult = "update_admin_setting_result" // Server → client: result
+	MsgTypeGetPolicySnapshot        = "get_policy_snapshot"         // Client → server: request active read-only policy snapshot
+	MsgTypePolicySnapshot           = "policy_snapshot"             // Server → client: active read-only policy snapshot
+	MsgTypeReplacePolicy            = "replace_policy"              // Client → server: wholesale replace policy.yaml
+	MsgTypeReplacePolicyResult      = "replace_policy_result"       // Server → client: replacement result and active snapshot
+	MsgTypeValidatePolicy           = "validate_policy"             // Client → server: validate policy YAML without writing
+	MsgTypeValidatePolicyResult     = "validate_policy_result"      // Server → client: validation result
 
 	// Client displacement message types (for single-client IPC enforcement)
 	MsgTypeClientExists    = "client_exists"    // Server → new client: another client is connected
@@ -153,9 +143,8 @@ type AuthRequiredMessage struct {
 	ProtocolVersion ProtocolVersion `json:"protocol_version"`
 }
 
-// AuthMessage is sent by apadmin to authenticate the IPC session.
-// IdentityID is optional; if omitted, the server binds the session to
-// the current product identity (backward compatible with older clients).
+// AuthMessage is sent by an admin client to authenticate the IPC/SSH session.
+// IdentityID is optional; ProtocolVersion is required by the server.
 type AuthMessage struct {
 	BaseMessage
 	Passphrase      SensitiveBytes   `json:"passphrase"`
@@ -829,32 +818,6 @@ type UpdateAdminSettingResultMessage struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// GetPolicySettingsMessage requests the current policy settings from the server.
-type GetPolicySettingsMessage struct {
-	BaseMessage
-}
-
-// PolicySettingsMessage contains the current signer policy settings.
-type PolicySettingsMessage struct {
-	BaseMessage
-	RejectForeignRekey          bool                         `json:"reject_foreign_rekey"`
-	RejectCloseRemainder        bool                         `json:"reject_close_remainder"`
-	RejectAssetClose            bool                         `json:"reject_asset_close"`
-	RejectClawback              bool                         `json:"reject_clawback"`
-	AlwaysReviewWarnings        bool                         `json:"always_review_warnings"`
-	AutoApproveSelfNoOpTransfer bool                         `json:"auto_approve_self_noop_transfer"`
-	MaxFeeMicroAlgos            string                       `json:"max_fee_microalgos"`
-	ReviewAlgoPayments          map[string]string            `json:"review_algo_payments,omitempty"`
-	MaxAlgoPayments             map[string]string            `json:"max_algo_payments,omitempty"`
-	PolicyNetworks              []string                     `json:"policy_networks"`
-	ReviewASAAmounts            map[string]string            `json:"review_asa_amounts,omitempty"`
-	MaxASAAmounts               map[string]string            `json:"max_asa_amounts,omitempty"`
-	PolicyASAMetadata           map[string][]ASAMetadataInfo `json:"policy_asa_metadata,omitempty"`
-	MaxASAAmountsMainnet        string                       `json:"max_asa_amounts_mainnet,omitempty"`
-	MaxASAAmountsTestnet        string                       `json:"max_asa_amounts_testnet,omitempty"`
-	MaxASAAmountsBetanet        string                       `json:"max_asa_amounts_betanet,omitempty"`
-}
-
 // GetPolicySnapshotMessage requests the active read-only policy snapshot from
 // the signer. The response is a signer-owned projection and must not be
 // synthesized from local apadmin files.
@@ -918,80 +881,6 @@ type ValidatePolicyResultMessage struct {
 	IdentityID string `json:"identity_id,omitempty"`
 	Code       string `json:"code,omitempty"`
 	Error      string `json:"error,omitempty"`
-}
-
-// UpdatePolicySettingMessage requests a change to a single policy setting.
-type UpdatePolicySettingMessage struct {
-	BaseMessage
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-// UpdatePolicySettingResultMessage is the response to a policy setting change.
-type UpdatePolicySettingResultMessage struct {
-	BaseMessage
-	Success bool   `json:"success"`
-	Key     string `json:"key"`
-	Value   string `json:"value,omitempty"`
-	Code    string `json:"code,omitempty"`
-	Error   string `json:"error,omitempty"`
-}
-
-// UpdatePolicyASAAmountsMessage requests an atomic change to network-scoped transfer guards.
-type UpdatePolicyASAAmountsMessage struct {
-	BaseMessage
-	ReviewASAAmounts   map[string]string `json:"review_asa_amounts,omitempty"`
-	MaxASAAmounts      map[string]string `json:"max_asa_amounts,omitempty"`
-	ReviewAlgoPayments map[string]string `json:"review_algo_payments,omitempty"`
-	MaxAlgoPayments    map[string]string `json:"max_algo_payments,omitempty"`
-	Mainnet            string            `json:"mainnet,omitempty"`
-	Testnet            string            `json:"testnet,omitempty"`
-	Betanet            string            `json:"betanet,omitempty"`
-}
-
-// UpdatePolicyASAAmountsResultMessage is the response to a transfer guard change.
-type UpdatePolicyASAAmountsResultMessage struct {
-	BaseMessage
-	Success bool   `json:"success"`
-	Code    string `json:"code,omitempty"`
-	Error   string `json:"error,omitempty"`
-}
-
-type ASAMetadataInfo struct {
-	AssetID  uint64 `json:"asset_id"`
-	Name     string `json:"name,omitempty"`
-	UnitName string `json:"unit_name,omitempty"`
-	Decimals uint64 `json:"decimals"`
-	Source   string `json:"source,omitempty"`
-}
-
-type SearchASAMetadataMessage struct {
-	BaseMessage
-	Network string `json:"network"`
-	Query   string `json:"query"`
-}
-
-type ASAMetadataResultsMessage struct {
-	BaseMessage
-	Network string            `json:"network"`
-	Query   string            `json:"query"`
-	Results []ASAMetadataInfo `json:"results,omitempty"`
-	Code    string            `json:"code,omitempty"`
-	Error   string            `json:"error,omitempty"`
-}
-
-type ResolveASAMetadataMessage struct {
-	BaseMessage
-	Network string `json:"network"`
-	AssetID uint64 `json:"asset_id"`
-}
-
-type ASAMetadataResultMessage struct {
-	BaseMessage
-	Network string           `json:"network"`
-	Asset   *ASAMetadataInfo `json:"asset,omitempty"`
-	Code    string           `json:"code,omitempty"`
-	Error   string           `json:"error,omitempty"`
 }
 
 // ClientExistsMessage is sent by the server to a new client when another apadmin is already connected.

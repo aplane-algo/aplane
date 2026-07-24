@@ -30,7 +30,7 @@ endif
 
 # Compile TEAL programs and copy to embedded locations
 # Only compiles if source is newer than target or if goal is available
-compile-teal: resources/dummy.teal.tok internal/signing/dummy.teal.tok internal/lsig/dummy.teal.tok
+compile-teal: resources/dummy.teal.tok internal/signing/dummy.teal.tok
 
 GENERATED_JSAPI = internal/docassets/generated/USER_JSAPI.md
 GENERATED_MANUAL = internal/docassets/generated/USER_MCP_MANUAL.md
@@ -82,11 +82,6 @@ internal/signing/dummy.teal.tok: resources/dummy.teal.tok
 	@echo "Updating internal/signing/dummy.teal.tok..."
 	@cp resources/dummy.teal.tok internal/signing/dummy.teal.tok
 	@echo "✓ Updated internal/signing/dummy.teal.tok"
-
-internal/lsig/dummy.teal.tok: resources/dummy.teal.tok
-	@echo "Updating internal/lsig/dummy.teal.tok..."
-	@cp resources/dummy.teal.tok internal/lsig/dummy.teal.tok
-	@echo "✓ Updated internal/lsig/dummy.teal.tok"
 
 # Default: Build all first-party binaries and official bundled plugins.
 all: compile-teal apshell aprekey apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe bundled-plugins

@@ -43,18 +43,6 @@ type ConnectRequest struct {
 	OnDisconnect    func()
 }
 
-// RequestTokenRequest requests a fresh apshell API token from the signer host.
-type RequestTokenRequest struct {
-	Host                  string
-	SSHPort               int
-	IdentityFile          string
-	KnownHostsPath        string
-	TokenFile             string
-	EndpointName          string
-	HostKeyApproval       sshtunnel.HostKeyApprovalHandler
-	OnProvisioningStarted func()
-}
-
 // Connect establishes an SSH tunnel using the configured signer identity and token.
 func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, error) {
 	tokenPath, err := a.tokenPathForRequest(req.TokenFile)
@@ -128,21 +116,17 @@ func (a *App) ConnectConfigured(ctx context.Context, hostKeyApproval sshtunnel.H
 }
 
 func (a *App) ConnectEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
-	host, sshPort, err := sshEndpointHostPort(endpoint)
+	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {
 		return nil, err
 	}
-	signerPort := endpoint.SignerPort
-	if signerPort == 0 {
-		signerPort = a.Config.LegacySignerPort
-	}
 	return a.Connect(ctx, ConnectRequest{
-		Host:            host,
-		SSHPort:         sshPort,
-		SignerPort:      signerPort,
-		IdentityFile:    endpoint.IdentityFile,
-		KnownHostsPath:  endpoint.KnownHostsPath,
-		TokenFile:       endpoint.TokenFile,
+		Host:            endpointSSH.Host,
+		SSHPort:         endpointSSH.Port,
+		SignerPort:      endpointSSH.SignerPort,
+		IdentityFile:    endpointSSH.IdentityFile,
+		KnownHostsPath:  endpointSSH.KnownHostsPath,
+		TokenFile:       endpointSSH.TokenFile,
 		EndpointName:    alias,
 		HostKeyApproval: hostKeyApproval,
 		OnDisconnect:    onDisconnect,
@@ -164,53 +148,8 @@ func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
 	}, nil
 }
 
-// RequestToken requests and persists a fresh apshell token for the configured client data dir.
-func (a *App) RequestToken(ctx context.Context, req RequestTokenRequest) (*RequestTokenResult, error) {
-	wasConnected := a.eng.IsTunnelConnected()
-	token, err := a.eng.RequestTokenWithContext(ctx, req.Host, req.SSHPort, req.IdentityFile, req.KnownHostsPath, req.HostKeyApproval, req.OnProvisioningStarted)
-	if err != nil {
-		return nil, err
-	}
-
-	tokenPath, err := a.tokenPathForRequest(req.TokenFile)
-	if err != nil {
-		return nil, err
-	}
-	tokenPath, err = a.eng.SaveApshellTokenToPath(tokenPath, token)
-	if err != nil {
-		return nil, fmt.Errorf("failed to save token: %w", err)
-	}
-
-	result := &RequestTokenResult{
-		TokenPath:        tokenPath,
-		DisconnectedPrev: wasConnected,
-		Summary:          Summary{Message: fmt.Sprintf("Token received and saved to %s", tokenPath)},
-	}
-	result.RenderLines = []string{
-		fmt.Sprintf("✓ %s", result.Summary.Message),
-	}
-	return result, nil
-}
-
-// RequestTokenConfigured requests and persists a fresh apshell token using the configured default endpoint.
-func (a *App) RequestTokenConfigured(ctx context.Context, hostKeyApproval sshtunnel.HostKeyApprovalHandler) (*RequestTokenResult, error) {
-	registry := a.Config.ClientEndpointsOrDefault()
-	alias, endpoint, ok := registry.DefaultEndpoint()
-	if !ok {
-		return nil, fmt.Errorf("usage: request-token [<host> [--ssh-port <port>]]\n\n" +
-			"Request an API token from the Signer. Requires an operator\n" +
-			"(apadmin) to approve the request on the server.\n" +
-			"If no arguments are given, apshell uses the default signer endpoint from endpoints.yaml.\n\n" +
-			"Examples:\n" +
-			"  request-token\n" +
-			"  request-token 192.168.1.100\n" +
-			"  request-token 192.168.1.100 --ssh-port 2222")
-	}
-	return a.RequestTokenEndpoint(ctx, alias, endpoint, hostKeyApproval)
-}
-
 func (a *App) RequestTokenEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStarted ...func()) (*RequestTokenResult, error) {
-	host, sshPort, err := sshEndpointHostPort(endpoint)
+	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -218,16 +157,36 @@ func (a *App) RequestTokenEndpoint(ctx context.Context, alias string, endpoint c
 	if len(onProvisioningStarted) > 0 {
 		progress = onProvisioningStarted[0]
 	}
-	return a.RequestToken(ctx, RequestTokenRequest{
-		Host:                  host,
-		SSHPort:               sshPort,
-		IdentityFile:          endpoint.IdentityFile,
-		KnownHostsPath:        endpoint.KnownHostsPath,
-		TokenFile:             endpoint.TokenFile,
-		EndpointName:          alias,
-		HostKeyApproval:       hostKeyApproval,
-		OnProvisioningStarted: progress,
-	})
+	wasConnected := a.eng.IsTunnelConnected()
+	token, err := a.eng.RequestTokenWithContext(
+		ctx,
+		endpointSSH.Host,
+		endpointSSH.Port,
+		endpointSSH.IdentityFile,
+		endpointSSH.KnownHostsPath,
+		hostKeyApproval,
+		progress,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenPath, err := a.tokenPathForRequest(endpointSSH.TokenFile)
+	if err != nil {
+		return nil, err
+	}
+	tokenPath, err = a.eng.SaveApshellTokenToPath(tokenPath, token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save token for endpoint %q: %w", alias, err)
+	}
+
+	result := &RequestTokenResult{
+		TokenPath:        tokenPath,
+		DisconnectedPrev: wasConnected,
+		Summary:          Summary{Message: fmt.Sprintf("Token received and saved to %s", tokenPath)},
+	}
+	result.RenderLines = []string{fmt.Sprintf("✓ %s", result.Summary.Message)}
+	return result, nil
 }
 
 func (a *App) tokenPathForRequest(tokenPath string) (string, error) {
@@ -235,10 +194,6 @@ func (a *App) tokenPathForRequest(tokenPath string) (string, error) {
 		return tokenPath, nil
 	}
 	return tokenfile.GetApshellTokenPathForDataDir(a.DataDir)
-}
-
-func sshEndpointHostPort(endpoint config.ClientEndpointConfig) (string, int, error) {
-	return config.ClientEndpointSSHHostPort(endpoint)
 }
 
 func decorateConnectResult(res *ConnectResult) {

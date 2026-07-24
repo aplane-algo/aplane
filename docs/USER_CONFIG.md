@@ -179,9 +179,9 @@ export APCLIENT_DATA=/custom/path
 
 - All connections use SSH tunneling for uniform per-client identity
 - Clients store signer routing in `endpoints.yaml`
-- Top-level `ssh:` signer settings in `config.yaml` are not supported by
-  `apshell` or the apconsole shell pane; create a fresh apclient data directory
-  or write signer routing in `endpoints.yaml`.
+- Top-level `ssh:` and `signer_port:` settings in client `config.yaml` are not
+  supported; create a fresh apclient data directory or write signer routing in
+  `endpoints.yaml`.
 - Edit `endpoints.yaml` or use `endpoints import` to change signer
   endpoint routing
 
@@ -282,8 +282,9 @@ endpoints default main
 endpoints delete old-signer
 ```
 
-To request a token from a one-off host for enrollment, use
-`request-token <host> [--ssh-port <port>]`.
+Token enrollment is endpoint-only. Import or configure a signer endpoint
+before running `request-token`; create or import a sentry endpoint before
+running `request-token --endpoint <alias>`.
 
 ---
 

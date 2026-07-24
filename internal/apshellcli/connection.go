@@ -6,48 +6,9 @@ package apshellcli
 import (
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
-
-// connectTunnelWithKey establishes an SSH tunnel using public key authentication.
-// SSH prompts and host trust remain in the shell; connection orchestration lives in apshellapp.
-func connectTunnelWithKey(r *REPLState, host string, sshPort, signerPort int) error {
-	if r.Config.LegacySSH == nil {
-		return fmt.Errorf("SSH defaults are not configured; use 'connect <endpoint-alias>' with an endpoints.yaml profile")
-	}
-
-	// Build TOFU callback (UI concern - stays in REPL)
-	hostKeyApproval := buildHostKeyApproval(r)
-
-	r.printf("Connecting to SSH server at %s:%d...\n", host, sshPort)
-	r.println("Using SSH public key authentication...")
-
-	result, err := r.app().Connect(r.commandContext(), apshellapp.ConnectRequest{
-		Host:            host,
-		SSHPort:         sshPort,
-		SignerPort:      signerPort,
-		IdentityFile:    r.Config.LegacySSH.IdentityFile,
-		KnownHostsPath:  r.Config.LegacySSH.KnownHostsPath,
-		HostKeyApproval: hostKeyApproval,
-		OnDisconnect: func() {
-			r.println("⚠️  Disconnected from signer")
-			r.print("> ")
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	if result.AlreadyConnected {
-		return r.renderConnectResult(result)
-	}
-
-	if err := r.renderConnectResult(result); err != nil {
-		return err
-	}
-	return nil
-}
 
 func connectConfigured(r *REPLState) error {
 	hostKeyApproval := buildHostKeyApproval(r)
@@ -107,69 +68,13 @@ func disconnectTunnel(r *REPLState) error {
 	return nil
 }
 
-// requestToken connects to the SSH server and requests a token provisioning.
-// The token is saved to the local token file if approved.
-func requestToken(r *REPLState, host string, sshPort int) error {
-	// Disconnect if currently connected (old token will be invalid after provisioning)
-	if r.app().IsTunnelConnected() {
-		r.println("Disconnecting current session...")
-		_ = disconnectTunnel(r)
-	}
-
-	r.printf("Requesting token from %s (SSH port: %d)...\n", host, sshPort)
-	r.println("This requires an operator (apadmin) to approve on the server.")
-	r.println()
-
-	if r.Config.LegacySSH == nil {
-		return fmt.Errorf("SSH defaults are not configured; use 'request-token --endpoint <alias>' with an endpoints.yaml profile")
-	}
-
-	hostKeyApproval := buildHostKeyApproval(r)
-
-	result, err := r.app().RequestToken(r.commandContext(), apshellapp.RequestTokenRequest{
-		Host:                  host,
-		SSHPort:               sshPort,
-		IdentityFile:          r.Config.LegacySSH.IdentityFile,
-		KnownHostsPath:        r.Config.LegacySSH.KnownHostsPath,
-		HostKeyApproval:       hostKeyApproval,
-		OnProvisioningStarted: r.printTokenProvisioningWait,
-	})
-	if err != nil {
-		return err
-	}
-
-	for _, line := range result.RenderLines {
-		r.println(line)
-	}
-	r.println("Connecting to signer with new token...")
-	return connectTunnelWithKey(r, host, sshPort, r.Config.LegacySignerPort)
-}
-
 func requestTokenConfigured(r *REPLState) error {
 	registry := r.Config.ClientEndpointsOrDefault()
-	alias, endpoint, ok := registry.DefaultEndpoint()
+	alias, _, ok := registry.DefaultEndpoint()
 	if !ok {
-		return fmt.Errorf("usage: request-token [<host> [--ssh-port <port>]]\n\n" +
-			"Request an API token from the Signer. Requires an operator\n" +
-			"(apadmin) to approve the request on the server.\n" +
-			"If no arguments are given, apshell uses the default signer endpoint from endpoints.yaml.\n\n" +
-			"Examples:\n" +
-			"  request-token\n" +
-			"  request-token 192.168.1.100\n" +
-			"  request-token 192.168.1.100 --ssh-port 2222")
+		return fmt.Errorf("no default signer endpoint in endpoints.yaml; import or configure a signer endpoint before running request-token")
 	}
-
-	hostKeyApproval := buildHostKeyApproval(r)
-	result, err := r.app().RequestTokenEndpoint(r.commandContext(), alias, endpoint, hostKeyApproval, r.printTokenProvisioningWait)
-	if err != nil {
-		return err
-	}
-
-	for _, line := range result.RenderLines {
-		r.println(line)
-	}
-	r.println("Connecting to signer with new token...")
-	return connectEndpointAlias(r, alias)
+	return requestTokenEndpointAlias(r, alias)
 }
 
 func requestTokenEndpointAlias(r *REPLState, alias string) error {
@@ -178,9 +83,9 @@ func requestTokenEndpointAlias(r *REPLState, alias string) error {
 	if !ok {
 		return fmt.Errorf("unknown endpoint alias %q", alias)
 	}
-	defaultAlias, _, _ := registry.DefaultEndpoint()
+	autoConnect := shouldAutoConnectAfterEnrollment(registry, alias)
 
-	if alias == defaultAlias && r.app().IsTunnelConnected() {
+	if autoConnect && r.app().IsTunnelConnected() {
 		r.println("Disconnecting current session...")
 		_ = disconnectTunnel(r)
 	}
@@ -197,11 +102,16 @@ func requestTokenEndpointAlias(r *REPLState, alias string) error {
 	for _, line := range result.RenderLines {
 		r.println(line)
 	}
-	if alias == defaultAlias {
+	if autoConnect {
 		r.println("Connecting to signer with new token...")
 		return connectEndpointAlias(r, alias)
 	}
 	return nil
+}
+
+func shouldAutoConnectAfterEnrollment(registry config.ClientEndpointRegistry, alias string) bool {
+	defaultAlias, defaultEndpoint, ok := registry.DefaultEndpoint()
+	return ok && alias == defaultAlias && defaultEndpoint.Role == config.ClientEndpointRoleSigner
 }
 
 func (r *REPLState) printTokenProvisioningWait() {

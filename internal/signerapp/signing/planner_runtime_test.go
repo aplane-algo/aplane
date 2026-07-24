@@ -11,9 +11,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -755,13 +755,13 @@ func TestCalculateDummies_BoundedAdminSlotTopUp(t *testing.T) {
 	// a spend, but the admin top-up (+1280) forces dummies for an admin rekey.
 	deps := stubPlannerDeps{
 		keyTypes:  map[string]string{addr: "aplane.falcon1024-bounded.v1"},
-		lsigSizes: map[string]int{addr: lsig.TxLsigBudget},
+		lsigSizes: map[string]int{addr: coresigning.TxLsigBudget},
 	}
 	requests := []signerapi.SignRequest{{AuthAddress: addr, TxnBytesHex: "deadbeef"}}
 	txns := []types.Transaction{makePlannerTxn(types.Digest{})}
 
 	metadata := testBoundedMetadata(t, boundedmeta.AdminAuthorizationAdmin)
-	metadata.PostSigningLogicSigSize = lsig.TxLsigBudget + boundedmeta.FalconAdminSignatureSize
+	metadata.PostSigningLogicSigSize = coresigning.TxLsigBudget + boundedmeta.FalconAdminSignatureSize
 	spendItems := []*boundedPlanItem{{Path: boundedPathPureSpend, Metadata: metadata}}
 	dummies, _, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, spendItems, map[int]bool{}, map[int]bool{}, false, false)
 	if err != nil {
@@ -776,7 +776,7 @@ func TestCalculateDummies_BoundedAdminSlotTopUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin path: unexpected error: %v", err)
 	}
-	wantDummies := (boundedmeta.FalconAdminSignatureSize + lsig.TxLsigBudget - 1) / lsig.TxLsigBudget
+	wantDummies := (boundedmeta.FalconAdminSignatureSize + coresigning.TxLsigBudget - 1) / coresigning.TxLsigBudget
 	if dummies != wantDummies {
 		t.Fatalf("admin path dummies = %d, want %d (admin signature reserved)", dummies, wantDummies)
 	}

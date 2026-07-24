@@ -48,22 +48,13 @@ func (r *REPLState) cmdConnect(args []string, _ interface{}) error {
 }
 
 func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
-	// Parse connection info
 	if len(args) == 0 {
 		return requestTokenConfigured(r)
 	}
 	if len(args) == 2 && (args[0] == "--endpoint" || args[0] == "-e") {
 		return requestTokenEndpointAlias(r, args[1])
 	}
-
-	// Parse connection string
-	connStr := strings.Join(args, " ")
-	parsed, err := config.ParseConnectionString(connStr)
-	if err != nil {
-		return fmt.Errorf("invalid connection: %w", err)
-	}
-
-	return requestToken(r, parsed.Host, parsed.SSHPort)
+	return fmt.Errorf("usage: request-token [--endpoint <alias>]")
 }
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {

@@ -13,7 +13,6 @@ import (
 	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -109,7 +108,7 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 		if err := ctx.Err(); err != nil {
 			return nil, canceledSignRequest(err)
 		}
-		signedDummyBytes, err := lsig.SignDummyTransactions(allTxns[len(txns):])
+		signedDummyBytes, err := coresigning.SignDummyTransactions(allTxns[len(txns):])
 		if err != nil {
 			return nil, internal(fmt.Sprintf("failed to sign dummy transactions: %v", err))
 		}

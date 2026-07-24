@@ -65,11 +65,6 @@ type ServerConfig struct {
 	Theme string `yaml:"theme" description:"Signer-admin UI theme: auto, dark, or light (auto detects terminal)" default:"auto"`
 }
 
-type serverConfigFile struct {
-	ServerConfig   `yaml:",inline"`
-	ManualApproval *bool `yaml:"manual_approval,omitempty"`
-}
-
 // Clone returns an independent copy of the server config.
 func (c ServerConfig) Clone() ServerConfig {
 	out := c
@@ -237,16 +232,12 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	}
 
 	// Parse YAML
-	configFile := serverConfigFile{ServerConfig: defaults}
-	if err := apconfig.UnmarshalKnownConfigFields(data, &configFile); err != nil {
+	config := defaults
+	if err := apconfig.UnmarshalKnownConfigFields(data, &config); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
-	config := configFile.ServerConfig
 	config.SchemaVersion = apconfig.NormalizeConfigSchemaVersion(config.SchemaVersion)
 	if err := apconfig.ValidateConfigSchemaVersion("server config", config.SchemaVersion); err != nil {
-		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
-	}
-	if err := applyLegacyManualApproval(data, configFile.ManualApproval, &config); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 	if config.Algod, err = mergeServerNetworkAlgodConfig(nil, config.Networks); err != nil {
@@ -325,38 +316,6 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	}
 
 	return config, nil
-}
-
-func applyLegacyManualApproval(data []byte, manualApproval *bool, config *ServerConfig) error {
-	if manualApproval == nil {
-		return nil
-	}
-	legacyUserAutoApprove := !*manualApproval
-	if yamlHasTopLevelKey(data, "user_auto_approve") {
-		if config.UserAutoApprove != legacyUserAutoApprove {
-			return fmt.Errorf("manual_approval is deprecated and conflicts with user_auto_approve")
-		}
-		return nil
-	}
-	config.UserAutoApprove = legacyUserAutoApprove
-	return nil
-}
-
-func yamlHasTopLevelKey(data []byte, key string) bool {
-	var root yaml.Node
-	if err := yaml.Unmarshal(data, &root); err != nil {
-		return false
-	}
-	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
-		return false
-	}
-	mapping := root.Content[0]
-	for i := 0; i+1 < len(mapping.Content); i += 2 {
-		if mapping.Content[i].Value == key {
-			return true
-		}
-	}
-	return false
 }
 
 // GetAlgodConfig returns the algod settings for the specified network.

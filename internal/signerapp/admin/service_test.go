@@ -15,14 +15,12 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapp/asametadata"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -363,116 +361,6 @@ func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
 				t.Fatalf("Endpoint.AdvertiseURL = %q, want unchanged empty", deps.config.Endpoint.AdvertiseURL)
 			}
 		})
-	}
-}
-
-func TestSearchASAMetadataUsesSignerCacheOnly(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
-	deps.config.Algod = apconfig.AlgodConfig{
-		"customnet": {Server: "http://127.0.0.1:1", Token: ""},
-	}
-
-	metadataStore := asametadata.NewStore(deps.dataDir)
-	for _, meta := range []asa.Metadata{
-		{AssetID: 44, Name: "Second Duplicate", UnitName: "DUP", Decimals: 6},
-		{AssetID: 11, Name: "First Duplicate", UnitName: "dup", Decimals: 2},
-		{AssetID: 99, Name: "Different", UnitName: "OTHER", Decimals: 0},
-	} {
-		if err := metadataStore.SaveLocalMetadata("customnet", meta); err != nil {
-			t.Fatalf("SaveLocalMetadata() error = %v", err)
-		}
-	}
-
-	result := svc.SearchASAMetadata(ir, adminproto.SearchASAMetadataRequest{
-		Network: "customnet",
-		Query:   "DuP",
-	})
-	if result.Error != "" || result.Code != "" {
-		t.Fatalf("SearchASAMetadata() error = code %q error %q", result.Code, result.Error)
-	}
-	if len(result.Results) != 2 {
-		t.Fatalf("SearchASAMetadata() returned %d results, want 2: %+v", len(result.Results), result.Results)
-	}
-	if result.Results[0].AssetID != 11 || result.Results[1].AssetID != 44 {
-		t.Fatalf("SearchASAMetadata() asset order = [%d %d], want [11 44]", result.Results[0].AssetID, result.Results[1].AssetID)
-	}
-	if result.Network != "customnet" || result.Results[0].Source != "cache" {
-		t.Fatalf("SearchASAMetadata() result = network %q first %+v, want cache-sourced customnet metadata", result.Network, result.Results[0])
-	}
-}
-
-func TestSearchASAMetadataRejectsUnconfiguredNetwork(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
-	deps.config.Algod = apconfig.AlgodConfig{
-		"customnet": {Server: "http://127.0.0.1:1", Token: ""},
-	}
-
-	result := svc.SearchASAMetadata(ir, adminproto.SearchASAMetadataRequest{
-		Network: "othernet",
-		Query:   "USDC",
-	})
-	if result.Code != "network_not_configured" {
-		t.Fatalf("SearchASAMetadata() code = %q, want network_not_configured", result.Code)
-	}
-	if result.Error == "" {
-		t.Fatal("SearchASAMetadata() error is empty, want explanatory error")
-	}
-}
-
-func TestResolveASAMetadataResolvesBuiltinNumericID(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
-	deps.config.Algod = apconfig.AlgodConfig{
-		"testnet": {Server: "http://127.0.0.1:1", Token: ""},
-	}
-
-	result := svc.ResolveASAMetadata(ir, adminproto.ResolveASAMetadataRequest{
-		Network: "testnet",
-		AssetID: 10458941,
-	})
-	if result.Error != "" || result.Code != "" {
-		t.Fatalf("ResolveASAMetadata() error = code %q error %q", result.Code, result.Error)
-	}
-	if result.Asset.AssetID != 10458941 || result.Asset.UnitName != "USDC" || result.Asset.Decimals != 6 {
-		t.Fatalf("ResolveASAMetadata() asset = %+v, want testnet USDC", result.Asset)
-	}
-}
-
-func TestBuildPolicySettingsIncludesASAMetadataForConfiguredLimits(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
-	deps.config.Algod = apconfig.AlgodConfig{
-		"testnet": {Server: "http://127.0.0.1:1", Token: ""},
-	}
-	ir.SetPolicy(&policy.Config{
-		ReviewAlgoPayments: map[string]uint64{
-			"testnet": 5_250_000,
-		},
-		MaxAlgoPayments: map[string]uint64{
-			"testnet": 10_500_000,
-		},
-		ReviewASAAmounts: map[string]map[uint64]uint64{
-			"testnet": {10458941: 500_000},
-		},
-		MaxASAAmounts: map[string]map[uint64]uint64{
-			"testnet": {10458941: 1_000_000},
-		},
-	})
-
-	settings := svc.BuildPolicySettings(ir)
-	items := settings.PolicyASAMetadata["testnet"]
-	if len(items) != 1 {
-		t.Fatalf("PolicyASAMetadata[testnet] length = %d, want 1: %+v", len(items), items)
-	}
-	if items[0].AssetID != 10458941 || items[0].UnitName != "USDC" || items[0].Decimals != 6 {
-		t.Fatalf("PolicyASAMetadata[testnet][0] = %+v, want testnet USDC metadata", items[0])
-	}
-	if settings.MaxAlgoPayments["testnet"] != "10.5" {
-		t.Fatalf("MaxAlgoPayments[testnet] = %q, want 10.5", settings.MaxAlgoPayments["testnet"])
-	}
-	if settings.ReviewAlgoPayments["testnet"] != "5.25" {
-		t.Fatalf("ReviewAlgoPayments[testnet] = %q, want 5.25", settings.ReviewAlgoPayments["testnet"])
-	}
-	if settings.ReviewASAAmounts["testnet"] != "10458941:0.5" {
-		t.Fatalf("ReviewASAAmounts[testnet] = %q, want 10458941:0.5", settings.ReviewASAAmounts["testnet"])
 	}
 }
 

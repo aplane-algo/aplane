@@ -20,7 +20,6 @@ import (
 	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -194,7 +193,7 @@ func validateNetworkContext(network string, genesisHash []byte) (bool, error) {
 }
 
 func validateDummySlots(group *canonical.Group, partialSigned []string) error {
-	dummyAddress, err := lsig.DummyAddress()
+	dummyAddress, err := signing.DummyAddress()
 	if err != nil {
 		return fmt.Errorf("derive dummy address: %w", err)
 	}

@@ -5,8 +5,8 @@ package engine
 
 import (
 	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 func (e *Core) signerCacheCount() int {
@@ -77,11 +77,11 @@ func (e *Core) signerCacheLsigSize(address string) int {
 func (e *Core) DummyFeeReserve(sender string, minFee uint64) uint64 {
 	effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
 	lsigSize := e.signerCacheLsigSize(effectiveSigner)
-	if lsigSize <= lsig.TxLsigBudget {
+	if lsigSize <= signing.TxLsigBudget {
 		return 0
 	}
-	extra := lsigSize - lsig.TxLsigBudget
-	dummies := (extra + lsig.TxLsigBudget - 1) / lsig.TxLsigBudget
+	extra := lsigSize - signing.TxLsigBudget
+	dummies := (extra + signing.TxLsigBudget - 1) / signing.TxLsigBudget
 	return uint64(dummies) * minFee
 }
 

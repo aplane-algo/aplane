@@ -135,7 +135,7 @@ endpoints:
 	if cfg != nil {
 		t.Fatalf("cfg = %#v, want nil", cfg)
 	}
-	if !strings.Contains(err.Error(), "no token configured") {
+	if !strings.Contains(err.Error(), "requires an enrolled client token") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -258,7 +258,7 @@ func writeKnownHost(t *testing.T, path, host string, port int) {
 
 func writeDummyKnownHost(t *testing.T, path, host string, port int) {
 	t.Helper()
-	sshPub, err := dummyHostPublicKey()
+	sshPub, err := ssh.NewPublicKey(ed25519.PublicKey(make([]byte, ed25519.PublicKeySize)))
 	if err != nil {
 		t.Fatalf("dummy host key: %v", err)
 	}

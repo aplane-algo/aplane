@@ -340,7 +340,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 
 	mustRegister(registry, &command.Command{
 		Name:        "request-token",
-		Usage:       "request-token [--endpoint <alias>] [<host> [--ssh-port <port>]]",
+		Usage:       "request-token [--endpoint <alias>]",
 		Description: "Request API token from Signer (requires operator approval)",
 		Category:    command.CategoryRemote,
 		Handler:     command.NewInternalHandler(r.cmdRequestToken),

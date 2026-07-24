@@ -173,28 +173,84 @@ networks:
 	if strings.Contains(out, "add ssh block to config.yaml") {
 		t.Fatalf("DisplayConfig output points at legacy ssh config:\n%s", out)
 	}
-	if !strings.Contains(out, "current signer routing is endpoints.yaml") {
-		t.Fatalf("DisplayConfig output missing endpoint routing guidance:\n%s", out)
+	if !strings.Contains(out, filepath.Join(dataDir, ClientEndpointsFile)) {
+		t.Fatalf("DisplayConfig output missing endpoints path:\n%s", out)
 	}
 }
 
-func TestLoadConfigRejectsUnknownNestedFields(t *testing.T) {
+func TestLoadConfigRejectsRemovedSSHField(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(`
 network: testnet
 ssh:
   host: localhost
-  surprise: true
 `), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	_, err := LoadConfigFromPath(path)
 	if err == nil {
-		t.Fatal("LoadConfigFromPath error = nil, want unknown nested field error")
+		t.Fatal("LoadConfigFromPath error = nil, want removed ssh field error")
 	}
-	if !strings.Contains(err.Error(), "field surprise not found") {
-		t.Fatalf("LoadConfigFromPath error = %q, want surprise", err)
+	if !strings.Contains(err.Error(), `unknown field "ssh"`) {
+		t.Fatalf("LoadConfigFromPath error = %q, want unknown ssh field", err)
+	}
+}
+
+func TestLoadConfigRejectsRemovedSignerPortField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+network: testnet
+signer_port: 11270
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfigFromPath(path)
+	if err == nil {
+		t.Fatal("LoadConfigFromPath error = nil, want removed signer_port field error")
+	}
+	if !strings.Contains(err.Error(), `unknown field "signer_port"`) {
+		t.Fatalf("LoadConfigFromPath error = %q, want unknown signer_port field", err)
+	}
+}
+
+func TestLoadConfigAppliesSSHDefaultsFromEndpointRegistry(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("network: testnet\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.example
+`), 0o600); err != nil {
+		t.Fatalf("write endpoints: %v", err)
+	}
+
+	cfg, err := LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	_, endpoint, ok := cfg.Endpoints.DefaultEndpoint()
+	if !ok {
+		t.Fatal("default endpoint missing")
+	}
+	endpointSSH, err := ResolveClientEndpointSSH(endpoint)
+	if err != nil {
+		t.Fatalf("ResolveClientEndpointSSH: %v", err)
+	}
+	if endpointSSH.SignerPort != DefaultRESTPort || endpointSSH.Port != DefaultSSHPort {
+		t.Fatalf("endpoint SSH ports = %#v", endpointSSH)
+	}
+	if endpointSSH.IdentityFile != filepath.Join(dataDir, ".ssh/id_ed25519") {
+		t.Fatalf("identity file = %q", endpointSSH.IdentityFile)
+	}
+	if endpointSSH.KnownHostsPath != filepath.Join(dataDir, ".ssh/known_hosts") {
+		t.Fatalf("known_hosts = %q", endpointSSH.KnownHostsPath)
 	}
 }
 
@@ -254,10 +310,6 @@ func TestLoadConfigEndpointRegistryDerivesSentryRoutesFromPublishedInventory(t *
 	componentKey := sentryEndpointConfigTestComponentKey(t, witness.Falcon1024V1, publicKey)
 	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
 network: testnet
-signer_port: 12270
-ssh:
-  host: signer.example
-  port: 2222
 `), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

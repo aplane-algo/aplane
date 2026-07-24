@@ -178,7 +178,7 @@ positions.
 
 ```go
 // Planner analyzes the group
-currentBudget := len(txns) * lsig.TxLsigBudget
+currentBudget := len(txns) * signing.TxLsigBudget
 requiredBudget := totalLsigBytes // signer metadata + foreign lsig_size hints
 
 if isPreGrouped && needsDummies {
@@ -216,8 +216,8 @@ The server automatically:
 
 | Function | Location | Purpose |
 |----------|----------|---------|
-| `CreateDummyTransactions()` | `internal/lsig/wrapper.go` | Creates zero-fee dummy transactions |
-| `SignDummyTransactions()` | `internal/lsig/wrapper.go` | Signs dummies with embedded LogicSig |
+| `CreateDummyTransactions()` | `internal/signing/dummy_transactions.go` | Creates zero-fee dummy transactions |
+| `SignDummyTransactions()` | `internal/signing/dummy_transactions.go` | Signs dummies with embedded LogicSig |
 | `calculateDummies()` | `internal/signerapp/signing/planner_runtime.go` | Calculates required dummy count from LSig sizes and group budget |
 | `CalculateDummyFees()` | `internal/signing/common.go` | Calculates total dummy fees and approximate per-LSig share |
 | `ApplyDummyFees()` | `internal/signing/common.go` | Planner-facing dummy fee application helper |

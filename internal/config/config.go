@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -17,16 +15,6 @@ const (
 	DefaultSignerStatusPollIntervalString = "10s"
 	MinSignerStatusPollInterval           = 1 * time.Second
 )
-
-// SSHClientConfig is compatibility-only client SSH configuration retained for
-// old command forms. Current signer and sentry endpoint routing lives in
-// ClientEndpointConfig records loaded from endpoints.yaml.
-type SSHClientConfig struct {
-	Host           string `yaml:"host" description:"Signer host to SSH to (required)"`
-	Port           int    `yaml:"port" description:"SSH port" default:"1127"`
-	IdentityFile   string `yaml:"identity_file" description:"SSH private key path (relative to data dir)" default:".ssh/id_ed25519"`
-	KnownHostsPath string `yaml:"known_hosts_path" description:"Known hosts file path (relative to data dir)" default:".ssh/known_hosts"`
-}
 
 // SentryEndpointConfig maps an embedded sentry public key to the signer
 // endpoint that can produce sentry-role component signatures for that key.
@@ -46,18 +34,13 @@ type SentryEndpointConfigs map[string]SentryEndpointConfig
 
 // Config holds apshell configuration settings
 type Config struct {
-	SchemaVersion    int      `yaml:"schema_version,omitempty" description:"Client config schema version" default:"1"`
-	Network          string   `yaml:"network" description:"Default network context token" default:"testnet"`
-	NetworksAllowed  []string `yaml:"networks_allowed" description:"Restrict allowed networks (empty = all)" default:"[]"`
-	LegacySignerPort int      `yaml:"signer_port" configdoc:"skip" description:"Compatibility fallback for legacy client routing; current endpoint signer_port lives in endpoints.yaml" default:"11270"`
-	Theme            string   `yaml:"theme" description:"Local client UI theme: auto, dark, or light (auto detects terminal)" default:"auto"`
+	SchemaVersion   int      `yaml:"schema_version,omitempty" description:"Client config schema version" default:"1"`
+	Network         string   `yaml:"network" description:"Default network context token" default:"testnet"`
+	NetworksAllowed []string `yaml:"networks_allowed" description:"Restrict allowed networks (empty = all)" default:"[]"`
+	Theme           string   `yaml:"theme" description:"Local client UI theme: auto, dark, or light (auto detects terminal)" default:"auto"`
 	// SignerStatusPollInterval controls how often interactive apshell sessions
 	// poll /status for keyset revision changes. "0" disables background polling.
 	SignerStatusPollInterval string `yaml:"signer_status_poll_interval" description:"Background /status polling interval for signer keyset refresh (0=disabled)" default:"10s"`
-
-	// LegacySSH is compatibility-only client routing state. New installs and
-	// normal connections use endpoint records from endpoints.yaml.
-	LegacySSH *SSHClientConfig `yaml:"ssh" configdoc:"skip" description:"Compatibility SSH tunnel settings; current endpoint SSH fields live in endpoints.yaml"`
 
 	// SentryEndpoints maps guarded-account embedded sentry public keys to
 	// signer endpoints for sentry-role component signing. It is derived
@@ -77,26 +60,14 @@ type Config struct {
 
 // DefaultConfig returns the default configuration for runtime use.
 // Algod URLs are empty - user must explicitly configure them.
-// SSH is nil by default; normal routing is loaded from endpoints.yaml.
 func DefaultConfig() Config {
 	return Config{
 		SchemaVersion:            ConfigSchemaVersion,
 		Network:                  "testnet",
 		NetworksAllowed:          []string{}, // Empty = all networks allowed
-		LegacySignerPort:         DefaultRESTPort,
 		Theme:                    "auto",
 		SignerStatusPollInterval: DefaultSignerStatusPollIntervalString,
-		LegacySSH:                nil,
 		// Algod URLs intentionally empty - must be explicitly configured
-	}
-}
-
-// DefaultSSHClientConfig returns default SSH settings (used when ssh block exists but fields are missing)
-func DefaultSSHClientConfig() SSHClientConfig {
-	return SSHClientConfig{
-		Port:           DefaultSSHPort,
-		IdentityFile:   ".ssh/id_ed25519",  // Relative to data directory
-		KnownHostsPath: ".ssh/known_hosts", // Relative to data directory
 	}
 }
 
@@ -122,7 +93,6 @@ func GetConfigPath(dataDir string) string {
 // LoadConfig loads configuration from config.yaml in the data directory.
 // The dataDir parameter is required - use GetClientDataDir() to resolve it.
 // If dataDir is empty or file doesn't exist, returns default config.
-// Relative SSH paths are resolved relative to the data directory.
 // Returns an error if the config is invalid (e.g., network not in networks_allowed)
 func LoadConfig(dataDir string) (Config, error) {
 	config, err := LoadConfigFromPath(GetConfigPath(dataDir))
@@ -130,12 +100,7 @@ func LoadConfig(dataDir string) (Config, error) {
 		return config, err
 	}
 
-	// Resolve relative SSH paths to absolute paths based on dataDir
-	if config.LegacySSH != nil {
-		config.LegacySSH.IdentityFile = ResolvePath(config.LegacySSH.IdentityFile, dataDir)
-		config.LegacySSH.KnownHostsPath = ResolvePath(config.LegacySSH.KnownHostsPath, dataDir)
-	}
-	endpoints, err := LoadClientEndpointRegistry(dataDir, config)
+	endpoints, err := LoadClientEndpointRegistry(dataDir)
 	if err != nil {
 		return Config{}, err
 	}
@@ -209,9 +174,6 @@ func LoadConfigFromPath(path string) (Config, error) {
 
 	// Fill in defaults for missing values
 	defaults := DefaultConfig()
-	if config.LegacySignerPort == 0 {
-		config.LegacySignerPort = defaults.LegacySignerPort
-	}
 	if config.Theme == "" {
 		config.Theme = defaults.Theme
 	}
@@ -219,22 +181,6 @@ func LoadConfigFromPath(path string) (Config, error) {
 		config.SignerStatusPollInterval = defaults.SignerStatusPollInterval
 	}
 
-	// Fill in SSH defaults if SSH block is present
-	if config.LegacySSH != nil {
-		sshDefaults := DefaultSSHClientConfig()
-		if config.LegacySSH.Host == "" {
-			return Config{}, fmt.Errorf("ssh.host is required when ssh block is present")
-		}
-		if config.LegacySSH.Port == 0 {
-			config.LegacySSH.Port = sshDefaults.Port
-		}
-		if config.LegacySSH.IdentityFile == "" {
-			config.LegacySSH.IdentityFile = sshDefaults.IdentityFile
-		}
-		if config.LegacySSH.KnownHostsPath == "" {
-			config.LegacySSH.KnownHostsPath = sshDefaults.KnownHostsPath
-		}
-	}
 	return config, nil
 }
 
@@ -302,71 +248,6 @@ func (c *Config) GetAlgodConfig(network string) (*AlgodNetworkConfig, error) {
 	return c.Algod.GetNetwork(network)
 }
 
-// ParsedConnection represents a parsed connection string
-type ParsedConnection struct {
-	Host       string // The remote host
-	SSHPort    int    // SSH port (default 1127)
-	SignerPort int    // Remote signer REST port (default 11270)
-}
-
-// ParseConnectionString parses a connection string in the format:
-//
-//	<host> [--ssh-port <port>] [--signer-port <port>]
-//
-// For local loopback connections:
-//
-//	127.0.0.1 [--signer-port <port>]
-//
-// Defaults are taken from config.yaml if available, otherwise: ssh-port=1127, signer-port=11270
-// Returns the parsed connection or an error if invalid
-func ParseConnectionString(connStr string) (*ParsedConnection, error) {
-	if connStr == "" {
-		return nil, fmt.Errorf("empty connection string")
-	}
-
-	parts := strings.Fields(connStr) // Split on whitespace
-	if len(parts) < 1 {
-		return nil, fmt.Errorf("invalid connection format: expected '<host> [--ssh-port <port>] [--signer-port <port>]'")
-	}
-
-	// Use hardcoded defaults - the caller should have loaded config separately
-	result := &ParsedConnection{
-		Host:       parts[0],
-		SSHPort:    DefaultSSHPort,
-		SignerPort: DefaultRESTPort,
-	}
-
-	// Parse optional flags
-	for i := 1; i < len(parts); i++ {
-		switch parts[i] {
-		case "--ssh-port":
-			if i+1 >= len(parts) {
-				return nil, fmt.Errorf("--ssh-port requires a value")
-			}
-			port, err := strconv.Atoi(parts[i+1])
-			if err != nil || port <= 0 || port > 65535 {
-				return nil, fmt.Errorf("invalid SSH port: %s", parts[i+1])
-			}
-			result.SSHPort = port
-			i++ // Skip the value
-		case "--signer-port":
-			if i+1 >= len(parts) {
-				return nil, fmt.Errorf("--signer-port requires a value")
-			}
-			port, err := strconv.Atoi(parts[i+1])
-			if err != nil || port <= 0 || port > 65535 {
-				return nil, fmt.Errorf("invalid signer port: %s", parts[i+1])
-			}
-			result.SignerPort = port
-			i++ // Skip the value
-		default:
-			return nil, fmt.Errorf("unknown option: %s", parts[i])
-		}
-	}
-
-	return result, nil
-}
-
 // DisplayConfig prints the current configuration
 func DisplayConfig(dataDir string) {
 	config, err := LoadConfig(dataDir)
@@ -387,15 +268,7 @@ func DisplayConfig(dataDir string) {
 	} else {
 		fmt.Printf("Allowed:     all networks\n")
 	}
-	fmt.Printf("Signer port: %d (compatibility fallback; current routing is endpoints.yaml)\n", config.LegacySignerPort)
-	if config.LegacySSH != nil {
-		fmt.Printf("SSH host:    %s\n", config.LegacySSH.Host)
-		fmt.Printf("SSH port:    %d\n", config.LegacySSH.Port)
-		fmt.Printf("SSH key:     %s\n", config.LegacySSH.IdentityFile)
-		fmt.Printf("known_hosts: %s\n", config.LegacySSH.KnownHostsPath)
-	} else {
-		fmt.Printf("SSH:         not configured in config.yaml (current signer routing is endpoints.yaml)\n")
-	}
+	fmt.Printf("Endpoints:   %s\n", GetClientEndpointsPath(dataDir))
 	for network, cfg := range config.Algod {
 		if cfg != nil && cfg.Server != "" {
 			fmt.Printf("algod.%s:  %s\n", network, cfg.Server)

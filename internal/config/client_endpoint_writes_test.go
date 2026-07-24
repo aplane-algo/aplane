@@ -292,6 +292,24 @@ ssh: {}
 	}
 }
 
+func TestCheckSupportedClientEndpointConfigRejectsLegacySignerPort(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
+network: testnet
+signer_port: 12270
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	err := CheckSupportedClientEndpointConfig(dataDir)
+	if err == nil {
+		t.Fatal("CheckSupportedClientEndpointConfig() error = nil, want unsupported config")
+	}
+	if !strings.Contains(err.Error(), "top-level signer_port") {
+		t.Fatalf("error = %v, want top-level signer_port guidance", err)
+	}
+}
+
 func endpointPublishedTestSentry(t *testing.T, publicKeyHex string) ClientEndpointPublishedSentry {
 	t.Helper()
 	return ClientEndpointPublishedSentry{

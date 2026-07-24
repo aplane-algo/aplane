@@ -42,11 +42,11 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
-- `auth_required` carries the server admin protocol version as
-  `protocol_version:{major,minor}`; clients should send their version in
-  `auth.protocol_version`; an omitted version is accepted as unknown,
-  explicit major-version mismatches are rejected, and minor-version mismatches
-  are logged for skew diagnosis,
+- the current admin protocol major version is 2; `auth_required` carries it as
+  `protocol_version:{major,minor}`; clients must send their version in
+  `auth.protocol_version`; major-version mismatches
+  are rejected during authentication, and minor-version mismatches are logged
+  but accepted,
 - post-auth admin connections use one dispatcher-owned reader in `internal/transport`,
 - the dispatcher routes by envelope semantics (`kind` + `id`) rather than message-type allowlists,
 - the generic client helpers in `internal/transport` expect `auth_required` for
@@ -172,33 +172,23 @@ Client to Server:
 
 - `get_admin_settings`
 - `update_admin_setting`
-- `get_policy_settings`
 - `get_policy_snapshot`
 - `validate_policy`
 - `replace_policy`
-- `update_policy_setting`
-- `update_policy_asa_amounts`
-- `search_asa_metadata`
-- `resolve_asa_metadata`
 
 Server to Client:
 
 - `admin_settings`
 - `update_admin_setting_result`
-- `policy_settings`
 - `policy_snapshot`
 - `validate_policy_result`
 - `replace_policy_result`
-- `update_policy_setting_result`
-- `update_policy_asa_result`
-- `asa_metadata_results`
-- `asa_metadata_result`
 
 ## Key Payload Shapes
 
 ### Session and Identity
 
-- `auth`: `passphrase`, optional `identity_id`, optional `protocol_version`
+- `auth`: `passphrase`, optional `identity_id`, required `protocol_version`
 - `auth_result`: `success`, optional `code`, optional `error`
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
@@ -278,21 +268,12 @@ unlock/reload after passphrase verification through
 - `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
-- `policy_settings`: `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, `reject_clawback`, `always_review_warnings`, `auto_approve_self_noop_transfer`, `max_fee_microalgos`, `review_algo_payments`, `max_algo_payments`, `policy_networks`, `review_asa_amounts`, `max_asa_amounts`, optional `policy_asa_metadata`; compatibility fields `max_asa_amounts_mainnet`, `max_asa_amounts_testnet`, and `max_asa_amounts_betanet` may also be present; `reject_clawback` is reported for visibility but is YAML-only for mutation; `key_overrides` is not projected over admin IPC
 - `get_policy_snapshot`: optional `target` (`signer` or `sentry`, omitted means `signer`); requests the active signer-owned stored policy projection for display/editing
 - `policy_snapshot`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
 - `validate_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`; parses and runtime-validates the submitted YAML in the selected policy domain without writing it
 - `validate_policy_result`: `success`, optional `target`, optional `identity_id`, optional `code`, optional `error`
 - `replace_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of the selected policy document with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
 - `replace_policy_result`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, the response is the resulting active canonical snapshot, not necessarily the exact uploaded bytes
-- `update_policy_setting`: `key`, `value` (string-typed on wire)
-- `update_policy_setting_result`: `success`, `key`, optional `value`, `code`, `error`
-- `update_policy_asa_amounts`: `review_asa_amounts`, `max_asa_amounts`, `review_algo_payments`, and `max_algo_payments` maps keyed by network context token; compatibility fields `mainnet`, `testnet`, and `betanet` are accepted for ASA deny thresholds
-- `update_policy_asa_result`: `success`, optional `code`, `error`
-- `search_asa_metadata`: `network`, `query`; searches only signer-local ASA metadata cache by unit name and never queries algod
-- `asa_metadata_results`: `network`, `query`, `results[]` with `asset_id`, `unit_name`, `name`, `decimals`, `source`, optional `code`, `error`
-- `resolve_asa_metadata`: `network`, `asset_id`; resolves numeric ASA IDs through signer cache and, if cold, configured algod
-- `asa_metadata_result`: `network`, `asset`, optional `code`, `error`
 
 ## Writable Settings
 
@@ -322,25 +303,9 @@ YAML-only runtime settings:
 - `approval_wait`: identity-effective manual signing approval timeout. It is
   not projected through admin IPC.
 
-Writable policy settings:
-
-- `reject_foreign_rekey`
-- `reject_close_remainder`
-- `reject_asset_close`
-- `always_review_warnings` (second-phase forced-review rule)
-- `auto_approve_self_noop_transfer` (policy auto-approval rule)
-- `max_fee_microalgos`
-
-`reject_clawback` remains in `policy_settings` as a read projection, but scalar
-`update_policy_setting` rejects it as YAML-only. Change it through whole-policy
-YAML replacement, `appolicy --save`, or direct checked/signed policy YAML.
-
-Scalar threshold update semantics:
-
-- `max_fee_microalgos` is operator-visible and persisted as raw microAlgos
-- `review_algo_payments` is keyed by network context token, is operator-visible over admin IPC as ALGO display units, accepts up to 6 decimal places, and is persisted/enforced as raw microAlgos in `policy.yaml`
-- `max_algo_payments` is keyed by network context token, is operator-visible over admin IPC as ALGO display units, accepts up to 6 decimal places, and is persisted/enforced as raw microAlgos in `policy.yaml`
-- transfer guard review/rejection messages render both the transaction amount and policy threshold in display units and include the resolved network token
+Policy has no scalar admin setting surface. Read, validation, and mutation use
+`get_policy_snapshot`, `validate_policy`, and `replace_policy` with the complete
+canonical YAML document.
 
 Key-type override semantics:
 
@@ -360,25 +325,6 @@ Whole-policy replacement:
 - successful replacement writes the exact submitted YAML bytes plus a fresh sidecar, verifies the saved file, and updates the bound identity runtime without requiring a restart
 - failure is fail-closed: parse, validation, stale-snapshot, locked-identity, or current-policy verification errors do not overwrite the existing policy
 - `replace_policy_result.policy_yaml` is canonical YAML for display; clients that need byte preservation should retain their own uploaded bytes
-
-Atomic transfer guard update:
-
-- `update_policy_asa_amounts` replaces the identity policy's `max_asa_amounts` map and, when provided, its `review_asa_amounts`, `max_algo_payments`, and `review_algo_payments` maps atomically
-- map keys are validated as network context tokens
-- non-empty network entries are accepted only for networks listed in `policy_settings.policy_networks`
-- `policy_networks` is derived from signer `algod` config entries with non-empty `server` values
-- `mainnet`, `testnet`, and `betanet` are scalar compatibility fields that map to ASA deny thresholds
-- when both review and deny thresholds are provided for the same network/asset, the deny threshold must be greater than or equal to the review threshold
-- admin/UI semantics are:
-  - ASA refs must be numeric ASA IDs; ASA names and unit names are display labels only,
-  - `policy_settings.policy_asa_metadata` is display metadata for the configured ASA guards and is not authoritative policy state,
-  - symbol entry in admin clients is a local-cache search aid that must resolve to a numeric ASA ID before saving,
-  - ambiguous cached symbol matches are presented by numeric ASA ID for operator choice,
-  - any numeric ASA ID that resolves on the selected network uses display-unit amounts at edit time,
-  - resolution checks the signer-wide ASA metadata cache first, then queries the selected network's configured algod endpoint when the cache is cold,
-  - successful live algod metadata lookups are persisted to `cache/<network>_asa_cache.json` under the signer data directory,
-  - unresolved assets are rejected instead of being interpreted as raw,
-  - policy persistence and enforcement always use raw on-chain units
 
 ## Admin Lock Semantics
 

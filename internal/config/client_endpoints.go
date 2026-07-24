@@ -53,6 +53,17 @@ type ClientEndpointConfig struct {
 	PublishedSentries map[string]ClientEndpointPublishedSentry `yaml:"published_sentries,omitempty"`
 }
 
+// ClientEndpointSSH contains runtime SSH transport settings resolved from one
+// endpoint profile.
+type ClientEndpointSSH struct {
+	Host           string
+	Port           int
+	SignerPort     int
+	IdentityFile   string
+	KnownHostsPath string
+	TokenFile      string
+}
+
 // ClientEndpointPublishedSentry records one sentry key advertised by an
 // endpoint.
 type ClientEndpointPublishedSentry struct {
@@ -70,7 +81,7 @@ func GetClientEndpointsPath(dataDir string) string {
 
 // LoadClientEndpointRegistry loads endpoints.yaml. Client signer routing lives
 // only in endpoints.yaml; config.yaml ssh settings are not a fallback.
-func LoadClientEndpointRegistry(dataDir string, cfg Config) (ClientEndpointRegistry, error) {
+func LoadClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, error) {
 	path := GetClientEndpointsPath(dataDir)
 	if path == "" {
 		return emptyClientEndpointRegistry(), nil
@@ -100,7 +111,7 @@ func LoadClientEndpointRegistry(dataDir string, cfg Config) (ClientEndpointRegis
 		if err := ValidateClientEndpointAlias(alias); err != nil {
 			return ClientEndpointRegistry{}, fmt.Errorf("endpoint %q: %w", alias, err)
 		}
-		normalized, err := normalizeClientEndpointConfig(dataDir, cfg, alias, endpoint)
+		normalized, err := normalizeClientEndpointConfig(dataDir, alias, endpoint)
 		if err != nil {
 			return ClientEndpointRegistry{}, fmt.Errorf("endpoint %q: %w", alias, err)
 		}
@@ -145,7 +156,7 @@ func ValidateClientEndpointRole(role string) error {
 	}
 }
 
-func normalizeClientEndpointConfig(dataDir string, cfg Config, alias string, endpoint ClientEndpointConfig) (ClientEndpointConfig, error) {
+func normalizeClientEndpointConfig(dataDir, alias string, endpoint ClientEndpointConfig) (ClientEndpointConfig, error) {
 	endpoint.Role = strings.TrimSpace(endpoint.Role)
 	if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
 		return endpoint, err
@@ -170,19 +181,14 @@ func normalizeClientEndpointConfig(dataDir string, cfg Config, alias string, end
 	}
 
 	if strings.HasPrefix(endpoint.URL, "ssh://") {
-		defaultSSH := DefaultSSHClientConfig()
 		if endpoint.SignerPort == 0 {
-			if cfg.LegacySignerPort != 0 {
-				endpoint.SignerPort = cfg.LegacySignerPort
-			} else {
-				endpoint.SignerPort = DefaultRESTPort
-			}
+			endpoint.SignerPort = DefaultRESTPort
 		}
 		if endpoint.IdentityFile == "" {
-			endpoint.IdentityFile = defaultSSH.IdentityFile
+			endpoint.IdentityFile = ".ssh/id_ed25519"
 		}
 		if endpoint.KnownHostsPath == "" {
-			endpoint.KnownHostsPath = defaultSSH.KnownHostsPath
+			endpoint.KnownHostsPath = ".ssh/known_hosts"
 		}
 		endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
 		endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
@@ -256,6 +262,26 @@ func ClientEndpointSSHHostPort(endpoint ClientEndpointConfig) (string, int, erro
 		sshPort = port
 	}
 	return host, sshPort, nil
+}
+
+// ResolveClientEndpointSSH resolves the complete SSH transport for an endpoint.
+func ResolveClientEndpointSSH(endpoint ClientEndpointConfig) (ClientEndpointSSH, error) {
+	host, port, err := ClientEndpointSSHHostPort(endpoint)
+	if err != nil {
+		return ClientEndpointSSH{}, err
+	}
+	signerPort := endpoint.SignerPort
+	if signerPort == 0 {
+		signerPort = DefaultRESTPort
+	}
+	return ClientEndpointSSH{
+		Host:           host,
+		Port:           port,
+		SignerPort:     signerPort,
+		IdentityFile:   endpoint.IdentityFile,
+		KnownHostsPath: endpoint.KnownHostsPath,
+		TokenFile:      endpoint.TokenFile,
+	}, nil
 }
 
 func isLoopbackEndpointHost(host string) bool {

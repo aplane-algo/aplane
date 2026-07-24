@@ -13,6 +13,7 @@ import (
 type consoleClientPrereqs struct {
 	dataDir string
 	config  config.Config
+	ssh     config.ClientEndpointSSH
 	token   string
 }
 
@@ -35,6 +36,7 @@ func loadConsoleClientPrereqs(clientDataDirFlag string) (*consoleClientPrereqs, 
 	return &consoleClientPrereqs{
 		dataDir: prereqs.DataDir,
 		config:  prereqs.Config,
+		ssh:     prereqs.SSH,
 		token:   prereqs.Token,
 	}, nil
 }

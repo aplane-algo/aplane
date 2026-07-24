@@ -25,14 +25,9 @@ type IdentityServices interface {
 type SettingsServices interface {
 	BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettings
 	UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateAdminSettingRequest) error
-	BuildPolicySettings(ir *identity.Runtime) adminproto.PolicySettings
 	BuildPolicySnapshot(ir *identity.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot
 	ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot
 	ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult
-	UpdatePolicySetting(ir *identity.Runtime, req adminproto.UpdatePolicySettingRequest) error
-	UpdatePolicyASAAmounts(ir *identity.Runtime, req adminproto.UpdatePolicyASAAmountsRequest) error
-	SearchASAMetadata(ir *identity.Runtime, req adminproto.SearchASAMetadataRequest) adminproto.ASAMetadataResults
-	ResolveASAMetadata(ir *identity.Runtime, req adminproto.ResolveASAMetadataRequest) adminproto.ASAMetadataResult
 }
 
 type KeyServices interface {

@@ -5,7 +5,6 @@ package apshellcli
 
 import (
 	"bytes"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,14 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
-
-type stubListener struct {
-	addr net.Addr
-}
-
-func (s stubListener) Accept() (net.Conn, error) { return nil, nil }
-func (s stubListener) Close() error              { return nil }
-func (s stubListener) Addr() net.Addr            { return s.addr }
 
 func testREPLForJS(t *testing.T) *REPLState {
 	t.Helper()
@@ -172,20 +163,5 @@ func TestCmdJSSaveRejectsRelativePathWithSlash(t *testing.T) {
 	err := repl.cmdJSSave(nil, &command.Context{RawArgs: `nested/audit.js print("ok")`})
 	if err == nil {
 		t.Fatal("cmdJSSave() expected error for relative path with slash")
-	}
-}
-
-func TestJSRunnerFindAvailablePort(t *testing.T) {
-	port, err := jsRunnerFindAvailablePortWith(func(network, address string) (net.Listener, error) {
-		if network != "tcp" || address != "127.0.0.1:0" {
-			t.Fatalf("listen args = %q %q, want tcp 127.0.0.1:0", network, address)
-		}
-		return stubListener{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 42424}}, nil
-	})
-	if err != nil {
-		t.Fatalf("jsRunnerFindAvailablePortWith() error = %v", err)
-	}
-	if port != 42424 {
-		t.Fatalf("port = %d, want 42424", port)
 	}
 }

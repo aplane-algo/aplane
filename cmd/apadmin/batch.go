@@ -207,14 +207,14 @@ func runTestMode(config serverconfig.ServerConfig, args []string) {
 	runTestSession(transport.NewIPC(config.IPCPath), false, args)
 }
 
-// runRemoteTestMode runs apadmin test mode over the legacy SSH admin transport.
+// runRemoteTestMode runs apadmin test mode over the endpoint's SSH admin transport.
 func runRemoteTestMode(remoteCfg *remoteAdminConfig, args []string) {
 	conn := transport.NewSSHAdmin(
-		remoteCfg.config.LegacySSH.Host,
-		remoteCfg.config.LegacySSH.Port,
+		remoteCfg.ssh.Host,
+		remoteCfg.ssh.Port,
 		remoteCfg.token,
-		remoteCfg.config.LegacySSH.IdentityFile,
-		remoteCfg.config.LegacySSH.KnownHostsPath,
+		remoteCfg.ssh.IdentityFile,
+		remoteCfg.ssh.KnownHostsPath,
 	)
 	runTestSession(conn, true, args)
 }

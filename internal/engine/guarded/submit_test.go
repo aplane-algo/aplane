@@ -25,12 +25,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
-	internallsig "github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -716,7 +716,7 @@ func TestValidateBoundedComponentPlan(t *testing.T) {
 	plannedOriginal := original
 	plannedOriginal.Fee += 1_000
 	plannedOriginal.Group = types.Digest{0x44}
-	dummies, err := internallsig.CreateDummyTransactions(1, suggestedParamsFromTxn(original))
+	dummies, err := signing.CreateDummyTransactions(1, suggestedParamsFromTxn(original))
 	if err != nil {
 		t.Fatal(err)
 	}

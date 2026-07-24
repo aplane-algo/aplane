@@ -15,11 +15,11 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	internallsig "github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	signingutil "github.com/aplane-algo/aplane/internal/signing"
 )
 
 func userAutoApproveDefault(v bool) *bool {
@@ -989,7 +989,7 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferAllowsSignerDummies(t *test
 	approvalPathCalled := false
 	beforeExecuteCalled := false
 	addr := types.Address{1}
-	dummyAddr, err := internallsig.DummyAddress()
+	dummyAddr, err := signingutil.DummyAddress()
 	if err != nil {
 		t.Fatalf("DummyAddress() error = %v", err)
 	}
@@ -1068,7 +1068,7 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferAllowsSignerDummies(t *test
 
 func TestSelfNoOpTransferPlanAutoApprovalUsesActualDummyFees(t *testing.T) {
 	addr := types.Address{1}
-	dummyAddr, err := internallsig.DummyAddress()
+	dummyAddr, err := signingutil.DummyAddress()
 	if err != nil {
 		t.Fatalf("DummyAddress() error = %v", err)
 	}
@@ -1170,7 +1170,7 @@ func TestSignGroupWithPlanAutoApproveASAZeroSelfTransferSkipsManualReview(t *tes
 func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackForUnexpectedDummy(t *testing.T) {
 	beforeExecuteCalled := false
 	addr := types.Address{1}
-	dummyAddr, err := internallsig.DummyAddress()
+	dummyAddr, err := signingutil.DummyAddress()
 	if err != nil {
 		t.Fatalf("DummyAddress() error = %v", err)
 	}

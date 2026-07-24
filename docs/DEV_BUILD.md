@@ -265,8 +265,8 @@ apshell> send 10 algo from mykey to RECEIVER...
 
 `connect` reads the default signer endpoint from
 `$APCLIENT_DATA/endpoints.yaml`. Passing an endpoint alias connects to that
-named profile. This release does not support top-level `ssh:` signer routing in
-client `config.yaml`.
+named profile. This release does not support top-level `ssh:` or
+`signer_port:` routing in client `config.yaml`.
 
 ### Signer Server
 

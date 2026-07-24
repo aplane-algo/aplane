@@ -52,15 +52,6 @@ func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessa
 	_ = s.WriteJSON(ProtocolUpdateAdminSettingResultMessage(msg.ID, request, err))
 }
 
-func (s *Session) HandleGetPolicySettings(requestID string) {
-	ir := s.productOrBoundRuntime()
-	if !s.authorize(requestID, auth.ActionPolicyView, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
-		return
-	}
-	settings := s.settingsServices.BuildPolicySettings(ir)
-	_ = s.WriteJSON(ProtocolPolicySettingsMessage(requestID, settings))
-}
-
 func (s *Session) HandleGetPolicySnapshot(msg *protocol.GetPolicySnapshotMessage) {
 	ir := s.productOrBoundRuntime()
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
@@ -93,62 +84,6 @@ func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
 		PolicyYAML: msg.PolicyYAML,
 	})
 	_ = s.WriteJSON(ProtocolValidatePolicyResultMessage(msg.ID, result))
-}
-
-func (s *Session) HandleUpdatePolicySetting(msg *protocol.UpdatePolicySettingMessage) {
-	ir := s.productOrBoundRuntime()
-	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
-		return
-	}
-	request := adminproto.UpdatePolicySettingRequest{Key: msg.Key, Value: msg.Value}
-	err := s.settingsServices.UpdatePolicySetting(ir, request)
-	_ = s.WriteJSON(ProtocolUpdatePolicySettingResultMessage(msg.ID, request, err))
-}
-
-func (s *Session) HandleUpdatePolicyASAAmounts(msg *protocol.UpdatePolicyASAAmountsMessage) {
-	ir := s.productOrBoundRuntime()
-	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
-		return
-	}
-	err := s.settingsServices.UpdatePolicyASAAmounts(ir, adminproto.UpdatePolicyASAAmountsRequest{
-		ReviewASAAmounts:   msg.ReviewASAAmounts,
-		MaxASAAmounts:      msg.MaxASAAmounts,
-		ReviewAlgoPayments: msg.ReviewAlgoPayments,
-		MaxAlgoPayments:    msg.MaxAlgoPayments,
-		Mainnet:            msg.Mainnet,
-		Testnet:            msg.Testnet,
-		Betanet:            msg.Betanet,
-	})
-
-	_ = s.WriteJSON(ProtocolUpdatePolicyASAAmountsResultMessage(msg.ID, err))
-}
-
-func (s *Session) HandleSearchASAMetadata(msg *protocol.SearchASAMetadataMessage) {
-	ir := s.productOrBoundRuntime()
-	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
-		return
-	}
-	result := s.settingsServices.SearchASAMetadata(ir, adminproto.SearchASAMetadataRequest{
-		Network: msg.Network,
-		Query:   msg.Query,
-	})
-	out := ProtocolASAMetadataResultsMessage(result)
-	out.ID = msg.ID
-	_ = s.WriteJSON(out)
-}
-
-func (s *Session) HandleResolveASAMetadata(msg *protocol.ResolveASAMetadataMessage) {
-	ir := s.productOrBoundRuntime()
-	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
-		return
-	}
-	result := s.settingsServices.ResolveASAMetadata(ir, adminproto.ResolveASAMetadataRequest{
-		Network: msg.Network,
-		AssetID: msg.AssetID,
-	})
-	out := ProtocolASAMetadataResultMessage(result)
-	out.ID = msg.ID
-	_ = s.WriteJSON(out)
 }
 
 func (s *Session) HandleRevokeToken(msg *protocol.RevokeTokenMessage) {

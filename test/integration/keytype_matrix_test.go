@@ -14,9 +14,9 @@ import (
 	"os"
 	"testing"
 
-	internallsig "github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -261,7 +261,7 @@ func pregroupedMatrixSignRequest(t *testing.T, sp types.SuggestedParams, funder 
 	dummySP.FirstRoundValid = signTxns[0].txn.FirstValid
 	dummySP.LastRoundValid = signTxns[0].txn.LastValid
 	dummySP.FlatFee = true
-	dummies, err := internallsig.CreateDummyTransactions(dummyCount, dummySP)
+	dummies, err := signing.CreateDummyTransactions(dummyCount, dummySP)
 	if err != nil {
 		t.Fatalf("failed to create matrix dummy transactions: %v", err)
 	}
@@ -289,7 +289,7 @@ func pregroupedMatrixSignRequest(t *testing.T, sp types.SuggestedParams, funder 
 	if err != nil {
 		t.Fatalf("failed to sign matrix fee sponsor: %v", err)
 	}
-	signedDummies, err := internallsig.SignDummyTransactions(dummies)
+	signedDummies, err := signing.SignDummyTransactions(dummies)
 	if err != nil {
 		t.Fatalf("failed to sign matrix dummy transactions: %v", err)
 	}

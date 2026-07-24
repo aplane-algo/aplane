@@ -4,14 +4,12 @@
 package main
 
 import (
-	"github.com/aplane-algo/aplane/internal/config"
 	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
 	"github.com/aplane-algo/aplane/internal/theme"
 )
 
 type remoteAdminConfig struct {
 	dataDir   string
-	config    config.Config
 	token     string
 	connector *tui.SSHAdminConnector
 }
@@ -25,16 +23,15 @@ func loadRemoteAdminConfig(clientDataDirFlag string) (*remoteAdminConfig, error)
 	theme.Init(cfg.Theme)
 
 	connector := &tui.SSHAdminConnector{
-		Host:           cfg.LegacySSH.Host,
-		Port:           cfg.LegacySSH.Port,
+		Host:           prereqs.ssh.Host,
+		Port:           prereqs.ssh.Port,
 		Token:          prereqs.token,
-		IdentityFile:   cfg.LegacySSH.IdentityFile,
-		KnownHostsPath: cfg.LegacySSH.KnownHostsPath,
+		IdentityFile:   prereqs.ssh.IdentityFile,
+		KnownHostsPath: prereqs.ssh.KnownHostsPath,
 	}
 
 	return &remoteAdminConfig{
 		dataDir:   prereqs.dataDir,
-		config:    cfg,
 		token:     prereqs.token,
 		connector: connector,
 	}, nil

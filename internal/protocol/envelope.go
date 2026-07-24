@@ -41,14 +41,9 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeListKeyTypes,
 		MsgTypeGetAdminSettings,
 		MsgTypeUpdateAdminSetting,
-		MsgTypeGetPolicySettings,
 		MsgTypeGetPolicySnapshot,
 		MsgTypeReplacePolicy,
 		MsgTypeValidatePolicy,
-		MsgTypeUpdatePolicySetting,
-		MsgTypeUpdatePolicyASAAmounts,
-		MsgTypeSearchASAMetadata,
-		MsgTypeResolveASAMetadata,
 		MsgTypeDisplaceConfirm:
 		return MessageKindRequest, true
 	case MsgTypeAuthResult,
@@ -81,14 +76,9 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeRevokeTokenResult,
 		MsgTypeAdminSettings,
 		MsgTypeUpdateAdminSettingResult,
-		MsgTypePolicySettings,
 		MsgTypePolicySnapshot,
 		MsgTypeReplacePolicyResult,
-		MsgTypeValidatePolicyResult,
-		MsgTypeUpdatePolicySettingResult,
-		MsgTypeUpdatePolicyASAResult,
-		MsgTypeASAMetadataResults,
-		MsgTypeASAMetadataResult:
+		MsgTypeValidatePolicyResult:
 		return MessageKindResponse, true
 	case MsgTypeAuthRequired,
 		MsgTypeStatus,

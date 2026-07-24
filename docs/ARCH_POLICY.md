@@ -870,11 +870,11 @@ Inside the TUI, `a` applies the current in-memory draft to production. `w`
 exports the current draft to an operator-selected YAML file only; it does not
 write a sidecar, update the identity store, or mark the draft clean.
 
-The signer retains compatibility support for authenticated admin IPC policy
-changes. The identity must be unlocked so the signer can verify the current
-policy and write a fresh sidecar. `apadmin` presents those capabilities through
-the shared guided editor; the editor displays the policy currently held by the
-signer runtime and applies changes as whole-document replacements.
+Authenticated admin IPC policy changes use only whole-document replacement.
+The identity must be unlocked so the signer can verify the current policy and
+write a fresh sidecar. `apadmin` presents those capabilities through the shared
+guided editor; the editor displays the policy currently held by the signer
+runtime and applies changes as whole-document replacements.
 For deliberate direct YAML edits, use `apstore policy check`, review the file,
 then run `apstore policy sign`; `apstore policy verify` checks the sidecar with
 the store passphrase. `apstore policy sign` is an offline store mutation and

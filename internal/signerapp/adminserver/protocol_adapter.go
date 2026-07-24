@@ -75,38 +75,6 @@ func ProtocolUpdateAdminSettingResultMessage(id string, request adminproto.Updat
 	return result
 }
 
-func ProtocolUpdatePolicySettingResultMessage(id string, request adminproto.UpdatePolicySettingRequest, err error) protocol.UpdatePolicySettingResultMessage {
-	result := protocol.UpdatePolicySettingResultMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeUpdatePolicySettingResult,
-			ID:   id,
-		},
-		Success: err == nil,
-		Key:     request.Key,
-		Value:   request.Value,
-	}
-	if err != nil {
-		result.Code = protocol.CodeForError(err)
-		result.Error = err.Error()
-	}
-	return result
-}
-
-func ProtocolUpdatePolicyASAAmountsResultMessage(id string, err error) protocol.UpdatePolicyASAAmountsResultMessage {
-	result := protocol.UpdatePolicyASAAmountsResultMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeUpdatePolicyASAResult,
-			ID:   id,
-		},
-		Success: err == nil,
-	}
-	if err != nil {
-		result.Code = protocol.CodeForError(err)
-		result.Error = err.Error()
-	}
-	return result
-}
-
 func ProtocolUnlockResultMessage(id string, success bool, keyCount int, errMsg string, code string) protocol.UnlockResultMessage {
 	if code == "" && errMsg != "" {
 		code = protocol.IPCErrorCode(errMsg)
@@ -339,28 +307,6 @@ func ProtocolAdminSettingsMessage(requestID string, settings adminproto.AdminSet
 	}
 }
 
-func ProtocolPolicySettingsMessage(requestID string, settings adminproto.PolicySettings) protocol.PolicySettingsMessage {
-	return protocol.PolicySettingsMessage{
-		BaseMessage:                 protocol.BaseMessage{Type: protocol.MsgTypePolicySettings, ID: requestID},
-		RejectForeignRekey:          settings.RejectForeignRekey,
-		RejectCloseRemainder:        settings.RejectCloseRemainder,
-		RejectAssetClose:            settings.RejectAssetClose,
-		RejectClawback:              settings.RejectClawback,
-		AlwaysReviewWarnings:        settings.AlwaysReviewWarnings,
-		AutoApproveSelfNoOpTransfer: settings.AutoApproveSelfNoOpTransfer,
-		MaxFeeMicroAlgos:            settings.MaxFeeMicroAlgos,
-		ReviewAlgoPayments:          clonePolicyStringMap(settings.ReviewAlgoPayments),
-		MaxAlgoPayments:             clonePolicyStringMap(settings.MaxAlgoPayments),
-		PolicyNetworks:              append([]string(nil), settings.PolicyNetworks...),
-		ReviewASAAmounts:            clonePolicyStringMap(settings.ReviewASAAmounts),
-		MaxASAAmounts:               clonePolicyStringMap(settings.MaxASAAmounts),
-		PolicyASAMetadata:           protocolPolicyASAMetadata(settings.PolicyASAMetadata),
-		MaxASAAmountsMainnet:        settings.MaxASAAmountsMainnet,
-		MaxASAAmountsTestnet:        settings.MaxASAAmountsTestnet,
-		MaxASAAmountsBetanet:        settings.MaxASAAmountsBetanet,
-	}
-}
-
 func ProtocolPolicySnapshotMessage(id string, snapshot adminproto.PolicySnapshot) protocol.PolicySnapshotMessage {
 	return protocol.PolicySnapshotMessage{
 		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicySnapshot, ID: id},
@@ -398,75 +344,6 @@ func ProtocolValidatePolicyResultMessage(id string, result adminproto.ValidatePo
 		Code:        result.Code,
 		Error:       result.Error,
 	}
-}
-
-func ProtocolASAMetadataResultsMessage(result adminproto.ASAMetadataResults) protocol.ASAMetadataResultsMessage {
-	return protocol.ASAMetadataResultsMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeASAMetadataResults},
-		Network:     result.Network,
-		Query:       result.Query,
-		Results:     protocolASAMetadataInfos(result.Results),
-		Code:        result.Code,
-		Error:       result.Error,
-	}
-}
-
-func ProtocolASAMetadataResultMessage(result adminproto.ASAMetadataResult) protocol.ASAMetadataResultMessage {
-	var asset *protocol.ASAMetadataInfo
-	if result.Error == "" && result.Code == "" {
-		info := protocolASAMetadataInfo(result.Asset)
-		asset = &info
-	}
-	return protocol.ASAMetadataResultMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeASAMetadataResult},
-		Network:     result.Network,
-		Asset:       asset,
-		Code:        result.Code,
-		Error:       result.Error,
-	}
-}
-
-func protocolASAMetadataInfos(in []adminproto.ASAMetadataInfo) []protocol.ASAMetadataInfo {
-	if in == nil {
-		return nil
-	}
-	out := make([]protocol.ASAMetadataInfo, len(in))
-	for i, item := range in {
-		out[i] = protocolASAMetadataInfo(item)
-	}
-	return out
-}
-
-func protocolPolicyASAMetadata(in map[string][]adminproto.ASAMetadataInfo) map[string][]protocol.ASAMetadataInfo {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string][]protocol.ASAMetadataInfo, len(in))
-	for network, items := range in {
-		out[network] = protocolASAMetadataInfos(items)
-	}
-	return out
-}
-
-func protocolASAMetadataInfo(in adminproto.ASAMetadataInfo) protocol.ASAMetadataInfo {
-	return protocol.ASAMetadataInfo{
-		AssetID:  in.AssetID,
-		Name:     in.Name,
-		UnitName: in.UnitName,
-		Decimals: in.Decimals,
-		Source:   in.Source,
-	}
-}
-
-func clonePolicyStringMap(in map[string]string) map[string]string {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
 
 func ProtocolGenerateResultMessage(id string, result adminproto.GenerateKeyResult) protocol.GenerateResultMessage {
