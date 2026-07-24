@@ -479,6 +479,41 @@ computes the fixed-depth root during program generation, and verifies the
 proof for every non-self payment or asset receiver. It accepts no asset-ID or
 amount options and rejects author TEAL.
 
+### Merkle Allowlist Compatibility Contract
+
+The `bounded1` Merkle root and proof bytes are compatibility-bearing. Given the
+`recipients` address list, implementations must use this exact algorithm:
+
+1. Decode every Algorand address to its raw 32-byte public key. The list must
+   contain 1 through 65,536 entries.
+2. Reject duplicate public keys, then sort the unique public keys in ascending
+   byte order. Duplicate input is invalid, so there is no duplicate proof
+   selection rule.
+3. Create a depth-16 tree with exactly 65,536 leaves. Place the sorted
+   recipients in leaves `0` through `N-1`.
+4. A recipient leaf is
+   `SHA256(0x00 || recipient_public_key)`.
+5. The empty-leaf value is `SHA256(0x00)`. Fill leaves `N` through `65,535`
+   with that value.
+6. An internal node is
+   `SHA256(0x01 || min(left_hash, right_hash) || max(left_hash, right_hash))`,
+   where `min` and `max` use ascending byte order.
+7. Repeat the internal-node operation for sixteen levels. The sole remaining
+   hash is the root compiled into the LogicSig.
+8. A membership proof is the sibling at each level, beginning with the leaf
+   sibling and proceeding upward to the root. Concatenate the sixteen 32-byte
+   hashes in that order for exactly 512 bytes.
+9. Verification starts with the recipient leaf and combines each proof hash in
+   order using the same internal-node function. No index or direction bits are
+   encoded or consumed because every child pair is canonicalized with
+   `min`/`max`.
+
+A non-member has no proof. The separate bounded transaction rule permits a
+self receiver without a proof; that exception does not change root
+construction. `internal/merkleallowlist` owns the implementation, and
+`TestMerkleAllowlistCompatibilityVector` freezes a deterministic root and
+proof.
+
 `bounded_admin_public_key` is injected by the framework and cannot be declared
 by the author. User parameters, variables, runtime args, and references using
 the `bounded_` prefix reject. Author labels and executable references using

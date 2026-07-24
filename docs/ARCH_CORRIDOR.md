@@ -53,6 +53,10 @@ parameter. Self receivers bypass proof verification. Every spend also requires
 the enrolled sentry's Falcon signature over the `APLANE_SENTRY_V1` sentry-role
 TxID message.
 
+Root construction, recipient canonicalization, duplicate rejection, padding,
+node hashing, and proof order are frozen by the
+[bounded1 Merkle allowlist compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
+
 Corridor rejects close remainder, asset close, clawback, hybrid rekey+spend,
 unsupported transaction types, missing or malformed proofs, missing sentry
 authorization, and arguments supplied from the wrong source.

@@ -339,6 +339,10 @@ V1 also supports `policy: merkle_allowlist`. It accepts only a required
 exactly one 512-byte `merkle_allowlist_proof` derived argument for that same
 parameter. The composer computes the fixed-depth root and emits the complete
 proof verifier; author TEAL, asset filters, and amount options are forbidden.
+Recipients are unique raw address public keys sorted ascending; leaves,
+padding, commutative internal-node hashing, and bottom-up proof ordering are
+defined normatively in
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
 
 ### External Contract Admin Artifact Contract
 

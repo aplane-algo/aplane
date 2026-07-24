@@ -834,11 +834,15 @@ external-admin path still requires the spending key.
 
 This template stores the public receiver allowlist in the encrypted key file
 and commits the LogicSig to a fixed-depth Merkle root derived from that list.
-The root is built from unique address public keys sorted ascending, with leaves
-`sha256(0x00 || pubkey)`, padding to 65,536 leaves with `sha256(0x00)`, and
-internal nodes `sha256(0x01 || min(left,right) || max(left,right))`. For a
-non-self destination, the signer generates the 512-byte proof and appends it to
-the LogicSig arguments; callers do not pass `arg:proof`.
+Duplicate public keys are rejected. The root is built from the remaining
+address public keys sorted ascending, with leaves `sha256(0x00 || pubkey)`,
+padding to 65,536 leaves with `sha256(0x00)`, and internal nodes
+`sha256(0x01 || min(left,right) || max(left,right))`. For a non-self
+destination, the signer generates the 512-byte proof as sixteen 32-byte
+siblings ordered from the leaf upward and appends it to the LogicSig arguments;
+callers do not pass `arg:proof`. Child hashes are sorted at each level, so the
+proof contains no direction bits. See the normative
+[Merkle compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
 
 Payment and asset receivers may be the sender itself without a proof. The
 bounded envelope rejects payment close, asset close, clawback, all non-transfer
