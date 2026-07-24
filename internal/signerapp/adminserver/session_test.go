@@ -127,6 +127,7 @@ type stubServices struct {
 	activateRecoveredResult adminproto.ActivateRecoveredResult
 	rollbackRecoveredResult adminproto.RollbackRecoveredResult
 	purgeRecoveredResult    adminproto.PurgeRecoveredResult
+	onActivateRecovered     func()
 	policySnapshotResult    adminproto.PolicySnapshot
 	replacePolicyResult     adminproto.PolicySnapshot
 	validatePolicyResult    adminproto.ValidatePolicyResult
@@ -279,6 +280,9 @@ func (s *stubServices) ReviewRecovered(ir *identity.Runtime, restoreID string) a
 func (s *stubServices) ActivateRecovered(ir *identity.Runtime, req adminproto.ActivateRecoveredRequest) adminproto.ActivateRecoveredResult {
 	s.activateRecoveredCalls++
 	s.lastActivateRecovered = req
+	if s.onActivateRecovered != nil {
+		s.onActivateRecovered()
+	}
 	return s.activateRecoveredResult
 }
 func (s *stubServices) RollbackRecovered(ir *identity.Runtime, req adminproto.RollbackRecoveredRequest) adminproto.RollbackRecoveredResult {

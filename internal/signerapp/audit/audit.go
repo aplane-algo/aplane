@@ -6,13 +6,14 @@ package audit
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
 
 // AuditEventType represents the type of audit event
@@ -46,6 +47,14 @@ const (
 	AuditBackupRestoreCompleted     AuditEventType = "BACKUP_RESTORE_COMPLETED"
 	AuditBackupRestorePartial       AuditEventType = "BACKUP_RESTORE_PARTIAL"
 	AuditBackupRestoreFailed        AuditEventType = "BACKUP_RESTORE_FAILED"
+	AuditBackupRecovered            AuditEventType = "BACKUP_RECOVERED"
+	AuditBackupRecoveryFailed       AuditEventType = "BACKUP_RECOVERY_FAILED"
+	AuditBackupActivationIntent     AuditEventType = "BACKUP_ACTIVATION_INTENT"
+	AuditBackupActivated            AuditEventType = "BACKUP_ACTIVATED"
+	AuditBackupActivationFailed     AuditEventType = "BACKUP_ACTIVATION_FAILED"
+	AuditBackupActivationResumed    AuditEventType = "BACKUP_ACTIVATION_RESUMED"
+	AuditBackupActivationRolledBack AuditEventType = "BACKUP_ACTIVATION_ROLLED_BACK"
+	AuditBackupRecoveryPurged       AuditEventType = "BACKUP_RECOVERY_PURGED"
 	AuditStoreInitialized           AuditEventType = "STORE_INITIALIZED"
 	AuditStoreInitializeFailed      AuditEventType = "STORE_INITIALIZE_FAILED"
 	AuditPassphraseChanged          AuditEventType = "PASSPHRASE_CHANGED"
@@ -54,25 +63,31 @@ const (
 
 // AuditEntry represents a single audit log entry
 type AuditEntry struct {
-	Timestamp          time.Time      `json:"timestamp"`
-	Event              AuditEventType `json:"event"`
-	IdentityID         string         `json:"identity_id,omitempty"`         // Backward-compatible owning identity
-	TargetIdentityID   string         `json:"target_identity_id,omitempty"`  // Signing identity targeted by the action
-	Principal          string         `json:"principal,omitempty"`           // Backward-compatible principal field
-	RequesterPrincipal string         `json:"requester_principal,omitempty"` // Principal requesting the action
-	ApproverPrincipal  string         `json:"approver_principal,omitempty"`  // Principal approving or rejecting the action
-	AdminSessionID     string         `json:"admin_session_id,omitempty"`    // Admin protocol session ID
-	Transport          string         `json:"transport,omitempty"`           // ipc, ssh, http, or empty for process-level events
-	Outcome            string         `json:"outcome,omitempty"`             // requested, approved, rejected, failed, etc.
-	TxnAuth            string         `json:"txn_auth,omitempty"`            // Signing key address (auth addr)
-	TxnSender          string         `json:"txn_sender,omitempty"`          // Transaction sender (if different)
-	TxnType            string         `json:"txn_type,omitempty"`            // Transaction type (pay, axfer, etc)
-	TxnDetails         string         `json:"txn_details,omitempty"`         // Human-readable transaction summary
-	TxID               string         `json:"txid,omitempty"`                // Transaction ID (after signing)
-	RemoteAddr         string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
-	Reason             string         `json:"reason,omitempty"`              // Rejection/failure reason
-	PolicyRuleID       string         `json:"policy_rule_id,omitempty"`      // Policy rule that forced manual review
-	KeyCount           int            `json:"key_count,omitempty"`           // For key reload events
+	Timestamp               time.Time      `json:"timestamp"`
+	Event                   AuditEventType `json:"event"`
+	IdentityID              string         `json:"identity_id,omitempty"`         // Backward-compatible owning identity
+	TargetIdentityID        string         `json:"target_identity_id,omitempty"`  // Signing identity targeted by the action
+	Principal               string         `json:"principal,omitempty"`           // Backward-compatible principal field
+	RequesterPrincipal      string         `json:"requester_principal,omitempty"` // Principal requesting the action
+	ApproverPrincipal       string         `json:"approver_principal,omitempty"`  // Principal approving or rejecting the action
+	AdminSessionID          string         `json:"admin_session_id,omitempty"`    // Admin protocol session ID
+	Transport               string         `json:"transport,omitempty"`           // ipc, ssh, http, or empty for process-level events
+	Outcome                 string         `json:"outcome,omitempty"`             // requested, approved, rejected, failed, etc.
+	TxnAuth                 string         `json:"txn_auth,omitempty"`            // Signing key address (auth addr)
+	TxnSender               string         `json:"txn_sender,omitempty"`          // Transaction sender (if different)
+	TxnType                 string         `json:"txn_type,omitempty"`            // Transaction type (pay, axfer, etc)
+	TxnDetails              string         `json:"txn_details,omitempty"`         // Human-readable transaction summary
+	TxID                    string         `json:"txid,omitempty"`                // Transaction ID (after signing)
+	RemoteAddr              string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
+	Reason                  string         `json:"reason,omitempty"`              // Rejection/failure reason
+	PolicyRuleID            string         `json:"policy_rule_id,omitempty"`      // Policy rule that forced manual review
+	KeyCount                int            `json:"key_count,omitempty"`           // For key reload events
+	RestoreID               string         `json:"restore_id,omitempty"`
+	ArchiveSHA256           string         `json:"archive_sha256,omitempty"`
+	SourcePolicySHA256      string         `json:"source_policy_sha256,omitempty"`
+	DestinationPolicySHA256 string         `json:"destination_policy_sha256,omitempty"`
+	PolicyComparison        string         `json:"policy_comparison,omitempty"`
+	ReplaceExisting         bool           `json:"replace_existing,omitempty"`
 }
 
 // AuditLogger handles append-only audit logging
@@ -611,6 +626,119 @@ func (a *AuditLogger) LogBackupRestoreFailedContext(ctx adminserver.SessionConte
 	entry.Event = AuditBackupRestoreFailed
 	entry.Outcome = "failed"
 	entry.Reason = reason
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogBackupRecoveredContext(
+	ctx adminserver.SessionContext,
+	result adminproto.RecoverBackupResult,
+) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditBackupRecovered
+	entry.Outcome = "recovered"
+	entry.RestoreID = result.RestoreID
+	entry.ArchiveSHA256 = result.ArchiveChecksum
+	entry.KeyCount = result.EntryCount
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogBackupRecoveryFailedContext(ctx adminserver.SessionContext, restoreID, reason string) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditBackupRecoveryFailed
+	entry.Outcome = "failed"
+	entry.RestoreID = restoreID
+	entry.Reason = reason
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogBackupActivationIntentContext(
+	ctx adminserver.SessionContext,
+	restoreID string,
+	replaceExisting bool,
+) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditBackupActivationIntent
+	entry.Outcome = "requested"
+	entry.RestoreID = restoreID
+	entry.ReplaceExisting = replaceExisting
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogBackupActivatedContext(
+	ctx adminserver.SessionContext,
+	result adminproto.ActivateRecoveredResult,
+) {
+	entry := recoveredActivationAuditEntry(ctx, result)
+	entry.Event = AuditBackupActivated
+	entry.Outcome = "activated"
+	entry.KeyCount = len(result.Activated)
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogBackupActivationFailedContext(
+	ctx adminserver.SessionContext,
+	result adminproto.ActivateRecoveredResult,
+) {
+	entry := recoveredActivationAuditEntry(ctx, result)
+	entry.Event = AuditBackupActivationFailed
+	entry.Outcome = "failed"
+	entry.Reason = result.Error
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogBackupActivationResumedContext(
+	ctx adminserver.SessionContext,
+	result adminproto.ActivateRecoveredResult,
+) {
+	entry := recoveredActivationAuditEntry(ctx, result)
+	entry.Event = AuditBackupActivationResumed
+	entry.Outcome = "resumed"
+	entry.KeyCount = len(result.Activated)
+	a.Log(entry)
+}
+
+func recoveredActivationAuditEntry(
+	ctx adminserver.SessionContext,
+	result adminproto.ActivateRecoveredResult,
+) AuditEntry {
+	entry := sessionAuditFields(ctx)
+	entry.RestoreID = result.RestoreID
+	entry.ArchiveSHA256 = result.ArchiveSHA256
+	entry.SourcePolicySHA256 = result.SourcePolicySHA256
+	entry.DestinationPolicySHA256 = result.DestinationPolicySHA256
+	entry.PolicyComparison = result.PolicyComparison
+	entry.ReplaceExisting = result.ReplaceExisting
+	return entry
+}
+
+func (a *AuditLogger) LogBackupActivationRolledBackContext(
+	ctx adminserver.SessionContext,
+	result adminproto.RollbackRecoveredResult,
+) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditBackupActivationRolledBack
+	entry.Outcome = "rolled_back"
+	entry.RestoreID = result.RestoreID
+	entry.KeyCount = result.KeyCount
+	if !result.Success {
+		entry.Outcome = "failed"
+		entry.Reason = result.Error
+	}
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogBackupRecoveryPurgedContext(
+	ctx adminserver.SessionContext,
+	result adminproto.PurgeRecoveredResult,
+) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditBackupRecoveryPurged
+	entry.Outcome = "purged"
+	entry.RestoreID = result.RestoreID
+	if !result.Success {
+		entry.Outcome = "failed"
+		entry.Reason = result.Error
+	}
 	a.Log(entry)
 }
 

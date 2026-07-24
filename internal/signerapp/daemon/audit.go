@@ -37,6 +37,14 @@ const (
 	AuditBackupRestoreCompleted     = signeraudit.AuditBackupRestoreCompleted
 	AuditBackupRestorePartial       = signeraudit.AuditBackupRestorePartial
 	AuditBackupRestoreFailed        = signeraudit.AuditBackupRestoreFailed
+	AuditBackupRecovered            = signeraudit.AuditBackupRecovered
+	AuditBackupRecoveryFailed       = signeraudit.AuditBackupRecoveryFailed
+	AuditBackupActivationIntent     = signeraudit.AuditBackupActivationIntent
+	AuditBackupActivated            = signeraudit.AuditBackupActivated
+	AuditBackupActivationFailed     = signeraudit.AuditBackupActivationFailed
+	AuditBackupActivationResumed    = signeraudit.AuditBackupActivationResumed
+	AuditBackupActivationRolledBack = signeraudit.AuditBackupActivationRolledBack
+	AuditBackupRecoveryPurged       = signeraudit.AuditBackupRecoveryPurged
 	AuditStoreInitialized           = signeraudit.AuditStoreInitialized
 	AuditStoreInitializeFailed      = signeraudit.AuditStoreInitializeFailed
 	AuditPassphraseChanged          = signeraudit.AuditPassphraseChanged

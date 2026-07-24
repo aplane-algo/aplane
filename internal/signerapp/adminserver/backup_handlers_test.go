@@ -5,6 +5,7 @@ package adminserver
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -289,6 +290,58 @@ func TestBackupRestoreMessagesRequireIdentityRestoreAuthorization(t *testing.T) 
 			wantRequestID: "recover-authz",
 			wantCalls:     func(s *stubServices) int { return s.recoverBackupCalls },
 		},
+		{
+			name: "list recovered",
+			dispatch: func(session *Session) {
+				session.HandleListRecovered("list-recovered-authz")
+			},
+			wantRequestID: "list-recovered-authz",
+			wantCalls:     func(s *stubServices) int { return s.listRecoveredCalls },
+		},
+		{
+			name: "review recovered",
+			dispatch: func(session *Session) {
+				session.HandleReviewRecovered(&protocol.ReviewRecoveredMessage{
+					BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeReviewRecovered, ID: "review-authz"},
+					RestoreID:   "0123456789abcdef0123456789abcdef",
+				})
+			},
+			wantRequestID: "review-authz",
+			wantCalls:     func(s *stubServices) int { return s.reviewRecoveredCalls },
+		},
+		{
+			name: "activate recovered",
+			dispatch: func(session *Session) {
+				session.HandleActivateRecovered(&protocol.ActivateRecoveredMessage{
+					BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeActivateRecovered, ID: "activate-authz"},
+					RestoreID:   "0123456789abcdef0123456789abcdef",
+				})
+			},
+			wantRequestID: "activate-authz",
+			wantCalls:     func(s *stubServices) int { return s.activateRecoveredCalls },
+		},
+		{
+			name: "rollback recovered",
+			dispatch: func(session *Session) {
+				session.HandleRollbackRecovered(&protocol.RollbackRecoveredMessage{
+					BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRollbackRecovered, ID: "rollback-authz"},
+					RestoreID:   "0123456789abcdef0123456789abcdef",
+				})
+			},
+			wantRequestID: "rollback-authz",
+			wantCalls:     func(s *stubServices) int { return s.rollbackRecoveredCalls },
+		},
+		{
+			name: "purge recovered",
+			dispatch: func(session *Session) {
+				session.HandlePurgeRecovered(&protocol.PurgeRecoveredMessage{
+					BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePurgeRecovered, ID: "purge-authz"},
+					RestoreID:   "0123456789abcdef0123456789abcdef",
+				})
+			},
+			wantRequestID: "purge-authz",
+			wantCalls:     func(s *stubServices) int { return s.purgeRecoveredCalls },
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ir := identity.New(identity.Config{
@@ -404,8 +457,39 @@ func TestRestoreHandlersWriteAuditEvents(t *testing.T) {
 			ArchivePath: "backup.tar.gz",
 			Keys:        []adminproto.RestoreKeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
 		},
+		recoverBackupResult: adminproto.RecoverBackupResult{
+			Success:         true,
+			RestoreID:       "0123456789abcdef0123456789abcdef",
+			ArchiveChecksum: "archive-digest",
+			EntryCount:      1,
+		},
+		activateRecoveredResult: adminproto.ActivateRecoveredResult{
+			Success:                 true,
+			RestoreID:               "0123456789abcdef0123456789abcdef",
+			Activated:               []adminproto.RecoveredReviewEntry{{Selector: "ADDR1"}},
+			ArchiveSHA256:           "archive-digest",
+			SourcePolicySHA256:      "source-policy-digest",
+			DestinationPolicySHA256: "destination-policy-digest",
+			PolicyComparison:        "different",
+			ReplaceExisting:         true,
+			Resumed:                 true,
+		},
+		rollbackRecoveredResult: adminproto.RollbackRecoveredResult{
+			Success:   true,
+			RestoreID: "0123456789abcdef0123456789abcdef",
+			KeyCount:  1,
+		},
+		purgeRecoveredResult: adminproto.PurgeRecoveredResult{
+			Success:   true,
+			RestoreID: "0123456789abcdef0123456789abcdef",
+		},
 	}
 	audit := &recordingRestoreAudit{}
+	svc.onActivateRecovered = func() {
+		if len(audit.events) == 0 || audit.events[len(audit.events)-1] != "activation_intent" {
+			t.Fatal("activation intent was not audited before the service call")
+		}
+	}
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{
 		Backups: svc,
@@ -418,9 +502,46 @@ func TestRestoreHandlersWriteAuditEvents(t *testing.T) {
 		ArchivePath:      "backup.tar.gz",
 		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
 	})
+	session.HandleRecoverBackup(&protocol.RecoverBackupMessage{
+		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRecoverBackup, ID: "recover-audit"},
+		ArchivePath:      "backup.tar.gz",
+		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
+	})
+	session.HandleActivateRecovered(&protocol.ActivateRecoveredMessage{
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeActivateRecovered, ID: "activate-audit"},
+		RestoreID:       "0123456789abcdef0123456789abcdef",
+		ReviewToken:     "review-token",
+		ReplaceExisting: true,
+	})
+	session.HandleRollbackRecovered(&protocol.RollbackRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRollbackRecovered, ID: "rollback-audit"},
+		RestoreID:   "0123456789abcdef0123456789abcdef",
+	})
+	session.HandlePurgeRecovered(&protocol.PurgeRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePurgeRecovered, ID: "purge-audit"},
+		RestoreID:   "0123456789abcdef0123456789abcdef",
+	})
 
 	if audit.previewedArchive != "backup.tar.gz" || audit.previewedCount != 1 {
 		t.Fatalf("preview audit = archive %q count %d, want backup.tar.gz/1", audit.previewedArchive, audit.previewedCount)
+	}
+	wantEvents := []string{
+		"recovered",
+		"activation_intent",
+		"activation_resumed",
+		"activated",
+		"rolled_back",
+		"purged",
+	}
+	if !reflect.DeepEqual(audit.events, wantEvents) {
+		t.Fatalf("lifecycle audit events = %v, want %v", audit.events, wantEvents)
+	}
+	if audit.recovered.ArchiveChecksum != "archive-digest" || audit.recovered.EntryCount != 1 {
+		t.Fatalf("recovered audit result = %+v", audit.recovered)
+	}
+	if audit.activated.DestinationPolicySHA256 != "destination-policy-digest" ||
+		!audit.activated.ReplaceExisting {
+		t.Fatalf("activated audit result = %+v", audit.activated)
 	}
 }
 
@@ -430,13 +551,9 @@ type recordingRestoreAudit struct {
 	previewedArchive string
 	previewedCount   int
 	failedReason     string
-	startedArchive   string
-	startedCount     int
-	completedArchive string
-	completedCount   int
-	partialArchive   string
-	partialRestored  int
-	partialFailed    int
+	events           []string
+	recovered        adminproto.RecoverBackupResult
+	activated        adminproto.ActivateRecoveredResult
 }
 
 func (a *recordingRestoreAudit) LogBackupRestorePreviewedContext(ctx SessionContext, archivePath string, keyCount int) {
@@ -450,28 +567,54 @@ func (a *recordingRestoreAudit) LogBackupRestorePreviewFailedContext(ctx Session
 	a.failedReason = reason
 }
 
-func (a *recordingRestoreAudit) LogBackupRestoreStartedContext(ctx SessionContext, archivePath string, selectedCount int) {
+func (a *recordingRestoreAudit) LogBackupRecoveredContext(ctx SessionContext, result adminproto.RecoverBackupResult) {
 	_ = ctx
-	a.startedArchive = archivePath
-	a.startedCount = selectedCount
+	a.events = append(a.events, "recovered")
+	a.recovered = result
 }
 
-func (a *recordingRestoreAudit) LogBackupRestoreCompletedContext(ctx SessionContext, archivePath string, restoredCount int) {
+func (a *recordingRestoreAudit) LogBackupRecoveryFailedContext(ctx SessionContext, restoreID, reason string) {
 	_ = ctx
-	a.completedArchive = archivePath
-	a.completedCount = restoredCount
-}
-
-func (a *recordingRestoreAudit) LogBackupRestorePartialContext(ctx SessionContext, archivePath string, restoredCount, failedCount int) {
-	_ = ctx
-	a.partialArchive = archivePath
-	a.partialRestored = restoredCount
-	a.partialFailed = failedCount
-}
-
-func (a *recordingRestoreAudit) LogBackupRestoreFailedContext(ctx SessionContext, reason string) {
-	_ = ctx
+	_ = restoreID
+	a.events = append(a.events, "recovery_failed")
 	a.failedReason = reason
+}
+
+func (a *recordingRestoreAudit) LogBackupActivationIntentContext(ctx SessionContext, restoreID string, replaceExisting bool) {
+	_ = ctx
+	_ = restoreID
+	_ = replaceExisting
+	a.events = append(a.events, "activation_intent")
+}
+
+func (a *recordingRestoreAudit) LogBackupActivatedContext(ctx SessionContext, result adminproto.ActivateRecoveredResult) {
+	_ = ctx
+	a.events = append(a.events, "activated")
+	a.activated = result
+}
+
+func (a *recordingRestoreAudit) LogBackupActivationFailedContext(ctx SessionContext, result adminproto.ActivateRecoveredResult) {
+	_ = ctx
+	a.events = append(a.events, "activation_failed")
+	a.activated = result
+}
+
+func (a *recordingRestoreAudit) LogBackupActivationResumedContext(ctx SessionContext, result adminproto.ActivateRecoveredResult) {
+	_ = ctx
+	a.events = append(a.events, "activation_resumed")
+	a.activated = result
+}
+
+func (a *recordingRestoreAudit) LogBackupActivationRolledBackContext(ctx SessionContext, result adminproto.RollbackRecoveredResult) {
+	_ = ctx
+	_ = result
+	a.events = append(a.events, "rolled_back")
+}
+
+func (a *recordingRestoreAudit) LogBackupRecoveryPurgedContext(ctx SessionContext, result adminproto.PurgeRecoveredResult) {
+	_ = ctx
+	_ = result
+	a.events = append(a.events, "purged")
 }
 
 func assertSensitiveBytesZeroed(t *testing.T, data protocol.SensitiveBytes) {

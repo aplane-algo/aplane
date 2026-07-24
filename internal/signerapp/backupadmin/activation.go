@@ -62,6 +62,7 @@ func (s Service) activateRecovered(
 	}
 	activationDir := s.Deps.KeyPaths().RecoveredActivationDir(ir.ID(), req.RestoreID)
 	if _, err := os.Lstat(activationDir); err == nil {
+		result.Resumed = true
 		if err := s.resumeRecoveredActivation(ir, req); err != nil {
 			return err
 		}
@@ -78,6 +79,11 @@ func (s Service) activateRecovered(
 	if err != nil {
 		return fmt.Errorf("review recovered batch before activation: %w", err)
 	}
+	result.ArchiveSHA256 = review.ArchiveChecksum
+	result.SourcePolicySHA256 = review.SourcePolicySHA256
+	result.DestinationPolicySHA256 = review.DestinationPolicySHA256
+	result.PolicyComparison = review.PolicyComparison
+	result.ReplaceExisting = req.ReplaceExisting
 	if req.ReviewToken == "" || req.ReviewToken != review.ReviewToken {
 		return activationFailure(
 			protocol.ResultCodeActivationReviewStale,

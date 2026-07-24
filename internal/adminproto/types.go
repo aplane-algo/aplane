@@ -301,12 +301,18 @@ type ActivateRecoveredRequest struct {
 // ActivateRecoveredResult describes credentials made active by one atomic
 // activation attempt.
 type ActivateRecoveredResult struct {
-	Success   bool
-	RestoreID string
-	Activated []RecoveredReviewEntry
-	KeyCount  int
-	Code      string
-	Error     string
+	Success                 bool
+	RestoreID               string
+	Activated               []RecoveredReviewEntry
+	KeyCount                int
+	ArchiveSHA256           string
+	SourcePolicySHA256      string
+	DestinationPolicySHA256 string
+	PolicyComparison        string
+	ReplaceExisting         bool
+	Resumed                 bool
+	Code                    string
+	Error                   string
 }
 
 // RollbackRecoveredRequest identifies one incomplete activation to reverse.

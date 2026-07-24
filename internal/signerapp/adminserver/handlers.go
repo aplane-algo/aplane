@@ -296,6 +296,16 @@ func (s *Session) HandleRecoverBackup(msg *protocol.RecoverBackupMessage) {
 		Addresses:        append([]string(nil), msg.Addresses...),
 		ExportPassphrase: exportPassphrase,
 	})
+	if audit, ok := s.audit.(interface {
+		LogBackupRecoveredContext(SessionContext, adminproto.RecoverBackupResult)
+		LogBackupRecoveryFailedContext(SessionContext, string, string)
+	}); ok {
+		if result.Success {
+			audit.LogBackupRecoveredContext(s.SessionContext(), result)
+		} else {
+			audit.LogBackupRecoveryFailedContext(s.SessionContext(), result.RestoreID, result.Error)
+		}
+	}
 	_ = s.WriteJSON(ProtocolRecoverBackupResultMessage(msg.ID, result))
 }
 
@@ -342,6 +352,11 @@ func (s *Session) HandleActivateRecovered(msg *protocol.ActivateRecoveredMessage
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
+	if audit, ok := s.audit.(interface {
+		LogBackupActivationIntentContext(SessionContext, string, bool)
+	}); ok {
+		audit.LogBackupActivationIntentContext(s.SessionContext(), msg.RestoreID, msg.ReplaceExisting)
+	}
 	result := s.backupServices.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
 		RestoreID:                    msg.RestoreID,
 		ReviewToken:                  msg.ReviewToken,
@@ -349,6 +364,20 @@ func (s *Session) HandleActivateRecovered(msg *protocol.ActivateRecoveredMessage
 		AcknowledgeUnattendedSigning: msg.AcknowledgeUnattendedSigning,
 		ReplaceExisting:              msg.ReplaceExisting,
 	})
+	if audit, ok := s.audit.(interface {
+		LogBackupActivatedContext(SessionContext, adminproto.ActivateRecoveredResult)
+		LogBackupActivationFailedContext(SessionContext, adminproto.ActivateRecoveredResult)
+		LogBackupActivationResumedContext(SessionContext, adminproto.ActivateRecoveredResult)
+	}); ok {
+		if result.Success {
+			if result.Resumed {
+				audit.LogBackupActivationResumedContext(s.SessionContext(), result)
+			}
+			audit.LogBackupActivatedContext(s.SessionContext(), result)
+		} else {
+			audit.LogBackupActivationFailedContext(s.SessionContext(), result)
+		}
+	}
 	_ = s.WriteJSON(ProtocolActivateRecoveredResultMessage(msg.ID, result))
 }
 
@@ -367,6 +396,11 @@ func (s *Session) HandleRollbackRecovered(msg *protocol.RollbackRecoveredMessage
 	result := s.backupServices.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{
 		RestoreID: msg.RestoreID,
 	})
+	if audit, ok := s.audit.(interface {
+		LogBackupActivationRolledBackContext(SessionContext, adminproto.RollbackRecoveredResult)
+	}); ok {
+		audit.LogBackupActivationRolledBackContext(s.SessionContext(), result)
+	}
 	_ = s.WriteJSON(ProtocolRollbackRecoveredResultMessage(msg.ID, result))
 }
 
@@ -385,6 +419,11 @@ func (s *Session) HandlePurgeRecovered(msg *protocol.PurgeRecoveredMessage) {
 	result := s.backupServices.PurgeRecovered(ir, adminproto.PurgeRecoveredRequest{
 		RestoreID: msg.RestoreID,
 	})
+	if audit, ok := s.audit.(interface {
+		LogBackupRecoveryPurgedContext(SessionContext, adminproto.PurgeRecoveredResult)
+	}); ok {
+		audit.LogBackupRecoveryPurgedContext(s.SessionContext(), result)
+	}
 	_ = s.WriteJSON(ProtocolPurgeRecoveredResultMessage(msg.ID, result))
 }
 
