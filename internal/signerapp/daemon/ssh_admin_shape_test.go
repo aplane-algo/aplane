@@ -64,7 +64,7 @@ func TestSSHAdminSessionRejectsMissingKindDuringAuth(t *testing.T) {
 		t.Fatalf("first message kind = %q, want %q", authRequired.Kind, protocol.MessageKindNotification)
 	}
 
-	if _, err := stream.Write([]byte(`{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":2,"minor":0}}` + "\n")); err != nil {
+	if _, err := stream.Write([]byte(`{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":3,"minor":0}}` + "\n")); err != nil {
 		t.Fatalf("stream.Write() error = %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestSSHAdminSessionAuthHandshakeMatchesGenericContract(t *testing.T) {
 		t.Fatalf("first message = %#v, want auth_required notification", authRequired)
 	}
 	if !reflectJSONSubset(authRequired.Raw, map[string]any{
-		"protocol_version": map[string]any{"major": float64(2), "minor": float64(0)},
+		"protocol_version": map[string]any{"major": float64(3), "minor": float64(0)},
 	}) {
 		t.Fatalf("auth_required protocol version missing: %#v", authRequired.Raw)
 	}

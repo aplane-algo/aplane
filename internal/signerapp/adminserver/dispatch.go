@@ -36,7 +36,6 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeDeleteBackup:    typed("delete backup", (*Session).HandleDeleteBackup),
 	protocol.MsgTypeChangeStorePass: typed("change store passphrase", (*Session).HandleChangeStorePassphrase),
 	protocol.MsgTypePreviewRestore:  typed("preview restore", (*Session).HandlePreviewRestore),
-	protocol.MsgTypeRestoreBackup:   typed("restore backup", (*Session).HandleRestoreBackup),
 	protocol.MsgTypeRecoverBackup:   typed("recover backup", (*Session).HandleRecoverBackup),
 	protocol.MsgTypeListRecovered: typed("list recovered", func(s *Session, m *protocol.ListRecoveredMessage) {
 		s.HandleListRecovered(m.ID)

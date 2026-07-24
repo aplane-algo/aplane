@@ -276,49 +276,6 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 	_ = s.WriteJSON(ProtocolRestorePreviewMessage(msg.ID, result))
 }
 
-func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
-		return
-	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
-		return
-	}
-	if audit, ok := s.audit.(interface {
-		LogBackupRestoreStartedContext(SessionContext, string, int)
-	}); ok {
-		audit.LogBackupRestoreStartedContext(s.SessionContext(), msg.ArchivePath, len(msg.Addresses))
-	}
-	exportPassphrase := msg.ExportPassphrase.Clone()
-	defer zeroBytes(exportPassphrase)
-	defer msg.ExportPassphrase.Zero()
-	result := s.backupServices.RestoreBackup(ir, adminproto.RestoreBackupRequest{
-		ArchivePath:      msg.ArchivePath,
-		Addresses:        append([]string(nil), msg.Addresses...),
-		Overwrite:        msg.Overwrite,
-		ExportPassphrase: exportPassphrase,
-	})
-	if audit, ok := s.audit.(interface {
-		LogBackupRestoreCompletedContext(SessionContext, string, int)
-		LogBackupRestorePartialContext(SessionContext, string, int, int)
-		LogBackupRestoreFailedContext(SessionContext, string)
-	}); ok {
-		switch {
-		case result.Success:
-			audit.LogBackupRestoreCompletedContext(s.SessionContext(), result.ArchivePath, len(result.Restored))
-		case len(result.Restored) > 0:
-			audit.LogBackupRestorePartialContext(s.SessionContext(), result.ArchivePath, len(result.Restored), len(result.Errors))
-		case result.Error != "":
-			audit.LogBackupRestoreFailedContext(s.SessionContext(), result.Error)
-		}
-	}
-	_ = s.WriteJSON(ProtocolRestoreBackupResultMessage(msg.ID, result))
-}
-
 func (s *Session) HandleRecoverBackup(msg *protocol.RecoverBackupMessage) {
 	ir := s.requireUnlockedRuntime(msg.ID)
 	if ir == nil {

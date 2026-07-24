@@ -45,20 +45,6 @@ func TestBackupRestoreMessagesDispatchToBackupServices(t *testing.T) {
 				AlreadyExists: true,
 			}},
 		},
-		restoreBackupResult: adminproto.RestoreBackupResult{
-			ArchivePath: "/data/identities/default/backups/backup.tar.gz",
-			Success:     true,
-			Restored: []adminproto.RestoreKeyInfo{{
-				Address: "ADDR1",
-				KeyType: "ed25519",
-			}},
-			Warnings: []adminproto.RestoreWarning{{
-				Address: "ADDR1",
-				KeyType: "test.timed-policy.v1",
-				Warning: "skipped bundled template for test.timed-policy.v1: backup template conflicts with existing keystore definition",
-			}},
-			KeyCount: 1,
-		},
 	}
 	conn := &queueConn{}
 	session := NewSession(conn, svc.backupDeps())
@@ -78,13 +64,6 @@ func TestBackupRestoreMessagesDispatchToBackupServices(t *testing.T) {
 	dispatchAdminMessage(t, session, protocol.PreviewRestoreMessage{
 		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypePreviewRestore, ID: "preview-1"},
 		ArchivePath:      "backup.tar.gz",
-		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
-	})
-	dispatchAdminMessage(t, session, protocol.RestoreBackupMessage{
-		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: "restore-1"},
-		ArchivePath:      "backup.tar.gz",
-		Addresses:        []string{"ADDR1"},
-		Overwrite:        true,
 		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
 	})
 
@@ -109,35 +88,25 @@ func TestBackupRestoreMessagesDispatchToBackupServices(t *testing.T) {
 	if svc.lastPreviewRestore.ArchivePath != "backup.tar.gz" || string(svc.lastPreviewRestore.ExportPassphrase) != "export-passphrase" {
 		t.Fatalf("preview request = %+v, want archive and passphrase", svc.lastPreviewRestore)
 	}
-	if svc.restoreBackupCalls != 1 {
-		t.Fatalf("RestoreBackup calls = %d, want 1", svc.restoreBackupCalls)
-	}
-	if svc.lastRestoreBackup.ArchivePath != "backup.tar.gz" || !svc.lastRestoreBackup.Overwrite {
-		t.Fatalf("restore request = %+v, want archive and overwrite", svc.lastRestoreBackup)
-	}
-	if len(svc.lastRestoreBackup.Addresses) != 1 || svc.lastRestoreBackup.Addresses[0] != "ADDR1" {
-		t.Fatalf("restore addresses = %v, want [ADDR1]", svc.lastRestoreBackup.Addresses)
-	}
-
 	msgs := decodeAdminProtoWrites(t, conn)
-	if len(msgs) != 5 {
-		t.Fatalf("write count = %d, want 5", len(msgs))
+	if len(msgs) != 4 {
+		t.Fatalf("write count = %d, want 4", len(msgs))
 	}
 	assertAdminProtoMessage(t, msgs[0], protocol.MsgTypeBackupResult, "backup-1")
 	assertAdminProtoMessage(t, msgs[1], protocol.MsgTypeBackupsList, "list-backups-1")
 	assertAdminProtoMessage(t, msgs[2], protocol.MsgTypeDeleteBackupResult, "delete-backup-1")
 	assertAdminProtoMessage(t, msgs[3], protocol.MsgTypeRestorePreview, "preview-1")
-	assertAdminProtoMessage(t, msgs[4], protocol.MsgTypeRestoreBackupResult, "restore-1")
+}
 
-	var restoreResult protocol.RestoreBackupResultMessage
-	if err := json.Unmarshal(conn.writes[4], &restoreResult); err != nil {
-		t.Fatalf("decode restore result: %v", err)
+func TestLegacyRestoreBackupIsNotDispatched(t *testing.T) {
+	conn := &queueConn{}
+	session := NewSession(conn, (&stubServices{}).backupDeps())
+
+	if session.Dispatch([]byte(`{"kind":"request","type":"restore_backup","id":"legacy-restore"}`)) {
+		t.Fatal("Dispatch(restore_backup) = true, want unsupported legacy route")
 	}
-	if !restoreResult.Success || restoreResult.KeyCount != 1 {
-		t.Fatalf("restore result = %+v, want success with key_count 1", restoreResult)
-	}
-	if len(restoreResult.Warnings) != 1 || restoreResult.Warnings[0].KeyType != "test.timed-policy.v1" {
-		t.Fatalf("restore warnings = %+v, want test.timed-policy.v1 warning", restoreResult.Warnings)
+	if len(conn.writes) != 0 {
+		t.Fatalf("write count = %d, want 0 for an unsupported route", len(conn.writes))
 	}
 }
 
@@ -251,35 +220,6 @@ func TestRecoveredLifecycleMessagesDispatchToBackupServices(t *testing.T) {
 	}
 }
 
-func TestRestoreBackupRequiresUnlockedRuntime(t *testing.T) {
-	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
-
-	svc := &stubServices{}
-	conn := &queueConn{}
-	session := NewSession(conn, svc.backupDeps())
-	session.Bind(auth.NewDefaultIdentity("test"), ir)
-
-	dispatchAdminMessage(t, session, protocol.RestoreBackupMessage{
-		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: "restore-locked"},
-		ArchivePath:      "backup.tar.gz",
-		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
-	})
-
-	if svc.restoreBackupCalls != 0 {
-		t.Fatalf("RestoreBackup calls = %d, want 0 while locked", svc.restoreBackupCalls)
-	}
-	msgs := decodeAdminProtoWrites(t, conn)
-	if len(msgs) != 1 {
-		t.Fatalf("write count = %d, want 1", len(msgs))
-	}
-	if msgs[0].Type != protocol.MsgTypeError || msgs[0].Code != protocol.ErrCodeSignerLocked {
-		t.Fatalf("locked response = %+v, want signer_locked error", msgs[0])
-	}
-}
-
 func TestRecoveryStatePermitsOnlyRecoveryResolutionHandlers(t *testing.T) {
 	ir := identity.New(identity.Config{
 		ID:            auth.DefaultIdentityID,
@@ -338,16 +278,16 @@ func TestBackupRestoreMessagesRequireIdentityRestoreAuthorization(t *testing.T) 
 			wantCalls:     func(s *stubServices) int { return s.previewRestoreCalls },
 		},
 		{
-			name: "restore backup",
+			name: "recover backup",
 			dispatch: func(session *Session) {
-				session.HandleRestoreBackup(&protocol.RestoreBackupMessage{
-					BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: "restore-authz"},
+				session.HandleRecoverBackup(&protocol.RecoverBackupMessage{
+					BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRecoverBackup, ID: "recover-authz"},
 					ArchivePath:      "backup.tar.gz",
 					ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
 				})
 			},
-			wantRequestID: "restore-authz",
-			wantCalls:     func(s *stubServices) int { return s.restoreBackupCalls },
+			wantRequestID: "recover-authz",
+			wantCalls:     func(s *stubServices) int { return s.recoverBackupCalls },
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -398,7 +338,7 @@ func TestRestoreHandlersZeroProtocolPassphrases(t *testing.T) {
 
 	svc := &stubServices{
 		previewRestoreResult: adminproto.RestorePreviewResult{ArchivePath: "backup.tar.gz"},
-		restoreBackupResult:  adminproto.RestoreBackupResult{ArchivePath: "backup.tar.gz", Success: true},
+		recoverBackupResult:  adminproto.RecoverBackupResult{ArchiveName: "backup.tar.gz", Success: true},
 	}
 	conn := &queueConn{}
 	session := NewSession(conn, svc.backupDeps())
@@ -415,16 +355,16 @@ func TestRestoreHandlersZeroProtocolPassphrases(t *testing.T) {
 	}
 	assertSensitiveBytesZeroed(t, previewMsg.ExportPassphrase)
 
-	restoreMsg := &protocol.RestoreBackupMessage{
-		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: "restore-zero"},
+	recoverMsg := &protocol.RecoverBackupMessage{
+		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRecoverBackup, ID: "recover-zero"},
 		ArchivePath:      "backup.tar.gz",
 		ExportPassphrase: protocol.NewSensitiveBytes("restore-passphrase"),
 	}
-	session.HandleRestoreBackup(restoreMsg)
-	if string(svc.lastRestoreBackup.ExportPassphrase) != "restore-passphrase" {
-		t.Fatalf("service restore passphrase = %q, want original passphrase", string(svc.lastRestoreBackup.ExportPassphrase))
+	session.HandleRecoverBackup(recoverMsg)
+	if string(svc.lastRecoverBackup.ExportPassphrase) != "restore-passphrase" {
+		t.Fatalf("service recover passphrase = %q, want original passphrase", string(svc.lastRecoverBackup.ExportPassphrase))
 	}
-	assertSensitiveBytesZeroed(t, restoreMsg.ExportPassphrase)
+	assertSensitiveBytesZeroed(t, recoverMsg.ExportPassphrase)
 }
 
 func TestBackupHandlerZeroesProtocolPassphrase(t *testing.T) {
@@ -464,11 +404,6 @@ func TestRestoreHandlersWriteAuditEvents(t *testing.T) {
 			ArchivePath: "backup.tar.gz",
 			Keys:        []adminproto.RestoreKeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
 		},
-		restoreBackupResult: adminproto.RestoreBackupResult{
-			ArchivePath: "backup.tar.gz",
-			Success:     true,
-			Restored:    []adminproto.RestoreKeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
-		},
 	}
 	audit := &recordingRestoreAudit{}
 	conn := &queueConn{}
@@ -483,21 +418,9 @@ func TestRestoreHandlersWriteAuditEvents(t *testing.T) {
 		ArchivePath:      "backup.tar.gz",
 		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
 	})
-	session.HandleRestoreBackup(&protocol.RestoreBackupMessage{
-		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: "restore-audit"},
-		ArchivePath:      "backup.tar.gz",
-		Addresses:        []string{"ADDR1"},
-		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
-	})
 
 	if audit.previewedArchive != "backup.tar.gz" || audit.previewedCount != 1 {
 		t.Fatalf("preview audit = archive %q count %d, want backup.tar.gz/1", audit.previewedArchive, audit.previewedCount)
-	}
-	if audit.startedArchive != "backup.tar.gz" || audit.startedCount != 1 {
-		t.Fatalf("started audit = archive %q count %d, want backup.tar.gz/1", audit.startedArchive, audit.startedCount)
-	}
-	if audit.completedArchive != "backup.tar.gz" || audit.completedCount != 1 {
-		t.Fatalf("completed audit = archive %q count %d, want backup.tar.gz/1", audit.completedArchive, audit.completedCount)
 	}
 }
 

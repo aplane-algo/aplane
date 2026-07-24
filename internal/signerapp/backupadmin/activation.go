@@ -36,9 +36,7 @@ func (s Service) ActivateRecovered(
 ) adminproto.ActivateRecoveredResult {
 	result := adminproto.ActivateRecoveredResult{RestoreID: req.RestoreID}
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return ir.WithMasterKey(func(masterKey []byte) error {
-			return s.activateRecoveredWithMasterKey(ir, req, masterKey, &result)
-		})
+		return s.activateRecovered(ir, req, &result)
 	})
 	if err != nil {
 		var activationErr *recoveredActivationError
@@ -54,10 +52,9 @@ func (s Service) ActivateRecovered(
 	return result
 }
 
-func (s Service) activateRecoveredWithMasterKey(
+func (s Service) activateRecovered(
 	ir *identity.Runtime,
 	req adminproto.ActivateRecoveredRequest,
-	masterKey []byte,
 	result *adminproto.ActivateRecoveredResult,
 ) error {
 	if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
@@ -65,14 +62,19 @@ func (s Service) activateRecoveredWithMasterKey(
 	}
 	activationDir := s.Deps.KeyPaths().RecoveredActivationDir(ir.ID(), req.RestoreID)
 	if _, err := os.Lstat(activationDir); err == nil {
-		if err := s.resumeRecoveredActivation(ir, req, masterKey); err != nil {
+		if err := s.resumeRecoveredActivation(ir, req); err != nil {
 			return err
 		}
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect recovered activation state: %w", err)
 	}
 
-	review, err := s.reviewRecoveredWithMasterKey(ir, req.RestoreID, masterKey)
+	var review adminproto.ReviewRecoveredResult
+	err := ir.WithMasterKey(func(masterKey []byte) error {
+		var reviewErr error
+		review, reviewErr = s.reviewRecoveredWithMasterKey(ir, req.RestoreID, masterKey)
+		return reviewErr
+	})
 	if err != nil {
 		return fmt.Errorf("review recovered batch before activation: %w", err)
 	}
@@ -119,17 +121,21 @@ func (s Service) activateRecoveredWithMasterKey(
 		AcknowledgeUnattendedSigning: req.AcknowledgeUnattendedSigning,
 		ReplaceExisting:              req.ReplaceExisting,
 	}
-	if err := recovered.CreateActivation(
-		s.Deps.KeyPaths(),
-		ir.ID(),
-		journal,
-		*snapshot,
-		masterKey,
-	); err != nil {
+	if err := ir.WithMasterKey(func(masterKey []byte) error {
+		return recovered.CreateActivation(
+			s.Deps.KeyPaths(),
+			ir.ID(),
+			journal,
+			*snapshot,
+			masterKey,
+		)
+	}); err != nil {
 		return fmt.Errorf("publish activation state: %w", err)
 	}
 
-	applyErr := s.applyRecoveredBatch(ir, req, masterKey)
+	applyErr := ir.WithMasterKey(func(masterKey []byte) error {
+		return s.applyRecoveredBatch(ir, req, masterKey)
+	})
 	if applyErr == nil && s.activationHook != nil {
 		if err := s.activationHook(activationAfterApply); err != nil {
 			return fmt.Errorf("activation interrupted after active writes: %w", err)
@@ -151,7 +157,7 @@ func (s Service) activateRecoveredWithMasterKey(
 		}
 	}
 	if applyErr != nil {
-		return s.rollbackFailedActivation(ir, req.RestoreID, snapshot, masterKey, applyErr)
+		return s.rollbackFailedActivation(ir, req.RestoreID, snapshot, applyErr)
 	}
 
 	result.Activated = append([]adminproto.RecoveredReviewEntry(nil), review.Entries...)
@@ -163,14 +169,21 @@ func (s Service) activateRecoveredWithMasterKey(
 func (s Service) resumeRecoveredActivation(
 	ir *identity.Runtime,
 	req adminproto.ActivateRecoveredRequest,
-	masterKey []byte,
 ) error {
-	journal, snapshot, err := recovered.LoadActivation(
-		s.Deps.KeyPaths(),
-		ir.ID(),
-		req.RestoreID,
-		masterKey,
+	var (
+		journal  *recovered.ActivationJournal
+		snapshot *recovered.RollbackSnapshot
 	)
+	err := ir.WithMasterKey(func(masterKey []byte) error {
+		var loadErr error
+		journal, snapshot, loadErr = recovered.LoadActivation(
+			s.Deps.KeyPaths(),
+			ir.ID(),
+			req.RestoreID,
+			masterKey,
+		)
+		return loadErr
+	})
 	if err != nil {
 		return fmt.Errorf("load incomplete activation: %w", err)
 	}
@@ -188,13 +201,15 @@ func (s Service) resumeRecoveredActivation(
 			"resume request does not match the recorded activation intent",
 		)
 	}
-	if err := recovered.UpdateActivationState(
-		s.Deps.KeyPaths(),
-		ir.ID(),
-		req.RestoreID,
-		recovered.ActivationRollingBack,
-		masterKey,
-	); err != nil {
+	if err := ir.WithMasterKey(func(masterKey []byte) error {
+		return recovered.UpdateActivationState(
+			s.Deps.KeyPaths(),
+			ir.ID(),
+			req.RestoreID,
+			recovered.ActivationRollingBack,
+			masterKey,
+		)
+	}); err != nil {
 		return fmt.Errorf("begin rollback-first activation resume: %w", err)
 	}
 	if err := restoreActivationSnapshot(s.Deps.KeyPaths(), ir.ID(), snapshot); err != nil {
@@ -271,16 +286,17 @@ func (s Service) rollbackFailedActivation(
 	ir *identity.Runtime,
 	restoreID string,
 	snapshot *recovered.RollbackSnapshot,
-	masterKey []byte,
 	activationErr error,
 ) error {
-	stateErr := recovered.UpdateActivationState(
-		s.Deps.KeyPaths(),
-		ir.ID(),
-		restoreID,
-		recovered.ActivationRollingBack,
-		masterKey,
-	)
+	stateErr := ir.WithMasterKey(func(masterKey []byte) error {
+		return recovered.UpdateActivationState(
+			s.Deps.KeyPaths(),
+			ir.ID(),
+			restoreID,
+			recovered.ActivationRollingBack,
+			masterKey,
+		)
+	})
 	restoreErr := restoreActivationSnapshot(s.Deps.KeyPaths(), ir.ID(), snapshot)
 	var reloadErr error
 	if restoreErr == nil {
@@ -321,46 +337,56 @@ func (s Service) RollbackRecovered(
 ) adminproto.RollbackRecoveredResult {
 	result := adminproto.RollbackRecoveredResult{RestoreID: req.RestoreID}
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return ir.WithMasterKey(func(masterKey []byte) error {
-			if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
-				return err
-			}
-			journal, snapshot, err := recovered.LoadActivation(
+		if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
+			return err
+		}
+		var (
+			journal  *recovered.ActivationJournal
+			snapshot *recovered.RollbackSnapshot
+		)
+		err := ir.WithMasterKey(func(masterKey []byte) error {
+			var loadErr error
+			journal, snapshot, loadErr = recovered.LoadActivation(
 				s.Deps.KeyPaths(),
 				ir.ID(),
 				req.RestoreID,
 				masterKey,
 			)
-			if err != nil {
-				return err
+			if loadErr != nil {
+				return loadErr
 			}
-			defer snapshot.Zero()
 			if journal.State == recovered.ActivationApplying {
-				if err := recovered.UpdateActivationState(
+				return recovered.UpdateActivationState(
 					s.Deps.KeyPaths(),
 					ir.ID(),
 					req.RestoreID,
 					recovered.ActivationRollingBack,
 					masterKey,
-				); err != nil {
-					return err
-				}
-			}
-			if err := restoreActivationSnapshot(s.Deps.KeyPaths(), ir.ID(), snapshot); err != nil {
-				return err
-			}
-			reloadReport, err := ir.Reload()
-			if err != nil {
-				return err
-			}
-			if err := recovered.RemoveActivation(s.Deps.KeyPaths(), ir.ID(), req.RestoreID); err != nil {
-				return err
-			}
-			if reloadReport != nil {
-				result.KeyCount = reloadReport.KeyCount
+				)
 			}
 			return nil
 		})
+		if err != nil {
+			if snapshot != nil {
+				snapshot.Zero()
+			}
+			return err
+		}
+		defer snapshot.Zero()
+		if err := restoreActivationSnapshot(s.Deps.KeyPaths(), ir.ID(), snapshot); err != nil {
+			return err
+		}
+		reloadReport, err := ir.Reload()
+		if err != nil {
+			return err
+		}
+		if err := recovered.RemoveActivation(s.Deps.KeyPaths(), ir.ID(), req.RestoreID); err != nil {
+			return err
+		}
+		if reloadReport != nil {
+			result.KeyCount = reloadReport.KeyCount
+		}
+		return nil
 	})
 	if err != nil {
 		result.Code = protocol.ResultCodeRecoveredRollbackFailed

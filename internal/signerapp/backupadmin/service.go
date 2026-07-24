@@ -4,7 +4,6 @@
 package backupadmin
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -15,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -160,147 +158,6 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 		Keys:        projectRestoreKeyInfos(preview.Keys),
 		Errors:      projectRestoreErrors(preview.Errors),
 	}
-}
-
-func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
-	passphraseBytes := req.ExportPassphrase
-	defer crypto.ZeroBytes(passphraseBytes)
-
-	archivePath, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), req.ArchivePath)
-	if err != nil {
-		return adminproto.RestoreBackupResult{
-			Code:  protocol.ResultCodeInvalidBackupArchive,
-			Error: err.Error(),
-		}
-	}
-	if _, err := backup.StatManagedBackupArchive(archivePath); err != nil {
-		if os.IsNotExist(err) {
-			return adminproto.RestoreBackupResult{
-				ArchivePath: archivePath,
-				Code:        protocol.ResultCodeBackupArchiveNotFound,
-				Error:       fmt.Sprintf("backup archive not found: %s", archivePath),
-			}
-		}
-		return adminproto.RestoreBackupResult{
-			ArchivePath: archivePath,
-			Code:        protocol.ResultCodeBackupArchiveUnavailable,
-			Error:       err.Error(),
-		}
-	}
-	limiter := s.Deps.RestoreLimiter()
-	if retryAfter := limiter.RetryAfter(ir.ID(), archivePath); retryAfter > 0 {
-		return adminproto.RestoreBackupResult{
-			ArchivePath: archivePath,
-			Code:        protocol.ResultCodeRestoreRateLimited,
-			Error:       RestoreRateLimitedError(retryAfter),
-		}
-	}
-
-	sourceRoot, cleanup, err := backup.PrepareRestoreSource(archivePath)
-	if err != nil {
-		limiter.RecordFailure(ir.ID(), archivePath)
-		return adminproto.RestoreBackupResult{
-			ArchivePath: archivePath,
-			Code:        protocol.ResultCodePrepareRestoreFailed,
-			Error:       err.Error(),
-		}
-	}
-	defer cleanup()
-
-	keysDir := backup.ResolveBackupKeysDir(sourceRoot)
-	addresses := append([]string(nil), req.Addresses...)
-	if len(addresses) == 0 {
-		addresses, err = backup.ScanBackupFiles(keysDir)
-		if err != nil {
-			limiter.RecordFailure(ir.ID(), archivePath)
-			return adminproto.RestoreBackupResult{
-				ArchivePath: archivePath,
-				Code:        protocol.ResultCodeScanBackupFailed,
-				Error:       err.Error(),
-			}
-		}
-	}
-	if len(addresses) == 0 {
-		limiter.RecordFailure(ir.ID(), archivePath)
-		return adminproto.RestoreBackupResult{
-			ArchivePath: archivePath,
-			Code:        protocol.ResultCodeEmptyBackup,
-			Error:       fmt.Sprintf("no .apb files found in backup: %s", archivePath),
-		}
-	}
-
-	result := adminproto.RestoreBackupResult{ArchivePath: archivePath}
-	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		if err := ir.WithMasterKey(func(masterKey []byte) error {
-			for _, address := range addresses {
-				if address == "" {
-					continue
-				}
-				warningAddress := address
-				restorer := backup.NewRestorer(s.Deps.KeyPaths(), ir.ID()).
-					WithNodeRole(ir.NodeRole()).
-					WithOverwrite(req.Overwrite).
-					WithLogger(s.Deps.Logf).
-					WithWarningHandler(func(keyType, warning string) {
-						result.Warnings = append(result.Warnings, adminproto.RestoreWarning{
-							Address: warningAddress,
-							KeyType: keyType,
-							Warning: warning,
-						})
-					})
-				keyType, restoreErr := restorer.RestoreKey(keysDir, address, masterKey, passphraseBytes)
-				if restoreErr != nil {
-					if errors.Is(restoreErr, keys.ErrManagedCredentialExists) {
-						result.Skipped = append(result.Skipped, adminproto.RestoreKeyInfo{
-							Address:       address,
-							AlreadyExists: true,
-							Error:         "managed credential already exists",
-						})
-						continue
-					}
-					result.Errors = append(result.Errors, adminproto.RestoreError{
-						Address: address,
-						Error:   restoreErr.Error(),
-					})
-					continue
-				}
-				result.Restored = append(result.Restored, adminproto.RestoreKeyInfo{
-					Address: address,
-					KeyType: keyType,
-				})
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-		if len(result.Restored) == 0 {
-			return nil
-		}
-		reloadReport, reloadErr := ir.Reload()
-		if reloadErr != nil {
-			return reloadErr
-		}
-		if reloadReport != nil {
-			result.KeyCount = reloadReport.KeyCount
-		}
-		return nil
-	})
-	if err != nil {
-		limiter.RecordFailure(ir.ID(), archivePath)
-		result.Code = "restore_failed"
-		result.Error = err.Error()
-		return result
-	}
-	if len(result.Errors) > 0 {
-		limiter.RecordFailure(ir.ID(), archivePath)
-		result.Code = "restore_partial"
-		result.Error = fmt.Sprintf("%d key(s) failed to restore", len(result.Errors))
-		result.Success = false
-		return result
-	}
-	limiter.RecordSuccess(ir.ID(), archivePath)
-	result.Success = true
-	return result
 }
 
 // RecoverBackup publishes selected archive entries as one inactive batch. It

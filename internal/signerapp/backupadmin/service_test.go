@@ -100,39 +100,6 @@ func TestPreviewRestoreRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 	}
 }
 
-func TestRestoreBackupRecordsLimiterFailureForMalformedArchive(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	archivePath := writeMalformedManagedArchive(t, paths, auth.DefaultIdentityID, "restore")
-	limiter := NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) })
-	service := Service{
-		Deps: backupServiceTestDeps{
-			paths:   paths,
-			limiter: limiter,
-		},
-	}
-	ir := testBackupIdentityRuntime()
-
-	result := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
-		ArchivePath:      archivePath,
-		ExportPassphrase: []byte("export-passphrase"),
-	})
-
-	if result.Code != protocol.ResultCodePrepareRestoreFailed {
-		t.Fatalf("RestoreBackup().Code = %q, want %s", result.Code, protocol.ResultCodePrepareRestoreFailed)
-	}
-	if retryAfter := limiter.RetryAfter(auth.DefaultIdentityID, archivePath); retryAfter == 0 {
-		t.Fatal("RetryAfter() = 0, want malformed restore to record limiter failure")
-	}
-
-	limited := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
-		ArchivePath:      archivePath,
-		ExportPassphrase: []byte("export-passphrase"),
-	})
-	if limited.Code != protocol.ResultCodeRestoreRateLimited {
-		t.Fatalf("second RestoreBackup().Code = %q, want %s", limited.Code, protocol.ResultCodeRestoreRateLimited)
-	}
-}
-
 func TestRecoverBackupAndListRecoveredDoNotReloadOrActivate(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)

@@ -191,10 +191,6 @@ func (s signerAdminServices) PreviewRestore(ir *identity.Runtime, req adminproto
 	return s.backupApp().PreviewRestore(ir, req)
 }
 
-func (s signerAdminServices) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
-	return s.backupApp().RestoreBackup(ir, req)
-}
-
 func (s signerAdminServices) RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBackupRequest) adminproto.RecoverBackupResult {
 	return s.backupApp().RecoverBackup(ir, req)
 }

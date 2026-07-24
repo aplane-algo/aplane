@@ -71,7 +71,6 @@ type stubServices struct {
 	deleteBackupCalls       int
 	changePassphraseCalls   int
 	previewRestoreCalls     int
-	restoreBackupCalls      int
 	recoverBackupCalls      int
 	listRecoveredCalls      int
 	reviewRecoveredCalls    int
@@ -96,7 +95,6 @@ type stubServices struct {
 	lastInitializeStore     adminproto.InitializeStoreRequest
 	lastChangePassphrase    adminproto.ChangeStorePassphraseRequest
 	lastPreviewRestore      adminproto.PreviewRestoreRequest
-	lastRestoreBackup       adminproto.RestoreBackupRequest
 	lastRecoverBackup       adminproto.RecoverBackupRequest
 	lastReviewRestoreID     string
 	lastActivateRecovered   adminproto.ActivateRecoveredRequest
@@ -123,7 +121,6 @@ type stubServices struct {
 	initializeStoreResult   adminproto.InitializeStoreResult
 	changePassphraseResult  adminproto.ChangeStorePassphraseResult
 	previewRestoreResult    adminproto.RestorePreviewResult
-	restoreBackupResult     adminproto.RestoreBackupResult
 	recoverBackupResult     adminproto.RecoverBackupResult
 	listRecoveredResult     adminproto.ListRecoveredResult
 	reviewRecoveredResult   adminproto.ReviewRecoveredResult
@@ -260,16 +257,6 @@ func (s *stubServices) PreviewRestore(ir *identity.Runtime, req adminproto.Previ
 		ExportPassphrase: append([]byte(nil), req.ExportPassphrase...),
 	}
 	return s.previewRestoreResult
-}
-func (s *stubServices) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
-	s.restoreBackupCalls++
-	s.lastRestoreBackup = adminproto.RestoreBackupRequest{
-		ArchivePath:      req.ArchivePath,
-		Addresses:        append([]string(nil), req.Addresses...),
-		Overwrite:        req.Overwrite,
-		ExportPassphrase: append([]byte(nil), req.ExportPassphrase...),
-	}
-	return s.restoreBackupResult
 }
 func (s *stubServices) RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBackupRequest) adminproto.RecoverBackupResult {
 	s.recoverBackupCalls++

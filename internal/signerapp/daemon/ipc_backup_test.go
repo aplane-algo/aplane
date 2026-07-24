@@ -193,35 +193,80 @@ func TestIPCManagedBackupPreviewAndRestore(t *testing.T) {
 	server.ipcServer = ipcServer
 	activeRecorder := addActiveIdentitySession(t, ipcServer, auth.DefaultIdentityID)
 
-	restoreRecorder := &ipcJSONRecorderConn{}
-	restoreSession := newBoundTestSession(ipcServer, restoreRecorder, ir)
-	dispatchIPCMessage(t, restoreSession, protocol.RestoreBackupMessage{
+	recoverRecorder := &ipcJSONRecorderConn{}
+	recoverSession := newBoundTestSession(ipcServer, recoverRecorder, ir)
+	dispatchIPCMessage(t, recoverSession, protocol.RecoverBackupMessage{
 		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeRestoreBackup,
-			ID:   "restore-backup-test",
+			Type: protocol.MsgTypeRecoverBackup,
+			ID:   "recover-backup-test",
 		},
 		ArchivePath:      filepath.Base(archivePath),
 		Addresses:        []string{gen.Address},
 		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
 	})
-	restoreMsgs := restoreRecorder.messages(t)
-	if len(restoreMsgs) != 1 {
-		t.Fatalf("restore message count = %d, want 1", len(restoreMsgs))
+	recoverMsgs := recoverRecorder.messages(t)
+	if len(recoverMsgs) != 1 {
+		t.Fatalf("recover message count = %d, want 1", len(recoverMsgs))
 	}
-	if !reflectJSONSubset(restoreMsgs[0], map[string]any{
+	if !reflectJSONSubset(recoverMsgs[0], map[string]any{
 		"kind":    string(protocol.MessageKindResponse),
-		"type":    protocol.MsgTypeRestoreBackupResult,
-		"id":      "restore-backup-test",
+		"type":    protocol.MsgTypeRecoverBackupResult,
+		"id":      "recover-backup-test",
 		"success": true,
 	}) {
-		t.Fatalf("restore backup response mismatch: %#v", restoreMsgs[0])
+		t.Fatalf("recover backup response mismatch: %#v", recoverMsgs[0])
 	}
-	restored, _ := restoreMsgs[0]["restored"].([]any)
-	if len(restored) != 1 {
-		t.Fatalf("restored key count = %d, want 1", len(restored))
+	restoreID, _ := recoverMsgs[0]["restore_id"].(string)
+	if restoreID == "" {
+		t.Fatalf("recover response missing restore_id: %#v", recoverMsgs[0])
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); !os.IsNotExist(err) {
+		t.Fatalf("recovered key became active before review/activation: %v", err)
+	}
+	if activeMsgs := activeRecorder.messages(t); len(activeMsgs) != 0 {
+		t.Fatalf("active notification count after recovery = %d, want 0", len(activeMsgs))
+	}
+
+	reviewRecorder := &ipcJSONRecorderConn{}
+	reviewSession := newBoundTestSession(ipcServer, reviewRecorder, ir)
+	dispatchIPCMessage(t, reviewSession, protocol.ReviewRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeReviewRecovered,
+			ID:   "review-recovered-test",
+		},
+		RestoreID: restoreID,
+	})
+	reviewMsgs := reviewRecorder.messages(t)
+	if len(reviewMsgs) != 1 {
+		t.Fatalf("review message count = %d, want 1", len(reviewMsgs))
+	}
+	reviewToken, _ := reviewMsgs[0]["review_token"].(string)
+	if reviewToken == "" {
+		t.Fatalf("review response missing token: %#v", reviewMsgs[0])
+	}
+
+	activateRecorder := &ipcJSONRecorderConn{}
+	activateSession := newBoundTestSession(ipcServer, activateRecorder, ir)
+	dispatchIPCMessage(t, activateSession, protocol.ActivateRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeActivateRecovered,
+			ID:   "activate-recovered-test",
+		},
+		RestoreID:                   restoreID,
+		ReviewToken:                 reviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+	activateMsgs := activateRecorder.messages(t)
+	if len(activateMsgs) != 1 || !reflectJSONSubset(activateMsgs[0], map[string]any{
+		"kind":    string(protocol.MessageKindResponse),
+		"type":    protocol.MsgTypeActivateRecoveredResult,
+		"id":      "activate-recovered-test",
+		"success": true,
+	}) {
+		t.Fatalf("activate response mismatch: %#v", activateMsgs)
 	}
 	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); err != nil {
-		t.Fatalf("restored key stat error = %v", err)
+		t.Fatalf("activated key stat error = %v", err)
 	}
 
 	activeMsgs := activeRecorder.messages(t)
@@ -236,7 +281,7 @@ func TestIPCManagedBackupPreviewAndRestore(t *testing.T) {
 	}
 }
 
-func TestIPCRestoreSkipsExistingKeyWithoutOverwrite(t *testing.T) {
+func TestIPCRecoveredActivationRejectsExistingKeyWithoutReplacement(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -273,46 +318,61 @@ func TestIPCRestoreSkipsExistingKeyWithoutOverwrite(t *testing.T) {
 		t.Fatal("archive_path missing from backup response")
 	}
 
-	restoreRecorder := &ipcJSONRecorderConn{}
-	restoreSession := newBoundTestSession(ipcServer, restoreRecorder, ir)
-	dispatchIPCMessage(t, restoreSession, protocol.RestoreBackupMessage{
+	recoverRecorder := &ipcJSONRecorderConn{}
+	recoverSession := newBoundTestSession(ipcServer, recoverRecorder, ir)
+	dispatchIPCMessage(t, recoverSession, protocol.RecoverBackupMessage{
 		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeRestoreBackup,
-			ID:   "restore-existing-test",
+			Type: protocol.MsgTypeRecoverBackup,
+			ID:   "recover-existing-test",
 		},
 		ArchivePath:      filepath.Base(archivePath),
 		Addresses:        []string{gen.Address},
 		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
 	})
-	restoreMsgs := restoreRecorder.messages(t)
-	if len(restoreMsgs) != 1 {
-		t.Fatalf("restore message count = %d, want 1", len(restoreMsgs))
+	recoverMsgs := recoverRecorder.messages(t)
+	if len(recoverMsgs) != 1 {
+		t.Fatalf("recover message count = %d, want 1", len(recoverMsgs))
 	}
-	if !reflectJSONSubset(restoreMsgs[0], map[string]any{
-		"kind":    string(protocol.MessageKindResponse),
-		"type":    protocol.MsgTypeRestoreBackupResult,
-		"id":      "restore-existing-test",
-		"success": true,
-	}) {
-		t.Fatalf("restore existing response mismatch: %#v", restoreMsgs[0])
+	restoreID, _ := recoverMsgs[0]["restore_id"].(string)
+	if restoreID == "" {
+		t.Fatalf("recover response missing restore ID: %#v", recoverMsgs[0])
 	}
-	restored, _ := restoreMsgs[0]["restored"].([]any)
-	if len(restored) != 0 {
-		t.Fatalf("restored key count = %d, want 0 without overwrite", len(restored))
+
+	reviewRecorder := &ipcJSONRecorderConn{}
+	reviewSession := newBoundTestSession(ipcServer, reviewRecorder, ir)
+	dispatchIPCMessage(t, reviewSession, protocol.ReviewRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeReviewRecovered,
+			ID:   "review-existing-test",
+		},
+		RestoreID: restoreID,
+	})
+	reviewMsgs := reviewRecorder.messages(t)
+	reviewToken, _ := reviewMsgs[0]["review_token"].(string)
+	conflicts, _ := reviewMsgs[0]["active_conflicts"].([]any)
+	if reviewToken == "" || len(conflicts) != 1 {
+		t.Fatalf("review existing response = %#v, want token and conflict", reviewMsgs[0])
 	}
-	skipped, _ := restoreMsgs[0]["skipped"].([]any)
-	if len(skipped) != 1 {
-		t.Fatalf("skipped key count = %d, want 1", len(skipped))
-	}
-	skippedKey, ok := skipped[0].(map[string]any)
-	if !ok {
-		t.Fatalf("skipped key has unexpected type: %#v", skipped[0])
-	}
-	if skippedKey["address"] != gen.Address || skippedKey["already_exists"] != true {
-		t.Fatalf("skipped key = %#v, want existing generated address", skippedKey)
+
+	activateRecorder := &ipcJSONRecorderConn{}
+	activateSession := newBoundTestSession(ipcServer, activateRecorder, ir)
+	dispatchIPCMessage(t, activateSession, protocol.ActivateRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeActivateRecovered,
+			ID:   "activate-existing-test",
+		},
+		RestoreID:                   restoreID,
+		ReviewToken:                 reviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+	activateMsgs := activateRecorder.messages(t)
+	if len(activateMsgs) != 1 ||
+		activateMsgs[0]["code"] != protocol.ResultCodeActivationConflict ||
+		activateMsgs[0]["success"] != false {
+		t.Fatalf("activate existing response = %#v, want conflict", activateMsgs)
 	}
 	if activeMsgs := activeRecorder.messages(t); len(activeMsgs) != 0 {
-		t.Fatalf("active notification count = %d, want 0 for skipped-only restore: %#v", len(activeMsgs), activeMsgs)
+		t.Fatalf("active notification count = %d, want 0 for rejected activation: %#v", len(activeMsgs), activeMsgs)
 	}
 }
 

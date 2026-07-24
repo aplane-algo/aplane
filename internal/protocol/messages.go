@@ -16,7 +16,7 @@ const (
 )
 
 const (
-	AdminProtocolVersionMajor = 2
+	AdminProtocolVersionMajor = 3
 	AdminProtocolVersionMinor = 0
 )
 
