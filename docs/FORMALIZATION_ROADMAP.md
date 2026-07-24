@@ -400,6 +400,31 @@ pass at recorded metrics; the new standard cell covers 99,584 distinct states.
 The model has no deep target-count variant because its predicates are
 group-wide and that input only duplicated identical states.
 
+**Drift review (2026-07-24, HEAD `1462f3e5`).** Re-checked after 36 commits —
+the bounded-sentry v1 implementation (PR #14), the endpoint-only enrollment
+refactor (PR #15), and the Corridor contract-clarification docs (PR #16). All
+14 standard and 11 deep TLC runs pass at recorded metrics. The dominant new
+surface, bounded sentry, was modeled inside the same window
+(`bounded_sentry.tla` plus BS1-BS7 anchors, added in `a4f83f4b` and trimmed in
+`92438404`), and the hardening commits that landed after the model
+(`1dedff71`, `3312b7e2`, `d4f1beea`, `b1e5160d`) only add validation — the
+transcribed choreography still holds: base components are released only after
+policy and operator approval (`approveGroupWithPlanContext`, the same gate as
+ordinary signing, so the ApprovalWait fairness assumption carries over), the
+frozen plan is validated before the sentry sees the group, and assembly binds
+both authorities. Sign-boundary changes are conservative: ordinary `/sign` now
+fail-closes on bounded-sentry keys via `boundedSentryRequired()` before mode
+validation, and the guarded passthrough rejection extends to
+bounded-sentry-authorized keys; the deleted `AssemblyExtraArgsProvider` hook
+(Corridor migration) appears in no spec or formal doc. Session-ownership area
+moved only in RPC surface (scalar policy RPCs removed, nil admin protocol
+version now rejected at handshake — before the modeled auth step); unlock at
+auth, disconnect-defer cleanup, `PromoteToActive`, and `DisplaceSession` had
+zero diff. Approval, lifecycle, and plugin areas had no commits. Full anchor
+sweep of [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) passed;
+`metrics.json` matches the module table and every model-doc status header.
+Nothing required correction in this pass.
+
 ### Milestone status
 
 | Milestone | Status | Notes |
