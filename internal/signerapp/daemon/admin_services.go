@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
+	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
@@ -80,6 +81,18 @@ func (s signerAdminServices) VerifyPassphrase(ir *identity.Runtime, passphrase [
 }
 
 func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string) {
+	incomplete, err := recovered.IncompleteActivationIDs(ir.KeyPaths(), ir.ID())
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to inspect activation recovery state: %v", err)
+		return false, 0, errMsg, protocol.ErrCodeUnlockFailed
+	}
+	if len(incomplete) > 0 {
+		success, errMsg := ir.TryRecoveryUnlock(passphrase)
+		if !success {
+			return false, 0, errMsg, unlockFailureCode(errMsg)
+		}
+		return true, 0, "", protocol.ResultCodeActivationIncomplete
+	}
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
@@ -195,11 +208,23 @@ func (s signerAdminServices) ReviewRecovered(ir *identity.Runtime, restoreID str
 }
 
 func (s signerAdminServices) ActivateRecovered(ir *identity.Runtime, req adminproto.ActivateRecoveredRequest) adminproto.ActivateRecoveredResult {
-	return s.backupApp().ActivateRecovered(ir, req)
+	wasRecovery := ir.IsRecovery()
+	result := s.backupApp().ActivateRecovered(ir, req)
+	if result.Success && wasRecovery {
+		ir.SetUnlocked()
+		ir.EnsureKeyWatcher(startKeyWatcherForDir)
+	}
+	return result
 }
 
 func (s signerAdminServices) RollbackRecovered(ir *identity.Runtime, req adminproto.RollbackRecoveredRequest) adminproto.RollbackRecoveredResult {
-	return s.backupApp().RollbackRecovered(ir, req)
+	wasRecovery := ir.IsRecovery()
+	result := s.backupApp().RollbackRecovered(ir, req)
+	if result.Success && wasRecovery {
+		ir.SetUnlocked()
+		ir.EnsureKeyWatcher(startKeyWatcherForDir)
+	}
+	return result
 }
 
 func (s signerAdminServices) PurgeRecovered(ir *identity.Runtime, req adminproto.PurgeRecoveredRequest) adminproto.PurgeRecoveredResult {

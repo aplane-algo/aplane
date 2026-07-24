@@ -15,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
+	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -209,18 +210,34 @@ func Run(dataDir string) int {
 	if startLocked {
 		logInfof("signer runtime initialized (waiting for apadmin connection)")
 	} else {
-		// Headless mode: load keys using passphrase, then zero it immediately
-		logInfof("scanning keys directory for private keys")
-		_, err := ir.ReloadWithPassphrase(startPassphrase)
-		crypto.ZeroBytes(startPassphrase)
-		if err != nil {
-			logErrorf("error loading keys: %v", err)
+		incomplete, inspectErr := recovered.IncompleteActivationIDs(startupOpts.Paths, ir.ID())
+		if inspectErr != nil {
+			crypto.ZeroBytes(startPassphrase)
+			logErrorf("error inspecting activation recovery state: %v", inspectErr)
 			return 1
 		}
-		ir.SetUnlocked()
+		if len(incomplete) > 0 {
+			success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
+			crypto.ZeroBytes(startPassphrase)
+			if !success {
+				logErrorf("error unlocking activation recovery state: %s", errMsg)
+				return 1
+			}
+			logWarnf("identity is recovery-blocked by incomplete activation: %s", strings.Join(incomplete, ", "))
+		} else {
+			// Headless mode: load keys using passphrase, then zero it immediately.
+			logInfof("scanning keys directory for private keys")
+			_, err := ir.ReloadWithPassphrase(startPassphrase)
+			crypto.ZeroBytes(startPassphrase)
+			if err != nil {
+				logErrorf("error loading keys: %v", err)
+				return 1
+			}
+			ir.SetUnlocked()
+		}
 
 		keyCount := ir.KeyCount()
-		if keyCount == 0 {
+		if keyCount == 0 && !ir.IsRecovery() {
 			logWarnf("no private keys found in keys directory")
 			logWarnf("keys must be generated using the apadmin tool:")
 			logWarnf("  1. run apadmin on this machine (local access required)")

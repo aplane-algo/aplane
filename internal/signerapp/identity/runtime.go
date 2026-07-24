@@ -379,9 +379,37 @@ func (ir *Runtime) IsUnlocked() bool {
 	return ir.lockRuntime.IsUnlocked()
 }
 
+// IsRecovery reports that the master key is available only for explicit
+// activation reconciliation; signing remains locked.
+func (ir *Runtime) IsRecovery() bool {
+	return ir.lockRuntime.IsRecovery()
+}
+
 // SetUnlocked marks this identity as unlocked without side effects.
 func (ir *Runtime) SetUnlocked() {
 	ir.lockRuntime.SetUnlocked()
+}
+
+// SetRecovery marks this identity as recovery-blocked without permitting
+// signing. Production unlock paths should use TryRecoveryUnlock.
+func (ir *Runtime) SetRecovery() {
+	ir.lockRuntime.SetRecovery()
+}
+
+// TryRecoveryUnlock derives the master key without scanning or publishing
+// active credentials, then enters recovery state.
+func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
+	if ir.decommissioned.Load() {
+		return false, ErrDecommissioned.Error()
+	}
+	return ir.lockRuntime.TryRecovery(func() error {
+		ir.passphraseLock.Lock()
+		defer ir.passphraseLock.Unlock()
+		if _, err := ir.keyStore.InitializeMasterKey(passphrase); err != nil {
+			return fmt.Errorf("invalid passphrase")
+		}
+		return nil
+	})
 }
 
 // Lock transitions this identity to the locked state.

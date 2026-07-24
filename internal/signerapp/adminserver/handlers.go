@@ -343,7 +343,7 @@ func (s *Session) HandleRecoverBackup(msg *protocol.RecoverBackupMessage) {
 }
 
 func (s *Session) HandleListRecovered(requestID string) {
-	ir := s.requireUnlockedRuntime(requestID)
+	ir := s.requireRecoveryAdminRuntime(requestID)
 	if ir == nil {
 		return
 	}
@@ -358,7 +358,7 @@ func (s *Session) HandleListRecovered(requestID string) {
 }
 
 func (s *Session) HandleReviewRecovered(msg *protocol.ReviewRecoveredMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
 	if ir == nil {
 		return
 	}
@@ -374,7 +374,7 @@ func (s *Session) HandleReviewRecovered(msg *protocol.ReviewRecoveredMessage) {
 }
 
 func (s *Session) HandleActivateRecovered(msg *protocol.ActivateRecoveredMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
 	if ir == nil {
 		return
 	}
@@ -396,7 +396,7 @@ func (s *Session) HandleActivateRecovered(msg *protocol.ActivateRecoveredMessage
 }
 
 func (s *Session) HandleRollbackRecovered(msg *protocol.RollbackRecoveredMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
 	if ir == nil {
 		return
 	}

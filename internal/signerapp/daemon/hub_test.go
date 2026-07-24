@@ -27,6 +27,7 @@ func TestSignerStateString(t *testing.T) {
 	}{
 		{SignerStateLocked, "locked"},
 		{SignerStateUnlocked, "unlocked"},
+		{SignerStateRecovery, "recovery"},
 		{SignerState(99), "unknown"}, // Invalid state
 	}
 

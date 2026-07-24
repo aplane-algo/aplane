@@ -94,6 +94,7 @@ const (
 	ResultCodeRecoveredActivationFailed = "recovered_activation_failed"
 	ResultCodeRecoveredRollbackFailed   = "recovered_rollback_failed"
 	ResultCodePurgeRecoveredFailed      = "purge_recovered_failed"
+	ResultCodeActivationIncomplete      = "activation_incomplete"
 
 	ResultCodeListFailed           = "list_failed"
 	ResultCodeInvalidTemplateType  = "invalid_template_type"

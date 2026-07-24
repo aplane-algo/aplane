@@ -280,6 +280,36 @@ func TestRestoreBackupRequiresUnlockedRuntime(t *testing.T) {
 	}
 }
 
+func TestRecoveryStatePermitsOnlyRecoveryResolutionHandlers(t *testing.T) {
+	ir := identity.New(identity.Config{
+		ID:            auth.DefaultIdentityID,
+		Authenticator: auth.NewTokenAuthenticator("token"),
+	})
+	ir.SetRecovery()
+	svc := &stubServices{
+		listRecoveredResult: adminproto.ListRecoveredResult{},
+	}
+	conn := &queueConn{}
+	session := NewSession(conn, svc.backupDeps())
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	session.HandleListRecovered("list-recovery")
+	if svc.listRecoveredCalls != 1 {
+		t.Fatalf("ListRecovered calls = %d, want 1 in recovery state", svc.listRecoveredCalls)
+	}
+	session.HandleRecoverBackup(&protocol.RecoverBackupMessage{
+		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRecoverBackup, ID: "recover-blocked"},
+		ArchivePath:      "backup.tar.gz",
+		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
+	})
+	if svc.recoverBackupCalls != 0 {
+		t.Fatalf("RecoverBackup calls = %d, want 0 in recovery state", svc.recoverBackupCalls)
+	}
+	if ir.IsUnlocked() {
+		t.Fatal("recovery identity reports unlocked")
+	}
+}
+
 func TestBackupRestoreMessagesRequireIdentityRestoreAuthorization(t *testing.T) {
 	for _, tc := range []struct {
 		name          string

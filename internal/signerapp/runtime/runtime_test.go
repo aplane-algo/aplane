@@ -128,3 +128,20 @@ func TestTryUnlockSucceedsWithoutRacingLock(t *testing.T) {
 		t.Fatalf("state = %v, want unlocked", r.GetState())
 	}
 }
+
+func TestTryRecoveryBlocksSigningAndLockRunsCleanup(t *testing.T) {
+	r := New()
+	var lockCalls atomic.Int32
+	r.SetOnLock(func() { lockCalls.Add(1) })
+	ok, errMsg := r.TryRecovery(func() error { return nil })
+	if !ok || errMsg != "" {
+		t.Fatalf("TryRecovery() = (%v, %q)", ok, errMsg)
+	}
+	if !r.IsRecovery() || r.IsUnlocked() || r.GetState().String() != "recovery" {
+		t.Fatalf("recovery state = %v unlocked=%v", r.GetState(), r.IsUnlocked())
+	}
+	r.Lock()
+	if r.GetState() != SignerStateLocked || lockCalls.Load() != 1 {
+		t.Fatalf("Lock() state=%v cleanup calls=%d", r.GetState(), lockCalls.Load())
+	}
+}
