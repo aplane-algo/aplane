@@ -13,6 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -299,6 +300,95 @@ func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBacku
 	limiter.RecordSuccess(ir.ID(), archivePath)
 	result.Success = true
 	return result
+}
+
+// RecoverBackup publishes selected archive entries as one inactive batch. It
+// deliberately does not reload the identity runtime.
+func (s Service) RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBackupRequest) adminproto.RecoverBackupResult {
+	passphraseBytes := req.ExportPassphrase
+	defer crypto.ZeroBytes(passphraseBytes)
+
+	archivePath, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), req.ArchivePath)
+	if err != nil {
+		return adminproto.RecoverBackupResult{
+			Code:  protocol.ResultCodeRecoverBackupFailed,
+			Error: err.Error(),
+		}
+	}
+	limiter := s.Deps.RestoreLimiter()
+	if retryAfter := limiter.RetryAfter(ir.ID(), archivePath); retryAfter > 0 {
+		return adminproto.RecoverBackupResult{
+			Code:  protocol.ResultCodeRestoreRateLimited,
+			Error: RestoreRateLimitedError(retryAfter),
+		}
+	}
+
+	var batch *recovered.Batch
+	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
+		return ir.WithMasterKey(func(masterKey []byte) error {
+			var recoverErr error
+			batch, recoverErr = backup.RecoverManagedBackup(
+				s.Deps.KeyPaths(),
+				ir.ID(),
+				archivePath,
+				req.Addresses,
+				masterKey,
+				passphraseBytes,
+				ir.NodeRole(),
+			)
+			return recoverErr
+		})
+	})
+	if err != nil {
+		limiter.RecordFailure(ir.ID(), archivePath)
+		return adminproto.RecoverBackupResult{
+			Code:  protocol.ResultCodeRecoverBackupFailed,
+			Error: err.Error(),
+		}
+	}
+	crypto.ZeroBytes(batch.SourcePolicyYAML)
+	limiter.RecordSuccess(ir.ID(), archivePath)
+	s.Deps.Logf("recovered managed backup as inactive batch: %s", batch.RestoreID)
+	return adminproto.RecoverBackupResult{
+		Success:         true,
+		RestoreID:       batch.RestoreID,
+		ArchiveName:     batch.ArchiveName,
+		ArchiveChecksum: batch.ArchiveSHA256,
+		EntryCount:      len(batch.Entries),
+	}
+}
+
+// ListRecovered returns inactive recovered-batch inventory without reloading
+// or mutating active runtime state.
+func (s Service) ListRecovered(ir *identity.Runtime) adminproto.ListRecoveredResult {
+	var batches []recovered.BatchInfo
+	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+		return ir.WithMasterKey(func(masterKey []byte) error {
+			var listErr error
+			batches, listErr = recovered.List(s.Deps.KeyPaths(), ir.ID(), masterKey)
+			return listErr
+		})
+	})
+	if err != nil {
+		return adminproto.ListRecoveredResult{
+			Code:  protocol.ResultCodeListRecoveredFailed,
+			Error: err.Error(),
+		}
+	}
+	out := make([]adminproto.RecoveredBatchInfo, len(batches))
+	for i, batch := range batches {
+		out[i] = adminproto.RecoveredBatchInfo{
+			RestoreID:          batch.RestoreID,
+			CreatedAt:          batch.CreatedAt.Unix(),
+			ArchiveName:        batch.ArchiveName,
+			ArchiveChecksum:    batch.ArchiveSHA256,
+			SourceNodeRole:     batch.SourceNodeRole,
+			SourcePolicyStatus: string(batch.SourcePolicyStatus),
+			SourcePolicySHA256: batch.SourcePolicySHA256,
+			EntryCount:         batch.EntryCount,
+		}
+	}
+	return adminproto.ListRecoveredResult{Batches: out}
 }
 
 func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreKeyInfo {

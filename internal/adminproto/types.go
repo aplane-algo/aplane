@@ -184,6 +184,43 @@ type RestoreBackupResult struct {
 	Error       string
 }
 
+// RecoverBackupRequest selects archive entries for inactive recovery.
+type RecoverBackupRequest struct {
+	ArchivePath      string
+	Addresses        []string
+	ExportPassphrase []byte
+}
+
+// RecoverBackupResult identifies one atomically published inactive batch.
+type RecoverBackupResult struct {
+	Success         bool
+	RestoreID       string
+	ArchiveName     string
+	ArchiveChecksum string
+	EntryCount      int
+	Code            string
+	Error           string
+}
+
+// RecoveredBatchInfo is the non-secret inventory projection of one batch.
+type RecoveredBatchInfo struct {
+	RestoreID          string
+	CreatedAt          int64
+	ArchiveName        string
+	ArchiveChecksum    string
+	SourceNodeRole     string
+	SourcePolicyStatus string
+	SourcePolicySHA256 string
+	EntryCount         int
+}
+
+// ListRecoveredResult contains inactive recovered batches.
+type ListRecoveredResult struct {
+	Batches []RecoveredBatchInfo
+	Code    string
+	Error   string
+}
+
 // UpdateAdminSettingRequest is the admin-domain request to change one setting.
 type UpdateAdminSettingRequest struct {
 	Key   string
