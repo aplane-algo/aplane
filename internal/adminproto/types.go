@@ -221,6 +221,70 @@ type ListRecoveredResult struct {
 	Error   string
 }
 
+// DestinationApprovalMode describes the destination's effective unmatched
+// signing behavior.
+type DestinationApprovalMode string
+
+const (
+	// DestinationApprovalManualDefault requires unmatched requests to use
+	// operator approval.
+	DestinationApprovalManualDefault DestinationApprovalMode = "manual_default"
+	// DestinationApprovalAutoApproveFallback permits unmatched requests to
+	// skip operator approval.
+	DestinationApprovalAutoApproveFallback DestinationApprovalMode = "auto_approve_fallback"
+	// DestinationApprovalNotApplicable is used for identities without an
+	// operator-default approval mode.
+	DestinationApprovalNotApplicable DestinationApprovalMode = "not_applicable"
+)
+
+// RecoveredReviewEntry identifies one validated inactive entry.
+type RecoveredReviewEntry struct {
+	Selector string
+	Category string
+	KeyType  string
+}
+
+// RecoveredActiveConflict fingerprints an active credential that activation
+// would replace.
+type RecoveredActiveConflict struct {
+	Selector string
+	Category string
+	KeyType  string
+	SHA256   string
+}
+
+// RecoveryPolicyChange is one ordered factual policy difference.
+type RecoveryPolicyChange struct {
+	Category    string
+	Selector    string
+	Path        string
+	Source      string
+	Destination string
+}
+
+// ReviewRecoveredResult pins one review of current destination state.
+type ReviewRecoveredResult struct {
+	Success                  bool
+	RestoreID                string
+	State                    string
+	ArchiveChecksum          string
+	SourceNodeRole           string
+	SourcePolicyStatus       string
+	SourcePolicySHA256       string
+	DestinationPolicySHA256  string
+	DestinationApprovalMode  DestinationApprovalMode
+	UnattendedSigningWarning string
+	PolicyComparison         string
+	SecurityChanges          []RecoveryPolicyChange
+	ChangedPaths             []string
+	UnknownSourceSettings    []string
+	Entries                  []RecoveredReviewEntry
+	ActiveConflicts          []RecoveredActiveConflict
+	ReviewToken              string
+	Code                     string
+	Error                    string
+}
+
 // UpdateAdminSettingRequest is the admin-domain request to change one setting.
 type UpdateAdminSettingRequest struct {
 	Key   string

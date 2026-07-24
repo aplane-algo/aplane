@@ -87,6 +87,7 @@ const (
 	ResultCodeEmptyBackup              = "empty_backup"
 	ResultCodeRecoverBackupFailed      = "recover_backup_failed"
 	ResultCodeListRecoveredFailed      = "list_recovered_failed"
+	ResultCodeReviewRecoveredFailed    = "review_recovered_failed"
 
 	ResultCodeListFailed           = "list_failed"
 	ResultCodeInvalidTemplateType  = "invalid_template_type"

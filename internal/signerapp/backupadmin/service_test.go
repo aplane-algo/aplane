@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -213,6 +215,91 @@ func TestRecoverAndListRecoveredFailWithoutMasterKey(t *testing.T) {
 	}
 }
 
+func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{
+		Deps: backupServiceTestDeps{
+			paths:   paths,
+			limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+		},
+	}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntimeWithAutoApprove(t, paths, &reloads, true)
+	destination := &policy.StoredConfig{
+		StoredPolicyCore: policy.StoredPolicyCore{
+			RejectForeignRekey: boolPointer(false),
+			MaxFeeMicroAlgos:   uint64Pointer(1_000),
+		},
+	}
+	installBackupAdminPolicy(t, ir, paths, destination)
+
+	recoveredResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoveredResult.Success {
+		t.Fatalf("RecoverBackup() = %+v", recoveredResult)
+	}
+	first := service.ReviewRecovered(ir, recoveredResult.RestoreID)
+	if !first.Success {
+		t.Fatalf("ReviewRecovered() = %+v", first)
+	}
+	if first.DestinationApprovalMode != adminproto.DestinationApprovalAutoApproveFallback ||
+		first.UnattendedSigningWarning == "" {
+		t.Fatalf("destination approval review = mode %q warning %q", first.DestinationApprovalMode, first.UnattendedSigningWarning)
+	}
+	if first.PolicyComparison != string(policy.RestoreComparisonDifferent) ||
+		len(first.SecurityChanges) == 0 ||
+		first.SecurityChanges[0].Category != string(policy.RestoreCategoryHardRejects) {
+		t.Fatalf("security-first comparison = status %q changes %+v", first.PolicyComparison, first.SecurityChanges)
+	}
+	if !slices.Contains(first.UnknownSourceSettings, "source.user_auto_approve") {
+		t.Fatalf("unknown source settings = %v, want source.user_auto_approve", first.UnknownSourceSettings)
+	}
+	if first.ReviewToken == "" {
+		t.Fatal("review token is empty")
+	}
+	repeated := service.ReviewRecovered(ir, recoveredResult.RestoreID)
+	if repeated.ReviewToken != first.ReviewToken {
+		t.Fatalf("unchanged review token = %q, want %q", repeated.ReviewToken, first.ReviewToken)
+	}
+
+	if err := os.MkdirAll(paths.KeysDir(auth.DefaultIdentityID), 0o750); err != nil {
+		t.Fatalf("MkdirAll(keys) error = %v", err)
+	}
+	if err := os.WriteFile(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address), []byte("existing encrypted credential"), 0o600); err != nil {
+		t.Fatalf("WriteFile(active conflict) error = %v", err)
+	}
+	withConflict := service.ReviewRecovered(ir, recoveredResult.RestoreID)
+	if len(withConflict.ActiveConflicts) != 1 || withConflict.ReviewToken == first.ReviewToken {
+		t.Fatalf("conflict review = conflicts %+v token %q, want one conflict and changed token", withConflict.ActiveConflicts, withConflict.ReviewToken)
+	}
+
+	ir.Config().SetUserAutoApprove(false)
+	manual := service.ReviewRecovered(ir, recoveredResult.RestoreID)
+	if manual.DestinationApprovalMode != adminproto.DestinationApprovalManualDefault ||
+		manual.UnattendedSigningWarning != "" ||
+		manual.ReviewToken == withConflict.ReviewToken {
+		t.Fatalf("manual review = mode %q warning %q token %q", manual.DestinationApprovalMode, manual.UnattendedSigningWarning, manual.ReviewToken)
+	}
+
+	matching := &policy.StoredConfig{
+		StoredPolicyCore: policy.StoredPolicyCore{
+			RejectForeignRekey: boolPointer(true),
+		},
+	}
+	installBackupAdminPolicy(t, ir, paths, matching)
+	changedPolicy := service.ReviewRecovered(ir, recoveredResult.RestoreID)
+	if changedPolicy.DestinationPolicySHA256 == manual.DestinationPolicySHA256 ||
+		changedPolicy.ReviewToken == manual.ReviewToken {
+		t.Fatalf("policy change did not stale review: before %+v after %+v", manual, changedPolicy)
+	}
+	if got := reloads.Load(); got != 0 {
+		t.Fatalf("runtime reload count = %d, want 0", got)
+	}
+}
+
 func writeMalformedManagedArchive(t *testing.T, paths storepaths.Paths, identityID, label string) string {
 	t.Helper()
 
@@ -246,6 +333,13 @@ func writeRecoverableManagedArchive(t *testing.T, paths storepaths.Paths, identi
 	if err := backup.WriteManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0)); err != nil {
 		t.Fatalf("WriteManifest() error = %v", err)
 	}
+	policyDir := filepath.Join(root, "policy")
+	if err := os.MkdirAll(policyDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll(policy) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), []byte("reject_foreign_rekey: true\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(source policy) error = %v", err)
+	}
 	archivePath := backup.BuildManagedArchivePath(paths, identityID, "recover-service")
 	if err := backup.CreateTarGzArchive(root, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
@@ -254,6 +348,15 @@ func writeRecoverableManagedArchive(t *testing.T, paths storepaths.Paths, identi
 }
 
 func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *identity.Runtime {
+	return testUnlockedBackupIdentityRuntimeWithAutoApprove(t, paths, reloads, false)
+}
+
+func testUnlockedBackupIdentityRuntimeWithAutoApprove(
+	t *testing.T,
+	paths storepaths.Paths,
+	reloads *atomic.Int64,
+	userAutoApprove bool,
+) *identity.Runtime {
 	t.Helper()
 
 	if _, _, err := crypto.CreateKeystoreMetadata(paths.IdentityDir(auth.DefaultIdentityID), backupAdminTestPassphrase); err != nil {
@@ -264,11 +367,12 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 		t.Fatalf("InitializeMasterKey() error = %v", err)
 	}
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
-		KeyStore:      keyStore,
-		KeyPaths:      paths,
-		Authenticator: auth.NewTokenAuthenticator("token"),
-		NodeRole:      noderole.RoleSigner,
+		ID:              auth.DefaultIdentityID,
+		KeyStore:        keyStore,
+		KeyPaths:        paths,
+		Authenticator:   auth.NewTokenAuthenticator("token"),
+		NodeRole:        noderole.RoleSigner,
+		UserAutoApprove: &userAutoApprove,
 	})
 	ir.SetReloadFunc(func(string, []byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		reloads.Add(1)
@@ -277,6 +381,34 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 	ir.SetUnlocked()
 	return ir
 }
+
+func installBackupAdminPolicy(
+	t *testing.T,
+	ir *identity.Runtime,
+	paths storepaths.Paths,
+	stored *policy.StoredConfig,
+) {
+	t.Helper()
+	if err := ir.WithMasterKey(func(masterKey []byte) error {
+		return policy.SaveStoredConfigWithMasterKey(
+			paths.Root(),
+			auth.DefaultIdentityID,
+			stored,
+			masterKey,
+			time.Unix(1_700_000_000, 0),
+		)
+	}); err != nil {
+		t.Fatalf("SaveStoredConfigWithMasterKey() error = %v", err)
+	}
+	effective, err := stored.ApplySigning(nil)
+	if err != nil {
+		t.Fatalf("ApplySigning() error = %v", err)
+	}
+	ir.SetPolicyState(stored, effective)
+}
+
+func boolPointer(value bool) *bool       { return &value }
+func uint64Pointer(value uint64) *uint64 { return &value }
 
 func testBackupIdentityRuntime() *identity.Runtime {
 	return identity.New(identity.Config{

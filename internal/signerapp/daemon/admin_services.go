@@ -190,6 +190,10 @@ func (s signerAdminServices) ListRecovered(ir *identity.Runtime) adminproto.List
 	return s.backupApp().ListRecovered(ir)
 }
 
+func (s signerAdminServices) ReviewRecovered(ir *identity.Runtime, restoreID string) adminproto.ReviewRecoveredResult {
+	return s.backupApp().ReviewRecovered(ir, restoreID)
+}
+
 func (s signerAdminServices) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibraryTemplatesResult {
 	return s.templateApp().ListLibraryTemplates(ir)
 }

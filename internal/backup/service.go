@@ -4,10 +4,7 @@
 package backup
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -165,17 +162,7 @@ func copyPolicyFilesToArchive(paths storepaths.Paths, identityID, stageDir strin
 
 // FileSHA256 returns the SHA-256 checksum and size of path.
 func FileSHA256(path string) (string, int64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", 0, err
-	}
-	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	n, err := io.Copy(h, f)
-	if err != nil {
-		return "", 0, err
-	}
-	return hex.EncodeToString(h.Sum(nil)), n, nil
+	return fsutil.RegularFileSHA256(path)
 }
 
 func prepareManagedArchiveDestination(paths storepaths.Paths, identityID, archivePath string) error {
