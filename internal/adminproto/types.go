@@ -125,6 +125,7 @@ type ChangeStorePassphraseResult struct {
 	Success                  bool
 	KeysMigrated             int
 	TemplatesMigrated        int
+	RecoveredFilesMigrated   int
 	PolicySidecarsMigrated   int
 	NodeRoleSidecarsMigrated int
 	Code                     string

@@ -161,6 +161,7 @@ DTOs and contract fixtures.
 | JavaScript script | Client data dir | `scripts/*.js` | Goja execution context | shell/MCP `js`, `jssave`, `jslist` | `internal/scripting`, `internal/jsapi` |
 | Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files, `manifest.json`, and policy snapshots | restore preview/apply plan | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
 | Backup manifest | Backup archive | `manifest.json` schema `aplane.backup.manifest.v1` | source node role default and diagnostics for rebuild | none | `internal/backup` |
+| Recovered batch | Signer identity | destination-encrypted `recovered/<restore-id>/batch.enc` and `entries/*.recovered` | none before explicit activation | future recovery admin messages | `internal/backup/recovered` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
 
 ## Relationship Map
@@ -255,9 +256,21 @@ identities/<identity>/
   sentries/*.json
   keytypes/<key_type>.json
   keytypes/<key_type>.template
+  recovered/<restore-id>/
+    batch.enc
+    entries/<selector-hash>.recovered
   deleted/
   passphrase | passphrase.cred   # optional helper artifacts
 ```
+
+Recovered batches are inactive, identity-scoped recovery state. Their metadata
+and entries are authenticated encryption under the destination identity master
+key, but they are not managed `.key` or `.sen` files and have no signing-runtime
+projection. The batch commits to each exact entry plaintext, and each entry
+also carries its restore ID. Store passphrase rotation validates and
+re-encrypts every published recovered file. Directories prefixed
+`.recovering-` are unpublished staging state and must be ignored by inventory
+operations.
 
 `identity.Runtime` is the runtime projection. It owns:
 

@@ -193,7 +193,7 @@ Server to Client:
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
 - `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the identity keystore metadata/master-key state and may write the configured passphrase helper
-- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, `code`, `error`; local IPC only, rejects identical current/new passphrases and rotates key/template encryption, policy integrity sidecars, and keystore metadata
+- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `recovered_files_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, `code`, `error`; local IPC only, rejects identical current/new passphrases and rotates active-key, template, and recovered-batch encryption, policy integrity sidecars, and keystore metadata
 - `status`: `state`, `key_count`
 - `error`: optional `code`, `error`
 - `signer_locked`: `reason`

@@ -227,6 +227,7 @@ type ChangeStorePassphraseResultMessage struct {
 	Success                  bool   `json:"success"`
 	KeysMigrated             int    `json:"keys_migrated,omitempty"`
 	TemplatesMigrated        int    `json:"templates_migrated,omitempty"`
+	RecoveredFilesMigrated   int    `json:"recovered_files_migrated,omitempty"`
 	PolicySidecarsMigrated   int    `json:"policy_sidecars_migrated,omitempty"`
 	NodeRoleSidecarsMigrated int    `json:"node_role_sidecars_migrated,omitempty"`
 	Code                     string `json:"code,omitempty"`

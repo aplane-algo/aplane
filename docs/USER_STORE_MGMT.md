@@ -270,9 +270,10 @@ When run against systemd data, `apstore` returns managed store files to the
 signer data directory owner/group after successful mutations, while
 `appass-systemd-creds` files remain root-owned.
 
-This safely re-encrypts all keys and templates, and re-signs the policy and
-node-role integrity sidecars with the new master key, using a two-phase atomic
-operation:
+This safely re-encrypts all keys, templates, and published recovered-batch
+files, and re-signs the policy and node-role integrity sidecars with the new
+master key, using a two-phase atomic operation. Rotation rejects unresolved
+recovered-batch state instead of silently leaving it under the old key:
 1. **Phase 1**: Creates new encrypted files (`.new`) and verifies each one
 2. **Phase 2**: Atomically swaps old files for new files
 

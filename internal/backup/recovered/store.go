@@ -26,28 +26,48 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
 const (
+	// BatchSchema identifies the decrypted recovered-batch metadata schema.
 	BatchSchema = "aplane.recovered-batch.v1"
+	// EntrySchema identifies the decrypted recovered-entry schema.
 	EntrySchema = "aplane.recovered-entry.v1"
+	// StagingDirPrefix identifies unpublished Create work directories. Listing
+	// and rotation code must ignore these names.
+	StagingDirPrefix = ".recovering-"
 
-	restoreIDBytes = 16
+	restoreIDBytes      = 16
+	maxArchiveNameBytes = 255
 )
 
-var (
-	restoreIDShape = regexp.MustCompile(`^[0-9a-f]{32}$`)
-	sha256Shape    = regexp.MustCompile(`^[0-9a-f]{64}$`)
-)
+var sha256Shape = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// SourcePolicyStatus describes how much trust the destination can place in
+// policy bytes copied from a source archive.
 type SourcePolicyStatus string
 
 const (
+	// SourcePolicyUnverified means policy bytes were present but the
+	// destination cannot authenticate their source-keyed HMAC.
 	SourcePolicyUnverified SourcePolicyStatus = "unverified"
-	SourcePolicyMissing    SourcePolicyStatus = "missing"
-	SourcePolicyInvalid    SourcePolicyStatus = "invalid"
+	// SourcePolicyMissing means the archive contained no source policy.
+	SourcePolicyMissing SourcePolicyStatus = "missing"
+	// SourcePolicyInvalid means policy bytes were present but could not be
+	// parsed or used for advisory comparison.
+	SourcePolicyInvalid SourcePolicyStatus = "invalid"
 )
 
+// SourceNodeRoleUnknown records that an archive predates trustworthy source
+// node-role metadata.
+const SourceNodeRoleUnknown = "unknown"
+
+// CreateRequest contains validated recovery material to persist as one batch.
+//
+// Create borrows Entries, KeyJSON, TemplateYAML, and SourcePolicyYAML for the
+// duration of the call. The caller retains ownership and must clear its own
+// secret buffers.
 type CreateRequest struct {
 	ArchiveName        string
 	ArchiveSHA256      string
@@ -59,6 +79,7 @@ type CreateRequest struct {
 	Entries            []Entry
 }
 
+// Batch is the destination-encrypted manifest for one recovered batch.
 type Batch struct {
 	Schema             string             `json:"schema"`
 	RestoreID          string             `json:"restore_id"`
@@ -72,15 +93,21 @@ type Batch struct {
 	Entries            []BatchEntry       `json:"entries"`
 }
 
+// BatchEntry commits batch metadata to one exact recovered-entry plaintext.
 type BatchEntry struct {
-	Selector  string `json:"selector"`
-	Category  string `json:"category"`
-	KeyType   string `json:"key_type"`
-	EntryFile string `json:"entry_file"`
+	Selector    string `json:"selector"`
+	Category    string `json:"category"`
+	KeyType     string `json:"key_type"`
+	EntryFile   string `json:"entry_file"`
+	EntrySHA256 string `json:"entry_sha256"`
 }
 
+// Entry contains one destination-encrypted recovered credential and its
+// optional bundled template. Call ZeroSecrets when an opened Entry is no
+// longer needed.
 type Entry struct {
 	Schema       string `json:"schema"`
+	RestoreID    string `json:"restore_id"`
 	Selector     string `json:"selector"`
 	Category     string `json:"category"`
 	KeyType      string `json:"key_type"`
@@ -89,6 +116,7 @@ type Entry struct {
 	TemplateType string `json:"template_type,omitempty"`
 }
 
+// NewRestoreID returns a random canonical 128-bit recovered-batch identifier.
 func NewRestoreID() (string, error) {
 	var raw [restoreIDBytes]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -97,18 +125,18 @@ func NewRestoreID() (string, error) {
 	return hex.EncodeToString(raw[:]), nil
 }
 
+// ValidateRestoreID checks the canonical recovered-batch identifier shape.
 func ValidateRestoreID(restoreID string) error {
-	if !restoreIDShape.MatchString(restoreID) {
-		return fmt.Errorf("invalid restore ID %q", restoreID)
-	}
-	return nil
+	return storepaths.ValidateRestoreIDComponent(restoreID)
 }
 
+// EntryFileName returns the non-authoritative filename for selector.
 func EntryFileName(selector string) string {
 	sum := sha256.Sum256([]byte(selector))
 	return hex.EncodeToString(sum[:]) + ".recovered"
 }
 
+// ZeroSecrets clears credential and template plaintext owned by e.
 func (e *Entry) ZeroSecrets() {
 	if e == nil {
 		return
@@ -117,6 +145,10 @@ func (e *Entry) ZeroSecrets() {
 	crypto.ZeroBytes(e.TemplateYAML)
 }
 
+// Create validates, destination-encrypts, and atomically publishes one
+// recovered batch without mutating active key or key-type storage.
+//
+// req and masterKey are borrowed. Create does not clear caller-owned buffers.
 func Create(paths storepaths.Paths, identityID string, req CreateRequest, masterKey []byte) (*Batch, error) {
 	if len(req.Entries) == 0 {
 		return nil, fmt.Errorf("recovered batch requires at least one entry")
@@ -141,18 +173,26 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 		if entry.Schema == "" {
 			entry.Schema = EntrySchema
 		}
-		if err := validateEntry(entry); err != nil {
+		if entry.RestoreID == "" {
+			entry.RestoreID = restoreID
+		}
+		if err := validateEntry(entry, restoreID); err != nil {
 			return nil, fmt.Errorf("validate recovered entry %q: %w", entry.Selector, err)
 		}
 		if _, ok := seen[entry.Selector]; ok {
 			return nil, fmt.Errorf("duplicate recovered selector %q", entry.Selector)
 		}
 		seen[entry.Selector] = struct{}{}
+		entrySHA256, err := entryPlaintextSHA256(entry)
+		if err != nil {
+			return nil, fmt.Errorf("marshal recovered entry %q: %w", entry.Selector, err)
+		}
 		batchEntries = append(batchEntries, BatchEntry{
-			Selector:  entry.Selector,
-			Category:  entry.Category,
-			KeyType:   entry.KeyType,
-			EntryFile: EntryFileName(entry.Selector),
+			Selector:    entry.Selector,
+			Category:    entry.Category,
+			KeyType:     entry.KeyType,
+			EntryFile:   EntryFileName(entry.Selector),
+			EntrySHA256: entrySHA256,
 		})
 	}
 
@@ -176,7 +216,7 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 	if err := fsutil.MkdirAll(root); err != nil {
 		return nil, fmt.Errorf("create recovered root: %w", err)
 	}
-	stageDir, err := os.MkdirTemp(root, ".recovering-*")
+	stageDir, err := os.MkdirTemp(root, StagingDirPrefix+"*")
 	if err != nil {
 		return nil, fmt.Errorf("create recovered batch staging directory: %w", err)
 	}
@@ -199,6 +239,11 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 		if err != nil {
 			return nil, fmt.Errorf("marshal recovered entry %q: %w", entries[i].Selector, err)
 		}
+		sum := sha256.Sum256(plaintext)
+		if hex.EncodeToString(sum[:]) != batchEntries[i].EntrySHA256 {
+			crypto.ZeroBytes(plaintext)
+			return nil, fmt.Errorf("recovered entry %q changed during creation", entries[i].Selector)
+		}
 		encrypted, encryptErr := crypto.EncryptWithMasterKey(plaintext, masterKey)
 		crypto.ZeroBytes(plaintext)
 		if encryptErr != nil {
@@ -208,6 +253,12 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 		if err := fsutil.WriteFile(entryPath, encrypted); err != nil {
 			return nil, fmt.Errorf("write recovered entry %q: %w", entries[i].Selector, err)
 		}
+		if err := syncRegularFile(entryPath); err != nil {
+			return nil, fmt.Errorf("sync recovered entry %q: %w", entries[i].Selector, err)
+		}
+	}
+	if err := syncDirectory(stageEntriesDir); err != nil {
+		return nil, fmt.Errorf("sync recovered entries directory: %w", err)
 	}
 
 	plaintext, err := json.Marshal(batch)
@@ -222,6 +273,12 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 	if err := fsutil.WriteFile(filepath.Join(stageDir, "batch.enc"), encrypted); err != nil {
 		return nil, fmt.Errorf("write recovered batch metadata: %w", err)
 	}
+	if err := syncRegularFile(filepath.Join(stageDir, "batch.enc")); err != nil {
+		return nil, fmt.Errorf("sync recovered batch metadata: %w", err)
+	}
+	if err := syncDirectory(stageDir); err != nil {
+		return nil, fmt.Errorf("sync recovered batch staging directory: %w", err)
+	}
 
 	finalDir := paths.RecoveredBatchDir(identityID, restoreID)
 	if _, err := os.Lstat(finalDir); err == nil {
@@ -233,9 +290,15 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 		return nil, fmt.Errorf("publish recovered batch: %w", err)
 	}
 	cleanup = false
+	if err := syncDirectory(root); err != nil {
+		_ = os.RemoveAll(finalDir)
+		_ = syncDirectory(root)
+		return nil, fmt.Errorf("sync recovered batch root: %w", err)
+	}
 	return batch, nil
 }
 
+// LoadBatch decrypts and validates one recovered-batch manifest.
 func LoadBatch(paths storepaths.Paths, identityID, restoreID string, masterKey []byte) (*Batch, error) {
 	if err := ValidateRestoreID(restoreID); err != nil {
 		return nil, err
@@ -262,6 +325,10 @@ func LoadBatch(paths storepaths.Paths, identityID, restoreID string, masterKey [
 	return &batch, nil
 }
 
+// LoadEntry decrypts and validates an entry committed by meta.
+//
+// The returned Entry owns plaintext key and template buffers. The caller must
+// call Entry.ZeroSecrets when finished.
 func LoadEntry(paths storepaths.Paths, identityID, restoreID string, meta BatchEntry, masterKey []byte) (*Entry, error) {
 	if err := ValidateRestoreID(restoreID); err != nil {
 		return nil, err
@@ -279,12 +346,16 @@ func LoadEntry(paths storepaths.Paths, identityID, restoreID string, meta BatchE
 		return nil, fmt.Errorf("decrypt recovered entry %q: %w", meta.Selector, err)
 	}
 	defer crypto.ZeroBytes(plaintext)
+	sum := sha256.Sum256(plaintext)
+	if hex.EncodeToString(sum[:]) != meta.EntrySHA256 {
+		return nil, fmt.Errorf("recovered entry digest mismatch for %q", meta.Selector)
+	}
 	var entry Entry
 	if err := json.Unmarshal(plaintext, &entry); err != nil {
 		entry.ZeroSecrets()
 		return nil, fmt.Errorf("parse recovered entry %q: %w", meta.Selector, err)
 	}
-	if err := validateEntry(&entry); err != nil {
+	if err := validateEntry(&entry, restoreID); err != nil {
 		entry.ZeroSecrets()
 		return nil, fmt.Errorf("validate recovered entry %q: %w", meta.Selector, err)
 	}
@@ -308,14 +379,14 @@ func validateBatch(batch *Batch) error {
 	if batch.CreatedAt.IsZero() {
 		return fmt.Errorf("recovered batch created_at is required")
 	}
-	if batch.ArchiveName == "" || filepath.Base(batch.ArchiveName) != batch.ArchiveName {
-		return fmt.Errorf("recovered batch archive_name must be a base filename")
+	if err := validateArchiveName(batch.ArchiveName); err != nil {
+		return err
 	}
 	if !sha256Shape.MatchString(batch.ArchiveSHA256) {
 		return fmt.Errorf("invalid recovered batch archive_sha256")
 	}
 	switch batch.SourceNodeRole {
-	case string(noderole.RoleSigner), string(noderole.RoleSentry), "unknown":
+	case string(noderole.RoleSigner), string(noderole.RoleSentry), SourceNodeRoleUnknown:
 	default:
 		return fmt.Errorf("invalid recovered batch source_node_role %q", batch.SourceNodeRole)
 	}
@@ -359,6 +430,14 @@ func validateBatch(batch *Batch) error {
 	return nil
 }
 
+func validateArchiveName(name string) error {
+	if name == "" || name == "." || name == ".." || len(name) > maxArchiveNameBytes ||
+		filepath.Base(name) != name || strings.ContainsAny(name, `/\`+"\x00") {
+		return fmt.Errorf("recovered batch archive_name must be a base filename")
+	}
+	return nil
+}
+
 func validateBatchEntry(entry BatchEntry) error {
 	if entry.Selector == "" || entry.Category == "" || entry.KeyType == "" {
 		return fmt.Errorf("recovered batch entry metadata is incomplete")
@@ -369,15 +448,24 @@ func validateBatchEntry(entry BatchEntry) error {
 	if entry.EntryFile != EntryFileName(entry.Selector) || filepath.Base(entry.EntryFile) != entry.EntryFile {
 		return fmt.Errorf("invalid recovered entry filename for %q", entry.Selector)
 	}
+	if !sha256Shape.MatchString(entry.EntrySHA256) {
+		return fmt.Errorf("invalid recovered entry digest for %q", entry.Selector)
+	}
 	return nil
 }
 
-func validateEntry(entry *Entry) error {
+func validateEntry(entry *Entry, restoreID string) error {
 	if entry == nil {
 		return fmt.Errorf("recovered entry is nil")
 	}
 	if entry.Schema != EntrySchema {
 		return fmt.Errorf("unsupported recovered entry schema %q", entry.Schema)
+	}
+	if err := ValidateRestoreID(entry.RestoreID); err != nil {
+		return err
+	}
+	if entry.RestoreID != restoreID {
+		return fmt.Errorf("recovered entry restore ID mismatch: batch=%s entry=%s", restoreID, entry.RestoreID)
 	}
 	if len(entry.KeyJSON) == 0 {
 		return fmt.Errorf("recovered entry key_json is required")
@@ -387,6 +475,13 @@ func validateEntry(entry *Entry) error {
 	}
 	if len(entry.TemplateYAML) > 0 && entry.TemplateType == "" {
 		return fmt.Errorf("recovered entry has template_yaml without template_type")
+	}
+	if len(entry.TemplateYAML) > 0 {
+		switch templatestore.TemplateType(entry.TemplateType) {
+		case templatestore.TemplateTypeGeneric, templatestore.TemplateTypeComposed:
+		default:
+			return fmt.Errorf("unsupported recovered entry template_type %q", entry.TemplateType)
+		}
 	}
 	payload, err := keys.ParsePayload(entry.KeyJSON)
 	if err != nil {
@@ -409,13 +504,30 @@ func validateEntry(entry *Entry) error {
 	return nil
 }
 
-func readRegularFile(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
+func entryPlaintextSHA256(entry *Entry) (string, error) {
+	plaintext, err := json.Marshal(entry)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("path is not a regular file: %s", path)
+	defer crypto.ZeroBytes(plaintext)
+	sum := sha256.Sum256(plaintext)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func syncRegularFile(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
 	}
-	return os.ReadFile(path)
+	defer func() { _ = file.Close() }()
+	return file.Sync()
+}
+
+func syncDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = dir.Close() }()
+	return dir.Sync()
 }

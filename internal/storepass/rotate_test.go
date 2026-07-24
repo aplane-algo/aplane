@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,8 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -41,14 +45,19 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
 	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+	recoveredBatch := createRecoveredBatchForRotateTest(t, paths, identityID, oldMasterKey)
 
 	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{})
 	if err != nil {
 		t.Fatalf("Rotate() error = %v", err)
 	}
 	if result.KeysMigrated != 2 || result.TemplatesMigrated != 1 ||
-		result.PolicySidecarsMigrated != 1 || result.NodeRoleSidecarsMigrated != 1 {
-		t.Fatalf("Rotate() result = %+v, want 2 credentials, 1 template, 1 policy sidecar, and 1 node role sidecar", result)
+		result.RecoveredFilesMigrated != 2 || result.PolicySidecarsMigrated != 1 ||
+		result.NodeRoleSidecarsMigrated != 1 {
+		t.Fatalf(
+			"Rotate() result = %+v, want 2 credentials, 1 template, 2 recovered files, 1 policy sidecar, and 1 node role sidecar",
+			result,
+		)
 	}
 
 	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
@@ -69,11 +78,79 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	assertDecryptsWithMasterKey(t, templatePath, newMasterKey)
 	assertPolicyVerifiesWithMasterKey(t, paths, identityID, newMasterKey)
 	assertNodeRoleVerifiesWithMasterKey(t, paths, identityID, newMasterKey, noderole.RoleSigner)
+	rotatedBatch, err := recovered.LoadBatch(paths, identityID, recoveredBatch.RestoreID, newMasterKey)
+	if err != nil {
+		t.Fatalf("LoadBatch(new master key) error = %v", err)
+	}
+	rotatedEntry, err := recovered.LoadEntry(paths, identityID, recoveredBatch.RestoreID, rotatedBatch.Entries[0], newMasterKey)
+	if err != nil {
+		t.Fatalf("LoadEntry(new master key) error = %v", err)
+	}
+	rotatedEntry.ZeroSecrets()
+	if _, err := recovered.LoadBatch(paths, identityID, recoveredBatch.RestoreID, oldMasterKey); err == nil {
+		t.Fatal("recovered batch still decrypts with old master key after rotation")
+	}
 	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(paths.Root(), identityID, oldMasterKey); err == nil {
 		t.Fatal("policy sidecar still verifies with old master key after rotation")
 	}
 	if _, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, oldMasterKey); err == nil {
 		t.Fatal("node role sidecar still verifies with old master key after rotation")
+	}
+}
+
+func createRecoveredBatchForRotateTest(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+	masterKey []byte,
+) *recovered.Batch {
+	t.Helper()
+	address, keyJSON := keystest.Ed25519KeyJSON(t)
+	archiveSum := sha256.Sum256([]byte("archive"))
+	batch, err := recovered.Create(paths, identityID, recovered.CreateRequest{
+		ArchiveName:        "backup.tar.gz",
+		ArchiveSHA256:      hex.EncodeToString(archiveSum[:]),
+		SourceNodeRole:     string(noderole.RoleSigner),
+		SourcePolicyStatus: recovered.SourcePolicyMissing,
+		Entries: []recovered.Entry{{
+			Selector: address,
+			Category: apkeys.CategoryEd25519,
+			KeyType:  "ed25519",
+			KeyJSON:  keyJSON,
+		}},
+	}, masterKey)
+	if err != nil {
+		t.Fatalf("recovered.Create() error = %v", err)
+	}
+	return batch
+}
+
+func TestRotateRejectsRecoveredBatchWithUnresolvedState(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	oldPassphrase := []byte("old-passphrase")
+	newPassphrase := []byte("new-passphrase")
+
+	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	}
+	defer crypto.ZeroBytes(oldMasterKey)
+	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+	batch := createRecoveredBatchForRotateTest(t, paths, identityID, oldMasterKey)
+	if err := os.Mkdir(filepath.Join(paths.RecoveredBatchDir(identityID, batch.RestoreID), "activation"), 0o770); err != nil {
+		t.Fatalf("Mkdir(activation) error = %v", err)
+	}
+
+	if _, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{}); err == nil ||
+		!strings.Contains(err.Error(), "resolve it before passphrase rotation") {
+		t.Fatalf("Rotate() error = %v, want unresolved recovered-state rejection", err)
+	}
+	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
+	assertMetadataRejectsPassphrase(t, paths, identityID, newPassphrase)
+	if _, err := recovered.LoadBatch(paths, identityID, batch.RestoreID, oldMasterKey); err != nil {
+		t.Fatalf("LoadBatch(old master key) error = %v", err)
 	}
 }
 
@@ -250,6 +327,7 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
 	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+	recoveredBatch := createRecoveredBatchForRotateTest(t, paths, identityID, oldMasterKey)
 
 	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{
 		AfterSwap: func() error {
@@ -263,8 +341,9 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 		t.Fatalf("Rotate() error = %v, want helper failure context", err)
 	}
 	if result.KeysMigrated != 1 || result.TemplatesMigrated != 1 ||
-		result.PolicySidecarsMigrated != 1 || result.NodeRoleSidecarsMigrated != 1 {
-		t.Fatalf("Rotate() result = %+v, want attempted key, template, policy, and node role migration", result)
+		result.RecoveredFilesMigrated != 2 || result.PolicySidecarsMigrated != 1 ||
+		result.NodeRoleSidecarsMigrated != 1 {
+		t.Fatalf("Rotate() result = %+v, want attempted key, template, recovered, policy, and node role migration", result)
 	}
 
 	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
@@ -273,7 +352,24 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 	assertDecryptsWithMasterKey(t, templatePath, oldMasterKey)
 	assertPolicyVerifiesWithMasterKey(t, paths, identityID, oldMasterKey)
 	assertNodeRoleVerifiesWithMasterKey(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
-	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(identityID), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), paths.NodeRoleIntegritySidecar(identityID))
+	if _, err := recovered.LoadBatch(paths, identityID, recoveredBatch.RestoreID, oldMasterKey); err != nil {
+		t.Fatalf("LoadBatch(old master key after rollback) error = %v", err)
+	}
+	recoveredMetadataPath := paths.RecoveredBatchMetadataPath(identityID, recoveredBatch.RestoreID)
+	recoveredEntryPath := filepath.Join(
+		paths.RecoveredBatchEntriesDir(identityID, recoveredBatch.RestoreID),
+		recoveredBatch.Entries[0].EntryFile,
+	)
+	assertNoRotationArtifacts(
+		t,
+		keyPath,
+		templatePath,
+		recoveredMetadataPath,
+		recoveredEntryPath,
+		filepath.Join(paths.KeystoreMetadataDir(identityID), ".keystore"),
+		policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)),
+		paths.NodeRoleIntegritySidecar(identityID),
+	)
 }
 
 func TestRotateFailsWhenPolicyBaselineMissing(t *testing.T) {

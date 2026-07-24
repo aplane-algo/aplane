@@ -31,7 +31,7 @@ func (l *recordingAuditLog) LogStoreInitializeFailed(identityID, reason string) 
 	l.events = append(l.events, auditEvent{kind: "store_initialize_failed", identity: identityID, reason: reason})
 }
 
-func (l *recordingAuditLog) LogPassphraseChanged(identityID string, _, _ int) {
+func (l *recordingAuditLog) LogPassphraseChanged(identityID string, _, _, _ int) {
 	l.events = append(l.events, auditEvent{kind: "passphrase_changed", identity: identityID})
 }
 

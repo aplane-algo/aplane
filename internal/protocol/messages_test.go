@@ -323,6 +323,24 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			name: "change_store_passphrase_result",
+			msg: ChangeStorePassphraseResultMessage{
+				BaseMessage:            BaseMessage{Type: MsgTypeChangeStorePassResult, ID: "change-1"},
+				Success:                true,
+				KeysMigrated:           2,
+				TemplatesMigrated:      1,
+				RecoveredFilesMigrated: 3,
+			},
+			wantMap: map[string]any{
+				"type":                     MsgTypeChangeStorePassResult,
+				"id":                       "change-1",
+				"success":                  true,
+				"keys_migrated":            float64(2),
+				"templates_migrated":       float64(1),
+				"recovered_files_migrated": float64(3),
+			},
+		},
+		{
 			name: "backup",
 			msg: BackupMessage{
 				BaseMessage:      BaseMessage{Type: MsgTypeBackup, ID: "backup-1"},

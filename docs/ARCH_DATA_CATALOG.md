@@ -76,6 +76,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Managed backup locker | authoritative backup inventory | `backups/<identity>/*.tar.gz` | backup list/restore preview/apply plans | `internal/backup`, `internal/signerapp/backupadmin` | Imported archives are validated before publication; archive payloads are encrypted `.apb`. |
 | Managed backup manifest | backup metadata | `manifest.json` inside managed archives | source node role default and diagnostics | `internal/backup` | Schema `aplane.backup.manifest.v1`; `apstore rebuild --role` is destination authority when provided; missing manifests default to signer. |
 | Deleted archive root | inactive durable storage | `identities/<identity>/deleted/` | outside active key/template scans | `internal/keys`, `internal/templatestore` | Deleted keys/templates are not active authority. |
+| Recovered batch root | inactive encrypted recovery state | `identities/<identity>/recovered/<restore-id>/` | no signing-runtime projection before explicit activation | `internal/backup/recovered`, `internal/storepass` | Batch and entries are authenticated encryption under the destination master key; the batch commits to exact entry plaintexts; passphrase rotation re-encrypts them; `.recovering-*` directories are unpublished staging state. |
 
 ## Signer Identity Storage
 
@@ -95,6 +96,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Policy sidecar | authoritative integrity metadata | `policy.yaml.hmac` JSON | HMAC verification result | `internal/policy`, `cmd/appolicy`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
 | Key type state record | authoritative generation state | `keytypes/<key_type>.json` | enabled/disabled identity key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | encrypted `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Encrypted with identity master key; disabled state skips registration. |
+| Recovered credential batch | inactive recovery authority | encrypted `recovered/<restore-id>/batch.enc` and `entries/*.recovered` | none until a later explicit activation operation | `internal/backup/recovered` | Restore ID is random 128-bit lowercase hex; selector/category/key type derive from canonical payload; manifest digest and embedded restore ID bind each entry to its batch; runtime scans ignore this directory. |
 | Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` | Public metadata only; source is `manual` or `client_discovery`; not endpoint ownership proof. |
 
 ## Key Material And Key Metadata

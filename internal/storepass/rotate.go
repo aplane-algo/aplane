@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -30,6 +31,7 @@ type RotateOptions struct {
 type RotateResult struct {
 	KeysMigrated             int
 	TemplatesMigrated        int
+	RecoveredFilesMigrated   int
 	PolicySidecarsMigrated   int
 	NodeRoleSidecarsMigrated int
 }
@@ -49,8 +51,9 @@ func VerifyCurrentPassphrase(paths storepaths.Paths, identityID string, passphra
 	return nil
 }
 
-// Rotate re-encrypts the identity keystore metadata, keys, and installed
-// templates under a new passphrase using a write-new, verify, swap pattern.
+// Rotate re-encrypts the identity keystore metadata, active keys, installed
+// templates, and published recovered batches under a new passphrase using a
+// write-new, verify, swap pattern.
 func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphrase []byte, opts RotateOptions) (RotateResult, error) {
 	var result RotateResult
 	metaDir := paths.KeystoreMetadataDir(identityID)
@@ -65,11 +68,11 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
-	managedFiles, templateFiles, err := scanTargets(paths, identityID)
+	managedFiles, templateFiles, recoveredFiles, err := scanTargets(paths, identityID, oldMasterKey)
 	if err != nil {
 		return result, err
 	}
-	logTargets(opts.Logf, managedFiles, templateFiles)
+	logTargets(opts.Logf, managedFiles, templateFiles, recoveredFiles)
 
 	var pendingFiles []pendingFile
 	newKeystorePath := keystorePath + ".new"
@@ -104,6 +107,19 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		if ok {
 			pendingFiles = append(pendingFiles, *pf)
 			result.TemplatesMigrated++
+		}
+	}
+
+	for _, recoveredPath := range recoveredFiles {
+		label := filepath.Base(filepath.Dir(recoveredPath)) + "/" + filepath.Base(recoveredPath)
+		pf, ok, err := createPendingEncryptedFile(recoveredPath, oldMasterKey, newMasterKey, label, opts.Logf)
+		if err != nil {
+			cleanupPendingNewFiles(pendingFiles)
+			return result, err
+		}
+		if ok {
+			pendingFiles = append(pendingFiles, *pf)
+			result.RecoveredFilesMigrated++
 		}
 	}
 
@@ -175,10 +191,14 @@ func loadAndVerifyCurrentMasterKey(paths storepaths.Paths, identityID string, ol
 	return oldMasterKey, nil
 }
 
-func scanTargets(paths storepaths.Paths, identityID string) ([]keys.ManagedCredentialFile, []string, error) {
+func scanTargets(
+	paths storepaths.Paths,
+	identityID string,
+	masterKey []byte,
+) ([]keys.ManagedCredentialFile, []string, []string, error) {
 	managedFiles, err := keys.ScanManagedCredentialFiles(paths.KeysDir(identityID))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to scan keystore: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to scan keystore: %w", err)
 	}
 
 	var templateFiles []string
@@ -192,12 +212,106 @@ func scanTargets(paths storepaths.Paths, identityID string) ([]keys.ManagedCrede
 		}
 		return nil
 	})
-	return managedFiles, templateFiles, nil
+	recoveredFiles, err := scanRecoveredTargets(paths, identityID, masterKey)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return managedFiles, templateFiles, recoveredFiles, nil
 }
 
-func logTargets(log Logger, managedFiles []keys.ManagedCredentialFile, templateFiles []string) {
-	if len(managedFiles) == 0 && len(templateFiles) == 0 {
-		logf(log, "no key or template files found in keystore")
+func scanRecoveredTargets(paths storepaths.Paths, identityID string, masterKey []byte) ([]string, error) {
+	root := paths.RecoveredRootDir(identityID)
+	rootInfo, err := os.Lstat(root)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect recovered batch root: %w", err)
+	}
+	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
+		return nil, fmt.Errorf("recovered batch root is not a regular directory: %s", root)
+	}
+	batchDirs, err := os.ReadDir(root)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan recovered batch root: %w", err)
+	}
+
+	var targets []string
+	for _, batchDirEntry := range batchDirs {
+		name := batchDirEntry.Name()
+		if strings.HasPrefix(name, recovered.StagingDirPrefix) {
+			continue
+		}
+		if err := recovered.ValidateRestoreID(name); err != nil {
+			return nil, fmt.Errorf("unexpected recovered batch directory %q: %w", name, err)
+		}
+		if batchDirEntry.Type()&os.ModeSymlink != 0 || !batchDirEntry.IsDir() {
+			return nil, fmt.Errorf("recovered batch path is not a regular directory: %s", name)
+		}
+		batchDir := paths.RecoveredBatchDir(identityID, name)
+		children, err := os.ReadDir(batchDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan recovered batch %s: %w", name, err)
+		}
+		for _, child := range children {
+			switch child.Name() {
+			case "batch.enc", "entries":
+			default:
+				return nil, fmt.Errorf(
+					"recovered batch %s contains unsupported state %q; resolve it before passphrase rotation",
+					name,
+					child.Name(),
+				)
+			}
+		}
+
+		batch, err := recovered.LoadBatch(paths, identityID, name, masterKey)
+		if err != nil {
+			return nil, fmt.Errorf("validate recovered batch %s before passphrase rotation: %w", name, err)
+		}
+		entriesDir := paths.RecoveredBatchEntriesDir(identityID, name)
+		entriesInfo, err := os.Lstat(entriesDir)
+		if err != nil {
+			return nil, fmt.Errorf("inspect recovered entries for %s: %w", name, err)
+		}
+		if entriesInfo.Mode()&os.ModeSymlink != 0 || !entriesInfo.IsDir() {
+			return nil, fmt.Errorf("recovered entries path is not a regular directory: %s", entriesDir)
+		}
+		entryFiles, err := os.ReadDir(entriesDir)
+		if err != nil {
+			return nil, fmt.Errorf("scan recovered entries for %s: %w", name, err)
+		}
+		expected := make(map[string]recovered.BatchEntry, len(batch.Entries))
+		for _, meta := range batch.Entries {
+			expected[meta.EntryFile] = meta
+		}
+		if len(entryFiles) != len(expected) {
+			return nil, fmt.Errorf("recovered batch %s entry file count does not match manifest", name)
+		}
+		targets = append(targets, paths.RecoveredBatchMetadataPath(identityID, name))
+		for _, entryFile := range entryFiles {
+			meta, ok := expected[entryFile.Name()]
+			if !ok || entryFile.Type()&os.ModeSymlink != 0 || entryFile.IsDir() {
+				return nil, fmt.Errorf("recovered batch %s contains unexpected entry file %q", name, entryFile.Name())
+			}
+			entry, err := recovered.LoadEntry(paths, identityID, name, meta, masterKey)
+			if err != nil {
+				return nil, fmt.Errorf("validate recovered entry %s/%s before passphrase rotation: %w", name, meta.Selector, err)
+			}
+			entry.ZeroSecrets()
+			targets = append(targets, filepath.Join(entriesDir, entryFile.Name()))
+		}
+	}
+	return targets, nil
+}
+
+func logTargets(
+	log Logger,
+	managedFiles []keys.ManagedCredentialFile,
+	templateFiles, recoveredFiles []string,
+) {
+	if len(managedFiles) == 0 && len(templateFiles) == 0 && len(recoveredFiles) == 0 {
+		logf(log, "no key, template, or recovered batch files found in keystore")
 		return
 	}
 	if len(managedFiles) > 0 {
@@ -205,6 +319,9 @@ func logTargets(log Logger, managedFiles []keys.ManagedCredentialFile, templateF
 	}
 	if len(templateFiles) > 0 {
 		logf(log, "found %d template file(s) to migrate", len(templateFiles))
+	}
+	if len(recoveredFiles) > 0 {
+		logf(log, "found %d recovered batch file(s) to migrate", len(recoveredFiles))
 	}
 }
 

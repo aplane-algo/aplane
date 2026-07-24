@@ -5,6 +5,7 @@ package storepaths
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -74,6 +75,21 @@ func TestRecoveredPathsAreIdentityScoped(t *testing.T) {
 	}
 	if got := paths.RecoveredBatchMetadataPath("default", restoreID); got != filepath.Join(wantBatch, "batch.enc") {
 		t.Fatalf("RecoveredBatchMetadataPath() = %q", got)
+	}
+}
+
+func TestRecoveredBatchPathsRejectInvalidRestoreIDs(t *testing.T) {
+	paths := NewPaths("/tmp/test-keystore")
+	valid := "0123456789abcdef0123456789abcdef"
+	for _, restoreID := range []string{"", "batch", "tmp.bak", strings.ToUpper(valid), "../" + valid, valid + "00"} {
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("RecoveredBatchDir(%q) did not panic", restoreID)
+				}
+			}()
+			_ = paths.RecoveredBatchDir("default", restoreID)
+		}()
 	}
 }
 

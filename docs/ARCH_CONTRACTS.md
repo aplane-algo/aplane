@@ -1650,7 +1650,7 @@ Store-management audit semantics:
 
 - `STORE_INITIALIZED` is emitted when authenticated local IPC store initialization succeeds
 - `STORE_INITIALIZE_FAILED` is emitted when authenticated local IPC store initialization fails
-- `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key/template counts are recorded on the event
+- `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key/template/recovered-file counts are recorded on the event
 - `PASSPHRASE_CHANGE_FAILED` is emitted when authenticated local IPC passphrase rotation fails
 
 ## Authentication, SSH, and Token Provisioning

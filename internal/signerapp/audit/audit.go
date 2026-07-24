@@ -630,11 +630,16 @@ func (a *AuditLogger) LogStoreInitializeFailed(identityID, reason string) {
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogPassphraseChanged(identityID string, keysMigrated, templatesMigrated int) {
+func (a *AuditLogger) LogPassphraseChanged(identityID string, keysMigrated, templatesMigrated, recoveredFilesMigrated int) {
 	entry := identityAuditFields(identityID)
 	entry.Event = AuditPassphraseChanged
 	entry.Outcome = "changed"
-	entry.Reason = fmt.Sprintf("keys_migrated=%d templates_migrated=%d", keysMigrated, templatesMigrated)
+	entry.Reason = fmt.Sprintf(
+		"keys_migrated=%d templates_migrated=%d recovered_files_migrated=%d",
+		keysMigrated,
+		templatesMigrated,
+		recoveredFilesMigrated,
+	)
 	a.Log(entry)
 }
 
