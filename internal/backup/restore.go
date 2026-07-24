@@ -398,16 +398,38 @@ func readBackupPayload(keysDir, address string, exportPassphrase []byte) (keyJSO
 // Backup files may contain a BackupBundle (key plus embedded template) or a
 // plain canonical key payload.
 func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphrase []byte) (string, error) {
-	keyJSON, templateYAML, tmplType, err := readBackupPayload(keysDir, address, exportPassphrase)
+	entry, err := r.InspectBackupEntry(keysDir, address, exportPassphrase)
 	if err != nil {
 		return "", err
 	}
-	defer crypto.ZeroBytes(keyJSON)
-	defer crypto.ZeroBytes(templateYAML)
+	defer entry.ZeroSecrets()
+	return r.applyInspectedBackupEntry(entry, masterKey)
+}
+
+// RestoreActiveForRebuild restores one inspected archive entry directly into
+// an offline store being rebuilt. Live restore workflows must recover an
+// inactive batch and activate it through the admin protocol instead.
+func (r Restorer) RestoreActiveForRebuild(keysDir, address string, masterKey, exportPassphrase []byte) (string, error) {
+	entry, err := r.InspectBackupEntry(keysDir, address, exportPassphrase)
+	if err != nil {
+		return "", err
+	}
+	defer entry.ZeroSecrets()
+	return r.applyInspectedBackupEntry(entry, masterKey)
+}
+
+func (r Restorer) applyInspectedBackupEntry(entry *InspectedBackupEntry, masterKey []byte) (string, error) {
+	if entry == nil {
+		return "", fmt.Errorf("inspected backup entry is nil")
+	}
+	keyJSON := entry.KeyJSON
+	templateYAML := entry.TemplateYAML
+	tmplType := entry.TemplateType
+	address := entry.Selector
 
 	payload, err := keys.ParsePayload(keyJSON)
 	if err != nil {
-		return "", fmt.Errorf("%w; if this backup predates the current key schema, re-export it with current apstore or regenerate the key", err)
+		return "", fmt.Errorf("failed to revalidate inspected key payload: %w", err)
 	}
 	defer payload.ZeroSecrets()
 	derivedAddress, err := payload.Selector()
@@ -417,8 +439,8 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 	keyType := payload.KeyType
 	hasLogicSigBytecode := len(payload.LogicSigBytecode) > 0
 
-	if derivedAddress != address {
-		return "", fmt.Errorf("address mismatch: expected %s, got %s", address, derivedAddress)
+	if derivedAddress != address || payload.Category != entry.Category || payload.KeyType != entry.KeyType {
+		return "", fmt.Errorf("inspected backup entry metadata no longer matches key payload")
 	}
 	if err := r.validateKeyTypeAllowed(keyType); err != nil {
 		return "", err

@@ -334,6 +334,13 @@ func TestValidateBatchRejectsInvalidPolicyAndEntryOrdering(t *testing.T) {
 			},
 		}
 	}
+	emptyPolicySum := sha256.Sum256(nil)
+	emptyPolicyBatch := valid()
+	emptyPolicyBatch.SourcePolicyStatus = SourcePolicyUnverified
+	emptyPolicyBatch.SourcePolicySHA256 = hex.EncodeToString(emptyPolicySum[:])
+	if err := validateBatch(&emptyPolicyBatch); err != nil {
+		t.Fatalf("validateBatch(empty present policy) error = %v", err)
+	}
 	tests := []struct {
 		name    string
 		mutate  func(*Batch)

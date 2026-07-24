@@ -407,9 +407,6 @@ func validateBatch(batch *Batch) error {
 			return fmt.Errorf("missing source policy must not include policy data")
 		}
 	case SourcePolicyUnverified, SourcePolicyInvalid:
-		if len(batch.SourcePolicyYAML) == 0 {
-			return fmt.Errorf("%s source policy requires policy YAML", batch.SourcePolicyStatus)
-		}
 		if !sha256Shape.MatchString(batch.SourcePolicySHA256) {
 			return fmt.Errorf("invalid recovered batch source_policy_sha256")
 		}

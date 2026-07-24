@@ -197,7 +197,7 @@ func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Rol
 		keyType, err := backup.NewRestorer(keystorePaths(), productIdentityID()).
 			WithNodeRole(role).
 			WithLogger(logInfof).
-			RestoreKey(keysDir, address, masterKey, exportPassphrase)
+			RestoreActiveForRebuild(keysDir, address, masterKey, exportPassphrase)
 		if err != nil {
 			return fmt.Errorf("failed to rebuild %s: %w", address, err)
 		}

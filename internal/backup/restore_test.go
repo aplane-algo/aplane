@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -358,6 +359,106 @@ func TestPreviewRestoreRejectsEmptyManagedArchive(t *testing.T) {
 		t.Fatal("PreviewRestore(empty archive) error = nil, want no .apb rejection")
 	} else if !strings.Contains(err.Error(), "no .apb files found") {
 		t.Fatalf("PreviewRestore(empty archive) error = %v, want no .apb rejection", err)
+	}
+}
+
+func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	policyYAML := []byte("reject_foreign_rekey: true\n")
+	archivePath := writeManagedRecoveryArchive(t, paths, identityID, noderole.RoleSigner, policyYAML, func(keysDir string) {
+		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+			t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+		}
+	})
+	archiveSHA256, _, err := FileSHA256(archivePath)
+	if err != nil {
+		t.Fatalf("FileSHA256() error = %v", err)
+	}
+
+	batch, err := RecoverManagedBackup(
+		paths,
+		identityID,
+		filepath.Base(archivePath),
+		nil,
+		testExportMasterKey,
+		[]byte("export-passphrase"),
+		noderole.RoleSigner,
+	)
+	if err != nil {
+		t.Fatalf("RecoverManagedBackup() error = %v", err)
+	}
+	if batch.ArchiveName != filepath.Base(archivePath) || batch.ArchiveSHA256 != archiveSHA256 {
+		t.Fatalf("batch archive metadata = %q %q, want %q %q", batch.ArchiveName, batch.ArchiveSHA256, filepath.Base(archivePath), archiveSHA256)
+	}
+	if batch.SourceNodeRole != string(noderole.RoleSigner) ||
+		batch.SourcePolicyStatus != recovered.SourcePolicyUnverified ||
+		string(batch.SourcePolicyYAML) != string(policyYAML) {
+		t.Fatalf("batch source metadata = role %q status %q policy %q", batch.SourceNodeRole, batch.SourcePolicyStatus, batch.SourcePolicyYAML)
+	}
+	if len(batch.Entries) != 1 || batch.Entries[0].Selector != address || batch.Entries[0].KeyType != "ed25519" {
+		t.Fatalf("batch entries = %+v, want recovered ed25519 %s", batch.Entries, address)
+	}
+
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address)); !os.IsNotExist(err) {
+		t.Fatalf("active key stat error = %v, want not found", err)
+	}
+	for _, activeDir := range []string{paths.KeysDir(identityID), paths.KeyTypeRecordsDir(identityID)} {
+		if _, err := os.Stat(activeDir); !os.IsNotExist(err) {
+			t.Fatalf("active directory %s stat error = %v, want not found", activeDir, err)
+		}
+	}
+
+	loaded, err := recovered.LoadBatch(paths, identityID, batch.RestoreID, testExportMasterKey)
+	if err != nil {
+		t.Fatalf("recovered.LoadBatch() error = %v", err)
+	}
+	entry, err := recovered.LoadEntry(paths, identityID, batch.RestoreID, loaded.Entries[0], testExportMasterKey)
+	if err != nil {
+		t.Fatalf("recovered.LoadEntry() error = %v", err)
+	}
+	defer entry.ZeroSecrets()
+	if entry.Selector != address || entry.KeyType != "ed25519" {
+		t.Fatalf("loaded recovered entry = %+v, want ed25519 %s", entry, address)
+	}
+}
+
+func TestRecoverManagedBackupIsAllOrNothing(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	archivePath := writeManagedRecoveryArchive(t, paths, identityID, noderole.RoleSigner, nil, func(keysDir string) {
+		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+			t.Fatalf("writeStandaloneBackupFile(valid) error = %v", err)
+		}
+		if err := writeStandaloneBackupFile(filepath.Join(keysDir, "zz-invalid.apb"), []byte(`{"not":"a key"}`), []byte("export-passphrase")); err != nil {
+			t.Fatalf("writeStandaloneBackupFile(invalid) error = %v", err)
+		}
+	})
+
+	if _, err := RecoverManagedBackup(
+		paths,
+		identityID,
+		archivePath,
+		nil,
+		testExportMasterKey,
+		[]byte("export-passphrase"),
+		noderole.RoleSigner,
+	); err == nil {
+		t.Fatal("RecoverManagedBackup() error = nil, want invalid entry rejection")
+	}
+	if entries, err := os.ReadDir(paths.RecoveredRootDir(identityID)); err == nil && len(entries) != 0 {
+		t.Fatalf("recovered root entries = %v, want no published batch", entries)
+	} else if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("ReadDir(recovered root) error = %v", err)
+	}
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address)); !os.IsNotExist(err) {
+		t.Fatalf("active key stat error = %v, want not found", err)
 	}
 }
 
@@ -843,6 +944,42 @@ func writeManagedRestoreArchive(t *testing.T, paths storepaths.Paths, identityID
 	populate(keysDir)
 
 	archivePath := filepath.Join(paths.IdentityBackupsDir(identityID), "managed-restore-test.tar.gz")
+	if err := CreateTarGzArchive(root, archivePath); err != nil {
+		t.Fatalf("CreateTarGzArchive() error = %v", err)
+	}
+	return archivePath
+}
+
+func writeManagedRecoveryArchive(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+	role noderole.Role,
+	policyYAML []byte,
+	populate func(keysDir string),
+) string {
+	t.Helper()
+
+	root := t.TempDir()
+	keysDir := filepath.Join(root, "apb")
+	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll(apb) error = %v", err)
+	}
+	populate(keysDir)
+	if err := WriteManifest(root, role, time.Unix(1_700_000_000, 0)); err != nil {
+		t.Fatalf("WriteManifest() error = %v", err)
+	}
+	if policyYAML != nil {
+		policyDir := filepath.Join(root, "policy")
+		if err := os.MkdirAll(policyDir, 0o750); err != nil {
+			t.Fatalf("MkdirAll(policy) error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), policyYAML, 0o600); err != nil {
+			t.Fatalf("WriteFile(policy) error = %v", err)
+		}
+	}
+
+	archivePath := filepath.Join(paths.IdentityBackupsDir(identityID), "managed-recovery-test.tar.gz")
 	if err := CreateTarGzArchive(root, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}
