@@ -11,12 +11,13 @@ The six observations are:
 
 1. signed simulation discloses executable transaction groups to algod;
 2. admin idle expiration depends on cooperative client behavior;
-3. restore can activate keys under a different effective policy;
+3. restore historically activated keys without a distinct policy-transition gate;
 4. policy reload failure is fail-stale with respect to operator intent;
 5. the bounded1 fee ceiling can become a liveness fuse; and
 6. bounded1 provides transaction-local, not group-wide, semantic containment.
 
-All six concerns are addressable. The first four can be corrected in the
+All six concerns are addressable; observation 3 is corrected by the recovered
+activation workflow described below. The first four can be corrected in the
 runtime, configuration, storage, and administrative surfaces. The final two
 involve immutable LogicSig semantics: stronger guarantees can be provided for
 new accounts through a new contract or profile, but cannot be added
@@ -78,7 +79,7 @@ is needed in apsigner because apsigner no longer contacts algod for simulation.
 
 ## 2. Server Ownership Of Admin Session Expiration
 
-### Current behavior
+### Corrected behavior
 
 The configured `passphrase_timeout` is implemented as an apadmin-local idle
 disconnect timer. Keyboard input rearms the timer. When the timer expires,
@@ -144,7 +145,7 @@ client.
 
 ## 3. Restore And Effective Authorization Transitions
 
-### Current behavior
+### Corrected behavior
 
 Managed backups contain encrypted key payloads and a snapshot of the source
 identity policy. Backup creation verifies the live source policy before
@@ -153,14 +154,24 @@ policy because destination policy is authoritative and should not be replaced
 silently.
 
 Restore preview exposes key addresses, key types, existing-file conflicts, and
-template requirements. Restore apply decrypts selected payloads, validates
-them, re-encrypts them under the destination identity master key, writes them
-to the active managed-key directory, and reloads the identity runtime. A valid
-restored credential consequently becomes signable under the destination's
-current policy as soon as reload succeeds.
+template requirements. Recovery then validates all selected payloads and
+atomically publishes one destination-encrypted inactive batch outside active
+key and watcher namespaces. It does not reload and cannot make a credential
+signable.
 
-The restore workflow does not compare source and destination policy or require
-an explicit acknowledgement of the resulting policy transition.
+Review revalidates the batch against the current destination. It prominently
+shows the known effective destination `user_auto_approve` state, even though
+the source value is unavailable, and orders security-bearing differences
+before raw changed paths. The factual policy comparison does not claim to
+prove widening or containment.
+
+Activation requires a destination-bound review token and explicit policy
+transition acknowledgement. An auto-approving destination requires a separate
+unattended-signing acknowledgement. Active replacement is a separate option.
+The server publishes an encrypted exact rollback snapshot and activation
+journal before the first active write. Reload failure restores prior state; a
+hard interruption blocks signing until explicit rollback-first resume or
+rollback. Purge cannot erase incomplete activation state.
 
 ### Security significance
 
@@ -182,35 +193,26 @@ snapshot can be compared and displayed as source-provenance material, but it
 must not be represented as destination-verified policy merely because it was
 included in the archive.
 
-### Correctable boundary
+### Implemented boundary
 
 A safer restore model separates credential recovery from activation:
 
 ```text
-archive -> preview -> quarantined restore -> policy comparison -> activation
+archive -> preview -> recovered batch -> policy comparison -> activation
 ```
 
-Restored credentials can be held in a quarantine directory or represented by
-durable disabled inventory state. They should not enter the signable runtime
-index until the operator explicitly activates them.
+Recovered credentials do not enter the runtime index until activation and
+successful reload. Both interactive clients and `apstore` use the same server
+operations and acknowledgements. Recovery, activation intent/outcome,
+resume/rollback, and purge carry structured audit events with identity,
+principal, session, transport, restore ID, and available policy digests.
 
-The activation review should show the archived policy identity or digest, the
-destination policy identity or digest, and a useful semantic comparison of
-security-bearing settings. It should identify obvious widening, such as the
-removal of fee or amount ceilings, review requirements, route restrictions,
-or foreign-rekey rejection. The operator can then retain destination policy,
-install a deliberately reviewed replacement, or decline activation.
+### Resolution status
 
-Activation and the policy decision should be audited. Scripted restore needs
-an explicit non-interactive acknowledgement rather than silently bypassing the
-same boundary.
-
-### Fixability
-
-This is fully correctable through restore storage, state-machine, protocol,
-and administrative UX changes. Existing backup payloads can remain usable;
-the archived policy's provenance limitations should simply be represented
-accurately.
+Corrected in admin protocol v3 without changing existing `.apb` payloads or
+managed archive format. The v2 direct-to-active `restore_backup` mutation is no
+longer dispatched. Offline `apstore rebuild` remains an explicitly separate,
+absent-store rescue path.
 
 ## 4. Policy Reload Failure: Fail-Closed And Fail-Stale
 

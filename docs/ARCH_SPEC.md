@@ -274,7 +274,8 @@ Persistent sensitive state is stored on disk and unlocked into memory only via a
 - template storage: `internal/templatestore`
 - plaintext template library parsing and install preparation: `internal/templatelibrary`
 - template reload/registration outcome reporting: `internal/templatepolicy`
-- backup/restore: `internal/backup`
+- backup archives/validation: `internal/backup`
+- inactive recovery/journals/snapshots: `internal/backup/recovered`
 
 ### Storage, Key, And Template Package Clusters
 
@@ -1794,7 +1795,7 @@ Product-level boundaries:
 | Signing | `internal/signerapp/signing/service.go`, `internal/signerapp/signing/planner.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/execution.go`, `internal/signerapp/signing/approval.go` |
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
-| Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/service.go`, `internal/signerapp/backupadmin/limiter.go`, `internal/backup/*.go` |
+| Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/*.go`, `internal/backup/*.go`, `internal/backup/recovered/*.go` |
 | LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `library/templates/aplane.corridor.v1.yaml`, `lsig/sentryaccount/sentryaccount.go`, `internal/boundedadmin/message/message.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
@@ -1810,18 +1811,23 @@ Product-level boundaries:
 
 ## Backup and Restore Ownership
 
-For backup/restore specifically, `internal/backup` owns export packaging and
-restore-time resolution/mutation policy: authoritative local template
-precedence for explicit template restore and bundled-template conflict checks,
-import-time bundled template/key bytecode reproduction validation, LogicSig
-signing-metadata validation, compiled-provider activation, and per-key rollback
-if the final key-file write fails. Managed backup archives also carry a verified
-policy snapshot under `policy/`, but restore paths do not install that snapshot
-as active policy. The apsigner process routes the live restore path through
-`internal/signerapp/daemon` and `internal/signerapp/backupadmin` for both
-`apadmin` and local-IPC `apstore` restore commands. `cmd/apstore` retains the
-local `initialize` path, local `backup import` admission check, `verify`
-inspection command, policy integrity check/sign/verify commands, and `rebuild`
-replacement-keystore rescue path. The wire and on-disk compatibility rules remain in
+For backup/restore specifically, `internal/backup` owns export packaging,
+archive inspection, payload validation, and the active-apply primitive used
+only by reviewed activation and offline rebuild. `internal/backup/recovered`
+owns destination-encrypted inactive batches, activation journals, rollback
+snapshots, and passphrase-rotation target discovery. `internal/signerapp/backupadmin`
+owns the live recover/review/activate/rollback/purge state machine. Recovery
+does not write managed `.key`/`.sen` files or reload the runtime; activation is
+the only live operation that does so, after a destination-bound policy review
+and explicit acknowledgements. A durable incomplete activation puts the
+identity in recovery mode and blocks signing until exact resume or rollback.
+Managed archives carry a verified-at-source policy snapshot under `policy/`,
+but no restore path installs that snapshot as active policy.
+
+Both `apadmin` and local-IPC `apstore` use the same daemon-owned lifecycle.
+`cmd/apstore` retains local `initialize`, backup-import admission, `verify`,
+policy integrity check/sign/verify, and `rebuild` replacement-keystore rescue.
+Offline rebuild is deliberately distinct: it requires an absent store and may
+write active credentials directly. The wire and on-disk compatibility rules remain in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md); the key/keytype lifecycle state model
 is in [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).

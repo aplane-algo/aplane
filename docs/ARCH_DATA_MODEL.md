@@ -159,9 +159,9 @@ DTOs and contract fixtures.
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
 | Plugin | Client data dir | `plugins.available/<name>`, `plugins.yaml`, checksums | plugin manager process state | plugin JSON-RPC result | `internal/plugin`, `internal/apshellcli` |
 | JavaScript script | Client data dir | `scripts/*.js` | Goja execution context | shell/MCP `js`, `jssave`, `jslist` | `internal/scripting`, `internal/jsapi` |
-| Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files, `manifest.json`, and policy snapshots | restore preview/apply plan | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
+| Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files, `manifest.json`, and policy snapshots | restore preview/recovery input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
 | Backup manifest | Backup archive | `manifest.json` schema `aplane.backup.manifest.v1` | source node role default and diagnostics for rebuild | none | `internal/backup` |
-| Recovered batch | Signer identity | destination-encrypted `recovered/<restore-id>/batch.enc` and `entries/*.recovered` | none before explicit activation | future recovery admin messages | `internal/backup/recovered` |
+| Recovered batch | Signer identity | destination-encrypted `recovered/<restore-id>/batch.enc`, `entries/*.recovered`, and optional `activation/` reconciliation state | none before explicit activation; recovery-only runtime when activation is incomplete | recovered lifecycle admin messages | `internal/backup/recovered`, `internal/signerapp/backupadmin` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
 
 ## Relationship Map
@@ -259,6 +259,9 @@ identities/<identity>/
   recovered/<restore-id>/
     batch.enc
     entries/<selector-hash>.recovered
+    activation/
+      journal.enc
+      rollback.enc
   deleted/
   passphrase | passphrase.cred   # optional helper artifacts
 ```
@@ -273,7 +276,12 @@ store removes exact `.new`/`.old` siblings after the canonical file validates,
 or restores a missing/invalid canonical file only from an exact sibling that
 validates under the current master key. Unknown state fails closed. Directories
 prefixed `.recovering-` are unpublished staging state and must be ignored by
-inventory operations.
+inventory operations. Before the first active activation write, an encrypted
+activation journal and exact rollback snapshot are published under
+`activation/`. Their presence is authoritative incomplete-activation state:
+startup retains the master-key session only for recovery administration,
+blocks signing, and requires exact resume or rollback. Purge cannot erase this
+state.
 
 `identity.Runtime` is the runtime projection. It owns:
 
@@ -856,13 +864,20 @@ policy snapshot. The manifest role is a rebuild default/diagnostic; explicit
 `apstore rebuild --role` is the replacement store authority when supplied.
 `.apb` is the cryptographic backup unit; the tarball is packaging.
 
-Restore is per-key:
+Live restore is batch-oriented:
 
 - preview decrypts and reports without mutation,
-- apply writes selected keys/templates/state where allowed,
-- successful restore reloads the identity runtime,
-- policy files are not installed automatically and must be reviewed and signed
-  explicitly before use.
+- recovery atomically publishes selected entries outside active scans,
+- review binds the batch to current destination policy, approval mode, and
+  active conflicts,
+- activation requires explicit acknowledgements, publishes rollback state,
+  writes active state, and reloads,
+- hard interruption blocks signing until resume or rollback,
+- policy files are never installed automatically and must be reviewed and
+  replaced explicitly.
+
+`apstore rebuild` is the separate absent-store rescue path and may write active
+credentials directly because no live signer identity is being mutated.
 
 ## Security-Sensitive Data
 

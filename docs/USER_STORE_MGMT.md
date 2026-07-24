@@ -37,7 +37,7 @@ Key management is handled by **apadmin** and **apstore**, not directly by apsign
 │                                                             │
 │  apstore           ─────────►  Signer Server                │
 │    • Create/import/list/export/delete managed backups       │
-│    • Preview/apply managed restores                         │
+│    • Preview/recover/review/activate managed restores       │
 │    • Change passphrase                                      │
 │    • Manage templates and key-type enablement               │
 │                                                             │
@@ -335,14 +335,18 @@ In the TUI:
 4. Enter the backup export passphrase
 5. Review the previewed addresses, key types, existing-key conflicts, and template indicators
 6. Select the keys to restore
-7. Enable overwrite only if you explicitly want to replace existing key files
-8. Confirm restore and review the restored/skipped/error result screen
+7. Review the destination approval mode and security-first source/destination
+   policy differences. Raw changed paths are secondary detail.
+8. Acknowledge the policy transition. If the destination uses
+   `user_auto_approve`, separately acknowledge unattended signing.
+9. Enable replacement only if you explicitly want to replace existing active
+   credentials, then activate.
 
 `apadmin` restore is intentionally scoped to the active identity's managed
 backup locker. It does not restore arbitrary external paths or extracted backup
-directories. Restored keys are encrypted into the
-bound identity keystore and the identity key/template state is
-refreshed after successful changes.
+directories. Selected entries are first recovered into an encrypted, inactive
+batch under `identities/<identity>/recovered/`. They do not enter the active
+key list or become signable until reviewed activation succeeds.
 
 The export passphrase is required before `apadmin` shows key addresses or key
 types from an archive. Wrong-passphrase and malformed-backup attempts are
@@ -364,16 +368,34 @@ then preview and apply it:
 The restore process:
 1. `backup import` prompts for the **backup passphrase**, validates the archive contents, and copies it into the signer-managed backup locker.
 2. `restore preview` prompts for the **backup passphrase** and shows addresses, key types, conflicts, and template requirements.
-3. `restore apply` prompts for the **backup passphrase** and asks the daemon to restore selected keys.
-4. The daemon decrypts each key using the export passphrase.
-5. It checks any template-backed `key_type` against the local definition before trusting the bundled copy.
-6. It re-encrypts keys with the live identity store master key.
-7. It installs or re-enables required templates or compiled-provider enablement needed by the restored key type.
-8. It reloads the identity runtime after successful restore changes.
+3. `restore apply` prompts for the **backup passphrase**, validates all selected
+   entries, and creates one inactive destination-encrypted batch.
+4. It prints the current destination approval mode, policy digests,
+   security-bearing differences, unknown source settings, and active conflicts.
+5. It asks for policy-transition acknowledgement and, when required, a
+   separate unattended-signing acknowledgement.
+6. Only after confirmation does activation publish rollback state, apply the
+   whole batch, and reload the identity runtime.
 
 Use `--address ADDRESS` one or more times with `restore apply` to restore a
 subset. Use `--overwrite` only when you explicitly intend to replace an
-existing key file.
+existing active credential.
+
+`restore apply` is a client convenience sequence; the server has no
+direct-to-active restore operation. To manage batches separately:
+
+```bash
+./apstore restore list
+./apstore restore review <restore-id>
+./apstore restore activate <restore-id> [--replace-existing]
+./apstore restore rollback <restore-id>
+./apstore restore purge <restore-id>
+```
+
+If a crash interrupts activation, the identity enters recovery mode and
+signing stays blocked. Re-run `restore activate` to perform the exact recorded
+rollback-first resume, or use `restore rollback` to restore the pre-activation
+state. An incomplete activation cannot be purged.
 
 **Note:** `apstore restore` operates on archives in the managed backup locker;
 it does not restore directly from extracted directories. Backups do not include
@@ -385,15 +407,16 @@ passphrase.
 
 Backups include `policy/policy.yaml` and `policy/policy.yaml.hmac` so an
 operator can inspect the node-role policy that was active when the backup was
-created. Normal restore flows restore keys only. `apconsole`
-admin restore and `apstore restore apply` do not install or replace the active
-identity policy documents.
+created. Normal restore flows recover and activate credentials only.
+`apadmin` and `apstore restore apply` do not install or replace active identity
+policy documents.
 
 The archived policy sidecars are source-store provenance material. They are not
 destination restore artifacts and should not be copied into the active identity
-directory. There is currently no CLI command that verifies an archive policy
-snapshot against the source store; backup creation verifies the live policy
-before copying the snapshot.
+directory. The destination cannot verify the archived HMAC without the source
+master key. Backup creation verified the live source policy before copying it;
+activation review accurately treats the archived policy as unverified source
+material and the destination policy as authoritative.
 
 If policy restoration is warranted, restore it deliberately:
 
@@ -459,10 +482,10 @@ A few other things to know:
   Restoring the key alone does not require the template to be enabled to sign.
 - If a restored key uses a library-visible compiled provider, restore creates
   the identity state record for that key type as needed.
-- `apstore restore apply` works per-key: one key can fail while others
-  restore successfully. If a key restore fails after installing a template or
-  enabling a compiled provider, those side effects are rolled back before the
-  command returns.
+- Recovery is all-or-nothing for the selected batch. Activation also treats
+  the batch as one unit: a failure restores exact pre-activation key and
+  key-type state before returning, or leaves a durable recovery marker that
+  blocks signing until operator resolution.
 
 ### Rebuild an Absent Keystore
 
@@ -488,10 +511,11 @@ classes are still validated against the destination role.
 
 ### Verifying Restoration
 
-After `apstore restore apply`, the daemon reloads the identity runtime. Verify
-the address matches your backup in the apadmin TUI key list. After `apstore
-rebuild`, start `apsigner`, unlock the identity, and verify the restored
-addresses in apadmin.
+After successful `apstore restore apply` activation, the daemon reloads the
+identity runtime. Verify the address matches your backup in the apadmin TUI key
+list. A batch visible under `apstore restore list` remains inactive. After
+`apstore rebuild`, start `apsigner`, unlock the identity, and verify the
+restored addresses in apadmin.
 
 ## External Contract Admin Artifacts
 
@@ -617,6 +641,11 @@ From the key details view:
 # Restore keys
 ./apstore restore preview <backup-id|name>
 ./apstore restore apply <backup-id|name> [--address ADDRESS ...] [--overwrite]
+./apstore restore list
+./apstore restore review <restore-id>
+./apstore restore activate <restore-id> [--replace-existing]
+./apstore restore rollback <restore-id>
+./apstore restore purge <restore-id>
 
 # Rescue rebuild when no identity keystore exists
 ./apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...]

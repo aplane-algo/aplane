@@ -42,7 +42,7 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
-- the current admin protocol major version is 2; `auth_required` carries it as
+- the current admin protocol major version is 3; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -156,7 +156,12 @@ Client to Server:
 - `list_backups`
 - `delete_backup`
 - `preview_restore`
-- `restore_backup`
+- `recover_backup`
+- `list_recovered`
+- `review_recovered`
+- `activate_recovered`
+- `rollback_recovered`
+- `purge_recovered`
 
 Server to Client:
 
@@ -164,7 +169,12 @@ Server to Client:
 - `backups_list`
 - `delete_backup_result`
 - `restore_preview`
-- `restore_backup_result`
+- `recover_backup_result`
+- `recovered_list`
+- `review_recovered_result`
+- `activate_recovered_result`
+- `rollback_recovered_result`
+- `purge_recovered_result`
 
 ### Admin and Policy Settings
 
@@ -260,7 +270,29 @@ unlock/reload after passphrase verification through
 - `list_backups` -> `backups_list`: `backups[]`, optional `code`, `error`; each backup has `path`, `file_name`, optional Unix `created_at`, optional `size`, optional `checksum`, optional `verified`
 - `delete_backup`: `archive_path` -> `delete_backup_result`: `success`, optional `code`, `error`
 - `preview_restore`: `archive_path`, `export_passphrase` -> `restore_preview`: optional resolved `archive_path`, `keys[]`, `errors[]`, `code`, `error`; each key has `address`, optional `key_type`, `already_exists`, `has_template`, `template_type`, `error`
-- `restore_backup`: `archive_path`, optional `addresses[]`, optional `overwrite`, `export_passphrase` -> `restore_backup_result`: `success`, optional resolved `archive_path`, `restored[]`, `skipped[]`, `errors[]`, `warnings[]`, `key_count`, `code`, `error`
+- `recover_backup`: `archive_path`, optional `addresses[]`, `export_passphrase`
+  -> `recover_backup_result`: `success`, optional `restore_id`,
+  `archive_name`, `archive_checksum`, `entry_count`, `code`, `error`; success
+  publishes one destination-encrypted inactive batch and does not reload
+- `list_recovered` -> `recovered_list`: optional `batches[]`, `code`, `error`;
+  each batch carries restore ID, creation time, archive name/checksum, source
+  role and policy status/digest, and entry count
+- `review_recovered`: `restore_id` -> `review_recovered_result`: `success`,
+  restore/batch state, archive and policy digests, destination approval mode,
+  unattended-signing warning, factual policy comparison, ordered
+  `security_changes[]`, secondary `changed_paths[]`, unknown source settings,
+  entries, active conflict fingerprints, opaque `review_token`, required
+  acknowledgement flags, replacement state, `code`, `error`
+- `activate_recovered`: `restore_id`, `review_token`,
+  `acknowledge_policy_transition`, optional
+  `acknowledge_unattended_signing`, optional `replace_existing` ->
+  `activate_recovered_result`: `success`, restore ID, activated entries,
+  resulting `key_count`, `code`, `error`
+- `rollback_recovered`: `restore_id` -> `rollback_recovered_result`: `success`,
+  restore ID, resulting `key_count`, `code`, `error`
+- `purge_recovered`: `restore_id` -> `purge_recovered_result`: `success`,
+  restore ID, `code`, `error`; incomplete activation state cannot be purged
+- admin protocol v3 does not dispatch the v2 `restore_backup` mutation
 - restore `export_passphrase` fields are JSON strings on the wire but are parsed into mutable byte buffers at the protocol boundary so server handlers can zero them after use; raw JSON transport buffers are best-effort and may retain bytes until their normal lifetime ends
 
 ### Admin and Policy Settings

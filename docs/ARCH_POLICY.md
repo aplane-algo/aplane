@@ -890,9 +890,23 @@ policy/policy.yaml
 policy/policy.yaml.hmac
 ```
 
-The backup path verifies the live policy before copying that snapshot. Restore
-paths do not install policy files automatically: `apconsole` admin restore and
-`apstore restore apply` restore keys and required key-type/template state only.
+The backup path verifies the live policy before copying that snapshot. Recovery
+records the archived YAML and digest as source material but cannot verify the
+source HMAC with the destination master key. Review compares the parseable
+source projection with the current verified destination policy, foregrounding
+hard rejects, ceilings, review requirements, routing restrictions, and the
+known effective destination `user_auto_approve` mode. It reports a factual
+identical/different/unavailable result, not a widening verdict.
+
+Recovery does not make keys signable. Activation is pinned to the destination
+policy digest and approval mode by the review token, always requires policy
+transition acknowledgement, and requires a separate unattended-signing
+acknowledgement when destination auto-approve is effective. A policy or
+approval-mode change invalidates the token and forces a new review.
+
+No restore path installs policy files automatically: `apadmin` and
+`apstore restore apply` activate only recovered credential/key-type state after
+review.
 
 The archived sidecars are source-store provenance material, not destination
 sidecars. If an operator deliberately restores archived policy YAML, the

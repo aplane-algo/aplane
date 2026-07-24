@@ -127,6 +127,10 @@ standalone `apstore` CLI tool on the signer host:
 ./apstore -d /path/to/signer-data backup import /mnt/usb/aplane-backup.tar.gz
 ./apstore -d /path/to/signer-data restore preview aplane-backup.tar.gz
 ./apstore -d /path/to/signer-data restore apply aplane-backup.tar.gz
+./apstore -d /path/to/signer-data restore list
+./apstore -d /path/to/signer-data restore review <restore-id>
+./apstore -d /path/to/signer-data restore activate <restore-id>
+./apstore -d /path/to/signer-data restore rollback <restore-id>
 ./apstore -d /path/to/signer-data verify /mnt/usb/aplane-backup.tar.gz --deep
 ```
 
@@ -139,13 +143,15 @@ data root.
 For a live signer-managed restore, unlock the signer, open the admin/settings
 panel, choose `Restore backup` or press `o`, select a managed archive, enter
 the archive export passphrase, preview the contained keys, select keys to
-restore, and confirm overwrite only if needed. `apadmin` restores only archives
-from the bound identity's managed backup locker and writes restored keys into
-that same identity.
+restore, then review the destination approval mode and security-first policy
+differences. Policy transition always requires acknowledgement; an
+auto-approving destination requires a separate unattended-signing
+acknowledgement. `apadmin` first creates an inactive recovered batch and writes
+active credentials only during reviewed activation.
 
 `apadmin` does not verify backups or restore arbitrary external paths. Use
-`apstore` for offline restore, verification, extracted backup directories, and
-operator-selected archive paths.
+`apstore` for verification, managed recovery lifecycle commands, and the
+separate absent-store `rebuild` rescue path.
 
 See `apstore --help` for more options.
 
