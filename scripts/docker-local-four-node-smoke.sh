@@ -677,7 +677,7 @@ create_client_sentry_endpoint() {
         die "failed to add sentry endpoint through apshell"
     fi
     printf '%s\n' "$out"
-    printf '%s\n' "$out" | grep -q 'Configured sentry endpoint local-sentry' \
+    grep -Fq 'Configured sentry endpoint local-sentry' <<<"$out" \
         || die "sentry endpoint creation output did not include success marker"
 }
 
@@ -1105,9 +1105,9 @@ sync_sentry_key_to_signer() {
         die "failed to sync sentry key to signer"
     fi
     printf '%s\n' "$out"
-    printf '%s\n' "$out" | grep -q 'Synced 1 endpoint-discovered sentry reference(s) to signer' \
+    grep -Fq 'Synced 1 endpoint-discovered sentry reference(s) to signer' <<<"$out" \
         || die "sentry sync output did not include signer sync success marker"
-    printf '%s\n' "$out" | grep -q "$SENTRY_COMPONENT_KEY" \
+    grep -Fq "$SENTRY_COMPONENT_KEY" <<<"$out" \
         || die "sentry sync output did not include generated Witness Key ID"
 }
 
@@ -1304,7 +1304,7 @@ validate_falcon_self_send() {
         die "Falcon validation self-send failed"
     fi
     printf '%s\n' "$out"
-    printf '%s\n' "$out" | grep -q 'Validated successfully' \
+    grep -Fq 'Validated successfully' <<<"$out" \
         || die "Falcon validation output did not include success marker"
 }
 
@@ -1319,7 +1319,7 @@ validate_guarded_self_send() {
         die "guarded validation self-send failed"
     fi
     printf '%s\n' "$out"
-    printf '%s\n' "$out" | grep -q 'Validated successfully' \
+    grep -Fq 'Validated successfully' <<<"$out" \
         || die "guarded validation output did not include success marker"
 }
 
@@ -1335,12 +1335,12 @@ validate_corridor_allowed_send() {
         die "corridor allowlisted send command failed"
     fi
     printf '%s\n' "$out"
-    if printf '%s\n' "$out" | grep -q 'Failed:'; then
+    if grep -Fq 'Failed:' <<<"$out"; then
         die "corridor allowlisted send reported failure"
     fi
-    printf '%s\n' "$out" | grep -q 'Transaction submitted:' \
+    grep -Fq 'Transaction submitted:' <<<"$out" \
         || die "corridor allowlisted send did not submit a transaction"
-    printf '%s\n' "$out" | grep -q 'Confirmed: sent' \
+    grep -Fq 'Confirmed: sent' <<<"$out" \
         || die "corridor allowlisted send did not confirm"
 }
 
@@ -1353,13 +1353,13 @@ validate_corridor_blocked_send_fails() {
     out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/send-corridor-deny.script 2>&1" || true)"
     printf '%s\n' "$out"
-    if printf '%s\n' "$out" | grep -q 'Transaction submitted:'; then
+    if grep -Fq 'Transaction submitted:' <<<"$out"; then
         die "corridor blocked send unexpectedly submitted a transaction"
     fi
-    if printf '%s\n' "$out" | grep -q 'Confirmed: sent'; then
+    if grep -Fq 'Confirmed: sent' <<<"$out"; then
         die "corridor blocked send unexpectedly confirmed"
     fi
-    printf '%s\n' "$out" | grep -q 'not in allowlist' \
+    grep -Fq 'not in allowlist' <<<"$out" \
         || die "corridor blocked send did not report allowlist rejection"
 }
 
@@ -1373,10 +1373,10 @@ validate_corridor_send_after_sentry_delete_fails() {
     out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/send-corridor-missing-sentry.script 2>&1" || true)"
     printf '%s\n' "$out"
-    if printf '%s\n' "$out" | grep -q 'Transaction submitted:'; then
+    if grep -Fq 'Transaction submitted:' <<<"$out"; then
         die "Corridor send unexpectedly submitted after sentry key deletion"
     fi
-    printf '%s\n' "$out" | grep -q 'did not advertise Witness Key ID' \
+    grep -Fq 'did not advertise Witness Key ID' <<<"$out" \
         || die "Corridor send failure did not report the missing sentry key"
 }
 
@@ -1413,9 +1413,9 @@ EXPECT_SCRIPT
         die "external Corridor admin rekey failed while sentry key was unavailable"
     fi
     printf '%s\n' "$out"
-    printf '%s\n' "$out" | grep -q 'Governed rekey transaction submitted:' \
+    grep -Fq 'Governed rekey transaction submitted:' <<<"$out" \
         || die "Corridor admin rekey output did not include submission marker"
-    printf '%s\n' "$out" | grep -q 'Transaction confirmed' \
+    grep -Fq 'Transaction confirmed' <<<"$out" \
         || die "Corridor admin rekey did not confirm"
 }
 
@@ -1438,7 +1438,7 @@ PY")"; then
         die "failed to delete sentry key through sentry admin API"
     fi
     printf '%s\n' "$out"
-    printf '%s\n' "$out" | grep -q '"success":true' \
+    grep -Fq '"success":true' <<<"$out" \
         || die "sentry key deletion output did not include success marker"
 }
 
@@ -1450,12 +1450,12 @@ validate_guarded_self_send_after_sentry_delete_fails() {
     out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/validate-guarded-missing-sentry.script 2>&1" || true)"
     printf '%s\n' "$out"
-    if printf '%s\n' "$out" | grep -q 'Validated successfully'; then
+    if grep -Fq 'Validated successfully' <<<"$out"; then
         die "guarded validation unexpectedly included success marker after sentry key deletion"
     fi
-    printf '%s\n' "$out" | grep -q 'Failed:' \
+    grep -Fq 'Failed:' <<<"$out" \
         || die "guarded validation did not report a failed transaction after sentry key deletion"
-    printf '%s\n' "$out" | grep -q 'did not advertise Witness Key ID' \
+    grep -Fq 'did not advertise Witness Key ID' <<<"$out" \
         || die "guarded validation failure did not report missing sentry key"
 }
 
@@ -1465,7 +1465,7 @@ verify_signer_reachable() {
     out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/status.script 2>&1")"
     printf '%s\n' "$out"
-    printf '%s' "$out" | grep -qE 'Signer:[[:space:]]*Connected' \
+    grep -qE 'Signer:[[:space:]]*Connected' <<<"$out" \
         || die "apshell status did not report Signer: Connected"
 }
 
