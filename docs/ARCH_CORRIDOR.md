@@ -38,6 +38,11 @@ discarded or decommissioned and recreated from this template. The key type,
 canonical program, metadata, and `bounded-sentry1` flow documented here become
 the Corridor v1 compatibility baseline.
 
+The complete sentry-bearing profile encoding, behavior parameters, Merkle
+root/proof, argument masks, program binding, and admin transcript are frozen
+together in
+[bounded1 Golden vector 2](ARCH_BOUNDED_DSA.md#golden-vector-2-corridor).
+
 ## Accepted Transactions
 
 Every accepted path requires the Falcon spending signature and
