@@ -55,8 +55,6 @@ const (
 	MsgTypeDeleteBackupResult      = "delete_backup_result"
 	MsgTypePreviewRestore          = "preview_restore"
 	MsgTypeRestorePreview          = "restore_preview"
-	MsgTypeRestoreBackup           = "restore_backup"
-	MsgTypeRestoreBackupResult     = "restore_backup_result"
 	MsgTypeRecoverBackup           = "recover_backup"
 	MsgTypeRecoverBackupResult     = "recover_backup_result"
 	MsgTypeListRecovered           = "list_recovered"
@@ -325,38 +323,11 @@ type RestoreError struct {
 	Error   string `json:"error"`
 }
 
-type RestoreWarning struct {
-	Address string `json:"address,omitempty"`
-	KeyType string `json:"key_type,omitempty"`
-	Warning string `json:"warning"`
-}
-
 type RestorePreviewMessage struct {
 	BaseMessage
 	ArchivePath string           `json:"archive_path,omitempty"`
 	Keys        []RestoreKeyInfo `json:"keys,omitempty"`
 	Errors      []RestoreError   `json:"errors,omitempty"`
-	Code        string           `json:"code,omitempty"`
-	Error       string           `json:"error,omitempty"`
-}
-
-type RestoreBackupMessage struct {
-	BaseMessage
-	ArchivePath      string         `json:"archive_path"`
-	Addresses        []string       `json:"addresses,omitempty"`
-	Overwrite        bool           `json:"overwrite,omitempty"`
-	ExportPassphrase SensitiveBytes `json:"export_passphrase"`
-}
-
-type RestoreBackupResultMessage struct {
-	BaseMessage
-	ArchivePath string           `json:"archive_path,omitempty"`
-	Success     bool             `json:"success"`
-	Restored    []RestoreKeyInfo `json:"restored,omitempty"`
-	Skipped     []RestoreKeyInfo `json:"skipped,omitempty"`
-	Errors      []RestoreError   `json:"errors,omitempty"`
-	Warnings    []RestoreWarning `json:"warnings,omitempty"`
-	KeyCount    int              `json:"key_count,omitempty"`
 	Code        string           `json:"code,omitempty"`
 	Error       string           `json:"error,omitempty"`
 }

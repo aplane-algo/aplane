@@ -148,42 +148,6 @@ func TestIPCClientSendBackupRestoreMessagesUseSensitivePassphraseWireString(t *t
 		t.Fatalf("preview.ExportPassphrase = %q", string(preview.ExportPassphrase))
 	}
 
-	restoreLineCh := make(chan []byte, 1)
-	restoreErrCh := make(chan error, 1)
-	go func() {
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			restoreErrCh <- err
-			return
-		}
-		restoreLineCh <- line
-	}()
-	if err := client.SendRestoreBackup("aplane-backup.tar.gz", []string{"ADDR1"}, true, passphrase); err != nil {
-		t.Fatalf("SendRestoreBackup() error = %v", err)
-	}
-	select {
-	case err := <-restoreErrCh:
-		t.Fatalf("ReadBytes(restore) error = %v", err)
-	case line = <-restoreLineCh:
-	case <-time.After(time.Second):
-		t.Fatal("timed out reading restore message")
-	}
-	var restore protocol.RestoreBackupMessage
-	if err := json.Unmarshal(line, &restore); err != nil {
-		t.Fatalf("Unmarshal(restore) error = %v", err)
-	}
-	if restore.Type != protocol.MsgTypeRestoreBackup {
-		t.Fatalf("restore.Type = %q, want %q", restore.Type, protocol.MsgTypeRestoreBackup)
-	}
-	if len(restore.Addresses) != 1 || restore.Addresses[0] != "ADDR1" {
-		t.Fatalf("restore.Addresses = %#v, want [ADDR1]", restore.Addresses)
-	}
-	if !restore.Overwrite {
-		t.Fatal("restore.Overwrite = false, want true")
-	}
-	if string(restore.ExportPassphrase) != "export-passphrase" {
-		t.Fatalf("restore.ExportPassphrase = %q", string(restore.ExportPassphrase))
-	}
 }
 
 func TestIPCClientSendLockIdentityMessage(t *testing.T) {

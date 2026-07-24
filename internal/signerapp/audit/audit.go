@@ -43,10 +43,6 @@ const (
 	AuditBackupFailed               AuditEventType = "BACKUP_FAILED"
 	AuditBackupRestorePreviewed     AuditEventType = "BACKUP_RESTORE_PREVIEWED"
 	AuditBackupRestorePreviewFailed AuditEventType = "BACKUP_RESTORE_PREVIEW_FAILED"
-	AuditBackupRestoreStarted       AuditEventType = "BACKUP_RESTORE_STARTED"
-	AuditBackupRestoreCompleted     AuditEventType = "BACKUP_RESTORE_COMPLETED"
-	AuditBackupRestorePartial       AuditEventType = "BACKUP_RESTORE_PARTIAL"
-	AuditBackupRestoreFailed        AuditEventType = "BACKUP_RESTORE_FAILED"
 	AuditBackupRecovered            AuditEventType = "BACKUP_RECOVERED"
 	AuditBackupRecoveryFailed       AuditEventType = "BACKUP_RECOVERY_FAILED"
 	AuditBackupActivationIntent     AuditEventType = "BACKUP_ACTIVATION_INTENT"
@@ -589,41 +585,6 @@ func (a *AuditLogger) LogBackupRestorePreviewedContext(ctx adminserver.SessionCo
 func (a *AuditLogger) LogBackupRestorePreviewFailedContext(ctx adminserver.SessionContext, reason string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupRestorePreviewFailed
-	entry.Outcome = "failed"
-	entry.Reason = reason
-	a.Log(entry)
-}
-
-func (a *AuditLogger) LogBackupRestoreStartedContext(ctx adminserver.SessionContext, archivePath string, selectedCount int) {
-	entry := sessionAuditFields(ctx)
-	entry.Event = AuditBackupRestoreStarted
-	entry.Outcome = "started"
-	entry.Reason = archivePath
-	entry.KeyCount = selectedCount
-	a.Log(entry)
-}
-
-func (a *AuditLogger) LogBackupRestoreCompletedContext(ctx adminserver.SessionContext, archivePath string, restoredCount int) {
-	entry := sessionAuditFields(ctx)
-	entry.Event = AuditBackupRestoreCompleted
-	entry.Outcome = "completed"
-	entry.Reason = archivePath
-	entry.KeyCount = restoredCount
-	a.Log(entry)
-}
-
-func (a *AuditLogger) LogBackupRestorePartialContext(ctx adminserver.SessionContext, archivePath string, restoredCount, failedCount int) {
-	entry := sessionAuditFields(ctx)
-	entry.Event = AuditBackupRestorePartial
-	entry.Outcome = "partial"
-	entry.Reason = fmt.Sprintf("%s restored=%d failed=%d", archivePath, restoredCount, failedCount)
-	entry.KeyCount = restoredCount
-	a.Log(entry)
-}
-
-func (a *AuditLogger) LogBackupRestoreFailedContext(ctx adminserver.SessionContext, reason string) {
-	entry := sessionAuditFields(ctx)
-	entry.Event = AuditBackupRestoreFailed
 	entry.Outcome = "failed"
 	entry.Reason = reason
 	a.Log(entry)

@@ -178,7 +178,7 @@ type restoreState struct {
 	unattendedAcknowledged bool
 	displaySelectedKey     int
 	displayScrollOffset    int
-	result                 RestoreBackupResultMessage
+	result                 RestoreDisplayResult
 }
 
 // formsState covers the generate and import forms, their parameter modals,
@@ -515,14 +515,11 @@ type RestorePreviewMsg struct {
 	Error       string
 }
 
-// RestoreBackupResultMsg is sent when backup restore completes.
-type RestoreBackupResultMsg struct {
+// RestoreDisplayResult is the local post-activation display model.
+type RestoreDisplayResult struct {
 	ArchivePath string
 	Success     bool
-	Restored    []RestoreKeyInfo
-	Skipped     []RestoreKeyInfo
-	Errors      []RestoreError
-	Warnings    []RestoreWarning
+	Activated   []RestoreKeyInfo
 	KeyCount    int
 	Error       string
 }

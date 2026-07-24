@@ -31,8 +31,6 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeDeleteBackupResult,
 		MsgTypePreviewRestore,
 		MsgTypeRestorePreview,
-		MsgTypeRestoreBackup,
-		MsgTypeRestoreBackupResult,
 		MsgTypeSignRequest,
 		MsgTypeSignRequestCanceled,
 		MsgTypeSignResponse,
@@ -414,44 +412,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 						"error":   "failed to decrypt backup",
 					},
 				},
-			},
-		},
-		{
-			name: "restore_backup_result",
-			msg: RestoreBackupResultMessage{
-				BaseMessage: BaseMessage{Type: MsgTypeRestoreBackupResult, ID: "restore-1"},
-				ArchivePath: "/data/identities/default/backups/backup.tar.gz",
-				Success:     true,
-				Restored: []RestoreKeyInfo{{
-					Address: "ADDR1",
-					KeyType: "ed25519",
-				}},
-				Warnings: []RestoreWarning{{
-					Address: "ADDR1",
-					KeyType: "test.timed-policy.v1",
-					Warning: "skipped bundled template for test.timed-policy.v1: backup template conflicts with existing keystore definition",
-				}},
-				KeyCount: 5,
-			},
-			wantMap: map[string]any{
-				"type":         MsgTypeRestoreBackupResult,
-				"id":           "restore-1",
-				"archive_path": "/data/identities/default/backups/backup.tar.gz",
-				"success":      true,
-				"restored": []any{
-					map[string]any{
-						"address":  "ADDR1",
-						"key_type": "ed25519",
-					},
-				},
-				"warnings": []any{
-					map[string]any{
-						"address":  "ADDR1",
-						"key_type": "test.timed-policy.v1",
-						"warning":  "skipped bundled template for test.timed-policy.v1: backup template conflicts with existing keystore definition",
-					},
-				},
-				"key_count": float64(5),
 			},
 		},
 		{

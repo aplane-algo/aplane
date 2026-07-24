@@ -285,20 +285,17 @@ func (m Model) renderRestoreDisplay() string {
 		lines = append(lines, fmt.Sprintf("Archive: %s", restoreArchiveLabel(result.ArchivePath)))
 	}
 	lines = append(lines,
-		fmt.Sprintf("Restored: %d", len(result.Restored)),
-		fmt.Sprintf("Skipped:  %d", len(result.Skipped)),
-		fmt.Sprintf("Errors:   %d", len(result.Errors)),
+		fmt.Sprintf("Activated: %d", len(result.Activated)),
 	)
 
-	if result.Error != "" && len(result.Errors) == 0 {
+	if result.Error != "" {
 		lines = append(lines, "", errorStyle.Render(result.Error))
 	}
 	lines = append(lines, "")
 
-	bottomLines := restoreDisplayBottomLines(result, rowWidth)
-	if len(result.Restored) > 0 {
+	if len(result.Activated) > 0 {
 		overhead := 5 // header, above indicator, below indicator, total, spacer
-		visibleRows := contentHeight - len(lines) - len(bottomLines) - overhead
+		visibleRows := contentHeight - len(lines) - overhead
 		if visibleRows < 1 {
 			visibleRows = 1
 		}
@@ -306,8 +303,8 @@ func (m Model) renderRestoreDisplay() string {
 		displayModel.clampRestoreDisplayScroll(visibleRows)
 		scrollOffset := displayModel.restore.displayScrollOffset
 		endIdx := scrollOffset + visibleRows
-		if endIdx > len(result.Restored) {
-			endIdx = len(result.Restored)
+		if endIdx > len(result.Activated) {
+			endIdx = len(result.Activated)
 		}
 
 		lines = append(lines, statusUnlockedStyle.Render("Restored keys:"))
@@ -319,65 +316,24 @@ func (m Model) renderRestoreDisplay() string {
 			if i == displayModel.restore.displaySelectedKey {
 				prefix = "> "
 			}
-			line := restoreDisplayKeyLine(result.Restored[i], prefix, rowWidth)
+			line := restoreDisplayKeyLine(result.Activated[i], prefix, rowWidth)
 			if i == displayModel.restore.displaySelectedKey {
 				lines = append(lines, selectedStyle.Render(line))
 			} else {
 				lines = append(lines, normalStyle.Render(line))
 			}
 		}
-		if below := scrollMoreBelowLine(len(result.Restored) - endIdx); below != "" {
+		if below := scrollMoreBelowLine(len(result.Activated) - endIdx); below != "" {
 			lines = append(lines, below)
 		}
-		lines = append(lines, fmt.Sprintf("  Total: %d restored keys", len(result.Restored)))
-		if len(bottomLines) == 0 {
-			lines = append(lines, "")
-		}
+		lines = append(lines, fmt.Sprintf("  Total: %d activated keys", len(result.Activated)))
+		lines = append(lines, "")
 	}
 
-	lines = append(lines, bottomLines...)
 	if len(lines) > contentHeight {
 		lines = lines[:contentHeight]
 	}
 	return m.renderPopup(popupWidth, strings.Join(lines, "\n"))
-}
-
-func restoreDisplayBottomLines(result RestoreBackupResultMessage, rowWidth int) []string {
-	lines := make([]string, 0)
-	if len(result.Skipped) > 0 {
-		lines = append(lines, warningStyle.Render("Skipped keys:"))
-		for _, key := range result.Skipped {
-			line := restoreDisplayKeyLine(key, "  ", rowWidth)
-			if key.Error != "" {
-				line += "  " + key.Error
-			}
-			lines = append(lines, warningStyle.Render(line))
-		}
-		lines = append(lines, "")
-	}
-	if len(result.Errors) > 0 {
-		lines = append(lines, errorStyle.Render("Errors:"))
-		for _, restoreErr := range result.Errors {
-			line := "  "
-			if restoreErr.Address != "" {
-				line += restoreErr.Address + ": "
-			}
-			line += restoreErr.Error
-			lines = append(lines, errorStyle.Render(ellipsize(line, rowWidth)))
-		}
-	}
-	if len(result.Warnings) > 0 {
-		lines = append(lines, warningStyle.Render("Warnings:"))
-		for _, warning := range result.Warnings {
-			line := "  "
-			if warning.Address != "" {
-				line += warning.Address + ": "
-			}
-			line += warning.Warning
-			lines = append(lines, warningStyle.Render(ellipsize(line, rowWidth)))
-		}
-	}
-	return lines
 }
 
 func restoreDisplayKeyLine(key RestoreKeyInfo, prefix string, maxWidth int) string {

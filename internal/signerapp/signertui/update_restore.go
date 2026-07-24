@@ -230,14 +230,14 @@ func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.restore.displaySelectedKey--
 		}
 	case "down":
-		if m.restore.displaySelectedKey < len(m.restore.result.Restored)-1 {
+		if m.restore.displaySelectedKey < len(m.restore.result.Activated)-1 {
 			m.restore.displaySelectedKey++
 		}
 	case "q", "esc", "enter", " ":
 		result := m.restore.result
 		m.resetRestoreFlow(true)
-		if len(result.Restored) > 0 {
-			m.selectKeyByAddress(result.Restored[0].Address)
+		if len(result.Activated) > 0 {
+			m.selectKeyByAddress(result.Activated[0].Address)
 		}
 		m.viewState = ViewKeyList
 		return m, tea.Batch(m.sendListKeysCmd(), m.waitForMessageCmd())

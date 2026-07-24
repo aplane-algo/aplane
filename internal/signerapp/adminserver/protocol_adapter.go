@@ -194,24 +194,6 @@ func ProtocolRestorePreviewMessage(id string, result adminproto.RestorePreviewRe
 	}
 }
 
-func ProtocolRestoreBackupResultMessage(id string, result adminproto.RestoreBackupResult) protocol.RestoreBackupResultMessage {
-	return protocol.RestoreBackupResultMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeRestoreBackupResult,
-			ID:   id,
-		},
-		ArchivePath: result.ArchivePath,
-		Success:     result.Success,
-		Restored:    protocolRestoreKeyInfos(result.Restored),
-		Skipped:     protocolRestoreKeyInfos(result.Skipped),
-		Errors:      protocolRestoreErrors(result.Errors),
-		Warnings:    protocolRestoreWarnings(result.Warnings),
-		KeyCount:    result.KeyCount,
-		Code:        result.Code,
-		Error:       result.Error,
-	}
-}
-
 func ProtocolRecoverBackupResultMessage(id string, result adminproto.RecoverBackupResult) protocol.RecoverBackupResultMessage {
 	return protocol.RecoverBackupResultMessage{
 		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeRecoverBackupResult, ID: id},
@@ -402,21 +384,6 @@ func protocolRestoreErrors(items []adminproto.RestoreError) []protocol.RestoreEr
 		out[i] = protocol.RestoreError{
 			Address: item.Address,
 			Error:   item.Error,
-		}
-	}
-	return out
-}
-
-func protocolRestoreWarnings(items []adminproto.RestoreWarning) []protocol.RestoreWarning {
-	if len(items) == 0 {
-		return nil
-	}
-	out := make([]protocol.RestoreWarning, len(items))
-	for i, item := range items {
-		out[i] = protocol.RestoreWarning{
-			Address: item.Address,
-			KeyType: item.KeyType,
-			Warning: item.Warning,
 		}
 	}
 	return out

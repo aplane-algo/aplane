@@ -360,31 +360,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewRestorePreview
 		return m, m.waitForMessageCmd()
 
-	case RestoreBackupResultMsg:
-		m.clearRestorePassphrase()
-		m.restore.result = RestoreBackupResultMessage{
-			ArchivePath: msg.ArchivePath,
-			Success:     msg.Success,
-			Restored:    msg.Restored,
-			Skipped:     msg.Skipped,
-			Errors:      msg.Errors,
-			Warnings:    msg.Warnings,
-			KeyCount:    msg.KeyCount,
-			Error:       msg.Error,
-		}
-		m.restore.displaySelectedKey = 0
-		m.restore.displayScrollOffset = 0
-		m.viewState = ViewRestoreDisplay
-		cmds := []tea.Cmd{m.waitForMessageCmd()}
-		if msg.Success || len(msg.Restored) > 0 || msg.KeyCount > 0 {
-			cmds = append(cmds, m.sendListKeysCmd(), m.sendListKeyTypesCmd())
-		}
-		return m, tea.Batch(cmds...)
-
 	case RecoverBackupResultMsg:
 		m.clearRestorePassphrase()
 		if !msg.Success {
-			m.restore.result = RestoreBackupResultMessage{
+			m.restore.result = RestoreDisplayResult{
 				ArchivePath: m.restore.archivePath,
 				Success:     false,
 				Error:       msg.Error,
@@ -397,7 +376,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ReviewRecoveredResultMsg:
 		if !msg.Result.Success {
-			m.restore.result = RestoreBackupResultMessage{
+			m.restore.result = RestoreDisplayResult{
 				ArchivePath: m.restore.archivePath,
 				Success:     false,
 				Error:       msg.Result.Error,
@@ -421,10 +400,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				KeyType: entry.KeyType,
 			}
 		}
-		m.restore.result = RestoreBackupResultMessage{
+		m.restore.result = RestoreDisplayResult{
 			ArchivePath: m.restore.archivePath,
 			Success:     msg.Result.Success,
-			Restored:    restored,
+			Activated:   restored,
 			KeyCount:    msg.Result.KeyCount,
 			Error:       msg.Result.Error,
 		}

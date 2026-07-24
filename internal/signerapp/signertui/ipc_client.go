@@ -434,22 +434,6 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 					Error:       preview.Error,
 				})
 
-			case MsgTypeRestoreBackupResult:
-				var restoreResult RestoreBackupResultMessage
-				if err := json.Unmarshal(line, &restoreResult); err != nil {
-					continue
-				}
-				c.emit(sessionID, RestoreBackupResultMsg{
-					ArchivePath: restoreResult.ArchivePath,
-					Success:     restoreResult.Success,
-					Restored:    restoreResult.Restored,
-					Skipped:     restoreResult.Skipped,
-					Errors:      restoreResult.Errors,
-					Warnings:    restoreResult.Warnings,
-					KeyCount:    restoreResult.KeyCount,
-					Error:       restoreResult.Error,
-				})
-
 			case MsgTypeRecoverBackupResult:
 				var recovered RecoverBackupResultMessage
 				if err := json.Unmarshal(line, &recovered); err != nil {
@@ -907,24 +891,6 @@ func (c *IPCClient) SendPreviewRestore(archivePath string, exportPassphrase []by
 			ID:   fmt.Sprintf("preview-restore-%d", time.Now().UnixNano()),
 		},
 		ArchivePath:      archivePath,
-		ExportPassphrase: passphrase,
-	}
-	return c.sendMessage(msg)
-}
-
-// SendRestoreBackup requests restoration of selected keys from a signer-managed backup archive.
-func (c *IPCClient) SendRestoreBackup(archivePath string, addresses []string, overwrite bool, exportPassphrase []byte) error {
-	passphrase := SensitiveBytes(append([]byte(nil), exportPassphrase...))
-	defer passphrase.Zero()
-
-	msg := RestoreBackupMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeRestoreBackup,
-			ID:   fmt.Sprintf("restore-backup-%d", time.Now().UnixNano()),
-		},
-		ArchivePath:      archivePath,
-		Addresses:        append([]string(nil), addresses...),
-		Overwrite:        overwrite,
 		ExportPassphrase: passphrase,
 	}
 	return c.sendMessage(msg)

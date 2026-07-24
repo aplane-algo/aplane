@@ -56,7 +56,6 @@ func writeStandaloneBackup(dir, address string, keyJSON, exportPassphrase []byte
 type fakeApstoreAdminRequester struct {
 	requests                 []string
 	previewResult            protocol.RestorePreviewMessage
-	restoreResult            protocol.RestoreBackupResultMessage
 	recoverResult            protocol.RecoverBackupResultMessage
 	recoveredListResult      protocol.RecoveredListMessage
 	recoveredReviewResult    protocol.ReviewRecoveredResultMessage
@@ -73,7 +72,6 @@ type fakeApstoreAdminRequester struct {
 	activateResult           protocol.ActivateKeyTypeResultMessage
 	deactivateResult         protocol.DeactivateKeyTypeResultMessage
 	changePassphraseResult   protocol.ChangeStorePassphraseResultMessage
-	restoreRequest           protocol.RestoreBackupMessage
 	recoverRequest           protocol.RecoverBackupMessage
 	recoveredActivateRequest protocol.ActivateRecoveredMessage
 	backupRequest            protocol.BackupMessage
@@ -123,15 +121,6 @@ func (f *fakeApstoreAdminRequester) request(msg any, out any) error {
 			return errors.New("preview restore output has unexpected type")
 		}
 		*result = f.previewResult
-		return nil
-	case protocol.RestoreBackupMessage:
-		f.requests = append(f.requests, typed.Type)
-		f.restoreRequest = typed
-		result, ok := out.(*protocol.RestoreBackupResultMessage)
-		if !ok {
-			return errors.New("restore backup output has unexpected type")
-		}
-		*result = f.restoreResult
 		return nil
 	case protocol.RecoverBackupMessage:
 		f.requests = append(f.requests, typed.Type)

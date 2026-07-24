@@ -141,7 +141,7 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	if m.viewState != ViewRestoreDisplay {
 		t.Fatalf("after activation result viewState = %v, want ViewRestoreDisplay", m.viewState)
 	}
-	if !m.restore.result.Success || len(m.restore.result.Restored) != 1 {
+	if !m.restore.result.Success || len(m.restore.result.Activated) != 1 {
 		t.Fatalf("restoreResult = %+v, want successful one-key result", m.restore.result)
 	}
 
@@ -344,43 +344,6 @@ func TestRestorePreviewFailureClearsPassphrase(t *testing.T) {
 	}
 }
 
-func TestRestoreBackupResultClearsPassphraseAndShowsResult(t *testing.T) {
-	archivePath := filepath.Join(t.TempDir(), "backups", "default", "backup.tar.gz")
-	passphrase := []byte("export-passphrase")
-	m := Model{
-		viewState: ViewRestoring,
-		restore:   restoreState{passphrase: passphrase},
-	}
-
-	next, cmd := m.Update(RestoreBackupResultMsg{
-		ArchivePath: archivePath,
-		Success:     true,
-		Restored: []RestoreKeyInfo{{
-			Address: "ADDR1",
-			KeyType: "ed25519",
-		}},
-		KeyCount: 1,
-	})
-	got := next.(Model)
-	if got.viewState != ViewRestoreDisplay {
-		t.Fatalf("viewState = %v, want ViewRestoreDisplay", got.viewState)
-	}
-	if len(got.restore.passphrase) != 0 {
-		t.Fatalf("restorePassphrase length = %d, want 0", len(got.restore.passphrase))
-	}
-	for i, b := range passphrase {
-		if b != 0 {
-			t.Fatalf("passphrase byte %d = %d, want zero", i, b)
-		}
-	}
-	if !got.restore.result.Success || len(got.restore.result.Restored) != 1 {
-		t.Fatalf("restoreResult = %+v, want successful one-key result", got.restore.result)
-	}
-	if cmd == nil {
-		t.Fatal("cmd = nil, want key refresh commands")
-	}
-}
-
 func TestRestorePreviewRequiresOverwriteBeforeSelectingExistingKey(t *testing.T) {
 	m := Model{
 		viewState: ViewRestorePreview,
@@ -531,19 +494,10 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 		viewState: ViewRestoreDisplay,
 		width:     90,
 		height:    21,
-		restore: restoreState{result: RestoreBackupResultMessage{
+		restore: restoreState{result: RestoreDisplayResult{
 			ArchivePath: archivePath,
-			Restored:    restored,
-			Errors: []RestoreError{{
-				Address: "FAILEDADDR",
-				Error:   "template conflict for test.timed-policy.v1",
-			}},
-			Warnings: []RestoreWarning{{
-				Address: "WARNADDR",
-				KeyType: "test.timed-policy.v1",
-				Warning: "skipped bundled template for test.timed-policy.v1: backup template conflicts with existing keystore definition",
-			}},
-			Error: "1 key(s) failed to restore",
+			Activated:   restored,
+			Success:     true,
 		}},
 	}
 
@@ -552,14 +506,8 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 	if lines := visibleLineCount(view); lines > m.height {
 		t.Fatalf("restore display line count = %d, want <= %d\n%s", lines, m.height, clean)
 	}
-	if !strings.Contains(clean, "Warnings:") {
-		t.Fatalf("restore display missing warnings section:\n%s", clean)
-	}
 	if !strings.Contains(clean, "▼") || !strings.Contains(clean, "more below") {
 		t.Fatalf("restore display missing scroll-down indicator:\n%s", clean)
-	}
-	if !strings.Contains(clean, "FAILEDADDR: template conflict for test.timed-policy.v1") {
-		t.Fatalf("restore display should keep restore errors visible below key list:\n%s", clean)
 	}
 	if strings.Contains(clean, "RESTOREDADDR07") {
 		t.Fatalf("restore display shows key outside initial window:\n%s", clean)
@@ -568,7 +516,7 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 		t.Fatalf("restore display missing selected cursor on first row:\n%s", clean)
 	}
 
-	for range 4 {
+	for range 5 {
 		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		m = next.(Model)
 	}
@@ -580,10 +528,10 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 	if !strings.Contains(clean, "▲") || !strings.Contains(clean, "more above") {
 		t.Fatalf("scrolled restore display missing scroll-up indicator:\n%s", clean)
 	}
-	if !strings.Contains(clean, "RESTOREDADDR04") {
+	if !strings.Contains(clean, "RESTOREDADDR05") {
 		t.Fatalf("scrolled restore display missing later restored key:\n%s", clean)
 	}
-	if !strings.Contains(clean, "> RESTOREDADDR04  [ed25519]") {
+	if !strings.Contains(clean, "> RESTOREDADDR05  [ed25519]") {
 		t.Fatalf("scrolled restore display did not move cursor to later key:\n%s", clean)
 	}
 }

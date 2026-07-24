@@ -146,12 +146,6 @@ type RestoreError struct {
 	Error   string
 }
 
-type RestoreWarning struct {
-	Address string
-	KeyType string
-	Warning string
-}
-
 type PreviewRestoreRequest struct {
 	ArchivePath      string
 	ExportPassphrase []byte
@@ -161,25 +155,6 @@ type RestorePreviewResult struct {
 	ArchivePath string
 	Keys        []RestoreKeyInfo
 	Errors      []RestoreError
-	Code        string
-	Error       string
-}
-
-type RestoreBackupRequest struct {
-	ArchivePath      string
-	Addresses        []string
-	Overwrite        bool
-	ExportPassphrase []byte
-}
-
-type RestoreBackupResult struct {
-	ArchivePath string
-	Success     bool
-	Restored    []RestoreKeyInfo
-	Skipped     []RestoreKeyInfo
-	Errors      []RestoreError
-	Warnings    []RestoreWarning
-	KeyCount    int
 	Code        string
 	Error       string
 }

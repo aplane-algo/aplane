@@ -48,7 +48,7 @@ func (m *Model) resetRestoreFlow(clearBackups bool) {
 	m.restore.unattendedAcknowledged = false
 	m.restore.displaySelectedKey = 0
 	m.restore.displayScrollOffset = 0
-	m.restore.result = RestoreBackupResultMessage{}
+	m.restore.result = RestoreDisplayResult{}
 }
 
 func (m Model) currentRestoreBackup() (BackupInfo, bool) {
@@ -131,15 +131,15 @@ func restoreDisplayClampOffset(offset, total, visible int) int {
 }
 
 func (m *Model) clampRestoreDisplayScroll(visibleRows int) {
-	if m.restore.displaySelectedKey >= len(m.restore.result.Restored) {
-		m.restore.displaySelectedKey = len(m.restore.result.Restored) - 1
+	if m.restore.displaySelectedKey >= len(m.restore.result.Activated) {
+		m.restore.displaySelectedKey = len(m.restore.result.Activated) - 1
 	}
 	if m.restore.displaySelectedKey < 0 {
 		m.restore.displaySelectedKey = 0
 	}
 	m.restore.displayScrollOffset = restoreDisplayClampOffset(
 		m.restore.displayScrollOffset,
-		len(m.restore.result.Restored),
+		len(m.restore.result.Activated),
 		visibleRows,
 	)
 	if m.restore.displaySelectedKey < m.restore.displayScrollOffset {
@@ -150,7 +150,7 @@ func (m *Model) clampRestoreDisplayScroll(visibleRows int) {
 	}
 	m.restore.displayScrollOffset = restoreDisplayClampOffset(
 		m.restore.displayScrollOffset,
-		len(m.restore.result.Restored),
+		len(m.restore.result.Activated),
 		visibleRows,
 	)
 }

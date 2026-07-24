@@ -26,8 +26,6 @@ const (
 	MsgTypeBackupsList             = protocol.MsgTypeBackupsList
 	MsgTypePreviewRestore          = protocol.MsgTypePreviewRestore
 	MsgTypeRestorePreview          = protocol.MsgTypeRestorePreview
-	MsgTypeRestoreBackup           = protocol.MsgTypeRestoreBackup
-	MsgTypeRestoreBackupResult     = protocol.MsgTypeRestoreBackupResult
 	MsgTypeRecoverBackup           = protocol.MsgTypeRecoverBackup
 	MsgTypeRecoverBackupResult     = protocol.MsgTypeRecoverBackupResult
 	MsgTypeReviewRecovered         = protocol.MsgTypeReviewRecovered
@@ -110,10 +108,7 @@ type (
 	SensitiveBytes                      = protocol.SensitiveBytes
 	RestoreKeyInfo                      = protocol.RestoreKeyInfo
 	RestoreError                        = protocol.RestoreError
-	RestoreWarning                      = protocol.RestoreWarning
 	RestorePreviewMessage               = protocol.RestorePreviewMessage
-	RestoreBackupMessage                = protocol.RestoreBackupMessage
-	RestoreBackupResultMessage          = protocol.RestoreBackupResultMessage
 	RecoverBackupMessage                = protocol.RecoverBackupMessage
 	RecoverBackupResultMessage          = protocol.RecoverBackupResultMessage
 	ReviewRecoveredMessage              = protocol.ReviewRecoveredMessage
