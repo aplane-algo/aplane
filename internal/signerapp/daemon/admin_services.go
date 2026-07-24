@@ -194,6 +194,18 @@ func (s signerAdminServices) ReviewRecovered(ir *identity.Runtime, restoreID str
 	return s.backupApp().ReviewRecovered(ir, restoreID)
 }
 
+func (s signerAdminServices) ActivateRecovered(ir *identity.Runtime, req adminproto.ActivateRecoveredRequest) adminproto.ActivateRecoveredResult {
+	return s.backupApp().ActivateRecovered(ir, req)
+}
+
+func (s signerAdminServices) RollbackRecovered(ir *identity.Runtime, req adminproto.RollbackRecoveredRequest) adminproto.RollbackRecoveredResult {
+	return s.backupApp().RollbackRecovered(ir, req)
+}
+
+func (s signerAdminServices) PurgeRecovered(ir *identity.Runtime, req adminproto.PurgeRecoveredRequest) adminproto.PurgeRecoveredResult {
+	return s.backupApp().PurgeRecovered(ir, req)
+}
+
 func (s signerAdminServices) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibraryTemplatesResult {
 	return s.templateApp().ListLibraryTemplates(ir)
 }

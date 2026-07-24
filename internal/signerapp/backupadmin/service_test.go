@@ -638,6 +638,51 @@ func TestRollbackRecoveredRetriesIdempotentlyAfterReloadFailure(t *testing.T) {
 	}
 }
 
+func TestPurgeRecoveredDeletesOnlyInactiveBatchAndRejectsIncompleteActivation(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, _ := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	first := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	purged := service.PurgeRecovered(ir, adminproto.PurgeRecoveredRequest{RestoreID: first.RestoreID})
+	if !purged.Success {
+		t.Fatalf("PurgeRecovered() = %+v", purged)
+	}
+	if _, err := os.Stat(paths.RecoveredBatchDir(auth.DefaultIdentityID, first.RestoreID)); !os.IsNotExist(err) {
+		t.Fatalf("purged batch stat error = %v, want not found", err)
+	}
+
+	second := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	review := service.ReviewRecovered(ir, second.RestoreID)
+	service.activationHook = func(activationPoint) error {
+		return errors.New("simulated hard interruption")
+	}
+	_ = service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   second.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+	rejected := service.PurgeRecovered(ir, adminproto.PurgeRecoveredRequest{RestoreID: second.RestoreID})
+	if rejected.Code != protocol.ResultCodePurgeRecoveredFailed ||
+		!strings.Contains(rejected.Error, "incomplete activation") {
+		t.Fatalf("PurgeRecovered(incomplete) = %+v", rejected)
+	}
+	if _, err := os.Stat(paths.RecoveredBatchDir(auth.DefaultIdentityID, second.RestoreID)); err != nil {
+		t.Fatalf("incomplete batch after rejected purge stat error = %v", err)
+	}
+}
+
 func writeMalformedManagedArchive(t *testing.T, paths storepaths.Paths, identityID, label string) string {
 	t.Helper()
 

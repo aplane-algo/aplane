@@ -392,6 +392,47 @@ func (s Service) ListRecovered(ir *identity.Runtime) adminproto.ListRecoveredRes
 	return adminproto.ListRecoveredResult{Batches: out}
 }
 
+// PurgeRecovered deletes one inactive batch and refuses to erase durable
+// reconciliation state for an incomplete activation.
+func (s Service) PurgeRecovered(
+	ir *identity.Runtime,
+	req adminproto.PurgeRecoveredRequest,
+) adminproto.PurgeRecoveredResult {
+	result := adminproto.PurgeRecoveredResult{RestoreID: req.RestoreID}
+	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+		return ir.WithMasterKey(func(masterKey []byte) error {
+			if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
+				return err
+			}
+			activationDir := s.Deps.KeyPaths().RecoveredActivationDir(ir.ID(), req.RestoreID)
+			if _, err := os.Lstat(activationDir); err == nil {
+				return fmt.Errorf("cannot purge recovered batch with incomplete activation")
+			} else if !os.IsNotExist(err) {
+				return fmt.Errorf("inspect recovered activation before purge: %w", err)
+			}
+			batch, err := recovered.LoadBatch(
+				s.Deps.KeyPaths(),
+				ir.ID(),
+				req.RestoreID,
+				masterKey,
+			)
+			if err != nil {
+				return err
+			}
+			crypto.ZeroBytes(batch.SourcePolicyYAML)
+			return recovered.RemoveBatch(s.Deps.KeyPaths(), ir.ID(), req.RestoreID)
+		})
+	})
+	if err != nil {
+		result.Code = protocol.ResultCodePurgeRecoveredFailed
+		result.Error = err.Error()
+		return result
+	}
+	result.Success = true
+	s.Deps.Logf("purged inactive recovered backup batch: %s", req.RestoreID)
+	return result
+}
+
 func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreKeyInfo {
 	out := make([]adminproto.RestoreKeyInfo, len(items))
 	for i, item := range items {

@@ -323,6 +323,19 @@ type RollbackRecoveredResult struct {
 	Error     string
 }
 
+// PurgeRecoveredRequest identifies one inactive batch to delete.
+type PurgeRecoveredRequest struct {
+	RestoreID string
+}
+
+// PurgeRecoveredResult reports deletion of one inactive batch.
+type PurgeRecoveredResult struct {
+	Success   bool
+	RestoreID string
+	Code      string
+	Error     string
+}
+
 // UpdateAdminSettingRequest is the admin-domain request to change one setting.
 type UpdateAdminSettingRequest struct {
 	Key   string
