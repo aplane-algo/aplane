@@ -30,7 +30,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
-	internallsig "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -716,7 +716,7 @@ func TestValidateBoundedComponentPlan(t *testing.T) {
 	plannedOriginal := original
 	plannedOriginal.Fee += 1_000
 	plannedOriginal.Group = types.Digest{0x44}
-	dummies, err := internallsig.CreateDummyTransactions(1, suggestedParamsFromTxn(original))
+	dummies, err := signing.CreateDummyTransactions(1, suggestedParamsFromTxn(original))
 	if err != nil {
 		t.Fatal(err)
 	}

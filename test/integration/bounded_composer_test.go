@@ -13,7 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	internallsig "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -92,7 +92,7 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 				adminSize = spendSize + composeddsa.BoundedAdminSignatureMaxSize
 				maxSize = adminSize
 			}
-			groupSize := (maxSize + internallsig.TxLsigBudget - 1) / internallsig.TxLsigBudget
+			groupSize := (maxSize + signing.TxLsigBudget - 1) / signing.TxLsigBudget
 			if len(result.Bytecode) != test.bytecode || spendSize != test.spendSize || adminSize != test.adminSize || groupSize != test.groupSize || result.Address.String() != test.address {
 				t.Fatalf("compiled matrix = bytecode=%d spend=%d admin=%d group=%d address=%s; want %d/%d/%d/%d/%s", len(result.Bytecode), spendSize, adminSize, groupSize, result.Address.String(), test.bytecode, test.spendSize, test.adminSize, test.groupSize, test.address)
 			}
@@ -339,7 +339,7 @@ func (account boundedExecutionAccount) signGroup(t *testing.T, targetTxn types.T
 		Fee: types.MicroAlgos(minFee), GenesisID: targetTxn.GenesisID, GenesisHash: targetTxn.GenesisHash[:],
 		FirstRoundValid: targetTxn.FirstValid, LastRoundValid: targetTxn.LastValid, FlatFee: true,
 	}
-	dummies, err := internallsig.CreateDummyTransactions(boundedExecutionGroupSize-1, dummySP)
+	dummies, err := signing.CreateDummyTransactions(boundedExecutionGroupSize-1, dummySP)
 	if err != nil {
 		t.Fatalf("build bounded budget dummies: %v", err)
 	}
@@ -387,7 +387,7 @@ func (account boundedExecutionAccount) signGroup(t *testing.T, targetTxn types.T
 	if err != nil {
 		t.Fatalf("sign bounded target transaction: %v", err)
 	}
-	signedDummies, err := internallsig.SignDummyTransactions(dummies)
+	signedDummies, err := signing.SignDummyTransactions(dummies)
 	if err != nil {
 		t.Fatalf("sign bounded dummies: %v", err)
 	}

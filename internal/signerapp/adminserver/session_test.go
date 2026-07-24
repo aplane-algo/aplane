@@ -743,35 +743,48 @@ func TestSessionAuthenticateResolveIdentityFailureIsGeneric(t *testing.T) {
 }
 
 func TestSessionAuthenticateRejectsAdminProtocolMajorMismatch(t *testing.T) {
-	clientVersion := protocol.ProtocolVersion{Major: 1}
-	authMsg, err := json.Marshal(protocol.AuthMessage{
-		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
-		Passphrase:      protocol.NewSensitiveBytes("secret"),
-		ProtocolVersion: &clientVersion,
-	})
-	if err != nil {
-		t.Fatal(err)
+	currentMajor := protocol.CurrentAdminProtocolVersion().Major
+	tests := []struct {
+		name  string
+		major int
+	}{
+		{name: "older", major: currentMajor - 1},
+		{name: "newer", major: currentMajor + 1},
 	}
 
-	conn := &queueConn{reads: [][]byte{authMsg}}
-	session := NewSession(conn, stubServices{}.deps())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clientVersion := protocol.ProtocolVersion{Major: tt.major}
+			authMsg, err := json.Marshal(protocol.AuthMessage{
+				BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
+				Passphrase:      protocol.NewSensitiveBytes("secret"),
+				ProtocolVersion: &clientVersion,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	if session.Authenticate() {
-		t.Fatal("Authenticate() = true, want false")
-	}
-	if len(conn.writes) != 2 {
-		t.Fatalf("write count = %d, want 2", len(conn.writes))
-	}
+			conn := &queueConn{reads: [][]byte{authMsg}}
+			session := NewSession(conn, stubServices{}.deps())
 
-	var result protocol.AuthResultMessage
-	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage {
-		t.Fatalf("auth result = %+v, want invalid auth protocol failure", result)
-	}
-	if !strings.Contains(result.Error, "admin protocol major version mismatch") {
-		t.Fatalf("auth result error = %q, want major version mismatch", result.Error)
+			if session.Authenticate() {
+				t.Fatal("Authenticate() = true, want false")
+			}
+			if len(conn.writes) != 2 {
+				t.Fatalf("write count = %d, want 2", len(conn.writes))
+			}
+
+			var result protocol.AuthResultMessage
+			if err := json.Unmarshal(conn.writes[1], &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage {
+				t.Fatalf("auth result = %+v, want invalid auth protocol failure", result)
+			}
+			if !strings.Contains(result.Error, "admin protocol major version mismatch") {
+				t.Fatalf("auth result error = %q, want major version mismatch", result.Error)
+			}
+		})
 	}
 }
 

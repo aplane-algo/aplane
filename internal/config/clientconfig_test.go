@@ -197,6 +197,24 @@ ssh:
 	}
 }
 
+func TestLoadConfigRejectsRemovedSignerPortField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+network: testnet
+signer_port: 11270
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfigFromPath(path)
+	if err == nil {
+		t.Fatal("LoadConfigFromPath error = nil, want removed signer_port field error")
+	}
+	if !strings.Contains(err.Error(), `unknown field "signer_port"`) {
+		t.Fatalf("LoadConfigFromPath error = %q, want unknown signer_port field", err)
+	}
+}
+
 func TestLoadConfigAppliesSSHDefaultsFromEndpointRegistry(t *testing.T) {
 	dataDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("network: testnet\n"), 0o600); err != nil {

@@ -27,12 +27,10 @@ type Options struct {
 
 // Prereqs describes an enrolled client configuration ready for signer-facing use.
 type Prereqs struct {
-	DataDir      string
-	Config       config.Config
-	EndpointName string
-	Endpoint     config.ClientEndpointConfig
-	SSH          config.ClientEndpointSSH
-	Token        string
+	DataDir string
+	Config  config.Config
+	SSH     config.ClientEndpointSSH
+	Token   string
 }
 
 // LoadEnrolledClient validates that the client is already enrolled for a
@@ -47,7 +45,7 @@ func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 		return nil, fmt.Errorf("invalid client configuration for %s: %w", opts.Product, err)
 	}
 	registry := cfg.ClientEndpointsOrDefault()
-	alias, endpoint, ok := registry.DefaultEndpoint()
+	_, endpoint, ok := registry.DefaultEndpoint()
 	if !ok {
 		return nil, fmt.Errorf("%s requires a default signer endpoint in %s/endpoints.yaml; %s", opts.Product, dataDir, opts.MissingSSHHint)
 	}
@@ -73,12 +71,10 @@ func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 	}
 
 	return &Prereqs{
-		DataDir:      dataDir,
-		Config:       cfg,
-		EndpointName: alias,
-		Endpoint:     endpoint,
-		SSH:          endpointSSH,
-		Token:        token,
+		DataDir: dataDir,
+		Config:  cfg,
+		SSH:     endpointSSH,
+		Token:   token,
 	}, nil
 }
 

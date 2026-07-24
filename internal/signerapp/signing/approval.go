@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
-	internallsig "github.com/aplane-algo/aplane/internal/signing"
+	signingutil "github.com/aplane-algo/aplane/internal/signing"
 )
 
 type AuditRejectLogger interface {
@@ -357,7 +357,7 @@ func matchesSignerAddedDummyForSelfNoOp(dummy, original types.Transaction, index
 	if dummy.Type != types.PaymentTx {
 		return false
 	}
-	dummyAddr, err := internallsig.DummyAddress()
+	dummyAddr, err := signingutil.DummyAddress()
 	if err != nil {
 		return false
 	}

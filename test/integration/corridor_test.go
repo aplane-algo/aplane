@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
-	internallsig "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -302,7 +302,7 @@ func (a corridorExecutionAccount) signGroup(t *testing.T, targetTxn types.Transa
 		LastRoundValid:  targetTxn.LastValid,
 		FlatFee:         true,
 	}
-	dummies, err := internallsig.CreateDummyTransactions(corridorExecutionGroupSize-1, dummySP)
+	dummies, err := signing.CreateDummyTransactions(corridorExecutionGroupSize-1, dummySP)
 	if err != nil {
 		t.Fatalf("failed to build corridor dummy transactions: %v", err)
 	}
@@ -342,7 +342,7 @@ func (a corridorExecutionAccount) signGroup(t *testing.T, targetTxn types.Transa
 	if err != nil {
 		t.Fatalf("failed to sign corridor target transaction: %v", err)
 	}
-	signedDummies, err := internallsig.SignDummyTransactions(dummies)
+	signedDummies, err := signing.SignDummyTransactions(dummies)
 	if err != nil {
 		t.Fatalf("failed to sign corridor dummy transactions: %v", err)
 	}

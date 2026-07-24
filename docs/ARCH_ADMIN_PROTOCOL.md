@@ -43,8 +43,8 @@ Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
 - the current admin protocol major version is 2; `auth_required` carries it as
-  `protocol_version:{major,minor}`; clients should send their version in
-  `auth.protocol_version`; the field is mandatory, major-version mismatches
+  `protocol_version:{major,minor}`; clients must send their version in
+  `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
   but accepted,
 - post-auth admin connections use one dispatcher-owned reader in `internal/transport`,

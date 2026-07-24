@@ -189,9 +189,6 @@ endpoints:
 	if got.Token != "test-token" {
 		t.Fatalf("Token = %q, want test-token", got.Token)
 	}
-	if got.EndpointName != "primary" {
-		t.Fatalf("EndpointName = %q", got.EndpointName)
-	}
 	if got.SSH.Host != "signer.local" {
 		t.Fatalf("Host = %q", got.SSH.Host)
 	}
