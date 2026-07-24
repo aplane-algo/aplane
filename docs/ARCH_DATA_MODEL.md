@@ -268,9 +268,12 @@ and entries are authenticated encryption under the destination identity master
 key, but they are not managed `.key` or `.sen` files and have no signing-runtime
 projection. The batch commits to each exact entry plaintext, and each entry
 also carries its restore ID. Store passphrase rotation validates and
-re-encrypts every published recovered file. Directories prefixed
-`.recovering-` are unpublished staging state and must be ignored by inventory
-operations.
+re-encrypts every published recovered file. Before rotation, the recovered
+store removes exact `.new`/`.old` siblings after the canonical file validates,
+or restores a missing/invalid canonical file only from an exact sibling that
+validates under the current master key. Unknown state fails closed. Directories
+prefixed `.recovering-` are unpublished staging state and must be ignored by
+inventory operations.
 
 `identity.Runtime` is the runtime projection. It owns:
 

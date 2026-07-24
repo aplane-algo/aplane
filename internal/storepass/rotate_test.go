@@ -106,6 +106,7 @@ func createRecoveredBatchForRotateTest(
 ) *recovered.Batch {
 	t.Helper()
 	address, keyJSON := keystest.Ed25519KeyJSON(t)
+	defer crypto.ZeroBytes(keyJSON)
 	archiveSum := sha256.Sum256([]byte("archive"))
 	batch, err := recovered.Create(paths, identityID, recovered.CreateRequest{
 		ArchiveName:        "backup.tar.gz",
@@ -123,6 +124,60 @@ func createRecoveredBatchForRotateTest(
 		t.Fatalf("recovered.Create() error = %v", err)
 	}
 	return batch
+}
+
+func TestRotateReconcilesRecoveredRotationArtifacts(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	oldPassphrase := []byte("old-passphrase")
+	newPassphrase := []byte("new-passphrase")
+
+	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	}
+	defer crypto.ZeroBytes(oldMasterKey)
+	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+	batch := createRecoveredBatchForRotateTest(t, paths, identityID, oldMasterKey)
+	metadataPath := paths.RecoveredBatchMetadataPath(identityID, batch.RestoreID)
+	entryPath := filepath.Join(
+		paths.RecoveredBatchEntriesDir(identityID, batch.RestoreID),
+		batch.Entries[0].EntryFile,
+	)
+	for _, path := range []string{metadataPath, entryPath} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile(%s) error = %v", path, err)
+		}
+		if err := os.WriteFile(path+".old", data, 0o600); err != nil {
+			t.Fatalf("WriteFile(%s.old) error = %v", path, err)
+		}
+		if err := os.WriteFile(path+".new", []byte("interrupted rotation"), 0o600); err != nil {
+			t.Fatalf("WriteFile(%s.new) error = %v", path, err)
+		}
+	}
+
+	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{})
+	if err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+	if result.RecoveredFilesMigrated != 2 {
+		t.Fatalf("Rotate().RecoveredFilesMigrated = %d, want 2", result.RecoveredFilesMigrated)
+	}
+	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	if err != nil {
+		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+	}
+	newMasterKey, err := meta.VerifyAndDeriveMasterKey(newPassphrase)
+	if err != nil {
+		t.Fatalf("VerifyAndDeriveMasterKey(new passphrase) error = %v", err)
+	}
+	defer crypto.ZeroBytes(newMasterKey)
+	if _, err := recovered.LoadBatch(paths, identityID, batch.RestoreID, newMasterKey); err != nil {
+		t.Fatalf("LoadBatch(new master key) error = %v", err)
+	}
+	assertNoRotationArtifacts(t, metadataPath, entryPath)
 }
 
 func TestRotateRejectsRecoveredBatchWithUnresolvedState(t *testing.T) {

@@ -38,8 +38,10 @@ const (
 	// and rotation code must ignore these names.
 	StagingDirPrefix = ".recovering-"
 
-	restoreIDBytes      = 16
-	maxArchiveNameBytes = 255
+	restoreIDBytes        = 16
+	maxArchiveNameBytes   = 255
+	batchMetadataFileName = "batch.enc"
+	entriesDirectoryName  = "entries"
 )
 
 var sha256Shape = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -166,6 +168,12 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 	slices.SortFunc(entries, func(a, b Entry) int {
 		return strings.Compare(a.Selector, b.Selector)
 	})
+	entryPlaintexts := make([][]byte, len(entries))
+	defer func() {
+		for _, plaintext := range entryPlaintexts {
+			crypto.ZeroBytes(plaintext)
+		}
+	}()
 	batchEntries := make([]BatchEntry, 0, len(entries))
 	seen := make(map[string]struct{}, len(entries))
 	for i := range entries {
@@ -183,16 +191,18 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 			return nil, fmt.Errorf("duplicate recovered selector %q", entry.Selector)
 		}
 		seen[entry.Selector] = struct{}{}
-		entrySHA256, err := entryPlaintextSHA256(entry)
+		plaintext, err := json.Marshal(entry)
 		if err != nil {
 			return nil, fmt.Errorf("marshal recovered entry %q: %w", entry.Selector, err)
 		}
+		entryPlaintexts[i] = plaintext
+		sum := sha256.Sum256(plaintext)
 		batchEntries = append(batchEntries, BatchEntry{
 			Selector:    entry.Selector,
 			Category:    entry.Category,
 			KeyType:     entry.KeyType,
 			EntryFile:   EntryFileName(entry.Selector),
-			EntrySHA256: entrySHA256,
+			EntrySHA256: hex.EncodeToString(sum[:]),
 		})
 	}
 
@@ -229,23 +239,16 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 	if err := os.Chmod(stageDir, fsutil.StoreDirPerm); err != nil {
 		return nil, fmt.Errorf("set recovered batch staging permissions: %w", err)
 	}
-	stageEntriesDir := filepath.Join(stageDir, "entries")
+	stageEntriesDir := filepath.Join(stageDir, entriesDirectoryName)
 	if err := fsutil.MkdirAll(stageEntriesDir); err != nil {
 		return nil, fmt.Errorf("create recovered entries directory: %w", err)
 	}
 
 	for i := range entries {
-		plaintext, err := json.Marshal(&entries[i])
-		if err != nil {
-			return nil, fmt.Errorf("marshal recovered entry %q: %w", entries[i].Selector, err)
-		}
-		sum := sha256.Sum256(plaintext)
-		if hex.EncodeToString(sum[:]) != batchEntries[i].EntrySHA256 {
-			crypto.ZeroBytes(plaintext)
-			return nil, fmt.Errorf("recovered entry %q changed during creation", entries[i].Selector)
-		}
+		plaintext := entryPlaintexts[i]
 		encrypted, encryptErr := crypto.EncryptWithMasterKey(plaintext, masterKey)
 		crypto.ZeroBytes(plaintext)
+		entryPlaintexts[i] = nil
 		if encryptErr != nil {
 			return nil, fmt.Errorf("encrypt recovered entry %q: %w", entries[i].Selector, encryptErr)
 		}
@@ -270,10 +273,10 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 	if encryptErr != nil {
 		return nil, fmt.Errorf("encrypt recovered batch: %w", encryptErr)
 	}
-	if err := fsutil.WriteFile(filepath.Join(stageDir, "batch.enc"), encrypted); err != nil {
+	if err := fsutil.WriteFile(filepath.Join(stageDir, batchMetadataFileName), encrypted); err != nil {
 		return nil, fmt.Errorf("write recovered batch metadata: %w", err)
 	}
-	if err := syncRegularFile(filepath.Join(stageDir, "batch.enc")); err != nil {
+	if err := syncRegularFile(filepath.Join(stageDir, batchMetadataFileName)); err != nil {
 		return nil, fmt.Errorf("sync recovered batch metadata: %w", err)
 	}
 	if err := syncDirectory(stageDir); err != nil {
@@ -303,7 +306,11 @@ func LoadBatch(paths storepaths.Paths, identityID, restoreID string, masterKey [
 	if err := ValidateRestoreID(restoreID); err != nil {
 		return nil, err
 	}
-	data, err := readRegularFile(paths.RecoveredBatchMetadataPath(identityID, restoreID))
+	return loadBatchAt(paths.RecoveredBatchMetadataPath(identityID, restoreID), restoreID, masterKey)
+}
+
+func loadBatchAt(path, restoreID string, masterKey []byte) (*Batch, error) {
+	data, err := readRegularFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read recovered batch: %w", err)
 	}
@@ -337,6 +344,10 @@ func LoadEntry(paths storepaths.Paths, identityID, restoreID string, meta BatchE
 		return nil, err
 	}
 	path := filepath.Join(paths.RecoveredBatchEntriesDir(identityID, restoreID), meta.EntryFile)
+	return loadEntryAt(path, restoreID, meta, masterKey)
+}
+
+func loadEntryAt(path, restoreID string, meta BatchEntry, masterKey []byte) (*Entry, error) {
 	data, err := readRegularFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read recovered entry %q: %w", meta.Selector, err)
@@ -502,16 +513,6 @@ func validateEntry(entry *Entry, restoreID string) error {
 		return fmt.Errorf("recovered entry key type mismatch: metadata=%s payload=%s", entry.KeyType, payload.KeyType)
 	}
 	return nil
-}
-
-func entryPlaintextSHA256(entry *Entry) (string, error) {
-	plaintext, err := json.Marshal(entry)
-	if err != nil {
-		return "", err
-	}
-	defer crypto.ZeroBytes(plaintext)
-	sum := sha256.Sum256(plaintext)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 func syncRegularFile(path string) error {

@@ -19,10 +19,6 @@ func readRegularFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	file := os.NewFile(uintptr(fd), path)
-	if file == nil {
-		_ = unix.Close(fd)
-		return nil, fmt.Errorf("open regular file: %s", path)
-	}
 	defer func() { _ = file.Close() }()
 
 	info, err := file.Stat()

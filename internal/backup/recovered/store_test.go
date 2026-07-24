@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
@@ -294,6 +296,119 @@ func TestCreateRejectsInvalidArchiveNamesAndTemplateTypes(t *testing.T) {
 	if _, err := Create(paths, "default", req, bytes.Repeat([]byte{0x79}, 32)); err == nil ||
 		!strings.Contains(err.Error(), "unsupported recovered entry template_type") {
 		t.Fatalf("Create(unsupported template type) error = %v", err)
+	}
+}
+
+func TestValidateBatchRejectsInvalidPolicyAndEntryOrdering(t *testing.T) {
+	firstAddress, firstKeyJSON := keystest.Ed25519KeyJSON(t)
+	defer crypto.ZeroBytes(firstKeyJSON)
+	secondAddress, secondKeyJSON := keystest.Ed25519KeyJSON(t)
+	defer crypto.ZeroBytes(secondKeyJSON)
+	if firstAddress > secondAddress {
+		firstAddress, secondAddress = secondAddress, firstAddress
+	}
+	valid := func() Batch {
+		return Batch{
+			Schema:             BatchSchema,
+			RestoreID:          "0123456789abcdef0123456789abcdef",
+			CreatedAt:          time.Unix(1234, 0).UTC(),
+			ArchiveName:        "backup.tar.gz",
+			ArchiveSHA256:      strings.Repeat("a", 64),
+			SourceNodeRole:     "signer",
+			SourcePolicyStatus: SourcePolicyMissing,
+			Entries: []BatchEntry{
+				{
+					Selector:    firstAddress,
+					Category:    keys.CategoryEd25519,
+					KeyType:     "ed25519",
+					EntryFile:   EntryFileName(firstAddress),
+					EntrySHA256: strings.Repeat("b", 64),
+				},
+				{
+					Selector:    secondAddress,
+					Category:    keys.CategoryEd25519,
+					KeyType:     "ed25519",
+					EntryFile:   EntryFileName(secondAddress),
+					EntrySHA256: strings.Repeat("c", 64),
+				},
+			},
+		}
+	}
+	tests := []struct {
+		name    string
+		mutate  func(*Batch)
+		wantErr string
+	}{
+		{
+			name: "missing status carries policy data",
+			mutate: func(batch *Batch) {
+				batch.SourcePolicyYAML = []byte("reject_foreign_rekey: true\n")
+			},
+			wantErr: "missing source policy must not include policy data",
+		},
+		{
+			name: "policy digest mismatch",
+			mutate: func(batch *Batch) {
+				batch.SourcePolicyStatus = SourcePolicyUnverified
+				batch.SourcePolicyYAML = []byte("reject_foreign_rekey: true\n")
+				batch.SourcePolicySHA256 = strings.Repeat("0", 64)
+			},
+			wantErr: "source policy digest mismatch",
+		},
+		{
+			name: "unsorted entries",
+			mutate: func(batch *Batch) {
+				batch.Entries[0], batch.Entries[1] = batch.Entries[1], batch.Entries[0]
+			},
+			wantErr: "entries are not sorted",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			batch := valid()
+			test.mutate(&batch)
+			if err := validateBatch(&batch); err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validateBatch() error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadBatchRejectsRestoreIDMismatch(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := bytes.Repeat([]byte{0x7a}, 32)
+	batch := createRotationTestBatch(t, paths, masterKey)
+	path := paths.RecoveredBatchMetadataPath("default", batch.RestoreID)
+	encrypted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(batch) error = %v", err)
+	}
+	plaintext, err := crypto.DecryptWithMasterKey(encrypted, masterKey)
+	if err != nil {
+		t.Fatalf("DecryptWithMasterKey(batch) error = %v", err)
+	}
+	defer crypto.ZeroBytes(plaintext)
+	var stored Batch
+	if err := json.Unmarshal(plaintext, &stored); err != nil {
+		t.Fatalf("Unmarshal(batch) error = %v", err)
+	}
+	stored.RestoreID = "abcdef0123456789abcdef0123456789"
+	reencoded, err := json.Marshal(&stored)
+	if err != nil {
+		t.Fatalf("Marshal(batch) error = %v", err)
+	}
+	defer crypto.ZeroBytes(reencoded)
+	reEncrypted, err := crypto.EncryptWithMasterKey(reencoded, masterKey)
+	if err != nil {
+		t.Fatalf("EncryptWithMasterKey(batch) error = %v", err)
+	}
+	if err := os.WriteFile(path, reEncrypted, fsutil.StoreFilePerm); err != nil {
+		t.Fatalf("WriteFile(batch) error = %v", err)
+	}
+
+	if _, err := LoadBatch(paths, "default", batch.RestoreID, masterKey); err == nil ||
+		!strings.Contains(err.Error(), "restore ID mismatch") {
+		t.Fatalf("LoadBatch() error = %v, want restore ID mismatch", err)
 	}
 }
 

@@ -277,7 +277,14 @@ recovered-batch state instead of silently leaving it under the old key:
 1. **Phase 1**: Creates new encrypted files (`.new`) and verifies each one
 2. **Phase 2**: Atomically swaps old files for new files
 
-If any step fails, the operation is rolled back automatically.
+If a step returns an error while the process is running, the operation is
+rolled back automatically.
+If the process stops after writing or swapping recovered-batch files, retrying
+`changepass` removes exact stale `.new` and `.old` siblings when the canonical
+file validates, or restores the canonical file from an exact sibling that
+validates under the current store key. Other files or activation state inside a
+recovered batch remain a hard error and must be resolved through the recovery
+workflow; do not rename or delete recovered credential files manually.
 
 ### Template Management
 

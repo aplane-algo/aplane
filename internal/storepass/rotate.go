@@ -212,97 +212,11 @@ func scanTargets(
 		}
 		return nil
 	})
-	recoveredFiles, err := scanRecoveredTargets(paths, identityID, masterKey)
+	recoveredFiles, err := recovered.RotationTargets(paths, identityID, masterKey)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	return managedFiles, templateFiles, recoveredFiles, nil
-}
-
-func scanRecoveredTargets(paths storepaths.Paths, identityID string, masterKey []byte) ([]string, error) {
-	root := paths.RecoveredRootDir(identityID)
-	rootInfo, err := os.Lstat(root)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to inspect recovered batch root: %w", err)
-	}
-	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
-		return nil, fmt.Errorf("recovered batch root is not a regular directory: %s", root)
-	}
-	batchDirs, err := os.ReadDir(root)
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan recovered batch root: %w", err)
-	}
-
-	var targets []string
-	for _, batchDirEntry := range batchDirs {
-		name := batchDirEntry.Name()
-		if strings.HasPrefix(name, recovered.StagingDirPrefix) {
-			continue
-		}
-		if err := recovered.ValidateRestoreID(name); err != nil {
-			return nil, fmt.Errorf("unexpected recovered batch directory %q: %w", name, err)
-		}
-		if batchDirEntry.Type()&os.ModeSymlink != 0 || !batchDirEntry.IsDir() {
-			return nil, fmt.Errorf("recovered batch path is not a regular directory: %s", name)
-		}
-		batchDir := paths.RecoveredBatchDir(identityID, name)
-		children, err := os.ReadDir(batchDir)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan recovered batch %s: %w", name, err)
-		}
-		for _, child := range children {
-			switch child.Name() {
-			case "batch.enc", "entries":
-			default:
-				return nil, fmt.Errorf(
-					"recovered batch %s contains unsupported state %q; resolve it before passphrase rotation",
-					name,
-					child.Name(),
-				)
-			}
-		}
-
-		batch, err := recovered.LoadBatch(paths, identityID, name, masterKey)
-		if err != nil {
-			return nil, fmt.Errorf("validate recovered batch %s before passphrase rotation: %w", name, err)
-		}
-		entriesDir := paths.RecoveredBatchEntriesDir(identityID, name)
-		entriesInfo, err := os.Lstat(entriesDir)
-		if err != nil {
-			return nil, fmt.Errorf("inspect recovered entries for %s: %w", name, err)
-		}
-		if entriesInfo.Mode()&os.ModeSymlink != 0 || !entriesInfo.IsDir() {
-			return nil, fmt.Errorf("recovered entries path is not a regular directory: %s", entriesDir)
-		}
-		entryFiles, err := os.ReadDir(entriesDir)
-		if err != nil {
-			return nil, fmt.Errorf("scan recovered entries for %s: %w", name, err)
-		}
-		expected := make(map[string]recovered.BatchEntry, len(batch.Entries))
-		for _, meta := range batch.Entries {
-			expected[meta.EntryFile] = meta
-		}
-		if len(entryFiles) != len(expected) {
-			return nil, fmt.Errorf("recovered batch %s entry file count does not match manifest", name)
-		}
-		targets = append(targets, paths.RecoveredBatchMetadataPath(identityID, name))
-		for _, entryFile := range entryFiles {
-			meta, ok := expected[entryFile.Name()]
-			if !ok || entryFile.Type()&os.ModeSymlink != 0 || entryFile.IsDir() {
-				return nil, fmt.Errorf("recovered batch %s contains unexpected entry file %q", name, entryFile.Name())
-			}
-			entry, err := recovered.LoadEntry(paths, identityID, name, meta, masterKey)
-			if err != nil {
-				return nil, fmt.Errorf("validate recovered entry %s/%s before passphrase rotation: %w", name, meta.Selector, err)
-			}
-			entry.ZeroSecrets()
-			targets = append(targets, filepath.Join(entriesDir, entryFile.Name()))
-		}
-	}
-	return targets, nil
 }
 
 func logTargets(
