@@ -264,25 +264,28 @@ type RecoveryPolicyChange struct {
 
 // ReviewRecoveredResult pins one review of current destination state.
 type ReviewRecoveredResult struct {
-	Success                  bool
-	RestoreID                string
-	State                    string
-	ArchiveChecksum          string
-	SourceNodeRole           string
-	SourcePolicyStatus       string
-	SourcePolicySHA256       string
-	DestinationPolicySHA256  string
-	DestinationApprovalMode  DestinationApprovalMode
-	UnattendedSigningWarning string
-	PolicyComparison         string
-	SecurityChanges          []RecoveryPolicyChange
-	ChangedPaths             []string
-	UnknownSourceSettings    []string
-	Entries                  []RecoveredReviewEntry
-	ActiveConflicts          []RecoveredActiveConflict
-	ReviewToken              string
-	Code                     string
-	Error                    string
+	Success                      bool
+	RestoreID                    string
+	State                        string
+	ArchiveChecksum              string
+	SourceNodeRole               string
+	SourcePolicyStatus           string
+	SourcePolicySHA256           string
+	DestinationPolicySHA256      string
+	DestinationApprovalMode      DestinationApprovalMode
+	UnattendedSigningWarning     string
+	PolicyComparison             string
+	SecurityChanges              []RecoveryPolicyChange
+	ChangedPaths                 []string
+	UnknownSourceSettings        []string
+	Entries                      []RecoveredReviewEntry
+	ActiveConflicts              []RecoveredActiveConflict
+	ReviewToken                  string
+	AcknowledgePolicyTransition  bool
+	AcknowledgeUnattendedSigning bool
+	ReplaceExisting              bool
+	Code                         string
+	Error                        string
 }
 
 // ActivateRecoveredRequest binds activation to one reviewed destination

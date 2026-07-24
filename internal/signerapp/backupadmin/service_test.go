@@ -469,6 +469,175 @@ func TestActivateRecoveredRequiresExplicitConflictReplacement(t *testing.T) {
 	}
 }
 
+func TestActivateRecoveredExplicitlyResumesAfterHardInterruption(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	request := adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoverResult.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+	}
+	service.activationHook = func(point activationPoint) error {
+		if point != activationAfterApply {
+			t.Fatalf("activation hook point = %q", point)
+		}
+		return errors.New("simulated hard interruption")
+	}
+
+	interrupted := service.ActivateRecovered(ir, request)
+	if interrupted.Code != protocol.ResultCodeRecoveredActivationFailed ||
+		!strings.Contains(interrupted.Error, "interrupted after active writes") {
+		t.Fatalf("ActivateRecovered(interrupted) = %+v", interrupted)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)); err != nil {
+		t.Fatalf("partially applied active key stat error = %v", err)
+	}
+	if _, err := os.Stat(paths.RecoveredActivationDir(auth.DefaultIdentityID, recoverResult.RestoreID)); err != nil {
+		t.Fatalf("durable activation marker stat error = %v", err)
+	}
+	if got := reloads.Load(); got != 0 {
+		t.Fatalf("reload count after interruption = %d, want 0", got)
+	}
+	incomplete := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if !incomplete.Success ||
+		incomplete.State != "activation_incomplete" ||
+		incomplete.ReviewToken != review.ReviewToken ||
+		!incomplete.AcknowledgePolicyTransition {
+		t.Fatalf("ReviewRecovered(incomplete) = %+v", incomplete)
+	}
+	mismatch := request
+	mismatch.ReplaceExisting = true
+	rejected := service.ActivateRecovered(ir, mismatch)
+	if rejected.Code != protocol.ResultCodeActivationReviewStale {
+		t.Fatalf("ActivateRecovered(mismatched resume).Code = %q", rejected.Code)
+	}
+
+	service.activationHook = nil
+	resumed := service.ActivateRecovered(ir, request)
+	if !resumed.Success {
+		t.Fatalf("ActivateRecovered(resume) = %+v", resumed)
+	}
+	if got := reloads.Load(); got != 2 {
+		t.Fatalf("reload count = %d, want prior-state plus activated reload", got)
+	}
+	if _, err := os.Stat(paths.RecoveredBatchDir(auth.DefaultIdentityID, recoverResult.RestoreID)); !os.IsNotExist(err) {
+		t.Fatalf("resumed batch stat error = %v, want not found", err)
+	}
+}
+
+func TestRollbackRecoveredResolvesHardInterruption(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	service.activationHook = func(activationPoint) error {
+		return errors.New("simulated hard interruption")
+	}
+	_ = service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoverResult.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+
+	rolledBack := service.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{
+		RestoreID: recoverResult.RestoreID,
+	})
+	if !rolledBack.Success {
+		t.Fatalf("RollbackRecovered() = %+v", rolledBack)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)); !os.IsNotExist(err) {
+		t.Fatalf("active key after explicit rollback stat error = %v, want not found", err)
+	}
+	if _, err := os.Stat(paths.RecoveredActivationDir(auth.DefaultIdentityID, recoverResult.RestoreID)); !os.IsNotExist(err) {
+		t.Fatalf("activation marker after explicit rollback stat error = %v, want not found", err)
+	}
+	if _, err := os.Stat(paths.RecoveredBatchDir(auth.DefaultIdentityID, recoverResult.RestoreID)); err != nil {
+		t.Fatalf("batch after explicit rollback stat error = %v", err)
+	}
+	if got := reloads.Load(); got != 1 {
+		t.Fatalf("reload count = %d, want 1", got)
+	}
+}
+
+func TestRollbackRecoveredRetriesIdempotentlyAfterReloadFailure(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	service.activationHook = func(activationPoint) error {
+		return errors.New("simulated hard interruption")
+	}
+	_ = service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoverResult.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+	ir.SetReloadFunc(func(string, []byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		if reloads.Add(1) == 1 {
+			return nil, errors.New("simulated rollback reload failure")
+		}
+		return &signertemplates.ReloadReport{}, nil
+	})
+
+	first := service.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{
+		RestoreID: recoverResult.RestoreID,
+	})
+	if first.Code != protocol.ResultCodeRecoveredRollbackFailed {
+		t.Fatalf("RollbackRecovered(first) = %+v", first)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)); !os.IsNotExist(err) {
+		t.Fatalf("active key after first rollback stat error = %v, want not found", err)
+	}
+	incomplete := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if incomplete.State != "activation_incomplete" {
+		t.Fatalf("ReviewRecovered().State = %q, want activation_incomplete", incomplete.State)
+	}
+	second := service.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{
+		RestoreID: recoverResult.RestoreID,
+	})
+	if !second.Success {
+		t.Fatalf("RollbackRecovered(second) = %+v", second)
+	}
+	if _, err := os.Stat(paths.RecoveredActivationDir(auth.DefaultIdentityID, recoverResult.RestoreID)); !os.IsNotExist(err) {
+		t.Fatalf("activation marker after retry stat error = %v, want not found", err)
+	}
+	if got := reloads.Load(); got != 2 {
+		t.Fatalf("reload count = %d, want 2", got)
+	}
+}
+
 func writeMalformedManagedArchive(t *testing.T, paths storepaths.Paths, identityID, label string) string {
 	t.Helper()
 

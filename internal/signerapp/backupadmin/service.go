@@ -29,7 +29,8 @@ type Deps interface {
 }
 
 type Service struct {
-	Deps Deps
+	Deps           Deps
+	activationHook func(activationPoint) error
 }
 
 func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
