@@ -136,6 +136,7 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 			Selector: "NEWADDR",
 			KeyType:  "ed25519",
 		}},
+		Warnings: []string{"skipped bundled template for test.v1: conflict"},
 		KeyCount: 1,
 	}})
 	if m.viewState != ViewRestoreDisplay {
@@ -143,6 +144,9 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	}
 	if !m.restore.result.Success || len(m.restore.result.Activated) != 1 {
 		t.Fatalf("restoreResult = %+v, want successful one-key result", m.restore.result)
+	}
+	if view := m.renderRestoreDisplay(); !strings.Contains(view, "skipped bundled template") {
+		t.Fatalf("restore display omitted activation warning:\n%s", view)
 	}
 
 	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})

@@ -520,6 +520,7 @@ type RestoreDisplayResult struct {
 	ArchivePath string
 	Success     bool
 	Activated   []RestoreKeyInfo
+	Warnings    []string
 	KeyCount    int
 	Error       string
 }

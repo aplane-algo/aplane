@@ -404,6 +404,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ArchivePath: m.restore.archivePath,
 			Success:     msg.Result.Success,
 			Activated:   restored,
+			Warnings:    append([]string(nil), msg.Result.Warnings...),
 			KeyCount:    msg.Result.KeyCount,
 			Error:       msg.Result.Error,
 		}

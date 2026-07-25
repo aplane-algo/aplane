@@ -263,6 +263,7 @@ func ProtocolActivateRecoveredResultMessage(id string, result adminproto.Activat
 		Success:     result.Success,
 		RestoreID:   result.RestoreID,
 		Activated:   protocolRecoveredReviewEntries(result.Activated),
+		Warnings:    append([]string(nil), result.Warnings...),
 		KeyCount:    result.KeyCount,
 		Code:        result.Code,
 		Error:       result.Error,

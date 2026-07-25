@@ -440,6 +440,7 @@ type ActivateRecoveredResultMessage struct {
 	Success   bool                   `json:"success"`
 	RestoreID string                 `json:"restore_id,omitempty"`
 	Activated []RecoveredReviewEntry `json:"activated,omitempty"`
+	Warnings  []string               `json:"warnings,omitempty"`
 	KeyCount  int                    `json:"key_count,omitempty"`
 	Code      string                 `json:"code,omitempty"`
 	Error     string                 `json:"error,omitempty"`

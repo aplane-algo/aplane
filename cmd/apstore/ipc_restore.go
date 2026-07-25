@@ -308,6 +308,9 @@ func activateRecovered(
 	if !result.Success {
 		return resultError("activate recovered batch failed", result.Code, result.Error)
 	}
+	for _, warning := range result.Warnings {
+		logWarnf("%s", warning)
+	}
 	logInfof("activated recovered batch: %s", review.RestoreID)
 	if result.KeyCount > 0 {
 		logInfof("key count: %d", result.KeyCount)

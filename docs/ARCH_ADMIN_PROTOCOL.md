@@ -287,7 +287,9 @@ unlock/reload after passphrase verification through
   `acknowledge_policy_transition`, optional
   `acknowledge_unattended_signing`, optional `replace_existing` ->
   `activate_recovered_result`: `success`, restore ID, activated entries,
-  resulting `key_count`, `code`, `error`
+  optional operator-facing `warnings[]`, resulting `key_count`, `code`,
+  `error`; warnings include non-fatal bundled-template skips decided against
+  current destination state during activation
 - `rollback_recovered`: `restore_id` -> `rollback_recovered_result`: `success`,
   restore ID, resulting `key_count`, `code`, `error`
 - `purge_recovered`: `restore_id` -> `purge_recovered_result`: `success`,

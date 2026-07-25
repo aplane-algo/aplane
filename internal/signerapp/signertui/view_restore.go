@@ -291,6 +291,12 @@ func (m Model) renderRestoreDisplay() string {
 	if result.Error != "" {
 		lines = append(lines, "", errorStyle.Render(result.Error))
 	}
+	if len(result.Warnings) > 0 {
+		lines = append(lines, "", warningStyle.Render("Activation warnings:"))
+		for _, warning := range result.Warnings {
+			lines = append(lines, warningStyle.Render("  "+warning))
+		}
+	}
 	lines = append(lines, "")
 
 	if len(result.Activated) > 0 {

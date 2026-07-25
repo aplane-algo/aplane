@@ -165,7 +165,7 @@ func (s Service) activateRecovered(
 	}
 
 	applyErr := ir.WithMasterKey(func(masterKey []byte) error {
-		return s.applyRecoveredBatch(ir, req, masterKey)
+		return s.applyRecoveredBatch(ir, req, masterKey, &result.Warnings)
 	})
 	var interruption *activationInterruption
 	if errors.As(applyErr, &interruption) {
@@ -287,6 +287,7 @@ func (s Service) applyRecoveredBatch(
 	ir *identity.Runtime,
 	req adminproto.ActivateRecoveredRequest,
 	masterKey []byte,
+	warnings *[]string,
 ) error {
 	batch, err := recovered.LoadBatch(s.Deps.KeyPaths(), ir.ID(), req.RestoreID, masterKey)
 	if err != nil {
@@ -296,7 +297,10 @@ func (s Service) applyRecoveredBatch(
 	restorer := backup.NewRestorer(s.Deps.KeyPaths(), ir.ID()).
 		WithNodeRole(ir.NodeRole()).
 		WithOverwrite(req.ReplaceExisting).
-		WithLogger(s.Deps.Logf)
+		WithLogger(s.Deps.Logf).
+		WithWarningHandler(func(_ string, warning string) {
+			*warnings = append(*warnings, warning)
+		})
 	for _, meta := range batch.Entries {
 		entry, err := recovered.LoadEntry(
 			s.Deps.KeyPaths(),

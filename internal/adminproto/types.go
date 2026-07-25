@@ -279,6 +279,7 @@ type ActivateRecoveredResult struct {
 	Success                 bool
 	RestoreID               string
 	Activated               []RecoveredReviewEntry
+	Warnings                []string
 	KeyCount                int
 	ArchiveSHA256           string
 	SourcePolicySHA256      string

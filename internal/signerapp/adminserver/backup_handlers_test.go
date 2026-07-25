@@ -135,7 +135,10 @@ func TestRecoveredLifecycleMessagesDispatchToBackupServices(t *testing.T) {
 			RestoreID:   restoreID,
 			ReviewToken: reviewToken,
 		},
-		activateRecoveredResult: adminproto.ActivateRecoveredResult{Success: true},
+		activateRecoveredResult: adminproto.ActivateRecoveredResult{
+			Success:  true,
+			Warnings: []string{"skipped bundled template for test.v1: conflict"},
+		},
 		rollbackRecoveredResult: adminproto.RollbackRecoveredResult{Success: true},
 		purgeRecoveredResult:    adminproto.PurgeRecoveredResult{Success: true},
 	}
@@ -218,6 +221,14 @@ func TestRecoveredLifecycleMessagesDispatchToBackupServices(t *testing.T) {
 		if base.Type != wantType {
 			t.Fatalf("response %d type = %q, want %q", i, base.Type, wantType)
 		}
+	}
+	var activated protocol.ActivateRecoveredResultMessage
+	if err := json.Unmarshal(conn.writes[3], &activated); err != nil {
+		t.Fatalf("unmarshal activation response: %v", err)
+	}
+	if len(activated.Warnings) != 1 ||
+		!strings.Contains(activated.Warnings[0], "skipped bundled template") {
+		t.Fatalf("activation warnings = %v", activated.Warnings)
 	}
 }
 
