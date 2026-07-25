@@ -1382,7 +1382,9 @@ func runRestoreArchiveWithRunningSigner(t *testing.T, apstore *harness.ApStoreHa
 	for _, address := range addresses {
 		args = append(args, "--address", address)
 	}
-	return apstore.RunWithInput(exportPassphrase+"\ny\n", args...)
+	// The shared LocalNet identity is auto-approving, so activation requires
+	// both the policy-transition and unattended-signing acknowledgements.
+	return apstore.RunWithInput(exportPassphrase+"\ny\ny\n", args...)
 }
 
 func mustExtractBackupArchive(t *testing.T, archivePath string) string {
