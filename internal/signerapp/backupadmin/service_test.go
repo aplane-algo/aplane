@@ -560,6 +560,162 @@ func TestActivateRecoveredRequiresExplicitConflictReplacement(t *testing.T) {
 	}
 }
 
+func TestActivateRecoveredCrashBoundariesResumeFromKnownState(t *testing.T) {
+	tests := []struct {
+		name              string
+		interruptAt       activationPoint
+		wantAppliedBefore int
+	}{
+		{
+			name:              "journal published before first active write",
+			interruptAt:       activationBeforeApply,
+			wantAppliedBefore: 0,
+		},
+		{
+			name:              "between active entry writes",
+			interruptAt:       activationAfterEntry,
+			wantAppliedBefore: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			paths := storepaths.NewPaths(t.TempDir())
+			archivePath, addresses := writeRecoverableManagedArchiveWithTwoKeys(
+				t,
+				paths,
+				auth.DefaultIdentityID,
+			)
+			service := Service{Deps: backupServiceTestDeps{
+				paths:   paths,
+				limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+			}}
+			var reloads atomic.Int64
+			ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+			installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+			recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+				ArchivePath:      archivePath,
+				ExportPassphrase: []byte("export-passphrase"),
+			})
+			review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+			request := adminproto.ActivateRecoveredRequest{
+				RestoreID:                   recoverResult.RestoreID,
+				ReviewToken:                 review.ReviewToken,
+				AcknowledgePolicyTransition: true,
+			}
+			var appliedEntries int
+			service.activationHook = func(point activationPoint) error {
+				switch tt.interruptAt {
+				case activationBeforeApply:
+					if point == activationBeforeApply {
+						return errors.New("simulated journal-boundary crash")
+					}
+				case activationAfterEntry:
+					if point == activationAfterEntry {
+						appliedEntries++
+						if appliedEntries == 1 {
+							return errors.New("simulated partial-batch crash")
+						}
+					}
+				}
+				return nil
+			}
+
+			interrupted := service.ActivateRecovered(ir, request)
+			if interrupted.Code != protocol.ResultCodeRecoveredActivationFailed {
+				t.Fatalf("ActivateRecovered(interrupted) = %+v", interrupted)
+			}
+			for i, address := range addresses {
+				_, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address))
+				if i < tt.wantAppliedBefore {
+					if err != nil {
+						t.Fatalf("applied key %d stat error = %v", i, err)
+					}
+				} else if !os.IsNotExist(err) {
+					t.Fatalf("unapplied key %d stat error = %v, want not found", i, err)
+				}
+			}
+			if _, err := os.Stat(
+				paths.RecoveredActivationDir(auth.DefaultIdentityID, recoverResult.RestoreID),
+			); err != nil {
+				t.Fatalf("activation marker stat error = %v", err)
+			}
+
+			service.activationHook = nil
+			resumed := service.ActivateRecovered(ir, request)
+			if !resumed.Success || !resumed.Resumed || len(resumed.Activated) != len(addresses) {
+				t.Fatalf("ActivateRecovered(resume) = %+v", resumed)
+			}
+			for _, address := range addresses {
+				if _, err := os.Stat(
+					keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address),
+				); err != nil {
+					t.Fatalf("resumed active key %s stat error = %v", address, err)
+				}
+			}
+			if got := reloads.Load(); got != 2 {
+				t.Fatalf("reload count = %d, want prior-state plus activated reload", got)
+			}
+		})
+	}
+}
+
+func TestRollbackRecoveredRestoresReplacedCredentialAfterPartialActivation(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if err := os.MkdirAll(paths.KeysDir(auth.DefaultIdentityID), 0o750); err != nil {
+		t.Fatalf("MkdirAll(keys) error = %v", err)
+	}
+	activePath := keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)
+	original := []byte("exact pre-activation encrypted credential")
+	if err := os.WriteFile(activePath, original, 0o600); err != nil {
+		t.Fatalf("WriteFile(active conflict) error = %v", err)
+	}
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	service.activationHook = func(point activationPoint) error {
+		if point == activationAfterEntry {
+			return errors.New("simulated crash after replacement")
+		}
+		return nil
+	}
+
+	interrupted := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoverResult.RestoreID,
+		ReviewToken:                 review.ReviewToken,
+		AcknowledgePolicyTransition: true,
+		ReplaceExisting:             true,
+	})
+	if interrupted.Code != protocol.ResultCodeRecoveredActivationFailed {
+		t.Fatalf("ActivateRecovered(interrupted replacement) = %+v", interrupted)
+	}
+	replaced, err := os.ReadFile(activePath)
+	if err != nil || slices.Equal(replaced, original) {
+		t.Fatalf("active replacement bytes = %q error = %v", replaced, err)
+	}
+
+	rolledBack := service.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{
+		RestoreID: recoverResult.RestoreID,
+	})
+	if !rolledBack.Success {
+		t.Fatalf("RollbackRecovered() = %+v", rolledBack)
+	}
+	restored, err := os.ReadFile(activePath)
+	if err != nil || !slices.Equal(restored, original) {
+		t.Fatalf("restored active bytes = %q error = %v, want exact original", restored, err)
+	}
+}
+
 func TestActivateRecoveredExplicitlyResumesAfterHardInterruption(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
@@ -582,7 +738,7 @@ func TestActivateRecoveredExplicitlyResumesAfterHardInterruption(t *testing.T) {
 	}
 	service.activationHook = func(point activationPoint) error {
 		if point != activationAfterApply {
-			t.Fatalf("activation hook point = %q", point)
+			return nil
 		}
 		return errors.New("simulated hard interruption")
 	}
@@ -643,7 +799,10 @@ func TestRollbackRecoveredResolvesHardInterruption(t *testing.T) {
 		ExportPassphrase: []byte("export-passphrase"),
 	})
 	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
-	service.activationHook = func(activationPoint) error {
+	service.activationHook = func(point activationPoint) error {
+		if point != activationAfterApply {
+			return nil
+		}
 		return errors.New("simulated hard interruption")
 	}
 	_ = service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
@@ -687,7 +846,10 @@ func TestRollbackRecoveredRetriesIdempotentlyAfterReloadFailure(t *testing.T) {
 		ExportPassphrase: []byte("export-passphrase"),
 	})
 	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
-	service.activationHook = func(activationPoint) error {
+	service.activationHook = func(point activationPoint) error {
+		if point != activationAfterApply {
+			return nil
+		}
 		return errors.New("simulated hard interruption")
 	}
 	_ = service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
@@ -756,7 +918,10 @@ func TestPurgeRecoveredDeletesOnlyInactiveBatchAndRejectsIncompleteActivation(t 
 		ExportPassphrase: []byte("export-passphrase"),
 	})
 	review := service.ReviewRecovered(ir, second.RestoreID)
-	service.activationHook = func(activationPoint) error {
+	service.activationHook = func(point activationPoint) error {
+		if point != activationAfterApply {
+			return nil
+		}
 		return errors.New("simulated hard interruption")
 	}
 	_ = service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
@@ -789,6 +954,53 @@ func writeMalformedManagedArchive(t *testing.T, paths storepaths.Paths, identity
 
 func writeRecoverableManagedArchive(t *testing.T, paths storepaths.Paths, identityID string) (string, string) {
 	return writeRecoverableArchiveForRole(t, paths, identityID, noderole.RoleSigner)
+}
+
+func writeRecoverableManagedArchiveWithTwoKeys(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+) (string, []string) {
+	t.Helper()
+
+	root := t.TempDir()
+	keysDir := filepath.Join(root, "apb")
+	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll(apb) error = %v", err)
+	}
+	selectors := make([]string, 0, 2)
+	for range 2 {
+		selector, keyJSON := keystest.Ed25519KeyJSON(t)
+		encrypted, err := crypto.EncryptStandalone(keyJSON, []byte("export-passphrase"))
+		crypto.ZeroBytes(keyJSON)
+		if err != nil {
+			t.Fatalf("EncryptStandalone() error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(keysDir, selector+".apb"), encrypted, 0o600); err != nil {
+			t.Fatalf("WriteFile(apb) error = %v", err)
+		}
+		selectors = append(selectors, selector)
+	}
+	slices.Sort(selectors)
+	if err := backup.WriteManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0)); err != nil {
+		t.Fatalf("WriteManifest() error = %v", err)
+	}
+	policyDir := filepath.Join(root, "policy")
+	if err := os.MkdirAll(policyDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll(policy) error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(policyDir, "policy.yaml"),
+		[]byte("reject_foreign_rekey: true\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("WriteFile(source policy) error = %v", err)
+	}
+	archivePath := backup.BuildManagedArchivePath(paths, identityID, "recover-service-two-keys")
+	if err := backup.CreateTarGzArchive(root, archivePath); err != nil {
+		t.Fatalf("CreateTarGzArchive() error = %v", err)
+	}
+	return archivePath, selectors
 }
 
 func writeRecoverableSentryArchive(t *testing.T, paths storepaths.Paths, identityID string) (string, string) {

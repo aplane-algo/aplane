@@ -15,6 +15,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 func TestIPCBackupCreatesManagedArchive(t *testing.T) {
@@ -223,21 +226,48 @@ func TestIPCManagedBackupPreviewAndRestore(t *testing.T) {
 	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); !os.IsNotExist(err) {
 		t.Fatalf("recovered key became active before review/activation: %v", err)
 	}
+	if ir.KeyCount() != 0 {
+		t.Fatalf("active runtime key count after recovery = %d, want 0", ir.KeyCount())
+	}
 	if activeMsgs := activeRecorder.messages(t); len(activeMsgs) != 0 {
 		t.Fatalf("active notification count after recovery = %d, want 0", len(activeMsgs))
 	}
-	reloadReport, err := ir.Reload()
-	if err != nil {
-		t.Fatalf("Reload() with inactive recovered batch error = %v", err)
+
+	restartedServer := &Signer{
+		registry: identity.NewRegistry(),
+		config:   server.config,
+		keyPaths: server.keyPaths,
+		dataDir:  server.dataDir,
 	}
-	if reloadReport == nil || reloadReport.KeyCount != 0 {
-		t.Fatalf("Reload() report = %+v, want no active keys", reloadReport)
+	if _, err := tokenfile.LoadAPlaneToken(server.dataDir, auth.DefaultIdentityID); err != nil {
+		t.Fatalf("LoadAPlaneToken(restart) error = %v", err)
+	}
+	restartedRuntime, err := signerstartup.BuildIdentityRuntime(
+		restartedServer.registry,
+		testIdentityBuildOptions(restartedServer),
+		restartedServer.identityBuildHooks(),
+		auth.DefaultIdentityID,
+	)
+	if err != nil {
+		t.Fatalf("BuildIdentityRuntime(restart) error = %v", err)
+	}
+	success, keyCount, errMsg, code := (signerAdminServices{signer: restartedServer}).
+		UnlockIdentity(restartedRuntime, append([]byte(nil), testPassphrase...))
+	if !success || keyCount != 0 || errMsg != "" || code != "" {
+		t.Fatalf(
+			"UnlockIdentity(restart) = success %v keys %d error %q code %q, want inert recovered batch",
+			success,
+			keyCount,
+			errMsg,
+			code,
+		)
+	}
+	defer restartedRuntime.Lock()
+	if restartedRuntime.KeyCount() != 0 {
+		t.Fatalf("restarted runtime key count = %d, want 0", restartedRuntime.KeyCount())
 	}
 	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); !os.IsNotExist(err) {
-		t.Fatalf("recovered key became active after full runtime rescan: %v", err)
-	}
-	if activeMsgs := activeRecorder.messages(t); len(activeMsgs) != 1 {
-		t.Fatalf("active notification count after explicit rescan = %d, want 1", len(activeMsgs))
+		t.Fatalf("recovered key became active after signer restart: %v", err)
 	}
 
 	reviewRecorder := &ipcJSONRecorderConn{}
@@ -281,16 +311,19 @@ func TestIPCManagedBackupPreviewAndRestore(t *testing.T) {
 	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); err != nil {
 		t.Fatalf("activated key stat error = %v", err)
 	}
+	if ir.KeyCount() != 1 {
+		t.Fatalf("active runtime key count after activation = %d, want 1", ir.KeyCount())
+	}
 
 	activeMsgs := activeRecorder.messages(t)
-	if len(activeMsgs) != 2 {
-		t.Fatalf("active notification count = %d, want rescan plus activation notifications", len(activeMsgs))
+	if len(activeMsgs) != 1 {
+		t.Fatalf("active notification count = %d, want activation notification", len(activeMsgs))
 	}
-	if !reflectJSONSubset(activeMsgs[1], map[string]any{
+	if !reflectJSONSubset(activeMsgs[0], map[string]any{
 		"kind": string(protocol.MessageKindNotification),
 		"type": protocol.MsgTypeKeysChanged,
 	}) {
-		t.Fatalf("activation notification mismatch: %#v", activeMsgs[1])
+		t.Fatalf("activation notification mismatch: %#v", activeMsgs[0])
 	}
 }
 

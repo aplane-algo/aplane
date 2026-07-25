@@ -18,7 +18,29 @@ import (
 
 type activationPoint string
 
-const activationAfterApply activationPoint = "after_apply"
+const (
+	activationBeforeApply activationPoint = "before_apply"
+	activationAfterEntry  activationPoint = "after_entry"
+	activationAfterApply  activationPoint = "after_apply"
+)
+
+type activationInterruption struct {
+	point activationPoint
+	err   error
+}
+
+func (e *activationInterruption) Error() string {
+	switch e.point {
+	case activationBeforeApply:
+		return fmt.Sprintf("activation interrupted before active writes: %v", e.err)
+	case activationAfterEntry:
+		return fmt.Sprintf("activation interrupted after active entry write: %v", e.err)
+	default:
+		return fmt.Sprintf("activation interrupted after active writes: %v", e.err)
+	}
+}
+
+func (e *activationInterruption) Unwrap() error { return e.err }
 
 type recoveredActivationError struct {
 	code string
@@ -138,13 +160,20 @@ func (s Service) activateRecovered(
 	}); err != nil {
 		return fmt.Errorf("publish activation state: %w", err)
 	}
+	if err := s.runActivationHook(activationBeforeApply); err != nil {
+		return err
+	}
 
 	applyErr := ir.WithMasterKey(func(masterKey []byte) error {
 		return s.applyRecoveredBatch(ir, req, masterKey)
 	})
-	if applyErr == nil && s.activationHook != nil {
-		if err := s.activationHook(activationAfterApply); err != nil {
-			return fmt.Errorf("activation interrupted after active writes: %w", err)
+	var interruption *activationInterruption
+	if errors.As(applyErr, &interruption) {
+		return interruption
+	}
+	if applyErr == nil {
+		if err := s.runActivationHook(activationAfterApply); err != nil {
+			return err
 		}
 	}
 	var keyCount int
@@ -284,6 +313,19 @@ func (s Service) applyRecoveredBatch(
 		if applyErr != nil {
 			return fmt.Errorf("apply recovered credential %s: %w", meta.Selector, applyErr)
 		}
+		if err := s.runActivationHook(activationAfterEntry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s Service) runActivationHook(point activationPoint) error {
+	if s.activationHook == nil {
+		return nil
+	}
+	if err := s.activationHook(point); err != nil {
+		return &activationInterruption{point: point, err: err}
 	}
 	return nil
 }
