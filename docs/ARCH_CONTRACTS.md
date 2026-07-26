@@ -2277,13 +2277,29 @@ Managed archive packaging:
   managed path, or checksum, copies it into a caller-selected destination
   directory using the managed archive filename, creates the destination directory
   when needed, and verifies the copy
-- the archive contains `README.md`, `manifest.json`, `apb/*.apb`, and the
-  active policy snapshot at `policy/policy.yaml` and
-  `policy/policy.yaml.hmac`
+- the archive contains `README.md`, `manifest.json`, `apb/*.apb`, the active
+  policy snapshot at `policy/policy.yaml` and `policy/policy.yaml.hmac`, and,
+  for current writers, `source_settings.json`
 - `manifest.json` has schema `aplane.backup.manifest.v1`, `schema_version:1`,
   `source_node_role:"signer"|"sentry"`, and `created_at_unix`. Restore
   validates payload key classes against the destination node role; it does not
   change the destination role.
+- `source_settings.json` is an optional, independently versioned archive
+  member with schema `aplane.backup.source-settings.v1` and
+  `schema_version:1`. It contains only the signer source's effective
+  `user_auto_approve` value (omitted for sentry sources) and canonical custom
+  genesis-hash-to-network mappings. It never contains algod URLs, tokens,
+  endpoints, or other connection configuration.
+- sidecar mappings are canonical base64, use validated non-reserved network
+  tokens, cannot remap built-in networks, are unique and ordered by
+  `(network, genesis_hash)`, and are bounded to 1024 entries and 256 KiB.
+  Current writers fail backup creation rather than claim a current archive
+  shape without a valid sidecar.
+- old readers remain compatible because manifest v1 is unchanged and unknown
+  archive members are ignored. Recovery classifies an absent sidecar as
+  `missing`, a valid sidecar as `unverified`, and malformed, oversized, or
+  unsupported metadata as `invalid`. Missing or invalid advisory metadata
+  does not prevent recovery of otherwise valid `.apb` payloads.
 - the tarball is packaging only; `.apb` remains the cryptographic backup unit
 - the archived policy sidecar is source-store provenance material only; restore
   does not install it as the destination sidecar
@@ -2296,8 +2312,7 @@ Live signer-managed backup:
 - output path is signer-managed, not operator-chosen
 - archives are written under `backups/<identity>/aplane-backup-YYYYMMDD-HHMMSS.tar.gz` beneath the signer data root
 - archive layout matches managed backups: `README.md`, `manifest.json`,
-  `apb/*.apb`, and
-  `policy/`
+  `source_settings.json`, `apb/*.apb`, and `policy/`
 - signer-managed backup covers active key files for the bound identity plus a
   verified policy snapshot; it does not export deleted archives, other
   identities, or live runtime state
@@ -2335,6 +2350,8 @@ Live signer-managed restore:
   archives with no `apb/*.apb` files
 - preview requires the export passphrase before showing key addresses or key types; wrong-passphrase or pre-decrypt payload errors do not echo filename-derived addresses
 - preview decrypts and inspects backup payload metadata, reports whether each key already exists, and does not write key, template, or key type state
+- preview remains a passphrase and key-inventory check; source-settings trust
+  status and values are shown only by destination-bound recovered-batch review
 - failed preview/recovery decrypt or payload parse attempts are rate limited
   with per-identity/archive exponential backoff; rate-limited responses use
   `code:"restore_rate_limited"`
@@ -2342,16 +2359,32 @@ Live signer-managed restore:
   validated, re-encrypted under the destination master key, and published
   atomically as `recovered/<restore-id>/`; it does not write active key or
   key-type files and does not reload
+- recovery copies source-settings status, the exact valid-sidecar digest, and
+  any valid projection into destination-encrypted recovered-batch v1 metadata.
+  These are additive optional fields; absent fields on older batches mean
+  `missing`.
+- a published recovered batch is immutable. Code may decrypt and validate
+  `batch.enc` but must not persist a re-marshaled loaded `Batch`, because old
+  readers intentionally ignore additive JSON fields. Passphrase rotation
+  re-encrypts the exact plaintext bytes; mutable activation progress belongs
+  only in the activation journal. Activation completion and purge may delete a
+  batch but do not rewrite it.
 - review revalidates the batch and current destination state, foregrounds
   security-bearing policy differences and the effective destination
   `user_auto_approve` mode, fingerprints active conflicts, and returns an
   opaque review token. Actual `security_changes` are rendered separately from
   unavailable source metadata. Protocol v3 conservatively reports the
-  constant archive limitations `source.user_auto_approve` and
-  `source.genesis_hash_mappings` in `unknown_source_settings`; clients present
-  those once as subordinate archive context rather than policy differences.
-  A pre-manifest archive also reports the batch-specific
-  `source.node_role`.
+  compatibility entries `source.user_auto_approve` and
+  `source.genesis_hash_mappings` in `unknown_source_settings`. Protocol 3.1
+  additionally reports typed `missing|unverified|invalid` source context.
+  Updated clients give typed fields precedence and treat the constant unknown
+  entries as protocol-v3 compatibility artifacts; without typed fields they
+  present the archive limitation once as subordinate context. A pre-manifest
+  archive also reports the batch-specific `source.node_role`.
+- valid source settings are always labeled unverified and never determine
+  acknowledgements, policy verdicts, signing behavior, or destination network
+  resolution. Missing or invalid settings retain the limitation note, and
+  invalid settings add a prominent warning.
 - activation requires the current review token plus policy-transition
   acknowledgement; a destination using auto-approve additionally requires a
   separate unattended-signing acknowledgement; replacing active credentials

@@ -42,7 +42,7 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
-- the current admin protocol major version is 3; `auth_required` carries it as
+- the current admin protocol version is 3.1; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -281,14 +281,23 @@ unlock/reload after passphrase verification through
   restore/batch state, archive and policy digests, destination approval mode,
   unattended-signing warning, factual policy comparison, ordered
   `security_changes[]`, secondary `changed_paths[]`,
-  `unknown_source_settings[]`, entries, active conflict fingerprints, opaque
+  `unknown_source_settings[]`, optional `source_settings_status`
+  (`missing|unverified|invalid`), optional Boolean
+  `source_user_auto_approve`, optional
+  `source_genesis_hash_mappings[]` (`genesis_hash`, `network`), optional
+  `source_settings_warning`, entries, active conflict fingerprints, opaque
   `review_token`, required acknowledgement flags, replacement state, `code`,
-  `error`. In protocol v3, `unknown_source_settings` conservatively includes
+  `error`. These typed source fields were added in protocol 3.1. In protocol
+  v3, `unknown_source_settings` conservatively includes
   the constant archive limitations `source.user_auto_approve` and
   `source.genesis_hash_mappings`; a pre-manifest archive additionally reports
   the batch-specific `source.node_role`. Updated clients render the constant
   limitations once as archive-format context, outside the policy-difference
-  findings.
+  findings. When `source_settings_status` is present, typed `source_*` fields
+  are authoritative for what the archive reported; they remain unverified and
+  have no activation authority. The two constant unknown entries are
+  compatibility artifacts in that case and updated clients ignore them.
+  Protocol v4 removes those two constant entries.
 - `activate_recovered`: `restore_id`, `review_token`,
   `acknowledge_policy_transition`, optional
   `acknowledge_unattended_signing`, optional `replace_existing` ->

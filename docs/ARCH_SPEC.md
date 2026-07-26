@@ -1812,8 +1812,10 @@ Product-level boundaries:
 ## Backup and Restore Ownership
 
 For backup/restore specifically, `internal/backup` owns export packaging,
-archive inspection, payload validation, and the active-apply primitive used
-only by reviewed activation and offline rebuild. `internal/backup/recovered`
+archive inspection, payload validation, the optional independently versioned
+`source_settings.json` projection, and the active-apply primitive used only by
+reviewed activation and offline rebuild. `internal/backup/sourcecontext` owns
+validation of that non-secret advisory projection. `internal/backup/recovered`
 owns destination-encrypted inactive batches, activation journals, rollback
 snapshots, and passphrase-rotation target discovery. `internal/signerapp/backupadmin`
 owns the live recover/review/activate/rollback/purge state machine. Recovery
@@ -1822,7 +1824,11 @@ the only live operation that does so, after a destination-bound policy review
 and explicit acknowledgements. A durable incomplete activation puts the
 identity in recovery mode and blocks signing until exact resume or rollback.
 Managed archives carry a verified-at-source policy snapshot under `policy/`,
-but no restore path installs that snapshot as active policy.
+but no restore path installs that snapshot as active policy. Current writers
+also capture the source approval default (signer role only) and custom
+genesis-hash mappings without connection credentials. Those settings remain
+unverified advisory review context; destination policy, approval mode, and
+network configuration remain authoritative.
 
 Both `apadmin` and local-IPC `apstore` use the same daemon-owned lifecycle.
 `cmd/apstore` retains local `initialize`, backup-import admission, `verify`,

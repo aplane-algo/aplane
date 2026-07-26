@@ -159,8 +159,9 @@ DTOs and contract fixtures.
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
 | Plugin | Client data dir | `plugins.available/<name>`, `plugins.yaml`, checksums | plugin manager process state | plugin JSON-RPC result | `internal/plugin`, `internal/apshellcli` |
 | JavaScript script | Client data dir | `scripts/*.js` | Goja execution context | shell/MCP `js`, `jssave`, `jslist` | `internal/scripting`, `internal/jsapi` |
-| Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files, `manifest.json`, and policy snapshots | restore preview/recovery input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
+| Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files, `manifest.json`, optional independently versioned `source_settings.json`, and policy snapshots | restore preview/recovery input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
 | Backup manifest | Backup archive | `manifest.json` schema `aplane.backup.manifest.v1` | source node role default and diagnostics for rebuild | none | `internal/backup` |
+| Backup source settings | Backup archive | optional `source_settings.json` schema `aplane.backup.source-settings.v1` | unverified source approval/custom-network review context | recovered batch and `review_recovered_result` | `internal/backup`, `internal/backup/sourcecontext` |
 | Recovered batch | Signer identity | destination-encrypted `recovered/<restore-id>/batch.enc`, `entries/*.recovered`, and optional `activation/` reconciliation state | none before explicit activation; recovery-only runtime when activation is incomplete | recovered lifecycle admin messages | `internal/backup/recovered`, `internal/signerapp/backupadmin` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
 
@@ -270,8 +271,11 @@ Recovered batches are inactive, identity-scoped recovery state. Their metadata
 and entries are authenticated encryption under the destination identity master
 key, but they are not managed `.key` or `.sen` files and have no signing-runtime
 projection. The batch commits to each exact entry plaintext, and each entry
-also carries its restore ID. Store passphrase rotation validates and
-re-encrypts every published recovered file. Before rotation, the recovered
+also carries its restore ID. Batch v1 may add optional source-context fields;
+absence means `missing` to current readers. Published batch plaintext is
+immutable: loaded batches must never be re-marshaled for persistence, and
+passphrase rotation preserves exact plaintext bytes, including unknown
+additive fields. Before rotation, the recovered
 store removes exact `.new`/`.old` siblings after the canonical file validates,
 or restores a missing/invalid canonical file only from an exact sibling that
 validates under the current master key. Unknown state fails closed. Directories
@@ -860,7 +864,10 @@ can only return a signature that assembly or the on-chain LogicSig rejects.
 
 Managed backup archives live under `backups/<identity>/`. Each archive contains
 encrypted `.apb` payloads, `manifest.json` with source node role metadata, and a
-policy snapshot. The manifest role is a rebuild default/diagnostic; explicit
+policy snapshot. Current writers also include optional-format
+`source_settings.json` with non-secret approval/custom-network context; its
+`missing|unverified|invalid` status is advisory and does not block valid key
+recovery. The manifest role is a rebuild default/diagnostic; explicit
 `apstore rebuild --role` is the replacement store authority when supplied.
 `.apb` is the cryptographic backup unit; the tarball is packaging.
 
@@ -868,8 +875,8 @@ Live restore is batch-oriented:
 
 - preview decrypts and reports without mutation,
 - recovery atomically publishes selected entries outside active scans,
-- review binds the batch to current destination policy, approval mode, and
-  active conflicts,
+- review binds the batch to current destination policy, approval mode,
+  source-settings status/digest, and active conflicts,
 - activation requires explicit acknowledgements, publishes rollback state,
   writes active state, and reloads,
 - hard interruption blocks signing until resume or rollback,

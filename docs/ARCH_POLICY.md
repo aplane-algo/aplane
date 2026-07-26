@@ -898,15 +898,21 @@ hard rejects, ceilings, review requirements, routing restrictions, and the
 known effective destination `user_auto_approve` mode. It reports a factual
 identical/different/unavailable result, not a widening verdict. The policy
 difference section contains only actual source/destination policy changes.
-Settings not carried by current backup archives are shown once as subordinate
-archive context; batch-specific missing metadata, such as a pre-manifest source
-role, is shown separately.
+Older archives without source-settings metadata show the archive limitation
+once as subordinate context; malformed source-settings metadata adds a warning.
+A valid current sidecar shows explicitly unverified source approval and custom
+genesis-hash context instead. Batch-specific missing metadata, such as a
+pre-manifest source role, is shown separately. None of this source context is a
+policy verdict or authorization input.
 
 Recovery does not make keys signable. Activation is pinned to the destination
 policy digest and approval mode by the review token, always requires policy
 transition acknowledgement, and requires a separate unattended-signing
 acknowledgement when destination auto-approve is effective. A policy or
-approval-mode change invalidates the token and forces a new review.
+approval-mode change invalidates the token and forces a new review. The token
+also pins the interpreted source-settings status and exact valid-sidecar
+digest. Source claims cannot suppress a destination warning or either
+acknowledgement.
 
 No restore path installs policy files automatically: `apadmin` and
 `apstore restore apply` activate only recovered credential/key-type state after

@@ -160,6 +160,9 @@ before the command reports success.
 `apstore backup create` writes a single `.tar.gz` archive. The archive includes:
 - All `.apb` files (encrypted with the export passphrase) in the `apb/` subdirectory
 - `README.md` with decryption instructions
+- `manifest.json` with source node-role metadata
+- `source_settings.json` with the signer source's approval default (not
+  applicable to sentry sources) and custom genesis-hash mappings
 - Any bundled template definition for a template-backed key, embedded inside that key's encrypted payload
 - Verified active policy snapshots at `policy/policy.yaml` and
   `policy/policy.yaml.hmac` for provenance. Restore workflows do not install
@@ -171,6 +174,7 @@ It does **not** include:
 - the store `.keystore` metadata file
 - the live signer token
 - any unlocked runtime state
+- algod URLs, algod tokens, endpoints, or other network credentials
 
 **Important:** Backup files use standalone `envelope_version 2` encryption. Each `.apb` file embeds its own salt, so only the file and the export passphrase are needed to decrypt it.
 
@@ -372,13 +376,17 @@ The restore process:
    entries, and creates one inactive destination-encrypted batch.
 4. It prints the current destination approval mode, policy digests,
    security-bearing differences, batch-specific unavailable source metadata,
-   archive source-setting limitations, and active conflicts. Archive
-   limitations are informational context and are not listed as policy
-   differences.
+   source-setting context, and active conflicts. New archives report source
+   settings as explicitly unverified; older archives show a limitation note,
+   and malformed metadata adds a warning. None of these source claims is listed
+   as a policy difference or changes destination behavior.
 5. It asks for policy-transition acknowledgement and, when required, a
    separate unattended-signing acknowledgement.
 6. Only after confirmation does activation publish rollback state, apply the
    whole batch, and reload the identity runtime.
+
+Source-settings status is intentionally shown at recovered-batch review, not
+in the earlier passphrase/key-inventory preview.
 
 Use `--address ADDRESS` one or more times with `restore apply` to restore a
 subset. Use `--overwrite` only when you explicitly intend to replace an
@@ -421,12 +429,15 @@ master key. Backup creation verified the live source policy before copying it;
 activation review accurately treats the archived policy as unverified source
 material and the destination policy as authoritative.
 
-Current backup archives do not record the source node's approval default or
-custom genesis-hash mappings. Review states that limitation once and always
-foregrounds the known destination approval mode. A pre-manifest archive also
-reports its source node role as unavailable. When the destination uses
-auto-approve, activation still requires the separate unattended-signing
-acknowledgement.
+Current backup writers record the source node's approval default and custom
+genesis-hash mappings in `source_settings.json`; the sidecar contains no
+network credentials. Because the destination cannot authenticate this
+plaintext archive metadata, review labels it unverified. Older archives show a
+limitation note instead. Malformed source settings produce a warning but do not
+prevent recovery of otherwise valid keys. A pre-manifest archive also reports
+its source node role as unavailable. The known destination approval mode is
+always authoritative: when it uses auto-approve, activation still requires the
+separate unattended-signing acknowledgement regardless of the source value.
 
 If policy restoration is warranted, restore it deliberately:
 
