@@ -2344,8 +2344,14 @@ Live signer-managed restore:
   key-type files and does not reload
 - review revalidates the batch and current destination state, foregrounds
   security-bearing policy differences and the effective destination
-  `user_auto_approve` mode, reports source-only settings that cannot be known,
-  fingerprints active conflicts, and returns an opaque review token
+  `user_auto_approve` mode, fingerprints active conflicts, and returns an
+  opaque review token. Actual `security_changes` are rendered separately from
+  unavailable source metadata. Protocol v3 conservatively reports the
+  constant archive limitations `source.user_auto_approve` and
+  `source.genesis_hash_mappings` in `unknown_source_settings`; clients present
+  those once as subordinate archive context rather than policy differences.
+  A pre-manifest archive also reports the batch-specific
+  `source.node_role`.
 - activation requires the current review token plus policy-transition
   acknowledgement; a destination using auto-approve additionally requires a
   separate unattended-signing acknowledgement; replacing active credentials

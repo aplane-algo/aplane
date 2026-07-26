@@ -11,6 +11,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
+const archiveSourceSettingsLimitation = "Backup archives do not record the source node's " +
+	"approval default or custom genesis-hash mappings."
+
 func cmdRestoreManaged(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: apstore restore <preview|apply|list|review|activate|rollback|purge>")
@@ -325,12 +328,24 @@ func printRecoveredReview(review protocol.ReviewRecoveredResultMessage) {
 		logWarnf("%s", review.UnattendedSigningWarning)
 	}
 	logInfof("policy comparison: %s", review.PolicyComparison)
+	fmt.Print(formatRecoveredReviewSections(review))
+	for _, conflict := range review.ActiveConflicts {
+		logWarnf("active conflict: %s (%s, %s)", conflict.Selector, conflict.Category, conflict.KeyType)
+	}
+}
+
+func formatRecoveredReviewSections(review protocol.ReviewRecoveredResultMessage) string {
+	var sb strings.Builder
+	sb.WriteString("Security-bearing policy differences\n")
+	if len(review.SecurityChanges) == 0 {
+		sb.WriteString("  none\n")
+	}
 	for _, change := range review.SecurityChanges {
 		scope := change.Selector
 		if scope == "" {
 			scope = "default"
 		}
-		fmt.Printf("  [%s] %s %s: %s -> %s\n",
+		fmt.Fprintf(&sb, "  [%s] %s %s: %s -> %s\n",
 			change.Category,
 			scope,
 			change.Path,
@@ -338,12 +353,24 @@ func printRecoveredReview(review protocol.ReviewRecoveredResultMessage) {
 			change.Destination,
 		)
 	}
+	var batchUnknowns []string
 	for _, unknown := range review.UnknownSourceSettings {
-		fmt.Printf("  [unknown source] %s\n", unknown)
+		if protocol.IsRecoveryArchiveSourceLimitation(unknown) {
+			continue
+		}
+		batchUnknowns = append(batchUnknowns, unknown)
 	}
-	for _, conflict := range review.ActiveConflicts {
-		logWarnf("active conflict: %s (%s, %s)", conflict.Selector, conflict.Category, conflict.KeyType)
+	if len(batchUnknowns) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString("Source metadata unavailable for this archive\n")
 	}
+	for _, unknown := range batchUnknowns {
+		fmt.Fprintf(&sb, "  [unknown source] %s\n", unknown)
+	}
+	sb.WriteString("\n")
+	sb.WriteString(archiveSourceSettingsLimitation)
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 func requestRestorePreview(client apstoreAdminRequester, name string, exportPassphrase []byte) (protocol.RestorePreviewMessage, error) {

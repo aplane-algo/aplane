@@ -37,6 +37,57 @@ func TestCmdBackupImportRejectsInvalidSources(t *testing.T) {
 	}
 }
 
+func TestFormatRecoveredReviewSectionsSeparatesArchiveLimitations(t *testing.T) {
+	review := protocol.ReviewRecoveredResultMessage{
+		UnknownSourceSettings: []string{
+			protocol.RecoverySourceSettingUserAutoApprove,
+			protocol.RecoverySourceSettingGenesisHashMappings,
+			protocol.RecoverySourceSettingNodeRole,
+			"source.future_setting",
+		},
+	}
+	rendered := formatRecoveredReviewSections(review)
+
+	if !strings.Contains(rendered, "Security-bearing policy differences\n  none") {
+		t.Fatalf("review omitted new no-difference output:\n%s", rendered)
+	}
+	if strings.Count(rendered, archiveSourceSettingsLimitation) != 1 {
+		t.Fatalf("archive limitation count = %d, want 1:\n%s",
+			strings.Count(rendered, archiveSourceSettingsLimitation), rendered)
+	}
+	if strings.Contains(rendered, "[unknown source] "+protocol.RecoverySourceSettingUserAutoApprove) ||
+		strings.Contains(rendered, "[unknown source] "+protocol.RecoverySourceSettingGenesisHashMappings) {
+		t.Fatalf("constant archive limitations rendered as findings:\n%s", rendered)
+	}
+	for _, want := range []string{
+		"Source metadata unavailable for this archive",
+		"[unknown source] " + protocol.RecoverySourceSettingNodeRole,
+		"[unknown source] source.future_setting",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("review omitted %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestFormatRecoveredReviewSectionsOrdersSecurityChangesFirst(t *testing.T) {
+	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{
+		SecurityChanges: []protocol.RecoveryPolicyChange{{
+			Category:    "hard_rejects",
+			Path:        "reject_rekey",
+			Source:      "true",
+			Destination: "false",
+		}},
+		UnknownSourceSettings: []string{protocol.RecoverySourceSettingNodeRole},
+	})
+	changeIndex := strings.Index(rendered, "reject_rekey")
+	unknownIndex := strings.Index(rendered, protocol.RecoverySourceSettingNodeRole)
+	noteIndex := strings.Index(rendered, archiveSourceSettingsLimitation)
+	if changeIndex < 0 || unknownIndex < changeIndex || noteIndex < unknownIndex {
+		t.Fatalf("review section order is wrong:\n%s", rendered)
+	}
+}
+
 func TestCmdBackupImportRejectsDuplicateBasename(t *testing.T) {
 	RegisterProviders()
 

@@ -371,7 +371,10 @@ The restore process:
 3. `restore apply` prompts for the **backup passphrase**, validates all selected
    entries, and creates one inactive destination-encrypted batch.
 4. It prints the current destination approval mode, policy digests,
-   security-bearing differences, unknown source settings, and active conflicts.
+   security-bearing differences, batch-specific unavailable source metadata,
+   archive source-setting limitations, and active conflicts. Archive
+   limitations are informational context and are not listed as policy
+   differences.
 5. It asks for policy-transition acknowledgement and, when required, a
    separate unattended-signing acknowledgement.
 6. Only after confirmation does activation publish rollback state, apply the
@@ -417,6 +420,13 @@ directory. The destination cannot verify the archived HMAC without the source
 master key. Backup creation verified the live source policy before copying it;
 activation review accurately treats the archived policy as unverified source
 material and the destination policy as authoritative.
+
+Current backup archives do not record the source node's approval default or
+custom genesis-hash mappings. Review states that limitation once and always
+foregrounds the known destination approval mode. A pre-manifest archive also
+reports its source node role as unavailable. When the destination uses
+auto-approve, activation still requires the separate unattended-signing
+acknowledgement.
 
 If policy restoration is warranted, restore it deliberately:
 

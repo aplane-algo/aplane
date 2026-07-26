@@ -896,7 +896,11 @@ source HMAC with the destination master key. Review compares the parseable
 source projection with the current verified destination policy, foregrounding
 hard rejects, ceilings, review requirements, routing restrictions, and the
 known effective destination `user_auto_approve` mode. It reports a factual
-identical/different/unavailable result, not a widening verdict.
+identical/different/unavailable result, not a widening verdict. The policy
+difference section contains only actual source/destination policy changes.
+Settings not carried by current backup archives are shown once as subordinate
+archive context; batch-specific missing metadata, such as a pre-manifest source
+role, is shown separately.
 
 Recovery does not make keys signable. Activation is pinned to the destination
 policy digest and approval mode by the review token, always requires policy

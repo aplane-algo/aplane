@@ -293,8 +293,10 @@ func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing
 		first.SecurityChanges[0].Category != string(policy.RestoreCategoryHardRejects) {
 		t.Fatalf("security-first comparison = status %q changes %+v", first.PolicyComparison, first.SecurityChanges)
 	}
-	if !slices.Contains(first.UnknownSourceSettings, "source.user_auto_approve") {
-		t.Fatalf("unknown source settings = %v, want source.user_auto_approve", first.UnknownSourceSettings)
+	if len(first.UnknownSourceSettings) != 2 ||
+		!slices.Contains(first.UnknownSourceSettings, protocol.RecoverySourceSettingUserAutoApprove) ||
+		!slices.Contains(first.UnknownSourceSettings, protocol.RecoverySourceSettingGenesisHashMappings) {
+		t.Fatalf("unknown source settings = %v, want current archive limitations", first.UnknownSourceSettings)
 	}
 	if first.ReviewToken == "" {
 		t.Fatal("review token is empty")
@@ -336,6 +338,43 @@ func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing
 	}
 	if got := reloads.Load(); got != 0 {
 		t.Fatalf("runtime reload count = %d, want 0", got)
+	}
+}
+
+func TestReviewRecoveredReportsLegacySourceRoleSeparately(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, _ := writeRecoverableArchiveWithoutManifest(
+		t,
+		paths,
+		auth.DefaultIdentityID,
+		noderole.RoleSigner,
+	)
+	service := Service{
+		Deps: backupServiceTestDeps{
+			paths:   paths,
+			limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+		},
+	}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoverResult.Success {
+		t.Fatalf("RecoverBackup() = %+v", recoverResult)
+	}
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if !review.Success {
+		t.Fatalf("ReviewRecovered() = %+v", review)
+	}
+	if len(review.UnknownSourceSettings) != 3 ||
+		!slices.Contains(review.UnknownSourceSettings, protocol.RecoverySourceSettingUserAutoApprove) ||
+		!slices.Contains(review.UnknownSourceSettings, protocol.RecoverySourceSettingGenesisHashMappings) ||
+		!slices.Contains(review.UnknownSourceSettings, protocol.RecoverySourceSettingNodeRole) {
+		t.Fatalf("unknown source settings = %v, want limitations plus legacy node role", review.UnknownSourceSettings)
 	}
 }
 
@@ -1013,6 +1052,25 @@ func writeRecoverableArchiveForRole(
 	identityID string,
 	role noderole.Role,
 ) (string, string) {
+	return writeRecoverableArchive(t, paths, identityID, role, true)
+}
+
+func writeRecoverableArchiveWithoutManifest(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+	role noderole.Role,
+) (string, string) {
+	return writeRecoverableArchive(t, paths, identityID, role, false)
+}
+
+func writeRecoverableArchive(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+	role noderole.Role,
+	withManifest bool,
+) (string, string) {
 	t.Helper()
 
 	root := t.TempDir()
@@ -1038,8 +1096,10 @@ func writeRecoverableArchiveForRole(
 	if err := os.WriteFile(filepath.Join(keysDir, selector+".apb"), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(apb) error = %v", err)
 	}
-	if err := backup.WriteManifest(root, role, time.Unix(1_700_000_000, 0)); err != nil {
-		t.Fatalf("WriteManifest() error = %v", err)
+	if withManifest {
+		if err := backup.WriteManifest(root, role, time.Unix(1_700_000_000, 0)); err != nil {
+			t.Fatalf("WriteManifest() error = %v", err)
+		}
 	}
 	policyDir := filepath.Join(root, "policy")
 	if err := os.MkdirAll(policyDir, 0o750); err != nil {
@@ -1052,7 +1112,11 @@ func writeRecoverableArchiveForRole(
 	if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), sourcePolicy, 0o600); err != nil {
 		t.Fatalf("WriteFile(source policy) error = %v", err)
 	}
-	archivePath := backup.BuildManagedArchivePath(paths, identityID, "recover-service")
+	label := "recover-service"
+	if !withManifest {
+		label = "recover-service-legacy"
+	}
+	archivePath := backup.BuildManagedArchivePath(paths, identityID, label)
 	if err := backup.CreateTarGzArchive(root, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}

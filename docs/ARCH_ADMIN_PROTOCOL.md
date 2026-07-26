@@ -280,9 +280,15 @@ unlock/reload after passphrase verification through
 - `review_recovered`: `restore_id` -> `review_recovered_result`: `success`,
   restore/batch state, archive and policy digests, destination approval mode,
   unattended-signing warning, factual policy comparison, ordered
-  `security_changes[]`, secondary `changed_paths[]`, unknown source settings,
-  entries, active conflict fingerprints, opaque `review_token`, required
-  acknowledgement flags, replacement state, `code`, `error`
+  `security_changes[]`, secondary `changed_paths[]`,
+  `unknown_source_settings[]`, entries, active conflict fingerprints, opaque
+  `review_token`, required acknowledgement flags, replacement state, `code`,
+  `error`. In protocol v3, `unknown_source_settings` conservatively includes
+  the constant archive limitations `source.user_auto_approve` and
+  `source.genesis_hash_mappings`; a pre-manifest archive additionally reports
+  the batch-specific `source.node_role`. Updated clients render the constant
+  limitations once as archive-format context, outside the policy-difference
+  findings.
 - `activate_recovered`: `restore_id`, `review_token`,
   `acknowledge_policy_transition`, optional
   `acknowledge_unattended_signing`, optional `replace_existing` ->

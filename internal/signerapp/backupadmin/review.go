@@ -112,10 +112,7 @@ func (s Service) reviewRecoveredWithMasterKey(
 		return adminproto.ReviewRecoveredResult{}, err
 	}
 	approvalMode, warning := destinationApprovalMode(ir)
-	unknowns := []string{"source.user_auto_approve", "source.genesis_hash_mappings"}
-	if batch.SourceNodeRole == recovered.SourceNodeRoleUnknown {
-		unknowns = append(unknowns, "source.node_role")
-	}
+	unknowns := recoveredUnknownSourceSettings(batch)
 	changes := make([]adminproto.RecoveryPolicyChange, len(comparison.Changes))
 	for i, change := range comparison.Changes {
 		changes[i] = adminproto.RecoveryPolicyChange{
@@ -208,12 +205,24 @@ func (s Service) reviewIncompleteActivation(
 		DestinationApprovalMode:      approvalMode,
 		UnattendedSigningWarning:     warning,
 		PolicyComparison:             string(policy.RestoreComparisonUnavailable),
+		UnknownSourceSettings:        recoveredUnknownSourceSettings(batch),
 		Entries:                      entries,
 		ReviewToken:                  journal.ReviewToken,
 		AcknowledgePolicyTransition:  journal.AcknowledgePolicyTransition,
 		AcknowledgeUnattendedSigning: journal.AcknowledgeUnattendedSigning,
 		ReplaceExisting:              journal.ReplaceExisting,
 	}, nil
+}
+
+func recoveredUnknownSourceSettings(batch *recovered.Batch) []string {
+	unknowns := []string{
+		protocol.RecoverySourceSettingUserAutoApprove,
+		protocol.RecoverySourceSettingGenesisHashMappings,
+	}
+	if batch != nil && batch.SourceNodeRole == recovered.SourceNodeRoleUnknown {
+		unknowns = append(unknowns, protocol.RecoverySourceSettingNodeRole)
+	}
+	return unknowns
 }
 
 func loadDestinationRestorePolicy(

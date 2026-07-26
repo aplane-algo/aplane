@@ -8,7 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
+
+const archiveSourceSettingsLimitation = "Backup archives do not record the source node's " +
+	"approval default or custom genesis-hash mappings."
 
 func (m Model) renderRestoreList() string {
 	var sb strings.Builder
@@ -216,7 +221,19 @@ func (m Model) renderRestoreReview() string {
 		sb.WriteString(fmt.Sprintf("    source: %s\n", change.Source))
 		sb.WriteString(fmt.Sprintf("    destination: %s\n", change.Destination))
 	}
+	var batchUnknowns []string
 	for _, unknown := range review.UnknownSourceSettings {
+		if protocol.IsRecoveryArchiveSourceLimitation(unknown) {
+			continue
+		}
+		batchUnknowns = append(batchUnknowns, unknown)
+	}
+	if len(batchUnknowns) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render("Source metadata unavailable for this archive"))
+		sb.WriteString("\n")
+	}
+	for _, unknown := range batchUnknowns {
 		sb.WriteString(fmt.Sprintf("  [unknown source] %s\n", unknown))
 	}
 	if len(review.ActiveConflicts) > 0 {
@@ -228,6 +245,9 @@ func (m Model) renderRestoreReview() string {
 		}
 	}
 
+	sb.WriteString("\n")
+	sb.WriteString(helpStyle.Render(wrapText(archiveSourceSettingsLimitation, popupWidth-6)))
+	sb.WriteString("\n")
 	sb.WriteString("\n")
 	sb.WriteString(subtitleStyle.Render("Required acknowledgements"))
 	sb.WriteString("\n")

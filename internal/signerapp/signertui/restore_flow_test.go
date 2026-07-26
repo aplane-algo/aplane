@@ -200,6 +200,61 @@ func TestRestoreReviewForegroundsAutoApproveBeforeSeparateAcknowledgements(t *te
 	}
 }
 
+func TestRestoreReviewSeparatesPolicyChangesFromSourceLimitations(t *testing.T) {
+	review := ReviewRecoveredResultMessage{
+		Success:                 true,
+		RestoreID:               "0123456789abcdef0123456789abcdef",
+		State:                   "recovered",
+		DestinationApprovalMode: "manual_default",
+		PolicyComparison:        "identical",
+		UnknownSourceSettings: []string{
+			"source.user_auto_approve",
+			"source.genesis_hash_mappings",
+			"source.node_role",
+			"source.future_setting",
+		},
+		ReviewToken: strings.Repeat("c", 64),
+	}
+	m := Model{
+		viewState: ViewRestoreReview,
+		restore: restoreState{
+			restoreID: review.RestoreID,
+			review:    review,
+		},
+	}
+
+	rendered := stripANSI(m.renderRestoreReview())
+	policyHeadingIndex := strings.Index(rendered, "Security-bearing policy differences")
+	noneIndex := strings.Index(rendered, "none")
+	if policyHeadingIndex < 0 || noneIndex < policyHeadingIndex {
+		t.Fatalf("review omitted empty policy-difference result:\n%s", rendered)
+	}
+	if strings.Count(rendered, archiveSourceSettingsLimitation) != 1 {
+		t.Fatalf("archive limitation count = %d, want 1:\n%s",
+			strings.Count(rendered, archiveSourceSettingsLimitation), rendered)
+	}
+	if strings.Contains(rendered, "[unknown source] source.user_auto_approve") ||
+		strings.Contains(rendered, "[unknown source] source.genesis_hash_mappings") {
+		t.Fatalf("constant archive limitations rendered as findings:\n%s", rendered)
+	}
+	for _, want := range []string{
+		"Source metadata unavailable for this archive",
+		"[unknown source] source.node_role",
+		"[unknown source] source.future_setting",
+		"Required acknowledgements",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("review omitted %q:\n%s", want, rendered)
+		}
+	}
+	metadataIndex := strings.Index(rendered, "Source metadata unavailable")
+	noteIndex := strings.Index(rendered, archiveSourceSettingsLimitation)
+	ackIndex := strings.Index(rendered, "Required acknowledgements")
+	if metadataIndex < 0 || noteIndex < metadataIndex || ackIndex < noteIndex {
+		t.Fatalf("source review order is wrong:\n%s", rendered)
+	}
+}
+
 func TestKeyListRestoreShortcutOpensRestoreList(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyList,
