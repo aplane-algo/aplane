@@ -208,6 +208,7 @@ func RecoverManagedBackup(
 	if hasManifest {
 		sourceNodeRole = manifest.SourceNodeRole
 	}
+	sourceSettings := inspectSourceSettings(sourceRoot, sourceNodeRole)
 	policyStatus, policySHA256, policyYAML, err := inspectSourcePolicy(sourceRoot, sourceNodeRole)
 	if err != nil {
 		return nil, err
@@ -235,14 +236,19 @@ func RecoverManagedBackup(
 	}
 
 	return recovered.Create(paths, identityID, recovered.CreateRequest{
-		ArchiveName:        filepath.Base(resolvedArchive),
-		ArchiveSHA256:      archiveSHA256,
-		SourceNodeRole:     sourceNodeRole,
-		SourcePolicyStatus: policyStatus,
-		SourcePolicySHA256: policySHA256,
-		SourcePolicyYAML:   policyYAML,
-		CreatedAt:          time.Now().UTC(),
-		Entries:            entries,
+		ArchiveName:               filepath.Base(resolvedArchive),
+		ArchiveSHA256:             archiveSHA256,
+		SourceNodeRole:            sourceNodeRole,
+		SourcePolicyStatus:        policyStatus,
+		SourcePolicySHA256:        policySHA256,
+		SourcePolicyYAML:          policyYAML,
+		SourceSettingsStatus:      sourceSettings.Status,
+		SourceSettingsSHA256:      sourceSettings.SHA256,
+		SourceUserAutoApprove:     sourceSettings.Projection.UserAutoApprove,
+		SourceGenesisHashMappings: sourceSettings.Projection.GenesisHashMappings,
+		SourceSettingsWarning:     sourceSettings.Warning,
+		CreatedAt:                 time.Now().UTC(),
+		Entries:                   entries,
 	}, masterKey)
 }
 

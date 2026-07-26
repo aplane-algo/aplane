@@ -4,6 +4,7 @@
 package backupadmin
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -64,6 +65,84 @@ func TestBackupIdentityZeroesRequestPassphraseOnFailure(t *testing.T) {
 	for i, b := range passphrase {
 		if b != 0 {
 			t.Fatalf("passphrase byte %d = %d, want zero", i, b)
+		}
+	}
+}
+
+func TestBackupIdentityCapturesSourceApprovalAndCustomGenesisMappings(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	customGenesisHash := strings.Repeat("34", 32)
+	service := Service{
+		Deps: backupServiceTestDeps{
+			paths: paths,
+			genesisHashMappings: map[string]string{
+				customGenesisHash: "private-network",
+			},
+		},
+	}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntimeWithAutoApprove(t, paths, &reloads, true)
+	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, time.Unix(1_700_000_000, 0)); err != nil {
+		t.Fatalf("SaveInitial(node role) error = %v", err)
+	}
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	address, keyJSON := keystest.Ed25519KeyJSON(t)
+	defer crypto.ZeroBytes(keyJSON)
+	if err := ir.WithMasterKey(func(masterKey []byte) error {
+		encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(paths.KeysDir(auth.DefaultIdentityID), 0o770); err != nil {
+			return err
+		}
+		return os.WriteFile(
+			keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address),
+			encrypted,
+			0o600,
+		)
+	}); err != nil {
+		t.Fatalf("write active key: %v", err)
+	}
+
+	result := service.BackupIdentity(ir, adminproto.BackupIdentityRequest{
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !result.Success {
+		t.Fatalf("BackupIdentity() = %+v, want success", result)
+	}
+	extractDir := t.TempDir()
+	if err := backup.ExtractTarGzArchive(result.ArchivePath, extractDir); err != nil {
+		t.Fatalf("ExtractTarGzArchive() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(extractDir, backup.SourceSettingsFileName))
+	if err != nil {
+		t.Fatalf("ReadFile(source settings) error = %v", err)
+	}
+	var document struct {
+		UserAutoApprove     *bool `json:"user_auto_approve"`
+		GenesisHashMappings []struct {
+			GenesisHash string `json:"genesis_hash"`
+			Network     string `json:"network"`
+		} `json:"genesis_hash_mappings"`
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatalf("Unmarshal(source settings) error = %v", err)
+	}
+	if document.UserAutoApprove == nil || !*document.UserAutoApprove {
+		t.Fatalf("source user_auto_approve = %v, want true", document.UserAutoApprove)
+	}
+	if len(document.GenesisHashMappings) != 1 ||
+		document.GenesisHashMappings[0].Network != "private-network" ||
+		document.GenesisHashMappings[0].GenesisHash == customGenesisHash {
+		t.Fatalf(
+			"source genesis-hash mappings = %+v, want one canonical private-network mapping",
+			document.GenesisHashMappings,
+		)
+	}
+	for _, forbidden := range []string{"algod_token", "algod_url", "endpoint"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("source settings contain forbidden field %q: %s", forbidden, data)
 		}
 	}
 }
@@ -1229,11 +1308,15 @@ func testBackupIdentityRuntime() *identity.Runtime {
 }
 
 type backupServiceTestDeps struct {
-	paths   storepaths.Paths
-	limiter RestoreLimiter
+	paths               storepaths.Paths
+	limiter             RestoreLimiter
+	genesisHashMappings map[string]string
 }
 
 func (d backupServiceTestDeps) KeyPaths() storepaths.Paths { return d.paths }
+func (d backupServiceTestDeps) GenesisHashMappings() map[string]string {
+	return d.genesisHashMappings
+}
 func (d backupServiceTestDeps) RestoreLimiter() RestoreLimiter {
 	return d.limiter
 }
@@ -1251,6 +1334,9 @@ type failingBackupDeps struct {
 }
 
 func (d failingBackupDeps) KeyPaths() storepaths.Paths { return d.paths }
+func (d failingBackupDeps) GenesisHashMappings() map[string]string {
+	return nil
+}
 func (d failingBackupDeps) RestoreLimiter() RestoreLimiter {
 	return nil
 }

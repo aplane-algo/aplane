@@ -6,6 +6,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -385,6 +386,11 @@ func (d signerAdminAppDeps) Config() *serverconfig.ServerConfig {
 
 func (d signerAdminAppDeps) KeyPaths() storepaths.Paths {
 	return d.signer.keyPaths
+}
+
+func (d signerAdminAppDeps) GenesisHashMappings() map[string]string {
+	cfg := d.signer.ConfigSnapshot()
+	return maps.Clone(cfg.GenesisHashNetworks)
 }
 
 func (d signerAdminAppDeps) Theme() string {

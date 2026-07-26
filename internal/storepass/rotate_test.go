@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
+	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
@@ -178,6 +180,100 @@ func TestRotateReconcilesRecoveredRotationArtifacts(t *testing.T) {
 		t.Fatalf("LoadBatch(new master key) error = %v", err)
 	}
 	assertNoRotationArtifacts(t, metadataPath, entryPath)
+}
+
+func TestRotatePreservesRecoveredBatchPlaintextWithUnknownFields(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	oldPassphrase := []byte("old-passphrase")
+	newPassphrase := []byte("new-passphrase")
+
+	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	}
+	defer crypto.ZeroBytes(oldMasterKey)
+	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+
+	autoApprove := false
+	address, keyJSON := keystest.Ed25519KeyJSON(t)
+	defer crypto.ZeroBytes(keyJSON)
+	archiveSum := sha256.Sum256([]byte("archive"))
+	batch, err := recovered.Create(paths, identityID, recovered.CreateRequest{
+		ArchiveName:           "backup.tar.gz",
+		ArchiveSHA256:         hex.EncodeToString(archiveSum[:]),
+		SourceNodeRole:        string(noderole.RoleSigner),
+		SourcePolicyStatus:    recovered.SourcePolicyMissing,
+		SourceSettingsStatus:  sourcecontext.StatusUnverified,
+		SourceSettingsSHA256:  strings.Repeat("d", 64),
+		SourceUserAutoApprove: &autoApprove,
+		Entries: []recovered.Entry{{
+			Selector: address,
+			Category: apkeys.CategoryEd25519,
+			KeyType:  "ed25519",
+			KeyJSON:  keyJSON,
+		}},
+	}, oldMasterKey)
+	if err != nil {
+		t.Fatalf("recovered.Create() error = %v", err)
+	}
+
+	batchPath := paths.RecoveredBatchMetadataPath(identityID, batch.RestoreID)
+	originalPlaintext, err := decryptForRotateTest(batchPath, oldMasterKey)
+	if err != nil {
+		t.Fatalf("decrypt recovered batch: %v", err)
+	}
+	defer crypto.ZeroBytes(originalPlaintext)
+	if len(originalPlaintext) == 0 || originalPlaintext[len(originalPlaintext)-1] != '}' {
+		t.Fatalf("recovered batch plaintext is not a JSON object: %q", originalPlaintext)
+	}
+	futureField := []byte(`,"future_source_context":{"keep":"exact"}}`)
+	injectedPlaintext := make([]byte, 0, len(originalPlaintext)+len(futureField))
+	injectedPlaintext = append(injectedPlaintext, originalPlaintext[:len(originalPlaintext)-1]...)
+	injectedPlaintext = append(injectedPlaintext, futureField...)
+	defer crypto.ZeroBytes(injectedPlaintext)
+	var validJSON map[string]json.RawMessage
+	if err := json.Unmarshal(injectedPlaintext, &validJSON); err != nil {
+		t.Fatalf("injected recovered batch JSON is invalid: %v", err)
+	}
+	writeEncryptedForRotateTest(t, batchPath, injectedPlaintext, oldMasterKey)
+
+	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{})
+	if err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+	if result.RecoveredFilesMigrated != 2 {
+		t.Fatalf("RecoveredFilesMigrated = %d, want 2", result.RecoveredFilesMigrated)
+	}
+	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	if err != nil {
+		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+	}
+	newMasterKey, err := meta.VerifyAndDeriveMasterKey(newPassphrase)
+	if err != nil {
+		t.Fatalf("VerifyAndDeriveMasterKey(new passphrase) error = %v", err)
+	}
+	defer crypto.ZeroBytes(newMasterKey)
+	rotatedPlaintext, err := decryptForRotateTest(batchPath, newMasterKey)
+	if err != nil {
+		t.Fatalf("decrypt rotated recovered batch: %v", err)
+	}
+	defer crypto.ZeroBytes(rotatedPlaintext)
+	if !bytes.Equal(rotatedPlaintext, injectedPlaintext) {
+		t.Fatalf(
+			"rotation changed recovered batch plaintext\nbefore:\n%s\nafter:\n%s",
+			injectedPlaintext,
+			rotatedPlaintext,
+		)
+	}
+	loaded, err := recovered.LoadBatch(paths, identityID, batch.RestoreID, newMasterKey)
+	if err != nil {
+		t.Fatalf("LoadBatch(rotated) error = %v", err)
+	}
+	if loaded.SourceUserAutoApprove == nil || *loaded.SourceUserAutoApprove {
+		t.Fatalf("rotated SourceUserAutoApprove = %v, want false", loaded.SourceUserAutoApprove)
+	}
 }
 
 func TestRotateRejectsRecoveredBatchWithUnresolvedState(t *testing.T) {

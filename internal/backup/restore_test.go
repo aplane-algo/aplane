@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
+	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -373,6 +374,15 @@ func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
 		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
 			t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 		}
+		autoApprove := true
+		if err := writeSourceSettings(filepath.Dir(keysDir), noderole.RoleSigner, SourceSettingsSnapshot{
+			UserAutoApprove: &autoApprove,
+			GenesisHashMappings: map[string]string{
+				strings.Repeat("42", 32): "voi-mainnet",
+			},
+		}); err != nil {
+			t.Fatalf("writeSourceSettings() error = %v", err)
+		}
 	})
 	archiveSHA256, _, err := FileSHA256(archivePath)
 	if err != nil {
@@ -399,6 +409,13 @@ func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
 		string(batch.SourcePolicyYAML) != string(policyYAML) {
 		t.Fatalf("batch source metadata = role %q status %q policy %q", batch.SourceNodeRole, batch.SourcePolicyStatus, batch.SourcePolicyYAML)
 	}
+	if batch.SourceSettingsStatus != sourcecontext.StatusUnverified ||
+		batch.SourceSettingsSHA256 == "" ||
+		batch.SourceUserAutoApprove == nil ||
+		!*batch.SourceUserAutoApprove ||
+		len(batch.SourceGenesisHashMappings) != 1 {
+		t.Fatalf("batch source settings = %+v, want unverified auto-approve context", batch)
+	}
 	if len(batch.Entries) != 1 || batch.Entries[0].Selector != address || batch.Entries[0].KeyType != "ed25519" {
 		t.Fatalf("batch entries = %+v, want recovered ed25519 %s", batch.Entries, address)
 	}
@@ -423,6 +440,59 @@ func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
 	defer entry.ZeroSecrets()
 	if entry.Selector != address || entry.KeyType != "ed25519" {
 		t.Fatalf("loaded recovered entry = %+v, want ed25519 %s", entry, address)
+	}
+}
+
+func TestRecoverManagedBackupKeepsKeysWhenSourceSettingsAreInvalid(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	archivePath := writeManagedRecoveryArchive(
+		t,
+		paths,
+		identityID,
+		noderole.RoleSigner,
+		nil,
+		func(keysDir string) {
+			if err := writeStandaloneBackupFile(
+				filepath.Join(keysDir, address+".apb"),
+				keyJSON,
+				[]byte("export-passphrase"),
+			); err != nil {
+				t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+			}
+			if err := os.WriteFile(
+				filepath.Join(filepath.Dir(keysDir), SourceSettingsFileName),
+				[]byte(`{"schema":`),
+				0o600,
+			); err != nil {
+				t.Fatalf("WriteFile(source settings) error = %v", err)
+			}
+		},
+	)
+
+	batch, err := RecoverManagedBackup(
+		paths,
+		identityID,
+		archivePath,
+		nil,
+		testExportMasterKey,
+		[]byte("export-passphrase"),
+		noderole.RoleSigner,
+	)
+	if err != nil {
+		t.Fatalf("RecoverManagedBackup() error = %v", err)
+	}
+	if batch.SourceSettingsStatus != sourcecontext.StatusInvalid ||
+		batch.SourceSettingsWarning == "" ||
+		batch.SourceSettingsSHA256 != "" ||
+		batch.SourceUserAutoApprove != nil {
+		t.Fatalf("batch source settings = %+v, want invalid without values", batch)
+	}
+	if len(batch.Entries) != 1 || batch.Entries[0].Selector != address {
+		t.Fatalf("batch entries = %+v, want recovered key %s", batch.Entries, address)
 	}
 }
 

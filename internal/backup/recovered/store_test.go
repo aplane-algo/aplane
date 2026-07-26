@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -341,6 +342,14 @@ func TestValidateBatchRejectsInvalidPolicyAndEntryOrdering(t *testing.T) {
 	if err := validateBatch(&emptyPolicyBatch); err != nil {
 		t.Fatalf("validateBatch(empty present policy) error = %v", err)
 	}
+	autoApprove := false
+	sourceSettingsBatch := valid()
+	sourceSettingsBatch.SourceSettingsStatus = sourcecontext.StatusUnverified
+	sourceSettingsBatch.SourceSettingsSHA256 = strings.Repeat("d", 64)
+	sourceSettingsBatch.SourceUserAutoApprove = &autoApprove
+	if err := validateBatch(&sourceSettingsBatch); err != nil {
+		t.Fatalf("validateBatch(valid source settings) error = %v", err)
+	}
 	tests := []struct {
 		name    string
 		mutate  func(*Batch)
@@ -363,6 +372,49 @@ func TestValidateBatchRejectsInvalidPolicyAndEntryOrdering(t *testing.T) {
 			wantErr: "source policy digest mismatch",
 		},
 		{
+			name: "missing source settings carry values",
+			mutate: func(batch *Batch) {
+				value := false
+				batch.SourceUserAutoApprove = &value
+			},
+			wantErr: "missing source settings must not include source-setting data",
+		},
+		{
+			name: "invalid source settings omit warning",
+			mutate: func(batch *Batch) {
+				batch.SourceSettingsStatus = sourcecontext.StatusInvalid
+			},
+			wantErr: "invalid source settings require a warning",
+		},
+		{
+			name: "invalid source settings carry values",
+			mutate: func(batch *Batch) {
+				value := false
+				batch.SourceSettingsStatus = sourcecontext.StatusInvalid
+				batch.SourceSettingsWarning = "invalid sidecar"
+				batch.SourceUserAutoApprove = &value
+			},
+			wantErr: "invalid source settings must not include source-setting values",
+		},
+		{
+			name: "unverified source settings have invalid digest",
+			mutate: func(batch *Batch) {
+				value := false
+				batch.SourceSettingsStatus = sourcecontext.StatusUnverified
+				batch.SourceSettingsSHA256 = "invalid"
+				batch.SourceUserAutoApprove = &value
+			},
+			wantErr: "invalid recovered batch source_settings_sha256",
+		},
+		{
+			name: "unverified signer settings omit approval default",
+			mutate: func(batch *Batch) {
+				batch.SourceSettingsStatus = sourcecontext.StatusUnverified
+				batch.SourceSettingsSHA256 = strings.Repeat("d", 64)
+			},
+			wantErr: "signer source settings require user_auto_approve",
+		},
+		{
 			name: "unsorted entries",
 			mutate: func(batch *Batch) {
 				batch.Entries[0], batch.Entries[1] = batch.Entries[1], batch.Entries[0]
@@ -378,6 +430,52 @@ func TestValidateBatchRejectsInvalidPolicyAndEntryOrdering(t *testing.T) {
 				t.Fatalf("validateBatch() error = %v, want %q", err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestLegacyBatchViewIgnoresAdditiveSourceSettings(t *testing.T) {
+	autoApprove := false
+	batch := Batch{
+		Schema:                    BatchSchema,
+		RestoreID:                 "0123456789abcdef0123456789abcdef",
+		CreatedAt:                 time.Unix(1234, 0).UTC(),
+		ArchiveName:               "backup.tar.gz",
+		ArchiveSHA256:             strings.Repeat("a", 64),
+		SourceNodeRole:            "signer",
+		SourcePolicyStatus:        SourcePolicyMissing,
+		SourceSettingsStatus:      sourcecontext.StatusUnverified,
+		SourceSettingsSHA256:      strings.Repeat("b", 64),
+		SourceUserAutoApprove:     &autoApprove,
+		SourceGenesisHashMappings: nil,
+		Entries: []BatchEntry{{
+			Selector:    "selector",
+			Category:    "category",
+			KeyType:     "key-type",
+			EntryFile:   "entry.recovered",
+			EntrySHA256: strings.Repeat("c", 64),
+		}},
+	}
+	plaintext, err := json.Marshal(batch)
+	if err != nil {
+		t.Fatalf("Marshal(batch) error = %v", err)
+	}
+	defer crypto.ZeroBytes(plaintext)
+
+	type legacyBatchView struct {
+		Schema             string             `json:"schema"`
+		RestoreID          string             `json:"restore_id"`
+		SourcePolicyStatus SourcePolicyStatus `json:"source_policy_status"`
+		Entries            []BatchEntry       `json:"entries"`
+	}
+	var legacy legacyBatchView
+	if err := json.Unmarshal(plaintext, &legacy); err != nil {
+		t.Fatalf("legacy Unmarshal(new v1 batch) error = %v", err)
+	}
+	if legacy.Schema != BatchSchema ||
+		legacy.RestoreID != batch.RestoreID ||
+		legacy.SourcePolicyStatus != SourcePolicyMissing ||
+		len(legacy.Entries) != 1 {
+		t.Fatalf("legacy batch view = %+v, want core v1 fields preserved", legacy)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -21,6 +22,7 @@ import (
 
 type Deps interface {
 	KeyPaths() storepaths.Paths
+	GenesisHashMappings() map[string]string
 	RestoreLimiter() RestoreLimiter
 	WithIdentityMutation(identityID string, fn func() error) error
 	Logf(format string, args ...interface{})
@@ -41,8 +43,23 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 	var result *backup.ArchiveResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		return ir.WithMasterKey(func(masterKey []byte) error {
+			sourceSettings := backup.SourceSettingsSnapshot{
+				GenesisHashMappings: s.Deps.GenesisHashMappings(),
+			}
+			if ir.NodeRole() == noderole.RoleSigner {
+				userAutoApprove := ir.Config().UserAutoApprove()
+				sourceSettings.UserAutoApprove = &userAutoApprove
+			}
 			var backupErr error
-			result, backupErr = backup.CreateKeysArchive(s.Deps.KeyPaths(), ir.ID(), archivePath, req.Addresses, masterKey, passphraseBytes)
+			result, backupErr = backup.CreateKeysArchive(backup.CreateKeysArchiveRequest{
+				Paths:            s.Deps.KeyPaths(),
+				IdentityID:       ir.ID(),
+				ArchivePath:      archivePath,
+				Addresses:        req.Addresses,
+				MasterKey:        masterKey,
+				ExportPassphrase: passphraseBytes,
+				SourceSettings:   sourceSettings,
+			})
 			return backupErr
 		})
 	})
