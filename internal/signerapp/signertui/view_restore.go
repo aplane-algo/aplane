@@ -173,6 +173,14 @@ func (m Model) renderRestorePreview() string {
 		}
 	}
 
+	sb.WriteString("\n")
+	sb.WriteString(restoreActionButton(
+		"RECOVER",
+		m.restore.previewFocus == restoreFocusAction,
+		m.selectedRestoreCount() > 0,
+	))
+	sb.WriteString("\n")
+
 	if m.restore.previewError != "" {
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render(m.restore.previewError))
@@ -180,6 +188,19 @@ func (m Model) renderRestorePreview() string {
 	}
 
 	return m.renderPopup(popupWidth, sb.String())
+}
+
+// restoreActionButton renders one commit button. ready styles a button whose
+// preconditions are met; an unready button is still focusable so activating it
+// can explain what is missing.
+func restoreActionButton(label string, focused, ready bool) string {
+	if !focused {
+		return buttonInactiveStyle.Render("  " + label)
+	}
+	if !ready {
+		return buttonInactiveStyle.Render("> " + label)
+	}
+	return buttonActiveStyle.Render("> " + label)
 }
 
 func (m Model) renderRestoring() string {
@@ -243,7 +264,8 @@ func (m Model) renderRestoreReview() string {
 	}
 
 	appendRecoveredSourceContext(&sb, review, popupWidth)
-	if recoveredUnattendedSigningAckRequired(review) {
+	requiresUnattended := recoveredUnattendedSigningAckRequired(review)
+	if requiresUnattended {
 		sb.WriteString("\n")
 		sb.WriteString(subtitleStyle.Render("Required acknowledgement"))
 		sb.WriteString("\n")
@@ -251,9 +273,20 @@ func (m Model) renderRestoreReview() string {
 			m.restore.unattendedAcknowledged,
 			"I acknowledge this identity auto-approves unmatched signing requests",
 		)
-		sb.WriteString(selectedStyle.Render("> " + unattendedLine))
+		if m.restore.reviewFocus == restoreFocusList {
+			sb.WriteString(selectedStyle.Render("> " + unattendedLine))
+		} else {
+			sb.WriteString("  " + unattendedLine)
+		}
 		sb.WriteString("\n")
 	}
+	sb.WriteString("\n")
+	sb.WriteString(restoreActionButton(
+		"ACTIVATE",
+		m.restore.reviewFocus == restoreFocusAction,
+		!requiresUnattended || m.restore.unattendedAcknowledged,
+	))
+	sb.WriteString("\n")
 	if m.restore.previewError != "" {
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render(m.restore.previewError))

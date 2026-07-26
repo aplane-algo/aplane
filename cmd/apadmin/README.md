@@ -143,7 +143,9 @@ data root.
 For a live signer-managed restore, unlock the signer, open the admin/settings
 panel, choose `Restore backup` or press `o`, select a managed archive, enter
 the archive export passphrase, preview the contained keys, select keys to
-restore, then review the destination approval mode and the source/destination
+restore, then tab to **RECOVER** and press Enter. Enter while navigating the
+key list does nothing, so a recovery only starts from the button. Next review
+the destination approval mode and the source/destination
 policy differences. Those differences are informational: archived source
 policy cannot be authenticated by the destination, so it produces no verdict
 and requires no acknowledgement. An auto-approving destination requires the

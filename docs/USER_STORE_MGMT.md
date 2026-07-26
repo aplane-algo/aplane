@@ -338,7 +338,9 @@ In the TUI:
 3. Select one of the managed archives in `<signer-data>/backups/<identity>/`
 4. Enter the backup export passphrase
 5. Review the previewed addresses, key types, existing-key conflicts, and template indicators
-6. Select the keys to restore
+6. Select the keys to restore, then `tab` to the **RECOVER** button and press
+   Enter. Recovery starts only from the button; Enter while navigating the key
+   list does nothing.
 7. Review the destination approval mode and the source/destination policy
    differences. The differences are informational; raw changed paths are
    secondary detail.
@@ -346,7 +348,8 @@ In the TUI:
    acknowledge unattended signing. Nothing the archive reports removes that
    acknowledgement.
 9. Enable replacement only if you explicitly want to replace existing active
-   credentials, then activate.
+   credentials, then `tab` to **ACTIVATE** and press Enter. Activation also
+   starts only from its button.
 
 `apadmin` restore is intentionally scoped to the active identity's managed
 backup locker. It does not restore arbitrary external paths or extracted backup

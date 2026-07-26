@@ -91,6 +91,12 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	}
 
 	passphrase := m.restore.passphrase
+	// Enter on the key list must not commit; only the Recover button does.
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.viewState != ViewRestorePreview {
+		t.Fatalf("enter on the key list started a recovery: viewState = %v", m.viewState)
+	}
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
 	m, cmd = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.viewState != ViewRestoring {
 		t.Fatalf("after restore submit viewState = %v, want ViewRestoring", m.viewState)
@@ -191,12 +197,16 @@ func TestRestoreReviewForegroundsAutoApproveBeforeAcknowledgement(t *testing.T) 
 		t.Fatalf("security review rendered a downgrade verdict:\n%s", rendered)
 	}
 
+	// Activating without the acknowledgement is refused from the button.
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
 	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.viewState != ViewRestoreReview ||
 		!strings.Contains(m.restore.previewError, "Acknowledge unattended signing") {
 		t.Fatalf("enter without unattended ack state=%v error=%q", m.viewState, m.restore.previewError)
 	}
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
 	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
 	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.viewState != ViewRestoring || cmd == nil {
 		t.Fatalf("acknowledged activation state=%v cmd=%v", m.viewState, cmd)
@@ -326,9 +336,50 @@ func TestRestoreReviewAutoApproveRequiresUnattendedAcknowledgement(t *testing.T)
 	}
 
 	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
 	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.viewState != ViewRestoring || cmd == nil {
 		t.Fatalf("unattended-only acknowledgement state=%v cmd=%v", m.viewState, cmd)
+	}
+}
+
+// Committing is a deliberate act on a focused button on both restore screens,
+// so Enter while navigating cannot start a recovery or an activation.
+func TestRestoreScreensCommitOnlyFromTheirButton(t *testing.T) {
+	preview := Model{
+		viewState: ViewRestorePreview,
+		restore: restoreState{
+			archivePath: "aplane-backup.tar.gz",
+			passphrase:  []byte("export"),
+			previewKeys: []RestoreKeyInfo{{Address: "NEWADDR", KeyType: "ed25519"}},
+			selected:    map[string]bool{"NEWADDR": true},
+		},
+	}
+	next, cmd := preview.handleRestorePreviewKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := next.(Model); got.viewState != ViewRestorePreview || cmd != nil {
+		t.Fatalf("enter on the key list started a recovery: viewState=%v cmd=%v", got.viewState, cmd)
+	}
+	if len(preview.restore.passphrase) == 0 {
+		t.Fatal("enter on the key list cleared the export passphrase")
+	}
+
+	review := Model{
+		viewState: ViewRestoreReview,
+		restore: restoreState{
+			restoreID: "0123456789abcdef0123456789abcdef",
+			review: ReviewRecoveredResultMessage{
+				Success:                 true,
+				RestoreID:               "0123456789abcdef0123456789abcdef",
+				State:                   "recovered",
+				DestinationApprovalMode: "manual_default",
+				ReviewToken:             strings.Repeat("a", 64),
+			},
+			reviewFocus: restoreFocusList,
+		},
+	}
+	next, cmd = review.handleRestoreReviewKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := next.(Model); got.viewState != ViewRestoreReview || cmd != nil {
+		t.Fatalf("enter off the button started an activation: viewState=%v cmd=%v", got.viewState, cmd)
 	}
 }
 
@@ -708,7 +759,7 @@ func TestRestoreSubmitClearsPassphrase(t *testing.T) {
 		viewState: ViewRestorePreview,
 		restore: restoreState{archivePath: archivePath, passphrase: passphrase, previewKeys: []RestoreKeyInfo{
 			{Address: "NEWADDR", KeyType: "ed25519"},
-		}, selected: map[string]bool{"NEWADDR": true}},
+		}, selected: map[string]bool{"NEWADDR": true}, previewFocus: restoreFocusAction},
 	}
 
 	next, cmd := m.handleRestorePreviewKeys(tea.KeyMsg{Type: tea.KeyEnter})

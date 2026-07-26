@@ -103,6 +103,9 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewRestoreList
 		return m, nil
 	case "up", "k":
+		if m.restore.previewFocus != restoreFocusList {
+			return m, nil
+		}
 		if m.restore.selectedKey > 0 {
 			m.restore.selectedKey--
 			if m.restore.selectedKey < m.restore.previewScrollOffset {
@@ -110,6 +113,9 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "down", "j":
+		if m.restore.previewFocus != restoreFocusList {
+			return m, nil
+		}
 		if m.restore.selectedKey < len(m.restore.previewKeys)-1 {
 			m.restore.selectedKey++
 			visibleHeight := m.restorePreviewVisibleHeight()
@@ -154,7 +160,19 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.restore.previewError = ""
+	case "tab", "shift+tab":
+		if m.restore.previewFocus == restoreFocusList {
+			m.restore.previewFocus = restoreFocusAction
+		} else {
+			m.restore.previewFocus = restoreFocusList
+		}
+		m.restore.previewError = ""
 	case "enter":
+		// Enter commits only from the Recover button, so arrowing through the
+		// key list cannot start a recovery by reflex.
+		if m.restore.previewFocus != restoreFocusAction {
+			return m, nil
+		}
 		addresses := m.selectedRestoreAddresses()
 		if len(addresses) == 0 {
 			m.restore.previewError = "Select at least one key to restore"
@@ -184,11 +202,26 @@ func (m Model) handleRestoreReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.restore.restoreID,
 		)
 		m.viewState = ViewRestorePreview
+	case "tab", "shift+tab", "up", "k", "down", "j":
+		if !requiresUnattended {
+			return m, nil
+		}
+		if m.restore.reviewFocus == restoreFocusList {
+			m.restore.reviewFocus = restoreFocusAction
+		} else {
+			m.restore.reviewFocus = restoreFocusList
+		}
+		m.restore.previewError = ""
 	case " ":
-		if requiresUnattended {
+		if requiresUnattended && m.restore.reviewFocus == restoreFocusList {
 			m.restore.unattendedAcknowledged = !m.restore.unattendedAcknowledged
+			m.restore.previewError = ""
 		}
 	case "enter":
+		// Enter commits only from the Activate button.
+		if m.restore.reviewFocus != restoreFocusAction {
+			return m, nil
+		}
 		if requiresUnattended && !m.restore.unattendedAcknowledged {
 			m.restore.previewError = "Acknowledge unattended signing before activation"
 			return m, nil

@@ -156,28 +156,41 @@ type backupState struct {
 
 // restoreState is the backup browse/preview/restore flow.
 type restoreState struct {
-	backups                []BackupInfo
-	backupsLoaded          bool
-	selectedBackup         int
-	backupScrollOffset     int
-	archivePath            string
-	passphrase             []byte
-	passphraseError        string
-	previewing             bool
-	previewKeys            []RestoreKeyInfo
-	previewErrors          []RestoreError
-	selected               map[string]bool
-	selectedKey            int
-	previewScrollOffset    int
-	previewError           string
-	overwrite              bool
+	backups             []BackupInfo
+	backupsLoaded       bool
+	selectedBackup      int
+	backupScrollOffset  int
+	archivePath         string
+	passphrase          []byte
+	passphraseError     string
+	previewing          bool
+	previewKeys         []RestoreKeyInfo
+	previewErrors       []RestoreError
+	selected            map[string]bool
+	selectedKey         int
+	previewScrollOffset int
+	previewError        string
+	overwrite           bool
+	// previewFocus selects the key list (restoreFocusList) or the Recover
+	// button (restoreFocusAction) on the preview screen.
+	previewFocus           int
 	restoreID              string
 	review                 ReviewRecoveredResultMessage
 	unattendedAcknowledged bool
-	displaySelectedKey     int
-	displayScrollOffset    int
-	result                 RestoreDisplayResult
+	// reviewFocus selects the acknowledgement checkbox (restoreFocusList) or
+	// the Activate button (restoreFocusAction) on the review screen.
+	reviewFocus         int
+	displaySelectedKey  int
+	displayScrollOffset int
+	result              RestoreDisplayResult
 }
+
+// Focus positions shared by the restore preview and review screens. Committing
+// is always a deliberate act on a focused button rather than a bare Enter.
+const (
+	restoreFocusList = iota
+	restoreFocusAction
+)
 
 // formsState covers the generate and import forms, their parameter modals,
 // and the post-completion display screens.

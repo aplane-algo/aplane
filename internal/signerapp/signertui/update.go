@@ -356,6 +356,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.restore.previewError = ""
 		m.restore.selectedKey = 0
 		m.restore.previewScrollOffset = 0
+		m.restore.previewFocus = restoreFocusList
 		m.initializeRestoreSelection()
 		m.viewState = ViewRestorePreview
 		return m, m.waitForMessageCmd()
@@ -386,6 +387,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.restore.review = msg.Result
 		m.restore.unattendedAcknowledged = false
+		if recoveredUnattendedSigningAckRequired(msg.Result) {
+			m.restore.reviewFocus = restoreFocusList
+		} else {
+			m.restore.reviewFocus = restoreFocusAction
+		}
 		m.restore.previewError = ""
 		m.viewState = ViewRestoreReview
 		return m, m.waitForMessageCmd()
