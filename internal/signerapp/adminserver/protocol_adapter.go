@@ -246,6 +246,10 @@ func ProtocolReviewRecoveredResultMessage(id string, result adminproto.ReviewRec
 		SecurityChanges:              protocolRecoveryPolicyChanges(result.SecurityChanges),
 		ChangedPaths:                 append([]string(nil), result.ChangedPaths...),
 		UnknownSourceSettings:        append([]string(nil), result.UnknownSourceSettings...),
+		SourceSettingsStatus:         result.SourceSettingsStatus,
+		SourceUserAutoApprove:        cloneOptionalBool(result.SourceUserAutoApprove),
+		SourceGenesisHashMappings:    protocolRecoveryGenesisHashMappings(result.SourceGenesisHashMappings),
+		SourceSettingsWarning:        result.SourceSettingsWarning,
 		Entries:                      protocolRecoveredReviewEntries(result.Entries),
 		ActiveConflicts:              protocolRecoveredActiveConflicts(result.ActiveConflicts),
 		ReviewToken:                  result.ReviewToken,
@@ -255,6 +259,27 @@ func ProtocolReviewRecoveredResultMessage(id string, result adminproto.ReviewRec
 		Code:                         result.Code,
 		Error:                        result.Error,
 	}
+}
+
+func protocolRecoveryGenesisHashMappings(
+	mappings []adminproto.RecoveryGenesisHashMapping,
+) []protocol.RecoveryGenesisHashMapping {
+	out := make([]protocol.RecoveryGenesisHashMapping, len(mappings))
+	for i, mapping := range mappings {
+		out[i] = protocol.RecoveryGenesisHashMapping{
+			GenesisHash: mapping.GenesisHash,
+			Network:     mapping.Network,
+		}
+	}
+	return out
+}
+
+func cloneOptionalBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
 }
 
 func ProtocolActivateRecoveredResultMessage(id string, result adminproto.ActivateRecoveredResult) protocol.ActivateRecoveredResultMessage {

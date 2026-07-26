@@ -4,6 +4,8 @@
 package backupadmin
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -17,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
@@ -377,6 +380,12 @@ func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing
 		!slices.Contains(first.UnknownSourceSettings, protocol.RecoverySourceSettingGenesisHashMappings) {
 		t.Fatalf("unknown source settings = %v, want current archive limitations", first.UnknownSourceSettings)
 	}
+	if first.SourceSettingsStatus != protocol.RecoverySourceSettingsStatusMissing ||
+		first.SourceUserAutoApprove != nil ||
+		len(first.SourceGenesisHashMappings) != 0 ||
+		first.SourceSettingsWarning != "" {
+		t.Fatalf("missing source settings review = %+v", first)
+	}
 	if first.ReviewToken == "" {
 		t.Fatal("review token is empty")
 	}
@@ -417,6 +426,150 @@ func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing
 	}
 	if got := reloads.Load(); got != 0 {
 		t.Fatalf("runtime reload count = %d, want 0", got)
+	}
+}
+
+func TestReviewRecoveredCarriesUnverifiedSourceSettingsAndPinsDigest(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	genesisHash := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x44}, 32))
+	sourceSettings, err := json.Marshal(map[string]any{
+		"schema":            backup.SourceSettingsSchema,
+		"schema_version":    backup.SourceSettingsSchemaVersion,
+		"user_auto_approve": false,
+		"genesis_hash_mappings": []map[string]string{{
+			"genesis_hash": genesisHash,
+			"network":      "private-network",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Marshal(source settings) error = %v", err)
+	}
+	archivePath, _ := writeRecoverableArchiveWithSourceSettings(
+		t,
+		paths,
+		auth.DefaultIdentityID,
+		noderole.RoleSigner,
+		true,
+		sourceSettings,
+	)
+	service := Service{
+		Deps: backupServiceTestDeps{
+			paths:   paths,
+			limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+		},
+	}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoverResult.Success {
+		t.Fatalf("RecoverBackup() = %+v", recoverResult)
+	}
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if !review.Success ||
+		review.SourceSettingsStatus != protocol.RecoverySourceSettingsStatusUnverified ||
+		review.SourceUserAutoApprove == nil ||
+		*review.SourceUserAutoApprove ||
+		len(review.SourceGenesisHashMappings) != 1 ||
+		review.SourceGenesisHashMappings[0].GenesisHash != genesisHash ||
+		review.SourceGenesisHashMappings[0].Network != "private-network" ||
+		review.SourceSettingsWarning != "" {
+		t.Fatalf("ReviewRecovered() source settings = %+v", review)
+	}
+	if len(review.UnknownSourceSettings) != 2 {
+		t.Fatalf(
+			"protocol-v3 compatibility unknowns = %v, want two conservative entries",
+			review.UnknownSourceSettings,
+		)
+	}
+	ir.Config().SetUserAutoApprove(true)
+	autoApproveReview := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if autoApproveReview.DestinationApprovalMode != adminproto.DestinationApprovalAutoApproveFallback ||
+		autoApproveReview.UnattendedSigningWarning == "" {
+		t.Fatalf("destination auto-approve warning was suppressed: %+v", autoApproveReview)
+	}
+	missingUnattendedAck := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                   recoverResult.RestoreID,
+		ReviewToken:                 autoApproveReview.ReviewToken,
+		AcknowledgePolicyTransition: true,
+	})
+	if missingUnattendedAck.Code != protocol.ResultCodeActivationAckRequired ||
+		!strings.Contains(missingUnattendedAck.Error, "unattended-signing") {
+		t.Fatalf(
+			"source manual-approval claim waived destination acknowledgement: %+v",
+			missingUnattendedAck,
+		)
+	}
+
+	baseToken, err := recoveredReviewToken(recoveredReviewTokenInput{
+		FormatVersion:           recoveredReviewFormatVersion,
+		RestoreID:               recoverResult.RestoreID,
+		ArchiveSHA256:           strings.Repeat("a", 64),
+		SourcePolicyStatus:      string(recovered.SourcePolicyMissing),
+		SourceSettingsStatus:    protocol.RecoverySourceSettingsStatusMissing,
+		DestinationPolicySHA256: strings.Repeat("b", 64),
+		DestinationApprovalMode: string(adminproto.DestinationApprovalManualDefault),
+		PolicyComparisonFormat:  recoveredReviewFormatVersion,
+	})
+	if err != nil {
+		t.Fatalf("recoveredReviewToken(missing) error = %v", err)
+	}
+	changedToken, err := recoveredReviewToken(recoveredReviewTokenInput{
+		FormatVersion:           recoveredReviewFormatVersion,
+		RestoreID:               recoverResult.RestoreID,
+		ArchiveSHA256:           strings.Repeat("a", 64),
+		SourcePolicyStatus:      string(recovered.SourcePolicyMissing),
+		SourceSettingsStatus:    protocol.RecoverySourceSettingsStatusUnverified,
+		SourceSettingsSHA256:    strings.Repeat("c", 64),
+		DestinationPolicySHA256: strings.Repeat("b", 64),
+		DestinationApprovalMode: string(adminproto.DestinationApprovalManualDefault),
+		PolicyComparisonFormat:  recoveredReviewFormatVersion,
+	})
+	if err != nil {
+		t.Fatalf("recoveredReviewToken(unverified) error = %v", err)
+	}
+	if changedToken == baseToken {
+		t.Fatal("source-settings status and digest did not change review token")
+	}
+}
+
+func TestReviewRecoveredCarriesInvalidSourceSettingsWarning(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, _ := writeRecoverableArchiveWithSourceSettings(
+		t,
+		paths,
+		auth.DefaultIdentityID,
+		noderole.RoleSigner,
+		true,
+		[]byte(`{"schema":"unsupported"}`),
+	)
+	service := Service{
+		Deps: backupServiceTestDeps{
+			paths:   paths,
+			limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+		},
+	}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoverResult.Success {
+		t.Fatalf("RecoverBackup() = %+v", recoverResult)
+	}
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if !review.Success ||
+		review.SourceSettingsStatus != protocol.RecoverySourceSettingsStatusInvalid ||
+		review.SourceSettingsWarning == "" ||
+		review.SourceUserAutoApprove != nil ||
+		len(review.SourceGenesisHashMappings) != 0 {
+		t.Fatalf("ReviewRecovered() invalid source settings = %+v", review)
 	}
 }
 
@@ -1150,6 +1303,24 @@ func writeRecoverableArchive(
 	role noderole.Role,
 	withManifest bool,
 ) (string, string) {
+	return writeRecoverableArchiveWithSourceSettings(
+		t,
+		paths,
+		identityID,
+		role,
+		withManifest,
+		nil,
+	)
+}
+
+func writeRecoverableArchiveWithSourceSettings(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+	role noderole.Role,
+	withManifest bool,
+	sourceSettings []byte,
+) (string, string) {
 	t.Helper()
 
 	root := t.TempDir()
@@ -1178,6 +1349,15 @@ func writeRecoverableArchive(
 	if withManifest {
 		if err := backup.WriteManifest(root, role, time.Unix(1_700_000_000, 0)); err != nil {
 			t.Fatalf("WriteManifest() error = %v", err)
+		}
+	}
+	if sourceSettings != nil {
+		if err := os.WriteFile(
+			filepath.Join(root, backup.SourceSettingsFileName),
+			sourceSettings,
+			0o600,
+		); err != nil {
+			t.Fatalf("WriteFile(source settings) error = %v", err)
 		}
 	}
 	policyDir := filepath.Join(root, "policy")

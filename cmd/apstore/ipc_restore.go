@@ -367,10 +367,51 @@ func formatRecoveredReviewSections(review protocol.ReviewRecoveredResultMessage)
 	for _, unknown := range batchUnknowns {
 		fmt.Fprintf(&sb, "  [unknown source] %s\n", unknown)
 	}
-	sb.WriteString("\n")
-	sb.WriteString(archiveSourceSettingsLimitation)
-	sb.WriteString("\n")
+	appendRecoveredSourceContext(&sb, review)
 	return sb.String()
+}
+
+func appendRecoveredSourceContext(
+	sb *strings.Builder,
+	review protocol.ReviewRecoveredResultMessage,
+) {
+	switch review.SourceSettingsStatus {
+	case protocol.RecoverySourceSettingsStatusUnverified:
+		sb.WriteString("\n")
+		sb.WriteString("Unverified archive-reported source context\n")
+		fmt.Fprintf(sb, "  approval default: %s\n", recoveredSourceApprovalLabel(review.SourceUserAutoApprove))
+		if len(review.SourceGenesisHashMappings) == 0 {
+			sb.WriteString("  custom genesis-hash mappings: none\n")
+		} else {
+			sb.WriteString("  custom genesis-hash mappings:\n")
+			for _, mapping := range review.SourceGenesisHashMappings {
+				fmt.Fprintf(sb, "    %s: %s\n", mapping.Network, mapping.GenesisHash)
+			}
+		}
+	case protocol.RecoverySourceSettingsStatusInvalid:
+		sb.WriteString("\n")
+		if review.SourceSettingsWarning == "" {
+			sb.WriteString("WARNING: archive source-settings metadata is invalid.\n")
+		} else {
+			fmt.Fprintf(sb, "WARNING: %s\n", review.SourceSettingsWarning)
+		}
+		sb.WriteString(archiveSourceSettingsLimitation)
+		sb.WriteString("\n")
+	default:
+		sb.WriteString("\n")
+		sb.WriteString(archiveSourceSettingsLimitation)
+		sb.WriteString("\n")
+	}
+}
+
+func recoveredSourceApprovalLabel(value *bool) string {
+	if value == nil {
+		return "not applicable"
+	}
+	if *value {
+		return "auto approve"
+	}
+	return "manual review"
 }
 
 func requestRestorePreview(client apstoreAdminRequester, name string, exportPassphrase []byte) (protocol.RestorePreviewMessage, error) {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -252,6 +253,74 @@ func TestRestoreReviewSeparatesPolicyChangesFromSourceLimitations(t *testing.T) 
 	ackIndex := strings.Index(rendered, "Required acknowledgements")
 	if metadataIndex < 0 || noteIndex < metadataIndex || ackIndex < noteIndex {
 		t.Fatalf("source review order is wrong:\n%s", rendered)
+	}
+}
+
+func TestRestoreReviewUsesTypedSourceContextPrecedence(t *testing.T) {
+	autoApprove := false
+	review := ReviewRecoveredResultMessage{
+		Success:                 true,
+		RestoreID:               "0123456789abcdef0123456789abcdef",
+		State:                   "recovered",
+		DestinationApprovalMode: "manual_default",
+		PolicyComparison:        "identical",
+		UnknownSourceSettings: []string{
+			protocol.RecoverySourceSettingUserAutoApprove,
+			protocol.RecoverySourceSettingGenesisHashMappings,
+		},
+		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusUnverified,
+		SourceUserAutoApprove: &autoApprove,
+		SourceGenesisHashMappings: []protocol.RecoveryGenesisHashMapping{{
+			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
+			Network:     "private-network",
+		}},
+		ReviewToken: strings.Repeat("d", 64),
+	}
+	m := Model{
+		viewState: ViewRestoreReview,
+		restore: restoreState{
+			restoreID: review.RestoreID,
+			review:    review,
+		},
+	}
+	rendered := stripANSI(m.renderRestoreReview())
+	for _, want := range []string{
+		"Unverified archive-reported source context",
+		"approval default: manual review",
+		"private-network: REREREREREREREREREREREREREREREREREREREREREQ=",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("typed source review omitted %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, archiveSourceSettingsLimitation) ||
+		strings.Contains(rendered, "[unknown source] "+protocol.RecoverySourceSettingUserAutoApprove) {
+		t.Fatalf("typed source review retained superseded v3 caveat:\n%s", rendered)
+	}
+}
+
+func TestRestoreReviewWarnsForInvalidSourceContext(t *testing.T) {
+	review := ReviewRecoveredResultMessage{
+		Success:                 true,
+		RestoreID:               "0123456789abcdef0123456789abcdef",
+		State:                   "recovered",
+		DestinationApprovalMode: "manual_default",
+		PolicyComparison:        "identical",
+		SourceSettingsStatus:    protocol.RecoverySourceSettingsStatusInvalid,
+		SourceSettingsWarning:   "source settings metadata is invalid: unsupported schema",
+		ReviewToken:             strings.Repeat("e", 64),
+	}
+	m := Model{
+		viewState: ViewRestoreReview,
+		restore: restoreState{
+			restoreID: review.RestoreID,
+			review:    review,
+		},
+	}
+	rendered := stripANSI(m.renderRestoreReview())
+	if !strings.Contains(rendered, "source settings metadata is invalid") ||
+		!strings.Contains(rendered, archiveSourceSettingsLimitation) {
+		t.Fatalf("invalid source review omitted warning or limitation:\n%s", rendered)
 	}
 }
 

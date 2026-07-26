@@ -237,6 +237,12 @@ type RecoveryPolicyChange struct {
 	Destination string
 }
 
+// RecoveryGenesisHashMapping is one archive-reported custom network binding.
+type RecoveryGenesisHashMapping struct {
+	GenesisHash string
+	Network     string
+}
+
 // ReviewRecoveredResult pins one review of current destination state.
 type ReviewRecoveredResult struct {
 	Success                      bool
@@ -253,6 +259,10 @@ type ReviewRecoveredResult struct {
 	SecurityChanges              []RecoveryPolicyChange
 	ChangedPaths                 []string
 	UnknownSourceSettings        []string
+	SourceSettingsStatus         string
+	SourceUserAutoApprove        *bool
+	SourceGenesisHashMappings    []RecoveryGenesisHashMapping
+	SourceSettingsWarning        string
 	Entries                      []RecoveredReviewEntry
 	ActiveConflicts              []RecoveredActiveConflict
 	ReviewToken                  string

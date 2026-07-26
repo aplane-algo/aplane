@@ -88,6 +88,46 @@ func TestFormatRecoveredReviewSectionsOrdersSecurityChangesFirst(t *testing.T) {
 	}
 }
 
+func TestFormatRecoveredReviewSectionsUsesTypedSourceContextPrecedence(t *testing.T) {
+	autoApprove := false
+	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{
+		UnknownSourceSettings: []string{
+			protocol.RecoverySourceSettingUserAutoApprove,
+			protocol.RecoverySourceSettingGenesisHashMappings,
+		},
+		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusUnverified,
+		SourceUserAutoApprove: &autoApprove,
+		SourceGenesisHashMappings: []protocol.RecoveryGenesisHashMapping{{
+			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
+			Network:     "private-network",
+		}},
+	})
+	for _, want := range []string{
+		"Unverified archive-reported source context",
+		"approval default: manual review",
+		"private-network: REREREREREREREREREREREREREREREREREREREREREQ=",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("typed source review omitted %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, archiveSourceSettingsLimitation) ||
+		strings.Contains(rendered, "[unknown source] "+protocol.RecoverySourceSettingUserAutoApprove) {
+		t.Fatalf("typed source review retained superseded v3 caveat:\n%s", rendered)
+	}
+}
+
+func TestFormatRecoveredReviewSectionsWarnsForInvalidSourceContext(t *testing.T) {
+	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{
+		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusInvalid,
+		SourceSettingsWarning: "source settings metadata is invalid: unsupported schema",
+	})
+	if !strings.Contains(rendered, "WARNING: source settings metadata is invalid") ||
+		!strings.Contains(rendered, archiveSourceSettingsLimitation) {
+		t.Fatalf("invalid source review omitted warning or limitation:\n%s", rendered)
+	}
+}
+
 func TestCmdBackupImportRejectsDuplicateBasename(t *testing.T) {
 	RegisterProviders()
 

@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
+	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -24,7 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-const recoveredReviewFormatVersion = 1
+const recoveredReviewFormatVersion = 2
 
 // ReviewRecovered validates one inactive batch against current destination
 // policy, approval mode, and active credential conflicts.
@@ -113,6 +114,7 @@ func (s Service) reviewRecoveredWithMasterKey(
 	}
 	approvalMode, warning := destinationApprovalMode(ir)
 	unknowns := recoveredUnknownSourceSettings(batch)
+	sourceSettings := projectRecoveredSourceSettings(batch)
 	changes := make([]adminproto.RecoveryPolicyChange, len(comparison.Changes))
 	for i, change := range comparison.Changes {
 		changes[i] = adminproto.RecoveryPolicyChange{
@@ -130,6 +132,8 @@ func (s Service) reviewRecoveredWithMasterKey(
 		ArchiveSHA256:           batch.ArchiveSHA256,
 		SourcePolicyStatus:      string(batch.SourcePolicyStatus),
 		SourcePolicySHA256:      batch.SourcePolicySHA256,
+		SourceSettingsStatus:    sourceSettings.Status,
+		SourceSettingsSHA256:    batch.SourceSettingsSHA256,
 		DestinationPolicySHA256: destinationDigest,
 		DestinationApprovalMode: string(approvalMode),
 		Entries:                 entries,
@@ -140,22 +144,26 @@ func (s Service) reviewRecoveredWithMasterKey(
 		return adminproto.ReviewRecoveredResult{}, err
 	}
 	return adminproto.ReviewRecoveredResult{
-		RestoreID:                batch.RestoreID,
-		State:                    "recovered",
-		ArchiveChecksum:          batch.ArchiveSHA256,
-		SourceNodeRole:           batch.SourceNodeRole,
-		SourcePolicyStatus:       string(batch.SourcePolicyStatus),
-		SourcePolicySHA256:       batch.SourcePolicySHA256,
-		DestinationPolicySHA256:  destinationDigest,
-		DestinationApprovalMode:  approvalMode,
-		UnattendedSigningWarning: warning,
-		PolicyComparison:         string(comparison.Status),
-		SecurityChanges:          changes,
-		ChangedPaths:             slices.Clone(comparison.ChangedPaths),
-		UnknownSourceSettings:    unknowns,
-		Entries:                  entries,
-		ActiveConflicts:          conflicts,
-		ReviewToken:              token,
+		RestoreID:                 batch.RestoreID,
+		State:                     "recovered",
+		ArchiveChecksum:           batch.ArchiveSHA256,
+		SourceNodeRole:            batch.SourceNodeRole,
+		SourcePolicyStatus:        string(batch.SourcePolicyStatus),
+		SourcePolicySHA256:        batch.SourcePolicySHA256,
+		DestinationPolicySHA256:   destinationDigest,
+		DestinationApprovalMode:   approvalMode,
+		UnattendedSigningWarning:  warning,
+		PolicyComparison:          string(comparison.Status),
+		SecurityChanges:           changes,
+		ChangedPaths:              slices.Clone(comparison.ChangedPaths),
+		UnknownSourceSettings:     unknowns,
+		SourceSettingsStatus:      sourceSettings.Status,
+		SourceUserAutoApprove:     sourceSettings.UserAutoApprove,
+		SourceGenesisHashMappings: sourceSettings.GenesisHashMappings,
+		SourceSettingsWarning:     sourceSettings.Warning,
+		Entries:                   entries,
+		ActiveConflicts:           conflicts,
+		ReviewToken:               token,
 	}, nil
 }
 
@@ -194,6 +202,7 @@ func (s Service) reviewIncompleteActivation(
 	if approvalMode == adminproto.DestinationApprovalAutoApproveFallback {
 		warning = "you are activating into an auto-approving identity"
 	}
+	sourceSettings := projectRecoveredSourceSettings(batch)
 	return adminproto.ReviewRecoveredResult{
 		RestoreID:                    restoreID,
 		State:                        "activation_incomplete",
@@ -206,12 +215,51 @@ func (s Service) reviewIncompleteActivation(
 		UnattendedSigningWarning:     warning,
 		PolicyComparison:             string(policy.RestoreComparisonUnavailable),
 		UnknownSourceSettings:        recoveredUnknownSourceSettings(batch),
+		SourceSettingsStatus:         sourceSettings.Status,
+		SourceUserAutoApprove:        sourceSettings.UserAutoApprove,
+		SourceGenesisHashMappings:    sourceSettings.GenesisHashMappings,
+		SourceSettingsWarning:        sourceSettings.Warning,
 		Entries:                      entries,
 		ReviewToken:                  journal.ReviewToken,
 		AcknowledgePolicyTransition:  journal.AcknowledgePolicyTransition,
 		AcknowledgeUnattendedSigning: journal.AcknowledgeUnattendedSigning,
 		ReplaceExisting:              journal.ReplaceExisting,
 	}, nil
+}
+
+type recoveredSourceSettingsReview struct {
+	Status              string
+	UserAutoApprove     *bool
+	GenesisHashMappings []adminproto.RecoveryGenesisHashMapping
+	Warning             string
+}
+
+func projectRecoveredSourceSettings(batch *recovered.Batch) recoveredSourceSettingsReview {
+	if batch == nil {
+		return recoveredSourceSettingsReview{Status: string(sourcecontext.StatusMissing)}
+	}
+	status := batch.SourceSettingsStatus
+	if status == "" {
+		status = sourcecontext.StatusMissing
+	}
+	var userAutoApprove *bool
+	if batch.SourceUserAutoApprove != nil {
+		value := *batch.SourceUserAutoApprove
+		userAutoApprove = &value
+	}
+	mappings := make([]adminproto.RecoveryGenesisHashMapping, len(batch.SourceGenesisHashMappings))
+	for i, mapping := range batch.SourceGenesisHashMappings {
+		mappings[i] = adminproto.RecoveryGenesisHashMapping{
+			GenesisHash: mapping.GenesisHash,
+			Network:     mapping.Network,
+		}
+	}
+	return recoveredSourceSettingsReview{
+		Status:              string(status),
+		UserAutoApprove:     userAutoApprove,
+		GenesisHashMappings: mappings,
+		Warning:             batch.SourceSettingsWarning,
+	}
 }
 
 func recoveredUnknownSourceSettings(batch *recovered.Batch) []string {
@@ -356,6 +404,8 @@ type recoveredReviewTokenInput struct {
 	ArchiveSHA256           string                               `json:"archive_sha256"`
 	SourcePolicyStatus      string                               `json:"source_policy_status"`
 	SourcePolicySHA256      string                               `json:"source_policy_sha256"`
+	SourceSettingsStatus    string                               `json:"source_settings_status"`
+	SourceSettingsSHA256    string                               `json:"source_settings_sha256"`
 	DestinationPolicySHA256 string                               `json:"destination_policy_sha256"`
 	DestinationApprovalMode string                               `json:"destination_approval_mode"`
 	Entries                 []adminproto.RecoveredReviewEntry    `json:"entries"`

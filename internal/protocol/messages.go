@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 3
-	AdminProtocolVersionMinor = 0
+	AdminProtocolVersionMinor = 1
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
@@ -400,30 +400,41 @@ type RecoveryPolicyChange struct {
 	Destination string `json:"destination"`
 }
 
+// RecoveryGenesisHashMapping is one unverified, archive-reported custom
+// genesis-hash binding.
+type RecoveryGenesisHashMapping struct {
+	GenesisHash string `json:"genesis_hash"`
+	Network     string `json:"network"`
+}
+
 type ReviewRecoveredResultMessage struct {
 	BaseMessage
-	Success                      bool                      `json:"success"`
-	RestoreID                    string                    `json:"restore_id,omitempty"`
-	State                        string                    `json:"state,omitempty"`
-	ArchiveChecksum              string                    `json:"archive_checksum,omitempty"`
-	SourceNodeRole               string                    `json:"source_node_role,omitempty"`
-	SourcePolicyStatus           string                    `json:"source_policy_status,omitempty"`
-	SourcePolicySHA256           string                    `json:"source_policy_sha256,omitempty"`
-	DestinationPolicySHA256      string                    `json:"destination_policy_sha256,omitempty"`
-	DestinationApprovalMode      string                    `json:"destination_approval_mode,omitempty"`
-	UnattendedSigningWarning     string                    `json:"unattended_signing_warning,omitempty"`
-	PolicyComparison             string                    `json:"policy_comparison,omitempty"`
-	SecurityChanges              []RecoveryPolicyChange    `json:"security_changes,omitempty"`
-	ChangedPaths                 []string                  `json:"changed_paths,omitempty"`
-	UnknownSourceSettings        []string                  `json:"unknown_source_settings,omitempty"`
-	Entries                      []RecoveredReviewEntry    `json:"entries,omitempty"`
-	ActiveConflicts              []RecoveredActiveConflict `json:"active_conflicts,omitempty"`
-	ReviewToken                  string                    `json:"review_token,omitempty"`
-	AcknowledgePolicyTransition  bool                      `json:"acknowledge_policy_transition,omitempty"`
-	AcknowledgeUnattendedSigning bool                      `json:"acknowledge_unattended_signing,omitempty"`
-	ReplaceExisting              bool                      `json:"replace_existing,omitempty"`
-	Code                         string                    `json:"code,omitempty"`
-	Error                        string                    `json:"error,omitempty"`
+	Success                      bool                         `json:"success"`
+	RestoreID                    string                       `json:"restore_id,omitempty"`
+	State                        string                       `json:"state,omitempty"`
+	ArchiveChecksum              string                       `json:"archive_checksum,omitempty"`
+	SourceNodeRole               string                       `json:"source_node_role,omitempty"`
+	SourcePolicyStatus           string                       `json:"source_policy_status,omitempty"`
+	SourcePolicySHA256           string                       `json:"source_policy_sha256,omitempty"`
+	DestinationPolicySHA256      string                       `json:"destination_policy_sha256,omitempty"`
+	DestinationApprovalMode      string                       `json:"destination_approval_mode,omitempty"`
+	UnattendedSigningWarning     string                       `json:"unattended_signing_warning,omitempty"`
+	PolicyComparison             string                       `json:"policy_comparison,omitempty"`
+	SecurityChanges              []RecoveryPolicyChange       `json:"security_changes,omitempty"`
+	ChangedPaths                 []string                     `json:"changed_paths,omitempty"`
+	UnknownSourceSettings        []string                     `json:"unknown_source_settings,omitempty"`
+	SourceSettingsStatus         string                       `json:"source_settings_status,omitempty"`
+	SourceUserAutoApprove        *bool                        `json:"source_user_auto_approve,omitempty"`
+	SourceGenesisHashMappings    []RecoveryGenesisHashMapping `json:"source_genesis_hash_mappings,omitempty"`
+	SourceSettingsWarning        string                       `json:"source_settings_warning,omitempty"`
+	Entries                      []RecoveredReviewEntry       `json:"entries,omitempty"`
+	ActiveConflicts              []RecoveredActiveConflict    `json:"active_conflicts,omitempty"`
+	ReviewToken                  string                       `json:"review_token,omitempty"`
+	AcknowledgePolicyTransition  bool                         `json:"acknowledge_policy_transition,omitempty"`
+	AcknowledgeUnattendedSigning bool                         `json:"acknowledge_unattended_signing,omitempty"`
+	ReplaceExisting              bool                         `json:"replace_existing,omitempty"`
+	Code                         string                       `json:"code,omitempty"`
+	Error                        string                       `json:"error,omitempty"`
 }
 
 type ActivateRecoveredMessage struct {

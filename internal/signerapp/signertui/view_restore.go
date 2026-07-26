@@ -245,9 +245,7 @@ func (m Model) renderRestoreReview() string {
 		}
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString(helpStyle.Render(wrapText(archiveSourceSettingsLimitation, popupWidth-6)))
-	sb.WriteString("\n")
+	appendRecoveredSourceContext(&sb, review, popupWidth)
 	sb.WriteString("\n")
 	sb.WriteString(subtitleStyle.Render("Required acknowledgements"))
 	sb.WriteString("\n")
@@ -278,6 +276,56 @@ func (m Model) renderRestoreReview() string {
 		sb.WriteString("\n")
 	}
 	return m.renderPopup(popupWidth, sb.String())
+}
+
+func appendRecoveredSourceContext(
+	sb *strings.Builder,
+	review ReviewRecoveredResultMessage,
+	popupWidth int,
+) {
+	switch review.SourceSettingsStatus {
+	case protocol.RecoverySourceSettingsStatusUnverified:
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render("Unverified archive-reported source context"))
+		sb.WriteString("\n")
+		fmt.Fprintf(
+			sb,
+			"  approval default: %s\n",
+			recoveredSourceApprovalLabel(review.SourceUserAutoApprove),
+		)
+		if len(review.SourceGenesisHashMappings) == 0 {
+			sb.WriteString("  custom genesis-hash mappings: none\n")
+		} else {
+			sb.WriteString("  custom genesis-hash mappings:\n")
+			for _, mapping := range review.SourceGenesisHashMappings {
+				fmt.Fprintf(sb, "    %s: %s\n", mapping.Network, mapping.GenesisHash)
+			}
+		}
+	case protocol.RecoverySourceSettingsStatusInvalid:
+		sb.WriteString("\n")
+		warning := review.SourceSettingsWarning
+		if warning == "" {
+			warning = "Archive source-settings metadata is invalid."
+		}
+		sb.WriteString(warningStyle.Render(wrapText(warning, popupWidth-6)))
+		sb.WriteString("\n")
+		sb.WriteString(helpStyle.Render(wrapText(archiveSourceSettingsLimitation, popupWidth-6)))
+		sb.WriteString("\n")
+	default:
+		sb.WriteString("\n")
+		sb.WriteString(helpStyle.Render(wrapText(archiveSourceSettingsLimitation, popupWidth-6)))
+		sb.WriteString("\n")
+	}
+}
+
+func recoveredSourceApprovalLabel(value *bool) string {
+	if value == nil {
+		return "not applicable"
+	}
+	if *value {
+		return "auto approve"
+	}
+	return "manual review"
 }
 
 func checkboxLine(checked bool, label string) string {

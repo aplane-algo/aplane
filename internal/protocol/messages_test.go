@@ -98,6 +98,70 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
+func TestCurrentAdminProtocolVersionIncludesRecoverySourceContext(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 3, Minor: 1}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 3.1", got)
+	}
+}
+
+func TestReviewRecoveredSourceSettingsJSONShapeAndMinorSkew(t *testing.T) {
+	autoApprove := false
+	message := ReviewRecoveredResultMessage{
+		BaseMessage: BaseMessage{Type: MsgTypeReviewRecoveredResult, ID: "review-1"},
+		Success:     true,
+		UnknownSourceSettings: []string{
+			RecoverySourceSettingUserAutoApprove,
+			RecoverySourceSettingGenesisHashMappings,
+		},
+		SourceSettingsStatus:  RecoverySourceSettingsStatusUnverified,
+		SourceUserAutoApprove: &autoApprove,
+		SourceGenesisHashMappings: []RecoveryGenesisHashMapping{{
+			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
+			Network:     "private-network",
+		}},
+	}
+	encoded, err := json.Marshal(message)
+	if err != nil {
+		t.Fatalf("Marshal(review) error = %v", err)
+	}
+	var shape map[string]any
+	if err := json.Unmarshal(encoded, &shape); err != nil {
+		t.Fatalf("Unmarshal(review shape) error = %v", err)
+	}
+	if shape["source_settings_status"] != RecoverySourceSettingsStatusUnverified ||
+		shape["source_user_auto_approve"] != false {
+		t.Fatalf("review source settings shape = %#v", shape)
+	}
+	mappings, ok := shape["source_genesis_hash_mappings"].([]any)
+	if !ok || len(mappings) != 1 {
+		t.Fatalf("review mappings shape = %#v", shape["source_genesis_hash_mappings"])
+	}
+
+	var oldClient struct {
+		Success               bool     `json:"success"`
+		UnknownSourceSettings []string `json:"unknown_source_settings"`
+	}
+	if err := json.Unmarshal(encoded, &oldClient); err != nil {
+		t.Fatalf("old client Unmarshal(new review) error = %v", err)
+	}
+	if !oldClient.Success || len(oldClient.UnknownSourceSettings) != 2 {
+		t.Fatalf("old client view = %+v, want conservative v3 caveats", oldClient)
+	}
+
+	var newClient ReviewRecoveredResultMessage
+	if err := json.Unmarshal(
+		[]byte(`{"type":"review_recovered_result","success":true,"unknown_source_settings":["source.user_auto_approve","source.genesis_hash_mappings"]}`),
+		&newClient,
+	); err != nil {
+		t.Fatalf("new client Unmarshal(old review) error = %v", err)
+	}
+	if newClient.SourceSettingsStatus != "" ||
+		newClient.SourceUserAutoApprove != nil ||
+		len(newClient.SourceGenesisHashMappings) != 0 {
+		t.Fatalf("new client old-server source settings = %+v, want absent", newClient)
+	}
+}
+
 func TestCoreMessageJSONShapes(t *testing.T) {
 	tests := []struct {
 		name    string

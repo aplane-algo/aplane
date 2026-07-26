@@ -116,7 +116,7 @@ func TestSSHAdminSessionAuthHandshakeMatchesGenericContract(t *testing.T) {
 		t.Fatalf("first message = %#v, want auth_required notification", authRequired)
 	}
 	if !reflectJSONSubset(authRequired.Raw, map[string]any{
-		"protocol_version": map[string]any{"major": float64(3), "minor": float64(0)},
+		"protocol_version": map[string]any{"major": float64(3), "minor": float64(1)},
 	}) {
 		t.Fatalf("auth_required protocol version missing: %#v", authRequired.Raw)
 	}
