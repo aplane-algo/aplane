@@ -223,7 +223,9 @@ func Run(dataDir string) int {
 				logErrorf("error unlocking activation recovery state: %s", errMsg)
 				return 1
 			}
-			logWarnf("identity is recovery-blocked by incomplete activation: %s", strings.Join(incomplete, ", "))
+			if _, reconciled := (signerAdminServices{signer: server}).reconcileIncompleteActivationsAtUnlock(ir, incomplete); !reconciled {
+				logWarnf("identity is recovery-blocked by incomplete activation: %s", strings.Join(incomplete, ", "))
+			}
 		} else {
 			// Headless mode: load keys using passphrase, then zero it immediately.
 			logInfof("scanning keys directory for private keys")
