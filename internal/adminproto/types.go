@@ -266,7 +266,7 @@ type ReviewRecoveredResult struct {
 	Entries                      []RecoveredReviewEntry
 	ActiveConflicts              []RecoveredActiveConflict
 	ReviewToken                  string
-	AcknowledgePolicyTransition  bool
+	UnattendedSigningAckRequired bool
 	AcknowledgeUnattendedSigning bool
 	ReplaceExisting              bool
 	Code                         string
@@ -274,11 +274,11 @@ type ReviewRecoveredResult struct {
 }
 
 // ActivateRecoveredRequest binds activation to one reviewed destination
-// state and records each security-sensitive operator acknowledgement.
+// state and records the operator acknowledgement that destination state
+// requires.
 type ActivateRecoveredRequest struct {
 	RestoreID                    string
 	ReviewToken                  string
-	AcknowledgePolicyTransition  bool
 	AcknowledgeUnattendedSigning bool
 	ReplaceExisting              bool
 }

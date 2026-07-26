@@ -253,12 +253,22 @@ func ProtocolReviewRecoveredResultMessage(id string, result adminproto.ReviewRec
 		Entries:                      protocolRecoveredReviewEntries(result.Entries),
 		ActiveConflicts:              protocolRecoveredActiveConflicts(result.ActiveConflicts),
 		ReviewToken:                  result.ReviewToken,
-		AcknowledgePolicyTransition:  result.AcknowledgePolicyTransition,
+		UnattendedSigningAckRequired: protocolUnattendedSigningAckRequired(result),
 		AcknowledgeUnattendedSigning: result.AcknowledgeUnattendedSigning,
 		ReplaceExisting:              result.ReplaceExisting,
 		Code:                         result.Code,
 		Error:                        result.Error,
 	}
+}
+
+func protocolUnattendedSigningAckRequired(
+	result adminproto.ReviewRecoveredResult,
+) *bool {
+	if !result.Success {
+		return nil
+	}
+	required := result.UnattendedSigningAckRequired
+	return &required
 }
 
 func protocolRecoveryGenesisHashMappings(

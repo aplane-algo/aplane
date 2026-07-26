@@ -12,7 +12,7 @@ import (
 )
 
 // RestoreComparisonStatus is the factual relationship between two normalized
-// policy projections. It is not a widening or safety verdict.
+// policy projections.
 type RestoreComparisonStatus string
 
 const (
@@ -100,6 +100,11 @@ func NormalizeForRestoreDiff(cfg *Config, role string, selectors []string) (Rest
 
 // DiffForRestore compares two deterministic projections without assigning a
 // widening or safety verdict.
+//
+// The source projection comes from archive-reported policy that the
+// destination store cannot authenticate, so the comparison is review material
+// only. It never gates activation, and callers must not derive a security
+// verdict from it.
 func DiffForRestore(source, destination RestorePolicyProjection) RestorePolicyComparison {
 	if source.Role == "" || source.Role != destination.Role {
 		return RestorePolicyComparison{Status: RestoreComparisonUnavailable}

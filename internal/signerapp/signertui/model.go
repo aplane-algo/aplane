@@ -173,8 +173,6 @@ type restoreState struct {
 	overwrite              bool
 	restoreID              string
 	review                 ReviewRecoveredResultMessage
-	reviewFocus            int
-	policyAcknowledged     bool
 	unattendedAcknowledged bool
 	displaySelectedKey     int
 	displayScrollOffset    int

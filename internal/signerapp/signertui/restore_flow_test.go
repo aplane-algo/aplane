@@ -126,7 +126,6 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	if m.viewState != ViewRestoreReview {
 		t.Fatalf("after review viewState = %v, want ViewRestoreReview", m.viewState)
 	}
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
 	m, cmd = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.viewState != ViewRestoring || cmd == nil {
 		t.Fatalf("after activation submit viewState=%v cmd=%v", m.viewState, cmd)
@@ -156,7 +155,8 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	}
 }
 
-func TestRestoreReviewForegroundsAutoApproveBeforeSeparateAcknowledgements(t *testing.T) {
+func TestRestoreReviewForegroundsAutoApproveBeforeAcknowledgement(t *testing.T) {
+	unattendedAckRequired := true
 	m := Model{
 		viewState: ViewRestoring,
 		restore: restoreState{
@@ -164,13 +164,14 @@ func TestRestoreReviewForegroundsAutoApproveBeforeSeparateAcknowledgements(t *te
 		},
 	}
 	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
-		Success:                  true,
-		RestoreID:                m.restore.restoreID,
-		State:                    "recovered",
-		DestinationApprovalMode:  "auto_approve_fallback",
-		UnattendedSigningWarning: "you are activating into an auto-approving identity",
-		PolicyComparison:         "different",
-		ReviewToken:              strings.Repeat("b", 64),
+		Success:                      true,
+		RestoreID:                    m.restore.restoreID,
+		State:                        "recovered",
+		DestinationApprovalMode:      "auto_approve_fallback",
+		UnattendedSigningWarning:     "you are activating into an auto-approving identity",
+		PolicyComparison:             "different",
+		ReviewToken:                  strings.Repeat("b", 64),
+		UnattendedSigningAckRequired: &unattendedAckRequired,
 		SecurityChanges: []RecoveryPolicyChange{{
 			Category:    "hard_rejects",
 			Path:        "reject_rekey",
@@ -181,27 +182,29 @@ func TestRestoreReviewForegroundsAutoApproveBeforeSeparateAcknowledgements(t *te
 	rendered := m.renderRestoreReview()
 	warningIndex := strings.Index(rendered, "auto-approving identity")
 	changeIndex := strings.Index(rendered, "reject_rekey")
-	ackIndex := strings.Index(rendered, "Required acknowledgements")
+	ackIndex := strings.Index(rendered, "Required acknowledgement")
 	if warningIndex < 0 || changeIndex < 0 || ackIndex < 0 ||
 		warningIndex > ackIndex || changeIndex > ackIndex {
 		t.Fatalf("security review order is wrong:\n%s", rendered)
 	}
+	if strings.Contains(stripANSI(rendered), "downgrade") {
+		t.Fatalf("security review rendered a downgrade verdict:\n%s", rendered)
+	}
 
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
 	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.viewState != ViewRestoreReview ||
-		!strings.Contains(m.restore.previewError, "Separately acknowledge") {
+		!strings.Contains(m.restore.previewError, "Acknowledge unattended signing") {
 		t.Fatalf("enter without unattended ack state=%v error=%q", m.viewState, m.restore.previewError)
 	}
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
 	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("fully acknowledged activation state=%v cmd=%v", m.viewState, cmd)
+		t.Fatalf("acknowledged activation state=%v cmd=%v", m.viewState, cmd)
 	}
 }
 
-func TestRestoreReviewSeparatesPolicyChangesFromSourceLimitations(t *testing.T) {
+func TestRestoreReviewSeparatesSourceMetadataFromPolicyDifferences(t *testing.T) {
+	autoApprove := false
 	review := ReviewRecoveredResultMessage{
 		Success:                 true,
 		RestoreID:               "0123456789abcdef0123456789abcdef",
@@ -214,6 +217,12 @@ func TestRestoreReviewSeparatesPolicyChangesFromSourceLimitations(t *testing.T) 
 			"source.node_role",
 			"source.future_setting",
 		},
+		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusUnverified,
+		SourceUserAutoApprove: &autoApprove,
+		SourceGenesisHashMappings: []protocol.RecoveryGenesisHashMapping{{
+			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
+			Network:     "private-network",
+		}},
 		ReviewToken: strings.Repeat("c", 64),
 	}
 	m := Model{
@@ -225,102 +234,130 @@ func TestRestoreReviewSeparatesPolicyChangesFromSourceLimitations(t *testing.T) 
 	}
 
 	rendered := stripANSI(m.renderRestoreReview())
-	policyHeadingIndex := strings.Index(rendered, "Security-bearing policy differences")
-	noneIndex := strings.Index(rendered, "none")
-	if policyHeadingIndex < 0 || noneIndex < policyHeadingIndex {
-		t.Fatalf("review omitted empty policy-difference result:\n%s", rendered)
+	policyHeadingIndex := strings.Index(rendered, "Policy differences (informational)")
+	metadataHeadingIndex := strings.Index(rendered, "Source metadata unavailable for this archive")
+	contextHeadingIndex := strings.Index(rendered, "Reported by the backup archive")
+	if policyHeadingIndex < 0 || metadataHeadingIndex < policyHeadingIndex ||
+		contextHeadingIndex < metadataHeadingIndex {
+		t.Fatalf("review sections are out of order:\n%s", rendered)
 	}
-	if strings.Count(rendered, archiveSourceSettingsLimitation) != 1 {
-		t.Fatalf("archive limitation count = %d, want 1:\n%s",
-			strings.Count(rendered, archiveSourceSettingsLimitation), rendered)
+	differences := rendered[policyHeadingIndex:metadataHeadingIndex]
+	if !strings.Contains(differences, "none") {
+		t.Fatalf("review omitted the empty policy-difference result:\n%s", rendered)
 	}
-	if strings.Contains(rendered, "[unknown source] source.user_auto_approve") ||
-		strings.Contains(rendered, "[unknown source] source.genesis_hash_mappings") {
-		t.Fatalf("constant archive limitations rendered as findings:\n%s", rendered)
-	}
-	for _, want := range []string{
-		"Source metadata unavailable for this archive",
-		"[unknown source] source.node_role",
-		"[unknown source] source.future_setting",
-		"Required acknowledgements",
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("review omitted %q:\n%s", want, rendered)
+	// Constant archive limitations belong to the format note, not the bullets.
+	for _, constant := range []string{"source.user_auto_approve", "source.genesis_hash_mappings"} {
+		if strings.Contains(rendered, "[unknown source] "+constant) {
+			t.Fatalf("review rendered constant limitation %q as a finding:\n%s", constant, rendered)
 		}
 	}
-	metadataIndex := strings.Index(rendered, "Source metadata unavailable")
-	noteIndex := strings.Index(rendered, archiveSourceSettingsLimitation)
-	ackIndex := strings.Index(rendered, "Required acknowledgements")
-	if metadataIndex < 0 || noteIndex < metadataIndex || ackIndex < noteIndex {
-		t.Fatalf("source review order is wrong:\n%s", rendered)
+	metadata := rendered[metadataHeadingIndex:contextHeadingIndex]
+	if !strings.Contains(metadata, "source.node_role") ||
+		!strings.Contains(metadata, "source.future_setting") {
+		t.Fatalf("review dropped batch-specific source metadata:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "approval default: manual review") ||
+		!strings.Contains(rendered, "private-network") {
+		t.Fatalf("review omitted typed source context:\n%s", rendered)
+	}
+	// Invariant prose belongs in the documentation, not on every review.
+	for _, constant := range []string{
+		"Backup archives do not record",
+		"cannot be authenticated",
+		"Unverified",
+	} {
+		if strings.Contains(rendered, constant) {
+			t.Fatalf("review repeated invariant prose %q:\n%s", constant, rendered)
+		}
+	}
+	if strings.Contains(rendered, "Required acknowledgement") {
+		t.Fatalf("manual-default review rendered an acknowledgement:\n%s", rendered)
 	}
 }
 
-func TestRestoreReviewUsesTypedSourceContextPrecedence(t *testing.T) {
-	autoApprove := false
-	review := ReviewRecoveredResultMessage{
+func TestRestoreReviewIdenticalPolicyActivatesWithoutAcknowledgement(t *testing.T) {
+	m := Model{
+		viewState: ViewRestoring,
+		restore: restoreState{
+			restoreID: "0123456789abcdef0123456789abcdef",
+		},
+	}
+	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
 		Success:                 true,
-		RestoreID:               "0123456789abcdef0123456789abcdef",
+		RestoreID:               m.restore.restoreID,
 		State:                   "recovered",
 		DestinationApprovalMode: "manual_default",
 		PolicyComparison:        "identical",
-		UnknownSourceSettings: []string{
-			protocol.RecoverySourceSettingUserAutoApprove,
-			protocol.RecoverySourceSettingGenesisHashMappings,
-		},
-		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusUnverified,
-		SourceUserAutoApprove: &autoApprove,
-		SourceGenesisHashMappings: []protocol.RecoveryGenesisHashMapping{{
-			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
-			Network:     "private-network",
-		}},
-		ReviewToken: strings.Repeat("d", 64),
-	}
-	m := Model{
-		viewState: ViewRestoreReview,
-		restore: restoreState{
-			restoreID: review.RestoreID,
-			review:    review,
-		},
-	}
+		ReviewToken:             strings.Repeat("f", 64),
+	}})
 	rendered := stripANSI(m.renderRestoreReview())
-	for _, want := range []string{
-		"Unverified archive-reported source context",
-		"approval default: manual review",
-		"private-network: REREREREREREREREREREREREREREREREREREREREREQ=",
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("typed source review omitted %q:\n%s", want, rendered)
-		}
+	if strings.Contains(rendered, "Required acknowledgements") ||
+		strings.Contains(rendered, "I acknowledge the destination policy downgrade") {
+		t.Fatalf("identical policy review rendered an acknowledgement:\n%s", rendered)
 	}
-	if strings.Contains(rendered, archiveSourceSettingsLimitation) ||
-		strings.Contains(rendered, "[unknown source] "+protocol.RecoverySourceSettingUserAutoApprove) {
-		t.Fatalf("typed source review retained superseded v3 caveat:\n%s", rendered)
+
+	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.viewState != ViewRestoring || cmd == nil {
+		t.Fatalf("activation without acknowledgement state=%v cmd=%v", m.viewState, cmd)
 	}
 }
 
-func TestRestoreReviewWarnsForInvalidSourceContext(t *testing.T) {
-	review := ReviewRecoveredResultMessage{
-		Success:                 true,
-		RestoreID:               "0123456789abcdef0123456789abcdef",
-		State:                   "recovered",
-		DestinationApprovalMode: "manual_default",
-		PolicyComparison:        "identical",
-		SourceSettingsStatus:    protocol.RecoverySourceSettingsStatusInvalid,
-		SourceSettingsWarning:   "source settings metadata is invalid: unsupported schema",
-		ReviewToken:             strings.Repeat("e", 64),
-	}
+func TestRestoreReviewAutoApproveRequiresUnattendedAcknowledgement(t *testing.T) {
+	unattendedAckRequired := true
 	m := Model{
-		viewState: ViewRestoreReview,
+		viewState: ViewRestoring,
 		restore: restoreState{
-			restoreID: review.RestoreID,
-			review:    review,
+			restoreID: "0123456789abcdef0123456789abcdef",
 		},
 	}
+	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
+		Success:                      true,
+		RestoreID:                    m.restore.restoreID,
+		State:                        "recovered",
+		DestinationApprovalMode:      "auto_approve_fallback",
+		UnattendedSigningWarning:     "you are activating into an auto-approving identity",
+		PolicyComparison:             "identical",
+		ReviewToken:                  strings.Repeat("1", 64),
+		UnattendedSigningAckRequired: &unattendedAckRequired,
+	}})
 	rendered := stripANSI(m.renderRestoreReview())
-	if !strings.Contains(rendered, "source settings metadata is invalid") ||
-		!strings.Contains(rendered, archiveSourceSettingsLimitation) {
-		t.Fatalf("invalid source review omitted warning or limitation:\n%s", rendered)
+	if !strings.Contains(rendered, "I acknowledge this identity auto-approves unmatched signing requests") {
+		t.Fatalf("auto-approve review omitted its acknowledgement:\n%s", rendered)
+	}
+
+	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.viewState != ViewRestoring || cmd == nil {
+		t.Fatalf("unattended-only acknowledgement state=%v cmd=%v", m.viewState, cmd)
+	}
+}
+
+func TestRestoreReviewWithoutAcknowledgementActivatesDirectly(t *testing.T) {
+	unattendedAckRequired := false
+	m := Model{
+		viewState: ViewRestoring,
+		restore: restoreState{
+			restoreID: "0123456789abcdef0123456789abcdef",
+		},
+	}
+	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
+		Success:                      true,
+		RestoreID:                    m.restore.restoreID,
+		State:                        "recovered",
+		DestinationApprovalMode:      "auto_approve_fallback",
+		PolicyComparison:             "identical",
+		ReviewToken:                  strings.Repeat("2", 64),
+		UnattendedSigningAckRequired: &unattendedAckRequired,
+	}})
+	rendered := stripANSI(m.renderRestoreReview())
+	if strings.Contains(rendered, "Required acknowledgements") ||
+		strings.Contains(rendered, "I acknowledge") {
+		t.Fatalf("same-auto-approve review rendered an acknowledgement:\n%s", rendered)
+	}
+
+	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.viewState != ViewRestoring || cmd == nil {
+		t.Fatalf("same-auto-approve activation state=%v cmd=%v", m.viewState, cmd)
 	}
 }
 

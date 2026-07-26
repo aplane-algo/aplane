@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 3
-	AdminProtocolVersionMinor = 1
+	AdminProtocolVersionMinor = 2
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
@@ -430,7 +430,7 @@ type ReviewRecoveredResultMessage struct {
 	Entries                      []RecoveredReviewEntry       `json:"entries,omitempty"`
 	ActiveConflicts              []RecoveredActiveConflict    `json:"active_conflicts,omitempty"`
 	ReviewToken                  string                       `json:"review_token,omitempty"`
-	AcknowledgePolicyTransition  bool                         `json:"acknowledge_policy_transition,omitempty"`
+	UnattendedSigningAckRequired *bool                        `json:"unattended_signing_ack_required,omitempty"`
 	AcknowledgeUnattendedSigning bool                         `json:"acknowledge_unattended_signing,omitempty"`
 	ReplaceExisting              bool                         `json:"replace_existing,omitempty"`
 	Code                         string                       `json:"code,omitempty"`
@@ -441,7 +441,6 @@ type ActivateRecoveredMessage struct {
 	BaseMessage
 	RestoreID                    string `json:"restore_id"`
 	ReviewToken                  string `json:"review_token"`
-	AcknowledgePolicyTransition  bool   `json:"acknowledge_policy_transition"`
 	AcknowledgeUnattendedSigning bool   `json:"acknowledge_unattended_signing,omitempty"`
 	ReplaceExisting              bool   `json:"replace_existing,omitempty"`
 }

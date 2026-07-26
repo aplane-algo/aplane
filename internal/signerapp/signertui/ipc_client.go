@@ -922,10 +922,10 @@ func (c *IPCClient) SendReviewRecovered(restoreID string) error {
 	})
 }
 
-// SendActivateRecovered submits the exact reviewed intent and acknowledgements.
+// SendActivateRecovered submits the exact reviewed intent and acknowledgement.
 func (c *IPCClient) SendActivateRecovered(
 	restoreID, reviewToken string,
-	policyAcknowledged, unattendedAcknowledged, replaceExisting bool,
+	unattendedAcknowledged, replaceExisting bool,
 ) error {
 	return c.sendMessage(ActivateRecoveredMessage{
 		BaseMessage: BaseMessage{
@@ -934,7 +934,6 @@ func (c *IPCClient) SendActivateRecovered(
 		},
 		RestoreID:                    restoreID,
 		ReviewToken:                  reviewToken,
-		AcknowledgePolicyTransition:  policyAcknowledged,
 		AcknowledgeUnattendedSigning: unattendedAcknowledged,
 		ReplaceExisting:              replaceExisting,
 	})
@@ -1022,13 +1021,12 @@ func (m Model) sendReviewRecoveredCmd(restoreID string) tea.Cmd {
 
 func (m Model) sendActivateRecoveredCmd(
 	restoreID, reviewToken string,
-	policyAcknowledged, unattendedAcknowledged, replaceExisting bool,
+	unattendedAcknowledged, replaceExisting bool,
 ) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error {
 		return c.SendActivateRecovered(
 			restoreID,
 			reviewToken,
-			policyAcknowledged,
 			unattendedAcknowledged,
 			replaceExisting,
 		)

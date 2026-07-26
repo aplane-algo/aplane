@@ -385,8 +385,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.waitForMessageCmd()
 		}
 		m.restore.review = msg.Result
-		m.restore.reviewFocus = 0
-		m.restore.policyAcknowledged = false
 		m.restore.unattendedAcknowledged = false
 		m.restore.previewError = ""
 		m.viewState = ViewRestoreReview

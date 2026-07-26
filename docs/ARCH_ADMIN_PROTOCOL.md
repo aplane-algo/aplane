@@ -42,7 +42,7 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
-- the current admin protocol version is 3.1; `auth_required` carries it as
+- the current admin protocol version is 3.2; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -279,32 +279,48 @@ unlock/reload after passphrase verification through
   role and policy status/digest, and entry count
 - `review_recovered`: `restore_id` -> `review_recovered_result`: `success`,
   restore/batch state, archive and policy digests, destination approval mode,
-  unattended-signing warning, factual policy comparison, ordered
-  `security_changes[]`, secondary `changed_paths[]`,
+  optional unattended-signing warning, factual policy comparison, ordered
+  `security_changes[]`, secondary
+  `changed_paths[]`,
   `unknown_source_settings[]`, optional `source_settings_status`
   (`missing|unverified|invalid`), optional Boolean
   `source_user_auto_approve`, optional
   `source_genesis_hash_mappings[]` (`genesis_hash`, `network`), optional
   `source_settings_warning`, entries, active conflict fingerprints, opaque
-  `review_token`, required acknowledgement flags, replacement state, `code`,
-  `error`. These typed source fields were added in protocol 3.1. In protocol
+  `review_token`, optional `unattended_signing_ack_required`, recorded
+  acknowledgement flag, replacement state, `code`, `error`.
+  The policy comparison is informational. It carries no downgrade verdict, and
+  no acknowledgement is derived from it: archive-reported source policy cannot
+  be authenticated by the destination store, so any verdict built on it could
+  be suppressed by the archive.
+  `unattended_signing_ack_required` is derived from verified destination state
+  alone. It is true whenever the destination identity auto-approves unmatched
+  signing requests, whatever the archive reports; absence means a pre-3.2
+  server, and updated clients then fall back to the destination approval mode.
+  The typed source fields were added in protocol 3.1. In protocol
   v3, `unknown_source_settings` conservatively includes
   the constant archive limitations `source.user_auto_approve` and
   `source.genesis_hash_mappings`; a pre-manifest archive additionally reports
-  the batch-specific `source.node_role`. Updated clients render the constant
-  limitations once as archive-format context, outside the policy-difference
-  findings. When `source_settings_status` is present, typed `source_*` fields
-  are authoritative for what the archive reported; they remain unverified and
-  have no activation authority. The two constant unknown entries are
-  compatibility artifacts in that case and updated clients ignore them.
+  the batch-specific `source.node_role`. Updated clients do not render these
+  source-metadata fields as standalone review notifications. When
+  `source_settings_status` is present, typed `source_*` fields are authoritative
+  for what the archive reported; they remain unverified and have no signing,
+  policy, or acknowledgement authority. The two constant unknown
+  entries are compatibility artifacts in that case and updated clients ignore
+  them.
   Protocol v4 removes those two constant entries.
-- `activate_recovered`: `restore_id`, `review_token`,
-  `acknowledge_policy_transition`, optional
+  `policy_downgrade_ack_required` and the `downgrade` member of
+  `security_changes[]` were removed with the downgrade classifier. Clients
+  compiled against an earlier contract ignore their absence.
+- `activate_recovered`: `restore_id`, `review_token`, optional
   `acknowledge_unattended_signing`, optional `replace_existing` ->
   `activate_recovered_result`: `success`, restore ID, activated entries,
   optional operator-facing `warnings[]`, resulting `key_count`, `code`,
   `error`; warnings include non-fatal bundled-template skips decided against
-  current destination state during activation
+  current destination state during activation. The server enforces
+  `acknowledge_unattended_signing` against the pinned review. A deprecated
+  `acknowledge_policy_transition` sent by an older protocol-v3 client is
+  accepted and ignored; protocol v4 drops it entirely.
 - `rollback_recovered`: `restore_id` -> `rollback_recovered_result`: `success`,
   restore ID, resulting `key_count`, `code`, `error`
 - `purge_recovered`: `restore_id` -> `purge_recovered_result`: `success`,

@@ -99,13 +99,14 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 }
 
 func TestCurrentAdminProtocolVersionIncludesRecoverySourceContext(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 3, Minor: 1}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 3.1", got)
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 3, Minor: 2}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 3.2", got)
 	}
 }
 
 func TestReviewRecoveredSourceSettingsJSONShapeAndMinorSkew(t *testing.T) {
 	autoApprove := false
+	unattendedAckRequired := true
 	message := ReviewRecoveredResultMessage{
 		BaseMessage: BaseMessage{Type: MsgTypeReviewRecoveredResult, ID: "review-1"},
 		Success:     true,
@@ -113,8 +114,15 @@ func TestReviewRecoveredSourceSettingsJSONShapeAndMinorSkew(t *testing.T) {
 			RecoverySourceSettingUserAutoApprove,
 			RecoverySourceSettingGenesisHashMappings,
 		},
-		SourceSettingsStatus:  RecoverySourceSettingsStatusUnverified,
-		SourceUserAutoApprove: &autoApprove,
+		SourceSettingsStatus:         RecoverySourceSettingsStatusUnverified,
+		SourceUserAutoApprove:        &autoApprove,
+		UnattendedSigningAckRequired: &unattendedAckRequired,
+		SecurityChanges: []RecoveryPolicyChange{{
+			Category:    "hard_rejects",
+			Path:        "reject_rekey",
+			Source:      "true",
+			Destination: "false",
+		}},
 		SourceGenesisHashMappings: []RecoveryGenesisHashMapping{{
 			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
 			Network:     "private-network",
@@ -129,12 +137,24 @@ func TestReviewRecoveredSourceSettingsJSONShapeAndMinorSkew(t *testing.T) {
 		t.Fatalf("Unmarshal(review shape) error = %v", err)
 	}
 	if shape["source_settings_status"] != RecoverySourceSettingsStatusUnverified ||
-		shape["source_user_auto_approve"] != false {
+		shape["source_user_auto_approve"] != false ||
+		shape["unattended_signing_ack_required"] != true {
 		t.Fatalf("review source settings shape = %#v", shape)
 	}
 	mappings, ok := shape["source_genesis_hash_mappings"].([]any)
 	if !ok || len(mappings) != 1 {
 		t.Fatalf("review mappings shape = %#v", shape["source_genesis_hash_mappings"])
+	}
+	changes, ok := shape["security_changes"].([]any)
+	if !ok || len(changes) != 1 {
+		t.Fatalf("review policy-change shape = %#v", shape["security_changes"])
+	}
+	change, ok := changes[0].(map[string]any)
+	if !ok || change["path"] != "reject_rekey" {
+		t.Fatalf("review policy-change shape = %#v", shape["security_changes"])
+	}
+	if _, present := change["downgrade"]; present {
+		t.Fatalf("review policy change carried a downgrade verdict = %#v", change)
 	}
 
 	var oldClient struct {

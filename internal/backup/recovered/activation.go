@@ -41,16 +41,20 @@ const (
 
 // ActivationJournal pins the operator-reviewed activation intent.
 type ActivationJournal struct {
-	Schema                       string          `json:"schema"`
-	RestoreID                    string          `json:"restore_id"`
-	CreatedAt                    time.Time       `json:"created_at"`
-	State                        ActivationState `json:"state"`
-	ReviewToken                  string          `json:"review_token"`
-	DestinationPolicySHA256      string          `json:"destination_policy_sha256"`
-	DestinationApprovalMode      string          `json:"destination_approval_mode"`
-	AcknowledgePolicyTransition  bool            `json:"acknowledge_policy_transition"`
-	AcknowledgeUnattendedSigning bool            `json:"acknowledge_unattended_signing"`
-	ReplaceExisting              bool            `json:"replace_existing"`
+	Schema                  string          `json:"schema"`
+	RestoreID               string          `json:"restore_id"`
+	CreatedAt               time.Time       `json:"created_at"`
+	State                   ActivationState `json:"state"`
+	ReviewToken             string          `json:"review_token"`
+	DestinationPolicySHA256 string          `json:"destination_policy_sha256"`
+	DestinationApprovalMode string          `json:"destination_approval_mode"`
+	// AcknowledgePolicyTransition is deprecated and no longer written. The
+	// policy comparison is informational and requires no acknowledgement. The
+	// field is retained so a journal written before that change still loads
+	// during incomplete-activation reconciliation. Remove at protocol v4.
+	AcknowledgePolicyTransition  bool `json:"acknowledge_policy_transition,omitempty"`
+	AcknowledgeUnattendedSigning bool `json:"acknowledge_unattended_signing"`
+	ReplaceExisting              bool `json:"replace_existing"`
 }
 
 // RollbackSnapshot is the exact pre-activation state of active namespaces.

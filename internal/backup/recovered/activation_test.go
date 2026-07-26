@@ -14,6 +14,50 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
+// A journal written before the policy acknowledgement was retired must still
+// load and survive a state update, so an interrupted activation stays
+// reconcilable across the upgrade.
+func TestActivationJournalPreservesDeprecatedPolicyAcknowledgement(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := bytes.Repeat([]byte{0x5c}, 32)
+	batch := createRotationTestBatch(t, paths, masterKey)
+	journal := ActivationJournal{
+		RestoreID:                   batch.RestoreID,
+		CreatedAt:                   time.Unix(1_700_000_000, 0).UTC(),
+		State:                       ActivationApplying,
+		ReviewToken:                 string64("a"),
+		DestinationPolicySHA256:     string64("b"),
+		DestinationApprovalMode:     "manual_default",
+		AcknowledgePolicyTransition: true,
+	}
+	snapshot := RollbackSnapshot{
+		RestoreID:   batch.RestoreID,
+		Directories: []RollbackDirectory{{RelativePath: "keys", Existed: false}},
+	}
+	if err := CreateActivation(paths, "default", journal, snapshot, masterKey); err != nil {
+		t.Fatalf("CreateActivation() error = %v", err)
+	}
+	loaded, loadedSnapshot, err := LoadActivation(paths, "default", batch.RestoreID, masterKey)
+	if err != nil {
+		t.Fatalf("LoadActivation() error = %v", err)
+	}
+	loadedSnapshot.Zero()
+	if !loaded.AcknowledgePolicyTransition {
+		t.Fatalf("deprecated acknowledgement was dropped on load: %+v", loaded)
+	}
+	if err := UpdateActivationState(paths, "default", batch.RestoreID, ActivationRollingBack, masterKey); err != nil {
+		t.Fatalf("UpdateActivationState() error = %v", err)
+	}
+	reloaded, reloadedSnapshot, err := LoadActivation(paths, "default", batch.RestoreID, masterKey)
+	if err != nil {
+		t.Fatalf("LoadActivation(after update) error = %v", err)
+	}
+	reloadedSnapshot.Zero()
+	if !reloaded.AcknowledgePolicyTransition || reloaded.State != ActivationRollingBack {
+		t.Fatalf("deprecated acknowledgement did not survive a state update: %+v", reloaded)
+	}
+}
+
 func TestCreateLoadUpdateAndRemoveActivation(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	masterKey := bytes.Repeat([]byte{0x71}, 32)

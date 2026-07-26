@@ -25,7 +25,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-const recoveredReviewFormatVersion = 2
+const recoveredReviewFormatVersion = 3
+
+// unattendedSigningWarning is emitted whenever the destination identity
+// auto-approves unmatched signing requests. It is destination-derived and
+// cannot be suppressed by archive-reported source context.
+const unattendedSigningWarning = "you are activating into an auto-approving identity"
 
 // ReviewRecovered validates one inactive batch against current destination
 // policy, approval mode, and active credential conflicts.
@@ -112,9 +117,9 @@ func (s Service) reviewRecoveredWithMasterKey(
 	if err != nil {
 		return adminproto.ReviewRecoveredResult{}, err
 	}
-	approvalMode, warning := destinationApprovalMode(ir)
 	unknowns := recoveredUnknownSourceSettings(batch)
 	sourceSettings := projectRecoveredSourceSettings(batch)
+	approvalMode, warning := destinationApprovalMode(ir)
 	changes := make([]adminproto.RecoveryPolicyChange, len(comparison.Changes))
 	for i, change := range comparison.Changes {
 		changes[i] = adminproto.RecoveryPolicyChange{
@@ -144,26 +149,27 @@ func (s Service) reviewRecoveredWithMasterKey(
 		return adminproto.ReviewRecoveredResult{}, err
 	}
 	return adminproto.ReviewRecoveredResult{
-		RestoreID:                 batch.RestoreID,
-		State:                     "recovered",
-		ArchiveChecksum:           batch.ArchiveSHA256,
-		SourceNodeRole:            batch.SourceNodeRole,
-		SourcePolicyStatus:        string(batch.SourcePolicyStatus),
-		SourcePolicySHA256:        batch.SourcePolicySHA256,
-		DestinationPolicySHA256:   destinationDigest,
-		DestinationApprovalMode:   approvalMode,
-		UnattendedSigningWarning:  warning,
-		PolicyComparison:          string(comparison.Status),
-		SecurityChanges:           changes,
-		ChangedPaths:              slices.Clone(comparison.ChangedPaths),
-		UnknownSourceSettings:     unknowns,
-		SourceSettingsStatus:      sourceSettings.Status,
-		SourceUserAutoApprove:     sourceSettings.UserAutoApprove,
-		SourceGenesisHashMappings: sourceSettings.GenesisHashMappings,
-		SourceSettingsWarning:     sourceSettings.Warning,
-		Entries:                   entries,
-		ActiveConflicts:           conflicts,
-		ReviewToken:               token,
+		RestoreID:                    batch.RestoreID,
+		State:                        "recovered",
+		ArchiveChecksum:              batch.ArchiveSHA256,
+		SourceNodeRole:               batch.SourceNodeRole,
+		SourcePolicyStatus:           string(batch.SourcePolicyStatus),
+		SourcePolicySHA256:           batch.SourcePolicySHA256,
+		DestinationPolicySHA256:      destinationDigest,
+		DestinationApprovalMode:      approvalMode,
+		UnattendedSigningWarning:     warning,
+		PolicyComparison:             string(comparison.Status),
+		SecurityChanges:              changes,
+		ChangedPaths:                 slices.Clone(comparison.ChangedPaths),
+		UnknownSourceSettings:        unknowns,
+		SourceSettingsStatus:         sourceSettings.Status,
+		SourceUserAutoApprove:        sourceSettings.UserAutoApprove,
+		SourceGenesisHashMappings:    sourceSettings.GenesisHashMappings,
+		SourceSettingsWarning:        sourceSettings.Warning,
+		Entries:                      entries,
+		ActiveConflicts:              conflicts,
+		ReviewToken:                  token,
+		UnattendedSigningAckRequired: warning != "",
 	}, nil
 }
 
@@ -198,11 +204,11 @@ func (s Service) reviewIncompleteActivation(
 		}
 	}
 	approvalMode := adminproto.DestinationApprovalMode(journal.DestinationApprovalMode)
+	sourceSettings := projectRecoveredSourceSettings(batch)
 	warning := ""
 	if approvalMode == adminproto.DestinationApprovalAutoApproveFallback {
-		warning = "you are activating into an auto-approving identity"
+		warning = unattendedSigningWarning
 	}
-	sourceSettings := projectRecoveredSourceSettings(batch)
 	return adminproto.ReviewRecoveredResult{
 		RestoreID:                    restoreID,
 		State:                        "activation_incomplete",
@@ -221,7 +227,7 @@ func (s Service) reviewIncompleteActivation(
 		SourceSettingsWarning:        sourceSettings.Warning,
 		Entries:                      entries,
 		ReviewToken:                  journal.ReviewToken,
-		AcknowledgePolicyTransition:  journal.AcknowledgePolicyTransition,
+		UnattendedSigningAckRequired: warning != "",
 		AcknowledgeUnattendedSigning: journal.AcknowledgeUnattendedSigning,
 		ReplaceExisting:              journal.ReplaceExisting,
 	}, nil
@@ -351,13 +357,19 @@ func compareRecoveredSourcePolicy(
 	return policy.DiffForRestore(source, destination), nil
 }
 
+// destinationApprovalMode reports the destination's own unmatched-request
+// approval behavior and the warning it requires.
+//
+// The warning depends only on verified destination state. Archive-reported
+// source context is unauthenticated and must never suppress it: a source that
+// claims it also auto-approved, an archive with no source settings, and an
+// archive whose policy failed to parse all produce the same warning here.
 func destinationApprovalMode(ir *identity.Runtime) (adminproto.DestinationApprovalMode, string) {
 	if ir.NodeRole() != noderole.RoleSigner {
 		return adminproto.DestinationApprovalNotApplicable, ""
 	}
 	if ir.Config().UserAutoApprove() {
-		return adminproto.DestinationApprovalAutoApproveFallback,
-			"you are activating into an auto-approving identity"
+		return adminproto.DestinationApprovalAutoApproveFallback, unattendedSigningWarning
 	}
 	return adminproto.DestinationApprovalManualDefault, ""
 }

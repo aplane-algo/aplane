@@ -360,7 +360,6 @@ func (s *Session) HandleActivateRecovered(msg *protocol.ActivateRecoveredMessage
 	result := s.backupServices.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
 		RestoreID:                    msg.RestoreID,
 		ReviewToken:                  msg.ReviewToken,
-		AcknowledgePolicyTransition:  msg.AcknowledgePolicyTransition,
 		AcknowledgeUnattendedSigning: msg.AcknowledgeUnattendedSigning,
 		ReplaceExisting:              msg.ReplaceExisting,
 	})

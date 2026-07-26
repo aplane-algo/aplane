@@ -2378,17 +2378,22 @@ Live signer-managed restore:
   `source.genesis_hash_mappings` in `unknown_source_settings`. Protocol 3.1
   additionally reports typed `missing|unverified|invalid` source context.
   Updated clients give typed fields precedence and treat the constant unknown
-  entries as protocol-v3 compatibility artifacts; without typed fields they
-  present the archive limitation once as subordinate context. A pre-manifest
-  archive also reports the batch-specific `source.node_role`.
-- valid source settings are always labeled unverified and never determine
-  acknowledgements, policy verdicts, signing behavior, or destination network
-  resolution. Missing or invalid settings retain the limitation note, and
-  invalid settings add a prominent warning.
-- activation requires the current review token plus policy-transition
-  acknowledgement; a destination using auto-approve additionally requires a
-  separate unattended-signing acknowledgement; replacing active credentials
-  is a separate explicit option
+  entries as protocol-v3 compatibility artifacts. They do not render source
+  metadata as a standalone review notification. A pre-manifest archive also
+  reports the batch-specific `source.node_role`.
+- valid source settings are always labeled unverified. They are review context
+  only: they never change policy verdicts, signing behavior, destination
+  network resolution, or any acknowledgement requirement. The archive-reported
+  approval default in particular cannot suppress a destination warning.
+- activation requires the current review token. Factual policy differences are
+  always shown and never require acknowledgement, because archive-reported
+  source policy is unauthenticated and any verdict derived from it could be
+  suppressed by the archive. The one acknowledgement is unattended signing,
+  required whenever the destination identity auto-approves unmatched signing
+  requests. Protocol 3.2 communicates that through
+  `unattended_signing_ack_required`; an absent field from an older server
+  falls back to the destination approval mode. Replacing active credentials is
+  a separate explicit option
 - before the first active write, activation publishes an encrypted journal and
   exact rollback snapshot. Apply and rollback are idempotent. Reload failure
   automatically restores the prior state.

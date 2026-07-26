@@ -12,9 +12,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
-const archiveSourceSettingsLimitation = "Backup archives do not record the source node's " +
-	"approval default or custom genesis-hash mappings."
-
 func (m Model) renderRestoreList() string {
 	var sb strings.Builder
 	popupWidth := m.popupWidth(90)
@@ -207,7 +204,7 @@ func (m Model) renderRestoreReview() string {
 		sb.WriteString("\n")
 	}
 	sb.WriteString(fmt.Sprintf("Policy comparison: %s\n\n", review.PolicyComparison))
-	sb.WriteString(subtitleStyle.Render("Security-bearing policy differences"))
+	sb.WriteString(subtitleStyle.Render("Policy differences (informational)"))
 	sb.WriteString("\n")
 	if len(review.SecurityChanges) == 0 {
 		sb.WriteString("  none\n")
@@ -246,28 +243,15 @@ func (m Model) renderRestoreReview() string {
 	}
 
 	appendRecoveredSourceContext(&sb, review, popupWidth)
-	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render("Required acknowledgements"))
-	sb.WriteString("\n")
-	policyLine := checkboxLine(m.restore.policyAcknowledged, "I acknowledge the destination policy transition")
-	if m.restore.reviewFocus == 0 {
-		policyLine = selectedStyle.Render("> " + policyLine)
-	} else {
-		policyLine = "  " + policyLine
-	}
-	sb.WriteString(policyLine)
-	sb.WriteString("\n")
-	if review.DestinationApprovalMode == "auto_approve_fallback" {
+	if recoveredUnattendedSigningAckRequired(review) {
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render("Required acknowledgement"))
+		sb.WriteString("\n")
 		unattendedLine := checkboxLine(
 			m.restore.unattendedAcknowledged,
-			"I acknowledge activation into an auto-approving identity",
+			"I acknowledge this identity auto-approves unmatched signing requests",
 		)
-		if m.restore.reviewFocus == 1 {
-			unattendedLine = selectedStyle.Render("> " + unattendedLine)
-		} else {
-			unattendedLine = "  " + unattendedLine
-		}
-		sb.WriteString(unattendedLine)
+		sb.WriteString(selectedStyle.Render("> " + unattendedLine))
 		sb.WriteString("\n")
 	}
 	if m.restore.previewError != "" {
@@ -278,6 +262,14 @@ func (m Model) renderRestoreReview() string {
 	return m.renderPopup(popupWidth, sb.String())
 }
 
+// appendRecoveredSourceContext renders what the archive reported about its
+// source node, under a heading that names the provenance.
+//
+// It deliberately says nothing when the archive reports nothing. That backups
+// are unsigned, and that archive-reported context therefore governs nothing,
+// is true of every restore; constant prose on every review teaches operators
+// to skim the block that also carries the variable findings. USER_STORE_MGMT.md
+// carries the explanation instead.
 func appendRecoveredSourceContext(
 	sb *strings.Builder,
 	review ReviewRecoveredResultMessage,
@@ -286,7 +278,7 @@ func appendRecoveredSourceContext(
 	switch review.SourceSettingsStatus {
 	case protocol.RecoverySourceSettingsStatusUnverified:
 		sb.WriteString("\n")
-		sb.WriteString(subtitleStyle.Render("Unverified archive-reported source context"))
+		sb.WriteString(subtitleStyle.Render("Reported by the backup archive"))
 		sb.WriteString("\n")
 		fmt.Fprintf(
 			sb,
@@ -308,12 +300,6 @@ func appendRecoveredSourceContext(
 			warning = "Archive source-settings metadata is invalid."
 		}
 		sb.WriteString(warningStyle.Render(wrapText(warning, popupWidth-6)))
-		sb.WriteString("\n")
-		sb.WriteString(helpStyle.Render(wrapText(archiveSourceSettingsLimitation, popupWidth-6)))
-		sb.WriteString("\n")
-	default:
-		sb.WriteString("\n")
-		sb.WriteString(helpStyle.Render(wrapText(archiveSourceSettingsLimitation, popupWidth-6)))
 		sb.WriteString("\n")
 	}
 }

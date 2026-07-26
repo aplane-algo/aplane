@@ -11,8 +11,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
-const archiveSourceSettingsLimitation = "Backup archives do not record the source node's " +
-	"approval default or custom genesis-hash mappings."
+const (
+	applyUsage    = "usage: apstore restore apply <backup-id|name> [--address ADDRESS ...] [--overwrite] [--acknowledge-unattended-signing]"
+	activateUsage = "usage: apstore restore activate <restore-id> [--replace-existing] [--acknowledge-unattended-signing]"
+)
 
 func cmdRestoreManaged(args []string) error {
 	if len(args) == 0 {
@@ -78,18 +80,21 @@ func cmdRestorePreviewManaged(name string) error {
 
 func cmdRestoreApplyManaged(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore restore apply <backup-id|name> [--address ADDRESS ...] [--overwrite]")
+		return fmt.Errorf("%s", applyUsage)
 	}
 	name := args[0]
 	var addresses []string
 	overwrite := false
+	unattendedAck := false
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "--overwrite":
 			overwrite = true
+		case "--acknowledge-unattended-signing":
+			unattendedAck = true
 		case "--address":
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: apstore restore apply <backup-id|name> [--address ADDRESS ...] [--overwrite]")
+				return fmt.Errorf("%s", applyUsage)
 			}
 			addresses = append(addresses, args[i+1])
 			i++
@@ -123,7 +128,7 @@ func cmdRestoreApplyManaged(args []string) error {
 		return resultError("backup recovery failed", recoveredResult.Code, recoveredResult.Error)
 	}
 	logInfof("recovered inactive batch: %s (%d entries)", recoveredResult.RestoreID, recoveredResult.EntryCount)
-	return reviewAndActivateRecovered(client, recoveredResult.RestoreID, overwrite)
+	return reviewAndActivateRecovered(client, recoveredResult.RestoreID, overwrite, unattendedAck)
 }
 
 func cmdRestoreListRecovered() error {
@@ -172,22 +177,27 @@ func cmdRestoreReviewRecovered(restoreID string) error {
 
 func cmdRestoreActivateRecovered(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore restore activate <restore-id> [--replace-existing]")
+		return fmt.Errorf("%s", activateUsage)
 	}
 	restoreID := args[0]
 	replaceExisting := false
+	unattendedAck := false
 	for _, arg := range args[1:] {
-		if arg != "--replace-existing" {
+		switch arg {
+		case "--replace-existing":
+			replaceExisting = true
+		case "--acknowledge-unattended-signing":
+			unattendedAck = true
+		default:
 			return fmt.Errorf("unknown restore activate option: %s", arg)
 		}
-		replaceExisting = true
 	}
 	client, err := newApstoreAdminClientForCommand()
 	if err != nil {
 		return err
 	}
 	defer client.close()
-	return reviewAndActivateRecovered(client, restoreID, replaceExisting)
+	return reviewAndActivateRecovered(client, restoreID, replaceExisting, unattendedAck)
 }
 
 func cmdRestoreRollbackRecovered(restoreID string) error {
@@ -236,10 +246,17 @@ func cmdRestorePurgeRecovered(restoreID string) error {
 	return nil
 }
 
+// reviewAndActivateRecovered activates one reviewed batch. preAcknowledged
+// carries --acknowledge-unattended-signing: it replaces the interactive prompt
+// with explicit operator intent recorded on the command line, so restore stays
+// scriptable against an auto-approving destination. It does not bypass the
+// requirement; the server still enforces the acknowledgement against its own
+// pinned review.
 func reviewAndActivateRecovered(
 	client apstoreAdminRequester,
 	restoreID string,
 	replaceExisting bool,
+	preAcknowledged bool,
 ) error {
 	review, err := requestRecoveredReview(client, restoreID)
 	if err != nil {
@@ -258,19 +275,25 @@ func reviewAndActivateRecovered(
 	if len(review.ActiveConflicts) > 0 && !replaceExisting {
 		return fmt.Errorf("%d active credential conflict(s); review and retry with --replace-existing", len(review.ActiveConflicts))
 	}
-	if !confirmYesNo("I acknowledge the destination policy transition and want to activate?") {
-		return fmt.Errorf("activation cancelled; recovered batch %s remains inactive", restoreID)
-	}
 	unattendedAck := false
-	if review.DestinationApprovalMode == string("auto_approve_fallback") {
-		if !confirmYesNo("I acknowledge this identity can sign unattended?") {
+	if recoveredUnattendedSigningAckRequired(review) {
+		if !preAcknowledged &&
+			!confirmYesNo("I acknowledge this identity auto-approves unmatched signing requests?") {
 			return fmt.Errorf("activation cancelled; recovered batch %s remains inactive", restoreID)
 		}
 		unattendedAck = true
 	}
-	review.AcknowledgePolicyTransition = true
 	review.AcknowledgeUnattendedSigning = unattendedAck
 	return activateRecovered(client, review, replaceExisting)
+}
+
+func recoveredUnattendedSigningAckRequired(
+	review protocol.ReviewRecoveredResultMessage,
+) bool {
+	if review.UnattendedSigningAckRequired == nil {
+		return review.DestinationApprovalMode == "auto_approve_fallback"
+	}
+	return *review.UnattendedSigningAckRequired
 }
 
 func requestRecoveredReview(
@@ -301,7 +324,6 @@ func activateRecovered(
 		BaseMessage:                  protocol.BaseMessage{Type: protocol.MsgTypeActivateRecovered, ID: newApstoreRequestID("restore-activate")},
 		RestoreID:                    review.RestoreID,
 		ReviewToken:                  review.ReviewToken,
-		AcknowledgePolicyTransition:  review.AcknowledgePolicyTransition,
 		AcknowledgeUnattendedSigning: review.AcknowledgeUnattendedSigning,
 		ReplaceExisting:              replaceExisting,
 	}, &result)
@@ -336,7 +358,7 @@ func printRecoveredReview(review protocol.ReviewRecoveredResultMessage) {
 
 func formatRecoveredReviewSections(review protocol.ReviewRecoveredResultMessage) string {
 	var sb strings.Builder
-	sb.WriteString("Security-bearing policy differences\n")
+	sb.WriteString("Policy differences (informational)\n")
 	if len(review.SecurityChanges) == 0 {
 		sb.WriteString("  none\n")
 	}
@@ -361,8 +383,7 @@ func formatRecoveredReviewSections(review protocol.ReviewRecoveredResultMessage)
 		batchUnknowns = append(batchUnknowns, unknown)
 	}
 	if len(batchUnknowns) > 0 {
-		sb.WriteString("\n")
-		sb.WriteString("Source metadata unavailable for this archive\n")
+		sb.WriteString("\nSource metadata unavailable for this archive\n")
 	}
 	for _, unknown := range batchUnknowns {
 		fmt.Fprintf(&sb, "  [unknown source] %s\n", unknown)
@@ -371,14 +392,17 @@ func formatRecoveredReviewSections(review protocol.ReviewRecoveredResultMessage)
 	return sb.String()
 }
 
-func appendRecoveredSourceContext(
-	sb *strings.Builder,
-	review protocol.ReviewRecoveredResultMessage,
-) {
+// appendRecoveredSourceContext renders what the archive reported about its
+// source node, under a heading that names the provenance.
+//
+// It deliberately says nothing when the archive reports nothing. That backups
+// are unsigned, and that archive-reported context therefore governs nothing,
+// holds for every restore; USER_STORE_MGMT.md carries the explanation rather
+// than repeating it on each review.
+func appendRecoveredSourceContext(sb *strings.Builder, review protocol.ReviewRecoveredResultMessage) {
 	switch review.SourceSettingsStatus {
 	case protocol.RecoverySourceSettingsStatusUnverified:
-		sb.WriteString("\n")
-		sb.WriteString("Unverified archive-reported source context\n")
+		sb.WriteString("\nReported by the backup archive\n")
 		fmt.Fprintf(sb, "  approval default: %s\n", recoveredSourceApprovalLabel(review.SourceUserAutoApprove))
 		if len(review.SourceGenesisHashMappings) == 0 {
 			sb.WriteString("  custom genesis-hash mappings: none\n")
@@ -389,18 +413,11 @@ func appendRecoveredSourceContext(
 			}
 		}
 	case protocol.RecoverySourceSettingsStatusInvalid:
-		sb.WriteString("\n")
-		if review.SourceSettingsWarning == "" {
-			sb.WriteString("WARNING: archive source-settings metadata is invalid.\n")
-		} else {
-			fmt.Fprintf(sb, "WARNING: %s\n", review.SourceSettingsWarning)
+		warning := review.SourceSettingsWarning
+		if warning == "" {
+			warning = "Archive source-settings metadata is invalid."
 		}
-		sb.WriteString(archiveSourceSettingsLimitation)
-		sb.WriteString("\n")
-	default:
-		sb.WriteString("\n")
-		sb.WriteString(archiveSourceSettingsLimitation)
-		sb.WriteString("\n")
+		fmt.Fprintf(sb, "\n%s\n", warning)
 	}
 }
 

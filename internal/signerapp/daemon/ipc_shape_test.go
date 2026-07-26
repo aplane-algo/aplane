@@ -51,7 +51,7 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 	if !reflectJSONSubset(msgs[0], map[string]any{
 		"kind":             string(protocol.MessageKindNotification),
 		"type":             protocol.MsgTypeAuthRequired,
-		"protocol_version": map[string]any{"major": float64(3), "minor": float64(1)},
+		"protocol_version": map[string]any{"major": float64(3), "minor": float64(2)},
 	}) {
 		t.Fatalf("auth_required shape mismatch: %#v", msgs[0])
 	}
@@ -99,7 +99,7 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 		"kind":             string(protocol.MessageKindNotification),
 		"type":             protocol.MsgTypeAuthRequired,
 		"id":               "",
-		"protocol_version": map[string]any{"major": float64(3), "minor": float64(1)},
+		"protocol_version": map[string]any{"major": float64(3), "minor": float64(2)},
 	}) {
 		t.Fatalf("auth_required shape mismatch: %#v", msgs[0])
 	}

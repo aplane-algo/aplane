@@ -143,11 +143,13 @@ data root.
 For a live signer-managed restore, unlock the signer, open the admin/settings
 panel, choose `Restore backup` or press `o`, select a managed archive, enter
 the archive export passphrase, preview the contained keys, select keys to
-restore, then review the destination approval mode and security-first policy
-differences. Policy transition always requires acknowledgement; an
-auto-approving destination requires a separate unattended-signing
-acknowledgement. `apadmin` first creates an inactive recovered batch and writes
-active credentials only during reviewed activation.
+restore, then review the destination approval mode and the source/destination
+policy differences. Those differences are informational: archived source
+policy cannot be authenticated by the destination, so it produces no verdict
+and requires no acknowledgement. An auto-approving destination requires the
+unattended-signing acknowledgement, derived from verified destination state
+alone. `apadmin` first creates an inactive recovered batch and writes active
+credentials only during reviewed activation.
 
 `apadmin` does not verify backups or restore arbitrary external paths. Use
 `apstore` for verification, managed recovery lifecycle commands, and the

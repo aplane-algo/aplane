@@ -324,9 +324,8 @@ func TestRecoveredBatchSurvivesPassphraseRotationAndActivation(t *testing.T) {
 		t.Fatalf("ReviewRecovered(after rotation) = %+v", review)
 	}
 	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoveredResult.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   recoveredResult.RestoreID,
+		ReviewToken: review.ReviewToken,
 	})
 	if !activated.Success {
 		t.Fatalf("ActivateRecovered(after rotation) = %+v", activated)
@@ -366,14 +365,19 @@ func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing
 	if !first.Success {
 		t.Fatalf("ReviewRecovered() = %+v", first)
 	}
+	// The archive carries no source settings, so nothing can report what the
+	// source approved. The destination auto-approves, so the warning and its
+	// acknowledgement are required anyway.
 	if first.DestinationApprovalMode != adminproto.DestinationApprovalAutoApproveFallback ||
-		first.UnattendedSigningWarning == "" {
+		first.UnattendedSigningWarning == "" ||
+		!first.UnattendedSigningAckRequired {
 		t.Fatalf("destination approval review = mode %q warning %q", first.DestinationApprovalMode, first.UnattendedSigningWarning)
 	}
+	// Policy differences are informational and never require acknowledgement.
 	if first.PolicyComparison != string(policy.RestoreComparisonDifferent) ||
 		len(first.SecurityChanges) == 0 ||
 		first.SecurityChanges[0].Category != string(policy.RestoreCategoryHardRejects) {
-		t.Fatalf("security-first comparison = status %q changes %+v", first.PolicyComparison, first.SecurityChanges)
+		t.Fatalf("policy comparison = status %q changes %+v", first.PolicyComparison, first.SecurityChanges)
 	}
 	if len(first.UnknownSourceSettings) != 2 ||
 		!slices.Contains(first.UnknownSourceSettings, protocol.RecoverySourceSettingUserAutoApprove) ||
@@ -423,6 +427,9 @@ func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing
 	if changedPolicy.DestinationPolicySHA256 == manual.DestinationPolicySHA256 ||
 		changedPolicy.ReviewToken == manual.ReviewToken {
 		t.Fatalf("policy change did not stale review: before %+v after %+v", manual, changedPolicy)
+	}
+	if changedPolicy.PolicyComparison != string(policy.RestoreComparisonIdentical) {
+		t.Fatalf("matching policy review = %+v, want identical comparison", changedPolicy)
 	}
 	if got := reloads.Load(); got != 0 {
 		t.Fatalf("runtime reload count = %d, want 0", got)
@@ -489,18 +496,18 @@ func TestReviewRecoveredCarriesUnverifiedSourceSettingsAndPinsDigest(t *testing.
 	ir.Config().SetUserAutoApprove(true)
 	autoApproveReview := service.ReviewRecovered(ir, recoverResult.RestoreID)
 	if autoApproveReview.DestinationApprovalMode != adminproto.DestinationApprovalAutoApproveFallback ||
-		autoApproveReview.UnattendedSigningWarning == "" {
+		autoApproveReview.UnattendedSigningWarning == "" ||
+		!autoApproveReview.UnattendedSigningAckRequired {
 		t.Fatalf("destination auto-approve warning was suppressed: %+v", autoApproveReview)
 	}
 	missingUnattendedAck := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoverResult.RestoreID,
-		ReviewToken:                 autoApproveReview.ReviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: autoApproveReview.ReviewToken,
 	})
 	if missingUnattendedAck.Code != protocol.ResultCodeActivationAckRequired ||
 		!strings.Contains(missingUnattendedAck.Error, "unattended-signing") {
 		t.Fatalf(
-			"source manual-approval claim waived destination acknowledgement: %+v",
+			"source approval claim waived destination acknowledgement: %+v",
 			missingUnattendedAck,
 		)
 	}
@@ -602,15 +609,27 @@ func TestReviewRecoveredReportsLegacySourceRoleSeparately(t *testing.T) {
 	if !review.Success {
 		t.Fatalf("ReviewRecovered() = %+v", review)
 	}
+	if review.PolicyComparison != string(policy.RestoreComparisonUnavailable) {
+		t.Fatalf("legacy source role review = %+v, want unavailable comparison", review)
+	}
 	if len(review.UnknownSourceSettings) != 3 ||
 		!slices.Contains(review.UnknownSourceSettings, protocol.RecoverySourceSettingUserAutoApprove) ||
 		!slices.Contains(review.UnknownSourceSettings, protocol.RecoverySourceSettingGenesisHashMappings) ||
 		!slices.Contains(review.UnknownSourceSettings, protocol.RecoverySourceSettingNodeRole) {
 		t.Fatalf("unknown source settings = %v, want limitations plus legacy node role", review.UnknownSourceSettings)
 	}
+
+	// An uncomparable source policy must not suppress the destination warning.
+	ir.Config().SetUserAutoApprove(true)
+	autoApprove := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if autoApprove.PolicyComparison != string(policy.RestoreComparisonUnavailable) ||
+		autoApprove.UnattendedSigningWarning == "" ||
+		!autoApprove.UnattendedSigningAckRequired {
+		t.Fatalf("uncomparable source policy suppressed the destination warning: %+v", autoApprove)
+	}
 }
 
-func TestActivateRecoveredRequiresCurrentReviewAndAcknowledgements(t *testing.T) {
+func TestActivateRecoveredIdenticalPolicyNeedsNoPolicyAcknowledgement(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
 	service := Service{Deps: backupServiceTestDeps{
@@ -618,8 +637,167 @@ func TestActivateRecoveredRequiresCurrentReviewAndAcknowledgements(t *testing.T)
 		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
 	}}
 	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{
+		StoredPolicyCore: policy.StoredPolicyCore{
+			RejectForeignRekey: boolPointer(true),
+		},
+	})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoverResult.Success {
+		t.Fatalf("RecoverBackup() = %+v", recoverResult)
+	}
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if !review.Success ||
+		review.PolicyComparison != string(policy.RestoreComparisonIdentical) {
+		t.Fatalf("ReviewRecovered() = %+v, want identical comparison", review)
+	}
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
+	})
+	if !activated.Success {
+		t.Fatalf("ActivateRecovered(no policy acknowledgement) = %+v", activated)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)); err != nil {
+		t.Fatalf("active key stat error = %v", err)
+	}
+}
+
+// A sidecar claiming the source also auto-approved must not waive the
+// destination acknowledgement: the claim is archive-reported and cannot be
+// authenticated by this store.
+func TestActivateRecoveredSourceAutoApproveClaimDoesNotWaiveAcknowledgement(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	sourceSettings, err := json.Marshal(map[string]any{
+		"schema":                backup.SourceSettingsSchema,
+		"schema_version":        backup.SourceSettingsSchemaVersion,
+		"user_auto_approve":     true,
+		"genesis_hash_mappings": []map[string]string{},
+	})
+	if err != nil {
+		t.Fatalf("Marshal(source settings) error = %v", err)
+	}
+	archivePath, address := writeRecoverableArchiveWithSourceSettings(
+		t,
+		paths,
+		auth.DefaultIdentityID,
+		noderole.RoleSigner,
+		true,
+		sourceSettings,
+	)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntimeWithAutoApprove(t, paths, &reloads, true)
-	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{
+		StoredPolicyCore: policy.StoredPolicyCore{
+			RejectForeignRekey: boolPointer(true),
+		},
+	})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if !review.Success ||
+		review.PolicyComparison != string(policy.RestoreComparisonIdentical) ||
+		!review.UnattendedSigningAckRequired ||
+		review.UnattendedSigningWarning == "" {
+		t.Fatalf("source auto-approve claim suppressed the destination warning: %+v", review)
+	}
+	missingAck := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
+	})
+	if missingAck.Code != protocol.ResultCodeActivationAckRequired {
+		t.Fatalf("ActivateRecovered(no acknowledgement) = %+v, want acknowledgement required", missingAck)
+	}
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:                    recoverResult.RestoreID,
+		ReviewToken:                  review.ReviewToken,
+		AcknowledgeUnattendedSigning: true,
+	})
+	if !activated.Success {
+		t.Fatalf("ActivateRecovered(acknowledged) = %+v", activated)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)); err != nil {
+		t.Fatalf("active key stat error = %v", err)
+	}
+}
+
+func TestActivateRecoveredPolicyTighteningNeedsNoAcknowledgement(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archivePath, address := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{
+		StoredPolicyCore: policy.StoredPolicyCore{
+			RejectForeignRekey: boolPointer(true),
+			MaxFeeMicroAlgos:   uint64Pointer(1_000),
+		},
+	})
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	if !review.Success ||
+		review.PolicyComparison != string(policy.RestoreComparisonDifferent) ||
+		len(review.SecurityChanges) != 1 {
+		t.Fatalf("tightening review = %+v, want one factual difference", review)
+	}
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
+	})
+	if !activated.Success {
+		t.Fatalf("ActivateRecovered(tightening without acknowledgement) = %+v", activated)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address)); err != nil {
+		t.Fatalf("active key stat error = %v", err)
+	}
+}
+
+func TestActivateRecoveredRequiresCurrentReviewAndAcknowledgement(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	sourceSettings, err := json.Marshal(map[string]any{
+		"schema":                backup.SourceSettingsSchema,
+		"schema_version":        backup.SourceSettingsSchemaVersion,
+		"user_auto_approve":     false,
+		"genesis_hash_mappings": []map[string]string{},
+	})
+	if err != nil {
+		t.Fatalf("Marshal(source settings) error = %v", err)
+	}
+	archivePath, address := writeRecoverableArchiveWithSourceSettings(
+		t,
+		paths,
+		auth.DefaultIdentityID,
+		noderole.RoleSigner,
+		true,
+		sourceSettings,
+	)
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntimeWithAutoApprove(t, paths, &reloads, true)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{
+		StoredPolicyCore: policy.StoredPolicyCore{
+			RejectForeignRekey: boolPointer(false),
+		},
+	})
 	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -628,26 +806,23 @@ func TestActivateRecoveredRequiresCurrentReviewAndAcknowledgements(t *testing.T)
 	if !review.Success {
 		t.Fatalf("ReviewRecovered() = %+v", review)
 	}
+	// Policy differences are informational; only the destination's own
+	// auto-approve state requires an acknowledgement.
+	if !review.UnattendedSigningAckRequired {
+		t.Fatalf("auto-approve destination did not require acknowledgement: %+v", review)
+	}
 
 	stale := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoverResult.RestoreID,
-		ReviewToken:                 strings.Repeat("0", 64),
-		AcknowledgePolicyTransition: true,
+		RestoreID:                    recoverResult.RestoreID,
+		ReviewToken:                  strings.Repeat("0", 64),
+		AcknowledgeUnattendedSigning: true,
 	})
 	if stale.Code != protocol.ResultCodeActivationReviewStale {
 		t.Fatalf("ActivateRecovered(stale).Code = %q, want %q", stale.Code, protocol.ResultCodeActivationReviewStale)
 	}
-	missingPolicyAck := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+	missingUnattendedAck := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
 		RestoreID:   recoverResult.RestoreID,
 		ReviewToken: review.ReviewToken,
-	})
-	if missingPolicyAck.Code != protocol.ResultCodeActivationAckRequired {
-		t.Fatalf("ActivateRecovered(no policy ack).Code = %q", missingPolicyAck.Code)
-	}
-	missingUnattendedAck := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoverResult.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
 	})
 	if missingUnattendedAck.Code != protocol.ResultCodeActivationAckRequired {
 		t.Fatalf("ActivateRecovered(no unattended ack).Code = %q", missingUnattendedAck.Code)
@@ -662,7 +837,6 @@ func TestActivateRecoveredRequiresCurrentReviewAndAcknowledgements(t *testing.T)
 	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
 		RestoreID:                    recoverResult.RestoreID,
 		ReviewToken:                  review.ReviewToken,
-		AcknowledgePolicyTransition:  true,
 		AcknowledgeUnattendedSigning: true,
 	})
 	if !activated.Success || len(activated.Activated) != 1 {
@@ -712,9 +886,8 @@ func TestSentryRecoveryPublishesWitnessMetadataOnlyOnActivation(t *testing.T) {
 		t.Fatalf("ReviewRecovered(sentry) = %+v", review)
 	}
 	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoveredResult.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   recoveredResult.RestoreID,
+		ReviewToken: review.ReviewToken,
 	})
 	if !activated.Success {
 		t.Fatalf("ActivateRecovered(sentry) = %+v", activated)
@@ -754,9 +927,8 @@ func TestActivateRecoveredRollsBackWhenReloadFails(t *testing.T) {
 	})
 
 	result := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoverResult.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
 	})
 	if result.Code != protocol.ResultCodeRecoveredActivationFailed ||
 		!strings.Contains(result.Error, "prior state was restored") {
@@ -804,9 +976,8 @@ func TestActivateRecoveredRequiresExplicitConflictReplacement(t *testing.T) {
 	}
 
 	rejected := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoverResult.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
 	})
 	if rejected.Code != protocol.ResultCodeActivationConflict {
 		t.Fatalf("ActivateRecovered(no replace).Code = %q", rejected.Code)
@@ -817,10 +988,9 @@ func TestActivateRecoveredRequiresExplicitConflictReplacement(t *testing.T) {
 	}
 
 	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoverResult.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
-		ReplaceExisting:             true,
+		RestoreID:       recoverResult.RestoreID,
+		ReviewToken:     review.ReviewToken,
+		ReplaceExisting: true,
 	})
 	if !activated.Success {
 		t.Fatalf("ActivateRecovered(replace) = %+v", activated)
@@ -870,9 +1040,8 @@ func TestActivateRecoveredCrashBoundariesResumeFromKnownState(t *testing.T) {
 			})
 			review := service.ReviewRecovered(ir, recoverResult.RestoreID)
 			request := adminproto.ActivateRecoveredRequest{
-				RestoreID:                   recoverResult.RestoreID,
-				ReviewToken:                 review.ReviewToken,
-				AcknowledgePolicyTransition: true,
+				RestoreID:   recoverResult.RestoreID,
+				ReviewToken: review.ReviewToken,
 			}
 			var appliedEntries int
 			service.activationHook = func(point activationPoint) error {
@@ -962,10 +1131,9 @@ func TestRollbackRecoveredRestoresReplacedCredentialAfterPartialActivation(t *te
 	}
 
 	interrupted := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoverResult.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
-		ReplaceExisting:             true,
+		RestoreID:       recoverResult.RestoreID,
+		ReviewToken:     review.ReviewToken,
+		ReplaceExisting: true,
 	})
 	if interrupted.Code != protocol.ResultCodeRecoveredActivationFailed {
 		t.Fatalf("ActivateRecovered(interrupted replacement) = %+v", interrupted)
@@ -1003,9 +1171,8 @@ func TestActivateRecoveredExplicitlyResumesAfterHardInterruption(t *testing.T) {
 	})
 	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
 	request := adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoverResult.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
 	}
 	service.activationHook = func(point activationPoint) error {
 		if point != activationAfterApply {
@@ -1031,8 +1198,7 @@ func TestActivateRecoveredExplicitlyResumesAfterHardInterruption(t *testing.T) {
 	incomplete := service.ReviewRecovered(ir, recoverResult.RestoreID)
 	if !incomplete.Success ||
 		incomplete.State != "activation_incomplete" ||
-		incomplete.ReviewToken != review.ReviewToken ||
-		!incomplete.AcknowledgePolicyTransition {
+		incomplete.ReviewToken != review.ReviewToken {
 		t.Fatalf("ReviewRecovered(incomplete) = %+v", incomplete)
 	}
 	mismatch := request
@@ -1077,9 +1243,8 @@ func TestRollbackRecoveredResolvesHardInterruption(t *testing.T) {
 		return errors.New("simulated hard interruption")
 	}
 	_ = service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoverResult.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
 	})
 
 	rolledBack := service.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{
@@ -1124,9 +1289,8 @@ func TestRollbackRecoveredRetriesIdempotentlyAfterReloadFailure(t *testing.T) {
 		return errors.New("simulated hard interruption")
 	}
 	_ = service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   recoverResult.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
 	})
 	ir.SetReloadFunc(func(string, []byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		if reloads.Add(1) == 1 {
@@ -1196,9 +1360,8 @@ func TestPurgeRecoveredDeletesOnlyInactiveBatchAndRejectsIncompleteActivation(t 
 		return errors.New("simulated hard interruption")
 	}
 	_ = service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                   second.RestoreID,
-		ReviewToken:                 review.ReviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   second.RestoreID,
+		ReviewToken: review.ReviewToken,
 	})
 	rejected := service.PurgeRecovered(ir, adminproto.PurgeRecoveredRequest{RestoreID: second.RestoreID})
 	if rejected.Code != protocol.ResultCodePurgeRecoveredFailed ||

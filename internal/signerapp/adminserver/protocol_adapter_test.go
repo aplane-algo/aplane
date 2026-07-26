@@ -30,14 +30,18 @@ func TestProtocolKeyDetailsMessageIncludesPublicKey(t *testing.T) {
 func TestProtocolReviewRecoveredResultCopiesTypedSourceContext(t *testing.T) {
 	autoApprove := false
 	result := adminproto.ReviewRecoveredResult{
-		Success:               true,
-		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusUnverified,
-		SourceUserAutoApprove: &autoApprove,
+		Success:                      true,
+		UnattendedSigningAckRequired: true,
+		SourceSettingsStatus:         protocol.RecoverySourceSettingsStatusUnverified,
+		SourceUserAutoApprove:        &autoApprove,
 		SourceGenesisHashMappings: []adminproto.RecoveryGenesisHashMapping{{
 			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
 			Network:     "private-network",
 		}},
 		SourceSettingsWarning: "warning",
+		SecurityChanges: []adminproto.RecoveryPolicyChange{{
+			Path: "reject_rekey",
+		}},
 	}
 	message := ProtocolReviewRecoveredResultMessage("review-1", result)
 	if message.SourceSettingsStatus != protocol.RecoverySourceSettingsStatusUnverified ||
@@ -45,7 +49,11 @@ func TestProtocolReviewRecoveredResultCopiesTypedSourceContext(t *testing.T) {
 		*message.SourceUserAutoApprove ||
 		len(message.SourceGenesisHashMappings) != 1 ||
 		message.SourceGenesisHashMappings[0].Network != "private-network" ||
-		message.SourceSettingsWarning != "warning" {
+		message.SourceSettingsWarning != "warning" ||
+		message.UnattendedSigningAckRequired == nil ||
+		!*message.UnattendedSigningAckRequired ||
+		len(message.SecurityChanges) != 1 ||
+		message.SecurityChanges[0].Path != "reject_rekey" {
 		t.Fatalf("protocol review source context = %+v", message)
 	}
 	autoApprove = true

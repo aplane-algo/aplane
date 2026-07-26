@@ -163,7 +163,6 @@ func TestRecoveredLifecycleMessagesDispatchToBackupServices(t *testing.T) {
 		BaseMessage:                  protocol.BaseMessage{Type: protocol.MsgTypeActivateRecovered, ID: "activate-1"},
 		RestoreID:                    restoreID,
 		ReviewToken:                  reviewToken,
-		AcknowledgePolicyTransition:  true,
 		AcknowledgeUnattendedSigning: true,
 		ReplaceExisting:              true,
 	})
@@ -193,7 +192,6 @@ func TestRecoveredLifecycleMessagesDispatchToBackupServices(t *testing.T) {
 	}
 	if string(svc.lastRecoverBackup.ExportPassphrase) != "export-passphrase" ||
 		svc.lastReviewRestoreID != restoreID ||
-		!svc.lastActivateRecovered.AcknowledgePolicyTransition ||
 		!svc.lastActivateRecovered.AcknowledgeUnattendedSigning ||
 		!svc.lastActivateRecovered.ReplaceExisting {
 		t.Fatalf("projected recovery requests = recover %+v review %q activate %+v",

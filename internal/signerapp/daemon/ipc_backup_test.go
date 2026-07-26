@@ -295,9 +295,8 @@ func TestIPCManagedBackupPreviewAndRestore(t *testing.T) {
 			Type: protocol.MsgTypeActivateRecovered,
 			ID:   "activate-recovered-test",
 		},
-		RestoreID:                   restoreID,
-		ReviewToken:                 reviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   restoreID,
+		ReviewToken: reviewToken,
 	})
 	activateMsgs := activateRecorder.messages(t)
 	if len(activateMsgs) != 1 || !reflectJSONSubset(activateMsgs[0], map[string]any{
@@ -407,9 +406,8 @@ func TestIPCRecoveredActivationRejectsExistingKeyWithoutReplacement(t *testing.T
 			Type: protocol.MsgTypeActivateRecovered,
 			ID:   "activate-existing-test",
 		},
-		RestoreID:                   restoreID,
-		ReviewToken:                 reviewToken,
-		AcknowledgePolicyTransition: true,
+		RestoreID:   restoreID,
+		ReviewToken: reviewToken,
 	})
 	activateMsgs := activateRecorder.messages(t)
 	if len(activateMsgs) != 1 ||

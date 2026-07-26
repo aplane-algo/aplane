@@ -37,7 +37,8 @@ func TestCmdBackupImportRejectsInvalidSources(t *testing.T) {
 	}
 }
 
-func TestFormatRecoveredReviewSectionsSeparatesArchiveLimitations(t *testing.T) {
+func TestFormatRecoveredReviewSectionsSeparatesSourceContextFromDifferences(t *testing.T) {
+	autoApprove := false
 	review := protocol.ReviewRecoveredResultMessage{
 		UnknownSourceSettings: []string{
 			protocol.RecoverySourceSettingUserAutoApprove,
@@ -45,32 +46,43 @@ func TestFormatRecoveredReviewSectionsSeparatesArchiveLimitations(t *testing.T) 
 			protocol.RecoverySourceSettingNodeRole,
 			"source.future_setting",
 		},
+		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusUnverified,
+		SourceUserAutoApprove: &autoApprove,
+		SourceGenesisHashMappings: []protocol.RecoveryGenesisHashMapping{{
+			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
+			Network:     "private-network",
+		}},
 	}
 	rendered := formatRecoveredReviewSections(review)
 
-	if !strings.Contains(rendered, "Security-bearing policy differences\n  none") {
-		t.Fatalf("review omitted new no-difference output:\n%s", rendered)
+	if !strings.Contains(rendered, "Policy differences (informational)") ||
+		!strings.Contains(rendered, "  none") {
+		t.Fatalf("review omitted the no-difference result:\n%s", rendered)
 	}
-	if strings.Count(rendered, archiveSourceSettingsLimitation) != 1 {
-		t.Fatalf("archive limitation count = %d, want 1:\n%s",
-			strings.Count(rendered, archiveSourceSettingsLimitation), rendered)
-	}
-	if strings.Contains(rendered, "[unknown source] "+protocol.RecoverySourceSettingUserAutoApprove) ||
-		strings.Contains(rendered, "[unknown source] "+protocol.RecoverySourceSettingGenesisHashMappings) {
-		t.Fatalf("constant archive limitations rendered as findings:\n%s", rendered)
-	}
-	for _, want := range []string{
-		"Source metadata unavailable for this archive",
-		"[unknown source] " + protocol.RecoverySourceSettingNodeRole,
-		"[unknown source] source.future_setting",
+	// Constant archive limitations are format properties, not per-batch findings.
+	for _, constant := range []string{
+		protocol.RecoverySourceSettingUserAutoApprove,
+		protocol.RecoverySourceSettingGenesisHashMappings,
 	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("review omitted %q:\n%s", want, rendered)
+		if strings.Contains(rendered, "[unknown source] "+constant) {
+			t.Fatalf("review rendered constant limitation %q as a finding:\n%s", constant, rendered)
 		}
+	}
+	// Batch-specific and unrecognized values stay visible under their own heading.
+	if !strings.Contains(rendered, "Source metadata unavailable for this archive") ||
+		!strings.Contains(rendered, "[unknown source] "+protocol.RecoverySourceSettingNodeRole) ||
+		!strings.Contains(rendered, "[unknown source] source.future_setting") {
+		t.Fatalf("review dropped batch-specific source metadata:\n%s", rendered)
+	}
+	// Typed source context renders separately, under a provenance heading.
+	if !strings.Contains(rendered, "Reported by the backup archive") ||
+		!strings.Contains(rendered, "approval default: manual review") ||
+		!strings.Contains(rendered, "private-network") {
+		t.Fatalf("review omitted typed source context:\n%s", rendered)
 	}
 }
 
-func TestFormatRecoveredReviewSectionsOrdersSecurityChangesFirst(t *testing.T) {
+func TestFormatRecoveredReviewSectionsRendersChangesWithoutVerdict(t *testing.T) {
 	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{
 		SecurityChanges: []protocol.RecoveryPolicyChange{{
 			Category:    "hard_rejects",
@@ -80,51 +92,30 @@ func TestFormatRecoveredReviewSectionsOrdersSecurityChangesFirst(t *testing.T) {
 		}},
 		UnknownSourceSettings: []string{protocol.RecoverySourceSettingNodeRole},
 	})
-	changeIndex := strings.Index(rendered, "reject_rekey")
-	unknownIndex := strings.Index(rendered, protocol.RecoverySourceSettingNodeRole)
-	noteIndex := strings.Index(rendered, archiveSourceSettingsLimitation)
-	if changeIndex < 0 || unknownIndex < changeIndex || noteIndex < unknownIndex {
-		t.Fatalf("review section order is wrong:\n%s", rendered)
+	if !strings.Contains(rendered, "[hard_rejects]") {
+		t.Fatalf("review omitted the policy difference:\n%s", rendered)
 	}
-}
-
-func TestFormatRecoveredReviewSectionsUsesTypedSourceContextPrecedence(t *testing.T) {
-	autoApprove := false
-	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{
-		UnknownSourceSettings: []string{
-			protocol.RecoverySourceSettingUserAutoApprove,
-			protocol.RecoverySourceSettingGenesisHashMappings,
-		},
-		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusUnverified,
-		SourceUserAutoApprove: &autoApprove,
-		SourceGenesisHashMappings: []protocol.RecoveryGenesisHashMapping{{
-			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
-			Network:     "private-network",
-		}},
-	})
-	for _, want := range []string{
-		"Unverified archive-reported source context",
-		"approval default: manual review",
-		"private-network: REREREREREREREREREREREREREREREREREREREREREQ=",
+	if strings.Contains(rendered, "downgrade") {
+		t.Fatalf("review rendered a downgrade verdict:\n%s", rendered)
+	}
+	// Source metadata must not appear inside the policy-difference block.
+	differences, metadata, split := strings.Cut(rendered, "Source metadata unavailable for this archive")
+	if !split {
+		t.Fatalf("review omitted the source-metadata heading:\n%s", rendered)
+	}
+	if strings.Contains(differences, protocol.RecoverySourceSettingNodeRole) ||
+		!strings.Contains(metadata, protocol.RecoverySourceSettingNodeRole) {
+		t.Fatalf("review mixed source metadata into policy differences:\n%s", rendered)
+	}
+	// Invariant prose belongs in the documentation, not on every review.
+	for _, constant := range []string{
+		"Backup archives do not record",
+		"cannot be authenticated",
+		"Unverified",
 	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("typed source review omitted %q:\n%s", want, rendered)
+		if strings.Contains(rendered, constant) {
+			t.Fatalf("review repeated invariant prose %q:\n%s", constant, rendered)
 		}
-	}
-	if strings.Contains(rendered, archiveSourceSettingsLimitation) ||
-		strings.Contains(rendered, "[unknown source] "+protocol.RecoverySourceSettingUserAutoApprove) {
-		t.Fatalf("typed source review retained superseded v3 caveat:\n%s", rendered)
-	}
-}
-
-func TestFormatRecoveredReviewSectionsWarnsForInvalidSourceContext(t *testing.T) {
-	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{
-		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusInvalid,
-		SourceSettingsWarning: "source settings metadata is invalid: unsupported schema",
-	})
-	if !strings.Contains(rendered, "WARNING: source settings metadata is invalid") ||
-		!strings.Contains(rendered, archiveSourceSettingsLimitation) {
-		t.Fatalf("invalid source review omitted warning or limitation:\n%s", rendered)
 	}
 }
 
@@ -287,7 +278,7 @@ func TestCmdRestoreApplyManagedRecoversReviewsAndActivates(t *testing.T) {
 	}
 	withFakeApstoreAdminClient(t, fake)
 
-	if err := withTestStdin("export-passphrase\ny\n", func() error {
+	if err := withTestStdin("export-passphrase\n", func() error {
 		return cmdRestoreApplyManaged([]string{"restore-source.tar.gz", "--address", "ADDR", "--overwrite"})
 	}); err != nil {
 		t.Fatalf("cmdRestoreApplyManaged() error = %v", err)
@@ -307,9 +298,8 @@ func TestCmdRestoreApplyManagedRecoversReviewsAndActivates(t *testing.T) {
 	if len(fake.recoverRequest.Addresses) != 1 || fake.recoverRequest.Addresses[0] != "ADDR" {
 		t.Fatalf("recover addresses = %v, want [ADDR]", fake.recoverRequest.Addresses)
 	}
-	if !fake.recoveredActivateRequest.ReplaceExisting ||
-		!fake.recoveredActivateRequest.AcknowledgePolicyTransition {
-		t.Fatalf("activate request = %+v, want replace and policy acknowledgement", fake.recoveredActivateRequest)
+	if !fake.recoveredActivateRequest.ReplaceExisting {
+		t.Fatalf("activate request = %+v, want replace_existing", fake.recoveredActivateRequest)
 	}
 }
 
@@ -361,33 +351,121 @@ func TestCmdRestoreApplyManagedStopsWhenBackupArchiveMissing(t *testing.T) {
 	}
 }
 
-func TestCmdRestoreApplyRequiresSeparateUnattendedSigningAcknowledgement(t *testing.T) {
+// --acknowledge-unattended-signing records the acknowledgement without a
+// prompt, so restore stays scriptable against an auto-approving destination.
+func TestCmdRestoreApplyAcceptsUnattendedAcknowledgementFlag(t *testing.T) {
 	restoreID := "0123456789abcdef0123456789abcdef"
+	unattendedAckRequired := true
 	fake := &fakeApstoreAdminRequester{
 		recoverResult: protocol.RecoverBackupResultMessage{
 			Success:   true,
 			RestoreID: restoreID,
 		},
 		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
-			Success:                  true,
-			RestoreID:                restoreID,
-			State:                    "recovered",
-			DestinationApprovalMode:  "auto_approve_fallback",
-			UnattendedSigningWarning: "you are activating into an auto-approving identity",
-			ReviewToken:              strings.Repeat("a", 64),
+			Success:                      true,
+			RestoreID:                    restoreID,
+			State:                        "recovered",
+			DestinationApprovalMode:      "auto_approve_fallback",
+			UnattendedSigningWarning:     "you are activating into an auto-approving identity",
+			ReviewToken:                  strings.Repeat("a", 64),
+			UnattendedSigningAckRequired: &unattendedAckRequired,
 		},
 		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{Success: true},
 	}
 	withFakeApstoreAdminClient(t, fake)
 
-	if err := withTestStdin("export-passphrase\ny\ny\n", func() error {
+	// Only the export passphrase is supplied: no prompt may be read.
+	if err := withTestStdin("export-passphrase\n", func() error {
+		return cmdRestoreApplyManaged([]string{
+			"restore-source.tar.gz",
+			"--acknowledge-unattended-signing",
+		})
+	}); err != nil {
+		t.Fatalf("cmdRestoreApplyManaged(flag) error = %v", err)
+	}
+	if !fake.recoveredActivateRequest.AcknowledgeUnattendedSigning {
+		t.Fatalf("activation request = %+v, want recorded acknowledgement", fake.recoveredActivateRequest)
+	}
+}
+
+// The flag is explicit intent, not a blanket opt-out: a destination that does
+// not auto-approve still sends no acknowledgement.
+func TestCmdRestoreApplyFlagDoesNotAcknowledgeWhenNotRequired(t *testing.T) {
+	restoreID := "0123456789abcdef0123456789abcdef"
+	unattendedAckRequired := false
+	fake := &fakeApstoreAdminRequester{
+		recoverResult: protocol.RecoverBackupResultMessage{
+			Success:   true,
+			RestoreID: restoreID,
+		},
+		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
+			Success:                      true,
+			RestoreID:                    restoreID,
+			State:                        "recovered",
+			DestinationApprovalMode:      "manual_default",
+			ReviewToken:                  strings.Repeat("a", 64),
+			UnattendedSigningAckRequired: &unattendedAckRequired,
+		},
+		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{Success: true},
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	if err := withTestStdin("export-passphrase\n", func() error {
+		return cmdRestoreApplyManaged([]string{
+			"restore-source.tar.gz",
+			"--acknowledge-unattended-signing",
+		})
+	}); err != nil {
+		t.Fatalf("cmdRestoreApplyManaged(flag) error = %v", err)
+	}
+	if fake.recoveredActivateRequest.AcknowledgeUnattendedSigning {
+		t.Fatalf("activation request = %+v, want no acknowledgement", fake.recoveredActivateRequest)
+	}
+}
+
+func TestCmdRestoreApplyRequiresSeparateUnattendedSigningAcknowledgement(t *testing.T) {
+	restoreID := "0123456789abcdef0123456789abcdef"
+	unattendedAckRequired := true
+	fake := &fakeApstoreAdminRequester{
+		recoverResult: protocol.RecoverBackupResultMessage{
+			Success:   true,
+			RestoreID: restoreID,
+		},
+		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
+			Success:                      true,
+			RestoreID:                    restoreID,
+			State:                        "recovered",
+			DestinationApprovalMode:      "auto_approve_fallback",
+			UnattendedSigningWarning:     "you are activating into an auto-approving identity",
+			ReviewToken:                  strings.Repeat("a", 64),
+			UnattendedSigningAckRequired: &unattendedAckRequired,
+		},
+		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{Success: true},
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	if err := withTestStdin("export-passphrase\ny\n", func() error {
 		return cmdRestoreApplyManaged([]string{"restore-source.tar.gz"})
 	}); err != nil {
 		t.Fatalf("cmdRestoreApplyManaged() error = %v", err)
 	}
-	if !fake.recoveredActivateRequest.AcknowledgePolicyTransition ||
-		!fake.recoveredActivateRequest.AcknowledgeUnattendedSigning {
+	if !fake.recoveredActivateRequest.AcknowledgeUnattendedSigning {
 		t.Fatalf("activation acknowledgements = %+v", fake.recoveredActivateRequest)
+	}
+}
+
+func TestRecoveredUnattendedSigningAckRequiredTreatsMissingFieldAsLegacy(t *testing.T) {
+	if !recoveredUnattendedSigningAckRequired(protocol.ReviewRecoveredResultMessage{
+		DestinationApprovalMode: "auto_approve_fallback",
+	}) {
+		t.Fatal("missing unattended-signing requirement did not use conservative legacy fallback")
+	}
+	required := false
+	if recoveredUnattendedSigningAckRequired(protocol.ReviewRecoveredResultMessage{
+		DestinationApprovalMode:      "auto_approve_fallback",
+		UnattendedSigningAckRequired: &required,
+	}) {
+		t.Fatal("explicit false unattended-signing requirement was ignored")
 	}
 }
 
@@ -395,12 +473,11 @@ func TestCmdRestoreActivateResumesOnlyRecordedIntent(t *testing.T) {
 	restoreID := "0123456789abcdef0123456789abcdef"
 	fake := &fakeApstoreAdminRequester{
 		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
-			Success:                     true,
-			RestoreID:                   restoreID,
-			State:                       "activation_incomplete",
-			DestinationApprovalMode:     "manual_default",
-			ReviewToken:                 strings.Repeat("b", 64),
-			AcknowledgePolicyTransition: true,
+			Success:                 true,
+			RestoreID:               restoreID,
+			State:                   "activation_incomplete",
+			DestinationApprovalMode: "manual_default",
+			ReviewToken:             strings.Repeat("b", 64),
 		},
 		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{Success: true},
 	}
@@ -415,8 +492,7 @@ func TestCmdRestoreActivateResumesOnlyRecordedIntent(t *testing.T) {
 	if strings.Join(fake.requests, ",") != strings.Join(wantRequests, ",") {
 		t.Fatalf("requests = %v, want %v", fake.requests, wantRequests)
 	}
-	if fake.recoveredActivateRequest.ReviewToken != strings.Repeat("b", 64) ||
-		!fake.recoveredActivateRequest.AcknowledgePolicyTransition {
+	if fake.recoveredActivateRequest.ReviewToken != strings.Repeat("b", 64) {
 		t.Fatalf("resume request = %+v", fake.recoveredActivateRequest)
 	}
 }

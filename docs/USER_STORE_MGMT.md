@@ -339,10 +339,12 @@ In the TUI:
 4. Enter the backup export passphrase
 5. Review the previewed addresses, key types, existing-key conflicts, and template indicators
 6. Select the keys to restore
-7. Review the destination approval mode and security-first source/destination
-   policy differences. Raw changed paths are secondary detail.
-8. Acknowledge the policy transition. If the destination uses
-   `user_auto_approve`, separately acknowledge unattended signing.
+7. Review the destination approval mode and the source/destination policy
+   differences. The differences are informational; raw changed paths are
+   secondary detail.
+8. If the destination identity auto-approves unmatched signing requests,
+   acknowledge unattended signing. Nothing the archive reports removes that
+   acknowledgement.
 9. Enable replacement only if you explicitly want to replace existing active
    credentials, then activate.
 
@@ -374,23 +376,29 @@ The restore process:
 2. `restore preview` prompts for the **backup passphrase** and shows addresses, key types, conflicts, and template requirements.
 3. `restore apply` prompts for the **backup passphrase**, validates all selected
    entries, and creates one inactive destination-encrypted batch.
-4. It prints the current destination approval mode, policy digests,
-   security-bearing differences, batch-specific unavailable source metadata,
-   source-setting context, and active conflicts. New archives report source
-   settings as explicitly unverified; older archives show a limitation note,
-   and malformed metadata adds a warning. None of these source claims is listed
-   as a policy difference or changes destination behavior.
-5. It asks for policy-transition acknowledgement and, when required, a
-   separate unattended-signing acknowledgement.
+4. It prints the current destination approval mode, policy digests, policy
+   differences, and active conflicts. Archive-reported source settings are
+   shown as labeled unverified context, not as a standalone notification.
+5. It asks for acknowledgement only when the destination identity
+   auto-approves unmatched signing requests. Policy differences are shown for
+   review and never require acknowledgement.
 6. Only after confirmation does activation publish rollback state, apply the
    whole batch, and reload the identity runtime.
 
-Source-settings status is intentionally shown at recovered-batch review, not
-in the earlier passphrase/key-inventory preview.
+Source-settings status remains available in the admin protocol for
+compatibility and diagnostics, but current clients do not render it as a
+standalone review notification.
 
 Use `--address ADDRESS` one or more times with `restore apply` to restore a
 subset. Use `--overwrite` only when you explicitly intend to replace an
 existing active credential.
+
+Use `--acknowledge-unattended-signing` to record that acknowledgement on the
+command line instead of answering the prompt, which keeps restore scriptable
+against an identity that auto-approves unmatched signing requests. The flag is
+explicit operator intent, not a bypass: the server still requires the
+acknowledgement and still refuses activation without it. Omitting the flag on
+such a destination in a non-interactive context fails closed.
 
 `restore apply` is a client convenience sequence; the server has no
 direct-to-active restore operation. To manage batches separately:
@@ -398,7 +406,7 @@ direct-to-active restore operation. To manage batches separately:
 ```bash
 ./apstore restore list
 ./apstore restore review <restore-id>
-./apstore restore activate <restore-id> [--replace-existing]
+./apstore restore activate <restore-id> [--replace-existing] [--acknowledge-unattended-signing]
 ./apstore restore rollback <restore-id>
 ./apstore restore purge <restore-id>
 ```
@@ -431,13 +439,26 @@ material and the destination policy as authoritative.
 
 Current backup writers record the source node's approval default and custom
 genesis-hash mappings in `source_settings.json`; the sidecar contains no
-network credentials. Because the destination cannot authenticate this
-plaintext archive metadata, review labels it unverified. Older archives show a
-limitation note instead. Malformed source settings produce a warning but do not
-prevent recovery of otherwise valid keys. A pre-manifest archive also reports
-its source node role as unavailable. The known destination approval mode is
-always authoritative: when it uses auto-approve, activation still requires the
-separate unattended-signing acknowledgement regardless of the source value.
+network credentials.
+
+**Backup archives are not signed.** Neither the archived policy nor
+`source_settings.json` can be authenticated by a destination store, so
+everything the archive says about its source node is provenance, not evidence.
+This is true of every restore without exception, which is why the review screen
+does not repeat it. Instead the review states provenance structurally: source
+values appear under a **Reported by the backup archive** heading, and policy
+differences appear under **Policy differences (informational)**. Read both as
+"this is what the archive claims", never as "this node checked it".
+
+Nothing the archive reports changes any prompt. A destination that auto-approves
+unmatched signing requests warns and requires acknowledgement whether the
+archive claims manual review, claims auto-approve, or reports nothing at all.
+The destination approval mode and the destination's verified policy are always
+authoritative.
+
+The review does speak up when something is genuinely wrong: a malformed or
+oversized `source_settings.json` is reported as a warning on the review screen,
+and key recovery continues regardless.
 
 If policy restoration is warranted, restore it deliberately:
 
@@ -661,7 +682,7 @@ From the key details view:
 
 # Restore keys
 ./apstore restore preview <backup-id|name>
-./apstore restore apply <backup-id|name> [--address ADDRESS ...] [--overwrite]
+./apstore restore apply <backup-id|name> [--address ADDRESS ...] [--overwrite] [--acknowledge-unattended-signing]
 ./apstore restore list
 ./apstore restore review <restore-id>
 ./apstore restore activate <restore-id> [--replace-existing]

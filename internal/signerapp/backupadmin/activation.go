@@ -113,17 +113,11 @@ func (s Service) activateRecovered(
 			req.RestoreID,
 		)
 	}
-	if !req.AcknowledgePolicyTransition {
-		return activationFailure(
-			protocol.ResultCodeActivationAckRequired,
-			"policy transition acknowledgement is required",
-		)
-	}
-	if review.DestinationApprovalMode == adminproto.DestinationApprovalAutoApproveFallback &&
+	if review.UnattendedSigningAckRequired &&
 		!req.AcknowledgeUnattendedSigning {
 		return activationFailure(
 			protocol.ResultCodeActivationAckRequired,
-			"unattended-signing acknowledgement is required for this destination",
+			"unattended-signing acknowledgement is required",
 		)
 	}
 	if len(review.ActiveConflicts) > 0 && !req.ReplaceExisting {
@@ -145,7 +139,6 @@ func (s Service) activateRecovered(
 		ReviewToken:                  req.ReviewToken,
 		DestinationPolicySHA256:      review.DestinationPolicySHA256,
 		DestinationApprovalMode:      string(review.DestinationApprovalMode),
-		AcknowledgePolicyTransition:  req.AcknowledgePolicyTransition,
 		AcknowledgeUnattendedSigning: req.AcknowledgeUnattendedSigning,
 		ReplaceExisting:              req.ReplaceExisting,
 	}
@@ -278,7 +271,6 @@ func activationRequestMatchesJournal(
 	return journal != nil &&
 		req.RestoreID == journal.RestoreID &&
 		req.ReviewToken == journal.ReviewToken &&
-		req.AcknowledgePolicyTransition == journal.AcknowledgePolicyTransition &&
 		req.AcknowledgeUnattendedSigning == journal.AcknowledgeUnattendedSigning &&
 		req.ReplaceExisting == journal.ReplaceExisting
 }

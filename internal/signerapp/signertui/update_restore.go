@@ -176,7 +176,7 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleRestoreReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	requiresUnattended := m.restore.review.DestinationApprovalMode == "auto_approve_fallback"
+	requiresUnattended := recoveredUnattendedSigningAckRequired(m.restore.review)
 	switch msg.String() {
 	case "q", "esc":
 		m.restore.previewError = fmt.Sprintf(
@@ -184,27 +184,13 @@ func (m Model) handleRestoreReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.restore.restoreID,
 		)
 		m.viewState = ViewRestorePreview
-	case "up", "k", "down", "j", "tab":
-		if requiresUnattended {
-			if m.restore.reviewFocus == 0 {
-				m.restore.reviewFocus = 1
-			} else {
-				m.restore.reviewFocus = 0
-			}
-		}
 	case " ":
-		if m.restore.reviewFocus == 0 {
-			m.restore.policyAcknowledged = !m.restore.policyAcknowledged
-		} else if requiresUnattended {
+		if requiresUnattended {
 			m.restore.unattendedAcknowledged = !m.restore.unattendedAcknowledged
 		}
 	case "enter":
-		if !m.restore.policyAcknowledged {
-			m.restore.previewError = "Acknowledge the destination policy transition before activation"
-			return m, nil
-		}
 		if requiresUnattended && !m.restore.unattendedAcknowledged {
-			m.restore.previewError = "Separately acknowledge unattended signing before activation"
+			m.restore.previewError = "Acknowledge unattended signing before activation"
 			return m, nil
 		}
 		m.restore.previewError = ""
@@ -213,7 +199,6 @@ func (m Model) handleRestoreReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sendActivateRecoveredCmd(
 				m.restore.restoreID,
 				m.restore.review.ReviewToken,
-				m.restore.policyAcknowledged,
 				m.restore.unattendedAcknowledged,
 				m.restore.overwrite,
 			),
@@ -221,6 +206,15 @@ func (m Model) handleRestoreReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		)
 	}
 	return m, nil
+}
+
+func recoveredUnattendedSigningAckRequired(
+	review ReviewRecoveredResultMessage,
+) bool {
+	if review.UnattendedSigningAckRequired == nil {
+		return review.DestinationApprovalMode == "auto_approve_fallback"
+	}
+	return *review.UnattendedSigningAckRequired
 }
 
 func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

@@ -159,15 +159,18 @@ atomically publishes one destination-encrypted inactive batch outside active
 key and watcher namespaces. It does not reload and cannot make a credential
 signable.
 
-Review revalidates the batch against the current destination. It prominently
-shows the known effective destination `user_auto_approve` state, even though
-the source value is unavailable, and orders security-bearing differences
-before raw changed paths. The factual policy comparison does not claim to
-prove widening or containment.
+Review revalidates the batch against the current destination. It shows the
+known effective destination `user_auto_approve` state and orders policy
+differences before raw changed paths. The comparison is informational: the
+destination cannot authenticate archived source policy, so the review assigns
+no widening or safety verdict and derives no acknowledgement from it.
+Unverified archive-reported source settings are shown as labeled context, not
+as standalone notifications.
 
-Activation requires a destination-bound review token and explicit policy
-transition acknowledgement. An auto-approving destination requires a separate
-unattended-signing acknowledgement. Active replacement is a separate option.
+Activation requires a destination-bound review token. One acknowledgement is
+required, and it is derived from verified destination state: an identity that
+auto-approves unmatched signing requests must be acknowledged, whatever the
+archive reports. Active replacement is a separate option.
 The server publishes an encrypted exact rollback snapshot and activation
 journal before the first active write. Reload failure restores prior state; a
 hard interruption blocks signing until explicit rollback-first resume or
