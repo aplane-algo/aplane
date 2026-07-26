@@ -161,6 +161,51 @@ func (a *AuditLogger) Log(entry AuditEntry) {
 	}
 }
 
+// logDurable appends entry and reports failure instead of dropping it: the
+// entry counts as recorded only after both the write and the fsync succeed.
+// Rotation failure alone is tolerated (the entry still lands durably in the
+// oversized current file), matching Log; every path that would silently drop
+// or leave the entry unsynced returns an error instead.
+func (a *AuditLogger) logDurable(entry AuditEntry) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now().UTC()
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("marshal audit entry: %w", err)
+	}
+
+	line := append(data, '\n')
+	if a.written+uint64(len(line)) > maxAuditLogSize {
+		if err := a.rotate(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to rotate audit log: %v\n", err)
+			// Continue writing to the current file; the entry's durability
+			// does not depend on rotation succeeding.
+		}
+	}
+
+	if a.file == nil {
+		a.reopenCurrent()
+		if a.file == nil {
+			return fmt.Errorf("audit log unavailable at %s", a.path)
+		}
+	}
+
+	if _, err := a.file.Write(line); err != nil {
+		return fmt.Errorf("write audit entry: %w", err)
+	}
+	a.written += uint64(len(line))
+
+	if err := a.file.Sync(); err != nil {
+		return fmt.Errorf("sync audit log: %w", err)
+	}
+	return nil
+}
+
 // rotate archives the current log file and opens a fresh one.
 // Must be called with a.mu held.
 func (a *AuditLogger) rotate() error {
@@ -623,6 +668,24 @@ func (a *AuditLogger) LogBackupActivationIntentContext(
 	entry.RestoreID = restoreID
 	entry.ReplaceExisting = replaceExisting
 	a.Log(entry)
+}
+
+// LogBackupActivationIntentDurableContext is the gating variant of
+// LogBackupActivationIntentContext: BACKUP_ACTIVATION_INTENT must be durable
+// before the activation service makes its first active-store write
+// (ARCH_CONTRACTS), so the caller aborts the activation when this returns an
+// error. Ordinary audit events keep Log's best-effort contract.
+func (a *AuditLogger) LogBackupActivationIntentDurableContext(
+	ctx adminserver.SessionContext,
+	restoreID string,
+	replaceExisting bool,
+) error {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditBackupActivationIntent
+	entry.Outcome = "requested"
+	entry.RestoreID = restoreID
+	entry.ReplaceExisting = replaceExisting
+	return a.logDurable(entry)
 }
 
 func (a *AuditLogger) LogBackupActivatedContext(

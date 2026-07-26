@@ -352,9 +352,23 @@ func (s *Session) HandleActivateRecovered(msg *protocol.ActivateRecoveredMessage
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
-	if audit, ok := s.audit.(interface {
+	switch audit := s.audit.(type) {
+	case interface {
+		LogBackupActivationIntentDurableContext(SessionContext, string, bool) error
+	}:
+		// The durable intent record is a precondition: no activation marker
+		// and no active-store write may exist without it (ARCH_CONTRACTS).
+		if err := audit.LogBackupActivationIntentDurableContext(s.SessionContext(), msg.RestoreID, msg.ReplaceExisting); err != nil {
+			_ = s.WriteJSON(ProtocolActivateRecoveredResultMessage(msg.ID, adminproto.ActivateRecoveredResult{
+				RestoreID: msg.RestoreID,
+				Code:      protocol.ResultCodeActivationAuditFailed,
+				Error:     fmt.Sprintf("activation aborted: durable audit of activation intent failed: %v", err),
+			}))
+			return
+		}
+	case interface {
 		LogBackupActivationIntentContext(SessionContext, string, bool)
-	}); ok {
+	}:
 		audit.LogBackupActivationIntentContext(s.SessionContext(), msg.RestoreID, msg.ReplaceExisting)
 	}
 	result := s.backupServices.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
