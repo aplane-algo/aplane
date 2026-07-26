@@ -82,18 +82,40 @@ func (s Service) activateRecovered(
 	if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
 		return activationFailure(protocol.ResultCodeRecoveredActivationFailed, "%v", err)
 	}
+	// The scan over every batch is authoritative: an incomplete activation
+	// anywhere blocks new activations, even for a different restore ID. Never
+	// infer safety from the requested batch alone. [P1]
+	incomplete, err := recovered.IncompleteActivationIDs(s.Deps.KeyPaths(), ir.ID())
+	if err != nil {
+		return fmt.Errorf("inspect activation recovery state: %w", err)
+	}
+	for _, id := range incomplete {
+		if id != req.RestoreID {
+			return activationFailure(
+				protocol.ResultCodeActivationIncomplete,
+				"recovered batch %s has an incomplete activation; resolve it before activating another batch",
+				id,
+			)
+		}
+	}
 	activationDir := s.Deps.KeyPaths().RecoveredActivationDir(ir.ID(), req.RestoreID)
 	if _, err := os.Lstat(activationDir); err == nil {
 		result.Resumed = true
-		if err := s.resumeRecoveredActivation(ir, req); err != nil {
+		finished, keyCount, err := s.resumeRecoveredActivation(ir, req)
+		if err != nil {
 			return err
+		}
+		if finished {
+			result.KeyCount = keyCount
+			s.Deps.Logf("finished cleanup of completed recovered activation: %s", req.RestoreID)
+			return nil
 		}
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect recovered activation state: %w", err)
 	}
 
 	var review adminproto.ReviewRecoveredResult
-	err := ir.WithMasterKey(func(masterKey []byte) error {
+	err = ir.WithMasterKey(func(masterKey []byte) error {
 		var reviewErr error
 		review, reviewErr = s.reviewRecoveredWithMasterKey(ir, req.RestoreID, masterKey)
 		return reviewErr
@@ -133,6 +155,11 @@ func (s Service) activateRecovered(
 		return fmt.Errorf("capture pre-activation state: %w", err)
 	}
 	defer snapshot.Zero()
+	owned, err := snapshotOwnership(review.Entries)
+	if err != nil {
+		return fmt.Errorf("derive activation ownership: %w", err)
+	}
+	attachSnapshotOwnership(snapshot, owned)
 	journal := recovered.ActivationJournal{
 		RestoreID:                    req.RestoreID,
 		State:                        recovered.ActivationApplying,
@@ -169,6 +196,13 @@ func (s Service) activateRecovered(
 			return err
 		}
 	}
+	if applyErr == nil {
+		// Every active write must be durable before completion is recorded
+		// and before any recovery evidence is removed. [P1c]
+		if err := syncActiveNamespaces(s.Deps.KeyPaths(), ir.ID()); err != nil {
+			applyErr = fmt.Errorf("sync activated namespaces: %w", err)
+		}
+	}
 	var keyCount int
 	if applyErr == nil {
 		reloadReport, reloadErr := ir.Reload()
@@ -178,14 +212,35 @@ func (s Service) activateRecovered(
 			keyCount = reloadReport.KeyCount
 		}
 	}
-	if applyErr == nil {
-		applyErr = recovered.RemoveBatch(s.Deps.KeyPaths(), ir.ID(), req.RestoreID)
-		if applyErr != nil {
-			applyErr = fmt.Errorf("complete recovered activation: %w", applyErr)
-		}
-	}
 	if applyErr != nil {
 		return s.rollbackFailedActivation(ir, req.RestoreID, snapshot, applyErr)
+	}
+	// The activation is applied, durable, and validated: record completion
+	// durably so post-crash reconciliation finishes the cleanup instead of
+	// rolling back a successful activation.
+	if err := ir.WithMasterKey(func(masterKey []byte) error {
+		return recovered.UpdateActivationState(
+			s.Deps.KeyPaths(),
+			ir.ID(),
+			req.RestoreID,
+			recovered.ActivationCompleted,
+			masterKey,
+		)
+	}); err != nil {
+		// Completion was never recorded, so exact rollback remains the
+		// correct reconciliation, now or after a restart.
+		return s.rollbackFailedActivation(ir, req.RestoreID, snapshot,
+			fmt.Errorf("record activation completion: %w", err))
+	}
+	if err := recovered.RemoveBatch(s.Deps.KeyPaths(), ir.ID(), req.RestoreID); err != nil {
+		// Never roll back after completion: the activation succeeded and
+		// only cleanup remains. Retrying the activation finishes it.
+		return activationFailure(
+			protocol.ResultCodeRecoveredActivationFailed,
+			"activation %s completed but cleanup failed; retry the activation to finish cleanup: %v",
+			req.RestoreID,
+			err,
+		)
 	}
 
 	result.Activated = append([]adminproto.RecoveredReviewEntry(nil), review.Entries...)
@@ -194,15 +249,19 @@ func (s Service) activateRecovered(
 	return nil
 }
 
+// resumeRecoveredActivation reconciles an existing activation marker before
+// a fresh activation may proceed. finished reports that the marker recorded a
+// completed activation whose cleanup was finished here: the caller must not
+// re-apply anything.
 func (s Service) resumeRecoveredActivation(
 	ir *identity.Runtime,
 	req adminproto.ActivateRecoveredRequest,
-) error {
+) (finished bool, keyCount int, err error) {
 	var (
 		journal  *recovered.ActivationJournal
 		snapshot *recovered.RollbackSnapshot
 	)
-	err := ir.WithMasterKey(func(masterKey []byte) error {
+	err = ir.WithMasterKey(func(masterKey []byte) error {
 		var loadErr error
 		journal, snapshot, loadErr = recovered.LoadActivation(
 			s.Deps.KeyPaths(),
@@ -213,18 +272,45 @@ func (s Service) resumeRecoveredActivation(
 		return loadErr
 	})
 	if err != nil {
-		return fmt.Errorf("load incomplete activation: %w", err)
+		return false, 0, fmt.Errorf("load incomplete activation: %w", err)
 	}
 	defer snapshot.Zero()
+	if journal.State == recovered.ActivationCompleted {
+		// Every active write was durable and validated before completion was
+		// recorded; only cleanup remains. Rolling back here would undo a
+		// successful activation, so finish the cleanup regardless of how the
+		// resume request compares to the recorded intent.
+		reloadReport, reloadErr := ir.Reload()
+		if reloadErr != nil {
+			return false, 0, activationFailure(
+				protocol.ResultCodeRecoveredActivationFailed,
+				"reload completed activation %s: %v",
+				req.RestoreID,
+				reloadErr,
+			)
+		}
+		if err := recovered.RemoveBatch(s.Deps.KeyPaths(), ir.ID(), req.RestoreID); err != nil {
+			return false, 0, activationFailure(
+				protocol.ResultCodeRecoveredActivationFailed,
+				"finish cleanup of completed activation %s: %v",
+				req.RestoreID,
+				err,
+			)
+		}
+		if reloadReport != nil {
+			keyCount = reloadReport.KeyCount
+		}
+		return true, keyCount, nil
+	}
 	if journal.State != recovered.ActivationApplying {
-		return activationFailure(
+		return false, 0, activationFailure(
 			protocol.ResultCodeRecoveredRollbackFailed,
 			"activation %s is rolling back; explicit rollback must finish first",
 			req.RestoreID,
 		)
 	}
 	if !activationRequestMatchesJournal(req, journal) {
-		return activationFailure(
+		return false, 0, activationFailure(
 			protocol.ResultCodeActivationReviewStale,
 			"resume request does not match the recorded activation intent",
 		)
@@ -238,30 +324,35 @@ func (s Service) resumeRecoveredActivation(
 			masterKey,
 		)
 	}); err != nil {
-		return fmt.Errorf("begin rollback-first activation resume: %w", err)
+		return false, 0, fmt.Errorf("begin rollback-first activation resume: %w", err)
 	}
 	if err := restoreActivationSnapshot(s.Deps.KeyPaths(), ir.ID(), snapshot); err != nil {
-		return activationFailure(
+		// The store may hold a partial mutation that was not reverted.
+		// Signing must stop now, not at the next unlock. [P1b]
+		ir.SetRecovery()
+		return false, 0, activationFailure(
 			protocol.ResultCodeRecoveredRollbackFailed,
 			"restore prior state for activation resume: %v",
 			err,
 		)
 	}
 	if _, err := ir.Reload(); err != nil {
-		return activationFailure(
+		ir.SetRecovery()
+		return false, 0, activationFailure(
 			protocol.ResultCodeRecoveredRollbackFailed,
 			"reload prior state for activation resume: %v",
 			err,
 		)
 	}
 	if err := recovered.RemoveActivation(s.Deps.KeyPaths(), ir.ID(), req.RestoreID); err != nil {
-		return activationFailure(
+		ir.SetRecovery()
+		return false, 0, activationFailure(
 			protocol.ResultCodeRecoveredRollbackFailed,
 			"complete prior-state restoration for activation resume: %v",
 			err,
 		)
 	}
-	return nil
+	return false, 0, nil
 }
 
 func activationRequestMatchesJournal(
@@ -352,6 +443,11 @@ func (s Service) rollbackFailedActivation(
 	}
 	reconciliationErr := errors.Join(stateErr, restoreErr, reloadErr, cleanupErr)
 	if reconciliationErr != nil {
+		// The active store may hold a partial mutation that automatic
+		// rollback could not revert. Transition into recovery mode before
+		// reporting the failure: signing must stop now, not at the next
+		// unlock. [P1b]
+		ir.SetRecovery()
 		return activationFailure(
 			protocol.ResultCodeRecoveredRollbackFailed,
 			"activation failed: %v; automatic rollback is incomplete: %v",
@@ -380,6 +476,7 @@ func (s Service) RollbackRecovered(
 	req adminproto.RollbackRecoveredRequest,
 ) adminproto.RollbackRecoveredResult {
 	result := adminproto.RollbackRecoveredResult{RestoreID: req.RestoreID}
+	mutated := false
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
 			return err
@@ -399,6 +496,15 @@ func (s Service) RollbackRecovered(
 			if loadErr != nil {
 				return loadErr
 			}
+			if journal.State == recovered.ActivationCompleted {
+				// The activation succeeded; only cleanup remains. Rolling
+				// back would revert a completed activation.
+				return activationFailure(
+					protocol.ResultCodeRecoveredActivationFailed,
+					"activation %s already completed; retry the activation to finish cleanup instead of rolling back",
+					req.RestoreID,
+				)
+			}
 			if journal.State == recovered.ActivationApplying {
 				return recovered.UpdateActivationState(
 					s.Deps.KeyPaths(),
@@ -417,6 +523,9 @@ func (s Service) RollbackRecovered(
 			return err
 		}
 		defer snapshot.Zero()
+		// From here on the active store is being mutated; a failure leaves
+		// state that must force recovery mode. [P1b]
+		mutated = true
 		if err := restoreActivationSnapshot(s.Deps.KeyPaths(), ir.ID(), snapshot); err != nil {
 			return err
 		}
@@ -433,7 +542,15 @@ func (s Service) RollbackRecovered(
 		return nil
 	})
 	if err != nil {
-		result.Code = protocol.ResultCodeRecoveredRollbackFailed
+		if mutated {
+			ir.SetRecovery()
+		}
+		var activationErr *recoveredActivationError
+		if errors.As(err, &activationErr) {
+			result.Code = activationErr.code
+		} else {
+			result.Code = protocol.ResultCodeRecoveredRollbackFailed
+		}
 		result.Error = err.Error()
 		return result
 	}

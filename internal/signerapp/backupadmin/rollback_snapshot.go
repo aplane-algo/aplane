@@ -114,15 +114,38 @@ func restoreActivationDirectory(path string, snapshot recovered.RollbackDirector
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if err == nil {
+	dirExisted := err == nil
+	if dirExisted {
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return fmt.Errorf("activation namespace is not a regular directory: %s", path)
+		}
+		snapshotFiles := make(map[string]struct{}, len(snapshot.Files))
+		for _, file := range snapshot.Files {
+			snapshotFiles[file.Name] = struct{}{}
+		}
+		var ownedFiles map[string]struct{}
+		if snapshot.Owned != nil {
+			ownedFiles = make(map[string]struct{}, len(snapshot.Owned))
+			for _, name := range snapshot.Owned {
+				ownedFiles[name] = struct{}{}
+			}
 		}
 		entries, err := os.ReadDir(path)
 		if err != nil {
 			return err
 		}
 		for _, entry := range entries {
+			if ownedFiles != nil {
+				_, inSnapshot := snapshotFiles[entry.Name()]
+				_, isOwned := ownedFiles[entry.Name()]
+				if !inSnapshot && !isOwned {
+					// The activation could not have written this file; it
+					// belongs to another operation and must survive rollback.
+					// (Legacy snapshots without ownership keep the historical
+					// clear-directory behavior.)
+					continue
+				}
+			}
 			target := filepath.Join(path, entry.Name())
 			if _, _, err := fsutil.ReadRegularFile(target); err != nil {
 				return fmt.Errorf("refuse to replace unsupported rollback target %s: %w", target, err)
@@ -133,22 +156,38 @@ func restoreActivationDirectory(path string, snapshot recovered.RollbackDirector
 		}
 	}
 	if !snapshot.Existed {
-		if err == nil {
-			return os.Remove(path)
+		if !dirExisted {
+			return nil
 		}
-		return nil
+		if snapshot.Owned != nil {
+			remaining, err := os.ReadDir(path)
+			if err != nil {
+				return err
+			}
+			if len(remaining) > 0 {
+				// Ownership-limited rollback left files that belong to other
+				// operations; the directory must survive with them.
+				return fsutil.SyncDir(path)
+			}
+		}
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+		return fsutil.SyncDir(filepath.Dir(path))
 	}
 	if err := fsutil.MkdirAll(path); err != nil {
 		return err
 	}
 	for _, file := range snapshot.Files {
 		target := filepath.Join(path, file.Name)
-		if err := fsutil.WriteFile(target, file.Data); err != nil {
+		// Durable restore: the journal and marker may only be removed once
+		// every restored byte is on disk. [P1c]
+		if err := fsutil.WriteFileDurable(target, file.Data); err != nil {
 			return err
 		}
 		if err := os.Chmod(target, os.FileMode(file.Mode)); err != nil {
 			return err
 		}
 	}
-	return nil
+	return fsutil.SyncDir(path)
 }

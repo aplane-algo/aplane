@@ -521,7 +521,11 @@ func (r Restorer) applyInspectedBackupEntry(entry *InspectedBackupEntry, masterK
 	if err := fsutil.MkdirAll(r.Paths.KeysDir(r.IdentityID)); err != nil {
 		return "", rollbackPlans(fmt.Errorf("failed to create keys directory: %w", err))
 	}
-	if err := fsutil.WriteFile(destPath, encrypted); err != nil {
+	// Durable write: an activated credential must never be lost to a crash
+	// after the activation's recovery state is cleaned up, and the
+	// foreign-uid in-place fallback of fsutil.WriteFile is unsynced and
+	// non-atomic. [P1c]
+	if err := fsutil.WriteFileDurable(destPath, encrypted); err != nil {
 		return "", rollbackPlans(fmt.Errorf("failed to write key file: %w", err))
 	}
 	componentMetadataPath, wroteComponentMetadata, err := keys.WriteWitnessPublicMetadataFromKeyJSON(r.Paths, r.IdentityID, address, keyPayload)
