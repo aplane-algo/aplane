@@ -41,7 +41,7 @@ func (m Model) viewFooterText() string {
 		}
 		return "Enter: Preview | Esc: Back"
 	case ViewRestorePreview:
-		return "Space: Toggle | a: Select all | o: Overwrite | Tab: Recover button | Enter: Activate | Esc: Back"
+		return "Space: Toggle | a: Select all | o: Overwrite | Tab: Recover button | Enter: Recover | Esc: Back"
 	case ViewRestoreReview:
 		return "tab: Acknowledgement/Activate | space: Toggle | enter: Activate | esc: Leave inactive"
 	case ViewRestoreDisplay:
