@@ -37,6 +37,10 @@ const (
 	ActivationApplying ActivationState = "applying"
 	// ActivationRollingBack means only rollback may continue.
 	ActivationRollingBack ActivationState = "rolling_back"
+	// ActivationCompleted means every active write is durable and only
+	// cleanup (batch removal) remains. Reconciliation must finish the cleanup
+	// rather than roll back: the activation succeeded.
+	ActivationCompleted ActivationState = "completed"
 )
 
 // ActivationJournal pins the operator-reviewed activation intent.
@@ -70,6 +74,15 @@ type RollbackDirectory struct {
 	RelativePath string         `json:"relative_path"`
 	Existed      bool           `json:"existed"`
 	Files        []RollbackFile `json:"files"`
+	// Owned, when non-nil, names every file the activation may create or
+	// replace in this directory. Rollback then removes only owned entries
+	// instead of clearing the directory, so a snapshot damaged by a pre-fix
+	// binary cannot delete files written by an unrelated later operation.
+	// Nil in snapshots written before ownership was recorded; those keep the
+	// legacy clear-directory behavior. An empty non-nil slice means ownership
+	// was recorded and nothing is owned, so no omitempty: the nil/empty
+	// distinction must survive the JSON round trip.
+	Owned []string `json:"owned"`
 }
 
 // RollbackFile records one exact regular file.
@@ -247,7 +260,7 @@ func validateActivationJournal(journal *ActivationJournal) error {
 		return fmt.Errorf("activation journal metadata is incomplete")
 	}
 	switch journal.State {
-	case ActivationApplying, ActivationRollingBack:
+	case ActivationApplying, ActivationRollingBack, ActivationCompleted:
 	default:
 		return fmt.Errorf("invalid activation state %q", journal.State)
 	}
@@ -295,6 +308,17 @@ func validateRollbackSnapshot(snapshot *RollbackSnapshot, restoreID string) erro
 		}) {
 			return fmt.Errorf("rollback files are not sorted")
 		}
+		seenOwned := make(map[string]struct{}, len(dir.Owned))
+		for _, name := range dir.Owned {
+			if name == "" || filepath.Base(name) != name ||
+				strings.ContainsAny(name, `/\`+"\x00") {
+				return fmt.Errorf("invalid owned filename %q", name)
+			}
+			if _, ok := seenOwned[name]; ok {
+				return fmt.Errorf("duplicate owned filename %q", name)
+			}
+			seenOwned[name] = struct{}{}
+		}
 	}
 	if !slices.IsSortedFunc(snapshot.Directories, func(a, b RollbackDirectory) int {
 		return strings.Compare(a.RelativePath, b.RelativePath)
@@ -314,10 +338,12 @@ func writeEncryptedJSON(path string, value any, masterKey []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := fsutil.WriteFile(path, encrypted); err != nil {
-		return err
-	}
-	return syncRegularFile(path)
+	// Durable write: fsync before rename, then the parent directory. The
+	// journal and snapshot are the only state a crash-interrupted activation
+	// can be reconciled from; they must never be torn or unsynced, and the
+	// foreign-uid in-place fallback of fsutil.WriteFile is not acceptable
+	// here.
+	return fsutil.WriteFileDurable(path, encrypted)
 }
 
 func readEncryptedJSON(path string, masterKey []byte, out any) error {
