@@ -858,6 +858,7 @@ func (m Model) usesSharedPopupViewport() bool {
 	case ViewAuth,
 		ViewUnlock,
 		ViewTokenProvisioningPopup,
+		ViewRestoreReview,
 		ViewGenerateForm,
 		ViewGenerateParams,
 		ViewGenerating,

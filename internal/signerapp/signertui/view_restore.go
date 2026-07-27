@@ -226,7 +226,26 @@ func (m Model) renderRestoreReview() string {
 	sb.WriteString(titleStyle.Render("Recovered Activation Review"))
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("Restore ID: %s\n", review.RestoreID))
+	if review.ArchiveChecksum != "" {
+		sb.WriteString(fmt.Sprintf("Source archive: %s", review.ArchiveChecksum))
+		if review.SourceNodeRole != "" {
+			sb.WriteString(fmt.Sprintf(" (%s)", review.SourceNodeRole))
+		}
+		sb.WriteString("\n")
+	}
 	sb.WriteString(fmt.Sprintf("Destination approval mode: %s\n", review.DestinationApprovalMode))
+	// The operator is committing ACTIVATE for exactly these credentials;
+	// they must be visible on this screen, including via the
+	// passphrase-free reopen path where no preview was shown.
+	sb.WriteString("\n")
+	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("Credentials to activate (%d)", len(review.Entries))))
+	sb.WriteString("\n")
+	if len(review.Entries) == 0 {
+		sb.WriteString("  none\n")
+	}
+	for _, entry := range review.Entries {
+		sb.WriteString(fmt.Sprintf("  %s (%s, %s)\n", entry.Selector, entry.Category, entry.KeyType))
+	}
 	if review.UnattendedSigningWarning != "" {
 		sb.WriteString(warningStyle.Render(review.UnattendedSigningWarning))
 		sb.WriteString("\n")

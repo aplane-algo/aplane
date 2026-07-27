@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -343,5 +344,77 @@ func TestFailedRollbackResultMirrorsRecoveryState(t *testing.T) {
 	}
 	if !strings.Contains(got.restore.recoveredError, "rollback incomplete") {
 		t.Fatalf("failure details missing: %q", got.restore.recoveredError)
+	}
+}
+
+func TestReviewRendersEntriesAndArchiveIdentity(t *testing.T) {
+	m := Model{
+		viewState:   ViewRestoreReview,
+		signerState: signerRuntimeUnlocked,
+		restore: restoreState{
+			restoreID: "00000000000000000000000000000001",
+			review: ReviewRecoveredResultMessage{
+				Success:         true,
+				RestoreID:       "00000000000000000000000000000001",
+				ArchiveChecksum: "abcdef0123456789",
+				SourceNodeRole:  "signer",
+				Entries: []protocol.RecoveredReviewEntry{
+					{Selector: "ENTRYADDRONE", Category: "account", KeyType: "ed25519"},
+					{Selector: "ENTRYADDRTWO", Category: "witness", KeyType: "aplane.witness-falcon1024.v1"},
+				},
+			},
+		},
+	}
+	view := stripANSI(m.renderRestoreReview())
+	// The operator commits ACTIVATE for exactly these credentials; via the
+	// passphrase-free reopen path this screen is the only place they can
+	// ever be seen.
+	for _, want := range []string{
+		"Credentials to activate (2)",
+		"ENTRYADDRONE (account, ed25519)",
+		"ENTRYADDRTWO (witness, aplane.witness-falcon1024.v1)",
+		"Source archive: abcdef0123456789 (signer)",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("review view missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestReviewScrollsInsteadOfTruncating(t *testing.T) {
+	changes := make([]protocol.RecoveryPolicyChange, 20)
+	for i := range changes {
+		changes[i] = protocol.RecoveryPolicyChange{Category: "routing", Path: fmt.Sprintf("field-%02d", i)}
+	}
+	m := Model{
+		viewState:   ViewRestoreReview,
+		signerState: signerRuntimeUnlocked,
+		width:       120,
+		height:      24,
+		restore: restoreState{
+			restoreID: "00000000000000000000000000000001",
+			review: ReviewRecoveredResultMessage{
+				Success:         true,
+				RestoreID:       "00000000000000000000000000000001",
+				SecurityChanges: changes,
+			},
+		},
+	}
+	if !m.usesSharedPopupViewport() {
+		t.Fatal("ViewRestoreReview is not registered for the shared popup viewport; overflow would be truncated with controls still operable")
+	}
+	top := stripANSI(m.renderRestoreReview())
+	if !strings.Contains(top, "Panel lines") {
+		t.Fatalf("overflowing review has no scroll indicator:\n%s", top)
+	}
+	// Scrolling to the bottom reveals the ACTIVATE control that plain
+	// truncation used to drop while leaving it operable.
+	scrolled := m.setSharedPopupPosition(panelScrollScale)
+	bottom := stripANSI(scrolled.renderRestoreReview())
+	if !strings.Contains(bottom, "ACTIVATE") {
+		t.Fatalf("scrolled-to-bottom review does not reveal ACTIVATE:\n%s", bottom)
+	}
+	if strings.Contains(top, "ACTIVATE") {
+		t.Skip("terminal budget fits ACTIVATE at top; scroll assertion not meaningful at this size")
 	}
 }
