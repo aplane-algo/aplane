@@ -154,11 +154,10 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 	}
 	s.auditRejectedLogicSigKeys(identityID)
 
-	// Generation-based stores fail closed on content defects: the selected
-	// generation is the committed state and a malformed or undecryptable
-	// entry in it means the generation fails validation — recovery, not a
-	// warning-tolerant unlock (docs/ARCH_GENERATIONS.md §6). Legacy flat
-	// stores keep the historical tolerant semantics.
+	// Reload fails closed on content defects: the selected generation is
+	// the committed state, and a malformed or undecryptable entry in it
+	// means the generation fails validation — recovery, not a
+	// warning-tolerant unlock (docs/ARCH_GENERATIONS.md §6).
 	{
 		var warnings []keys.KeyScanWarning
 		if provider, ok := s.KeyStore.(keys.KeyScanWarningProvider); ok {

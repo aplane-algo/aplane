@@ -482,7 +482,6 @@ func TestRestoreHandlersWriteAuditEvents(t *testing.T) {
 			DestinationPolicySHA256: "destination-policy-digest",
 			PolicyComparison:        "different",
 			ReplaceExisting:         true,
-			Resumed:                 true,
 		},
 		rollbackRecoveredResult: adminproto.RollbackRecoveredResult{
 			Success:   true,
@@ -538,7 +537,6 @@ func TestRestoreHandlersWriteAuditEvents(t *testing.T) {
 	wantEvents := []string{
 		"recovered",
 		"activation_intent",
-		"activation_resumed",
 		"activated",
 		"rolled_back",
 		"purged",
@@ -655,12 +653,6 @@ func (a *recordingRestoreAudit) LogBackupActivatedContext(ctx SessionContext, re
 func (a *recordingRestoreAudit) LogBackupActivationFailedContext(ctx SessionContext, result adminproto.ActivateRecoveredResult) {
 	_ = ctx
 	a.events = append(a.events, "activation_failed")
-	a.activated = result
-}
-
-func (a *recordingRestoreAudit) LogBackupActivationResumedContext(ctx SessionContext, result adminproto.ActivateRecoveredResult) {
-	_ = ctx
-	a.events = append(a.events, "activation_resumed")
 	a.activated = result
 }
 

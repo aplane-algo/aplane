@@ -55,7 +55,6 @@ func TestAdminSessionAuditSatisfiesHandlerProbes(t *testing.T) {
 	if _, ok := audit.(interface {
 		LogBackupActivatedContext(adminserver.SessionContext, adminproto.ActivateRecoveredResult)
 		LogBackupActivationFailedContext(adminserver.SessionContext, adminproto.ActivateRecoveredResult)
-		LogBackupActivationResumedContext(adminserver.SessionContext, adminproto.ActivateRecoveredResult)
 	}); !ok {
 		t.Fatal("production Audit does not satisfy the activation outcome probe")
 	}

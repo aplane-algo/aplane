@@ -195,12 +195,8 @@ const (
 )
 
 // reviewCheckboxes lists the consents the current review collects, in render
-// order. A resumed activation collects none: its consents are fixed to the
-// recorded intent the server verifies.
+// order.
 func (m Model) reviewCheckboxes() []reviewCheckbox {
-	if m.restore.review.State == "activation_incomplete" {
-		return nil
-	}
 	var boxes []reviewCheckbox
 	if recoveredUnattendedSigningAckRequired(m.restore.review) {
 		boxes = append(boxes, reviewCheckboxAck)
@@ -262,18 +258,11 @@ func (m Model) handleRestoreReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.restore.reviewFocus != restoreFocusAction {
 			return m, nil
 		}
-		resuming := m.restore.review.State == "activation_incomplete"
 		if recoveredUnattendedSigningAckRequired(m.restore.review) && !m.restore.unattendedAcknowledged {
-			if resuming {
-				m.restore.previewError = "Recorded intent lacks the now-required unattended-signing acknowledgement; roll back instead"
-			} else {
-				m.restore.previewError = "Acknowledge unattended signing before activation"
-			}
+			m.restore.previewError = "Acknowledge unattended signing before activation"
 			return m, nil
 		}
-		// A resume submits the recorded consent verbatim; only a fresh
-		// activation collects it here.
-		if !resuming && len(m.restore.review.ActiveConflicts) > 0 && !m.restore.replaceExisting {
+		if len(m.restore.review.ActiveConflicts) > 0 && !m.restore.replaceExisting {
 			m.restore.previewError = fmt.Sprintf(
 				"Enable replace-existing to overwrite %d active credential(s)",
 				len(m.restore.review.ActiveConflicts),

@@ -106,20 +106,34 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 	// carries state). Structural validation tolerates them; this is where
 	// they are removed.
 	currentDir := paths.GenerationPaths(identityID, current).Dir()
-	if currentEntries, err := os.ReadDir(currentDir); err == nil {
-		for _, entry := range currentEntries {
-			if entry.IsDir() || !isDurableWriteResidue(entry.Name()) {
+	residueDirs := []string{currentDir}
+	for _, namespace := range generationNamespaces {
+		residueDirs = append(residueDirs, filepath.Join(currentDir, namespace))
+	}
+	for _, dir := range residueDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return report, err
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			// Root residue is a crashed seal/manifest write; namespace
+			// residue is a crashed durable single-file write inside the
+			// mutable current generation. Neither ever carries state (the
+			// committing rename is atomic), and unswept namespace residue
+			// would be copied into every child generation and sealed there.
+			isResidue := isDurableWriteResidue(name) ||
+				(dir != currentDir && strings.Contains(name, ".tmp-"))
+			if entry.IsDir() || !isResidue {
 				continue
 			}
 			if remove {
-				if err := fsutil.RemoveDurable(filepath.Join(currentDir, entry.Name())); err != nil {
-					return report, fmt.Errorf("discard durable-write residue %s: %w", entry.Name(), err)
+				if err := fsutil.RemoveDurable(filepath.Join(dir, name)); err != nil {
+					return report, fmt.Errorf("discard durable-write residue %s: %w", name, err)
 				}
 			}
-			report.DiscardedStaging = append(report.DiscardedStaging, entry.Name())
+			report.DiscardedStaging = append(report.DiscardedStaging, name)
 		}
-	} else {
-		return report, err
 	}
 
 	generationsDir := paths.GenerationsDir(identityID)

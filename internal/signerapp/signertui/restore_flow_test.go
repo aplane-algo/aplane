@@ -124,7 +124,6 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
 		Success:                 true,
 		RestoreID:               restoreID,
-		State:                   "recovered",
 		DestinationApprovalMode: "manual_default",
 		PolicyComparison:        "different",
 		ReviewToken:             strings.Repeat("a", 64),
@@ -172,7 +171,6 @@ func TestRestoreReviewForegroundsAutoApproveBeforeAcknowledgement(t *testing.T) 
 	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
 		Success:                      true,
 		RestoreID:                    m.restore.restoreID,
-		State:                        "recovered",
 		DestinationApprovalMode:      "auto_approve_fallback",
 		UnattendedSigningWarning:     "you are activating into an auto-approving identity",
 		PolicyComparison:             "different",
@@ -218,7 +216,6 @@ func TestRestoreReviewSeparatesSourceMetadataFromPolicyDifferences(t *testing.T)
 	review := ReviewRecoveredResultMessage{
 		Success:                 true,
 		RestoreID:               "0123456789abcdef0123456789abcdef",
-		State:                   "recovered",
 		DestinationApprovalMode: "manual_default",
 		PolicyComparison:        "identical",
 		UnknownSourceSettings: []string{
@@ -295,7 +292,6 @@ func TestRestoreReviewIdenticalPolicyActivatesWithoutAcknowledgement(t *testing.
 	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
 		Success:                 true,
 		RestoreID:               m.restore.restoreID,
-		State:                   "recovered",
 		DestinationApprovalMode: "manual_default",
 		PolicyComparison:        "identical",
 		ReviewToken:             strings.Repeat("f", 64),
@@ -323,7 +319,6 @@ func TestRestoreReviewAutoApproveRequiresUnattendedAcknowledgement(t *testing.T)
 	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
 		Success:                      true,
 		RestoreID:                    m.restore.restoreID,
-		State:                        "recovered",
 		DestinationApprovalMode:      "auto_approve_fallback",
 		UnattendedSigningWarning:     "you are activating into an auto-approving identity",
 		PolicyComparison:             "identical",
@@ -370,7 +365,6 @@ func TestRestoreScreensCommitOnlyFromTheirButton(t *testing.T) {
 			review: ReviewRecoveredResultMessage{
 				Success:                 true,
 				RestoreID:               "0123456789abcdef0123456789abcdef",
-				State:                   "recovered",
 				DestinationApprovalMode: "manual_default",
 				ReviewToken:             strings.Repeat("a", 64),
 			},
@@ -394,7 +388,6 @@ func TestRestoreReviewWithoutAcknowledgementActivatesDirectly(t *testing.T) {
 	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
 		Success:                      true,
 		RestoreID:                    m.restore.restoreID,
-		State:                        "recovered",
 		DestinationApprovalMode:      "auto_approve_fallback",
 		PolicyComparison:             "identical",
 		ReviewToken:                  strings.Repeat("2", 64),

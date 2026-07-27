@@ -142,7 +142,6 @@ func (s Service) reviewRecoveredWithMasterKey(
 	}
 	return adminproto.ReviewRecoveredResult{
 		RestoreID:                    batch.RestoreID,
-		State:                        "recovered",
 		ArchiveChecksum:              batch.ArchiveSHA256,
 		SourceNodeRole:               batch.SourceNodeRole,
 		SourcePolicyStatus:           string(batch.SourcePolicyStatus),

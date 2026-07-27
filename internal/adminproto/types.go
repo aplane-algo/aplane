@@ -187,10 +187,6 @@ type RecoveredBatchInfo struct {
 	SourcePolicyStatus string
 	SourcePolicySHA256 string
 	EntryCount         int
-	// ActivationState is empty for an inactive batch; otherwise the durable
-	// activation journal state ("applying", "rolling_back", "completed",
-	// or "unknown" for an unreadable journal).
-	ActivationState string
 }
 
 // ListRecoveredResult contains inactive recovered batches.
@@ -251,7 +247,6 @@ type RecoveryGenesisHashMapping struct {
 type ReviewRecoveredResult struct {
 	Success                      bool
 	RestoreID                    string
-	State                        string
 	ArchiveChecksum              string
 	SourceNodeRole               string
 	SourcePolicyStatus           string
@@ -300,7 +295,6 @@ type ActivateRecoveredResult struct {
 	DestinationPolicySHA256 string
 	PolicyComparison        string
 	ReplaceExisting         bool
-	Resumed                 bool
 	Code                    string
 	Error                   string
 }

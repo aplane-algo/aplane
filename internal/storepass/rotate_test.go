@@ -677,9 +677,9 @@ func TestRotatePreservesGenerationalLayoutGate(t *testing.T) {
 	oldPassphrase := []byte("rotate-generational-old")
 	newPassphrase := []byte("rotate-generational-new")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadataGenerational(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadataGenerational() error = %v", err)
+		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
@@ -713,9 +713,9 @@ func TestRotateRefusedUntilPriorGenerationsPruned(t *testing.T) {
 	identityID := "default"
 	passphrase := []byte("rotate-quiescence")
 
-	_, masterKey, err := crypto.CreateKeystoreMetadataGenerational(paths.KeystoreMetadataDir(identityID), passphrase)
+	_, masterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadataGenerational() error = %v", err)
+		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
 	}
 	defer crypto.ZeroBytes(masterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, masterKey, &policy.StoredConfig{})

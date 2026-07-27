@@ -50,8 +50,9 @@ type recoveredActivationError struct {
 func (e *recoveredActivationError) Error() string { return e.err.Error() }
 func (e *recoveredActivationError) Unwrap() error { return e.err }
 
-// ActivateRecovered applies one reviewed inactive batch to active storage.
-// Durable rollback state is published before the first active-store write.
+// ActivateRecovered applies one reviewed inactive batch to active storage
+// by minting a new generation; the commit is a single durable CURRENT flip,
+// and rollback repoints CURRENT at the parent (docs/ARCH_GENERATIONS.md).
 func (s Service) ActivateRecovered(
 	ir *identity.Runtime,
 	req adminproto.ActivateRecoveredRequest,

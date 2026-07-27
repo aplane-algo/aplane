@@ -69,82 +69,6 @@ func TestRecoveredListBlocksEscapeWhileInRecovery(t *testing.T) {
 	}
 }
 
-func TestRecoveredListActionSetsFollowBatchState(t *testing.T) {
-	batches := []RecoveredBatchInfo{
-		{RestoreID: "00000000000000000000000000000001"},
-		{RestoreID: "00000000000000000000000000000002", ActivationState: "applying"},
-		{RestoreID: "00000000000000000000000000000003", ActivationState: "completed"},
-	}
-	base := Model{
-		viewState:   ViewRecoveredList,
-		signerState: signerRuntimeUnlocked,
-		restore:     restoreState{recovered: batches, recoveredLoaded: true},
-	}
-
-	// Inactive: rollback refused, purge arms then commits on y.
-	m := base
-	m.restore.selectedRecovered = 0
-	next, _ := m.handleRecoveredListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
-	got := next.(Model)
-	if !strings.Contains(got.restore.recoveredError, "nothing to roll back") {
-		t.Fatalf("inactive rollback error = %q", got.restore.recoveredError)
-	}
-	next, _ = m.handleRecoveredListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
-	got = next.(Model)
-	if got.restore.purgeArmedID != batches[0].RestoreID {
-		t.Fatalf("purge not armed: %q", got.restore.purgeArmedID)
-	}
-	next, cmd := got.handleRecoveredListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	got = next.(Model)
-	if got.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("confirmed purge = view %v cmd %v", got.viewState, cmd != nil)
-	}
-	if got.restore.progressLabel != "Purging Recovered Batch" {
-		t.Fatalf("purge progress label = %q", got.restore.progressLabel)
-	}
-
-	// Incomplete (applying): rollback proceeds, purge refused.
-	m = base
-	m.restore.selectedRecovered = 1
-	next, cmd = m.handleRecoveredListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
-	got = next.(Model)
-	if got.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("incomplete rollback = view %v cmd %v", got.viewState, cmd != nil)
-	}
-	if got.restore.progressLabel != "Rolling Back Incomplete Activation" {
-		t.Fatalf("rollback progress label = %q", got.restore.progressLabel)
-	}
-	next, _ = m.handleRecoveredListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
-	got = next.(Model)
-	if !strings.Contains(got.restore.recoveredError, "Cannot purge") {
-		t.Fatalf("incomplete purge error = %q", got.restore.recoveredError)
-	}
-
-	// Completed: rollback redirected to cleanup via activation retry.
-	m = base
-	m.restore.selectedRecovered = 2
-	next, _ = m.handleRecoveredListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
-	got = next.(Model)
-	if !strings.Contains(got.restore.recoveredError, "finish its cleanup") {
-		t.Fatalf("completed rollback error = %q", got.restore.recoveredError)
-	}
-
-	// Review needs no passphrase: enter goes straight to the review fetch.
-	m = base
-	m.restore.selectedRecovered = 1
-	next, cmd = m.handleRecoveredListKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	got = next.(Model)
-	if got.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("review reopen = view %v cmd %v", got.viewState, cmd != nil)
-	}
-	if got.restore.progressLabel != "Loading Activation Review" {
-		t.Fatalf("review progress label = %q", got.restore.progressLabel)
-	}
-	if len(got.restore.passphrase) != 0 {
-		t.Fatal("reopening a recovered batch must not involve a passphrase")
-	}
-}
-
 func TestReviewEscapeReturnsToRecoveredListWithoutStranding(t *testing.T) {
 	m := Model{
 		viewState:   ViewRestoreReview,
@@ -222,40 +146,6 @@ func TestReviewCollectsReplaceConsentBesideConflicts(t *testing.T) {
 	}
 }
 
-func TestResumeReviewUsesRecordedIntentVerbatim(t *testing.T) {
-	m := Model{viewState: ViewRestoring}
-	got, _ := updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
-		Success:                      true,
-		RestoreID:                    "00000000000000000000000000000002",
-		State:                        "activation_incomplete",
-		ReviewToken:                  "recorded-token",
-		AcknowledgeUnattendedSigning: true,
-		ReplaceExisting:              true,
-		ActiveConflicts: []protocol.RecoveredActiveConflict{
-			{Selector: "CONFLICTADDR", Category: "account", KeyType: "ed25519"},
-		},
-	}})
-	if got.viewState != ViewRestoreReview {
-		t.Fatalf("view = %v, want review", got.viewState)
-	}
-	if !got.restore.replaceExisting || !got.restore.unattendedAcknowledged {
-		t.Fatal("recorded consent was not adopted for the resume")
-	}
-	if boxes := got.reviewCheckboxes(); len(boxes) != 0 {
-		t.Fatalf("resume review offers %d checkboxes, want none (consent is fixed to the recorded intent)", len(boxes))
-	}
-	view := stripANSI(got.renderRestoreReview())
-	if !strings.Contains(view, "resumes the exact recorded intent") {
-		t.Fatalf("resume review does not state the recorded-intent semantics:\n%s", view)
-	}
-
-	next, cmd := got.handleRestoreReviewKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	final := next.(Model)
-	if final.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("resume activation = view %v cmd %v", final.viewState, cmd != nil)
-	}
-}
-
 func TestFailedActivationResultRoutesBackToRecoveredList(t *testing.T) {
 	m := Model{
 		viewState:   ViewRestoreDisplay,
@@ -318,14 +208,14 @@ func TestBackupConfirmStatesScopeAndCredentialCount(t *testing.T) {
 func TestRecoveredListMsgPopulatesInventory(t *testing.T) {
 	m := Model{viewState: ViewRecoveredList}
 	got, _ := updateForTest(t, m, RecoveredListMsg{Batches: []RecoveredBatchInfo{
-		{RestoreID: "00000000000000000000000000000001", ActivationState: "applying", EntryCount: 2},
+		{RestoreID: "00000000000000000000000000000001", EntryCount: 2},
 	}})
 	if !got.restore.recoveredLoaded || len(got.restore.recovered) != 1 {
 		t.Fatalf("recovered list not populated: loaded %v n %d", got.restore.recoveredLoaded, len(got.restore.recovered))
 	}
 	view := stripANSI(got.renderRecoveredList())
-	if !strings.Contains(view, "INCOMPLETE (applying)") {
-		t.Fatalf("batch lifecycle state not rendered:\n%s", view)
+	if !strings.Contains(view, "00000000000000000000000000000001") {
+		t.Fatalf("batch not rendered:\n%s", view)
 	}
 }
 

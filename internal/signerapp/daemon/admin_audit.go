@@ -98,12 +98,6 @@ func (s signerAdminServices) LogBackupActivationFailedContext(ctx adminserver.Se
 	}
 }
 
-func (s signerAdminServices) LogBackupActivationResumedContext(ctx adminserver.SessionContext, result adminproto.ActivateRecoveredResult) {
-	if audit := s.auditLogger(); audit != nil {
-		audit.LogBackupActivationResumedContext(ctx, result)
-	}
-}
-
 func (s signerAdminServices) LogBackupActivationRolledBackContext(ctx adminserver.SessionContext, result adminproto.RollbackRecoveredResult) {
 	if audit := s.auditLogger(); audit != nil {
 		audit.LogBackupActivationRolledBackContext(ctx, result)

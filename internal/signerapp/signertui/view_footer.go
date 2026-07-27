@@ -49,9 +49,9 @@ func (m Model) viewFooterText() string {
 			return "y: Confirm purge | any other key: Cancel"
 		}
 		if m.signerState == signerRuntimeRecovery {
-			return "Enter: Review/Resume | x: Roll back | r: Refresh | q: Quit"
+			return "Enter: Review | r: Refresh | q: Quit"
 		}
-		return "Enter: Review | x: Roll back | p: Purge | r: Refresh | Esc: Back"
+		return "Enter: Review | p: Purge | r: Refresh | Esc: Back"
 	case ViewRestoreDisplay:
 		return "up/down: Select | Enter/Esc: Back"
 	case ViewGenerateForm:

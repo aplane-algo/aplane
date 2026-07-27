@@ -267,7 +267,6 @@ func TestCmdRestoreApplyManagedRecoversReviewsAndActivates(t *testing.T) {
 		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
 			Success:                 true,
 			RestoreID:               restoreID,
-			State:                   "recovered",
 			DestinationApprovalMode: "manual_default",
 			ReviewToken:             strings.Repeat("a", 64),
 		},
@@ -364,7 +363,6 @@ func TestCmdRestoreApplyAcceptsUnattendedAcknowledgementFlag(t *testing.T) {
 		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
 			Success:                      true,
 			RestoreID:                    restoreID,
-			State:                        "recovered",
 			DestinationApprovalMode:      "auto_approve_fallback",
 			UnattendedSigningWarning:     "you are activating into an auto-approving identity",
 			ReviewToken:                  strings.Repeat("a", 64),
@@ -401,7 +399,6 @@ func TestCmdRestoreApplyFlagDoesNotAcknowledgeWhenNotRequired(t *testing.T) {
 		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
 			Success:                      true,
 			RestoreID:                    restoreID,
-			State:                        "recovered",
 			DestinationApprovalMode:      "manual_default",
 			ReviewToken:                  strings.Repeat("a", 64),
 			UnattendedSigningAckRequired: &unattendedAckRequired,
@@ -434,7 +431,6 @@ func TestCmdRestoreApplyRequiresSeparateUnattendedSigningAcknowledgement(t *test
 		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
 			Success:                      true,
 			RestoreID:                    restoreID,
-			State:                        "recovered",
 			DestinationApprovalMode:      "auto_approve_fallback",
 			UnattendedSigningWarning:     "you are activating into an auto-approving identity",
 			ReviewToken:                  strings.Repeat("a", 64),
@@ -466,34 +462,6 @@ func TestRecoveredUnattendedSigningAckRequiredTreatsMissingFieldAsLegacy(t *test
 		UnattendedSigningAckRequired: &required,
 	}) {
 		t.Fatal("explicit false unattended-signing requirement was ignored")
-	}
-}
-
-func TestCmdRestoreActivateResumesOnlyRecordedIntent(t *testing.T) {
-	restoreID := "0123456789abcdef0123456789abcdef"
-	fake := &fakeApstoreAdminRequester{
-		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
-			Success:                 true,
-			RestoreID:               restoreID,
-			State:                   "activation_incomplete",
-			DestinationApprovalMode: "manual_default",
-			ReviewToken:             strings.Repeat("b", 64),
-		},
-		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{Success: true},
-	}
-	withFakeApstoreAdminClient(t, fake)
-
-	if err := withTestStdin("y\n", func() error {
-		return cmdRestoreActivateRecovered([]string{restoreID})
-	}); err != nil {
-		t.Fatalf("cmdRestoreActivateRecovered() error = %v", err)
-	}
-	wantRequests := []string{protocol.MsgTypeReviewRecovered, protocol.MsgTypeActivateRecovered}
-	if strings.Join(fake.requests, ",") != strings.Join(wantRequests, ",") {
-		t.Fatalf("requests = %v, want %v", fake.requests, wantRequests)
-	}
-	if fake.recoveredActivateRequest.ReviewToken != strings.Repeat("b", 64) {
-		t.Fatalf("resume request = %+v", fake.recoveredActivateRequest)
 	}
 }
 

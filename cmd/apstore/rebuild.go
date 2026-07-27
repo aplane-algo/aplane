@@ -116,7 +116,7 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	// Rebuilt stores use generation-based active storage: version-3
 	// keystore metadata plus the restored keys committed as the first
 	// generation behind a durable CURRENT flip.
-	_, masterKey, err := crypto.CreateKeystoreMetadataGenerational(keystorePaths().KeystoreMetadataDir(productIdentityID()), storePassphrase)
+	_, masterKey, err := crypto.CreateKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()), storePassphrase)
 	if err != nil {
 		return fmt.Errorf("failed to create keystore metadata: %w", err)
 	}

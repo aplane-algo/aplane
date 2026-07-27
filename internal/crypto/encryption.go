@@ -283,19 +283,6 @@ func MarshalKeystoreMetadata(meta *KeystoreMetadata) ([]byte, error) {
 	return json.MarshalIndent(meta, "", "  ")
 }
 
-// CreateKeystoreMetadataGenerational writes version-3 metadata for a store
-// whose active namespaces use the generation layout. Older binaries reject
-// the store outright instead of reading stale legacy paths.
-func CreateKeystoreMetadataGenerational(keystoreDir string, passphrase []byte) (*KeystoreMetadata, []byte, error) {
-	meta, masterKey, err := buildKeystoreMetadata(passphrase)
-	if err != nil {
-		return nil, nil, err
-	}
-	meta.Version = GenerationalKeystoreMetadataVersion
-	meta.Layout = KeystoreLayoutGenerationsV1
-	return writeKeystoreMetadata(keystoreDir, meta, masterKey)
-}
-
 func writeKeystoreMetadata(keystoreDir string, meta *KeystoreMetadata, masterKey []byte) (*KeystoreMetadata, []byte, error) {
 
 	data, err := json.MarshalIndent(meta, "", "  ")

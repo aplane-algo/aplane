@@ -17,23 +17,6 @@ func (m Model) recoveredVisibleHeight() int {
 	return height
 }
 
-// recoveredStateLabel renders one batch's lifecycle position. Inactive
-// batches carry no marker; everything else is durable activation state.
-func recoveredStateLabel(state string) string {
-	switch state {
-	case "":
-		return "inactive"
-	case "applying":
-		return "INCOMPLETE (applying)"
-	case "rolling_back":
-		return "INCOMPLETE (rolling back)"
-	case "completed":
-		return "COMPLETED (cleanup pending)"
-	default:
-		return "INCOMPLETE (unreadable journal)"
-	}
-}
-
 func (m Model) renderRecoveredList() string {
 	var sb strings.Builder
 	popupWidth := m.popupWidth(96)
@@ -76,18 +59,15 @@ func (m Model) renderRecoveredList() string {
 			if i == m.restore.selectedRecovered {
 				prefix = "> "
 			}
-			line := fmt.Sprintf("%s%s  %s  %2d entr%s  %s",
+			line := fmt.Sprintf("%s%s  %s  %2d entr%s",
 				prefix,
 				batch.RestoreID,
 				formatRestoreTime(batch.CreatedAt),
 				batch.EntryCount,
 				pluralSuffixIesY(batch.EntryCount),
-				recoveredStateLabel(batch.ActivationState),
 			)
 			if i == m.restore.selectedRecovered {
 				sb.WriteString(selectedStyle.Render(line))
-			} else if batch.ActivationState != "" {
-				sb.WriteString(warningStyle.Render(line))
 			} else {
 				sb.WriteString(normalStyle.Render(line))
 			}

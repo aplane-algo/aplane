@@ -1098,12 +1098,6 @@ func (m Model) sendListRecoveredCmd() tea.Cmd {
 	})
 }
 
-func (m Model) sendRollbackRecoveredCmd(restoreID string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error {
-		return c.SendRollbackRecovered(restoreID)
-	})
-}
-
 func (m Model) sendPurgeRecoveredCmd(restoreID string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error {
 		return c.SendPurgeRecovered(restoreID)

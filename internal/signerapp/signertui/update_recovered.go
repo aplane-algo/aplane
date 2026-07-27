@@ -108,32 +108,9 @@ func (m Model) handleRecoveredListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.restore.progressLabel = "Loading Activation Review"
 		m.viewState = ViewRestoring
 		return m, tea.Batch(m.sendReviewRecoveredCmd(batch.RestoreID), m.waitForMessageCmd())
-	case "x", "X":
-		// Rollback: restore the exact pre-activation state. The default
-		// resolution for an interrupted activation.
-		batch, ok := m.currentRecoveredBatch()
-		if !ok {
-			return m, nil
-		}
-		if batch.ActivationState == "" {
-			m.restore.recoveredError = "Batch is inactive; nothing to roll back"
-			return m, nil
-		}
-		if batch.ActivationState == "completed" {
-			m.restore.recoveredError = "Activation already completed; press Enter to finish its cleanup instead"
-			return m, nil
-		}
-		m.restore.recoveredError = ""
-		m.restore.progressLabel = "Rolling Back Incomplete Activation"
-		m.viewState = ViewRestoring
-		return m, tea.Batch(m.sendRollbackRecoveredCmd(batch.RestoreID), m.waitForMessageCmd())
 	case "p", "P":
 		batch, ok := m.currentRecoveredBatch()
 		if !ok {
-			return m, nil
-		}
-		if batch.ActivationState != "" {
-			m.restore.recoveredError = "Cannot purge a batch with an incomplete activation"
 			return m, nil
 		}
 		if m.signerState == signerRuntimeRecovery {

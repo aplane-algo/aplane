@@ -263,15 +263,6 @@ func reviewAndActivateRecovered(
 		return err
 	}
 	printRecoveredReview(review)
-	if review.State == "activation_incomplete" {
-		if replaceExisting != review.ReplaceExisting {
-			return fmt.Errorf("resume options must match recorded replace_existing=%t", review.ReplaceExisting)
-		}
-		if !confirmYesNo("Resume the exact recorded activation?") {
-			return fmt.Errorf("activation resume cancelled")
-		}
-		return activateRecovered(client, review, review.ReplaceExisting)
-	}
 	if len(review.ActiveConflicts) > 0 && !replaceExisting {
 		return fmt.Errorf("%d active credential conflict(s); review and retry with --replace-existing", len(review.ActiveConflicts))
 	}
@@ -344,7 +335,6 @@ func activateRecovered(
 }
 
 func printRecoveredReview(review protocol.ReviewRecoveredResultMessage) {
-	logInfof("recovery state: %s", review.State)
 	logInfof("destination approval mode: %s", review.DestinationApprovalMode)
 	if review.UnattendedSigningWarning != "" {
 		logWarnf("%s", review.UnattendedSigningWarning)

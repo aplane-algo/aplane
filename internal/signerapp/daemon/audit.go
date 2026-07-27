@@ -38,7 +38,6 @@ const (
 	AuditBackupActivationIntent     = signeraudit.AuditBackupActivationIntent
 	AuditBackupActivated            = signeraudit.AuditBackupActivated
 	AuditBackupActivationFailed     = signeraudit.AuditBackupActivationFailed
-	AuditBackupActivationResumed    = signeraudit.AuditBackupActivationResumed
 	AuditBackupActivationRolledBack = signeraudit.AuditBackupActivationRolledBack
 	AuditBackupRecoveryPurged       = signeraudit.AuditBackupRecoveryPurged
 	AuditStoreInitialized           = signeraudit.AuditStoreInitialized

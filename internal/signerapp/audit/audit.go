@@ -48,7 +48,6 @@ const (
 	AuditBackupActivationIntent     AuditEventType = "BACKUP_ACTIVATION_INTENT"
 	AuditBackupActivated            AuditEventType = "BACKUP_ACTIVATED"
 	AuditBackupActivationFailed     AuditEventType = "BACKUP_ACTIVATION_FAILED"
-	AuditBackupActivationResumed    AuditEventType = "BACKUP_ACTIVATION_RESUMED"
 	AuditBackupActivationRolledBack AuditEventType = "BACKUP_ACTIVATION_ROLLED_BACK"
 	AuditBackupRecoveryPurged       AuditEventType = "BACKUP_RECOVERY_PURGED"
 	AuditStoreInitialized           AuditEventType = "STORE_INITIALIZED"
@@ -707,17 +706,6 @@ func (a *AuditLogger) LogBackupActivationFailedContext(
 	entry.Event = AuditBackupActivationFailed
 	entry.Outcome = "failed"
 	entry.Reason = result.Error
-	a.Log(entry)
-}
-
-func (a *AuditLogger) LogBackupActivationResumedContext(
-	ctx adminserver.SessionContext,
-	result adminproto.ActivateRecoveredResult,
-) {
-	entry := recoveredActivationAuditEntry(ctx, result)
-	entry.Event = AuditBackupActivationResumed
-	entry.Outcome = "resumed"
-	entry.KeyCount = len(result.Activated)
 	a.Log(entry)
 }
 

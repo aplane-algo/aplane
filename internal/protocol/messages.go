@@ -365,9 +365,6 @@ type RecoveredBatchInfo struct {
 	SourcePolicyStatus string `json:"source_policy_status"`
 	SourcePolicySHA256 string `json:"source_policy_sha256,omitempty"`
 	EntryCount         int    `json:"entry_count"`
-	// ActivationState is empty for an inactive batch; otherwise the durable
-	// activation state of its incomplete activation.
-	ActivationState string `json:"activation_state,omitempty"`
 }
 
 type RecoveredListMessage struct {
@@ -414,7 +411,6 @@ type ReviewRecoveredResultMessage struct {
 	BaseMessage
 	Success                      bool                         `json:"success"`
 	RestoreID                    string                       `json:"restore_id,omitempty"`
-	State                        string                       `json:"state,omitempty"`
 	ArchiveChecksum              string                       `json:"archive_checksum,omitempty"`
 	SourceNodeRole               string                       `json:"source_node_role,omitempty"`
 	SourcePolicyStatus           string                       `json:"source_policy_status,omitempty"`

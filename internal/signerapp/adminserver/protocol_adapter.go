@@ -219,7 +219,6 @@ func ProtocolRecoveredListMessage(id string, result adminproto.ListRecoveredResu
 			SourcePolicyStatus: batch.SourcePolicyStatus,
 			SourcePolicySHA256: batch.SourcePolicySHA256,
 			EntryCount:         batch.EntryCount,
-			ActivationState:    batch.ActivationState,
 		}
 	}
 	return protocol.RecoveredListMessage{
@@ -235,7 +234,6 @@ func ProtocolReviewRecoveredResultMessage(id string, result adminproto.ReviewRec
 		BaseMessage:                  protocol.BaseMessage{Type: protocol.MsgTypeReviewRecoveredResult, ID: id},
 		Success:                      result.Success,
 		RestoreID:                    result.RestoreID,
-		State:                        result.State,
 		ArchiveChecksum:              result.ArchiveChecksum,
 		SourceNodeRole:               result.SourceNodeRole,
 		SourcePolicyStatus:           result.SourcePolicyStatus,

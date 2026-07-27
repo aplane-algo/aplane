@@ -418,15 +418,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// list on the informed-consent screen.
 		m.panelScrollView = ViewRestoreReview
 		m.panelScrollPosition = 0
-		if msg.Result.State == "activation_incomplete" {
-			// Resume: the consent and acknowledgement are fixed to the
-			// recorded activation intent the server will verify.
-			m.restore.unattendedAcknowledged = msg.Result.AcknowledgeUnattendedSigning
-			m.restore.replaceExisting = msg.Result.ReplaceExisting
-		} else {
-			m.restore.unattendedAcknowledged = false
-			m.restore.replaceExisting = false
-		}
+		m.restore.unattendedAcknowledged = false
+		m.restore.replaceExisting = false
 		m.restore.reviewCursor = 0
 		if len(m.reviewCheckboxes()) > 0 {
 			m.restore.reviewFocus = restoreFocusList

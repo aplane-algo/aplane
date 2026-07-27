@@ -81,7 +81,6 @@ The examples show `"default"` as the identity. See [ARCH_OVERVIEW.md](ARCH_OVERV
 | `BACKUP_ACTIVATION_INTENT` | Reviewed activation was requested; written and fsynced before any active-store mutation — activation aborts if this record cannot be made durable |
 | `BACKUP_ACTIVATED` | A recovered batch was activated and reloaded successfully |
 | `BACKUP_ACTIVATION_FAILED` | Activation failed; `reason` describes the failure or incomplete rollback |
-| `BACKUP_ACTIVATION_RESUMED` | A previously interrupted activation completed through rollback-first resume |
 | `BACKUP_ACTIVATION_ROLLED_BACK` | The operator restored exact pre-activation state |
 | `BACKUP_RECOVERY_PURGED` | An inactive batch was purged; failed attempts use `outcome:"failed"` |
 | `STORE_INITIALIZED` | Store initialization succeeded through authenticated local IPC |

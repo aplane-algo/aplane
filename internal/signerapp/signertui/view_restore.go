@@ -280,7 +280,6 @@ func (m Model) renderRestoreReview() string {
 	for _, unknown := range batchUnknowns {
 		sb.WriteString(fmt.Sprintf("  [unknown source] %s\n", unknown))
 	}
-	resuming := review.State == "activation_incomplete"
 	if len(review.ActiveConflicts) > 0 {
 		sb.WriteString("\n")
 		sb.WriteString(warningStyle.Render("Active credential conflicts"))
@@ -288,12 +287,6 @@ func (m Model) renderRestoreReview() string {
 		for _, conflict := range review.ActiveConflicts {
 			sb.WriteString(fmt.Sprintf("  %s (%s, %s)\n", conflict.Selector, conflict.Category, conflict.KeyType))
 		}
-	}
-	if resuming {
-		sb.WriteString("\n")
-		sb.WriteString(warningStyle.Render("Interrupted activation: activating resumes the exact recorded intent"))
-		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("  replace existing active credentials: %s\n", yesNo(review.ReplaceExisting)))
 	}
 
 	appendRecoveredSourceContext(&sb, review, popupWidth)
@@ -325,7 +318,7 @@ func (m Model) renderRestoreReview() string {
 		}
 	}
 	ready := (!recoveredUnattendedSigningAckRequired(review) || m.restore.unattendedAcknowledged) &&
-		(resuming || len(review.ActiveConflicts) == 0 || m.restore.replaceExisting)
+		(len(review.ActiveConflicts) == 0 || m.restore.replaceExisting)
 	sb.WriteString("\n")
 	sb.WriteString(restoreActionButton(
 		"ACTIVATE",
@@ -339,13 +332,6 @@ func (m Model) renderRestoreReview() string {
 		sb.WriteString("\n")
 	}
 	return m.renderPopup(popupWidth, sb.String())
-}
-
-func yesNo(value bool) string {
-	if value {
-		return "yes"
-	}
-	return "no"
 }
 
 // appendRecoveredSourceContext renders what the archive reported about its

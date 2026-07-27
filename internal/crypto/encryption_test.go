@@ -186,7 +186,7 @@ func TestLoadKeystoreMetadataRejectsUnsupportedVersion(t *testing.T) {
 func TestCreateKeystoreMetadataGenerationalRoundTrip(t *testing.T) {
 	passphrase := []byte("test-keystore-passphrase")
 	keystoreDir := t.TempDir()
-	meta, masterKey, err := CreateKeystoreMetadataGenerational(keystoreDir, passphrase)
+	meta, masterKey, err := CreateKeystoreMetadata(keystoreDir, passphrase)
 	if err != nil {
 		t.Fatalf("CreateKeystoreMetadataGenerational failed: %v", err)
 	}

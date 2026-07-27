@@ -578,8 +578,8 @@ func TestMintRefusesFirstMintWhenCurrentMissingOnEstablishedStore(t *testing.T) 
 		if err := fsutil.MkdirAll(paths.KeystoreMetadataDir(testIdentity)); err != nil {
 			t.Fatalf("MkdirAll(metadata): %v", err)
 		}
-		if _, _, err := crypto.CreateKeystoreMetadataGenerational(paths.KeystoreMetadataDir(testIdentity), []byte("pw")); err != nil {
-			t.Fatalf("CreateKeystoreMetadataGenerational() error = %v", err)
+		if _, _, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(testIdentity), []byte("pw")); err != nil {
+			t.Fatalf("CreateKeystoreMetadata() error = %v", err)
 		}
 		mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
 		if err := os.Remove(paths.CurrentPointerPath(testIdentity)); err != nil {
@@ -815,5 +815,47 @@ func TestManifestRejectsTrailingGarbage(t *testing.T) {
 	}
 	if _, err := ReadManifest(gen); err == nil {
 		t.Fatal("ReadManifest accepted trailing data after the JSON document")
+	}
+}
+
+func TestMintRejectsStagedSeal(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
+	// An Apply hook that plants a seal in the staged generation: a staged
+	// generation is pre-publish by definition and must never carry the
+	// final content record.
+	_, err := Mint(paths, testIdentity, MintRequest{
+		GenerationID: testGenB,
+		Parent:       testGenA,
+		Operation:    "test-activation",
+		OperationID:  "op-staged-seal",
+		CreatedAt:    time.Unix(1_754_300_000, 0),
+		Apply: func(staged storepaths.GenPaths) error {
+			return os.WriteFile(staged.SealPath(), []byte("{}"), 0o660)
+		},
+	})
+	if err == nil {
+		t.Fatal("Mint accepted a staged generation carrying a seal")
+	}
+}
+
+func TestReconcileCollectsNamespaceDurableWriteResidue(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	gen := paths.GenerationPaths(testIdentity, testGenC)
+	residue := filepath.Join(gen.KeysDir(), "ADDR.key.tmp-998877")
+	if err := os.WriteFile(residue, []byte("partial write"), 0o660); err != nil {
+		t.Fatalf("write residue: %v", err)
+	}
+
+	report, err := Reconcile(paths, testIdentity, nil)
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if !slices.Contains(report.DiscardedStaging, filepath.Base(residue)) {
+		t.Fatalf("residue not reported: %v", report.DiscardedStaging)
+	}
+	if _, err := os.Stat(residue); !os.IsNotExist(err) {
+		t.Fatalf("namespace durable-write residue survived reconciliation; it would be copied and sealed into every child generation: %v", err)
 	}
 }

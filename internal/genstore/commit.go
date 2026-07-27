@@ -368,6 +368,12 @@ func validateStructureAt(dir, generationID string, requireManifest bool) error {
 		case storepaths.GenerationManifestName:
 			sawManifest = true
 		case storepaths.GenerationSealName:
+			if !requireManifest {
+				// Staged generations are pre-publish by definition; a seal
+				// there means something wrote the final content record
+				// before the generation ever became current. Never accept.
+				return fmt.Errorf("staged generation %s carries a seal", generationID)
+			}
 		case "keys", "keytypes":
 			if err := validateNamespaceDir(filepath.Join(dir, name)); err != nil {
 				return fmt.Errorf("generation %s: %w", generationID, err)

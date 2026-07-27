@@ -77,7 +77,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		}
 	}()
 
-	_, masterKey, err := crypto.CreateKeystoreMetadataGenerational(metadataDir, passphrase)
+	_, masterKey, err := crypto.CreateKeystoreMetadata(metadataDir, passphrase)
 	if err != nil {
 		return result, fmt.Errorf("failed to create keystore metadata: %w", err)
 	}

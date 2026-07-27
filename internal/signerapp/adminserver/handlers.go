@@ -380,12 +380,8 @@ func (s *Session) HandleActivateRecovered(msg *protocol.ActivateRecoveredMessage
 	if audit, ok := s.audit.(interface {
 		LogBackupActivatedContext(SessionContext, adminproto.ActivateRecoveredResult)
 		LogBackupActivationFailedContext(SessionContext, adminproto.ActivateRecoveredResult)
-		LogBackupActivationResumedContext(SessionContext, adminproto.ActivateRecoveredResult)
 	}); ok {
 		if result.Success {
-			if result.Resumed {
-				audit.LogBackupActivationResumedContext(s.SessionContext(), result)
-			}
 			audit.LogBackupActivatedContext(s.SessionContext(), result)
 		} else {
 			audit.LogBackupActivationFailedContext(s.SessionContext(), result)
