@@ -72,6 +72,18 @@ func (p Paths) GenerationPaths(identityID, generationID string) GenPaths {
 	}
 }
 
+// StagedGenerationPaths binds GenPaths to an unpublished staging directory.
+// Only the genstore commit protocol should use this: staging and published
+// generation directories share one internal layout, and the commit rename
+// is what turns one into the other.
+func StagedGenerationPaths(identityID, generationID, stagingDir string) GenPaths {
+	return GenPaths{
+		root:         stagingDir,
+		identityID:   identityID,
+		generationID: validateGenerationComponent(generationID),
+	}
+}
+
 // GenPaths carries the active-store paths of one resolved generation.
 type GenPaths struct {
 	root         string
