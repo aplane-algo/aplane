@@ -12,8 +12,10 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"gopkg.in/yaml.v3"
 )
 
@@ -177,7 +179,13 @@ func copyDir(src, dst string) error {
 }
 
 func clearClonedSignerKeys(dataDir string) error {
-	keysDir := filepath.Join(dataDir, "identities", "default", "keys")
+	// Resolve through the active layout: generational clones keep their
+	// keys under generations/<id>/keys behind the CURRENT pointer.
+	active, err := genstore.ResolveActive(storepaths.NewPaths(dataDir), "default")
+	if err != nil {
+		return err
+	}
+	keysDir := active.KeysDir()
 	entries, err := os.ReadDir(keysDir)
 	if err != nil {
 		return err
