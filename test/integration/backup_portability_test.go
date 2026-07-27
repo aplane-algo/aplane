@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1208,9 +1209,7 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 	}
 
 	otherIdentity := "other"
-	if err := os.MkdirAll(paths.KeysDir(otherIdentity), 0o755); err != nil {
-		t.Fatalf("failed to create other identity keys dir: %v", err)
-	}
+	genstoretest.MintFirst(t, paths, otherIdentity)
 	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, otherIdentity, deletedAddress), activeKeyData, 0o600); err != nil {
 		t.Fatalf("failed to write other-identity key file: %v", err)
 	}
