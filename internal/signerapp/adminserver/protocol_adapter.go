@@ -219,6 +219,7 @@ func ProtocolRecoveredListMessage(id string, result adminproto.ListRecoveredResu
 			SourcePolicyStatus: batch.SourcePolicyStatus,
 			SourcePolicySHA256: batch.SourcePolicySHA256,
 			EntryCount:         batch.EntryCount,
+			ActivationState:    batch.ActivationState,
 		}
 	}
 	return protocol.RecoveredListMessage{

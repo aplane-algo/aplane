@@ -261,6 +261,7 @@ func (s Service) ListRecovered(ir *identity.Runtime) adminproto.ListRecoveredRes
 			SourcePolicyStatus: string(batch.SourcePolicyStatus),
 			SourcePolicySHA256: batch.SourcePolicySHA256,
 			EntryCount:         batch.EntryCount,
+			ActivationState:    batch.ActivationState,
 		}
 	}
 	return adminproto.ListRecoveredResult{Batches: out}

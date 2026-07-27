@@ -24,6 +24,11 @@ type BatchInfo struct {
 	SourcePolicyStatus SourcePolicyStatus
 	SourcePolicySHA256 string
 	EntryCount         int
+	// ActivationState is empty for an inactive batch; otherwise the journal
+	// state of the batch's incomplete activation ("applying",
+	// "rolling_back", "completed"), or "unknown" when a marker exists but
+	// its journal cannot be read.
+	ActivationState string
 }
 
 // List validates and returns published recovered batches newest first.
@@ -71,6 +76,7 @@ func List(paths storepaths.Paths, identityID string, masterKey []byte) ([]BatchI
 			SourcePolicyStatus: batch.SourcePolicyStatus,
 			SourcePolicySHA256: batch.SourcePolicySHA256,
 			EntryCount:         len(batch.Entries),
+			ActivationState:    batchActivationState(paths, identityID, restoreID, masterKey),
 		})
 		crypto.ZeroBytes(batch.SourcePolicyYAML)
 	}
@@ -81,4 +87,23 @@ func List(paths storepaths.Paths, identityID string, masterKey []byte) ([]BatchI
 		return strings.Compare(a.RestoreID, b.RestoreID)
 	})
 	return batches, nil
+}
+
+// batchActivationState reports the durable activation state of one batch:
+// empty when no marker exists, the journal state when it can be read, and
+// "unknown" for a marker whose journal is unreadable (still incomplete —
+// reconciliation decides what to do with it).
+func batchActivationState(paths storepaths.Paths, identityID, restoreID string, masterKey []byte) string {
+	dir := paths.RecoveredActivationDir(identityID, restoreID)
+	if _, err := os.Lstat(dir); os.IsNotExist(err) {
+		return ""
+	}
+	var journal ActivationJournal
+	if err := readEncryptedJSON(paths.RecoveredActivationJournalPath(identityID, restoreID), masterKey, &journal); err != nil {
+		return "unknown"
+	}
+	if err := validateActivationJournal(&journal); err != nil || journal.RestoreID != restoreID {
+		return "unknown"
+	}
+	return string(journal.State)
 }

@@ -292,6 +292,18 @@ func (s *IPCServer) NotifyLocked(identityID string, notification adminproto.Sign
 	_ = active.WriteJSON(msg) // Best-effort notification
 }
 
+// NotifyStatus pushes the current signer state to the connected IPC client.
+// Used when the runtime state changes without a client request that already
+// reports it — e.g. leaving recovery mode after the marker rescan comes back
+// clean.
+func (s *IPCServer) NotifyStatus(identityID, state string, keyCount int) {
+	active := s.activeIdentitySession(identityID)
+	if active == nil {
+		return
+	}
+	_ = active.WriteJSON(adminserver.ProtocolStatusMessage(state, keyCount)) // Best-effort notification
+}
+
 // NotifyKeysChanged sends a keys_changed notification to the connected IPC client.
 // This allows apadmin to refresh its key list when keys are added/removed.
 func (s *IPCServer) NotifyKeysChanged(identityID string, notification adminproto.KeysChangedNotification) {

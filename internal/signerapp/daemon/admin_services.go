@@ -315,6 +315,11 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) bool
 	}
 	ir.SetUnlocked()
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
+	if s.signer != nil {
+		if hub := s.signer.adminHub(); hub != nil {
+			hub.NotifyStatus(ir.ID(), ir.GetState().String(), ir.KeyCount())
+		}
+	}
 	return true
 }
 
