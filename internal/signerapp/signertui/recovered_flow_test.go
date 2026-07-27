@@ -507,3 +507,23 @@ func TestIdleTrackingArmsInRecoveryMode(t *testing.T) {
 		t.Fatal("idle tracking armed while locked")
 	}
 }
+
+func TestRecoveredListQQuitsAsAdvertised(t *testing.T) {
+	m := Model{
+		viewState:   ViewRecoveredList,
+		signerState: signerRuntimeRecovery,
+	}
+	// The recovery footer advertises "q: Quit"; q must actually quit.
+	_, cmd := m.handleRecoveredListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("q on the blocking recovery screen did nothing despite the footer advertising Quit")
+	}
+	if msg := cmd(); msg != (tea.QuitMsg{}) {
+		t.Fatalf("q produced %T, want tea.QuitMsg", msg)
+	}
+	// Esc still holds the blocking screen.
+	next, _ := m.handleRecoveredListKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	if got := next.(Model); got.viewState != ViewRecoveredList {
+		t.Fatalf("esc left the blocking screen for view %v", got.viewState)
+	}
+}

@@ -166,10 +166,16 @@ construction, an uncommitted attempt (§7).
 Fail-closed and explicitly **not** the tolerant runtime reload
 (`FileKeyStore.Scan` records warnings and succeeds; reload audits rejected
 keys — those semantics cannot back "selected generation fails validation →
-recovery"). The validator rejects: malformed/missing/multiple `CURRENT`
+recovery"). The structural validator rejects: malformed/missing `CURRENT`
 values, traversal or symlinks or non-directories anywhere in the resolved
-path, incomplete manifests, undecryptable or malformed entries, unexpected
-files, and (for sealed generations) any seal/inventory mismatch.
+path, missing namespace directories, incomplete manifests, unexpected
+entries at the generation root, and (for sealed generations) any
+seal/inventory mismatch. Orphaned durable-write temp files
+(`seal.json.tmp-*`) are tolerated — the committing rename is atomic, so
+residue never carries state — and reconciliation garbage-collects them.
+Content-level defects (undecryptable or malformed keys, template and
+key-type record defects, unexpected or noncanonical namespace filenames)
+are enforced by the fail-closed reload gate with the master key.
 
 - **Current generation at startup:** manifest schema + completion state, then
   a strict scan of live files. No at-mint digest equality (mutable current);
@@ -297,9 +303,10 @@ open decide-or-fix item is unchanged by this design.)
 ## 12. Filesystems, crash ordering, ownership
 
 - Supported: Linux and Darwin on a **single filesystem per identity store**
-  (already assumed by five existing cross-directory `os.Rename` sites;
-  documented as a store requirement, checked at migration time by renaming a
-  probe file from `generations/` staging to the identity dir).
+  (already assumed by five existing cross-directory `os.Rename` sites). This
+  is a documented store requirement, not probed at runtime: a store that
+  violates it fails its first commit's publish rename with `EXDEV` before
+  anything durable refers to the staged generation.
 - Durability primitives: `fsutil.WriteFileDurable`/`SyncDir`/`RemoveDurable`
   exclusively for commit-path writes; `fsutil.TestHook` is the crash-matrix
   injection seam.

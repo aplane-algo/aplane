@@ -63,6 +63,12 @@ func (m Model) handleRecoveredListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc":
 		if m.signerState == signerRuntimeRecovery {
+			if msg.String() == "q" {
+				// The footer advertises "q: Quit" and quitting the TUI is
+				// safe: recovery state is durable server-side. Esc keeps
+				// the blocking message — there is no screen to go back to.
+				return m, tea.Quit
+			}
 			// Blocking: there is no normal navigation to return to while
 			// signing is disabled.
 			m.restore.recoveredError = "Signing is disabled until every incomplete activation is resolved"
