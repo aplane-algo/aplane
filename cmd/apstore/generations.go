@@ -52,15 +52,15 @@ func cmdGenerations(args []string) error {
 		return nil
 
 	case "prune":
-		retainNewestPrior := true
+		retainRollbackParent := true
 		switch {
 		case len(args) == 1:
 		case len(args) == 2 && args[1] == "--all-priors":
-			retainNewestPrior = false
+			retainRollbackParent = false
 		default:
 			return fmt.Errorf("usage: apstore generations prune [--all-priors]")
 		}
-		removed, err := genstore.CollectGarbage(paths, identityID, nil, retainNewestPrior)
+		removed, err := genstore.CollectGarbage(paths, identityID, nil, retainRollbackParent)
 		if err != nil {
 			return err
 		}
@@ -70,10 +70,10 @@ func cmdGenerations(args []string) error {
 		if len(removed) == 0 {
 			logInfof("nothing to prune")
 		}
-		if !retainNewestPrior {
+		if !retainRollbackParent {
 			logInfof("only the current generation remains; passphrase rotation quiescence satisfied")
 		} else {
-			logInfof("newest sealed prior retained as the rollback target")
+			logInfof("the current generation's parent retained as the rollback target")
 		}
 		return nil
 

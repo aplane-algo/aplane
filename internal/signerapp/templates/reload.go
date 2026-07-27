@@ -165,15 +165,22 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 		if provider, ok := s.KeyStore.(keys.KeyScanWarningProvider); ok {
 			warnings = provider.GetScanWarnings()
 		}
-		if len(warnings) > 0 {
+		templateDefects := report.ContentDefectKeyTypes()
+		if len(warnings) > 0 || len(templateDefects) > 0 {
 			clearInitializedMasterKey()
 			s.clearKeyCache()
 			s.PublishSnapshot(map[string]string{}, map[string]string{}, map[string]int{})
 			if s.NotifyKeysChanged != nil {
 				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
 			}
-			return nil, fmt.Errorf("%s: %d malformed key file(s) in the selected generation: %s",
-				generationValidationFailedPrefix, len(warnings), warnings[0].Message())
+			detail := ""
+			if len(warnings) > 0 {
+				detail = warnings[0].Message()
+			} else {
+				detail = "key type " + templateDefects[0]
+			}
+			return nil, fmt.Errorf("%s: %d malformed key file(s) and %d template/key-type defect(s) in the selected generation: %s",
+				generationValidationFailedPrefix, len(warnings), len(templateDefects), detail)
 		}
 	} else if genErr != nil {
 		clearInitializedMasterKey()

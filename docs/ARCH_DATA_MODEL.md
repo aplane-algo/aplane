@@ -243,10 +243,17 @@ An identity is the root of sensitive signer state:
 
 ```text
 identities/<identity>/
-  keys/*.key
-  keys/*.sen
-  keys/*.wit.json          # public sentry metadata sidecar (not private authority)
-  .keystore
+  CURRENT                  # names the active generation (generation layout)
+  generations/<gen-id>/
+    manifest.json          # immutable at-mint operation record
+    seal.json              # final content record, written before flip-away
+    keys/*.key
+    keys/*.sen
+    keys/*.wit.json        # public sentry metadata sidecar (not private authority)
+    keytypes/*.json        # key-type state records
+    keytypes/*.template    # encrypted template documents
+  keys/ keytypes/          # legacy flat namespaces (pre-migration stores only)
+  .keystore                # version 3 + generations/v1 layout tag when migrated
   node.yaml.hmac
   aplane.token
   config.yaml

@@ -839,10 +839,15 @@ execution, output decoding, environment filtering, and validation.
     *.tar.gz                # restorable managed/imported backup archives
   .ssh/ssh_host_key
   identities/<identity>/
-    keys/*.key              # account authority, selected by Algorand address
-    keys/*.sen              # sentry witness authority, selected by Witness Key ID
-    keys/*.wit.json         # derived public witness reference; not private authority
-    .keystore
+    CURRENT                 # names the active generation (generation layout)
+    generations/<gen-id>/
+      manifest.json         # immutable at-mint operation record
+      seal.json             # final content record, written before flip-away
+      keys/*.key            # account authority, selected by Algorand address
+      keys/*.sen            # sentry witness authority, selected by Witness Key ID
+      keys/*.wit.json       # derived public witness reference; not private authority
+    keys/ keytypes/         # legacy flat namespaces (pre-migration stores only)
+    .keystore               # version 3 + layout tag on generation-layout stores
     node.yaml.hmac
     aplane.token
     config.yaml

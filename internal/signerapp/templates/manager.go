@@ -26,6 +26,31 @@ type TemplateRegistrar struct {
 	Prepare      PrepareFunc
 }
 
+// ContentDefectKeyTypes lists key types whose durable store content is
+// malformed, unreadable, missing, or externally edited: invalid templates,
+// invalid state records, orphaned records (state without a template file),
+// and fingerprint mismatches. Registration-semantics categories (conflicts
+// with process-global providers, idempotent re-registration, disabled
+// records) are deliberately excluded — they are not store corruption. On a
+// generation-based store any entry here fails the selected generation's
+// validation (docs/ARCH_GENERATIONS.md §6).
+func (r RegistrationReport) ContentDefectKeyTypes() []string {
+	var defects []string
+	for _, bucket := range [][]string{
+		r.GenericInvalidKeyTypes,
+		r.ComposedInvalidKeyTypes,
+		r.InvalidStateRecordKeyTypes,
+		r.CompiledInvalidKeyTypes,
+		r.GenericOrphanedKeyTypes,
+		r.ComposedOrphanedKeyTypes,
+		r.GenericExternalEditKeyTypes,
+		r.ComposedExternalEditKeyTypes,
+	} {
+		defects = append(defects, bucket...)
+	}
+	return defects
+}
+
 type RegistrationReport struct {
 	GenericErr  error
 	ComposedErr error

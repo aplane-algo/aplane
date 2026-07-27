@@ -272,3 +272,40 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 		t.Fatal("identity not unlocked after repair")
 	}
 }
+
+func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	svc := signerAdminServices{signer: server}
+	generationID := convertTestSignerToGenerational(t, server)
+
+	// A corrupt key-type state record inside the selected generation: the
+	// keytypes namespace is generation content and validates fail-closed
+	// exactly like keys.
+	gen := server.keyPaths.GenerationPaths(auth.DefaultIdentityID, generationID)
+	garbage := filepath.Join(gen.KeyTypeRecordsDir(), "broken.json")
+	if err := os.WriteFile(garbage, []byte("{not json"), 0o660); err != nil {
+		t.Fatalf("WriteFile(garbage record): %v", err)
+	}
+	ir.Lock()
+
+	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeActivationIncomplete {
+		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
+	}
+	if !ir.IsRecovery() || ir.IsUnlocked() {
+		t.Fatalf("identity state = recovery %v unlocked %v, want recovery", ir.IsRecovery(), ir.IsUnlocked())
+	}
+
+	if err := os.Remove(garbage); err != nil {
+		t.Fatalf("remove garbage record: %v", err)
+	}
+	ir.Lock()
+	if success, _, errMsg, code := svc.UnlockIdentity(ir, testPassphrase); !success || errMsg != "" || code != "" {
+		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
+	}
+}

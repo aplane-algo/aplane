@@ -4,11 +4,13 @@
 package genstore
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -297,5 +299,36 @@ func TestResolveActiveSelectsLayout(t *testing.T) {
 	}
 	if _, err := ResolveActive(paths, testIdentity); err == nil {
 		t.Fatal("ResolveActive silently fell back past an invalid CURRENT")
+	}
+}
+
+// TestWriteCurrentUnreadablePointerIsUnknownNotUncommitted proves the
+// classification rule: only a successful read of the old pointer proves the
+// rename never landed; an unreadable pointer is unknown commit state.
+func TestWriteCurrentUnreadablePointerIsUnknownNotUncommitted(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	mintTestGeneration(t, paths, testGenA, nil)
+
+	// A pointer that ReadCurrent rejects (symlink) plus an injected write
+	// failure: the write path cannot prove non-commit by reading back.
+	target := filepath.Join(paths.IdentityDir(testIdentity), "pointer-target")
+	if err := os.WriteFile(target, []byte("x\n"), 0o660); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Symlink(target, paths.CurrentPointerPath(testIdentity)); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	injected := errors.New("injected file-sync failure")
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpFileSync && filepath.Base(path) == storepaths.CurrentPointerName {
+			return injected
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	err := WriteCurrent(paths, testIdentity, testGenA)
+	if !errors.Is(err, ErrCommitDurabilityUnknown) {
+		t.Fatalf("WriteCurrent error = %v, want ErrCommitDurabilityUnknown (unreadable pointer proves nothing)", err)
 	}
 }

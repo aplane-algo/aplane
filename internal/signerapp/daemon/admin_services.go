@@ -343,9 +343,11 @@ func (s signerAdminServices) ActivateRecovered(ir *identity.Runtime, req adminpr
 	if result.Success && wasRecovery {
 		s.exitRecoveryIfReconciled(ir)
 	}
-	if result.Success {
-		s.rearmWatcherAfterGenerationFlip(ir)
-	}
+	// Re-arm regardless of the result: a committed flip can coexist with a
+	// failed follow-up (batch cleanup, unverified durability), and success
+	// is therefore not a proxy for "the pointer did not move". Re-arming is
+	// idempotent and a no-op on legacy stores.
+	s.rearmWatcherAfterGenerationFlip(ir)
 	return result
 }
 
@@ -355,9 +357,7 @@ func (s signerAdminServices) RollbackRecovered(ir *identity.Runtime, req adminpr
 	if result.Success && wasRecovery {
 		s.exitRecoveryIfReconciled(ir)
 	}
-	if result.Success {
-		s.rearmWatcherAfterGenerationFlip(ir)
-	}
+	s.rearmWatcherAfterGenerationFlip(ir)
 	return result
 }
 

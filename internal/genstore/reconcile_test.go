@@ -190,3 +190,32 @@ func TestCollectGarbageAllPriorsReachesRotationQuiescence(t *testing.T) {
 		t.Fatalf("generations after full prune = %d (%v), want only current", len(entries), err)
 	}
 }
+
+// TestCollectGarbageRetainsManifestParentAfterRollback drives the retention
+// trap: after a rollback the lexicographically newest prior is the
+// rolled-away child, while the true rollback target is the current
+// generation's manifest parent.
+func TestCollectGarbageRetainsManifestParentAfterRollback(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_500, 0)); err != nil {
+		t.Fatalf("RollbackTo(B) error = %v", err)
+	}
+	// CURRENT=B; sealed priors are A (B's parent) and C (the rolled-away
+	// child, lexicographically newest).
+
+	removed, err := CollectGarbage(paths, testIdentity, nil, true)
+	if err != nil {
+		t.Fatalf("CollectGarbage() error = %v", err)
+	}
+	if !slices.Equal(removed, []string{testGenC}) {
+		t.Fatalf("removed = %v, want the rolled-away child [%s]", removed, testGenC)
+	}
+	// The manifest parent survives and remains a valid rollback target.
+	if err := ValidateSealed(paths.GenerationPaths(testIdentity, testGenA)); err != nil {
+		t.Fatalf("manifest parent A invalid after prune: %v", err)
+	}
+	if err := RollbackTo(paths, testIdentity, testGenA, time.Unix(1_753_500_600, 0)); err != nil {
+		t.Fatalf("RollbackTo(parent) error = %v", err)
+	}
+}

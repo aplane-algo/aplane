@@ -465,8 +465,18 @@ rotation exists, keeps the legacy directories under `.legacy-<timestamp>/`
 for a rollback window, and preserves the pre-migration keystore metadata as
 `.keystore.premigration`. After migration, older aplane binaries reject the
 store with an unsupported-keystore-version error instead of misreading it.
-Passphrase rotation on a generational store requires generation quiescence:
-prune prior generations first.
+
+Manage generations offline (daemon stopped):
+
+```
+./apstore generations list                # current + sealed priors
+./apstore generations prune               # keep current + its parent
+./apstore generations prune --all-priors  # keep only current
+```
+
+Passphrase rotation on a generational store requires generation quiescence —
+run `apstore generations prune --all-priors` first; after a successful
+rotation the retention window restarts empty.
 
 ### Policy Snapshots in Backups
 

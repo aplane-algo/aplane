@@ -9,6 +9,7 @@
 package genstore
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -83,9 +84,21 @@ func WriteCurrent(paths storepaths.Paths, identityID, generationID string) error
 		return nil
 	}
 	current, readErr := ReadCurrent(paths, identityID)
-	if readErr != nil || current != generationID {
-		// The rename never landed (or the pointer is unreadable); the old
-		// state is authoritative and nothing was committed.
+	if readErr != nil {
+		if errors.Is(readErr, os.ErrNotExist) {
+			// An absent pointer proves non-commit: a rename cannot remove
+			// its destination, so the pointer was never created — the
+			// first-ever flip failed before publishing anything.
+			return writeErr
+		}
+		// Any other read failure proves nothing about whether the rename
+		// landed; the commit state is unknown and must never be classified
+		// as not-committed.
+		return fmt.Errorf("%w: generation %s: write: %v; read-back: %v",
+			ErrCommitDurabilityUnknown, generationID, writeErr, readErr)
+	}
+	if current != generationID {
+		// The old pointer is intact and authoritative; nothing committed.
 		return writeErr
 	}
 	if syncErr := fsutil.SyncDir(paths.IdentityDir(identityID)); syncErr == nil {
