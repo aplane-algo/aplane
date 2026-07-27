@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -196,13 +197,24 @@ func scanTargets(
 	identityID string,
 	masterKey []byte,
 ) ([]keys.ManagedCredentialFile, []string, []string, error) {
-	managedFiles, err := keys.ScanManagedCredentialFiles(paths.KeysDir(identityID))
+	// Rotation requires generation quiescence: it rewrites only what it can
+	// see through the resolved current namespaces, so a retained prior
+	// generation would silently keep material encrypted under the old
+	// master key and make generation rollback produce an unreadable store.
+	if err := requireGenerationQuiescence(paths, identityID); err != nil {
+		return nil, nil, nil, err
+	}
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to resolve active key store layout: %w", err)
+	}
+	managedFiles, err := keys.ScanManagedCredentialFiles(active.KeysDir())
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to scan keystore: %w", err)
 	}
 
 	var templateFiles []string
-	templatesRootDir := paths.KeyTypeRecordsDir(identityID)
+	templatesRootDir := active.KeyTypeRecordsDir()
 	_ = filepath.WalkDir(templatesRootDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -217,6 +229,41 @@ func scanTargets(
 		return nil, nil, nil, err
 	}
 	return managedFiles, templateFiles, recoveredFiles, nil
+}
+
+// requireGenerationQuiescence refuses rotation on a generational store while
+// any generation other than the current one exists (docs/ARCH_GENERATIONS.md
+// §11). The operator prunes prior generations first; after a successful
+// rotation the retention window restarts empty. Prior-generation retention
+// and passphrase rotation never coexist.
+func requireGenerationQuiescence(paths storepaths.Paths, identityID string) error {
+	generational, err := genstore.IsGenerational(paths, identityID)
+	if err != nil {
+		return err
+	}
+	if !generational {
+		return nil
+	}
+	current, err := genstore.ReadCurrent(paths, identityID)
+	if err != nil {
+		return fmt.Errorf("passphrase rotation requires a valid CURRENT generation: %w", err)
+	}
+	entries, err := os.ReadDir(paths.GenerationsDir(identityID))
+	if err != nil {
+		return err
+	}
+	var extra []string
+	for _, entry := range entries {
+		if entry.Name() != current {
+			extra = append(extra, entry.Name())
+		}
+	}
+	if len(extra) > 0 {
+		return fmt.Errorf(
+			"passphrase rotation requires generation quiescence: %d other generation(s) exist (%s); reconcile and collect them first",
+			len(extra), strings.Join(extra, ", "))
+	}
+	return nil
 }
 
 func logTargets(

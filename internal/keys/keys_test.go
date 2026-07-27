@@ -318,7 +318,7 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 			}
 		}
 		decryptCalls := 0
-		report, err := scanKeysDirectoryInternalReport(paths, "default", func(string) ([]byte, error) {
+		report, err := scanKeysDirectoryInternalReport(paths.LegacyActivePaths("default"), func(string) ([]byte, error) {
 			decryptCalls++
 			return nil, fmt.Errorf("unexpected decrypt")
 		})

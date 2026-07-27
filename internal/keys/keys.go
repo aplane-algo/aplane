@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
@@ -248,7 +249,17 @@ func ReadDecryptedKeyJSONWithMasterKey(keyFile string, masterKey []byte) ([]byte
 // ScanKeysDirectoryWithMasterKey scans the identity-scoped keys subdirectory using a master key for decryption.
 // Only supports envelope_version 2 files.
 func ScanKeysDirectoryWithMasterKey(paths storepaths.Paths, identityID string, masterKey []byte) (map[string]KeyScanInfo, error) {
-	report, err := ScanKeysDirectoryWithMasterKeyReport(paths, identityID, masterKey)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return nil, err
+	}
+	return ScanKeysDirectoryWithMasterKeyActive(active, masterKey)
+}
+
+// ScanKeysDirectoryWithMasterKeyActive is ScanKeysDirectoryWithMasterKey
+// against resolved active-store paths (generational or legacy).
+func ScanKeysDirectoryWithMasterKeyActive(active storepaths.ActivePaths, masterKey []byte) (map[string]KeyScanInfo, error) {
+	report, err := ScanKeysDirectoryWithMasterKeyReportActive(active, masterKey)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +269,17 @@ func ScanKeysDirectoryWithMasterKey(paths storepaths.Paths, identityID string, m
 // ScanKeysDirectoryWithMasterKeyReport scans the identity-scoped keys
 // subdirectory and returns structured warnings for key files that were skipped.
 func ScanKeysDirectoryWithMasterKeyReport(paths storepaths.Paths, identityID string, masterKey []byte) (*KeyScanReport, error) {
-	return scanKeysDirectoryInternalReport(paths, identityID, func(keyFile string) ([]byte, error) {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return nil, err
+	}
+	return ScanKeysDirectoryWithMasterKeyReportActive(active, masterKey)
+}
+
+// ScanKeysDirectoryWithMasterKeyReportActive is
+// ScanKeysDirectoryWithMasterKeyReport against resolved active-store paths.
+func ScanKeysDirectoryWithMasterKeyReportActive(active storepaths.ActivePaths, masterKey []byte) (*KeyScanReport, error) {
+	return scanKeysDirectoryInternalReport(active, func(keyFile string) ([]byte, error) {
 		return ReadDecryptedKeyJSONWithMasterKey(keyFile, masterKey)
 	})
 }
@@ -266,7 +287,7 @@ func ScanKeysDirectoryWithMasterKeyReport(paths storepaths.Paths, identityID str
 // scanKeysDirectoryInternalReport is the shared implementation for scanning
 // keys. The decryptFunc parameter allows using either passphrase or master key
 // decryption.
-func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
+func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
 	keysMap := make(map[string]KeyScanInfo)
 	addressFiles := make(map[string][]string)
 	var warnings []KeyScanWarning
@@ -278,7 +299,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: %s\n", warning.Message())
 	}
 
-	keysDir := paths.KeysDir(identityID)
+	keysDir := active.KeysDir()
 
 	// Ensure keys directory exists
 	if err := fsutil.MkdirAll(keysDir); err != nil {

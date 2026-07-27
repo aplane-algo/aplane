@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -136,33 +137,65 @@ func CanonicalManagedCredentialFilename(selector, category string) (string, erro
 }
 
 func CanonicalManagedCredentialPath(paths storepaths.Paths, identityID, selector, category string) (string, error) {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return "", err
+	}
+	return CanonicalManagedCredentialPathActive(active, selector, category)
+}
+
+// CanonicalManagedCredentialPathActive is CanonicalManagedCredentialPath
+// against resolved active-store paths (generational or legacy).
+func CanonicalManagedCredentialPathActive(active storepaths.ActivePaths, selector, category string) (string, error) {
 	name, err := CanonicalManagedCredentialFilename(selector, category)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(paths.KeysDir(identityID), name), nil
+	return filepath.Join(active.KeysDir(), name), nil
 }
 
 // AccountKeyFilePath is for code that already owns a validated Algorand
 // account address. Canonical writers should prefer CanonicalManagedCredentialPath.
 func AccountKeyFilePath(paths storepaths.Paths, identityID, address string) string {
-	return filepath.Join(paths.KeysDir(identityID), address+AccountKeyExtension)
+	return AccountKeyFilePathActive(paths.LegacyActivePaths(identityID), address)
+}
+
+// AccountKeyFilePathActive is AccountKeyFilePath against resolved
+// active-store paths.
+func AccountKeyFilePathActive(active storepaths.ActivePaths, address string) string {
+	return filepath.Join(active.KeysDir(), address+AccountKeyExtension)
 }
 
 // SentryCredentialFilePath is for code that already owns a validated Witness
 // Key ID. Canonical writers should prefer CanonicalManagedCredentialPath.
 func SentryCredentialFilePath(paths storepaths.Paths, identityID, witnessKeyID string) string {
-	return filepath.Join(paths.KeysDir(identityID), witnessKeyID+SentryCredentialExtension)
+	return SentryCredentialFilePathActive(paths.LegacyActivePaths(identityID), witnessKeyID)
+}
+
+// SentryCredentialFilePathActive is SentryCredentialFilePath against
+// resolved active-store paths.
+func SentryCredentialFilePathActive(active storepaths.ActivePaths, witnessKeyID string) string {
+	return filepath.Join(active.KeysDir(), witnessKeyID+SentryCredentialExtension)
 }
 
 // ManagedCredentialDestination reports the canonical destination and whether
 // it exists, while rejecting an active file in the contradictory class.
 func ManagedCredentialDestination(paths storepaths.Paths, identityID, selector, category string) (string, bool, error) {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return "", false, err
+	}
+	return ManagedCredentialDestinationActive(active, selector, category)
+}
+
+// ManagedCredentialDestinationActive is ManagedCredentialDestination against
+// resolved active-store paths.
+func ManagedCredentialDestinationActive(active storepaths.ActivePaths, selector, category string) (string, bool, error) {
 	class, err := ManagedCredentialClassForCategory(category)
 	if err != nil {
 		return "", false, err
 	}
-	canonicalPath, err := CanonicalManagedCredentialPath(paths, identityID, selector, category)
+	canonicalPath, err := CanonicalManagedCredentialPathActive(active, selector, category)
 	if err != nil {
 		return "", false, err
 	}
@@ -171,7 +204,7 @@ func ManagedCredentialDestination(paths storepaths.Paths, identityID, selector, 
 	if class == ManagedCredentialAccount {
 		otherClass = ManagedCredentialSentry
 	}
-	contradictoryPath := filepath.Join(paths.KeysDir(identityID), selector+otherClass.Extension())
+	contradictoryPath := filepath.Join(active.KeysDir(), selector+otherClass.Extension())
 	if _, err := os.Lstat(contradictoryPath); err == nil {
 		return "", false, fmt.Errorf("%w: %s", ErrManagedCredentialClassConflict, contradictoryPath)
 	} else if !os.IsNotExist(err) {

@@ -102,15 +102,15 @@ func createTestKeyFile(t *testing.T, keysDir, address string, masterKey []byte) 
 
 // TestFileKeyStore_NewFileKeyStore tests store creation
 func TestFileKeyStore_NewFileKeyStore(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
+	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
 	store := NewFileKeyStoreForPaths(paths, testIdentityID)
 	switch {
 	case store == nil:
 		t.Fatal("NewFileKeyStoreForPaths returned nil")
-	case store.keysDir != keysDir:
-		t.Errorf("keysDir = %s, want %s", store.keysDir, keysDir)
+	case store.identityID != testIdentityID:
+		t.Errorf("identityID = %s, want %s", store.identityID, testIdentityID)
 	case store.cache == nil:
 		t.Error("cache should be initialized")
 	}
@@ -118,17 +118,17 @@ func TestFileKeyStore_NewFileKeyStore(t *testing.T) {
 
 // TestFileKeyStore_NewFileKeyStore_DefaultPath tests default path handling
 func TestFileKeyStore_NewFileKeyStore_DefaultPath(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
+	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	// Create with default identity - should use KeysDir(identityID)
+	// Create with default identity - scanning resolves the identity-scoped
+	// active layout per operation.
 	store := NewFileKeyStoreForPaths(paths, testIdentityID)
-	switch {
-	case store == nil:
+	if store == nil {
 		t.Fatal("NewFileKeyStoreForPaths returned nil")
-	case store.keysDir != keysDir:
-		// Should use the configured keystore path with identity
-		t.Errorf("keysDir should be identity-scoped, got %s, want %s", store.keysDir, keysDir)
+	}
+	if store.identityID != testIdentityID {
+		t.Errorf("identityID = %s, want %s", store.identityID, testIdentityID)
 	}
 }
 

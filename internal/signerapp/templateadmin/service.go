@@ -249,7 +249,13 @@ func (s Service) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.Show
 		}
 	}
 
-	path := templatestore.GetTemplateFilePathForPaths(s.Deps.KeyPaths(), ir.ID(), keyType, templateType)
+	path, err := templatestore.GetTemplateFilePathForPaths(s.Deps.KeyPaths(), ir.ID(), keyType, templateType)
+	if err != nil {
+		return adminproto.ShowInstalledTemplateResult{
+			Code:  protocol.ResultCodeTemplateStateFailed,
+			Error: err.Error(),
+		}
+	}
 	var data []byte
 	err = ir.WithMasterKey(func(masterKey []byte) error {
 		var loadErr error

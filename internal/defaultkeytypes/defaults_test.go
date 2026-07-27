@@ -47,10 +47,11 @@ func TestInstallForNewIdentityInstallsDefaultAllowlistTemplatesForSigner(t *test
 		if !templatestore.TemplateExistsForPaths(paths, identityID, keyType, templatestore.TemplateTypeComposed) {
 			t.Fatalf("default template %s not installed", keyType)
 		}
-		installed, err := templatestore.LoadTemplateFromPath(
-			templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeComposed),
-			masterKey,
-		)
+		templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeComposed)
+		if pathErr != nil {
+			t.Fatalf("GetTemplateFilePathForPaths(%s) error = %v", keyType, pathErr)
+		}
+		installed, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
 		if err != nil {
 			t.Fatalf("LoadTemplateFromPath(%s) error = %v", keyType, err)
 		}

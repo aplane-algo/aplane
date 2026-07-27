@@ -119,7 +119,11 @@ teal: |
 	assertTemplateDirMode(t, filepath.Dir(outputPath))
 
 	// Load template back
-	loadedData, err := LoadTemplateFromPath(GetTemplateFilePathForPaths(paths, testIdentityID, keyType, TemplateTypeGeneric), testMasterKey)
+	templatePath, pathErr := GetTemplateFilePathForPaths(paths, testIdentityID, keyType, TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
+	loadedData, err := LoadTemplateFromPath(templatePath, testMasterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath failed: %v", err)
 	}
@@ -179,7 +183,11 @@ teal: |
 	}
 
 	// Load template back
-	loadedData, err := LoadTemplateFromPath(GetTemplateFilePathForPaths(paths, testIdentityID, keyType, TemplateTypeComposed), testMasterKey)
+	templatePath, pathErr := GetTemplateFilePathForPaths(paths, testIdentityID, keyType, TemplateTypeComposed)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
+	loadedData, err := LoadTemplateFromPath(templatePath, testMasterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath failed: %v", err)
 	}

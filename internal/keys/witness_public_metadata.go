@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -21,17 +22,33 @@ const WitnessPublicMetadataSuffix = ".wit.json"
 // WitnessPublicMetadataPath returns the public-only metadata sidecar path for
 // a signer-custodied witness key.
 func WitnessPublicMetadataPath(paths storepaths.Paths, identityID, witnessKeyID string) string {
-	return filepath.Join(paths.KeysDir(identityID), witnessKeyID+WitnessPublicMetadataSuffix)
+	return WitnessPublicMetadataPathActive(paths.LegacyActivePaths(identityID), witnessKeyID)
+}
+
+// WitnessPublicMetadataPathActive is WitnessPublicMetadataPath against
+// resolved active-store paths.
+func WitnessPublicMetadataPathActive(active storepaths.ActivePaths, witnessKeyID string) string {
+	return filepath.Join(active.KeysDir(), witnessKeyID+WitnessPublicMetadataSuffix)
 }
 
 // ReadWitnessPublicMetadata reads and validates a witness public metadata
 // sidecar. The boolean is false when the sidecar is absent.
 func ReadWitnessPublicMetadata(paths storepaths.Paths, identityID, witnessKeyID string) (sentryrefs.ExportEnvelope, bool, error) {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return sentryrefs.ExportEnvelope{}, false, err
+	}
+	return ReadWitnessPublicMetadataActive(active, witnessKeyID)
+}
+
+// ReadWitnessPublicMetadataActive is ReadWitnessPublicMetadata against
+// resolved active-store paths.
+func ReadWitnessPublicMetadataActive(active storepaths.ActivePaths, witnessKeyID string) (sentryrefs.ExportEnvelope, bool, error) {
 	witnessKeyID, err := witness.NormalizeID(witnessKeyID)
 	if err != nil {
 		return sentryrefs.ExportEnvelope{}, false, err
 	}
-	path := WitnessPublicMetadataPath(paths, identityID, witnessKeyID)
+	path := WitnessPublicMetadataPathActive(active, witnessKeyID)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -52,6 +69,16 @@ func ReadWitnessPublicMetadata(paths storepaths.Paths, identityID, witnessKeyID 
 // WriteWitnessPublicMetadataFromKeyJSON writes the public-only sidecar for a
 // restored signer-custodied witness payload. Other payloads are ignored.
 func WriteWitnessPublicMetadataFromKeyJSON(paths storepaths.Paths, identityID, address string, keyJSON []byte) (string, bool, error) {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return "", false, err
+	}
+	return WriteWitnessPublicMetadataFromKeyJSONActive(active, address, keyJSON)
+}
+
+// WriteWitnessPublicMetadataFromKeyJSONActive is
+// WriteWitnessPublicMetadataFromKeyJSON against resolved active-store paths.
+func WriteWitnessPublicMetadataFromKeyJSONActive(active storepaths.ActivePaths, address string, keyJSON []byte) (string, bool, error) {
 	payload, err := ParsePayload(keyJSON)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to parse key payload for witness public metadata: %w", err)
@@ -60,17 +87,17 @@ func WriteWitnessPublicMetadataFromKeyJSON(paths storepaths.Paths, identityID, a
 	if payload.Category != CategoryWitness || !witness.IsKeyType(payload.KeyType) {
 		return "", false, nil
 	}
-	if err := writeWitnessPublicMetadataFromPayload(paths, identityID, address, payload); err != nil {
+	if err := writeWitnessPublicMetadataFromPayload(active, address, payload); err != nil {
 		return "", false, err
 	}
 	witnessKeyID, err := witness.NormalizeID(address)
 	if err != nil {
 		return "", false, err
 	}
-	return WitnessPublicMetadataPath(paths, identityID, witnessKeyID), true, nil
+	return WitnessPublicMetadataPathActive(active, witnessKeyID), true, nil
 }
 
-func writeWitnessPublicMetadataFromPayload(paths storepaths.Paths, identityID, selector string, payload *Payload) error {
+func writeWitnessPublicMetadataFromPayload(active storepaths.ActivePaths, selector string, payload *Payload) error {
 	if payload == nil || payload.Category != CategoryWitness || !witness.IsKeyType(payload.KeyType) {
 		return nil
 	}
@@ -87,7 +114,7 @@ func writeWitnessPublicMetadataFromPayload(paths storepaths.Paths, identityID, s
 		return fmt.Errorf("failed to encode witness public metadata: %w", err)
 	}
 	data = append(data, '\n')
-	path := WitnessPublicMetadataPath(paths, identityID, witnessKeyID)
+	path := WitnessPublicMetadataPathActive(active, witnessKeyID)
 	if err := fsutil.WriteFile(path, data); err != nil {
 		return fmt.Errorf("failed to write witness public metadata %s: %w", path, err)
 	}

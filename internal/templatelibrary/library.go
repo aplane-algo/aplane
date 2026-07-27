@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -257,7 +258,11 @@ func validateBaseImportableSchema(base templatestore.BaseTemplateSpec, templateM
 }
 
 func InstallParsed(paths storepaths.Paths, identityID string, tmpl ParsedTemplate, masterKey []byte) (InstallResult, error) {
-	return InstallParsedActive(paths.LegacyActivePaths(identityID), tmpl, masterKey)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return InstallResult{KeyType: tmpl.KeyType, TemplateType: tmpl.TemplateType}, err
+	}
+	return InstallParsedActive(active, tmpl, masterKey)
 }
 
 // InstallParsedActive is InstallParsed against resolved active-store paths
@@ -489,7 +494,11 @@ func EnableInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 	if result.KeyType == "" {
 		return result, fmt.Errorf("key type is required")
 	}
-	result.OutputPath = templatestore.GetTemplateFilePathForPaths(paths, identityID, result.KeyType, templateType)
+	outputPath, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, result.KeyType, templateType)
+	if err != nil {
+		return result, err
+	}
+	result.OutputPath = outputPath
 	if !templatestore.TemplateExistsForPaths(paths, identityID, result.KeyType, templateType) {
 		return result, fmt.Errorf("template %s is not installed", result.KeyType)
 	}
@@ -520,7 +529,11 @@ func DisableInstalledTemplate(paths storepaths.Paths, identityID, keyType string
 	if result.KeyType == "" {
 		return result, fmt.Errorf("key type is required")
 	}
-	result.OutputPath = templatestore.GetTemplateFilePathForPaths(paths, identityID, result.KeyType, templateType)
+	outputPath, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, result.KeyType, templateType)
+	if err != nil {
+		return result, err
+	}
+	result.OutputPath = outputPath
 	if !templatestore.TemplateExistsForPaths(paths, identityID, result.KeyType, templateType) {
 		return result, fmt.Errorf("template %s is not installed", result.KeyType)
 	}
@@ -561,7 +574,10 @@ func RemoveInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 		return result, fmt.Errorf("unsupported template type: %s", templateType)
 	}
 
-	path := templatestore.GetTemplateFilePathForPaths(paths, identityID, result.KeyType, templateType)
+	path, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, result.KeyType, templateType)
+	if err != nil {
+		return result, err
+	}
 	result.OutputPath = path
 	if !templatestore.TemplateExistsForPaths(paths, identityID, result.KeyType, templateType) {
 		return result, nil
@@ -594,7 +610,11 @@ func RemoveInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 // template file. It deliberately leaves key type state rollback to
 // RollbackTemplateStateChange.
 func RollbackInstalledTemplateFile(paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType) error {
-	return rollbackInstalledTemplateFileActive(paths.LegacyActivePaths(identityID), keyType, templateType)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return err
+	}
+	return rollbackInstalledTemplateFileActive(active, keyType, templateType)
 }
 
 func rollbackInstalledTemplateFileActive(active storepaths.ActivePaths, keyType string, templateType templatestore.TemplateType) error {
@@ -606,7 +626,10 @@ func rollbackInstalledTemplateFileActive(active storepaths.ActivePaths, keyType 
 }
 
 func archiveInstalled(paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType) (string, error) {
-	sourcePath := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templateType)
+	sourcePath, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templateType)
+	if err != nil {
+		return "", err
+	}
 	deletedKeysDir := paths.DeletedKeysDir(identityID)
 	deletedTemplatePath := paths.DeletedKeyTypeTemplate(identityID, keyType)
 	if err := fsutil.MkdirAll(deletedKeysDir); err != nil {

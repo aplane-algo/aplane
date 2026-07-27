@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -78,7 +79,11 @@ func (e *InUseError) Unwrap() error {
 //     contains unknown source/state values. Treat this as corruption, not as an
 //     absent record.
 func Get(paths storepaths.Paths, identityID, keyType string) (Record, bool, error) {
-	return GetActive(paths.LegacyActivePaths(identityID), keyType)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return Record{}, false, err
+	}
+	return GetActive(active, keyType)
 }
 
 // GetActive is Get against resolved active-store paths (generational or
@@ -107,7 +112,11 @@ func GetActive(active storepaths.ActivePaths, keyType string) (Record, bool, err
 //
 // CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
 func Put(paths storepaths.Paths, identityID string, rec Record) error {
-	return PutActive(paths.LegacyActivePaths(identityID), rec)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return err
+	}
+	return PutActive(active, rec)
 }
 
 // PutActive is Put against resolved active-store paths.
@@ -141,10 +150,21 @@ func PutActive(active storepaths.ActivePaths, rec Record) error {
 //
 // CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
 func SetState(paths storepaths.Paths, identityID, keyType string, state State) error {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return err
+	}
+	return SetStateActive(active, keyType, state)
+}
+
+// SetStateActive is SetState against resolved active-store paths.
+//
+// CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
+func SetStateActive(active storepaths.ActivePaths, keyType string, state State) error {
 	if err := validateState(state); err != nil {
 		return err
 	}
-	rec, ok, err := Get(paths, identityID, keyType)
+	rec, ok, err := GetActive(active, keyType)
 	if err != nil {
 		return err
 	}
@@ -152,7 +172,7 @@ func SetState(paths storepaths.Paths, identityID, keyType string, state State) e
 		return fmt.Errorf("key type state not found: %s", keyType)
 	}
 	rec.State = state
-	return Put(paths, identityID, rec)
+	return PutActive(active, rec)
 }
 
 // Delete removes a state record. It is idempotent when the record is already
@@ -160,7 +180,11 @@ func SetState(paths storepaths.Paths, identityID, keyType string, state State) e
 //
 // CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
 func Delete(paths storepaths.Paths, identityID, keyType string) error {
-	return DeleteActive(paths.LegacyActivePaths(identityID), keyType)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return err
+	}
+	return DeleteActive(active, keyType)
 }
 
 // DeleteActive is Delete against resolved active-store paths.
@@ -186,7 +210,16 @@ func DeleteActive(active storepaths.ActivePaths, keyType string) error {
 // callers that need to alert operators about corruption use ListInvalid to
 // enumerate the affected key types separately.
 func List(paths storepaths.Paths, identityID string) ([]Record, error) {
-	dir := paths.KeyTypeRecordsDir(identityID)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return nil, err
+	}
+	return ListActive(active)
+}
+
+// ListActive is List against resolved active-store paths. Lock-free.
+func ListActive(active storepaths.ActivePaths) ([]Record, error) {
+	dir := active.KeyTypeRecordsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -201,7 +234,7 @@ func List(paths storepaths.Paths, identityID string) ([]Record, error) {
 			continue
 		}
 		keyType := strings.TrimSuffix(entry.Name(), ".json")
-		rec, ok, err := Get(paths, identityID, keyType)
+		rec, ok, err := GetActive(active, keyType)
 		if err != nil || !ok {
 			continue
 		}
@@ -217,7 +250,16 @@ func List(paths storepaths.Paths, identityID string) ([]Record, error) {
 // empty, malformed, or carries unknown enum values. Used by reload paths to
 // populate InvalidKeyTypes buckets. Lock-free.
 func ListInvalid(paths storepaths.Paths, identityID string) ([]string, error) {
-	dir := paths.KeyTypeRecordsDir(identityID)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return nil, err
+	}
+	return ListInvalidActive(active)
+}
+
+// ListInvalidActive is ListInvalid against resolved active-store paths.
+func ListInvalidActive(active storepaths.ActivePaths) ([]string, error) {
+	dir := active.KeyTypeRecordsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -232,7 +274,7 @@ func ListInvalid(paths storepaths.Paths, identityID string) ([]string, error) {
 			continue
 		}
 		keyType := strings.TrimSuffix(entry.Name(), ".json")
-		if _, _, err := Get(paths, identityID, keyType); err != nil {
+		if _, _, err := GetActive(active, keyType); err != nil {
 			invalid = append(invalid, keyType)
 		}
 	}
@@ -243,12 +285,21 @@ func ListInvalid(paths storepaths.Paths, identityID string) ([]string, error) {
 // ListEnabled returns the key types whose record state is StateEnabled.
 // Lock-free.
 func ListEnabled(paths storepaths.Paths, identityID string) ([]string, error) {
-	if invalid, err := ListInvalid(paths, identityID); err != nil {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return nil, err
+	}
+	return ListEnabledActive(active)
+}
+
+// ListEnabledActive is ListEnabled against resolved active-store paths.
+func ListEnabledActive(active storepaths.ActivePaths) ([]string, error) {
+	if invalid, err := ListInvalidActive(active); err != nil {
 		return nil, err
 	} else if len(invalid) > 0 {
 		return nil, fmt.Errorf("invalid key type state records: %s", strings.Join(invalid, ", "))
 	}
-	records, err := List(paths, identityID)
+	records, err := ListActive(active)
 	if err != nil {
 		return nil, err
 	}

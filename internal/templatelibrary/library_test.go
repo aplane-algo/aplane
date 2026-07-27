@@ -377,7 +377,10 @@ func TestInstallParsedRollsBackTemplateWhenStateWriteFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("InstallParsed() error = nil, want fingerprint/state failure")
 	}
-	templatePath := templatestore.GetTemplateFilePathForPaths(paths, testIdentityID, parsed.KeyType, parsed.TemplateType)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, testIdentityID, parsed.KeyType, parsed.TemplateType)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if _, statErr := os.Stat(templatePath); !os.IsNotExist(statErr) {
 		t.Fatalf("installed template stat error = %v, want removed rollback file", statErr)
 	}

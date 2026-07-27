@@ -783,7 +783,10 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); !os.IsNotExist(err) {
 		t.Fatalf("restored key stat error = %v, want not exist", err)
 	}
-	templatePath := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if _, err := os.Stat(templatePath); !os.IsNotExist(err) {
 		t.Fatalf("restored template stat error = %v, want not exist", err)
 	}
@@ -993,7 +996,10 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 		t.Fatalf("restore warnings = %v, want structured skipped template warning", warnings)
 	}
 
-	templatePath := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	gotTemplate, err := templatestore.LoadTemplateFromPath(templatePath, testExportMasterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath() error = %v", err)

@@ -18,6 +18,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -133,8 +134,12 @@ func GetTemplateDirForPaths(paths storepaths.Paths, identityID string, templateT
 	return paths.KeyTypeRecordsDir(identityID)
 }
 
-func GetTemplateFilePathForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) string {
-	return GetTemplateFilePathActive(paths.LegacyActivePaths(identityID), keyType, templateType)
+func GetTemplateFilePathForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) (string, error) {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return "", err
+	}
+	return GetTemplateFilePathActive(active, keyType, templateType), nil
 }
 
 // GetTemplateFilePathActive is GetTemplateFilePathForPaths against resolved
@@ -144,7 +149,11 @@ func GetTemplateFilePathActive(active storepaths.ActivePaths, keyType string, _ 
 }
 
 func SaveTemplateForPaths(paths storepaths.Paths, identityID string, yamlData []byte, keyType string, templateType TemplateType, masterKey []byte) (string, error) {
-	return SaveTemplateActive(paths.LegacyActivePaths(identityID), yamlData, keyType, templateType, masterKey)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return "", err
+	}
+	return SaveTemplateActive(active, yamlData, keyType, templateType, masterKey)
 }
 
 // SaveTemplateActive is SaveTemplateForPaths against resolved active-store
@@ -181,7 +190,11 @@ func LoadTemplateFromPath(path string, masterKey []byte) ([]byte, error) {
 }
 
 func TemplateExistsForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) bool {
-	return TemplateExistsActive(paths.LegacyActivePaths(identityID), keyType, templateType)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return false
+	}
+	return TemplateExistsActive(active, keyType, templateType)
 }
 
 // TemplateExistsActive is TemplateExistsForPaths against resolved
@@ -221,7 +234,10 @@ func ScanTemplateDirectoryForPaths(paths storepaths.Paths, identityID string, te
 		if rec.Source != source {
 			continue
 		}
-		path := GetTemplateFilePathForPaths(paths, identityID, rec.KeyType, templateType)
+		path, err := GetTemplateFilePathForPaths(paths, identityID, rec.KeyType, templateType)
+		if err != nil {
+			return nil, err
+		}
 		if _, err := os.Stat(path); err != nil {
 			if os.IsNotExist(err) {
 				continue

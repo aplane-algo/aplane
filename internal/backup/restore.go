@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
@@ -518,7 +519,11 @@ func (r Restorer) applyInspectedBackupEntry(entry *InspectedBackupEntry, masterK
 		return "", rollbackPlans(fmt.Errorf("failed to encrypt key: %w", err))
 	}
 
-	if err := fsutil.MkdirAll(r.Paths.KeysDir(r.IdentityID)); err != nil {
+	activeForKeys, err := genstore.ResolveActive(r.Paths, r.IdentityID)
+	if err != nil {
+		return "", rollbackPlans(fmt.Errorf("failed to resolve active key store layout: %w", err))
+	}
+	if err := fsutil.MkdirAll(activeForKeys.KeysDir()); err != nil {
 		return "", rollbackPlans(fmt.Errorf("failed to create keys directory: %w", err))
 	}
 	// Durable write: an activated credential must never be lost to a crash
@@ -833,7 +838,10 @@ func (r Restorer) loadKeystoreTemplateForKeyType(keyType string, masterKey []byt
 		if !templatestore.TemplateExistsForPaths(r.Paths, r.IdentityID, keyType, tt) {
 			continue
 		}
-		templatePath := templatestore.GetTemplateFilePathForPaths(r.Paths, r.IdentityID, keyType, tt)
+		templatePath, err := templatestore.GetTemplateFilePathForPaths(r.Paths, r.IdentityID, keyType, tt)
+		if err != nil {
+			return "", nil, false, err
+		}
 		templateYAML, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
 		if err != nil {
 			return "", nil, false, fmt.Errorf("failed to read existing keystore template: %w", err)
@@ -985,7 +993,10 @@ func (r Restorer) compiledProviderRecord(keyType string) (keytypestate.Record, e
 }
 
 func removeTemplateFile(paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType) error {
-	path := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templateType)
+	path, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templateType)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove restored template: %w", err)
 	}

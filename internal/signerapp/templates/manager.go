@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -147,7 +148,14 @@ func (m *Manager) RegisterKeystoreTemplates(identityID string, masterKey []byte)
 	}
 
 	report := RegistrationReport{}
-	records, err := keytypestate.List(m.Paths, identityID)
+	// Resolve the active layout once for the whole registration pass; on a
+	// generational store this binds every record and template read to the
+	// generation CURRENT names right now.
+	active, err := genstore.ResolveActive(m.Paths, identityID)
+	if err != nil {
+		return report, fmt.Errorf("failed to resolve active key store layout: %w", err)
+	}
+	records, err := keytypestate.ListActive(active)
 	if err != nil {
 		return report, fmt.Errorf("failed to load keystore templates: %w", err)
 	}
@@ -164,11 +172,11 @@ func (m *Manager) RegisterKeystoreTemplates(identityID string, masterKey []byte)
 		if !ok {
 			continue
 		}
-		outcome := registerTemplateRecord(m.Paths, identityID, masterKey, rec, registrar)
+		outcome := registerTemplateRecord(active, identityID, masterKey, rec, registrar)
 		appendOutcome(&report, registrar.Source, outcome)
 	}
 
-	if invalid, listErr := keytypestate.ListInvalid(m.Paths, identityID); listErr == nil {
+	if invalid, listErr := keytypestate.ListInvalidActive(active); listErr == nil {
 		report.InvalidStateRecordKeyTypes = append(report.InvalidStateRecordKeyTypes, invalid...)
 	}
 
@@ -198,9 +206,9 @@ func (m *Manager) templateRegistrars() ([]TemplateRegistrar, error) {
 	return registrars, nil
 }
 
-func registerTemplateRecord(paths storepaths.Paths, identityID string, masterKey []byte, rec keytypestate.Record, registrar TemplateRegistrar) templatepolicy.RegistrationOutcome {
+func registerTemplateRecord(active storepaths.ActivePaths, identityID string, masterKey []byte, rec keytypestate.Record, registrar TemplateRegistrar) templatepolicy.RegistrationOutcome {
 	var outcome templatepolicy.RegistrationOutcome
-	path := templatestore.GetTemplateFilePathForPaths(paths, identityID, rec.KeyType, registrar.TemplateType)
+	path := templatestore.GetTemplateFilePathActive(active, rec.KeyType, registrar.TemplateType)
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			if rec.State == keytypestate.StateEnabled {

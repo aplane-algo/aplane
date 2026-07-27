@@ -932,7 +932,10 @@ func TestSignerManagedBackupRoundTripViaApstoreRestore(t *testing.T) {
 	if err := os.Remove(libraryPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination aplane.htlc.v1 library template: %v", err)
 	}
-	installedTemplatePath := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)
 	}
@@ -1066,7 +1069,10 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if err := os.Remove(libraryPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination aplane.htlc.v1 library template: %v", err)
 	}
-	installedTemplatePath := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)
 	}

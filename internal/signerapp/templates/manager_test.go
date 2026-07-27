@@ -466,7 +466,10 @@ func TestRegisterKeystoreTemplatesReportsUnreadableTemplateAsInvalid(t *testing.
 	paths := storepaths.NewPaths(t.TempDir())
 	masterKey := testTemplateMasterKey()
 	keyType := "test.manager-unreadable-template.v1"
-	templatePath := templatestore.GetTemplateFilePathForPaths(paths, "default", keyType, templatestore.TemplateTypeGeneric)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, "default", keyType, templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if err := os.MkdirAll(filepath.Dir(templatePath), 0o750); err != nil {
 		t.Fatalf("MkdirAll(template dir) error = %v", err)
 	}

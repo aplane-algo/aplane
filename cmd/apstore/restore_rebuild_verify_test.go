@@ -329,10 +329,11 @@ func TestRestoreTemplateRejectsConflictingDestinationTemplate(t *testing.T) {
 		t.Fatalf("restoreTemplate() error = %v, want keystore conflict", err)
 	}
 
-	loaded, err := templatestore.LoadTemplateFromPath(
-		templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric),
-		masterKey,
-	)
+	templatePath, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	if err != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", err)
+	}
+	loaded, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath() error = %v", err)
 	}
@@ -410,10 +411,11 @@ func TestRestoreKeySkipsTemplateConflictForStandaloneKey(t *testing.T) {
 	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)); statErr != nil {
 		t.Fatalf("expected key file written despite template conflict, got stat err=%v", statErr)
 	}
-	loaded, err := templatestore.LoadTemplateFromPath(
-		templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric),
-		masterKey,
-	)
+	templatePath, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	if err != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", err)
+	}
+	loaded, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath() error = %v", err)
 	}
