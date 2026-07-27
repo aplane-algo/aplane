@@ -636,7 +636,7 @@ func RollbackInstalledTemplateFile(paths storepaths.Paths, identityID, keyType s
 
 func rollbackInstalledTemplateFileActive(active storepaths.ActivePaths, keyType string, templateType templatestore.TemplateType) error {
 	path := templatestore.GetTemplateFilePathActive(active, keyType, templateType)
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	if err := fsutil.RemoveDurable(path); err != nil {
 		return fmt.Errorf("failed to remove installed template: %w", err)
 	}
 	return nil

@@ -55,7 +55,10 @@ func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, masterKe
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive canonical managed credential path: %w", err)
 	}
-	if err := fsutil.WriteFile(privateFile, dataToWrite); err != nil {
+	// Durable, never in-place: a credential write must survive a crash and
+	// must not be able to reach an inode a sealed generation shares
+	// (docs/ARCH_GENERATIONS.md §4).
+	if err := fsutil.WriteFileDurable(privateFile, dataToWrite); err != nil {
 		return nil, fmt.Errorf("failed to write key file: %w", err)
 	}
 	if err := writeWitnessPublicMetadataFromPayload(active, selector, payload); err != nil {

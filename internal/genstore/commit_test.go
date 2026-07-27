@@ -236,3 +236,73 @@ func TestRollbackToRequiresSealAndSealsOutgoing(t *testing.T) {
 		t.Fatal("RollbackTo accepted an unsealed target")
 	}
 }
+
+// TestMintPointerFlipDirSyncFailureIsCommittedButUnverified covers the
+// window where the CURRENT rename landed but the identity-directory sync
+// failed: the commit is visible and must be reported as
+// ErrCommitDurabilityUnknown, never as "nothing committed".
+func TestMintPointerFlipDirSyncFailureIsCommittedButUnverified(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	first := mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
+
+	identityDirBase := filepath.Base(paths.IdentityDir(testIdentity))
+	injected := errors.New("simulated crash: post-rename dir sync")
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && filepath.Base(path) == identityDirBase {
+			return injected
+		}
+		return nil
+	}
+	_, err := Mint(paths, testIdentity, MintRequest{
+		GenerationID: testGenB,
+		Parent:       first.GenerationID(),
+		Operation:    "test-activation",
+		OperationID:  "op-2",
+		CreatedAt:    time.Unix(1_753_500_100, 0),
+	})
+	fsutil.TestHook = nil
+	if !errors.Is(err, ErrCommitDurabilityUnknown) {
+		t.Fatalf("Mint error = %v, want ErrCommitDurabilityUnknown", err)
+	}
+
+	// The flip is visible: CURRENT names the new generation and it
+	// validates; the parent is sealed.
+	resolved, resolveErr := Resolve(paths, testIdentity)
+	if resolveErr != nil || resolved.GenerationID() != testGenB {
+		t.Fatalf("CURRENT after unverified commit = %s (%v), want %s", resolved.GenerationID(), resolveErr, testGenB)
+	}
+	if err := ValidateCurrent(resolved); err != nil {
+		t.Fatalf("committed generation invalid: %v", err)
+	}
+	if err := ValidateSealed(first); err != nil {
+		t.Fatalf("parent not sealed: %v", err)
+	}
+}
+
+// TestWriteCurrentRetriesDirSyncOnce proves a transient post-rename sync
+// failure self-heals without surfacing an error.
+func TestWriteCurrentRetriesDirSyncOnce(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
+	gen := mintTestGeneration(t, paths, testGenC, nil)
+	_ = gen
+
+	identityDirBase := filepath.Base(paths.IdentityDir(testIdentity))
+	failures := 0
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && filepath.Base(path) == identityDirBase && failures == 0 {
+			failures++
+			return errors.New("transient sync failure")
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	if err := WriteCurrent(paths, testIdentity, testGenC); err != nil {
+		t.Fatalf("WriteCurrent() error = %v, want retried success", err)
+	}
+	current, err := ReadCurrent(paths, testIdentity)
+	if err != nil || current != testGenC {
+		t.Fatalf("CURRENT = %s (%v), want %s", current, err, testGenC)
+	}
+}

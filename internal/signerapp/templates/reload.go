@@ -6,7 +6,9 @@ package templates
 import (
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 )
@@ -64,6 +66,17 @@ type ReloadService struct {
 	NotifyKeysChanged NotifyKeysChangedFunc
 	Info              InfoFunc
 	Warn              WarnFunc
+}
+
+// GenerationValidationFailedPrefix marks a reload failure caused by content
+// defects in the selected generation; the unlock path maps it to recovery
+// mode instead of an ordinary unlock failure.
+const generationValidationFailedPrefix = "generation validation failed"
+
+// IsGenerationValidationError reports whether a reload error means the
+// selected generation failed content validation.
+func IsGenerationValidationError(errMsg string) bool {
+	return strings.Contains(errMsg, generationValidationFailedPrefix)
 }
 
 func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadReport, error) {
@@ -141,6 +154,31 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 		return nil, fmt.Errorf("failed to rescan keys directory: %w", err)
 	}
 	s.auditRejectedLogicSigKeys(identityID)
+
+	// Generation-based stores fail closed on content defects: the selected
+	// generation is the committed state and a malformed or undecryptable
+	// entry in it means the generation fails validation — recovery, not a
+	// warning-tolerant unlock (docs/ARCH_GENERATIONS.md §6). Legacy flat
+	// stores keep the historical tolerant semantics.
+	if generational, genErr := genstore.IsGenerational(s.TemplateManager.Paths, identityID); genErr == nil && generational {
+		var warnings []keys.KeyScanWarning
+		if provider, ok := s.KeyStore.(keys.KeyScanWarningProvider); ok {
+			warnings = provider.GetScanWarnings()
+		}
+		if len(warnings) > 0 {
+			clearInitializedMasterKey()
+			s.clearKeyCache()
+			s.PublishSnapshot(map[string]string{}, map[string]string{}, map[string]int{})
+			if s.NotifyKeysChanged != nil {
+				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
+			}
+			return nil, fmt.Errorf("%s: %d malformed key file(s) in the selected generation: %s",
+				generationValidationFailedPrefix, len(warnings), warnings[0].Message())
+		}
+	} else if genErr != nil {
+		clearInitializedMasterKey()
+		return nil, fmt.Errorf("failed to inspect store layout: %w", genErr)
+	}
 
 	newKeysMap := s.KeyStore.GetCache()
 	newKeyTypes := s.KeyStore.GetKeyTypes()

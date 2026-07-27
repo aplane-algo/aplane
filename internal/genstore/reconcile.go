@@ -104,18 +104,20 @@ func Reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 }
 
 // CollectGarbage removes sealed prior generations beyond the retention set:
-// the current generation, the most recent sealed prior (the rollback
-// target), and anything in referenced. Never call during activation,
-// rotation, reload, or migration; the caller holds the mutation locks.
-// Reconcile must have run first (GC ignores staging and unsealed attempts).
-func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[string]bool) ([]string, error) {
+// the current generation, the most recent sealed prior (the rollback target,
+// unless retainNewestPrior is false — the pre-rotation quiescence prune),
+// and anything in referenced. Never call during activation, rotation,
+// reload, or migration; the caller holds the mutation locks. Reconcile runs
+// first (staging and unsealed attempts are discarded, an invalid CURRENT
+// aborts with nothing deleted).
+func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[string]bool, retainNewestPrior bool) ([]string, error) {
 	report, err := Reconcile(paths, identityID, referenced)
 	if err != nil {
 		return nil, err
 	}
 	var removed []string
 	for i, name := range report.SealedPriors {
-		if i == 0 || referenced[name] {
+		if (retainNewestPrior && i == 0) || referenced[name] {
 			// Retain the newest sealed prior as the rollback target, and
 			// everything still referenced.
 			continue

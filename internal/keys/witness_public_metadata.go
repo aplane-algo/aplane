@@ -115,7 +115,7 @@ func writeWitnessPublicMetadataFromPayload(active storepaths.ActivePaths, select
 	}
 	data = append(data, '\n')
 	path := WitnessPublicMetadataPathActive(active, witnessKeyID)
-	if err := fsutil.WriteFile(path, data); err != nil {
+	if err := fsutil.WriteFileDurable(path, data); err != nil {
 		return fmt.Errorf("failed to write witness public metadata %s: %w", path, err)
 	}
 	return nil

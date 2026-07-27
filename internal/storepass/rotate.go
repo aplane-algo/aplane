@@ -84,6 +84,17 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		return result, fmt.Errorf("failed to create new keystore metadata: %w", err)
 	}
 	defer crypto.ZeroBytes(newMasterKey)
+	// Rotation must not strip the generational layout gate: a downgraded
+	// version would let pre-generation binaries accept the store and read
+	// its retired flat paths.
+	oldMeta, err := crypto.LoadKeystoreMetadata(metaDir)
+	if err != nil {
+		return result, fmt.Errorf("failed to load current keystore metadata: %w", err)
+	}
+	if oldMeta.IsGenerationalLayout() {
+		newMeta.Version = crypto.GenerationalKeystoreMetadataVersion
+		newMeta.Layout = crypto.KeystoreLayoutGenerationsV1
+	}
 
 	logf(opts.Logf, "phase 1: creating new encrypted files")
 	for _, managedFile := range managedFiles {

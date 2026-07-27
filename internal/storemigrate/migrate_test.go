@@ -4,6 +4,7 @@
 package storemigrate
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -200,5 +201,51 @@ func TestMigrateCrashMatrix(t *testing.T) {
 			}
 			assertMigrated(t, paths, map[string]string{"ADDR1.key": "credential-1", "WIT1.sen": "sentry-1"})
 		})
+	}
+}
+
+// TestMigrateV1KeystorePersistsLegacyKDFParams proves a version-1 keystore
+// (no persisted KDF parameters) migrates cleanly: the v3 record carries the
+// frozen legacy constants explicitly, so derivation is unchanged and the
+// bump validates.
+func TestMigrateV1KeystorePersistsLegacyKDFParams(t *testing.T) {
+	paths := legacyStoreFixture(t)
+	keystorePath := filepath.Join(paths.IdentityDir(testIdentity), ".keystore")
+	data, err := os.ReadFile(keystorePath)
+	if err != nil {
+		t.Fatalf("read keystore: %v", err)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("unmarshal keystore: %v", err)
+	}
+	meta["version"] = 1
+	delete(meta, "kdf_time")
+	delete(meta, "kdf_memory")
+	delete(meta, "kdf_threads")
+	rewritten, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal keystore: %v", err)
+	}
+	if err := os.WriteFile(keystorePath, rewritten, 0o600); err != nil {
+		t.Fatalf("rewrite keystore: %v", err)
+	}
+
+	result, err := Migrate(paths, testIdentity, testNow)
+	if err != nil {
+		t.Fatalf("Migrate(v1) error = %v", err)
+	}
+	if result.AlreadyMigrated || result.ResumedAfterCrash {
+		t.Fatalf("result = %+v, want fresh migration", result)
+	}
+	migrated, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(testIdentity))
+	if err != nil {
+		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+	}
+	if !migrated.IsGenerationalLayout() {
+		t.Fatalf("metadata = v%d layout %q", migrated.Version, migrated.Layout)
+	}
+	if migrated.KDFTime == 0 || migrated.KDFMemory == 0 || migrated.KDFThreads == 0 {
+		t.Fatalf("legacy KDF parameters not persisted: %+v", migrated)
 	}
 }

@@ -5,14 +5,18 @@ package daemon
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // plantIncompleteActivation publishes a real (journal + snapshot) activation
@@ -174,5 +178,97 @@ func TestResolvingOneBatchDoesNotUnlockWhileAnotherMarkerRemains(t *testing.T) {
 	}
 	if !ir.IsUnlocked() || ir.IsRecovery() {
 		t.Fatalf("identity state = unlocked %v recovery %v after final resolution", ir.IsUnlocked(), ir.IsRecovery())
+	}
+}
+
+// convertTestSignerToGenerational mints the store's flat namespaces into a
+// first generation and removes the legacy directories.
+func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
+	t.Helper()
+	generationID, err := genstore.NewGenerationID(time.Unix(1_753_800_000, 0))
+	if err != nil {
+		t.Fatalf("NewGenerationID: %v", err)
+	}
+	if _, err := genstore.Mint(server.keyPaths, auth.DefaultIdentityID, genstore.MintRequest{
+		GenerationID: generationID,
+		Operation:    "test-init",
+		OperationID:  "init-" + generationID,
+		CreatedAt:    time.Unix(1_753_800_000, 0),
+		Apply: func(staged storepaths.GenPaths) error {
+			for src, dst := range map[string]string{
+				server.keyPaths.KeysDir(auth.DefaultIdentityID):           staged.KeysDir(),
+				server.keyPaths.KeyTypeRecordsDir(auth.DefaultIdentityID): staged.KeyTypeRecordsDir(),
+			} {
+				entries, err := os.ReadDir(src)
+				if os.IsNotExist(err) {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				for _, entry := range entries {
+					data, err := os.ReadFile(filepath.Join(src, entry.Name()))
+					if err != nil {
+						return err
+					}
+					if err := os.WriteFile(filepath.Join(dst, entry.Name()), data, 0o660); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	for _, legacy := range []string{
+		server.keyPaths.KeysDir(auth.DefaultIdentityID),
+		server.keyPaths.KeyTypeRecordsDir(auth.DefaultIdentityID),
+	} {
+		if err := os.RemoveAll(legacy); err != nil {
+			t.Fatalf("remove legacy namespace: %v", err)
+		}
+	}
+	return generationID
+}
+
+func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	svc := signerAdminServices{signer: server}
+	generationID := convertTestSignerToGenerational(t, server)
+
+	// A malformed credential inside the selected generation: structural
+	// validation passes (regular file), content validation must fail closed.
+	gen := server.keyPaths.GenerationPaths(auth.DefaultIdentityID, generationID)
+	garbage := filepath.Join(gen.KeysDir(), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.key")
+	if err := os.WriteFile(garbage, []byte("not-an-encrypted-credential"), 0o660); err != nil {
+		t.Fatalf("WriteFile(garbage): %v", err)
+	}
+	ir.Lock()
+
+	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeActivationIncomplete {
+		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
+	}
+	if !ir.IsRecovery() || ir.IsUnlocked() {
+		t.Fatalf("identity state = recovery %v unlocked %v, want recovery (signing blocked)", ir.IsRecovery(), ir.IsUnlocked())
+	}
+
+	// Removing the defect and unlocking again succeeds normally.
+	if err := os.Remove(garbage); err != nil {
+		t.Fatalf("remove garbage: %v", err)
+	}
+	ir.Lock()
+	success, _, errMsg, code = svc.UnlockIdentity(ir, testPassphrase)
+	if !success || errMsg != "" || code != "" {
+		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
+	}
+	if !ir.IsUnlocked() {
+		t.Fatal("identity not unlocked after repair")
 	}
 }

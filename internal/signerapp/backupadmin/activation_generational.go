@@ -6,6 +6,7 @@ package backupadmin
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -90,6 +91,21 @@ func (s Service) activateRecoveredGenerational(
 			})
 		},
 	}); err != nil {
+		if errors.Is(err, genstore.ErrCommitDurabilityUnknown) {
+			// The flip is visible: the activation IS committed for every
+			// subsequent resolution, but its durability across a power loss
+			// is unproven. Reload the visible state and block signing until
+			// reconciliation confirms the store.
+			_, reloadErr := ir.Reload()
+			ir.SetRecovery()
+			return activationFailure(
+				protocol.ResultCodeRecoveredRollbackFailed,
+				"activation committed as generation %s but the commit's durability is unconfirmed; signing is blocked pending reconciliation (reload: %v): %v",
+				generationID,
+				reloadErr,
+				err,
+			)
+		}
 		return activationFailure(
 			protocol.ResultCodeRecoveredActivationFailed,
 			"activation failed; nothing was committed and the batch remains inactive: %v",
@@ -177,6 +193,9 @@ func (s Service) rollbackRecoveredGenerational(
 		return fmt.Errorf("generation %s has no parent to roll back to", gen.GenerationID())
 	}
 	if err := genstore.RollbackTo(paths, ir.ID(), manifest.ParentID, time.Now()); err != nil {
+		if errors.Is(err, genstore.ErrCommitDurabilityUnknown) {
+			ir.SetRecovery()
+		}
 		return err
 	}
 	reloadReport, err := ir.Reload()

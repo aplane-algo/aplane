@@ -27,6 +27,13 @@ func dispatchApstoreCommand(args []string) {
 			exitWithError(err)
 		}
 
+	case "generations":
+		if err := runStoreMutatingCommand(command, func() error {
+			return cmdGenerations(args[1:])
+		}); err != nil {
+			exitWithError(err)
+		}
+
 	case "migrate-layout":
 		if err := runStoreMutatingCommand(command, func() error {
 			return cmdMigrateLayout(args[1:])

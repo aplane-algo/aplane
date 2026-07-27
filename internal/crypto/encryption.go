@@ -270,6 +270,36 @@ func CreateKeystoreMetadata(keystoreDir string, passphrase []byte) (*KeystoreMet
 	return writeKeystoreMetadata(keystoreDir, meta, masterKey)
 }
 
+// GenerationalMetadataFrom returns a copy of meta stamped with the
+// generational layout version. A version-1 record persists no KDF
+// parameters (derivation uses frozen legacy constants), so the copy records
+// those constants explicitly — key derivation is unchanged, only the layout
+// gate moves.
+func GenerationalMetadataFrom(meta *KeystoreMetadata) (*KeystoreMetadata, error) {
+	if meta == nil {
+		return nil, fmt.Errorf("keystore metadata is required")
+	}
+	bumped := *meta
+	if bumped.Version == 1 {
+		bumped.KDFTime = argon2TimeLegacy
+		bumped.KDFMemory = argon2MemoryLegacy
+		bumped.KDFThreads = argon2ThreadsLegacy
+	}
+	bumped.Version = GenerationalKeystoreMetadataVersion
+	bumped.Layout = KeystoreLayoutGenerationsV1
+	if err := bumped.validateVersion(); err != nil {
+		return nil, err
+	}
+	return &bumped, nil
+}
+
+// IsGenerationalLayout reports whether metadata records the generation
+// layout marker.
+func (m *KeystoreMetadata) IsGenerationalLayout() bool {
+	return m != nil && m.Version >= GenerationalKeystoreMetadataVersion &&
+		m.Layout == KeystoreLayoutGenerationsV1
+}
+
 // MarshalKeystoreMetadata encodes metadata in the canonical .keystore file
 // format after validating it.
 func MarshalKeystoreMetadata(meta *KeystoreMetadata) ([]byte, error) {

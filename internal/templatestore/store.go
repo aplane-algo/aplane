@@ -177,7 +177,8 @@ func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType 
 
 	// Write the file
 	outputPath := GetTemplateFilePathActive(active, keyType, templateType)
-	if err := fsutil.WriteFile(outputPath, encrypted); err != nil {
+	// Durable, never in-place (docs/ARCH_GENERATIONS.md §4).
+	if err := fsutil.WriteFileDurable(outputPath, encrypted); err != nil {
 		return "", fmt.Errorf("failed to write template file: %w", err)
 	}
 

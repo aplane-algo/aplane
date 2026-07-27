@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/storeadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/templateadmin"
+	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -118,6 +119,17 @@ func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []b
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
+	if !success && signertemplates.IsGenerationValidationError(errMsg) {
+		// Content defects in the selected generation are a recovery
+		// condition, not an unlock failure: the passphrase was right and
+		// the operator resolves the store from recovery mode.
+		recoverySuccess, recoveryErrMsg := ir.TryRecoveryUnlock(passphrase)
+		if !recoverySuccess {
+			return false, 0, recoveryErrMsg, unlockFailureCode(recoveryErrMsg)
+		}
+		logWarnf("identity is recovery-blocked: %s", errMsg)
+		return true, 0, "", protocol.ResultCodeActivationIncomplete
+	}
 	return success, keyCount, errMsg, unlockFailureCode(errMsg)
 }
 

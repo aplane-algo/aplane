@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -55,10 +56,21 @@ func ReadCurrent(paths storepaths.Paths, identityID string) (string, error) {
 	return generationID, nil
 }
 
+// ErrCommitDurabilityUnknown reports that CURRENT names the new generation
+// but the directory sync that makes the flip durable could not be confirmed:
+// the commit is visible now and may or may not survive a power loss. Callers
+// must treat the store state as uncertain — reload against the visible state
+// and enter recovery mode rather than assuming nothing was committed.
+var ErrCommitDurabilityUnknown = fmt.Errorf("CURRENT flip visible but its durability is unconfirmed")
+
 // WriteCurrent durably points CURRENT at generationID: temp file, fsync,
 // rename over CURRENT, fsync the identity directory. The caller must already
 // have published and fsynced the generation directory (and sealed the
 // outgoing generation) per the commit protocol.
+//
+// A failure after the rename is not "nothing committed": CURRENT already
+// names the new generation. WriteCurrent detects that window, retries the
+// directory sync once, and otherwise returns ErrCommitDurabilityUnknown.
 func WriteCurrent(paths storepaths.Paths, identityID, generationID string) error {
 	if err := storepaths.ValidateGenerationID(generationID); err != nil {
 		return err
@@ -66,7 +78,20 @@ func WriteCurrent(paths storepaths.Paths, identityID, generationID string) error
 	if err := requireRegularDirectory(paths.GenerationDir(identityID, generationID)); err != nil {
 		return fmt.Errorf("refusing to point CURRENT at %s: %w", generationID, err)
 	}
-	return fsutil.WriteFileDurable(paths.CurrentPointerPath(identityID), []byte(generationID+"\n"))
+	writeErr := fsutil.WriteFileDurable(paths.CurrentPointerPath(identityID), []byte(generationID+"\n"))
+	if writeErr == nil {
+		return nil
+	}
+	current, readErr := ReadCurrent(paths, identityID)
+	if readErr != nil || current != generationID {
+		// The rename never landed (or the pointer is unreadable); the old
+		// state is authoritative and nothing was committed.
+		return writeErr
+	}
+	if syncErr := fsutil.SyncDir(paths.IdentityDir(identityID)); syncErr == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: generation %s: %v", ErrCommitDurabilityUnknown, generationID, writeErr)
 }
 
 // Resolve reads CURRENT once and returns the bound generation paths.
@@ -97,17 +122,24 @@ func ResolveActive(paths storepaths.Paths, identityID string) (storepaths.Active
 }
 
 // IsGenerational reports whether the identity store uses the generation
-// layout (a CURRENT pointer exists). It deliberately does not validate the
-// pointer: layout detection and pointer validation are separate failures.
+// layout: a CURRENT pointer exists, or the keystore metadata carries the
+// durable layout marker. Consulting the marker closes the missing-pointer
+// hole — a generational store whose CURRENT was lost must fail closed in
+// Resolve, never silently fall back to the flat legacy paths. Layout
+// detection and pointer validation remain separate failures.
 func IsGenerational(paths storepaths.Paths, identityID string) (bool, error) {
 	_, err := os.Lstat(paths.CurrentPointerPath(identityID))
-	if os.IsNotExist(err) {
-		return false, nil
+	if err == nil {
+		return true, nil
 	}
-	if err != nil {
+	if !os.IsNotExist(err) {
 		return false, err
 	}
-	return true, nil
+	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	if err != nil {
+		return false, fmt.Errorf("inspect store layout: %w", err)
+	}
+	return meta.IsGenerationalLayout(), nil
 }
 
 func requireRegularDirectory(path string) error {

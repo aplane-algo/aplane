@@ -111,6 +111,12 @@ func Migrate(paths storepaths.Paths, identityID string, now time.Time) (Result, 
 	}
 
 	// Legacy store: verify fully, refuse unresolved state, then convert.
+	// The metadata bump is dry-run validated first: nothing may flip
+	// CURRENT unless the layout record that follows it is guaranteed to
+	// write (a v1 record persists its legacy KDF constants at this point).
+	if _, err := crypto.GenerationalMetadataFrom(meta); err != nil {
+		return result, fmt.Errorf("migrate: keystore metadata cannot carry the layout version: %w", err)
+	}
 	if err := verifyLegacyLayout(paths, identityID); err != nil {
 		return result, err
 	}
@@ -231,10 +237,11 @@ func bumpKeystoreLayoutVersion(paths storepaths.Paths, identityID string, meta *
 			return fmt.Errorf("migrate: write downgrade backup: %w", err)
 		}
 	}
-	bumped := *meta
-	bumped.Version = crypto.GenerationalKeystoreMetadataVersion
-	bumped.Layout = crypto.KeystoreLayoutGenerationsV1
-	data, err := crypto.MarshalKeystoreMetadata(&bumped)
+	bumped, err := crypto.GenerationalMetadataFrom(meta)
+	if err != nil {
+		return err
+	}
+	data, err := crypto.MarshalKeystoreMetadata(bumped)
 	if err != nil {
 		return err
 	}

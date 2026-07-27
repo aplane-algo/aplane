@@ -144,7 +144,7 @@ func TestCollectGarbageRetainsCurrentPlusNewestSealedPrior(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A, B sealed priors; C current
 
-	removed, err := CollectGarbage(paths, testIdentity, nil)
+	removed, err := CollectGarbage(paths, testIdentity, nil, true)
 	if err != nil {
 		t.Fatalf("CollectGarbage() error = %v", err)
 	}
@@ -165,11 +165,28 @@ func TestCollectGarbageRetainsCurrentPlusNewestSealedPrior(t *testing.T) {
 func TestCollectGarbageHonorsReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths)
-	removed, err := CollectGarbage(paths, testIdentity, map[string]bool{testGenA: true})
+	removed, err := CollectGarbage(paths, testIdentity, map[string]bool{testGenA: true}, true)
 	if err != nil {
 		t.Fatalf("CollectGarbage() error = %v", err)
 	}
 	if len(removed) != 0 {
 		t.Fatalf("removed referenced generation: %v", removed)
+	}
+}
+
+func TestCollectGarbageAllPriorsReachesRotationQuiescence(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths) // A, B sealed priors; C current
+
+	removed, err := CollectGarbage(paths, testIdentity, nil, false)
+	if err != nil {
+		t.Fatalf("CollectGarbage(all priors) error = %v", err)
+	}
+	if !slices.Equal(removed, []string{testGenB, testGenA}) {
+		t.Fatalf("removed = %v, want both priors newest-first", removed)
+	}
+	entries, err := os.ReadDir(paths.GenerationsDir(testIdentity))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("generations after full prune = %d (%v), want only current", len(entries), err)
 	}
 }

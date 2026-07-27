@@ -139,7 +139,8 @@ func PutActive(active storepaths.ActivePaths, rec Record) error {
 		return fmt.Errorf("failed to encode key type state: %w", err)
 	}
 	data = append(data, '\n')
-	if err := fsutil.WriteFile(path, data); err != nil {
+	// Durable, never in-place (docs/ARCH_GENERATIONS.md §4).
+	if err := fsutil.WriteFileDurable(path, data); err != nil {
 		return fmt.Errorf("failed to write key type state: %w", err)
 	}
 	return nil
@@ -195,10 +196,7 @@ func DeleteActive(active storepaths.ActivePaths, keyType string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(active.KeyTypeRecord(keyType)); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+	if err := fsutil.RemoveDurable(active.KeyTypeRecord(keyType)); err != nil {
 		return fmt.Errorf("failed to remove key type state %s: %w", keyType, err)
 	}
 	return nil

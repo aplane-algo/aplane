@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -652,5 +653,98 @@ func assertNoRotationArtifacts(t *testing.T, paths ...string) {
 				t.Fatalf("rotation artifact %s stat error = %v, want not exist", artifactPath, err)
 			}
 		}
+	}
+}
+
+// TestRotatePreservesGenerationalLayoutGate proves rotation cannot strip the
+// keystore version/layout marker: a downgraded record would let
+// pre-generation binaries accept the store and read its retired flat paths.
+func TestRotatePreservesGenerationalLayoutGate(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	oldPassphrase := []byte("rotate-generational-old")
+	newPassphrase := []byte("rotate-generational-new")
+
+	_, oldMasterKey, err := crypto.CreateKeystoreMetadataGenerational(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadataGenerational() error = %v", err)
+	}
+	defer crypto.ZeroBytes(oldMasterKey)
+	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+
+	generationID, err := genstore.NewGenerationID(time.Unix(1_753_900_000, 0))
+	if err != nil {
+		t.Fatalf("NewGenerationID: %v", err)
+	}
+	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
+		GenerationID: generationID,
+		Operation:    "test-init",
+		OperationID:  "init-" + generationID,
+		CreatedAt:    time.Unix(1_753_900_000, 0),
+	}); err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+
+	if _, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+
+	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	if err != nil {
+		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+	}
+	if !meta.IsGenerationalLayout() {
+		t.Fatalf("rotation stripped the generational layout gate: version %d layout %q", meta.Version, meta.Layout)
+	}
+	// The new passphrase verifies against the preserved-version metadata.
+	newMasterKey, err := meta.VerifyAndDeriveMasterKey(newPassphrase)
+	if err != nil {
+		t.Fatalf("VerifyAndDeriveMasterKey(new) error = %v", err)
+	}
+	crypto.ZeroBytes(newMasterKey)
+}
+
+// TestRotateRefusedUntilPriorGenerationsPruned proves the documented
+// quiescence workflow is completable with supported tooling.
+func TestRotateRefusedUntilPriorGenerationsPruned(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	passphrase := []byte("rotate-quiescence")
+
+	_, masterKey, err := crypto.CreateKeystoreMetadataGenerational(paths.KeystoreMetadataDir(identityID), passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadataGenerational() error = %v", err)
+	}
+	defer crypto.ZeroBytes(masterKey)
+	writePolicyBaselineForRotateTest(t, paths, identityID, masterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, masterKey, noderole.RoleSigner)
+
+	first := "gen-1753900000-0badc0de"
+	second := "gen-1753900001-1badc0de"
+	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
+		GenerationID: first, Operation: "test-init", OperationID: "op-1",
+		CreatedAt: time.Unix(1_753_900_000, 0),
+	}); err != nil {
+		t.Fatalf("Mint(first): %v", err)
+	}
+	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
+		GenerationID: second, Parent: first, Operation: "test-activation", OperationID: "op-2",
+		CreatedAt: time.Unix(1_753_900_001, 0),
+	}); err != nil {
+		t.Fatalf("Mint(second): %v", err)
+	}
+
+	// A sealed prior blocks rotation...
+	if _, err := Rotate(paths, identityID, passphrase, []byte("new-pass"), RotateOptions{}); err == nil ||
+		!strings.Contains(err.Error(), "quiescence") {
+		t.Fatalf("Rotate() error = %v, want quiescence refusal", err)
+	}
+	// ...and the supported prune restores rotatability.
+	if _, err := genstore.CollectGarbage(paths, identityID, nil, false); err != nil {
+		t.Fatalf("CollectGarbage() error = %v", err)
+	}
+	if _, err := Rotate(paths, identityID, passphrase, []byte("new-pass"), RotateOptions{}); err != nil {
+		t.Fatalf("Rotate(after prune) error = %v", err)
 	}
 }
