@@ -78,7 +78,7 @@ The examples show `"default"` as the identity. See [ARCH_OVERVIEW.md](ARCH_OVERV
 | `BACKUP_RESTORE_PREVIEW_FAILED` | A managed backup restore preview failed through the authenticated admin surface |
 | `BACKUP_RECOVERED` | An inactive destination-encrypted recovery batch was published |
 | `BACKUP_RECOVERY_FAILED` | Recovery failed before an inactive batch was published |
-| `BACKUP_ACTIVATION_INTENT` | Reviewed activation was requested; written before active-store mutation |
+| `BACKUP_ACTIVATION_INTENT` | Reviewed activation was requested; written and fsynced before any active-store mutation — activation aborts if this record cannot be made durable |
 | `BACKUP_ACTIVATED` | A recovered batch was activated and reloaded successfully |
 | `BACKUP_ACTIVATION_FAILED` | Activation failed; `reason` describes the failure or incomplete rollback |
 | `BACKUP_ACTIVATION_RESUMED` | A previously interrupted activation completed through rollback-first resume |

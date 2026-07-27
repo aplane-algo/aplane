@@ -415,9 +415,17 @@ direct-to-active restore operation. To manage batches separately:
 ```
 
 If a crash interrupts activation, the identity enters recovery mode and
-signing stays blocked. Re-run `restore activate` to perform the exact recorded
-rollback-first resume, or use `restore rollback` to restore the pre-activation
-state. An incomplete activation cannot be purged.
+signing stays blocked. The next unlock reconciles automatically: a single
+interrupted activation is rolled back to the exact pre-activation state (the
+recovered batch stays available for a fresh review), and an activation that
+had already completed has its cleanup finished. The identity unlocks normally
+only when no incomplete activation remains; if several are found, their order
+cannot be reconstructed safely, so the identity stays in recovery mode and
+each one must be resolved explicitly. You can also resolve manually at any
+time: re-run `restore activate` to perform the exact recorded rollback-first
+resume, or use `restore rollback` to restore the pre-activation state. An
+incomplete activation cannot be purged, and no new activation is accepted
+while any incomplete activation exists.
 
 **Note:** `apstore restore` operates on archives in the managed backup locker;
 it does not restore directly from extracted directories. Backups do not include
