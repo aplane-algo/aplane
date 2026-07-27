@@ -123,6 +123,9 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		NodeRole:      noderole.RoleSigner,
 	})
 	_ = server.registry.Register(ir)
+	// All stores are generational in this release: mint the first
+	// generation the way initialize does before any test writes keys.
+	convertTestSignerToGenerational(t, server)
 	signerstartup.WireReloadFunc(ir, testIdentityBuildOptions(server), server.identityBuildHooks())
 	signerstartup.WireApprovalCoordinator(ir, server.identityBuildHooks())
 	ir.SetPolicy(initialPolicy)

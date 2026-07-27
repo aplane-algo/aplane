@@ -15,7 +15,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
-	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -233,25 +232,7 @@ func Run(dataDir string) int {
 			logWarnf("identity is recovery-blocked: %v", generationErr)
 			startPassphrase = nil
 		}
-		incomplete, inspectErr := recovered.IncompleteActivationIDs(startupOpts.Paths, ir.ID())
-		if inspectErr != nil {
-			crypto.ZeroBytes(startPassphrase)
-			logErrorf("error inspecting activation recovery state: %v", inspectErr)
-			return 1
-		}
-		if generationErr != nil {
-			// Already recovery-unlocked above; skip the normal branches.
-		} else if len(incomplete) > 0 {
-			success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
-			crypto.ZeroBytes(startPassphrase)
-			if !success {
-				logErrorf("error unlocking activation recovery state: %s", errMsg)
-				return 1
-			}
-			if _, reconciled := (signerAdminServices{signer: server}).reconcileIncompleteActivationsAtUnlock(ir, incomplete); !reconciled {
-				logWarnf("identity is recovery-blocked by incomplete activation: %s", strings.Join(incomplete, ", "))
-			}
-		} else {
+		if generationErr == nil {
 			// Headless mode: load keys using passphrase, then zero it immediately.
 			logInfof("scanning keys directory for private keys")
 			_, err := ir.ReloadWithPassphrase(startPassphrase)

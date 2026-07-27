@@ -23,6 +23,10 @@ import (
 // first generation so activation exercises the pointer-commit path.
 func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 	t.Helper()
+	// Idempotent: the shared fixture already mints the first generation.
+	if current, err := genstore.ReadCurrent(paths, auth.DefaultIdentityID); err == nil {
+		return current
+	}
 	generationID, err := genstore.NewGenerationID(time.Unix(1_753_700_000, 0))
 	if err != nil {
 		t.Fatalf("NewGenerationID: %v", err)

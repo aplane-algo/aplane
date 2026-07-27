@@ -4,9 +4,7 @@
 package backupadmin
 
 import (
-	"fmt"
 	"maps"
-	"os"
 	"sort"
 	"time"
 
@@ -278,12 +276,6 @@ func (s Service) PurgeRecovered(
 		return ir.WithMasterKey(func(masterKey []byte) error {
 			if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
 				return err
-			}
-			activationDir := s.Deps.KeyPaths().RecoveredActivationDir(ir.ID(), req.RestoreID)
-			if _, err := os.Lstat(activationDir); err == nil {
-				return fmt.Errorf("cannot purge recovered batch with incomplete activation")
-			} else if !os.IsNotExist(err) {
-				return fmt.Errorf("inspect recovered activation before purge: %w", err)
 			}
 			batch, err := recovered.LoadBatch(
 				s.Deps.KeyPaths(),

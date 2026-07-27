@@ -24,12 +24,13 @@ func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T)
 	); err != nil {
 		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
 	}
-	restoreID := "0123456789abcdef0123456789abcdef"
-	if err := os.MkdirAll(
-		paths.RecoveredActivationDir(auth.DefaultIdentityID, restoreID),
-		0o770,
-	); err != nil {
-		t.Fatalf("MkdirAll(activation) error = %v", err)
+	// A present-but-invalid CURRENT pointer fails generational
+	// reconciliation at unlock: the recovery condition under test.
+	if err := os.MkdirAll(paths.IdentityDir(auth.DefaultIdentityID), 0o770); err != nil {
+		t.Fatalf("MkdirAll(identity) error = %v", err)
+	}
+	if err := os.WriteFile(paths.CurrentPointerPath(auth.DefaultIdentityID), []byte("garbage"+"\n"), 0o660); err != nil {
+		t.Fatalf("WriteFile(CURRENT) error = %v", err)
 	}
 	ir := identity.New(identity.Config{
 		ID:            auth.DefaultIdentityID,

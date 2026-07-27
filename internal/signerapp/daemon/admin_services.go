@@ -15,7 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
-	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -101,21 +100,6 @@ func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []b
 			return true, 0, "", protocol.ResultCodeActivationIncomplete
 		}
 	}
-	incomplete, err := recovered.IncompleteActivationIDs(ir.KeyPaths(), ir.ID())
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to inspect activation recovery state: %v", err)
-		return false, 0, errMsg, protocol.ErrCodeUnlockFailed
-	}
-	if len(incomplete) > 0 {
-		success, errMsg := ir.TryRecoveryUnlock(passphrase)
-		if !success {
-			return false, 0, errMsg, unlockFailureCode(errMsg)
-		}
-		if keyCount, ok := s.reconcileIncompleteActivationsAtUnlock(ir, incomplete); ok {
-			return true, keyCount, "", ""
-		}
-		return true, 0, "", protocol.ResultCodeActivationIncomplete
-	}
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
@@ -158,79 +142,6 @@ func (s signerAdminServices) reconcileGenerations(ir *identity.Runtime) error {
 		return reconcile()
 	}
 	return s.signer.withIdentityMutation(ir.ID(), reconcile)
-}
-
-// reconcileIncompleteActivationsAtUnlock runs automatic reconciliation after
-// a recovery unlock has made the master key available: a single completed
-// activation has its cleanup finished, a single interrupted activation is
-// rolled back to the exact pre-activation state. Multiple markers cannot be
-// ordered safely, so they fail closed into recovery for explicit operator
-// resolution. Reports the reloaded key count and whether the identity left
-// recovery mode; any failure keeps the identity in recovery. [P1, P1b]
-func (s signerAdminServices) reconcileIncompleteActivationsAtUnlock(ir *identity.Runtime, incomplete []string) (int, bool) {
-	if len(incomplete) != 1 {
-		logInfof("staying in recovery mode: %d incomplete activations for %s need explicit resolution: %v",
-			len(incomplete), ir.ID(), incomplete)
-		return 0, false
-	}
-	restoreID := incomplete[0]
-
-	// Validate and decrypt the journal and snapshot before anything touches
-	// the active store; reconciliation direction comes from the journal.
-	var state recovered.ActivationState
-	if err := ir.WithMasterKey(func(masterKey []byte) error {
-		journal, snapshot, err := recovered.LoadActivation(ir.KeyPaths(), ir.ID(), restoreID, masterKey)
-		if err != nil {
-			return err
-		}
-		snapshot.Zero()
-		state = journal.State
-		return nil
-	}); err != nil {
-		logInfof("staying in recovery mode: cannot load activation state %s for %s: %v", restoreID, ir.ID(), err)
-		return 0, false
-	}
-
-	if state == recovered.ActivationCompleted {
-		// The activation succeeded before the interruption; finish its
-		// cleanup instead of rolling it back.
-		result := s.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{RestoreID: restoreID})
-		if !result.Success {
-			logInfof("staying in recovery mode: cleanup of completed activation %s failed: %s", restoreID, result.Error)
-			return 0, false
-		}
-		logInfof("finished cleanup of completed activation %s during unlock", restoreID)
-		s.auditAutoReconcile(ir, adminproto.RollbackRecoveredResult{}, result)
-		return result.KeyCount, ir.IsUnlocked()
-	}
-
-	result := s.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{RestoreID: restoreID})
-	if !result.Success {
-		logInfof("staying in recovery mode: automatic rollback of activation %s failed: %s", restoreID, result.Error)
-		return 0, false
-	}
-	logInfof("rolled back interrupted activation %s during unlock; the recovered batch remains available for review", restoreID)
-	s.auditAutoReconcile(ir, result, adminproto.ActivateRecoveredResult{})
-	return result.KeyCount, ir.IsUnlocked()
-}
-
-// auditAutoReconcile records the automatic unlock-time reconciliation with
-// the same events the explicit admin operations emit.
-func (s signerAdminServices) auditAutoReconcile(
-	ir *identity.Runtime,
-	rolledBack adminproto.RollbackRecoveredResult,
-	activated adminproto.ActivateRecoveredResult,
-) {
-	if s.signer == nil || s.signer.auditLog == nil {
-		return
-	}
-	ctx := adminserver.SessionContext{TargetIdentityID: ir.ID(), Transport: "unlock"}
-	switch {
-	case rolledBack.Success:
-		s.signer.auditLog.LogBackupActivationRolledBackContext(ctx, rolledBack)
-	case activated.Success:
-		s.signer.auditLog.LogBackupActivatedContext(ctx, activated)
-	}
 }
 
 func unlockFailureCode(errMsg string) string {
@@ -380,13 +291,11 @@ func (s signerAdminServices) rearmWatcherAfterGenerationFlip(ir *identity.Runtim
 // still unreconciled: the rescan, not the operation that just succeeded, is
 // authoritative. Reports whether the identity was unlocked. [P1]
 func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) bool {
-	incomplete, err := recovered.IncompleteActivationIDs(ir.KeyPaths(), ir.ID())
-	if err != nil {
-		logInfof("staying in recovery mode: failed to rescan activation state for %s: %v", ir.ID(), err)
-		return false
-	}
-	if len(incomplete) > 0 {
-		logInfof("staying in recovery mode: %d incomplete activation(s) remain for %s", len(incomplete), ir.ID())
+	// The rescan re-runs generational reconciliation and fail-closed
+	// validation of the selected generation; recovery only lifts when the
+	// committed state proves clean.
+	if err := s.reconcileGenerations(ir); err != nil {
+		logInfof("staying in recovery mode: %s failed reconciliation rescan: %v", ir.ID(), err)
 		return false
 	}
 	if !ir.PromoteRecoveryToUnlocked() {
