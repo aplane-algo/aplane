@@ -91,6 +91,20 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 	if err != nil {
 		return result, fmt.Errorf("failed to load current keystore metadata: %w", err)
 	}
+	// "Generational" has one authoritative definition: genstore.IsGenerational
+	// (CURRENT pointer or metadata marker). Keying the gate preservation on
+	// the metadata alone would drop the gate in the migration's flip-to-bump
+	// crash window, where the store is generational by pointer but the
+	// metadata is still pre-generational: rotating there would write fresh
+	// v2 metadata on a committed generational store and let old binaries
+	// accept it. Refuse instead; re-running migrate-layout closes the window.
+	generational, err := genstore.IsGenerational(paths, identityID)
+	if err != nil {
+		return result, err
+	}
+	if generational && !oldMeta.IsGenerationalLayout() {
+		return result, fmt.Errorf("store uses generation-based storage but its keystore metadata does not carry the layout version: the layout migration is incomplete; run 'apstore migrate-layout' to finish it before rotating")
+	}
 	if oldMeta.IsGenerationalLayout() {
 		newMeta.Version = crypto.GenerationalKeystoreMetadataVersion
 		newMeta.Layout = crypto.KeystoreLayoutGenerationsV1

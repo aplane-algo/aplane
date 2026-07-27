@@ -41,11 +41,13 @@ func cmdGenerations(args []string) error {
 		if len(args) != 1 {
 			return fmt.Errorf("usage: apstore generations list")
 		}
-		report, err := genstore.Reconcile(paths, identityID, nil)
+		// Read-only: list classifies without deleting. Discard of staging
+		// residue and uncommitted attempts happens at unlock or prune.
+		report, err := genstore.Inspect(paths, identityID, nil)
 		if err != nil {
 			return err
 		}
-		reportDiscards(report)
+		reportPendingDiscards(report)
 		if report.RetainedUnsealedParent != "" {
 			logWarnf("rollback parent %s is missing its seal; pruning is blocked until it is restored or removed", report.RetainedUnsealedParent)
 		}
@@ -150,11 +152,11 @@ func verifyCurrentGenerationContent(paths storepaths.Paths, identityID string) e
 	return nil
 }
 
-func reportDiscards(report genstore.ReconcileReport) {
-	for _, discarded := range report.DiscardedAttempts {
-		logInfof("discarded uncommitted generation %s", discarded)
+func reportPendingDiscards(report genstore.ReconcileReport) {
+	for _, attempt := range report.DiscardedAttempts {
+		logInfof("uncommitted generation %s (discarded at next unlock or prune)", attempt)
 	}
 	for _, staging := range report.DiscardedStaging {
-		logInfof("discarded staging residue %s", staging)
+		logInfof("staging residue %s (discarded at next unlock or prune)", staging)
 	}
 }

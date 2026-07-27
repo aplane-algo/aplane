@@ -249,3 +249,55 @@ func TestMigrateV1KeystorePersistsLegacyKDFParams(t *testing.T) {
 		t.Fatalf("legacy KDF parameters not persisted: %+v", migrated)
 	}
 }
+
+func TestCompleteIfInterrupted(t *testing.T) {
+	t.Run("closes the flip-to-bump window", func(t *testing.T) {
+		paths := legacyStoreFixture(t)
+		// Reproduce the crash window: mint and flip the first generation
+		// (as Migrate does), then "crash" before the metadata bump and
+		// legacy retirement.
+		generationID, err := genstore.NewGenerationID(time.Unix(1_754_100_000, 0))
+		if err != nil {
+			t.Fatalf("NewGenerationID: %v", err)
+		}
+		if _, err := genstore.Mint(paths, testIdentity, genstore.MintRequest{
+			GenerationID:    generationID,
+			FirstGeneration: true,
+			Operation:       "layout-migration",
+			OperationID:     "migrate-" + generationID,
+			CreatedAt:       time.Unix(1_754_100_000, 0),
+			Apply: func(staged storepaths.GenPaths) error {
+				return copyLegacyNamespaces(paths, testIdentity, staged)
+			},
+		}); err != nil {
+			t.Fatalf("Mint: %v", err)
+		}
+
+		completed, err := CompleteIfInterrupted(paths, testIdentity, time.Unix(1_754_100_100, 0))
+		if err != nil || !completed {
+			t.Fatalf("CompleteIfInterrupted() = (%v, %v), want completion", completed, err)
+		}
+		meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(testIdentity))
+		if err != nil || meta == nil || !meta.IsGenerationalLayout() {
+			t.Fatalf("metadata after completion = %+v (%v), want generational layout gate", meta, err)
+		}
+		if _, err := os.Lstat(paths.KeysDir(testIdentity)); !os.IsNotExist(err) {
+			t.Fatalf("legacy keys namespace not retired: %v", err)
+		}
+		// Idempotent: a second call is a no-op.
+		if completed, err := CompleteIfInterrupted(paths, testIdentity, time.Unix(1_754_100_200, 0)); err != nil || completed {
+			t.Fatalf("CompleteIfInterrupted(again) = (%v, %v), want no-op", completed, err)
+		}
+	})
+
+	t.Run("never migrates an unconverted legacy store", func(t *testing.T) {
+		paths := legacyStoreFixture(t)
+		completed, err := CompleteIfInterrupted(paths, testIdentity, time.Unix(1_754_100_300, 0))
+		if err != nil || completed {
+			t.Fatalf("CompleteIfInterrupted(legacy) = (%v, %v), want untouched no-op", completed, err)
+		}
+		if _, err := os.Lstat(paths.KeysDir(testIdentity)); err != nil {
+			t.Fatalf("legacy keys namespace touched: %v", err)
+		}
+	})
+}

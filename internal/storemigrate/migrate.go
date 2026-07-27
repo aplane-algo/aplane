@@ -90,22 +90,12 @@ func Migrate(paths storepaths.Paths, identityID string, now time.Time) (Result, 
 
 	case generational:
 		// Crash window: CURRENT flipped, version bump lost. Finish it.
-		gen, err := genstore.Resolve(paths, identityID)
+		generationID, retired, err := finishInterruptedMigration(paths, identityID, meta, now)
 		if err != nil {
-			return result, fmt.Errorf("migrate: interrupted migration: %w", err)
+			return result, err
 		}
-		if err := genstore.ValidateCurrent(gen); err != nil {
-			return result, fmt.Errorf("migrate: interrupted migration: %w", err)
-		}
-		result.GenerationID = gen.GenerationID()
+		result.GenerationID = generationID
 		result.ResumedAfterCrash = true
-		if err := bumpKeystoreLayoutVersion(paths, identityID, meta); err != nil {
-			return result, err
-		}
-		retired, err := retireLegacyNamespaces(paths, identityID, now)
-		if err != nil {
-			return result, err
-		}
 		result.RetiredDir = retired
 		return result, nil
 	}
@@ -255,6 +245,59 @@ func bumpKeystoreLayoutVersion(paths storepaths.Paths, identityID string, meta *
 // retireLegacyNamespaces moves any remaining flat keys/ and keytypes/ into
 // .legacy-<unix>/ inside the identity directory (same filesystem). They are
 // kept for a documented rollback window and never deleted here.
+// finishInterruptedMigration closes the flip-to-bump crash window: CURRENT
+// already names a valid generation, but the keystore metadata still lacks
+// the layout version gate and the legacy namespaces are unretired. It bumps
+// the metadata and retires the legacy directories.
+func finishInterruptedMigration(paths storepaths.Paths, identityID string, meta *crypto.KeystoreMetadata, now time.Time) (string, string, error) {
+	gen, err := genstore.Resolve(paths, identityID)
+	if err != nil {
+		return "", "", fmt.Errorf("migrate: interrupted migration: %w", err)
+	}
+	if err := genstore.ValidateCurrent(gen); err != nil {
+		return "", "", fmt.Errorf("migrate: interrupted migration: %w", err)
+	}
+	if err := bumpKeystoreLayoutVersion(paths, identityID, meta); err != nil {
+		return "", "", err
+	}
+	retired, err := retireLegacyNamespaces(paths, identityID, now)
+	if err != nil {
+		return "", "", err
+	}
+	return gen.GenerationID(), retired, nil
+}
+
+// CompleteIfInterrupted finishes a layout migration that crashed between the
+// CURRENT flip and the metadata version bump, and reports whether it did.
+// In that window the store is generational by its pointer while the
+// metadata still admits pre-generation binaries and the legacy namespaces
+// remain in place — a dual-layout state nothing else ever closes. The
+// daemon calls this at unlock and headless startup (under the identity
+// mutation lock) so the window self-closes instead of persisting until an
+// operator happens to re-run migrate-layout. A store that is not in the
+// window returns (false, nil) untouched; an unmigrated legacy store is
+// never migrated from here.
+func CompleteIfInterrupted(paths storepaths.Paths, identityID string, now time.Time) (bool, error) {
+	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	if err != nil {
+		return false, err
+	}
+	if meta == nil || meta.Version >= crypto.GenerationalKeystoreMetadataVersion {
+		return false, nil
+	}
+	generational, err := genstore.IsGenerational(paths, identityID)
+	if err != nil {
+		return false, err
+	}
+	if !generational {
+		return false, nil
+	}
+	if _, _, err := finishInterruptedMigration(paths, identityID, meta, now); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func retireLegacyNamespaces(paths storepaths.Paths, identityID string, now time.Time) (string, error) {
 	identityDir := paths.IdentityDir(identityID)
 	var retireDir string

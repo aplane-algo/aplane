@@ -469,14 +469,18 @@ store with an unsupported-keystore-version error instead of misreading it.
 Manage generations offline (daemon stopped):
 
 ```
-./apstore generations list                # current + sealed priors
+./apstore generations list                # current + sealed priors (read-only)
 ./apstore generations prune               # keep current + its parent
 ./apstore generations prune --all-priors  # keep only current
 ```
 
 Passphrase rotation on a generational store requires generation quiescence —
 run `apstore generations prune --all-priors` first; after a successful
-rotation the retention window restarts empty.
+rotation the retention window restarts empty. Rotation also refuses to run
+while a layout migration is incomplete (the store is generational but its
+keystore metadata lacks the layout version); the signer completes such an
+interrupted migration automatically at the next unlock, or run
+`apstore migrate-layout` again.
 
 `prune --all-priors` abandons every rollback fallback, so it prompts for the
 store passphrase and decrypt-validates the current generation's content (the

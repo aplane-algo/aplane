@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
@@ -26,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/storeadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/templateadmin"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/storemigrate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -138,6 +140,16 @@ func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []b
 // validates the selected generation fail-closed.
 func (s signerAdminServices) reconcileGenerations(ir *identity.Runtime) error {
 	reconcile := func() error {
+		// Close the migration flip-to-bump crash window first: in it the
+		// store is generational by pointer while the metadata still admits
+		// pre-generation binaries and the legacy namespaces linger — a
+		// dual-layout state only this completion (or a manual
+		// migrate-layout re-run) ever closes.
+		if completed, err := storemigrate.CompleteIfInterrupted(ir.KeyPaths(), ir.ID(), time.Now()); err != nil {
+			return err
+		} else if completed {
+			logInfof("completed interrupted layout migration: metadata version gate written, legacy namespaces retired")
+		}
 		report, err := genstore.Reconcile(ir.KeyPaths(), ir.ID(), nil)
 		if err != nil {
 			return err

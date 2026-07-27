@@ -641,3 +641,41 @@ func TestMintRefusesFirstMintWhenCurrentMissingOnEstablishedStore(t *testing.T) 
 		}
 	})
 }
+
+func TestInspectClassifiesWithoutDeleting(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	attempt := paths.GenerationPaths(testIdentity, testGenD)
+	for _, namespace := range []string{"keys", "keytypes"} {
+		if err := os.MkdirAll(filepath.Join(attempt.Dir(), namespace), 0o770); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+	}
+	staging := filepath.Join(paths.GenerationsDir(testIdentity), storepaths.GenerationStagingPrefix+"leftover")
+	if err := os.MkdirAll(staging, 0o770); err != nil {
+		t.Fatalf("MkdirAll(staging): %v", err)
+	}
+
+	report, err := Inspect(paths, testIdentity, nil)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+	if !slices.Equal(report.DiscardedAttempts, []string{testGenD}) || len(report.DiscardedStaging) != 1 {
+		t.Fatalf("classification = %v/%v, want the attempt and staging residue reported", report.DiscardedAttempts, report.DiscardedStaging)
+	}
+	// Nothing was deleted.
+	for _, path := range []string{attempt.Dir(), staging} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("Inspect deleted %s: %v", path, err)
+		}
+	}
+	// Reconcile still deletes the same set.
+	if _, err := Reconcile(paths, testIdentity, nil); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	for _, path := range []string{attempt.Dir(), staging} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("Reconcile left %s behind: %v", path, err)
+		}
+	}
+}

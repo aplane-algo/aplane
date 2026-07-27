@@ -32,6 +32,15 @@ type ReconcileReport struct {
 	RetainedUnsealedParent string
 }
 
+// Inspect classifies the generations directory without deleting anything:
+// the same validation and classification Reconcile applies, with
+// DiscardedStaging and DiscardedAttempts reporting what reconciliation
+// WOULD remove. Read-only callers (apstore generations list) use this;
+// everything else goes through Reconcile.
+func Inspect(paths storepaths.Paths, identityID string, referenced map[string]bool) (ReconcileReport, error) {
+	return reconcile(paths, identityID, referenced, false)
+}
+
 // Reconcile enforces CURRENT as the sole commit record. Run at
 // startup/unlock under the store and identity mutation locks, before any
 // new operation:
@@ -48,6 +57,10 @@ type ReconcileReport struct {
 // state. Eligibility is reachability-based, not parentage-based: a stale
 // attempt whose parent has since been superseded is still collected.
 func Reconcile(paths storepaths.Paths, identityID string, referenced map[string]bool) (ReconcileReport, error) {
+	return reconcile(paths, identityID, referenced, true)
+}
+
+func reconcile(paths storepaths.Paths, identityID string, referenced map[string]bool, remove bool) (ReconcileReport, error) {
 	report := ReconcileReport{}
 	current, err := ReadCurrent(paths, identityID)
 	if err != nil {
@@ -81,11 +94,13 @@ func Reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 		name := entry.Name()
 		switch {
 		case strings.HasPrefix(name, storepaths.GenerationStagingPrefix):
-			if err := os.RemoveAll(paths.GenerationsDir(identityID) + "/" + name); err != nil {
-				return report, fmt.Errorf("discard staging %s: %w", name, err)
+			if remove {
+				if err := os.RemoveAll(paths.GenerationsDir(identityID) + "/" + name); err != nil {
+					return report, fmt.Errorf("discard staging %s: %w", name, err)
+				}
+				removedAny = true
 			}
 			report.DiscardedStaging = append(report.DiscardedStaging, name)
-			removedAny = true
 		case name == current:
 			// The committed state; validated by the caller via
 			// ValidateCurrent.
@@ -109,11 +124,13 @@ func Reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 			}
 			// Non-current and unsealed: by construction an uncommitted
 			// attempt (the seal precedes every flip). Discard.
-			if err := os.RemoveAll(gen.Dir()); err != nil {
-				return report, fmt.Errorf("discard uncommitted generation %s: %w", name, err)
+			if remove {
+				if err := os.RemoveAll(gen.Dir()); err != nil {
+					return report, fmt.Errorf("discard uncommitted generation %s: %w", name, err)
+				}
+				removedAny = true
 			}
 			report.DiscardedAttempts = append(report.DiscardedAttempts, name)
-			removedAny = true
 		}
 	}
 	if removedAny {
