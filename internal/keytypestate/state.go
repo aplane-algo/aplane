@@ -400,6 +400,16 @@ func normalizeRecord(rec Record) (Record, error) {
 	return rec, nil
 }
 
+// NormalizeKeyType validates and canonicalizes a key type name (lowercase,
+// trimmed, restricted shape). Every state record and template file is stored
+// under its canonical name; strict-validation sweeps use this to reject
+// namespace entries whose basename is not already canonical — the lookup
+// APIs normalize before reading, so a noncanonical file would otherwise be
+// silently invisible rather than reported.
+func NormalizeKeyType(keyType string) (string, error) {
+	return normalizeKeyType(keyType)
+}
+
 func normalizeKeyType(keyType string) (string, error) {
 	keyType = strings.ToLower(strings.TrimSpace(keyType))
 	if keyType == "" {

@@ -128,6 +128,15 @@ func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[st
 	if err := ValidateCurrent(paths.GenerationPaths(identityID, report.Current)); err != nil {
 		return nil, fmt.Errorf("collect: current generation failed validation, refusing to prune: %w", err)
 	}
+	if len(report.SealedPriors) == 0 {
+		// Nothing to delete. Succeed as a no-op without demanding the
+		// manifest's ParentID still exist: after an --all-priors prune
+		// (the rotation-quiescence workflow) that parent was deleted
+		// deliberately, and an ordinary prune must stay idempotent.
+		// When deletable priors DO exist while the declared parent is
+		// missing, the fail-closed seal validation below still applies.
+		return nil, nil
+	}
 	retain := make(map[string]bool, len(referenced)+1)
 	for name, keep := range referenced {
 		if keep {

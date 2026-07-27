@@ -296,9 +296,20 @@ func sweepKeyTypeNamespace(active storepaths.ActivePaths, masterKey []byte, reco
 		case entry.IsDir():
 			defects = append(defects, fmt.Sprintf("unexpected directory %q", name))
 		case strings.HasSuffix(name, ".json"):
+			// Lookup APIs normalize the key type before reading, so a
+			// record whose basename is not already canonical is silently
+			// invisible to them — unaccounted content, not "invalid".
+			keyType := strings.TrimSuffix(name, ".json")
+			if canonical, err := keytypestate.NormalizeKeyType(keyType); err != nil || canonical != keyType {
+				defects = append(defects, fmt.Sprintf("record %q does not use a canonical key type filename", name))
+			}
 			// Record content validity is covered by ListInvalidActive.
 		case strings.HasSuffix(name, ".template"):
 			keyType := strings.TrimSuffix(name, ".template")
+			if canonical, err := keytypestate.NormalizeKeyType(keyType); err != nil || canonical != keyType {
+				defects = append(defects, fmt.Sprintf("template %q does not use a canonical key type filename", name))
+				continue
+			}
 			if !recordFileExists[keyType] {
 				defects = append(defects, fmt.Sprintf("template %q has no state record", name))
 				continue

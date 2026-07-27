@@ -277,3 +277,23 @@ func TestCollectGarbageRefusesToPruneWhenCurrentInvalid(t *testing.T) {
 		})
 	}
 }
+
+func TestCollectGarbageIsIdempotentAfterAllPriorsPrune(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+	if _, err := CollectGarbage(paths, testIdentity, nil, false); err != nil {
+		t.Fatalf("CollectGarbage(all priors) error = %v", err)
+	}
+	// Current's immutable manifest still names the deleted parent B; an
+	// ordinary prune must be a successful no-op, not a missing-parent error.
+	removed, err := CollectGarbage(paths, testIdentity, nil, true)
+	if err != nil {
+		t.Fatalf("CollectGarbage(after all-priors) error = %v, want no-op", err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("removed = %v, want nothing", removed)
+	}
+	if _, err := CollectGarbage(paths, testIdentity, nil, false); err != nil {
+		t.Fatalf("CollectGarbage(all priors, repeated) error = %v, want no-op", err)
+	}
+}

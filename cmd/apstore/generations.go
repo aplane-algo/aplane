@@ -98,6 +98,18 @@ func cmdGenerations(args []string) error {
 // this prune prepares — re-encrypts all of this content next; defects must
 // surface while a rollback target still exists.
 func verifyCurrentGenerationContent(paths storepaths.Paths, identityID string) error {
+	// Structural validation precedes the passphrase prompt and every
+	// content read: a symlinked or otherwise malformed namespace must be
+	// rejected here, not followed by the scans below (only the structural
+	// validator checks that namespace entries are regular files).
+	gen, err := genstore.Resolve(paths, identityID)
+	if err != nil {
+		return err
+	}
+	if err := genstore.ValidateCurrent(gen); err != nil {
+		return fmt.Errorf("refusing to prune: current generation failed validation: %w", err)
+	}
+
 	logInfof("pruning all priors abandons every rollback fallback; validating current generation content first")
 	fmt.Print("Enter passphrase: ")
 	passphrase, err := readPassword()

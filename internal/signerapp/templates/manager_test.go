@@ -873,3 +873,37 @@ func TestSweepKeyTypeNamespaceFlagsTemplatePairedWithCompiledRecord(t *testing.T
 		t.Fatalf("sweepKeyTypeNamespace() = %#v, want one compiled-pairing defect", defects)
 	}
 }
+
+func TestSweepKeyTypeNamespaceFlagsNoncanonicalFilenames(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := testTemplateMasterKey()
+	keyType := "test.sweep-canonical.v1"
+	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-canonical"), masterKey)
+	dir := paths.LegacyActivePaths("default").KeyTypeRecordsDir()
+	// Noncanonical copies: the lookup APIs normalize before reading, so
+	// these files are invisible to registration and ListInvalidActive.
+	recordJSON, err := os.ReadFile(filepath.Join(dir, keyType+".json"))
+	if err != nil {
+		t.Fatalf("read canonical record: %v", err)
+	}
+	templateBytes, err := os.ReadFile(filepath.Join(dir, keyType+".template"))
+	if err != nil {
+		t.Fatalf("read canonical template: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Test.Sweep-Canonical.V1.json"), recordJSON, 0600); err != nil {
+		t.Fatalf("write noncanonical record: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Test.Sweep-Canonical.V1.template"), templateBytes, 0600); err != nil {
+		t.Fatalf("write noncanonical template: %v", err)
+	}
+
+	defects := sweepForTest(t, paths, masterKey)
+	if len(defects) != 2 {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, want canonical-filename defects for record and template", defects)
+	}
+	for _, defect := range defects {
+		if !strings.Contains(defect, "canonical key type filename") {
+			t.Fatalf("defect %q, want canonical-filename rejection", defect)
+		}
+	}
+}
