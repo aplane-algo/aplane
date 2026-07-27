@@ -66,15 +66,30 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	if req.Operation == "" || req.OperationID == "" {
 		return storepaths.GenPaths{}, fmt.Errorf("mint requires a durable operation identity")
 	}
-	if req.Parent != "" {
-		if req.Parent == req.GenerationID {
-			return storepaths.GenPaths{}, fmt.Errorf("generation %s cannot be its own parent", req.GenerationID)
+	// The parent must be exactly the generation CURRENT names: Mint seals
+	// req.Parent as "the outgoing generation", so a stale parent — or an
+	// empty parent on a store that already has a CURRENT — would seal the
+	// wrong generation and leave the real outgoing one unsealed, which
+	// reconciliation would then classify as an uncommitted attempt and
+	// delete. A parentless mint is valid only on a store with no CURRENT
+	// (initialize, rebuild, first migration). This also subsumes the
+	// self-parent and parent-must-exist checks: CURRENT's generation
+	// directory is verified by ReadCurrent, and a self-parent request
+	// would collide with the existing current directory below.
+	if _, err := os.Lstat(paths.CurrentPointerPath(identityID)); err != nil {
+		if !os.IsNotExist(err) {
+			return storepaths.GenPaths{}, err
 		}
-		// The parent must actually exist: copyNamespaces tolerates missing
-		// source namespace directories, so a mistyped parent would
-		// otherwise silently mint an empty generation instead of a child.
-		if err := requireRegularDirectory(paths.GenerationDir(identityID, req.Parent)); err != nil {
-			return storepaths.GenPaths{}, fmt.Errorf("mint parent %s: %w", req.Parent, err)
+		if req.Parent != "" {
+			return storepaths.GenPaths{}, fmt.Errorf("mint parent %s: store has no current generation; the first mint must be parentless", req.Parent)
+		}
+	} else {
+		current, err := ReadCurrent(paths, identityID)
+		if err != nil {
+			return storepaths.GenPaths{}, fmt.Errorf("mint: %w", err)
+		}
+		if req.Parent != current {
+			return storepaths.GenPaths{}, fmt.Errorf("mint parent %q is not the current generation %s", req.Parent, current)
 		}
 	}
 

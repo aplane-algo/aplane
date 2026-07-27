@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -452,4 +453,65 @@ func TestSelfParentLineageIsRejectedEverywhere(t *testing.T) {
 			t.Fatalf("CURRENT = %s (%v), want unchanged %s", current, err, testGenC)
 		}
 	})
+}
+
+func TestMintRequiresParentToBeCurrent(t *testing.T) {
+	t.Run("stale parent is rejected", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+		// Minting with sealed prior A as parent would seal A (again) and
+		// flip to D, leaving the real outgoing generation C unsealed for
+		// reconciliation to delete as an uncommitted attempt.
+		_, err := Mint(paths, testIdentity, MintRequest{
+			GenerationID: testGenD,
+			Parent:       testGenA,
+			Operation:    "test-activation",
+			OperationID:  "op-stale",
+			CreatedAt:    time.Unix(1_753_500_800, 0),
+		})
+		if err == nil {
+			t.Fatal("Mint accepted a parent that is not the current generation")
+		}
+		assertChainUntouched(t, paths)
+	})
+
+	t.Run("parentless mint on a store with a CURRENT is rejected", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		buildGenerationChain(t, paths)
+		_, err := Mint(paths, testIdentity, MintRequest{
+			GenerationID: testGenD,
+			Operation:    "test-activation",
+			OperationID:  "op-parentless",
+			CreatedAt:    time.Unix(1_753_500_801, 0),
+		})
+		if err == nil {
+			t.Fatal("Mint accepted a parentless request on a store that already has a current generation")
+		}
+		assertChainUntouched(t, paths)
+	})
+}
+
+// assertChainUntouched verifies a rejected mint changed nothing: CURRENT
+// still names C, C survives, and no D directory or staging residue exists.
+func assertChainUntouched(t *testing.T, paths storepaths.Paths) {
+	t.Helper()
+	current, err := ReadCurrent(paths, testIdentity)
+	if err != nil || current != testGenC {
+		t.Fatalf("CURRENT = %s (%v), want unchanged %s", current, err, testGenC)
+	}
+	if err := ValidateCurrent(paths.GenerationPaths(testIdentity, testGenC)); err != nil {
+		t.Fatalf("current generation damaged by rejected mint: %v", err)
+	}
+	if _, err := os.Lstat(paths.GenerationPaths(testIdentity, testGenD).Dir()); !os.IsNotExist(err) {
+		t.Fatalf("rejected mint published generation %s", testGenD)
+	}
+	entries, err := os.ReadDir(paths.GenerationsDir(testIdentity))
+	if err != nil {
+		t.Fatalf("ReadDir(generations): %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), storepaths.GenerationStagingPrefix) {
+			t.Fatalf("rejected mint left staging residue %s", entry.Name())
+		}
+	}
 }
