@@ -679,3 +679,33 @@ func TestInspectClassifiesWithoutDeleting(t *testing.T) {
 		}
 	}
 }
+
+func TestReconcileReconfirmsCurrentFlipDurability(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+
+	identityDirSynced := false
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == paths.IdentityDir(testIdentity) {
+			identityDirSynced = true
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	if _, err := Reconcile(paths, testIdentity, nil); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if !identityDirSynced {
+		t.Fatal("Reconcile did not fsync the identity directory; an ErrCommitDurabilityUnknown flip would never be re-confirmed")
+	}
+
+	// The read-only classification must not perform the sync.
+	identityDirSynced = false
+	if _, err := Inspect(paths, testIdentity, nil); err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+	if identityDirSynced {
+		t.Fatal("Inspect performed a durability sync; it must stay read-only")
+	}
+}

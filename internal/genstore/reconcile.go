@@ -84,6 +84,19 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 	}
 	retainedParent := manifest.ParentID
 
+	if remove {
+		// Re-confirm the CURRENT flip's durability. A commit that ended in
+		// ErrCommitDurabilityUnknown left the pointer visible but its
+		// directory fsync unproven; nothing else ever re-syncs it, so the
+		// next unlock would resume signing on a flip a later power loss
+		// could silently revert. Reconciliation is the designated healing
+		// point: fsync the identity directory so the pointer read above is
+		// durably the pointer.
+		if err := fsutil.SyncDir(paths.IdentityDir(identityID)); err != nil {
+			return report, fmt.Errorf("reconcile: confirm CURRENT durability: %w", err)
+		}
+	}
+
 	generationsDir := paths.GenerationsDir(identityID)
 	entries, err := os.ReadDir(generationsDir)
 	if err != nil {
