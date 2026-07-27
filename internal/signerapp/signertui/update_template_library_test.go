@@ -43,10 +43,10 @@ func TestLockedSignerStatusFetchesKeyTypes(t *testing.T) {
 		auth:      authState{passphraseInput: "secret", passphraseError: "old error"},
 	}
 
-	next, cmd := m.Update(SignerStatusMsg{Locked: true, KeyCount: 12})
+	next, cmd := m.Update(SignerStatusMsg{State: "locked", KeyCount: 12})
 	got := next.(Model)
-	if !got.signerLocked || !got.signerStatusKnown {
-		t.Fatalf("signer status = locked %v known %v, want locked and known", got.signerLocked, got.signerStatusKnown)
+	if got.signerState != signerRuntimeLocked || !got.signerStatusKnown {
+		t.Fatalf("signer status = state %v known %v, want locked and known", got.signerState, got.signerStatusKnown)
 	}
 	if got.viewState != ViewUnlock {
 		t.Fatalf("viewState = %v, want ViewUnlock", got.viewState)

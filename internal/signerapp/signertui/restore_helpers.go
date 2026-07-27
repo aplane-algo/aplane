@@ -40,15 +40,19 @@ func (m *Model) resetRestoreFlow(clearBackups bool) {
 	m.restore.selectedKey = 0
 	m.restore.previewScrollOffset = 0
 	m.restore.previewError = ""
-	m.restore.overwrite = false
+	m.restore.replaceExisting = false
 	m.restore.restoreID = ""
 	m.restore.review = ReviewRecoveredResultMessage{}
 	m.restore.previewFocus = restoreFocusList
 	m.restore.unattendedAcknowledged = false
 	m.restore.reviewFocus = restoreFocusList
+	m.restore.reviewCursor = 0
 	m.restore.displaySelectedKey = 0
 	m.restore.displayScrollOffset = 0
 	m.restore.result = RestoreDisplayResult{}
+	m.restore.progressLabel = ""
+	m.restore.purgeArmedID = ""
+	m.restore.recoveredError = ""
 }
 
 func (m Model) currentRestoreBackup() (BackupInfo, bool) {
@@ -58,11 +62,13 @@ func (m Model) currentRestoreBackup() (BackupInfo, bool) {
 	return m.restore.backups[m.restore.selectedBackup], true
 }
 
+// restoreKeySelectable reports whether a previewed key may be selected for
+// recovery. Conflicting (already-existing) keys are freely selectable:
+// recovery is inactive and never overwrites anything, and the
+// replace-existing consent is collected on the activation review beside the
+// exact conflicts it authorizes.
 func (m Model) restoreKeySelectable(key RestoreKeyInfo) bool {
-	if key.Error != "" || key.Address == "" {
-		return false
-	}
-	return !key.AlreadyExists || m.restore.overwrite
+	return key.Error == "" && key.Address != ""
 }
 
 func (m *Model) initializeRestoreSelection() {

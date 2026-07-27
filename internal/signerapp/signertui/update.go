@@ -148,26 +148,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.reconnectCmd()
 
 	case SignerStatusMsg:
-		if msg.Locked {
+		switch signerRuntimeStateFromWire(msg.State) {
+		case signerRuntimeUnlocked:
+			m.applySignerUnlockedState(msg.KeyCount)
+			idleCmd := m.armLocalIdleTimer()
+			// If signer is already unlocked, request key list
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
+		case signerRuntimeRecovery:
+			// Signing is blocked by an incomplete activation; open the
+			// blocking recovery screen instead of normal navigation.
+			m.applySignerRecoveryState()
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListRecoveredCmd(), m.sendGetAdminSettingsCmd())
+		default:
 			// Signer locked; show unlock screen immediately regardless of
 			// current view. Any in-progress operation would fail anyway since
 			// the master key has been zeroed.
 			m.applySignerLockedState()
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd())
-		} else {
-			m.applySignerUnlockedState(msg.KeyCount)
-			idleCmd := m.armLocalIdleTimer()
-			// If signer is already unlocked, request key list
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
 		}
 
 	case UnlockResultMsg:
 		m.auth.loggingIn = false
 		if msg.Success {
-			m.applySignerUnlockedState(msg.KeyCount)
 			m.auth.passphraseError = ""
 			m.auth.passphraseInput = ""
 			m.clearWarningIf(localIdleDisconnectReason)
+			if msg.Code == protocol.ResultCodeActivationIncomplete {
+				// Unlock succeeded into recovery mode: automatic
+				// reconciliation could not resolve every incomplete
+				// activation, so signing stays blocked.
+				m.applySignerRecoveryState()
+				return m, tea.Batch(m.waitForMessageCmd(), m.sendListRecoveredCmd(), m.sendGetAdminSettingsCmd())
+			}
+			m.applySignerUnlockedState(msg.KeyCount)
 			idleCmd := m.armLocalIdleTimer()
 			// Request the key list after unlocking
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
@@ -386,8 +399,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.waitForMessageCmd()
 		}
 		m.restore.review = msg.Result
-		m.restore.unattendedAcknowledged = false
-		if recoveredUnattendedSigningAckRequired(msg.Result) {
+		m.restore.restoreID = msg.Result.RestoreID
+		if msg.Result.State == "activation_incomplete" {
+			// Resume: the consent and acknowledgement are fixed to the
+			// recorded activation intent the server will verify.
+			m.restore.unattendedAcknowledged = msg.Result.AcknowledgeUnattendedSigning
+			m.restore.replaceExisting = msg.Result.ReplaceExisting
+		} else {
+			m.restore.unattendedAcknowledged = false
+			m.restore.replaceExisting = false
+		}
+		m.restore.reviewCursor = 0
+		if len(m.reviewCheckboxes()) > 0 {
 			m.restore.reviewFocus = restoreFocusList
 		} else {
 			m.restore.reviewFocus = restoreFocusAction
@@ -417,9 +440,64 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewRestoreDisplay
 		cmds := []tea.Cmd{m.waitForMessageCmd()}
 		if msg.Result.Success {
+			if m.signerState == signerRuntimeRecovery {
+				// The activation resolved recovery-blocking state; the
+				// server pushes the unlocked status when its rescan is
+				// clean, and the refreshed list covers the still-blocked
+				// case.
+				cmds = append(cmds, m.sendListRecoveredCmd())
+			}
 			cmds = append(cmds, m.sendListKeysCmd(), m.sendListKeyTypesCmd())
+		} else if msg.Result.Code == protocol.ResultCodeRecoveredRollbackFailed {
+			// A failed rollback blocks signing immediately server-side;
+			// mirror it so the client does not pretend to be unlocked.
+			m.signerState = signerRuntimeRecovery
 		}
 		return m, tea.Batch(cmds...)
+
+	case RecoveredListMsg:
+		m.restore.recoveredLoaded = true
+		if msg.Error != "" {
+			m.restore.recoveredError = msg.Error
+		} else {
+			m.restore.recoveredError = ""
+			m.restore.recovered = msg.Batches
+			m.clampRecoveredSelection()
+		}
+		return m, m.waitForMessageCmd()
+
+	case RollbackRecoveredResultMsg:
+		cmds := []tea.Cmd{m.waitForMessageCmd()}
+		if msg.Result.Success {
+			m.restore.recoveredError = ""
+			if m.viewState == ViewRestoring {
+				m.viewState = ViewRecoveredList
+			}
+			// The server pushes the unlocked status if its rescan is clean;
+			// refresh the list either way.
+			cmds = append(cmds, m.sendListRecoveredCmd())
+		} else {
+			if msg.Result.Code == protocol.ResultCodeRecoveredRollbackFailed {
+				m.signerState = signerRuntimeRecovery
+			}
+			m.restore.recoveredError = msg.Result.Error
+			if m.viewState == ViewRestoring {
+				m.viewState = ViewRecoveredList
+			}
+			cmds = append(cmds, m.sendListRecoveredCmd())
+		}
+		return m, tea.Batch(cmds...)
+
+	case PurgeRecoveredResultMsg:
+		if msg.Result.Success {
+			m.restore.recoveredError = ""
+		} else {
+			m.restore.recoveredError = msg.Result.Error
+		}
+		if m.viewState == ViewRestoring {
+			m.viewState = ViewRecoveredList
+		}
+		return m, tea.Batch(m.waitForMessageCmd(), m.sendListRecoveredCmd())
 
 	case ImportResultMsg:
 		if msg.Success {
@@ -729,6 +807,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRestoreReviewKeys(msg)
 	case ViewRestoreDisplay:
 		return m.handleRestoreDisplayKeys(msg)
+	case ViewRecoveredList:
+		return m.handleRecoveredListKeys(msg)
 	case ViewGenerateDisplay:
 		return m.handleGenerateDisplayKeys(msg)
 	case ViewImportDisplay:

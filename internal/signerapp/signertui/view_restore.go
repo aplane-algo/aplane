@@ -112,7 +112,7 @@ func (m Model) renderRestorePreview() string {
 	sb.WriteString(titleStyle.Render("Restore Preview"))
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("Archive:   %s\n", restoreArchiveLabel(m.restore.archivePath)))
-	sb.WriteString(fmt.Sprintf("Overwrite: %s | Selected: %d\n", restoreOverwriteLabel(m.restore.overwrite), m.selectedRestoreCount()))
+	sb.WriteString(fmt.Sprintf("Selected: %d\n", m.selectedRestoreCount()))
 	sb.WriteString("\n")
 
 	if len(m.restore.previewKeys) == 0 {
@@ -205,7 +205,14 @@ func restoreActionButton(label string, focused, ready bool) string {
 
 func (m Model) renderRestoring() string {
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Restoring Backup"))
+	// Distinct labels: recovering into an inactive batch and activating
+	// recovered credentials are different operations with different
+	// consequences.
+	title := m.restore.progressLabel
+	if title == "" {
+		title = "Working"
+	}
+	sb.WriteString(titleStyle.Render(title))
 	sb.WriteString("\n\n")
 	sb.WriteString(subtitleStyle.Render("Please wait..."))
 	sb.WriteString("\n")
@@ -254,6 +261,7 @@ func (m Model) renderRestoreReview() string {
 	for _, unknown := range batchUnknowns {
 		sb.WriteString(fmt.Sprintf("  [unknown source] %s\n", unknown))
 	}
+	resuming := review.State == "activation_incomplete"
 	if len(review.ActiveConflicts) > 0 {
 		sb.WriteString("\n")
 		sb.WriteString(warningStyle.Render("Active credential conflicts"))
@@ -262,29 +270,48 @@ func (m Model) renderRestoreReview() string {
 			sb.WriteString(fmt.Sprintf("  %s (%s, %s)\n", conflict.Selector, conflict.Category, conflict.KeyType))
 		}
 	}
+	if resuming {
+		sb.WriteString("\n")
+		sb.WriteString(warningStyle.Render("Interrupted activation: activating resumes the exact recorded intent"))
+		sb.WriteString("\n")
+		sb.WriteString(fmt.Sprintf("  replace existing active credentials: %s\n", yesNo(review.ReplaceExisting)))
+	}
 
 	appendRecoveredSourceContext(&sb, review, popupWidth)
-	requiresUnattended := recoveredUnattendedSigningAckRequired(review)
-	if requiresUnattended {
+	boxes := m.reviewCheckboxes()
+	if len(boxes) > 0 {
 		sb.WriteString("\n")
-		sb.WriteString(subtitleStyle.Render("Required acknowledgement"))
+		sb.WriteString(subtitleStyle.Render("Required acknowledgements"))
 		sb.WriteString("\n")
-		unattendedLine := checkboxLine(
-			m.restore.unattendedAcknowledged,
-			"I acknowledge this identity auto-approves unmatched signing requests",
-		)
-		if m.restore.reviewFocus == restoreFocusList {
-			sb.WriteString(selectedStyle.Render("> " + unattendedLine))
-		} else {
-			sb.WriteString("  " + unattendedLine)
+		for i, box := range boxes {
+			var line string
+			switch box {
+			case reviewCheckboxAck:
+				line = checkboxLine(
+					m.restore.unattendedAcknowledged,
+					"I acknowledge this identity auto-approves unmatched signing requests",
+				)
+			case reviewCheckboxReplace:
+				line = checkboxLine(
+					m.restore.replaceExisting,
+					fmt.Sprintf("Replace the %d existing active credential(s) listed above", len(review.ActiveConflicts)),
+				)
+			}
+			if m.restore.reviewFocus == restoreFocusList && i == m.restore.reviewCursor {
+				sb.WriteString(selectedStyle.Render("> " + line))
+			} else {
+				sb.WriteString("  " + line)
+			}
+			sb.WriteString("\n")
 		}
-		sb.WriteString("\n")
 	}
+	ready := (!recoveredUnattendedSigningAckRequired(review) || m.restore.unattendedAcknowledged) &&
+		(resuming || len(review.ActiveConflicts) == 0 || m.restore.replaceExisting)
 	sb.WriteString("\n")
 	sb.WriteString(restoreActionButton(
 		"ACTIVATE",
 		m.restore.reviewFocus == restoreFocusAction,
-		!requiresUnattended || m.restore.unattendedAcknowledged,
+		ready,
 	))
 	sb.WriteString("\n")
 	if m.restore.previewError != "" {
@@ -293,6 +320,13 @@ func (m Model) renderRestoreReview() string {
 		sb.WriteString("\n")
 	}
 	return m.renderPopup(popupWidth, sb.String())
+}
+
+func yesNo(value bool) string {
+	if value {
+		return "yes"
+	}
+	return "no"
 }
 
 // appendRecoveredSourceContext renders what the archive reported about its
@@ -473,13 +507,6 @@ func formatRestoreSize(size int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
-func restoreOverwriteLabel(overwrite bool) string {
-	if overwrite {
-		return "enabled"
-	}
-	return "disabled"
-}
-
 func restoreSelectionMark(m Model, key RestoreKeyInfo) string {
 	if m.restore.selected[key.Address] {
 		return "* "
@@ -521,6 +548,11 @@ func restorePreviewSuffix(key RestoreKeyInfo) string {
 	var suffix string
 	if key.HasTemplate {
 		suffix += "  template:" + key.TemplateType
+	}
+	if key.AlreadyExists {
+		// Informational: replacing an active credential is consented to on
+		// the activation review, beside the exact conflicts.
+		suffix += "  exists"
 	}
 	if key.Error != "" {
 		suffix += "  " + key.Error

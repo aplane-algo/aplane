@@ -32,6 +32,12 @@ const (
 	MsgTypeReviewRecoveredResult   = protocol.MsgTypeReviewRecoveredResult
 	MsgTypeActivateRecovered       = protocol.MsgTypeActivateRecovered
 	MsgTypeActivateRecoveredResult = protocol.MsgTypeActivateRecoveredResult
+	MsgTypeListRecovered           = protocol.MsgTypeListRecovered
+	MsgTypeRecoveredList           = protocol.MsgTypeRecoveredList
+	MsgTypeRollbackRecovered       = protocol.MsgTypeRollbackRecovered
+	MsgTypeRollbackRecoveredResult = protocol.MsgTypeRollbackRecoveredResult
+	MsgTypePurgeRecovered          = protocol.MsgTypePurgeRecovered
+	MsgTypePurgeRecoveredResult    = protocol.MsgTypePurgeRecoveredResult
 	MsgTypeSignRequest             = protocol.MsgTypeSignRequest
 	MsgTypeSignResponse            = protocol.MsgTypeSignResponse
 	MsgTypeStatus                  = protocol.MsgTypeStatus
@@ -115,6 +121,13 @@ type (
 	ReviewRecoveredResultMessage        = protocol.ReviewRecoveredResultMessage
 	ActivateRecoveredMessage            = protocol.ActivateRecoveredMessage
 	ActivateRecoveredResultMessage      = protocol.ActivateRecoveredResultMessage
+	ListRecoveredMessage                = protocol.ListRecoveredMessage
+	RecoveredBatchInfo                  = protocol.RecoveredBatchInfo
+	RecoveredListMessage                = protocol.RecoveredListMessage
+	RollbackRecoveredMessage            = protocol.RollbackRecoveredMessage
+	RollbackRecoveredResultMessage      = protocol.RollbackRecoveredResultMessage
+	PurgeRecoveredMessage               = protocol.PurgeRecoveredMessage
+	PurgeRecoveredResultMessage         = protocol.PurgeRecoveredResultMessage
 	RecoveredReviewEntry                = protocol.RecoveredReviewEntry
 	RecoveryPolicyChange                = protocol.RecoveryPolicyChange
 	SignRequestMessage                  = protocol.SignRequestMessage

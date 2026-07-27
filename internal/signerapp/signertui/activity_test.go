@@ -16,7 +16,7 @@ func activityReadyModel() Model {
 		connectionState:   ConnectionConnected,
 		adminClient:       &IPCClient{},
 		signerStatusKnown: true,
-		signerLocked:      false,
+		signerState:       signerRuntimeUnlocked,
 		auth:              authState{passphraseMasked: true},
 		restore:           restoreState{selected: map[string]bool{}},
 		forms:             formsState{importMnemonicInput: newImportMnemonicInput()},
@@ -74,7 +74,7 @@ func TestRecordUserActivityCountsSignResponseKeysAsLocalActivity(t *testing.T) {
 func TestUpdateIgnoresUnlockTypingEvenWithStaleUnlockedState(t *testing.T) {
 	m := activityReadyModel()
 	m.viewState = ViewUnlock
-	m.signerLocked = false
+	m.signerState = signerRuntimeUnlocked
 	m.signerStatusKnown = true
 
 	got, _ := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
@@ -201,8 +201,8 @@ func TestLocalIdleDisconnectedMsgShowsAuthAndReconnectsWithoutLocking(t *testing
 	if got.auth.passphraseInput != "" || got.auth.passphraseError != "" || got.auth.loggingIn {
 		t.Fatalf("auth state = %+v, want fresh login prompt", got.auth)
 	}
-	if got.signerLocked {
-		t.Fatal("signerLocked = true, want unchanged false")
+	if got.signerState == signerRuntimeLocked {
+		t.Fatal("signerState = locked, want unchanged unlocked")
 	}
 	if got.signerStatusKnown {
 		t.Fatal("signerStatusKnown = true, want unknown after local disconnect")
@@ -248,9 +248,9 @@ func TestDisconnectAndServerLockClearActivityAndSensitiveRestoreState(t *testing
 	m = activityReadyModel()
 	m.viewState = ViewRestorePreview
 	m.restore.passphrase = passphrase
-	got, _ = updateForTest(t, m, SignerStatusMsg{Locked: true})
-	if got.viewState != ViewUnlock || !got.signerLocked {
-		t.Fatalf("server lock state = view %v locked %v, want unlock locked", got.viewState, got.signerLocked)
+	got, _ = updateForTest(t, m, SignerStatusMsg{State: "locked"})
+	if got.viewState != ViewUnlock || got.signerState != signerRuntimeLocked {
+		t.Fatalf("server lock state = view %v state %v, want unlock locked", got.viewState, got.signerState)
 	}
 	if len(got.restore.passphrase) != 0 {
 		t.Fatalf("restorePassphrase length = %d, want 0", len(got.restore.passphrase))

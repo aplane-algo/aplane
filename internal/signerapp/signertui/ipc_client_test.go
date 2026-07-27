@@ -315,7 +315,7 @@ func TestIPCClientReconnectCreatesFreshDoneChannelAndKeepsReading(t *testing.T) 
 	if !ok {
 		t.Fatalf("msg type = %T, want SignerStatusMsg", msg)
 	}
-	if statusMsg.Locked || statusMsg.KeyCount != 2 {
+	if statusMsg.State != "unlocked" || statusMsg.KeyCount != 2 {
 		t.Fatalf("SignerStatusMsg = %#v, want unlocked with key count 2", statusMsg)
 	}
 
@@ -373,7 +373,7 @@ func TestIPCClientReconnectsAfterConnectionLossAndKeepsReading(t *testing.T) {
 	if !ok {
 		t.Fatalf("msg type = %T, want SignerStatusMsg", msg)
 	}
-	if statusMsg.Locked || statusMsg.KeyCount != 3 {
+	if statusMsg.State != "unlocked" || statusMsg.KeyCount != 3 {
 		t.Fatalf("SignerStatusMsg = %#v, want unlocked with key count 3", statusMsg)
 	}
 }

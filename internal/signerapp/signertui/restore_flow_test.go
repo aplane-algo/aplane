@@ -560,7 +560,10 @@ func TestRestorePreviewFailureClearsPassphrase(t *testing.T) {
 	}
 }
 
-func TestRestorePreviewRequiresOverwriteBeforeSelectingExistingKey(t *testing.T) {
+func TestRestorePreviewSelectsExistingKeysFreely(t *testing.T) {
+	// Recovery is inactive and never overwrites anything: conflict rows are
+	// informational, and the replace-existing consent lives on the
+	// activation review beside the exact conflicts it authorizes.
 	m := Model{
 		viewState: ViewRestorePreview,
 		restore: restoreState{previewKeys: []RestoreKeyInfo{
@@ -570,19 +573,20 @@ func TestRestorePreviewRequiresOverwriteBeforeSelectingExistingKey(t *testing.T)
 
 	next, _ := m.handleRestorePreviewKeys(tea.KeyMsg{Type: tea.KeySpace})
 	got := next.(Model)
-	if got.restore.selected["EXISTINGADDR"] {
-		t.Fatal("existing key selected while overwrite was disabled")
+	if !got.restore.selected["EXISTINGADDR"] {
+		t.Fatal("existing key was not freely selectable on the preview")
 	}
-	if got.restore.previewError == "" {
-		t.Fatal("restorePreviewError is empty")
+	if got.restore.previewError != "" {
+		t.Fatalf("previewError = %q, want none for an informational conflict", got.restore.previewError)
 	}
 
-	next, _ = got.handleRestorePreviewKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	got = next.(Model)
-	next, _ = got.handleRestorePreviewKeys(tea.KeyMsg{Type: tea.KeySpace})
-	got = next.(Model)
-	if !got.restore.selected["EXISTINGADDR"] {
-		t.Fatal("existing key was not selectable after overwrite was enabled")
+	view := got.renderRestorePreview()
+	plain := stripANSI(view)
+	if !strings.Contains(plain, "exists") {
+		t.Fatalf("preview does not mark the conflicting key informationally:\n%s", plain)
+	}
+	if strings.Contains(plain, "Overwrite:") {
+		t.Fatalf("preview still renders the removed overwrite toggle:\n%s", plain)
 	}
 }
 
