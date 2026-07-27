@@ -527,3 +527,38 @@ func TestRecoveredListQQuitsAsAdvertised(t *testing.T) {
 		t.Fatalf("esc left the blocking screen for view %v", got.viewState)
 	}
 }
+
+func TestTokenPopupResolutionStaysOnRecoveryScreen(t *testing.T) {
+	m := Model{
+		viewState:   ViewTokenProvisioningPopup,
+		signerState: signerRuntimeRecovery,
+		tokenApproval: tokenApprovalState{
+			request: &PendingTokenRequest{ID: "req-1"},
+		},
+	}
+	next, _ := m.handleTokenProvisioningPopupKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	got := next.(Model)
+	if got.viewState == ViewKeyList {
+		t.Fatal("token popup resolution escaped the blocking recovery screen into normal navigation")
+	}
+	if got.viewState != ViewRecoveredList && got.viewState != ViewTokenProvisioningPopup {
+		t.Fatalf("token popup resolution landed on view %v, want the blocking recovery screen", got.viewState)
+	}
+}
+
+func TestReviewArrivalResetsScrollPosition(t *testing.T) {
+	m := Model{
+		viewState:           ViewRestoreList,
+		signerState:         signerRuntimeUnlocked,
+		panelScrollView:     ViewRestoreReview,
+		panelScrollPosition: panelScrollScale, // stale: scrolled to bottom
+	}
+	next, _ := m.Update(ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
+		Success:   true,
+		RestoreID: "00000000000000000000000000000001",
+	}})
+	got := next.(Model)
+	if got.panelScrollPosition != 0 {
+		t.Fatalf("review opened with stale scroll position %d; the credentials list would start off-screen", got.panelScrollPosition)
+	}
+}

@@ -316,7 +316,15 @@ func snapshotManagedBackupArchive(archivePath string) (string, string, func(), e
 }
 
 func inspectSourcePolicy(sourceRoot, sourceNodeRole string) (recovered.SourcePolicyStatus, string, []byte, error) {
-	policyYAML, err := os.ReadFile(filepath.Join(sourceRoot, "policy", "policy.yaml"))
+	policyPath := filepath.Join(sourceRoot, "policy", "policy.yaml")
+	if info, err := os.Stat(policyPath); err == nil && info.Size() > maxSourceSettingsBytes {
+		// The policy snapshot is embedded verbatim in the encrypted batch
+		// manifest, which every subsequent list/review/activation/rotation
+		// decrypts and parses; an unbounded archive-supplied blob must not
+		// ride along. Mirrors the source-settings cap.
+		return "", "", nil, fmt.Errorf("source policy snapshot exceeds size limit %d", maxSourceSettingsBytes)
+	}
+	policyYAML, err := os.ReadFile(policyPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return recovered.SourcePolicyMissing, "", nil, nil

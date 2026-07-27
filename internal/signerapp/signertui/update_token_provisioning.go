@@ -17,6 +17,13 @@ func (m Model) handleTokenProvisioningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.
 	m, cmd, focus, _ := m.handleApprovalKeys(msg, m.tokenApproval.focus, requestID,
 		func(m Model, id string, approved bool) (Model, tea.Cmd) {
 			m.tokenApproval.request = nil
+			if m.signerState == signerRuntimeRecovery {
+				// Recovery is blocking: resolving an enrollment popup must
+				// return to the blocking recovery screen, never to normal
+				// navigation.
+				m.viewState = ViewRecoveredList
+				return m, tea.Batch(m.sendTokenProvisioningResponse(id, approved), m.sendListRecoveredCmd())
+			}
 			m.viewState = ViewKeyList
 			return m, m.sendTokenProvisioningResponse(id, approved)
 		})

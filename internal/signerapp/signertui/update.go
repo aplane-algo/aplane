@@ -413,6 +413,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.restore.review = msg.Result
 		m.restore.restoreID = msg.Result.RestoreID
+		// A freshly opened review always starts at the top: a stale scroll
+		// position from a previous popup must not hide the credentials
+		// list on the informed-consent screen.
+		m.panelScrollView = ViewRestoreReview
+		m.panelScrollPosition = 0
 		if msg.Result.State == "activation_incomplete" {
 			// Resume: the consent and acknowledgement are fixed to the
 			// recorded activation intent the server will verify.
