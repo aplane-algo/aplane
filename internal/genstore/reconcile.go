@@ -6,6 +6,7 @@ package genstore
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -20,7 +21,9 @@ type ReconcileReport struct {
 	// deleted (non-current, unsealed, unreferenced). Each is an activation
 	// or migration that never committed; the operator reviews again.
 	DiscardedAttempts []string
-	// DiscardedStaging are .staging-* directories that never published.
+	// DiscardedStaging are .staging-* directories that never published,
+	// plus orphaned durable-write temp files (seal.json.tmp-*) inside the
+	// current generation — both crash residue that never carried state.
 	DiscardedStaging []string
 	// SealedPriors are retained committed prior generations, newest first.
 	SealedPriors []string
@@ -95,6 +98,28 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 		if err := fsutil.SyncDir(paths.IdentityDir(identityID)); err != nil {
 			return report, fmt.Errorf("reconcile: confirm CURRENT durability: %w", err)
 		}
+	}
+
+	// Garbage-collect orphaned durable-write temp files in the current
+	// generation (a crash mid-seal leaves seal.json.tmp-* at the
+	// generation root; the committing rename is atomic, so residue never
+	// carries state). Structural validation tolerates them; this is where
+	// they are removed.
+	currentDir := paths.GenerationPaths(identityID, current).Dir()
+	if currentEntries, err := os.ReadDir(currentDir); err == nil {
+		for _, entry := range currentEntries {
+			if entry.IsDir() || !isDurableWriteResidue(entry.Name()) {
+				continue
+			}
+			if remove {
+				if err := fsutil.RemoveDurable(filepath.Join(currentDir, entry.Name())); err != nil {
+					return report, fmt.Errorf("discard durable-write residue %s: %w", entry.Name(), err)
+				}
+			}
+			report.DiscardedStaging = append(report.DiscardedStaging, entry.Name())
+		}
+	} else {
+		return report, err
 	}
 
 	generationsDir := paths.GenerationsDir(identityID)

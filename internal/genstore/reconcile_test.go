@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -707,5 +708,102 @@ func TestReconcileReconfirmsCurrentFlipDurability(t *testing.T) {
 	}
 	if identityDirSynced {
 		t.Fatal("Inspect performed a durability sync; it must stay read-only")
+	}
+}
+
+func TestMintPreservesStoreModesUnderUmask(t *testing.T) {
+	oldUmask := syscall.Umask(0o022)
+	defer syscall.Umask(oldUmask)
+
+	paths := storepaths.NewPaths(t.TempDir())
+	mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
+	// Normalize the source file mode; the child copy must preserve it
+	// exactly despite the restrictive umask.
+	firstKey := filepath.Join(paths.GenerationPaths(testIdentity, testGenA).KeysDir(), "A.key")
+	if err := os.Chmod(firstKey, 0o660); err != nil {
+		t.Fatalf("chmod source key: %v", err)
+	}
+	if _, err := Mint(paths, testIdentity, MintRequest{
+		GenerationID: testGenB,
+		Parent:       testGenA,
+		Operation:    "test-activation",
+		OperationID:  "op-umask",
+		CreatedAt:    time.Unix(1_754_200_000, 0),
+	}); err != nil {
+		t.Fatalf("Mint(child) error = %v", err)
+	}
+
+	child := paths.GenerationPaths(testIdentity, testGenB)
+	for _, dir := range []string{child.KeysDir(), child.KeyTypeRecordsDir()} {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("stat %s: %v", dir, err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o770 {
+			t.Fatalf("namespace dir %s mode = %o, want 770 despite umask", dir, perm)
+		}
+	}
+	info, err := os.Stat(filepath.Join(child.KeysDir(), "A.key"))
+	if err != nil {
+		t.Fatalf("stat copied key: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o660 {
+		t.Fatalf("copied key mode = %o, want source mode 660 despite umask", perm)
+	}
+}
+
+func TestSealTempResidueIsToleratedAndCollected(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	gen := paths.GenerationPaths(testIdentity, testGenC)
+	residue := filepath.Join(gen.Dir(), storepaths.GenerationSealName+".tmp-123456")
+	if err := os.WriteFile(residue, []byte("partial seal"), 0o660); err != nil {
+		t.Fatalf("write residue: %v", err)
+	}
+
+	// The survivable crash is absorbed: validation tolerates the residue
+	// instead of sending the store into recovery.
+	if err := ValidateCurrent(gen); err != nil {
+		t.Fatalf("ValidateCurrent() error = %v, want tolerance for durable-write residue", err)
+	}
+	report, err := Inspect(paths, testIdentity, nil)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+	if !slices.Contains(report.DiscardedStaging, filepath.Base(residue)) {
+		t.Fatalf("Inspect classification %v does not report the residue", report.DiscardedStaging)
+	}
+	if _, err := os.Stat(residue); err != nil {
+		t.Fatalf("Inspect deleted the residue: %v", err)
+	}
+
+	if _, err := Reconcile(paths, testIdentity, nil); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if _, err := os.Stat(residue); !os.IsNotExist(err) {
+		t.Fatalf("Reconcile left the residue behind: %v", err)
+	}
+}
+
+func TestMintRefusesMissingParentNamespace(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
+	// Damage the current (= parent) generation after it committed.
+	if err := os.RemoveAll(paths.GenerationPaths(testIdentity, testGenA).KeysDir()); err != nil {
+		t.Fatalf("remove parent keys namespace: %v", err)
+	}
+
+	_, err := Mint(paths, testIdentity, MintRequest{
+		GenerationID: testGenB,
+		Parent:       testGenA,
+		Operation:    "test-activation",
+		OperationID:  "op-damaged-parent",
+		CreatedAt:    time.Unix(1_754_200_100, 0),
+	})
+	if err == nil {
+		t.Fatal("Mint silently propagated a damaged parent: child would commit with an empty keys namespace")
+	}
+	if _, statErr := os.Lstat(paths.GenerationPaths(testIdentity, testGenB).Dir()); !os.IsNotExist(statErr) {
+		t.Fatalf("rejected mint published a generation: %v", statErr)
 	}
 }

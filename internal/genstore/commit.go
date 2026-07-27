@@ -149,7 +149,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 		}
 	} else {
 		for _, namespace := range generationNamespaces {
-			if err := os.Mkdir(filepath.Join(stagingDir, namespace), 0o770); err != nil {
+			if err := makeNamespaceDir(filepath.Join(stagingDir, namespace)); err != nil {
 				return storepaths.GenPaths{}, err
 			}
 		}
@@ -300,15 +300,16 @@ func copyNamespaces(from, to storepaths.GenPaths) error {
 	for _, namespace := range generationNamespaces {
 		srcDir := filepath.Join(from.Dir(), namespace)
 		dstDir := filepath.Join(to.Dir(), namespace)
-		if err := os.Mkdir(dstDir, 0o770); err != nil {
+		if err := makeNamespaceDir(dstDir); err != nil {
 			return err
 		}
 		info, err := os.Lstat(srcDir)
-		if os.IsNotExist(err) {
-			continue
-		}
 		if err != nil {
-			return err
+			// A parent namespace that is missing is damage, never a valid
+			// state (validateStructure: absence is damage). Tolerating it
+			// here would silently mint a child with an empty namespace —
+			// keys vanishing from active state under a clean commit record.
+			return fmt.Errorf("parent generation namespace %s: %w", namespace, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return fmt.Errorf("generation namespace is not a regular directory: %s", srcDir)
@@ -326,9 +327,25 @@ func copyNamespaces(from, to storepaths.GenPaths) error {
 			if err := os.WriteFile(dst, data, mode.Perm()); err != nil {
 				return err
 			}
+			// Creation modes are umask-masked; the copy must preserve the
+			// source mode exactly (ARCH_GENERATIONS §12).
+			if err := os.Chmod(dst, mode.Perm()); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// makeNamespaceDir creates a generation namespace directory with the store
+// directory mode. os.Mkdir permissions are umask-masked, so an explicit
+// chmod restores the group-shared store model regardless of the invoking
+// process's umask.
+func makeNamespaceDir(dir string) error {
+	if err := os.Mkdir(dir, 0o770); err != nil {
+		return err
+	}
+	return os.Chmod(dir, fsutil.StoreDirPerm)
 }
 
 // syncTreeBottomUp fsyncs every regular file, then every directory from the

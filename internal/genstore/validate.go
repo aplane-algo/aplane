@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -121,6 +122,12 @@ func validateStructure(gen storepaths.GenPaths) error {
 			}
 		case slices.Contains(generationNamespaces, name):
 			// Validated unconditionally above.
+		case isDurableWriteResidue(name):
+			// Crash residue of WriteFileDurable's temp file (a power loss
+			// mid-seal orphans one at the generation root). The rename that
+			// commits a durable write is atomic, so a .tmp-* never carries
+			// state; reconciliation garbage-collects it. Rejecting it here
+			// would send a survivable crash into recovery.
 		default:
 			return fmt.Errorf("generation %s contains unsupported entry %q", gen.GenerationID(), name)
 		}
@@ -142,4 +149,12 @@ func validateNamespaceDir(dir string) error {
 		}
 	}
 	return nil
+}
+
+// isDurableWriteResidue reports whether name is an orphaned temp file from a
+// crashed WriteFileDurable of a generation record (seal.json.tmp-*,
+// manifest.json.tmp-*).
+func isDurableWriteResidue(name string) bool {
+	return strings.HasPrefix(name, storepaths.GenerationSealName+".tmp-") ||
+		strings.HasPrefix(name, storepaths.GenerationManifestName+".tmp-")
 }
