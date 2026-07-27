@@ -77,6 +77,22 @@ func (r *Runtime) SetUnlocked() {
 	r.stateMu.Unlock()
 }
 
+// PromoteRecoveryToUnlocked transitions recovery -> unlocked atomically,
+// honoring the lock fence: a Lock that raced the caller's recovery-exit
+// rescan has already destroyed the key session and set the state to locked,
+// so the promotion is refused rather than reporting unlocked over a
+// destroyed session. This is the only valid way to leave recovery upward;
+// SetUnlocked bypasses the fence and must not be used from recovery.
+func (r *Runtime) PromoteRecoveryToUnlocked() bool {
+	r.stateMu.Lock()
+	defer r.stateMu.Unlock()
+	if r.state != SignerStateRecovery {
+		return false
+	}
+	r.state = SignerStateUnlocked
+	return true
+}
+
 // SetRecovery marks the runtime master-key-available for explicit recovery
 // administration without permitting signing.
 func (r *Runtime) SetRecovery() {

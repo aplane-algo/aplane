@@ -242,7 +242,17 @@ func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[st
 		if retain[name] {
 			continue
 		}
-		if err := os.RemoveAll(paths.GenerationPaths(identityID, name).Dir()); err != nil {
+		// Deletion is not atomic: a crash mid-RemoveAll would leave a
+		// half-deleted generation that later classification could only
+		// treat as damage (wedging every subsequent prune fail-closed).
+		// Rename to a staging tombstone first — atomic, and staging
+		// residue is unconditionally garbage to reconciliation — so a
+		// crashed prune retries as a no-op instead of wedging.
+		tombstone := filepath.Join(paths.GenerationsDir(identityID), storepaths.GenerationStagingPrefix+"prune-"+name)
+		if err := os.Rename(paths.GenerationPaths(identityID, name).Dir(), tombstone); err != nil {
+			return removed, fmt.Errorf("collect generation %s: %w", name, err)
+		}
+		if err := os.RemoveAll(tombstone); err != nil {
 			return removed, fmt.Errorf("collect generation %s: %w", name, err)
 		}
 		removed = append(removed, name)

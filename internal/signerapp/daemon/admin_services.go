@@ -401,7 +401,13 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) bool
 		logInfof("staying in recovery mode: %d incomplete activation(s) remain for %s", len(incomplete), ir.ID())
 		return false
 	}
-	ir.SetUnlocked()
+	if !ir.PromoteRecoveryToUnlocked() {
+		// A concurrent lock won the race during the rescan; its callback
+		// already destroyed the key session, and reporting unlocked over
+		// it would bypass the lock-generation fence.
+		logInfof("staying out of unlocked state: %s was locked during the recovery-exit rescan", ir.ID())
+		return false
+	}
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	if s.signer != nil {
 		if hub := s.signer.adminHub(); hub != nil {

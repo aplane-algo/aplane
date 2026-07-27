@@ -807,3 +807,36 @@ func TestMintRefusesMissingParentNamespace(t *testing.T) {
 		t.Fatalf("rejected mint published a generation: %v", statErr)
 	}
 }
+
+func TestCrashedPruneRetriesAsNoOp(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths) // A, B sealed priors; C current
+	// Simulate a prune that crashed after the tombstone rename but before
+	// the removal finished: the doomed generation sits half-deleted under
+	// a staging name.
+	doomed := paths.GenerationPaths(testIdentity, testGenA).Dir()
+	tombstone := filepath.Join(paths.GenerationsDir(testIdentity), storepaths.GenerationStagingPrefix+"prune-"+testGenA)
+	if err := os.Rename(doomed, tombstone); err != nil {
+		t.Fatalf("simulate crashed prune: %v", err)
+	}
+	if err := os.Remove(filepath.Join(tombstone, storepaths.GenerationSealName)); err != nil {
+		t.Fatalf("simulate partial deletion: %v", err)
+	}
+
+	// The retry neither wedges on the residue nor misclassifies it: the
+	// tombstone is staging garbage, and the remaining prior still prunes.
+	removed, err := CollectGarbage(paths, testIdentity, nil, false)
+	if err != nil {
+		t.Fatalf("CollectGarbage(retry) error = %v, want crash-idempotent retry", err)
+	}
+	if !slices.Equal(removed, []string{testGenB}) {
+		t.Fatalf("removed = %v, want [%s]", removed, testGenB)
+	}
+	if _, err := os.Stat(tombstone); !os.IsNotExist(err) {
+		t.Fatalf("tombstone residue survived reconciliation: %v", err)
+	}
+	entries, err := os.ReadDir(paths.GenerationsDir(testIdentity))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("generations after retry = %d (%v), want only current", len(entries), err)
+	}
+}

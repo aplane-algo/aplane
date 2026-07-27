@@ -386,6 +386,12 @@ func (ir *Runtime) IsRecovery() bool {
 	return ir.lockRuntime.IsRecovery()
 }
 
+// PromoteRecoveryToUnlocked atomically transitions recovery -> unlocked,
+// refusing if a racing lock already left recovery (the lock wins).
+func (ir *Runtime) PromoteRecoveryToUnlocked() bool {
+	return ir.lockRuntime.PromoteRecoveryToUnlocked()
+}
+
 // SetUnlocked marks this identity as unlocked without side effects.
 func (ir *Runtime) SetUnlocked() {
 	ir.lockRuntime.SetUnlocked()
