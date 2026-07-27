@@ -80,6 +80,22 @@ func Resolve(paths storepaths.Paths, identityID string) (storepaths.GenPaths, er
 	return paths.GenerationPaths(identityID, generationID), nil
 }
 
+// ResolveActive resolves the identity's active namespaces exactly once:
+// the generation named by CURRENT on a migrated store, or the flat legacy
+// layout on an unmigrated one. Mutating callers hold the identity mutation
+// lock across the resolve and every use of the result. A present-but-
+// invalid CURRENT is an error, never a silent fallback to legacy paths.
+func ResolveActive(paths storepaths.Paths, identityID string) (storepaths.ActivePaths, error) {
+	generational, err := IsGenerational(paths, identityID)
+	if err != nil {
+		return nil, err
+	}
+	if !generational {
+		return paths.LegacyActivePaths(identityID), nil
+	}
+	return Resolve(paths, identityID)
+}
+
 // IsGenerational reports whether the identity store uses the generation
 // layout (a CURRENT pointer exists). It deliberately does not validate the
 // pointer: layout detection and pointer validation are separate failures.

@@ -262,3 +262,40 @@ func TestGenerationIDValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveActiveSelectsLayout(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	if err := os.MkdirAll(paths.KeysDir(testIdentity), 0o770); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	// Legacy store: flat namespaces.
+	active, err := ResolveActive(paths, testIdentity)
+	if err != nil {
+		t.Fatalf("ResolveActive(legacy) error = %v", err)
+	}
+	if active.KeysDir() != paths.KeysDir(testIdentity) {
+		t.Fatalf("legacy KeysDir = %s, want %s", active.KeysDir(), paths.KeysDir(testIdentity))
+	}
+
+	// Migrated store: generation-qualified namespaces.
+	gen := mintTestGeneration(t, paths, testGenA, nil)
+	if err := WriteCurrent(paths, testIdentity, testGenA); err != nil {
+		t.Fatalf("WriteCurrent: %v", err)
+	}
+	active, err = ResolveActive(paths, testIdentity)
+	if err != nil {
+		t.Fatalf("ResolveActive(generational) error = %v", err)
+	}
+	if active.KeysDir() != gen.KeysDir() {
+		t.Fatalf("generational KeysDir = %s, want %s", active.KeysDir(), gen.KeysDir())
+	}
+
+	// A present-but-invalid CURRENT must never fall back to legacy paths.
+	if err := os.WriteFile(paths.CurrentPointerPath(testIdentity), []byte("garbage\n"), 0o660); err != nil {
+		t.Fatalf("corrupt CURRENT: %v", err)
+	}
+	if _, err := ResolveActive(paths, testIdentity); err == nil {
+		t.Fatal("ResolveActive silently fell back past an invalid CURRENT")
+	}
+}
