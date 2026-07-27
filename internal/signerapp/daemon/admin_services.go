@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
@@ -82,6 +83,23 @@ func (s signerAdminServices) VerifyPassphrase(ir *identity.Runtime, passphrase [
 }
 
 func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string) {
+	// Generation-based stores reconcile before unlock: CURRENT is the sole
+	// commit record, staging residue and uncommitted attempts are discarded
+	// (never resumed), and the selected generation must validate. Any
+	// failure enters recovery mode with nothing deleted.
+	if generational, genErr := genstore.IsGenerational(ir.KeyPaths(), ir.ID()); genErr != nil {
+		errMsg := fmt.Sprintf("failed to inspect store layout: %v", genErr)
+		return false, 0, errMsg, protocol.ErrCodeUnlockFailed
+	} else if generational {
+		if reconcileErr := s.reconcileGenerations(ir); reconcileErr != nil {
+			success, errMsg := ir.TryRecoveryUnlock(passphrase)
+			if !success {
+				return false, 0, errMsg, unlockFailureCode(errMsg)
+			}
+			logWarnf("identity is recovery-blocked: %v", reconcileErr)
+			return true, 0, "", protocol.ResultCodeActivationIncomplete
+		}
+	}
 	incomplete, err := recovered.IncompleteActivationIDs(ir.KeyPaths(), ir.ID())
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to inspect activation recovery state: %v", err)
@@ -101,6 +119,33 @@ func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []b
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
 	return success, keyCount, errMsg, unlockFailureCode(errMsg)
+}
+
+// reconcileGenerations enforces CURRENT as the sole commit record at unlock
+// (docs/ARCH_GENERATIONS.md §7) under the identity mutation lock, and
+// validates the selected generation fail-closed.
+func (s signerAdminServices) reconcileGenerations(ir *identity.Runtime) error {
+	reconcile := func() error {
+		report, err := genstore.Reconcile(ir.KeyPaths(), ir.ID(), nil)
+		if err != nil {
+			return err
+		}
+		for _, discarded := range report.DiscardedAttempts {
+			logInfof("discarded uncommitted generation %s (never resumed; review and activate again)", discarded)
+		}
+		for _, staging := range report.DiscardedStaging {
+			logInfof("discarded generation staging residue %s", staging)
+		}
+		gen, err := genstore.Resolve(ir.KeyPaths(), ir.ID())
+		if err != nil {
+			return err
+		}
+		return genstore.ValidateCurrent(gen)
+	}
+	if s.signer == nil {
+		return reconcile()
+	}
+	return s.signer.withIdentityMutation(ir.ID(), reconcile)
 }
 
 // reconcileIncompleteActivationsAtUnlock runs automatic reconciliation after
@@ -286,6 +331,9 @@ func (s signerAdminServices) ActivateRecovered(ir *identity.Runtime, req adminpr
 	if result.Success && wasRecovery {
 		s.exitRecoveryIfReconciled(ir)
 	}
+	if result.Success {
+		s.rearmWatcherAfterGenerationFlip(ir)
+	}
 	return result
 }
 
@@ -295,7 +343,23 @@ func (s signerAdminServices) RollbackRecovered(ir *identity.Runtime, req adminpr
 	if result.Success && wasRecovery {
 		s.exitRecoveryIfReconciled(ir)
 	}
+	if result.Success {
+		s.rearmWatcherAfterGenerationFlip(ir)
+	}
 	return result
+}
+
+// rearmWatcherAfterGenerationFlip rebinds the key watcher to the new current
+// generation's directories after a pointer flip: fsnotify watches bind to
+// inodes, so the watches armed before the flip still point at the prior
+// generation.
+func (s signerAdminServices) rearmWatcherAfterGenerationFlip(ir *identity.Runtime) {
+	generational, err := genstore.IsGenerational(ir.KeyPaths(), ir.ID())
+	if err != nil || !generational {
+		return
+	}
+	ir.StopKeyWatcher()
+	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 }
 
 // exitRecoveryIfReconciled promotes recovery to unlocked only after a rescan

@@ -22,7 +22,7 @@ const WitnessPublicMetadataSuffix = ".wit.json"
 // WitnessPublicMetadataPath returns the public-only metadata sidecar path for
 // a signer-custodied witness key.
 func WitnessPublicMetadataPath(paths storepaths.Paths, identityID, witnessKeyID string) string {
-	return WitnessPublicMetadataPathActive(paths.LegacyActivePaths(identityID), witnessKeyID)
+	return WitnessPublicMetadataPathActive(mustResolveActive(paths, identityID), witnessKeyID)
 }
 
 // WitnessPublicMetadataPathActive is WitnessPublicMetadataPath against

@@ -315,6 +315,15 @@ func ListEnabledActive(active storepaths.ActivePaths) ([]string, error) {
 // RequireUnused scans existing identity keys and returns ErrKeyTypeInUse if any
 // key uses keyType.
 func RequireUnused(paths storepaths.Paths, identityID, keyType string, masterKey []byte) error {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return err
+	}
+	return RequireUnusedActive(active, keyType, masterKey)
+}
+
+// RequireUnusedActive is RequireUnused against resolved active-store paths.
+func RequireUnusedActive(active storepaths.ActivePaths, keyType string, masterKey []byte) error {
 	keyType, err := normalizeKeyType(keyType)
 	if err != nil {
 		return err
@@ -322,7 +331,7 @@ func RequireUnused(paths storepaths.Paths, identityID, keyType string, masterKey
 	if len(masterKey) == 0 {
 		return fmt.Errorf("master key is required to verify key type is unused")
 	}
-	scan, err := keys.ScanKeysDirectoryWithMasterKey(paths, identityID, masterKey)
+	scan, err := keys.ScanKeysDirectoryWithMasterKeyActive(active, masterKey)
 	if err != nil {
 		return err
 	}

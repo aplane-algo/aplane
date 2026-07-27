@@ -12,8 +12,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 type activationPoint string
@@ -82,12 +84,22 @@ func (s Service) activateRecovered(
 	if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
 		return activationFailure(protocol.ResultCodeRecoveredActivationFailed, "%v", err)
 	}
+	// Generation-based stores commit activation with a durable pointer flip
+	// (docs/ARCH_GENERATIONS.md); the journal/snapshot machinery below is
+	// the legacy path, retained solely for unmigrated flat stores.
+	generational, err := genstore.IsGenerational(s.Deps.KeyPaths(), ir.ID())
+	if err != nil {
+		return err
+	}
+	if generational {
+		return s.activateRecoveredGenerational(ir, req, result)
+	}
 	// The scan over every batch is authoritative: an incomplete activation
 	// anywhere blocks new activations, even for a different restore ID. Never
 	// infer safety from the requested batch alone. [P1]
-	incomplete, err := recovered.IncompleteActivationIDs(s.Deps.KeyPaths(), ir.ID())
-	if err != nil {
-		return fmt.Errorf("inspect activation recovery state: %w", err)
+	incomplete, incompleteErr := recovered.IncompleteActivationIDs(s.Deps.KeyPaths(), ir.ID())
+	if incompleteErr != nil {
+		return fmt.Errorf("inspect activation recovery state: %w", incompleteErr)
 	}
 	for _, id := range incomplete {
 		if id != req.RestoreID {
@@ -372,6 +384,19 @@ func (s Service) applyRecoveredBatch(
 	masterKey []byte,
 	warnings *[]string,
 ) error {
+	return s.applyRecoveredBatchTo(ir, req, masterKey, warnings, nil)
+}
+
+// applyRecoveredBatchTo applies the batch's entries; a non-nil target routes
+// every namespace write into resolved active paths (e.g. a staged
+// generation during a mint).
+func (s Service) applyRecoveredBatchTo(
+	ir *identity.Runtime,
+	req adminproto.ActivateRecoveredRequest,
+	masterKey []byte,
+	warnings *[]string,
+	target storepaths.ActivePaths,
+) error {
 	batch, err := recovered.LoadBatch(s.Deps.KeyPaths(), ir.ID(), req.RestoreID, masterKey)
 	if err != nil {
 		return err
@@ -384,6 +409,9 @@ func (s Service) applyRecoveredBatch(
 		WithWarningHandler(func(_ string, warning string) {
 			*warnings = append(*warnings, warning)
 		})
+	if target != nil {
+		restorer = restorer.WithActiveNamespace(target)
+	}
 	for _, meta := range batch.Entries {
 		entry, err := recovered.LoadEntry(
 			s.Deps.KeyPaths(),
@@ -481,11 +509,20 @@ func (s Service) RollbackRecovered(
 		if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
 			return err
 		}
+		// Generation-based stores roll back a committed activation by
+		// repointing CURRENT at its parent; there is no incomplete state.
+		generational, err := genstore.IsGenerational(s.Deps.KeyPaths(), ir.ID())
+		if err != nil {
+			return err
+		}
+		if generational {
+			return s.rollbackRecoveredGenerational(ir, req, &result)
+		}
 		var (
 			journal  *recovered.ActivationJournal
 			snapshot *recovered.RollbackSnapshot
 		)
-		err := ir.WithMasterKey(func(masterKey []byte) error {
+		err = ir.WithMasterKey(func(masterKey []byte) error {
 			var loadErr error
 			journal, snapshot, loadErr = recovered.LoadActivation(
 				s.Deps.KeyPaths(),

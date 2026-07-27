@@ -443,6 +443,31 @@ a `.keystore` metadata file. The backup passphrase is the export passphrase you
 entered when the backup was created, and it may differ from your current store
 passphrase.
 
+### Generation-Based Storage and Migration
+
+New and rebuilt stores keep their active credentials in generation-based
+storage: `identities/<identity>/CURRENT` names the active generation under
+`generations/`, and every restore activation commits as a complete new
+generation with one durable pointer flip. Activation on these stores cannot
+be left half-applied — a failure before the flip leaves the batch inactive
+and nothing published, and `restore rollback <restore-id>` repoints the
+store at the pre-activation generation.
+
+Existing flat stores keep working unchanged. To convert one (daemon
+stopped):
+
+```
+./apstore migrate-layout
+```
+
+Migration refuses while an incomplete activation or unresolved passphrase
+rotation exists, keeps the legacy directories under `.legacy-<timestamp>/`
+for a rollback window, and preserves the pre-migration keystore metadata as
+`.keystore.premigration`. After migration, older aplane binaries reject the
+store with an unsupported-keystore-version error instead of misreading it.
+Passphrase rotation on a generational store requires generation quiescence:
+prune prior generations first.
+
 ### Policy Snapshots in Backups
 
 Backups include `policy/policy.yaml` and `policy/policy.yaml.hmac` so an
