@@ -4,6 +4,9 @@
 package harness
 
 import (
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,8 +17,8 @@ func TestCloneSharedTestEnvUsesOriginalSharedSource(t *testing.T) {
 	sharedSigner := filepath.Join(sharedRoot, "apadmin")
 	sharedClient := filepath.Join(sharedRoot, "apclient")
 
-	mustMkdirAll(t, filepath.Join(sharedSigner, "identities", "default", "keys"))
-	mustMkdirAll(t, filepath.Join(sharedSigner, "identities", "default", "keytypes"))
+	sharedPaths := storepaths.NewPaths(sharedSigner)
+	genstoretest.MintFirst(t, sharedPaths, "default")
 	mustMkdirAll(t, filepath.Join(sharedSigner, ".ssh"))
 	mustMkdirAll(t, filepath.Join(sharedClient, ".ssh"))
 
@@ -30,11 +33,19 @@ func TestCloneSharedTestEnvUsesOriginalSharedSource(t *testing.T) {
 	t.Setenv("APLANE_SHARED_APCLIENT_DATA", sharedClient)
 
 	first := CloneSharedTestEnv(t, TestEnvCloneOptions{})
-	templatePath := filepath.Join(first.SignerDataDir, "identities", "default", "keytypes", "aplane.custom.v1.template")
+	firstActive, err := genstore.ResolveActive(storepaths.NewPaths(first.SignerDataDir), "default")
+	if err != nil {
+		t.Fatalf("ResolveActive(first clone): %v", err)
+	}
+	templatePath := firstActive.KeyTypeTemplate("aplane.custom.v1")
 	mustWriteFile(t, templatePath, []byte("custom template"), 0o600)
 
 	second := CloneSharedTestEnv(t, TestEnvCloneOptions{})
-	if _, err := os.Stat(filepath.Join(second.SignerDataDir, "identities", "default", "keytypes", "aplane.custom.v1.template")); !os.IsNotExist(err) {
+	secondActive, err := genstore.ResolveActive(storepaths.NewPaths(second.SignerDataDir), "default")
+	if err != nil {
+		t.Fatalf("ResolveActive(second clone): %v", err)
+	}
+	if _, err := os.Stat(secondActive.KeyTypeTemplate("aplane.custom.v1")); !os.IsNotExist(err) {
 		t.Fatalf("second clone unexpectedly copied template from first clone, stat err=%v", err)
 	}
 }

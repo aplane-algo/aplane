@@ -26,12 +26,6 @@ type Options struct {
 	IdentityID string
 	Role       noderole.Role
 	Logf       func(format string, args ...any)
-	// Generational creates the store with generation-based active storage
-	// (docs/ARCH_GENERATIONS.md): version-3 keystore metadata and the first
-	// generation minted behind CURRENT. Off until every runtime consumer
-	// resolves through the generation layer (rollout gate 5); binaries
-	// without generation support reject such a store outright.
-	Generational bool
 }
 
 type Result struct {
@@ -83,14 +77,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		}
 	}()
 
-	// Generational stores write version-3 metadata, which makes binaries
-	// without generation support reject the store instead of reading paths
-	// that do not exist.
-	createMetadata := crypto.CreateKeystoreMetadata
-	if opts.Generational {
-		createMetadata = crypto.CreateKeystoreMetadataGenerational
-	}
-	_, masterKey, err := createMetadata(metadataDir, passphrase)
+	_, masterKey, err := crypto.CreateKeystoreMetadataGenerational(metadataDir, passphrase)
 	if err != nil {
 		return result, fmt.Errorf("failed to create keystore metadata: %w", err)
 	}
@@ -114,7 +101,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		crypto.ZeroBytes(masterKey)
 		return result, fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)
 	}
-	if opts.Generational {
+	{
 		// Mint the store's first generation, installing the default key
 		// types into the staged namespaces; the commit flips CURRENT
 		// durably.
@@ -137,16 +124,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 			return result, fmt.Errorf("failed to mint initial generation: %w", err)
 		}
 		crypto.ZeroBytes(masterKey)
-	} else {
-		if err := defaultkeytypes.InstallForNewIdentity(opts.Paths, opts.IdentityID, role, masterKey, opts.Logf); err != nil {
-			crypto.ZeroBytes(masterKey)
-			return result, fmt.Errorf("failed to install default key types: %w", err)
-		}
-		crypto.ZeroBytes(masterKey)
-
-		if err := fsutil.MkdirAll(opts.Paths.KeysDir(opts.IdentityID)); err != nil {
-			return result, fmt.Errorf("failed to create keys directory: %w", err)
-		}
 	}
 
 	if _, err := tokenfile.LoadAPlaneToken(opts.Paths.Root(), opts.IdentityID); err != nil {

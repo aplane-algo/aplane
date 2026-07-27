@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"testing"
 
@@ -19,6 +20,7 @@ import (
 func TestSavePayloadEncrypted(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
@@ -70,6 +72,7 @@ func TestSavePayloadEncrypted(t *testing.T) {
 func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	publicKey, privateKey := canonicalFalconComponentPair(t, 0x41)
 	payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
 	componentKey, err := payload.Selector()
@@ -133,6 +136,7 @@ func TestSavePayloadRejectsEmptyMasterKey(t *testing.T) {
 func TestSavePayloadDirectoryCreation(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
@@ -140,7 +144,7 @@ func TestSavePayloadDirectoryCreation(t *testing.T) {
 	if _, err := SavePayload(paths, "default", NewEd25519Payload(publicKey, privateKey), masterKey); err != nil {
 		t.Fatalf("SavePayload() error = %v, keys dir should be created automatically", err)
 	}
-	info, err := os.Stat(paths.KeysDir("default"))
+	info, err := os.Stat(activeKeysDirForTest(t, paths, "default"))
 	if err != nil {
 		t.Fatalf("keys directory should exist: %v", err)
 	}

@@ -5,6 +5,7 @@ package keygen
 
 import (
 	"context"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"testing"
 
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
@@ -19,6 +20,7 @@ import (
 func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	RegisterWitnessKeygen()
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	passphrase := []byte("component-generator-test-passphrase")
 	if _, _, err := securecrypto.CreateKeystoreMetadata(paths.IdentityDir("default"), passphrase); err != nil {
 		t.Fatalf("CreateKeystoreMetadata() error = %v", err)

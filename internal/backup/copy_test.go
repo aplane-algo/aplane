@@ -6,11 +6,13 @@ package backup
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -25,13 +27,11 @@ var testExportMasterKey = []byte("0123456789abcdef0123456789abcdef")
 
 func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
 	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, testExportMasterKey)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(paths.KeysDir(identityID), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	source := keys.SentryCredentialFilePath(paths, identityID, selector)
@@ -39,7 +39,11 @@ func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	destination := t.TempDir()
-	if _, _, err := ExportKey(paths, identityID, paths.KeysDir(identityID), destination, selector, testExportMasterKey, []byte("export-passphrase")); err != nil {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	if _, _, err := ExportKey(paths, identityID, active.KeysDir(), destination, selector, testExportMasterKey, []byte("export-passphrase")); err != nil {
 		t.Fatalf("ExportKey() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(destination, selector+".apb")); err != nil {
@@ -49,6 +53,7 @@ func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 
 func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
 	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, testExportMasterKey)
@@ -101,6 +106,7 @@ func TestBuildExportPayloadBundlesKeystoreTemplate(t *testing.T) {
 	)
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	keyJSON := testKeyJSON(t, keyType)
 	wantTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Override\nteal: |\n  int 1\n")
 
@@ -257,6 +263,7 @@ func TestBuildExportPayloadBundlesLibraryGenericTemplateFromKeystore(t *testing.
 	}
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeGeneric, testExportMasterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
@@ -314,6 +321,7 @@ func TestBuildExportPayloadBundlesLibraryComposedTemplateFromKeystore(t *testing
 	}
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeComposed, testExportMasterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
@@ -346,6 +354,7 @@ func TestBuildExportPayloadBundlesKeystoreTemplateEvenWhenProviderRegistered(t *
 
 	wantTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: test\nfamily: backup-registered-template\nversion: 1\ndisplay_name: Backup Registered Template\nteal: |\n  int 1\n")
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeGeneric, testExportMasterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
@@ -414,5 +423,22 @@ func TestIsCanonicalPayloadRejectionCoversEverySentinel(t *testing.T) {
 				t.Fatalf("isCanonicalPayloadRejection(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+func mintFirstGenerationForBackupTest(t *testing.T, paths storepaths.Paths) {
+	t.Helper()
+	generationID, err := genstore.NewGenerationID(time.Unix(1_785_200_000, 0))
+	if err != nil {
+		t.Fatalf("NewGenerationID: %v", err)
+	}
+	if _, err := genstore.Mint(paths, "default", genstore.MintRequest{
+		GenerationID:    generationID,
+		FirstGeneration: true,
+		Operation:       "store-initialize",
+		OperationID:     "init-" + generationID,
+		CreatedAt:       time.Unix(1_785_200_000, 0),
+	}); err != nil {
+		t.Fatalf("Mint(first): %v", err)
 	}
 }

@@ -14,7 +14,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -118,28 +117,17 @@ func Resolve(paths storepaths.Paths, identityID string) (storepaths.GenPaths, er
 	return paths.GenerationPaths(identityID, generationID), nil
 }
 
-// ResolveActive resolves the identity's active namespaces exactly once:
-// the generation named by CURRENT on a migrated store, or the flat legacy
-// layout on an unmigrated one. Mutating callers hold the identity mutation
-// lock across the resolve and every use of the result. A present-but-
-// invalid CURRENT is an error, never a silent fallback to legacy paths.
+// ResolveActive resolves the identity's active namespaces: the generation
+// named by CURRENT. All stores are generation-based; a missing or invalid
+// CURRENT is an error (recovery), never a fallback.
 func ResolveActive(paths storepaths.Paths, identityID string) (storepaths.ActivePaths, error) {
-	generational, err := IsGenerational(paths, identityID)
-	if err != nil {
-		return nil, err
-	}
-	if !generational {
-		return paths.LegacyActivePaths(identityID), nil
-	}
 	return Resolve(paths, identityID)
 }
 
-// IsGenerational reports whether the identity store uses the generation
-// layout: a CURRENT pointer exists, or the keystore metadata carries the
-// durable layout marker. Consulting the marker closes the missing-pointer
-// hole — a generational store whose CURRENT was lost must fail closed in
-// Resolve, never silently fall back to the flat legacy paths. Layout
-// detection and pointer validation remain separate failures.
+// IsGenerational reports whether the identity store exists as a
+// generation-based store (all supported stores are). It distinguishes an
+// uninitialized store from one whose CURRENT pointer is present, so callers
+// can produce a friendly not-initialized error instead of a pointer error.
 func IsGenerational(paths storepaths.Paths, identityID string) (bool, error) {
 	_, err := os.Lstat(paths.CurrentPointerPath(identityID))
 	if err == nil {
@@ -148,11 +136,7 @@ func IsGenerational(paths storepaths.Paths, identityID string) (bool, error) {
 	if !os.IsNotExist(err) {
 		return false, err
 	}
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
-	if err != nil {
-		return false, fmt.Errorf("inspect store layout: %w", err)
-	}
-	return meta.IsGenerationalLayout(), nil
+	return false, nil
 }
 
 func requireRegularDirectory(path string) error {

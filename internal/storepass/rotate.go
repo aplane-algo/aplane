@@ -249,13 +249,6 @@ func scanTargets(
 // rotation the retention window restarts empty. Prior-generation retention
 // and passphrase rotation never coexist.
 func requireGenerationQuiescence(paths storepaths.Paths, identityID string) error {
-	generational, err := genstore.IsGenerational(paths, identityID)
-	if err != nil {
-		return err
-	}
-	if !generational {
-		return nil
-	}
 	current, err := genstore.ReadCurrent(paths, identityID)
 	if err != nil {
 		return fmt.Errorf("passphrase rotation requires a valid CURRENT generation: %w", err)

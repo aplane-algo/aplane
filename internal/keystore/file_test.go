@@ -12,6 +12,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,13 +48,13 @@ func setupTestKeysDir(t *testing.T) (string, utilkeys.Paths, func()) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
-	// Set keystore path to tmpDir, so KeysDir("default") returns tmpDir/identities/default/keys
-	keysDir := filepath.Join(tmpDir, "identities", testIdentityID, "keys")
-	if err := os.MkdirAll(keysDir, 0750); err != nil {
-		t.Fatalf("Failed to create test keys dir: %v", err)
+	paths := utilkeys.NewPaths(tmpDir)
+	genstoretest.MintFirst(t, paths, testIdentityID)
+	active, err := genstore.ResolveActive(paths, testIdentityID)
+	if err != nil {
+		t.Fatalf("ResolveActive: %v", err)
 	}
-
-	return keysDir, utilkeys.NewPaths(tmpDir), func() {}
+	return active.KeysDir(), paths, func() {}
 }
 
 // createTestKeyFile creates an encrypted test key file
@@ -366,7 +368,9 @@ func TestFileKeyStoreDeleteKeepsCacheWhenRemoveFails(t *testing.T) {
 
 // TestFileKeyStore_Type tests Type returns "file"
 func TestFileKeyStore_Type(t *testing.T) {
-	store := NewFileKeyStoreForPaths(utilkeys.NewPaths(t.TempDir()), "dummy-identity")
+	dummyPaths := utilkeys.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, dummyPaths, "dummy-identity")
+	store := NewFileKeyStoreForPaths(dummyPaths, "dummy-identity")
 	if store.Type() != "file" {
 		t.Errorf("Type = %s, want 'file'", store.Type())
 	}

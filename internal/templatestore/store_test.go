@@ -4,6 +4,8 @@
 package templatestore
 
 import (
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +93,7 @@ func TestSaveAndLoadTemplate(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	paths := utilkeys.NewPaths(tmpDir)
+	genstoretest.MintFirst(t, paths, "default")
 
 	yamlData := []byte(`
 schema_version: 1
@@ -143,6 +146,7 @@ func TestSaveAndLoadComposedTemplate(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	paths := utilkeys.NewPaths(tmpDir)
+	genstoretest.MintFirst(t, paths, "default")
 
 	yamlData := []byte(`
 schema_version: 1
@@ -177,7 +181,7 @@ teal: |
 	}
 
 	// Verify file was created in the identity-local key type records directory.
-	expectedDir := filepath.Join(tmpDir, "identities", "default", "keytypes")
+	expectedDir := mustActiveTS(t, paths).KeyTypeRecordsDir()
 	if !strings.HasPrefix(outputPath, expectedDir) {
 		t.Errorf("Template saved to wrong directory. Expected prefix %s, got %s", expectedDir, outputPath)
 	}
@@ -236,6 +240,7 @@ func TestTemplateExists(t *testing.T) {
 
 	// Set keystore path
 	paths := utilkeys.NewPaths(tmpDir)
+	genstoretest.MintFirst(t, paths, "default")
 
 	keyType := "test.exists-test.v1"
 
@@ -269,6 +274,7 @@ func TestTemplateExists(t *testing.T) {
 
 func TestTemplateStoreRejectsUnknownTemplateType(t *testing.T) {
 	paths := utilkeys.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	keyType := "test.unknown-template-type.v1"
 	unknownType := TemplateType("compiled_provider")
 
@@ -301,6 +307,7 @@ func TestLoadAllTemplates(t *testing.T) {
 
 	// Set keystore path
 	paths := utilkeys.NewPaths(tmpDir)
+	genstoretest.MintFirst(t, paths, "default")
 
 	// Save multiple templates
 	templates := map[string][]byte{
@@ -546,4 +553,13 @@ func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mustActiveTS(t *testing.T, paths utilkeys.Paths) utilkeys.ActivePaths {
+	t.Helper()
+	active, err := genstore.ResolveActive(paths, "default")
+	if err != nil {
+		t.Fatalf("ResolveActive: %v", err)
+	}
+	return active
 }

@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/authz"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -214,14 +213,7 @@ func Run(dataDir string) int {
 		// Generation-based stores reconcile before startup unlock: CURRENT
 		// is the sole commit record; uncommitted attempts are discarded and
 		// the selected generation must validate, else recovery mode.
-		var generationErr error
-		if generational, genErr := genstore.IsGenerational(startupOpts.Paths, ir.ID()); genErr != nil {
-			crypto.ZeroBytes(startPassphrase)
-			logErrorf("error inspecting store layout: %v", genErr)
-			return 1
-		} else if generational {
-			generationErr = (signerAdminServices{signer: server}).reconcileGenerations(ir)
-		}
+		generationErr := (signerAdminServices{signer: server}).reconcileGenerations(ir)
 		if generationErr != nil {
 			success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
 			crypto.ZeroBytes(startPassphrase)

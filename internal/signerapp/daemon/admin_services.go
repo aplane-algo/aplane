@@ -87,18 +87,13 @@ func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []b
 	// commit record, staging residue and uncommitted attempts are discarded
 	// (never resumed), and the selected generation must validate. Any
 	// failure enters recovery mode with nothing deleted.
-	if generational, genErr := genstore.IsGenerational(ir.KeyPaths(), ir.ID()); genErr != nil {
-		errMsg := fmt.Sprintf("failed to inspect store layout: %v", genErr)
-		return false, 0, errMsg, protocol.ErrCodeUnlockFailed
-	} else if generational {
-		if reconcileErr := s.reconcileGenerations(ir); reconcileErr != nil {
-			success, errMsg := ir.TryRecoveryUnlock(passphrase)
-			if !success {
-				return false, 0, errMsg, unlockFailureCode(errMsg)
-			}
-			logWarnf("identity is recovery-blocked: %v", reconcileErr)
-			return true, 0, "", protocol.ResultCodeActivationIncomplete
+	if reconcileErr := s.reconcileGenerations(ir); reconcileErr != nil {
+		success, errMsg := ir.TryRecoveryUnlock(passphrase)
+		if !success {
+			return false, 0, errMsg, unlockFailureCode(errMsg)
 		}
+		logWarnf("identity is recovery-blocked: %v", reconcileErr)
+		return true, 0, "", protocol.ResultCodeActivationIncomplete
 	}
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
@@ -277,10 +272,6 @@ func (s signerAdminServices) RollbackRecovered(ir *identity.Runtime, req adminpr
 // inodes, so the watches armed before the flip still point at the prior
 // generation.
 func (s signerAdminServices) rearmWatcherAfterGenerationFlip(ir *identity.Runtime) {
-	generational, err := genstore.IsGenerational(ir.KeyPaths(), ir.ID())
-	if err != nil || !generational {
-		return
-	}
 	ir.StopKeyWatcher()
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 }

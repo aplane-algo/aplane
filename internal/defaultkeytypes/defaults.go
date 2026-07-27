@@ -7,6 +7,7 @@ package defaultkeytypes
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore"
 
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -38,7 +39,11 @@ var signerDefaultTemplates = []bundledTemplate{
 // have already registered built-in LogicSig providers. Sentry nodes skip signer
 // account key types.
 func InstallForNewIdentity(paths storepaths.Paths, identityID string, role noderole.Role, masterKey []byte, logf func(format string, args ...any)) error {
-	return InstallForNewIdentityActive(paths.LegacyActivePaths(identityID), role, masterKey, logf)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return err
+	}
+	return InstallForNewIdentityActive(active, role, masterKey, logf)
 }
 
 // InstallForNewIdentityActive is InstallForNewIdentity against resolved

@@ -5,6 +5,8 @@ package keytypestate
 
 import (
 	"errors"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,7 @@ import (
 
 func TestPutGetListAndListEnabled(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 
 	if err := Put(paths, "default", Record{
 		KeyType:     "APlane.Falcon1024_Allowlist.v1",
@@ -68,6 +71,7 @@ func TestPutGetListAndListEnabled(t *testing.T) {
 
 func TestSetStatePreservesOtherFields(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	rec := Record{
 		KeyType:     "custom-v1",
 		Source:      SourceYAMLGeneric,
@@ -95,6 +99,7 @@ func TestSetStatePreservesOtherFields(t *testing.T) {
 
 func TestDeleteIsIdempotent(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	if err := Put(paths, "default", Record{KeyType: "custom-v1", Source: SourceCompiled, State: StateEnabled}); err != nil {
 		t.Fatalf("Put() error = %v", err)
 	}
@@ -115,11 +120,12 @@ func TestDeleteIsIdempotent(t *testing.T) {
 
 func TestGetDistinguishesMissingFromMalformed(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	if _, ok, err := Get(paths, "default", "missing-v1"); err != nil || ok {
 		t.Fatalf("Get(missing) = ok %v err %v, want absent without error", ok, err)
 	}
 
-	path := paths.KeyTypeRecord("default", "bad-v1")
+	path := mustActive(t, paths).KeyTypeRecord("bad-v1")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -140,10 +146,11 @@ func TestGetDistinguishesMissingFromMalformed(t *testing.T) {
 
 func TestListEnabledSurfacesMalformedRecord(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	if err := Put(paths, "default", Record{KeyType: "good-v1", Source: SourceCompiled, State: StateEnabled}); err != nil {
 		t.Fatalf("Put() error = %v", err)
 	}
-	path := paths.KeyTypeRecord("default", "bad-v1")
+	path := mustActive(t, paths).KeyTypeRecord("bad-v1")
 	if err := os.WriteFile(path, []byte(`{bad`), 0o600); err != nil {
 		t.Fatalf("WriteFile(bad record) error = %v", err)
 	}
@@ -159,6 +166,7 @@ func TestListEnabledSurfacesMalformedRecord(t *testing.T) {
 
 func TestRejectsUnsafeKeyType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	for _, keyType := range []string{"", "../bad", "bad/name", "bad\\name", "bad\x00name", "bad:name", "bad..name"} {
 		if err := Put(paths, "default", Record{KeyType: keyType, Source: SourceCompiled, State: StateEnabled}); err == nil {
 			t.Fatalf("Put(%q) error = nil, want invalid key type", keyType)
@@ -171,6 +179,7 @@ func TestRejectsUnsafeKeyType(t *testing.T) {
 
 func TestRequireUnusedRejectsKeyTypeInUse(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	masterKey := []byte("01234567890123456789012345678901")
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	payload := apkeys.NewDSALSigPayload("custom-v1", "custom-v1", []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
@@ -200,6 +209,7 @@ func TestCanGenerate(t *testing.T) {
 	})
 
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	ok, err := CanGenerate(paths, "default", defaultKeyType)
 	if err != nil {
 		t.Fatalf("CanGenerate(default) error = %v", err)
@@ -219,7 +229,7 @@ func TestCanGenerate(t *testing.T) {
 		t.Fatal("CanGenerate(custom) = false, want true")
 	}
 
-	if err := os.WriteFile(paths.KeyTypeRecord("default", "bad-v1"), []byte(`{bad`), 0o600); err != nil {
+	if err := os.WriteFile(mustActive(t, paths).KeyTypeRecord("bad-v1"), []byte(`{bad`), 0o600); err != nil {
 		t.Fatalf("WriteFile(bad record) error = %v", err)
 	}
 	if ok, err = CanGenerate(paths, "default", "bad-v1"); err == nil || ok {
@@ -338,6 +348,7 @@ func TestCanGenerateLifecycleMatrix(t *testing.T) {
 			keyType: "keytypestate-matrix-cross-identity-v1",
 			setup: func(t *testing.T, paths storepaths.Paths) {
 				t.Helper()
+				genstoretest.MintFirst(t, paths, "alice")
 				if err := Put(paths, "alice", Record{
 					KeyType: "keytypestate-matrix-cross-identity-v1",
 					Source:  SourceYAMLGeneric,
@@ -352,7 +363,7 @@ func TestCanGenerateLifecycleMatrix(t *testing.T) {
 			keyType: "keytypestate-matrix-corrupt-v1",
 			setup: func(t *testing.T, paths storepaths.Paths) {
 				t.Helper()
-				path := paths.KeyTypeRecord("default", "keytypestate-matrix-corrupt-v1")
+				path := mustActive(t, paths).KeyTypeRecord("keytypestate-matrix-corrupt-v1")
 				if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 					t.Fatalf("MkdirAll() error = %v", err)
 				}
@@ -367,6 +378,7 @@ func TestCanGenerateLifecycleMatrix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
+			genstoretest.MintFirst(t, paths, "default")
 			tt.setup(t, paths)
 
 			got, err := CanGenerate(paths, "default", tt.keyType)
@@ -461,6 +473,7 @@ func TestCompareForReload(t *testing.T) {
 
 func TestConcurrentReadAndWriteConverges(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	rec := Record{KeyType: "custom-v1", Source: SourceCompiled, State: StateEnabled, Fingerprint: "initial"}
 	if err := Put(paths, "default", rec); err != nil {
 		t.Fatalf("Put(initial) error = %v", err)
@@ -498,4 +511,13 @@ func keyTypesOf(records []Record) []string {
 		out[i] = rec.KeyType
 	}
 	return out
+}
+
+func mustActive(t *testing.T, paths storepaths.Paths) storepaths.ActivePaths {
+	t.Helper()
+	active, err := genstore.ResolveActive(paths, "default")
+	if err != nil {
+		t.Fatalf("ResolveActive: %v", err)
+	}
+	return active
 }

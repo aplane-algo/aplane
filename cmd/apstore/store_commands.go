@@ -190,7 +190,6 @@ func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.Initi
 		// New stores use generation-based active storage
 		// (docs/ARCH_GENERATIONS.md); older binaries reject them via the
 		// keystore metadata version gate.
-		Generational: true,
 	})
 	if err != nil {
 		return protocol.InitializeStoreResultMessage{

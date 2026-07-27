@@ -5,6 +5,8 @@ package storemut
 
 import (
 	"context"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -48,6 +50,7 @@ func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, []byte, fun
 
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
+	genstoretest.MintFirst(t, paths, identityID)
 
 	userDir := paths.IdentityDir(identityID)
 	if _, _, err := crypto.CreateKeystoreMetadata(userDir, []byte("test-passphrase-for-storemut")); err != nil {
@@ -72,6 +75,7 @@ func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, []byte, fun
 func TestRevokeTokenWritesAndUpdatesDependents(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
+	genstoretest.MintFirst(t, paths, "default")
 
 	httpUpdater := &recordingUpdater{}
 	sshUpdater := &recordingUpdater{}
@@ -100,6 +104,7 @@ func TestRevokeTokenWritesAndUpdatesDependents(t *testing.T) {
 func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
+	genstoretest.MintFirst(t, paths, "default")
 
 	keyPath := keys.AccountKeyFilePath(paths, "default", "ADDR")
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
@@ -145,7 +150,7 @@ func TestGenerateKeyCreatesPersistedKey(t *testing.T) {
 	if _, err := os.Stat(result.KeyFile); err != nil {
 		t.Fatalf("expected key file at %s: %v", result.KeyFile, err)
 	}
-	if got, want := filepath.Dir(result.KeyFile), paths.KeysDir(identityID); got != want {
+	if got, want := filepath.Dir(result.KeyFile), mustActiveKeysDirStoremut(t, paths, identityID); got != want {
 		t.Fatalf("key dir = %s, want %s", got, want)
 	}
 }
@@ -169,7 +174,7 @@ func TestImportKeyFromMnemonicCreatesPersistedKey(t *testing.T) {
 	if _, err := os.Stat(result.KeyFile); err != nil {
 		t.Fatalf("expected key file at %s: %v", result.KeyFile, err)
 	}
-	if got, want := filepath.Dir(result.KeyFile), paths.KeysDir(identityID); got != want {
+	if got, want := filepath.Dir(result.KeyFile), mustActiveKeysDirStoremut(t, paths, identityID); got != want {
 		t.Fatalf("key dir = %s, want %s", got, want)
 	}
 }
@@ -263,4 +268,13 @@ func TestSaveIdentitySettingPersistsIdentityConfigValue(t *testing.T) {
 	if cfg.PassphraseTimeout != "30m" {
 		t.Fatalf("passphrase_timeout = %q, want %q", cfg.PassphraseTimeout, "30m")
 	}
+}
+
+func mustActiveKeysDirStoremut(t *testing.T, paths utilkeys.Paths, identityID string) string {
+	t.Helper()
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		t.Fatalf("ResolveActive: %v", err)
+	}
+	return active.KeysDir()
 }

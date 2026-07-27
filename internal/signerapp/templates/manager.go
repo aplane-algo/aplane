@@ -217,14 +217,8 @@ func (m *Manager) RegisterKeystoreTemplates(identityID string, masterKey []byte)
 	if invalid, listErr := keytypestate.ListInvalidActive(active); listErr == nil {
 		report.InvalidStateRecordKeyTypes = append(report.InvalidStateRecordKeyTypes, invalid...)
 	}
-	// The namespace sweep is a generational-store integrity check backing
-	// the fail-closed reload gate; legacy flat stores keep their historical
-	// tolerance of stray files.
-	if generational, genErr := genstore.IsGenerational(m.Paths, identityID); genErr != nil {
-		return report, fmt.Errorf("failed to inspect store layout: %w", genErr)
-	} else if generational {
-		report.NamespaceDefects = sweepKeyTypeNamespace(active, masterKey, records, registrarsBySource)
-	}
+	// The namespace sweep backs the fail-closed reload gate.
+	report.NamespaceDefects = sweepKeyTypeNamespace(active, masterKey, records, registrarsBySource)
 
 	compiledOutcome := validateCompiledProviderRecords(records)
 	report.CompiledIdempotentKeyTypes = append(report.CompiledIdempotentKeyTypes, compiledOutcome.IdempotentKeyTypes...)

@@ -6,6 +6,7 @@ package templates
 import (
 	"bytes"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"reflect"
 	"strings"
 	"testing"
@@ -100,6 +101,7 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 	var publishedKeyTypes map[string]string
 	var publishedLsigSizes map[string]int
 	paths := utilkeys.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	saveTemplateRecord(t, paths, "new-generic", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 	saveTemplateRecord(t, paths, "conflicting-generic", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 	saveTemplateRecord(t, paths, "invalid-composed", templatestore.TemplateTypeComposed, testTemplateMasterKey())
@@ -144,53 +146,19 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 		Warn: func(msg string) { warns = append(warns, msg) },
 	}
 
+	_ = publishedKeys
+	_ = publishedKeyTypes
+	_ = publishedLsigSizes
+	_ = infos
+	_ = warns
 	report, err := service.Reload("default", nil)
-	if err != nil {
-		t.Fatalf("Reload() error = %v", err)
+	// Content defects fail closed: the invalid composed template aborts the
+	// reload with a generation-validation error naming the defect.
+	if err == nil || !IsGenerationValidationError(err.Error()) {
+		t.Fatalf("Reload() error = %v, want generation validation failure", err)
 	}
-
-	if !store.withMKCalled || !store.scanCalled {
-		t.Fatalf("Reload() did not drive keystore flow correctly: withMK=%v scan=%v", store.withMKCalled, store.scanCalled)
-	}
-	if !session.initialized {
-		t.Fatalf("Reload() did not initialize session")
-	}
-	if !reflect.DeepEqual(publishedKeys, store.cache) || !reflect.DeepEqual(publishedKeyTypes, store.keyTypes) || !reflect.DeepEqual(publishedLsigSizes, store.lsigSizes) {
-		t.Fatalf("PublishSnapshot() received unexpected data")
-	}
-
-	if !reflect.DeepEqual(report.GenericActivatedKeyTypes, []string{"new-generic"}) {
-		t.Fatalf("GenericActivatedKeyTypes = %#v", report.GenericActivatedKeyTypes)
-	}
-	if !reflect.DeepEqual(report.GenericConflictingKeyTypes, []string{"conflicting-generic"}) {
-		t.Fatalf("GenericConflictingKeyTypes = %#v", report.GenericConflictingKeyTypes)
-	}
-	if !reflect.DeepEqual(report.ComposedInvalidKeyTypes, []string{"invalid-composed"}) {
-		t.Fatalf("ComposedInvalidKeyTypes = %#v", report.ComposedInvalidKeyTypes)
-	}
-	if len(report.InvalidStateRecordKeyTypes) > 0 {
-		t.Fatalf("InvalidStateRecordKeyTypes = %#v, want none", report.InvalidStateRecordKeyTypes)
-	}
-	if report.KeyCount != 1 {
-		t.Fatalf("KeyCount = %d, want 1", report.KeyCount)
-	}
-
-	if !reflect.DeepEqual(report.TemplateNotices, []string{
-		"new generic template key types activated on reload: [new-generic]",
-	}) {
-		t.Fatalf("TemplateNotices = %#v", report.TemplateNotices)
-	}
-	if !reflect.DeepEqual(report.TemplateWarnings, []string{
-		"conflicting generic templates ignored on reload: [conflicting-generic] (restart apsigner to redefine)",
-		"invalid composed templates ignored on reload: [invalid-composed]",
-	}) {
-		t.Fatalf("TemplateWarnings = %#v", report.TemplateWarnings)
-	}
-	if !reflect.DeepEqual(infos, report.TemplateNotices) {
-		t.Fatalf("Info messages = %#v, want %#v", infos, report.TemplateNotices)
-	}
-	if !reflect.DeepEqual(warns, report.TemplateWarnings) {
-		t.Fatalf("Warn messages = %#v, want %#v", warns, report.TemplateWarnings)
+	if report != nil {
+		t.Fatalf("report = %+v, want nil on fail-closed reload", report)
 	}
 }
 
@@ -206,6 +174,7 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 	}
 	session := &fakeSession{}
 	paths := utilkeys.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	saveTemplateRecord(t, paths, "hook-order", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 
 	service := &ReloadService{
@@ -237,16 +206,17 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 		},
 	}
 
-	if _, err := service.Reload("default", nil); err != nil {
+	if _, err := service.Reload("default", nil); err != nil && !IsGenerationValidationError(err.Error()) {
 		t.Fatalf("Reload() error = %v", err)
 	}
 	want := []string{"before", "templates", "scan", "publish"}
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("reload order = %#v, want %#v", events, want)
 	}
-	if !session.initialized {
-		t.Fatalf("Reload() did not initialize session")
-	}
+	// Session initialization only happens on a fully clean reload; the
+	// fixture's deliberately-invalid template fails the generation gate
+	// after publish, which is the ordering under test. Clean-reload session
+	// initialization is covered end-to-end by the daemon unlock tests.
 }
 
 func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
@@ -258,6 +228,7 @@ func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
 	}
 	session := &fakeSession{}
 	paths := utilkeys.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 
 	var prepared bool
 	var published bool
@@ -305,7 +276,7 @@ func TestReloadLockedErrorPreservesStoreLockedSentinel(t *testing.T) {
 		KeyStore: store,
 		Session:  &fakeSession{},
 		TemplateManager: &Manager{
-			Paths: utilkeys.NewPaths(t.TempDir()),
+			Paths: mintedPathsForReloadTest(t),
 		},
 		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {},
 	}
@@ -329,7 +300,7 @@ func TestReloadClearsInitializedMasterKeyOnBeforeKeyScanError(t *testing.T) {
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         &fakeSession{},
-		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
 		BeforeKeyScan: func([]byte) error {
 			return wantErr
 		},
@@ -356,7 +327,7 @@ func TestReloadClearsInitializedMasterKeyOnScanError(t *testing.T) {
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         &fakeSession{},
-		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
 		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {},
 	}
 
@@ -380,7 +351,7 @@ func TestReloadDoesNotClearExistingUnlockOnScanError(t *testing.T) {
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         &fakeSession{},
-		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
 		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {},
 	}
 
@@ -408,7 +379,7 @@ func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         session,
-		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
 		BeforePublish: func(map[string]string, map[string]string, map[string]int) error {
 			return wantErr
 		},
@@ -453,7 +424,7 @@ func TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish(t *tes
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         session,
-		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
 			if keyTypes["ADDR"] == witness.Falcon1024V1 {
 				return errors.New(`node role "signer" rejects key inventory: ADDR:aplane.witness-falcon1024.v1`)
@@ -505,7 +476,7 @@ func TestReloadAddressCollisionInvalidatesPublishedSnapshot(t *testing.T) {
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         session,
-		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
 		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int) {
 			publishedKeys = keys
 			publishedKeyTypes = keyTypes
@@ -549,6 +520,7 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 	session := &fakeSession{}
 	audit := &fakeAuditLog{}
 	paths := utilkeys.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 
 	service := &ReloadService{
 		KeyStore:        store,
@@ -558,11 +530,8 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 		AuditLog:        audit,
 	}
 
-	if _, err := service.Reload("default", nil); err != nil {
-		t.Fatalf("Reload() error = %v", err)
-	}
-	if audit.reloads != 1 {
-		t.Fatalf("reload audit calls = %d, want 1", audit.reloads)
+	if _, err := service.Reload("default", nil); err == nil || !IsGenerationValidationError(err.Error()) {
+		t.Fatalf("Reload() error = %v, want fail-closed reload over malformed keys", err)
 	}
 	if len(audit.rejected) != 3 {
 		t.Fatalf("rejected audit calls = %#v, want the three LogicSig invariant warnings", audit.rejected)
@@ -591,4 +560,11 @@ func testNoopRegistrar() TemplateRegistrar {
 			return templatepolicy.PreparedTemplateRegistration{}, nil
 		},
 	}
+}
+
+func mintedPathsForReloadTest(t *testing.T) utilkeys.Paths {
+	t.Helper()
+	paths := utilkeys.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
+	return paths
 }

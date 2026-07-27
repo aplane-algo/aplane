@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 )
@@ -160,7 +159,7 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 	// entry in it means the generation fails validation — recovery, not a
 	// warning-tolerant unlock (docs/ARCH_GENERATIONS.md §6). Legacy flat
 	// stores keep the historical tolerant semantics.
-	if generational, genErr := genstore.IsGenerational(s.TemplateManager.Paths, identityID); genErr == nil && generational {
+	{
 		var warnings []keys.KeyScanWarning
 		if provider, ok := s.KeyStore.(keys.KeyScanWarningProvider); ok {
 			warnings = provider.GetScanWarnings()
@@ -182,9 +181,6 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 			return nil, fmt.Errorf("%s: %d malformed key file(s) and %d template/key-type defect(s) in the selected generation: %s",
 				generationValidationFailedPrefix, len(warnings), len(templateDefects), detail)
 		}
-	} else if genErr != nil {
-		clearInitializedMasterKey()
-		return nil, fmt.Errorf("failed to inspect store layout: %w", genErr)
 	}
 
 	newKeysMap := s.KeyStore.GetCache()

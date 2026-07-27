@@ -30,10 +30,9 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	defer crypto.ZeroBytes(passphrase)
 
 	result, err := Initialize(passphrase, Options{
-		DataDir:      dataDir,
-		Paths:        paths,
-		IdentityID:   identityID,
-		Generational: true,
+		DataDir:    dataDir,
+		Paths:      paths,
+		IdentityID: identityID,
 	})
 	if err != nil {
 		t.Fatalf("Initialize() error = %v", err)
