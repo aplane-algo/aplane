@@ -448,13 +448,19 @@ func ActivateCompiledProvider(paths storepaths.Paths, identityID, keyType string
 	if err != nil {
 		return result, err
 	}
+	// The record path reported back must be the one the writes actually
+	// use: the active namespace, never the flat legacy path.
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return result, err
+	}
 	fingerprint := compiledProviderFingerprint(result.KeyType)
 	if ok {
 		if rec.Source != keytypestate.SourceCompiled {
 			return result, fmt.Errorf("key type %s is already installed from source %q", result.KeyType, rec.Source)
 		}
 		if rec.State == keytypestate.StateEnabled && rec.Fingerprint == fingerprint {
-			result.OutputPath = paths.KeyTypeRecord(identityID, result.KeyType)
+			result.OutputPath = active.KeyTypeRecord(result.KeyType)
 			result.AlreadyExists = true
 			return result, nil
 		}
@@ -463,7 +469,7 @@ func ActivateCompiledProvider(paths storepaths.Paths, identityID, keyType string
 		if err := keytypestate.Put(paths, identityID, rec); err != nil {
 			return result, err
 		}
-		result.OutputPath = paths.KeyTypeRecord(identityID, result.KeyType)
+		result.OutputPath = active.KeyTypeRecord(result.KeyType)
 		return result, nil
 	}
 	if err := keytypestate.Put(paths, identityID, keytypestate.Record{
@@ -474,7 +480,7 @@ func ActivateCompiledProvider(paths storepaths.Paths, identityID, keyType string
 	}); err != nil {
 		return result, err
 	}
-	result.OutputPath = paths.KeyTypeRecord(identityID, result.KeyType)
+	result.OutputPath = active.KeyTypeRecord(result.KeyType)
 	return result, nil
 }
 
@@ -485,7 +491,11 @@ func DeactivateCompiledProvider(paths storepaths.Paths, identityID, keyType stri
 	if result.KeyType == "" {
 		return result, fmt.Errorf("key type is required")
 	}
-	result.OutputPath = paths.KeyTypeRecord(identityID, result.KeyType)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return result, err
+	}
+	result.OutputPath = active.KeyTypeRecord(result.KeyType)
 	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, masterKey); err != nil {
 		return result, err
 	}
@@ -516,6 +526,10 @@ func EnableInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 		return result, err
 	}
 	result.OutputPath = outputPath
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return result, err
+	}
 	if !templatestore.TemplateExistsForPaths(paths, identityID, result.KeyType, templateType) {
 		return result, fmt.Errorf("template %s is not installed", result.KeyType)
 	}
@@ -534,7 +548,7 @@ func EnableInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 	if err := keytypestate.Put(paths, identityID, rec); err != nil {
 		return result, err
 	}
-	result.OutputPath = paths.KeyTypeRecord(identityID, result.KeyType)
+	result.OutputPath = active.KeyTypeRecord(result.KeyType)
 	return result, nil
 }
 
@@ -551,6 +565,10 @@ func DisableInstalledTemplate(paths storepaths.Paths, identityID, keyType string
 		return result, err
 	}
 	result.OutputPath = outputPath
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return result, err
+	}
 	if !templatestore.TemplateExistsForPaths(paths, identityID, result.KeyType, templateType) {
 		return result, fmt.Errorf("template %s is not installed", result.KeyType)
 	}
@@ -562,7 +580,7 @@ func DisableInstalledTemplate(paths storepaths.Paths, identityID, keyType string
 		return result, fmt.Errorf("template state %s is not installed", result.KeyType)
 	}
 	if rec.State == keytypestate.StateDisabled {
-		result.OutputPath = paths.KeyTypeRecord(identityID, result.KeyType)
+		result.OutputPath = active.KeyTypeRecord(result.KeyType)
 		return result, nil
 	}
 	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, masterKey); err != nil {
@@ -572,7 +590,7 @@ func DisableInstalledTemplate(paths storepaths.Paths, identityID, keyType string
 	if err := keytypestate.Put(paths, identityID, rec); err != nil {
 		return result, err
 	}
-	result.OutputPath = paths.KeyTypeRecord(identityID, result.KeyType)
+	result.OutputPath = active.KeyTypeRecord(result.KeyType)
 	result.Removed = true
 	return result, nil
 }

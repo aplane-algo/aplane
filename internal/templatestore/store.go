@@ -130,10 +130,6 @@ func ActiveTemplateTypes() []TemplateType {
 	return []TemplateType{TemplateTypeGeneric, TemplateTypeComposed}
 }
 
-func GetTemplateDirForPaths(paths storepaths.Paths, identityID string, templateType TemplateType) string {
-	return paths.KeyTypeRecordsDir(identityID)
-}
-
 func GetTemplateFilePathForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) (string, error) {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {

@@ -840,3 +840,19 @@ func TestCrashedPruneRetriesAsNoOp(t *testing.T) {
 		t.Fatalf("generations after retry = %d (%v), want only current", len(entries), err)
 	}
 }
+
+func TestManifestRejectsTrailingGarbage(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
+	gen := paths.GenerationPaths(testIdentity, testGenA)
+	data, err := os.ReadFile(gen.ManifestPath())
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if err := os.WriteFile(gen.ManifestPath(), append(data, []byte("{\"extra\":1}")...), 0o660); err != nil {
+		t.Fatalf("append garbage: %v", err)
+	}
+	if _, err := ReadManifest(gen); err == nil {
+		t.Fatal("ReadManifest accepted trailing data after the JSON document")
+	}
+}
