@@ -738,7 +738,15 @@ func sweepForTest(t *testing.T, paths storepaths.Paths, masterKey []byte) []stri
 	if err != nil {
 		t.Fatalf("ListActive() error = %v", err)
 	}
-	return sweepKeyTypeNamespace(active, masterKey, records)
+	registrars, err := NewManager(paths).templateRegistrars()
+	if err != nil {
+		t.Fatalf("templateRegistrars() error = %v", err)
+	}
+	registrarsBySource := make(map[keytypestate.Source]TemplateRegistrar, len(registrars))
+	for _, registrar := range registrars {
+		registrarsBySource[registrar.Source] = registrar
+	}
+	return sweepKeyTypeNamespace(active, masterKey, records, registrarsBySource)
 }
 
 func TestSweepKeyTypeNamespaceCleanStore(t *testing.T) {
@@ -804,5 +812,64 @@ func TestSweepKeyTypeNamespaceValidatesDisabledTemplates(t *testing.T) {
 	defects := sweepForTest(t, paths, masterKey)
 	if len(defects) != 1 || !strings.Contains(defects[0], "disabled template") {
 		t.Fatalf("sweepKeyTypeNamespace() = %#v, want one disabled-template validation defect", defects)
+	}
+}
+
+func TestSweepKeyTypeNamespaceValidatesDisabledTemplateContent(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := testTemplateMasterKey()
+	keyType := "test.sweep-disabled-yaml.v1"
+	// Validly encrypted but semantically malformed template: decryption
+	// succeeds, Prepare must reject it.
+	if _, err := templatestore.SaveTemplateForPaths(paths, "default", []byte("not a template"), keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
+		t.Fatalf("SaveTemplateForPaths() error = %v", err)
+	}
+	writeTemplateStateForTest(t, paths, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
+
+	defects := sweepForTest(t, paths, masterKey)
+	if len(defects) != 1 || !strings.Contains(defects[0], "disabled template") {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, want one disabled-template validation defect for malformed YAML", defects)
+	}
+}
+
+func TestSweepKeyTypeNamespaceFlagsDisabledRecordMissingTemplate(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := testTemplateMasterKey()
+	keyType := "test.sweep-disabled-missing.v1"
+	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-disabled-missing"), masterKey)
+	if err := keytypestate.SetState(paths, "default", keyType, keytypestate.StateDisabled); err != nil {
+		t.Fatalf("SetState(disabled) error = %v", err)
+	}
+	active := paths.LegacyActivePaths("default")
+	if err := os.Remove(active.KeyTypeTemplate(keyType)); err != nil {
+		t.Fatalf("remove template file: %v", err)
+	}
+
+	defects := sweepForTest(t, paths, masterKey)
+	if len(defects) != 1 || !strings.Contains(defects[0], "no template file") {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, want one disabled-record-missing-template defect", defects)
+	}
+}
+
+func TestSweepKeyTypeNamespaceFlagsTemplatePairedWithCompiledRecord(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := testTemplateMasterKey()
+	keyType := "test.sweep-compiled.v1"
+	if err := keytypestate.Put(paths, "default", keytypestate.Record{
+		KeyType: keyType,
+		Source:  keytypestate.SourceCompiled,
+		State:   keytypestate.StateEnabled,
+	}); err != nil {
+		t.Fatalf("keytypestate.Put() error = %v", err)
+	}
+	// Compiled providers own no template files; a stray one is unaccounted
+	// encrypted content.
+	if _, err := templatestore.SaveTemplateForPaths(paths, "default", []byte("stray"), keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
+		t.Fatalf("SaveTemplateForPaths() error = %v", err)
+	}
+
+	defects := sweepForTest(t, paths, masterKey)
+	if len(defects) != 1 || !strings.Contains(defects[0], "compiled-provider record") {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, want one compiled-pairing defect", defects)
 	}
 }

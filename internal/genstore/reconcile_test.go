@@ -4,6 +4,7 @@
 package genstore
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -245,5 +246,34 @@ func TestCollectGarbageRefusesToPruneWhenRollbackParentInvalid(t *testing.T) {
 		if _, statErr := os.Stat(paths.GenerationPaths(testIdentity, gen).Dir()); statErr != nil {
 			t.Fatalf("generation %s missing after aborted prune: %v", gen, statErr)
 		}
+	}
+}
+
+func TestCollectGarbageRefusesToPruneWhenCurrentInvalid(t *testing.T) {
+	for _, retainParent := range []bool{true, false} {
+		t.Run(fmt.Sprintf("retainRollbackParent=%v", retainParent), func(t *testing.T) {
+			paths := storepaths.NewPaths(t.TempDir())
+			buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+			// The pointer resolves and the directory exists, but the current
+			// generation is structurally broken: no manifest. Deleting any
+			// prior now would abandon the only recovery material.
+			manifest := paths.GenerationPaths(testIdentity, testGenC).ManifestPath()
+			if err := os.Remove(manifest); err != nil {
+				t.Fatalf("remove manifest: %v", err)
+			}
+
+			removed, err := CollectGarbage(paths, testIdentity, nil, retainParent)
+			if err == nil {
+				t.Fatalf("CollectGarbage() = %v, want error for invalid current generation", removed)
+			}
+			if len(removed) != 0 {
+				t.Fatalf("removed = %v, want nothing deleted on aborted prune", removed)
+			}
+			for _, gen := range []string{testGenA, testGenB, testGenC} {
+				if _, statErr := os.Stat(paths.GenerationPaths(testIdentity, gen).Dir()); statErr != nil {
+					t.Fatalf("generation %s missing after aborted prune: %v", gen, statErr)
+				}
+			}
+		})
 	}
 }

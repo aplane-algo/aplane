@@ -478,6 +478,13 @@ Passphrase rotation on a generational store requires generation quiescence —
 run `apstore generations prune --all-priors` first; after a successful
 rotation the retention window restarts empty.
 
+`prune --all-priors` abandons every rollback fallback, so it prompts for the
+store passphrase and decrypt-validates the current generation's content (the
+same checks the signer's unlock gate applies) before deleting anything. Both
+prune modes also refuse to run if the current generation fails structural
+validation or, when the parent is being retained, if that rollback target's
+seal does not verify.
+
 ### Policy Snapshots in Backups
 
 Backups include `policy/policy.yaml` and `policy/policy.yaml.hmac` so an

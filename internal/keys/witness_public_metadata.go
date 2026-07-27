@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -64,6 +65,32 @@ func ReadWitnessPublicMetadataActive(active storepaths.ActivePaths, witnessKeyID
 		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("witness public metadata %s ID %q does not match %q", path, normalized.WitnessKeyID, witnessKeyID)
 	}
 	return normalized, true, nil
+}
+
+// validateWitnessPublicMetadataFilename validates a .wit.json sidecar in
+// place during key scan: the filename must carry a canonical Witness Key ID,
+// and the content must be a well-formed public reference whose embedded ID
+// matches the filename. This mirrors what ReadWitnessPublicMetadataActive
+// enforces at read time, so a generation cannot commit a sidecar that its
+// own consumers would later reject.
+func validateWitnessPublicMetadataFilename(path string) error {
+	base := strings.TrimSuffix(filepath.Base(path), WitnessPublicMetadataSuffix)
+	witnessKeyID, err := witness.NormalizeID(base)
+	if err != nil {
+		return fmt.Errorf("filename: %w", err)
+	}
+	data, _, err := fsutil.ReadRegularFile(path)
+	if err != nil {
+		return err
+	}
+	normalized, err := witness.ParsePublicReference(data)
+	if err != nil {
+		return err
+	}
+	if normalized.WitnessKeyID != witnessKeyID {
+		return fmt.Errorf("embedded witness key ID %q does not match filename %q", normalized.WitnessKeyID, witnessKeyID)
+	}
+	return nil
 }
 
 // WriteWitnessPublicMetadataFromKeyJSON writes the public-only sidecar for a

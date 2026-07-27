@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -222,7 +223,7 @@ func (m *Manager) RegisterKeystoreTemplates(identityID string, masterKey []byte)
 	if generational, genErr := genstore.IsGenerational(m.Paths, identityID); genErr != nil {
 		return report, fmt.Errorf("failed to inspect store layout: %w", genErr)
 	} else if generational {
-		report.NamespaceDefects = sweepKeyTypeNamespace(active, masterKey, records)
+		report.NamespaceDefects = sweepKeyTypeNamespace(active, masterKey, records, registrarsBySource)
 	}
 
 	compiledOutcome := validateCompiledProviderRecords(records)
@@ -252,13 +253,17 @@ func (m *Manager) templateRegistrars() ([]TemplateRegistrar, error) {
 }
 
 // sweepKeyTypeNamespace validates the keytypes namespace of a generational
-// store directly, catching what record-driven registration cannot: unexpected
-// entries, template files without any state record, and disabled templates
-// registration never decrypts. Enabled templates and malformed records are
-// already covered by registration and ListInvalidActive; the sweep does not
-// re-report them. Defects feed the fail-closed reload gate
-// (docs/ARCH_GENERATIONS.md §6).
-func sweepKeyTypeNamespace(active storepaths.ActivePaths, masterKey []byte, records []keytypestate.Record) []string {
+// store directly, catching what record-driven registration cannot:
+// unexpected entries, template files with no state record or whose record's
+// source does not use template files, disabled YAML templates (registration
+// never decrypts or parses them), and disabled YAML records whose template
+// file is missing (registration's orphan bucket only covers enabled
+// records). The expected on-disk pairing comes from each record's source:
+// YAML sources own exactly one .template, compiled sources own none.
+// Enabled templates and malformed records are already covered by
+// registration and ListInvalidActive; the sweep does not re-report them.
+// Defects feed the fail-closed reload gate (docs/ARCH_GENERATIONS.md §6).
+func sweepKeyTypeNamespace(active storepaths.ActivePaths, masterKey []byte, records []keytypestate.Record, registrarsBySource map[keytypestate.Source]TemplateRegistrar) []string {
 	dir := active.KeyTypeRecordsDir()
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -267,14 +272,21 @@ func sweepKeyTypeNamespace(active storepaths.ActivePaths, masterKey []byte, reco
 	if err != nil {
 		return []string{fmt.Sprintf("read keytypes namespace: %v", err)}
 	}
-	recordStates := make(map[string]keytypestate.State, len(records))
+	recordsByKeyType := make(map[string]keytypestate.Record, len(records))
 	for _, rec := range records {
-		recordStates[rec.KeyType] = rec.State
+		recordsByKeyType[rec.KeyType] = rec
 	}
 	recordFileExists := make(map[string]bool, len(entries))
+	templateFileExists := make(map[string]bool, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+		if entry.IsDir() {
+			continue
+		}
+		switch {
+		case strings.HasSuffix(entry.Name(), ".json"):
 			recordFileExists[strings.TrimSuffix(entry.Name(), ".json")] = true
+		case strings.HasSuffix(entry.Name(), ".template"):
+			templateFileExists[strings.TrimSuffix(entry.Name(), ".template")] = true
 		}
 	}
 	var defects []string
@@ -291,11 +303,23 @@ func sweepKeyTypeNamespace(active storepaths.ActivePaths, masterKey []byte, reco
 				defects = append(defects, fmt.Sprintf("template %q has no state record", name))
 				continue
 			}
-			// Disabled templates are skipped by registration, so their
-			// content is otherwise never checked. Enabled templates were
-			// just loaded; invalid records are reported separately.
-			if recordStates[keyType] == keytypestate.StateDisabled {
-				if _, err := templatestore.LoadTemplateFromPath(filepath.Join(dir, name), masterKey); err != nil {
+			rec, ok := recordsByKeyType[keyType]
+			if !ok {
+				// Record file exists but is invalid; already reported by
+				// ListInvalidActive.
+				continue
+			}
+			if rec.Source == keytypestate.SourceCompiled {
+				defects = append(defects, fmt.Sprintf("template %q is paired with a compiled-provider record, which does not use template files", name))
+				continue
+			}
+			// Disabled YAML templates are skipped by registration, so their
+			// content is otherwise never checked. Run the same decrypt and
+			// Prepare validation registration applies to enabled ones —
+			// without registering the provider. Enabled templates were just
+			// loaded by registration.
+			if rec.State == keytypestate.StateDisabled {
+				if err := validateTemplateContent(dir, name, keyType, masterKey, registrarsBySource[rec.Source]); err != nil {
 					defects = append(defects, fmt.Sprintf("disabled template %q failed validation: %v", name, err))
 				}
 			}
@@ -303,7 +327,35 @@ func sweepKeyTypeNamespace(active storepaths.ActivePaths, masterKey []byte, reco
 			defects = append(defects, fmt.Sprintf("unexpected entry %q", name))
 		}
 	}
+	// Record-driven pass: a disabled YAML record whose template file is
+	// missing is invisible to both the file loop above and registration
+	// (whose orphan bucket is enabled-only).
+	for _, rec := range records {
+		if rec.Source == keytypestate.SourceCompiled || rec.State != keytypestate.StateDisabled {
+			continue
+		}
+		if !templateFileExists[rec.KeyType] {
+			defects = append(defects, fmt.Sprintf("disabled record %q has no template file", rec.KeyType))
+		}
+	}
+	sort.Strings(defects)
 	return defects
+}
+
+// validateTemplateContent decrypts a template file and runs its registrar's
+// Prepare validation without registering anything.
+func validateTemplateContent(dir, name, keyType string, masterKey []byte, registrar TemplateRegistrar) error {
+	data, err := templatestore.LoadTemplateFromPath(filepath.Join(dir, name), masterKey)
+	if err != nil {
+		return err
+	}
+	if registrar.Prepare == nil {
+		return fmt.Errorf("no registrar for source")
+	}
+	if _, err := registrar.Prepare(keyType, data); err != nil {
+		return err
+	}
+	return nil
 }
 
 func registerTemplateRecord(active storepaths.ActivePaths, identityID string, masterKey []byte, rec keytypestate.Record, registrar TemplateRegistrar) templatepolicy.RegistrationOutcome {

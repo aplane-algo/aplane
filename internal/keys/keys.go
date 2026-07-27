@@ -22,9 +22,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// witnessArtifactBundleSuffix mirrors witness/artifact.BundleExtension:
-// external witness artifact bundles are expected residents of the keys
-// namespace and are never scanned as credentials.
+// witnessArtifactBundleSuffix mirrors witness/artifact.BundleExtension.
+// External witness artifact bundles are aprekey-owned and never valid signer
+// store residents; the scan recognizes the suffix only to report them with a
+// targeted message and must never decrypt them.
 const witnessArtifactBundleSuffix = ".wit"
 
 // ErrMissingLogicSigSaltCounter indicates a LogicSig key file predates the
@@ -149,6 +150,7 @@ const (
 	KeyScanWarningFilenameAddressMismatch KeyScanWarningCode = "filename_address_mismatch"
 	KeyScanWarningFilenameClassMismatch   KeyScanWarningCode = "filename_class_mismatch"
 	KeyScanWarningUnexpectedEntry         KeyScanWarningCode = "unexpected_entry"
+	KeyScanWarningWitnessMetadataInvalid  KeyScanWarningCode = "witness_metadata_invalid"
 )
 
 // KeyScanWarning describes a recoverable key-scan failure. Scanning continues
@@ -192,6 +194,8 @@ func (w KeyScanWarning) Message() string {
 		return fmt.Sprintf("Skipped managed credential %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningUnexpectedEntry:
 		return fmt.Sprintf("Unexpected entry in keys namespace %s: %v", w.KeyFile, w.Err)
+	case KeyScanWarningWitnessMetadataInvalid:
+		return fmt.Sprintf("Invalid witness public metadata %s: %v", w.KeyFile, w.Err)
 	default:
 		return fmt.Sprintf("Failed to scan key file %s: %v", w.KeyFile, w.Err)
 	}
@@ -320,18 +324,32 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc 
 		return nil, fmt.Errorf("failed to read keys directory: %w", err)
 	}
 
-	// Scan only signer-managed private credential classes. External witness
-	// artifact bundles (.wit) and public witness references (.wit.json) are
-	// the expected non-credential residents; anything else in the namespace
-	// is reported so generation-based stores can fail closed on unexpected
-	// content (legacy stores keep tolerating it as a warning).
+	// Scan only signer-managed private credential classes. Public witness
+	// references (.wit.json) are the sole expected non-credential residents
+	// and are validated without decryption; external witness artifact
+	// bundles (.wit) are aprekey-owned and never signer store residents
+	// (docs/ARCH_CONTRACTS.md). Everything unrecognized is reported so
+	// generation-based stores can fail closed on unexpected content
+	// (legacy stores keep tolerating it as a warning). Nothing outside the
+	// managed credential classes ever reaches decryptFunc.
 	for _, entry := range entries {
 		filenameSelector, _, ok := ParseManagedCredentialFilename(entry.Name())
 		if entry.IsDir() || !ok {
-			if !strings.HasSuffix(entry.Name(), WitnessPublicMetadataSuffix) &&
-				!strings.HasSuffix(entry.Name(), witnessArtifactBundleSuffix) {
-				warn(KeyScanWarningUnexpectedEntry, filepath.Join(keysDir, entry.Name()),
-					fmt.Errorf("not a managed credential or witness artifact"))
+			entryPath := filepath.Join(keysDir, entry.Name())
+			switch {
+			case entry.IsDir():
+				warn(KeyScanWarningUnexpectedEntry, entryPath,
+					fmt.Errorf("not a managed credential"))
+			case strings.HasSuffix(entry.Name(), WitnessPublicMetadataSuffix):
+				if err := validateWitnessPublicMetadataFilename(entryPath); err != nil {
+					warn(KeyScanWarningWitnessMetadataInvalid, entryPath, err)
+				}
+			case strings.HasSuffix(entry.Name(), witnessArtifactBundleSuffix):
+				warn(KeyScanWarningUnexpectedEntry, entryPath,
+					fmt.Errorf("external witness artifact bundles are aprekey-owned and not signer store residents; move it outside the keystore"))
+			default:
+				warn(KeyScanWarningUnexpectedEntry, entryPath,
+					fmt.Errorf("not a managed credential"))
 			}
 			continue
 		}

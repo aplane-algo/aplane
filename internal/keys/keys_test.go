@@ -4,6 +4,7 @@
 package keys
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
@@ -11,12 +12,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -306,14 +309,39 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 		}
 	})
 
-	t.Run("external witness artifacts never reach decrypt", func(t *testing.T) {
+	t.Run("witness files are validated but never reach decrypt", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
 		keysDir := paths.KeysDir("default")
 		if err := fsutil.MkdirAll(keysDir); err != nil {
 			t.Fatal(err)
 		}
-		for _, name := range []string{"offline.wit", "offline.wit.json"} {
-			if err := os.WriteFile(filepath.Join(keysDir, name), []byte("not a managed credential"), 0600); err != nil {
+		// A well-formed public witness reference sidecar, as the signer
+		// itself writes it.
+		publicKey := bytes.Repeat([]byte{7}, witness.Falcon1024PublicKeySize)
+		witnessKeyID, err := witness.ID(witness.Falcon1024V1, publicKey)
+		if err != nil {
+			t.Fatalf("witness.ID() error = %v", err)
+		}
+		envelope, err := sentryrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, hex.EncodeToString(publicKey))
+		if err != nil {
+			t.Fatalf("NewExportEnvelope() error = %v", err)
+		}
+		envelopeJSON, err := json.Marshal(envelope)
+		if err != nil {
+			t.Fatalf("Marshal(envelope) error = %v", err)
+		}
+		writes := map[string][]byte{
+			// Valid sidecar: accepted silently.
+			witnessKeyID + ".wit.json": envelopeJSON,
+			// Sidecar whose filename is not a canonical Witness Key ID.
+			"offline.wit.json": envelopeJSON,
+			// Sidecar whose content does not parse.
+			strings.Repeat("A", len(witnessKeyID)-1) + "B.wit.json": []byte("not json"),
+			// External artifact bundle: aprekey-owned, never a store resident.
+			witnessKeyID + ".wit": []byte("encrypted bundle"),
+		}
+		for name, data := range writes {
+			if err := os.WriteFile(filepath.Join(keysDir, name), data, 0600); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -325,8 +353,56 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 		if err != nil {
 			t.Fatalf("scanKeysDirectoryInternalReport() error = %v", err)
 		}
-		if decryptCalls != 0 || len(report.Keys) != 0 || len(report.Warnings) != 0 {
-			t.Fatalf("decrypt calls/report = %d/%#v, want empty", decryptCalls, report)
+		if decryptCalls != 0 || len(report.Keys) != 0 {
+			t.Fatalf("decrypt calls/keys = %d/%d, want witness files kept away from decrypt", decryptCalls, len(report.Keys))
+		}
+		got := map[KeyScanWarningCode]int{}
+		for _, warning := range report.Warnings {
+			got[warning.Code]++
+		}
+		want := map[KeyScanWarningCode]int{
+			KeyScanWarningWitnessMetadataInvalid: 2,
+			KeyScanWarningUnexpectedEntry:        1,
+		}
+		if len(report.Warnings) != 3 || got[KeyScanWarningWitnessMetadataInvalid] != want[KeyScanWarningWitnessMetadataInvalid] || got[KeyScanWarningUnexpectedEntry] != want[KeyScanWarningUnexpectedEntry] {
+			t.Fatalf("warnings = %#v, want 2 invalid-metadata + 1 unexpected-entry", report.Warnings)
+		}
+	})
+
+	t.Run("witness sidecar with mismatched embedded ID is rejected", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		keysDir := paths.KeysDir("default")
+		if err := fsutil.MkdirAll(keysDir); err != nil {
+			t.Fatal(err)
+		}
+		publicKey := bytes.Repeat([]byte{7}, witness.Falcon1024PublicKeySize)
+		witnessKeyID, err := witness.ID(witness.Falcon1024V1, publicKey)
+		if err != nil {
+			t.Fatalf("witness.ID() error = %v", err)
+		}
+		otherKeyID, err := witness.ID(witness.Falcon1024V1, bytes.Repeat([]byte{8}, witness.Falcon1024PublicKeySize))
+		if err != nil {
+			t.Fatalf("witness.ID() error = %v", err)
+		}
+		envelope, err := sentryrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, hex.EncodeToString(publicKey))
+		if err != nil {
+			t.Fatalf("NewExportEnvelope() error = %v", err)
+		}
+		envelopeJSON, err := json.Marshal(envelope)
+		if err != nil {
+			t.Fatalf("Marshal(envelope) error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(keysDir, otherKeyID+".wit.json"), envelopeJSON, 0600); err != nil {
+			t.Fatal(err)
+		}
+		report, err := scanKeysDirectoryInternalReport(paths.LegacyActivePaths("default"), func(string) ([]byte, error) {
+			return nil, fmt.Errorf("unexpected decrypt")
+		})
+		if err != nil {
+			t.Fatalf("scanKeysDirectoryInternalReport() error = %v", err)
+		}
+		if len(report.Warnings) != 1 || report.Warnings[0].Code != KeyScanWarningWitnessMetadataInvalid {
+			t.Fatalf("warnings = %#v, want one ID-mismatch rejection", report.Warnings)
 		}
 	})
 

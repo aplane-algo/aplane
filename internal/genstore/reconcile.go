@@ -121,6 +121,13 @@ func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[st
 	if err != nil {
 		return nil, err
 	}
+	// Reconcile only proves the CURRENT pointer names an existing directory.
+	// Before deleting any fallback, the current generation itself must pass
+	// structural validation — pruning priors while current is missing its
+	// manifest or namespaces would abandon the only recovery material.
+	if err := ValidateCurrent(paths.GenerationPaths(identityID, report.Current)); err != nil {
+		return nil, fmt.Errorf("collect: current generation failed validation, refusing to prune: %w", err)
+	}
 	retain := make(map[string]bool, len(referenced)+1)
 	for name, keep := range referenced {
 		if keep {
