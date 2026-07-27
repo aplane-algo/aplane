@@ -24,6 +24,12 @@ type ReconcileReport struct {
 	DiscardedStaging []string
 	// SealedPriors are retained committed prior generations, newest first.
 	SealedPriors []string
+	// RetainedUnsealedParent is set when the current generation's manifest
+	// ParentID names a generation whose seal is missing. The parent was
+	// committed once (the seal precedes every flip), so a missing seal is
+	// damage, not an uncommitted attempt: reconciliation retains it and
+	// pruning refuses to run until the operator restores or removes it.
+	RetainedUnsealedParent string
 }
 
 // Reconcile enforces CURRENT as the sole commit record. Run at
@@ -48,6 +54,22 @@ func Reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 		return report, fmt.Errorf("reconcile: %w", err)
 	}
 	report.Current = current
+
+	// Everything below deletes state, so the committed generation must be
+	// proven valid first — reconciliation under a broken current would be
+	// destroying the material recovery needs. The current manifest's
+	// ParentID is derived here for the same reason: the parent was
+	// committed once (its seal preceded the flip to current), so if its
+	// seal is now missing that is damage, not an uncommitted attempt, and
+	// it must survive reconciliation for the operator.
+	if err := ValidateCurrent(paths.GenerationPaths(identityID, current)); err != nil {
+		return report, fmt.Errorf("reconcile: current generation failed validation, nothing deleted: %w", err)
+	}
+	manifest, err := ReadManifest(paths.GenerationPaths(identityID, current))
+	if err != nil {
+		return report, fmt.Errorf("reconcile: %w", err)
+	}
+	retainedParent := manifest.ParentID
 
 	generationsDir := paths.GenerationsDir(identityID)
 	entries, err := os.ReadDir(generationsDir)
@@ -77,9 +99,11 @@ func Reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 			if err != nil {
 				return report, err
 			}
-			if sealed || referenced[name] {
+			if sealed || referenced[name] || name == retainedParent {
 				if sealed {
 					report.SealedPriors = append(report.SealedPriors, name)
+				} else if name == retainedParent {
+					report.RetainedUnsealedParent = name
 				}
 				continue
 			}
@@ -121,12 +145,11 @@ func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[st
 	if err != nil {
 		return nil, err
 	}
-	// Reconcile only proves the CURRENT pointer names an existing directory.
-	// Before deleting any fallback, the current generation itself must pass
-	// structural validation — pruning priors while current is missing its
-	// manifest or namespaces would abandon the only recovery material.
-	if err := ValidateCurrent(paths.GenerationPaths(identityID, report.Current)); err != nil {
-		return nil, fmt.Errorf("collect: current generation failed validation, refusing to prune: %w", err)
+	// Reconcile has already validated the current generation (structure and
+	// manifest completeness) before its own deletions; nothing here runs
+	// against an unvalidated current.
+	if report.RetainedUnsealedParent != "" {
+		return nil, fmt.Errorf("collect: rollback parent %s is missing its seal, refusing to prune; restore the parent's seal or remove the generation manually", report.RetainedUnsealedParent)
 	}
 	if len(report.SealedPriors) == 0 {
 		// Nothing to delete. Succeed as a no-op without demanding the

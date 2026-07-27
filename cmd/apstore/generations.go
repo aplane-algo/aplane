@@ -46,6 +46,9 @@ func cmdGenerations(args []string) error {
 			return err
 		}
 		reportDiscards(report)
+		if report.RetainedUnsealedParent != "" {
+			logWarnf("rollback parent %s is missing its seal; pruning is blocked until it is restored or removed", report.RetainedUnsealedParent)
+		}
 		logInfof("current: %s", report.Current)
 		for _, prior := range report.SealedPriors {
 			logInfof("sealed prior: %s", prior)

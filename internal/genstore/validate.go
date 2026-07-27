@@ -94,10 +94,19 @@ func VerifyFileAgainstSeal(gen storepaths.GenPaths, seal *Seal, relativePath str
 
 // validateStructure enforces the generation directory's shape: a regular
 // directory containing only manifest.json, seal.json, and the namespace
-// directories; namespaces contain only regular files; no symlinks anywhere.
+// directories; both namespaces present (Mint creates them unconditionally,
+// so absence is damage — a missing keys/ would otherwise validate, be
+// recreated empty by the scanner, and let a prune delete the generations
+// that still hold the keys); namespaces contain only regular files; no
+// symlinks anywhere.
 func validateStructure(gen storepaths.GenPaths) error {
 	if err := requireRegularDirectory(gen.Dir()); err != nil {
 		return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
+	}
+	for _, namespace := range generationNamespaces {
+		if err := validateNamespaceDir(filepath.Join(gen.Dir(), namespace)); err != nil {
+			return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
+		}
 	}
 	entries, err := os.ReadDir(gen.Dir())
 	if err != nil {
@@ -111,9 +120,7 @@ func validateStructure(gen storepaths.GenPaths) error {
 				return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
 			}
 		case slices.Contains(generationNamespaces, name):
-			if err := validateNamespaceDir(filepath.Join(gen.Dir(), name)); err != nil {
-				return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
-			}
+			// Validated unconditionally above.
 		default:
 			return fmt.Errorf("generation %s contains unsupported entry %q", gen.GenerationID(), name)
 		}

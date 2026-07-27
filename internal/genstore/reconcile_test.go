@@ -297,3 +297,98 @@ func TestCollectGarbageIsIdempotentAfterAllPriorsPrune(t *testing.T) {
 		t.Fatalf("CollectGarbage(all priors, repeated) error = %v, want no-op", err)
 	}
 }
+
+func TestValidateCurrentRequiresBothNamespaces(t *testing.T) {
+	for _, namespace := range []string{"keys", "keytypes"} {
+		t.Run(namespace, func(t *testing.T) {
+			paths := storepaths.NewPaths(t.TempDir())
+			buildGenerationChain(t, paths)
+			gen := paths.GenerationPaths(testIdentity, testGenC)
+			if err := ValidateCurrent(gen); err != nil {
+				t.Fatalf("ValidateCurrent(intact) error = %v", err)
+			}
+			if err := os.RemoveAll(filepath.Join(gen.Dir(), namespace)); err != nil {
+				t.Fatalf("remove namespace: %v", err)
+			}
+			if err := ValidateCurrent(gen); err == nil {
+				t.Fatalf("ValidateCurrent accepted a generation missing %s/", namespace)
+			}
+			// The prune path inherits the rejection: nothing is deleted.
+			removed, err := CollectGarbage(paths, testIdentity, nil, false)
+			if err == nil {
+				t.Fatalf("CollectGarbage() = %v, want error for missing namespace", removed)
+			}
+			for _, id := range []string{testGenA, testGenB} {
+				if _, statErr := os.Stat(paths.GenerationPaths(testIdentity, id).Dir()); statErr != nil {
+					t.Fatalf("prior %s deleted despite invalid current: %v", id, statErr)
+				}
+			}
+		})
+	}
+}
+
+func TestReconcileRetainsUnsealedRollbackParent(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+	// C's manifest names B as parent. B was committed once; deleting its
+	// seal simulates damage — reconciliation must retain it as lineage,
+	// never classify it as an uncommitted attempt.
+	if err := os.Remove(paths.GenerationPaths(testIdentity, testGenB).SealPath()); err != nil {
+		t.Fatalf("remove parent seal: %v", err)
+	}
+
+	report, err := Reconcile(paths, testIdentity, nil)
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if len(report.DiscardedAttempts) != 0 {
+		t.Fatalf("discarded = %v, want the unsealed parent retained", report.DiscardedAttempts)
+	}
+	if report.RetainedUnsealedParent != testGenB {
+		t.Fatalf("RetainedUnsealedParent = %q, want %s", report.RetainedUnsealedParent, testGenB)
+	}
+	if _, err := os.Stat(paths.GenerationPaths(testIdentity, testGenB).Dir()); err != nil {
+		t.Fatalf("unsealed parent deleted by reconciliation: %v", err)
+	}
+
+	// Both prune modes refuse while the damaged parent exists.
+	for _, retainParent := range []bool{true, false} {
+		removed, err := CollectGarbage(paths, testIdentity, nil, retainParent)
+		if err == nil || len(removed) != 0 {
+			t.Fatalf("CollectGarbage(retain=%v) = (%v, %v), want fail-closed refusal", retainParent, removed, err)
+		}
+	}
+	if _, err := os.Stat(paths.GenerationPaths(testIdentity, testGenA).Dir()); err != nil {
+		t.Fatalf("sealed prior A deleted despite refusal: %v", err)
+	}
+}
+
+func TestReconcileDeletesNothingWhenCurrentManifestIncomplete(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	// Residue that reconciliation would normally delete.
+	staging := filepath.Join(paths.GenerationsDir(testIdentity), storepaths.GenerationStagingPrefix+"leftover")
+	if err := os.MkdirAll(staging, 0o770); err != nil {
+		t.Fatalf("MkdirAll(staging): %v", err)
+	}
+	attempt := paths.GenerationPaths(testIdentity, testGenD)
+	for _, namespace := range []string{"keys", "keytypes"} {
+		if err := os.MkdirAll(filepath.Join(attempt.Dir(), namespace), 0o770); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+	}
+	// Break the current generation's manifest.
+	gen := paths.GenerationPaths(testIdentity, testGenC)
+	if err := os.WriteFile(gen.ManifestPath(), []byte("{not json"), 0o660); err != nil {
+		t.Fatalf("corrupt manifest: %v", err)
+	}
+
+	if _, err := Reconcile(paths, testIdentity, nil); err == nil {
+		t.Fatal("Reconcile accepted an invalid current manifest")
+	}
+	for _, path := range []string{staging, attempt.Dir()} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("reconcile deleted %s under an invalid current: %v", path, err)
+		}
+	}
+}
