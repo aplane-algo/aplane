@@ -93,9 +93,15 @@ const (
 	ResultCodeActivationConflict        = "activation_conflict"
 	ResultCodeRecoveredActivationFailed = "recovered_activation_failed"
 	ResultCodeRecoveredRollbackFailed   = "recovered_rollback_failed"
-	ResultCodePurgeRecoveredFailed      = "purge_recovered_failed"
-	ResultCodeActivationIncomplete      = "activation_incomplete"
-	ResultCodeActivationAuditFailed     = "activation_audit_failed"
+	// ResultCodeRecoveredRollbackRefused reports a rollback the server
+	// refused before mutating anything: no recovery mode was entered and
+	// the store is unchanged. Clients must not treat it as evidence of
+	// recovery (recovered_rollback_failed means state was mutated and the
+	// failure forced recovery).
+	ResultCodeRecoveredRollbackRefused = "recovered_rollback_refused"
+	ResultCodePurgeRecoveredFailed     = "purge_recovered_failed"
+	ResultCodeActivationIncomplete     = "activation_incomplete"
+	ResultCodeActivationAuditFailed    = "activation_audit_failed"
 
 	ResultCodeListFailed           = "list_failed"
 	ResultCodeInvalidTemplateType  = "invalid_template_type"

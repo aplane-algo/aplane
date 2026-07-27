@@ -37,7 +37,12 @@ func (m Model) canTrackLocalIdle() bool {
 	if m.connectionState != ConnectionConnected || m.adminClient == nil {
 		return false
 	}
-	if !m.signerStatusKnown || m.signerState != signerRuntimeUnlocked {
+	// Recovery mode holds the master key resident with recovery-admin
+	// operations live; a walked-away operator must not leave it available
+	// indefinitely. Batch state is durable, so an idle disconnect
+	// mid-recovery loses nothing.
+	if !m.signerStatusKnown ||
+		(m.signerState != signerRuntimeUnlocked && m.signerState != signerRuntimeRecovery) {
 		return false
 	}
 	return m.viewState != ViewAuth && m.viewState != ViewUnlock
@@ -91,6 +96,7 @@ func (m *Model) applySignerRecoveryState() {
 	m.restore.purgeArmedID = ""
 	m.viewState = ViewRecoveredList
 	m.resetActivityState()
+	m.activity.lastInputAt = time.Now()
 }
 
 func (m *Model) applyAdminSettingsTimeout(settings AdminSettings) tea.Cmd {

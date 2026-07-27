@@ -317,7 +317,15 @@ func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "q", "esc", "enter", " ":
 		result := m.restore.result
-		if !result.Success && (m.signerState == signerRuntimeRecovery || m.restore.restoreID != "") {
+		if m.signerState == signerRuntimeRecovery {
+			// The daemon is still in recovery — even after a successful
+			// activation, if the server-side recovery-exit rescan failed
+			// no unlocked push is coming, and ordinary administration must
+			// stay unavailable (ARCH_TUI). The blocking recovery screen is
+			// the only valid destination.
+			return m.openRecoveredList()
+		}
+		if !result.Success && m.restore.restoreID != "" {
 			// Failure routes back to the batch list: the batch (or its
 			// incomplete activation) still exists there and is never
 			// stranded.

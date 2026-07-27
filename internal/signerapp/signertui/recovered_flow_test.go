@@ -418,3 +418,92 @@ func TestReviewScrollsInsteadOfTruncating(t *testing.T) {
 		t.Skip("terminal budget fits ACTIVATE at top; scroll assertion not meaningful at this size")
 	}
 }
+
+func TestUntypedErrorLeavesProgressScreen(t *testing.T) {
+	m := Model{
+		viewState:   ViewRestoring,
+		signerState: signerRuntimeUnlocked,
+		restore:     restoreState{restoreID: "00000000000000000000000000000001"},
+	}
+	next, _ := m.Update(ErrorMsg{Error: fmt.Errorf("authorization denied")})
+	got := next.(Model)
+	if got.viewState != ViewRecoveredList {
+		t.Fatalf("untyped error left view %v, want recovered list (not stranded on progress screen)", got.viewState)
+	}
+	if !strings.Contains(got.restore.recoveredError, "authorization denied") {
+		t.Fatalf("recovered error = %q", got.restore.recoveredError)
+	}
+
+	// Outside recovered context the archive list is the destination.
+	m = Model{viewState: ViewRestoring, signerState: signerRuntimeUnlocked}
+	next, _ = m.Update(ErrorMsg{Error: fmt.Errorf("backup service unavailable")})
+	got = next.(Model)
+	if got.viewState != ViewRestoreList {
+		t.Fatalf("untyped error left view %v, want restore list", got.viewState)
+	}
+}
+
+func TestSuccessOnDisplayStaysBlockedWhileDaemonInRecovery(t *testing.T) {
+	m := Model{
+		viewState:   ViewRestoreDisplay,
+		signerState: signerRuntimeRecovery,
+		restore: restoreState{
+			restoreID: "00000000000000000000000000000001",
+			result:    RestoreDisplayResult{Success: true},
+		},
+	}
+	next, _ := m.handleRestoreDisplayKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	got := next.(Model)
+	if got.viewState != ViewRecoveredList {
+		t.Fatalf("success while daemon in recovery landed on view %v, want the blocking recovery screen", got.viewState)
+	}
+}
+
+func TestRollbackRefusalDoesNotMirrorRecovery(t *testing.T) {
+	base := Model{
+		viewState:   ViewRestoring,
+		signerState: signerRuntimeUnlocked,
+		restore:     restoreState{restoreID: "00000000000000000000000000000001"},
+	}
+	refused := RollbackRecoveredResultMsg{Result: RollbackRecoveredResultMessage{
+		Success: false,
+		Code:    protocol.ResultCodeRecoveredRollbackRefused,
+		Error:   "no activation to roll back",
+	}}
+	next, _ := base.Update(refused)
+	got := next.(Model)
+	if got.signerState == signerRuntimeRecovery {
+		t.Fatal("pre-mutation rollback refusal locked the client into recovery with no corrective push coming")
+	}
+	if got.viewState != ViewRecoveredList {
+		t.Fatalf("refusal left view %v, want recovered list", got.viewState)
+	}
+
+	failed := RollbackRecoveredResultMsg{Result: RollbackRecoveredResultMessage{
+		Success: false,
+		Code:    protocol.ResultCodeRecoveredRollbackFailed,
+		Error:   "restore failed midway",
+	}}
+	next, _ = base.Update(failed)
+	got = next.(Model)
+	if got.signerState != signerRuntimeRecovery {
+		t.Fatal("mutated-and-failed rollback did not mirror server-side recovery")
+	}
+}
+
+func TestIdleTrackingArmsInRecoveryMode(t *testing.T) {
+	m := Model{
+		connectionState:   ConnectionConnected,
+		adminClient:       &IPCClient{},
+		signerStatusKnown: true,
+		signerState:       signerRuntimeRecovery,
+		viewState:         ViewRecoveredList,
+	}
+	if !m.canTrackLocalIdle() {
+		t.Fatal("idle tracking disabled in recovery mode: a walked-away operator leaves the resident master key available indefinitely")
+	}
+	m.signerState = signerRuntimeLocked
+	if m.canTrackLocalIdle() {
+		t.Fatal("idle tracking armed while locked")
+	}
+}

@@ -173,6 +173,7 @@ func (s Service) rollbackRecoveredGenerational(
 	ir *identity.Runtime,
 	req adminproto.RollbackRecoveredRequest,
 	result *adminproto.RollbackRecoveredResult,
+	mutated *bool,
 ) error {
 	paths := s.Deps.KeyPaths()
 	gen, err := genstore.Resolve(paths, ir.ID())
@@ -192,6 +193,10 @@ func (s Service) rollbackRecoveredGenerational(
 	if manifest.ParentID == "" {
 		return fmt.Errorf("generation %s has no parent to roll back to", gen.GenerationID())
 	}
+	// RollbackTo seals the outgoing generation before flipping the pointer:
+	// from here the store is being mutated, and a failure must classify as
+	// recovered_rollback_failed, never as a pre-mutation refusal.
+	*mutated = true
 	if err := genstore.RollbackTo(paths, ir.ID(), manifest.ParentID, time.Now()); err != nil {
 		if errors.Is(err, genstore.ErrCommitDurabilityUnknown) {
 			ir.SetRecovery()

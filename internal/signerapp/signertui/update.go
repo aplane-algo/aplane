@@ -158,7 +158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Signing is blocked by an incomplete activation; open the
 			// blocking recovery screen instead of normal navigation.
 			m.applySignerRecoveryState()
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListRecoveredCmd(), m.sendGetAdminSettingsCmd())
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListRecoveredCmd(), m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
 		default:
 			// Signer locked; show unlock screen immediately regardless of
 			// current view. Any in-progress operation would fail anyway since
@@ -178,7 +178,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// reconciliation could not resolve every incomplete
 				// activation, so signing stays blocked.
 				m.applySignerRecoveryState()
-				return m, tea.Batch(m.waitForMessageCmd(), m.sendListRecoveredCmd(), m.sendGetAdminSettingsCmd())
+				return m, tea.Batch(m.waitForMessageCmd(), m.sendListRecoveredCmd(), m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
 			}
 			m.applySignerUnlockedState(msg.KeyCount)
 			idleCmd := m.armLocalIdleTimer()
@@ -256,6 +256,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
 			m.clearRestorePassphrase()
 			m.restore.previewing = false
+		}
+		if m.viewState == ViewRestoring {
+			// An untyped failure (authorization denial, service
+			// unavailable, a send error) must not strand the operator on
+			// the progress screen, where Esc refuses and only q quits.
+			// Route the same way typed failures do.
+			if m.signerState == signerRuntimeRecovery || m.restore.restoreID != "" {
+				m.restore.recoveredError = msg.Error.Error()
+				return m.openRecoveredList()
+			}
+			m.lastError = msg.Error.Error()
+			m.viewState = ViewRestoreList
+			return m, m.waitForMessageCmd()
 		}
 		m.lastError = msg.Error.Error()
 		// Continue listening for messages
@@ -477,6 +490,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// refresh the list either way.
 			cmds = append(cmds, m.sendListRecoveredCmd())
 		} else {
+			// recovered_rollback_refused means the server refused before
+			// mutating anything: no recovery was entered server-side and
+			// no corrective status push will ever come, so mirroring
+			// recovery here would lock the client into the blocking screen
+			// until restart. Only a mutated-and-failed rollback mirrors.
 			if msg.Result.Code == protocol.ResultCodeRecoveredRollbackFailed {
 				m.signerState = signerRuntimeRecovery
 			}

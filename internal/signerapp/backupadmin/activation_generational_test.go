@@ -157,6 +157,21 @@ func TestGenerationalActivationCommitsWithPointerFlip(t *testing.T) {
 	if _, err := os.Stat(keys.AccountKeyFilePathActive(activeAfterRollback, address)); !os.IsNotExist(err) {
 		t.Fatalf("rolled-back credential still resolvable: %v", err)
 	}
+
+	// A second rollback finds nothing to roll back: the server refused
+	// before mutating anything, and the result code must say refused, not
+	// failed — recovered_rollback_failed makes clients mirror a recovery
+	// mode the server never entered.
+	refused := service.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{RestoreID: recoverResult.RestoreID})
+	if refused.Success {
+		t.Fatalf("RollbackRecovered(again) = %+v, want refusal", refused)
+	}
+	if refused.Code != protocol.ResultCodeRecoveredRollbackRefused {
+		t.Fatalf("refusal code = %q, want %q (pre-mutation refusal)", refused.Code, protocol.ResultCodeRecoveredRollbackRefused)
+	}
+	if ir.IsRecovery() {
+		t.Fatal("pre-mutation rollback refusal put the identity into recovery")
+	}
 }
 
 func TestGenerationalActivationFailureLeavesStoreUntouched(t *testing.T) {

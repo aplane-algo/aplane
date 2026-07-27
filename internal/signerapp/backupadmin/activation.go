@@ -516,7 +516,7 @@ func (s Service) RollbackRecovered(
 			return err
 		}
 		if generational {
-			return s.rollbackRecoveredGenerational(ir, req, &result)
+			return s.rollbackRecoveredGenerational(ir, req, &result, &mutated)
 		}
 		var (
 			journal  *recovered.ActivationJournal
@@ -583,10 +583,16 @@ func (s Service) RollbackRecovered(
 			ir.SetRecovery()
 		}
 		var activationErr *recoveredActivationError
-		if errors.As(err, &activationErr) {
+		switch {
+		case errors.As(err, &activationErr):
 			result.Code = activationErr.code
-		} else {
+		case mutated:
 			result.Code = protocol.ResultCodeRecoveredRollbackFailed
+		default:
+			// Refused before any mutation: the store is unchanged and no
+			// recovery was entered; the client must not lock into the
+			// blocking recovery screen waiting for a push that never comes.
+			result.Code = protocol.ResultCodeRecoveredRollbackRefused
 		}
 		result.Error = err.Error()
 		return result
