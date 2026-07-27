@@ -88,6 +88,12 @@ func snapshotOwnership(entries []adminproto.RecoveredReviewEntry) (map[string][]
 		add("keys", entry.Selector+keys.WitnessPublicMetadataSuffix)
 		if entry.KeyType != "" {
 			add("keytypes", entry.KeyType+".json")
+			// Archive-supplied templates install beside the record
+			// (restore.go template plans). An unowned template written by
+			// a failed activation would survive rollback and later be
+			// treated as existing keystore material in fingerprint-conflict
+			// decisions; claiming a name that is never written is harmless.
+			add("keytypes", entry.KeyType+".template")
 		}
 	}
 	result := make(map[string][]string, len(owned))

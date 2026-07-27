@@ -4,8 +4,11 @@
 package backupadmin
 
 import (
+	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -81,5 +84,25 @@ func TestCaptureActivationSnapshotRejectsSymlink(t *testing.T) {
 	}
 	if _, err := captureActivationSnapshot(paths, identityID, "0123456789abcdef0123456789abcdef"); err == nil {
 		t.Fatal("captureActivationSnapshot(symlink) error = nil, want rejection")
+	}
+}
+
+func TestSnapshotOwnershipClaimsTemplateFiles(t *testing.T) {
+	owned, err := snapshotOwnership([]adminproto.RecoveredReviewEntry{{
+		Selector: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+		Category: keys.CategoryDSALsig,
+		KeyType:  "test.rollback-template.v1",
+	}})
+	if err != nil {
+		t.Fatalf("snapshotOwnership() error = %v", err)
+	}
+	// A failed activation must be able to roll back everything it writes:
+	// the key-type record AND the archive-supplied template. An unowned
+	// template would survive rollback and later count as existing keystore
+	// material in fingerprint-conflict decisions.
+	for _, want := range []string{"test.rollback-template.v1.json", "test.rollback-template.v1.template"} {
+		if !slices.Contains(owned["keytypes"], want) {
+			t.Fatalf("keytypes ownership %v missing %s", owned["keytypes"], want)
+		}
 	}
 }
