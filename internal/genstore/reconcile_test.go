@@ -392,3 +392,64 @@ func TestReconcileDeletesNothingWhenCurrentManifestIncomplete(t *testing.T) {
 		}
 	}
 }
+
+func TestSelfParentLineageIsRejectedEverywhere(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+
+	t.Run("mint rejects self-parent", func(t *testing.T) {
+		_, err := Mint(paths, testIdentity, MintRequest{
+			GenerationID: testGenD,
+			Parent:       testGenD,
+			Operation:    "test-activation",
+			OperationID:  "op-self",
+			CreatedAt:    time.Unix(1_753_500_700, 0),
+		})
+		if err == nil {
+			t.Fatal("Mint accepted a self-parent request")
+		}
+	})
+
+	t.Run("mint rejects nonexistent parent", func(t *testing.T) {
+		_, err := Mint(paths, testIdentity, MintRequest{
+			GenerationID: testGenD,
+			Parent:       "gen-1753500009-99999999",
+			Operation:    "test-activation",
+			OperationID:  "op-ghost",
+			CreatedAt:    time.Unix(1_753_500_701, 0),
+		})
+		if err == nil {
+			t.Fatal("Mint accepted a nonexistent parent; copyNamespaces would silently mint an empty generation")
+		}
+	})
+
+	t.Run("self-parent manifest fails validation", func(t *testing.T) {
+		gen := paths.GenerationPaths(testIdentity, testGenC)
+		manifest, err := ReadManifest(gen)
+		if err != nil {
+			t.Fatalf("ReadManifest() error = %v", err)
+		}
+		manifest.ParentID = manifest.GenerationID
+		if err := WriteManifest(gen, *manifest); err == nil {
+			// If writing validated, the read side must still reject it.
+			if _, err := ReadManifest(gen); err == nil {
+				t.Fatal("self-parent manifest passed both write and read validation")
+			}
+		}
+		// Restore for the rollback subtest below.
+		manifest.ParentID = testGenB
+		if err := WriteManifest(gen, *manifest); err != nil {
+			t.Fatalf("restore manifest: %v", err)
+		}
+	})
+
+	t.Run("rollback to current is an error not a silent success", func(t *testing.T) {
+		if err := RollbackTo(paths, testIdentity, testGenC, time.Unix(1_753_500_702, 0)); err == nil {
+			t.Fatal("RollbackTo(current) reported success without moving CURRENT")
+		}
+		current, err := ReadCurrent(paths, testIdentity)
+		if err != nil || current != testGenC {
+			t.Fatalf("CURRENT = %s (%v), want unchanged %s", current, err, testGenC)
+		}
+	})
+}

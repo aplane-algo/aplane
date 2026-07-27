@@ -66,6 +66,17 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	if req.Operation == "" || req.OperationID == "" {
 		return storepaths.GenPaths{}, fmt.Errorf("mint requires a durable operation identity")
 	}
+	if req.Parent != "" {
+		if req.Parent == req.GenerationID {
+			return storepaths.GenPaths{}, fmt.Errorf("generation %s cannot be its own parent", req.GenerationID)
+		}
+		// The parent must actually exist: copyNamespaces tolerates missing
+		// source namespace directories, so a mistyped parent would
+		// otherwise silently mint an empty generation instead of a child.
+		if err := requireRegularDirectory(paths.GenerationDir(identityID, req.Parent)); err != nil {
+			return storepaths.GenPaths{}, fmt.Errorf("mint parent %s: %w", req.Parent, err)
+		}
+	}
 
 	generationsDir := paths.GenerationsDir(identityID)
 	if err := fsutil.MkdirAll(generationsDir); err != nil {
@@ -177,7 +188,11 @@ func RollbackTo(paths storepaths.Paths, identityID, targetID string, now time.Ti
 		return err
 	}
 	if current == targetID {
-		return nil
+		// Succeeding here would report a rollback that never moved CURRENT.
+		// No legitimate caller asks to roll back to the generation that is
+		// already current; a self-parent manifest could (and is rejected by
+		// manifest validation for the same reason).
+		return fmt.Errorf("rollback target %s is already the current generation", targetID)
 	}
 	target := paths.GenerationPaths(identityID, targetID)
 	if err := ValidateSealed(target); err != nil {

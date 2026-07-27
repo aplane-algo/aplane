@@ -53,7 +53,7 @@ func cmdGenerations(args []string) error {
 		for _, prior := range report.SealedPriors {
 			logInfof("sealed prior: %s", prior)
 		}
-		if len(report.SealedPriors) == 0 {
+		if len(report.SealedPriors) == 0 && report.RetainedUnsealedParent == "" {
 			logInfof("no prior generations (rotation quiescence satisfied)")
 		}
 		return nil

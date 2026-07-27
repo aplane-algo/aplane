@@ -211,6 +211,12 @@ func validateManifest(manifest *Manifest, generationID string) error {
 		if err := storepaths.ValidateGenerationID(manifest.ParentID); err != nil {
 			return fmt.Errorf("generation manifest parent: %w", err)
 		}
+		if manifest.ParentID == manifest.GenerationID {
+			// A self-parent manifest would make rollback resolve to the
+			// current generation itself — reporting a rollback that never
+			// moved CURRENT.
+			return fmt.Errorf("generation manifest names itself as its parent")
+		}
 	}
 	if manifest.CreatedAtUnix <= 0 || manifest.Operation == "" || manifest.OperationID == "" {
 		return fmt.Errorf("generation manifest metadata is incomplete")
