@@ -846,7 +846,10 @@ execution, output decoding, environment filtering, and validation.
       keys/*.key            # account authority, selected by Algorand address
       keys/*.sen            # sentry witness authority, selected by Witness Key ID
       keys/*.wit.json       # derived public witness reference; not private authority
-    keys/ keytypes/         # legacy flat namespaces (pre-migration stores only)
+      keytypes/<key_type>.json      # key type state record
+      keytypes/<key_type>.template  # encrypted key type template
+    keys/ keytypes/         # legacy flat namespaces (pre-migration stores only);
+                            # same *.key/*.sen/*.json/*.template contents as above
     .keystore               # version 3 + layout tag on generation-layout stores
     node.yaml.hmac
     aplane.token
@@ -857,8 +860,6 @@ execution, output decoding, environment filtering, and validation.
     .ssh/authorized_keys
     passphrase              # plaintext appass-file helper artifact, mode 0600
     passphrase.cred         # systemd-creds helper artifact, mode 0600
-    keytypes/<key_type>.json
-    keytypes/<key_type>.template
     sentries/<name>.json
     recovered/<restore-id>/
       batch.enc

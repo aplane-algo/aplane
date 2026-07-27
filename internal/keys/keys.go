@@ -22,6 +22,11 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
+// witnessArtifactBundleSuffix mirrors witness/artifact.BundleExtension:
+// external witness artifact bundles are expected residents of the keys
+// namespace and are never scanned as credentials.
+const witnessArtifactBundleSuffix = ".wit"
+
 // ErrMissingLogicSigSaltCounter indicates a LogicSig key file predates the
 // off-curve address invariant and cannot be safely loaded.
 var ErrMissingLogicSigSaltCounter = errors.New("logic sig key file missing salt_counter")
@@ -143,6 +148,7 @@ const (
 	KeyScanWarningAddressDerivationFailed KeyScanWarningCode = "address_derivation_failed"
 	KeyScanWarningFilenameAddressMismatch KeyScanWarningCode = "filename_address_mismatch"
 	KeyScanWarningFilenameClassMismatch   KeyScanWarningCode = "filename_class_mismatch"
+	KeyScanWarningUnexpectedEntry         KeyScanWarningCode = "unexpected_entry"
 )
 
 // KeyScanWarning describes a recoverable key-scan failure. Scanning continues
@@ -184,6 +190,8 @@ func (w KeyScanWarning) Message() string {
 		return fmt.Sprintf("Skipped key file %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningFilenameClassMismatch:
 		return fmt.Sprintf("Skipped managed credential %s: %v", w.KeyFile, w.Err)
+	case KeyScanWarningUnexpectedEntry:
+		return fmt.Sprintf("Unexpected entry in keys namespace %s: %v", w.KeyFile, w.Err)
 	default:
 		return fmt.Sprintf("Failed to scan key file %s: %v", w.KeyFile, w.Err)
 	}
@@ -313,10 +321,18 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc 
 	}
 
 	// Scan only signer-managed private credential classes. External witness
-	// artifacts and public witness references are intentionally excluded.
+	// artifact bundles (.wit) and public witness references (.wit.json) are
+	// the expected non-credential residents; anything else in the namespace
+	// is reported so generation-based stores can fail closed on unexpected
+	// content (legacy stores keep tolerating it as a warning).
 	for _, entry := range entries {
 		filenameSelector, _, ok := ParseManagedCredentialFilename(entry.Name())
 		if entry.IsDir() || !ok {
+			if !strings.HasSuffix(entry.Name(), WitnessPublicMetadataSuffix) &&
+				!strings.HasSuffix(entry.Name(), witnessArtifactBundleSuffix) {
+				warn(KeyScanWarningUnexpectedEntry, filepath.Join(keysDir, entry.Name()),
+					fmt.Errorf("not a managed credential or witness artifact"))
+			}
 			continue
 		}
 

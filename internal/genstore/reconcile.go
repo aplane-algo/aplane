@@ -133,6 +133,13 @@ func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[st
 			return nil, fmt.Errorf("collect: read current generation manifest: %w", err)
 		}
 		if manifest.ParentID != "" {
+			// The retained parent is being kept as the rollback target;
+			// a parent that fails seal validation cannot serve that role,
+			// and deleting the alternatives would destroy the only other
+			// recovery material. Abort the prune before removing anything.
+			if err := ValidateSealed(paths.GenerationPaths(identityID, manifest.ParentID)); err != nil {
+				return nil, fmt.Errorf("collect: rollback parent %s failed seal validation, refusing to prune: %w", manifest.ParentID, err)
+			}
 			retain[manifest.ParentID] = true
 		}
 	}

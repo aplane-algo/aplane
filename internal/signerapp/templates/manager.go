@@ -6,6 +6,8 @@ package templates
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -45,6 +47,7 @@ func (r RegistrationReport) ContentDefectKeyTypes() []string {
 		r.ComposedOrphanedKeyTypes,
 		r.GenericExternalEditKeyTypes,
 		r.ComposedExternalEditKeyTypes,
+		r.NamespaceDefects,
 	} {
 		defects = append(defects, bucket...)
 	}
@@ -54,6 +57,12 @@ func (r RegistrationReport) ContentDefectKeyTypes() []string {
 type RegistrationReport struct {
 	GenericErr  error
 	ComposedErr error
+
+	// NamespaceDefects are content problems found by sweeping the keytypes
+	// namespace directly: unexpected entries, template files without a
+	// state record, and templates (including disabled ones) that fail to
+	// decrypt. Registration is record-driven and would never touch these.
+	NamespaceDefects []string
 
 	GenericActivatedKeyTypes     []string
 	ComposedActivatedKeyTypes    []string
@@ -77,6 +86,9 @@ type RegistrationReport struct {
 
 func (r RegistrationReport) Warnings() []string {
 	var warnings []string
+	for _, defect := range r.NamespaceDefects {
+		warnings = append(warnings, fmt.Sprintf("keytypes namespace defect: %s", defect))
+	}
 	if r.GenericErr != nil {
 		warnings = append(warnings, fmt.Sprintf("failed to load generic templates: %v", r.GenericErr))
 	}
@@ -204,6 +216,14 @@ func (m *Manager) RegisterKeystoreTemplates(identityID string, masterKey []byte)
 	if invalid, listErr := keytypestate.ListInvalidActive(active); listErr == nil {
 		report.InvalidStateRecordKeyTypes = append(report.InvalidStateRecordKeyTypes, invalid...)
 	}
+	// The namespace sweep is a generational-store integrity check backing
+	// the fail-closed reload gate; legacy flat stores keep their historical
+	// tolerance of stray files.
+	if generational, genErr := genstore.IsGenerational(m.Paths, identityID); genErr != nil {
+		return report, fmt.Errorf("failed to inspect store layout: %w", genErr)
+	} else if generational {
+		report.NamespaceDefects = sweepKeyTypeNamespace(active, masterKey, records)
+	}
 
 	compiledOutcome := validateCompiledProviderRecords(records)
 	report.CompiledIdempotentKeyTypes = append(report.CompiledIdempotentKeyTypes, compiledOutcome.IdempotentKeyTypes...)
@@ -229,6 +249,61 @@ func (m *Manager) templateRegistrars() ([]TemplateRegistrar, error) {
 		seen[registrar.Source] = struct{}{}
 	}
 	return registrars, nil
+}
+
+// sweepKeyTypeNamespace validates the keytypes namespace of a generational
+// store directly, catching what record-driven registration cannot: unexpected
+// entries, template files without any state record, and disabled templates
+// registration never decrypts. Enabled templates and malformed records are
+// already covered by registration and ListInvalidActive; the sweep does not
+// re-report them. Defects feed the fail-closed reload gate
+// (docs/ARCH_GENERATIONS.md §6).
+func sweepKeyTypeNamespace(active storepaths.ActivePaths, masterKey []byte, records []keytypestate.Record) []string {
+	dir := active.KeyTypeRecordsDir()
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return []string{fmt.Sprintf("read keytypes namespace: %v", err)}
+	}
+	recordStates := make(map[string]keytypestate.State, len(records))
+	for _, rec := range records {
+		recordStates[rec.KeyType] = rec.State
+	}
+	recordFileExists := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			recordFileExists[strings.TrimSuffix(entry.Name(), ".json")] = true
+		}
+	}
+	var defects []string
+	for _, entry := range entries {
+		name := entry.Name()
+		switch {
+		case entry.IsDir():
+			defects = append(defects, fmt.Sprintf("unexpected directory %q", name))
+		case strings.HasSuffix(name, ".json"):
+			// Record content validity is covered by ListInvalidActive.
+		case strings.HasSuffix(name, ".template"):
+			keyType := strings.TrimSuffix(name, ".template")
+			if !recordFileExists[keyType] {
+				defects = append(defects, fmt.Sprintf("template %q has no state record", name))
+				continue
+			}
+			// Disabled templates are skipped by registration, so their
+			// content is otherwise never checked. Enabled templates were
+			// just loaded; invalid records are reported separately.
+			if recordStates[keyType] == keytypestate.StateDisabled {
+				if _, err := templatestore.LoadTemplateFromPath(filepath.Join(dir, name), masterKey); err != nil {
+					defects = append(defects, fmt.Sprintf("disabled template %q failed validation: %v", name, err))
+				}
+			}
+		default:
+			defects = append(defects, fmt.Sprintf("unexpected entry %q", name))
+		}
+	}
+	return defects
 }
 
 func registerTemplateRecord(active storepaths.ActivePaths, identityID string, masterKey []byte, rec keytypestate.Record, registrar TemplateRegistrar) templatepolicy.RegistrationOutcome {

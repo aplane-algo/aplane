@@ -727,3 +727,82 @@ func (p templatesTestProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, e
 	return nil, nil
 }
 func (p templatesTestProvider) CompatibilityFingerprint() string { return p.fingerprint }
+
+// sweepActiveForTest resolves the flat legacy layout and lists its records;
+// sweepKeyTypeNamespace itself is layout-agnostic (the generational gate
+// lives in RegisterKeystoreTemplates), so unit tests exercise it directly.
+func sweepForTest(t *testing.T, paths storepaths.Paths, masterKey []byte) []string {
+	t.Helper()
+	active := paths.LegacyActivePaths("default")
+	records, err := keytypestate.ListActive(active)
+	if err != nil {
+		t.Fatalf("ListActive() error = %v", err)
+	}
+	return sweepKeyTypeNamespace(active, masterKey, records)
+}
+
+func TestSweepKeyTypeNamespaceCleanStore(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := testTemplateMasterKey()
+	saveTemplateYAML(t, paths, "test.sweep-clean.v1", templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-clean"), masterKey)
+
+	if defects := sweepForTest(t, paths, masterKey); len(defects) != 0 {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, want none for a clean store", defects)
+	}
+}
+
+func TestSweepKeyTypeNamespaceFlagsTemplateWithoutRecord(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := testTemplateMasterKey()
+	keyType := "test.sweep-stray.v1"
+	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-stray"), masterKey)
+	if err := keytypestate.Delete(paths, "default", keyType); err != nil {
+		t.Fatalf("Delete(state record) error = %v", err)
+	}
+
+	defects := sweepForTest(t, paths, masterKey)
+	if len(defects) != 1 || !strings.Contains(defects[0], "no state record") {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, want one no-state-record defect", defects)
+	}
+}
+
+func TestSweepKeyTypeNamespaceFlagsUnexpectedEntries(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := testTemplateMasterKey()
+	saveTemplateYAML(t, paths, "test.sweep-unexpected.v1", templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-unexpected"), masterKey)
+	dir := paths.LegacyActivePaths("default").KeyTypeRecordsDir()
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0600); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "subdir"), 0750); err != nil {
+		t.Fatalf("Mkdir error = %v", err)
+	}
+
+	defects := sweepForTest(t, paths, masterKey)
+	if len(defects) != 2 {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, want unexpected-entry and unexpected-directory defects", defects)
+	}
+}
+
+func TestSweepKeyTypeNamespaceValidatesDisabledTemplates(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := testTemplateMasterKey()
+	keyType := "test.sweep-disabled.v1"
+	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-disabled"), masterKey)
+	if err := keytypestate.SetState(paths, "default", keyType, keytypestate.StateDisabled); err != nil {
+		t.Fatalf("SetState(disabled) error = %v", err)
+	}
+
+	if defects := sweepForTest(t, paths, masterKey); len(defects) != 0 {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, want none for a healthy disabled template", defects)
+	}
+
+	dir := paths.LegacyActivePaths("default").KeyTypeRecordsDir()
+	if err := os.WriteFile(filepath.Join(dir, keyType+".template"), []byte("plaintext garbage"), 0600); err != nil {
+		t.Fatalf("WriteFile(corrupt template) error = %v", err)
+	}
+	defects := sweepForTest(t, paths, masterKey)
+	if len(defects) != 1 || !strings.Contains(defects[0], "disabled template") {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, want one disabled-template validation defect", defects)
+	}
+}

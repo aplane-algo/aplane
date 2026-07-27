@@ -309,3 +309,47 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
 	}
 }
+
+func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	svc := signerAdminServices{signer: server}
+	generationID := convertTestSignerToGenerational(t, server)
+
+	// Files that are neither managed credentials nor witness artifacts are
+	// unaccounted-for content: strict validation treats them as defects, in
+	// either namespace of the selected generation.
+	gen := server.keyPaths.GenerationPaths(auth.DefaultIdentityID, generationID)
+	strays := []string{
+		filepath.Join(gen.KeysDir(), "notes.txt"),
+		filepath.Join(gen.KeyTypeRecordsDir(), "backup.tar"),
+	}
+	for _, stray := range strays {
+		if err := os.WriteFile(stray, []byte("stray"), 0o660); err != nil {
+			t.Fatalf("WriteFile(%s): %v", stray, err)
+		}
+	}
+	ir.Lock()
+
+	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeActivationIncomplete {
+		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
+	}
+	if !ir.IsRecovery() || ir.IsUnlocked() {
+		t.Fatalf("identity state = recovery %v unlocked %v, want recovery", ir.IsRecovery(), ir.IsUnlocked())
+	}
+
+	for _, stray := range strays {
+		if err := os.Remove(stray); err != nil {
+			t.Fatalf("remove %s: %v", stray, err)
+		}
+	}
+	ir.Lock()
+	if success, _, errMsg, code := svc.UnlockIdentity(ir, testPassphrase); !success || errMsg != "" || code != "" {
+		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
+	}
+}

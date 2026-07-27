@@ -219,3 +219,31 @@ func TestCollectGarbageRetainsManifestParentAfterRollback(t *testing.T) {
 		t.Fatalf("RollbackTo(parent) error = %v", err)
 	}
 }
+
+func TestCollectGarbageRefusesToPruneWhenRollbackParentInvalid(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_500, 0)); err != nil {
+		t.Fatalf("RollbackTo(B) error = %v", err)
+	}
+	// CURRENT=B, rollback parent A. Corrupt A's seal: A can no longer serve
+	// as the rollback target, so the prune must delete nothing rather than
+	// destroy C, the only other recovery material.
+	sealPath := paths.GenerationPaths(testIdentity, testGenA).SealPath()
+	if err := os.WriteFile(sealPath, []byte("{corrupt"), 0600); err != nil {
+		t.Fatalf("corrupt seal: %v", err)
+	}
+
+	removed, err := CollectGarbage(paths, testIdentity, nil, true)
+	if err == nil {
+		t.Fatalf("CollectGarbage() = %v, want error for invalid rollback parent", removed)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("removed = %v, want nothing deleted on aborted prune", removed)
+	}
+	for _, gen := range []string{testGenA, testGenC} {
+		if _, statErr := os.Stat(paths.GenerationPaths(testIdentity, gen).Dir()); statErr != nil {
+			t.Fatalf("generation %s missing after aborted prune: %v", gen, statErr)
+		}
+	}
+}
