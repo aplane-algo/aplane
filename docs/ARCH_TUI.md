@@ -60,6 +60,15 @@ identifies the current screen. The enum has families for:
 - Generate / import flows (form, params, loading, display)
 - Managed backup create flow (`ViewBackupConfirm`, `ViewBackingUp`, `ViewBackupDisplay`)
 - Managed backup restore flow (`ViewRestoreList` through `ViewRestoreDisplay`)
+- Recovered-batch lifecycle (`ViewRecoveredList`): review, resume, rollback,
+  and purge for recovered batches, reachable from the archive list (`v`) with
+  no export passphrase. While the signer reports the `recovery` runtime state
+  the same screen is blocking — Escape does not leave it, ordinary
+  administration stays unavailable, and the status bar shows
+  "Signer Recovery (signing disabled)" until every incomplete activation is
+  resolved. The client preserves the server's three-way runtime state
+  (`locked` / `recovery` / `unlocked`); recovery is never rendered as
+  unlocked.
 - Destructive confirmations (`ViewDeleteConfirm`, `ViewRevokeTokenConfirm`, `ViewDisplaceConfirm`)
 - Settings panel (`ViewAdminPanel`) and shared policy editor workflow (`ViewPolicyEditor`)
 - KeyType Library (`ViewTemplateLibrary`, install confirm/loading, `ViewLibraryTemplateDetails`)

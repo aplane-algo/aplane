@@ -427,6 +427,16 @@ resume, or use `restore rollback` to restore the pre-activation state. An
 incomplete activation cannot be purged, and no new activation is accepted
 while any incomplete activation exists.
 
+In `apadmin`, recovered batches are managed from the archive list (`r`, then
+`v`): reopening a batch for review requires no export passphrase, incomplete
+activations offer resume (Enter, using the exact recorded intent) and
+rollback (`x`), and inactive batches can be purged (`p`, confirmed with `y`).
+While the signer is in recovery mode the same screen is blocking — signing
+and ordinary administration stay disabled until every incomplete activation
+is resolved. Replacing existing active credentials is consented to on the
+activation review, beside the listed conflicts; the archive preview marks
+conflicting keys informationally and never collects that consent.
+
 **Note:** `apstore restore` operates on archives in the managed backup locker;
 it does not restore directly from extracted directories. Backups do not include
 a `.keystore` metadata file. The backup passphrase is the export passphrase you
