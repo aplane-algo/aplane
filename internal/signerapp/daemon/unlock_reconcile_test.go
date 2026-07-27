@@ -190,10 +190,11 @@ func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
 	if _, err := genstore.Mint(server.keyPaths, auth.DefaultIdentityID, genstore.MintRequest{
-		GenerationID: generationID,
-		Operation:    "test-init",
-		OperationID:  "init-" + generationID,
-		CreatedAt:    time.Unix(1_753_800_000, 0),
+		GenerationID:    generationID,
+		FirstGeneration: true,
+		Operation:       "test-init",
+		OperationID:     "init-" + generationID,
+		CreatedAt:       time.Unix(1_753_800_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
 			for src, dst := range map[string]string{
 				server.keyPaths.KeysDir(auth.DefaultIdentityID):           staged.KeysDir(),

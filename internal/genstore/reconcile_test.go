@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -514,4 +516,128 @@ func assertChainUntouched(t *testing.T, paths storepaths.Paths) {
 			t.Fatalf("rejected mint left staging residue %s", entry.Name())
 		}
 	}
+}
+
+func TestMintRefusesFirstMintWhenCurrentMissingOnEstablishedStore(t *testing.T) {
+	mintD := func(paths storepaths.Paths, first bool) error {
+		_, err := Mint(paths, testIdentity, MintRequest{
+			GenerationID:    testGenD,
+			FirstGeneration: first,
+			Operation:       "test-activation",
+			OperationID:     "op-relineage",
+			CreatedAt:       time.Unix(1_753_500_900, 0),
+		})
+		return err
+	}
+	generationsUntouched := func(t *testing.T, paths storepaths.Paths, want []string) {
+		t.Helper()
+		entries, err := os.ReadDir(paths.GenerationsDir(testIdentity))
+		if err != nil {
+			t.Fatalf("ReadDir(generations): %v", err)
+		}
+		var got []string
+		for _, entry := range entries {
+			got = append(got, entry.Name())
+		}
+		slices.Sort(got)
+		slices.Sort(want)
+		if !slices.Equal(got, want) {
+			t.Fatalf("generations = %v, want untouched %v", got, want)
+		}
+	}
+
+	t.Run("unauthorized parentless mint is refused", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
+		if err := os.Remove(paths.CurrentPointerPath(testIdentity)); err != nil {
+			t.Fatalf("remove CURRENT: %v", err)
+		}
+		if err := mintD(paths, false); err == nil {
+			t.Fatal("Mint accepted a parentless mint without first-generation authorization")
+		}
+		generationsUntouched(t, paths, []string{testGenA})
+	})
+
+	t.Run("authorized first mint refused when generations exist without metadata", func(t *testing.T) {
+		// The reviewer's scenario: mint A, remove CURRENT, parentlessly
+		// mint D. D must not become current; A must survive.
+		paths := storepaths.NewPaths(t.TempDir())
+		mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
+		if err := os.Remove(paths.CurrentPointerPath(testIdentity)); err != nil {
+			t.Fatalf("remove CURRENT: %v", err)
+		}
+		if err := mintD(paths, true); err == nil {
+			t.Fatal("Mint created a new lineage over an established store missing its CURRENT pointer")
+		}
+		generationsUntouched(t, paths, []string{testGenA})
+	})
+
+	t.Run("authorized first mint refused when metadata carries the layout marker", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		if err := fsutil.MkdirAll(paths.KeystoreMetadataDir(testIdentity)); err != nil {
+			t.Fatalf("MkdirAll(metadata): %v", err)
+		}
+		if _, _, err := crypto.CreateKeystoreMetadataGenerational(paths.KeystoreMetadataDir(testIdentity), []byte("pw")); err != nil {
+			t.Fatalf("CreateKeystoreMetadataGenerational() error = %v", err)
+		}
+		mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
+		if err := os.Remove(paths.CurrentPointerPath(testIdentity)); err != nil {
+			t.Fatalf("remove CURRENT: %v", err)
+		}
+		if err := mintD(paths, true); err == nil {
+			t.Fatal("Mint created a new lineage over a marked generational store missing its CURRENT pointer")
+		}
+		generationsUntouched(t, paths, []string{testGenA})
+	})
+
+	t.Run("authorized first mint refused when sealed history exists", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		buildGenerationChain(t, paths) // A, B sealed; C current
+		if err := os.Remove(paths.CurrentPointerPath(testIdentity)); err != nil {
+			t.Fatalf("remove CURRENT: %v", err)
+		}
+		if err := mintD(paths, true); err == nil {
+			t.Fatal("Mint created a new lineage over sealed generational history")
+		}
+		generationsUntouched(t, paths, []string{testGenA, testGenB, testGenC})
+	})
+
+	t.Run("crashed migration retry still mints", func(t *testing.T) {
+		// Crash window: a published-but-unflipped attempt on a store whose
+		// metadata has no layout marker (v2). The retry mints a fresh
+		// first generation; reconciliation later discards the attempt.
+		paths := storepaths.NewPaths(t.TempDir())
+		if err := fsutil.MkdirAll(paths.KeystoreMetadataDir(testIdentity)); err != nil {
+			t.Fatalf("MkdirAll(metadata): %v", err)
+		}
+		if _, _, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(testIdentity), []byte("pw")); err != nil {
+			t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		}
+		attempt := paths.GenerationPaths(testIdentity, testGenA)
+		for _, namespace := range []string{"keys", "keytypes"} {
+			if err := os.MkdirAll(filepath.Join(attempt.Dir(), namespace), 0o770); err != nil {
+				t.Fatalf("MkdirAll: %v", err)
+			}
+		}
+		if err := WriteManifest(attempt, Manifest{
+			GenerationID: testGenA, CreatedAtUnix: 1, Operation: "layout-migration", OperationID: "op-crashed", Complete: true,
+		}); err != nil {
+			t.Fatalf("WriteManifest: %v", err)
+		}
+
+		if err := mintD(paths, true); err != nil {
+			t.Fatalf("Mint(retry after crashed migration) error = %v", err)
+		}
+		current, err := ReadCurrent(paths, testIdentity)
+		if err != nil || current != testGenD {
+			t.Fatalf("CURRENT = %s (%v), want %s", current, err, testGenD)
+		}
+		report, err := Reconcile(paths, testIdentity, nil)
+		if err != nil {
+			t.Fatalf("Reconcile() error = %v", err)
+		}
+		if !slices.Equal(report.DiscardedAttempts, []string{testGenA}) {
+			t.Fatalf("discarded = %v, want the crashed attempt [%s]", report.DiscardedAttempts, testGenA)
+		}
+	})
 }

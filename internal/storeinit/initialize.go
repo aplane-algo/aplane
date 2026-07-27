@@ -124,10 +124,11 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 			return result, err
 		}
 		if _, err := genstore.Mint(opts.Paths, opts.IdentityID, genstore.MintRequest{
-			GenerationID: generationID,
-			Operation:    "store-initialize",
-			OperationID:  "init-" + generationID,
-			CreatedAt:    time.Now(),
+			GenerationID:    generationID,
+			FirstGeneration: true,
+			Operation:       "store-initialize",
+			OperationID:     "init-" + generationID,
+			CreatedAt:       time.Now(),
 			Apply: func(staged storepaths.GenPaths) error {
 				return defaultkeytypes.InstallForNewIdentityActive(staged, role, masterKey, opts.Logf)
 			},

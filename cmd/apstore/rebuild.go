@@ -130,10 +130,11 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		return err
 	}
 	if _, err := genstore.Mint(keystorePaths(), productIdentityID(), genstore.MintRequest{
-		GenerationID: generationID,
-		Operation:    "store-rebuild",
-		OperationID:  "rebuild-" + generationID,
-		CreatedAt:    time.Now(),
+		GenerationID:    generationID,
+		FirstGeneration: true,
+		Operation:       "store-rebuild",
+		OperationID:     "rebuild-" + generationID,
+		CreatedAt:       time.Now(),
 		Apply: func(staged storepaths.GenPaths) error {
 			return rebuildRestoreKeys(sourceRoot, addresses, nodeRole, masterKey, exportPassphrase, staged)
 		},

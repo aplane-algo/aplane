@@ -678,10 +678,11 @@ func TestRotatePreservesGenerationalLayoutGate(t *testing.T) {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
 	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
-		GenerationID: generationID,
-		Operation:    "test-init",
-		OperationID:  "init-" + generationID,
-		CreatedAt:    time.Unix(1_753_900_000, 0),
+		GenerationID:    generationID,
+		FirstGeneration: true,
+		Operation:       "test-init",
+		OperationID:     "init-" + generationID,
+		CreatedAt:       time.Unix(1_753_900_000, 0),
 	}); err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
@@ -723,7 +724,7 @@ func TestRotateRefusedUntilPriorGenerationsPruned(t *testing.T) {
 	first := "gen-1753900000-0badc0de"
 	second := "gen-1753900001-1badc0de"
 	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
-		GenerationID: first, Operation: "test-init", OperationID: "op-1",
+		GenerationID: first, FirstGeneration: true, Operation: "test-init", OperationID: "op-1",
 		CreatedAt: time.Unix(1_753_900_000, 0),
 	}); err != nil {
 		t.Fatalf("Mint(first): %v", err)

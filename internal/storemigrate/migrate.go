@@ -135,10 +135,11 @@ func Migrate(paths storepaths.Paths, identityID string, now time.Time) (Result, 
 		return result, err
 	}
 	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
-		GenerationID: generationID,
-		Operation:    "layout-migration",
-		OperationID:  "migrate-" + generationID,
-		CreatedAt:    now,
+		GenerationID:    generationID,
+		FirstGeneration: true,
+		Operation:       "layout-migration",
+		OperationID:     "migrate-" + generationID,
+		CreatedAt:       now,
 		Apply: func(staged storepaths.GenPaths) error {
 			return copyLegacyNamespaces(paths, identityID, staged)
 		},

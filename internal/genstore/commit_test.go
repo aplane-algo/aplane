@@ -17,10 +17,11 @@ import (
 func mintFirst(t *testing.T, paths storepaths.Paths, files map[string]string) storepaths.GenPaths {
 	t.Helper()
 	gen, err := Mint(paths, testIdentity, MintRequest{
-		GenerationID: testGenA,
-		Operation:    "test-init",
-		OperationID:  "op-init",
-		CreatedAt:    time.Unix(1_753_500_000, 0),
+		GenerationID:    testGenA,
+		FirstGeneration: true,
+		Operation:       "test-init",
+		OperationID:     "op-init",
+		CreatedAt:       time.Unix(1_753_500_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
 			for relative, content := range files {
 				if err := os.WriteFile(filepath.Join(staged.Dir(), filepath.FromSlash(relative)), []byte(content), 0o660); err != nil {

@@ -28,10 +28,11 @@ func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
 	if _, err := genstore.Mint(paths, auth.DefaultIdentityID, genstore.MintRequest{
-		GenerationID: generationID,
-		Operation:    "test-init",
-		OperationID:  "init-" + generationID,
-		CreatedAt:    time.Unix(1_753_700_000, 0),
+		GenerationID:    generationID,
+		FirstGeneration: true,
+		Operation:       "test-init",
+		OperationID:     "init-" + generationID,
+		CreatedAt:       time.Unix(1_753_700_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
 			for _, dir := range []string{paths.KeysDir(auth.DefaultIdentityID), paths.KeyTypeRecordsDir(auth.DefaultIdentityID)} {
 				entries, err := os.ReadDir(dir)
