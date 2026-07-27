@@ -107,8 +107,23 @@ const (
 	argon2MemoryLegacy  = 64 * 1024
 	argon2ThreadsLegacy = 4
 
-	// CurrentKeystoreMetadataVersion is the latest supported .keystore schema version.
+	// CurrentKeystoreMetadataVersion is the .keystore schema version for
+	// flat-layout stores. Binaries without generation-layout support have
+	// this as their maximum, which is what makes the version bump below a
+	// hard old-binary rejection gate.
 	CurrentKeystoreMetadataVersion = 2
+
+	// GenerationalKeystoreMetadataVersion marks a store whose active
+	// key/key-type namespaces live under identities/<id>/generations/ behind
+	// the CURRENT pointer (docs/ARCH_GENERATIONS.md). Older binaries reject
+	// it at unlock, rotation, rebuild, and policy-sign — before reading a
+	// single stale legacy path.
+	GenerationalKeystoreMetadataVersion = 3
+
+	// KeystoreLayoutGenerationsV1 is the layout tag recorded in version-3
+	// metadata; the version gate does the rejection, the field documents
+	// the reason.
+	KeystoreLayoutGenerationsV1 = "generations/v1"
 )
 
 // EncryptedData stores the encrypted content with metadata
@@ -151,6 +166,11 @@ type KeystoreMetadata struct {
 	KDFTime    uint32 `json:"kdf_time,omitempty"`
 	KDFMemory  uint32 `json:"kdf_memory,omitempty"`
 	KDFThreads uint8  `json:"kdf_threads,omitempty"`
+
+	// Layout documents the on-disk store layout for version 3+ metadata
+	// (KeystoreLayoutGenerationsV1). The version gate is what rejects the
+	// store on older binaries; this field records why.
+	Layout string `json:"layout,omitempty"`
 }
 
 const (
@@ -247,6 +267,23 @@ func CreateKeystoreMetadata(keystoreDir string, passphrase []byte) (*KeystoreMet
 	if err != nil {
 		return nil, nil, err
 	}
+	return writeKeystoreMetadata(keystoreDir, meta, masterKey)
+}
+
+// CreateKeystoreMetadataGenerational writes version-3 metadata for a store
+// whose active namespaces use the generation layout. Older binaries reject
+// the store outright instead of reading stale legacy paths.
+func CreateKeystoreMetadataGenerational(keystoreDir string, passphrase []byte) (*KeystoreMetadata, []byte, error) {
+	meta, masterKey, err := buildKeystoreMetadata(passphrase)
+	if err != nil {
+		return nil, nil, err
+	}
+	meta.Version = GenerationalKeystoreMetadataVersion
+	meta.Layout = KeystoreLayoutGenerationsV1
+	return writeKeystoreMetadata(keystoreDir, meta, masterKey)
+}
+
+func writeKeystoreMetadata(keystoreDir string, meta *KeystoreMetadata, masterKey []byte) (*KeystoreMetadata, []byte, error) {
 
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -343,11 +380,14 @@ func (m *KeystoreMetadata) GetMasterSalt() ([]byte, error) {
 }
 
 func (m *KeystoreMetadata) validateVersion() error {
-	if m.Version < 1 || m.Version > CurrentKeystoreMetadataVersion {
-		return fmt.Errorf("unsupported keystore metadata version %d (supported range 1-%d)", m.Version, CurrentKeystoreMetadataVersion)
+	if m.Version < 1 || m.Version > GenerationalKeystoreMetadataVersion {
+		return fmt.Errorf("unsupported keystore metadata version %d (supported range 1-%d)", m.Version, GenerationalKeystoreMetadataVersion)
 	}
 	if m.Version >= 2 && (m.KDFTime == 0 || m.KDFMemory == 0 || m.KDFThreads == 0) {
 		return fmt.Errorf("keystore metadata version %d has incomplete KDF parameters", m.Version)
+	}
+	if m.Version >= GenerationalKeystoreMetadataVersion && m.Layout != KeystoreLayoutGenerationsV1 {
+		return fmt.Errorf("keystore metadata version %d has unsupported layout %q", m.Version, m.Layout)
 	}
 	return nil
 }

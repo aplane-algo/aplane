@@ -134,18 +134,29 @@ func GetTemplateDirForPaths(paths storepaths.Paths, identityID string, templateT
 }
 
 func GetTemplateFilePathForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) string {
-	return paths.KeyTypeTemplate(identityID, normalizeKeyType(keyType))
+	return GetTemplateFilePathActive(paths.LegacyActivePaths(identityID), keyType, templateType)
+}
+
+// GetTemplateFilePathActive is GetTemplateFilePathForPaths against resolved
+// active-store paths (generational or legacy).
+func GetTemplateFilePathActive(active storepaths.ActivePaths, keyType string, _ TemplateType) string {
+	return active.KeyTypeTemplate(normalizeKeyType(keyType))
 }
 
 func SaveTemplateForPaths(paths storepaths.Paths, identityID string, yamlData []byte, keyType string, templateType TemplateType, masterKey []byte) (string, error) {
+	return SaveTemplateActive(paths.LegacyActivePaths(identityID), yamlData, keyType, templateType, masterKey)
+}
+
+// SaveTemplateActive is SaveTemplateForPaths against resolved active-store
+// paths.
+func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType string, templateType TemplateType, masterKey []byte) (string, error) {
 	keyType = normalizeKeyType(keyType)
 	if _, ok := sourceForTemplateType(templateType); !ok {
 		return "", fmt.Errorf("unsupported template_type %q", templateType)
 	}
-	dir := GetTemplateDirForPaths(paths, identityID, templateType)
 
 	// Ensure directory exists
-	if err := fsutil.MkdirAll(dir); err != nil {
+	if err := fsutil.MkdirAll(active.KeyTypeRecordsDir()); err != nil {
 		return "", fmt.Errorf("failed to create templates directory: %w", err)
 	}
 
@@ -156,7 +167,7 @@ func SaveTemplateForPaths(paths storepaths.Paths, identityID string, yamlData []
 	}
 
 	// Write the file
-	outputPath := GetTemplateFilePathForPaths(paths, identityID, keyType, templateType)
+	outputPath := GetTemplateFilePathActive(active, keyType, templateType)
 	if err := fsutil.WriteFile(outputPath, encrypted); err != nil {
 		return "", fmt.Errorf("failed to write template file: %w", err)
 	}
@@ -170,15 +181,21 @@ func LoadTemplateFromPath(path string, masterKey []byte) ([]byte, error) {
 }
 
 func TemplateExistsForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) bool {
+	return TemplateExistsActive(paths.LegacyActivePaths(identityID), keyType, templateType)
+}
+
+// TemplateExistsActive is TemplateExistsForPaths against resolved
+// active-store paths.
+func TemplateExistsActive(active storepaths.ActivePaths, keyType string, templateType TemplateType) bool {
 	source, sourceOK := sourceForTemplateType(templateType)
 	if !sourceOK {
 		return false
 	}
-	rec, ok, err := keytypestate.Get(paths, identityID, keyType)
+	rec, ok, err := keytypestate.GetActive(active, keyType)
 	if err != nil || !ok || rec.Source != source {
 		return false
 	}
-	path := GetTemplateFilePathForPaths(paths, identityID, keyType, templateType)
+	path := GetTemplateFilePathActive(active, keyType, templateType)
 	_, err = os.Stat(path)
 	return err == nil
 }

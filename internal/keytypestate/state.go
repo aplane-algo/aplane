@@ -78,11 +78,17 @@ func (e *InUseError) Unwrap() error {
 //     contains unknown source/state values. Treat this as corruption, not as an
 //     absent record.
 func Get(paths storepaths.Paths, identityID, keyType string) (Record, bool, error) {
+	return GetActive(paths.LegacyActivePaths(identityID), keyType)
+}
+
+// GetActive is Get against resolved active-store paths (generational or
+// legacy); the caller resolved the layout once for the whole operation.
+func GetActive(active storepaths.ActivePaths, keyType string) (Record, bool, error) {
 	keyType, err := normalizeKeyType(keyType)
 	if err != nil {
 		return Record{}, false, err
 	}
-	path := paths.KeyTypeRecord(identityID, keyType)
+	path := active.KeyTypeRecord(keyType)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -101,6 +107,13 @@ func Get(paths storepaths.Paths, identityID, keyType string) (Record, bool, erro
 //
 // CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
 func Put(paths storepaths.Paths, identityID string, rec Record) error {
+	return PutActive(paths.LegacyActivePaths(identityID), rec)
+}
+
+// PutActive is Put against resolved active-store paths.
+//
+// CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
+func PutActive(active storepaths.ActivePaths, rec Record) error {
 	normalized, err := normalizeRecord(rec)
 	if err != nil {
 		return err
@@ -108,7 +121,7 @@ func Put(paths storepaths.Paths, identityID string, rec Record) error {
 	if normalized.ActivatedAt == "" {
 		normalized.ActivatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	path := paths.KeyTypeRecord(identityID, normalized.KeyType)
+	path := active.KeyTypeRecord(normalized.KeyType)
 	if err := fsutil.MkdirAll(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("failed to create key type state directory: %w", err)
 	}
@@ -147,11 +160,18 @@ func SetState(paths storepaths.Paths, identityID, keyType string, state State) e
 //
 // CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
 func Delete(paths storepaths.Paths, identityID, keyType string) error {
+	return DeleteActive(paths.LegacyActivePaths(identityID), keyType)
+}
+
+// DeleteActive is Delete against resolved active-store paths.
+//
+// CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
+func DeleteActive(active storepaths.ActivePaths, keyType string) error {
 	keyType, err := normalizeKeyType(keyType)
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(paths.KeyTypeRecord(identityID, keyType)); err != nil {
+	if err := os.Remove(active.KeyTypeRecord(keyType)); err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
