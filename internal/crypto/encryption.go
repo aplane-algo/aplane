@@ -270,6 +270,15 @@ func CreateKeystoreMetadata(keystoreDir string, passphrase []byte) (*KeystoreMet
 	return writeKeystoreMetadata(keystoreDir, meta, masterKey)
 }
 
+// MarshalKeystoreMetadata encodes metadata in the canonical .keystore file
+// format after validating it.
+func MarshalKeystoreMetadata(meta *KeystoreMetadata) ([]byte, error) {
+	if err := meta.validateVersion(); err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(meta, "", "  ")
+}
+
 // CreateKeystoreMetadataGenerational writes version-3 metadata for a store
 // whose active namespaces use the generation layout. Older binaries reject
 // the store outright instead of reading stale legacy paths.
