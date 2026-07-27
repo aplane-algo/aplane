@@ -13,7 +13,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -353,32 +352,5 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 	ir.Lock()
 	if success, _, errMsg, code := svc.UnlockIdentity(ir, testPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
-	}
-}
-
-func TestUnlockClosesMigrationCrashWindow(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
-	if ir == nil {
-		t.Fatal("expected default identity runtime")
-	}
-	svc := signerAdminServices{signer: server}
-	convertTestSignerToGenerational(t, server)
-	// The test store's metadata is v2, so after conversion this signer sits
-	// in the migration flip-to-bump crash window: generational by pointer,
-	// metadata without the layout version gate.
-	metaDir := server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID)
-	if meta, err := crypto.LoadKeystoreMetadata(metaDir); err != nil || meta == nil || meta.IsGenerationalLayout() {
-		t.Fatalf("precondition: metadata = %+v (%v), want pre-generational v2", meta, err)
-	}
-	ir.Lock()
-
-	if success, _, errMsg, code := svc.UnlockIdentity(ir, testPassphrase); !success || errMsg != "" || code != "" {
-		t.Fatalf("UnlockIdentity() = (%v, %q, %q), want clean unlock", success, errMsg, code)
-	}
-	meta, err := crypto.LoadKeystoreMetadata(metaDir)
-	if err != nil || meta == nil || !meta.IsGenerationalLayout() {
-		t.Fatalf("metadata after unlock = %+v (%v), want the layout version gate written (window closed)", meta, err)
 	}
 }

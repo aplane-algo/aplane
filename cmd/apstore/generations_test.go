@@ -13,26 +13,33 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/storemigrate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// newGenerationalTestStore builds a real migrated store: legacy layout plus
-// v2 metadata, converted through the production migration path.
+// newGenerationalTestStore builds a generational store the way initialize
+// does: v3 metadata first, then the authorized first mint.
 func newGenerationalTestStore(t *testing.T, passphrase string) (storepaths.Paths, string) {
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
-	for _, dir := range []string{paths.KeysDir(identityID), paths.KeyTypeRecordsDir(identityID)} {
-		if err := fsutil.MkdirAll(dir); err != nil {
-			t.Fatalf("MkdirAll(%s): %v", dir, err)
-		}
+	if err := fsutil.MkdirAll(paths.KeystoreMetadataDir(identityID)); err != nil {
+		t.Fatalf("MkdirAll(metadata): %v", err)
 	}
-	if _, _, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), []byte(passphrase)); err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	if _, _, err := crypto.CreateKeystoreMetadataGenerational(paths.KeystoreMetadataDir(identityID), []byte(passphrase)); err != nil {
+		t.Fatalf("CreateKeystoreMetadataGenerational() error = %v", err)
 	}
-	if _, err := storemigrate.Migrate(paths, identityID, time.Unix(1_785_100_000, 0)); err != nil {
-		t.Fatalf("Migrate() error = %v", err)
+	generationID, err := genstore.NewGenerationID(time.Unix(1_785_100_000, 0))
+	if err != nil {
+		t.Fatalf("NewGenerationID: %v", err)
+	}
+	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
+		GenerationID:    generationID,
+		FirstGeneration: true,
+		Operation:       "store-initialize",
+		OperationID:     "init-" + generationID,
+		CreatedAt:       time.Unix(1_785_100_000, 0),
+	}); err != nil {
+		t.Fatalf("Mint(first) error = %v", err)
 	}
 	return paths, identityID
 }

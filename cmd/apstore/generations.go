@@ -33,7 +33,7 @@ func cmdGenerations(args []string) error {
 		return err
 	}
 	if !generational {
-		return fmt.Errorf("store does not use generation-based storage (run apstore migrate-layout to convert)")
+		return fmt.Errorf("store does not use generation-based storage; this release only supports stores it initialized (restore from a backup archive into a fresh store)")
 	}
 
 	switch args[0] {

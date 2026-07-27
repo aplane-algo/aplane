@@ -602,45 +602,6 @@ func TestMintRefusesFirstMintWhenCurrentMissingOnEstablishedStore(t *testing.T) 
 		}
 		generationsUntouched(t, paths, []string{testGenA, testGenB, testGenC})
 	})
-
-	t.Run("crashed migration retry still mints", func(t *testing.T) {
-		// Crash window: a published-but-unflipped attempt on a store whose
-		// metadata has no layout marker (v2). The retry mints a fresh
-		// first generation; reconciliation later discards the attempt.
-		paths := storepaths.NewPaths(t.TempDir())
-		if err := fsutil.MkdirAll(paths.KeystoreMetadataDir(testIdentity)); err != nil {
-			t.Fatalf("MkdirAll(metadata): %v", err)
-		}
-		if _, _, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(testIdentity), []byte("pw")); err != nil {
-			t.Fatalf("CreateKeystoreMetadata() error = %v", err)
-		}
-		attempt := paths.GenerationPaths(testIdentity, testGenA)
-		for _, namespace := range []string{"keys", "keytypes"} {
-			if err := os.MkdirAll(filepath.Join(attempt.Dir(), namespace), 0o770); err != nil {
-				t.Fatalf("MkdirAll: %v", err)
-			}
-		}
-		if err := WriteManifest(attempt, Manifest{
-			GenerationID: testGenA, CreatedAtUnix: 1, Operation: "layout-migration", OperationID: "op-crashed", Complete: true,
-		}); err != nil {
-			t.Fatalf("WriteManifest: %v", err)
-		}
-
-		if err := mintD(paths, true); err != nil {
-			t.Fatalf("Mint(retry after crashed migration) error = %v", err)
-		}
-		current, err := ReadCurrent(paths, testIdentity)
-		if err != nil || current != testGenD {
-			t.Fatalf("CURRENT = %s (%v), want %s", current, err, testGenD)
-		}
-		report, err := Reconcile(paths, testIdentity, nil)
-		if err != nil {
-			t.Fatalf("Reconcile() error = %v", err)
-		}
-		if !slices.Equal(report.DiscardedAttempts, []string{testGenA}) {
-			t.Fatalf("discarded = %v, want the crashed attempt [%s]", report.DiscardedAttempts, testGenA)
-		}
-	})
 }
 
 func TestInspectClassifiesWithoutDeleting(t *testing.T) {

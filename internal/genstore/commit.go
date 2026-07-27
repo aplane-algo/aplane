@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -238,15 +237,11 @@ func RollbackTo(paths storepaths.Paths, identityID, targetID string, now time.Ti
 }
 
 // verifyFirstMintPreconditions rejects an authorized first mint on any store
-// showing evidence of an established generational history. The only residue
-// a legitimate first mint may encounter is what a crashed first mint or
-// crashed migration leaves behind: staging directories, and published-but-
-// unflipped attempts on a store whose keystore metadata does not carry the
-// generational layout marker (reconciliation discards those after the retry
-// commits). A sealed generation, the layout marker, a missing or unreadable
-// metadata record alongside existing generations, or an unknown entry all
-// prove an established or unrecognizable store: fail closed — that store
-// needs recovery, not a new lineage.
+// showing evidence of generational history: pointer absence proves nothing
+// (docs/ARCH_GENERATIONS.md §recovery), so the generations directory must
+// hold no generation at all. The only tolerated residue is staging
+// directories from a crashed earlier mint — atomic-rename leftovers that
+// reconciliation treats as unconditional garbage.
 func verifyFirstMintPreconditions(paths storepaths.Paths, identityID string) error {
 	entries, err := os.ReadDir(paths.GenerationsDir(identityID))
 	if os.IsNotExist(err) {
@@ -255,36 +250,11 @@ func verifyFirstMintPreconditions(paths storepaths.Paths, identityID string) err
 	if err != nil {
 		return err
 	}
-	sawGeneration := false
 	for _, entry := range entries {
-		name := entry.Name()
-		if strings.HasPrefix(name, storepaths.GenerationStagingPrefix) {
+		if strings.HasPrefix(entry.Name(), storepaths.GenerationStagingPrefix) {
 			continue
 		}
-		if err := storepaths.ValidateGenerationID(name); err != nil {
-			return fmt.Errorf("first mint: unexpected entry %q in generations directory", name)
-		}
-		sawGeneration = true
-		sealed, err := HasSeal(paths.GenerationPaths(identityID, name))
-		if err != nil {
-			return err
-		}
-		if sealed {
-			return fmt.Errorf("first mint: sealed generation %s exists without a CURRENT pointer; this store has generational history and requires recovery", name)
-		}
-	}
-	if !sawGeneration {
-		return nil
-	}
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
-	if err != nil {
-		return fmt.Errorf("first mint: generations exist but the store layout cannot be inspected: %w", err)
-	}
-	if meta == nil {
-		return fmt.Errorf("first mint: generations exist but the store has no keystore metadata; refusing to mint a new lineage")
-	}
-	if meta.IsGenerationalLayout() {
-		return fmt.Errorf("first mint: keystore metadata carries the generational layout marker but the CURRENT pointer is missing; this store requires recovery, not a new lineage")
+		return fmt.Errorf("first mint: %q exists in the generations directory; this store has generational history and requires recovery, not a new lineage", entry.Name())
 	}
 	return nil
 }

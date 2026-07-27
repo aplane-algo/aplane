@@ -751,45 +751,6 @@ func TestRotateRefusedUntilPriorGenerationsPruned(t *testing.T) {
 	}
 }
 
-func TestRotateRefusesInMigrationCrashWindow(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	identityID := "default"
-	oldPassphrase := []byte("old-pass")
-	// v2 metadata plus a committed generation: the flip-to-bump crash
-	// window. The store is generational by pointer, but the metadata does
-	// not yet carry the layout version gate.
-	if _, _, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase); err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
-	}
-	generationID, err := genstore.NewGenerationID(time.Unix(1_754_000_000, 0))
-	if err != nil {
-		t.Fatalf("NewGenerationID: %v", err)
-	}
-	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
-		GenerationID:    generationID,
-		FirstGeneration: true,
-		Operation:       "layout-migration",
-		OperationID:     "migrate-" + generationID,
-		CreatedAt:       time.Unix(1_754_000_000, 0),
-	}); err != nil {
-		t.Fatalf("Mint: %v", err)
-	}
-
-	_, err = Rotate(paths, identityID, oldPassphrase, []byte("new-pass"), RotateOptions{})
-	if err == nil || !strings.Contains(err.Error(), "migration is incomplete") {
-		t.Fatalf("Rotate() error = %v, want refusal in the flip-to-bump crash window", err)
-	}
-	// The refusal must leave the metadata untouched — still v2, still
-	// unlockable with the old passphrase.
-	meta, loadErr := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
-	if loadErr != nil || meta == nil || meta.IsGenerationalLayout() {
-		t.Fatalf("metadata after refusal = %+v (%v), want untouched v2", meta, loadErr)
-	}
-	if _, err := meta.VerifyAndDeriveMasterKey(oldPassphrase); err != nil {
-		t.Fatalf("old passphrase no longer verifies after refused rotation: %v", err)
-	}
-}
-
 func TestRotateSyncsNewFilesAndSwapDirectories(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"

@@ -176,7 +176,7 @@ func shellQuoteArg(s string) string {
 
 func isOfflineMutatingCommand(command string) bool {
 	switch command {
-	case "initialize", "policy", "rebuild", "migrate-layout", "generations":
+	case "initialize", "policy", "rebuild", "generations":
 		return true
 	default:
 		return false
