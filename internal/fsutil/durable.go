@@ -108,6 +108,22 @@ func WriteFileDurable(path string, data []byte) error {
 	return SyncDir(dir)
 }
 
+// SyncFile fsyncs an existing file's data and metadata. Use it when a file
+// was written or modified through a path that does not sync (plain writes,
+// chmod/chown fix-ups) and its content must survive a power loss before a
+// subsequent rename publishes it.
+func SyncFile(path string) error {
+	if err := runHook(OpFileSync, path); err != nil {
+		return err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	return f.Sync()
+}
+
 // SyncDir fsyncs the directory at path, making previously renamed, created,
 // or removed entries durable. Platforms without directory fsync (Windows)
 // treat it as a no-op.

@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
@@ -786,5 +787,53 @@ func TestRotateRefusesInMigrationCrashWindow(t *testing.T) {
 	}
 	if _, err := meta.VerifyAndDeriveMasterKey(oldPassphrase); err != nil {
 		t.Fatalf("old passphrase no longer verifies after refused rotation: %v", err)
+	}
+}
+
+func TestRotateSyncsNewFilesAndSwapDirectories(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	oldPassphrase := []byte("old-passphrase")
+
+	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	}
+	defer crypto.ZeroBytes(oldMasterKey)
+	keyPath := apkeys.AccountKeyFilePath(paths, identityID, "ADDR")
+	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKey)
+	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+
+	newFileSyncs := map[string]bool{}
+	dirSyncs := map[string]bool{}
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		switch op {
+		case fsutil.OpFileSync:
+			if strings.HasSuffix(path, ".new") {
+				newFileSyncs[filepath.Base(path)] = true
+			}
+		case fsutil.OpDirSync:
+			dirSyncs[path] = true
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	if _, err := Rotate(paths, identityID, oldPassphrase, []byte("new-passphrase"), RotateOptions{}); err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+
+	// Every staged .new file was fsynced before the swap could publish it.
+	for _, want := range []string{"ADDR.key.new", ".keystore.new"} {
+		if !newFileSyncs[want] {
+			t.Fatalf("no file sync observed for %s (synced: %v)", want, newFileSyncs)
+		}
+	}
+	// The swap's renames were made durable in each affected directory.
+	for _, dir := range []string{filepath.Dir(keyPath), paths.KeystoreMetadataDir(identityID)} {
+		if !dirSyncs[dir] {
+			t.Fatalf("no directory sync observed for %s (synced: %v)", dir, dirSyncs)
+		}
 	}
 }

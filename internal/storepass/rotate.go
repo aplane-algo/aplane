@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -364,6 +365,13 @@ func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKe
 	if err := ApplyFileMetadataFrom(path, path+".new"); err != nil {
 		return fmt.Errorf("failed to set metadata on %s.new: %w", display, err)
 	}
+	// The swap in phase 2 renames this file over the canonical one and then
+	// removes the .old fallback. Its data blocks must be on disk before the
+	// rename can ever become durable, or a power loss leaves a canonical
+	// file that decrypts under neither key.
+	if err := fsutil.SyncFile(path + ".new"); err != nil {
+		return fmt.Errorf("failed to sync %s.new: %w", display, err)
+	}
 
 	verifyData, err := os.ReadFile(path + ".new")
 	if err != nil {
@@ -561,6 +569,9 @@ func writeVerifiedNewKeystore(
 	if _, err := verifyMeta.VerifyAndDeriveMasterKey(newPassphrase); err != nil {
 		return fmt.Errorf("verification failed for .keystore.new")
 	}
+	if err := fsutil.SyncFile(newKeystorePath); err != nil {
+		return fmt.Errorf("failed to sync .keystore.new: %w", err)
+	}
 	return nil
 }
 
@@ -579,5 +590,30 @@ func swapPendingFiles(pendingFiles []pendingFile, log Logger) error {
 		}
 		logf(log, "swapped: %s", filepath.Base(pf.original))
 	}
+	// The renames above are metadata operations; without a directory fsync a
+	// power loss can revert any subset of them after cleanup has removed the
+	// .old fallbacks. Make the whole swap durable before cleanup may run.
+	for _, dir := range uniqueParentDirs(pendingFiles) {
+		if err := fsutil.SyncDir(dir); err != nil {
+			return fmt.Errorf("failed to sync directory %s after swap: %w", dir, err)
+		}
+	}
 	return nil
+}
+
+// uniqueParentDirs returns the sorted set of directories holding the
+// canonical files of pendingFiles.
+func uniqueParentDirs(pendingFiles []pendingFile) []string {
+	seen := make(map[string]struct{}, len(pendingFiles))
+	var dirs []string
+	for _, pf := range pendingFiles {
+		dir := filepath.Dir(pf.original)
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	return dirs
 }
