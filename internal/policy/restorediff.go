@@ -6,6 +6,7 @@ package policy
 import (
 	"encoding/json"
 	"fmt"
+	types "github.com/algorand/go-algorand-sdk/v2/types"
 	"slices"
 	"strconv"
 	"strings"
@@ -203,6 +204,53 @@ func appendTransferRestoreFields(fields *[]RestorePolicyField, selector string, 
 	slices.Sort(blocked)
 	appendRestoreField(fields, RestoreCategoryRouting, selector, "transfer_policy.blocked_destinations", blocked)
 
+	// Routes reference address/asset sets by name; the membership behind a
+	// name must be projected too, or a destination policy whose set gained
+	// members would diff as identical while silently permitting transfers
+	// the source never allowed — exactly the downgrade class this diff
+	// exists to surface.
+	addressSetNames := make([]string, 0, len(transfer.AddressSets))
+	for name := range transfer.AddressSets {
+		addressSetNames = append(addressSetNames, name)
+	}
+	slices.Sort(addressSetNames)
+	for _, name := range addressSetNames {
+		set := transfer.AddressSets[name]
+		prefix := "transfer_policy.address_sets." + name
+		appendRestoreField(fields, RestoreCategoryRouting, selector, prefix, restoreSortedAddresses(set.Flat))
+		networks := make([]string, 0, len(set.ByNetwork))
+		for network := range set.ByNetwork {
+			networks = append(networks, network)
+		}
+		slices.Sort(networks)
+		for _, network := range networks {
+			appendRestoreField(fields, RestoreCategoryRouting, selector, prefix+".by_network."+network, restoreSortedAddresses(set.ByNetwork[network]))
+		}
+	}
+	assetSetNames := make([]string, 0, len(transfer.AssetSets))
+	for name := range transfer.AssetSets {
+		assetSetNames = append(assetSetNames, name)
+	}
+	slices.Sort(assetSetNames)
+	for _, name := range assetSetNames {
+		set := transfer.AssetSets[name]
+		prefix := "transfer_policy.asset_sets." + name
+		networks := make([]string, 0, len(set.ByNetwork))
+		for network := range set.ByNetwork {
+			networks = append(networks, network)
+		}
+		slices.Sort(networks)
+		for _, network := range networks {
+			ids := slices.Clone(set.ByNetwork[network])
+			slices.Sort(ids)
+			out := make([]string, len(ids))
+			for i, assetID := range ids {
+				out[i] = "asa:" + strconv.FormatUint(assetID, 10)
+			}
+			appendRestoreField(fields, RestoreCategoryRouting, selector, prefix+".by_network."+network, out)
+		}
+	}
+
 	routes := slices.Clone(transfer.Routes)
 	slices.SortFunc(routes, func(a, b CompiledTransferRoute) int {
 		return strings.Compare(a.ID, b.ID)
@@ -380,4 +428,13 @@ func categoryOrder(category RestoreChangeCategory) int {
 
 func restoreFieldKey(field RestorePolicyField) string {
 	return field.Selector + "\x00" + field.Path
+}
+
+func restoreSortedAddresses(addresses []types.Address) []string {
+	out := make([]string, len(addresses))
+	for i, address := range addresses {
+		out[i] = address.String()
+	}
+	slices.Sort(out)
+	return out
 }
