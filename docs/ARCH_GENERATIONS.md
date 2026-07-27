@@ -206,51 +206,17 @@ has a seal). `.staging-*` directories are unconditionally garbage. fsync
 `generations/` after removals; audit the abort with the manifest's operation
 ID. Published-but-uncommitted generations are **never resumed**.
 
-## 8. Migration and downgrade
+## 8. Release compatibility (no migration)
 
-Migration is an explicit transaction under the offline store lock
-(`storelock.AcquireExclusive`) **and** the identity mutation lock — not a
-startup side effect. Trigger: explicit (`apstore migrate-layout` or the
-first daemon start with an opt-in flag; decided at implementation, but never
-silent):
-
-1. Verify the legacy layout fully (strict scan of `keys/`+`keytypes/`).
-2. Refuse while any Tier-1 incomplete activation marker exists.
-3. Copy `keys/`+`keytypes/` into staged `gen-...` (first generation; parent
-   ID empty; operation type `layout-migration`); validate, sync, publish,
-   flip `CURRENT` per §2.
-4. **Durably record the layout version by bumping `.keystore` `version` 2→3**
-   via the rotation-proven `.new`/`.old` sibling swap. This is the crash-safe
-   `CURRENT`↔layout-marker relationship: `validateVersion` in
-   `internal/crypto/encryption.go` already hard-rejects out-of-range
-   versions, so **every existing binary and offline tool fails with
-   "unsupported keystore metadata version 3" at unlock, rotation, rebuild,
-   and policy-sign — before reading a single stale legacy path.** No new
-   marker file, no second commit record. v3 metadata is v2 plus
-   `layout: "generations/v1"`; the version gate does the rejection, the field
-   documents the reason.
-   Ordering: flip `CURRENT` first, bump `.keystore` second. Crash between
-   them = new layout present, old version value: new binaries detect
-   `CURRENT` + v2 and idempotently redo the bump; old binaries in that
-   window still resolve legacy `keys/` — which is why step 5 waits.
-5. Retire legacy `identities/<id>/{keys,keytypes}` only after the bump is
-   durable and a full post-migration validation passes — and not by
-   deletion: rename to `identities/<id>/.legacy-<unixts>/` and keep it for a
-   documented rollback window (delete manually or after N successful
-   unlocks; decided at implementation, default keep).
-6. Crash-and-retry idempotent at every step; re-running migration on a
-   migrated store is a validated no-op.
-
-**Downgrade** (documented, manual): restore `.keystore` from its `.old`
-sibling (or re-create v2 metadata with the same passphrase), copy the current
-generation's `keys/`+`keytypes/` back to the legacy paths (or rename
-`.legacy-*` back within the window), remove `CURRENT`+`generations/`.
-
-New stores: `storeinit.Initialize` creates the generational layout directly
-(first generation minted with the default keytypes; `.keystore` written as
-v3). Its `HasPartialState` whitelist gains `CURRENT`/`generations/` handling
-so a crashed init is still detected.
-
+Every release is incompatible with every prior release and documented as
+such. A store is readable only by the release that initialized it:
+`.keystore` carries exactly one supported metadata version
+(`validateVersion` rejects everything else with a restore-from-backup
+remediation), and no layout-migration or downgrade machinery exists. Key
+transfer between releases is by backup archive — standalone
+release-independent encryption — restored into a freshly initialized store.
+The pre-generation flat layout, the Tier-1 activation protocol, and the
+`migrate-layout` transaction were removed with this policy.
 ## 9. Rollback and GC
 
 Rollback = validate the target against its seal → seal the outgoing current

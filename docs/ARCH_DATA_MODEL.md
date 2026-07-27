@@ -252,8 +252,8 @@ identities/<identity>/
     keys/*.wit.json        # public sentry metadata sidecar (not private authority)
     keytypes/*.json        # key-type state records
     keytypes/*.template    # encrypted template documents
-  keys/ keytypes/          # legacy flat namespaces (pre-migration stores only)
-  .keystore                # version 3 + generations/v1 layout tag when migrated
+  .keystore                # version 3 + generations/v1 layout tag (the only
+                           # supported store format)
   node.yaml.hmac
   aplane.token
   config.yaml

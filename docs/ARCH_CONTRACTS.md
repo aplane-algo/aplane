@@ -848,9 +848,8 @@ execution, output decoding, environment filtering, and validation.
       keys/*.wit.json       # derived public witness reference; not private authority
       keytypes/<key_type>.json      # key type state record
       keytypes/<key_type>.template  # encrypted key type template
-    keys/ keytypes/         # legacy flat namespaces (pre-migration stores only);
-                            # same *.key/*.sen/*.json/*.template contents as above
-    .keystore               # version 3 + layout tag on generation-layout stores
+    .keystore               # version 3 + generations/v1 layout tag (the only
+                            # supported store format; other versions rejected)
     node.yaml.hmac
     aplane.token
     config.yaml

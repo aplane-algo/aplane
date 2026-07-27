@@ -453,18 +453,10 @@ be left half-applied — a failure before the flip leaves the batch inactive
 and nothing published, and `restore rollback <restore-id>` repoints the
 store at the pre-activation generation.
 
-Existing flat stores keep working unchanged. To convert one (daemon
-stopped):
-
-```
-./apstore migrate-layout
-```
-
-Migration refuses while an incomplete activation or unresolved passphrase
-rotation exists, keeps the legacy directories under `.legacy-<timestamp>/`
-for a rollback window, and preserves the pre-migration keystore metadata as
-`.keystore.premigration`. After migration, older aplane binaries reject the
-store with an unsupported-keystore-version error instead of misreading it.
+Every release is incompatible with every prior release: this release reads
+only stores it initialized. There is no layout migration — to move keys
+between releases, export backup archives (standalone, release-independent
+encryption) and restore them into a freshly initialized store.
 
 Manage generations offline (daemon stopped):
 
@@ -476,11 +468,7 @@ Manage generations offline (daemon stopped):
 
 Passphrase rotation on a generational store requires generation quiescence —
 run `apstore generations prune --all-priors` first; after a successful
-rotation the retention window restarts empty. Rotation also refuses to run
-while a layout migration is incomplete (the store is generational but its
-keystore metadata lacks the layout version); the signer completes such an
-interrupted migration automatically at the next unlock, or run
-`apstore migrate-layout` again.
+rotation the retention window restarts empty.
 
 `prune --all-priors` abandons every rollback fallback, so it prompts for the
 store passphrase and decrypt-validates the current generation's content (the

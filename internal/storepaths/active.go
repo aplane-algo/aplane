@@ -8,7 +8,7 @@ package storepaths
 // from Paths, so one operation resolves the layout exactly once (under the
 // identity mutation lock, via internal/genstore.ResolveActive) and passes
 // the result down — never re-resolving mid-operation. GenPaths implements
-// it for the generation layout; LegacyActivePaths adapts unmigrated stores
+// it for the generation layout.
 // until gate 5 removes the flat layout entirely.
 type ActivePaths interface {
 	KeysDir() string
@@ -19,12 +19,6 @@ type ActivePaths interface {
 
 var _ ActivePaths = GenPaths{}
 var _ ActivePaths = legacyActivePaths{}
-
-// LegacyActivePaths binds the flat pre-generation layout
-// (identities/<id>/{keys,keytypes}) as an ActivePaths.
-func (p Paths) LegacyActivePaths(identityID string) ActivePaths {
-	return legacyActivePaths{p: p, identityID: identityID}
-}
 
 type legacyActivePaths struct {
 	p          Paths
