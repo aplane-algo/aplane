@@ -152,8 +152,8 @@ func TestBuildKeystoreMetadata_Fields(t *testing.T) {
 	}
 	defer ZeroBytes(masterKey)
 
-	if meta.Version != 2 {
-		t.Errorf("Version = %d, want 2", meta.Version)
+	if meta.Version != CurrentKeystoreMetadataVersion {
+		t.Errorf("Version = %d, want %d", meta.Version, CurrentKeystoreMetadataVersion)
 	}
 	if meta.KDFTime != argon2Time {
 		t.Errorf("KDFTime = %d, want %d", meta.KDFTime, argon2Time)
@@ -229,67 +229,30 @@ func TestBuildKeystoreMetadata_UniqueSalts(t *testing.T) {
 		t.Error("two calls should produce different salts")
 	}
 }
-
-// TestVersion1Keystore_BackwardCompat verifies that a version 1 keystore (no KDF fields)
-// can still be unlocked. This simulates the upgrade path from the old time=1 format.
-func TestVersion1Keystore_BackwardCompat(t *testing.T) {
-	passphrase := []byte("legacy-passphrase")
-
-	// Build a keystore using legacy parameters (time=1), simulating version 1.
-	salt := make([]byte, masterSaltLen)
-	if _, err := rand.Read(salt); err != nil {
-		t.Fatalf("rand.Read: %v", err)
-	}
-
-	// Literal v1 parameters (time=1, memory=64MB, threads=4), deliberately not
-	// the argon2*Legacy constants: if those constants ever drift, this test must
-	// fail rather than drift with them.
-	legacyKey := deriveMasterKeyParams(passphrase, salt, 1, 64*1024, 4)
-	defer ZeroBytes(legacyKey)
-
-	checkCiphertext, err := encryptCheckValue(legacyKey)
-	if err != nil {
-		t.Fatalf("encryptCheckValue: %v", err)
-	}
-
+func TestVersion1KeystoreRejected(t *testing.T) {
 	meta := &KeystoreMetadata{
 		Version: 1,
-		Salt:    base64Encode(salt),
-		Check:   base64Encode(checkCiphertext),
+		Salt:    base64Encode(make([]byte, masterSaltLen)),
+		Check:   base64Encode([]byte("irrelevant")),
 		Created: "2026-01-01T00:00:00Z",
-		// No KDF fields — version 1
 	}
-
-	// Verify that VerifyAndDeriveMasterKey uses legacy defaults and succeeds.
-	derivedKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
-	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey on v1 keystore failed: %v", err)
-	}
-	defer ZeroBytes(derivedKey)
-
-	if !bytes.Equal(legacyKey, derivedKey) {
-		t.Error("derived key from v1 keystore should match legacy-derived key")
-	}
-
-	// Verify wrong passphrase is still rejected.
-	if _, err := meta.VerifyAndDeriveMasterKey([]byte("wrong")); err == nil {
-		t.Error("wrong passphrase should be rejected on v1 keystore")
+	if _, err := meta.VerifyAndDeriveMasterKey([]byte("any")); err == nil {
+		t.Fatal("version-1 keystore accepted; this release reads only stores it initialized")
 	}
 }
 
-func TestKeystoreMetadata_AcceptsLegacyCheckPlaintext(t *testing.T) {
+func TestKeystoreMetadataRejectsLegacyCheckPlaintext(t *testing.T) {
 	passphrase := []byte("legacy-check-passphrase")
 	salt := make([]byte, masterSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		t.Fatalf("rand.Read: %v", err)
 	}
-
 	masterKey := DeriveMasterKey(passphrase, salt)
 	defer ZeroBytes(masterKey)
-
-	checkCiphertext := encryptTestCheckPlaintext(t, masterKey, legacyCheckPlaintext)
+	checkCiphertext := encryptTestCheckPlaintext(t, masterKey, "ALGOPLANE_OK")
 	meta := &KeystoreMetadata{
-		Version:    2,
+		Version:    CurrentKeystoreMetadataVersion,
+		Layout:     KeystoreLayoutGenerationsV1,
 		Salt:       base64Encode(salt),
 		Check:      base64Encode(checkCiphertext),
 		Created:    "2026-01-01T00:00:00Z",
@@ -297,15 +260,8 @@ func TestKeystoreMetadata_AcceptsLegacyCheckPlaintext(t *testing.T) {
 		KDFMemory:  argon2Memory,
 		KDFThreads: argon2Threads,
 	}
-
-	derivedKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
-	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey with legacy check plaintext failed: %v", err)
-	}
-	defer ZeroBytes(derivedKey)
-
-	if !bytes.Equal(masterKey, derivedKey) {
-		t.Error("derived key should match master key")
+	if _, err := meta.VerifyAndDeriveMasterKey(passphrase); err == nil {
+		t.Fatal("legacy check plaintext accepted; the compatibility shim is removed")
 	}
 }
 
@@ -325,7 +281,7 @@ func encryptTestCheckPlaintext(t *testing.T, masterKey []byte, plaintext string)
 
 // TestVersion2Keystore_UsesStoredParams verifies that a version 2 keystore
 // uses the KDF parameters stored in the metadata, not the hardcoded defaults.
-func TestVersion2Keystore_UsesStoredParams(t *testing.T) {
+func TestKeystoreUsesStoredParams(t *testing.T) {
 	passphrase := []byte("v2-passphrase")
 
 	meta, masterKey, err := buildKeystoreMetadata(passphrase)
@@ -334,8 +290,8 @@ func TestVersion2Keystore_UsesStoredParams(t *testing.T) {
 	}
 	defer ZeroBytes(masterKey)
 
-	if meta.Version != 2 {
-		t.Fatalf("expected version 2, got %d", meta.Version)
+	if meta.Version != CurrentKeystoreMetadataVersion {
+		t.Fatalf("expected version %d, got %d", CurrentKeystoreMetadataVersion, meta.Version)
 	}
 	if meta.KDFTime == 0 || meta.KDFMemory == 0 || meta.KDFThreads == 0 {
 		t.Fatal("version 2 metadata should have non-zero KDF params")
@@ -352,9 +308,10 @@ func TestVersion2Keystore_UsesStoredParams(t *testing.T) {
 	}
 }
 
-func TestVersion2Keystore_RejectsMissingKDFParamsBeforeDerive(t *testing.T) {
+func TestKeystoreRejectsMissingKDFParamsBeforeDerive(t *testing.T) {
 	meta := &KeystoreMetadata{
-		Version: 2,
+		Version: CurrentKeystoreMetadataVersion,
+		Layout:  KeystoreLayoutGenerationsV1,
 		Salt:    "not-needed",
 		Check:   "not-needed",
 		Created: "2026-01-01T00:00:00Z",

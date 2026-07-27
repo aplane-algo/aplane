@@ -91,8 +91,8 @@ func TestKeystoreMetadataWorkflow(t *testing.T) {
 	}
 
 	// Verify metadata structure
-	if meta.Version != 2 {
-		t.Errorf("Expected version 2, got %d", meta.Version)
+	if meta.Version != CurrentKeystoreMetadataVersion {
+		t.Errorf("Expected version %d, got %d", CurrentKeystoreMetadataVersion, meta.Version)
 	}
 	if meta.Salt == "" {
 		t.Error("Salt should not be empty")
@@ -167,6 +167,7 @@ func TestLoadKeystoreMetadataRejectsUnsupportedVersion(t *testing.T) {
 	t.Run("v3-without-layout", func(t *testing.T) {
 		candidate := *meta
 		candidate.Version = GenerationalKeystoreMetadataVersion
+		candidate.Layout = ""
 		data, err := json.Marshal(candidate)
 		if err != nil {
 			t.Fatalf("Marshal metadata failed: %v", err)

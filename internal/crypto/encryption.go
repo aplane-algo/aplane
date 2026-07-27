@@ -80,6 +80,7 @@ func buildKeystoreMetadata(passphrase []byte) (*KeystoreMetadata, []byte, error)
 
 	meta := &KeystoreMetadata{
 		Version:    CurrentKeystoreMetadataVersion,
+		Layout:     KeystoreLayoutGenerationsV1,
 		Salt:       base64.StdEncoding.EncodeToString(salt),
 		Check:      base64.StdEncoding.EncodeToString(checkCiphertext),
 		Created:    time.Now().UTC().Format(time.RFC3339),
@@ -103,15 +104,12 @@ const (
 	// letting them alias the current constants above) would silently change the
 	// derived master key and lock existing v1 keystores out as "incorrect
 	// passphrase".
-	argon2TimeLegacy    = 1
-	argon2MemoryLegacy  = 64 * 1024
-	argon2ThreadsLegacy = 4
 
 	// CurrentKeystoreMetadataVersion is the .keystore schema version for
 	// flat-layout stores. Binaries without generation-layout support have
 	// this as their maximum, which is what makes the version bump below a
 	// hard old-binary rejection gate.
-	CurrentKeystoreMetadataVersion = 2
+	CurrentKeystoreMetadataVersion = GenerationalKeystoreMetadataVersion
 
 	// GenerationalKeystoreMetadataVersion marks a store whose active
 	// key/key-type namespaces live under identities/<id>/generations/ behind
@@ -175,8 +173,7 @@ type KeystoreMetadata struct {
 
 const (
 	// checkPlaintext is the known value encrypted in the Check field.
-	checkPlaintext       = "APLANE_OK"
-	legacyCheckPlaintext = "ALGOPLANE_OK"
+	checkPlaintext = "APLANE_OK"
 )
 
 // EncryptedDataMasterKey stores encrypted content using master key (no per-file salt)
@@ -268,29 +265,6 @@ func CreateKeystoreMetadata(keystoreDir string, passphrase []byte) (*KeystoreMet
 		return nil, nil, err
 	}
 	return writeKeystoreMetadata(keystoreDir, meta, masterKey)
-}
-
-// GenerationalMetadataFrom returns a copy of meta stamped with the
-// generational layout version. A version-1 record persists no KDF
-// parameters (derivation uses frozen legacy constants), so the copy records
-// those constants explicitly — key derivation is unchanged, only the layout
-// gate moves.
-func GenerationalMetadataFrom(meta *KeystoreMetadata) (*KeystoreMetadata, error) {
-	if meta == nil {
-		return nil, fmt.Errorf("keystore metadata is required")
-	}
-	bumped := *meta
-	if bumped.Version == 1 {
-		bumped.KDFTime = argon2TimeLegacy
-		bumped.KDFMemory = argon2MemoryLegacy
-		bumped.KDFThreads = argon2ThreadsLegacy
-	}
-	bumped.Version = GenerationalKeystoreMetadataVersion
-	bumped.Layout = KeystoreLayoutGenerationsV1
-	if err := bumped.validateVersion(); err != nil {
-		return nil, err
-	}
-	return &bumped, nil
 }
 
 // IsGenerationalLayout reports whether metadata records the generation
@@ -419,25 +393,21 @@ func (m *KeystoreMetadata) GetMasterSalt() ([]byte, error) {
 }
 
 func (m *KeystoreMetadata) validateVersion() error {
-	if m.Version < 1 || m.Version > GenerationalKeystoreMetadataVersion {
-		return fmt.Errorf("unsupported keystore metadata version %d (supported range 1-%d)", m.Version, GenerationalKeystoreMetadataVersion)
+	if m.Version != GenerationalKeystoreMetadataVersion {
+		return fmt.Errorf("unsupported keystore metadata version %d: this release only reads stores it initialized (version %d); restore from a backup archive into a fresh store", m.Version, GenerationalKeystoreMetadataVersion)
 	}
-	if m.Version >= 2 && (m.KDFTime == 0 || m.KDFMemory == 0 || m.KDFThreads == 0) {
+	if m.KDFTime == 0 || m.KDFMemory == 0 || m.KDFThreads == 0 {
 		return fmt.Errorf("keystore metadata version %d has incomplete KDF parameters", m.Version)
 	}
-	if m.Version >= GenerationalKeystoreMetadataVersion && m.Layout != KeystoreLayoutGenerationsV1 {
+	if m.Layout != KeystoreLayoutGenerationsV1 {
 		return fmt.Errorf("keystore metadata version %d has unsupported layout %q", m.Version, m.Layout)
 	}
 	return nil
 }
 
-// kdfParams returns the Argon2id parameters for this keystore.
-// Version 2+ reads stored values; version 1 returns legacy defaults.
+// kdfParams returns the stored Argon2id parameters for this keystore.
 func (m *KeystoreMetadata) kdfParams() (time, memory uint32, threads uint8) {
-	if m.Version >= 2 {
-		return m.KDFTime, m.KDFMemory, m.KDFThreads
-	}
-	return argon2TimeLegacy, argon2MemoryLegacy, argon2ThreadsLegacy
+	return m.KDFTime, m.KDFMemory, m.KDFThreads
 }
 
 // KeystoreMetadataExistsIn checks if the .keystore metadata file exists in the specified directory.
@@ -623,5 +593,5 @@ func (m *KeystoreMetadata) VerifyAndDeriveMasterKey(passphrase []byte) ([]byte, 
 }
 
 func isValidCheckPlaintext(plaintext string) bool {
-	return plaintext == checkPlaintext || plaintext == legacyCheckPlaintext
+	return plaintext == checkPlaintext
 }
