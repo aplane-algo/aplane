@@ -1,0 +1,193 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package daemon
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/storepaths"
+)
+
+// convertTestSignerToGenerational mints the store's flat namespaces into a
+// first generation and removes the legacy directories.
+func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
+	t.Helper()
+	if current, err := genstore.ReadCurrent(server.keyPaths, auth.DefaultIdentityID); err == nil {
+		return current
+	}
+	generationID, err := genstore.NewGenerationID(time.Unix(1_753_800_000, 0))
+	if err != nil {
+		t.Fatalf("NewGenerationID: %v", err)
+	}
+	if _, err := genstore.Mint(server.keyPaths, auth.DefaultIdentityID, genstore.MintRequest{
+		GenerationID:    generationID,
+		FirstGeneration: true,
+		Operation:       "test-init",
+		OperationID:     "init-" + generationID,
+		CreatedAt:       time.Unix(1_753_800_000, 0),
+		Apply: func(staged storepaths.GenPaths) error {
+			for src, dst := range map[string]string{
+				server.keyPaths.KeysDir(auth.DefaultIdentityID):           staged.KeysDir(),
+				server.keyPaths.KeyTypeRecordsDir(auth.DefaultIdentityID): staged.KeyTypeRecordsDir(),
+			} {
+				entries, err := os.ReadDir(src)
+				if os.IsNotExist(err) {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				for _, entry := range entries {
+					data, err := os.ReadFile(filepath.Join(src, entry.Name()))
+					if err != nil {
+						return err
+					}
+					if err := os.WriteFile(filepath.Join(dst, entry.Name()), data, 0o660); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	for _, legacy := range []string{
+		server.keyPaths.KeysDir(auth.DefaultIdentityID),
+		server.keyPaths.KeyTypeRecordsDir(auth.DefaultIdentityID),
+	} {
+		if err := os.RemoveAll(legacy); err != nil {
+			t.Fatalf("remove legacy namespace: %v", err)
+		}
+	}
+	return generationID
+}
+
+func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	svc := signerAdminServices{signer: server}
+	generationID := convertTestSignerToGenerational(t, server)
+
+	// A malformed credential inside the selected generation: structural
+	// validation passes (regular file), content validation must fail closed.
+	gen := server.keyPaths.GenerationPaths(auth.DefaultIdentityID, generationID)
+	garbage := filepath.Join(gen.KeysDir(), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.key")
+	if err := os.WriteFile(garbage, []byte("not-an-encrypted-credential"), 0o660); err != nil {
+		t.Fatalf("WriteFile(garbage): %v", err)
+	}
+	ir.Lock()
+
+	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeActivationIncomplete {
+		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
+	}
+	if !ir.IsRecovery() || ir.IsUnlocked() {
+		t.Fatalf("identity state = recovery %v unlocked %v, want recovery (signing blocked)", ir.IsRecovery(), ir.IsUnlocked())
+	}
+
+	// Removing the defect and unlocking again succeeds normally.
+	if err := os.Remove(garbage); err != nil {
+		t.Fatalf("remove garbage: %v", err)
+	}
+	ir.Lock()
+	success, _, errMsg, code = svc.UnlockIdentity(ir, testPassphrase)
+	if !success || errMsg != "" || code != "" {
+		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
+	}
+	if !ir.IsUnlocked() {
+		t.Fatal("identity not unlocked after repair")
+	}
+}
+
+func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	svc := signerAdminServices{signer: server}
+	generationID := convertTestSignerToGenerational(t, server)
+
+	// A corrupt key-type state record inside the selected generation: the
+	// keytypes namespace is generation content and validates fail-closed
+	// exactly like keys.
+	gen := server.keyPaths.GenerationPaths(auth.DefaultIdentityID, generationID)
+	garbage := filepath.Join(gen.KeyTypeRecordsDir(), "broken.json")
+	if err := os.WriteFile(garbage, []byte("{not json"), 0o660); err != nil {
+		t.Fatalf("WriteFile(garbage record): %v", err)
+	}
+	ir.Lock()
+
+	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeActivationIncomplete {
+		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
+	}
+	if !ir.IsRecovery() || ir.IsUnlocked() {
+		t.Fatalf("identity state = recovery %v unlocked %v, want recovery", ir.IsRecovery(), ir.IsUnlocked())
+	}
+
+	if err := os.Remove(garbage); err != nil {
+		t.Fatalf("remove garbage record: %v", err)
+	}
+	ir.Lock()
+	if success, _, errMsg, code := svc.UnlockIdentity(ir, testPassphrase); !success || errMsg != "" || code != "" {
+		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
+	}
+}
+
+func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	svc := signerAdminServices{signer: server}
+	generationID := convertTestSignerToGenerational(t, server)
+
+	// Files that are neither managed credentials nor witness artifacts are
+	// unaccounted-for content: strict validation treats them as defects, in
+	// either namespace of the selected generation.
+	gen := server.keyPaths.GenerationPaths(auth.DefaultIdentityID, generationID)
+	strays := []string{
+		filepath.Join(gen.KeysDir(), "notes.txt"),
+		filepath.Join(gen.KeyTypeRecordsDir(), "backup.tar"),
+	}
+	for _, stray := range strays {
+		if err := os.WriteFile(stray, []byte("stray"), 0o660); err != nil {
+			t.Fatalf("WriteFile(%s): %v", stray, err)
+		}
+	}
+	ir.Lock()
+
+	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeActivationIncomplete {
+		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
+	}
+	if !ir.IsRecovery() || ir.IsUnlocked() {
+		t.Fatalf("identity state = recovery %v unlocked %v, want recovery", ir.IsRecovery(), ir.IsUnlocked())
+	}
+
+	for _, stray := range strays {
+		if err := os.Remove(stray); err != nil {
+			t.Fatalf("remove %s: %v", stray, err)
+		}
+	}
+	ir.Lock()
+	if success, _, errMsg, code := svc.UnlockIdentity(ir, testPassphrase); !success || errMsg != "" || code != "" {
+		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
+	}
+}

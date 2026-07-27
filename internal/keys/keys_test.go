@@ -4,19 +4,24 @@
 package keys
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -71,7 +76,7 @@ func writeKeyFile(t *testing.T, paths storepaths.Paths, identityID, address stri
 
 func writeManagedCredentialFile(t *testing.T, paths storepaths.Paths, identityID, name string, keyJSON, masterKey []byte) string {
 	t.Helper()
-	keysDir := paths.KeysDir(identityID)
+	keysDir := activeKeysDirForTest(t, paths, identityID)
 	if err := fsutil.MkdirAll(keysDir); err != nil {
 		t.Fatalf("Failed to create keys dir: %v", err)
 	}
@@ -186,6 +191,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 	t.Run("empty directory", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
+		genstoretest.MintFirst(t, paths, "default")
 		result, err := ScanKeysDirectoryWithMasterKey(paths, "default", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -198,6 +204,7 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 	t.Run("single encrypted ed25519 key", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
+		genstoretest.MintFirst(t, paths, "default")
 		keyJSON, address := testEd25519Key(t)
 
 		writeKeyFile(t, paths, "default", address, keyJSON, masterKey)
@@ -228,6 +235,7 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 	t.Run("canonical sentry credential", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
+		genstoretest.MintFirst(t, paths, "default")
 		publicKey, privateKey := canonicalFalconComponentPair(t, 0x51)
 		payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
 		defer payload.ZeroSecrets()
@@ -260,6 +268,7 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 	t.Run("legacy witness key extension is rejected", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
+		genstoretest.MintFirst(t, paths, "default")
 		publicKey, privateKey := canonicalFalconComponentPair(t, 0x52)
 		payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
 		defer payload.ZeroSecrets()
@@ -294,6 +303,7 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 	t.Run("account payload in sentry class is rejected", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
+		genstoretest.MintFirst(t, paths, "default")
 		keyJSON, address := testEd25519Key(t)
 		writeManagedCredentialFile(t, paths, "default", address+SentryCredentialExtension, keyJSON, masterKey)
 
@@ -306,33 +316,109 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 		}
 	})
 
-	t.Run("external witness artifacts never reach decrypt", func(t *testing.T) {
+	t.Run("witness files are validated but never reach decrypt", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
-		keysDir := paths.KeysDir("default")
+		genstoretest.MintFirst(t, paths, "default")
+		keysDir := activeKeysDirForTest(t, paths, "default")
 		if err := fsutil.MkdirAll(keysDir); err != nil {
 			t.Fatal(err)
 		}
-		for _, name := range []string{"offline.wit", "offline.wit.json"} {
-			if err := os.WriteFile(filepath.Join(keysDir, name), []byte("not a managed credential"), 0600); err != nil {
+		// A well-formed public witness reference sidecar, as the signer
+		// itself writes it.
+		publicKey := bytes.Repeat([]byte{7}, witness.Falcon1024PublicKeySize)
+		witnessKeyID, err := witness.ID(witness.Falcon1024V1, publicKey)
+		if err != nil {
+			t.Fatalf("witness.ID() error = %v", err)
+		}
+		envelope, err := sentryrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, hex.EncodeToString(publicKey))
+		if err != nil {
+			t.Fatalf("NewExportEnvelope() error = %v", err)
+		}
+		envelopeJSON, err := json.Marshal(envelope)
+		if err != nil {
+			t.Fatalf("Marshal(envelope) error = %v", err)
+		}
+		writes := map[string][]byte{
+			// Valid sidecar: accepted silently.
+			witnessKeyID + ".wit.json": envelopeJSON,
+			// Sidecar whose filename is not a canonical Witness Key ID.
+			"offline.wit.json": envelopeJSON,
+			// Sidecar whose content does not parse.
+			strings.Repeat("A", len(witnessKeyID)-1) + "B.wit.json": []byte("not json"),
+			// External artifact bundle: aprekey-owned, never a store resident.
+			witnessKeyID + ".wit": []byte("encrypted bundle"),
+		}
+		for name, data := range writes {
+			if err := os.WriteFile(filepath.Join(keysDir, name), data, 0600); err != nil {
 				t.Fatal(err)
 			}
 		}
 		decryptCalls := 0
-		report, err := scanKeysDirectoryInternalReport(paths, "default", func(string) ([]byte, error) {
+		report, err := scanKeysDirectoryInternalReport(mustResolveActiveForTest(t, paths), func(string) ([]byte, error) {
 			decryptCalls++
 			return nil, fmt.Errorf("unexpected decrypt")
 		})
 		if err != nil {
 			t.Fatalf("scanKeysDirectoryInternalReport() error = %v", err)
 		}
-		if decryptCalls != 0 || len(report.Keys) != 0 || len(report.Warnings) != 0 {
-			t.Fatalf("decrypt calls/report = %d/%#v, want empty", decryptCalls, report)
+		if decryptCalls != 0 || len(report.Keys) != 0 {
+			t.Fatalf("decrypt calls/keys = %d/%d, want witness files kept away from decrypt", decryptCalls, len(report.Keys))
+		}
+		got := map[KeyScanWarningCode]int{}
+		for _, warning := range report.Warnings {
+			got[warning.Code]++
+		}
+		want := map[KeyScanWarningCode]int{
+			KeyScanWarningWitnessMetadataInvalid: 2,
+			KeyScanWarningUnexpectedEntry:        1,
+		}
+		if len(report.Warnings) != 3 || got[KeyScanWarningWitnessMetadataInvalid] != want[KeyScanWarningWitnessMetadataInvalid] || got[KeyScanWarningUnexpectedEntry] != want[KeyScanWarningUnexpectedEntry] {
+			t.Fatalf("warnings = %#v, want 2 invalid-metadata + 1 unexpected-entry", report.Warnings)
+		}
+	})
+
+	t.Run("witness sidecar with mismatched embedded ID is rejected", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		genstoretest.MintFirst(t, paths, "default")
+		keysDir := activeKeysDirForTest(t, paths, "default")
+		if err := fsutil.MkdirAll(keysDir); err != nil {
+			t.Fatal(err)
+		}
+		publicKey := bytes.Repeat([]byte{7}, witness.Falcon1024PublicKeySize)
+		witnessKeyID, err := witness.ID(witness.Falcon1024V1, publicKey)
+		if err != nil {
+			t.Fatalf("witness.ID() error = %v", err)
+		}
+		otherKeyID, err := witness.ID(witness.Falcon1024V1, bytes.Repeat([]byte{8}, witness.Falcon1024PublicKeySize))
+		if err != nil {
+			t.Fatalf("witness.ID() error = %v", err)
+		}
+		envelope, err := sentryrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, hex.EncodeToString(publicKey))
+		if err != nil {
+			t.Fatalf("NewExportEnvelope() error = %v", err)
+		}
+		envelopeJSON, err := json.Marshal(envelope)
+		if err != nil {
+			t.Fatalf("Marshal(envelope) error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(keysDir, otherKeyID+".wit.json"), envelopeJSON, 0600); err != nil {
+			t.Fatal(err)
+		}
+		report, err := scanKeysDirectoryInternalReport(mustResolveActiveForTest(t, paths), func(string) ([]byte, error) {
+			return nil, fmt.Errorf("unexpected decrypt")
+		})
+		if err != nil {
+			t.Fatalf("scanKeysDirectoryInternalReport() error = %v", err)
+		}
+		if len(report.Warnings) != 1 || report.Warnings[0].Code != KeyScanWarningWitnessMetadataInvalid {
+			t.Fatalf("warnings = %#v, want one ID-mismatch rejection", report.Warnings)
 		}
 	})
 
 	t.Run("filename address mismatch is skipped", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
+		genstoretest.MintFirst(t, paths, "default")
 		keyJSON, address := testEd25519Key(t)
 
 		firstPath := writeKeyFile(t, paths, "default", address, keyJSON, masterKey)
@@ -340,7 +426,7 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 		if err != nil {
 			t.Fatalf("EncryptWithMasterKey() error = %v", err)
 		}
-		duplicatePath := filepath.Join(paths.KeysDir("default"), "duplicate.key")
+		duplicatePath := filepath.Join(activeKeysDirForTest(t, paths, "default"), "duplicate.key")
 		if err := os.WriteFile(duplicatePath, encrypted, 0600); err != nil {
 			t.Fatalf("write duplicate key file: %v", err)
 		}
@@ -372,6 +458,7 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 
 	t.Run("plaintext ed25519 key skipped", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
+		genstoretest.MintFirst(t, paths, "default")
 		keyJSON, address := testEd25519Key(t)
 
 		writeKeyFile(t, paths, "default", address, keyJSON, nil)
@@ -393,7 +480,8 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 
 	t.Run("non-key files ignored", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
-		keysDir := paths.KeysDir("default")
+		genstoretest.MintFirst(t, paths, "default")
+		keysDir := activeKeysDirForTest(t, paths, "default")
 		if err := fsutil.MkdirAll(keysDir); err != nil {
 			t.Fatal(err)
 		}
@@ -414,7 +502,8 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 
 	t.Run("subdirectories ignored", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
-		keysDir := paths.KeysDir("default")
+		genstoretest.MintFirst(t, paths, "default")
+		keysDir := activeKeysDirForTest(t, paths, "default")
 		if err := fsutil.MkdirAll(keysDir); err != nil {
 			t.Fatal(err)
 		}
@@ -436,13 +525,14 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 	t.Run("corrupted file skipped", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
+		genstoretest.MintFirst(t, paths, "default")
 
 		// Write a valid key
 		keyJSON, address := testEd25519Key(t)
 		writeKeyFile(t, paths, "default", address, keyJSON, masterKey)
 
 		// Write a corrupted key file
-		keysDir := paths.KeysDir("default")
+		keysDir := activeKeysDirForTest(t, paths, "default")
 		if err := os.WriteFile(filepath.Join(keysDir, "BADKEY.key"), []byte("not valid data"), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -460,6 +550,7 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 	t.Run("multiple keys", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
+		genstoretest.MintFirst(t, paths, "default")
 
 		keyJSON1, addr1 := testEd25519Key(t)
 		keyJSON2, addr2 := testEd25519Key(t)
@@ -485,7 +576,8 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 func TestScanKeysDirectoryWithMasterKeyReportRecordsSaltWarnings(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
-	keysDir := paths.KeysDir("default")
+	genstoretest.MintFirst(t, paths, "default")
+	keysDir := activeKeysDirForTest(t, paths, "default")
 	if err := fsutil.MkdirAll(keysDir); err != nil {
 		t.Fatal(err)
 	}
@@ -581,6 +673,7 @@ func TestKeyPayloadScanWarningClassification(t *testing.T) {
 func TestScanKeysDirectoryWithMasterKeyLoadsGenericUnderDerivedAddress(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	address, bytecode, counter := saltedLogicSigForScanTest(t)
 	keyJSON := []byte(`{
 		"format_version": 1,
@@ -609,6 +702,7 @@ func TestScanKeysDirectoryWithMasterKeyLoadsGenericUnderDerivedAddress(t *testin
 func TestScanKeysDirectoryWithMasterKeyRejectsGenericFilenameAddressMismatch(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	_, bytecode, counter := saltedLogicSigForScanTest(t)
 	keyJSON := []byte(`{
 		"format_version": 1,
@@ -644,6 +738,7 @@ func TestScanKeysDirectoryWithMasterKeyRejectsGenericFilenameAddressMismatch(t *
 func TestScanKeysDirectoryWithMasterKeyRejectsDSALSigWithoutBytecode(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	keyJSON, address := testEd25519Key(t)
 	var fields map[string]interface{}
 	if err := json.Unmarshal(keyJSON, &fields); err != nil {
@@ -678,6 +773,7 @@ func TestScanKeysDirectoryWithMasterKeyRejectsDSALSigWithoutBytecode(t *testing.
 func TestScanKeysDirectoryWithMasterKeyRejectsDSALSigInvalidBytecode(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	keyJSON, address := testEd25519Key(t)
 	var fields map[string]interface{}
 	if err := json.Unmarshal(keyJSON, &fields); err != nil {
@@ -723,7 +819,8 @@ func saltedLogicSigForScanTest(t *testing.T) (string, []byte, byte) {
 func TestScanKeysDirectoryWithMasterKeyReportRecordsIncompatibleFormatWarnings(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
-	keysDir := paths.KeysDir("default")
+	genstoretest.MintFirst(t, paths, "default")
+	keysDir := activeKeysDirForTest(t, paths, "default")
 	if err := fsutil.MkdirAll(keysDir); err != nil {
 		t.Fatal(err)
 	}
@@ -764,6 +861,7 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsIncompatibleFormatWarnings(t
 func TestScanKeysDirectoryWithMasterKeyRejectsEd25519WithoutPublicKey(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -803,6 +901,7 @@ func TestScanKeysDirectoryWithMasterKeyRejectsEd25519WithoutPublicKey(t *testing
 func TestScanKeysDirectoryWithMasterKey_KeyWithCreatedAt(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 
 	keyJSON, address := testEd25519Key(t)
 
@@ -854,4 +953,22 @@ func contains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func activeKeysDirForTest(t *testing.T, paths storepaths.Paths, identityID string) string {
+	t.Helper()
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		t.Fatalf("ResolveActive: %v", err)
+	}
+	return active.KeysDir()
+}
+
+func mustResolveActiveForTest(t *testing.T, paths storepaths.Paths) storepaths.ActivePaths {
+	t.Helper()
+	active, err := genstore.ResolveActive(paths, "default")
+	if err != nil {
+		t.Fatalf("ResolveActive: %v", err)
+	}
+	return active
 }

@@ -27,6 +27,13 @@ func dispatchApstoreCommand(args []string) {
 			exitWithError(err)
 		}
 
+	case "generations":
+		if err := runStoreMutatingCommand(command, func() error {
+			return cmdGenerations(args[1:])
+		}); err != nil {
+			exitWithError(err)
+		}
+
 	case "backup":
 		if isManagedBackupCommand(args) {
 			if err := cmdBackupManaged(args[1:]); err != nil {

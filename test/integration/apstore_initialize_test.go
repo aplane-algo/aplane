@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -39,7 +40,13 @@ func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 	if !crypto.KeystoreMetadataExistsIn(paths.KeystoreMetadataDir(auth.DefaultIdentityID)) {
 		t.Fatal("keystore metadata missing after apstore initialize")
 	}
-	if _, err := os.Stat(paths.KeysDir(auth.DefaultIdentityID)); err != nil {
+	// New stores are generational: the keys namespace lives in the first
+	// generation behind CURRENT.
+	active, err := genstore.ResolveActive(paths, auth.DefaultIdentityID)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	if _, err := os.Stat(active.KeysDir()); err != nil {
 		t.Fatalf("keys dir missing after apstore initialize: %v", err)
 	}
 

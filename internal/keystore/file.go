@@ -15,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -25,7 +26,6 @@ import (
 // FileKeyStore implements KeyStore using encrypted files on disk
 type FileKeyStore struct {
 	paths      storepaths.Paths
-	keysDir    string
 	identityID string // Identity used for scanning (e.g., "default")
 
 	// Cache of address -> KeyScanInfo (populated by Scan)
@@ -53,7 +53,6 @@ type SigningSummary struct {
 func NewFileKeyStoreForPaths(paths storepaths.Paths, identityID string) *FileKeyStore {
 	return &FileKeyStore{
 		paths:      paths,
-		keysDir:    paths.KeysDir(identityID),
 		identityID: identityID,
 		cache:      make(map[string]keys.KeyScanInfo),
 	}
@@ -127,7 +126,16 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("master key not available after initialization")
 	}
-	report, err := keys.ScanKeysDirectoryWithMasterKeyReport(f.paths, f.identityID, masterKey)
+	// Resolve the active layout once per scan: on a generational store this
+	// binds the scan (and the absolute KeyFile paths it caches) to the
+	// generation CURRENT names right now, so every reload after a pointer
+	// flip rebuilds the cache against the new generation.
+	active, resolveErr := genstore.ResolveActive(f.paths, f.identityID)
+	if resolveErr != nil {
+		f.cacheLock.RUnlock()
+		return fmt.Errorf("failed to resolve active key store layout: %w", resolveErr)
+	}
+	report, err := keys.ScanKeysDirectoryWithMasterKeyReportActive(active, masterKey)
 	f.cacheLock.RUnlock()
 	if err != nil {
 		return fmt.Errorf("failed to scan keys directory: %w", err)

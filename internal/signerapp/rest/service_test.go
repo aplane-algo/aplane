@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"sort"
@@ -153,6 +155,9 @@ func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Rol
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
+	genstoretest.MintFirst(t, keyPaths, "default")
+	genstoretest.MintFirst(t, keyPaths, "alice")
+	genstoretest.MintFirst(t, keyPaths, "bob")
 	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
 	keysDir := keyPaths.KeysDir(auth.DefaultIdentityID)
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
@@ -902,10 +907,11 @@ func TestServiceKeyTypesIncludesEnabledYAMLComposedProvider(t *testing.T) {
 
 func TestServiceKeyTypesForIdentityReportsCorruptStateRecord(t *testing.T) {
 	ir := setupIdentityRuntime(t, false)
-	path := ir.KeyPaths().KeyTypeRecord(ir.ID(), "bad-rest-state-v1")
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
+	active, err := genstore.ResolveActive(ir.KeyPaths(), ir.ID())
+	if err != nil {
+		t.Fatalf("ResolveActive: %v", err)
 	}
+	path := active.KeyTypeRecord("bad-rest-state-v1")
 	if err := os.WriteFile(path, []byte(`{bad`), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -969,6 +975,9 @@ teal: |
 
 func TestServiceKeyTypesForIdentityHidesTemplateInstalledForOtherIdentity(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths, "alice")
+	genstoretest.MintFirst(t, paths, "bob")
 	keyType := "test.generic-rest-identity-scoped.v1"
 	yamlData := []byte(`schema_version: 1
 template_type: generic
@@ -1151,6 +1160,9 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
+			genstoretest.MintFirst(t, paths, "default")
+			genstoretest.MintFirst(t, paths, "alice")
+			genstoretest.MintFirst(t, paths, "bob")
 			ir := tt.setup(t, paths)
 
 			resp, svcErr := Service{}.KeyTypesForIdentity(ir)

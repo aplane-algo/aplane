@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -83,6 +85,8 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		return result, fmt.Errorf("failed to create new keystore metadata: %w", err)
 	}
 	defer crypto.ZeroBytes(newMasterKey)
+	// The new metadata carries the generational layout gate by
+	// construction (the only supported store format).
 
 	logf(opts.Logf, "phase 1: creating new encrypted files")
 	for _, managedFile := range managedFiles {
@@ -196,13 +200,24 @@ func scanTargets(
 	identityID string,
 	masterKey []byte,
 ) ([]keys.ManagedCredentialFile, []string, []string, error) {
-	managedFiles, err := keys.ScanManagedCredentialFiles(paths.KeysDir(identityID))
+	// Rotation requires generation quiescence: it rewrites only what it can
+	// see through the resolved current namespaces, so a retained prior
+	// generation would silently keep material encrypted under the old
+	// master key and make generation rollback produce an unreadable store.
+	if err := requireGenerationQuiescence(paths, identityID); err != nil {
+		return nil, nil, nil, err
+	}
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to resolve active key store layout: %w", err)
+	}
+	managedFiles, err := keys.ScanManagedCredentialFiles(active.KeysDir())
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to scan keystore: %w", err)
 	}
 
 	var templateFiles []string
-	templatesRootDir := paths.KeyTypeRecordsDir(identityID)
+	templatesRootDir := active.KeyTypeRecordsDir()
 	_ = filepath.WalkDir(templatesRootDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -217,6 +232,34 @@ func scanTargets(
 		return nil, nil, nil, err
 	}
 	return managedFiles, templateFiles, recoveredFiles, nil
+}
+
+// requireGenerationQuiescence refuses rotation on a generational store while
+// any generation other than the current one exists (docs/ARCH_GENERATIONS.md
+// §11). The operator prunes prior generations first; after a successful
+// rotation the retention window restarts empty. Prior-generation retention
+// and passphrase rotation never coexist.
+func requireGenerationQuiescence(paths storepaths.Paths, identityID string) error {
+	current, err := genstore.ReadCurrent(paths, identityID)
+	if err != nil {
+		return fmt.Errorf("passphrase rotation requires a valid CURRENT generation: %w", err)
+	}
+	entries, err := os.ReadDir(paths.GenerationsDir(identityID))
+	if err != nil {
+		return err
+	}
+	var extra []string
+	for _, entry := range entries {
+		if entry.Name() != current {
+			extra = append(extra, entry.Name())
+		}
+	}
+	if len(extra) > 0 {
+		return fmt.Errorf(
+			"passphrase rotation requires generation quiescence: %d other generation(s) exist (%s); reconcile and collect them first",
+			len(extra), strings.Join(extra, ", "))
+	}
+	return nil
 }
 
 func logTargets(
@@ -291,6 +334,13 @@ func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKe
 	}
 	if err := ApplyFileMetadataFrom(path, path+".new"); err != nil {
 		return fmt.Errorf("failed to set metadata on %s.new: %w", display, err)
+	}
+	// The swap in phase 2 renames this file over the canonical one and then
+	// removes the .old fallback. Its data blocks must be on disk before the
+	// rename can ever become durable, or a power loss leaves a canonical
+	// file that decrypts under neither key.
+	if err := fsutil.SyncFile(path + ".new"); err != nil {
+		return fmt.Errorf("failed to sync %s.new: %w", display, err)
 	}
 
 	verifyData, err := os.ReadFile(path + ".new")
@@ -489,6 +539,9 @@ func writeVerifiedNewKeystore(
 	if _, err := verifyMeta.VerifyAndDeriveMasterKey(newPassphrase); err != nil {
 		return fmt.Errorf("verification failed for .keystore.new")
 	}
+	if err := fsutil.SyncFile(newKeystorePath); err != nil {
+		return fmt.Errorf("failed to sync .keystore.new: %w", err)
+	}
 	return nil
 }
 
@@ -507,5 +560,30 @@ func swapPendingFiles(pendingFiles []pendingFile, log Logger) error {
 		}
 		logf(log, "swapped: %s", filepath.Base(pf.original))
 	}
+	// The renames above are metadata operations; without a directory fsync a
+	// power loss can revert any subset of them after cleanup has removed the
+	// .old fallbacks. Make the whole swap durable before cleanup may run.
+	for _, dir := range uniqueParentDirs(pendingFiles) {
+		if err := fsutil.SyncDir(dir); err != nil {
+			return fmt.Errorf("failed to sync directory %s after swap: %w", dir, err)
+		}
+	}
 	return nil
+}
+
+// uniqueParentDirs returns the sorted set of directories holding the
+// canonical files of pendingFiles.
+func uniqueParentDirs(pendingFiles []pendingFile) []string {
+	seen := make(map[string]struct{}, len(pendingFiles))
+	var dirs []string
+	for _, pf := range pendingFiles {
+		dir := filepath.Dir(pf.original)
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	return dirs
 }

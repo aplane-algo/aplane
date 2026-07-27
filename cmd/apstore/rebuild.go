@@ -11,7 +11,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 func cmdRebuild(args []string) error {
@@ -111,7 +113,10 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		return fmt.Errorf("passphrases do not match")
 	}
 
-	_, masterKey, err := crypto.CreateKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()), storePassphrase)
+	// Rebuilt stores use generation-based active storage: version-3
+	// keystore metadata plus the restored keys committed as the first
+	// generation behind a durable CURRENT flip.
+	_, masterKey, err := crypto.CreateKeystoreMetadataGenerational(keystorePaths().KeystoreMetadataDir(productIdentityID()), storePassphrase)
 	if err != nil {
 		return fmt.Errorf("failed to create keystore metadata: %w", err)
 	}
@@ -120,8 +125,21 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	if err := initializeRebuildNodeRole(nodeRole, masterKey); err != nil {
 		return err
 	}
-	if err := rebuildRestoreKeys(sourceRoot, addresses, nodeRole, masterKey, exportPassphrase); err != nil {
+	generationID, err := genstore.NewGenerationID(time.Now())
+	if err != nil {
 		return err
+	}
+	if _, err := genstore.Mint(keystorePaths(), productIdentityID(), genstore.MintRequest{
+		GenerationID:    generationID,
+		FirstGeneration: true,
+		Operation:       "store-rebuild",
+		OperationID:     "rebuild-" + generationID,
+		CreatedAt:       time.Now(),
+		Apply: func(staged storepaths.GenPaths) error {
+			return rebuildRestoreKeys(sourceRoot, addresses, nodeRole, masterKey, exportPassphrase, staged)
+		},
+	}); err != nil {
+		return fmt.Errorf("rebuild failed; nothing was committed: %w", err)
 	}
 	logInfof("rebuild complete: %s", identityDir)
 	return nil
@@ -179,7 +197,7 @@ func initializeRebuildNodeRole(role noderole.Role, masterKey []byte) error {
 	return nil
 }
 
-func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Role, masterKey, exportPassphrase []byte) error {
+func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Role, masterKey, exportPassphrase []byte, staged storepaths.GenPaths) error {
 	keysDir := resolveBackupKeysDir(sourceRoot)
 	if len(addresses) == 0 {
 		var err error
@@ -197,6 +215,7 @@ func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Rol
 		keyType, err := backup.NewRestorer(keystorePaths(), productIdentityID()).
 			WithNodeRole(role).
 			WithLogger(logInfof).
+			WithActiveNamespace(staged).
 			RestoreActiveForRebuild(keysDir, address, masterKey, exportPassphrase)
 		if err != nil {
 			return fmt.Errorf("failed to rebuild %s: %w", address, err)

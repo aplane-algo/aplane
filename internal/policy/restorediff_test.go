@@ -330,3 +330,50 @@ func restoreRoutingConfig(destination types.Address) *Config {
 	}
 	return cfg
 }
+
+func TestTransferRestoreFieldsProjectSetMembership(t *testing.T) {
+	memberA := types.Address{1}
+	memberB := types.Address{2}
+	build := func(members []types.Address) *TransferPolicy {
+		return &TransferPolicy{
+			Enabled: true,
+			AddressSets: map[string]compiledAddressSet{
+				"treasury": {Flat: members},
+			},
+			AssetSets: map[string]compiledAssetSet{
+				"stable": {ByNetwork: map[string][]uint64{"mainnet": {uint64(len(members))}}},
+			},
+			Routes: []CompiledTransferRoute{{
+				ID:           "r1",
+				Enabled:      true,
+				Destinations: compiledAddressTerms{Sets: []string{"treasury"}},
+				Assets:       compiledAssetTerms{Sets: []string{"stable"}},
+			}},
+		}
+	}
+	project := func(transfer *TransferPolicy) map[string]string {
+		var fields []RestorePolicyField
+		appendTransferRestoreFields(&fields, "default", transfer)
+		out := make(map[string]string, len(fields))
+		for _, field := range fields {
+			out[field.Path] = field.Value
+		}
+		return out
+	}
+
+	source := project(build([]types.Address{memberA}))
+	destination := project(build([]types.Address{memberA, memberB}))
+
+	// The set names and routes are identical; only membership differs. The
+	// projection must expose that difference or the diff reports identical
+	// policies while the destination silently permits transfers to B.
+	if _, ok := source["transfer_policy.address_sets.treasury"]; !ok {
+		t.Fatalf("projection has no address-set membership field: %v", source)
+	}
+	if source["transfer_policy.address_sets.treasury"] == destination["transfer_policy.address_sets.treasury"] {
+		t.Fatal("address-set membership change is invisible to the restore diff")
+	}
+	if source["transfer_policy.asset_sets.stable.by_network.mainnet"] == destination["transfer_policy.asset_sets.stable.by_network.mainnet"] {
+		t.Fatal("asset-set membership change is invisible to the restore diff")
+	}
+}

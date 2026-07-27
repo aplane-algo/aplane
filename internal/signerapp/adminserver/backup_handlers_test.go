@@ -5,6 +5,7 @@ package adminserver
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -554,6 +555,49 @@ func TestRestoreHandlersWriteAuditEvents(t *testing.T) {
 	}
 }
 
+func TestActivateRecoveredAbortsWhenDurableIntentAuditFails(t *testing.T) {
+	ir := identity.New(identity.Config{
+		ID:            auth.DefaultIdentityID,
+		Authenticator: auth.NewTokenAuthenticator("token"),
+	})
+	ir.SetUnlocked()
+
+	svc := &stubServices{}
+	svc.onActivateRecovered = func() {
+		t.Fatal("activation service called despite failed durable audit intent")
+	}
+	audit := &recordingRestoreAudit{intentErr: errors.New("audit disk full")}
+	conn := &queueConn{}
+	session := NewSession(conn, SessionDeps{
+		Backups: svc,
+		Audit:   audit,
+	})
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	session.HandleActivateRecovered(&protocol.ActivateRecoveredMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeActivateRecovered, ID: "activate-audit-fail"},
+		RestoreID:   "0123456789abcdef0123456789abcdef",
+		ReviewToken: "review-token",
+	})
+
+	if len(conn.writes) != 1 {
+		t.Fatalf("writes = %d, want exactly one abort reply", len(conn.writes))
+	}
+	var reply protocol.ActivateRecoveredResultMessage
+	if err := json.Unmarshal(conn.writes[0], &reply); err != nil {
+		t.Fatalf("unmarshal reply: %v", err)
+	}
+	if reply.Success {
+		t.Fatal("activation reported success despite failed durable audit intent")
+	}
+	if reply.Code != protocol.ResultCodeActivationAuditFailed {
+		t.Fatalf("code = %q, want %q", reply.Code, protocol.ResultCodeActivationAuditFailed)
+	}
+	if reply.RestoreID != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("restore_id = %q", reply.RestoreID)
+	}
+}
+
 type recordingRestoreAudit struct {
 	recordingAuthorizationAudit
 
@@ -563,6 +607,7 @@ type recordingRestoreAudit struct {
 	events           []string
 	recovered        adminproto.RecoverBackupResult
 	activated        adminproto.ActivateRecoveredResult
+	intentErr        error
 }
 
 func (a *recordingRestoreAudit) LogBackupRestorePreviewedContext(ctx SessionContext, archivePath string, keyCount int) {
@@ -589,11 +634,16 @@ func (a *recordingRestoreAudit) LogBackupRecoveryFailedContext(ctx SessionContex
 	a.failedReason = reason
 }
 
-func (a *recordingRestoreAudit) LogBackupActivationIntentContext(ctx SessionContext, restoreID string, replaceExisting bool) {
+func (a *recordingRestoreAudit) LogBackupActivationIntentDurableContext(ctx SessionContext, restoreID string, replaceExisting bool) error {
 	_ = ctx
 	_ = restoreID
 	_ = replaceExisting
+	if a.intentErr != nil {
+		a.events = append(a.events, "activation_intent_failed")
+		return a.intentErr
+	}
 	a.events = append(a.events, "activation_intent")
+	return nil
 }
 
 func (a *recordingRestoreAudit) LogBackupActivatedContext(ctx SessionContext, result adminproto.ActivateRecoveredResult) {

@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 
@@ -62,13 +61,6 @@ func (s Service) reviewRecoveredWithMasterKey(
 	if err := recovered.ValidateRestoreID(restoreID); err != nil {
 		return adminproto.ReviewRecoveredResult{}, err
 	}
-	activationDir := s.Deps.KeyPaths().RecoveredActivationDir(ir.ID(), restoreID)
-	if _, err := os.Lstat(activationDir); err == nil {
-		return s.reviewIncompleteActivation(ir, restoreID, masterKey)
-	} else if !os.IsNotExist(err) {
-		return adminproto.ReviewRecoveredResult{}, fmt.Errorf("inspect recovered activation state: %w", err)
-	}
-
 	batch, err := recovered.LoadBatch(s.Deps.KeyPaths(), ir.ID(), restoreID, masterKey)
 	if err != nil {
 		return adminproto.ReviewRecoveredResult{}, err
@@ -170,66 +162,6 @@ func (s Service) reviewRecoveredWithMasterKey(
 		ActiveConflicts:              conflicts,
 		ReviewToken:                  token,
 		UnattendedSigningAckRequired: warning != "",
-	}, nil
-}
-
-func (s Service) reviewIncompleteActivation(
-	ir *identity.Runtime,
-	restoreID string,
-	masterKey []byte,
-) (adminproto.ReviewRecoveredResult, error) {
-	journal, snapshot, err := recovered.LoadActivation(
-		s.Deps.KeyPaths(),
-		ir.ID(),
-		restoreID,
-		masterKey,
-	)
-	if snapshot != nil {
-		snapshot.Zero()
-	}
-	if err != nil {
-		return adminproto.ReviewRecoveredResult{}, err
-	}
-	batch, err := recovered.LoadBatch(s.Deps.KeyPaths(), ir.ID(), restoreID, masterKey)
-	if err != nil {
-		return adminproto.ReviewRecoveredResult{}, err
-	}
-	defer crypto.ZeroBytes(batch.SourcePolicyYAML)
-	entries := make([]adminproto.RecoveredReviewEntry, len(batch.Entries))
-	for i, entry := range batch.Entries {
-		entries[i] = adminproto.RecoveredReviewEntry{
-			Selector: entry.Selector,
-			Category: entry.Category,
-			KeyType:  entry.KeyType,
-		}
-	}
-	approvalMode := adminproto.DestinationApprovalMode(journal.DestinationApprovalMode)
-	sourceSettings := projectRecoveredSourceSettings(batch)
-	warning := ""
-	if approvalMode == adminproto.DestinationApprovalAutoApproveFallback {
-		warning = unattendedSigningWarning
-	}
-	return adminproto.ReviewRecoveredResult{
-		RestoreID:                    restoreID,
-		State:                        "activation_incomplete",
-		ArchiveChecksum:              batch.ArchiveSHA256,
-		SourceNodeRole:               batch.SourceNodeRole,
-		SourcePolicyStatus:           string(batch.SourcePolicyStatus),
-		SourcePolicySHA256:           batch.SourcePolicySHA256,
-		DestinationPolicySHA256:      journal.DestinationPolicySHA256,
-		DestinationApprovalMode:      approvalMode,
-		UnattendedSigningWarning:     warning,
-		PolicyComparison:             string(policy.RestoreComparisonUnavailable),
-		UnknownSourceSettings:        recoveredUnknownSourceSettings(batch),
-		SourceSettingsStatus:         sourceSettings.Status,
-		SourceUserAutoApprove:        sourceSettings.UserAutoApprove,
-		SourceGenesisHashMappings:    sourceSettings.GenesisHashMappings,
-		SourceSettingsWarning:        sourceSettings.Warning,
-		Entries:                      entries,
-		ReviewToken:                  journal.ReviewToken,
-		UnattendedSigningAckRequired: warning != "",
-		AcknowledgeUnattendedSigning: journal.AcknowledgeUnattendedSigning,
-		ReplaceExisting:              journal.ReplaceExisting,
 	}, nil
 }
 

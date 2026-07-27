@@ -511,7 +511,10 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	if !initial.Success || initial.AlreadyExists {
 		t.Fatalf("initial InstallLibraryTemplate result = %+v, want fresh success", initial)
 	}
-	installedPath := templatestore.GetTemplateFilePathForPaths(server.keyPaths, auth.CurrentProductIdentityID(), keyType, templatestore.TemplateTypeGeneric)
+	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, auth.CurrentProductIdentityID(), keyType, templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if _, err := os.Stat(installedPath); err != nil {
 		t.Fatalf("initial installed template stat: %v", err)
 	}
@@ -574,7 +577,10 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	}); err != nil {
 		t.Fatalf("preinstall template: %v", err)
 	}
-	installedPath := templatestore.GetTemplateFilePathForPaths(server.keyPaths, ir.ID(), keyType, templatestore.TemplateTypeGeneric)
+	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, ir.ID(), keyType, templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 
 	spec, err := generictemplate.ParseTemplateSpec(yamlData)
 	if err != nil {
@@ -612,7 +618,10 @@ func writeLibraryTemplateForTest(t *testing.T, server *Signer, filename string, 
 
 func assertInstalledTemplateRemoved(t *testing.T, server *Signer, keyType string, templateType templatestore.TemplateType) {
 	t.Helper()
-	path := templatestore.GetTemplateFilePathForPaths(server.keyPaths, auth.CurrentProductIdentityID(), keyType, templateType)
+	path, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, auth.CurrentProductIdentityID(), keyType, templateType)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("installed template path stat err = %v, want not exist for %s", err, path)
 	}

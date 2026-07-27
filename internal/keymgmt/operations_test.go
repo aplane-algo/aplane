@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"io"
 	"net/http"
 	"os"
@@ -65,6 +67,8 @@ func TestWitnessRoleCollisionChecks(t *testing.T) {
 
 func TestValidateKnownWitnessRoleExclusivityRejectsLocalWitness(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "test-identity")
+	genstoretest.MintFirst(t, paths, "default")
 	const identityID = "test-identity"
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
@@ -87,6 +91,8 @@ func init() {
 
 func TestGenerateKeyRejectsMissingAndInvalidType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "test-identity")
+	genstoretest.MintFirst(t, paths, "default")
 
 	_, err := GenerateKey(paths, "test-identity", "", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "key type must be specified") {
@@ -101,6 +107,8 @@ func TestGenerateKeyRejectsMissingAndInvalidType(t *testing.T) {
 
 func TestImportKeyRejectsInvalidType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "test-identity")
+	genstoretest.MintFirst(t, paths, "default")
 
 	_, err := ImportKey(paths, "test-identity", "not-a-real-key-type", "mnemonic words here", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid key type") {
@@ -133,6 +141,8 @@ func TestSupportsMnemonicImport(t *testing.T) {
 
 func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "test-identity")
+	genstoretest.MintFirst(t, paths, "default")
 
 	keyType := falcon1024guarded.KeyTypeV1
 	_, err := ImportKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, "mnemonic words here", nil, nil, []string{keyType})
@@ -143,13 +153,15 @@ func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 
 func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "test-identity")
+	genstoretest.MintFirst(t, paths, "default")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 	first, err := GenerateKey(paths, "test-identity", "ed25519", masterKey, nil)
 	if err != nil {
 		t.Fatalf("GenerateKey(first) error = %v", err)
 	}
-	duplicatePath := filepath.Join(paths.KeysDir("test-identity"), "duplicate.key")
+	duplicatePath := filepath.Join(activeKeysDirForKeymgmtTest(t, paths, "test-identity"), "duplicate.key")
 	if err := os.Rename(first.KeyFile, duplicatePath); err != nil {
 		t.Fatalf("Rename(%q, %q) error = %v", first.KeyFile, duplicatePath, err)
 	}
@@ -260,6 +272,8 @@ func TestValidKeyTypesIncludeActivatedFalcon1024GuardedKey(t *testing.T) {
 
 func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "test-identity")
+	genstoretest.MintFirst(t, paths, "default")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 	for _, keyType := range []string{
@@ -291,6 +305,8 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.keyType, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
+			genstoretest.MintFirst(t, paths, "test-identity")
+			genstoretest.MintFirst(t, paths, "default")
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 			result, err := GenerateKeyWithActivatedContext(
@@ -363,6 +379,8 @@ func TestGenerateKeySentryComponent(t *testing.T) {
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
+			genstoretest.MintFirst(t, paths, "test-identity")
+			genstoretest.MintFirst(t, paths, "default")
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 			result, err := GenerateKey(paths, "test-identity", keyType, masterKey, nil)
@@ -543,9 +561,11 @@ func TestDeleteKey(t *testing.T) {
 
 func TestDeleteKeyPreservesSentryCredentialClass(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "test-identity")
+	genstoretest.MintFirst(t, paths, "default")
 	identityID := "default"
 	selector := "WITNESSID"
-	keyFile := filepath.Join(paths.KeysDir(identityID), selector+keys.SentryCredentialExtension)
+	keyFile := filepath.Join(activeKeysDirForKeymgmtTest(t, paths, identityID), selector+keys.SentryCredentialExtension)
 	if err := os.MkdirAll(filepath.Dir(keyFile), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -837,4 +857,13 @@ func (p keymgmtTestDSAProvider) MnemonicScheme() string   { return "bip39" }
 func (p keymgmtTestDSAProvider) MnemonicWordCount() int   { return 24 }
 func (p keymgmtTestDSAProvider) DeriveLsig(context.Context, []byte, map[string]string) ([]byte, string, error) {
 	return nil, "", nil
+}
+
+func activeKeysDirForKeymgmtTest(t *testing.T, paths storepaths.Paths, identityID string) string {
+	t.Helper()
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		t.Fatalf("ResolveActive: %v", err)
+	}
+	return active.KeysDir()
 }

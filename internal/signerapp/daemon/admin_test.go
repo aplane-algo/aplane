@@ -100,11 +100,19 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		t.Fatalf("Failed to initialize master key: %v", err)
 	}
 
+	// A real audit logger, as production always has: the durable
+	// activation-intent gate fails closed without one.
+	auditLog, err := NewAuditLogger(filepath.Join(tmpDir, "audit.log"))
+	if err != nil {
+		t.Fatalf("NewAuditLogger: %v", err)
+	}
+	t.Cleanup(func() { _ = auditLog.Close() })
 	server := &Signer{
 		registry: identity.NewRegistry(),
 		config:   serverConfigForTest(),
 		keyPaths: keyPaths,
 		dataDir:  tmpDir,
+		auditLog: auditLog,
 	}
 
 	ir := identity.New(identity.Config{
@@ -115,6 +123,9 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		NodeRole:      noderole.RoleSigner,
 	})
 	_ = server.registry.Register(ir)
+	// All stores are generational in this release: mint the first
+	// generation the way initialize does before any test writes keys.
+	convertTestSignerToGenerational(t, server)
 	signerstartup.WireReloadFunc(ir, testIdentityBuildOptions(server), server.identityBuildHooks())
 	signerstartup.WireApprovalCoordinator(ir, server.identityBuildHooks())
 	ir.SetPolicy(initialPolicy)

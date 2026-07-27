@@ -5,6 +5,7 @@ package templatelibrary
 
 import (
 	"bytes"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -311,8 +312,9 @@ func TestInstallParsedWritesEncryptedTemplateAndDoesNotUseLibraryDir(t *testing.
 	if result.AlreadyExists {
 		t.Fatal("InstallParsed().AlreadyExists = true, want false on first install")
 	}
-	if !strings.Contains(result.OutputPath, filepath.Join("identities", testIdentityID, "keytypes")) {
-		t.Fatalf("OutputPath = %q, want identity key type directory", result.OutputPath)
+	if !strings.Contains(result.OutputPath, filepath.Join("identities", testIdentityID)) ||
+		!strings.Contains(result.OutputPath, string(filepath.Separator)+"keytypes"+string(filepath.Separator)) {
+		t.Fatalf("OutputPath = %q, want the identity's active key type directory", result.OutputPath)
 	}
 	if strings.Contains(result.OutputPath, "library/templates") {
 		t.Fatalf("OutputPath = %q, must not write into plaintext library", result.OutputPath)
@@ -377,7 +379,10 @@ func TestInstallParsedRollsBackTemplateWhenStateWriteFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("InstallParsed() error = nil, want fingerprint/state failure")
 	}
-	templatePath := templatestore.GetTemplateFilePathForPaths(paths, testIdentityID, parsed.KeyType, parsed.TemplateType)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, testIdentityID, parsed.KeyType, parsed.TemplateType)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if _, statErr := os.Stat(templatePath); !os.IsNotExist(statErr) {
 		t.Fatalf("installed template stat error = %v, want removed rollback file", statErr)
 	}
@@ -967,6 +972,9 @@ func TestParseFileAsRejectsMismatchedDeclaredTemplateType(t *testing.T) {
 func newLibraryTestPaths(t *testing.T) storepaths.Paths {
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths, "alice")
+	genstoretest.MintFirst(t, paths, "bob")
 	if err := EnsureLibraryDir(paths); err != nil {
 		t.Fatalf("EnsureLibraryDir() error = %v", err)
 	}

@@ -354,6 +354,7 @@ type recordingAdminHub struct {
 	tokenIdentity     string
 	lockedIdentity    string
 	keysIdentity      string
+	statusIdentity    string
 }
 
 func (h *recordingAdminHub) reset() {
@@ -386,4 +387,8 @@ func (h *recordingAdminHub) NotifyLocked(identityID string, _ adminproto.SignerL
 
 func (h *recordingAdminHub) NotifyKeysChanged(identityID string, _ adminproto.KeysChangedNotification) {
 	h.keysIdentity = identityID
+}
+
+func (h *recordingAdminHub) NotifyStatus(identityID, _ string, _ int) {
+	h.statusIdentity = identityID
 }

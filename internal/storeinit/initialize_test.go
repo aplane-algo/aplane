@@ -11,6 +11,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/defaultkeytypes"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -42,8 +43,24 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if !crypto.KeystoreMetadataExistsIn(paths.KeystoreMetadataDir(identityID)) {
 		t.Fatal("keystore metadata missing after initialize")
 	}
-	if _, err := os.Stat(paths.KeysDir(identityID)); err != nil {
-		t.Fatalf("keys dir stat error = %v", err)
+	// New stores are generational: active namespaces live in the first
+	// generation behind CURRENT, and the metadata carries the layout gate.
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	if _, err := os.Stat(active.KeysDir()); err != nil {
+		t.Fatalf("generational keys dir stat error = %v", err)
+	}
+	if _, err := os.Stat(paths.KeysDir(identityID)); !os.IsNotExist(err) {
+		t.Fatalf("legacy keys dir exists on a new store: err = %v", err)
+	}
+	gen, err := genstore.Resolve(paths, identityID)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if err := genstore.ValidateCurrent(gen); err != nil {
+		t.Fatalf("initial generation failed validation: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(paths.IdentityDir(identityID), "aplane.token")); err != nil {
 		t.Fatalf("token stat error = %v", err)
@@ -51,6 +68,9 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
 	if err != nil {
 		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+	}
+	if meta.Version != crypto.GenerationalKeystoreMetadataVersion {
+		t.Fatalf("keystore version = %d, want %d", meta.Version, crypto.GenerationalKeystoreMetadataVersion)
 	}
 	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
 	if err != nil {
@@ -68,9 +88,9 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSigner)
 	}
 	for _, keyType := range []string{defaultkeytypes.Falcon1024AllowlistKeyType} {
-		rec, ok, err := keytypestate.Get(paths, identityID, keyType)
+		rec, ok, err := keytypestate.GetActive(active, keyType)
 		if err != nil {
-			t.Fatalf("keytypestate.Get(default key type %s) error = %v", keyType, err)
+			t.Fatalf("keytypestate.GetActive(default key type %s) error = %v", keyType, err)
 		}
 		if !ok {
 			t.Fatalf("default key type %s state missing", keyType)
@@ -79,7 +99,7 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 			t.Fatalf("default key type %s state = (%s, %s), want (%s, %s)",
 				keyType, rec.Source, rec.State, keytypestate.SourceYAMLComposed, keytypestate.StateEnabled)
 		}
-		if !templatestore.TemplateExistsForPaths(paths, identityID, keyType, templatestore.TemplateTypeComposed) {
+		if !templatestore.TemplateExistsActive(active, keyType, templatestore.TemplateTypeComposed) {
 			t.Fatalf("default key type template %s missing", keyType)
 		}
 	}
@@ -119,9 +139,13 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 	if _, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
 		t.Fatalf("sentry policy integrity baseline did not verify: %v", err)
 	}
-	rec, ok, err := keytypestate.Get(paths, identityID, defaultkeytypes.Falcon1024AllowlistKeyType)
+	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
-		t.Fatalf("keytypestate.Get(default key type) error = %v", err)
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	rec, ok, err := keytypestate.GetActive(active, defaultkeytypes.Falcon1024AllowlistKeyType)
+	if err != nil {
+		t.Fatalf("keytypestate.GetActive(default key type) error = %v", err)
 	}
 	if ok {
 		t.Fatalf("sentry initialization installed signer default key type: %+v", rec)

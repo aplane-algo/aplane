@@ -345,6 +345,15 @@ func DeleteKey(address, keyFile, deletedKeysDir string) (*DeleteResult, error) {
 	if err := os.Rename(keyFile, destPath); err != nil {
 		return nil, fmt.Errorf("failed to move key file: %w", err)
 	}
+	// The removal and the tombstone must both survive a crash: a deletion
+	// that resurrects after power loss is an active credential the operator
+	// believes is gone.
+	if err := fsutil.SyncDir(filepath.Dir(keyFile)); err != nil {
+		return nil, fmt.Errorf("failed to sync keys directory after delete: %w", err)
+	}
+	if err := fsutil.SyncDir(deletedKeysDir); err != nil {
+		return nil, fmt.Errorf("failed to sync deleted keys directory: %w", err)
+	}
 
 	return &DeleteResult{
 		DeletedPath: destPath,

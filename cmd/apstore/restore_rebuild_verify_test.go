@@ -4,6 +4,7 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,7 @@ func TestCmdRebuildRejectsExistingIdentityBeforePrompt(t *testing.T) {
 	oldDataDirectory := dataDirectory
 	oldReader := stdinReader
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	stdinReader = nil
 	defer func() {
 		dataDirectory = oldDataDirectory
@@ -210,6 +212,7 @@ func TestRestoreKeyRejectsLegacyEnvelopeVersion1Backup(t *testing.T) {
 	RegisterProviders()
 
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	address, keyJSON := testEd25519KeyJSON(t)
 
@@ -237,6 +240,7 @@ func TestRestoreKeyRejectsUnsupportedEnvelopeVersion(t *testing.T) {
 	RegisterProviders()
 
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	address, _ := testEd25519KeyJSON(t)
 
@@ -283,6 +287,7 @@ func TestRestoreKeyIsIdempotentForSameBackup(t *testing.T) {
 	RegisterProviders()
 
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	address, keyJSON := testEd25519KeyJSON(t)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
@@ -308,6 +313,7 @@ func TestRestoreKeyIsIdempotentForSameBackup(t *testing.T) {
 
 func TestRestoreTemplateRejectsConflictingDestinationTemplate(t *testing.T) {
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 
 	paths := keystorePaths()
 	identityID := productIdentityID()
@@ -329,10 +335,11 @@ func TestRestoreTemplateRejectsConflictingDestinationTemplate(t *testing.T) {
 		t.Fatalf("restoreTemplate() error = %v, want keystore conflict", err)
 	}
 
-	loaded, err := templatestore.LoadTemplateFromPath(
-		templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric),
-		masterKey,
-	)
+	templatePath, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	if err != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", err)
+	}
+	loaded, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath() error = %v", err)
 	}
@@ -343,6 +350,7 @@ func TestRestoreTemplateRejectsConflictingDestinationTemplate(t *testing.T) {
 
 func TestRestoreTemplateSavesLibraryDefinitionWhenNotInstalled(t *testing.T) {
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	masterKey := bytes32(0x79)
 
 	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
@@ -363,6 +371,7 @@ func TestRestoreTemplateRejectsBuiltInProviderCollision(t *testing.T) {
 	RegisterProviders()
 
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	masterKey := bytes32(0x88)
 	conflictingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: aplane\nfamily: falcon1024\nversion: 1\ndisplay_name: Backup Override\nteal: |\n  #pragma version 8\n  int 0\n")
 
@@ -382,6 +391,7 @@ func TestRestoreKeySkipsTemplateConflictForStandaloneKey(t *testing.T) {
 	RegisterProviders()
 
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	paths := keystorePaths()
 	identityID := productIdentityID()
@@ -410,10 +420,11 @@ func TestRestoreKeySkipsTemplateConflictForStandaloneKey(t *testing.T) {
 	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)); statErr != nil {
 		t.Fatalf("expected key file written despite template conflict, got stat err=%v", statErr)
 	}
-	loaded, err := templatestore.LoadTemplateFromPath(
-		templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric),
-		masterKey,
-	)
+	templatePath, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	if err != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", err)
+	}
+	loaded, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath() error = %v", err)
 	}
@@ -424,6 +435,7 @@ func TestRestoreKeySkipsTemplateConflictForStandaloneKey(t *testing.T) {
 
 func TestRestoreKeyActivatesLibraryVisibleCompiledProvider(t *testing.T) {
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x8a)
 	keyType := "restore-library-provider-v1"
@@ -455,6 +467,7 @@ func TestRestoreKeyActivatesLibraryVisibleCompiledProvider(t *testing.T) {
 
 func TestRestoreKeyRollsBackCompiledProviderActivationOnKeyWriteFailure(t *testing.T) {
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	masterKey := bytes32(0xab)
 	keyType := "rollback-library-provider-v1"
@@ -486,6 +499,7 @@ func TestRestoreKeyRollsBackCompiledProviderActivationOnKeyWriteFailure(t *testi
 
 func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	paths := keystorePaths()
 	identityID := productIdentityID()
@@ -522,6 +536,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 
 func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x8c)
 	keyType := "missing-restore-template-v1"
@@ -550,6 +565,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 
 func TestRestoreKeyDoesNotInstallShippedLibraryGenericTemplateWithoutBundle(t *testing.T) {
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x8d)
 	keyType := "aplane.htlc.v1"
@@ -588,6 +604,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 	RegisterProviders()
 
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x8e)
 	keyType := "aplane.falcon1024-timelock.v1"
@@ -624,6 +641,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 
 func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testing.T) {
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	paths := keystorePaths()
 	identityID := productIdentityID()
@@ -659,6 +677,7 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 
 func TestRestoreKeyRollsBackDisabledTemplateStateOnKeyWriteFailure(t *testing.T) {
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	paths := keystorePaths()
 	identityID := productIdentityID()
@@ -724,6 +743,7 @@ func writeTemplateStateForApstoreTest(t *testing.T, paths storepaths.Paths, iden
 
 func TestRestoreKeyRollsBackTemplateInstallOnKeyWriteFailure(t *testing.T) {
 	dataDirectory = t.TempDir()
+	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x90)
 	keyType := "test.rollback-template.v1"

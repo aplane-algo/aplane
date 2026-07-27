@@ -15,8 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/transport"
 
 	"gopkg.in/yaml.v3"
@@ -468,7 +470,11 @@ func (v *ApAdminHarness) Cleanup() {
 // removeKeyFile removes a managed credential directly from the keystore directory.
 // Returns true if the file was found and removed.
 func (v *ApAdminHarness) removeKeyFile(addr string) bool {
-	keysDir := filepath.Join(v.dataDir, "identities", "default", "keys")
+	active, err := genstore.ResolveActive(storepaths.NewPaths(v.dataDir), "default")
+	if err != nil {
+		return false
+	}
+	keysDir := active.KeysDir()
 	candidates := []string{
 		filepath.Join(keysDir, addr+apkeys.AccountKeyExtension),
 		filepath.Join(keysDir, addr+apkeys.SentryCredentialExtension),

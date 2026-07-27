@@ -6,7 +6,6 @@ package backupadmin
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
@@ -14,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 type activationPoint string
@@ -82,204 +82,18 @@ func (s Service) activateRecovered(
 	if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
 		return activationFailure(protocol.ResultCodeRecoveredActivationFailed, "%v", err)
 	}
-	activationDir := s.Deps.KeyPaths().RecoveredActivationDir(ir.ID(), req.RestoreID)
-	if _, err := os.Lstat(activationDir); err == nil {
-		result.Resumed = true
-		if err := s.resumeRecoveredActivation(ir, req); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("inspect recovered activation state: %w", err)
-	}
-
-	var review adminproto.ReviewRecoveredResult
-	err := ir.WithMasterKey(func(masterKey []byte) error {
-		var reviewErr error
-		review, reviewErr = s.reviewRecoveredWithMasterKey(ir, req.RestoreID, masterKey)
-		return reviewErr
-	})
-	if err != nil {
-		return fmt.Errorf("review recovered batch before activation: %w", err)
-	}
-	result.ArchiveSHA256 = review.ArchiveChecksum
-	result.SourcePolicySHA256 = review.SourcePolicySHA256
-	result.DestinationPolicySHA256 = review.DestinationPolicySHA256
-	result.PolicyComparison = review.PolicyComparison
-	result.ReplaceExisting = req.ReplaceExisting
-	if req.ReviewToken == "" || req.ReviewToken != review.ReviewToken {
-		return activationFailure(
-			protocol.ResultCodeActivationReviewStale,
-			"recovery review is stale; review restore %s again",
-			req.RestoreID,
-		)
-	}
-	if review.UnattendedSigningAckRequired &&
-		!req.AcknowledgeUnattendedSigning {
-		return activationFailure(
-			protocol.ResultCodeActivationAckRequired,
-			"unattended-signing acknowledgement is required",
-		)
-	}
-	if len(review.ActiveConflicts) > 0 && !req.ReplaceExisting {
-		return activationFailure(
-			protocol.ResultCodeActivationConflict,
-			"%d active credential conflict(s) require replace_existing",
-			len(review.ActiveConflicts),
-		)
-	}
-
-	snapshot, err := captureActivationSnapshot(s.Deps.KeyPaths(), ir.ID(), req.RestoreID)
-	if err != nil {
-		return fmt.Errorf("capture pre-activation state: %w", err)
-	}
-	defer snapshot.Zero()
-	journal := recovered.ActivationJournal{
-		RestoreID:                    req.RestoreID,
-		State:                        recovered.ActivationApplying,
-		ReviewToken:                  req.ReviewToken,
-		DestinationPolicySHA256:      review.DestinationPolicySHA256,
-		DestinationApprovalMode:      string(review.DestinationApprovalMode),
-		AcknowledgeUnattendedSigning: req.AcknowledgeUnattendedSigning,
-		ReplaceExisting:              req.ReplaceExisting,
-	}
-	if err := ir.WithMasterKey(func(masterKey []byte) error {
-		return recovered.CreateActivation(
-			s.Deps.KeyPaths(),
-			ir.ID(),
-			journal,
-			*snapshot,
-			masterKey,
-		)
-	}); err != nil {
-		return fmt.Errorf("publish activation state: %w", err)
-	}
-	if err := s.runActivationHook(activationBeforeApply); err != nil {
-		return err
-	}
-
-	applyErr := ir.WithMasterKey(func(masterKey []byte) error {
-		return s.applyRecoveredBatch(ir, req, masterKey, &result.Warnings)
-	})
-	var interruption *activationInterruption
-	if errors.As(applyErr, &interruption) {
-		return interruption
-	}
-	if applyErr == nil {
-		if err := s.runActivationHook(activationAfterApply); err != nil {
-			return err
-		}
-	}
-	var keyCount int
-	if applyErr == nil {
-		reloadReport, reloadErr := ir.Reload()
-		if reloadErr != nil {
-			applyErr = fmt.Errorf("reload activated identity: %w", reloadErr)
-		} else if reloadReport != nil {
-			keyCount = reloadReport.KeyCount
-		}
-	}
-	if applyErr == nil {
-		applyErr = recovered.RemoveBatch(s.Deps.KeyPaths(), ir.ID(), req.RestoreID)
-		if applyErr != nil {
-			applyErr = fmt.Errorf("complete recovered activation: %w", applyErr)
-		}
-	}
-	if applyErr != nil {
-		return s.rollbackFailedActivation(ir, req.RestoreID, snapshot, applyErr)
-	}
-
-	result.Activated = append([]adminproto.RecoveredReviewEntry(nil), review.Entries...)
-	result.KeyCount = keyCount
-	s.Deps.Logf("activated recovered backup batch: %s", req.RestoreID)
-	return nil
+	return s.activateRecoveredGenerational(ir, req, result)
 }
 
-func (s Service) resumeRecoveredActivation(
-	ir *identity.Runtime,
-	req adminproto.ActivateRecoveredRequest,
-) error {
-	var (
-		journal  *recovered.ActivationJournal
-		snapshot *recovered.RollbackSnapshot
-	)
-	err := ir.WithMasterKey(func(masterKey []byte) error {
-		var loadErr error
-		journal, snapshot, loadErr = recovered.LoadActivation(
-			s.Deps.KeyPaths(),
-			ir.ID(),
-			req.RestoreID,
-			masterKey,
-		)
-		return loadErr
-	})
-	if err != nil {
-		return fmt.Errorf("load incomplete activation: %w", err)
-	}
-	defer snapshot.Zero()
-	if journal.State != recovered.ActivationApplying {
-		return activationFailure(
-			protocol.ResultCodeRecoveredRollbackFailed,
-			"activation %s is rolling back; explicit rollback must finish first",
-			req.RestoreID,
-		)
-	}
-	if !activationRequestMatchesJournal(req, journal) {
-		return activationFailure(
-			protocol.ResultCodeActivationReviewStale,
-			"resume request does not match the recorded activation intent",
-		)
-	}
-	if err := ir.WithMasterKey(func(masterKey []byte) error {
-		return recovered.UpdateActivationState(
-			s.Deps.KeyPaths(),
-			ir.ID(),
-			req.RestoreID,
-			recovered.ActivationRollingBack,
-			masterKey,
-		)
-	}); err != nil {
-		return fmt.Errorf("begin rollback-first activation resume: %w", err)
-	}
-	if err := restoreActivationSnapshot(s.Deps.KeyPaths(), ir.ID(), snapshot); err != nil {
-		return activationFailure(
-			protocol.ResultCodeRecoveredRollbackFailed,
-			"restore prior state for activation resume: %v",
-			err,
-		)
-	}
-	if _, err := ir.Reload(); err != nil {
-		return activationFailure(
-			protocol.ResultCodeRecoveredRollbackFailed,
-			"reload prior state for activation resume: %v",
-			err,
-		)
-	}
-	if err := recovered.RemoveActivation(s.Deps.KeyPaths(), ir.ID(), req.RestoreID); err != nil {
-		return activationFailure(
-			protocol.ResultCodeRecoveredRollbackFailed,
-			"complete prior-state restoration for activation resume: %v",
-			err,
-		)
-	}
-	return nil
-}
-
-func activationRequestMatchesJournal(
-	req adminproto.ActivateRecoveredRequest,
-	journal *recovered.ActivationJournal,
-) bool {
-	return journal != nil &&
-		req.RestoreID == journal.RestoreID &&
-		req.ReviewToken == journal.ReviewToken &&
-		req.AcknowledgeUnattendedSigning == journal.AcknowledgeUnattendedSigning &&
-		req.ReplaceExisting == journal.ReplaceExisting
-}
-
-func (s Service) applyRecoveredBatch(
+// applyRecoveredBatchTo applies the batch's entries; a non-nil target routes
+// every namespace write into resolved active paths (e.g. a staged
+// generation during a mint).
+func (s Service) applyRecoveredBatchTo(
 	ir *identity.Runtime,
 	req adminproto.ActivateRecoveredRequest,
 	masterKey []byte,
 	warnings *[]string,
+	target storepaths.ActivePaths,
 ) error {
 	batch, err := recovered.LoadBatch(s.Deps.KeyPaths(), ir.ID(), req.RestoreID, masterKey)
 	if err != nil {
@@ -293,6 +107,9 @@ func (s Service) applyRecoveredBatch(
 		WithWarningHandler(func(_ string, warning string) {
 			*warnings = append(*warnings, warning)
 		})
+	if target != nil {
+		restorer = restorer.WithActiveNamespace(target)
+	}
 	for _, meta := range batch.Entries {
 		entry, err := recovered.LoadEntry(
 			s.Deps.KeyPaths(),
@@ -326,46 +143,6 @@ func (s Service) runActivationHook(point activationPoint) error {
 	return nil
 }
 
-func (s Service) rollbackFailedActivation(
-	ir *identity.Runtime,
-	restoreID string,
-	snapshot *recovered.RollbackSnapshot,
-	activationErr error,
-) error {
-	stateErr := ir.WithMasterKey(func(masterKey []byte) error {
-		return recovered.UpdateActivationState(
-			s.Deps.KeyPaths(),
-			ir.ID(),
-			restoreID,
-			recovered.ActivationRollingBack,
-			masterKey,
-		)
-	})
-	restoreErr := restoreActivationSnapshot(s.Deps.KeyPaths(), ir.ID(), snapshot)
-	var reloadErr error
-	if restoreErr == nil {
-		_, reloadErr = ir.Reload()
-	}
-	var cleanupErr error
-	if stateErr == nil && restoreErr == nil && reloadErr == nil {
-		cleanupErr = recovered.RemoveActivation(s.Deps.KeyPaths(), ir.ID(), restoreID)
-	}
-	reconciliationErr := errors.Join(stateErr, restoreErr, reloadErr, cleanupErr)
-	if reconciliationErr != nil {
-		return activationFailure(
-			protocol.ResultCodeRecoveredRollbackFailed,
-			"activation failed: %v; automatic rollback is incomplete: %v",
-			activationErr,
-			reconciliationErr,
-		)
-	}
-	return activationFailure(
-		protocol.ResultCodeRecoveredActivationFailed,
-		"activation failed and prior state was restored: %v",
-		activationErr,
-	)
-}
-
 func activationFailure(code, format string, args ...any) error {
 	return &recoveredActivationError{
 		code: code,
@@ -380,60 +157,29 @@ func (s Service) RollbackRecovered(
 	req adminproto.RollbackRecoveredRequest,
 ) adminproto.RollbackRecoveredResult {
 	result := adminproto.RollbackRecoveredResult{RestoreID: req.RestoreID}
+	mutated := false
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
 			return err
 		}
-		var (
-			journal  *recovered.ActivationJournal
-			snapshot *recovered.RollbackSnapshot
-		)
-		err := ir.WithMasterKey(func(masterKey []byte) error {
-			var loadErr error
-			journal, snapshot, loadErr = recovered.LoadActivation(
-				s.Deps.KeyPaths(),
-				ir.ID(),
-				req.RestoreID,
-				masterKey,
-			)
-			if loadErr != nil {
-				return loadErr
-			}
-			if journal.State == recovered.ActivationApplying {
-				return recovered.UpdateActivationState(
-					s.Deps.KeyPaths(),
-					ir.ID(),
-					req.RestoreID,
-					recovered.ActivationRollingBack,
-					masterKey,
-				)
-			}
-			return nil
-		})
-		if err != nil {
-			if snapshot != nil {
-				snapshot.Zero()
-			}
-			return err
-		}
-		defer snapshot.Zero()
-		if err := restoreActivationSnapshot(s.Deps.KeyPaths(), ir.ID(), snapshot); err != nil {
-			return err
-		}
-		reloadReport, err := ir.Reload()
-		if err != nil {
-			return err
-		}
-		if err := recovered.RemoveActivation(s.Deps.KeyPaths(), ir.ID(), req.RestoreID); err != nil {
-			return err
-		}
-		if reloadReport != nil {
-			result.KeyCount = reloadReport.KeyCount
-		}
-		return nil
+		return s.rollbackRecoveredGenerational(ir, req, &result, &mutated)
 	})
 	if err != nil {
-		result.Code = protocol.ResultCodeRecoveredRollbackFailed
+		if mutated {
+			ir.SetRecovery()
+		}
+		var activationErr *recoveredActivationError
+		switch {
+		case errors.As(err, &activationErr):
+			result.Code = activationErr.code
+		case mutated:
+			result.Code = protocol.ResultCodeRecoveredRollbackFailed
+		default:
+			// Refused before any mutation: the store is unchanged and no
+			// recovery was entered; the client must not lock into the
+			// blocking recovery screen waiting for a push that never comes.
+			result.Code = protocol.ResultCodeRecoveredRollbackRefused
+		}
 		result.Error = err.Error()
 		return result
 	}

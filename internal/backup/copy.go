@@ -243,7 +243,13 @@ func loadTemplateForExport(paths storepaths.Paths, identityID, keyType string, m
 func findKeystoreTemplate(paths storepaths.Paths, identityID, keyType string) (templatestore.TemplateType, string) {
 	for _, tt := range templatestore.ActiveTemplateTypes() {
 		if templatestore.TemplateExistsForPaths(paths, identityID, keyType, tt) {
-			return tt, templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, tt)
+			path, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, tt)
+			if err != nil {
+				// TemplateExists just resolved the same layout; treat a
+				// racing resolution failure as template-absent.
+				return "", ""
+			}
+			return tt, path
 		}
 	}
 	return "", ""

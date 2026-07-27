@@ -7,6 +7,7 @@ package defaultkeytypes
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore"
 
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -38,12 +39,23 @@ var signerDefaultTemplates = []bundledTemplate{
 // have already registered built-in LogicSig providers. Sentry nodes skip signer
 // account key types.
 func InstallForNewIdentity(paths storepaths.Paths, identityID string, role noderole.Role, masterKey []byte, logf func(format string, args ...any)) error {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return err
+	}
+	return InstallForNewIdentityActive(active, role, masterKey, logf)
+}
+
+// InstallForNewIdentityActive is InstallForNewIdentity against resolved
+// active-store paths — including a staged, not-yet-published generation
+// during store initialization or migration.
+func InstallForNewIdentityActive(active storepaths.ActivePaths, role noderole.Role, masterKey []byte, logf func(format string, args ...any)) error {
 	if role != noderole.RoleSigner {
 		return nil
 	}
 
 	for _, tmpl := range signerDefaultTemplates {
-		if err := installBundledTemplate(paths, identityID, tmpl, masterKey); err != nil {
+		if err := installBundledTemplate(active, tmpl, masterKey); err != nil {
 			return err
 		}
 		log(logf, "enabled default key type: %s", tmpl.keyType)
@@ -51,7 +63,7 @@ func InstallForNewIdentity(paths storepaths.Paths, identityID string, role noder
 	return nil
 }
 
-func installBundledTemplate(paths storepaths.Paths, identityID string, tmpl bundledTemplate, masterKey []byte) error {
+func installBundledTemplate(active storepaths.ActivePaths, tmpl bundledTemplate, masterKey []byte) error {
 	data, err := librarytemplates.ReadFile(tmpl.fileName)
 	if err != nil {
 		return fmt.Errorf("failed to read bundled template %s: %w", tmpl.fileName, err)
@@ -64,7 +76,7 @@ func installBundledTemplate(paths storepaths.Paths, identityID string, tmpl bund
 		return fmt.Errorf("bundled template %s declared %s (%s), want %s (%s)",
 			tmpl.fileName, parsed.KeyType, parsed.TemplateType, tmpl.keyType, tmpl.templateType)
 	}
-	if _, err := templatelibrary.InstallParsed(paths, identityID, parsed, masterKey); err != nil {
+	if _, err := templatelibrary.InstallParsedActive(active, parsed, masterKey); err != nil {
 		return fmt.Errorf("failed to install default key type %s: %w", tmpl.keyType, err)
 	}
 	return nil

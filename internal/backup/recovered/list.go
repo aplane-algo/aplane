@@ -24,6 +24,11 @@ type BatchInfo struct {
 	SourcePolicyStatus SourcePolicyStatus
 	SourcePolicySHA256 string
 	EntryCount         int
+	// ActivationState is empty for an inactive batch; otherwise the journal
+	// state of the batch's incomplete activation ("applying",
+	// "rolling_back", "completed"), or "unknown" when a marker exists but
+	// its journal cannot be read.
+	ActivationState string
 }
 
 // List validates and returns published recovered batches newest first.

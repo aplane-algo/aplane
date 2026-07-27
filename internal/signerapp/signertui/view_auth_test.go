@@ -48,7 +48,7 @@ func TestStatusBarLabelsSignerLockState(t *testing.T) {
 	locked := stripANSI(Model{
 		connectionState:   ConnectionConnected,
 		signerStatusKnown: true,
-		signerLocked:      true,
+		signerState:       signerRuntimeLocked,
 	}.renderStatusBar())
 	if !strings.Contains(locked, "Signer Locked") {
 		t.Fatalf("locked status missing signer label: %q", locked)
@@ -57,7 +57,7 @@ func TestStatusBarLabelsSignerLockState(t *testing.T) {
 	unlocked := stripANSI(Model{
 		connectionState:   ConnectionConnected,
 		signerStatusKnown: true,
-		signerLocked:      false,
+		signerState:       signerRuntimeUnlocked,
 		keyCount:          3,
 	}.renderStatusBar())
 	if !strings.Contains(unlocked, "Signer Unlocked (3 keys)") {

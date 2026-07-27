@@ -311,7 +311,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 					continue
 				}
 				c.emit(sessionID, SignerStatusMsg{
-					Locked:   status.State == "locked",
+					State:    status.State,
 					KeyCount: status.KeyCount,
 				})
 
@@ -593,9 +593,34 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeSignerLocked:
 				// Server locked - transition to unlock screen.
 				c.emit(sessionID, SignerStatusMsg{
-					Locked:   true,
+					State:    "locked",
 					KeyCount: 0,
 				})
+
+			case MsgTypeRecoveredList:
+				var list RecoveredListMessage
+				if err := json.Unmarshal(line, &list); err != nil {
+					continue
+				}
+				c.emit(sessionID, RecoveredListMsg{
+					Batches: list.Batches,
+					Code:    list.Code,
+					Error:   list.Error,
+				})
+
+			case MsgTypeRollbackRecoveredResult:
+				var result RollbackRecoveredResultMessage
+				if err := json.Unmarshal(line, &result); err != nil {
+					continue
+				}
+				c.emit(sessionID, RollbackRecoveredResultMsg{Result: result})
+
+			case MsgTypePurgeRecoveredResult:
+				var result PurgeRecoveredResultMessage
+				if err := json.Unmarshal(line, &result); err != nil {
+					continue
+				}
+				c.emit(sessionID, PurgeRecoveredResultMsg{Result: result})
 
 			case MsgTypeTokenProvisioningRequest:
 				var req TokenProvisioningRequestMessage
@@ -939,6 +964,40 @@ func (c *IPCClient) SendActivateRecovered(
 	})
 }
 
+// SendListRecovered requests the recovered-batch inventory. Reopening a
+// batch from that inventory never requires the archive export passphrase.
+func (c *IPCClient) SendListRecovered() error {
+	return c.sendMessage(ListRecoveredMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeListRecovered,
+			ID:   fmt.Sprintf("list-recovered-%d", time.Now().UnixNano()),
+		},
+	})
+}
+
+// SendRollbackRecovered requests exact restoration of the pre-activation
+// state for one incomplete activation.
+func (c *IPCClient) SendRollbackRecovered(restoreID string) error {
+	return c.sendMessage(RollbackRecoveredMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeRollbackRecovered,
+			ID:   fmt.Sprintf("rollback-recovered-%d", time.Now().UnixNano()),
+		},
+		RestoreID: restoreID,
+	})
+}
+
+// SendPurgeRecovered requests deletion of one inactive recovered batch.
+func (c *IPCClient) SendPurgeRecovered(restoreID string) error {
+	return c.sendMessage(PurgeRecoveredMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypePurgeRecovered,
+			ID:   fmt.Sprintf("purge-recovered-%d", time.Now().UnixNano()),
+		},
+		RestoreID: restoreID,
+	})
+}
+
 // SendGenerateKeyWithParams sends a request to generate a new key with parameters
 // Used for generic LogicSigs like timelock that require additional configuration
 func (c *IPCClient) SendGenerateKeyWithParams(keyType, name string, params map[string]string) error {
@@ -1030,6 +1089,24 @@ func (m Model) sendActivateRecoveredCmd(
 			unattendedAcknowledged,
 			replaceExisting,
 		)
+	})
+}
+
+func (m Model) sendListRecoveredCmd() tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.SendListRecovered()
+	})
+}
+
+func (m Model) sendRollbackRecoveredCmd(restoreID string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.SendRollbackRecovered(restoreID)
+	})
+}
+
+func (m Model) sendPurgeRecoveredCmd(restoreID string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.SendPurgeRecovered(restoreID)
 	})
 }
 

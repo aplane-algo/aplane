@@ -15,8 +15,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
-	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
@@ -24,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/storeadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/templateadmin"
+	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -82,22 +83,60 @@ func (s signerAdminServices) VerifyPassphrase(ir *identity.Runtime, passphrase [
 }
 
 func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string) {
-	incomplete, err := recovered.IncompleteActivationIDs(ir.KeyPaths(), ir.ID())
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to inspect activation recovery state: %v", err)
-		return false, 0, errMsg, protocol.ErrCodeUnlockFailed
-	}
-	if len(incomplete) > 0 {
+	// Generation-based stores reconcile before unlock: CURRENT is the sole
+	// commit record, staging residue and uncommitted attempts are discarded
+	// (never resumed), and the selected generation must validate. Any
+	// failure enters recovery mode with nothing deleted.
+	if reconcileErr := s.reconcileGenerations(ir); reconcileErr != nil {
 		success, errMsg := ir.TryRecoveryUnlock(passphrase)
 		if !success {
 			return false, 0, errMsg, unlockFailureCode(errMsg)
 		}
+		logWarnf("identity is recovery-blocked: %v", reconcileErr)
 		return true, 0, "", protocol.ResultCodeActivationIncomplete
 	}
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
+	if !success && signertemplates.IsGenerationValidationError(errMsg) {
+		// Content defects in the selected generation are a recovery
+		// condition, not an unlock failure: the passphrase was right and
+		// the operator resolves the store from recovery mode.
+		recoverySuccess, recoveryErrMsg := ir.TryRecoveryUnlock(passphrase)
+		if !recoverySuccess {
+			return false, 0, recoveryErrMsg, unlockFailureCode(recoveryErrMsg)
+		}
+		logWarnf("identity is recovery-blocked: %s", errMsg)
+		return true, 0, "", protocol.ResultCodeActivationIncomplete
+	}
 	return success, keyCount, errMsg, unlockFailureCode(errMsg)
+}
+
+// reconcileGenerations enforces CURRENT as the sole commit record at unlock
+// (docs/ARCH_GENERATIONS.md §7) under the identity mutation lock, and
+// validates the selected generation fail-closed.
+func (s signerAdminServices) reconcileGenerations(ir *identity.Runtime) error {
+	reconcile := func() error {
+		report, err := genstore.Reconcile(ir.KeyPaths(), ir.ID(), nil)
+		if err != nil {
+			return err
+		}
+		for _, discarded := range report.DiscardedAttempts {
+			logInfof("discarded uncommitted generation %s (never resumed; review and activate again)", discarded)
+		}
+		for _, staging := range report.DiscardedStaging {
+			logInfof("discarded generation staging residue %s", staging)
+		}
+		gen, err := genstore.Resolve(ir.KeyPaths(), ir.ID())
+		if err != nil {
+			return err
+		}
+		return genstore.ValidateCurrent(gen)
+	}
+	if s.signer == nil {
+		return reconcile()
+	}
+	return s.signer.withIdentityMutation(ir.ID(), reconcile)
 }
 
 func unlockFailureCode(errMsg string) string {
@@ -208,9 +247,13 @@ func (s signerAdminServices) ActivateRecovered(ir *identity.Runtime, req adminpr
 	wasRecovery := ir.IsRecovery()
 	result := s.backupApp().ActivateRecovered(ir, req)
 	if result.Success && wasRecovery {
-		ir.SetUnlocked()
-		ir.EnsureKeyWatcher(startKeyWatcherForDir)
+		s.exitRecoveryIfReconciled(ir)
 	}
+	// Re-arm regardless of the result: a committed flip can coexist with a
+	// failed follow-up (batch cleanup, unverified durability), and success
+	// is therefore not a proxy for "the pointer did not move". Re-arming is
+	// idempotent and a no-op on legacy stores.
+	s.rearmWatcherAfterGenerationFlip(ir)
 	return result
 }
 
@@ -218,10 +261,48 @@ func (s signerAdminServices) RollbackRecovered(ir *identity.Runtime, req adminpr
 	wasRecovery := ir.IsRecovery()
 	result := s.backupApp().RollbackRecovered(ir, req)
 	if result.Success && wasRecovery {
-		ir.SetUnlocked()
-		ir.EnsureKeyWatcher(startKeyWatcherForDir)
+		s.exitRecoveryIfReconciled(ir)
 	}
+	s.rearmWatcherAfterGenerationFlip(ir)
 	return result
+}
+
+// rearmWatcherAfterGenerationFlip rebinds the key watcher to the new current
+// generation's directories after a pointer flip: fsnotify watches bind to
+// inodes, so the watches armed before the flip still point at the prior
+// generation.
+func (s signerAdminServices) rearmWatcherAfterGenerationFlip(ir *identity.Runtime) {
+	ir.StopKeyWatcher()
+	ir.EnsureKeyWatcher(startKeyWatcherForDir)
+}
+
+// exitRecoveryIfReconciled promotes recovery to unlocked only after a rescan
+// of every recovered batch confirms no incomplete activation marker remains.
+// Resolving one batch must never re-enable signing while another batch is
+// still unreconciled: the rescan, not the operation that just succeeded, is
+// authoritative. Reports whether the identity was unlocked. [P1]
+func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) bool {
+	// The rescan re-runs generational reconciliation and fail-closed
+	// validation of the selected generation; recovery only lifts when the
+	// committed state proves clean.
+	if err := s.reconcileGenerations(ir); err != nil {
+		logInfof("staying in recovery mode: %s failed reconciliation rescan: %v", ir.ID(), err)
+		return false
+	}
+	if !ir.PromoteRecoveryToUnlocked() {
+		// A concurrent lock won the race during the rescan; its callback
+		// already destroyed the key session, and reporting unlocked over
+		// it would bypass the lock-generation fence.
+		logInfof("staying out of unlocked state: %s was locked during the recovery-exit rescan", ir.ID())
+		return false
+	}
+	ir.EnsureKeyWatcher(startKeyWatcherForDir)
+	if s.signer != nil {
+		if hub := s.signer.adminHub(); hub != nil {
+			hub.NotifyStatus(ir.ID(), ir.GetState().String(), ir.KeyCount())
+		}
+	}
+	return true
 }
 
 func (s signerAdminServices) PurgeRecovered(ir *identity.Runtime, req adminproto.PurgeRecoveredRequest) adminproto.PurgeRecoveredResult {

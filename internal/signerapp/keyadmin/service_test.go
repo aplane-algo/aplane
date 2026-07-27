@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"io"
 	"net/http"
 	"os"
@@ -129,11 +130,8 @@ func setupIdentityRuntimeWithRole(t *testing.T, role noderole.Role) *identity.Ru
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
+	genstoretest.MintFirst(t, keyPaths, auth.DefaultIdentityID)
 	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
-	keysDir := keyPaths.KeysDir(auth.DefaultIdentityID)
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(keysDir): %v", err)
-	}
 	if _, _, err := crypto.CreateKeystoreMetadata(userDir, testPassphrase); err != nil {
 		t.Fatalf("CreateKeystoreMetadata(): %v", err)
 	}
@@ -490,6 +488,7 @@ teal: |
 // refactor gate is per-identity through keytypestate.CanGenerate.
 func TestServiceGenerateKeyRejectsComposedTemplateInstalledForOtherIdentity(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, auth.DefaultIdentityID)
 	keyType := "test.falcon1024-keyadmin-cross-identity.v1"
 	yamlData := []byte(`schema_version: 1
 template_type: composed
@@ -519,6 +518,8 @@ teal: |
 	}
 	logicsigdsa.RegisterIfAbsent(provider)
 
+	genstoretest.MintFirst(t, paths, "alice")
+	genstoretest.MintFirst(t, paths, "bob")
 	if err := keytypestate.Put(paths, "alice", keytypestate.Record{
 		KeyType: keyType,
 		Source:  keytypestate.SourceYAMLComposed,

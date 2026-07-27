@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"os"
 	"testing"
@@ -112,6 +113,7 @@ func TestSSHPreboundAdminSessionRejectsPayloadIdentitySwitchInDaemon(t *testing.
 func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityID string) *identity.Runtime {
 	t.Helper()
 
+	genstoretest.MintFirst(t, server.keyPaths, identityID)
 	if err := os.MkdirAll(server.keyPaths.KeysDir(identityID), 0o750); err != nil {
 		t.Fatalf("create keys dir for %q: %v", identityID, err)
 	}

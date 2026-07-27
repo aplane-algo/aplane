@@ -28,6 +28,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] verify <backup-dir|archive-path>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] changepass\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] generations <list|prune [--all-priors]>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] policy check\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] policy verify\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] policy sign\n")

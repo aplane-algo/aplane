@@ -4,6 +4,7 @@
 package backup
 
 import (
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +29,7 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
@@ -96,6 +98,7 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
 		t.Fatal(err)
 	}
@@ -205,6 +208,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	const identityID = "default"
 	const badAddress = "BADCANONICALKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
@@ -285,6 +289,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
@@ -315,16 +320,18 @@ func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
 func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
-	srcDir := paths.KeysDir(identityID)
-	if err := fsutil.MkdirAll(srcDir); err != nil {
-		t.Fatalf("MkdirAll(keys) error = %v", err)
+	mintFirstGenerationForBackupTest(t, paths)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
 	}
+	srcDir := active.KeysDir()
 	corruptFile := apkeys.AccountKeyFilePath(paths, identityID, "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	if err := os.WriteFile(corruptFile, []byte("not encrypted data"), fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}
 
-	_, _, err := ExportAllKeys(paths, identityID, srcDir, t.TempDir(), testExportMasterKey, []byte("export-passphrase"))
+	_, _, err = ExportAllKeys(paths, identityID, srcDir, t.TempDir(), testExportMasterKey, []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "failed to export") {
 		t.Fatalf("ExportAllKeys() error = %v, want decrypt-failure abort", err)
 	}

@@ -1822,7 +1822,13 @@ owns the live recover/review/activate/rollback/purge state machine. Recovery
 does not write managed `.key`/`.sen` files or reload the runtime; activation is
 the only live operation that does so, after a destination-bound policy review
 and explicit acknowledgements. A durable incomplete activation puts the
-identity in recovery mode and blocks signing until exact resume or rollback.
+identity in recovery mode and blocks signing until exact resume or rollback;
+unlock reconciles a single incomplete activation automatically (rollback for
+an interrupted apply, cleanup completion for a completed one) and exits
+recovery only after a rescan finds no marker in any batch. Activation records
+completion durably after reload validation and before batch cleanup; active
+writes and namespace directories are fsynced before any recovery evidence is
+removed; a failed rollback transitions the runtime into recovery immediately.
 Managed archives carry a verified-at-source policy snapshot under `policy/`,
 but no restore path installs that snapshot as active policy. Current writers
 also capture the source approval default (signer role only) and custom

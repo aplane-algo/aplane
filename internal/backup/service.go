@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -55,6 +56,13 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	}
 	defer func() { _ = os.RemoveAll(stageDir) }()
 
+	// Export sources resolve through the active layout once per archive.
+	activeStore, err := genstore.ResolveActive(req.Paths, req.IdentityID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve active key store layout: %w", err)
+	}
+	activeKeysDir := activeStore.KeysDir()
+
 	keysDestDir := filepath.Join(stageDir, "apb")
 	checksums := make(map[string]string)
 	skipped := make(map[string]string)
@@ -64,7 +72,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 		checksums, skipped, err = ExportAllKeys(
 			req.Paths,
 			req.IdentityID,
-			req.Paths.KeysDir(req.IdentityID),
+			activeKeysDir,
 			stageDir,
 			req.MasterKey,
 			req.ExportPassphrase,
@@ -87,7 +95,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 			checksum, _, err := ExportKey(
 				req.Paths,
 				req.IdentityID,
-				req.Paths.KeysDir(req.IdentityID),
+				activeKeysDir,
 				keysDestDir,
 				address,
 				req.MasterKey,

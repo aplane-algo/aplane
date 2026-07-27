@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,7 @@ import (
 
 func TestResolveManagedBackupPathScopesToIdentityBackupDir(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	root := paths.IdentityBackupsDir("default")
 
 	got, err := ResolveManagedBackupPath(paths, "default", "backup.tar.gz")
@@ -66,6 +68,7 @@ func TestResolveManagedBackupPathScopesToIdentityBackupDir(t *testing.T) {
 
 func TestResolveManagedBackupPathRejectsSymlinkedIntermediate(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	root := paths.IdentityBackupsDir("default")
 	outside := filepath.Join(t.TempDir(), "outside")
 	if err := os.MkdirAll(outside, 0o755); err != nil {
@@ -84,6 +87,7 @@ func TestResolveManagedBackupPathRejectsSymlinkedIntermediate(t *testing.T) {
 
 func TestAuthoritativeTemplateForKeyTypeSkipsNonTemplateKeyType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := os.MkdirAll(paths.TemplateLibraryDir(), 0o755); err != nil {
 		t.Fatalf("MkdirAll(library) error = %v", err)
 	}
@@ -109,6 +113,7 @@ func TestBuildTemplateRestorePlanRejectsStaleLocalTemplateWhenAuthoritativeMatch
 	)
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := os.MkdirAll(paths.TemplateLibraryDir(), 0o755); err != nil {
 		t.Fatalf("MkdirAll(library) error = %v", err)
 	}
@@ -147,6 +152,7 @@ teal: |
 
 func TestListManagedBackupsSortsArchivesAndIgnoresSymlinks(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	dir := paths.IdentityBackupsDir("default")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -211,6 +217,7 @@ func TestPreviewRestoreManagedArchiveReportsKeyMetadataAndExistingConflict(t *te
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
@@ -249,6 +256,7 @@ func TestPreviewRestoreWithNodeRoleReportsRoleForbiddenKey(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
@@ -275,6 +283,7 @@ func TestPreviewRestoreWithNodeRoleReportsRoleForbiddenKey(t *testing.T) {
 
 func TestPreviewRestoreWrongPassphraseDoesNotLeakAddress(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
@@ -303,6 +312,7 @@ func TestPreviewRestoreWrongPassphraseDoesNotLeakAddress(t *testing.T) {
 
 func TestPreviewRestoreUnsupportedEnvelopeDoesNotLeakAddress(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, _ := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
@@ -331,6 +341,7 @@ func TestPreviewRestoreUnsupportedEnvelopeDoesNotLeakAddress(t *testing.T) {
 
 func TestPreviewRestoreRejectsPlaintextBackupPayload(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
@@ -353,6 +364,7 @@ func TestPreviewRestoreRejectsPlaintextBackupPayload(t *testing.T) {
 
 func TestPreviewRestoreRejectsEmptyManagedArchive(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {})
 
@@ -367,6 +379,7 @@ func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	policyYAML := []byte("reject_foreign_rekey: true\n")
@@ -447,6 +460,7 @@ func TestRecoverManagedBackupKeepsKeysWhenSourceSettingsAreInvalid(t *testing.T)
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRecoveryArchive(
@@ -500,6 +514,7 @@ func TestRecoverManagedBackupIsAllOrNothing(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRecoveryArchive(t, paths, identityID, noderole.RoleSigner, nil, func(keysDir string) {
@@ -536,6 +551,7 @@ func TestRestoreKeyWritesStorePermissions(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
@@ -551,12 +567,17 @@ func TestRestoreKeyWritesStorePermissions(t *testing.T) {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
 
-	assertStoreDirMode(t, paths.KeysDir(identityID))
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	assertStoreDirMode(t, active.KeysDir())
 	assertFileMode(t, apkeys.AccountKeyFilePath(paths, identityID, address), fsutil.StoreFilePerm)
 }
 
 func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
@@ -582,6 +603,7 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 
 func TestRestoreKeyWritesWitnessPublicMetadataOnSentryNode(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
@@ -635,6 +657,7 @@ func TestRestoreKeyWritesWitnessPublicMetadataOnSentryNode(t *testing.T) {
 func TestRestoreKeyRequiresExplicitOverwrite(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
@@ -658,6 +681,7 @@ func TestRestoreKeyRequiresExplicitOverwrite(t *testing.T) {
 
 func TestRestoreKeyRejectsContradictoryManagedCredentialClass(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
@@ -690,6 +714,7 @@ func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
@@ -735,6 +760,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	)
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	bytecode := saltedLogicSigBytecodeForTest()
 	lsig := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
 	address, err := lsig.Address()
@@ -783,7 +809,10 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); !os.IsNotExist(err) {
 		t.Fatalf("restored key stat error = %v, want not exist", err)
 	}
-	templatePath := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if _, err := os.Stat(templatePath); !os.IsNotExist(err) {
 		t.Fatalf("restored template stat error = %v, want not exist", err)
 	}
@@ -796,6 +825,7 @@ func TestRestoreKeyPreservesBoundedSigningMetadata(t *testing.T) {
 		keyType    = "test.backup-bounded.v1"
 	)
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	bytecode := saltedLogicSigBytecodeForTest()
 	payload := apkeys.NewDSALSigPayload(
 		keyType, "aplane.falcon1024.v1", []byte{0x01}, []byte{0x02}, nil,
@@ -862,6 +892,7 @@ func TestRestoreKeyRejectsInvalidKeyTypeBeforeTemplatePathUse(t *testing.T) {
 	)
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	bytecode := saltedLogicSigBytecodeForTest()
 	lsig := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
 	address, err := lsig.Address()
@@ -912,6 +943,7 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 	)
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	bytecode := saltedLogicSigBytecodeForTest()
 	lsig := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
 	address, err := lsig.Address()
@@ -993,7 +1025,10 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 		t.Fatalf("restore warnings = %v, want structured skipped template warning", warnings)
 	}
 
-	templatePath := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	gotTemplate, err := templatestore.LoadTemplateFromPath(templatePath, testExportMasterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath() error = %v", err)

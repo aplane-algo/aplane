@@ -839,10 +839,17 @@ execution, output decoding, environment filtering, and validation.
     *.tar.gz                # restorable managed/imported backup archives
   .ssh/ssh_host_key
   identities/<identity>/
-    keys/*.key              # account authority, selected by Algorand address
-    keys/*.sen              # sentry witness authority, selected by Witness Key ID
-    keys/*.wit.json         # derived public witness reference; not private authority
-    .keystore
+    CURRENT                 # names the active generation (generation layout)
+    generations/<gen-id>/
+      manifest.json         # immutable at-mint operation record
+      seal.json             # final content record, written before flip-away
+      keys/*.key            # account authority, selected by Algorand address
+      keys/*.sen            # sentry witness authority, selected by Witness Key ID
+      keys/*.wit.json       # derived public witness reference; not private authority
+      keytypes/<key_type>.json      # key type state record
+      keytypes/<key_type>.template  # encrypted key type template
+    .keystore               # version 3 + generations/v1 layout tag (the only
+                            # supported store format; other versions rejected)
     node.yaml.hmac
     aplane.token
     config.yaml
@@ -852,8 +859,6 @@ execution, output decoding, environment filtering, and validation.
     .ssh/authorized_keys
     passphrase              # plaintext appass-file helper artifact, mode 0600
     passphrase.cred         # systemd-creds helper artifact, mode 0600
-    keytypes/<key_type>.json
-    keytypes/<key_type>.template
     sentries/<name>.json
     recovered/<restore-id>/
       batch.enc
@@ -1660,7 +1665,11 @@ Backup-audit semantics:
   `BACKUP_RECOVERY_FAILED` records a failed recovery
 - `BACKUP_ACTIVATION_INTENT` is durably audited before the activation service
   can make its first active-store write and records `restore_id` and
-  `replace_existing`
+  `replace_existing`. The record is a gating precondition: it is appended and
+  fsynced before the activation marker is published, and when the durable
+  write fails the activation aborts with `activation_audit_failed` and no
+  marker or active-store mutation exists. All other audit events remain
+  best-effort
 - `BACKUP_ACTIVATED`, `BACKUP_ACTIVATION_FAILED`, and
   `BACKUP_ACTIVATION_RESUMED` carry the available archive/source-policy/
   destination-policy digests, factual policy comparison, replacement option,
@@ -2395,12 +2404,34 @@ Live signer-managed restore:
   falls back to the destination approval mode. Replacing active credentials is
   a separate explicit option
 - before the first active write, activation publishes an encrypted journal and
-  exact rollback snapshot. Apply and rollback are idempotent. Reload failure
-  automatically restores the prior state.
-- a hard interruption leaves an activation marker. Unlock enters recovery mode
-  with signing blocked. The operator must retry activation with the recorded
-  intent (rollback-first resume) or explicitly roll back. Purge rejects a batch
-  with incomplete activation state.
+  exact rollback snapshot, each written durably (fsynced through a temp-file
+  rename with the parent directory synced). The snapshot records which active
+  entries the activation owns; rollback restores or removes only owned
+  entries, so rolling back one activation can never delete credentials
+  written by another operation. Apply and rollback are idempotent. Reload
+  failure automatically restores the prior state.
+- active key and key-type writes are durable before any recovery evidence is
+  removed: every written file and both namespace directories are fsynced,
+  completion is recorded durably in the journal after reload validates the
+  activated state, and only then is the batch (with its marker) removed. A
+  cleanup failure after completion is never rolled back; retrying the
+  activation or the next unlock finishes the cleanup.
+- an incomplete activation anywhere blocks new activations: every batch is
+  scanned for markers before an activation is accepted, and recovery mode
+  exits only after a rescan confirms zero markers remain — resolving one
+  batch never re-enables signing while another batch is unreconciled.
+- a hard interruption leaves an activation marker. Unlock enters recovery
+  mode with signing blocked, then reconciles automatically: a single
+  interrupted activation is rolled back to the exact pre-activation state, a
+  single completed activation has its cleanup finished, and the identity
+  unlocks only when the rescan is clean. Multiple markers fail closed into
+  recovery for explicit operator resolution. The operator may also retry
+  activation with the recorded intent (rollback-first resume) or explicitly
+  roll back. Purge rejects a batch with incomplete activation state.
+- a rollback that fails after active-store mutation began transitions the
+  runtime into recovery mode immediately — signing stops at the failure, not
+  at the next unlock — and retains enough durable state for another exact
+  attempt.
 - successful activation removes the inactive batch, reloads the bound identity,
   and only then makes the credentials available to signing
 - restore does not install archived policy documents or sidecars; restoring

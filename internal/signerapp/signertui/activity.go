@@ -37,7 +37,12 @@ func (m Model) canTrackLocalIdle() bool {
 	if m.connectionState != ConnectionConnected || m.adminClient == nil {
 		return false
 	}
-	if !m.signerStatusKnown || m.signerLocked {
+	// Recovery mode holds the master key resident with recovery-admin
+	// operations live; a walked-away operator must not leave it available
+	// indefinitely. Batch state is durable, so an idle disconnect
+	// mid-recovery loses nothing.
+	if !m.signerStatusKnown ||
+		(m.signerState != signerRuntimeUnlocked && m.signerState != signerRuntimeRecovery) {
 		return false
 	}
 	return m.viewState != ViewAuth && m.viewState != ViewUnlock
@@ -55,7 +60,7 @@ func (m *Model) applySignerLockedState() {
 	m.manualLock.pending = false
 	m.manualLock.focus = 0
 	m.manualLock.returnView = ViewKeyList
-	m.signerLocked = true
+	m.signerState = signerRuntimeLocked
 	m.signerStatusKnown = true
 	m.viewState = ViewUnlock
 	m.auth.passphraseInput = ""
@@ -67,10 +72,29 @@ func (m *Model) applySignerUnlockedState(keyCount int) {
 	m.manualLock.pending = false
 	m.manualLock.focus = 0
 	m.manualLock.returnView = ViewKeyList
-	m.signerLocked = false
+	m.signerState = signerRuntimeUnlocked
 	m.signerStatusKnown = true
 	m.keyCount = keyCount
 	m.viewState = ViewKeyList
+	m.resetActivityState()
+	m.activity.lastInputAt = time.Now()
+}
+
+// applySignerRecoveryState opens the blocking recovery screen: an incomplete
+// activation blocks signing server-side, so ordinary navigation is disabled
+// until every marker is resolved.
+func (m *Model) applySignerRecoveryState() {
+	m.clearRestorePassphrase()
+	m.manualLock.pending = false
+	m.manualLock.focus = 0
+	m.manualLock.returnView = ViewKeyList
+	m.signerState = signerRuntimeRecovery
+	m.signerStatusKnown = true
+	m.keyCount = 0
+	m.restore.recoveredLoaded = false
+	m.restore.recoveredError = ""
+	m.restore.purgeArmedID = ""
+	m.viewState = ViewRecoveredList
 	m.resetActivityState()
 	m.activity.lastInputAt = time.Now()
 }

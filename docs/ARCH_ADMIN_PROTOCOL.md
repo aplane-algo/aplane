@@ -276,7 +276,10 @@ unlock/reload after passphrase verification through
   publishes one destination-encrypted inactive batch and does not reload
 - `list_recovered` -> `recovered_list`: optional `batches[]`, `code`, `error`;
   each batch carries restore ID, creation time, archive name/checksum, source
-  role and policy status/digest, and entry count
+  role and policy status/digest, entry count, and optional `activation_state`
+  (empty for an inactive batch; otherwise the durable activation journal
+  state: `applying`, `rolling_back`, `completed`, or `unknown` for an
+  unreadable journal)
 - `review_recovered`: `restore_id` -> `review_recovered_result`: `success`,
   restore/batch state, archive and policy digests, destination approval mode,
   optional unattended-signing warning, factual policy comparison, ordered

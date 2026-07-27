@@ -8,12 +8,24 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // SavePayload validates and saves a canonical payload under the selector
 // derived from its authoritative key material.
 func SavePayload(paths storepaths.Paths, identityID string, payload *Payload, masterKey []byte) (*ImportKeyResult, error) {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return nil, err
+	}
+	return SavePayloadActive(active, payload, masterKey)
+}
+
+// SavePayloadActive is SavePayload against resolved active-store paths
+// (generational or legacy); the caller resolved the layout once for the
+// whole operation.
+func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, masterKey []byte) (*ImportKeyResult, error) {
 	if len(masterKey) == 0 {
 		return nil, fmt.Errorf("master key is required to save key file")
 	}
@@ -35,18 +47,21 @@ func SavePayload(paths storepaths.Paths, identityID string, payload *Payload, ma
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt key: %w", err)
 	}
-	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(active.KeysDir()); err != nil {
 		return nil, fmt.Errorf("failed to create keys directory: %w", err)
 	}
 
-	privateFile, err := CanonicalManagedCredentialPath(paths, identityID, selector, payload.Category)
+	privateFile, err := CanonicalManagedCredentialPathActive(active, selector, payload.Category)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive canonical managed credential path: %w", err)
 	}
-	if err := fsutil.WriteFile(privateFile, dataToWrite); err != nil {
+	// Durable, never in-place: a credential write must survive a crash and
+	// must not be able to reach an inode a sealed generation shares
+	// (docs/ARCH_GENERATIONS.md §4).
+	if err := fsutil.WriteFileDurable(privateFile, dataToWrite); err != nil {
 		return nil, fmt.Errorf("failed to write key file: %w", err)
 	}
-	if err := writeWitnessPublicMetadataFromPayload(paths, identityID, selector, payload); err != nil {
+	if err := writeWitnessPublicMetadataFromPayload(active, selector, payload); err != nil {
 		return nil, err
 	}
 

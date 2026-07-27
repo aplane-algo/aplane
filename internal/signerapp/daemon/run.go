@@ -15,12 +15,12 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
-	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	signerstartuptemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -210,30 +210,44 @@ func Run(dataDir string) int {
 	if startLocked {
 		logInfof("signer runtime initialized (waiting for apadmin connection)")
 	} else {
-		incomplete, inspectErr := recovered.IncompleteActivationIDs(startupOpts.Paths, ir.ID())
-		if inspectErr != nil {
-			crypto.ZeroBytes(startPassphrase)
-			logErrorf("error inspecting activation recovery state: %v", inspectErr)
-			return 1
-		}
-		if len(incomplete) > 0 {
+		// Generation-based stores reconcile before startup unlock: CURRENT
+		// is the sole commit record; uncommitted attempts are discarded and
+		// the selected generation must validate, else recovery mode.
+		generationErr := (signerAdminServices{signer: server}).reconcileGenerations(ir)
+		if generationErr != nil {
 			success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
 			crypto.ZeroBytes(startPassphrase)
 			if !success {
-				logErrorf("error unlocking activation recovery state: %s", errMsg)
+				logErrorf("error unlocking recovery-blocked store: %s", errMsg)
 				return 1
 			}
-			logWarnf("identity is recovery-blocked by incomplete activation: %s", strings.Join(incomplete, ", "))
-		} else {
+			logWarnf("identity is recovery-blocked: %v", generationErr)
+			startPassphrase = nil
+		}
+		if generationErr == nil {
 			// Headless mode: load keys using passphrase, then zero it immediately.
 			logInfof("scanning keys directory for private keys")
 			_, err := ir.ReloadWithPassphrase(startPassphrase)
-			crypto.ZeroBytes(startPassphrase)
-			if err != nil {
+			if err != nil && signerstartuptemplates.IsGenerationValidationError(err.Error()) {
+				// Content defects in the selected generation are a recovery
+				// condition, not a startup failure: keep the daemon up with
+				// signing blocked so the admin surface exists to repair the
+				// store, exactly as interactive unlock does.
+				success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
+				crypto.ZeroBytes(startPassphrase)
+				if !success {
+					logErrorf("error unlocking recovery-blocked store: %s", errMsg)
+					return 1
+				}
+				logWarnf("identity is recovery-blocked: %v", err)
+			} else if err != nil {
+				crypto.ZeroBytes(startPassphrase)
 				logErrorf("error loading keys: %v", err)
 				return 1
+			} else {
+				crypto.ZeroBytes(startPassphrase)
+				ir.SetUnlocked()
 			}
-			ir.SetUnlocked()
 		}
 
 		keyCount := ir.KeyCount()

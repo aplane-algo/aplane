@@ -415,15 +415,67 @@ direct-to-active restore operation. To manage batches separately:
 ```
 
 If a crash interrupts activation, the identity enters recovery mode and
-signing stays blocked. Re-run `restore activate` to perform the exact recorded
-rollback-first resume, or use `restore rollback` to restore the pre-activation
-state. An incomplete activation cannot be purged.
+signing stays blocked. The next unlock reconciles automatically: a single
+interrupted activation is rolled back to the exact pre-activation state (the
+recovered batch stays available for a fresh review), and an activation that
+had already completed has its cleanup finished. The identity unlocks normally
+only when no incomplete activation remains; if several are found, their order
+cannot be reconstructed safely, so the identity stays in recovery mode and
+each one must be resolved explicitly. You can also resolve manually at any
+time: re-run `restore activate` to perform the exact recorded rollback-first
+resume, or use `restore rollback` to restore the pre-activation state. An
+incomplete activation cannot be purged, and no new activation is accepted
+while any incomplete activation exists.
+
+In `apadmin`, recovered batches are managed from the archive list (`r`, then
+`v`): reopening a batch for review requires no export passphrase, incomplete
+activations offer resume (Enter, using the exact recorded intent) and
+rollback (`x`), and inactive batches can be purged (`p`, confirmed with `y`).
+While the signer is in recovery mode the same screen is blocking — signing
+and ordinary administration stay disabled until every incomplete activation
+is resolved. Replacing existing active credentials is consented to on the
+activation review, beside the listed conflicts; the archive preview marks
+conflicting keys informationally and never collects that consent.
 
 **Note:** `apstore restore` operates on archives in the managed backup locker;
 it does not restore directly from extracted directories. Backups do not include
 a `.keystore` metadata file. The backup passphrase is the export passphrase you
 entered when the backup was created, and it may differ from your current store
 passphrase.
+
+### Generation-Based Storage and Migration
+
+New and rebuilt stores keep their active credentials in generation-based
+storage: `identities/<identity>/CURRENT` names the active generation under
+`generations/`, and every restore activation commits as a complete new
+generation with one durable pointer flip. Activation on these stores cannot
+be left half-applied — a failure before the flip leaves the batch inactive
+and nothing published, and `restore rollback <restore-id>` repoints the
+store at the pre-activation generation.
+
+Every release is incompatible with every prior release: this release reads
+only stores it initialized. There is no layout migration — to move keys
+between releases, export backup archives (standalone, release-independent
+encryption) and restore them into a freshly initialized store.
+
+Manage generations offline (daemon stopped):
+
+```
+./apstore generations list                # current + sealed priors (read-only)
+./apstore generations prune               # keep current + its parent
+./apstore generations prune --all-priors  # keep only current
+```
+
+Passphrase rotation on a generational store requires generation quiescence —
+run `apstore generations prune --all-priors` first; after a successful
+rotation the retention window restarts empty.
+
+`prune --all-priors` abandons every rollback fallback, so it prompts for the
+store passphrase and decrypt-validates the current generation's content (the
+same checks the signer's unlock gate applies) before deleting anything. Both
+prune modes also refuse to run if the current generation fails structural
+validation or, when the parent is being retained, if that rollback target's
+seal does not verify.
 
 ### Policy Snapshots in Backups
 

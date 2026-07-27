@@ -17,4 +17,5 @@ type AdminHub interface {
 	SendTokenProvisioningRequest(identityID string, req *signerapproval.TokenProvisioningRequest) bool
 	NotifyLocked(identityID string, notification adminproto.SignerLockedNotification)
 	NotifyKeysChanged(identityID string, notification adminproto.KeysChangedNotification)
+	NotifyStatus(identityID, state string, keyCount int)
 }
