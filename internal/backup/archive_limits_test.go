@@ -84,7 +84,7 @@ func TestInspectSourcePolicyRejectsOversizedSnapshot(t *testing.T) {
 	if err := os.MkdirAll(policyDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	blob := make([]byte, maxSourceSettingsBytes+1)
+	blob := make([]byte, maxSourcePolicyBytes+1)
 	if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), blob, 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

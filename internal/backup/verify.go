@@ -69,6 +69,13 @@ func DeepVerifyBackupWithOptions(backupDir, passphrase string, opts DeepVerifyOp
 // hold the passphrase as zeroable bytes should use this so no immutable
 // string copy of the secret is ever created.
 func DeepVerifyBackupBytes(backupDir string, passphrase []byte, opts DeepVerifyOptions) (*VerifyReport, error) {
+	// The sealed manifest authenticates the archive as a whole before any
+	// member is trusted: a removed, added, or altered member fails here,
+	// which per-payload authentication cannot detect on its own.
+	if _, err := OpenSealedManifest(backupDir, passphrase); err != nil {
+		return nil, err
+	}
+
 	// Scan for .apb files in apb/ subdirectory
 	keysDir := filepath.Join(backupDir, "apb")
 	addresses, err := ScanBackupFiles(keysDir)

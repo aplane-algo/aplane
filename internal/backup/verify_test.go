@@ -13,12 +13,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	utilkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -48,6 +50,7 @@ func TestDeepVerifyBackupValidStandaloneFile(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackup(backupRoot, "export-passphrase")
 	if err != nil {
 		t.Fatalf("DeepVerifyBackup() error = %v", err)
@@ -84,6 +87,7 @@ func TestDeepVerifyBackupValidComponentKeyFile(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackup(backupRoot, "export-passphrase")
 	if err != nil {
 		t.Fatalf("DeepVerifyBackup() error = %v", err)
@@ -107,6 +111,7 @@ func TestDeepVerifyBackupRejectsPlaintextPayload(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackup(backupRoot, "export-passphrase")
 	if err != nil {
 		t.Fatalf("DeepVerifyBackup() error = %v", err)
@@ -140,6 +145,7 @@ func TestDeepVerifyBackupValidGenericLogicSigFile(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackup(backupRoot, "export-passphrase")
 	if err != nil {
 		t.Fatalf("DeepVerifyBackup() error = %v", err)
@@ -166,6 +172,7 @@ func TestDeepVerifyBackupValidatesBundledGenericTemplateBytecode(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
 		ValidateBundledTemplateBytecode: true,
 		AlgodClient:                     compileMockClient(t, compiledBytecode),
@@ -202,6 +209,7 @@ func TestDeepVerifyBackupRejectsInvalidKeyTypeInBundle(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackup(backupRoot, "export-passphrase")
 	if err != nil {
 		t.Fatalf("DeepVerifyBackup() error = %v", err)
@@ -230,6 +238,7 @@ func TestDeepVerifyBackupRejectsBundledGenericTemplateBytecodeMismatch(t *testin
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
 		ValidateBundledTemplateBytecode: true,
 		AlgodClient:                     compileMockClient(t, compiledBytecode),
@@ -259,6 +268,7 @@ func TestDeepVerifyBackupIgnoresAlgodHashForSaltedGenericTemplate(t *testing.T) 
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
 		ValidateBundledTemplateBytecode: true,
 		AlgodClient:                     compileMockClientWithHash(t, compiledBytecode, logicSigAddressForBytecode([]byte{0x0a, 0x81, 0x01, 0x44})),
@@ -303,6 +313,7 @@ func TestDeepVerifyBackupValidFalconLogicSigBytecodeFile(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackup(backupRoot, "export-passphrase")
 	if err != nil {
 		t.Fatalf("DeepVerifyBackup() error = %v", err)
@@ -328,15 +339,11 @@ func TestDeepVerifyBackupRejectsWrongPassphrase(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
-	report, err := DeepVerifyBackup(backupRoot, "wrong-export-passphrase")
-	if err != nil {
-		t.Fatalf("DeepVerifyBackup() error = %v", err)
-	}
-	if report.FailedFiles != 1 {
-		t.Fatalf("FailedFiles = %d, want 1", report.FailedFiles)
-	}
-	if !strings.Contains(report.Results[0].Error, "decryption failed") {
-		t.Fatalf("result.Error = %q, want decryption failure", report.Results[0].Error)
+	// The sealed manifest is the first thing a wrong passphrase hits, so
+	// verification fails before any per-payload result exists.
+	sealTestArchiveManifest(t, backupRoot)
+	if _, err := DeepVerifyBackup(backupRoot, "wrong-export-passphrase"); err == nil {
+		t.Fatal("DeepVerifyBackup accepted a wrong passphrase")
 	}
 }
 
@@ -351,6 +358,7 @@ func TestDeepVerifyBackupRejectsMalformedBackupBundleJSON(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackup(backupRoot, "export-passphrase")
 	if err != nil {
 		t.Fatalf("DeepVerifyBackup() error = %v", err)
@@ -393,6 +401,7 @@ func TestDeepVerifyBackupRejectsMalformedBundledTemplate(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackup(backupRoot, "export-passphrase")
 	if err != nil {
 		t.Fatalf("DeepVerifyBackup() error = %v", err)
@@ -422,6 +431,7 @@ func TestDeepVerifyBackupRejectsAddressMismatch(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 
+	sealTestArchiveManifest(t, backupRoot)
 	report, err := DeepVerifyBackup(backupRoot, "export-passphrase")
 	if err != nil {
 		t.Fatalf("DeepVerifyBackup() error = %v", err)
@@ -559,4 +569,20 @@ func writeStandaloneBackupFile(path string, plaintext, exportPassphrase []byte) 
 		return err
 	}
 	return os.WriteFile(path, encrypted, 0o600)
+}
+
+// sealTestArchiveManifest seals a manifest over a hand-built archive tree so
+// deep verification sees the same authenticated shape a real archive has.
+func sealTestArchiveManifest(t *testing.T, root string) {
+	t.Helper()
+	autoApprove := false
+	if err := WriteSealedManifest(
+		root,
+		noderole.RoleSigner,
+		time.Unix(1_700_000_000, 0),
+		SourceSettingsSnapshot{UserAutoApprove: &autoApprove},
+		[]byte("export-passphrase"),
+	); err != nil {
+		t.Fatalf("WriteSealedManifest() error = %v", err)
+	}
 }

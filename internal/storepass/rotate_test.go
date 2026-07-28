@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
-	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -211,8 +210,6 @@ func TestRotatePreservesRecoveredBatchPlaintextWithUnknownFields(t *testing.T) {
 		ArchiveSHA256:         hex.EncodeToString(archiveSum[:]),
 		SourceNodeRole:        string(noderole.RoleSigner),
 		SourcePolicyStatus:    recovered.SourcePolicyMissing,
-		SourceSettingsStatus:  sourcecontext.StatusUnverified,
-		SourceSettingsSHA256:  strings.Repeat("d", 64),
 		SourceUserAutoApprove: &autoApprove,
 		Entries: []recovered.Entry{{
 			Selector: address,

@@ -32,24 +32,20 @@ func TestProtocolReviewRecoveredResultCopiesTypedSourceContext(t *testing.T) {
 	result := adminproto.ReviewRecoveredResult{
 		Success:                      true,
 		UnattendedSigningAckRequired: true,
-		SourceSettingsStatus:         protocol.RecoverySourceSettingsStatusUnverified,
 		SourceUserAutoApprove:        &autoApprove,
 		SourceGenesisHashMappings: []adminproto.RecoveryGenesisHashMapping{{
 			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
 			Network:     "private-network",
 		}},
-		SourceSettingsWarning: "warning",
 		SecurityChanges: []adminproto.RecoveryPolicyChange{{
 			Path: "reject_rekey",
 		}},
 	}
 	message := ProtocolReviewRecoveredResultMessage("review-1", result)
-	if message.SourceSettingsStatus != protocol.RecoverySourceSettingsStatusUnverified ||
-		message.SourceUserAutoApprove == nil ||
+	if message.SourceUserAutoApprove == nil ||
 		*message.SourceUserAutoApprove ||
 		len(message.SourceGenesisHashMappings) != 1 ||
 		message.SourceGenesisHashMappings[0].Network != "private-network" ||
-		message.SourceSettingsWarning != "warning" ||
 		message.UnattendedSigningAckRequired == nil ||
 		!*message.UnattendedSigningAckRequired ||
 		len(message.SecurityChanges) != 1 ||

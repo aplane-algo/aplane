@@ -76,11 +76,6 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	logWarnf("authorization, audit logging, rate limiting, runtime reload, and admin IPC policy are not used")
 	logWarnf("rebuild has no durable audit log; capture terminal output externally if needed")
 
-	nodeRole, err := selectRebuildNodeRole(sourceRoot, explicitRole, explicitRoleSet)
-	if err != nil {
-		return err
-	}
-
 	fmt.Print("Enter export passphrase (to decrypt backup files): ")
 	exportPassphrase, err := readPassword()
 	if err != nil {
@@ -88,6 +83,13 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	}
 	defer crypto.ZeroBytes(exportPassphrase)
 	fmt.Println()
+
+	// The source role lives in the sealed manifest, so role selection
+	// follows the passphrase prompt.
+	nodeRole, err := selectRebuildNodeRole(sourceRoot, exportPassphrase, explicitRole, explicitRoleSet)
+	if err != nil {
+		return err
+	}
 
 	if err := verifyRebuildSource(sourceRoot, exportPassphrase); err != nil {
 		return err
@@ -145,34 +147,33 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	return nil
 }
 
-func selectRebuildNodeRole(sourceRoot string, explicitRole noderole.Role, explicitRoleSet bool) (noderole.Role, error) {
-	manifest, ok, err := backup.ReadManifest(sourceRoot)
+// selectRebuildNodeRole reads the destination role default from the archive's
+// sealed manifest. Every readable archive carries one, so the role is always
+// authenticated; --role remains the explicit override.
+func selectRebuildNodeRole(
+	sourceRoot string,
+	exportPassphrase []byte,
+	explicitRole noderole.Role,
+	explicitRoleSet bool,
+) (noderole.Role, error) {
+	manifest, err := backup.OpenSealedManifest(sourceRoot, exportPassphrase)
 	if err != nil {
 		return "", err
 	}
-	if ok {
-		manifestRole, err := noderole.ParseRole(manifest.SourceNodeRole)
-		if err != nil {
-			return "", err
-		}
-		if explicitRoleSet {
-			if explicitRole != manifestRole {
-				logWarnf("backup manifest source node role is %q; rebuilding destination as %q from --role", manifestRole, explicitRole)
-			} else {
-				logInfof("rebuild node role: %s (--role matches backup manifest)", explicitRole)
-			}
-			return explicitRole, nil
-		}
-		logInfof("rebuild node role: %s (from backup manifest; pass --role to override)", manifestRole)
-		return manifestRole, nil
+	manifestRole, err := noderole.ParseRole(manifest.SourceNodeRole)
+	if err != nil {
+		return "", err
 	}
 	if explicitRoleSet {
-		logInfof("rebuild node role: %s (from --role; backup manifest has no source role metadata)", explicitRole)
+		if explicitRole != manifestRole {
+			logWarnf("backup manifest source node role is %q; rebuilding destination as %q from --role", manifestRole, explicitRole)
+		} else {
+			logInfof("rebuild node role: %s (--role matches backup manifest)", explicitRole)
+		}
 		return explicitRole, nil
 	}
-	role := noderole.DefaultRole()
-	logWarnf("backup manifest has no source node role metadata; defaulting rebuild destination role to %q (use --role sentry for sentry backups)", role)
-	return role, nil
+	logInfof("rebuild node role: %s (from backup manifest; pass --role to override)", manifestRole)
+	return manifestRole, nil
 }
 
 func verifyRebuildSource(sourceRoot string, exportPassphrase []byte) error {

@@ -288,12 +288,10 @@ mode.
   restore/batch state, archive and policy digests, destination approval mode,
   optional unattended-signing warning, factual policy comparison, ordered
   `security_changes[]`, secondary
-  `changed_paths[]`,
-  `unknown_source_settings[]`, optional `source_settings_status`
-  (`missing|unverified|invalid`), optional Boolean
+  `changed_paths[]`, optional Boolean
   `source_user_auto_approve`, optional
-  `source_genesis_hash_mappings[]` (`genesis_hash`, `network`), optional
-  `source_settings_warning`, entries, active conflict fingerprints, opaque
+  `source_genesis_hash_mappings[]` (`genesis_hash`, `network`),
+  entries, active conflict fingerprints, opaque
   `review_token`, optional `unattended_signing_ack_required`, recorded
   acknowledgement flag, replacement state, `code`, `error`.
   The policy comparison is informational. It carries no downgrade verdict, and
@@ -304,18 +302,12 @@ mode.
   alone. It is true whenever the destination identity auto-approves unmatched
   signing requests, whatever the archive reports; absence means a pre-3.2
   server, and updated clients then fall back to the destination approval mode.
-  The typed source fields were added in protocol 3.1. In protocol
-  v3, `unknown_source_settings` conservatively includes
-  the constant archive limitations `source.user_auto_approve` and
-  `source.genesis_hash_mappings`; a pre-manifest archive additionally reports
-  the batch-specific `source.node_role`. Updated clients do not render these
-  source-metadata fields as standalone review notifications. When
-  `source_settings_status` is present, typed `source_*` fields are authoritative
-  for what the archive reported; they remain unverified and have no signing,
-  policy, or acknowledgement authority. The two constant unknown
-  entries are compatibility artifacts in that case and updated clients ignore
-  them.
-  Protocol v4 removes those two constant entries.
+  The typed `source_*` fields report what the archive recorded. They are
+  present when the source recorded them and absent otherwise; there is no
+  status enum and no unknown-settings list, because the archive's sealed
+  manifest authenticated the values before recovery recorded them.
+  Authentication proves who packaged the claim; the fields still carry no
+  signing, policy, or acknowledgement authority.
   `policy_downgrade_ack_required` and the `downgrade` member of
   `security_changes[]` were removed with the downgrade classifier. Clients
   compiled against an earlier contract ignore their absence.

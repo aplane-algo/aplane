@@ -121,10 +121,15 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load source node role: %w", err)
 	}
-	if err := WriteManifest(stageDir, nodeRole.Role, time.Now()); err != nil {
-		return nil, err
-	}
-	if err := writeSourceSettings(stageDir, nodeRole.Role, req.SourceSettings); err != nil {
+	// Last: the manifest inventories every member written above, so it can
+	// only be sealed once they are final.
+	if err := WriteSealedManifest(
+		stageDir,
+		nodeRole.Role,
+		time.Now(),
+		req.SourceSettings,
+		req.ExportPassphrase,
+	); err != nil {
 		return nil, err
 	}
 	if err := CreateTarGzArchive(stageDir, req.ArchivePath); err != nil {

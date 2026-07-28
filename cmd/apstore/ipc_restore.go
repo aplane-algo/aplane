@@ -371,19 +371,6 @@ func formatRecoveredReviewSections(review protocol.ReviewRecoveredResultMessage)
 			change.Destination,
 		)
 	}
-	var batchUnknowns []string
-	for _, unknown := range review.UnknownSourceSettings {
-		if protocol.IsRecoveryArchiveSourceLimitation(unknown) {
-			continue
-		}
-		batchUnknowns = append(batchUnknowns, unknown)
-	}
-	if len(batchUnknowns) > 0 {
-		sb.WriteString("\nSource metadata unavailable for this archive\n")
-	}
-	for _, unknown := range batchUnknowns {
-		fmt.Fprintf(&sb, "  [unknown source] %s\n", unknown)
-	}
 	appendRecoveredSourceContext(&sb, review)
 	return sb.String()
 }
@@ -396,24 +383,18 @@ func formatRecoveredReviewSections(review protocol.ReviewRecoveredResultMessage)
 // holds for every restore; USER_STORE_MGMT.md carries the explanation rather
 // than repeating it on each review.
 func appendRecoveredSourceContext(sb *strings.Builder, review protocol.ReviewRecoveredResultMessage) {
-	switch review.SourceSettingsStatus {
-	case protocol.RecoverySourceSettingsStatusUnverified:
-		sb.WriteString("\nReported by the backup archive\n")
-		fmt.Fprintf(sb, "  approval default: %s\n", recoveredSourceApprovalLabel(review.SourceUserAutoApprove))
-		if len(review.SourceGenesisHashMappings) == 0 {
-			sb.WriteString("  custom genesis-hash mappings: none\n")
-		} else {
-			sb.WriteString("  custom genesis-hash mappings:\n")
-			for _, mapping := range review.SourceGenesisHashMappings {
-				fmt.Fprintf(sb, "    %s: %s\n", mapping.Network, mapping.GenesisHash)
-			}
+	if review.SourceUserAutoApprove == nil && len(review.SourceGenesisHashMappings) == 0 {
+		return
+	}
+	sb.WriteString("\nReported by the backup archive\n")
+	fmt.Fprintf(sb, "  approval default: %s\n", recoveredSourceApprovalLabel(review.SourceUserAutoApprove))
+	if len(review.SourceGenesisHashMappings) == 0 {
+		sb.WriteString("  custom genesis-hash mappings: none\n")
+	} else {
+		sb.WriteString("  custom genesis-hash mappings:\n")
+		for _, mapping := range review.SourceGenesisHashMappings {
+			fmt.Fprintf(sb, "    %s: %s\n", mapping.Network, mapping.GenesisHash)
 		}
-	case protocol.RecoverySourceSettingsStatusInvalid:
-		warning := review.SourceSettingsWarning
-		if warning == "" {
-			warning = "Archive source-settings metadata is invalid."
-		}
-		fmt.Fprintf(sb, "\n%s\n", warning)
 	}
 }
 

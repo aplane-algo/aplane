@@ -104,17 +104,12 @@ func TestCurrentAdminProtocolVersionIncludesRecoverySourceContext(t *testing.T) 
 	}
 }
 
-func TestReviewRecoveredSourceSettingsJSONShapeAndMinorSkew(t *testing.T) {
+func TestReviewRecoveredSourceSettingsJSONShape(t *testing.T) {
 	autoApprove := false
 	unattendedAckRequired := true
 	message := ReviewRecoveredResultMessage{
-		BaseMessage: BaseMessage{Type: MsgTypeReviewRecoveredResult, ID: "review-1"},
-		Success:     true,
-		UnknownSourceSettings: []string{
-			RecoverySourceSettingUserAutoApprove,
-			RecoverySourceSettingGenesisHashMappings,
-		},
-		SourceSettingsStatus:         RecoverySourceSettingsStatusUnverified,
+		BaseMessage:                  BaseMessage{Type: MsgTypeReviewRecoveredResult, ID: "review-1"},
+		Success:                      true,
 		SourceUserAutoApprove:        &autoApprove,
 		UnattendedSigningAckRequired: &unattendedAckRequired,
 		SecurityChanges: []RecoveryPolicyChange{{
@@ -136,10 +131,16 @@ func TestReviewRecoveredSourceSettingsJSONShapeAndMinorSkew(t *testing.T) {
 	if err := json.Unmarshal(encoded, &shape); err != nil {
 		t.Fatalf("Unmarshal(review shape) error = %v", err)
 	}
-	if shape["source_settings_status"] != RecoverySourceSettingsStatusUnverified ||
-		shape["source_user_auto_approve"] != false ||
+	if shape["source_user_auto_approve"] != false ||
 		shape["unattended_signing_ack_required"] != true {
 		t.Fatalf("review source settings shape = %#v", shape)
+	}
+	// The source-context trust states are gone from the wire: the archive's
+	// sealed manifest authenticates this material before it is recorded.
+	for _, removed := range []string{"source_settings_status", "unknown_source_settings", "source_settings_warning"} {
+		if _, present := shape[removed]; present {
+			t.Fatalf("review still carries removed field %q: %#v", removed, shape)
+		}
 	}
 	mappings, ok := shape["source_genesis_hash_mappings"].([]any)
 	if !ok || len(mappings) != 1 {
@@ -155,30 +156,6 @@ func TestReviewRecoveredSourceSettingsJSONShapeAndMinorSkew(t *testing.T) {
 	}
 	if _, present := change["downgrade"]; present {
 		t.Fatalf("review policy change carried a downgrade verdict = %#v", change)
-	}
-
-	var oldClient struct {
-		Success               bool     `json:"success"`
-		UnknownSourceSettings []string `json:"unknown_source_settings"`
-	}
-	if err := json.Unmarshal(encoded, &oldClient); err != nil {
-		t.Fatalf("old client Unmarshal(new review) error = %v", err)
-	}
-	if !oldClient.Success || len(oldClient.UnknownSourceSettings) != 2 {
-		t.Fatalf("old client view = %+v, want conservative v3 caveats", oldClient)
-	}
-
-	var newClient ReviewRecoveredResultMessage
-	if err := json.Unmarshal(
-		[]byte(`{"type":"review_recovered_result","success":true,"unknown_source_settings":["source.user_auto_approve","source.genesis_hash_mappings"]}`),
-		&newClient,
-	); err != nil {
-		t.Fatalf("new client Unmarshal(old review) error = %v", err)
-	}
-	if newClient.SourceSettingsStatus != "" ||
-		newClient.SourceUserAutoApprove != nil ||
-		len(newClient.SourceGenesisHashMappings) != 0 {
-		t.Fatalf("new client old-server source settings = %+v, want absent", newClient)
 	}
 }
 

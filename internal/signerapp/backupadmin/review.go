@@ -14,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
-	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -109,7 +108,6 @@ func (s Service) reviewRecoveredWithMasterKey(
 	if err != nil {
 		return adminproto.ReviewRecoveredResult{}, err
 	}
-	unknowns := recoveredUnknownSourceSettings(batch)
 	sourceSettings := projectRecoveredSourceSettings(batch)
 	approvalMode, warning := destinationApprovalMode(ir)
 	changes := make([]adminproto.RecoveryPolicyChange, len(comparison.Changes))
@@ -129,8 +127,6 @@ func (s Service) reviewRecoveredWithMasterKey(
 		ArchiveSHA256:           batch.ArchiveSHA256,
 		SourcePolicyStatus:      string(batch.SourcePolicyStatus),
 		SourcePolicySHA256:      batch.SourcePolicySHA256,
-		SourceSettingsStatus:    sourceSettings.Status,
-		SourceSettingsSHA256:    batch.SourceSettingsSHA256,
 		DestinationPolicySHA256: destinationDigest,
 		DestinationApprovalMode: string(approvalMode),
 		Entries:                 entries,
@@ -152,11 +148,8 @@ func (s Service) reviewRecoveredWithMasterKey(
 		PolicyComparison:             string(comparison.Status),
 		SecurityChanges:              changes,
 		ChangedPaths:                 slices.Clone(comparison.ChangedPaths),
-		UnknownSourceSettings:        unknowns,
-		SourceSettingsStatus:         sourceSettings.Status,
 		SourceUserAutoApprove:        sourceSettings.UserAutoApprove,
 		SourceGenesisHashMappings:    sourceSettings.GenesisHashMappings,
-		SourceSettingsWarning:        sourceSettings.Warning,
 		Entries:                      entries,
 		ActiveConflicts:              conflicts,
 		ReviewToken:                  token,
@@ -165,19 +158,17 @@ func (s Service) reviewRecoveredWithMasterKey(
 }
 
 type recoveredSourceSettingsReview struct {
-	Status              string
 	UserAutoApprove     *bool
 	GenesisHashMappings []adminproto.RecoveryGenesisHashMapping
-	Warning             string
 }
 
+// projectRecoveredSourceSettings projects the batch's authenticated source
+// context. The archive's sealed manifest authenticated these values before
+// recovery recorded them, so absence means the source did not record them —
+// there is no trust state to report.
 func projectRecoveredSourceSettings(batch *recovered.Batch) recoveredSourceSettingsReview {
 	if batch == nil {
-		return recoveredSourceSettingsReview{Status: string(sourcecontext.StatusMissing)}
-	}
-	status := batch.SourceSettingsStatus
-	if status == "" {
-		status = sourcecontext.StatusMissing
+		return recoveredSourceSettingsReview{}
 	}
 	var userAutoApprove *bool
 	if batch.SourceUserAutoApprove != nil {
@@ -192,22 +183,9 @@ func projectRecoveredSourceSettings(batch *recovered.Batch) recoveredSourceSetti
 		}
 	}
 	return recoveredSourceSettingsReview{
-		Status:              string(status),
 		UserAutoApprove:     userAutoApprove,
 		GenesisHashMappings: mappings,
-		Warning:             batch.SourceSettingsWarning,
 	}
-}
-
-func recoveredUnknownSourceSettings(batch *recovered.Batch) []string {
-	unknowns := []string{
-		protocol.RecoverySourceSettingUserAutoApprove,
-		protocol.RecoverySourceSettingGenesisHashMappings,
-	}
-	if batch != nil && batch.SourceNodeRole == recovered.SourceNodeRoleUnknown {
-		unknowns = append(unknowns, protocol.RecoverySourceSettingNodeRole)
-	}
-	return unknowns
 }
 
 func loadDestinationRestorePolicy(
@@ -347,8 +325,6 @@ type recoveredReviewTokenInput struct {
 	ArchiveSHA256           string                               `json:"archive_sha256"`
 	SourcePolicyStatus      string                               `json:"source_policy_status"`
 	SourcePolicySHA256      string                               `json:"source_policy_sha256"`
-	SourceSettingsStatus    string                               `json:"source_settings_status"`
-	SourceSettingsSHA256    string                               `json:"source_settings_sha256"`
 	DestinationPolicySHA256 string                               `json:"destination_policy_sha256"`
 	DestinationApprovalMode string                               `json:"destination_approval_mode"`
 	Entries                 []adminproto.RecoveredReviewEntry    `json:"entries"`

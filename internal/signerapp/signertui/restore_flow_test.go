@@ -218,14 +218,7 @@ func TestRestoreReviewSeparatesSourceMetadataFromPolicyDifferences(t *testing.T)
 		RestoreID:               "0123456789abcdef0123456789abcdef",
 		DestinationApprovalMode: "manual_default",
 		PolicyComparison:        "identical",
-		UnknownSourceSettings: []string{
-			"source.user_auto_approve",
-			"source.genesis_hash_mappings",
-			"source.node_role",
-			"source.future_setting",
-		},
-		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusUnverified,
-		SourceUserAutoApprove: &autoApprove,
+		SourceUserAutoApprove:   &autoApprove,
 		SourceGenesisHashMappings: []protocol.RecoveryGenesisHashMapping{{
 			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
 			Network:     "private-network",
@@ -242,26 +235,19 @@ func TestRestoreReviewSeparatesSourceMetadataFromPolicyDifferences(t *testing.T)
 
 	rendered := stripANSI(m.renderRestoreReview())
 	policyHeadingIndex := strings.Index(rendered, "Policy differences (informational)")
-	metadataHeadingIndex := strings.Index(rendered, "Source metadata unavailable for this archive")
 	contextHeadingIndex := strings.Index(rendered, "Reported by the backup archive")
-	if policyHeadingIndex < 0 || metadataHeadingIndex < policyHeadingIndex ||
-		contextHeadingIndex < metadataHeadingIndex {
+	if policyHeadingIndex < 0 || contextHeadingIndex < policyHeadingIndex {
 		t.Fatalf("review sections are out of order:\n%s", rendered)
 	}
-	differences := rendered[policyHeadingIndex:metadataHeadingIndex]
+	differences := rendered[policyHeadingIndex:contextHeadingIndex]
 	if !strings.Contains(differences, "none") {
 		t.Fatalf("review omitted the empty policy-difference result:\n%s", rendered)
 	}
-	// Constant archive limitations belong to the format note, not the bullets.
-	for _, constant := range []string{"source.user_auto_approve", "source.genesis_hash_mappings"} {
-		if strings.Contains(rendered, "[unknown source] "+constant) {
-			t.Fatalf("review rendered constant limitation %q as a finding:\n%s", constant, rendered)
+	// No trust qualifier survives: the archive is authenticated or rejected.
+	for _, stale := range []string{"unknown source", "Source metadata unavailable", "unverified"} {
+		if strings.Contains(rendered, stale) {
+			t.Fatalf("review rendered trust-state text %q:\n%s", stale, rendered)
 		}
-	}
-	metadata := rendered[metadataHeadingIndex:contextHeadingIndex]
-	if !strings.Contains(metadata, "source.node_role") ||
-		!strings.Contains(metadata, "source.future_setting") {
-		t.Fatalf("review dropped batch-specific source metadata:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "approval default: manual review") ||
 		!strings.Contains(rendered, "private-network") {

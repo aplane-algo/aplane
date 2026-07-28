@@ -421,11 +421,8 @@ type ReviewRecoveredResultMessage struct {
 	PolicyComparison             string                       `json:"policy_comparison,omitempty"`
 	SecurityChanges              []RecoveryPolicyChange       `json:"security_changes,omitempty"`
 	ChangedPaths                 []string                     `json:"changed_paths,omitempty"`
-	UnknownSourceSettings        []string                     `json:"unknown_source_settings,omitempty"`
-	SourceSettingsStatus         string                       `json:"source_settings_status,omitempty"`
 	SourceUserAutoApprove        *bool                        `json:"source_user_auto_approve,omitempty"`
 	SourceGenesisHashMappings    []RecoveryGenesisHashMapping `json:"source_genesis_hash_mappings,omitempty"`
-	SourceSettingsWarning        string                       `json:"source_settings_warning,omitempty"`
 	Entries                      []RecoveredReviewEntry       `json:"entries,omitempty"`
 	ActiveConflicts              []RecoveredActiveConflict    `json:"active_conflicts,omitempty"`
 	ReviewToken                  string                       `json:"review_token,omitempty"`

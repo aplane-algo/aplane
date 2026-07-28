@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
-	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -292,21 +291,15 @@ func TestPreviewRestoreWrongPassphraseDoesNotLeakAddress(t *testing.T) {
 		}
 	})
 
-	preview, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("wrong-passphrase"), noderole.DefaultRole())
-	if err != nil {
-		t.Fatalf("PreviewRestore() error = %v", err)
+	// A wrong passphrase now fails at the sealed manifest, before any
+	// member is inspected: nothing about the archive's contents is
+	// reported, so no address can leak.
+	_, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("wrong-passphrase"), noderole.DefaultRole())
+	if err == nil {
+		t.Fatal("PreviewRestore accepted a wrong passphrase")
 	}
-	if len(preview.Keys) != 0 {
-		t.Fatalf("preview keys = %+v, want none for wrong passphrase", preview.Keys)
-	}
-	if len(preview.Errors) != 1 {
-		t.Fatalf("preview errors = %+v, want one decrypt error", preview.Errors)
-	}
-	if preview.Errors[0].Address != "" {
-		t.Fatalf("preview error leaked address %q for wrong passphrase", preview.Errors[0].Address)
-	}
-	if strings.Contains(preview.Errors[0].Error, address) {
-		t.Fatalf("preview error %q leaked address %s", preview.Errors[0].Error, address)
+	if strings.Contains(err.Error(), address) {
+		t.Fatalf("preview error %q leaked address %s", err, address)
 	}
 }
 
@@ -383,20 +376,20 @@ func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	policyYAML := []byte("reject_foreign_rekey: true\n")
-	archivePath := writeManagedRecoveryArchive(t, paths, identityID, noderole.RoleSigner, policyYAML, func(keysDir string) {
-		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-			t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-		}
-		autoApprove := true
-		if err := writeSourceSettings(filepath.Dir(keysDir), noderole.RoleSigner, SourceSettingsSnapshot{
+	autoApprove := true
+	archivePath := writeManagedRecoveryArchiveWithSourceSettings(
+		t, paths, identityID, noderole.RoleSigner, policyYAML,
+		SourceSettingsSnapshot{
 			UserAutoApprove: &autoApprove,
 			GenesisHashMappings: map[string]string{
 				strings.Repeat("42", 32): "voi-mainnet",
 			},
-		}); err != nil {
-			t.Fatalf("writeSourceSettings() error = %v", err)
-		}
-	})
+		},
+		func(keysDir string) {
+			if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+				t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+			}
+		})
 	archiveSHA256, _, err := FileSHA256(archivePath)
 	if err != nil {
 		t.Fatalf("FileSHA256() error = %v", err)
@@ -422,12 +415,10 @@ func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
 		string(batch.SourcePolicyYAML) != string(policyYAML) {
 		t.Fatalf("batch source metadata = role %q status %q policy %q", batch.SourceNodeRole, batch.SourcePolicyStatus, batch.SourcePolicyYAML)
 	}
-	if batch.SourceSettingsStatus != sourcecontext.StatusUnverified ||
-		batch.SourceSettingsSHA256 == "" ||
-		batch.SourceUserAutoApprove == nil ||
+	if batch.SourceUserAutoApprove == nil ||
 		!*batch.SourceUserAutoApprove ||
 		len(batch.SourceGenesisHashMappings) != 1 {
-		t.Fatalf("batch source settings = %+v, want unverified auto-approve context", batch)
+		t.Fatalf("batch source settings = %+v, want authenticated auto-approve context", batch)
 	}
 	if len(batch.Entries) != 1 || batch.Entries[0].Selector != address || batch.Entries[0].KeyType != "ed25519" {
 		t.Fatalf("batch entries = %+v, want recovered ed25519 %s", batch.Entries, address)
@@ -456,19 +447,23 @@ func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
 	}
 }
 
-func TestRecoverManagedBackupKeepsKeysWhenSourceSettingsAreInvalid(t *testing.T) {
+// TestRecoverManagedBackupRejectsTamperedArchive proves recovery fails closed
+// on an archive whose members no longer match the sealed manifest. Source
+// context can no longer be "invalid but ignorable": it is authenticated with
+// everything else, so tampering rejects the whole archive rather than
+// downgrading one field.
+func TestRecoverManagedBackupRejectsTamperedArchive(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
-	archivePath := writeManagedRecoveryArchive(
+	archivePath := writeTamperedManagedRecoveryArchive(
 		t,
 		paths,
 		identityID,
 		noderole.RoleSigner,
-		nil,
 		func(keysDir string) {
 			if err := writeStandaloneBackupFile(
 				filepath.Join(keysDir, address+".apb"),
@@ -477,17 +472,10 @@ func TestRecoverManagedBackupKeepsKeysWhenSourceSettingsAreInvalid(t *testing.T)
 			); err != nil {
 				t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 			}
-			if err := os.WriteFile(
-				filepath.Join(filepath.Dir(keysDir), SourceSettingsFileName),
-				[]byte(`{"schema":`),
-				0o600,
-			); err != nil {
-				t.Fatalf("WriteFile(source settings) error = %v", err)
-			}
 		},
 	)
 
-	batch, err := RecoverManagedBackup(
+	_, err := RecoverManagedBackup(
 		paths,
 		identityID,
 		archivePath,
@@ -496,18 +484,51 @@ func TestRecoverManagedBackupKeepsKeysWhenSourceSettingsAreInvalid(t *testing.T)
 		[]byte("export-passphrase"),
 		noderole.RoleSigner,
 	)
-	if err != nil {
-		t.Fatalf("RecoverManagedBackup() error = %v", err)
+	if err == nil {
+		t.Fatal("RecoverManagedBackup accepted an archive that does not match its sealed manifest")
 	}
-	if batch.SourceSettingsStatus != sourcecontext.StatusInvalid ||
-		batch.SourceSettingsWarning == "" ||
-		batch.SourceSettingsSHA256 != "" ||
-		batch.SourceUserAutoApprove != nil {
-		t.Fatalf("batch source settings = %+v, want invalid without values", batch)
+	if !strings.Contains(err.Error(), "unlisted member") &&
+		!strings.Contains(err.Error(), "does not match the sealed manifest") {
+		t.Fatalf("RecoverManagedBackup() error = %v, want manifest mismatch", err)
 	}
-	if len(batch.Entries) != 1 || batch.Entries[0].Selector != address {
-		t.Fatalf("batch entries = %+v, want recovered key %s", batch.Entries, address)
+}
+
+// writeTamperedManagedRecoveryArchive seals a manifest and then adds a member
+// the manifest never covered, modelling post-creation tampering by an attacker
+// who does not know the export passphrase.
+func writeTamperedManagedRecoveryArchive(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+	role noderole.Role,
+	populate func(keysDir string),
+) string {
+	t.Helper()
+
+	root := t.TempDir()
+	keysDir := filepath.Join(root, "apb")
+	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll(apb) error = %v", err)
 	}
+	populate(keysDir)
+	if err := WriteSealedManifest(
+		root,
+		role,
+		time.Unix(1_700_000_000, 0),
+		defaultSourceSettingsForRole(role, SourceSettingsSnapshot{}),
+		[]byte("export-passphrase"),
+	); err != nil {
+		t.Fatalf("WriteSealedManifest() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "smuggled.txt"), []byte("added after sealing"), 0o600); err != nil {
+		t.Fatalf("WriteFile(smuggled) error = %v", err)
+	}
+
+	archivePath := filepath.Join(paths.IdentityBackupsDir(identityID), "tampered-recovery-test.tar.gz")
+	if err := CreateTarGzArchive(root, archivePath); err != nil {
+		t.Fatalf("CreateTarGzArchive() error = %v", err)
+	}
+	return archivePath
 }
 
 func TestRecoverManagedBackupIsAllOrNothing(t *testing.T) {
@@ -1047,6 +1068,17 @@ func writeManagedRestoreArchive(t *testing.T, paths storepaths.Paths, identityID
 		t.Fatalf("MkdirAll(apb) error = %v", err)
 	}
 	populate(keysDir)
+	// Sealed last: it inventories every member written above.
+	autoApprove := false
+	if err := WriteSealedManifest(
+		root,
+		noderole.RoleSigner,
+		time.Unix(1_700_000_000, 0),
+		SourceSettingsSnapshot{UserAutoApprove: &autoApprove},
+		[]byte("export-passphrase"),
+	); err != nil {
+		t.Fatalf("WriteSealedManifest() error = %v", err)
+	}
 
 	archivePath := filepath.Join(paths.IdentityBackupsDir(identityID), "managed-restore-test.tar.gz")
 	if err := CreateTarGzArchive(root, archivePath); err != nil {
@@ -1064,6 +1096,21 @@ func writeManagedRecoveryArchive(
 	populate func(keysDir string),
 ) string {
 	t.Helper()
+	return writeManagedRecoveryArchiveWithSourceSettings(
+		t, paths, identityID, role, policyYAML, SourceSettingsSnapshot{}, populate,
+	)
+}
+
+func writeManagedRecoveryArchiveWithSourceSettings(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+	role noderole.Role,
+	policyYAML []byte,
+	sourceSettings SourceSettingsSnapshot,
+	populate func(keysDir string),
+) string {
+	t.Helper()
 
 	root := t.TempDir()
 	keysDir := filepath.Join(root, "apb")
@@ -1071,9 +1118,6 @@ func writeManagedRecoveryArchive(
 		t.Fatalf("MkdirAll(apb) error = %v", err)
 	}
 	populate(keysDir)
-	if err := WriteManifest(root, role, time.Unix(1_700_000_000, 0)); err != nil {
-		t.Fatalf("WriteManifest() error = %v", err)
-	}
 	if policyYAML != nil {
 		policyDir := filepath.Join(root, "policy")
 		if err := os.MkdirAll(policyDir, 0o750); err != nil {
@@ -1082,6 +1126,16 @@ func writeManagedRecoveryArchive(
 		if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), policyYAML, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
+	}
+	// Sealed last: it inventories every member above.
+	if err := WriteSealedManifest(
+		root,
+		role,
+		time.Unix(1_700_000_000, 0),
+		defaultSourceSettingsForRole(role, sourceSettings),
+		[]byte("export-passphrase"),
+	); err != nil {
+		t.Fatalf("WriteSealedManifest() error = %v", err)
 	}
 
 	archivePath := filepath.Join(paths.IdentityBackupsDir(identityID), "managed-recovery-test.tar.gz")
@@ -1094,4 +1148,14 @@ func writeManagedRecoveryArchive(
 func testSentryComponentBackupKeyJSON(t *testing.T) (string, []byte) {
 	t.Helper()
 	return keystest.SentryComponentFalcon1024KeyJSON(t, 0xcd)
+}
+
+// defaultSourceSettingsForRole mirrors production: a signer archive always
+// records its approval default, a sentry archive never does.
+func defaultSourceSettingsForRole(role noderole.Role, snapshot SourceSettingsSnapshot) SourceSettingsSnapshot {
+	if role == noderole.RoleSigner && snapshot.UserAutoApprove == nil {
+		value := false
+		snapshot.UserAutoApprove = &value
+	}
+	return snapshot
 }

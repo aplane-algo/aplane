@@ -257,11 +257,8 @@ type ReviewRecoveredResult struct {
 	PolicyComparison             string
 	SecurityChanges              []RecoveryPolicyChange
 	ChangedPaths                 []string
-	UnknownSourceSettings        []string
-	SourceSettingsStatus         string
 	SourceUserAutoApprove        *bool
 	SourceGenesisHashMappings    []RecoveryGenesisHashMapping
-	SourceSettingsWarning        string
 	Entries                      []RecoveredReviewEntry
 	ActiveConflicts              []RecoveredActiveConflict
 	ReviewToken                  string

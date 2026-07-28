@@ -200,15 +200,14 @@ func RecoverManagedBackup(
 		return nil, err
 	}
 
-	manifest, hasManifest, err := ReadManifest(sourceRoot)
+	// The sealed manifest authenticates the whole archive — member list,
+	// source role, and source context — before any of it is read.
+	manifest, err := OpenSealedManifest(sourceRoot, exportPassphrase)
 	if err != nil {
 		return nil, err
 	}
-	sourceNodeRole := recovered.SourceNodeRoleUnknown
-	if hasManifest {
-		sourceNodeRole = manifest.SourceNodeRole
-	}
-	sourceSettings := inspectSourceSettings(sourceRoot, sourceNodeRole)
+	sourceNodeRole := manifest.SourceNodeRole
+	sourceProjection := manifest.SourceProjection()
 	policyStatus, policySHA256, policyYAML, err := inspectSourcePolicy(sourceRoot, sourceNodeRole)
 	if err != nil {
 		return nil, err
@@ -242,11 +241,8 @@ func RecoverManagedBackup(
 		SourcePolicyStatus:        policyStatus,
 		SourcePolicySHA256:        policySHA256,
 		SourcePolicyYAML:          policyYAML,
-		SourceSettingsStatus:      sourceSettings.Status,
-		SourceSettingsSHA256:      sourceSettings.SHA256,
-		SourceUserAutoApprove:     sourceSettings.Projection.UserAutoApprove,
-		SourceGenesisHashMappings: sourceSettings.Projection.GenesisHashMappings,
-		SourceSettingsWarning:     sourceSettings.Warning,
+		SourceUserAutoApprove:     sourceProjection.UserAutoApprove,
+		SourceGenesisHashMappings: sourceProjection.GenesisHashMappings,
 		CreatedAt:                 time.Now().UTC(),
 		Entries:                   entries,
 	}, masterKey)
@@ -317,12 +313,12 @@ func snapshotManagedBackupArchive(archivePath string) (string, string, func(), e
 
 func inspectSourcePolicy(sourceRoot, sourceNodeRole string) (recovered.SourcePolicyStatus, string, []byte, error) {
 	policyPath := filepath.Join(sourceRoot, "policy", "policy.yaml")
-	if info, err := os.Stat(policyPath); err == nil && info.Size() > maxSourceSettingsBytes {
+	if info, err := os.Stat(policyPath); err == nil && info.Size() > maxSourcePolicyBytes {
 		// The policy snapshot is embedded verbatim in the encrypted batch
 		// manifest, which every subsequent list/review/activation/rotation
 		// decrypts and parses; an unbounded archive-supplied blob must not
-		// ride along. Mirrors the source-settings cap.
-		return "", "", nil, fmt.Errorf("source policy snapshot exceeds size limit %d", maxSourceSettingsBytes)
+		// ride along.
+		return "", "", nil, fmt.Errorf("source policy snapshot exceeds size limit %d", maxSourcePolicyBytes)
 	}
 	policyYAML, err := os.ReadFile(policyPath)
 	if err != nil {

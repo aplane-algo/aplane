@@ -159,9 +159,9 @@ DTOs and contract fixtures.
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
 | Plugin | Client data dir | `plugins.available/<name>`, `plugins.yaml`, checksums | plugin manager process state | plugin JSON-RPC result | `internal/plugin`, `internal/apshellcli` |
 | JavaScript script | Client data dir | `scripts/*.js` | Goja execution context | shell/MCP `js`, `jssave`, `jslist` | `internal/scripting`, `internal/jsapi` |
-| Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files, `manifest.json`, optional independently versioned `source_settings.json`, and policy snapshots | restore preview/recovery input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
-| Backup manifest | Backup archive | `manifest.json` schema `aplane.backup.manifest.v1` | source node role default and diagnostics for rebuild | none | `internal/backup` |
-| Backup source settings | Backup archive | optional `source_settings.json` schema `aplane.backup.source-settings.v1` | unverified source approval/custom-network review context | recovered batch and `review_recovered_result` | `internal/backup`, `internal/backup/sourcecontext` |
+| Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files, the sealed `manifest.sealed`, and policy snapshots | restore preview/recovery input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
+| Backup manifest | Backup archive | `manifest.sealed` schema `aplane.backup.manifest.v2`, sealed under the export passphrase | member inventory plus source node role default for rebuild | none | `internal/backup` |
+| Backup source context | Backup archive | source fields inside `manifest.sealed` (schema `aplane.backup.manifest.v2`) | authenticated source approval/custom-network review context | recovered batch and `review_recovered_result` | `internal/backup`, `internal/backup/sourcecontext` |
 | Recovered batch | Signer identity | destination-encrypted `recovered/<restore-id>/batch.enc` and `entries/*.recovered` | none before explicit activation | recovered lifecycle admin messages | `internal/backup/recovered`, `internal/signerapp/backupadmin` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
 
@@ -866,12 +866,12 @@ can only return a signature that assembly or the on-chain LogicSig rejects.
 ### Backup And Restore Lifecycle
 
 Managed backup archives live under `backups/<identity>/`. Each archive contains
-encrypted `.apb` payloads, `manifest.json` with source node role metadata, and a
-policy snapshot. Current writers also include optional-format
-`source_settings.json` with non-secret approval/custom-network context; its
-`missing|unverified|invalid` status is advisory and does not block valid key
-recovery. The manifest role is a rebuild default/diagnostic; explicit
-`apstore rebuild --role` is the replacement store authority when supplied.
+encrypted `.apb` payloads, a policy snapshot, and `manifest.sealed` — the
+archive's authenticated description, carrying the member inventory, the source
+node role, and non-secret approval/custom-network context. Opening an archive
+verifies every member against that inventory. The manifest role is a rebuild
+default; explicit `apstore rebuild --role` is the replacement store authority
+when supplied.
 `.apb` is the cryptographic backup unit; the tarball is packaging.
 
 Live restore is batch-oriented:

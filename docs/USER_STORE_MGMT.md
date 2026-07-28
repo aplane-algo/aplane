@@ -160,9 +160,10 @@ before the command reports success.
 `apstore backup create` writes a single `.tar.gz` archive. The archive includes:
 - All `.apb` files (encrypted with the export passphrase) in the `apb/` subdirectory
 - `README.md` with decryption instructions
-- `manifest.json` with source node-role metadata
-- `source_settings.json` with the signer source's approval default (not
-  applicable to sentry sources) and custom genesis-hash mappings
+- `manifest.sealed`, the archive's authenticated description: an inventory of
+  every other member with its digest, the source node role, and the signer
+  source's approval default (not applicable to sentry sources) with custom
+  genesis-hash mappings. It is encrypted under the export passphrase.
 - Any bundled template definition for a template-backed key, embedded inside that key's encrypted payload
 - Verified active policy snapshots at `policy/policy.yaml` and
   `policy/policy.yaml.hmac` for provenance. Restore workflows do not install
@@ -493,21 +494,23 @@ The archived policy sidecars are source-store provenance material. They are not
 destination restore artifacts and should not be copied into the active identity
 directory. The destination cannot verify the archived HMAC without the source
 master key. Backup creation verified the live source policy before copying it;
-activation review accurately treats the archived policy as unverified source
-material and the destination policy as authoritative.
+activation review treats the archived policy as source material and the
+destination policy as authoritative.
 
-Current backup writers record the source node's approval default and custom
-genesis-hash mappings in `source_settings.json`; the sidecar contains no
-network credentials.
+Backup writers record the source node's approval default and custom
+genesis-hash mappings inside the sealed manifest; it contains no network
+credentials.
 
-**Backup archives are not signed.** Neither the archived policy nor
-`source_settings.json` can be authenticated by a destination store, so
-everything the archive says about its source node is provenance, not evidence.
-This is true of every restore without exception, which is why the review screen
-does not repeat it. Instead the review states provenance structurally: source
-values appear under a **Reported by the backup archive** heading, and policy
-differences appear under **Policy differences (informational)**. Read both as
-"this is what the archive claims", never as "this node checked it".
+**What authentication proves.** Every archive carries a manifest sealed under
+the export passphrase, covering every member and its digest. Opening an
+archive verifies that inventory, so a member removed, added, or altered after
+creation is rejected. What this proves is provenance and integrity: the
+archive is what a holder of the export passphrase packaged. It is not a
+statement that the contents are safe to adopt. Anyone with the export
+passphrase — including whoever is restoring — could have packaged it, so the
+review still presents source values as claims: they appear under a **Reported
+by the backup archive** heading, and policy differences under **Policy
+differences (informational)**.
 
 Nothing the archive reports changes any prompt. A destination that auto-approves
 unmatched signing requests warns and requires acknowledgement whether the
@@ -515,9 +518,9 @@ archive claims manual review, claims auto-approve, or reports nothing at all.
 The destination approval mode and the destination's verified policy are always
 authoritative.
 
-The review does speak up when something is genuinely wrong: a malformed or
-oversized `source_settings.json` is reported as a warning on the review screen,
-and key recovery continues regardless.
+An archive whose manifest cannot be decrypted or whose members do not match it
+is rejected outright, with the same wrong-passphrase-or-tampering message a
+corrupted payload produces. There is no partially-trusted state to review.
 
 If policy restoration is warranted, restore it deliberately:
 

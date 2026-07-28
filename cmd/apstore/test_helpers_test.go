@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -444,4 +445,23 @@ func (p restoreLibraryProvider) RuntimeArgs() []lsigprovider.RuntimeArgDef { ret
 func (p restoreLibraryProvider) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
 	_ = runtimeArgs
 	return [][]byte{signature}, nil
+}
+
+// sealTestArchive seals a manifest over a hand-built archive tree so it has
+// the authenticated shape every real archive carries.
+func sealTestArchive(t *testing.T, root string, role noderole.Role) {
+	t.Helper()
+	snapshot := apbackup.SourceSettingsSnapshot{}
+	if role == noderole.RoleSigner {
+		snapshot.UserAutoApprove = new(bool)
+	}
+	if err := apbackup.WriteSealedManifest(
+		root,
+		role,
+		time.Unix(1_700_000_000, 0),
+		snapshot,
+		[]byte("export-passphrase"),
+	); err != nil {
+		t.Fatalf("WriteSealedManifest() error = %v", err)
+	}
 }

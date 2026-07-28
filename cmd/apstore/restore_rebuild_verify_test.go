@@ -77,6 +77,7 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 		t.Fatalf("WriteReadme() error = %v", err)
 	}
 	archivePath := filepath.Join(t.TempDir(), "rebuild.tar.gz")
+	sealTestArchive(t, backupRoot, noderole.RoleSigner)
 	if err := backup.CreateTarGzArchive(backupRoot, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}
@@ -110,7 +111,7 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	}
 }
 
-func TestCmdRebuildRoleOverrideRestoresSentryBackupWithoutManifest(t *testing.T) {
+func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 	RegisterProviders()
 
 	oldDataDirectory := dataDirectory
@@ -132,6 +133,7 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackupWithoutManifest(t *testing.T)
 		t.Fatalf("WriteReadme() error = %v", err)
 	}
 	archivePath := filepath.Join(t.TempDir(), "sentry-rebuild.tar.gz")
+	sealTestArchive(t, backupRoot, noderole.RoleSentry)
 	if err := backup.CreateTarGzArchive(backupRoot, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}
@@ -175,11 +177,18 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackupWithoutManifest(t *testing.T)
 
 func TestSelectRebuildNodeRoleExplicitOverridesManifest(t *testing.T) {
 	root := t.TempDir()
-	if err := backup.WriteManifest(root, noderole.RoleSigner, time.Unix(100, 0)); err != nil {
-		t.Fatalf("WriteManifest() error = %v", err)
+	passphrase := []byte("export-passphrase")
+	if err := backup.WriteSealedManifest(
+		root,
+		noderole.RoleSigner,
+		time.Unix(100, 0),
+		backup.SourceSettingsSnapshot{UserAutoApprove: new(bool)},
+		passphrase,
+	); err != nil {
+		t.Fatalf("WriteSealedManifest() error = %v", err)
 	}
 
-	role, err := selectRebuildNodeRole(root, noderole.RoleSentry, true)
+	role, err := selectRebuildNodeRole(root, passphrase, noderole.RoleSentry, true)
 	if err != nil {
 		t.Fatalf("selectRebuildNodeRole() error = %v", err)
 	}
@@ -188,13 +197,33 @@ func TestSelectRebuildNodeRoleExplicitOverridesManifest(t *testing.T) {
 	}
 }
 
-func TestSelectRebuildNodeRoleDefaultsMissingManifestToSigner(t *testing.T) {
-	role, err := selectRebuildNodeRole(t.TempDir(), "", false)
+func TestSelectRebuildNodeRoleUsesSealedManifestRole(t *testing.T) {
+	root := t.TempDir()
+	passphrase := []byte("export-passphrase")
+	if err := backup.WriteSealedManifest(
+		root,
+		noderole.RoleSentry,
+		time.Unix(100, 0),
+		backup.SourceSettingsSnapshot{},
+		passphrase,
+	); err != nil {
+		t.Fatalf("WriteSealedManifest() error = %v", err)
+	}
+
+	role, err := selectRebuildNodeRole(root, passphrase, "", false)
 	if err != nil {
 		t.Fatalf("selectRebuildNodeRole() error = %v", err)
 	}
-	if role != noderole.RoleSigner {
-		t.Fatalf("selectRebuildNodeRole() role = %q, want signer", role)
+	if role != noderole.RoleSentry {
+		t.Fatalf("selectRebuildNodeRole() role = %q, want sentry from the sealed manifest", role)
+	}
+}
+
+// TestSelectRebuildNodeRoleRejectsUnauthenticatedArchive proves the role
+// default can no longer be taken from an archive that fails authentication.
+func TestSelectRebuildNodeRoleRejectsUnauthenticatedArchive(t *testing.T) {
+	if _, err := selectRebuildNodeRole(t.TempDir(), []byte("export-passphrase"), "", false); err == nil {
+		t.Fatal("selectRebuildNodeRole accepted an archive with no sealed manifest")
 	}
 }
 
@@ -272,6 +301,7 @@ func TestCmdVerifyAcceptsTarball(t *testing.T) {
 	}
 
 	archivePath := filepath.Join(t.TempDir(), "verify.tar.gz")
+	sealTestArchive(t, backupRoot, noderole.RoleSigner)
 	if err := backup.CreateTarGzArchive(backupRoot, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}

@@ -18,19 +18,6 @@ const (
 	MaxGenesisHashMappings = 1024
 )
 
-// Status describes availability and trust of archive-reported source settings.
-type Status string
-
-const (
-	// StatusMissing means the archive did not carry source-setting metadata.
-	StatusMissing Status = "missing"
-	// StatusUnverified means metadata was present and valid but is not
-	// authenticated by the destination store.
-	StatusUnverified Status = "unverified"
-	// StatusInvalid means metadata was present but could not be safely used.
-	StatusInvalid Status = "invalid"
-)
-
 // GenesisHashMapping binds one canonical custom genesis hash to its network
 // context token.
 type GenesisHashMapping struct {

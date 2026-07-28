@@ -475,16 +475,18 @@ func TestIPCRestorePreviewRateLimitsFailures(t *testing.T) {
 	}) {
 		t.Fatalf("first preview response mismatch: %#v", firstMsgs[0])
 	}
-	firstErrors, _ := firstMsgs[0]["errors"].([]any)
-	if len(firstErrors) == 0 {
-		t.Fatalf("first preview errors = %#v, want decrypt error", firstMsgs[0]["errors"])
+	// A wrong passphrase fails at the archive's sealed manifest, before any
+	// member is inspected: the response carries a top-level failure and
+	// says nothing about the archive's contents.
+	firstFailure, _ := firstMsgs[0]["error"].(string)
+	if firstFailure == "" {
+		t.Fatalf("first preview response = %#v, want a decrypt failure", firstMsgs[0])
 	}
-	firstError, ok := firstErrors[0].(map[string]any)
-	if !ok {
-		t.Fatalf("first preview error has unexpected type: %#v", firstErrors[0])
+	if strings.Contains(firstFailure, gen.Address) {
+		t.Fatalf("wrong-passphrase preview leaked address %s in %q", gen.Address, firstFailure)
 	}
-	if _, leaked := firstError["address"]; leaked {
-		t.Fatalf("wrong-passphrase preview leaked address %s in error %#v", gen.Address, firstError)
+	if keys, present := firstMsgs[0]["keys"].([]any); present && len(keys) > 0 {
+		t.Fatalf("wrong-passphrase preview reported archive contents: %#v", keys)
 	}
 
 	secondRecorder := &ipcJSONRecorderConn{}
