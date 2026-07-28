@@ -9,6 +9,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -117,7 +119,9 @@ func DeepVerifyBackupBytes(backupDir string, passphrase []byte, opts DeepVerifyO
 		} else {
 			report.FailedFiles++
 		}
-		if result.TemplateProvenanceUnavailable {
+		// Only valid keys are counted: a key that fails a later check is a
+		// hard failure, not something an operator can decide to accept.
+		if result.Valid && result.TemplateProvenanceUnavailable {
 			report.ProvenanceUnavailableFiles++
 		}
 	}
@@ -303,9 +307,15 @@ func verifyBundledTemplateMatchesKey(
 		return fmt.Errorf("backup bundle has unsupported template_type %q", templateType)
 	}
 	if err != nil {
-		// The compiler could not answer. That is absence of evidence, not
-		// evidence of a bad template, and callers may treat it differently
-		// from a template that compiles into the wrong bytecode below.
+		if !isCompilerUnreachable(err) {
+			// The compiler answered, or the template never reached it: an
+			// unparseable spec, an invalid one, a missing public key, or TEAL
+			// the compiler rejected. All of that is evidence of a bad archive
+			// and stays fatal, exactly like wrong bytecode below.
+			return err
+		}
+		// The compiler could not be reached. That is absence of evidence, so
+		// callers may treat it differently.
 		return fmt.Errorf("%w: %v", ErrTemplateProvenanceUnavailable, err)
 	}
 	if !bytes.Equal(compiledBytecode, storedBytecode) {
@@ -363,4 +373,28 @@ func compileBundledComposedTemplate(ctx context.Context, templateYAML []byte, pu
 		return nil, "", fmt.Errorf("failed to derive bundled composed template LogicSig: %w", err)
 	}
 	return bytecode, address, nil
+}
+
+// isCompilerUnreachable reports whether err means the TEAL compiler could not
+// be reached at all, as opposed to answering.
+//
+// The distinction is load-bearing: only an unreachable compiler is absence of
+// evidence. A compiler that rejects the template's TEAL, a spec that fails to
+// parse or validate, and a payload missing the public key its template needs
+// are all evidence of a bad archive and must stay fatal. Classifying by
+// transport shape keeps content failures on the fatal path even though they
+// surface through the same call.
+func isCompilerUnreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }

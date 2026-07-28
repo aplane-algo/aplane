@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -300,15 +301,22 @@ func cmdBackupImport(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%s", importUsage)
 	}
-	source := args[0]
+	source := ""
 	acceptUnverifiedProvenance := false
-	for _, arg := range args[1:] {
-		switch arg {
-		case "--accept-unverified-template-provenance":
+	for _, arg := range args {
+		switch {
+		case arg == "--accept-unverified-template-provenance":
 			acceptUnverifiedProvenance = true
-		default:
+		case strings.HasPrefix(arg, "-"):
 			return fmt.Errorf("unknown backup import option: %s", arg)
+		case source == "":
+			source = arg
+		default:
+			return fmt.Errorf("%s", importUsage)
 		}
+	}
+	if source == "" {
+		return fmt.Errorf("%s", importUsage)
 	}
 	if !backup.IsArchivePath(source) {
 		return fmt.Errorf("backup source must end in .tar.gz or .tgz: %s", source)
@@ -433,7 +441,7 @@ func validateImportedBackupContents(sourceRoot string, acceptUnverifiedProvenanc
 // here — that is a hard failure above.
 func confirmUnverifiedTemplateProvenance(report *backup.VerifyReport, preAccepted bool) error {
 	logWarnf(
-		"%d of %d key file(s) bundle a template whose provenance could not be checked: the TEAL compiler is unreachable",
+		"%d of %d key file(s) bundle a template whose provenance could not be checked: the TEAL compiler could not be reached",
 		report.ProvenanceUnavailableFiles, report.TotalFiles,
 	)
 	for _, result := range report.Results {
@@ -449,7 +457,7 @@ func confirmUnverifiedTemplateProvenance(report *backup.VerifyReport, preAccepte
 		logWarnf("proceeding: --accept-unverified-template-provenance was given")
 		return nil
 	}
-	if !confirmYesNo("Import this backup without verifying bundled template provenance? ") {
+	if !confirmYesNo("Import this backup without verifying bundled template provenance? [y/N]: ") {
 		return fmt.Errorf("import cancelled; re-run when the TEAL compiler is reachable, or pass --accept-unverified-template-provenance")
 	}
 	return nil

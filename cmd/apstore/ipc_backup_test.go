@@ -214,3 +214,24 @@ func TestBackupImportRejectsUnknownOption(t *testing.T) {
 		t.Fatalf("cmdBackupImport(unknown option) error = %v, want rejection", err)
 	}
 }
+
+func TestBackupImportAcceptsFlagBeforeOrAfterPath(t *testing.T) {
+	// The flag must not be mistaken for the archive path in either order;
+	// both forms should reach the same missing-source rejection.
+	for _, args := range [][]string{
+		{"--accept-unverified-template-provenance", filepath.Join(t.TempDir(), "missing.tar.gz")},
+		{filepath.Join(t.TempDir(), "missing.tar.gz"), "--accept-unverified-template-provenance"},
+	} {
+		err := cmdBackupImport(args)
+		if err == nil || !strings.Contains(err.Error(), "backup source unavailable") {
+			t.Fatalf("cmdBackupImport(%v) error = %v, want missing-source rejection", args, err)
+		}
+	}
+}
+
+func TestBackupImportRequiresArchivePath(t *testing.T) {
+	err := cmdBackupImport([]string{"--accept-unverified-template-provenance"})
+	if err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("cmdBackupImport(flag only) error = %v, want usage", err)
+	}
+}

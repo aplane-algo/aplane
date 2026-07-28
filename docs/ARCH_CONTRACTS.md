@@ -2394,9 +2394,12 @@ Live signer-managed backup:
   import recompiles the bundled template with the key's stored creation
   parameters and verifies that the result exactly matches the key's stored
   LogicSig bytecode; mismatches reject the import
-- a template that compiles into different bytecode is evidence of a real
-  problem and always rejects the import. An unreachable TEAL compiler is a
-  different case — absence of evidence — and the two are never conflated: the
+- evidence of a bad archive always rejects the import, whether the template
+  compiles into different bytecode, fails to compile at all, or fails to
+  parse or validate before the compiler is reached. Only a compiler that
+  cannot be reached — a transport failure, a timeout, or no configured
+  client — is treated as absence of evidence, classified by transport shape
+  rather than inferred from any compile-path failure: the
   keys themselves have already validated, so import reports which payloads
   could not be provenance-checked and asks the operator whether to proceed.
   Declining cancels the import. `--accept-unverified-template-provenance`
