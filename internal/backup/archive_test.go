@@ -109,3 +109,49 @@ func TestExtractTarGzArchiveRejectsPathTraversal(t *testing.T) {
 		t.Fatalf("ExtractTarGzArchive() error = %v, want traversal rejection", err)
 	}
 }
+
+func TestExtractTarGzArchiveRejectsLinkEntries(t *testing.T) {
+	cases := []struct {
+		name     string
+		typeflag byte
+	}{
+		{"symlink", tar.TypeSymlink},
+		{"hardlink", tar.TypeLink},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			archivePath := filepath.Join(t.TempDir(), "bad.tar.gz")
+			file, err := os.Create(archivePath)
+			if err != nil {
+				t.Fatalf("Create(archive) error = %v", err)
+			}
+			gzw := gzip.NewWriter(file)
+			tw := tar.NewWriter(gzw)
+			if err := tw.WriteHeader(&tar.Header{
+				Name:     "entry",
+				Typeflag: tc.typeflag,
+				Linkname: "../../outside",
+				Mode:     0o644,
+			}); err != nil {
+				t.Fatalf("WriteHeader() error = %v", err)
+			}
+			if err := tw.Close(); err != nil {
+				t.Fatalf("tar.Close() error = %v", err)
+			}
+			if err := gzw.Close(); err != nil {
+				t.Fatalf("gzip.Close() error = %v", err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatalf("file.Close() error = %v", err)
+			}
+
+			err = ExtractTarGzArchive(archivePath, t.TempDir())
+			if err == nil {
+				t.Fatal("ExtractTarGzArchive() error = nil, want link rejection")
+			}
+			if !strings.Contains(err.Error(), "unsupported archive entry type") {
+				t.Fatalf("ExtractTarGzArchive() error = %v, want unsupported entry type", err)
+			}
+		})
+	}
+}

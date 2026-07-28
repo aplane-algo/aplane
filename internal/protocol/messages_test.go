@@ -31,8 +31,6 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeDeleteBackupResult,
 		MsgTypePreviewRestore,
 		MsgTypeRestorePreview,
-		MsgTypeRestoreBackup,
-		MsgTypeRestoreBackupResult,
 		MsgTypeSignRequest,
 		MsgTypeSignRequestCanceled,
 		MsgTypeSignResponse,
@@ -97,6 +95,90 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 			t.Fatalf("duplicate message type constant: %q", msgType)
 		}
 		seen[msgType] = struct{}{}
+	}
+}
+
+func TestCurrentAdminProtocolVersionIncludesRecoverySourceContext(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 3, Minor: 2}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 3.2", got)
+	}
+}
+
+func TestReviewRecoveredSourceSettingsJSONShapeAndMinorSkew(t *testing.T) {
+	autoApprove := false
+	unattendedAckRequired := true
+	message := ReviewRecoveredResultMessage{
+		BaseMessage: BaseMessage{Type: MsgTypeReviewRecoveredResult, ID: "review-1"},
+		Success:     true,
+		UnknownSourceSettings: []string{
+			RecoverySourceSettingUserAutoApprove,
+			RecoverySourceSettingGenesisHashMappings,
+		},
+		SourceSettingsStatus:         RecoverySourceSettingsStatusUnverified,
+		SourceUserAutoApprove:        &autoApprove,
+		UnattendedSigningAckRequired: &unattendedAckRequired,
+		SecurityChanges: []RecoveryPolicyChange{{
+			Category:    "hard_rejects",
+			Path:        "reject_rekey",
+			Source:      "true",
+			Destination: "false",
+		}},
+		SourceGenesisHashMappings: []RecoveryGenesisHashMapping{{
+			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
+			Network:     "private-network",
+		}},
+	}
+	encoded, err := json.Marshal(message)
+	if err != nil {
+		t.Fatalf("Marshal(review) error = %v", err)
+	}
+	var shape map[string]any
+	if err := json.Unmarshal(encoded, &shape); err != nil {
+		t.Fatalf("Unmarshal(review shape) error = %v", err)
+	}
+	if shape["source_settings_status"] != RecoverySourceSettingsStatusUnverified ||
+		shape["source_user_auto_approve"] != false ||
+		shape["unattended_signing_ack_required"] != true {
+		t.Fatalf("review source settings shape = %#v", shape)
+	}
+	mappings, ok := shape["source_genesis_hash_mappings"].([]any)
+	if !ok || len(mappings) != 1 {
+		t.Fatalf("review mappings shape = %#v", shape["source_genesis_hash_mappings"])
+	}
+	changes, ok := shape["security_changes"].([]any)
+	if !ok || len(changes) != 1 {
+		t.Fatalf("review policy-change shape = %#v", shape["security_changes"])
+	}
+	change, ok := changes[0].(map[string]any)
+	if !ok || change["path"] != "reject_rekey" {
+		t.Fatalf("review policy-change shape = %#v", shape["security_changes"])
+	}
+	if _, present := change["downgrade"]; present {
+		t.Fatalf("review policy change carried a downgrade verdict = %#v", change)
+	}
+
+	var oldClient struct {
+		Success               bool     `json:"success"`
+		UnknownSourceSettings []string `json:"unknown_source_settings"`
+	}
+	if err := json.Unmarshal(encoded, &oldClient); err != nil {
+		t.Fatalf("old client Unmarshal(new review) error = %v", err)
+	}
+	if !oldClient.Success || len(oldClient.UnknownSourceSettings) != 2 {
+		t.Fatalf("old client view = %+v, want conservative v3 caveats", oldClient)
+	}
+
+	var newClient ReviewRecoveredResultMessage
+	if err := json.Unmarshal(
+		[]byte(`{"type":"review_recovered_result","success":true,"unknown_source_settings":["source.user_auto_approve","source.genesis_hash_mappings"]}`),
+		&newClient,
+	); err != nil {
+		t.Fatalf("new client Unmarshal(old review) error = %v", err)
+	}
+	if newClient.SourceSettingsStatus != "" ||
+		newClient.SourceUserAutoApprove != nil ||
+		len(newClient.SourceGenesisHashMappings) != 0 {
+		t.Fatalf("new client old-server source settings = %+v, want absent", newClient)
 	}
 }
 
@@ -323,6 +405,24 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			name: "change_store_passphrase_result",
+			msg: ChangeStorePassphraseResultMessage{
+				BaseMessage:            BaseMessage{Type: MsgTypeChangeStorePassResult, ID: "change-1"},
+				Success:                true,
+				KeysMigrated:           2,
+				TemplatesMigrated:      1,
+				RecoveredFilesMigrated: 3,
+			},
+			wantMap: map[string]any{
+				"type":                     MsgTypeChangeStorePassResult,
+				"id":                       "change-1",
+				"success":                  true,
+				"keys_migrated":            float64(2),
+				"templates_migrated":       float64(1),
+				"recovered_files_migrated": float64(3),
+			},
+		},
+		{
 			name: "backup",
 			msg: BackupMessage{
 				BaseMessage:      BaseMessage{Type: MsgTypeBackup, ID: "backup-1"},
@@ -396,44 +496,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 						"error":   "failed to decrypt backup",
 					},
 				},
-			},
-		},
-		{
-			name: "restore_backup_result",
-			msg: RestoreBackupResultMessage{
-				BaseMessage: BaseMessage{Type: MsgTypeRestoreBackupResult, ID: "restore-1"},
-				ArchivePath: "/data/identities/default/backups/backup.tar.gz",
-				Success:     true,
-				Restored: []RestoreKeyInfo{{
-					Address: "ADDR1",
-					KeyType: "ed25519",
-				}},
-				Warnings: []RestoreWarning{{
-					Address: "ADDR1",
-					KeyType: "test.timed-policy.v1",
-					Warning: "skipped bundled template for test.timed-policy.v1: backup template conflicts with existing keystore definition",
-				}},
-				KeyCount: 5,
-			},
-			wantMap: map[string]any{
-				"type":         MsgTypeRestoreBackupResult,
-				"id":           "restore-1",
-				"archive_path": "/data/identities/default/backups/backup.tar.gz",
-				"success":      true,
-				"restored": []any{
-					map[string]any{
-						"address":  "ADDR1",
-						"key_type": "ed25519",
-					},
-				},
-				"warnings": []any{
-					map[string]any{
-						"address":  "ADDR1",
-						"key_type": "test.timed-policy.v1",
-						"warning":  "skipped bundled template for test.timed-policy.v1: backup template conflicts with existing keystore definition",
-					},
-				},
-				"key_count": float64(5),
 			},
 		},
 		{
@@ -977,7 +1039,7 @@ func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 	}{
 		{
 			name:       "auth",
-			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","identity_id":"default","protocol_version":{"major":2,"minor":0}}`),
+			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","identity_id":"default","protocol_version":{"major":3,"minor":0}}`),
 			msg:        &AuthMessage{},
 			fieldNames: []string{"passphrase"},
 			values:     []string{"auth-secret"},

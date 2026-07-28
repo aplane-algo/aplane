@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
@@ -67,6 +68,72 @@ type Restorer struct {
 	Overwrite  bool
 	Logf       RestoreLogger
 	Warnf      RestoreWarningHandler
+	// ActiveOverride, when set, targets every namespace write at these
+	// resolved paths instead of the store's live layout — e.g. a staged,
+	// not-yet-published generation during a restore activation mint.
+	ActiveOverride storepaths.ActivePaths
+}
+
+// Namespace helpers routing template/key-type state through the restorer's
+// destination namespaces (live or staged).
+
+func (r Restorer) ktGet(keyType string) (keytypestate.Record, bool, error) {
+	active, err := r.activeNamespace()
+	if err != nil {
+		return keytypestate.Record{}, false, err
+	}
+	return keytypestate.GetActive(active, keyType)
+}
+
+func (r Restorer) ktPut(rec keytypestate.Record) error {
+	active, err := r.activeNamespace()
+	if err != nil {
+		return err
+	}
+	return keytypestate.PutActive(active, rec)
+}
+
+func (r Restorer) ktSetState(keyType string, state keytypestate.State) error {
+	active, err := r.activeNamespace()
+	if err != nil {
+		return err
+	}
+	return keytypestate.SetStateActive(active, keyType, state)
+}
+
+func (r Restorer) ktDelete(keyType string) error {
+	active, err := r.activeNamespace()
+	if err != nil {
+		return err
+	}
+	return keytypestate.DeleteActive(active, keyType)
+}
+
+func (r Restorer) templateExists(keyType string, templateType templatestore.TemplateType) bool {
+	active, err := r.activeNamespace()
+	if err != nil {
+		return false
+	}
+	return templatestore.TemplateExistsActive(active, keyType, templateType)
+}
+
+func (r Restorer) templatePath(keyType string, templateType templatestore.TemplateType) (string, error) {
+	active, err := r.activeNamespace()
+	if err != nil {
+		return "", err
+	}
+	return templatestore.GetTemplateFilePathActive(active, keyType, templateType), nil
+}
+
+func (r Restorer) removeTemplate(keyType string, templateType templatestore.TemplateType) error {
+	path, err := r.templatePath(keyType, templateType)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove restored template: %w", err)
+	}
+	return nil
 }
 
 func NewRestorer(paths storepaths.Paths, identityID string) Restorer {
@@ -86,6 +153,24 @@ func (r Restorer) WithWarningHandler(warnf RestoreWarningHandler) Restorer {
 func (r Restorer) WithNodeRole(role noderole.Role) Restorer {
 	r.NodeRole = role
 	return r
+}
+
+// WithActiveNamespace targets all namespace writes at resolved active-store
+// paths (e.g. a staged generation).
+func (r Restorer) WithActiveNamespace(active storepaths.ActivePaths) Restorer {
+	r.ActiveOverride = active
+	return r
+}
+
+// activeNamespace resolves the destination namespaces for one apply: the
+// override when staging, else the store's live layout. Callers run under the
+// identity mutation lock (or hold the offline store lock), which also
+// serializes CURRENT flips.
+func (r Restorer) activeNamespace() (storepaths.ActivePaths, error) {
+	if r.ActiveOverride != nil {
+		return r.ActiveOverride, nil
+	}
+	return genstore.ResolveActive(r.Paths, r.IdentityID)
 }
 
 func (r Restorer) WithOverwrite(overwrite bool) Restorer {
@@ -398,16 +483,38 @@ func readBackupPayload(keysDir, address string, exportPassphrase []byte) (keyJSO
 // Backup files may contain a BackupBundle (key plus embedded template) or a
 // plain canonical key payload.
 func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphrase []byte) (string, error) {
-	keyJSON, templateYAML, tmplType, err := readBackupPayload(keysDir, address, exportPassphrase)
+	entry, err := r.InspectBackupEntry(keysDir, address, exportPassphrase)
 	if err != nil {
 		return "", err
 	}
-	defer crypto.ZeroBytes(keyJSON)
-	defer crypto.ZeroBytes(templateYAML)
+	defer entry.ZeroSecrets()
+	return r.applyInspectedBackupEntry(entry, masterKey)
+}
+
+// RestoreActiveForRebuild restores one inspected archive entry directly into
+// an offline store being rebuilt. Live restore workflows must recover an
+// inactive batch and activate it through the admin protocol instead.
+func (r Restorer) RestoreActiveForRebuild(keysDir, address string, masterKey, exportPassphrase []byte) (string, error) {
+	entry, err := r.InspectBackupEntry(keysDir, address, exportPassphrase)
+	if err != nil {
+		return "", err
+	}
+	defer entry.ZeroSecrets()
+	return r.applyInspectedBackupEntry(entry, masterKey)
+}
+
+func (r Restorer) applyInspectedBackupEntry(entry *InspectedBackupEntry, masterKey []byte) (string, error) {
+	if entry == nil {
+		return "", fmt.Errorf("inspected backup entry is nil")
+	}
+	keyJSON := entry.KeyJSON
+	templateYAML := entry.TemplateYAML
+	tmplType := entry.TemplateType
+	address := entry.Selector
 
 	payload, err := keys.ParsePayload(keyJSON)
 	if err != nil {
-		return "", fmt.Errorf("%w; if this backup predates the current key schema, re-export it with current apstore or regenerate the key", err)
+		return "", fmt.Errorf("failed to revalidate inspected key payload: %w", err)
 	}
 	defer payload.ZeroSecrets()
 	derivedAddress, err := payload.Selector()
@@ -417,13 +524,17 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 	keyType := payload.KeyType
 	hasLogicSigBytecode := len(payload.LogicSigBytecode) > 0
 
-	if derivedAddress != address {
-		return "", fmt.Errorf("address mismatch: expected %s, got %s", address, derivedAddress)
+	if derivedAddress != address || payload.Category != entry.Category || payload.KeyType != entry.KeyType {
+		return "", fmt.Errorf("inspected backup entry metadata no longer matches key payload")
 	}
 	if err := r.validateKeyTypeAllowed(keyType); err != nil {
 		return "", err
 	}
-	destPath, alreadyExists, err := keys.ManagedCredentialDestination(r.Paths, r.IdentityID, address, payload.Category)
+	activeNS, err := r.activeNamespace()
+	if err != nil {
+		return "", err
+	}
+	destPath, alreadyExists, err := keys.ManagedCredentialDestinationActive(activeNS, address, payload.Category)
 	if err != nil {
 		return "", err
 	}
@@ -496,13 +607,17 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 		return "", rollbackPlans(fmt.Errorf("failed to encrypt key: %w", err))
 	}
 
-	if err := fsutil.MkdirAll(r.Paths.KeysDir(r.IdentityID)); err != nil {
+	if err := fsutil.MkdirAll(activeNS.KeysDir()); err != nil {
 		return "", rollbackPlans(fmt.Errorf("failed to create keys directory: %w", err))
 	}
-	if err := fsutil.WriteFile(destPath, encrypted); err != nil {
+	// Durable write: an activated credential must never be lost to a crash
+	// after the activation's recovery state is cleaned up, and the
+	// foreign-uid in-place fallback of fsutil.WriteFile is unsynced and
+	// non-atomic. [P1c]
+	if err := fsutil.WriteFileDurable(destPath, encrypted); err != nil {
 		return "", rollbackPlans(fmt.Errorf("failed to write key file: %w", err))
 	}
-	componentMetadataPath, wroteComponentMetadata, err := keys.WriteWitnessPublicMetadataFromKeyJSON(r.Paths, r.IdentityID, address, keyPayload)
+	componentMetadataPath, wroteComponentMetadata, err := keys.WriteWitnessPublicMetadataFromKeyJSONActive(activeNS, address, keyPayload)
 	if err != nil {
 		_ = os.Remove(destPath)
 		return "", rollbackPlans(fmt.Errorf("failed to write component public metadata for %s: %w", address, err))
@@ -804,10 +919,13 @@ func (r Restorer) authoritativeTemplateForKeyType(keyType string) (templatestore
 
 func (r Restorer) loadKeystoreTemplateForKeyType(keyType string, masterKey []byte) (templatestore.TemplateType, []byte, bool, error) {
 	for _, tt := range templatestore.ActiveTemplateTypes() {
-		if !templatestore.TemplateExistsForPaths(r.Paths, r.IdentityID, keyType, tt) {
+		if !r.templateExists(keyType, tt) {
 			continue
 		}
-		templatePath := templatestore.GetTemplateFilePathForPaths(r.Paths, r.IdentityID, keyType, tt)
+		templatePath, err := r.templatePath(keyType, tt)
+		if err != nil {
+			return "", nil, false, err
+		}
 		templateYAML, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
 		if err != nil {
 			return "", nil, false, fmt.Errorf("failed to read existing keystore template: %w", err)
@@ -820,7 +938,7 @@ func (r Restorer) loadKeystoreTemplateForKeyType(keyType string, masterKey []byt
 func (r Restorer) enableInstalledTemplatePlan(keyType string, templateType templatestore.TemplateType, masterKey []byte) restorePlan {
 	_ = masterKey
 	return restorePlan{apply: func() (func() error, error) {
-		prior, priorOK, err := keytypestate.Get(r.Paths, r.IdentityID, keyType)
+		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
 			return nil, err
 		}
@@ -830,25 +948,29 @@ func (r Restorer) enableInstalledTemplatePlan(keyType string, templateType templ
 		if prior.State == keytypestate.StateEnabled {
 			return nil, nil
 		}
-		if err := keytypestate.SetState(r.Paths, r.IdentityID, keyType, keytypestate.StateEnabled); err != nil {
+		if err := r.ktSetState(keyType, keytypestate.StateEnabled); err != nil {
 			return nil, err
 		}
 		r.logf("enabled template: %s (%s)", keyType, templateType)
 		return func() error {
 			prior.State = keytypestate.StateDisabled
-			return keytypestate.Put(r.Paths, r.IdentityID, prior)
+			return r.ktPut(prior)
 		}, nil
 	}}
 }
 
 func (r Restorer) installLibraryTemplatePlan(keyType string, templateType templatestore.TemplateType, masterKey []byte) restorePlan {
 	return restorePlan{apply: func() (func() error, error) {
-		prior, priorOK, err := keytypestate.Get(r.Paths, r.IdentityID, keyType)
+		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
 			return nil, err
 		}
-		hadTemplate := templatestore.TemplateExistsForPaths(r.Paths, r.IdentityID, keyType, templateType)
-		result, err := templatelibrary.InstallFromLibrary(r.Paths, r.IdentityID, templatelibrary.TemplateRef{
+		hadTemplate := r.templateExists(keyType, templateType)
+		active, err := r.activeNamespace()
+		if err != nil {
+			return nil, err
+		}
+		result, err := templatelibrary.InstallFromLibraryActive(r.Paths, active, templatelibrary.TemplateRef{
 			KeyType:      keyType,
 			TemplateType: templateType,
 		}, masterKey)
@@ -860,7 +982,7 @@ func (r Restorer) installLibraryTemplatePlan(keyType string, templateType templa
 		}
 		return func() error {
 			if !hadTemplate {
-				if err := removeTemplateFile(r.Paths, r.IdentityID, keyType, templateType); err != nil {
+				if err := r.removeTemplate(keyType, templateType); err != nil {
 					return err
 				}
 			}
@@ -871,11 +993,11 @@ func (r Restorer) installLibraryTemplatePlan(keyType string, templateType templa
 
 func (r Restorer) installIncomingTemplatePlan(keyType string, templateType templatestore.TemplateType, templateYAML, masterKey []byte) restorePlan {
 	return restorePlan{apply: func() (func() error, error) {
-		prior, priorOK, err := keytypestate.Get(r.Paths, r.IdentityID, keyType)
+		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
 			return nil, err
 		}
-		hadTemplate := templatestore.TemplateExistsForPaths(r.Paths, r.IdentityID, keyType, templateType)
+		hadTemplate := r.templateExists(keyType, templateType)
 		parsed, err := templatelibrary.ParseYAMLAs("", templateYAML, templateType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse bundled template: %w", err)
@@ -883,7 +1005,11 @@ func (r Restorer) installIncomingTemplatePlan(keyType string, templateType templ
 		if !strings.EqualFold(parsed.KeyType, keyType) {
 			return nil, fmt.Errorf("bundled template for %s declares key type %s", keyType, parsed.KeyType)
 		}
-		result, err := templatelibrary.InstallParsed(r.Paths, r.IdentityID, parsed, masterKey)
+		active, err := r.activeNamespace()
+		if err != nil {
+			return nil, err
+		}
+		result, err := templatelibrary.InstallParsedActive(active, parsed, masterKey)
 		if err != nil {
 			return nil, err
 		}
@@ -892,7 +1018,7 @@ func (r Restorer) installIncomingTemplatePlan(keyType string, templateType templ
 		}
 		return func() error {
 			if !hadTemplate {
-				if err := removeTemplateFile(r.Paths, r.IdentityID, keyType, templateType); err != nil {
+				if err := r.removeTemplate(keyType, templateType); err != nil {
 					return err
 				}
 			}
@@ -903,7 +1029,7 @@ func (r Restorer) installIncomingTemplatePlan(keyType string, templateType templ
 
 func (r Restorer) activateCompiledProviderPlan(keyType string, masterKey []byte) restorePlan {
 	return restorePlan{apply: func() (func() error, error) {
-		prior, priorOK, err := keytypestate.Get(r.Paths, r.IdentityID, keyType)
+		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
 			return nil, err
 		}
@@ -918,11 +1044,15 @@ func (r Restorer) activateCompiledProviderPlan(keyType string, masterKey []byte)
 			return nil, nil
 		}
 		if priorOK && (prior.Source != keytypestate.SourceCompiled || !templateFingerprintsEquivalent(prior.Fingerprint, rec.Fingerprint)) {
-			if err := keytypestate.RequireUnused(r.Paths, r.IdentityID, keyType, masterKey); err != nil {
+			activeNS, err := r.activeNamespace()
+			if err != nil {
+				return nil, err
+			}
+			if err := keytypestate.RequireUnusedActive(activeNS, keyType, masterKey); err != nil {
 				return nil, err
 			}
 		}
-		if err := keytypestate.Put(r.Paths, r.IdentityID, rec); err != nil {
+		if err := r.ktPut(rec); err != nil {
 			return nil, err
 		}
 		r.logf("activated key type: %s", keyType)
@@ -933,15 +1063,15 @@ func (r Restorer) activateCompiledProviderPlan(keyType string, masterKey []byte)
 }
 
 func (r Restorer) keyTypeRecordDisabled(keyType string) bool {
-	rec, ok, err := keytypestate.Get(r.Paths, r.IdentityID, keyType)
+	rec, ok, err := r.ktGet(keyType)
 	return err == nil && ok && rec.State == keytypestate.StateDisabled
 }
 
 func (r Restorer) restoreKeyTypeRecord(keyType string, prior keytypestate.Record, priorOK bool) error {
 	if priorOK {
-		return keytypestate.Put(r.Paths, r.IdentityID, prior)
+		return r.ktPut(prior)
 	}
-	return keytypestate.Delete(r.Paths, r.IdentityID, keyType)
+	return r.ktDelete(keyType)
 }
 
 func (r Restorer) compiledProviderRecord(keyType string) (keytypestate.Record, error) {
@@ -956,14 +1086,6 @@ func (r Restorer) compiledProviderRecord(keyType string) (keytypestate.Record, e
 		State:       keytypestate.StateEnabled,
 		Fingerprint: fingerprint,
 	}, nil
-}
-
-func removeTemplateFile(paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType) error {
-	path := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templateType)
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove restored template: %w", err)
-	}
-	return nil
 }
 
 // templateFingerprintsConflict reports a real template-provenance conflict:

@@ -42,7 +42,7 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
-- the current admin protocol major version is 2; `auth_required` carries it as
+- the current admin protocol version is 3.2; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -156,7 +156,12 @@ Client to Server:
 - `list_backups`
 - `delete_backup`
 - `preview_restore`
-- `restore_backup`
+- `recover_backup`
+- `list_recovered`
+- `review_recovered`
+- `activate_recovered`
+- `rollback_recovered`
+- `purge_recovered`
 
 Server to Client:
 
@@ -164,7 +169,12 @@ Server to Client:
 - `backups_list`
 - `delete_backup_result`
 - `restore_preview`
-- `restore_backup_result`
+- `recover_backup_result`
+- `recovered_list`
+- `review_recovered_result`
+- `activate_recovered_result`
+- `rollback_recovered_result`
+- `purge_recovered_result`
 
 ### Admin and Policy Settings
 
@@ -193,7 +203,7 @@ Server to Client:
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
 - `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the identity keystore metadata/master-key state and may write the configured passphrase helper
-- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, `code`, `error`; local IPC only, rejects identical current/new passphrases and rotates key/template encryption, policy integrity sidecars, and keystore metadata
+- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `recovered_files_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, `code`, `error`; local IPC only, rejects identical current/new passphrases and rotates active-key, template, and recovered-batch encryption, policy integrity sidecars, and keystore metadata
 - `status`: `state`, `key_count`
 - `error`: optional `code`, `error`
 - `signer_locked`: `reason`
@@ -260,7 +270,65 @@ unlock/reload after passphrase verification through
 - `list_backups` -> `backups_list`: `backups[]`, optional `code`, `error`; each backup has `path`, `file_name`, optional Unix `created_at`, optional `size`, optional `checksum`, optional `verified`
 - `delete_backup`: `archive_path` -> `delete_backup_result`: `success`, optional `code`, `error`
 - `preview_restore`: `archive_path`, `export_passphrase` -> `restore_preview`: optional resolved `archive_path`, `keys[]`, `errors[]`, `code`, `error`; each key has `address`, optional `key_type`, `already_exists`, `has_template`, `template_type`, `error`
-- `restore_backup`: `archive_path`, optional `addresses[]`, optional `overwrite`, `export_passphrase` -> `restore_backup_result`: `success`, optional resolved `archive_path`, `restored[]`, `skipped[]`, `errors[]`, `warnings[]`, `key_count`, `code`, `error`
+- `recover_backup`: `archive_path`, optional `addresses[]`, `export_passphrase`
+  -> `recover_backup_result`: `success`, optional `restore_id`,
+  `archive_name`, `archive_checksum`, `entry_count`, `code`, `error`; success
+  publishes one destination-encrypted inactive batch and does not reload
+- `list_recovered` -> `recovered_list`: optional `batches[]`, `code`, `error`;
+  each batch carries restore ID, creation time, archive name/checksum, source
+  role and policy status/digest, entry count, and optional `activation_state`
+  (empty for an inactive batch; otherwise the durable activation journal
+  state: `applying`, `rolling_back`, `completed`, or `unknown` for an
+  unreadable journal)
+- `review_recovered`: `restore_id` -> `review_recovered_result`: `success`,
+  restore/batch state, archive and policy digests, destination approval mode,
+  optional unattended-signing warning, factual policy comparison, ordered
+  `security_changes[]`, secondary
+  `changed_paths[]`,
+  `unknown_source_settings[]`, optional `source_settings_status`
+  (`missing|unverified|invalid`), optional Boolean
+  `source_user_auto_approve`, optional
+  `source_genesis_hash_mappings[]` (`genesis_hash`, `network`), optional
+  `source_settings_warning`, entries, active conflict fingerprints, opaque
+  `review_token`, optional `unattended_signing_ack_required`, recorded
+  acknowledgement flag, replacement state, `code`, `error`.
+  The policy comparison is informational. It carries no downgrade verdict, and
+  no acknowledgement is derived from it: archive-reported source policy cannot
+  be authenticated by the destination store, so any verdict built on it could
+  be suppressed by the archive.
+  `unattended_signing_ack_required` is derived from verified destination state
+  alone. It is true whenever the destination identity auto-approves unmatched
+  signing requests, whatever the archive reports; absence means a pre-3.2
+  server, and updated clients then fall back to the destination approval mode.
+  The typed source fields were added in protocol 3.1. In protocol
+  v3, `unknown_source_settings` conservatively includes
+  the constant archive limitations `source.user_auto_approve` and
+  `source.genesis_hash_mappings`; a pre-manifest archive additionally reports
+  the batch-specific `source.node_role`. Updated clients do not render these
+  source-metadata fields as standalone review notifications. When
+  `source_settings_status` is present, typed `source_*` fields are authoritative
+  for what the archive reported; they remain unverified and have no signing,
+  policy, or acknowledgement authority. The two constant unknown
+  entries are compatibility artifacts in that case and updated clients ignore
+  them.
+  Protocol v4 removes those two constant entries.
+  `policy_downgrade_ack_required` and the `downgrade` member of
+  `security_changes[]` were removed with the downgrade classifier. Clients
+  compiled against an earlier contract ignore their absence.
+- `activate_recovered`: `restore_id`, `review_token`, optional
+  `acknowledge_unattended_signing`, optional `replace_existing` ->
+  `activate_recovered_result`: `success`, restore ID, activated entries,
+  optional operator-facing `warnings[]`, resulting `key_count`, `code`,
+  `error`; warnings include non-fatal bundled-template skips decided against
+  current destination state during activation. The server enforces
+  `acknowledge_unattended_signing` against the pinned review. A deprecated
+  `acknowledge_policy_transition` sent by an older protocol-v3 client is
+  accepted and ignored; protocol v4 drops it entirely.
+- `rollback_recovered`: `restore_id` -> `rollback_recovered_result`: `success`,
+  restore ID, resulting `key_count`, `code`, `error`
+- `purge_recovered`: `restore_id` -> `purge_recovered_result`: `success`,
+  restore ID, `code`, `error`; incomplete activation state cannot be purged
+- admin protocol v3 does not dispatch the v2 `restore_backup` mutation
 - restore `export_passphrase` fields are JSON strings on the wire but are parsed into mutable byte buffers at the protocol boundary so server handlers can zero them after use; raw JSON transport buffers are best-effort and may retain bytes until their normal lifetime ends
 
 ### Admin and Policy Settings

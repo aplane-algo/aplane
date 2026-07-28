@@ -4,6 +4,7 @@
 package backup
 
 import (
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -27,6 +29,7 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
@@ -47,7 +50,13 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	}
 
 	archivePath := BuildManagedArchivePath(paths, identityID, "20260428-010203")
-	if _, err := CreateKeysArchive(paths, identityID, archivePath, nil, testExportMasterKey, []byte("export-passphrase")); err != nil {
+	if _, err := CreateKeysArchive(testCreateKeysArchiveRequest(
+		paths,
+		identityID,
+		archivePath,
+		nil,
+		noderole.RoleSigner,
+	)); err != nil {
 		t.Fatalf("CreateKeysArchive() error = %v", err)
 	}
 
@@ -78,11 +87,18 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	if manifest.SourceNodeRole != string(noderole.RoleSigner) {
 		t.Fatalf("manifest source node role = %q, want signer", manifest.SourceNodeRole)
 	}
+	sourceSettings := inspectSourceSettings(extractDir, manifest.SourceNodeRole)
+	if sourceSettings.Status != sourcecontext.StatusUnverified ||
+		sourceSettings.Projection.UserAutoApprove == nil ||
+		*sourceSettings.Projection.UserAutoApprove {
+		t.Fatalf("source settings = %+v, want unverified manual signer context", sourceSettings)
+	}
 }
 
 func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +118,13 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	}
 
 	archivePath := BuildManagedArchivePath(paths, identityID, "20260721-010203")
-	result, err := CreateKeysArchive(paths, identityID, archivePath, nil, testExportMasterKey, []byte("export-passphrase"))
+	result, err := CreateKeysArchive(testCreateKeysArchiveRequest(
+		paths,
+		identityID,
+		archivePath,
+		nil,
+		noderole.RoleSentry,
+	))
 	if err != nil {
 		t.Fatalf("CreateKeysArchive() error = %v", err)
 	}
@@ -120,6 +142,30 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 
 func timeForBackupTest() time.Time {
 	return time.Unix(1700000000, 0)
+}
+
+func testCreateKeysArchiveRequest(
+	paths storepaths.Paths,
+	identityID, archivePath string,
+	addresses []string,
+	role noderole.Role,
+) CreateKeysArchiveRequest {
+	var userAutoApprove *bool
+	if role == noderole.RoleSigner {
+		value := false
+		userAutoApprove = &value
+	}
+	return CreateKeysArchiveRequest{
+		Paths:            paths,
+		IdentityID:       identityID,
+		ArchivePath:      archivePath,
+		Addresses:        addresses,
+		MasterKey:        testExportMasterKey,
+		ExportPassphrase: []byte("export-passphrase"),
+		SourceSettings: SourceSettingsSnapshot{
+			UserAutoApprove: userAutoApprove,
+		},
+	}
 }
 
 func assertStoreDirMode(t *testing.T, path string) {
@@ -162,6 +208,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	const identityID = "default"
 	const badAddress = "BADCANONICALKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
@@ -192,7 +239,13 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	}
 
 	archivePath := BuildManagedArchivePath(paths, identityID, "20260710-010203")
-	result, err := CreateKeysArchive(paths, identityID, archivePath, nil, testExportMasterKey, []byte("export-passphrase"))
+	result, err := CreateKeysArchive(testCreateKeysArchiveRequest(
+		paths,
+		identityID,
+		archivePath,
+		nil,
+		noderole.RoleSigner,
+	))
 	if err != nil {
 		t.Fatalf("CreateKeysArchive() error = %v", err)
 	}
@@ -220,7 +273,13 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 
 	// Explicitly selecting the invalid key still fails closed.
 	selectedPath := BuildManagedArchivePath(paths, identityID, "20260710-020304")
-	if _, err := CreateKeysArchive(paths, identityID, selectedPath, []string{badAddress}, testExportMasterKey, []byte("export-passphrase")); err == nil {
+	if _, err := CreateKeysArchive(testCreateKeysArchiveRequest(
+		paths,
+		identityID,
+		selectedPath,
+		[]string{badAddress},
+		noderole.RoleSigner,
+	)); err == nil {
 		t.Fatal("CreateKeysArchive(selected invalid key) should fail closed")
 	}
 }
@@ -230,6 +289,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
@@ -243,7 +303,13 @@ func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
 	}
 
 	archivePath := BuildManagedArchivePath(paths, identityID, "20260710-030405")
-	_, err = CreateKeysArchive(paths, identityID, archivePath, nil, testExportMasterKey, []byte("export-passphrase"))
+	_, err = CreateKeysArchive(testCreateKeysArchiveRequest(
+		paths,
+		identityID,
+		archivePath,
+		nil,
+		noderole.RoleSigner,
+	))
 	if err == nil || !strings.Contains(err.Error(), "no exportable keys") {
 		t.Fatalf("CreateKeysArchive() error = %v, want no-exportable-keys failure", err)
 	}
@@ -254,16 +320,18 @@ func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
 func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
-	srcDir := paths.KeysDir(identityID)
-	if err := fsutil.MkdirAll(srcDir); err != nil {
-		t.Fatalf("MkdirAll(keys) error = %v", err)
+	mintFirstGenerationForBackupTest(t, paths)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
 	}
+	srcDir := active.KeysDir()
 	corruptFile := apkeys.AccountKeyFilePath(paths, identityID, "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	if err := os.WriteFile(corruptFile, []byte("not encrypted data"), fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}
 
-	_, _, err := ExportAllKeys(paths, identityID, srcDir, t.TempDir(), testExportMasterKey, []byte("export-passphrase"))
+	_, _, err = ExportAllKeys(paths, identityID, srcDir, t.TempDir(), testExportMasterKey, []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "failed to export") {
 		t.Fatalf("ExportAllKeys() error = %v, want decrypt-failure abort", err)
 	}

@@ -385,8 +385,12 @@ func (m Model) renderViewContent() string {
 		content = m.renderRestorePreview()
 	case ViewRestoring:
 		content = m.renderRestoring()
+	case ViewRestoreReview:
+		content = m.renderRestoreReview()
 	case ViewRestoreDisplay:
 		content = m.renderRestoreDisplay()
+	case ViewRecoveredList:
+		content = m.renderRecoveredList()
 	case ViewImportForm:
 		content = m.renderImportForm()
 	case ViewImportParams:
@@ -553,10 +557,13 @@ func (m Model) renderStatusBar() string {
 
 	// Signer status (only show once we've heard from apsigner)
 	if m.signerStatusKnown {
-		if m.signerLocked {
-			parts = append(parts, statusLockedStyle.Render("Signer Locked"))
-		} else {
+		switch m.signerState {
+		case signerRuntimeUnlocked:
 			parts = append(parts, statusUnlockedStyle.Render(fmt.Sprintf("Signer Unlocked (%d keys)", m.keyCount)))
+		case signerRuntimeRecovery:
+			parts = append(parts, statusLockedStyle.Render("Signer Recovery (signing disabled)"))
+		default:
+			parts = append(parts, statusLockedStyle.Render("Signer Locked"))
 		}
 	}
 

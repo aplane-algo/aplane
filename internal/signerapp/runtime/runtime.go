@@ -13,6 +13,7 @@ type SignerState int
 const (
 	SignerStateLocked SignerState = iota
 	SignerStateUnlocked
+	SignerStateRecovery
 )
 
 const LockedDuringUnlockMessage = "signer locked during unlock"
@@ -23,6 +24,8 @@ func (s SignerState) String() string {
 		return "locked"
 	case SignerStateUnlocked:
 		return "unlocked"
+	case SignerStateRecovery:
+		return "recovery"
 	default:
 		return "unknown"
 	}
@@ -74,18 +77,48 @@ func (r *Runtime) SetUnlocked() {
 	r.stateMu.Unlock()
 }
 
+// PromoteRecoveryToUnlocked transitions recovery -> unlocked atomically,
+// honoring the lock fence: a Lock that raced the caller's recovery-exit
+// rescan has already destroyed the key session and set the state to locked,
+// so the promotion is refused rather than reporting unlocked over a
+// destroyed session. This is the only valid way to leave recovery upward;
+// SetUnlocked bypasses the fence and must not be used from recovery.
+func (r *Runtime) PromoteRecoveryToUnlocked() bool {
+	r.stateMu.Lock()
+	defer r.stateMu.Unlock()
+	if r.state != SignerStateRecovery {
+		return false
+	}
+	r.state = SignerStateUnlocked
+	return true
+}
+
+// SetRecovery marks the runtime master-key-available for explicit recovery
+// administration without permitting signing.
+func (r *Runtime) SetRecovery() {
+	r.stateMu.Lock()
+	r.state = SignerStateRecovery
+	r.stateMu.Unlock()
+}
+
+// IsRecovery reports whether signing is blocked pending explicit activation
+// reconciliation.
+func (r *Runtime) IsRecovery() bool {
+	return r.GetState() == SignerStateRecovery
+}
+
 // Lock transitions the runtime to locked and invokes the configured lock
 // callback once. It reports whether this call performed an unlocked->locked
 // transition.
 func (r *Runtime) Lock() bool {
 	r.stateMu.Lock()
-	wasUnlocked := r.state == SignerStateUnlocked
+	wasActive := r.state == SignerStateUnlocked || r.state == SignerStateRecovery
 	r.state = SignerStateLocked
 	r.lockGen++
 	onLock := r.onLock
 	r.stateMu.Unlock()
 
-	if !wasUnlocked {
+	if !wasActive {
 		return false
 	}
 
@@ -93,6 +126,31 @@ func (r *Runtime) Lock() bool {
 		onLock()
 	}
 	return true
+}
+
+// TryRecovery runs the master-key unlock function and enters recovery state
+// unless a concurrent lock wins.
+func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
+	r.stateMu.RLock()
+	gen := r.lockGen
+	r.stateMu.RUnlock()
+
+	if err := unlockFn(); err != nil {
+		return false, err.Error()
+	}
+
+	r.stateMu.Lock()
+	if r.lockGen != gen {
+		onLock := r.onLock
+		r.stateMu.Unlock()
+		if onLock != nil {
+			onLock()
+		}
+		return false, LockedDuringUnlockMessage
+	}
+	r.state = SignerStateRecovery
+	r.stateMu.Unlock()
+	return true, ""
 }
 
 // TryUnlock runs the supplied unlock function and, on success, transitions to

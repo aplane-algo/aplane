@@ -23,7 +23,7 @@ This document describes durable key and key type states that affect:
 
 - whether an identity can discover or generate a key type,
 - whether an existing key can sign,
-- what restore preview/apply may write,
+- what restore preview/recover/review/activate may write,
 - how disabled or conflicting key type records behave,
 - which warnings are provenance-only.
 
@@ -216,6 +216,8 @@ key is rejected during reload rather than published as a signable key.
 |---|---|---|---|
 | Absent | No active key file under `keys/`. | No. | May be restored from a backup payload. |
 | Archived/deleted | Key file moved to `deleted/keys/`. | No; outside active scans. | Restore can write a new active canonical key file if selected. |
+| Recovered/inactive | Destination-encrypted `.recovered` entry exists under one `recovered/<restore-id>/` batch. | No; outside active scans and watcher candidates. | Review and batch activation are required before any managed credential becomes active. |
+| Activation incomplete | Recovered batch has a durable encrypted `activation/` journal and rollback snapshot. | No; the identity is recovery-blocked even if some active files were written before interruption. | Exact activation resume or explicit rollback must reconcile it; purge is rejected. |
 | Present but signer locked | Encrypted `.key` or `.sen` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted managed credentials; restore requires authenticated/unlocked flow. |
 | Present, decrypts, canonical filename matches derived selector and category | Account `.key` matches its Algorand address, or witness `.sen` matches its Witness Key ID. | Candidate for its category-specific signing path after validation. | Backup and restore use canonical filenames. |
 | Misnamed or wrong-class managed credential | Basename selector mismatches the payload, witness payload uses `.key`, or account payload uses `.sen`. | No; scanner rejects/skips it. | Restore derives the canonical filename from validated payload category. |
@@ -243,7 +245,9 @@ key is rejected during reload rather than published as a signable key.
 | Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.sen` to `deleted/keys/`. | Credential leaves active scans. |
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
 | Restore preview | Managed archive and passphrase are valid. | Decrypt/inspect payloads without mutation and compare payload key classes to destination node role. | Reports addresses, key types, conflicts, errors, role mismatches, and template requirements. |
-| Restore apply | Selected payload passes validation, destination node role allows the key class, and no contradictory managed class exists. | Write canonical encrypted `.key` or `.sen`, optionally install/enable needed template or compiled state, then reload identity. | Credential becomes active; per-key rollback undoes restore side effects if final write fails. |
+| Restore recover | Selected payloads pass validation and destination node role allows every key class. | Atomically publish one destination-encrypted recovered batch outside active scans. | Whole batch remains inactive; no reload. |
+| Restore review | Recovered batch and current destination state validate. | Compare source material with current verified policy, report effective destination approval mode and active conflicts, and issue a review token. | No durable active-state mutation. |
+| Restore activate | Review token is current, acknowledgements are present, and replacement conflicts are explicitly accepted. | Publish exact rollback state, apply the whole batch, reload, then remove the inactive batch. | All credentials become active together; failure restores prior state. Hard interruption blocks signing until resume or rollback. |
 | Unlock/reload | Master key is available. | Verify node role integrity, register enabled templates, scan key files, validate node inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 
@@ -325,7 +329,9 @@ is not published as valid runtime inventory.
 | Backup create | Records source node role metadata in the managed archive manifest. | Reads selected active key files into encrypted backup payloads. | Source store unchanged. |
 | Backup import | None in active identity. | None in active identity. | Validates archive before publishing to managed backup locker. |
 | Restore preview | None. | None. | Decrypts and reports only, including node-role mismatch diagnostics. |
-| Restore apply | May install/enable required template or activate compiled provider when node role allows it. | Writes selected keys. | Per-key rollback on final write failure. |
+| Restore recover | None in active identity. | Writes only destination-encrypted recovered entries. | Atomic batch, no reload, never signable. |
+| Restore review | None. | None. | Security-first policy comparison, destination auto-approve warning, conflicts, and review token. |
+| Restore activate | May install/enable required template or activate compiled provider when node role allows it. | Writes the reviewed batch under durable rollback protection. | Reload publishes all entries; interruption enters recovery mode until resume or rollback. |
 | Rebuild absent store | Writes root `node.yaml` from explicit `--role`, manifest source role metadata, or `signer` fallback. | Restores selected keys into a new identity store. | Manifest role is diagnostic/default only; destination key-class gates remain authoritative. |
 | Store passphrase change | Re-encrypts installed templates and keys and rewrites role HMAC sidecars. | Re-encrypts keys. | Authority and state are unchanged. |
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
@@ -355,8 +361,9 @@ is not published as valid runtime inventory.
     be treated as independent signing authority.
 13. Guarded account keys use the guarded orchestration flow; normal `/sign`
     rejects them.
-14. Backup restore is per-key and must not silently redefine an existing local
-    `key_type`.
+14. Live backup restore is batch recovery followed by reviewed activation; it
+    must not silently redefine an existing local `key_type`, replace an active
+    credential, or enter the signing index before activation completes.
 15. Template/provider fingerprint conflicts are generation/provenance
     problems, not automatic invalidation of otherwise valid key files.
     Comparisons are version-aware: the fingerprint is behavior-only and

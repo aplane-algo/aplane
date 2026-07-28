@@ -9,10 +9,12 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -33,7 +35,21 @@ func setupTestKeystore(t *testing.T) (utilpaths.Paths, func()) {
 	tmpDir := t.TempDir()
 	oldDir, _ := os.Getwd()
 	_ = os.Chdir(tmpDir)
-	return utilpaths.NewPaths("."), func() {
+	paths := utilpaths.NewPaths(".")
+	generationID, err := genstore.NewGenerationID(time.Unix(1_785_200_000, 0))
+	if err != nil {
+		t.Fatalf("NewGenerationID: %v", err)
+	}
+	if _, err := genstore.Mint(paths, "test-identity", genstore.MintRequest{
+		GenerationID:    generationID,
+		FirstGeneration: true,
+		Operation:       "store-initialize",
+		OperationID:     "init-" + generationID,
+		CreatedAt:       time.Unix(1_785_200_000, 0),
+	}); err != nil {
+		t.Fatalf("Mint(first): %v", err)
+	}
+	return paths, func() {
 		_ = os.Chdir(oldDir)
 	}
 }
@@ -434,30 +450,13 @@ func TestKeysDirectoryCreation(t *testing.T) {
 
 	gen := &Ed25519Generator{}
 
-	// Ensure identities directory doesn't exist
+	// An uninitialized store (no generation) refuses key generation; keys
+	// only ever land inside the committed generation.
 	_ = os.RemoveAll("identities")
-
-	// Generate key (should create directory)
-	result, err := gen.GenerateRandom(context.Background(), paths, testIdentityID, testMasterKey, "ed25519", nil)
-	if err != nil {
-		t.Fatalf("GenerateRandom failed: %v", err)
+	if _, err := gen.GenerateRandom(context.Background(), paths, testIdentityID, testMasterKey, "ed25519", nil); err == nil {
+		t.Fatal("GenerateRandom succeeded on an uninitialized store")
 	}
 
-	// Verify identity-scoped keys directory was created
-	info, err := os.Stat(filepath.Join("identities", testIdentityID, "keys"))
-	if err != nil {
-		t.Fatalf("identities/%s/keys directory was not created", testIdentityID)
-	}
-
-	if !info.IsDir() {
-		t.Fatalf("identities/%s/keys should be a directory", testIdentityID)
-	}
-
-	// Verify key file is in the identity-scoped keys directory
-	expectedPrefix := filepath.Join("identities", testIdentityID, "keys") + string(filepath.Separator)
-	if !strings.HasPrefix(result.KeyFiles.PrivateFile, expectedPrefix) {
-		t.Errorf("Key file should be in %s directory, got %s", expectedPrefix, result.KeyFiles.PrivateFile)
-	}
 }
 
 // TestAddressFormat verifies generated addresses are valid Algorand format
@@ -483,8 +482,12 @@ func TestAddressFormat(t *testing.T) {
 		t.Errorf("Generated address is not valid Algorand address: %v", err)
 	}
 
-	// Verify filename matches address (identity-scoped)
-	expectedFile := filepath.Join("identities", testIdentityID, "keys", result.Address+".key")
+	// Verify filename matches address inside the active generation.
+	active, err := genstore.ResolveActive(paths, testIdentityID)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	expectedFile := filepath.Join(active.KeysDir(), result.Address+".key")
 	if result.KeyFiles.PrivateFile != expectedFile {
 		t.Errorf("Private file path = %s, want %s", result.KeyFiles.PrivateFile, expectedFile)
 	}

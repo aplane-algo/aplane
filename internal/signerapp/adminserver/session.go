@@ -463,6 +463,18 @@ func (s *Session) requireUnlockedRuntime(requestID string) *identity.Runtime {
 	return nil
 }
 
+func (s *Session) requireRecoveryAdminRuntime(requestID string) *identity.Runtime {
+	ir := s.requireBoundRuntime(requestID)
+	if ir == nil {
+		return nil
+	}
+	if ir.IsUnlocked() || ir.IsRecovery() {
+		return ir
+	}
+	_ = s.SendError(requestID, protocol.ErrCodeSignerLocked, "Signer is locked")
+	return nil
+}
+
 func (s *Session) sendAuthResult(success bool, code, errMsg string) {
 	_ = s.WriteJSON(ProtocolAuthResultMessage(success, code, errMsg))
 }

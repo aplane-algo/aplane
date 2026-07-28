@@ -6,6 +6,7 @@ package templates
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -64,6 +65,24 @@ type ReloadService struct {
 	NotifyKeysChanged NotifyKeysChangedFunc
 	Info              InfoFunc
 	Warn              WarnFunc
+}
+
+// ErrGenerationValidation marks a reload failure caused by content defects
+// in the selected generation; the unlock paths map it to recovery mode
+// instead of an ordinary unlock failure.
+var ErrGenerationValidation = errors.New("generation validation failed")
+
+// IsGenerationValidationErr reports whether err wraps ErrGenerationValidation.
+// Prefer this wherever the actual error value is available.
+func IsGenerationValidationErr(err error) bool {
+	return errors.Is(err, ErrGenerationValidation)
+}
+
+// IsGenerationValidationError is the flattened-string form for boundaries
+// that only carry the error message (runtime.TryUnlock flattens the reload
+// error to a string before it reaches the daemon).
+func IsGenerationValidationError(errMsg string) bool {
+	return strings.Contains(errMsg, ErrGenerationValidation.Error())
 }
 
 func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadReport, error) {
@@ -141,6 +160,34 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 		return nil, fmt.Errorf("failed to rescan keys directory: %w", err)
 	}
 	s.auditRejectedLogicSigKeys(identityID)
+
+	// Reload fails closed on content defects: the selected generation is
+	// the committed state, and a malformed or undecryptable entry in it
+	// means the generation fails validation — recovery, not a
+	// warning-tolerant unlock (docs/ARCH_GENERATIONS.md §6).
+	{
+		var warnings []keys.KeyScanWarning
+		if provider, ok := s.KeyStore.(keys.KeyScanWarningProvider); ok {
+			warnings = provider.GetScanWarnings()
+		}
+		templateDefects := report.ContentDefectKeyTypes()
+		if len(warnings) > 0 || len(templateDefects) > 0 {
+			clearInitializedMasterKey()
+			s.clearKeyCache()
+			s.PublishSnapshot(map[string]string{}, map[string]string{}, map[string]int{})
+			if s.NotifyKeysChanged != nil {
+				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
+			}
+			detail := ""
+			if len(warnings) > 0 {
+				detail = warnings[0].Message()
+			} else {
+				detail = "key type " + templateDefects[0]
+			}
+			return nil, fmt.Errorf("%w: %d malformed key file(s) and %d template/key-type defect(s) in the selected generation: %s",
+				ErrGenerationValidation, len(warnings), len(templateDefects), detail)
+		}
+	}
 
 	newKeysMap := s.KeyStore.GetCache()
 	newKeyTypes := s.KeyStore.GetKeyTypes()

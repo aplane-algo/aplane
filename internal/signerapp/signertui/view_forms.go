@@ -25,6 +25,12 @@ func (m Model) renderBackupConfirm() string {
 	} else {
 		sb.WriteString("\n")
 	}
+	sb.WriteString(subtitleStyle.Render(fmt.Sprintf(
+		"Scope: back up all active credentials of this identity (%d %s).",
+		m.keyCount,
+		pluralKeys(m.keyCount),
+	)))
+	sb.WriteString("\n")
 	sb.WriteString(subtitleStyle.Render("A signer-managed backup archive will be written to the identity backup store."))
 	sb.WriteString("\n\n")
 

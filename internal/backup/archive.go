@@ -106,9 +106,20 @@ func CreateTarGzArchive(srcDir, destPath string) (err error) {
 	return nil
 }
 
-// ExtractTarGzArchive extracts a tar.gz archive into destDir.
+// Decompression limits for backup archives. A backup holds encrypted key
+// payloads, a manifest, and policy snapshots — all small; anything
+// approaching these bounds is not a backup.
+const (
+	maxArchiveEntries        = 4096
+	maxArchiveExtractedBytes = 1 << 30 // 1 GiB across all entries
+)
+
+// ExtractTarGzArchive extracts a tar.gz archive into destDir. The archive is
+// opened with the same no-follow regular-file enforcement as the recover
+// path, and extraction is bounded (entry count and total decompressed size)
+// so a crafted archive cannot exhaust the disk.
 func ExtractTarGzArchive(archivePath, destDir string) error {
-	file, err := os.Open(archivePath)
+	file, err := openManagedBackupArchive(archivePath)
 	if err != nil {
 		return fmt.Errorf("failed to open archive: %w", err)
 	}
@@ -121,6 +132,8 @@ func ExtractTarGzArchive(archivePath, destDir string) error {
 	defer func() { _ = gzr.Close() }()
 
 	tr := tar.NewReader(gzr)
+	entries := 0
+	var extracted int64
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -128,6 +141,10 @@ func ExtractTarGzArchive(archivePath, destDir string) error {
 		}
 		if err != nil {
 			return fmt.Errorf("failed to read archive entry: %w", err)
+		}
+		entries++
+		if entries > maxArchiveEntries {
+			return fmt.Errorf("archive has more than %d entries; refusing to extract", maxArchiveEntries)
 		}
 
 		targetPath, err := safeArchivePath(destDir, header.Name)
@@ -148,9 +165,16 @@ func ExtractTarGzArchive(archivePath, destDir string) error {
 			if err != nil {
 				return fmt.Errorf("failed to create file %s: %w", targetPath, err)
 			}
-			if _, err := io.Copy(out, tr); err != nil {
+			remaining := maxArchiveExtractedBytes - extracted
+			written, err := io.Copy(out, io.LimitReader(tr, remaining+1))
+			if err != nil {
 				_ = out.Close()
 				return fmt.Errorf("failed to extract %s: %w", targetPath, err)
+			}
+			extracted += written
+			if extracted > maxArchiveExtractedBytes {
+				_ = out.Close()
+				return fmt.Errorf("archive decompresses past %d bytes; refusing to extract", int64(maxArchiveExtractedBytes))
 			}
 			if err := out.Close(); err != nil {
 				return fmt.Errorf("failed to close %s: %w", targetPath, err)

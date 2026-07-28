@@ -7,10 +7,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -124,6 +126,11 @@ func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Optio
 }
 
 func isReloadCandidate(path string) bool {
+	// CURRENT replacement commits a new generation of the active
+	// namespaces; the reload it triggers re-resolves the layout.
+	if filepath.Base(path) == storepaths.CurrentPointerName {
+		return true
+	}
 	return strings.HasSuffix(path, keys.AccountKeyExtension) ||
 		strings.HasSuffix(path, keys.SentryCredentialExtension) ||
 		strings.HasSuffix(path, ".template")

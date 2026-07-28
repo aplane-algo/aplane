@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -190,7 +192,9 @@ func setupTestKeystore(t *testing.T) (utilkeys.Paths, func()) {
 	tmpDir := t.TempDir()
 	oldDir, _ := os.Getwd()
 	_ = os.Chdir(tmpDir)
-	return utilkeys.NewPaths("."), func() {
+	paths := utilkeys.NewPaths(".")
+	genstoretest.MintFirst(t, paths, "test-identity")
+	return paths, func() {
 		_ = os.Chdir(oldDir)
 	}
 }
@@ -581,26 +585,9 @@ func TestKeysDirectoryCreation(t *testing.T) {
 	generator := newTestGenerator()
 	seed := make([]byte, 64)
 
-	_, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, testMasterKey, "aplane.falcon1024.v1", nil)
-	if err != nil {
-		t.Fatalf("GenerateFromSeed failed: %v", err)
-	}
-
-	// Verify identity-scoped keys directory was created
-	info, err := os.Stat(filepath.Join("identities", testIdentityID, "keys"))
-	if err != nil {
-		t.Fatalf("identities/%s/keys directory was not created: %v", testIdentityID, err)
-	}
-
-	if !info.IsDir() {
-		t.Fatalf("identities/%s/keys should be a directory", testIdentityID)
-	}
-
-	// Verify directory permissions (0770)
-	mode := info.Mode().Perm()
-	expectedMode := os.FileMode(0770)
-	if mode != expectedMode {
-		t.Errorf("identities/default/keys directory should have %o permissions, got %o", expectedMode, mode)
+	// An uninitialized store (no generation) refuses key generation.
+	if _, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, testMasterKey, "aplane.falcon1024.v1", nil); err == nil {
+		t.Fatal("GenerateFromSeed succeeded on an uninitialized store")
 	}
 }
 
@@ -617,8 +604,12 @@ func TestKeyFileNaming(t *testing.T) {
 		t.Fatalf("GenerateFromSeed failed: %v", err)
 	}
 
-	// Verify file naming: identities/default/keys/<address>.key
-	expectedFile := filepath.Join("identities", testIdentityID, "keys", result.Address+".key")
+	// Verify file naming inside the active generation.
+	active, err := genstore.ResolveActive(paths, testIdentityID)
+	if err != nil {
+		t.Fatalf("ResolveActive: %v", err)
+	}
+	expectedFile := filepath.Join(active.KeysDir(), result.Address+".key")
 	if result.KeyFiles.PrivateFile != expectedFile {
 		t.Errorf("Private key file = %q, want %q", result.KeyFiles.PrivateFile, expectedFile)
 	}

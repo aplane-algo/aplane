@@ -5,6 +5,7 @@ package keys
 
 import (
 	"errors"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,12 +63,13 @@ func TestCanonicalManagedCredentialFilename(t *testing.T) {
 		t.Fatalf("witness filename = %q", witnessName)
 	}
 
-	paths := storepaths.NewPaths("/store")
+	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	path, err := CanonicalManagedCredentialPath(paths, "default", witnessID, CategoryWitness)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join("/store", "identities", "default", "keys", witnessName); path != want {
+	if want := filepath.Join(activeKeysDirForTest(t, paths, "default"), witnessName); path != want {
 		t.Fatalf("path = %q, want %q", path, want)
 	}
 
@@ -144,12 +146,13 @@ func TestScanManagedCredentialFiles(t *testing.T) {
 
 func TestManagedCredentialDestinationRejectsContradictoryClass(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
 	identityID := "default"
 	account := types.Address{4}.String()
-	if err := os.MkdirAll(paths.KeysDir(identityID), 0o700); err != nil {
+	if err := os.MkdirAll(activeKeysDirForTest(t, paths, identityID), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	contradictory := filepath.Join(paths.KeysDir(identityID), account+SentryCredentialExtension)
+	contradictory := filepath.Join(activeKeysDirForTest(t, paths, identityID), account+SentryCredentialExtension)
 	if err := os.WriteFile(contradictory, []byte("corrupt"), 0o600); err != nil {
 		t.Fatal(err)
 	}

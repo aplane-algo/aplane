@@ -71,6 +71,9 @@ func cmdChangepass() error {
 	if result.TemplatesMigrated > 0 {
 		logInfof("  - %d template file(s) migrated", result.TemplatesMigrated)
 	}
+	if result.RecoveredFilesMigrated > 0 {
+		logInfof("  - %d recovered batch file(s) migrated", result.RecoveredFilesMigrated)
+	}
 	if result.PolicySidecarsMigrated > 0 {
 		logInfof("  - %d policy sidecar(s) re-signed", result.PolicySidecarsMigrated)
 	}
@@ -184,6 +187,9 @@ func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.Initi
 		IdentityID: productIdentityID(),
 		Role:       role,
 		Logf:       logInfof,
+		// New stores use generation-based active storage
+		// (docs/ARCH_GENERATIONS.md); older binaries reject them via the
+		// keystore metadata version gate.
 	})
 	if err != nil {
 		return protocol.InitializeStoreResultMessage{

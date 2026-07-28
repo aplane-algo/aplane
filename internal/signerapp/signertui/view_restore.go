@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 func (m Model) renderRestoreList() string {
@@ -110,7 +113,7 @@ func (m Model) renderRestorePreview() string {
 	sb.WriteString(titleStyle.Render("Restore Preview"))
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("Archive:   %s\n", restoreArchiveLabel(m.restore.archivePath)))
-	sb.WriteString(fmt.Sprintf("Overwrite: %s | Selected: %d\n", restoreOverwriteLabel(m.restore.overwrite), m.selectedRestoreCount()))
+	sb.WriteString(fmt.Sprintf("Selected: %d\n", m.selectedRestoreCount()))
 	sb.WriteString("\n")
 
 	if len(m.restore.previewKeys) == 0 {
@@ -171,6 +174,14 @@ func (m Model) renderRestorePreview() string {
 		}
 	}
 
+	sb.WriteString("\n")
+	sb.WriteString(restoreActionButton(
+		"RECOVER",
+		m.restore.previewFocus == restoreFocusAction,
+		m.selectedRestoreCount() > 0,
+	))
+	sb.WriteString("\n")
+
 	if m.restore.previewError != "" {
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render(m.restore.previewError))
@@ -180,13 +191,213 @@ func (m Model) renderRestorePreview() string {
 	return m.renderPopup(popupWidth, sb.String())
 }
 
+// restoreActionButton renders one commit button. ready styles a button whose
+// preconditions are met; an unready button is still focusable so activating it
+// can explain what is missing.
+func restoreActionButton(label string, focused, ready bool) string {
+	if !focused {
+		return buttonInactiveStyle.Render("  " + label)
+	}
+	if !ready {
+		return buttonInactiveStyle.Render("> " + label)
+	}
+	return buttonActiveStyle.Render("> " + label)
+}
+
 func (m Model) renderRestoring() string {
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Restoring Backup"))
+	// Distinct labels: recovering into an inactive batch and activating
+	// recovered credentials are different operations with different
+	// consequences.
+	title := m.restore.progressLabel
+	if title == "" {
+		title = "Working"
+	}
+	sb.WriteString(titleStyle.Render(title))
 	sb.WriteString("\n\n")
 	sb.WriteString(subtitleStyle.Render("Please wait..."))
 	sb.WriteString("\n")
 	return m.renderPopup(70, sb.String())
+}
+
+func (m Model) renderRestoreReview() string {
+	review := m.restore.review
+	var sb strings.Builder
+	popupWidth := m.popupWidth(118)
+	sb.WriteString(titleStyle.Render("Recovered Activation Review"))
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("Restore ID: %s\n", review.RestoreID))
+	if review.ArchiveChecksum != "" {
+		sb.WriteString(fmt.Sprintf("Source archive: %s", review.ArchiveChecksum))
+		if review.SourceNodeRole != "" {
+			sb.WriteString(fmt.Sprintf(" (%s)", review.SourceNodeRole))
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString(fmt.Sprintf("Destination approval mode: %s\n", review.DestinationApprovalMode))
+	// The operator is committing ACTIVATE for exactly these credentials;
+	// they must be visible on this screen, including via the
+	// passphrase-free reopen path where no preview was shown.
+	sb.WriteString("\n")
+	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("Credentials to activate (%d)", len(review.Entries))))
+	sb.WriteString("\n")
+	if len(review.Entries) == 0 {
+		sb.WriteString("  none\n")
+	}
+	for _, entry := range review.Entries {
+		sb.WriteString(fmt.Sprintf("  %s (%s, %s)\n", entry.Selector, entry.Category, entry.KeyType))
+	}
+	if review.UnattendedSigningWarning != "" {
+		sb.WriteString(warningStyle.Render(review.UnattendedSigningWarning))
+		sb.WriteString("\n")
+	}
+	sb.WriteString(fmt.Sprintf("Policy comparison: %s\n\n", review.PolicyComparison))
+	sb.WriteString(subtitleStyle.Render("Policy differences (informational)"))
+	sb.WriteString("\n")
+	if review.PolicyComparison == string(policy.RestoreComparisonUnavailable) {
+		// An empty change list here means "could not compare", never "no
+		// differences" — rendering "none" would read as an all-clear the
+		// comparison never established.
+		sb.WriteString("  comparison unavailable: the source policy could not be compared\n")
+	} else if len(review.SecurityChanges) == 0 {
+		sb.WriteString("  none\n")
+	}
+	for _, change := range review.SecurityChanges {
+		scope := change.Selector
+		if scope == "" {
+			scope = "default"
+		}
+		sb.WriteString(fmt.Sprintf("  [%s] %s %s\n", change.Category, scope, change.Path))
+		sb.WriteString(fmt.Sprintf("    source: %s\n", change.Source))
+		sb.WriteString(fmt.Sprintf("    destination: %s\n", change.Destination))
+	}
+	var batchUnknowns []string
+	for _, unknown := range review.UnknownSourceSettings {
+		if protocol.IsRecoveryArchiveSourceLimitation(unknown) {
+			continue
+		}
+		batchUnknowns = append(batchUnknowns, unknown)
+	}
+	if len(batchUnknowns) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render("Source metadata unavailable for this archive"))
+		sb.WriteString("\n")
+	}
+	for _, unknown := range batchUnknowns {
+		sb.WriteString(fmt.Sprintf("  [unknown source] %s\n", unknown))
+	}
+	if len(review.ActiveConflicts) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(warningStyle.Render("Active credential conflicts"))
+		sb.WriteString("\n")
+		for _, conflict := range review.ActiveConflicts {
+			sb.WriteString(fmt.Sprintf("  %s (%s, %s)\n", conflict.Selector, conflict.Category, conflict.KeyType))
+		}
+	}
+
+	appendRecoveredSourceContext(&sb, review, popupWidth)
+	boxes := m.reviewCheckboxes()
+	if len(boxes) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render("Required acknowledgements"))
+		sb.WriteString("\n")
+		for i, box := range boxes {
+			var line string
+			switch box {
+			case reviewCheckboxAck:
+				line = checkboxLine(
+					m.restore.unattendedAcknowledged,
+					"I acknowledge this identity auto-approves unmatched signing requests",
+				)
+			case reviewCheckboxReplace:
+				line = checkboxLine(
+					m.restore.replaceExisting,
+					fmt.Sprintf("Replace the %d existing active credential(s) listed above", len(review.ActiveConflicts)),
+				)
+			}
+			if m.restore.reviewFocus == restoreFocusList && i == m.restore.reviewCursor {
+				sb.WriteString(selectedStyle.Render("> " + line))
+			} else {
+				sb.WriteString("  " + line)
+			}
+			sb.WriteString("\n")
+		}
+	}
+	ready := (!recoveredUnattendedSigningAckRequired(review) || m.restore.unattendedAcknowledged) &&
+		(len(review.ActiveConflicts) == 0 || m.restore.replaceExisting)
+	sb.WriteString("\n")
+	sb.WriteString(restoreActionButton(
+		"ACTIVATE",
+		m.restore.reviewFocus == restoreFocusAction,
+		ready,
+	))
+	sb.WriteString("\n")
+	if m.restore.previewError != "" {
+		sb.WriteString("\n")
+		sb.WriteString(errorStyle.Render(m.restore.previewError))
+		sb.WriteString("\n")
+	}
+	return m.renderPopup(popupWidth, sb.String())
+}
+
+// appendRecoveredSourceContext renders what the archive reported about its
+// source node, under a heading that names the provenance.
+//
+// It deliberately says nothing when the archive reports nothing. That backups
+// are unsigned, and that archive-reported context therefore governs nothing,
+// is true of every restore; constant prose on every review teaches operators
+// to skim the block that also carries the variable findings. USER_STORE_MGMT.md
+// carries the explanation instead.
+func appendRecoveredSourceContext(
+	sb *strings.Builder,
+	review ReviewRecoveredResultMessage,
+	popupWidth int,
+) {
+	switch review.SourceSettingsStatus {
+	case protocol.RecoverySourceSettingsStatusUnverified:
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render("Reported by the backup archive"))
+		sb.WriteString("\n")
+		fmt.Fprintf(
+			sb,
+			"  approval default: %s\n",
+			recoveredSourceApprovalLabel(review.SourceUserAutoApprove),
+		)
+		if len(review.SourceGenesisHashMappings) == 0 {
+			sb.WriteString("  custom genesis-hash mappings: none\n")
+		} else {
+			sb.WriteString("  custom genesis-hash mappings:\n")
+			for _, mapping := range review.SourceGenesisHashMappings {
+				fmt.Fprintf(sb, "    %s: %s\n", mapping.Network, mapping.GenesisHash)
+			}
+		}
+	case protocol.RecoverySourceSettingsStatusInvalid:
+		sb.WriteString("\n")
+		warning := review.SourceSettingsWarning
+		if warning == "" {
+			warning = "Archive source-settings metadata is invalid."
+		}
+		sb.WriteString(warningStyle.Render(wrapText(warning, popupWidth-6)))
+		sb.WriteString("\n")
+	}
+}
+
+func recoveredSourceApprovalLabel(value *bool) string {
+	if value == nil {
+		return "not applicable"
+	}
+	if *value {
+		return "auto approve"
+	}
+	return "manual review"
+}
+
+func checkboxLine(checked bool, label string) string {
+	marker := "[ ]"
+	if checked {
+		marker = "[x]"
+	}
+	return marker + " " + label
 }
 
 func (m Model) renderRestoreDisplay() string {
@@ -206,20 +417,23 @@ func (m Model) renderRestoreDisplay() string {
 		lines = append(lines, fmt.Sprintf("Archive: %s", restoreArchiveLabel(result.ArchivePath)))
 	}
 	lines = append(lines,
-		fmt.Sprintf("Restored: %d", len(result.Restored)),
-		fmt.Sprintf("Skipped:  %d", len(result.Skipped)),
-		fmt.Sprintf("Errors:   %d", len(result.Errors)),
+		fmt.Sprintf("Activated: %d", len(result.Activated)),
 	)
 
-	if result.Error != "" && len(result.Errors) == 0 {
+	if result.Error != "" {
 		lines = append(lines, "", errorStyle.Render(result.Error))
+	}
+	if len(result.Warnings) > 0 {
+		lines = append(lines, "", warningStyle.Render("Activation warnings:"))
+		for _, warning := range result.Warnings {
+			lines = append(lines, warningStyle.Render("  "+warning))
+		}
 	}
 	lines = append(lines, "")
 
-	bottomLines := restoreDisplayBottomLines(result, rowWidth)
-	if len(result.Restored) > 0 {
+	if len(result.Activated) > 0 {
 		overhead := 5 // header, above indicator, below indicator, total, spacer
-		visibleRows := contentHeight - len(lines) - len(bottomLines) - overhead
+		visibleRows := contentHeight - len(lines) - overhead
 		if visibleRows < 1 {
 			visibleRows = 1
 		}
@@ -227,8 +441,8 @@ func (m Model) renderRestoreDisplay() string {
 		displayModel.clampRestoreDisplayScroll(visibleRows)
 		scrollOffset := displayModel.restore.displayScrollOffset
 		endIdx := scrollOffset + visibleRows
-		if endIdx > len(result.Restored) {
-			endIdx = len(result.Restored)
+		if endIdx > len(result.Activated) {
+			endIdx = len(result.Activated)
 		}
 
 		lines = append(lines, statusUnlockedStyle.Render("Restored keys:"))
@@ -240,65 +454,24 @@ func (m Model) renderRestoreDisplay() string {
 			if i == displayModel.restore.displaySelectedKey {
 				prefix = "> "
 			}
-			line := restoreDisplayKeyLine(result.Restored[i], prefix, rowWidth)
+			line := restoreDisplayKeyLine(result.Activated[i], prefix, rowWidth)
 			if i == displayModel.restore.displaySelectedKey {
 				lines = append(lines, selectedStyle.Render(line))
 			} else {
 				lines = append(lines, normalStyle.Render(line))
 			}
 		}
-		if below := scrollMoreBelowLine(len(result.Restored) - endIdx); below != "" {
+		if below := scrollMoreBelowLine(len(result.Activated) - endIdx); below != "" {
 			lines = append(lines, below)
 		}
-		lines = append(lines, fmt.Sprintf("  Total: %d restored keys", len(result.Restored)))
-		if len(bottomLines) == 0 {
-			lines = append(lines, "")
-		}
+		lines = append(lines, fmt.Sprintf("  Total: %d activated keys", len(result.Activated)))
+		lines = append(lines, "")
 	}
 
-	lines = append(lines, bottomLines...)
 	if len(lines) > contentHeight {
 		lines = lines[:contentHeight]
 	}
 	return m.renderPopup(popupWidth, strings.Join(lines, "\n"))
-}
-
-func restoreDisplayBottomLines(result RestoreBackupResultMessage, rowWidth int) []string {
-	lines := make([]string, 0)
-	if len(result.Skipped) > 0 {
-		lines = append(lines, warningStyle.Render("Skipped keys:"))
-		for _, key := range result.Skipped {
-			line := restoreDisplayKeyLine(key, "  ", rowWidth)
-			if key.Error != "" {
-				line += "  " + key.Error
-			}
-			lines = append(lines, warningStyle.Render(line))
-		}
-		lines = append(lines, "")
-	}
-	if len(result.Errors) > 0 {
-		lines = append(lines, errorStyle.Render("Errors:"))
-		for _, restoreErr := range result.Errors {
-			line := "  "
-			if restoreErr.Address != "" {
-				line += restoreErr.Address + ": "
-			}
-			line += restoreErr.Error
-			lines = append(lines, errorStyle.Render(ellipsize(line, rowWidth)))
-		}
-	}
-	if len(result.Warnings) > 0 {
-		lines = append(lines, warningStyle.Render("Warnings:"))
-		for _, warning := range result.Warnings {
-			line := "  "
-			if warning.Address != "" {
-				line += warning.Address + ": "
-			}
-			line += warning.Warning
-			lines = append(lines, warningStyle.Render(ellipsize(line, rowWidth)))
-		}
-	}
-	return lines
 }
 
 func restoreDisplayKeyLine(key RestoreKeyInfo, prefix string, maxWidth int) string {
@@ -345,13 +518,6 @@ func formatRestoreSize(size int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
-func restoreOverwriteLabel(overwrite bool) string {
-	if overwrite {
-		return "enabled"
-	}
-	return "disabled"
-}
-
 func restoreSelectionMark(m Model, key RestoreKeyInfo) string {
 	if m.restore.selected[key.Address] {
 		return "* "
@@ -393,6 +559,11 @@ func restorePreviewSuffix(key RestoreKeyInfo) string {
 	var suffix string
 	if key.HasTemplate {
 		suffix += "  template:" + key.TemplateType
+	}
+	if key.AlreadyExists {
+		// Informational: replacing an active credential is consented to on
+		// the activation review, beside the exact conflicts.
+		suffix += "  exists"
 	}
 	if key.Error != "" {
 		suffix += "  " + key.Error

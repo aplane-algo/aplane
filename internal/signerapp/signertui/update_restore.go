@@ -3,7 +3,11 @@
 
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"fmt"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func (m Model) openRestoreList() (tea.Model, tea.Cmd) {
 	m.resetRestoreFlow(true)
@@ -43,8 +47,10 @@ func (m Model) handleRestoreListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.restore.selected = nil
 		m.restore.selectedKey = 0
 		m.restore.previewScrollOffset = 0
-		m.restore.overwrite = false
+		m.restore.replaceExisting = false
 		m.viewState = ViewRestorePassphrase
+	case "v", "V":
+		return m.openRecoveredList()
 	}
 	return m, nil
 }
@@ -99,6 +105,9 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewRestoreList
 		return m, nil
 	case "up", "k":
+		if m.restore.previewFocus != restoreFocusList {
+			return m, nil
+		}
 		if m.restore.selectedKey > 0 {
 			m.restore.selectedKey--
 			if m.restore.selectedKey < m.restore.previewScrollOffset {
@@ -106,6 +115,9 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "down", "j":
+		if m.restore.previewFocus != restoreFocusList {
+			return m, nil
+		}
 		if m.restore.selectedKey < len(m.restore.previewKeys)-1 {
 			m.restore.selectedKey++
 			visibleHeight := m.restorePreviewVisibleHeight()
@@ -114,14 +126,14 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case " ":
+		// Recovery is inactive and never overwrites anything: conflicting
+		// keys are freely selectable, and the replace-existing consent is
+		// collected on the activation review beside the exact conflicts.
 		if len(m.restore.previewKeys) == 0 {
 			return m, nil
 		}
 		key := m.restore.previewKeys[m.restore.selectedKey]
 		if !m.restoreKeySelectable(key) {
-			if key.AlreadyExists && !m.restore.overwrite {
-				m.restore.previewError = "Enable overwrite before selecting existing keys"
-			}
 			return m, nil
 		}
 		if m.restore.selected == nil {
@@ -140,35 +152,146 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.restore.previewError = ""
-	case "o", "O":
-		m.restore.overwrite = !m.restore.overwrite
-		if !m.restore.overwrite {
-			for _, key := range m.restore.previewKeys {
-				if key.AlreadyExists {
-					delete(m.restore.selected, key.Address)
-				}
-			}
+	case "tab", "shift+tab":
+		if m.restore.previewFocus == restoreFocusList {
+			m.restore.previewFocus = restoreFocusAction
+		} else {
+			m.restore.previewFocus = restoreFocusList
 		}
 		m.restore.previewError = ""
 	case "enter":
+		// Enter commits only from the Recover button, so arrowing through the
+		// key list cannot start a recovery by reflex.
+		if m.restore.previewFocus != restoreFocusAction {
+			return m, nil
+		}
 		addresses := m.selectedRestoreAddresses()
 		if len(addresses) == 0 {
 			m.restore.previewError = "Select at least one key to restore"
 			return m, nil
 		}
-		for _, key := range m.restore.previewKeys {
-			if m.restore.selected[key.Address] && key.AlreadyExists && !m.restore.overwrite {
-				m.restore.previewError = "Enable overwrite before restoring existing keys"
-				return m, nil
-			}
+		if len(m.restore.passphrase) == 0 {
+			// The passphrase is zeroed once recovery launches; a doomed
+			// retry must not consume a restore rate-limiter slot.
+			m.restore.previewError = "Export passphrase no longer available; press Esc and re-enter it"
+			return m, nil
 		}
-		restoreCmd := m.sendRestoreBackupCmd(m.restore.archivePath, addresses, m.restore.overwrite, m.restore.passphrase)
+		restoreCmd := m.sendRecoverBackupCmd(m.restore.archivePath, addresses, m.restore.passphrase)
 		m.clearRestorePassphrase()
 		m.restore.previewError = ""
+		m.restore.progressLabel = "Recovering Into Inactive Batch"
 		m.viewState = ViewRestoring
 		return m, tea.Batch(restoreCmd, m.waitForMessageCmd())
 	}
 	return m, nil
+}
+
+// reviewCheckbox identifies one togglable consent on the activation review.
+type reviewCheckbox int
+
+const (
+	reviewCheckboxAck reviewCheckbox = iota
+	reviewCheckboxReplace
+)
+
+// reviewCheckboxes lists the consents the current review collects, in render
+// order.
+func (m Model) reviewCheckboxes() []reviewCheckbox {
+	var boxes []reviewCheckbox
+	if recoveredUnattendedSigningAckRequired(m.restore.review) {
+		boxes = append(boxes, reviewCheckboxAck)
+	}
+	if len(m.restore.review.ActiveConflicts) > 0 {
+		boxes = append(boxes, reviewCheckboxReplace)
+	}
+	return boxes
+}
+
+func (m Model) handleRestoreReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	boxes := m.reviewCheckboxes()
+	switch msg.String() {
+	case "q", "esc":
+		// The batch stays reachable from the recovered list; it is never
+		// stranded and re-reviewing needs no passphrase.
+		m.restore.recoveredError = fmt.Sprintf(
+			"Recovered batch %s remains inactive",
+			m.restore.restoreID,
+		)
+		return m.openRecoveredList()
+	case "tab", "shift+tab":
+		if len(boxes) == 0 {
+			return m, nil
+		}
+		if m.restore.reviewFocus == restoreFocusList {
+			m.restore.reviewFocus = restoreFocusAction
+		} else {
+			m.restore.reviewFocus = restoreFocusList
+		}
+		m.restore.previewError = ""
+	case "up", "k":
+		if m.restore.reviewFocus == restoreFocusList && m.restore.reviewCursor > 0 {
+			m.restore.reviewCursor--
+			m.restore.previewError = ""
+		}
+	case "down", "j":
+		if m.restore.reviewFocus == restoreFocusList && m.restore.reviewCursor < len(boxes)-1 {
+			m.restore.reviewCursor++
+			m.restore.previewError = ""
+		}
+	case " ":
+		if m.restore.reviewFocus != restoreFocusList || len(boxes) == 0 {
+			return m, nil
+		}
+		cursor := m.restore.reviewCursor
+		if cursor >= len(boxes) {
+			cursor = len(boxes) - 1
+		}
+		switch boxes[cursor] {
+		case reviewCheckboxAck:
+			m.restore.unattendedAcknowledged = !m.restore.unattendedAcknowledged
+		case reviewCheckboxReplace:
+			m.restore.replaceExisting = !m.restore.replaceExisting
+		}
+		m.restore.previewError = ""
+	case "enter":
+		// Enter commits only from the Activate button.
+		if m.restore.reviewFocus != restoreFocusAction {
+			return m, nil
+		}
+		if recoveredUnattendedSigningAckRequired(m.restore.review) && !m.restore.unattendedAcknowledged {
+			m.restore.previewError = "Acknowledge unattended signing before activation"
+			return m, nil
+		}
+		if len(m.restore.review.ActiveConflicts) > 0 && !m.restore.replaceExisting {
+			m.restore.previewError = fmt.Sprintf(
+				"Enable replace-existing to overwrite %d active credential(s)",
+				len(m.restore.review.ActiveConflicts),
+			)
+			return m, nil
+		}
+		m.restore.previewError = ""
+		m.restore.progressLabel = "Activating Recovered Credentials"
+		m.viewState = ViewRestoring
+		return m, tea.Batch(
+			m.sendActivateRecoveredCmd(
+				m.restore.restoreID,
+				m.restore.review.ReviewToken,
+				m.restore.unattendedAcknowledged,
+				m.restore.replaceExisting,
+			),
+			m.waitForMessageCmd(),
+		)
+	}
+	return m, nil
+}
+
+func recoveredUnattendedSigningAckRequired(
+	review ReviewRecoveredResultMessage,
+) bool {
+	if review.UnattendedSigningAckRequired == nil {
+		return review.DestinationApprovalMode == "auto_approve_fallback"
+	}
+	return *review.UnattendedSigningAckRequired
 }
 
 func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -178,14 +301,28 @@ func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.restore.displaySelectedKey--
 		}
 	case "down":
-		if m.restore.displaySelectedKey < len(m.restore.result.Restored)-1 {
+		if m.restore.displaySelectedKey < len(m.restore.result.Activated)-1 {
 			m.restore.displaySelectedKey++
 		}
 	case "q", "esc", "enter", " ":
 		result := m.restore.result
+		if m.signerState == signerRuntimeRecovery {
+			// The daemon is still in recovery — even after a successful
+			// activation, if the server-side recovery-exit rescan failed
+			// no unlocked push is coming, and ordinary administration must
+			// stay unavailable (ARCH_TUI). The blocking recovery screen is
+			// the only valid destination.
+			return m.openRecoveredList()
+		}
+		if !result.Success && m.restore.restoreID != "" {
+			// Failure routes back to the batch list: the batch (or its
+			// incomplete activation) still exists there and is never
+			// stranded.
+			return m.openRecoveredList()
+		}
 		m.resetRestoreFlow(true)
-		if len(result.Restored) > 0 {
-			m.selectKeyByAddress(result.Restored[0].Address)
+		if len(result.Activated) > 0 {
+			m.selectKeyByAddress(result.Activated[0].Address)
 		}
 		m.viewState = ViewKeyList
 		return m, tea.Batch(m.sendListKeysCmd(), m.waitForMessageCmd())

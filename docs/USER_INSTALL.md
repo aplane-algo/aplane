@@ -1075,6 +1075,13 @@ The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot
    sudo apstore -d /var/lib/apsigner restore apply aplane-backup.tar.gz
    ```
 
+   `restore apply` first creates an inactive recovered batch, prints the
+   destination policy/approval review, and activates only after the required
+   acknowledgements. If you stop before activation, use `restore list`,
+   `restore review <restore-id>`, and `restore activate <restore-id>` later.
+   An interrupted activation blocks signing until `restore activate` resumes
+   it or `restore rollback <restore-id>` restores prior state.
+
 3. **On the new machine** — if using auto-unlock, create a new machine-bound credential:
    ```bash
    sudo appass -d /var/lib/apsigner

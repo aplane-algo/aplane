@@ -74,17 +74,38 @@ const (
 // above, but producers and CLI consumers still share them through this package
 // so the lists cannot drift independently.
 const (
-	ResultCodeBackupFailed             = "backup_failed"
-	ResultCodeListBackupsFailed        = "list_backups_failed"
-	ResultCodeDeleteBackupFailed       = "delete_backup_failed"
-	ResultCodeRestorePreviewFailed     = "restore_preview_failed"
-	ResultCodeRestoreRateLimited       = "restore_rate_limited"
-	ResultCodeInvalidBackupArchive     = "invalid_backup_archive"
-	ResultCodeBackupArchiveNotFound    = "backup_archive_not_found"
-	ResultCodeBackupArchiveUnavailable = "backup_archive_unavailable"
-	ResultCodePrepareRestoreFailed     = "prepare_restore_failed"
-	ResultCodeScanBackupFailed         = "scan_backup_failed"
-	ResultCodeEmptyBackup              = "empty_backup"
+	ResultCodeBackupFailed              = "backup_failed"
+	ResultCodeListBackupsFailed         = "list_backups_failed"
+	ResultCodeDeleteBackupFailed        = "delete_backup_failed"
+	ResultCodeRestorePreviewFailed      = "restore_preview_failed"
+	ResultCodeRestoreRateLimited        = "restore_rate_limited"
+	ResultCodeInvalidBackupArchive      = "invalid_backup_archive"
+	ResultCodeBackupArchiveNotFound     = "backup_archive_not_found"
+	ResultCodeBackupArchiveUnavailable  = "backup_archive_unavailable"
+	ResultCodePrepareRestoreFailed      = "prepare_restore_failed"
+	ResultCodeScanBackupFailed          = "scan_backup_failed"
+	ResultCodeEmptyBackup               = "empty_backup"
+	ResultCodeRecoverBackupFailed       = "recover_backup_failed"
+	ResultCodeListRecoveredFailed       = "list_recovered_failed"
+	ResultCodeReviewRecoveredFailed     = "review_recovered_failed"
+	ResultCodeActivationReviewStale     = "activation_review_stale"
+	ResultCodeActivationAckRequired     = "activation_acknowledgement_required"
+	ResultCodeActivationConflict        = "activation_conflict"
+	ResultCodeRecoveredActivationFailed = "recovered_activation_failed"
+	ResultCodeRecoveredRollbackFailed   = "recovered_rollback_failed"
+	// ResultCodeRecoveredRollbackRefused reports a rollback the server
+	// refused before mutating anything: no recovery mode was entered and
+	// the store is unchanged. Clients must not treat it as evidence of
+	// recovery (recovered_rollback_failed means state was mutated and the
+	// failure forced recovery).
+	ResultCodeRecoveredRollbackRefused = "recovered_rollback_refused"
+	ResultCodePurgeRecoveredFailed     = "purge_recovered_failed"
+	// ResultCodeRecoveryBlocked reports an unlock that succeeded into
+	// recovery mode: the passphrase was right, but the store failed
+	// reconciliation or generation validation, so signing is blocked until
+	// the operator resolves the store from recovery.
+	ResultCodeRecoveryBlocked       = "recovery_blocked"
+	ResultCodeActivationAuditFailed = "activation_audit_failed"
 
 	ResultCodeListFailed           = "list_failed"
 	ResultCodeInvalidTemplateType  = "invalid_template_type"

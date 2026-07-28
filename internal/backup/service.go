@@ -4,15 +4,13 @@
 package backup
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -32,11 +30,23 @@ type ArchiveResult struct {
 	Skipped map[string]string
 }
 
-// CreateKeysArchive exports selected active keys for identityID into a single
-// tar.gz/tgz archive at archivePath. When addresses is empty, all active keys
-// are exported.
-func CreateKeysArchive(paths storepaths.Paths, identityID, archivePath string, addresses []string, masterKey, exportPassphrase []byte) (*ArchiveResult, error) {
-	if err := prepareManagedArchiveDestination(paths, identityID, archivePath); err != nil {
+// CreateKeysArchiveRequest contains one managed backup creation snapshot.
+// MasterKey and ExportPassphrase are borrowed for the duration of the call and
+// are not cleared.
+type CreateKeysArchiveRequest struct {
+	Paths            storepaths.Paths
+	IdentityID       string
+	ArchivePath      string
+	Addresses        []string
+	MasterKey        []byte
+	ExportPassphrase []byte
+	SourceSettings   SourceSettingsSnapshot
+}
+
+// CreateKeysArchive exports selected active keys into one tar.gz/tgz archive.
+// When Addresses is empty, all active keys are exported.
+func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
+	if err := prepareManagedArchiveDestination(req.Paths, req.IdentityID, req.ArchivePath); err != nil {
 		return nil, err
 	}
 
@@ -46,13 +56,27 @@ func CreateKeysArchive(paths storepaths.Paths, identityID, archivePath string, a
 	}
 	defer func() { _ = os.RemoveAll(stageDir) }()
 
+	// Export sources resolve through the active layout once per archive.
+	activeStore, err := genstore.ResolveActive(req.Paths, req.IdentityID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve active key store layout: %w", err)
+	}
+	activeKeysDir := activeStore.KeysDir()
+
 	keysDestDir := filepath.Join(stageDir, "apb")
 	checksums := make(map[string]string)
 	skipped := make(map[string]string)
 	var exported []string
-	if len(addresses) == 0 {
+	if len(req.Addresses) == 0 {
 		var err error
-		checksums, skipped, err = ExportAllKeys(paths, identityID, paths.KeysDir(identityID), stageDir, masterKey, exportPassphrase)
+		checksums, skipped, err = ExportAllKeys(
+			req.Paths,
+			req.IdentityID,
+			activeKeysDir,
+			stageDir,
+			req.MasterKey,
+			req.ExportPassphrase,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -64,11 +88,19 @@ func CreateKeysArchive(paths storepaths.Paths, identityID, archivePath string, a
 		if err := os.MkdirAll(keysDestDir, 0750); err != nil {
 			return nil, fmt.Errorf("failed to create backup keys directory: %w", err)
 		}
-		for _, address := range addresses {
+		for _, address := range req.Addresses {
 			if address == "" {
 				continue
 			}
-			checksum, _, err := ExportKey(paths, identityID, paths.KeysDir(identityID), keysDestDir, address, masterKey, exportPassphrase)
+			checksum, _, err := ExportKey(
+				req.Paths,
+				req.IdentityID,
+				activeKeysDir,
+				keysDestDir,
+				address,
+				req.MasterKey,
+				req.ExportPassphrase,
+			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to export %s: %w", address, err)
 			}
@@ -82,36 +114,39 @@ func CreateKeysArchive(paths storepaths.Paths, identityID, archivePath string, a
 	if err := WriteReadme(stageDir); err != nil {
 		return nil, err
 	}
-	if err := copyPolicyFilesToArchive(paths, identityID, stageDir, masterKey); err != nil {
+	if err := copyPolicyFilesToArchive(req.Paths, req.IdentityID, stageDir, req.MasterKey); err != nil {
 		return nil, err
 	}
-	nodeRole, _, err := noderole.Load(paths)
+	nodeRole, _, err := noderole.Load(req.Paths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load source node role: %w", err)
 	}
 	if err := WriteManifest(stageDir, nodeRole.Role, time.Now()); err != nil {
 		return nil, err
 	}
-	if err := CreateTarGzArchive(stageDir, archivePath); err != nil {
+	if err := writeSourceSettings(stageDir, nodeRole.Role, req.SourceSettings); err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(archivePath, fsutil.StoreFilePerm); err != nil {
+	if err := CreateTarGzArchive(stageDir, req.ArchivePath); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(req.ArchivePath, fsutil.StoreFilePerm); err != nil {
 		return nil, fmt.Errorf("failed to set backup archive permissions: %w", err)
 	}
-	verifyReport, err := DeepVerifyBackupBytes(stageDir, exportPassphrase, DeepVerifyOptions{})
+	verifyReport, err := DeepVerifyBackupBytes(stageDir, req.ExportPassphrase, DeepVerifyOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify backup archive: %w", err)
 	}
 	if verifyReport.FailedFiles > 0 {
 		return nil, fmt.Errorf("failed to verify backup archive: %d file(s) failed verification", verifyReport.FailedFiles)
 	}
-	archiveChecksum, archiveSize, err := FileSHA256(archivePath)
+	archiveChecksum, archiveSize, err := FileSHA256(req.ArchivePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to checksum backup archive: %w", err)
 	}
 
 	return &ArchiveResult{
-		ArchivePath:     archivePath,
+		ArchivePath:     req.ArchivePath,
 		ArchiveChecksum: archiveChecksum,
 		ArchiveSize:     archiveSize,
 		Checksums:       checksums,
@@ -165,17 +200,7 @@ func copyPolicyFilesToArchive(paths storepaths.Paths, identityID, stageDir strin
 
 // FileSHA256 returns the SHA-256 checksum and size of path.
 func FileSHA256(path string) (string, int64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", 0, err
-	}
-	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	n, err := io.Copy(h, f)
-	if err != nil {
-		return "", 0, err
-	}
-	return hex.EncodeToString(h.Sum(nil)), n, nil
+	return fsutil.RegularFileSHA256(path)
 }
 
 func prepareManagedArchiveDestination(paths storepaths.Paths, identityID, archivePath string) error {

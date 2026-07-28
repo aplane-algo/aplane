@@ -148,26 +148,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.reconnectCmd()
 
 	case SignerStatusMsg:
-		if msg.Locked {
+		switch signerRuntimeStateFromWire(msg.State) {
+		case signerRuntimeUnlocked:
+			m.applySignerUnlockedState(msg.KeyCount)
+			idleCmd := m.armLocalIdleTimer()
+			// If signer is already unlocked, request key list
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
+		case signerRuntimeRecovery:
+			// Signing is blocked by an incomplete activation; open the
+			// blocking recovery screen instead of normal navigation.
+			m.applySignerRecoveryState()
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListRecoveredCmd(), m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
+		default:
 			// Signer locked; show unlock screen immediately regardless of
 			// current view. Any in-progress operation would fail anyway since
 			// the master key has been zeroed.
 			m.applySignerLockedState()
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd())
-		} else {
-			m.applySignerUnlockedState(msg.KeyCount)
-			idleCmd := m.armLocalIdleTimer()
-			// If signer is already unlocked, request key list
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
 		}
 
 	case UnlockResultMsg:
 		m.auth.loggingIn = false
 		if msg.Success {
-			m.applySignerUnlockedState(msg.KeyCount)
 			m.auth.passphraseError = ""
 			m.auth.passphraseInput = ""
 			m.clearWarningIf(localIdleDisconnectReason)
+			if msg.Code == protocol.ResultCodeRecoveryBlocked {
+				// Unlock succeeded into recovery mode: automatic
+				// reconciliation could not resolve every incomplete
+				// activation, so signing stays blocked.
+				m.applySignerRecoveryState()
+				return m, tea.Batch(m.waitForMessageCmd(), m.sendListRecoveredCmd(), m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
+			}
+			m.applySignerUnlockedState(msg.KeyCount)
 			idleCmd := m.armLocalIdleTimer()
 			// Request the key list after unlocking
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
@@ -243,6 +256,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
 			m.clearRestorePassphrase()
 			m.restore.previewing = false
+		}
+		if m.viewState == ViewRestoring {
+			// An untyped failure (authorization denial, service
+			// unavailable, a send error) must not strand the operator on
+			// the progress screen, where Esc refuses and only q quits.
+			// Route the same way typed failures do.
+			if m.signerState == signerRuntimeRecovery || m.restore.restoreID != "" {
+				m.restore.recoveredError = msg.Error.Error()
+				return m.openRecoveredList()
+			}
+			m.lastError = msg.Error.Error()
+			m.viewState = ViewRestoreList
+			return m, m.waitForMessageCmd()
 		}
 		m.lastError = msg.Error.Error()
 		// Continue listening for messages
@@ -356,30 +382,138 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.restore.previewError = ""
 		m.restore.selectedKey = 0
 		m.restore.previewScrollOffset = 0
+		m.restore.previewFocus = restoreFocusList
 		m.initializeRestoreSelection()
 		m.viewState = ViewRestorePreview
 		return m, m.waitForMessageCmd()
 
-	case RestoreBackupResultMsg:
+	case RecoverBackupResultMsg:
 		m.clearRestorePassphrase()
-		m.restore.result = RestoreBackupResultMessage{
-			ArchivePath: msg.ArchivePath,
-			Success:     msg.Success,
-			Restored:    msg.Restored,
-			Skipped:     msg.Skipped,
-			Errors:      msg.Errors,
-			Warnings:    msg.Warnings,
-			KeyCount:    msg.KeyCount,
-			Error:       msg.Error,
+		if !msg.Success {
+			m.restore.result = RestoreDisplayResult{
+				ArchivePath: m.restore.archivePath,
+				Success:     false,
+				Error:       msg.Error,
+			}
+			m.viewState = ViewRestoreDisplay
+			return m, m.waitForMessageCmd()
+		}
+		m.restore.restoreID = msg.RestoreID
+		return m, tea.Batch(m.sendReviewRecoveredCmd(msg.RestoreID), m.waitForMessageCmd())
+
+	case ReviewRecoveredResultMsg:
+		if !msg.Result.Success {
+			m.restore.result = RestoreDisplayResult{
+				ArchivePath: m.restore.archivePath,
+				Success:     false,
+				Error:       msg.Result.Error,
+			}
+			m.viewState = ViewRestoreDisplay
+			return m, m.waitForMessageCmd()
+		}
+		m.restore.review = msg.Result
+		m.restore.restoreID = msg.Result.RestoreID
+		// A freshly opened review always starts at the top: a stale scroll
+		// position from a previous popup must not hide the credentials
+		// list on the informed-consent screen.
+		m.panelScrollView = ViewRestoreReview
+		m.panelScrollPosition = 0
+		m.restore.unattendedAcknowledged = false
+		m.restore.replaceExisting = false
+		m.restore.reviewCursor = 0
+		if len(m.reviewCheckboxes()) > 0 {
+			m.restore.reviewFocus = restoreFocusList
+		} else {
+			m.restore.reviewFocus = restoreFocusAction
+		}
+		m.restore.previewError = ""
+		m.viewState = ViewRestoreReview
+		return m, m.waitForMessageCmd()
+
+	case ActivateRecoveredResultMsg:
+		restored := make([]RestoreKeyInfo, len(msg.Result.Activated))
+		for i, entry := range msg.Result.Activated {
+			restored[i] = RestoreKeyInfo{
+				Address: entry.Selector,
+				KeyType: entry.KeyType,
+			}
+		}
+		m.restore.result = RestoreDisplayResult{
+			ArchivePath: m.restore.archivePath,
+			Success:     msg.Result.Success,
+			Activated:   restored,
+			Warnings:    append([]string(nil), msg.Result.Warnings...),
+			KeyCount:    msg.Result.KeyCount,
+			Error:       msg.Result.Error,
 		}
 		m.restore.displaySelectedKey = 0
 		m.restore.displayScrollOffset = 0
 		m.viewState = ViewRestoreDisplay
 		cmds := []tea.Cmd{m.waitForMessageCmd()}
-		if msg.Success || len(msg.Restored) > 0 || msg.KeyCount > 0 {
+		if msg.Result.Success {
+			if m.signerState == signerRuntimeRecovery {
+				// The activation resolved recovery-blocking state; the
+				// server pushes the unlocked status when its rescan is
+				// clean, and the refreshed list covers the still-blocked
+				// case.
+				cmds = append(cmds, m.sendListRecoveredCmd())
+			}
 			cmds = append(cmds, m.sendListKeysCmd(), m.sendListKeyTypesCmd())
+		} else if msg.Result.Code == protocol.ResultCodeRecoveredRollbackFailed {
+			// A failed rollback blocks signing immediately server-side;
+			// mirror it so the client does not pretend to be unlocked.
+			m.signerState = signerRuntimeRecovery
 		}
 		return m, tea.Batch(cmds...)
+
+	case RecoveredListMsg:
+		m.restore.recoveredLoaded = true
+		if msg.Error != "" {
+			m.restore.recoveredError = msg.Error
+		} else {
+			m.restore.recoveredError = ""
+			m.restore.recovered = msg.Batches
+			m.clampRecoveredSelection()
+		}
+		return m, m.waitForMessageCmd()
+
+	case RollbackRecoveredResultMsg:
+		cmds := []tea.Cmd{m.waitForMessageCmd()}
+		if msg.Result.Success {
+			m.restore.recoveredError = ""
+			if m.viewState == ViewRestoring {
+				m.viewState = ViewRecoveredList
+			}
+			// The server pushes the unlocked status if its rescan is clean;
+			// refresh the list either way.
+			cmds = append(cmds, m.sendListRecoveredCmd())
+		} else {
+			// recovered_rollback_refused means the server refused before
+			// mutating anything: no recovery was entered server-side and
+			// no corrective status push will ever come, so mirroring
+			// recovery here would lock the client into the blocking screen
+			// until restart. Only a mutated-and-failed rollback mirrors.
+			if msg.Result.Code == protocol.ResultCodeRecoveredRollbackFailed {
+				m.signerState = signerRuntimeRecovery
+			}
+			m.restore.recoveredError = msg.Result.Error
+			if m.viewState == ViewRestoring {
+				m.viewState = ViewRecoveredList
+			}
+			cmds = append(cmds, m.sendListRecoveredCmd())
+		}
+		return m, tea.Batch(cmds...)
+
+	case PurgeRecoveredResultMsg:
+		if msg.Result.Success {
+			m.restore.recoveredError = ""
+		} else {
+			m.restore.recoveredError = msg.Result.Error
+		}
+		if m.viewState == ViewRestoring {
+			m.viewState = ViewRecoveredList
+		}
+		return m, tea.Batch(m.waitForMessageCmd(), m.sendListRecoveredCmd())
 
 	case ImportResultMsg:
 		if msg.Success {
@@ -685,8 +819,12 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRestorePassphraseKeys(msg)
 	case ViewRestorePreview:
 		return m.handleRestorePreviewKeys(msg)
+	case ViewRestoreReview:
+		return m.handleRestoreReviewKeys(msg)
 	case ViewRestoreDisplay:
 		return m.handleRestoreDisplayKeys(msg)
+	case ViewRecoveredList:
+		return m.handleRecoveredListKeys(msg)
 	case ViewGenerateDisplay:
 		return m.handleGenerateDisplayKeys(msg)
 	case ViewImportDisplay:
@@ -736,6 +874,7 @@ func (m Model) usesSharedPopupViewport() bool {
 	case ViewAuth,
 		ViewUnlock,
 		ViewTokenProvisioningPopup,
+		ViewRestoreReview,
 		ViewGenerateForm,
 		ViewGenerateParams,
 		ViewGenerating,

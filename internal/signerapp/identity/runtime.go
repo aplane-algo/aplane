@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -379,9 +380,43 @@ func (ir *Runtime) IsUnlocked() bool {
 	return ir.lockRuntime.IsUnlocked()
 }
 
+// IsRecovery reports that the master key is available only for explicit
+// activation reconciliation; signing remains locked.
+func (ir *Runtime) IsRecovery() bool {
+	return ir.lockRuntime.IsRecovery()
+}
+
+// PromoteRecoveryToUnlocked atomically transitions recovery -> unlocked,
+// refusing if a racing lock already left recovery (the lock wins).
+func (ir *Runtime) PromoteRecoveryToUnlocked() bool {
+	return ir.lockRuntime.PromoteRecoveryToUnlocked()
+}
+
 // SetUnlocked marks this identity as unlocked without side effects.
 func (ir *Runtime) SetUnlocked() {
 	ir.lockRuntime.SetUnlocked()
+}
+
+// SetRecovery marks this identity as recovery-blocked without permitting
+// signing. Production unlock paths should use TryRecoveryUnlock.
+func (ir *Runtime) SetRecovery() {
+	ir.lockRuntime.SetRecovery()
+}
+
+// TryRecoveryUnlock derives the master key without scanning or publishing
+// active credentials, then enters recovery state.
+func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
+	if ir.decommissioned.Load() {
+		return false, ErrDecommissioned.Error()
+	}
+	return ir.lockRuntime.TryRecovery(func() error {
+		ir.passphraseLock.Lock()
+		defer ir.passphraseLock.Unlock()
+		if _, err := ir.keyStore.InitializeMasterKey(passphrase); err != nil {
+			return fmt.Errorf("invalid passphrase")
+		}
+		return nil
+	})
 }
 
 // Lock transitions this identity to the locked state.
@@ -898,13 +933,20 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 		return
 	}
 
-	// Watch keys dir and key type state/template records.
-	// The identity dir catches creation of intermediate directories so the
-	// watcher can dynamically add them.
-	dirs := []string{
-		ir.keyPaths.IdentityDir(ir.id),
-		ir.keyPaths.KeysDir(ir.id),
-		ir.keyPaths.KeyTypeRecordsDir(ir.id),
+	// Watch keys dir and key type state/template records, resolved through
+	// the active layout: on a generational store the namespaces live inside
+	// the generation CURRENT names. The identity dir catches creation of
+	// intermediate directories and CURRENT pointer replacement (a reload
+	// candidate); a pointer flip re-arms the watcher on the new generation's
+	// directories via StopKeyWatcher + EnsureKeyWatcher in the flipping
+	// operation, since fsnotify watches bind to inodes.
+	dirs := []string{ir.keyPaths.IdentityDir(ir.id)}
+	if active, err := genstore.ResolveActive(ir.keyPaths, ir.id); err == nil {
+		dirs = append(dirs, active.KeysDir(), active.KeyTypeRecordsDir())
+	} else {
+		// An unresolvable layout still gets the identity-dir watch so a
+		// repaired CURRENT triggers a reload; reload itself fails closed.
+		dirs = append(dirs, ir.keyPaths.KeysDir(ir.id), ir.keyPaths.KeyTypeRecordsDir(ir.id))
 	}
 
 	// The reload callback either reloads (if unlocked) or marks dirty (if locked)

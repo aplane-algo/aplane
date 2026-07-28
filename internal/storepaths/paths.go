@@ -16,7 +16,10 @@ type Paths struct {
 	root string
 }
 
-var keyTypeComponentShape = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
+var (
+	keyTypeComponentShape   = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
+	restoreIDComponentShape = regexp.MustCompile(`^[0-9a-f]{32}$`)
+)
 
 func NewPaths(root string) Paths {
 	return Paths{root: root}
@@ -69,6 +72,24 @@ func validateKeyTypeComponent(keyType string) {
 	}
 }
 
+// ValidateRestoreIDComponent checks whether restoreID is the canonical
+// lowercase 128-bit hexadecimal identifier used by recovered batches.
+func ValidateRestoreIDComponent(restoreID string) error {
+	if err := validatePathComponentValue("restore ID", restoreID); err != nil {
+		return err
+	}
+	if !restoreIDComponentShape.MatchString(restoreID) {
+		return fmt.Errorf("invalid restore ID: %q", restoreID)
+	}
+	return nil
+}
+
+func validateRestoreIDComponent(restoreID string) {
+	if err := ValidateRestoreIDComponent(restoreID); err != nil {
+		panic(err.Error())
+	}
+}
+
 func (p Paths) IdentityDir(identityID string) string {
 	validatePathComponent("identity ID", identityID)
 	return filepath.Join(p.root, "identities", identityID)
@@ -76,6 +97,23 @@ func (p Paths) IdentityDir(identityID string) string {
 
 func (p Paths) KeysDir(identityID string) string {
 	return filepath.Join(p.IdentityDir(identityID), "keys")
+}
+
+func (p Paths) RecoveredRootDir(identityID string) string {
+	return filepath.Join(p.IdentityDir(identityID), "recovered")
+}
+
+func (p Paths) RecoveredBatchDir(identityID, restoreID string) string {
+	validateRestoreIDComponent(restoreID)
+	return filepath.Join(p.RecoveredRootDir(identityID), restoreID)
+}
+
+func (p Paths) RecoveredBatchEntriesDir(identityID, restoreID string) string {
+	return filepath.Join(p.RecoveredBatchDir(identityID, restoreID), "entries")
+}
+
+func (p Paths) RecoveredBatchMetadataPath(identityID, restoreID string) string {
+	return filepath.Join(p.RecoveredBatchDir(identityID, restoreID), "batch.enc")
 }
 
 func (p Paths) DeletedDir(identityID string) string {

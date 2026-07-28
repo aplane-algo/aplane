@@ -91,8 +91,8 @@ func TestKeystoreMetadataWorkflow(t *testing.T) {
 	}
 
 	// Verify metadata structure
-	if meta.Version != 2 {
-		t.Errorf("Expected version 2, got %d", meta.Version)
+	if meta.Version != CurrentKeystoreMetadataVersion {
+		t.Errorf("Expected version %d, got %d", CurrentKeystoreMetadataVersion, meta.Version)
 	}
 	if meta.Salt == "" {
 		t.Error("Salt should not be empty")
@@ -141,7 +141,7 @@ func TestLoadKeystoreMetadataRejectsUnsupportedVersion(t *testing.T) {
 		version int
 	}{
 		{name: "missing", version: 0},
-		{name: "future", version: CurrentKeystoreMetadataVersion + 1},
+		{name: "future", version: GenerationalKeystoreMetadataVersion + 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			candidate := *meta
@@ -160,6 +160,52 @@ func TestLoadKeystoreMetadataRejectsUnsupportedVersion(t *testing.T) {
 				t.Fatalf("LoadKeystoreMetadataFrom() error = %v, want unsupported version", err)
 			}
 		})
+	}
+
+	// Version 3 requires the generations layout tag; without it the store
+	// is rejected rather than half-understood.
+	t.Run("v3-without-layout", func(t *testing.T) {
+		candidate := *meta
+		candidate.Version = GenerationalKeystoreMetadataVersion
+		candidate.Layout = ""
+		data, err := json.Marshal(candidate)
+		if err != nil {
+			t.Fatalf("Marshal metadata failed: %v", err)
+		}
+		metaPath := filepath.Join(t.TempDir(), ".keystore")
+		if err := os.WriteFile(metaPath, data, 0600); err != nil {
+			t.Fatalf("WriteFile metadata failed: %v", err)
+		}
+		if _, err := LoadKeystoreMetadataFrom(metaPath); err == nil ||
+			!strings.Contains(err.Error(), "unsupported layout") {
+			t.Fatalf("LoadKeystoreMetadataFrom() error = %v, want unsupported layout", err)
+		}
+	})
+}
+
+func TestCreateKeystoreMetadataGenerationalRoundTrip(t *testing.T) {
+	passphrase := []byte("test-keystore-passphrase")
+	keystoreDir := t.TempDir()
+	meta, masterKey, err := CreateKeystoreMetadata(keystoreDir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadataGenerational failed: %v", err)
+	}
+	defer ZeroBytes(masterKey)
+	if meta.Version != GenerationalKeystoreMetadataVersion || meta.Layout != KeystoreLayoutGenerationsV1 {
+		t.Fatalf("metadata = version %d layout %q", meta.Version, meta.Layout)
+	}
+
+	loaded, err := LoadKeystoreMetadata(keystoreDir)
+	if err != nil {
+		t.Fatalf("LoadKeystoreMetadata failed: %v", err)
+	}
+	if loaded == nil || loaded.Version != GenerationalKeystoreMetadataVersion {
+		t.Fatalf("loaded = %+v", loaded)
+	}
+	// The same passphrase verifies against v3 metadata: only the layout
+	// changed, not the KDF contract.
+	if err := VerifyPassphraseWithMetadata(passphrase, keystoreDir); err != nil {
+		t.Fatalf("VerifyPassphraseWithMetadata failed: %v", err)
 	}
 }
 

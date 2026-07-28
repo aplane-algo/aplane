@@ -148,9 +148,10 @@ func TestCmdChangepassUsesAdminIPC(t *testing.T) {
 
 	fake := &fakeApstoreAdminRequester{
 		changePassphraseResult: protocol.ChangeStorePassphraseResultMessage{
-			Success:           true,
-			KeysMigrated:      2,
-			TemplatesMigrated: 1,
+			Success:                true,
+			KeysMigrated:           2,
+			TemplatesMigrated:      1,
+			RecoveredFilesMigrated: 2,
 		},
 	}
 	withFakeApstoreAdminClient(t, fake)

@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	signerstartuptemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -209,18 +210,48 @@ func Run(dataDir string) int {
 	if startLocked {
 		logInfof("signer runtime initialized (waiting for apadmin connection)")
 	} else {
-		// Headless mode: load keys using passphrase, then zero it immediately
-		logInfof("scanning keys directory for private keys")
-		_, err := ir.ReloadWithPassphrase(startPassphrase)
-		crypto.ZeroBytes(startPassphrase)
-		if err != nil {
-			logErrorf("error loading keys: %v", err)
-			return 1
+		// Generation-based stores reconcile before startup unlock: CURRENT
+		// is the sole commit record; uncommitted attempts are discarded and
+		// the selected generation must validate, else recovery mode.
+		generationErr := (signerAdminServices{signer: server}).reconcileGenerations(ir)
+		if generationErr != nil {
+			success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
+			crypto.ZeroBytes(startPassphrase)
+			if !success {
+				logErrorf("error unlocking recovery-blocked store: %s", errMsg)
+				return 1
+			}
+			logWarnf("identity is recovery-blocked: %v", generationErr)
+			startPassphrase = nil
 		}
-		ir.SetUnlocked()
+		if generationErr == nil {
+			// Headless mode: load keys using passphrase, then zero it immediately.
+			logInfof("scanning keys directory for private keys")
+			_, err := ir.ReloadWithPassphrase(startPassphrase)
+			if err != nil && signerstartuptemplates.IsGenerationValidationErr(err) {
+				// Content defects in the selected generation are a recovery
+				// condition, not a startup failure: keep the daemon up with
+				// signing blocked so the admin surface exists to repair the
+				// store, exactly as interactive unlock does.
+				success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
+				crypto.ZeroBytes(startPassphrase)
+				if !success {
+					logErrorf("error unlocking recovery-blocked store: %s", errMsg)
+					return 1
+				}
+				logWarnf("identity is recovery-blocked: %v", err)
+			} else if err != nil {
+				crypto.ZeroBytes(startPassphrase)
+				logErrorf("error loading keys: %v", err)
+				return 1
+			} else {
+				crypto.ZeroBytes(startPassphrase)
+				ir.SetUnlocked()
+			}
+		}
 
 		keyCount := ir.KeyCount()
-		if keyCount == 0 {
+		if keyCount == 0 && !ir.IsRecovery() {
 			logWarnf("no private keys found in keys directory")
 			logWarnf("keys must be generated using the apadmin tool:")
 			logWarnf("  1. run apadmin on this machine (local access required)")

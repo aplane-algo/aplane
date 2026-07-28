@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -932,7 +933,10 @@ func TestSignerManagedBackupRoundTripViaApstoreRestore(t *testing.T) {
 	if err := os.Remove(libraryPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination aplane.htlc.v1 library template: %v", err)
 	}
-	installedTemplatePath := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)
 	}
@@ -1066,7 +1070,10 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if err := os.Remove(libraryPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination aplane.htlc.v1 library template: %v", err)
 	}
-	installedTemplatePath := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)
 	}
@@ -1202,9 +1209,7 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 	}
 
 	otherIdentity := "other"
-	if err := os.MkdirAll(paths.KeysDir(otherIdentity), 0o755); err != nil {
-		t.Fatalf("failed to create other identity keys dir: %v", err)
-	}
+	genstoretest.MintFirst(t, paths, otherIdentity)
 	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, otherIdentity, deletedAddress), activeKeyData, 0o600); err != nil {
 		t.Fatalf("failed to write other-identity key file: %v", err)
 	}
@@ -1382,7 +1387,11 @@ func runRestoreArchiveWithRunningSigner(t *testing.T, apstore *harness.ApStoreHa
 	for _, address := range addresses {
 		args = append(args, "--address", address)
 	}
-	return apstore.RunWithInput(exportPassphrase+"\ny\n", args...)
+	// The shared test environment auto-approves unmatched signing requests, so
+	// activation always requires the destination acknowledgement. Record it on
+	// the command line rather than answering an interactive prompt.
+	args = append(args, "--acknowledge-unattended-signing")
+	return apstore.RunWithInput(exportPassphrase+"\n", args...)
 }
 
 func mustExtractBackupArchive(t *testing.T, archivePath string) string {

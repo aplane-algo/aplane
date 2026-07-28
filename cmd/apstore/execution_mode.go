@@ -176,7 +176,7 @@ func shellQuoteArg(s string) string {
 
 func isOfflineMutatingCommand(command string) bool {
 	switch command {
-	case "initialize", "policy", "rebuild":
+	case "initialize", "policy", "rebuild", "generations":
 		return true
 	default:
 		return false
@@ -200,7 +200,7 @@ func isManagedRestoreCommand(args []string) bool {
 		return false
 	}
 	switch args[1] {
-	case "preview", "apply":
+	case "preview", "apply", "list", "review", "activate", "rollback", "purge":
 		return true
 	default:
 		return false

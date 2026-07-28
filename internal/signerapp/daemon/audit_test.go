@@ -57,7 +57,7 @@ func TestAuditIdentityScopedEventsCarryIdentityID(t *testing.T) {
 	logger.LogSessionDisconnected(id, "10.0.0.1", "user")
 	logger.LogStoreInitialized(id, "/data/identities/default")
 	logger.LogStoreInitializeFailed(id, "already initialized")
-	logger.LogPassphraseChanged(id, 2, 1)
+	logger.LogPassphraseChanged(id, 2, 1, 3)
 	logger.LogPassphraseChangeFailed(id, "invalid passphrase")
 
 	data, err := os.ReadFile(path)

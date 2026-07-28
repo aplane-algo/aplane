@@ -5,6 +5,7 @@ package storepaths
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -55,6 +56,40 @@ func TestDeletedPathsAreIdentityScoped(t *testing.T) {
 	want := filepath.Join(identityDir, "deleted", "keytypes", "test.generic-policy.v1.template")
 	if got != want {
 		t.Fatalf("DeletedKeyTypeTemplate() = %q, want %q", got, want)
+	}
+}
+
+func TestRecoveredPathsAreIdentityScoped(t *testing.T) {
+	paths := NewPaths("/tmp/test-keystore")
+	restoreID := "0123456789abcdef0123456789abcdef"
+	wantRoot := filepath.Join("/tmp/test-keystore", "identities", "default", "recovered")
+	wantBatch := filepath.Join(wantRoot, restoreID)
+	if got := paths.RecoveredRootDir("default"); got != wantRoot {
+		t.Fatalf("RecoveredRootDir() = %q, want %q", got, wantRoot)
+	}
+	if got := paths.RecoveredBatchDir("default", restoreID); got != wantBatch {
+		t.Fatalf("RecoveredBatchDir() = %q, want %q", got, wantBatch)
+	}
+	if got := paths.RecoveredBatchEntriesDir("default", restoreID); got != filepath.Join(wantBatch, "entries") {
+		t.Fatalf("RecoveredBatchEntriesDir() = %q", got)
+	}
+	if got := paths.RecoveredBatchMetadataPath("default", restoreID); got != filepath.Join(wantBatch, "batch.enc") {
+		t.Fatalf("RecoveredBatchMetadataPath() = %q", got)
+	}
+}
+
+func TestRecoveredBatchPathsRejectInvalidRestoreIDs(t *testing.T) {
+	paths := NewPaths("/tmp/test-keystore")
+	valid := "0123456789abcdef0123456789abcdef"
+	for _, restoreID := range []string{"", "batch", "tmp.bak", strings.ToUpper(valid), "../" + valid, valid + "00"} {
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("RecoveredBatchDir(%q) did not panic", restoreID)
+				}
+			}()
+			_ = paths.RecoveredBatchDir("default", restoreID)
+		}()
 	}
 }
 

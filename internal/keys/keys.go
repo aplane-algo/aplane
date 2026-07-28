@@ -14,12 +14,19 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
+
+// witnessArtifactBundleSuffix mirrors witness/artifact.BundleExtension.
+// External witness artifact bundles are aprekey-owned and never valid signer
+// store residents; the scan recognizes the suffix only to report them with a
+// targeted message and must never decrypt them.
+const witnessArtifactBundleSuffix = ".wit"
 
 // ErrMissingLogicSigSaltCounter indicates a LogicSig key file predates the
 // off-curve address invariant and cannot be safely loaded.
@@ -142,6 +149,8 @@ const (
 	KeyScanWarningAddressDerivationFailed KeyScanWarningCode = "address_derivation_failed"
 	KeyScanWarningFilenameAddressMismatch KeyScanWarningCode = "filename_address_mismatch"
 	KeyScanWarningFilenameClassMismatch   KeyScanWarningCode = "filename_class_mismatch"
+	KeyScanWarningUnexpectedEntry         KeyScanWarningCode = "unexpected_entry"
+	KeyScanWarningWitnessMetadataInvalid  KeyScanWarningCode = "witness_metadata_invalid"
 )
 
 // KeyScanWarning describes a recoverable key-scan failure. Scanning continues
@@ -183,6 +192,10 @@ func (w KeyScanWarning) Message() string {
 		return fmt.Sprintf("Skipped key file %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningFilenameClassMismatch:
 		return fmt.Sprintf("Skipped managed credential %s: %v", w.KeyFile, w.Err)
+	case KeyScanWarningUnexpectedEntry:
+		return fmt.Sprintf("Unexpected entry in keys namespace %s: %v", w.KeyFile, w.Err)
+	case KeyScanWarningWitnessMetadataInvalid:
+		return fmt.Sprintf("Invalid witness public metadata %s: %v", w.KeyFile, w.Err)
 	default:
 		return fmt.Sprintf("Failed to scan key file %s: %v", w.KeyFile, w.Err)
 	}
@@ -248,7 +261,17 @@ func ReadDecryptedKeyJSONWithMasterKey(keyFile string, masterKey []byte) ([]byte
 // ScanKeysDirectoryWithMasterKey scans the identity-scoped keys subdirectory using a master key for decryption.
 // Only supports envelope_version 2 files.
 func ScanKeysDirectoryWithMasterKey(paths storepaths.Paths, identityID string, masterKey []byte) (map[string]KeyScanInfo, error) {
-	report, err := ScanKeysDirectoryWithMasterKeyReport(paths, identityID, masterKey)
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return nil, err
+	}
+	return ScanKeysDirectoryWithMasterKeyActive(active, masterKey)
+}
+
+// ScanKeysDirectoryWithMasterKeyActive is ScanKeysDirectoryWithMasterKey
+// against resolved active-store paths (generational or legacy).
+func ScanKeysDirectoryWithMasterKeyActive(active storepaths.ActivePaths, masterKey []byte) (map[string]KeyScanInfo, error) {
+	report, err := ScanKeysDirectoryWithMasterKeyReportActive(active, masterKey)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +281,17 @@ func ScanKeysDirectoryWithMasterKey(paths storepaths.Paths, identityID string, m
 // ScanKeysDirectoryWithMasterKeyReport scans the identity-scoped keys
 // subdirectory and returns structured warnings for key files that were skipped.
 func ScanKeysDirectoryWithMasterKeyReport(paths storepaths.Paths, identityID string, masterKey []byte) (*KeyScanReport, error) {
-	return scanKeysDirectoryInternalReport(paths, identityID, func(keyFile string) ([]byte, error) {
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		return nil, err
+	}
+	return ScanKeysDirectoryWithMasterKeyReportActive(active, masterKey)
+}
+
+// ScanKeysDirectoryWithMasterKeyReportActive is
+// ScanKeysDirectoryWithMasterKeyReport against resolved active-store paths.
+func ScanKeysDirectoryWithMasterKeyReportActive(active storepaths.ActivePaths, masterKey []byte) (*KeyScanReport, error) {
+	return scanKeysDirectoryInternalReport(active, func(keyFile string) ([]byte, error) {
 		return ReadDecryptedKeyJSONWithMasterKey(keyFile, masterKey)
 	})
 }
@@ -266,7 +299,7 @@ func ScanKeysDirectoryWithMasterKeyReport(paths storepaths.Paths, identityID str
 // scanKeysDirectoryInternalReport is the shared implementation for scanning
 // keys. The decryptFunc parameter allows using either passphrase or master key
 // decryption.
-func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
+func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
 	keysMap := make(map[string]KeyScanInfo)
 	addressFiles := make(map[string][]string)
 	var warnings []KeyScanWarning
@@ -278,7 +311,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: %s\n", warning.Message())
 	}
 
-	keysDir := paths.KeysDir(identityID)
+	keysDir := active.KeysDir()
 
 	// Ensure keys directory exists
 	if err := fsutil.MkdirAll(keysDir); err != nil {
@@ -291,11 +324,33 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 		return nil, fmt.Errorf("failed to read keys directory: %w", err)
 	}
 
-	// Scan only signer-managed private credential classes. External witness
-	// artifacts and public witness references are intentionally excluded.
+	// Scan only signer-managed private credential classes. Public witness
+	// references (.wit.json) are the sole expected non-credential residents
+	// and are validated without decryption; external witness artifact
+	// bundles (.wit) are aprekey-owned and never signer store residents
+	// (docs/ARCH_CONTRACTS.md). Everything unrecognized is reported so
+	// generation-based stores can fail closed on unexpected content
+	// (legacy stores keep tolerating it as a warning). Nothing outside the
+	// managed credential classes ever reaches decryptFunc.
 	for _, entry := range entries {
 		filenameSelector, _, ok := ParseManagedCredentialFilename(entry.Name())
 		if entry.IsDir() || !ok {
+			entryPath := filepath.Join(keysDir, entry.Name())
+			switch {
+			case entry.IsDir():
+				warn(KeyScanWarningUnexpectedEntry, entryPath,
+					fmt.Errorf("not a managed credential"))
+			case strings.HasSuffix(entry.Name(), WitnessPublicMetadataSuffix):
+				if err := validateWitnessPublicMetadataFilename(entryPath); err != nil {
+					warn(KeyScanWarningWitnessMetadataInvalid, entryPath, err)
+				}
+			case strings.HasSuffix(entry.Name(), witnessArtifactBundleSuffix):
+				warn(KeyScanWarningUnexpectedEntry, entryPath,
+					fmt.Errorf("external witness artifact bundles are aprekey-owned and not signer store residents; move it outside the keystore"))
+			default:
+				warn(KeyScanWarningUnexpectedEntry, entryPath,
+					fmt.Errorf("not a managed credential"))
+			}
 			continue
 		}
 

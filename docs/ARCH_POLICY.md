@@ -890,9 +890,33 @@ policy/policy.yaml
 policy/policy.yaml.hmac
 ```
 
-The backup path verifies the live policy before copying that snapshot. Restore
-paths do not install policy files automatically: `apconsole` admin restore and
-`apstore restore apply` restore keys and required key-type/template state only.
+The backup path verifies the live policy before copying that snapshot. Recovery
+records the archived YAML and digest as source material but cannot verify the
+source HMAC with the destination master key. Review compares the parseable
+source projection with the current verified destination policy, foregrounding
+hard rejects, ceilings, review requirements, routing restrictions, and the
+known effective destination `user_auto_approve` mode. It reports a factual
+identical/different/unavailable result and assigns no widening or safety
+verdict. The comparison is informational: the destination cannot authenticate
+archived source policy, so a verdict derived from it could be suppressed by
+crafting or degrading the archive. The policy difference
+section contains only actual source/destination policy changes.
+Source-settings metadata is not rendered as a standalone review notification.
+None of this source context is a policy verdict or authorization input.
+
+Recovery does not make keys signable. Activation is pinned to the destination
+policy digest and approval mode by the review token. Policy differences require no
+acknowledgement. It requires an unattended-signing acknowledgement whenever
+the destination identity auto-approves unmatched signing requests, derived
+from verified destination state alone and unaffected by what the archive
+reports. A policy or approval-mode change invalidates the
+token and forces a new review. The token also pins the interpreted
+source-settings status and exact valid-sidecar digest. Source settings remain
+unverified provenance and cannot change destination signing behavior.
+
+No restore path installs policy files automatically: `apadmin` and
+`apstore restore apply` activate only recovered credential/key-type state after
+review.
 
 The archived sidecars are source-store provenance material, not destination
 sidecars. If an operator deliberately restores archived policy YAML, the

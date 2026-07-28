@@ -125,6 +125,7 @@ type ChangeStorePassphraseResult struct {
 	Success                  bool
 	KeysMigrated             int
 	TemplatesMigrated        int
+	RecoveredFilesMigrated   int
 	PolicySidecarsMigrated   int
 	NodeRoleSidecarsMigrated int
 	Code                     string
@@ -145,12 +146,6 @@ type RestoreError struct {
 	Error   string
 }
 
-type RestoreWarning struct {
-	Address string
-	KeyType string
-	Warning string
-}
-
 type PreviewRestoreRequest struct {
 	ArchivePath      string
 	ExportPassphrase []byte
@@ -164,23 +159,171 @@ type RestorePreviewResult struct {
 	Error       string
 }
 
-type RestoreBackupRequest struct {
+// RecoverBackupRequest selects archive entries for inactive recovery.
+type RecoverBackupRequest struct {
 	ArchivePath      string
 	Addresses        []string
-	Overwrite        bool
 	ExportPassphrase []byte
 }
 
-type RestoreBackupResult struct {
-	ArchivePath string
-	Success     bool
-	Restored    []RestoreKeyInfo
-	Skipped     []RestoreKeyInfo
-	Errors      []RestoreError
-	Warnings    []RestoreWarning
-	KeyCount    int
-	Code        string
-	Error       string
+// RecoverBackupResult identifies one atomically published inactive batch.
+type RecoverBackupResult struct {
+	Success         bool
+	RestoreID       string
+	ArchiveName     string
+	ArchiveChecksum string
+	EntryCount      int
+	Code            string
+	Error           string
+}
+
+// RecoveredBatchInfo is the non-secret inventory projection of one batch.
+type RecoveredBatchInfo struct {
+	RestoreID          string
+	CreatedAt          int64
+	ArchiveName        string
+	ArchiveChecksum    string
+	SourceNodeRole     string
+	SourcePolicyStatus string
+	SourcePolicySHA256 string
+	EntryCount         int
+}
+
+// ListRecoveredResult contains inactive recovered batches.
+type ListRecoveredResult struct {
+	Batches []RecoveredBatchInfo
+	Code    string
+	Error   string
+}
+
+// DestinationApprovalMode describes the destination's effective unmatched
+// signing behavior.
+type DestinationApprovalMode string
+
+const (
+	// DestinationApprovalManualDefault requires unmatched requests to use
+	// operator approval.
+	DestinationApprovalManualDefault DestinationApprovalMode = "manual_default"
+	// DestinationApprovalAutoApproveFallback permits unmatched requests to
+	// skip operator approval.
+	DestinationApprovalAutoApproveFallback DestinationApprovalMode = "auto_approve_fallback"
+	// DestinationApprovalNotApplicable is used for identities without an
+	// operator-default approval mode.
+	DestinationApprovalNotApplicable DestinationApprovalMode = "not_applicable"
+)
+
+// RecoveredReviewEntry identifies one validated inactive entry.
+type RecoveredReviewEntry struct {
+	Selector string
+	Category string
+	KeyType  string
+}
+
+// RecoveredActiveConflict fingerprints an active credential that activation
+// would replace.
+type RecoveredActiveConflict struct {
+	Selector string
+	Category string
+	KeyType  string
+	SHA256   string
+}
+
+// RecoveryPolicyChange is one ordered factual policy difference.
+type RecoveryPolicyChange struct {
+	Category    string
+	Selector    string
+	Path        string
+	Source      string
+	Destination string
+}
+
+// RecoveryGenesisHashMapping is one archive-reported custom network binding.
+type RecoveryGenesisHashMapping struct {
+	GenesisHash string
+	Network     string
+}
+
+// ReviewRecoveredResult pins one review of current destination state.
+type ReviewRecoveredResult struct {
+	Success                      bool
+	RestoreID                    string
+	ArchiveChecksum              string
+	SourceNodeRole               string
+	SourcePolicyStatus           string
+	SourcePolicySHA256           string
+	DestinationPolicySHA256      string
+	DestinationApprovalMode      DestinationApprovalMode
+	UnattendedSigningWarning     string
+	PolicyComparison             string
+	SecurityChanges              []RecoveryPolicyChange
+	ChangedPaths                 []string
+	UnknownSourceSettings        []string
+	SourceSettingsStatus         string
+	SourceUserAutoApprove        *bool
+	SourceGenesisHashMappings    []RecoveryGenesisHashMapping
+	SourceSettingsWarning        string
+	Entries                      []RecoveredReviewEntry
+	ActiveConflicts              []RecoveredActiveConflict
+	ReviewToken                  string
+	UnattendedSigningAckRequired bool
+	AcknowledgeUnattendedSigning bool
+	ReplaceExisting              bool
+	Code                         string
+	Error                        string
+}
+
+// ActivateRecoveredRequest binds activation to one reviewed destination
+// state and records the operator acknowledgement that destination state
+// requires.
+type ActivateRecoveredRequest struct {
+	RestoreID                    string
+	ReviewToken                  string
+	AcknowledgeUnattendedSigning bool
+	ReplaceExisting              bool
+}
+
+// ActivateRecoveredResult describes credentials made active by one atomic
+// activation attempt.
+type ActivateRecoveredResult struct {
+	Success                 bool
+	RestoreID               string
+	Activated               []RecoveredReviewEntry
+	Warnings                []string
+	KeyCount                int
+	ArchiveSHA256           string
+	SourcePolicySHA256      string
+	DestinationPolicySHA256 string
+	PolicyComparison        string
+	ReplaceExisting         bool
+	Code                    string
+	Error                   string
+}
+
+// RollbackRecoveredRequest identifies one incomplete activation to reverse.
+type RollbackRecoveredRequest struct {
+	RestoreID string
+}
+
+// RollbackRecoveredResult reports restoration of the pre-activation state.
+type RollbackRecoveredResult struct {
+	Success   bool
+	RestoreID string
+	KeyCount  int
+	Code      string
+	Error     string
+}
+
+// PurgeRecoveredRequest identifies one inactive batch to delete.
+type PurgeRecoveredRequest struct {
+	RestoreID string
+}
+
+// PurgeRecoveredResult reports deletion of one inactive batch.
+type PurgeRecoveredResult struct {
+	Success   bool
+	RestoreID string
+	Code      string
+	Error     string
 }
 
 // UpdateAdminSettingRequest is the admin-domain request to change one setting.

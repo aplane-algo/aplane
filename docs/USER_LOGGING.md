@@ -76,14 +76,22 @@ The examples show `"default"` as the identity. See [ARCH_OVERVIEW.md](ARCH_OVERV
 | `BACKUP_FAILED` | A key backup failed through the authenticated admin surface |
 | `BACKUP_RESTORE_PREVIEWED` | A managed backup restore preview succeeded through the authenticated admin surface |
 | `BACKUP_RESTORE_PREVIEW_FAILED` | A managed backup restore preview failed through the authenticated admin surface |
-| `BACKUP_RESTORE_STARTED` | A managed backup restore operation started through the authenticated admin surface |
-| `BACKUP_RESTORE_COMPLETED` | A managed backup restore operation completed through the authenticated admin surface |
-| `BACKUP_RESTORE_PARTIAL` | A managed backup restore operation restored at least one key and failed at least one key |
-| `BACKUP_RESTORE_FAILED` | A managed backup restore operation failed before restoring a key |
+| `BACKUP_RECOVERED` | An inactive destination-encrypted recovery batch was published |
+| `BACKUP_RECOVERY_FAILED` | Recovery failed before an inactive batch was published |
+| `BACKUP_ACTIVATION_INTENT` | Reviewed activation was requested; written and fsynced before any active-store mutation — activation aborts if this record cannot be made durable |
+| `BACKUP_ACTIVATED` | A recovered batch was activated and reloaded successfully |
+| `BACKUP_ACTIVATION_FAILED` | Activation failed; `reason` describes the failure or incomplete rollback |
+| `BACKUP_ACTIVATION_ROLLED_BACK` | The operator restored exact pre-activation state |
+| `BACKUP_RECOVERY_PURGED` | An inactive batch was purged; failed attempts use `outcome:"failed"` |
 | `STORE_INITIALIZED` | Store initialization succeeded through authenticated local IPC |
 | `STORE_INITIALIZE_FAILED` | Store initialization failed through authenticated local IPC |
 | `PASSPHRASE_CHANGED` | Store passphrase rotation succeeded through authenticated local IPC |
 | `PASSPHRASE_CHANGE_FAILED` | Store passphrase rotation failed through authenticated local IPC |
+
+Recovery/activation entries may include `restore_id`, `archive_sha256`,
+`source_policy_sha256`, `destination_policy_sha256`, `policy_comparison`,
+`replace_existing`, and `key_count`, in addition to normal identity/session/
+principal/transport attribution.
 
 ### Signing
 

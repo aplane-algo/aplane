@@ -39,6 +39,7 @@ const (
 	ViewRestorePassphrase  // Enter export passphrase before previewing restore metadata
 	ViewRestorePreview     // Select keys to restore from a backup archive
 	ViewRestoring          // Loading state while restoring backup keys
+	ViewRestoreReview      // Review destination security state and acknowledge activation
 	ViewRestoreDisplay     // Shows backup restore result
 	ViewDeleteConfirm      // Delete confirmation dialog
 	ViewDeleting           // Loading state while deleting
@@ -52,6 +53,7 @@ const (
 	ViewTemplateInstalling
 	ViewLibraryTemplateDetails // Full-screen view of a library entry's source (YAML or synthesized parameters)
 	ViewError
+	ViewRecoveredList // Recovered batches: review/activate/resume/rollback/purge; blocking while in recovery mode
 )
 
 // ConnectionState represents IPC connection status
@@ -62,6 +64,30 @@ const (
 	ConnectionConnecting
 	ConnectionConnected
 )
+
+// signerRuntimeState mirrors the server's three-way runtime state. Recovery
+// is a distinct state: signing is blocked server-side, and the client must
+// surface that instead of rendering the identity as normally unlocked.
+type signerRuntimeState int
+
+const (
+	signerRuntimeLocked signerRuntimeState = iota
+	signerRuntimeUnlocked
+	signerRuntimeRecovery
+)
+
+func signerRuntimeStateFromWire(state string) signerRuntimeState {
+	switch state {
+	case "unlocked":
+		return signerRuntimeUnlocked
+	case "recovery":
+		return signerRuntimeRecovery
+	default:
+		// Unknown states fail toward locked: the safest rendering for a
+		// state this client does not understand.
+		return signerRuntimeLocked
+	}
+}
 
 // KeyInfo holds information about a key
 type KeyInfo struct {
@@ -169,11 +195,44 @@ type restoreState struct {
 	selectedKey         int
 	previewScrollOffset int
 	previewError        string
-	overwrite           bool
+	// previewFocus selects the key list (restoreFocusList) or the Recover
+	// button (restoreFocusAction) on the preview screen.
+	previewFocus           int
+	restoreID              string
+	review                 ReviewRecoveredResultMessage
+	unattendedAcknowledged bool
+	// replaceExisting is the overwrite consent, collected on the activation
+	// review beside the exact conflicts it authorizes. For a resumed
+	// activation it is fixed to the recorded intent.
+	replaceExisting bool
+	// reviewFocus selects the checkbox list (restoreFocusList) or the
+	// Activate button (restoreFocusAction) on the review screen; reviewCursor
+	// selects among the visible checkboxes while the list is focused.
+	reviewFocus         int
+	reviewCursor        int
 	displaySelectedKey  int
 	displayScrollOffset int
-	result              RestoreBackupResultMessage
+	result              RestoreDisplayResult
+
+	// Recovered-batch list state. The list doubles as the blocking recovery
+	// screen while the signer is in recovery mode.
+	recovered             []RecoveredBatchInfo
+	recoveredLoaded       bool
+	selectedRecovered     int
+	recoveredScrollOffset int
+	recoveredError        string
+	// purgeArmedID holds the restore ID awaiting purge confirmation ("y").
+	purgeArmedID string
+	// progressLabel names the operation ViewRestoring is waiting on.
+	progressLabel string
 }
+
+// Focus positions shared by the restore preview and review screens. Committing
+// is always a deliberate act on a focused button rather than a bare Enter.
+const (
+	restoreFocusList = iota
+	restoreFocusAction
+)
 
 // formsState covers the generate and import forms, their parameter modals,
 // and the post-completion display screens.
@@ -289,7 +348,7 @@ type Model struct {
 	dataDir         string // APSIGNER_DATA directory
 
 	// Signer state
-	signerLocked      bool
+	signerState       signerRuntimeState
 	signerStatusKnown bool // true once we've received a status from apsigner
 	keyCount          int
 	serverKeyTypes    []protocol.KeyTypeInfo
@@ -351,7 +410,7 @@ func NewModel(connector AdminConnector, dataDir string) Model {
 		connector:       connector,
 		transportLabel:  connector.Label(),
 		dataDir:         dataDir,
-		signerLocked:    true,
+		signerState:     signerRuntimeLocked,
 		auth:            authState{passphraseMasked: true},
 		forms:           formsState{importMnemonicInput: newImportMnemonicInput()},
 	}
@@ -412,9 +471,11 @@ type DisconnectedMsg struct {
 	Error error
 }
 
-// SignerStatusMsg is sent when signer status is received
+// SignerStatusMsg is sent when signer status is received. State carries the
+// server's three-way runtime state ("locked", "unlocked", "recovery")
+// verbatim; recovery is never collapsed into unlocked.
 type SignerStatusMsg struct {
-	Locked   bool
+	State    string
 	KeyCount int
 }
 
@@ -509,16 +570,48 @@ type RestorePreviewMsg struct {
 	Error       string
 }
 
-// RestoreBackupResultMsg is sent when backup restore completes.
-type RestoreBackupResultMsg struct {
+// RestoreDisplayResult is the local post-activation display model.
+type RestoreDisplayResult struct {
 	ArchivePath string
 	Success     bool
-	Restored    []RestoreKeyInfo
-	Skipped     []RestoreKeyInfo
-	Errors      []RestoreError
-	Warnings    []RestoreWarning
+	Activated   []RestoreKeyInfo
+	Warnings    []string
 	KeyCount    int
 	Error       string
+}
+
+// RecoverBackupResultMsg is sent when an inactive recovered batch is created.
+type RecoverBackupResultMsg struct {
+	Success   bool
+	RestoreID string
+	Error     string
+}
+
+// ReviewRecoveredResultMsg carries the security-first activation review.
+type ReviewRecoveredResultMsg struct {
+	Result ReviewRecoveredResultMessage
+}
+
+// ActivateRecoveredResultMsg is sent when reviewed activation completes.
+type ActivateRecoveredResultMsg struct {
+	Result ActivateRecoveredResultMessage
+}
+
+// RecoveredListMsg carries the recovered-batch inventory.
+type RecoveredListMsg struct {
+	Batches []RecoveredBatchInfo
+	Code    string
+	Error   string
+}
+
+// RollbackRecoveredResultMsg is sent when an explicit rollback completes.
+type RollbackRecoveredResultMsg struct {
+	Result RollbackRecoveredResultMessage
+}
+
+// PurgeRecoveredResultMsg is sent when an inactive batch purge completes.
+type PurgeRecoveredResultMsg struct {
+	Result PurgeRecoveredResultMessage
 }
 
 // ImportResultMsg is sent when key import completes

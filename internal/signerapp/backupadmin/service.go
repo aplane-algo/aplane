@@ -4,17 +4,15 @@
 package backupadmin
 
 import (
-	"errors"
-	"fmt"
 	"maps"
-	"os"
 	"sort"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -22,13 +20,15 @@ import (
 
 type Deps interface {
 	KeyPaths() storepaths.Paths
+	GenesisHashMappings() map[string]string
 	RestoreLimiter() RestoreLimiter
 	WithIdentityMutation(identityID string, fn func() error) error
 	Logf(format string, args ...interface{})
 }
 
 type Service struct {
-	Deps Deps
+	Deps           Deps
+	activationHook func(activationPoint) error
 }
 
 func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
@@ -41,8 +41,23 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 	var result *backup.ArchiveResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		return ir.WithMasterKey(func(masterKey []byte) error {
+			sourceSettings := backup.SourceSettingsSnapshot{
+				GenesisHashMappings: s.Deps.GenesisHashMappings(),
+			}
+			if ir.NodeRole() == noderole.RoleSigner {
+				userAutoApprove := ir.Config().UserAutoApprove()
+				sourceSettings.UserAutoApprove = &userAutoApprove
+			}
 			var backupErr error
-			result, backupErr = backup.CreateKeysArchive(s.Deps.KeyPaths(), ir.ID(), archivePath, req.Addresses, masterKey, passphraseBytes)
+			result, backupErr = backup.CreateKeysArchive(backup.CreateKeysArchiveRequest{
+				Paths:            s.Deps.KeyPaths(),
+				IdentityID:       ir.ID(),
+				ArchivePath:      archivePath,
+				Addresses:        req.Addresses,
+				MasterKey:        masterKey,
+				ExportPassphrase: passphraseBytes,
+				SourceSettings:   sourceSettings,
+			})
 			return backupErr
 		})
 	})
@@ -160,144 +175,127 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 	}
 }
 
-func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
+// RecoverBackup publishes selected archive entries as one inactive batch. It
+// deliberately does not reload the identity runtime.
+func (s Service) RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBackupRequest) adminproto.RecoverBackupResult {
 	passphraseBytes := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphraseBytes)
 
 	archivePath, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), req.ArchivePath)
 	if err != nil {
-		return adminproto.RestoreBackupResult{
-			Code:  protocol.ResultCodeInvalidBackupArchive,
+		return adminproto.RecoverBackupResult{
+			Code:  protocol.ResultCodeRecoverBackupFailed,
 			Error: err.Error(),
-		}
-	}
-	if _, err := backup.StatManagedBackupArchive(archivePath); err != nil {
-		if os.IsNotExist(err) {
-			return adminproto.RestoreBackupResult{
-				ArchivePath: archivePath,
-				Code:        protocol.ResultCodeBackupArchiveNotFound,
-				Error:       fmt.Sprintf("backup archive not found: %s", archivePath),
-			}
-		}
-		return adminproto.RestoreBackupResult{
-			ArchivePath: archivePath,
-			Code:        protocol.ResultCodeBackupArchiveUnavailable,
-			Error:       err.Error(),
 		}
 	}
 	limiter := s.Deps.RestoreLimiter()
 	if retryAfter := limiter.RetryAfter(ir.ID(), archivePath); retryAfter > 0 {
-		return adminproto.RestoreBackupResult{
-			ArchivePath: archivePath,
-			Code:        protocol.ResultCodeRestoreRateLimited,
-			Error:       RestoreRateLimitedError(retryAfter),
+		return adminproto.RecoverBackupResult{
+			Code:  protocol.ResultCodeRestoreRateLimited,
+			Error: RestoreRateLimitedError(retryAfter),
 		}
 	}
 
-	sourceRoot, cleanup, err := backup.PrepareRestoreSource(archivePath)
-	if err != nil {
-		limiter.RecordFailure(ir.ID(), archivePath)
-		return adminproto.RestoreBackupResult{
-			ArchivePath: archivePath,
-			Code:        protocol.ResultCodePrepareRestoreFailed,
-			Error:       err.Error(),
-		}
-	}
-	defer cleanup()
-
-	keysDir := backup.ResolveBackupKeysDir(sourceRoot)
-	addresses := append([]string(nil), req.Addresses...)
-	if len(addresses) == 0 {
-		addresses, err = backup.ScanBackupFiles(keysDir)
-		if err != nil {
-			limiter.RecordFailure(ir.ID(), archivePath)
-			return adminproto.RestoreBackupResult{
-				ArchivePath: archivePath,
-				Code:        protocol.ResultCodeScanBackupFailed,
-				Error:       err.Error(),
-			}
-		}
-	}
-	if len(addresses) == 0 {
-		limiter.RecordFailure(ir.ID(), archivePath)
-		return adminproto.RestoreBackupResult{
-			ArchivePath: archivePath,
-			Code:        protocol.ResultCodeEmptyBackup,
-			Error:       fmt.Sprintf("no .apb files found in backup: %s", archivePath),
-		}
-	}
-
-	result := adminproto.RestoreBackupResult{ArchivePath: archivePath}
+	var batch *recovered.Batch
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		if err := ir.WithMasterKey(func(masterKey []byte) error {
-			for _, address := range addresses {
-				if address == "" {
-					continue
-				}
-				warningAddress := address
-				restorer := backup.NewRestorer(s.Deps.KeyPaths(), ir.ID()).
-					WithNodeRole(ir.NodeRole()).
-					WithOverwrite(req.Overwrite).
-					WithLogger(s.Deps.Logf).
-					WithWarningHandler(func(keyType, warning string) {
-						result.Warnings = append(result.Warnings, adminproto.RestoreWarning{
-							Address: warningAddress,
-							KeyType: keyType,
-							Warning: warning,
-						})
-					})
-				keyType, restoreErr := restorer.RestoreKey(keysDir, address, masterKey, passphraseBytes)
-				if restoreErr != nil {
-					if errors.Is(restoreErr, keys.ErrManagedCredentialExists) {
-						result.Skipped = append(result.Skipped, adminproto.RestoreKeyInfo{
-							Address:       address,
-							AlreadyExists: true,
-							Error:         "managed credential already exists",
-						})
-						continue
-					}
-					result.Errors = append(result.Errors, adminproto.RestoreError{
-						Address: address,
-						Error:   restoreErr.Error(),
-					})
-					continue
-				}
-				result.Restored = append(result.Restored, adminproto.RestoreKeyInfo{
-					Address: address,
-					KeyType: keyType,
-				})
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-		if len(result.Restored) == 0 {
-			return nil
-		}
-		reloadReport, reloadErr := ir.Reload()
-		if reloadErr != nil {
-			return reloadErr
-		}
-		if reloadReport != nil {
-			result.KeyCount = reloadReport.KeyCount
-		}
-		return nil
+		return ir.WithMasterKey(func(masterKey []byte) error {
+			var recoverErr error
+			batch, recoverErr = backup.RecoverManagedBackup(
+				s.Deps.KeyPaths(),
+				ir.ID(),
+				archivePath,
+				req.Addresses,
+				masterKey,
+				passphraseBytes,
+				ir.NodeRole(),
+			)
+			return recoverErr
+		})
 	})
 	if err != nil {
 		limiter.RecordFailure(ir.ID(), archivePath)
-		result.Code = "restore_failed"
+		return adminproto.RecoverBackupResult{
+			Code:  protocol.ResultCodeRecoverBackupFailed,
+			Error: err.Error(),
+		}
+	}
+	crypto.ZeroBytes(batch.SourcePolicyYAML)
+	limiter.RecordSuccess(ir.ID(), archivePath)
+	s.Deps.Logf("recovered managed backup as inactive batch: %s", batch.RestoreID)
+	return adminproto.RecoverBackupResult{
+		Success:         true,
+		RestoreID:       batch.RestoreID,
+		ArchiveName:     batch.ArchiveName,
+		ArchiveChecksum: batch.ArchiveSHA256,
+		EntryCount:      len(batch.Entries),
+	}
+}
+
+// ListRecovered returns inactive recovered-batch inventory without reloading
+// or mutating active runtime state.
+func (s Service) ListRecovered(ir *identity.Runtime) adminproto.ListRecoveredResult {
+	var batches []recovered.BatchInfo
+	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+		return ir.WithMasterKey(func(masterKey []byte) error {
+			var listErr error
+			batches, listErr = recovered.List(s.Deps.KeyPaths(), ir.ID(), masterKey)
+			return listErr
+		})
+	})
+	if err != nil {
+		return adminproto.ListRecoveredResult{
+			Code:  protocol.ResultCodeListRecoveredFailed,
+			Error: err.Error(),
+		}
+	}
+	out := make([]adminproto.RecoveredBatchInfo, len(batches))
+	for i, batch := range batches {
+		out[i] = adminproto.RecoveredBatchInfo{
+			RestoreID:          batch.RestoreID,
+			CreatedAt:          batch.CreatedAt.Unix(),
+			ArchiveName:        batch.ArchiveName,
+			ArchiveChecksum:    batch.ArchiveSHA256,
+			SourceNodeRole:     batch.SourceNodeRole,
+			SourcePolicyStatus: string(batch.SourcePolicyStatus),
+			SourcePolicySHA256: batch.SourcePolicySHA256,
+			EntryCount:         batch.EntryCount,
+		}
+	}
+	return adminproto.ListRecoveredResult{Batches: out}
+}
+
+// PurgeRecovered deletes one inactive batch and refuses to erase durable
+// reconciliation state for an incomplete activation.
+func (s Service) PurgeRecovered(
+	ir *identity.Runtime,
+	req adminproto.PurgeRecoveredRequest,
+) adminproto.PurgeRecoveredResult {
+	result := adminproto.PurgeRecoveredResult{RestoreID: req.RestoreID}
+	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+		return ir.WithMasterKey(func(masterKey []byte) error {
+			if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
+				return err
+			}
+			batch, err := recovered.LoadBatch(
+				s.Deps.KeyPaths(),
+				ir.ID(),
+				req.RestoreID,
+				masterKey,
+			)
+			if err != nil {
+				return err
+			}
+			crypto.ZeroBytes(batch.SourcePolicyYAML)
+			return recovered.RemoveBatch(s.Deps.KeyPaths(), ir.ID(), req.RestoreID)
+		})
+	})
+	if err != nil {
+		result.Code = protocol.ResultCodePurgeRecoveredFailed
 		result.Error = err.Error()
 		return result
 	}
-	if len(result.Errors) > 0 {
-		limiter.RecordFailure(ir.ID(), archivePath)
-		result.Code = "restore_partial"
-		result.Error = fmt.Sprintf("%d key(s) failed to restore", len(result.Errors))
-		result.Success = false
-		return result
-	}
-	limiter.RecordSuccess(ir.ID(), archivePath)
 	result.Success = true
+	s.Deps.Logf("purged inactive recovered backup batch: %s", req.RestoreID)
 	return result
 }
 

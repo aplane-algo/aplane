@@ -12,6 +12,7 @@ type SignerState = signerruntime.SignerState
 const (
 	SignerStateLocked   = signerruntime.SignerStateLocked
 	SignerStateUnlocked = signerruntime.SignerStateUnlocked
+	SignerStateRecovery = signerruntime.SignerStateRecovery
 )
 
 func (fs *Signer) hasClientForIdentity(identityID string) bool {

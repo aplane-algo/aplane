@@ -8,12 +8,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/backup/recovered"
+	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -33,6 +36,7 @@ import (
 
 func TestResolveManagedBackupPathScopesToIdentityBackupDir(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	root := paths.IdentityBackupsDir("default")
 
 	got, err := ResolveManagedBackupPath(paths, "default", "backup.tar.gz")
@@ -64,6 +68,7 @@ func TestResolveManagedBackupPathScopesToIdentityBackupDir(t *testing.T) {
 
 func TestResolveManagedBackupPathRejectsSymlinkedIntermediate(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	root := paths.IdentityBackupsDir("default")
 	outside := filepath.Join(t.TempDir(), "outside")
 	if err := os.MkdirAll(outside, 0o755); err != nil {
@@ -82,6 +87,7 @@ func TestResolveManagedBackupPathRejectsSymlinkedIntermediate(t *testing.T) {
 
 func TestAuthoritativeTemplateForKeyTypeSkipsNonTemplateKeyType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := os.MkdirAll(paths.TemplateLibraryDir(), 0o755); err != nil {
 		t.Fatalf("MkdirAll(library) error = %v", err)
 	}
@@ -107,6 +113,7 @@ func TestBuildTemplateRestorePlanRejectsStaleLocalTemplateWhenAuthoritativeMatch
 	)
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	if err := os.MkdirAll(paths.TemplateLibraryDir(), 0o755); err != nil {
 		t.Fatalf("MkdirAll(library) error = %v", err)
 	}
@@ -145,6 +152,7 @@ teal: |
 
 func TestListManagedBackupsSortsArchivesAndIgnoresSymlinks(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	dir := paths.IdentityBackupsDir("default")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -209,6 +217,7 @@ func TestPreviewRestoreManagedArchiveReportsKeyMetadataAndExistingConflict(t *te
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
@@ -247,6 +256,7 @@ func TestPreviewRestoreWithNodeRoleReportsRoleForbiddenKey(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
@@ -273,6 +283,7 @@ func TestPreviewRestoreWithNodeRoleReportsRoleForbiddenKey(t *testing.T) {
 
 func TestPreviewRestoreWrongPassphraseDoesNotLeakAddress(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
@@ -301,6 +312,7 @@ func TestPreviewRestoreWrongPassphraseDoesNotLeakAddress(t *testing.T) {
 
 func TestPreviewRestoreUnsupportedEnvelopeDoesNotLeakAddress(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, _ := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
@@ -329,6 +341,7 @@ func TestPreviewRestoreUnsupportedEnvelopeDoesNotLeakAddress(t *testing.T) {
 
 func TestPreviewRestoreRejectsPlaintextBackupPayload(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
@@ -351,6 +364,7 @@ func TestPreviewRestoreRejectsPlaintextBackupPayload(t *testing.T) {
 
 func TestPreviewRestoreRejectsEmptyManagedArchive(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {})
 
@@ -361,10 +375,183 @@ func TestPreviewRestoreRejectsEmptyManagedArchive(t *testing.T) {
 	}
 }
 
+func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+
+	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
+	identityID := "default"
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	policyYAML := []byte("reject_foreign_rekey: true\n")
+	archivePath := writeManagedRecoveryArchive(t, paths, identityID, noderole.RoleSigner, policyYAML, func(keysDir string) {
+		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+			t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+		}
+		autoApprove := true
+		if err := writeSourceSettings(filepath.Dir(keysDir), noderole.RoleSigner, SourceSettingsSnapshot{
+			UserAutoApprove: &autoApprove,
+			GenesisHashMappings: map[string]string{
+				strings.Repeat("42", 32): "voi-mainnet",
+			},
+		}); err != nil {
+			t.Fatalf("writeSourceSettings() error = %v", err)
+		}
+	})
+	archiveSHA256, _, err := FileSHA256(archivePath)
+	if err != nil {
+		t.Fatalf("FileSHA256() error = %v", err)
+	}
+
+	batch, err := RecoverManagedBackup(
+		paths,
+		identityID,
+		filepath.Base(archivePath),
+		nil,
+		testExportMasterKey,
+		[]byte("export-passphrase"),
+		noderole.RoleSigner,
+	)
+	if err != nil {
+		t.Fatalf("RecoverManagedBackup() error = %v", err)
+	}
+	if batch.ArchiveName != filepath.Base(archivePath) || batch.ArchiveSHA256 != archiveSHA256 {
+		t.Fatalf("batch archive metadata = %q %q, want %q %q", batch.ArchiveName, batch.ArchiveSHA256, filepath.Base(archivePath), archiveSHA256)
+	}
+	if batch.SourceNodeRole != string(noderole.RoleSigner) ||
+		batch.SourcePolicyStatus != recovered.SourcePolicyUnverified ||
+		string(batch.SourcePolicyYAML) != string(policyYAML) {
+		t.Fatalf("batch source metadata = role %q status %q policy %q", batch.SourceNodeRole, batch.SourcePolicyStatus, batch.SourcePolicyYAML)
+	}
+	if batch.SourceSettingsStatus != sourcecontext.StatusUnverified ||
+		batch.SourceSettingsSHA256 == "" ||
+		batch.SourceUserAutoApprove == nil ||
+		!*batch.SourceUserAutoApprove ||
+		len(batch.SourceGenesisHashMappings) != 1 {
+		t.Fatalf("batch source settings = %+v, want unverified auto-approve context", batch)
+	}
+	if len(batch.Entries) != 1 || batch.Entries[0].Selector != address || batch.Entries[0].KeyType != "ed25519" {
+		t.Fatalf("batch entries = %+v, want recovered ed25519 %s", batch.Entries, address)
+	}
+
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address)); !os.IsNotExist(err) {
+		t.Fatalf("active key stat error = %v, want not found", err)
+	}
+	for _, activeDir := range []string{paths.KeysDir(identityID), paths.KeyTypeRecordsDir(identityID)} {
+		if _, err := os.Stat(activeDir); !os.IsNotExist(err) {
+			t.Fatalf("active directory %s stat error = %v, want not found", activeDir, err)
+		}
+	}
+
+	loaded, err := recovered.LoadBatch(paths, identityID, batch.RestoreID, testExportMasterKey)
+	if err != nil {
+		t.Fatalf("recovered.LoadBatch() error = %v", err)
+	}
+	entry, err := recovered.LoadEntry(paths, identityID, batch.RestoreID, loaded.Entries[0], testExportMasterKey)
+	if err != nil {
+		t.Fatalf("recovered.LoadEntry() error = %v", err)
+	}
+	defer entry.ZeroSecrets()
+	if entry.Selector != address || entry.KeyType != "ed25519" {
+		t.Fatalf("loaded recovered entry = %+v, want ed25519 %s", entry, address)
+	}
+}
+
+func TestRecoverManagedBackupKeepsKeysWhenSourceSettingsAreInvalid(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+
+	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
+	identityID := "default"
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	archivePath := writeManagedRecoveryArchive(
+		t,
+		paths,
+		identityID,
+		noderole.RoleSigner,
+		nil,
+		func(keysDir string) {
+			if err := writeStandaloneBackupFile(
+				filepath.Join(keysDir, address+".apb"),
+				keyJSON,
+				[]byte("export-passphrase"),
+			); err != nil {
+				t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+			}
+			if err := os.WriteFile(
+				filepath.Join(filepath.Dir(keysDir), SourceSettingsFileName),
+				[]byte(`{"schema":`),
+				0o600,
+			); err != nil {
+				t.Fatalf("WriteFile(source settings) error = %v", err)
+			}
+		},
+	)
+
+	batch, err := RecoverManagedBackup(
+		paths,
+		identityID,
+		archivePath,
+		nil,
+		testExportMasterKey,
+		[]byte("export-passphrase"),
+		noderole.RoleSigner,
+	)
+	if err != nil {
+		t.Fatalf("RecoverManagedBackup() error = %v", err)
+	}
+	if batch.SourceSettingsStatus != sourcecontext.StatusInvalid ||
+		batch.SourceSettingsWarning == "" ||
+		batch.SourceSettingsSHA256 != "" ||
+		batch.SourceUserAutoApprove != nil {
+		t.Fatalf("batch source settings = %+v, want invalid without values", batch)
+	}
+	if len(batch.Entries) != 1 || batch.Entries[0].Selector != address {
+		t.Fatalf("batch entries = %+v, want recovered key %s", batch.Entries, address)
+	}
+}
+
+func TestRecoverManagedBackupIsAllOrNothing(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+
+	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
+	identityID := "default"
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	archivePath := writeManagedRecoveryArchive(t, paths, identityID, noderole.RoleSigner, nil, func(keysDir string) {
+		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+			t.Fatalf("writeStandaloneBackupFile(valid) error = %v", err)
+		}
+		if err := writeStandaloneBackupFile(filepath.Join(keysDir, "zz-invalid.apb"), []byte(`{"not":"a key"}`), []byte("export-passphrase")); err != nil {
+			t.Fatalf("writeStandaloneBackupFile(invalid) error = %v", err)
+		}
+	})
+
+	if _, err := RecoverManagedBackup(
+		paths,
+		identityID,
+		archivePath,
+		nil,
+		testExportMasterKey,
+		[]byte("export-passphrase"),
+		noderole.RoleSigner,
+	); err == nil {
+		t.Fatal("RecoverManagedBackup() error = nil, want invalid entry rejection")
+	}
+	if entries, err := os.ReadDir(paths.RecoveredRootDir(identityID)); err == nil && len(entries) != 0 {
+		t.Fatalf("recovered root entries = %v, want no published batch", entries)
+	} else if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("ReadDir(recovered root) error = %v", err)
+	}
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address)); !os.IsNotExist(err) {
+		t.Fatalf("active key stat error = %v, want not found", err)
+	}
+}
+
 func TestRestoreKeyWritesStorePermissions(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
@@ -380,12 +567,17 @@ func TestRestoreKeyWritesStorePermissions(t *testing.T) {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
 
-	assertStoreDirMode(t, paths.KeysDir(identityID))
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	assertStoreDirMode(t, active.KeysDir())
 	assertFileMode(t, apkeys.AccountKeyFilePath(paths, identityID, address), fsutil.StoreFilePerm)
 }
 
 func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
@@ -411,6 +603,7 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 
 func TestRestoreKeyWritesWitnessPublicMetadataOnSentryNode(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
@@ -464,6 +657,7 @@ func TestRestoreKeyWritesWitnessPublicMetadataOnSentryNode(t *testing.T) {
 func TestRestoreKeyRequiresExplicitOverwrite(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
@@ -487,6 +681,7 @@ func TestRestoreKeyRequiresExplicitOverwrite(t *testing.T) {
 
 func TestRestoreKeyRejectsContradictoryManagedCredentialClass(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
@@ -519,6 +714,7 @@ func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T
 	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
@@ -564,6 +760,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	)
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	bytecode := saltedLogicSigBytecodeForTest()
 	lsig := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
 	address, err := lsig.Address()
@@ -612,7 +809,10 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); !os.IsNotExist(err) {
 		t.Fatalf("restored key stat error = %v, want not exist", err)
 	}
-	templatePath := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	if _, err := os.Stat(templatePath); !os.IsNotExist(err) {
 		t.Fatalf("restored template stat error = %v, want not exist", err)
 	}
@@ -625,6 +825,7 @@ func TestRestoreKeyPreservesBoundedSigningMetadata(t *testing.T) {
 		keyType    = "test.backup-bounded.v1"
 	)
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	bytecode := saltedLogicSigBytecodeForTest()
 	payload := apkeys.NewDSALSigPayload(
 		keyType, "aplane.falcon1024.v1", []byte{0x01}, []byte{0x02}, nil,
@@ -691,6 +892,7 @@ func TestRestoreKeyRejectsInvalidKeyTypeBeforeTemplatePathUse(t *testing.T) {
 	)
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	bytecode := saltedLogicSigBytecodeForTest()
 	lsig := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
 	address, err := lsig.Address()
@@ -741,6 +943,7 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 	)
 
 	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
 	bytecode := saltedLogicSigBytecodeForTest()
 	lsig := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
 	address, err := lsig.Address()
@@ -822,7 +1025,10 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 		t.Fatalf("restore warnings = %v, want structured skipped template warning", warnings)
 	}
 
-	templatePath := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
+	if pathErr != nil {
+		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
+	}
 	gotTemplate, err := templatestore.LoadTemplateFromPath(templatePath, testExportMasterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath() error = %v", err)
@@ -843,6 +1049,42 @@ func writeManagedRestoreArchive(t *testing.T, paths storepaths.Paths, identityID
 	populate(keysDir)
 
 	archivePath := filepath.Join(paths.IdentityBackupsDir(identityID), "managed-restore-test.tar.gz")
+	if err := CreateTarGzArchive(root, archivePath); err != nil {
+		t.Fatalf("CreateTarGzArchive() error = %v", err)
+	}
+	return archivePath
+}
+
+func writeManagedRecoveryArchive(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+	role noderole.Role,
+	policyYAML []byte,
+	populate func(keysDir string),
+) string {
+	t.Helper()
+
+	root := t.TempDir()
+	keysDir := filepath.Join(root, "apb")
+	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll(apb) error = %v", err)
+	}
+	populate(keysDir)
+	if err := WriteManifest(root, role, time.Unix(1_700_000_000, 0)); err != nil {
+		t.Fatalf("WriteManifest() error = %v", err)
+	}
+	if policyYAML != nil {
+		policyDir := filepath.Join(root, "policy")
+		if err := os.MkdirAll(policyDir, 0o750); err != nil {
+			t.Fatalf("MkdirAll(policy) error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), policyYAML, 0o600); err != nil {
+			t.Fatalf("WriteFile(policy) error = %v", err)
+		}
+	}
+
+	archivePath := filepath.Join(paths.IdentityBackupsDir(identityID), "managed-recovery-test.tar.gz")
 	if err := CreateTarGzArchive(root, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}

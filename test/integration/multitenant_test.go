@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -117,9 +118,7 @@ func createIntegrationIdentityWithTemplate(t *testing.T, env *harness.TestEnvClo
 	passphrase := []byte(mustReadPassphrase(t, env.SignerDataDir))
 	defer apcrypto.ZeroBytes(passphrase)
 	identityDir := paths.IdentityDir(identityID)
-	if err := os.MkdirAll(paths.KeysDir(identityID), 0o750); err != nil {
-		t.Fatalf("failed to create %s keys dir: %v", identityID, err)
-	}
+	genstoretest.MintFirst(t, paths, identityID)
 	_, masterKey, err := apcrypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
 		t.Fatalf("failed to create %s keystore metadata: %v", identityID, err)

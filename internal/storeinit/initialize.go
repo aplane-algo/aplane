@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/defaultkeytypes"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -100,14 +101,29 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		crypto.ZeroBytes(masterKey)
 		return result, fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)
 	}
-	if err := defaultkeytypes.InstallForNewIdentity(opts.Paths, opts.IdentityID, role, masterKey, opts.Logf); err != nil {
+	{
+		// Mint the store's first generation, installing the default key
+		// types into the staged namespaces; the commit flips CURRENT
+		// durably.
+		generationID, err := genstore.NewGenerationID(time.Now())
+		if err != nil {
+			crypto.ZeroBytes(masterKey)
+			return result, err
+		}
+		if _, err := genstore.Mint(opts.Paths, opts.IdentityID, genstore.MintRequest{
+			GenerationID:    generationID,
+			FirstGeneration: true,
+			Operation:       "store-initialize",
+			OperationID:     "init-" + generationID,
+			CreatedAt:       time.Now(),
+			Apply: func(staged storepaths.GenPaths) error {
+				return defaultkeytypes.InstallForNewIdentityActive(staged, role, masterKey, opts.Logf)
+			},
+		}); err != nil {
+			crypto.ZeroBytes(masterKey)
+			return result, fmt.Errorf("failed to mint initial generation: %w", err)
+		}
 		crypto.ZeroBytes(masterKey)
-		return result, fmt.Errorf("failed to install default key types: %w", err)
-	}
-	crypto.ZeroBytes(masterKey)
-
-	if err := fsutil.MkdirAll(opts.Paths.KeysDir(opts.IdentityID)); err != nil {
-		return result, fmt.Errorf("failed to create keys directory: %w", err)
 	}
 
 	if _, err := tokenfile.LoadAPlaneToken(opts.Paths.Root(), opts.IdentityID); err != nil {
