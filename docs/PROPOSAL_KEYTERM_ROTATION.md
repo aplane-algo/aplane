@@ -13,11 +13,15 @@ authorized for current state, losing a property the store has today; and the
 term reference inventory reached past generations to recovered batches,
 sidecars, and deleted archives.
 
-One question is deliberately left open for the next review rather than
-decided here: **rollback semantics** — whether repointing `CURRENT` at an
-older-term generation is acceptable, or whether rollback should mint a fresh
-generation re-encrypted under the current term. It interacts with the
-post-activation divergence guard and deserves its own argument.
+A third round of review then found that the term-scoped authority rule had
+consequences of its own: the rotation transition needs a durable state
+machine with a specified ordering (sidecars re-signed before files, or
+current-term verification fails policy load closed), the rewrap window
+belongs inside `keyring.enc` rather than in a second record, phase 1-2
+`changepass` must *replace* the term key rather than rewrap it, and the
+seal — not the immutable at-mint manifest — is the term authority for a
+sealed generation. Rollback is no longer deferred: the authority rule
+decides it, and rollback mints a fresh generation rather than repointing.
 
 ## Problem
 
@@ -100,13 +104,24 @@ term key   --encrypts--> individual store files
   now-unreferenced terms; the drop happens inside the next `changepass`, or
   an explicit passphrase-prompting command. Term GC is optional hygiene, so
   deferring the drop costs nothing.
-- **A generation references a set of terms, not one term.** `Mint` copies
-  the parent byte-for-byte, so a child minted from a partially rewrapped
-  parent inherits files under mixed terms and is sealed that way. Term
-  references are therefore per file. `BuildInventory` already walks every
-  file at mint: have it collect the term set into the manifest, so GC reads
-  authenticated metadata instead of rescanning headers — and the seal covers
-  the term inventory for free.
+- **A generation references a set of terms, not one term** — and the
+  manifest cannot be the authority for it. `Mint` copies the parent
+  byte-for-byte, so a child minted from a partially rewrapped parent
+  inherits files under mixed terms. Term references are therefore per file.
+  But the manifest is an immutable at-mint record while the current
+  generation keeps changing under it — files added, removed, and rewrapped —
+  so a mint-time term set goes stale immediately. Authority by object:
+  - **sealed generations**: the `Terms` set computed at seal time and
+    recorded in `seal.json`, which the seal's own digest then covers;
+  - **the current generation and `RetainedUnsealedParent`**: a live scan,
+    since both are mutable;
+  - **recovered batches, sidecars, and recoverable `deleted/` objects**:
+    their own scans.
+
+  Manifest term data, if recorded at all, is at-mint diagnostics only.
+  Deletion must rescan under the identity mutation lock; a candidate list
+  recorded earlier by a passphrase-less prune is a hint, never deletion
+  authority.
 - **"Referenced" must mean every retained durable object, not every
   retained generation.** Generations are only part of the inventory:
   - sealed priors kept as rollback targets, the `RetainedUnsealedParent`
@@ -141,9 +156,11 @@ can reconstruct that term.**
   until that material is rewrapped — and sealed generations are never
   rewrapped by design, because their seals hash ciphertext.
 - The attacker this matters for is the one a passphrase change exists to
-  address: someone who knew the old passphrase and kept copies of
-  `keyring.enc` and `.keystore` (the latter carries the KDF salt). They can
-  re-derive the old KEK, unwrap their copy of the keyring, and read anything
+  address: someone who knew the old passphrase and kept a copy of
+  `keyring.enc`. Since the keyring is self-contained — it carries its own
+  KDF parameters and salt — that single file is sufficient; no companion
+  artifact is needed. They re-derive the old KEK, unwrap their copy, and
+  read anything
   still encrypted under a term it contains — in their retained copies, and
   in the live store wherever an unrewrapped file remains.
 - Because `Mint` copies the parent's namespaces byte-for-byte
@@ -177,7 +194,7 @@ The keyring exposes distinct authorities rather than one `Open`:
 | Context | Authorized terms |
 |---|---|
 | New and current-generation writes | newest only |
-| Reads during a durable `rewrap_pending` window | newest plus the terms being retired |
+| Reads during the rewrap window | current plus the terms being retired |
 | Opening a **validated sealed** generation | the historical terms that generation's seal covers |
 | Live policy / node-role sidecars | the designated current integrity term only |
 
@@ -185,19 +202,80 @@ Verification of a live sidecar must require the current integrity term, not
 accept any retained term the sidecar names — otherwise an attacker who
 captured an old term forges sidecars indefinitely.
 
-One scoping note, so the risk is not overstated: *replaying* an existing
-ciphertext from a retained prior into the current generation already works
-today, since priors share the current master key. That is a pre-existing
-consequence of retaining generations, not something terms introduce. The
-new exposure is *forgery* under a retained term, which term-scoped authority
-closes.
+**The rewrap window is state inside `keyring.enc`, not a second record.**
+The keyring is the single root, and that principle applies to the window
+itself: it records `{terms, current_term, retiring_terms}`. Otherwise a
+crash between appending a term and creating a separate pending marker
+leaves a current generation full of no-longer-current files that
+current-only authority rejects — the store fails closed on every read, a
+two-record crash window at the same root this design just consolidated.
 
-**Rollback needs a decision here too.** Repointing `CURRENT` at a generation
-written under an older term reauthorizes that term wholesale for current
-state. The safer semantics is to mint a fresh generation from the validated
-sealed target, re-encrypted under the current term, rather than repointing
-at the old one. That interacts with the post-activation divergence guard
-(`recovered_rollback_diverged`) and should be settled before implementation.
+Keeping the window in the keyring makes each step individually crash-safe
+and gives resumption a single source of truth: whoever reads the keyring
+sees the pending transition, and `retiring_terms` being a set handles
+overlapping interrupted rotations.
+
+`OpenCurrent` is therefore defined as *consulting the durable current
+authority* — `current_term` plus any `retiring_terms` — not as a literal
+"newest term only".
+
+One scoping note in both directions. *Replaying* an existing ciphertext from
+a retained prior into the current generation already works today, since
+priors share the current master key — a pre-existing consequence of
+retaining generations, not something terms introduce. The new exposure is
+*forgery* under a retained term, which term-scoped authority closes. But
+current-term authority also **improves** on today's replay story: once a
+rotation has completed, a replayed old-term file is rejected by the current
+generation's authority rule, which nothing rejects today.
+
+### The rotation transition (durable state machine)
+
+`changepass` is a transition with durable intermediate state, not a single
+step. Ordering matters because current-term-only authority makes each
+half-finished state visible to the next reader.
+
+1. Under the identity mutation lock, atomically write the keyring under the
+   new KEK containing the appended term and
+   `rewrap_pending:{from, to}`. One durable write; the root stays
+   self-consistent.
+2. Update the configured passphrase helper, with defined behavior if that
+   write fails — today a helper failure restores the prior state.
+3. **Re-sign the live integrity sidecars** under the new integrity term.
+   This must precede file rewrap: current-term-only verification would
+   otherwise reject sidecars still carrying the retiring term, failing
+   policy load closed at the next unlock. The window authorizes *both*
+   current and retiring terms for sidecar verification while it is open,
+   which is what makes this step interruptible.
+4. Rewrap every mutable live consumer — not only the current generation's
+   keys and templates, but recovered batches and any other object encrypted
+   under a term (see the reference inventory).
+5. Verify every required object is on the target term, then atomically
+   promote `current_term` and clear `rewrap_pending`.
+
+After a crash the new passphrase **resumes the existing transition** — it
+must not append a further term. Signing stays blocked while the window is
+open: the window deliberately authorizes retiring terms, which is precisely
+the forgery exposure current-term authority exists to close, so it must not
+overlap with live signing.
+
+This is also the ordering the promised TLA+ module should check; the
+generation commit model is a working template for exactly this shape.
+
+**Rollback: mint, do not repoint.** This was left open in an earlier draft,
+but the authority rule decides it. `RollbackTo` repoints `CURRENT` directly,
+so rolling back to a generation written under an older term would
+reauthorize that term for mutable current state — contradicting
+current-term-only authority in the one operation most likely to be run
+after a compromise. Rollback therefore:
+
+- validates the sealed target as today;
+- preserves the existing post-activation divergence guard
+  (`recovered_rollback_diverged`);
+- mints a **new** generation whose content comes from that target, decrypted
+  through historical authority and re-encrypted under the current term;
+- records the rollback source generation in the new manifest.
+
+The content rolls back; the cryptographic epoch does not.
 
 Three sections below follow directly from these two: what `changepass` can
 honestly claim (open question 5), what term garbage collection must treat as
@@ -232,6 +310,9 @@ accepts everywhere else.
 
 - The `pendingFile` two-phase swap machinery and its unrecoverable crash
   window (rotate.go), including `rollbackPendingFiles`/`swapPendingFiles`.
+  Note the timing: phases 1-2 deliberately keep the swap (it is what gives
+  `changepass` today's semantics before term append exists), so this retires
+  at phase 3.
 - The recovered-batch sibling reconciliation special case.
 - `requireGenerationQuiescence` and the `prune --all-priors` prerequisite,
   along with the destructive-prune confirmations and rollback-history
@@ -295,11 +376,12 @@ accepts everywhere else.
      Per-term derivation is deliberate: a fixed integrity root would make
      forgery ability permanent, since anyone who obtained it once could
      forge policy and node-role HMACs forever with no rotation able to help.
-     Deriving per term ties forgery to term lifetime. State the limit
-     plainly, though: verification accepts any term still in the keyring, so
-     rotation revokes forgery only as terms are dropped — which, per the
-     trust-model section, is bounded by generation retention, not by the
-     rotation itself.
+     Deriving per term ties forgery to term lifetime, and pairing it with
+     current-term-only verification (see "Decryptable is not authorized")
+     makes the revocation immediate rather than eventual: a holder of a
+     retired term cannot derive the current integrity key, so they cannot
+     forge a sidecar that verifies at all. A fixed root would validate a
+     forgery that simply labels itself with the current term.
    - **The resident key set is bounded by generation retention, not by
      rewrap.** An earlier draft claimed the previous term becomes
      unreferenced once the rewrap completes, so the steady state is one
@@ -342,13 +424,21 @@ accepts everywhere else.
       key" and every decrypt finds term 1. Independently shippable, and the
       easiest part to review carefully.
 
-      **`changepass` in phases 1-2 keeps today's semantics**: with append
-      disabled there is only ever one term, so it re-derives the KEK,
-      rewraps the keyring, and performs the existing bulk re-encryption of
-      data files. That preserves the current guarantee exactly while the
-      refactor is in flight — the two-phase swap and its crash window are
-      retired at phase 3, not before, and the proposal should not claim the
-      crash-safety win until then.
+      **`changepass` in phases 1-2 keeps today's semantics, which requires
+      replacing the term key — not merely rewrapping it.** Today's master
+      key is *derived* from the passphrase, so changing the passphrase
+      changes the key for free. Once the key is *stored* in a keyring,
+      changing the passphrase changes only the KEK; the term key underneath
+      is unchanged, which would make the bulk re-encryption a cryptographic
+      no-op and leave the Q5 attacker — old passphrase plus a copy of
+      `keyring.enc` — able to read every post-change write. Phase 1-2
+      `changepass` must therefore generate a **fresh term-1 key**,
+      re-encrypt every file from the old key to the new one through the
+      existing swap, and rewrap the keyring holding the new key under the
+      new KEK.
+
+      The two-phase swap and its crash window are retired at phase 3, not
+      before; the proposal must not claim the crash-safety win until then.
    2. **Migrate call sites package by package** to `WithKeyring`. Each
       package is separately reviewable, and a missed site is harmless while
       only one term exists.
@@ -392,11 +482,18 @@ accepts everywhere else.
 4. ~~**KDF/KEK caching** in the daemon unlock path.~~ **Decided: cache the
    unwrapped keyring; do not cache the KEK.**
 
-   Outside `internal/crypto` the passphrase becomes a key in exactly two
-   places: `FileKeyStore.InitializeMasterKey` (daemon unlock) and
-   `policyeditor/store.go` (offline, per-invocation, no caching). Today the
-   first derives the master key and holds it in `f.masterKey` for the
-   session, zeroed by `ClearMasterKey` on lock under `cacheLock`.
+   An earlier draft claimed the passphrase becomes a key in exactly two
+   places outside `internal/crypto`. That was wrong — measured, there are
+   six such sites across five files: `keystore/file.go`
+   (`InitializeMasterKey`, the daemon unlock path),
+   `storepass/rotate.go` (two), `policyeditor/store.go`,
+   `cmd/apstore/policy.go`, and `cmd/apstore/generations.go`. Only the first
+   caches; the rest derive per invocation. This widens the derivation gate
+   in open question 3 but does not change the caching decision, which
+   concerns the one caching site.
+
+   Today that site derives the master key and holds it in `f.masterKey` for
+   the session, zeroed by `ClearMasterKey` on lock under `cacheLock`.
 
    The keyring takes that slot: derive the KEK, unwrap `keyring.enc`, zero
    the KEK before returning, and cache the unwrapped terms where the master
@@ -415,9 +512,13 @@ accepts everywhere else.
    - **KDF cost is unchanged.** Argon2id (64 MiB, t=2) runs once per unlock
      today and once per unlock after; the keyring adds one AES-GCM unwrap.
      There is no performance argument for caching the KEK.
-   - **Passphrase verification is untouched.** The admin `VerifyPassphrase`
-     path checks `.keystore`'s verifier via
-     `crypto.VerifyPassphraseWithMetadata` and never consults the keyring.
+   - **Passphrase verification moves to the keyring.** An earlier draft said
+     this path was untouched, which the single-root consolidation made
+     false: the separate verifier is gone, so `VerifyPassphrase` attempts a
+     keyring unwrap and succeeds exactly when the AEAD authenticates. Two
+     consequences to handle: the unwrap briefly materializes term keys, so
+     they must be zeroed on the verify-only path, and the unlock
+     rate-limiter keys off decrypt failure, which is unchanged.
 
 5. ~~**Whether master-key rotation is even exposed** initially.~~
    **Decided: term append ships from the start, and `changepass` rewraps
@@ -466,9 +567,13 @@ accepts everywhere else.
    one.
 
    The rewrap is mandatory rather than an opt-in follow-up command. That
-   choice costs nothing: `changepass` already runs a synchronous pass over
-   every file and reports per-category counts, so the command, the wait,
-   and the output shape are unchanged. It is also less filesystem work than
+   costs no new *operator surface*: `changepass` already runs a synchronous
+   pass over every file and reports per-category counts, so the command, the
+   wait, and the output shape are unchanged. It is not free in
+   implementation, though — an earlier draft overstated this. It requires
+   the durable transition state, resume-after-crash behavior, passphrase
+   helper coordination, and status reporting described under "The rotation
+   transition". It is also less filesystem work than
    the two-phase swap it replaces (one durable write per file instead of a
    `.new` write plus two renames). An opt-in `rewrap` command would instead
    add a new command, a "partially rewrapped" store state needing its own
