@@ -111,6 +111,40 @@ orthogonal to source trust. The TEAL recompilation gate in `backup import`
 is likewise orthogonal (template provenance, not archive integrity) and is
 untouched by this proposal.
 
+### Trust model: passphrase knowledge is authentication
+
+This proposal takes the explicit position that knowledge of the export
+passphrase is sufficient authentication for archive content. A valid
+archive proves exactly one thing: it was created, or endorsed, by a party
+that knew the export passphrase. This is not a new assumption — it is the
+trust root the `.apb` payloads have always had (a passphrase holder could
+always fabricate a complete counterfeit archive, keys included), extended
+to cover the archive's shape. The manifest reduces the
+attacker-without-the-passphrase to zero capability and leaves the
+attacker-with-the-passphrase exactly as powerful as today.
+
+Consequences, stated so nothing more is read into it later:
+
+- this is shared-secret authentication, not origin authentication: any
+  legitimate passphrase recipient (the restoring operator) can mint
+  archives indistinguishable from the source's. In the single-operator
+  model, source and destination are one trust domain, so the distinction
+  is vacuous; cross-party archive exchange would require revisiting this
+  position,
+- authentication strength equals passphrase secrecy and entropy; Argon2id
+  slows brute force, but a weak passphrase yields forging ability along
+  with the read ability it already yields,
+- authenticated is not safe: source settings remain review context only
+  and the policy snapshot is never installed,
+- no trust qualifier survives in the product: an archive is either
+  authentic or rejected, and the review screen's "reported by the
+  archive" label describes scope (source facts, not destination facts),
+  not trust. Stronger origin authentication (per-store signing keys) is
+  rejected: it would require a public-key trust anchor between identities
+  that does not exist in the product model, break the archive's
+  standalone manually-decryptable property, and defend a boundary the
+  passphrase holder has already crossed.
+
 ## 3. Costs
 
 - **New archive generation; old archives unreadable.** Acceptable now:
