@@ -1,10 +1,13 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **proposal — scoping only, not accepted**. Refreshed against the
-tree after the generation-storage branch merged: the design core is
-unchanged, but the version gate no longer needs a migration (the release
-policy retired in-place upgrades), open question 1 is answered, and the
-sequencing note is spent.
+Status: **proposal — open questions resolved, ready for acceptance review**.
+
+Refreshed against the tree after the generation-storage branch merged: the
+design core is unchanged, but the version gate no longer needs a migration
+(the release policy retired in-place upgrades) and the sequencing note is
+spent. All five open questions below are now decided, with the reasoning
+recorded inline. What remains before implementation is an acceptance review
+of those decisions, not further scoping.
 
 ## Problem
 
@@ -100,7 +103,7 @@ accepts everywhere else.
 - The rotation/generation-rollback unreadability hazard noted at
   rotate.go's quiescence comment.
 
-## Open questions (to resolve before acceptance)
+## Open questions (resolved)
 
 1. ~~**Backup format.**~~ **Answered: independent.** `.apb` payloads are
    sealed with `crypto.EncryptStandalone` (envelope v2) under the export
@@ -191,8 +194,36 @@ accepts everywhere else.
    In a big-bang change a missed site is a latent data-loss bug; in this
    sequencing it is a no-op until phase 3, and phase 3 does not start until
    nothing is missed.
-4. **KDF/KEK caching** in the daemon unlock path (today the master key is
-   cached; becomes the keyring).
+4. ~~**KDF/KEK caching** in the daemon unlock path.~~ **Decided: cache the
+   unwrapped keyring; do not cache the KEK.**
+
+   Outside `internal/crypto` the passphrase becomes a key in exactly two
+   places: `FileKeyStore.InitializeMasterKey` (daemon unlock) and
+   `policyeditor/store.go` (offline, per-invocation, no caching). Today the
+   first derives the master key and holds it in `f.masterKey` for the
+   session, zeroed by `ClearMasterKey` on lock under `cacheLock`.
+
+   The keyring takes that slot: derive the KEK, unwrap `keyring.enc`, zero
+   the KEK before returning, and cache the unwrapped terms where the master
+   key lives today — same lifetime, same lock discipline, same zero-on-lock
+   (`ClearMasterKey` becomes `ClearKeyring`, iterating terms).
+
+   Nothing after unlock needs the KEK. It unwraps the keyring at unlock, and
+   rewraps it on passphrase change or term append — both of which happen
+   inside `changepass`, which holds the passphrases and can re-derive. Not
+   caching it means a memory disclosure of the running daemon yields term
+   keys, exactly as it yields the master key today, but not the ability to
+   unwrap a future keyring.
+
+   Two things this resolves:
+
+   - **KDF cost is unchanged.** Argon2id (64 MiB, t=2) runs once per unlock
+     today and once per unlock after; the keyring adds one AES-GCM unwrap.
+     There is no performance argument for caching the KEK.
+   - **Passphrase verification is untouched.** The admin `VerifyPassphrase`
+     path checks `.keystore`'s verifier via
+     `crypto.VerifyPassphraseWithMetadata` and never consults the keyring.
+
 5. ~~**Whether master-key rotation is even exposed** initially.~~
    **Decided: term append ships from the start, and `changepass` rewraps
    the current generation before returning.**
@@ -267,7 +298,7 @@ is worth repeating here:
 - **Settle the open questions explicitly before writing code**, and record
   the answers in this document. The manifest change resolved five questions
   up front; reviewers then argued about the design rather than about what
-  the design was.
+  the design was. Done — see the resolved questions above.
 - **Write the trust and lifecycle model down first.** For the keyring that
   means stating plainly what a term is, what compromise of one term does
   and does not imply, and what rotation is and is not claimed to
