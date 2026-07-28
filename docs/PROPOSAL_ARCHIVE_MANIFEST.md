@@ -157,30 +157,29 @@ Consequences, stated so nothing more is read into it later:
 - **Review surface:** one new sealed record and its verification path need
   the same scrutiny as the `.apb` envelope; reuse keeps that small.
 
-## 4. Open questions
+## 4. Resolved questions
 
-1. **Passphrase-free `apstore verify`.** Today structural verification
-   works without the passphrase. With the manifest sealed, a passphrase-free
-   check can only confirm archive shape, not inventory. Recommend: keep a
-   minimal passphrase-free structural mode; full verification requires the
-   passphrase (it already does for payload content).
-2. **Plaintext stub.** Whether to keep a tiny unauthenticated
-   `manifest.json` stub (archive format version only) for tooling
-   friendliness, with everything trust-bearing inside the sealed manifest.
-   Recommend: yes, version-only.
-3. **Rebuild role default.** `apstore rebuild` currently reads the default
-   destination role from plaintext `manifest.json` before prompting.
-   Post-change the role comes from the sealed manifest after the passphrase
-   prompt. Recommend: accept the reordering; `--role` remains the explicit
-   override.
-4. **Failure classification at preview.** Manifest authentication failure
-   is indistinguishable from a wrong passphrase (GCM). Recommend: fold into
-   the existing decrypt-failure and rate-limit path, as payload tampering
-   already is.
-5. **Final protocol shape.** Recommend dropping `source_settings_status`
-   entirely: v3 archives always carry a manifest, so typed fields are
-   present when the source recorded them and rendered "not recorded"
-   otherwise. No status enum survives.
+Decided under a maximal-simplification directive:
+
+1. **`apstore verify` requires the passphrase, always.** A passphrase-free
+   structural mode cannot check the inventory, so its "pass" would be a
+   weaker claim wearing the same name — the ambiguous-trust-state pattern
+   this proposal exists to eliminate. One verify path, full verification.
+   An archive is useless without its passphrase; the operator has it.
+2. **No plaintext stub.** The sealed manifest's standalone envelope carries
+   `envelope_version` in its cleartext header; that is the only version
+   signal, and it is sufficient for a precise unsupported-format error. No
+   separate stub file, no stub schema.
+3. **Rebuild role default moves after the passphrase prompt.** The role
+   comes from the sealed manifest once it is decrypted; `--role` remains
+   the explicit override. No role is stored outside the manifest.
+4. **Manifest authentication failure folds into the existing
+   decrypt-failure and rate-limit class.** It is indistinguishable from a
+   wrong passphrase (GCM), exactly as payload tampering already is. No new
+   failure taxonomy.
+5. **`source_settings_status` is dropped entirely.** Every v3 archive
+   carries a manifest, so typed fields are present when the source recorded
+   them and rendered "not recorded" otherwise. No status enum survives.
 
 ## 5. Sequencing
 
