@@ -38,6 +38,11 @@ below:**
   digest and so trips the post-activation rollback guard, which compares
   those digests against the at-mint manifest.
 
+The attacker model is also scoped explicitly: AEAD makes the root
+authentic but not fresh, so replacing `keyring.enc` with an older authentic
+copy is store substitution rather than injection, and is outside what
+in-store cryptography can detect.
+
 The passphrase-helper contract and the resume path are decided, not blocked.
 
 ## Problem
@@ -241,9 +246,11 @@ two-record crash window at the same root this design just consolidated.
 
 Keeping the window in the keyring makes each step individually crash-safe
 and gives resumption a single source of truth: whoever reads the keyring
-sees the pending transition. `retiring_terms` is a set because a single
-transition can retire several terms at once, not because rotations may
-overlap — appending while a window is open is forbidden.
+sees the pending transition. `retiring_terms` is a set as reserved generality — every path this document
+defines produces exactly one retiring term, since appending while a window
+is open is forbidden and windows close before the next append. A future
+term-GC pass folding several retirements into one transition would produce
+more; nothing today does.
 
 `OpenCurrent` is therefore defined as *consulting the durable current
 authority* — `current_term` plus any `retiring_terms` — not as a literal
@@ -306,9 +313,16 @@ half-finished state visible to the next reader.
    that **both are on the target term before the window closes**. An
    earlier draft justified sidecars-first by a fail-closed risk that the
    window's own coverage had already eliminated.
-5. Verify every required object is on the target term, then atomically
-   clear `retiring_terms` and `rewrap_pending`. This step promotes
-   nothing — promotion happened at step 1.
+5. Complete, in this durable order:
+   1. verify the transformation against the cutover snapshot;
+   2. durably write the post-rewrap divergence baseline for every generation
+      the snapshot recorded as clean before the cutover;
+   3. only then atomically clear `retiring_terms` and `rewrap_pending`.
+
+   The order matters: clearing the window first would leave a rotated store
+   whose current generation matches neither its at-mint manifest nor any
+   baseline, so every subsequent rollback would be refused as diverged —
+   permanently. This step promotes nothing; promotion happened at step 1.
 
 After a crash the new passphrase **resumes the existing transition** — it
 must not append a further term. Resume runs automatically at unlock, before
@@ -335,6 +349,14 @@ generation commit model is a working template for exactly this shape.
 Three separate problems below want the same record, so the design commits
 one authenticated **cutover snapshot** as part of step 1's atomic write.
 
+It must be atomic with step 1 — that is what makes it a cutover — but it
+must not bloat the root, which the divergence-baseline section deliberately
+kept O(terms) rather than O(store). Resolve both by indirection: write the
+snapshot body to its own file sealed under the target term, and have step
+1's root commit carry only its digest. The root stays small, the commit
+stays atomic, and a missing or mismatched body fails closed into
+rotation-pending recovery — never into a false-clean state.
+
 **Why it is required (the laundering attack).** The window deliberately
 authorizes retiring terms for reads, so the rewrap pass will decrypt
 anything encrypted under one. An attacker holding a compromised old term
@@ -347,18 +369,37 @@ writing files directly bypasses the daemon entirely.
 
 The snapshot defines the security cutover. It records, AEAD-authenticated:
 
-- the exact paths and ciphertext digests the transition is permitted to
-  rewrap — current-generation keys and templates, recovered batches, policy
-  and node-role bytes and their sidecars, and any other mutable live term
-  consumer;
+- the exact paths and digests of everything the transition may touch,
+  distinguishing two kinds because they are not transformed the same way:
+  **term-encrypted objects** (current-generation keys and templates,
+  recovered batches) are decrypted and re-encrypted, while
+  **plaintext-plus-sidecar objects** (policy and node-role documents) carry
+  no term on their content and are only *re-signed* under the new integrity
+  term. Both need pinning — an integrity input is as forgeable as a
+  ciphertext one — but an implementer enumerating "objects encrypted under a
+  term" would otherwise hunt for a term header on `policy.yaml` and not find
+  one;
 - for each generation, the **clean-or-diverged decision made before any
   rewrap** (see the divergence guard below);
 - the effective starting baseline for that decision.
 
 Rewrap then accepts only those exact bytes. Anything added, removed, or
-altered after the snapshot fails closed, and the final check proves a
-one-to-one transformation from the committed inputs to target-term outputs
-rather than merely inspecting output term numbers. Compromise *before* the
+altered after the snapshot fails closed.
+
+The completion check needs care about what it can actually prove. Outputs
+cannot be pinned at snapshot time — every rewrap output carries a fresh
+random nonce — so a naive check can only establish that every snapshot input
+was consumed and every expected path now holds *some* target-term
+ciphertext. That leaves output swapping: two valid target-term envelopes
+exchanged between paths. **Extend the GCM additional authenticated data to
+include the object's identity** (its path or selector) alongside the term
+header. A swapped output then fails authentication on open, the one-to-one
+property becomes cryptographic rather than asserted, and it costs one more
+field in an envelope change already committed to happen. Without that, the
+completion check must be described as "all inputs consumed, all outputs on
+the target term" and swap detection left to the reload gate's
+selector-versus-filename validation, which covers keys but is thinner for
+templates and recovered batches. Compromise *before* the
 snapshot is not defended against — that is what the cutover means — but
 nothing injected after it can be laundered into the new term.
 
@@ -367,6 +408,32 @@ correct: a crash mid-rewrap leaves ciphertext matching neither the manifest
 nor the final baseline, so without a durable decision the resuming process
 cannot tell whether recording a clean baseline would erase pre-existing
 divergence.
+
+### The root is authenticated but not fresh — scope the claim
+
+AEAD proves a `keyring.enc` was produced by someone holding the KEK. It
+does not prove it is the *current* one. The Q5 attacker holds an old,
+perfectly authentic root — so with filesystem write access they can simply
+**put their old copy back**, which erases the pending state, the anchors,
+and the promotion, restoring the old `current_term` and making their
+old-term forgeries current-authorized again.
+
+No in-store mechanism fixes this. A freshness counter would live in a file
+the same attacker can replace; anything strong enough (hardware-backed
+monotonic state) is outside this design. So the claim must be scoped rather
+than defended: **the cutover guarantees that nothing injected after it can
+be laundered into a store whose root is the one the transition committed.**
+Replacing the root is not injection into the store — it is substitution of
+the store, which no in-store cryptography detects.
+
+Two things make that boundary tolerable. Root replacement is loud: the
+operator's new passphrase stops working, since the reverted root only opens
+with the old one. And an attacker with write access to the identity
+directory can already substitute the entire store, so root replacement
+grants nothing that whole-store substitution did not.
+
+State it in the threat model rather than leaving "nothing can be laundered"
+to be read as unconditional.
 
 ### Retained sealed generations need an authenticity anchor
 
@@ -379,12 +446,38 @@ recompute its seal to match — and mint-on-rollback would then validate the
 forgery and re-encrypt it under the current term, which is the laundering
 attack again by a historical route.
 
-At the rotation cutover, record authenticated digests of every retained
-sealed generation inside the new `keyring.enc`, and carry those anchors
-forward while the generation is retained. `OpenSealed` and rollback require
-**both** ordinary seal validation and equality with the anchor. Generations
-created after the rotation are written under an uncompromised term and can
-be anchored when that term is itself retired.
+At step 1 of the rotation, anchor every retained sealed generation —
+authenticated digests recorded in the new `keyring.enc` — **before** its
+term becomes retiring. Carry those anchors forward while the generation is
+retained.
+
+The rule must be conditional, not absolute. A generation sealed since the
+last rotation has no anchor and is not suspect: its terms have never been
+retired, so no retired key can forge it. Requiring an anchor unconditionally
+would make such a generation unrollbackable-to, and anchoring at every mint
+would mean rewriting the root at every mint — which needs the KEK that is
+deliberately not cached.
+
+- **Anchored generation**: require exact anchor equality, in addition to
+  ordinary seal validation.
+- **Unanchored generation**: accept only if every inventory entry is on the
+  current term. That is exactly the population no retired key can have
+  written.
+
+**Opening must bind bytes, not just validate the generation.** An
+`OpenSealed(gen, ciphertext)` that takes arbitrary bytes leaves a TOCTOU
+window: validation reads the files, then rollback reads them again, and the
+filesystem attacker swaps one in between. Current validation already
+performs separate reads, and even `VerifyFileAgainstSeal` hashes a file
+without returning the bytes it verified. Historical opening must therefore
+hash the exact buffer it is about to decrypt and match it against the
+anchored `(generation ID, path, digest, size)` entry — whole-generation
+validation is not sufficient under this attacker model.
+
+**Anchor lifecycle:** pruning a generation cannot drop its anchor, since
+prune has no KEK. Stale anchors accumulate in the root until the next
+passphrase-holding operation clears them. Harmless, but stated so it is not
+mistaken for a leak.
 
 This is the same shape as the cutover snapshot — the store's authenticated
 root vouching for material that unkeyed integrity checks cannot.
@@ -549,8 +642,11 @@ accepts everywhere else.
 
    - **The master key has two uses, not one.** Besides encryption, it is an
      HKDF input for integrity HMACs (`DerivePolicyIntegrityKey`,
-     `DeriveNodeRoleIntegrityKey`). Verification must use the term that
-     signed, so sidecars need term identification too. Both
+     `DeriveNodeRoleIntegrityKey`). A sidecar must record its term, and
+     verification compares that record against the current authority — the
+     current integrity term, plus retiring terms only while the rewrap
+     window is open — rather than trusting whichever term the sidecar
+     names. Both
      `IntegritySidecar` types already carry `Version` and `KeyID`; add an
      explicit `Term` field and bump the sidecar version rather than
      overloading `KeyID`, which is a constant scheme tag exact-matched on
@@ -699,9 +795,13 @@ accepts everywhere else.
    key lives today — same lifetime, same lock discipline, same zero-on-lock
    (`ClearMasterKey` becomes `ClearKeyring`, iterating terms).
 
-   Nothing after unlock needs the KEK. It unwraps the keyring at unlock, and
-   rewraps it on passphrase change or term append — both of which happen
-   inside `changepass`, which holds the passphrases and can re-derive. Not
+   Nothing after unlock needs the KEK, with one bounded exception: an unlock
+   that resumes an interrupted rotation must clear `rewrap_pending`, which
+   rewrites the root. Define unlock as **incomplete until resume finishes** —
+   the KEK is retained inside that operation until the final root write and
+   zeroed immediately after, and it never enters the session cache. Outside
+   that window the KEK unwraps the keyring at unlock and is rewrapped only
+   during `changepass`, which holds the passphrases and can re-derive. Not
    caching it means a memory disclosure of the running daemon yields term
    keys, exactly as it yields the master key today, but not the ability to
    unwrap a future keyring.
@@ -734,8 +834,9 @@ accepts everywhere else.
    rewrap-only would silently redefine the operation.
 
    Appending a term protects new writes; rewrapping removes the mutable live
-   store from reach — not only the current generation's keys and templates
-   but recovered batches, policy and node-role bytes, and their sidecars. Reaching
+   store from reach: the current generation's keys and templates and recovered
+   batches are re-encrypted, and the policy and node-role sidecars are
+   re-signed under the new integrity term. Reaching
    that state is no longer atomic — and no longer needs to be, because a
    partially rewrapped store is a legal state: every file is wholly under
    one term at every instant, so an interrupted rewrap is resumable rather
