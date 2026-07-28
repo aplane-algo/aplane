@@ -430,3 +430,34 @@ func TestRestoreReviewMarksUnavailablePolicyComparison(t *testing.T) {
 		t.Fatalf("unavailable comparison not surfaced:\n%s", section)
 	}
 }
+
+// TestRestoreReviewShowsArchivePackagingTime pins the operator-visible
+// freshness signal: the sealed manifest binds an archive's members to each
+// other, not to a point in time, so review must show when the archive was
+// packaged.
+func TestRestoreReviewShowsArchivePackagingTime(t *testing.T) {
+	m := Model{
+		viewState:   ViewRestoreReview,
+		signerState: signerRuntimeUnlocked,
+		restore: restoreState{
+			restoreID: "00000000000000000000000000000001",
+			review: ReviewRecoveredResultMessage{
+				Success:              true,
+				RestoreID:            "00000000000000000000000000000001",
+				ArchiveChecksum:      strings.Repeat("a", 64),
+				ArchiveCreatedAtUnix: 1_700_000_000,
+			},
+		},
+	}
+	view := stripANSI(m.renderRestoreReview())
+	if !strings.Contains(view, "Archive packaged:") {
+		t.Fatalf("review omitted the archive packaging time:\n%s", view)
+	}
+
+	// An archive with no recorded packaging time shows nothing rather than
+	// an epoch date.
+	m.restore.review.ArchiveCreatedAtUnix = 0
+	if strings.Contains(stripANSI(m.renderRestoreReview()), "Archive packaged:") {
+		t.Fatal("review invented a packaging time for an archive without one")
+	}
+}

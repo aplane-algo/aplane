@@ -140,8 +140,9 @@ Consequences, stated so nothing more is read into it later:
   an attacker without the passphrase can still replace one archive with a
   different complete archive sealed under the same passphrase — an older
   backup, most usefully, rolling the operator back to a prior key set. The
-  sealed `created_at_unix` and the archive digest reported at review are the
-  operator-visible signals; nothing enforces freshness,
+  activation review surfaces the sealed `created_at_unix` alongside the
+  archive digest so an operator can notice this; nothing enforces
+  freshness automatically,
 - authenticated is not safe: source settings remain review context only
   and the policy snapshot is never installed,
 - no trust qualifier survives in the product: an archive is either

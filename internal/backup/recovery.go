@@ -235,16 +235,17 @@ func RecoverManagedBackup(
 	}
 
 	return recovered.Create(paths, identityID, recovered.CreateRequest{
-		ArchiveName:               filepath.Base(resolvedArchive),
-		ArchiveSHA256:             archiveSHA256,
-		SourceNodeRole:            sourceNodeRole,
-		SourcePolicyStatus:        policyStatus,
-		SourcePolicySHA256:        policySHA256,
-		SourcePolicyYAML:          policyYAML,
-		SourceUserAutoApprove:     sourceProjection.UserAutoApprove,
-		SourceGenesisHashMappings: sourceProjection.GenesisHashMappings,
-		CreatedAt:                 time.Now().UTC(),
-		Entries:                   entries,
+		ArchiveName:                filepath.Base(resolvedArchive),
+		ArchiveSHA256:              archiveSHA256,
+		SourceArchiveCreatedAtUnix: manifest.CreatedAtUnix,
+		SourceNodeRole:             sourceNodeRole,
+		SourcePolicyStatus:         policyStatus,
+		SourcePolicySHA256:         policySHA256,
+		SourcePolicyYAML:           policyYAML,
+		SourceUserAutoApprove:      sourceProjection.UserAutoApprove,
+		SourceGenesisHashMappings:  sourceProjection.GenesisHashMappings,
+		CreatedAt:                  time.Now().UTC(),
+		Entries:                    entries,
 	}, masterKey)
 }
 

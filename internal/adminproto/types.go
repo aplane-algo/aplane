@@ -248,6 +248,7 @@ type ReviewRecoveredResult struct {
 	Success                      bool
 	RestoreID                    string
 	ArchiveChecksum              string
+	ArchiveCreatedAtUnix         int64
 	SourceNodeRole               string
 	SourcePolicyStatus           string
 	SourcePolicySHA256           string
