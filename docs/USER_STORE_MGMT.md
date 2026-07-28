@@ -137,9 +137,23 @@ prompts for the export passphrase, decrypts and validates the encrypted key
 payloads, and publishes the archive under `<signer-data>/backups/<identity>/`
 only after validation succeeds. If a key payload includes bundled template YAML,
 import recompiles that template with the key's stored creation parameters and
-confirms that it reproduces the key's stored LogicSig bytecode. This bundled
-template check also preserves the key's stored off-curve salt counter and
-requires the configured TEAL compile algod endpoint to be available.
+confirms that it reproduces the key's stored LogicSig bytecode, preserving the
+key's stored off-curve salt counter.
+
+That check needs the configured TEAL compile algod endpoint. Anything the
+archive itself gets wrong always rejects the import: a template that compiles
+into different bytecode, one the compiler refuses to compile, and one that
+fails to parse or validate. If the compiler simply cannot be reached — a
+network failure, a timeout, or no configured endpoint — import does not
+fail: the keys have already
+decrypted and validated on their own, and their signing authority does not
+depend on this check, so import lists the affected payloads and asks whether
+to proceed without it. Decline and nothing is imported; accept and the archive
+is admitted with one thing unproven — that each bundled template recompiles
+into its key's stored bytecode. If a later restore installs such a template,
+it becomes the definition used to generate new keys of that type, so prefer
+re-running the import when the compiler is reachable. For unattended runs,
+`--accept-unverified-template-provenance` records the same decision up front.
 
 Use `backup export` when you want to move a managed archive to removable media
 or another vault. The first argument can be the managed archive filename or its

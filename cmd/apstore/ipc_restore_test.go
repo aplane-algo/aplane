@@ -26,13 +26,13 @@ func TestCmdBackupImportRejectsInvalidSources(t *testing.T) {
 	dataDirectory = t.TempDir()
 	defer func() { dataDirectory = oldDataDirectory }()
 
-	if err := cmdBackupImport(filepath.Join(t.TempDir(), "backup.zip")); err == nil {
+	if err := cmdBackupImport([]string{filepath.Join(t.TempDir(), "backup.zip")}); err == nil {
 		t.Fatal("cmdBackupImport(non-archive) error = nil, want extension rejection")
 	} else if !strings.Contains(err.Error(), "must end in .tar.gz or .tgz") {
 		t.Fatalf("cmdBackupImport(non-archive) error = %v, want extension context", err)
 	}
 
-	if err := cmdBackupImport(filepath.Join(t.TempDir(), "missing.tar.gz")); err == nil {
+	if err := cmdBackupImport([]string{filepath.Join(t.TempDir(), "missing.tar.gz")}); err == nil {
 		t.Fatal("cmdBackupImport(missing) error = nil, want missing source rejection")
 	} else if !strings.Contains(err.Error(), "backup source unavailable") {
 		t.Fatalf("cmdBackupImport(missing) error = %v, want missing source context", err)
@@ -122,12 +122,12 @@ func TestCmdBackupImportRejectsDuplicateBasename(t *testing.T) {
 	}
 
 	if err := withTestStdin("export-passphrase\n", func() error {
-		return cmdBackupImport(archivePath)
+		return cmdBackupImport([]string{archivePath})
 	}); err != nil {
 		t.Fatalf("first cmdBackupImport() error = %v", err)
 	}
 	err := withTestStdin("export-passphrase\n", func() error {
-		return cmdBackupImport(archivePath)
+		return cmdBackupImport([]string{archivePath})
 	})
 	if err == nil {
 		t.Fatal("second cmdBackupImport() error = nil, want duplicate rejection")
@@ -222,7 +222,7 @@ func TestCmdBackupImportUsesManagedBackupDir(t *testing.T) {
 	}
 
 	if err := withTestStdin("export-passphrase\n", func() error {
-		return cmdBackupImport(archivePath)
+		return cmdBackupImport([]string{archivePath})
 	}); err != nil {
 		t.Fatalf("cmdBackupImport() error = %v", err)
 	}

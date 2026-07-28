@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,5 +154,84 @@ func TestCmdBackupDeleteCancellationSkipsIPCDelete(t *testing.T) {
 	}
 	if fake.deleteBackupRequest.ArchivePath != "" {
 		t.Fatalf("delete request = %+v, want no delete request", fake.deleteBackupRequest)
+	}
+}
+
+// TestConfirmUnverifiedTemplateProvenance covers the operator decision that
+// replaces an unconditional import failure when the TEAL compiler is
+// unreachable. The keys themselves already validated; only the bundled
+// templates' correspondence to them is unproven.
+func TestConfirmUnverifiedTemplateProvenance(t *testing.T) {
+	report := &backup.VerifyReport{
+		TotalFiles:                 2,
+		ValidFiles:                 2,
+		ProvenanceUnavailableFiles: 1,
+		Results: []backup.VerifyResult{
+			{FileName: "A.apb", Valid: true},
+			{
+				FileName:                      "B.apb",
+				Valid:                         true,
+				TemplateProvenanceUnavailable: true,
+				TemplateProvenanceNote:        "bundled template provenance could not be verified: connection refused",
+			},
+		},
+	}
+
+	oldReader := stdinReader
+	t.Cleanup(func() { stdinReader = oldReader })
+
+	t.Run("declined", func(t *testing.T) {
+		stdinReader = bufio.NewReader(strings.NewReader("n\n"))
+		err := confirmUnverifiedTemplateProvenance(report, false)
+		if err == nil {
+			t.Fatal("declining the prompt still imported the backup")
+		}
+		if !strings.Contains(err.Error(), "cancelled") ||
+			!strings.Contains(err.Error(), "--accept-unverified-template-provenance") {
+			t.Fatalf("error = %v, want a cancellation naming the override flag", err)
+		}
+	})
+
+	t.Run("accepted at the prompt", func(t *testing.T) {
+		stdinReader = bufio.NewReader(strings.NewReader("y\n"))
+		if err := confirmUnverifiedTemplateProvenance(report, false); err != nil {
+			t.Fatalf("accepting the prompt failed the import: %v", err)
+		}
+	})
+
+	t.Run("pre-accepted by flag without prompting", func(t *testing.T) {
+		// No stdin available: a scripted run must not block on the prompt.
+		stdinReader = bufio.NewReader(strings.NewReader(""))
+		if err := confirmUnverifiedTemplateProvenance(report, true); err != nil {
+			t.Fatalf("--accept-unverified-template-provenance failed the import: %v", err)
+		}
+	})
+}
+
+func TestBackupImportRejectsUnknownOption(t *testing.T) {
+	err := cmdBackupImport([]string{"backup.tar.gz", "--not-a-flag"})
+	if err == nil || !strings.Contains(err.Error(), "unknown backup import option") {
+		t.Fatalf("cmdBackupImport(unknown option) error = %v, want rejection", err)
+	}
+}
+
+func TestBackupImportAcceptsFlagBeforeOrAfterPath(t *testing.T) {
+	// The flag must not be mistaken for the archive path in either order;
+	// both forms should reach the same missing-source rejection.
+	for _, args := range [][]string{
+		{"--accept-unverified-template-provenance", filepath.Join(t.TempDir(), "missing.tar.gz")},
+		{filepath.Join(t.TempDir(), "missing.tar.gz"), "--accept-unverified-template-provenance"},
+	} {
+		err := cmdBackupImport(args)
+		if err == nil || !strings.Contains(err.Error(), "backup source unavailable") {
+			t.Fatalf("cmdBackupImport(%v) error = %v, want missing-source rejection", args, err)
+		}
+	}
+}
+
+func TestBackupImportRequiresArchivePath(t *testing.T) {
+	err := cmdBackupImport([]string{"--accept-unverified-template-provenance"})
+	if err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("cmdBackupImport(flag only) error = %v, want usage", err)
 	}
 }

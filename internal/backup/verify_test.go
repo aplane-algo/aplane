@@ -5,10 +5,15 @@ package backup
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -584,5 +589,222 @@ func sealTestArchiveManifest(t *testing.T, root string) {
 		[]byte("export-passphrase"),
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
+	}
+}
+
+// unreachableCompileClient models a TEAL compiler that cannot be reached.
+func unreachableCompileClient(t *testing.T) *algod.Client {
+	t.Helper()
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, unreachableCompileTransport{})
+	if err != nil {
+		t.Fatalf("MakeClientWithTransport() error = %v", err)
+	}
+	return client
+}
+
+type unreachableCompileTransport struct{}
+
+func (unreachableCompileTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("dial tcp: connect: connection refused")
+}
+
+// stageBundledTemplateArchive stages an archive whose key bundles a template,
+// returning the archive root and the bytecode the template must reproduce.
+func stageBundledTemplateArchive(t *testing.T) (string, []byte) {
+	t.Helper()
+	backupRoot := t.TempDir()
+	keysDir := filepath.Join(backupRoot, "apb")
+	compiled := compiledPushbytesSaltBytecode(0)
+	storedBytecode, address := saltedBytecodeForTest(t, compiled)
+	keyJSON := genericLSigKeyJSONForTest(t, address, "test.verify-template.v1", storedBytecode, nil)
+	bundleJSON := backupBundleForTest(t, keyJSON, genericTemplateYAMLForTest("verify-template"))
+	if err := os.MkdirAll(keysDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), bundleJSON, []byte("export-passphrase")); err != nil {
+		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+	}
+	sealTestArchiveManifest(t, backupRoot)
+	return backupRoot, compiled
+}
+
+// TestDeepVerifyReportsUnreachableCompilerAsProvenanceUnavailable pins the
+// distinction the import gate depends on: a compiler that cannot answer is
+// absence of evidence, so the key stays valid and the archive is merely
+// flagged. A template that compiles into the wrong bytecode is evidence of a
+// real problem and must stay a hard failure — covered by the mismatch test.
+func TestDeepVerifyReportsUnreachableCompilerAsProvenanceUnavailable(t *testing.T) {
+	backupRoot, _ := stageBundledTemplateArchive(t)
+
+	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
+		ValidateBundledTemplateBytecode: true,
+		AlgodClient:                     unreachableCompileClient(t),
+	})
+	if err != nil {
+		t.Fatalf("DeepVerifyBackupWithOptions() error = %v", err)
+	}
+	if report.FailedFiles != 0 || report.ValidFiles != 1 {
+		t.Fatalf("report = %+v, want the key valid despite an unreachable compiler", *report)
+	}
+	if report.ProvenanceUnavailableFiles != 1 {
+		t.Fatalf("ProvenanceUnavailableFiles = %d, want 1", report.ProvenanceUnavailableFiles)
+	}
+	if !report.Results[0].TemplateProvenanceUnavailable || report.Results[0].TemplateProvenanceNote == "" {
+		t.Fatalf("result = %+v, want a provenance-unavailable note", report.Results[0])
+	}
+}
+
+// TestDeepVerifyKeepsBytecodeMismatchFatal proves the promptable path cannot
+// swallow a genuine mismatch: the key fails and is never reported as merely
+// unverifiable.
+func TestDeepVerifyKeepsBytecodeMismatchFatal(t *testing.T) {
+	backupRoot, compiled := stageBundledTemplateArchive(t)
+	wrong := append([]byte(nil), compiled...)
+	wrong[len(wrong)-1] ^= 0xff
+
+	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
+		ValidateBundledTemplateBytecode: true,
+		AlgodClient:                     compileMockClient(t, wrong),
+	})
+	if err != nil {
+		t.Fatalf("DeepVerifyBackupWithOptions() error = %v", err)
+	}
+	if report.FailedFiles != 1 {
+		t.Fatalf("report = %+v, want the mismatched key to fail", *report)
+	}
+	if report.ProvenanceUnavailableFiles != 0 || report.Results[0].TemplateProvenanceUnavailable {
+		t.Fatalf("a bytecode mismatch was reported as merely unverifiable: %+v", report.Results[0])
+	}
+}
+
+// TestDeepVerifyReportsMissingCompilerClientAsUnavailable covers the
+// no-client-configured path through the same classification.
+func TestDeepVerifyReportsMissingCompilerClientAsUnavailable(t *testing.T) {
+	backupRoot, _ := stageBundledTemplateArchive(t)
+
+	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
+		ValidateBundledTemplateBytecode: true,
+	})
+	if err != nil {
+		t.Fatalf("DeepVerifyBackupWithOptions() error = %v", err)
+	}
+	if report.FailedFiles != 0 || report.ProvenanceUnavailableFiles != 1 {
+		t.Fatalf("report = %+v, want provenance unavailable without a client", *report)
+	}
+}
+
+// rejectingCompileTransport models a compiler that answers, refusing the
+// template's TEAL. This is the seam where an outage must not be inferred.
+type rejectingCompileTransport struct{}
+
+func (rejectingCompileTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(bytes.NewReader([]byte(`{"message":"TEAL program failed to compile"}`))),
+		Request:    req,
+	}, nil
+}
+
+func rejectingCompileClient(t *testing.T) *algod.Client {
+	t.Helper()
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, rejectingCompileTransport{})
+	if err != nil {
+		t.Fatalf("MakeClientWithTransport() error = %v", err)
+	}
+	return client
+}
+
+// TestDeepVerifyKeepsCompilerRejectionFatal pins the boundary the import
+// prompt depends on: a compiler that answers by refusing the template is
+// evidence of a bad archive, not absence of evidence, so it must fail the key
+// rather than become promptable.
+func TestDeepVerifyKeepsCompilerRejectionFatal(t *testing.T) {
+	backupRoot, _ := stageBundledTemplateArchive(t)
+
+	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
+		ValidateBundledTemplateBytecode: true,
+		AlgodClient:                     rejectingCompileClient(t),
+	})
+	if err != nil {
+		t.Fatalf("DeepVerifyBackupWithOptions() error = %v", err)
+	}
+	if report.FailedFiles != 1 {
+		t.Fatalf("report = %+v, want a compiler rejection to fail the key", *report)
+	}
+	if report.ProvenanceUnavailableFiles != 0 || report.Results[0].TemplateProvenanceUnavailable {
+		t.Fatalf("a compiler rejection was reported as merely unverifiable: %+v", report.Results[0])
+	}
+}
+
+// TestDeepVerifyKeepsMalformedBundledTemplateFatal covers template content
+// rejected before the compile path is entered (the bundled-template gate
+// catches "teal is required"), confirming that gate still fails the key
+// rather than deferring to the promptable path.
+func TestDeepVerifyKeepsMalformedBundledTemplateFatal(t *testing.T) {
+	backupRoot := t.TempDir()
+	keysDir := filepath.Join(backupRoot, "apb")
+	compiled := compiledPushbytesSaltBytecode(0)
+	storedBytecode, address := saltedBytecodeForTest(t, compiled)
+	keyJSON := genericLSigKeyJSONForTest(t, address, "test.verify-template.v1", storedBytecode, nil)
+	// Parses as a template document but fails the stricter spec validation
+	// inside the compile path.
+	malformed := []byte("schema_version: 1\nderivation_version: 1\ntemplate_type: generic\n" +
+		"template_mode: generated\npublisher: test\nfamily: verify-template\nversion: 1\n" +
+		"display_name: Broken\ndescription: Missing TEAL\n")
+	bundleJSON := backupBundleForTest(t, keyJSON, malformed)
+	if err := os.MkdirAll(keysDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), bundleJSON, []byte("export-passphrase")); err != nil {
+		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+	}
+	sealTestArchiveManifest(t, backupRoot)
+
+	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
+		ValidateBundledTemplateBytecode: true,
+		AlgodClient:                     compileMockClient(t, compiled),
+	})
+	if err != nil {
+		t.Fatalf("DeepVerifyBackupWithOptions() error = %v", err)
+	}
+	if report.FailedFiles != 1 {
+		t.Fatalf("report = %+v, want malformed template content to fail the key", *report)
+	}
+	if report.ProvenanceUnavailableFiles != 0 || report.Results[0].TemplateProvenanceUnavailable {
+		t.Fatalf("malformed template content was reported as merely unverifiable: %+v", report.Results[0])
+	}
+}
+
+// TestIsCompilerUnreachableClassification pins the contract the import prompt
+// rests on. Only transport-shaped failures are absence of evidence; anything
+// the compiler or the template itself produced is evidence and stays fatal.
+func TestIsCompilerUnreachableClassification(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"connection refused", &url.Error{Op: "Post", URL: "http://algod", Err: errors.New("connect: connection refused")}, true},
+		{"dns failure", &url.Error{Op: "Post", URL: "http://algod", Err: &net.DNSError{Err: "no such host"}}, true},
+		{"bare net error", &net.DNSError{Err: "no such host"}, true},
+		{"deadline exceeded", context.DeadlineExceeded, true},
+		{"canceled", context.Canceled, true},
+		{"wrapped transport failure", fmt.Errorf("compile: %w", &url.Error{Err: errors.New("refused")}), true},
+
+		// Everything below is the compiler or the template answering.
+		{"compiler rejected the program", errors.New("HTTP 400: TEAL program failed to compile"), false},
+		{"unparseable spec", errors.New("invalid bundled generic template: yaml: line 3"), false},
+		{"invalid spec", errors.New("invalid bundled generic template: teal is required"), false},
+		{"missing public key", errors.New("bundled composed template validation requires public_key"), false},
+		{"bad public key hex", errors.New("invalid public_key: encoding/hex: invalid byte"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isCompilerUnreachable(tc.err); got != tc.want {
+				t.Fatalf("isCompilerUnreachable(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }

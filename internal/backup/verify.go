@@ -7,7 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -31,6 +34,12 @@ type VerifyResult struct {
 	Valid    bool
 	Error    string
 	KeyType  string // Only set for deep verification
+	// TemplateProvenanceUnavailable records that the bundled template could
+	// not be recompiled because the TEAL compiler was unreachable. The key
+	// itself validated; only the template-to-key correspondence is unproven.
+	TemplateProvenanceUnavailable bool
+	// TemplateProvenanceNote explains why the check could not run.
+	TemplateProvenanceNote string
 }
 
 // VerifyReport contains the results of verifying a backup directory
@@ -39,8 +48,17 @@ type VerifyReport struct {
 	TotalFiles  int
 	ValidFiles  int
 	FailedFiles int
-	Results     []VerifyResult
+	// ProvenanceUnavailableFiles counts valid keys whose bundled template
+	// could not be checked because the compiler was unreachable.
+	ProvenanceUnavailableFiles int
+	Results                    []VerifyResult
 }
+
+// ErrTemplateProvenanceUnavailable marks a bundled-template check that could
+// not run because the TEAL compiler was unreachable. It is strictly absence of
+// evidence: a template that compiles and does not match the key's bytecode
+// fails with an ordinary error and is never reported this way.
+var ErrTemplateProvenanceUnavailable = errors.New("bundled template provenance could not be verified")
 
 // DeepVerifyOptions controls optional backup checks that require external
 // services or stricter archive semantics than regular restore needs.
@@ -100,6 +118,11 @@ func DeepVerifyBackupBytes(backupDir string, passphrase []byte, opts DeepVerifyO
 			report.ValidFiles++
 		} else {
 			report.FailedFiles++
+		}
+		// Only valid keys are counted: a key that fails a later check is a
+		// hard failure, not something an operator can decide to accept.
+		if result.Valid && result.TemplateProvenanceUnavailable {
+			report.ProvenanceUnavailableFiles++
 		}
 	}
 
@@ -180,7 +203,13 @@ func verifyFileDeep(backupDir, address string, passphrase []byte, opts DeepVerif
 	}
 
 	if len(payload.LogicSigBytecode) > 0 && opts.ValidateBundledTemplateBytecode && len(templateYAML) > 0 {
-		if err := verifyBundledTemplateMatchesKey(payload, templateYAML, templateType, payload.LogicSigBytecode, address, opts); err != nil {
+		if err := verifyBundledTemplateMatchesKey(payload, templateYAML, templateType, payload.LogicSigBytecode, address, opts); errors.Is(err, ErrTemplateProvenanceUnavailable) {
+			// The key validated; only the template-to-key correspondence is
+			// unproven. Report it so the caller can decide, rather than
+			// failing a key whose own authority is intact.
+			result.TemplateProvenanceUnavailable = true
+			result.TemplateProvenanceNote = err.Error()
+		} else if err != nil {
 			result.Valid = false
 			result.Error = err.Error()
 			return result
@@ -254,7 +283,7 @@ func verifyBundledTemplateMatchesKey(
 	opts DeepVerifyOptions,
 ) error {
 	if opts.AlgodClient == nil {
-		return fmt.Errorf("bundled template validation requires algod client")
+		return fmt.Errorf("%w: no TEAL compiler client is configured", ErrTemplateProvenanceUnavailable)
 	}
 	params := payload.Parameters
 	if params == nil {
@@ -278,7 +307,16 @@ func verifyBundledTemplateMatchesKey(
 		return fmt.Errorf("backup bundle has unsupported template_type %q", templateType)
 	}
 	if err != nil {
-		return err
+		if !isCompilerUnreachable(err) {
+			// The compiler answered, or the template never reached it: an
+			// unparseable spec, an invalid one, a missing public key, or TEAL
+			// the compiler rejected. All of that is evidence of a bad archive
+			// and stays fatal, exactly like wrong bytecode below.
+			return err
+		}
+		// The compiler could not be reached. That is absence of evidence, so
+		// callers may treat it differently.
+		return fmt.Errorf("%w: %v", ErrTemplateProvenanceUnavailable, err)
 	}
 	if !bytes.Equal(compiledBytecode, storedBytecode) {
 		return fmt.Errorf("bundled template does not reproduce key bytecode for %s", payload.KeyType)
@@ -335,4 +373,28 @@ func compileBundledComposedTemplate(ctx context.Context, templateYAML []byte, pu
 		return nil, "", fmt.Errorf("failed to derive bundled composed template LogicSig: %w", err)
 	}
 	return bytecode, address, nil
+}
+
+// isCompilerUnreachable reports whether err means the TEAL compiler could not
+// be reached at all, as opposed to answering.
+//
+// The distinction is load-bearing: only an unreachable compiler is absence of
+// evidence. A compiler that rejects the template's TEAL, a spec that fails to
+// parse or validate, and a payload missing the public key its template needs
+// are all evidence of a bad archive and must stay fatal. Classifying by
+// transport shape keeps content failures on the fatal path even though they
+// surface through the same call.
+func isCompilerUnreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }
