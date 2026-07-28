@@ -69,6 +69,17 @@ func cmdGenerations(args []string) error {
 		default:
 			return fmt.Errorf("usage: apstore generations prune [--all-priors]")
 		}
+		// Pruning deletes rollback targets; the operator confirms the
+		// destructive consequence before any gate that could succeed.
+		if retainRollbackParent {
+			if !confirmYesNo("Prune deletes sealed prior generations except the rollback target (the current generation's parent). Deleted generations cannot be recovered. Proceed? ") {
+				return fmt.Errorf("prune cancelled")
+			}
+		} else {
+			if !confirmYesNo("Prune --all-priors deletes ALL prior generations, including the rollback target for the most recent operation. Rollback becomes impossible and the deletion cannot be undone. Proceed? ") {
+				return fmt.Errorf("prune cancelled")
+			}
+		}
 		if !retainRollbackParent {
 			if err := verifyCurrentGenerationContent(paths, identityID); err != nil {
 				return err

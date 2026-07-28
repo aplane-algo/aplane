@@ -1173,6 +1173,13 @@ specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
   staging residue (they are never resumed), validates the selected
   generation, and confirms the `CURRENT` flip's durability; any failure
   holds the identity in recovery mode with nothing deleted
+- the outgoing generation is sealed immediately before the `CURRENT` flip,
+  so a crash in that window leaves a seal on a generation that is still
+  current. The precommit seal is tolerated: nothing consults a seal while
+  its generation is current, current-generation validation ignores it, and
+  the next flip rewrites it from a fresh inventory. The
+  published-but-uncommitted successor from the same window is discarded by
+  reconciliation
 
 ### Policy File (`policy.yaml`)
 
@@ -2543,9 +2550,12 @@ Local rescue surface:
 - `apstore verify` is a read-only local archive inspection command
 - `apstore generations list` inspects the generation chain;
   `apstore generations prune [--all-priors]` deletes sealed prior
-  generations after validating the current one. Passphrase rotation requires
-  generation quiescence (no generation other than the current one), so
-  `generations prune --all-priors` may be required before `changepass`
+  generations after validating the current one and asking for explicit
+  confirmation — pruning permanently deletes rollback targets. Passphrase
+  rotation requires generation quiescence (no generation other than the
+  current one), so `generations prune --all-priors` may be required before
+  `changepass`; the rotation refusal names that command and its
+  consequence
 - `apstore rebuild` refuses to run when the destination identity directory
   already exists and uses the store lock to avoid concurrent signer access
 

@@ -256,7 +256,7 @@ func requireGenerationQuiescence(paths storepaths.Paths, identityID string) erro
 	}
 	if len(extra) > 0 {
 		return fmt.Errorf(
-			"passphrase rotation requires generation quiescence: %d other generation(s) exist (%s); reconcile and collect them first",
+			"passphrase rotation requires generation quiescence: %d other generation(s) exist (%s); run 'apstore generations prune --all-priors' first — this permanently deletes the generation rollback history",
 			len(extra), strings.Join(extra, ", "))
 	}
 	return nil
