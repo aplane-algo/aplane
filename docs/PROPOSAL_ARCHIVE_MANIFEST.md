@@ -60,8 +60,9 @@ the manifest itself is protected under the export passphrase.
 
 - schema + creation metadata,
 - source node role,
-- the complete member inventory: `{path, sha256, size}` for every archive
-  member — `apb/*.apb`, `policy/*`, `README.md` — no exceptions,
+- the complete member inventory: `{path, sha256, size}` for every other
+  archive member — `apb/*.apb`, `policy/*`, `README.md`; the manifest does
+  not inventory itself,
 - the source-context settings embedded inline (the separate file, its
   separate schema, and its standalone size limits disappear; the manifest's
   own size cap bounds them).
@@ -134,6 +135,13 @@ Consequences, stated so nothing more is read into it later:
 - authentication strength equals passphrase secrecy and entropy; Argon2id
   slows brute force, but a weak passphrase yields forging ability along
   with the read ability it already yields,
+- whole-archive substitution survives. The manifest binds an archive's
+  members to each other, not to a filename, a store, or a point in time, so
+  an attacker without the passphrase can still replace one archive with a
+  different complete archive sealed under the same passphrase — an older
+  backup, most usefully, rolling the operator back to a prior key set. The
+  sealed `created_at_unix` and the archive digest reported at review are the
+  operator-visible signals; nothing enforces freshness,
 - authenticated is not safe: source settings remain review context only
   and the policy snapshot is never installed,
 - no trust qualifier survives in the product: an archive is either

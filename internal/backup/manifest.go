@@ -139,12 +139,19 @@ func WriteSealedManifest(
 	if err != nil {
 		return fmt.Errorf("marshal backup manifest: %w", err)
 	}
-	if len(plaintext) > maxSealedManifestBytes {
-		return fmt.Errorf("backup manifest exceeds size limit %d", maxSealedManifestBytes)
-	}
 	sealed, err := crypto.EncryptStandalone(plaintext, exportPassphrase)
 	if err != nil {
 		return fmt.Errorf("seal backup manifest: %w", err)
+	}
+	// The bound is on the sealed bytes, which is what the reader caps. The
+	// envelope base64-encodes the ciphertext inside indented JSON, so a
+	// plaintext-side check would let an archive seal successfully and then
+	// never read back.
+	if len(sealed) > maxSealedManifestBytes {
+		return fmt.Errorf(
+			"sealed backup manifest is %d bytes, over the %d limit; the archive has too many members",
+			len(sealed), maxSealedManifestBytes,
+		)
 	}
 	if err := fsutil.WriteFile(filepath.Join(destDir, ManifestFileName), sealed); err != nil {
 		return fmt.Errorf("write backup manifest: %w", err)
