@@ -1,6 +1,6 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **proposal — phase 1 design-ready; phase 3 blocked on two items**. Amended after three rounds of design review.
+Status: **proposal — phase 1 design-ready; phase 3 blocked on three items**. Amended across four rounds of design review.
 
 Refreshed against the tree after the generation-storage branch merged: the
 design core is unchanged, but the version gate no longer needs a migration
@@ -13,23 +13,32 @@ authorized for current state, losing a property the store has today; and the
 term reference inventory reached past generations to recovered batches,
 sidecars, and deleted archives.
 
-A third round of review then found that the term-scoped authority rule had
-consequences of its own: the rotation transition needs a durable state
-machine with a specified ordering (sidecars re-signed before files, or
-current-term verification fails policy load closed), the rewrap window
+Subsequent rounds found that the term-scoped authority rule had consequences
+of its own: the rotation transition needs a durable state
+machine, the rewrap window
 belongs inside `keyring.enc` rather than in a second record, phase 1-2
 `changepass` must *replace* the term key rather than rewrap it, and the
 seal — not the immutable at-mint manifest — is the term authority for a
 sealed generation. Rollback is no longer deferred: the authority rule
 decides it, and rollback mints a fresh generation rather than repointing.
 
-A third round found two phase-3 blockers, both recorded below: mandatory
-rewrap silently trips the post-activation rollback divergence guard, since
-that guard compares ciphertext digests and a rewrap changes every one of
-them; and the passphrase-helper failure contract had to be rewritten, since
-the atomic root makes the old "restore the prior state" behavior
-impossible. **Phase 1 is design-ready and reviewable on its own; phase 3
-should not start until those two are settled.**
+Later rounds turned the transition into a specified state machine and then
+found what that machine still admitted. **Phase 1 is design-ready and
+reviewable on its own. Phase 3 is blocked on three items, all recorded
+below:**
+
+- **the cutover snapshot** — without an authenticated record of exactly what
+  the rewrap may consume, an attacker holding a retired term can inject
+  material during the window and have the rewrap launder it into the new
+  term;
+- **historical anchors** — `seal.json` is unkeyed, so a retired term can
+  forge a sealed generation and recompute its seal, which mint-on-rollback
+  would then bless under the current term;
+- **the divergence baseline** — mandatory rewrap changes every ciphertext
+  digest and so trips the post-activation rollback guard, which compares
+  those digests against the at-mint manifest.
+
+The passphrase-helper contract and the resume path are decided, not blocked.
 
 ## Problem
 
@@ -188,9 +197,10 @@ can reconstruct that term.**
   credentials as the current generation, under its original terms.
   Rewrapping only the current generation therefore does not remove that
   material from reach.
-- Consequently a term is referenced until **every** generation that retains
-  a file under it is gone. Term retention is bounded by generation
-  retention, not by rewrap.
+- Consequently a term is referenced until **every durable object** holding a
+  file under it is gone — retained generations, but also recovered batches,
+  policy and node-role sidecars, and any recoverable `deleted/` object. Term
+  retention is bounded by that whole inventory, not by rewrap.
 
 ### Decryptable is not authorized
 
@@ -231,8 +241,9 @@ two-record crash window at the same root this design just consolidated.
 
 Keeping the window in the keyring makes each step individually crash-safe
 and gives resumption a single source of truth: whoever reads the keyring
-sees the pending transition, and `retiring_terms` being a set handles
-overlapping interrupted rotations.
+sees the pending transition. `retiring_terms` is a set because a single
+transition can retire several terms at once, not because rotations may
+overlap — appending while a window is open is forbidden.
 
 `OpenCurrent` is therefore defined as *consulting the durable current
 authority* — `current_term` plus any `retiring_terms` — not as a literal
@@ -269,11 +280,16 @@ half-finished state visible to the next reader.
    reversed, because reversing it would mean rewrapping the root back under
    the old KEK and un-appending the term, a compensating write with its own
    crash story and no safe answer for a crash midway through it. A helper
-   write that fails after step 1 is reported loudly and retried; the root
-   is not rolled back. The crash boundary is stated honestly rather than
-   hidden: crash after the root commits but before the helper updates
-   leaves auto-unlock failing until the helper is refreshed, and manual
-   entry of the **new** passphrase resumes.
+   write that fails after step 1 is a **post-commit warning, never a
+   barrier**: the cryptographic transition completes using the manually
+   supplied new passphrase, and auto-unlock stays unavailable until the
+   helper is repaired separately. Making helper success a prerequisite for
+   resume would deadlock the identity — every mutation except resume is
+   blocked while the window is open, so a broken helper could leave a store
+   that can neither finish rotating nor repair the helper. The crash
+   boundary is stated rather than hidden: a crash after the root commits but
+   before the helper updates leaves auto-unlock failing until the helper is
+   refreshed, and manual entry of the **new** passphrase resumes.
 
    (The alternative — write the helper before step 1 — is also defensible,
    since helper-new/root-old is recoverable by falling back to prompting.
@@ -314,6 +330,65 @@ only mutation an open window permits.
 This is also the ordering the promised TLA+ module should check; the
 generation commit model is a working template for exactly this shape.
 
+### The cutover snapshot
+
+Three separate problems below want the same record, so the design commits
+one authenticated **cutover snapshot** as part of step 1's atomic write.
+
+**Why it is required (the laundering attack).** The window deliberately
+authorizes retiring terms for reads, so the rewrap pass will decrypt
+anything encrypted under one. An attacker holding a compromised old term
+and filesystem write access can therefore write a forged credential or
+template under the retiring term, let the rewrap pass decrypt it, and have
+the pass re-seal it under the new term — after which it passes the final
+"everything is on the target term" check and is permanently blessed under
+the uncompromised term. Blocking daemon mutations does not help: an attacker
+writing files directly bypasses the daemon entirely.
+
+The snapshot defines the security cutover. It records, AEAD-authenticated:
+
+- the exact paths and ciphertext digests the transition is permitted to
+  rewrap — current-generation keys and templates, recovered batches, policy
+  and node-role bytes and their sidecars, and any other mutable live term
+  consumer;
+- for each generation, the **clean-or-diverged decision made before any
+  rewrap** (see the divergence guard below);
+- the effective starting baseline for that decision.
+
+Rewrap then accepts only those exact bytes. Anything added, removed, or
+altered after the snapshot fails closed, and the final check proves a
+one-to-one transformation from the committed inputs to target-term outputs
+rather than merely inspecting output term numbers. Compromise *before* the
+snapshot is not defended against — that is what the cutover means — but
+nothing injected after it can be laundered into the new term.
+
+Recording the clean/diverged decision here is also what makes resume
+correct: a crash mid-rewrap leaves ciphertext matching neither the manifest
+nor the final baseline, so without a durable decision the resuming process
+cannot tell whether recording a clean baseline would erase pre-existing
+divergence.
+
+### Retained sealed generations need an authenticity anchor
+
+Adding `Term` to each `InventoryEntry` prevents accidental GC mistakes. It
+does not prevent malicious modification, because `seal.json` is unkeyed:
+`WriteSeal` writes plain JSON and `ValidateSealed` merely recomputes the
+inventory and compares (`slices.Equal(live, seal.Inventory)`). An attacker
+holding a retired term can therefore forge that generation's ciphertext and
+recompute its seal to match — and mint-on-rollback would then validate the
+forgery and re-encrypt it under the current term, which is the laundering
+attack again by a historical route.
+
+At the rotation cutover, record authenticated digests of every retained
+sealed generation inside the new `keyring.enc`, and carry those anchors
+forward while the generation is retained. `OpenSealed` and rollback require
+**both** ordinary seal validation and equality with the anchor. Generations
+created after the rotation are written under an uncompromised term and can
+be anchored when that term is itself retired.
+
+This is the same shape as the cutover snapshot — the store's authenticated
+root vouching for material that unkeyed integrity checks cannot.
+
 ### Rewrap versus the rollback divergence guard
 
 These two mechanisms collide, and the collision is silent. The guard added
@@ -333,14 +408,34 @@ generated a key or installed a template after the activation — from
 guard exists to protect. The rewrap pass:
 
 - determines the generation's clean/diverged state **before** rewrapping;
-- if it was clean, records an authenticated post-rewrap baseline (keyed by
-  generation ID, AEAD-protected inside `keyring.enc` — it must not be
-  forgeable, or divergence becomes assertable by anyone who can write to
-  the store);
+- if it was clean, records an authenticated post-rewrap baseline keyed by
+  generation ID;
 - if it was already diverged, records nothing: a diverged generation must
   never become clean again;
 - and the guard consults that effective baseline rather than the manifest
   whenever one exists.
+
+**The baseline must be unforgeable in a specific direction.** An earlier
+draft justified authentication by "divergence becomes assertable by anyone
+who can write to the store" — but forged *divergence* only denies rollback,
+which is fail-closed and harmless. The dangerous forgery is asserting
+*cleanness* over a genuinely diverged generation: rollback would then
+proceed and silently discard credentials generated after the activation,
+which is exactly what the guard exists to prevent. Authentication is
+required in that direction.
+
+**Where it lives is a real choice.** Inside `keyring.enc` the root becomes
+O(current-generation inventory) rather than O(terms), and the root is
+rewritten atomically on every transition. A separate file sealed under a
+term key avoids that growth, and the two-record objection does not apply
+here: its absence fails closed, since the guard falls back to the manifest
+and refuses. Given the size implication, prefer the separate sealed file and
+keep the root small; either is defensible, but the choice should be
+conscious.
+
+**Lifecycle:** a baseline is superseded at the next mint, when the fresh
+manifest resumes authority, and baselines for superseded generations are
+dropped.
 
 A plaintext semantic inventory would also work but needs leakage analysis
 first — it would describe active credential structure in the clear.
@@ -498,7 +593,11 @@ accepts everywhere else.
    | `WithMasterKey` callers | 99 | `WithKeyring` |
 
    `EncryptedDataMasterKey` already carries `envelope_version: 1`, so the
-   term is a header field added beside it. With no migration the envelope
+   term is a header field added beside it. Bind the header into the GCM
+   additional authenticated data while making that change: header integrity
+   is otherwise only emergent (tampering surfaces as a failed decrypt under
+   the wrong key), and AAD binding makes it cryptographic for one line in an
+   envelope change that is happening anyway. With no migration the envelope
    need not stay backward-readable: v4 reads only what v4 wrote.
 
    Correction to the original scoping: **caches are not in the blast
@@ -634,8 +733,9 @@ accepts everywhere else.
    precisely the person a passphrase change is performed for, so shipping
    rewrap-only would silently redefine the operation.
 
-   Appending a term protects new writes; rewrapping the current generation
-   under the new term removes the live active store from reach. Reaching
+   Appending a term protects new writes; rewrapping removes the mutable live
+   store from reach — not only the current generation's keys and templates
+   but recovered batches, policy and node-role bytes, and their sidecars. Reaching
    that state is no longer atomic — and no longer needs to be, because a
    partially rewrapped store is a legal state: every file is wholly under
    one term at every instant, so an interrupted rewrap is resumable rather
@@ -684,8 +784,11 @@ accepts everywhere else.
    not need to be: their terms stay in the keyring, so they remain readable
    as rollback targets.
 
-   Interrupted rewrap should report how many files remain on the previous
-   term, and re-running `changepass` (or the same pass) finishes the job.
+   An interrupted rewrap reports how many files remain on the previous term.
+   It is finished by the automatic resume at the next unlock, not by
+   re-running `changepass`, which rejects an unchanged passphrase. Expect
+   that unlock to take longer than usual while the remainder completes
+   before the identity is enabled — long, not hung.
 
 ## Rough effort
 
