@@ -2448,8 +2448,8 @@ Live signer-managed restore:
 - review revalidates the batch and current destination state, foregrounds
   security-bearing policy differences and the effective destination
   `user_auto_approve` mode, fingerprints active conflicts, and returns an
-  opaque review token, and the archive's packaging time from its sealed
-  manifest. Authentication proves who packaged an archive, never when, so
+  opaque review token together with the archive's packaging time from its
+  sealed manifest. Authentication proves who packaged an archive, never when, so
   the packaging time is what lets an operator notice an archive older than
   the one they meant to activate — the substitution the manifest cannot
   prevent. Source context is reported as typed fields

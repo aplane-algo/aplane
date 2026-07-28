@@ -32,6 +32,7 @@ func TestProtocolReviewRecoveredResultCopiesTypedSourceContext(t *testing.T) {
 	result := adminproto.ReviewRecoveredResult{
 		Success:                      true,
 		UnattendedSigningAckRequired: true,
+		ArchiveCreatedAtUnix:         1_700_000_000,
 		SourceUserAutoApprove:        &autoApprove,
 		SourceGenesisHashMappings: []adminproto.RecoveryGenesisHashMapping{{
 			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
@@ -42,6 +43,10 @@ func TestProtocolReviewRecoveredResultCopiesTypedSourceContext(t *testing.T) {
 		}},
 	}
 	message := ProtocolReviewRecoveredResultMessage("review-1", result)
+	if message.ArchiveCreatedAtUnix != 1_700_000_000 {
+		t.Fatalf("ArchiveCreatedAtUnix = %d, want the archive packaging time copied to the wire",
+			message.ArchiveCreatedAtUnix)
+	}
 	if message.SourceUserAutoApprove == nil ||
 		*message.SourceUserAutoApprove ||
 		len(message.SourceGenesisHashMappings) != 1 ||

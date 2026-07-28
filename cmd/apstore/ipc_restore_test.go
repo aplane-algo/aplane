@@ -492,7 +492,7 @@ func TestFormatRecoveredReviewSectionsMarksUnavailableComparison(t *testing.T) {
 	}
 }
 
-func TestPrintRecoveredReviewShowsArchivePackagingTime(t *testing.T) {
+func TestFormatArchiveTime(t *testing.T) {
 	if got := formatArchiveTime(1_700_000_000); got != "2023-11-14 22:13:20 UTC" {
 		t.Fatalf("formatArchiveTime = %q, want a UTC timestamp", got)
 	}

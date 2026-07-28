@@ -463,6 +463,13 @@ func TestReviewRecoveredCarriesAuthenticatedSourceSettings(t *testing.T) {
 		review.SourceGenesisHashMappings[0].Network != "private-network" {
 		t.Fatalf("ReviewRecovered() source settings = %+v", review)
 	}
+	// The archive's packaging time reaches review: it is the operator's
+	// only signal against substitution of an older archive sealed under the
+	// same passphrase. The fixture seals its manifest at this timestamp.
+	if review.ArchiveCreatedAtUnix != 1_700_000_000 {
+		t.Fatalf("ArchiveCreatedAtUnix = %d, want the archive's sealed packaging time",
+			review.ArchiveCreatedAtUnix)
+	}
 	ir.Config().SetUserAutoApprove(true)
 	autoApproveReview := service.ReviewRecovered(ir, recoverResult.RestoreID)
 	if autoApproveReview.DestinationApprovalMode != adminproto.DestinationApprovalAutoApproveFallback ||

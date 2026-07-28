@@ -286,8 +286,8 @@ mode.
   role and policy status/digest, and entry count
 - `review_recovered`: `restore_id` -> `review_recovered_result`: `success`,
   restore/batch state, archive and policy digests, optional
-  `archive_created_at` (the packaging time from the archive's sealed
-  manifest), destination approval mode,
+  `archive_created_at` (Unix seconds; the packaging time recorded in the
+  archive's sealed manifest), destination approval mode,
   optional unattended-signing warning, factual policy comparison, ordered
   `security_changes[]`, secondary
   `changed_paths[]`, optional Boolean
