@@ -1,6 +1,6 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **proposal — not yet accepted; amended after two design reviews**.
+Status: **proposal — phase 1 design-ready; phase 3 blocked on two items**. Amended after three rounds of design review.
 
 Refreshed against the tree after the generation-storage branch merged: the
 design core is unchanged, but the version gate no longer needs a migration
@@ -22,6 +22,14 @@ belongs inside `keyring.enc` rather than in a second record, phase 1-2
 seal — not the immutable at-mint manifest — is the term authority for a
 sealed generation. Rollback is no longer deferred: the authority rule
 decides it, and rollback mints a fresh generation rather than repointing.
+
+A third round found two phase-3 blockers, both recorded below: mandatory
+rewrap silently trips the post-activation rollback divergence guard, since
+that guard compares ciphertext digests and a rewrap changes every one of
+them; and the passphrase-helper failure contract had to be rewritten, since
+the atomic root makes the old "restore the prior state" behavior
+impossible. **Phase 1 is design-ready and reviewable on its own; phase 3
+should not start until those two are settled.**
 
 ## Problem
 
@@ -75,9 +83,11 @@ term key   --encrypts--> individual store files
 - **Passphrase change** = re-derive the KEK from the new passphrase and
   rewrap `keyring.enc`. Genuinely one durable single-file write
   (`fsutil.WriteFileDurable`) now that the keyring is the only root — atomic
-  today, no new machinery. Data files untouched by the passphrase change
-  itself; the term append and rewrap that accompany it are separate steps
-  (open question 5).
+  today, no new machinery. This bullet describes the root write in
+  isolation, as a decomposition aid — it is not a shippable operation on its
+  own. A passphrase change always appends a term and rewraps (open question
+  5), and step 1 of "The rotation transition" fuses the append into this
+  same single write.
 - **Master-key rotation** = append term N+1 to the keyring. New/updated files
   encrypt under the newest term. Old terms are never deleted while any file
   references them.
@@ -111,10 +121,19 @@ term key   --encrypts--> individual store files
   But the manifest is an immutable at-mint record while the current
   generation keeps changing under it — files added, removed, and rewrapped —
   so a mint-time term set goes stale immediately. Authority by object:
-  - **sealed generations**: the `Terms` set computed at seal time and
-    recorded in `seal.json`, which the seal's own digest then covers;
-  - **the current generation and `RetainedUnsealedParent`**: a live scan,
-    since both are mutable;
+  - **sealed generations**: the term set fixed at seal time — but recorded
+    as a `Term` on each applicable `InventoryEntry`, **not** as a standalone
+    `Terms` field. An earlier draft claimed a standalone field would be
+    covered by "the seal's own digest"; there is no such digest.
+    `ValidateSealed` rebuilds the inventory and compares it entry by entry
+    (`slices.Equal(live, seal.Inventory)`), so a term carried inside each
+    entry is verified by that existing comparison, while a separate field
+    would be trusted unverified. GC must never trust a standalone `Terms`
+    value merely because it appears in a seal;
+  - **the current generation**: a live scan, since it is mutable;
+  - **`RetainedUnsealedParent`**: a live scan too — not because it is
+    mutable, but because being unsealed it has no seal-time term record at
+    all;
   - **recovered batches, sidecars, and recoverable `deleted/` objects**:
     their own scans.
 
@@ -193,8 +212,8 @@ The keyring exposes distinct authorities rather than one `Open`:
 
 | Context | Authorized terms |
 |---|---|
-| New and current-generation writes | newest only |
-| Reads during the rewrap window | current plus the terms being retired |
+| New and current-generation writes | `current_term` only |
+| Reads and sidecar verification during the rewrap window | `current_term` plus `retiring_terms` |
 | Opening a **validated sealed** generation | the historical terms that generation's seal covers |
 | Live policy / node-role sidecars | the designated current integrity term only |
 
@@ -235,31 +254,101 @@ step. Ordering matters because current-term-only authority makes each
 half-finished state visible to the next reader.
 
 1. Under the identity mutation lock, atomically write the keyring under the
-   new KEK containing the appended term and
-   `rewrap_pending:{from, to}`. One durable write; the root stays
-   self-consistent.
-2. Update the configured passphrase helper, with defined behavior if that
-   write fails — today a helper failure restores the prior state.
-3. **Re-sign the live integrity sidecars** under the new integrity term.
-   This must precede file rewrap: current-term-only verification would
-   otherwise reject sidecars still carrying the retiring term, failing
-   policy load closed at the next unlock. The window authorizes *both*
-   current and retiring terms for sidecar verification while it is open,
-   which is what makes this step interruptible.
-4. Rewrap every mutable live consumer — not only the current generation's
-   keys and templates, but recovered batches and any other object encrypted
-   under a term (see the reference inventory).
+   new KEK with the appended term **already promoted**:
+   `current_term = to`, `retiring_terms = {from}`, `rewrap_pending`. One
+   durable write. From this instant `Seal` and `SignIntegrity` use the
+   target term, and the window authorizes reads and sidecar verification
+   under `current_term ∪ retiring_terms`.
+
+   Promotion belongs here, not at the end. An earlier draft appended at
+   step 1 and promoted at step 5, which left steps 3-4 with no coherent
+   write authority: writing the target term would violate "current only,"
+   and writing the old current term would make the rewrap a no-op.
+2. Coordinate the passphrase helper. **Step 1 is the point of no return** —
+   once the root is committed the transition is only ever completed, never
+   reversed, because reversing it would mean rewrapping the root back under
+   the old KEK and un-appending the term, a compensating write with its own
+   crash story and no safe answer for a crash midway through it. A helper
+   write that fails after step 1 is reported loudly and retried; the root
+   is not rolled back. The crash boundary is stated honestly rather than
+   hidden: crash after the root commits but before the helper updates
+   leaves auto-unlock failing until the helper is refreshed, and manual
+   entry of the **new** passphrase resumes.
+
+   (The alternative — write the helper before step 1 — is also defensible,
+   since helper-new/root-old is recoverable by falling back to prompting.
+   What is not available is the pre-amendment behavior of restoring the
+   prior state, which the atomic root makes impossible.)
+3. Re-sign the live integrity sidecars under the target term.
+4. Rewrap every mutable live consumer — the current generation's keys and
+   templates, recovered batches, and any other object encrypted under a
+   term (see the reference inventory).
+
+   Steps 3 and 4 may run in either order. The window authorizes retiring
+   terms for both file reads and sidecar verification, so neither ordering
+   fails closed at an intervening unlock; the binding invariant is simply
+   that **both are on the target term before the window closes**. An
+   earlier draft justified sidecars-first by a fail-closed risk that the
+   window's own coverage had already eliminated.
 5. Verify every required object is on the target term, then atomically
-   promote `current_term` and clear `rewrap_pending`.
+   clear `retiring_terms` and `rewrap_pending`. This step promotes
+   nothing — promotion happened at step 1.
 
 After a crash the new passphrase **resumes the existing transition** — it
-must not append a further term. Signing stays blocked while the window is
-open: the window deliberately authorizes retiring terms, which is precisely
-the forgery exposure current-term authority exists to close, so it must not
-overlap with live signing.
+must not append a further term. Resume runs automatically at unlock, before
+the identity is enabled, rather than through an operator command:
+`changepass` rejects an unchanged passphrase
+(`storeadmin/service.go`: "new passphrase must be different from current
+passphrase"), so "re-run changepass" is not actually available as a resume
+path. If resume fails, the identity surfaces a rotation-pending recovery
+status.
+
+**An open window blocks every identity mutation, not only signing.** Signing
+is blocked because the window deliberately authorizes retiring terms, which
+is the exposure current-term authority exists to close. But a mint during
+the window would copy mixed-term files into a child under ambiguous write
+authority, and a rollback-mint "re-encrypted under the current term" is
+ambiguous while `retiring_terms` is non-empty. Resuming the rewrap is the
+only mutation an open window permits.
 
 This is also the ordering the promised TLA+ module should check; the
 generation commit model is a working template for exactly this shape.
+
+### Rewrap versus the rollback divergence guard
+
+These two mechanisms collide, and the collision is silent. The guard added
+for post-activation divergence compares the current generation's live
+inventory against its immutable at-mint manifest — and inventory entries are
+digests of *ciphertext*
+(`activation_generational.go`: `inventoriesEqual(manifest.Inventory,
+BuildInventory(gen))`). A rewrap changes every file's key and nonce, so
+every digest changes, so after any `changepass` an otherwise untouched
+restore activation reports `recovered_rollback_diverged` and rollback is
+refused. Choosing mint-over-repoint does not help: the refusal happens
+before any mint begins.
+
+The guard must therefore distinguish **semantic** divergence — an operator
+generated a key or installed a template after the activation — from
+**cryptographic** rewrap, which changes bytes while changing nothing the
+guard exists to protect. The rewrap pass:
+
+- determines the generation's clean/diverged state **before** rewrapping;
+- if it was clean, records an authenticated post-rewrap baseline (keyed by
+  generation ID, AEAD-protected inside `keyring.enc` — it must not be
+  forgeable, or divergence becomes assertable by anyone who can write to
+  the store);
+- if it was already diverged, records nothing: a diverged generation must
+  never become clean again;
+- and the guard consults that effective baseline rather than the manifest
+  whenever one exists.
+
+A plaintext semantic inventory would also work but needs leakage analysis
+first — it would describe active credential structure in the clear.
+
+**This is a phase-3 blocker.** It cannot be discovered by unit-testing
+either mechanism alone; only exercising rotation and rollback together
+surfaces it, which is an argument for the crash-and-rotation TLA+ module
+covering both.
 
 **Rollback: mint, do not repoint.** This was left open in an earlier draft,
 but the authority rule decides it. `RollbackTo` repoints `CURRENT` directly,
@@ -335,7 +424,7 @@ accepts everywhere else.
    ```go
    WithKeyring(func(kr *crypto.Keyring) error {
        sealed, err := kr.Seal(plaintext)          // newest term, stamps the header
-       plain,  err := kr.OpenCurrent(sealed)      // newest term only
+       plain,  err := kr.OpenCurrent(sealed)      // the durable current authority
        plain,  err := kr.OpenSealed(gen, sealed)  // historical terms, validated generation
        mac,    err := kr.SignIntegrity(domain, b) // current integrity term
        err          = kr.VerifyIntegrity(domain, b, mac, term)
@@ -382,8 +471,11 @@ accepts everywhere else.
      retired term cannot derive the current integrity key, so they cannot
      forge a sidecar that verifies at all. A fixed root would validate a
      forgery that simply labels itself with the current term.
-   - **The resident key set is bounded by generation retention, not by
-     rewrap.** An earlier draft claimed the previous term becomes
+   - **The *required* term set is bounded by generation retention, not by
+     rewrap** — and required is not the same as resident. Since term
+     deletion is deferred out of the first implementation, the resident
+     keyring grows by one entry per passphrase change regardless of what
+     retention allows; only the required set shrinks. An earlier draft claimed the previous term becomes
      unreferenced once the rewrap completes, so the steady state is one
      term. That is false whenever a prior exists: retained sealed priors are
      never rewrapped and pin the terms they hold (see the trust-model
@@ -453,8 +545,16 @@ accepts everywhere else.
      the resulting `masterKey []byte` and calling `EncryptWithMasterKey`
      passes an accessor-only gate while being exactly the missed site the
      gate exists to catch. Fence the accessor, the raw-key
-     `Encrypt`/`DecryptWithMasterKey` entry points, and derivation outside
-     the two sanctioned sites.
+     `Encrypt`/`DecryptWithMasterKey` entry points, and passphrase-to-key
+     derivation.
+
+     State the derivation rule structurally rather than by counting sites,
+     which has already been miscounted once: after the refactor, derivation
+     exists **only** inside `internal/crypto`'s keyring-open constructor,
+     and every consumer — daemon unlock, `changepass`, the per-invocation
+     offline commands — calls that. The arch test then asserts no KDF or
+     derivation call outside `internal/crypto`, which stays true however
+     many callers there are.
    - **Prefer the compiler to a test.** At the end of phase 2, delete or
      unexport the compatibility accessor and the raw-key encrypt/decrypt
      functions. Completeness then fails the build rather than a check
