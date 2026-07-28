@@ -4,12 +4,15 @@
 package backup
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 )
 
@@ -151,5 +154,149 @@ func TestSealedManifestCarriesSourceContext(t *testing.T) {
 	}
 	if len(projection.GenesisHashMappings) != 1 {
 		t.Fatalf("GenesisHashMappings = %+v", projection.GenesisHashMappings)
+	}
+}
+
+// sealCraftedManifest writes a manifest the writer would never produce,
+// modelling an attacker who knows the export passphrase. These are the only
+// paths that reach the defensive checks in verifyArchiveMembers.
+func sealCraftedManifest(t *testing.T, root string, manifest Manifest, passphrase []byte) {
+	t.Helper()
+	plaintext, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Marshal(crafted manifest) error = %v", err)
+	}
+	sealed, err := crypto.EncryptStandalone(plaintext, passphrase)
+	if err != nil {
+		t.Fatalf("EncryptStandalone(crafted manifest) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ManifestFileName), sealed, 0o600); err != nil {
+		t.Fatalf("WriteFile(crafted manifest) error = %v", err)
+	}
+}
+
+func TestSealedManifestRejectsCraftedMemberPaths(t *testing.T) {
+	passphrase := []byte("export-passphrase")
+	autoApprove := false
+	base := Manifest{
+		Schema:          ManifestSchema,
+		SchemaVersion:   ManifestSchemaVersion,
+		SourceNodeRole:  string(noderole.RoleSigner),
+		CreatedAtUnix:   1_700_000_000,
+		UserAutoApprove: &autoApprove,
+	}
+
+	cases := []struct {
+		name    string
+		members []ManifestMember
+		wantErr string
+	}{
+		{
+			name: "duplicate member",
+			members: []ManifestMember{
+				{Path: "apb/A.apb", SHA256: strings.Repeat("a", 64), Size: 1},
+				{Path: "apb/A.apb", SHA256: strings.Repeat("b", 64), Size: 1},
+			},
+			wantErr: "twice",
+		},
+		{
+			name:    "traversal path",
+			members: []ManifestMember{{Path: "../escape", SHA256: strings.Repeat("a", 64), Size: 1}},
+			wantErr: "non-canonical",
+		},
+		{
+			name:    "absolute path",
+			members: []ManifestMember{{Path: "/etc/passwd", SHA256: strings.Repeat("a", 64), Size: 1}},
+			wantErr: "non-relative",
+		},
+		{
+			name:    "backslash path",
+			members: []ManifestMember{{Path: `apb\A.apb`, SHA256: strings.Repeat("a", 64), Size: 1}},
+			wantErr: "non-relative",
+		},
+		{
+			name:    "non-canonical path",
+			members: []ManifestMember{{Path: "apb/./A.apb", SHA256: strings.Repeat("a", 64), Size: 1}},
+			wantErr: "non-canonical",
+		},
+		{
+			name:    "manifest inventories itself",
+			members: []ManifestMember{{Path: ManifestFileName, SHA256: strings.Repeat("a", 64), Size: 1}},
+			wantErr: "invalid member path",
+		},
+		{
+			name:    "empty path",
+			members: []ManifestMember{{Path: "", SHA256: strings.Repeat("a", 64), Size: 1}},
+			wantErr: "invalid member path",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "apb"), 0o750); err != nil {
+				t.Fatalf("MkdirAll: %v", err)
+			}
+			manifest := base
+			manifest.Members = tc.members
+			sealCraftedManifest(t, root, manifest, passphrase)
+
+			_, err := OpenSealedManifest(root, passphrase)
+			if err == nil {
+				t.Fatal("OpenSealedManifest accepted a crafted member list")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("OpenSealedManifest() error = %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestSealedManifestRejectsOversizedFile(t *testing.T) {
+	root := t.TempDir()
+	oversized := make([]byte, maxSealedManifestBytes+1)
+	if err := os.WriteFile(filepath.Join(root, ManifestFileName), oversized, 0o600); err != nil {
+		t.Fatalf("WriteFile(oversized manifest) error = %v", err)
+	}
+	_, err := OpenSealedManifest(root, []byte("export-passphrase"))
+	if err == nil || !strings.Contains(err.Error(), "size limit") {
+		t.Fatalf("OpenSealedManifest() error = %v, want size-limit rejection", err)
+	}
+}
+
+// TestSealedManifestSizeCapMatchesReader proves the writer's bound is on the
+// sealed bytes: an archive that seals must always read back. A plaintext-side
+// bound would pass here and fail on read, because the envelope base64-encodes
+// the ciphertext inside indented JSON.
+func TestSealedManifestSizeCapMatchesReader(t *testing.T) {
+	passphrase := []byte("export-passphrase")
+	root := t.TempDir()
+	keysDir := filepath.Join(root, "apb")
+	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	// Enough members that the sealed manifest crosses the cap.
+	for i := 0; i < 12000; i++ {
+		name := fmt.Sprintf("%s%05d.apb", strings.Repeat("A", 45), i)
+		if err := os.WriteFile(filepath.Join(keysDir, name), []byte("x"), 0o600); err != nil {
+			t.Fatalf("WriteFile(member %d) error = %v", i, err)
+		}
+	}
+	autoApprove := false
+	err := WriteSealedManifest(
+		root,
+		noderole.RoleSigner,
+		time.Unix(1_700_000_000, 0),
+		SourceSettingsSnapshot{UserAutoApprove: &autoApprove},
+		passphrase,
+	)
+	if err == nil {
+		// If it sealed, the reader must accept it — never seal-then-fail.
+		if _, readErr := OpenSealedManifest(root, passphrase); readErr != nil {
+			t.Fatalf("manifest sealed but cannot be read back: %v", readErr)
+		}
+		return
+	}
+	if !strings.Contains(err.Error(), "over the") {
+		t.Fatalf("WriteSealedManifest() error = %v, want a sealed-size refusal", err)
 	}
 }
