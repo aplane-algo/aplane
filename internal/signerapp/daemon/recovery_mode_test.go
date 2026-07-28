@@ -41,7 +41,7 @@ func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T)
 	service := signerAdminServices{}
 
 	success, keyCount, errMsg, code := service.UnlockIdentity(ir, passphrase)
-	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeActivationIncomplete {
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q)", success, keyCount, errMsg, code)
 	}
 	if !ir.IsRecovery() || ir.IsUnlocked() || ir.KeyCount() != 0 {

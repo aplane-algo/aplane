@@ -173,7 +173,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.auth.passphraseError = ""
 			m.auth.passphraseInput = ""
 			m.clearWarningIf(localIdleDisconnectReason)
-			if msg.Code == protocol.ResultCodeActivationIncomplete {
+			if msg.Code == protocol.ResultCodeRecoveryBlocked {
 				// Unlock succeeded into recovery mode: automatic
 				// reconciliation could not resolve every incomplete
 				// activation, so signing stays blocked.

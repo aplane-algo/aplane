@@ -228,7 +228,7 @@ func Run(dataDir string) int {
 			// Headless mode: load keys using passphrase, then zero it immediately.
 			logInfof("scanning keys directory for private keys")
 			_, err := ir.ReloadWithPassphrase(startPassphrase)
-			if err != nil && signerstartuptemplates.IsGenerationValidationError(err.Error()) {
+			if err != nil && signerstartuptemplates.IsGenerationValidationErr(err) {
 				// Content defects in the selected generation are a recovery
 				// condition, not a startup failure: keep the daemon up with
 				// signing blocked so the admin surface exists to repair the

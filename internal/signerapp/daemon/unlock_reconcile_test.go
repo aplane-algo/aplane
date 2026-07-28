@@ -90,7 +90,7 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 	ir.Lock()
 
 	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
-	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeActivationIncomplete {
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
 	if !ir.IsRecovery() || ir.IsUnlocked() {
@@ -132,7 +132,7 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 	ir.Lock()
 
 	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
-	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeActivationIncomplete {
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
 	if !ir.IsRecovery() || ir.IsUnlocked() {
@@ -174,7 +174,7 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 	ir.Lock()
 
 	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
-	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeActivationIncomplete {
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
 	if !ir.IsRecovery() || ir.IsUnlocked() {

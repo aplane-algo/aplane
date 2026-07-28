@@ -807,3 +807,146 @@ func mustActiveRotate(t *testing.T, paths storepaths.Paths, identityID string) s
 	}
 	return active
 }
+
+// TestRotateReconcilesMidSwapCrashBeforeKeystoreSwap models a crash in the
+// middle of phase 2 before the keystore itself swapped: the master key is
+// still the old one, one file already swapped (canonical unreadable, .old
+// holds the pre-rotation bytes) while another has not (canonical intact,
+// .new is the half-installed sibling). The next rotation under the old
+// passphrase must restore the swapped file from .old, drop the stale .new,
+// and complete.
+func TestRotateReconcilesMidSwapCrashBeforeKeystoreSwap(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
+	identityID := "default"
+	oldPassphrase := []byte("old-passphrase")
+	finalPassphrase := []byte("final-passphrase")
+
+	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	}
+	defer crypto.ZeroBytes(oldMasterKey)
+	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+	batch := createRecoveredBatchForRotateTest(t, paths, identityID, oldMasterKey)
+	metadataPath := paths.RecoveredBatchMetadataPath(identityID, batch.RestoreID)
+	entryPath := filepath.Join(
+		paths.RecoveredBatchEntriesDir(identityID, batch.RestoreID),
+		batch.Entries[0].EntryFile,
+	)
+
+	// Metadata: already swapped. The canonical bytes are the half-installed
+	// new-key ciphertext (unreadable under the old master key); .old holds
+	// the pre-rotation bytes.
+	if err := os.Rename(metadataPath, metadataPath+".old"); err != nil {
+		t.Fatalf("Rename(metadata -> .old) error = %v", err)
+	}
+	if err := os.WriteFile(metadataPath, []byte("half-installed new-key ciphertext"), 0o600); err != nil {
+		t.Fatalf("WriteFile(metadata canonical) error = %v", err)
+	}
+	// Entry: not yet swapped. Canonical intact, .new is the sibling the
+	// crash stranded.
+	if err := os.WriteFile(entryPath+".new", []byte("stranded new-key ciphertext"), 0o600); err != nil {
+		t.Fatalf("WriteFile(entry .new) error = %v", err)
+	}
+
+	result, err := Rotate(paths, identityID, oldPassphrase, finalPassphrase, RotateOptions{})
+	if err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+	if result.RecoveredFilesMigrated != 2 {
+		t.Fatalf("Rotate().RecoveredFilesMigrated = %d, want 2", result.RecoveredFilesMigrated)
+	}
+	assertRotatedBatchLoads(t, paths, identityID, batch.RestoreID, finalPassphrase)
+	assertNoRotationArtifacts(t, metadataPath, entryPath)
+}
+
+// TestRotateReconcilesMidSwapCrashAfterKeystoreSwap models a crash after the
+// keystore swapped but before every file did: the store's master key is the
+// NEW one, one file already carries new-key ciphertext (.old still present)
+// while another still carries old-key ciphertext with its .new sibling
+// waiting. The next rotation — necessarily under the new passphrase — must
+// install the .new sibling, drop the stale .old, and complete.
+func TestRotateReconcilesMidSwapCrashAfterKeystoreSwap(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
+	identityID := "default"
+	oldPassphrase := []byte("old-passphrase")
+	newPassphrase := []byte("new-passphrase")
+	finalPassphrase := []byte("final-passphrase")
+
+	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	}
+	defer crypto.ZeroBytes(oldMasterKey)
+	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+	batch := createRecoveredBatchForRotateTest(t, paths, identityID, oldMasterKey)
+	metadataPath := paths.RecoveredBatchMetadataPath(identityID, batch.RestoreID)
+	entryPath := filepath.Join(
+		paths.RecoveredBatchEntriesDir(identityID, batch.RestoreID),
+		batch.Entries[0].EntryFile,
+	)
+
+	// Capture the old-key bytes, then rotate for real to obtain genuine
+	// new-key ciphertext for both files.
+	oldMetadataBytes, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("ReadFile(metadata, old key) error = %v", err)
+	}
+	oldEntryBytes, err := os.ReadFile(entryPath)
+	if err != nil {
+		t.Fatalf("ReadFile(entry, old key) error = %v", err)
+	}
+	if _, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
+		t.Fatalf("Rotate(old -> new) error = %v", err)
+	}
+	newMetadataBytes, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("ReadFile(metadata, new key) error = %v", err)
+	}
+
+	// Metadata: not yet swapped at crash time. Canonical still carries the
+	// old-key bytes; .new holds the valid new-key ciphertext.
+	if err := os.WriteFile(metadataPath+".new", newMetadataBytes, 0o600); err != nil {
+		t.Fatalf("WriteFile(metadata .new) error = %v", err)
+	}
+	if err := os.WriteFile(metadataPath, oldMetadataBytes, 0o600); err != nil {
+		t.Fatalf("WriteFile(metadata canonical) error = %v", err)
+	}
+	// Entry: already swapped. Canonical is the new-key ciphertext from the
+	// real rotation; .old is the stale pre-rotation sibling.
+	if err := os.WriteFile(entryPath+".old", oldEntryBytes, 0o600); err != nil {
+		t.Fatalf("WriteFile(entry .old) error = %v", err)
+	}
+
+	result, err := Rotate(paths, identityID, newPassphrase, finalPassphrase, RotateOptions{})
+	if err != nil {
+		t.Fatalf("Rotate(new -> final) error = %v", err)
+	}
+	if result.RecoveredFilesMigrated != 2 {
+		t.Fatalf("Rotate().RecoveredFilesMigrated = %d, want 2", result.RecoveredFilesMigrated)
+	}
+	assertRotatedBatchLoads(t, paths, identityID, batch.RestoreID, finalPassphrase)
+	assertNoRotationArtifacts(t, metadataPath, entryPath)
+}
+
+// assertRotatedBatchLoads proves the recovered batch decrypts under the
+// master key derived from the given passphrase after rotation.
+func assertRotatedBatchLoads(t *testing.T, paths storepaths.Paths, identityID, restoreID string, passphrase []byte) {
+	t.Helper()
+	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	if err != nil {
+		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+	}
+	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	if err != nil {
+		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+	}
+	defer crypto.ZeroBytes(masterKey)
+	if _, err := recovered.LoadBatch(paths, identityID, restoreID, masterKey); err != nil {
+		t.Fatalf("LoadBatch(rotated master key) error = %v", err)
+	}
+}

@@ -87,13 +87,19 @@ func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []b
 	// commit record, staging residue and uncommitted attempts are discarded
 	// (never resumed), and the selected generation must validate. Any
 	// failure enters recovery mode with nothing deleted.
+	//
+	// Reconcile runs before the passphrase is verified. That ordering is
+	// deliberate and safe: reconcile only removes state that is provably
+	// uncommitted (no seal, not named by CURRENT) — state no caller,
+	// authenticated or not, could resume — and it is exactly what startup
+	// does unauthenticated. Keep it free of anything auth-gated.
 	if reconcileErr := s.reconcileGenerations(ir); reconcileErr != nil {
 		success, errMsg := ir.TryRecoveryUnlock(passphrase)
 		if !success {
 			return false, 0, errMsg, unlockFailureCode(errMsg)
 		}
 		logWarnf("identity is recovery-blocked: %v", reconcileErr)
-		return true, 0, "", protocol.ResultCodeActivationIncomplete
+		return true, 0, "", protocol.ResultCodeRecoveryBlocked
 	}
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
@@ -107,7 +113,7 @@ func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []b
 			return false, 0, recoveryErrMsg, unlockFailureCode(recoveryErrMsg)
 		}
 		logWarnf("identity is recovery-blocked: %s", errMsg)
-		return true, 0, "", protocol.ResultCodeActivationIncomplete
+		return true, 0, "", protocol.ResultCodeRecoveryBlocked
 	}
 	return success, keyCount, errMsg, unlockFailureCode(errMsg)
 }

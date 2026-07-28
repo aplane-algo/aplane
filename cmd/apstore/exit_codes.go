@@ -90,7 +90,9 @@ func exitCodeForResultCode(code string) int {
 	case protocol.ResultCodeKeyTypeInUse,
 		protocol.ResultCodeActivationFailed,
 		protocol.ResultCodeDeactivationFailed,
-		protocol.ResultCodeRemoveFailed:
+		protocol.ResultCodeRemoveFailed,
+		protocol.ResultCodeActivationConflict,
+		protocol.ResultCodeActivationReviewStale:
 		return apstoreExitConflict
 	case "verification_failed",
 		"invalid_backup",

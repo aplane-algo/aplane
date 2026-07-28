@@ -67,15 +67,22 @@ type ReloadService struct {
 	Warn              WarnFunc
 }
 
-// GenerationValidationFailedPrefix marks a reload failure caused by content
-// defects in the selected generation; the unlock path maps it to recovery
-// mode instead of an ordinary unlock failure.
-const generationValidationFailedPrefix = "generation validation failed"
+// ErrGenerationValidation marks a reload failure caused by content defects
+// in the selected generation; the unlock paths map it to recovery mode
+// instead of an ordinary unlock failure.
+var ErrGenerationValidation = errors.New("generation validation failed")
 
-// IsGenerationValidationError reports whether a reload error means the
-// selected generation failed content validation.
+// IsGenerationValidationErr reports whether err wraps ErrGenerationValidation.
+// Prefer this wherever the actual error value is available.
+func IsGenerationValidationErr(err error) bool {
+	return errors.Is(err, ErrGenerationValidation)
+}
+
+// IsGenerationValidationError is the flattened-string form for boundaries
+// that only carry the error message (runtime.TryUnlock flattens the reload
+// error to a string before it reaches the daemon).
 func IsGenerationValidationError(errMsg string) bool {
-	return strings.Contains(errMsg, generationValidationFailedPrefix)
+	return strings.Contains(errMsg, ErrGenerationValidation.Error())
 }
 
 func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadReport, error) {
@@ -177,8 +184,8 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 			} else {
 				detail = "key type " + templateDefects[0]
 			}
-			return nil, fmt.Errorf("%s: %d malformed key file(s) and %d template/key-type defect(s) in the selected generation: %s",
-				generationValidationFailedPrefix, len(warnings), len(templateDefects), detail)
+			return nil, fmt.Errorf("%w: %d malformed key file(s) and %d template/key-type defect(s) in the selected generation: %s",
+				ErrGenerationValidation, len(warnings), len(templateDefects), detail)
 		}
 	}
 

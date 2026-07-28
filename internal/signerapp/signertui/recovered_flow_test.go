@@ -43,7 +43,7 @@ func TestUnlockIntoRecoveryOpensBlockingScreen(t *testing.T) {
 
 	got, cmd := updateForTest(t, m, UnlockResultMsg{
 		Success: true,
-		Code:    protocol.ResultCodeActivationIncomplete,
+		Code:    protocol.ResultCodeRecoveryBlocked,
 	})
 	if got.signerState != signerRuntimeRecovery || got.viewState != ViewRecoveredList {
 		t.Fatalf("unlock-into-recovery = state %v view %v, want recovery/recovered list", got.signerState, got.viewState)

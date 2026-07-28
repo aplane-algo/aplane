@@ -4,14 +4,17 @@
 package backupadmin
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -215,5 +218,88 @@ func TestGenerationalActivationFailureLeavesStoreUntouched(t *testing.T) {
 	}
 	if _, err := os.Stat(paths.RecoveredBatchDir(auth.DefaultIdentityID, recoverResult.RestoreID)); err != nil {
 		t.Fatalf("batch missing after failed activation: %v", err)
+	}
+}
+
+// TestGenerationalActivationDurabilityUnknownEntersRecovery exercises the
+// ErrCommitDurabilityUnknown branch: the CURRENT flip is visible (the
+// activation IS committed for every subsequent resolution) but the directory
+// sync confirming its durability failed. The handler must report failure,
+// reload the visible state, and block signing in recovery mode rather than
+// pretending nothing was committed.
+func TestGenerationalActivationDurabilityUnknownEntersRecovery(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	firstGen := convertToGenerationalStore(t, paths)
+
+	archivePath, _ := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoverResult.Success {
+		t.Fatalf("RecoverBackup() = %+v", recoverResult)
+	}
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	reloadsBefore := reloads.Load()
+
+	// Fail every directory sync after the CURRENT pointer rename: the flip
+	// becomes visible, but neither WriteFileDurable's parent sync nor
+	// WriteCurrent's retry can confirm it survived to disk.
+	var currentRenamed atomic.Bool
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpRename && filepath.Base(path) == "CURRENT" {
+			currentRenamed.Store(true)
+		}
+		if op == fsutil.OpDirSync && currentRenamed.Load() {
+			return errors.New("injected dir-sync failure")
+		}
+		return nil
+	}
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
+	})
+	fsutil.TestHook = nil
+
+	if !currentRenamed.Load() {
+		t.Fatal("test hook never observed the CURRENT rename; the injection missed the flip")
+	}
+	if activated.Success {
+		t.Fatalf("ActivateRecovered() = %+v, want durability-unknown failure", activated)
+	}
+	if activated.Code != protocol.ResultCodeRecoveredRollbackFailed {
+		t.Fatalf("result code = %q, want %q", activated.Code, protocol.ResultCodeRecoveredRollbackFailed)
+	}
+	if !strings.Contains(activated.Error, "durability") {
+		t.Fatalf("result error = %q, want durability explanation", activated.Error)
+	}
+	if !ir.IsRecovery() {
+		t.Fatal("durability-unknown commit did not enter recovery mode")
+	}
+	if reloads.Load() <= reloadsBefore {
+		t.Fatal("handler did not reload the visible post-flip state")
+	}
+	// The flip is visible and authoritative: CURRENT names the activation
+	// generation, not the parent.
+	gen, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if gen.GenerationID() == firstGen {
+		t.Fatal("CURRENT still names the pre-activation generation despite the visible flip")
+	}
+	manifest, err := genstore.ReadManifest(gen)
+	if err != nil {
+		t.Fatalf("ReadManifest() error = %v", err)
+	}
+	if manifest.Operation != "restore-activation" || manifest.ParentID != firstGen {
+		t.Fatalf("manifest = %+v", manifest)
 	}
 }

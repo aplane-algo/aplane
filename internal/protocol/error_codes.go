@@ -100,8 +100,12 @@ const (
 	// failure forced recovery).
 	ResultCodeRecoveredRollbackRefused = "recovered_rollback_refused"
 	ResultCodePurgeRecoveredFailed     = "purge_recovered_failed"
-	ResultCodeActivationIncomplete     = "activation_incomplete"
-	ResultCodeActivationAuditFailed    = "activation_audit_failed"
+	// ResultCodeRecoveryBlocked reports an unlock that succeeded into
+	// recovery mode: the passphrase was right, but the store failed
+	// reconciliation or generation validation, so signing is blocked until
+	// the operator resolves the store from recovery.
+	ResultCodeRecoveryBlocked       = "recovery_blocked"
+	ResultCodeActivationAuditFailed = "activation_audit_failed"
 
 	ResultCodeListFailed           = "list_failed"
 	ResultCodeInvalidTemplateType  = "invalid_template_type"
