@@ -2340,29 +2340,33 @@ Managed archive packaging:
   managed path, or checksum, copies it into a caller-selected destination
   directory using the managed archive filename, creates the destination directory
   when needed, and verifies the copy
-- the archive contains `README.md`, `manifest.json`, `apb/*.apb`, the active
-  policy snapshot at `policy/policy.yaml` and `policy/policy.yaml.hmac`, and,
-  for current writers, `source_settings.json`
-- `manifest.json` has schema `aplane.backup.manifest.v1`, `schema_version:1`,
-  `source_node_role:"signer"|"sentry"`, and `created_at_unix`. Restore
-  validates payload key classes against the destination node role; it does not
-  change the destination role.
-- `source_settings.json` is an optional, independently versioned archive
-  member with schema `aplane.backup.source-settings.v1` and
-  `schema_version:1`. It contains only the signer source's effective
+- the archive contains `manifest.sealed`, `README.md`, `apb/*.apb`, and the
+  active policy snapshot at `policy/policy.yaml` and `policy/policy.yaml.hmac`
+- `manifest.sealed` is the archive's authenticated description. Its plaintext
+  has schema `aplane.backup.manifest.v2`, `schema_version:1`,
+  `source_node_role:"signer"|"sentry"`, `created_at_unix`, the complete member
+  inventory (`path`, `sha256`, `size` for every other archive member), and the
+  source context inline. It is sealed with the standalone encryption envelope
+  the `.apb` payloads use, under the export passphrase.
+- **Knowledge of the export passphrase is authentication.** A readable archive
+  proves only that it was created, or endorsed, by a party that knew the
+  export passphrase — the trust root the `.apb` payloads already had, extended
+  to the archive's shape. It is not origin authentication, and authenticated
+  is not safe: source context remains review material that never changes
+  destination behavior, and the policy snapshot is never installed.
+- every operation that opens an archive decrypts the manifest first and
+  verifies each member against the inventory. A missing, added, or altered
+  member is rejected, as is an archive with no `manifest.sealed`. Manifest
+  authentication failure is indistinguishable from a wrong passphrase and
+  folds into the same decrypt-failure and rate-limit path as payload
+  tampering.
+- the manifest's source context contains only the signer source's effective
   `user_auto_approve` value (omitted for sentry sources) and canonical custom
-  genesis-hash-to-network mappings. It never contains algod URLs, tokens,
-  endpoints, or other connection configuration.
-- sidecar mappings are canonical base64, use validated non-reserved network
-  tokens, cannot remap built-in networks, are unique and ordered by
-  `(network, genesis_hash)`, and are bounded to 1024 entries and 256 KiB.
-  Current writers fail backup creation rather than claim a current archive
-  shape without a valid sidecar.
-- old readers remain compatible because manifest v1 is unchanged and unknown
-  archive members are ignored. Recovery classifies an absent sidecar as
-  `missing`, a valid sidecar as `unverified`, and malformed, oversized, or
-  unsupported metadata as `invalid`. Missing or invalid advisory metadata
-  does not prevent recovery of otherwise valid `.apb` payloads.
+  genesis-hash-to-network mappings, bounded to 1024 entries. It never contains
+  algod URLs, tokens, endpoints, or other connection configuration. Mappings
+  are canonical base64, use validated non-reserved network tokens, cannot
+  remap built-in networks, and are unique and ordered. Absent values mean the
+  source did not record them; there is no separate trust state.
 - the tarball is packaging only; `.apb` remains the cryptographic backup unit
 - the archived policy sidecar is source-store provenance material only; restore
   does not install it as the destination sidecar
@@ -2374,8 +2378,8 @@ Live signer-managed backup:
 - the signer uses the unlocked runtime master key; it does not re-prompt for the store passphrase
 - output path is signer-managed, not operator-chosen
 - archives are written under `backups/<identity>/aplane-backup-YYYYMMDD-HHMMSS.tar.gz` beneath the signer data root
-- archive layout matches managed backups: `README.md`, `manifest.json`,
-  `source_settings.json`, `apb/*.apb`, and `policy/`
+- archive layout matches managed backups: `manifest.sealed`, `README.md`,
+  `apb/*.apb`, and `policy/`
 - signer-managed backup covers active key files for the bound identity plus a
   verified policy snapshot; it does not export deleted archives, other
   identities, or live runtime state
@@ -2434,19 +2438,16 @@ Live signer-managed restore:
 - review revalidates the batch and current destination state, foregrounds
   security-bearing policy differences and the effective destination
   `user_auto_approve` mode, fingerprints active conflicts, and returns an
-  opaque review token. Actual `security_changes` are rendered separately from
-  unavailable source metadata. Protocol v3 conservatively reports the
-  compatibility entries `source.user_auto_approve` and
-  `source.genesis_hash_mappings` in `unknown_source_settings`. Protocol 3.1
-  additionally reports typed `missing|unverified|invalid` source context.
-  Updated clients give typed fields precedence and treat the constant unknown
-  entries as protocol-v3 compatibility artifacts. They do not render source
-  metadata as a standalone review notification. A pre-manifest archive also
-  reports the batch-specific `source.node_role`.
-- valid source settings are always labeled unverified. They are review context
-  only: they never change policy verdicts, signing behavior, destination
-  network resolution, or any acknowledgement requirement. The archive-reported
-  approval default in particular cannot suppress a destination warning.
+  opaque review token. Source context is reported as typed fields
+  (`source_user_auto_approve`, `source_genesis_hash_mappings`) that are
+  present when the source recorded them and absent otherwise; no status enum
+  or unknown-settings list exists, because the archive's sealed manifest
+  authenticated the values before recovery recorded them.
+- source settings are review context only: they never change policy verdicts,
+  signing behavior, destination network resolution, or any acknowledgement
+  requirement. Authentication proves who packaged the claim, never that the
+  destination may act on it — the archive-reported approval default in
+  particular cannot suppress a destination warning.
 - activation requires the current review token. Factual policy differences are
   always shown and never require acknowledgement, because archive-reported
   source policy is unauthenticated and any verdict derived from it could be
@@ -2516,11 +2517,10 @@ Restore:
 - library-visible compiled providers are activated for the identity when a key of that type is restored; this writes the normal
   `identities/<identity>/keytypes/<key_type>.json` state record and is idempotent
 - `apstore rebuild <archive-path> [--role signer|sentry]` restores an absent
-  store. `manifest.json` `source_node_role` metadata is diagnostic and supplies
-  the default destination role when `--role` is omitted. Archives without source
-  role metadata default to `signer`; use `--role sentry` when rebuilding an
-  sentry store from such an archive. If `--role` disagrees with the manifest,
-  rebuild warns and uses the explicit destination role. Restored key classes are
+  store. The sealed manifest's `source_node_role` supplies the default
+  destination role when `--role` is omitted, so role selection follows the
+  export-passphrase prompt. If `--role` disagrees with the manifest, rebuild
+  warns and uses the explicit destination role. Restored key classes are
   still validated against the destination role before being written.
 - a LogicSig key restore is rejected when the key payload has bytecode but is not a v1 signing-metadata key; templates are not
   consulted to reconstruct missing signing metadata

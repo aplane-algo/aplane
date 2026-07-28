@@ -910,9 +910,9 @@ acknowledgement. It requires an unattended-signing acknowledgement whenever
 the destination identity auto-approves unmatched signing requests, derived
 from verified destination state alone and unaffected by what the archive
 reports. A policy or approval-mode change invalidates the
-token and forces a new review. The token also pins the interpreted
-source-settings status and exact valid-sidecar digest. Source settings remain
-unverified provenance and cannot change destination signing behavior.
+token and forces a new review. The token pins the archive digest, which covers
+the source context the archive reported. Source settings remain provenance and
+cannot change destination signing behavior.
 
 No restore path installs policy files automatically: `apadmin` and
 `apstore restore apply` activate only recovered credential/key-type state after

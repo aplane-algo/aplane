@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -77,21 +76,32 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	if _, err := os.Stat(filepath.Join(extractDir, "policy", "policy.yaml.hmac")); err != nil {
 		t.Fatalf("extracted policy.yaml.hmac stat error = %v", err)
 	}
-	manifest, ok, err := ReadManifest(extractDir)
+	manifest, err := OpenSealedManifest(extractDir, []byte("export-passphrase"))
 	if err != nil {
-		t.Fatalf("ReadManifest() error = %v", err)
-	}
-	if !ok {
-		t.Fatal("backup manifest missing")
+		t.Fatalf("OpenSealedManifest() error = %v", err)
 	}
 	if manifest.SourceNodeRole != string(noderole.RoleSigner) {
 		t.Fatalf("manifest source node role = %q, want signer", manifest.SourceNodeRole)
 	}
-	sourceSettings := inspectSourceSettings(extractDir, manifest.SourceNodeRole)
-	if sourceSettings.Status != sourcecontext.StatusUnverified ||
-		sourceSettings.Projection.UserAutoApprove == nil ||
-		*sourceSettings.Projection.UserAutoApprove {
-		t.Fatalf("source settings = %+v, want unverified manual signer context", sourceSettings)
+	projection := manifest.SourceProjection()
+	if projection.UserAutoApprove == nil || *projection.UserAutoApprove {
+		t.Fatalf("source settings = %+v, want manual signer context", projection)
+	}
+	// Every archive member the writer produced is covered by the manifest,
+	// including the policy snapshot and the README.
+	covered := make(map[string]bool, len(manifest.Members))
+	for _, member := range manifest.Members {
+		covered[member.Path] = true
+	}
+	for _, required := range []string{
+		"apb/" + address + ".apb",
+		"policy/policy.yaml",
+		"policy/policy.yaml.hmac",
+		"README.md",
+	} {
+		if !covered[required] {
+			t.Fatalf("archive member %q is not covered by the sealed manifest: %+v", required, manifest.Members)
+		}
 	}
 }
 

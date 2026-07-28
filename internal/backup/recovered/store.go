@@ -39,11 +39,10 @@ const (
 	// and rotation code must ignore these names.
 	StagingDirPrefix = ".recovering-"
 
-	restoreIDBytes                = 16
-	maxArchiveNameBytes           = 255
-	maxSourceSettingsWarningBytes = 512
-	batchMetadataFileName         = "batch.enc"
-	entriesDirectoryName          = "entries"
+	restoreIDBytes        = 16
+	maxArchiveNameBytes   = 255
+	batchMetadataFileName = "batch.enc"
+	entriesDirectoryName  = "entries"
 )
 
 var sha256Shape = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -79,11 +78,8 @@ type CreateRequest struct {
 	SourcePolicyStatus        SourcePolicyStatus
 	SourcePolicySHA256        string
 	SourcePolicyYAML          []byte
-	SourceSettingsStatus      sourcecontext.Status
-	SourceSettingsSHA256      string
 	SourceUserAutoApprove     *bool
 	SourceGenesisHashMappings []sourcecontext.GenesisHashMapping
-	SourceSettingsWarning     string
 	CreatedAt                 time.Time
 	Entries                   []Entry
 }
@@ -104,11 +100,8 @@ type Batch struct {
 	SourcePolicyStatus        SourcePolicyStatus                 `json:"source_policy_status"`
 	SourcePolicySHA256        string                             `json:"source_policy_sha256,omitempty"`
 	SourcePolicyYAML          []byte                             `json:"source_policy_yaml,omitempty"`
-	SourceSettingsStatus      sourcecontext.Status               `json:"source_settings_status,omitempty"`
-	SourceSettingsSHA256      string                             `json:"source_settings_sha256,omitempty"`
 	SourceUserAutoApprove     *bool                              `json:"source_user_auto_approve,omitempty"`
 	SourceGenesisHashMappings []sourcecontext.GenesisHashMapping `json:"source_genesis_hash_mappings,omitempty"`
-	SourceSettingsWarning     string                             `json:"source_settings_warning,omitempty"`
 	Entries                   []BatchEntry                       `json:"entries"`
 }
 
@@ -225,19 +218,16 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 	}
 
 	batch := &Batch{
-		Schema:                BatchSchema,
-		RestoreID:             restoreID,
-		CreatedAt:             createdAt,
-		ArchiveName:           req.ArchiveName,
-		ArchiveSHA256:         req.ArchiveSHA256,
-		SourceNodeRole:        req.SourceNodeRole,
-		SourcePolicyStatus:    req.SourcePolicyStatus,
-		SourcePolicySHA256:    req.SourcePolicySHA256,
-		SourcePolicyYAML:      slices.Clone(req.SourcePolicyYAML),
-		SourceSettingsStatus:  req.SourceSettingsStatus,
-		SourceSettingsSHA256:  req.SourceSettingsSHA256,
-		SourceSettingsWarning: req.SourceSettingsWarning,
-		Entries:               batchEntries,
+		Schema:             BatchSchema,
+		RestoreID:          restoreID,
+		CreatedAt:          createdAt,
+		ArchiveName:        req.ArchiveName,
+		ArchiveSHA256:      req.ArchiveSHA256,
+		SourceNodeRole:     req.SourceNodeRole,
+		SourcePolicyStatus: req.SourcePolicyStatus,
+		SourcePolicySHA256: req.SourcePolicySHA256,
+		SourcePolicyYAML:   slices.Clone(req.SourcePolicyYAML),
+		Entries:            batchEntries,
 	}
 	sourceProjection := sourcecontext.CloneProjection(sourcecontext.Projection{
 		UserAutoApprove:     req.SourceUserAutoApprove,
@@ -444,33 +434,10 @@ func validateBatch(batch *Batch) error {
 	default:
 		return fmt.Errorf("invalid recovered batch source_policy_status %q", batch.SourcePolicyStatus)
 	}
-	switch batch.SourceSettingsStatus {
-	case "", sourcecontext.StatusMissing:
-		if batch.SourceSettingsSHA256 != "" ||
-			batch.SourceUserAutoApprove != nil ||
-			len(batch.SourceGenesisHashMappings) != 0 ||
-			batch.SourceSettingsWarning != "" {
-			return fmt.Errorf("missing source settings must not include source-setting data")
-		}
-	case sourcecontext.StatusInvalid:
-		if batch.SourceSettingsSHA256 != "" ||
-			batch.SourceUserAutoApprove != nil ||
-			len(batch.SourceGenesisHashMappings) != 0 {
-			return fmt.Errorf("invalid source settings must not include source-setting values")
-		}
-		if batch.SourceSettingsWarning == "" {
-			return fmt.Errorf("invalid source settings require a warning")
-		}
-		if len(batch.SourceSettingsWarning) > maxSourceSettingsWarningBytes {
-			return fmt.Errorf("source settings warning exceeds limit")
-		}
-	case sourcecontext.StatusUnverified:
-		if !sha256Shape.MatchString(batch.SourceSettingsSHA256) {
-			return fmt.Errorf("invalid recovered batch source_settings_sha256")
-		}
-		if batch.SourceSettingsWarning != "" {
-			return fmt.Errorf("unverified source settings must not include a warning")
-		}
+	// Source context is authenticated by the archive's sealed manifest
+	// before it ever reaches a batch, so there is no trust state to carry:
+	// values are either recorded and valid, or not recorded at all.
+	if batch.SourceUserAutoApprove != nil || len(batch.SourceGenesisHashMappings) > 0 {
 		if err := sourcecontext.ValidateProjection(
 			noderole.Role(batch.SourceNodeRole),
 			sourcecontext.Projection{
@@ -480,8 +447,6 @@ func validateBatch(batch *Batch) error {
 		); err != nil {
 			return fmt.Errorf("validate recovered batch source settings: %w", err)
 		}
-	default:
-		return fmt.Errorf("invalid recovered batch source_settings_status %q", batch.SourceSettingsStatus)
 	}
 	if len(batch.Entries) == 0 {
 		return fmt.Errorf("recovered batch requires at least one entry")

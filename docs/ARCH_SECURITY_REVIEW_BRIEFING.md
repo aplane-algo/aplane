@@ -164,7 +164,7 @@ known effective destination `user_auto_approve` state and orders policy
 differences before raw changed paths. The comparison is informational: the
 destination cannot authenticate archived source policy, so the review assigns
 no widening or safety verdict and derives no acknowledgement from it.
-Unverified archive-reported source settings are shown as labeled context, not
+Archive-reported source settings are shown as labeled context, not
 as standalone notifications.
 
 Activation requires a destination-bound review token. One acknowledgement is

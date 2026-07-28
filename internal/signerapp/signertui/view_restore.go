@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 func (m Model) renderRestoreList() string {
@@ -271,21 +270,6 @@ func (m Model) renderRestoreReview() string {
 		sb.WriteString(fmt.Sprintf("    source: %s\n", change.Source))
 		sb.WriteString(fmt.Sprintf("    destination: %s\n", change.Destination))
 	}
-	var batchUnknowns []string
-	for _, unknown := range review.UnknownSourceSettings {
-		if protocol.IsRecoveryArchiveSourceLimitation(unknown) {
-			continue
-		}
-		batchUnknowns = append(batchUnknowns, unknown)
-	}
-	if len(batchUnknowns) > 0 {
-		sb.WriteString("\n")
-		sb.WriteString(subtitleStyle.Render("Source metadata unavailable for this archive"))
-		sb.WriteString("\n")
-	}
-	for _, unknown := range batchUnknowns {
-		sb.WriteString(fmt.Sprintf("  [unknown source] %s\n", unknown))
-	}
 	if len(review.ActiveConflicts) > 0 {
 		sb.WriteString("\n")
 		sb.WriteString(warningStyle.Render("Active credential conflicts"))
@@ -353,32 +337,24 @@ func appendRecoveredSourceContext(
 	review ReviewRecoveredResultMessage,
 	popupWidth int,
 ) {
-	switch review.SourceSettingsStatus {
-	case protocol.RecoverySourceSettingsStatusUnverified:
-		sb.WriteString("\n")
-		sb.WriteString(subtitleStyle.Render("Reported by the backup archive"))
-		sb.WriteString("\n")
-		fmt.Fprintf(
-			sb,
-			"  approval default: %s\n",
-			recoveredSourceApprovalLabel(review.SourceUserAutoApprove),
-		)
-		if len(review.SourceGenesisHashMappings) == 0 {
-			sb.WriteString("  custom genesis-hash mappings: none\n")
-		} else {
-			sb.WriteString("  custom genesis-hash mappings:\n")
-			for _, mapping := range review.SourceGenesisHashMappings {
-				fmt.Fprintf(sb, "    %s: %s\n", mapping.Network, mapping.GenesisHash)
-			}
+	if review.SourceUserAutoApprove == nil && len(review.SourceGenesisHashMappings) == 0 {
+		return
+	}
+	sb.WriteString("\n")
+	sb.WriteString(subtitleStyle.Render("Reported by the backup archive"))
+	sb.WriteString("\n")
+	fmt.Fprintf(
+		sb,
+		"  approval default: %s\n",
+		recoveredSourceApprovalLabel(review.SourceUserAutoApprove),
+	)
+	if len(review.SourceGenesisHashMappings) == 0 {
+		sb.WriteString("  custom genesis-hash mappings: none\n")
+	} else {
+		sb.WriteString("  custom genesis-hash mappings:\n")
+		for _, mapping := range review.SourceGenesisHashMappings {
+			fmt.Fprintf(sb, "    %s: %s\n", mapping.Network, mapping.GenesisHash)
 		}
-	case protocol.RecoverySourceSettingsStatusInvalid:
-		sb.WriteString("\n")
-		warning := review.SourceSettingsWarning
-		if warning == "" {
-			warning = "Archive source-settings metadata is invalid."
-		}
-		sb.WriteString(warningStyle.Render(wrapText(warning, popupWidth-6)))
-		sb.WriteString("\n")
 	}
 }
 

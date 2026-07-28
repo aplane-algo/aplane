@@ -1819,7 +1819,7 @@ Product-level boundaries:
 
 For backup/restore specifically, `internal/backup` owns export packaging,
 archive inspection, payload validation, the optional independently versioned
-`source_settings.json` projection, and the active-apply primitive used only by
+sealed archive manifest (member inventory plus source context), and the active-apply primitive used only by
 reviewed activation and offline rebuild. `internal/backup/sourcecontext` owns
 validation of that non-secret advisory projection. `internal/backup/recovered`
 owns destination-encrypted inactive batches and passphrase-rotation target

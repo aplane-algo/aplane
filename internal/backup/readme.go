@@ -14,9 +14,17 @@ const ReadmeContent = `# Signer Key Backup
 
 This backup contains encrypted private keys backed up from Signer.
 
-Backups are normally packaged as a .tar.gz archive containing this README and
-an apb/ directory. If you extracted the archive first, the same
-instructions apply to the extracted directory.
+Backups are normally packaged as a .tar.gz archive containing this README, an
+apb/ directory, and manifest.sealed. If you extracted the archive first, the
+same instructions apply to the extracted directory.
+
+manifest.sealed describes the archive: it lists every other member with its
+SHA-256 digest, records the source node role, and carries the source node's
+non-secret approval and custom-network context. It is encrypted with the same
+envelope as the .apb payloads, under the same export passphrase, so APlane can
+detect a member that was removed, added, or altered after the backup was made.
+Recovering keys by hand does not require it: each .apb file remains
+self-contained.
 
 ## File Format
 

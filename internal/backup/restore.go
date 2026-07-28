@@ -365,6 +365,13 @@ func PreviewRestoreWithNodeRole(paths storepaths.Paths, identityID, archivePath 
 	}
 	defer cleanup()
 
+	// Authenticate the archive before reporting anything about its
+	// contents: a preview of a tampered archive would describe members the
+	// passphrase holder never packaged.
+	if _, err := OpenSealedManifest(sourceRoot, exportPassphrase); err != nil {
+		return nil, err
+	}
+
 	keysDir := ResolveBackupKeysDir(sourceRoot)
 	addresses, err := ScanBackupFiles(keysDir)
 	if err != nil {

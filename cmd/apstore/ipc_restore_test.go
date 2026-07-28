@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -38,16 +39,9 @@ func TestCmdBackupImportRejectsInvalidSources(t *testing.T) {
 	}
 }
 
-func TestFormatRecoveredReviewSectionsSeparatesSourceContextFromDifferences(t *testing.T) {
+func TestFormatRecoveredReviewSectionsRendersAuthenticatedSourceContext(t *testing.T) {
 	autoApprove := false
 	review := protocol.ReviewRecoveredResultMessage{
-		UnknownSourceSettings: []string{
-			protocol.RecoverySourceSettingUserAutoApprove,
-			protocol.RecoverySourceSettingGenesisHashMappings,
-			protocol.RecoverySourceSettingNodeRole,
-			"source.future_setting",
-		},
-		SourceSettingsStatus:  protocol.RecoverySourceSettingsStatusUnverified,
 		SourceUserAutoApprove: &autoApprove,
 		SourceGenesisHashMappings: []protocol.RecoveryGenesisHashMapping{{
 			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
@@ -60,26 +54,25 @@ func TestFormatRecoveredReviewSectionsSeparatesSourceContextFromDifferences(t *t
 		!strings.Contains(rendered, "  none") {
 		t.Fatalf("review omitted the no-difference result:\n%s", rendered)
 	}
-	// Constant archive limitations are format properties, not per-batch findings.
-	for _, constant := range []string{
-		protocol.RecoverySourceSettingUserAutoApprove,
-		protocol.RecoverySourceSettingGenesisHashMappings,
-	} {
-		if strings.Contains(rendered, "[unknown source] "+constant) {
-			t.Fatalf("review rendered constant limitation %q as a finding:\n%s", constant, rendered)
-		}
-	}
-	// Batch-specific and unrecognized values stay visible under their own heading.
-	if !strings.Contains(rendered, "Source metadata unavailable for this archive") ||
-		!strings.Contains(rendered, "[unknown source] "+protocol.RecoverySourceSettingNodeRole) ||
-		!strings.Contains(rendered, "[unknown source] source.future_setting") {
-		t.Fatalf("review dropped batch-specific source metadata:\n%s", rendered)
-	}
-	// Typed source context renders separately, under a provenance heading.
+	// Source context renders under a provenance heading that names its
+	// scope; the sealed manifest authenticated it, so no trust qualifier
+	// appears anywhere.
 	if !strings.Contains(rendered, "Reported by the backup archive") ||
 		!strings.Contains(rendered, "approval default: manual review") ||
 		!strings.Contains(rendered, "private-network") {
-		t.Fatalf("review omitted typed source context:\n%s", rendered)
+		t.Fatalf("review omitted source context:\n%s", rendered)
+	}
+	for _, stale := range []string{"unverified", "unknown source", "Source metadata unavailable"} {
+		if strings.Contains(rendered, stale) {
+			t.Fatalf("review rendered trust-state text %q:\n%s", stale, rendered)
+		}
+	}
+}
+
+func TestFormatRecoveredReviewSectionsOmitsAbsentSourceContext(t *testing.T) {
+	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{})
+	if strings.Contains(rendered, "Reported by the backup archive") {
+		t.Fatalf("review invented a source-context section:\n%s", rendered)
 	}
 }
 
@@ -91,22 +84,12 @@ func TestFormatRecoveredReviewSectionsRendersChangesWithoutVerdict(t *testing.T)
 			Source:      "true",
 			Destination: "false",
 		}},
-		UnknownSourceSettings: []string{protocol.RecoverySourceSettingNodeRole},
 	})
 	if !strings.Contains(rendered, "[hard_rejects]") {
 		t.Fatalf("review omitted the policy difference:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "downgrade") {
 		t.Fatalf("review rendered a downgrade verdict:\n%s", rendered)
-	}
-	// Source metadata must not appear inside the policy-difference block.
-	differences, metadata, split := strings.Cut(rendered, "Source metadata unavailable for this archive")
-	if !split {
-		t.Fatalf("review omitted the source-metadata heading:\n%s", rendered)
-	}
-	if strings.Contains(differences, protocol.RecoverySourceSettingNodeRole) ||
-		!strings.Contains(metadata, protocol.RecoverySourceSettingNodeRole) {
-		t.Fatalf("review mixed source metadata into policy differences:\n%s", rendered)
 	}
 	// Invariant prose belongs in the documentation, not on every review.
 	for _, constant := range []string{
@@ -133,6 +116,7 @@ func TestCmdBackupImportRejectsDuplicateBasename(t *testing.T) {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 	archivePath := filepath.Join(t.TempDir(), "restore-source.tar.gz")
+	sealTestArchive(t, backupRoot, noderole.RoleSigner)
 	if err := backup.CreateTarGzArchive(backupRoot, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}
@@ -232,6 +216,7 @@ func TestCmdBackupImportUsesManagedBackupDir(t *testing.T) {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 	archivePath := filepath.Join(t.TempDir(), "restore-source.tar.gz")
+	sealTestArchive(t, backupRoot, noderole.RoleSigner)
 	if err := backup.CreateTarGzArchive(backupRoot, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}

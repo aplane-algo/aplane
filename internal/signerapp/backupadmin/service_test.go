@@ -10,7 +10,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -118,20 +117,11 @@ func TestBackupIdentityCapturesSourceApprovalAndCustomGenesisMappings(t *testing
 	if err := backup.ExtractTarGzArchive(result.ArchivePath, extractDir); err != nil {
 		t.Fatalf("ExtractTarGzArchive() error = %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(extractDir, backup.SourceSettingsFileName))
+	manifest, err := backup.OpenSealedManifest(extractDir, []byte("export-passphrase"))
 	if err != nil {
-		t.Fatalf("ReadFile(source settings) error = %v", err)
+		t.Fatalf("OpenSealedManifest() error = %v", err)
 	}
-	var document struct {
-		UserAutoApprove     *bool `json:"user_auto_approve"`
-		GenesisHashMappings []struct {
-			GenesisHash string `json:"genesis_hash"`
-			Network     string `json:"network"`
-		} `json:"genesis_hash_mappings"`
-	}
-	if err := json.Unmarshal(data, &document); err != nil {
-		t.Fatalf("Unmarshal(source settings) error = %v", err)
-	}
+	document := manifest.SourceProjection()
 	if document.UserAutoApprove == nil || !*document.UserAutoApprove {
 		t.Fatalf("source user_auto_approve = %v, want true", document.UserAutoApprove)
 	}
@@ -143,9 +133,13 @@ func TestBackupIdentityCapturesSourceApprovalAndCustomGenesisMappings(t *testing
 			document.GenesisHashMappings,
 		)
 	}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		t.Fatalf("Marshal(source projection) error = %v", err)
+	}
 	for _, forbidden := range []string{"algod_token", "algod_url", "endpoint"} {
-		if strings.Contains(string(data), forbidden) {
-			t.Fatalf("source settings contain forbidden field %q: %s", forbidden, data)
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("source settings contain forbidden field %q: %s", forbidden, encoded)
 		}
 	}
 }
@@ -379,16 +373,9 @@ func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing
 		first.SecurityChanges[0].Category != string(policy.RestoreCategoryHardRejects) {
 		t.Fatalf("policy comparison = status %q changes %+v", first.PolicyComparison, first.SecurityChanges)
 	}
-	if len(first.UnknownSourceSettings) != 2 ||
-		!slices.Contains(first.UnknownSourceSettings, protocol.RecoverySourceSettingUserAutoApprove) ||
-		!slices.Contains(first.UnknownSourceSettings, protocol.RecoverySourceSettingGenesisHashMappings) {
-		t.Fatalf("unknown source settings = %v, want current archive limitations", first.UnknownSourceSettings)
-	}
-	if first.SourceSettingsStatus != protocol.RecoverySourceSettingsStatusMissing ||
-		first.SourceUserAutoApprove != nil ||
-		len(first.SourceGenesisHashMappings) != 0 ||
-		first.SourceSettingsWarning != "" {
-		t.Fatalf("missing source settings review = %+v", first)
+	if first.SourceUserAutoApprove == nil || *first.SourceUserAutoApprove ||
+		len(first.SourceGenesisHashMappings) != 0 {
+		t.Fatalf("authenticated source settings review = %+v", first)
 	}
 	if first.ReviewToken == "" {
 		t.Fatal("review token is empty")
@@ -436,28 +423,19 @@ func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing
 	}
 }
 
-func TestReviewRecoveredCarriesUnverifiedSourceSettingsAndPinsDigest(t *testing.T) {
+func TestReviewRecoveredCarriesAuthenticatedSourceSettings(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genesisHash := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x44}, 32))
-	sourceSettings, err := json.Marshal(map[string]any{
-		"schema":            backup.SourceSettingsSchema,
-		"schema_version":    backup.SourceSettingsSchemaVersion,
-		"user_auto_approve": false,
-		"genesis_hash_mappings": []map[string]string{{
-			"genesis_hash": genesisHash,
-			"network":      "private-network",
-		}},
-	})
-	if err != nil {
-		t.Fatalf("Marshal(source settings) error = %v", err)
-	}
+	autoApprove := false
 	archivePath, _ := writeRecoverableArchiveWithSourceSettings(
 		t,
 		paths,
 		auth.DefaultIdentityID,
 		noderole.RoleSigner,
-		true,
-		sourceSettings,
+		backup.SourceSettingsSnapshot{
+			UserAutoApprove:     &autoApprove,
+			GenesisHashMappings: map[string]string{genesisHash: "private-network"},
+		},
 	)
 	service := Service{
 		Deps: backupServiceTestDeps{
@@ -478,20 +456,12 @@ func TestReviewRecoveredCarriesUnverifiedSourceSettingsAndPinsDigest(t *testing.
 	}
 	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
 	if !review.Success ||
-		review.SourceSettingsStatus != protocol.RecoverySourceSettingsStatusUnverified ||
 		review.SourceUserAutoApprove == nil ||
 		*review.SourceUserAutoApprove ||
 		len(review.SourceGenesisHashMappings) != 1 ||
 		review.SourceGenesisHashMappings[0].GenesisHash != genesisHash ||
-		review.SourceGenesisHashMappings[0].Network != "private-network" ||
-		review.SourceSettingsWarning != "" {
+		review.SourceGenesisHashMappings[0].Network != "private-network" {
 		t.Fatalf("ReviewRecovered() source settings = %+v", review)
-	}
-	if len(review.UnknownSourceSettings) != 2 {
-		t.Fatalf(
-			"protocol-v3 compatibility unknowns = %v, want two conservative entries",
-			review.UnknownSourceSettings,
-		)
 	}
 	ir.Config().SetUserAutoApprove(true)
 	autoApproveReview := service.ReviewRecovered(ir, recoverResult.RestoreID)
@@ -517,7 +487,6 @@ func TestReviewRecoveredCarriesUnverifiedSourceSettingsAndPinsDigest(t *testing.
 		RestoreID:               recoverResult.RestoreID,
 		ArchiveSHA256:           strings.Repeat("a", 64),
 		SourcePolicyStatus:      string(recovered.SourcePolicyMissing),
-		SourceSettingsStatus:    protocol.RecoverySourceSettingsStatusMissing,
 		DestinationPolicySHA256: strings.Repeat("b", 64),
 		DestinationApprovalMode: string(adminproto.DestinationApprovalManualDefault),
 		PolicyComparisonFormat:  recoveredReviewFormatVersion,
@@ -528,61 +497,28 @@ func TestReviewRecoveredCarriesUnverifiedSourceSettingsAndPinsDigest(t *testing.
 	changedToken, err := recoveredReviewToken(recoveredReviewTokenInput{
 		FormatVersion:           recoveredReviewFormatVersion,
 		RestoreID:               recoverResult.RestoreID,
-		ArchiveSHA256:           strings.Repeat("a", 64),
+		ArchiveSHA256:           strings.Repeat("c", 64),
 		SourcePolicyStatus:      string(recovered.SourcePolicyMissing),
-		SourceSettingsStatus:    protocol.RecoverySourceSettingsStatusUnverified,
-		SourceSettingsSHA256:    strings.Repeat("c", 64),
 		DestinationPolicySHA256: strings.Repeat("b", 64),
 		DestinationApprovalMode: string(adminproto.DestinationApprovalManualDefault),
 		PolicyComparisonFormat:  recoveredReviewFormatVersion,
 	})
 	if err != nil {
-		t.Fatalf("recoveredReviewToken(unverified) error = %v", err)
+		t.Fatalf("recoveredReviewToken(changed archive) error = %v", err)
 	}
+	// Source context is authenticated by the archive, whose digest the token
+	// already binds; no separate source-settings term is needed.
 	if changedToken == baseToken {
-		t.Fatal("source-settings status and digest did not change review token")
+		t.Fatal("archive digest did not change the review token")
 	}
 }
 
-func TestReviewRecoveredCarriesInvalidSourceSettingsWarning(t *testing.T) {
+// TestRecoverBackupRejectsUnauthenticatedArchive proves an archive this
+// release cannot authenticate never reaches recovery: there is no
+// "valid but unverified" or "invalid source settings" state to degrade into.
+func TestRecoverBackupRejectsUnauthenticatedArchive(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	archivePath, _ := writeRecoverableArchiveWithSourceSettings(
-		t,
-		paths,
-		auth.DefaultIdentityID,
-		noderole.RoleSigner,
-		true,
-		[]byte(`{"schema":"unsupported"}`),
-	)
-	service := Service{
-		Deps: backupServiceTestDeps{
-			paths:   paths,
-			limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
-		},
-	}
-	var reloads atomic.Int64
-	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
-	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
-	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
-		ArchivePath:      archivePath,
-		ExportPassphrase: []byte("export-passphrase"),
-	})
-	if !recoverResult.Success {
-		t.Fatalf("RecoverBackup() = %+v", recoverResult)
-	}
-	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
-	if !review.Success ||
-		review.SourceSettingsStatus != protocol.RecoverySourceSettingsStatusInvalid ||
-		review.SourceSettingsWarning == "" ||
-		review.SourceUserAutoApprove != nil ||
-		len(review.SourceGenesisHashMappings) != 0 {
-		t.Fatalf("ReviewRecovered() invalid source settings = %+v", review)
-	}
-}
-
-func TestReviewRecoveredReportsLegacySourceRoleSeparately(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	archivePath, _ := writeRecoverableArchiveWithoutManifest(
+	archivePath, _ := writeUnauthenticatedArchive(
 		t,
 		paths,
 		auth.DefaultIdentityID,
@@ -602,30 +538,11 @@ func TestReviewRecoveredReportsLegacySourceRoleSeparately(t *testing.T) {
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
 	})
-	if !recoverResult.Success {
-		t.Fatalf("RecoverBackup() = %+v", recoverResult)
+	if recoverResult.Success {
+		t.Fatalf("RecoverBackup() = %+v, want rejection of an unauthenticated archive", recoverResult)
 	}
-	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
-	if !review.Success {
-		t.Fatalf("ReviewRecovered() = %+v", review)
-	}
-	if review.PolicyComparison != string(policy.RestoreComparisonUnavailable) {
-		t.Fatalf("legacy source role review = %+v, want unavailable comparison", review)
-	}
-	if len(review.UnknownSourceSettings) != 3 ||
-		!slices.Contains(review.UnknownSourceSettings, protocol.RecoverySourceSettingUserAutoApprove) ||
-		!slices.Contains(review.UnknownSourceSettings, protocol.RecoverySourceSettingGenesisHashMappings) ||
-		!slices.Contains(review.UnknownSourceSettings, protocol.RecoverySourceSettingNodeRole) {
-		t.Fatalf("unknown source settings = %v, want limitations plus legacy node role", review.UnknownSourceSettings)
-	}
-
-	// An uncomparable source policy must not suppress the destination warning.
-	ir.Config().SetUserAutoApprove(true)
-	autoApprove := service.ReviewRecovered(ir, recoverResult.RestoreID)
-	if autoApprove.PolicyComparison != string(policy.RestoreComparisonUnavailable) ||
-		autoApprove.UnattendedSigningWarning == "" ||
-		!autoApprove.UnattendedSigningAckRequired {
-		t.Fatalf("uncomparable source policy suppressed the destination warning: %+v", autoApprove)
+	if !strings.Contains(recoverResult.Error, "unsupported backup archive format") {
+		t.Fatalf("RecoverBackup() error = %q, want unsupported-format rejection", recoverResult.Error)
 	}
 }
 
@@ -667,26 +584,18 @@ func TestActivateRecoveredIdenticalPolicyNeedsNoPolicyAcknowledgement(t *testing
 	}
 }
 
-// A sidecar claiming the source also auto-approved must not waive the
-// destination acknowledgement: the claim is archive-reported and cannot be
-// authenticated by this store.
+// An archive claiming the source also auto-approved must not waive the
+// destination acknowledgement: authentication proves who packaged the claim,
+// never that the destination may skip operator approval.
 func TestActivateRecoveredSourceAutoApproveClaimDoesNotWaiveAcknowledgement(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	sourceSettings, err := json.Marshal(map[string]any{
-		"schema":                backup.SourceSettingsSchema,
-		"schema_version":        backup.SourceSettingsSchemaVersion,
-		"user_auto_approve":     true,
-		"genesis_hash_mappings": []map[string]string{},
-	})
-	if err != nil {
-		t.Fatalf("Marshal(source settings) error = %v", err)
-	}
+	sourceAutoApprove := true
+	sourceSettings := backup.SourceSettingsSnapshot{UserAutoApprove: &sourceAutoApprove}
 	archivePath, address := writeRecoverableArchiveWithSourceSettings(
 		t,
 		paths,
 		auth.DefaultIdentityID,
 		noderole.RoleSigner,
-		true,
 		sourceSettings,
 	)
 	service := Service{Deps: backupServiceTestDeps{
@@ -770,21 +679,13 @@ func TestActivateRecoveredPolicyTighteningNeedsNoAcknowledgement(t *testing.T) {
 
 func TestActivateRecoveredRequiresCurrentReviewAndAcknowledgement(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	sourceSettings, err := json.Marshal(map[string]any{
-		"schema":                backup.SourceSettingsSchema,
-		"schema_version":        backup.SourceSettingsSchemaVersion,
-		"user_auto_approve":     false,
-		"genesis_hash_mappings": []map[string]string{},
-	})
-	if err != nil {
-		t.Fatalf("Marshal(source settings) error = %v", err)
-	}
+	sourceAutoApprove := false
+	sourceSettings := backup.SourceSettingsSnapshot{UserAutoApprove: &sourceAutoApprove}
 	archivePath, address := writeRecoverableArchiveWithSourceSettings(
 		t,
 		paths,
 		auth.DefaultIdentityID,
 		noderole.RoleSigner,
-		true,
 		sourceSettings,
 	)
 	service := Service{Deps: backupServiceTestDeps{
@@ -931,16 +832,18 @@ func writeRecoverableArchiveForRole(
 	identityID string,
 	role noderole.Role,
 ) (string, string) {
-	return writeRecoverableArchive(t, paths, identityID, role, true)
+	return writeRecoverableArchive(t, paths, identityID, role)
 }
 
-func writeRecoverableArchiveWithoutManifest(
+// writeUnauthenticatedArchive writes an archive with no sealed manifest,
+// modelling material this release cannot authenticate.
+func writeUnauthenticatedArchive(
 	t *testing.T,
 	paths storepaths.Paths,
 	identityID string,
 	role noderole.Role,
 ) (string, string) {
-	return writeRecoverableArchive(t, paths, identityID, role, false)
+	return writeArchiveForRecovery(t, paths, identityID, role, false, backup.SourceSettingsSnapshot{})
 }
 
 func writeRecoverableArchive(
@@ -948,16 +851,8 @@ func writeRecoverableArchive(
 	paths storepaths.Paths,
 	identityID string,
 	role noderole.Role,
-	withManifest bool,
 ) (string, string) {
-	return writeRecoverableArchiveWithSourceSettings(
-		t,
-		paths,
-		identityID,
-		role,
-		withManifest,
-		nil,
-	)
+	return writeArchiveForRecovery(t, paths, identityID, role, true, backup.SourceSettingsSnapshot{})
 }
 
 func writeRecoverableArchiveWithSourceSettings(
@@ -965,8 +860,18 @@ func writeRecoverableArchiveWithSourceSettings(
 	paths storepaths.Paths,
 	identityID string,
 	role noderole.Role,
-	withManifest bool,
-	sourceSettings []byte,
+	sourceSettings backup.SourceSettingsSnapshot,
+) (string, string) {
+	return writeArchiveForRecovery(t, paths, identityID, role, true, sourceSettings)
+}
+
+func writeArchiveForRecovery(
+	t *testing.T,
+	paths storepaths.Paths,
+	identityID string,
+	role noderole.Role,
+	sealManifest bool,
+	sourceSettings backup.SourceSettingsSnapshot,
 ) (string, string) {
 	t.Helper()
 
@@ -993,20 +898,6 @@ func writeRecoverableArchiveWithSourceSettings(
 	if err := os.WriteFile(filepath.Join(keysDir, selector+".apb"), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(apb) error = %v", err)
 	}
-	if withManifest {
-		if err := backup.WriteManifest(root, role, time.Unix(1_700_000_000, 0)); err != nil {
-			t.Fatalf("WriteManifest() error = %v", err)
-		}
-	}
-	if sourceSettings != nil {
-		if err := os.WriteFile(
-			filepath.Join(root, backup.SourceSettingsFileName),
-			sourceSettings,
-			0o600,
-		); err != nil {
-			t.Fatalf("WriteFile(source settings) error = %v", err)
-		}
-	}
 	policyDir := filepath.Join(root, "policy")
 	if err := os.MkdirAll(policyDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll(policy) error = %v", err)
@@ -1019,8 +910,25 @@ func writeRecoverableArchiveWithSourceSettings(
 		t.Fatalf("WriteFile(source policy) error = %v", err)
 	}
 	label := "recover-service"
-	if !withManifest {
-		label = "recover-service-legacy"
+	if sealManifest {
+		// Sealed last: it inventories every member written above.
+		if role == noderole.RoleSigner && sourceSettings.UserAutoApprove == nil {
+			// Mirrors production: a signer archive always records its
+			// approval default.
+			value := false
+			sourceSettings.UserAutoApprove = &value
+		}
+		if err := backup.WriteSealedManifest(
+			root,
+			role,
+			time.Unix(1_700_000_000, 0),
+			sourceSettings,
+			[]byte("export-passphrase"),
+		); err != nil {
+			t.Fatalf("WriteSealedManifest() error = %v", err)
+		}
+	} else {
+		label = "recover-service-unauthenticated"
 	}
 	archivePath := backup.BuildManagedArchivePath(paths, identityID, label)
 	if err := backup.CreateTarGzArchive(root, archivePath); err != nil {

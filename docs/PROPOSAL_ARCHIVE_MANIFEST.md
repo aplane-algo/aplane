@@ -1,6 +1,6 @@
 # Proposal: Authenticated Backup Archive Manifest
 
-**Status:** draft, awaiting decision.
+**Status:** accepted and implemented. Retained as the rationale record for the archive trust model; the normative contract lives in ARCH_CONTRACTS.md.
 **Scope:** backup archive format, recovered-review source-context machinery,
 and the admin protocol v3 source-context fields.
 **Decides:** the "simplify or authenticate source context" question from the
