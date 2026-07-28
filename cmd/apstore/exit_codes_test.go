@@ -19,6 +19,7 @@ func TestExitCodeForResultCode(t *testing.T) {
 		{protocol.ResultCodeActivationConflict, apstoreExitConflict},
 		{protocol.ResultCodeActivationReviewStale, apstoreExitConflict},
 		{protocol.ResultCodeActivationAckRequired, apstoreExitConflict},
+		{protocol.ResultCodeRecoveredRollbackDiverged, apstoreExitConflict},
 		{protocol.ResultCodeKeyTypeInUse, apstoreExitConflict},
 		{protocol.ResultCodeActivationFailed, apstoreExitConflict},
 		{protocol.ResultCodeDeactivationFailed, apstoreExitConflict},

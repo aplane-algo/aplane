@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -193,6 +194,22 @@ func (s Service) rollbackRecoveredGenerational(
 	if manifest.ParentID == "" {
 		return fmt.Errorf("generation %s has no parent to roll back to", gen.GenerationID())
 	}
+	// The current generation is mutable: a key generated or a template
+	// installed after the activation lives in this generation but is not
+	// part of the restore. Repointing CURRENT at the parent would discard
+	// it, so rollback is permitted only while the generation still matches
+	// its at-mint inventory. Refused before any mutation.
+	inventory, err := genstore.BuildInventory(gen)
+	if err != nil {
+		return err
+	}
+	if !inventoriesEqual(manifest.Inventory, inventory) {
+		return activationFailure(
+			protocol.ResultCodeRecoveredRollbackDiverged,
+			"generation %s no longer matches its at-mint inventory: the store was mutated after activation of batch %s, and rolling back would discard those later changes; nothing was rolled back",
+			gen.GenerationID(), req.RestoreID,
+		)
+	}
 	// RollbackTo seals the outgoing generation before flipping the pointer:
 	// from here the store is being mutated, and a failure must classify as
 	// recovered_rollback_failed, never as a pre-mutation refusal.
@@ -214,4 +231,13 @@ func (s Service) rollbackRecoveredGenerational(
 	s.Deps.Logf("rolled back activation of batch %s: CURRENT repointed from %s to %s",
 		req.RestoreID, gen.GenerationID(), manifest.ParentID)
 	return nil
+}
+
+// inventoriesEqual compares two content inventories entry by entry. Both
+// sides are sorted by path at construction (BuildInventory sorts; manifest
+// validation requires sorted order), so positional comparison is exact.
+func inventoriesEqual(a, b []genstore.InventoryEntry) bool {
+	return slices.EqualFunc(a, b, func(x, y genstore.InventoryEntry) bool {
+		return x.Path == y.Path && x.SHA256 == y.SHA256 && x.Size == y.Size
+	})
 }

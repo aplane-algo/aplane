@@ -99,7 +99,14 @@ const (
 	// recovery (recovered_rollback_failed means state was mutated and the
 	// failure forced recovery).
 	ResultCodeRecoveredRollbackRefused = "recovered_rollback_refused"
-	ResultCodePurgeRecoveredFailed     = "purge_recovered_failed"
+	// ResultCodeRecoveredRollbackDiverged reports a rollback the server
+	// refused because the current generation no longer matches its at-mint
+	// inventory: the store was mutated after the activation (a generated
+	// key, an installed template), and repointing CURRENT at the parent
+	// would discard those later changes. Nothing was mutated and no
+	// recovery mode was entered.
+	ResultCodeRecoveredRollbackDiverged = "recovered_rollback_diverged"
+	ResultCodePurgeRecoveredFailed      = "purge_recovered_failed"
 	// ResultCodeRecoveryBlocked reports an unlock that succeeded into
 	// recovery mode: the passphrase was right, but the store failed
 	// reconciliation or generation validation, so signing is blocked until
