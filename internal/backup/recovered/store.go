@@ -93,7 +93,7 @@ type CreateRequest struct {
 // A published batch is immutable. Callers may load it for validation but must
 // never persist a re-marshaled loaded Batch because older readers intentionally
 // ignore additive JSON fields. Rotation re-encrypts the exact plaintext bytes;
-// mutable activation progress belongs in the separate activation journal.
+// activation and purge delete a batch but never rewrite it.
 type Batch struct {
 	Schema                    string                             `json:"schema"`
 	RestoreID                 string                             `json:"restore_id"`

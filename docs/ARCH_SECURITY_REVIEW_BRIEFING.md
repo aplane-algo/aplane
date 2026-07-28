@@ -171,10 +171,12 @@ Activation requires a destination-bound review token. One acknowledgement is
 required, and it is derived from verified destination state: an identity that
 auto-approves unmatched signing requests must be acknowledged, whatever the
 archive reports. Active replacement is a separate option.
-The server publishes an encrypted exact rollback snapshot and activation
-journal before the first active write. Reload failure restores prior state; a
-hard interruption blocks signing until explicit rollback-first resume or
-rollback. Purge cannot erase incomplete activation state.
+The server commits the activation by minting a complete new generation and
+flipping the `CURRENT` pointer in one durable rename; the outgoing generation
+is sealed first and remains the exact rollback target. Reload failure rolls
+the pointer back to it; an interrupted attempt leaves no committed state, and
+a commit with unconfirmed durability blocks signing in recovery mode until
+reconciliation.
 
 ### Security significance
 

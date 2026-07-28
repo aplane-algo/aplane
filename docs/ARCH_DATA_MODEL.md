@@ -162,7 +162,7 @@ DTOs and contract fixtures.
 | Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files, `manifest.json`, optional independently versioned `source_settings.json`, and policy snapshots | restore preview/recovery input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
 | Backup manifest | Backup archive | `manifest.json` schema `aplane.backup.manifest.v1` | source node role default and diagnostics for rebuild | none | `internal/backup` |
 | Backup source settings | Backup archive | optional `source_settings.json` schema `aplane.backup.source-settings.v1` | unverified source approval/custom-network review context | recovered batch and `review_recovered_result` | `internal/backup`, `internal/backup/sourcecontext` |
-| Recovered batch | Signer identity | destination-encrypted `recovered/<restore-id>/batch.enc`, `entries/*.recovered`, and optional `activation/` reconciliation state | none before explicit activation; recovery-only runtime when activation is incomplete | recovered lifecycle admin messages | `internal/backup/recovered`, `internal/signerapp/backupadmin` |
+| Recovered batch | Signer identity | destination-encrypted `recovered/<restore-id>/batch.enc` and `entries/*.recovered` | none before explicit activation | recovered lifecycle admin messages | `internal/backup/recovered`, `internal/signerapp/backupadmin` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
 
 ## Relationship Map
@@ -267,9 +267,6 @@ identities/<identity>/
   recovered/<restore-id>/
     batch.enc
     entries/<selector-hash>.recovered
-    activation/
-      journal.enc
-      rollback.enc
   deleted/
   passphrase | passphrase.cred   # optional helper artifacts
 ```
@@ -287,12 +284,11 @@ store removes exact `.new`/`.old` siblings after the canonical file validates,
 or restores a missing/invalid canonical file only from an exact sibling that
 validates under the current master key. Unknown state fails closed. Directories
 prefixed `.recovering-` are unpublished staging state and must be ignored by
-inventory operations. Before the first active activation write, an encrypted
-activation journal and exact rollback snapshot are published under
-`activation/`. Their presence is authoritative incomplete-activation state:
-startup retains the master-key session only for recovery administration,
-blocks signing, and requires exact resume or rollback. Purge cannot erase this
-state.
+inventory operations. Activation consumes a batch by minting a new generation
+behind a single durable `CURRENT` flip and deletes the batch after reload
+validates the activated state; no per-batch activation state exists on disk,
+and an uncommitted activation attempt leaves only staging residue that
+generation reconciliation discards at the next unlock.
 
 `identity.Runtime` is the runtime projection. It owns:
 
@@ -884,9 +880,11 @@ Live restore is batch-oriented:
 - recovery atomically publishes selected entries outside active scans,
 - review binds the batch to current destination policy, approval mode,
   source-settings status/digest, and active conflicts,
-- activation requires explicit acknowledgements, publishes rollback state,
-  writes active state, and reloads,
-- hard interruption blocks signing until resume or rollback,
+- activation requires explicit acknowledgements and commits the batch as a
+  new generation behind a single durable `CURRENT` flip, then reloads,
+- an uncommitted attempt leaves the prior generation active; a commit with
+  unconfirmed durability blocks signing in recovery mode until
+  reconciliation,
 - policy files are never installed automatically and must be reviewed and
   replaced explicitly.
 

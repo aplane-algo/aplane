@@ -99,16 +99,8 @@ const (
 	argon2Threads = 4         // parallelism
 	argon2KeyLen  = 32        // AES-256
 
-	// Legacy Argon2id parameters used by version 1 keystores. These are frozen:
-	// v1 metadata does not store KDF parameters, so changing any of these (or
-	// letting them alias the current constants above) would silently change the
-	// derived master key and lock existing v1 keystores out as "incorrect
-	// passphrase".
-
-	// CurrentKeystoreMetadataVersion is the .keystore schema version for
-	// flat-layout stores. Binaries without generation-layout support have
-	// this as their maximum, which is what makes the version bump below a
-	// hard old-binary rejection gate.
+	// CurrentKeystoreMetadataVersion is the .keystore schema version this
+	// release writes and the only version it reads.
 	CurrentKeystoreMetadataVersion = GenerationalKeystoreMetadataVersion
 
 	// GenerationalKeystoreMetadataVersion marks a store whose active
