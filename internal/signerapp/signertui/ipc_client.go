@@ -608,13 +608,6 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 					Error:   list.Error,
 				})
 
-			case MsgTypeRollbackRecoveredResult:
-				var result RollbackRecoveredResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					continue
-				}
-				c.emit(sessionID, RollbackRecoveredResultMsg{Result: result})
-
 			case MsgTypePurgeRecoveredResult:
 				var result PurgeRecoveredResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
@@ -972,18 +965,6 @@ func (c *IPCClient) SendListRecovered() error {
 			Type: MsgTypeListRecovered,
 			ID:   fmt.Sprintf("list-recovered-%d", time.Now().UnixNano()),
 		},
-	})
-}
-
-// SendRollbackRecovered requests exact restoration of the pre-activation
-// state for one incomplete activation.
-func (c *IPCClient) SendRollbackRecovered(restoreID string) error {
-	return c.sendMessage(RollbackRecoveredMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeRollbackRecovered,
-			ID:   fmt.Sprintf("rollback-recovered-%d", time.Now().UnixNano()),
-		},
-		RestoreID: restoreID,
 	})
 }
 

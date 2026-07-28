@@ -34,8 +34,6 @@ const (
 	MsgTypeActivateRecoveredResult = protocol.MsgTypeActivateRecoveredResult
 	MsgTypeListRecovered           = protocol.MsgTypeListRecovered
 	MsgTypeRecoveredList           = protocol.MsgTypeRecoveredList
-	MsgTypeRollbackRecovered       = protocol.MsgTypeRollbackRecovered
-	MsgTypeRollbackRecoveredResult = protocol.MsgTypeRollbackRecoveredResult
 	MsgTypePurgeRecovered          = protocol.MsgTypePurgeRecovered
 	MsgTypePurgeRecoveredResult    = protocol.MsgTypePurgeRecoveredResult
 	MsgTypeSignRequest             = protocol.MsgTypeSignRequest
@@ -124,8 +122,6 @@ type (
 	ListRecoveredMessage                = protocol.ListRecoveredMessage
 	RecoveredBatchInfo                  = protocol.RecoveredBatchInfo
 	RecoveredListMessage                = protocol.RecoveredListMessage
-	RollbackRecoveredMessage            = protocol.RollbackRecoveredMessage
-	RollbackRecoveredResultMessage      = protocol.RollbackRecoveredResultMessage
 	PurgeRecoveredMessage               = protocol.PurgeRecoveredMessage
 	PurgeRecoveredResultMessage         = protocol.PurgeRecoveredResultMessage
 	RecoveredReviewEntry                = protocol.RecoveredReviewEntry

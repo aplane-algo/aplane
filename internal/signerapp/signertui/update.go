@@ -477,33 +477,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.waitForMessageCmd()
 
-	case RollbackRecoveredResultMsg:
-		cmds := []tea.Cmd{m.waitForMessageCmd()}
-		if msg.Result.Success {
-			m.restore.recoveredError = ""
-			if m.viewState == ViewRestoring {
-				m.viewState = ViewRecoveredList
-			}
-			// The server pushes the unlocked status if its rescan is clean;
-			// refresh the list either way.
-			cmds = append(cmds, m.sendListRecoveredCmd())
-		} else {
-			// recovered_rollback_refused means the server refused before
-			// mutating anything: no recovery was entered server-side and
-			// no corrective status push will ever come, so mirroring
-			// recovery here would lock the client into the blocking screen
-			// until restart. Only a mutated-and-failed rollback mirrors.
-			if msg.Result.Code == protocol.ResultCodeRecoveredRollbackFailed {
-				m.signerState = signerRuntimeRecovery
-			}
-			m.restore.recoveredError = msg.Result.Error
-			if m.viewState == ViewRestoring {
-				m.viewState = ViewRecoveredList
-			}
-			cmds = append(cmds, m.sendListRecoveredCmd())
-		}
-		return m, tea.Batch(cmds...)
-
 	case PurgeRecoveredResultMsg:
 		if msg.Result.Success {
 			m.restore.recoveredError = ""

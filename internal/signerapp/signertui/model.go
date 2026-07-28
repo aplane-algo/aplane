@@ -53,7 +53,7 @@ const (
 	ViewTemplateInstalling
 	ViewLibraryTemplateDetails // Full-screen view of a library entry's source (YAML or synthesized parameters)
 	ViewError
-	ViewRecoveredList // Recovered batches: review/activate/resume/rollback/purge; blocking while in recovery mode
+	ViewRecoveredList // Recovered batches: review/activate/purge; blocking while in recovery mode
 )
 
 // ConnectionState represents IPC connection status
@@ -602,11 +602,6 @@ type RecoveredListMsg struct {
 	Batches []RecoveredBatchInfo
 	Code    string
 	Error   string
-}
-
-// RollbackRecoveredResultMsg is sent when an explicit rollback completes.
-type RollbackRecoveredResultMsg struct {
-	Result RollbackRecoveredResultMessage
 }
 
 // PurgeRecoveredResultMsg is sent when an inactive batch purge completes.

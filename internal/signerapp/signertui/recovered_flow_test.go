@@ -220,24 +220,6 @@ func TestRecoveredListMsgPopulatesInventory(t *testing.T) {
 	}
 }
 
-func TestFailedRollbackResultMirrorsRecoveryState(t *testing.T) {
-	m := Model{viewState: ViewRestoring, signerState: signerRuntimeUnlocked}
-	got, _ := updateForTest(t, m, RollbackRecoveredResultMsg{Result: RollbackRecoveredResultMessage{
-		Success: false,
-		Code:    protocol.ResultCodeRecoveredRollbackFailed,
-		Error:   "rollback incomplete",
-	}})
-	if got.signerState != signerRuntimeRecovery {
-		t.Fatalf("signer state = %v after failed rollback, want recovery", got.signerState)
-	}
-	if got.viewState != ViewRecoveredList {
-		t.Fatalf("view = %v after failed rollback, want recovered list", got.viewState)
-	}
-	if !strings.Contains(got.restore.recoveredError, "rollback incomplete") {
-		t.Fatalf("failure details missing: %q", got.restore.recoveredError)
-	}
-}
-
 func TestReviewRendersEntriesAndArchiveIdentity(t *testing.T) {
 	m := Model{
 		viewState:   ViewRestoreReview,
@@ -347,38 +329,6 @@ func TestSuccessOnDisplayStaysBlockedWhileDaemonInRecovery(t *testing.T) {
 	got := next.(Model)
 	if got.viewState != ViewRecoveredList {
 		t.Fatalf("success while daemon in recovery landed on view %v, want the blocking recovery screen", got.viewState)
-	}
-}
-
-func TestRollbackRefusalDoesNotMirrorRecovery(t *testing.T) {
-	base := Model{
-		viewState:   ViewRestoring,
-		signerState: signerRuntimeUnlocked,
-		restore:     restoreState{restoreID: "00000000000000000000000000000001"},
-	}
-	refused := RollbackRecoveredResultMsg{Result: RollbackRecoveredResultMessage{
-		Success: false,
-		Code:    protocol.ResultCodeRecoveredRollbackRefused,
-		Error:   "no activation to roll back",
-	}}
-	next, _ := base.Update(refused)
-	got := next.(Model)
-	if got.signerState == signerRuntimeRecovery {
-		t.Fatal("pre-mutation rollback refusal locked the client into recovery with no corrective push coming")
-	}
-	if got.viewState != ViewRecoveredList {
-		t.Fatalf("refusal left view %v, want recovered list", got.viewState)
-	}
-
-	failed := RollbackRecoveredResultMsg{Result: RollbackRecoveredResultMessage{
-		Success: false,
-		Code:    protocol.ResultCodeRecoveredRollbackFailed,
-		Error:   "restore failed midway",
-	}}
-	next, _ = base.Update(failed)
-	got = next.(Model)
-	if got.signerState != signerRuntimeRecovery {
-		t.Fatal("mutated-and-failed rollback did not mirror server-side recovery")
 	}
 }
 
