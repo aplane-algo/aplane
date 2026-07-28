@@ -450,7 +450,7 @@ Machine-checked invariants by module:
 | `guarded_assembly.tla` | A1, A6, A7, A8, A14, no-partial-output (component assembly verification) | 270,920 | 1 |
 | `bounded_sentry.tla` | BS1-BS7 (user-first ordering, authority/source/byte checks, atomic output, admin sentry bypass) | 99,584 | 4 |
 | `plugin_signing.tla` | PS2-PS7 (plugin trust boundary: digest, review fail-closed, plan preservation, byte match, approval gates) | 3,852 | 1 |
-| `generation_commit.tla` | G1-G5 (generation commit under crash: pointer never names an unpublished generation, parent sealed before flip, uncommitted attempts discarded at reconcile, durability-unknown blocks signing, reconcile restores durable CURRENT) | 44 | 10 |
+| `generation_commit.tla` | G1-G5 (generation commit under crash: pointer never names an unpublished generation, parent sealed before flip, uncommitted attempts discarded at reconcile on an undamaged store, durability-unknown blocks signing, reconcile restores durable CURRENT) | 41 | 10 |
 
 Not yet machine-checked: S1-S13 (entire signing-authority surface), the guarded
 signing invariants not covered by `guarded_assembly.tla` (A2-A5, A9-A13, and

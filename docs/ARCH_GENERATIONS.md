@@ -289,7 +289,7 @@ The commit protocol is machine-checked by `docs/formal/generation_commit.tla`
 every step and a filesystem that may lose any write whose fsync has not
 completed, and checks that CURRENT never names an unpublished generation
 (G1), the parent is sealed before the child becomes current (G2),
-reconciliation discards uncommitted attempts (G3), a commit with unconfirmed
+reconciliation discards uncommitted attempts on an undamaged store (G3), a commit with unconfirmed
 durability blocks signing (G4), and reconciliation restores a durable
 pointer (G5). The model is the exhaustive companion to the fault-injection
 tests below, which check chosen interruption points; it does not model

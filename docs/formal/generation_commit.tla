@@ -32,6 +32,16 @@ nothing. Deleting the publishedDurable conjunct from MintFlip makes TLC
 produce exactly that counterexample, which is the regression this model
 exists to catch.
 
+The counterexample is worth reading, because it does not take the obvious
+route. MintSealParent carries its own publishedDurable guard, so a first
+mint attempt stays safe even with MintFlip weakened. The violation comes
+from the retry path: seal the parent, crash in the seal-before-flip
+window, reconcile discards the unpublished child but leaves the parent
+sealed, and the retry then reaches a weakened MintFlip on a freshly
+published — not yet synced — generation, because parentSealed is already
+satisfied from the first attempt. The conjunct on MintFlip is what holds
+G1 there, where the seal step no longer re-derives it.
+
 Durability is modeled explicitly rather than assumed. Each write that the
 implementation follows with an fsync has a companion "durable" flag, and
 Crash nondeterministically loses any write whose flag is still FALSE.
@@ -52,6 +62,20 @@ The module intentionally omits:
   - Garbage collection of sealed priors, and the retention window. Prune
     is crash-idempotent through tombstone renames and does not interact
     with the commit sequence modeled here.
+  - Reconcile's retention exceptions. The implementation keeps a
+    non-current unsealed generation when recovery metadata references it
+    or when it is the current manifest's ParentID, which is damage
+    (RetainedUnsealedParent) rather than an uncommitted attempt. The
+    model's Reconcile discards unconditionally, so G3 is the claim for an
+    undamaged store with no referenced generations — the case the commit
+    protocol itself produces. Retention of referenced and damaged
+    generations is a reconciliation-policy question, checked by Go tests.
+  - Read-back failure during the flip. WriteCurrent also reports
+    durability-unknown when it cannot re-read CURRENT after a failed
+    write, a state where the flip may not have landed at all. The model
+    enters durabilityUnknown only with the flip visible; both reach the
+    same runtime outcome (signing blocked until reconciliation), which is
+    what G4 constrains.
   - Multi-generation chains. Two generations are enough to express every
     ordering constraint in the protocol; a longer chain adds states
     without adding reachable shapes.
@@ -187,6 +211,9 @@ MintFlip ==
 \* is complete.
 MintConfirmFlip ==
     /\ running
+    /\ mode = "signing"        \* after a reported durability failure the
+                               \* commit path has already returned; only
+                               \* reconciliation re-syncs
     /\ current = C
     /\ ~currentDurable
     /\ currentDurable' = TRUE

@@ -74,7 +74,7 @@
   },
   {
     "spec": "generation_commit",
-    "distinct_states": 44,
+    "distinct_states": 41,
     "depth": 10
   }
 ]
