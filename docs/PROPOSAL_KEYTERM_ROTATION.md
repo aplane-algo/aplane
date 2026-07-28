@@ -64,9 +64,58 @@ term key   --encrypts--> individual store files
   because bulk re-encryption would strand priors under the old key. With
   retained terms, priors and rotation coexist; the prune-then-rotate workflow
   and its content-validation gate become unnecessary.
-- `apstore generations prune` naturally garbage-collects term references;
-  a term unreferenced by any live generation can be dropped from the keyring
-  (optional hygiene, not required for correctness).
+- **Term garbage collection needs care, and cannot ride along with prune.**
+  Dropping a term rewrites `keyring.enc`, which requires the KEK — and the
+  KEK is never cached (open question 4), while plain `apstore generations
+  prune` never prompts for a passphrase. Only `prune --all-priors` does, and
+  only because it decrypt-validates. So prune *computes and records* the
+  now-unreferenced terms; the drop happens inside the next `changepass`, or
+  an explicit passphrase-prompting command. Term GC is optional hygiene, so
+  deferring the drop costs nothing.
+- **A generation references a set of terms, not one term.** `Mint` copies
+  the parent byte-for-byte, so a child minted from a partially rewrapped
+  parent inherits files under mixed terms and is sealed that way. Term
+  references are therefore per file. `BuildInventory` already walks every
+  file at mint: have it collect the term set into the manifest, so GC reads
+  authenticated metadata instead of rescanning headers — and the seal covers
+  the term inventory for free.
+- **"Referenced" must mean every retained generation**: sealed priors kept
+  as rollback targets, the `RetainedUnsealedParent` damage case, and
+  anything in the recovery-metadata `referenced` set. Dropping a term a
+  rollback target needs destroys the ability to roll back, silently.
+
+### What terms do and do not accomplish (trust model)
+
+One fact drives most of the consequences below, and it is easy to lose
+track of: **sealed priors are never rewrapped, so they pin the terms they
+were written under, and a pinned term keeps its data readable to anyone who
+can reconstruct that term.**
+
+- A term is a data-encryption key, not an identity or a capability. Files
+  record the term that encrypted them; the keyring maps term to key.
+- **Rotation is not revocation.** Appending a term protects *subsequent*
+  writes. It does nothing to material already written under earlier terms
+  until that material is rewrapped — and sealed generations are never
+  rewrapped by design, because their seals hash ciphertext.
+- The attacker this matters for is the one a passphrase change exists to
+  address: someone who knew the old passphrase and kept copies of
+  `keyring.enc` and `.keystore` (the latter carries the KDF salt). They can
+  re-derive the old KEK, unwrap their copy of the keyring, and read anything
+  still encrypted under a term it contains — in their retained copies, and
+  in the live store wherever an unrewrapped file remains.
+- Because `Mint` copies the parent's namespaces byte-for-byte
+  (`copyNamespaces`: `ReadRegularFile` then `WriteFile`, ciphertext
+  verbatim), a retained sealed parent holds substantially the same
+  credentials as the current generation, under its original terms.
+  Rewrapping only the current generation therefore does not remove that
+  material from reach.
+- Consequently a term is referenced until **every** generation that retains
+  a file under it is gone. Term retention is bounded by generation
+  retention, not by rewrap.
+
+Two sections below follow directly from this: what `changepass` can honestly
+claim (open question 5), and what term garbage collection must treat as a
+reference (open question 4).
 
 ### Version gate
 
@@ -146,10 +195,25 @@ accepts everywhere else.
      overloading `KeyID`, which is a constant scheme tag exact-matched on
      load. Absent `Term` fails closed — with no migration, a v4 sidecar
      always carries one.
-   - **Mandatory rewrap bounds the resident key set.** Once the rewrap pass
-     completes, the previous term is unreferenced and can be dropped from
-     the keyring. The steady state is one term, briefly two during a change
-     — today's single key plus a transient second, not an unbounded set.
+
+     Per-term derivation is deliberate: a fixed integrity root would make
+     forgery ability permanent, since anyone who obtained it once could
+     forge policy and node-role HMACs forever with no rotation able to help.
+     Deriving per term ties forgery to term lifetime. State the limit
+     plainly, though: verification accepts any term still in the keyring, so
+     rotation revokes forgery only as terms are dropped — which, per the
+     trust-model section, is bounded by generation retention, not by the
+     rotation itself.
+   - **The resident key set is bounded by generation retention, not by
+     rewrap.** An earlier draft claimed the previous term becomes
+     unreferenced once the rewrap completes, so the steady state is one
+     term. That is false whenever a prior exists: retained sealed priors are
+     never rewrapped and pin the terms they hold (see the trust-model
+     section). The true bound is *terms referenced by retained generations,
+     plus the current one* — small, since retention is current + parent +
+     referenced, and converging to one only after priors are pruned or
+     superseded and collected. An implementer following the earlier wording
+     literally would drop a term a rollback target still needs.
 
    This is the same refactor as open question 3; they are one workstream.
 3. ~~**Blast-radius review of `crypto.EncryptWithMasterKey` call sites.**~~
@@ -186,14 +250,36 @@ accepts everywhere else.
       only one term exists.
    3. **Enable term append**, gated on the migration being complete.
 
-   The gate is mechanically enforceable: an arch test asserting no non-test
-   code outside `internal/crypto` calls the compatibility accessor. The
-   repo already pins boundaries this way in `test/arch/`
-   (`guarded_surface_test.go`), so it is a familiar pattern that runs in CI.
+   **The gate must be stronger than an arch test over the accessor alone.**
+   Three holes to close:
+
+   - **Fence all three surfaces, not one.** Fencing the compatibility
+     accessor misses passphrase-to-key derivation: `policyeditor/store.go`
+     calls `meta.VerifyAndDeriveMasterKey` directly, and any code holding
+     the resulting `masterKey []byte` and calling `EncryptWithMasterKey`
+     passes an accessor-only gate while being exactly the missed site the
+     gate exists to catch. Fence the accessor, the raw-key
+     `Encrypt`/`DecryptWithMasterKey` entry points, and derivation outside
+     the two sanctioned sites.
+   - **Prefer the compiler to a test.** At the end of phase 2, delete or
+     unexport the compatibility accessor and the raw-key encrypt/decrypt
+     functions. Completeness then fails the build rather than a check
+     someone can skip or forget to extend. Reserve the arch test for what
+     the compiler cannot see — the derivation discipline.
+   - **Build the tagged tree.** This repo has production code behind
+     `//go:build testmode` (`cmd/apadmin/batch.go`), invisible to untagged
+     builds. A gate that does not build with `-tags testmode` can pass while
+     a tagged call site survives into phase 3.
+
+   **Phase 1 invariant to state explicitly:** the term stamp belongs to the
+   envelope writer, not to `Keyring.Seal`. Every v4 write stamps `term: 1`
+   regardless of which path produced it, and v4 decrypt fails closed on an
+   absent term. Otherwise files written through the compatibility path in
+   phases 1-2 carry no term and become unreadable at phase 3.
 
    In a big-bang change a missed site is a latent data-loss bug; in this
    sequencing it is a no-op until phase 3, and phase 3 does not start until
-   nothing is missed.
+   the build says nothing is missed.
 4. ~~**KDF/KEK caching** in the daemon unlock path.~~ **Decided: cache the
    unwrapped keyring; do not cache the KEK.**
 
@@ -239,11 +325,36 @@ accepts everywhere else.
    rewrap-only would silently redefine the operation.
 
    Appending a term protects new writes; rewrapping the current generation
-   under the new term restores today's end state completely. The difference
-   from today is that reaching that state is no longer atomic — and no
-   longer needs to be, because a partially rewrapped store is a legal
-   state: every file is wholly under one term at every instant, so an
-   interrupted rewrap is resumable rather than damage.
+   under the new term removes the live active store from reach. Reaching
+   that state is no longer atomic — and no longer needs to be, because a
+   partially rewrapped store is a legal state: every file is wholly under
+   one term at every instant, so an interrupted rewrap is resumable rather
+   than damage.
+
+   **It does not restore today's end state completely, and the proposal
+   must not claim it does.** Today `changepass` requires
+   `prune --all-priors` first, so it ends with no priors at all and nothing
+   anywhere readable under old material. Once quiescence dissolves, a
+   retained sealed parent survives the passphrase change unrewrapped, and
+   (per the trust-model section) it holds substantially the same credentials
+   as the current generation. The attacker described above reads the
+   retained prior and obtains current key material regardless of the rewrap.
+
+   Two ways to resolve it:
+
+   - **(a)** have `changepass` also prune priors, converging on today's
+     guarantee — at the cost of reimporting a milder version of the
+     quiescence requirement this design exists to remove;
+   - **(b)** accept the weaker guarantee and state it, with `changepass`
+     reporting exactly what remains: *"N prior generation(s) remain readable
+     under pre-change terms; run `apstore generations prune --all-priors` to
+     remove them."*
+
+   **Choose (b).** It keeps the rollback-safety win that motivates the whole
+   design, tells the operator the truth, and leaves them one documented
+   command from (a) when their threat model calls for it. What is not
+   acceptable is claiming the stronger guarantee while shipping the weaker
+   one.
 
    The rewrap is mandatory rather than an opt-in follow-up command. That
    choice costs nothing: `changepass` already runs a synchronous pass over
@@ -261,19 +372,6 @@ accepts everywhere else.
 
    Interrupted rewrap should report how many files remain on the previous
    term, and re-running `changepass` (or the same pass) finishes the job.
-
-## Rough effort
-
-- Envelope header + keyring type + v4 metadata/migration: the core, touching
-  `internal/crypto` and every encrypt/decrypt call site. Largest and
-  riskiest part; needs its own review cycle and crash matrix.
-- changepass rewrite: net-negative code (deletes the swap machinery).
-- Daemon/keystore plumbing (keyring in place of master key): mechanical but
-  wide.
-- Not a patch: this is a Phase-4-sized change and should not ride along with
-  the current branch. Recommended sequencing: land the current branch
-  (rotation refuses the crash window, fail-closed), then propose this as its
-  own reviewed migration.
 
 ## Rough effort
 
