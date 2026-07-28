@@ -21,6 +21,7 @@ import (
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -1414,8 +1415,28 @@ func tamperBackupBundleTemplateInArchive(t *testing.T, archivePath, address, exp
 	t.Helper()
 
 	extractDir := mustExtractBackupArchive(t, archivePath)
+	// Read the manifest before mutating, while the archive still matches it.
+	manifest, err := backupbundle.OpenSealedManifest(extractDir, []byte(exportPassphrase))
+	if err != nil {
+		t.Fatalf("failed to open sealed manifest for %s: %v", archivePath, err)
+	}
+
 	backupPath := filepath.Join(extractDir, "apb", address+".apb")
 	tamperBackupBundleTemplate(t, backupPath, exportPassphrase, mutate)
+
+	// These fixtures rewrite a payload to model an archive a different writer
+	// produced, so the manifest must be re-sealed over the new content. An
+	// archive left inconsistent would be rejected as tampered — which is the
+	// manifest working, not the behavior under test here.
+	if err := backupbundle.WriteSealedManifest(
+		extractDir,
+		noderole.Role(manifest.SourceNodeRole),
+		time.Unix(manifest.CreatedAtUnix, 0),
+		manifest.SourceSnapshot(),
+		[]byte(exportPassphrase),
+	); err != nil {
+		t.Fatalf("failed to re-seal manifest for %s: %v", archivePath, err)
+	}
 	if err := os.Remove(archivePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove original backup archive %s: %v", archivePath, err)
 	}

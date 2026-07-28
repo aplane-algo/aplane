@@ -76,6 +76,24 @@ func (m Manifest) SourceProjection() sourcecontext.Projection {
 	})
 }
 
+// SourceSnapshot returns the manifest's source context in the shape
+// WriteSealedManifest consumes, so an archive can be re-sealed after its
+// members are legitimately rewritten.
+func (m Manifest) SourceSnapshot() SourceSettingsSnapshot {
+	snapshot := SourceSettingsSnapshot{}
+	if m.UserAutoApprove != nil {
+		value := *m.UserAutoApprove
+		snapshot.UserAutoApprove = &value
+	}
+	if len(m.GenesisHashMappings) > 0 {
+		snapshot.GenesisHashMappings = make(map[string]string, len(m.GenesisHashMappings))
+		for _, mapping := range m.GenesisHashMappings {
+			snapshot.GenesisHashMappings[mapping.GenesisHash] = mapping.Network
+		}
+	}
+	return snapshot
+}
+
 // WriteSealedManifest inventories every file already staged under destDir,
 // seals the manifest under exportPassphrase, and writes it into the archive.
 // It must run after every other member is final: the inventory is what makes
