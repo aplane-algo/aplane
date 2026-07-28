@@ -1,0 +1,162 @@
+# Proposal: Authenticated Backup Archive Manifest
+
+**Status:** draft, awaiting decision.
+**Scope:** backup archive format, recovered-review source-context machinery,
+and the admin protocol v3 source-context fields.
+**Decides:** the "simplify or authenticate source context" question from the
+external design review.
+
+## 1. Problem
+
+Two problems share one root: nothing authenticates a backup archive as a
+whole.
+
+**Integrity gap.** Each `.apb` payload is individually authenticated
+(AES-256-GCM under an Argon2id key derived from the export passphrase), but
+the archive around the payloads is not. `manifest.json` and
+`source_settings.json` are unauthenticated plaintext, and the member list
+itself is unauthenticated. An attacker who can modify an archive in transit
+or at rest — without knowing the export passphrase — can:
+
+- remove members undetected (a missing `.apb` is invisible; each payload
+  authenticates only itself),
+- alter or strip the source node role and source settings (only
+  display/default consequences, but silently),
+- replace the policy snapshot the operator inspects (its `.hmac` sidecar is
+  bound to the *source* store's key, which the destination cannot verify).
+
+**Complexity.** Because source context is unauthenticated by design, the
+system carries machinery to say so precisely: an independent schema
+(`aplane.backup.source-settings.v1`) with canonical mapping rules and
+size/count limits, a `missing | unverified | invalid` tri-state, the
+protocol-v3 constant compatibility entries in `unknown_source_settings`, the
+protocol 3.1 typed-context fields with precedence rules over those entries,
+the protocol 3.2 acknowledgement field with old-server fallback, and the
+CLI/TUI rendering rules that keep "unverified" from reading as a verdict.
+That is roughly 550 lines in `internal/backup` plus protocol constants,
+review projection, and two rendering surfaces — for metadata that never
+affects destination behavior.
+
+## 2. Options
+
+### Option A — simplify to labeled diagnostics
+
+Keep the format; delete the trust-state machinery. Source context renders as
+plainly labeled unauthenticated text ("reported by the archive, not
+verified"), the tri-state and the compatibility entries disappear from the
+protocol, and no new crypto is introduced.
+
+- Cheap: mostly deletion.
+- Leaves the integrity gap untouched: member removal, role/settings
+  tampering, and policy-snapshot replacement remain undetectable.
+
+### Option B — authenticated archive manifest (recommended)
+
+New archive envelope generation where one manifest covers everything, and
+the manifest itself is protected under the export passphrase.
+
+**Manifest content** (single record, replacing today's `manifest.json` and
+`source_settings.json`):
+
+- schema + creation metadata,
+- source node role,
+- the complete member inventory: `{path, sha256, size}` for every archive
+  member — `apb/*.apb`, `policy/*`, `README.md` — no exceptions,
+- the source-context settings embedded inline (the separate file, its
+  separate schema, and its standalone size limits disappear; the manifest's
+  own size cap bounds them).
+
+**Protection:** the manifest is sealed with the same standalone encryption
+envelope the `.apb` payloads already use (Argon2id + AES-256-GCM under the
+export passphrase, own salt/nonce). Reusing the existing envelope avoids new
+cryptographic constructions; GCM provides the authentication. Domain
+separation comes from the manifest's distinct schema identifier inside the
+sealed plaintext.
+
+**Verification:** any operation that opens the archive with the export
+passphrase (preview, recover, import, rebuild, deep verify) decrypts the
+manifest first and verifies every member against the inventory. Outcomes
+collapse to two:
+
+- manifest decrypts and every member matches → the archive is authentic as
+  a whole; source context is *authenticated* (endorsed by whoever held the
+  export passphrase at creation),
+- anything else → the archive is rejected with the existing
+  `invalid_backup_archive` class, indistinguishable from payload tampering
+  today.
+
+**Trust semantics preserved.** Authentication proves provenance and
+integrity, not safety. Source settings remain review context only: they
+never change policy verdicts, signing behavior, network resolution, or
+acknowledgement requirements, and the policy snapshot is still never
+installed. The only change is that what the review screen shows is
+tamper-evident instead of spoofable.
+
+**What it deletes:**
+
+- the `missing | unverified | invalid` tri-state and its inspection code
+  (`source_settings.go`, most of the status plumbing in
+  `backupadmin/review.go`),
+- `unknown_source_settings` and the `RecoverySourceSetting*` constant
+  compatibility entries,
+- the protocol 3.0/3.1/3.2 source-context layering and old-peer fallback
+  rules — collapsed into one v3 shape with typed fields only (protocol v3
+  has never shipped, so this is free exactly once),
+- the "Source metadata unavailable" rendering branches and their
+  precedence rules,
+- the standalone `aplane.backup.source-settings.v1` schema and its limits.
+
+`unattended_signing_ack_required` stays: it is destination-derived and
+orthogonal to source trust. The TEAL recompilation gate in `backup import`
+is likewise orthogonal (template provenance, not archive integrity) and is
+untouched by this proposal.
+
+## 3. Costs
+
+- **New archive generation; old archives unreadable.** Acceptable now:
+  there are no operators, archives are regenerable from live stores, and
+  the release policy already makes every release's store format
+  self-contained. The existing `unsupported_backup_format` rejection covers
+  old archives with actionable text.
+- **Export cost:** hashing every member at creation — negligible against
+  the encryption already done.
+- **Review surface:** one new sealed record and its verification path need
+  the same scrutiny as the `.apb` envelope; reuse keeps that small.
+
+## 4. Open questions
+
+1. **Passphrase-free `apstore verify`.** Today structural verification
+   works without the passphrase. With the manifest sealed, a passphrase-free
+   check can only confirm archive shape, not inventory. Recommend: keep a
+   minimal passphrase-free structural mode; full verification requires the
+   passphrase (it already does for payload content).
+2. **Plaintext stub.** Whether to keep a tiny unauthenticated
+   `manifest.json` stub (archive format version only) for tooling
+   friendliness, with everything trust-bearing inside the sealed manifest.
+   Recommend: yes, version-only.
+3. **Rebuild role default.** `apstore rebuild` currently reads the default
+   destination role from plaintext `manifest.json` before prompting.
+   Post-change the role comes from the sealed manifest after the passphrase
+   prompt. Recommend: accept the reordering; `--role` remains the explicit
+   override.
+4. **Failure classification at preview.** Manifest authentication failure
+   is indistinguishable from a wrong passphrase (GCM). Recommend: fold into
+   the existing decrypt-failure and rate-limit path, as payload tampering
+   already is.
+5. **Final protocol shape.** Recommend dropping `source_settings_status`
+   entirely: v3 archives always carry a manifest, so typed fields are
+   present when the source recorded them and rendered "not recorded"
+   otherwise. No status enum survives.
+
+## 5. Sequencing
+
+1. Decide the open questions above.
+2. One change, hard cut (no compatibility path): archive writer + reader on
+   the sealed manifest; delete the superseded machinery in the same change
+   so the tri-state never coexists with the manifest.
+3. Collapse the protocol fields and the CLI/TUI rendering.
+4. Docs sweep: ARCH_CONTRACTS backup contract, archive README template,
+   ARCH_ADMIN_PROTOCOL review fields, user guides.
+
+Land before protocol v3 ships; independent of the keyterm rotation
+proposal, but smaller — do this first.
