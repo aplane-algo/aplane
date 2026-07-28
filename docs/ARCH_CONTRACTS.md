@@ -42,6 +42,10 @@ installer upgrades are intentionally narrow:
   fresh install root unless the operator explicitly passes the installer
   `-f`/`--force` upgrade-check override,
 - no config, key, cache, or endpoint migration utility is shipped,
+- signer identity stores unlock only with keystore metadata version 3 and the
+  `generations/v1` layout tag; stores in any other format are rejected at
+  unlock, rotation, rebuild, and policy-sign. Keys move between installs via
+  backup archives restored into a freshly initialized store,
 - usable apclient signer routing is endpoint-based and lives in
   `endpoints.yaml`; top-level client `config.yaml` `ssh:` and `signer_port:`
   routing is rejected in this release,
@@ -484,6 +488,14 @@ credential rejection. A direct authenticated `unlock` request reports failed
 unlock/reload after passphrase verification through
 `unlock_result{success:false, code:"unlock_failed"}`.
 
+An unlock can also succeed into recovery mode: when the passphrase verifies
+but generation reconciliation or validation of the selected generation fails,
+the result reports `success:true` with a zero key count and
+`code:"recovery_blocked"`. The identity is then unlocked for administration
+only — signing is blocked until the operator resolves the store from recovery
+mode. Clients must treat `recovery_blocked` as a store-integrity state
+distinct from both `unlock_failed` and credential rejection.
+
 ## apshell Parsing Contracts
 
 The `apshell` command surface remains compatibility-sensitive even when internal parsing is refactored.
@@ -863,9 +875,6 @@ execution, output decoding, environment filtering, and validation.
     recovered/<restore-id>/
       batch.enc
       entries/<selector-hash>.recovered
-      activation/
-        journal.enc
-        rollback.enc
     deleted/keys/*.{key,sen}
     deleted/keytypes/<key_type>.template
 ```
@@ -882,9 +891,9 @@ Additional signer-state notes:
   `<data_dir>/backups/<identity>/`, making the backup locker the source for
   restorable archives
 - recovered batches are authenticated encryption under the destination master
-  key but are outside active key/key-type scans; an `activation/` marker is
-  durable incomplete-activation state and blocks signing until resume or
-  rollback
+  key but are outside active key/key-type scans; activation consumes a batch
+  by minting a new generation and deleting the batch, so no per-batch
+  activation state exists on disk
 - signer `cache/<network>_asa_cache.json` is signer-wide public ASA metadata for policy editing/rendering; it is not identity-scoped and is not authoritative for policy enforcement
 - signer cache files use the same signed JSON/HMAC envelope as client cache files, with `cache/.cache_key` scoped to the signer cache root
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
@@ -1120,15 +1129,50 @@ names remain `activate_key_type` and `deactivate_key_type` for compatibility.
 
 Defined in `internal/crypto/encryption.go` as `crypto.KeystoreMetadata`.
 
-- version 1: salt, encrypted check value, creation time; Argon2id params implicit (`time=1`, `memory=64 MiB`, `threads=4`)
-- version 2: same fields plus explicit `kdf_time`, `kdf_memory`, `kdf_threads`
+Version 3 is the only readable format. Fields: salt, encrypted check value,
+creation time, explicit `kdf_time`, `kdf_memory`, `kdf_threads` (Argon2id),
+and the layout tag `layout: "generations/v1"`.
 
 Behavior:
 
-- new keystores are version 2
-- version 2 unlock uses stored KDF params
-- version 2 metadata with missing or zero KDF params is rejected
-- version 1 unlock uses the implicit Argon2id parameters listed above
+- new keystores are written as version 3 with the `generations/v1` layout tag
+- unlock derives the master key with the stored KDF parameters; metadata with
+  missing or zero KDF parameters is rejected before derivation
+- metadata with any other version, or version 3 without the `generations/v1`
+  layout tag, is rejected with guidance to restore from a backup archive into
+  a freshly initialized store; there is no in-place migration path
+
+### Generation Store (`CURRENT` + `generations/`)
+
+Owned by `internal/genstore`; the commit protocol and its invariants are
+specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
+
+- `identities/<identity>/CURRENT` contains the active generation ID and is
+  the sole commit record; the active `keys/` and `keytypes/` namespaces live
+  inside the generation it names and are resolved via
+  `genstore.ResolveActive`
+- generation IDs match `gen-<unix-seconds>-<8 hex chars>`
+  (`internal/storepaths.ValidateGenerationID`); directories under
+  `generations/` with the `.staging-` prefix are unpublished mint state
+- a generation holds exactly `manifest.json`, `seal.json` (once sealed), and
+  the `keys/` and `keytypes/` namespace directories; both namespaces are
+  required, entries are regular files, and symlinks and hardlinks are
+  rejected everywhere
+- `manifest.json` (schema `aplane.generation-manifest.v1`) is the immutable
+  at-mint operation record: operation, operation ID, parent generation ID,
+  and timestamps
+- `seal.json` (schema `aplane.generation-seal.v1`) is written when a
+  generation stops being current and is the content authority for sealed
+  priors: an inventory hash over both namespaces that later validation
+  checks byte-for-byte
+- single-file writes into the current generation's namespaces are the
+  routine mutation path (key generation, template install); multi-file
+  transactions (restore activation) commit by minting a new generation
+  behind a single durable `CURRENT` rename
+- generation reconciliation at unlock discards uncommitted attempts and
+  staging residue (they are never resumed), validates the selected
+  generation, and confirms the `CURRENT` flip's durability; any failure
+  holds the identity in recovery mode with nothing deleted
 
 ### Policy File (`policy.yaml`)
 
@@ -1623,7 +1667,6 @@ Events:
 - `BACKUP_ACTIVATION_INTENT`
 - `BACKUP_ACTIVATED`
 - `BACKUP_ACTIVATION_FAILED`
-- `BACKUP_ACTIVATION_RESUMED`
 - `BACKUP_ACTIVATION_ROLLED_BACK`
 - `BACKUP_RECOVERY_PURGED`
 - `STORE_INITIALIZED`
@@ -1666,14 +1709,13 @@ Backup-audit semantics:
 - `BACKUP_ACTIVATION_INTENT` is durably audited before the activation service
   can make its first active-store write and records `restore_id` and
   `replace_existing`. The record is a gating precondition: it is appended and
-  fsynced before the activation marker is published, and when the durable
-  write fails the activation aborts with `activation_audit_failed` and no
-  marker or active-store mutation exists. All other audit events remain
+  fsynced before activation stages any generation content, and when the
+  durable write fails the activation aborts with `activation_audit_failed`
+  and no active-store mutation exists. All other audit events remain
   best-effort
-- `BACKUP_ACTIVATED`, `BACKUP_ACTIVATION_FAILED`, and
-  `BACKUP_ACTIVATION_RESUMED` carry the available archive/source-policy/
-  destination-policy digests, factual policy comparison, replacement option,
-  and recovered entry count
+- `BACKUP_ACTIVATED` and `BACKUP_ACTIVATION_FAILED` carry the available
+  archive/source-policy/destination-policy digests, factual policy
+  comparison, replacement option, and recovered entry count
 - `BACKUP_ACTIVATION_ROLLED_BACK` and `BACKUP_RECOVERY_PURGED` record explicit
   operator resolution; failed attempts use `outcome:"failed"` and `reason`
 
@@ -1910,13 +1952,18 @@ Key/template watching is implemented via `fsnotify` and owned per identity runti
 
 Watched paths:
 
-- `identities/<identity>/keys/`
-- `identities/<identity>/keytypes/`
-- the identity directory for late directory creation
+- the identity directory, for `CURRENT` replacement and late directory
+  creation
+- the active generation's `keys/` and `keytypes/` directories, resolved
+  through `genstore.ResolveActive`; when `CURRENT` cannot be resolved the
+  watcher falls back to the identity-root `keys/` and `keytypes/` paths,
+  which are not the live active store on a healthy generational store
 
 Mechanism:
 
 - reacts to Create, Write, Remove, and Rename on `.key`, `.sen`, and `.template` files
+- a `CURRENT` replacement is a reload candidate; reload resolves the new
+  active generation and re-arms the watcher on its directories
 - missing key and key type directories are tracked and added later when created
 - when unlocked, qualifying changes trigger immediate reload
 - when locked, the watcher remains running and marks the identity dirty
@@ -2375,8 +2422,7 @@ Live signer-managed restore:
 - a published recovered batch is immutable. Code may decrypt and validate
   `batch.enc` but must not persist a re-marshaled loaded `Batch`, because old
   readers intentionally ignore additive JSON fields. Passphrase rotation
-  re-encrypts the exact plaintext bytes; mutable activation progress belongs
-  only in the activation journal. Activation completion and purge may delete a
+  re-encrypts the exact plaintext bytes. Activation and purge may delete a
   batch but do not rewrite it.
 - review revalidates the batch and current destination state, foregrounds
   security-bearing policy differences and the effective destination
@@ -2403,35 +2449,32 @@ Live signer-managed restore:
   `unattended_signing_ack_required`; an absent field from an older server
   falls back to the destination approval mode. Replacing active credentials is
   a separate explicit option
-- before the first active write, activation publishes an encrypted journal and
-  exact rollback snapshot, each written durably (fsynced through a temp-file
-  rename with the parent directory synced). The snapshot records which active
-  entries the activation owns; rollback restores or removes only owned
-  entries, so rolling back one activation can never delete credentials
-  written by another operation. Apply and rollback are idempotent. Reload
-  failure automatically restores the prior state.
-- active key and key-type writes are durable before any recovery evidence is
-  removed: every written file and both namespace directories are fsynced,
-  completion is recorded durably in the journal after reload validates the
-  activated state, and only then is the batch (with its marker) removed. A
-  cleanup failure after completion is never rolled back; retrying the
-  activation or the next unlock finishes the cleanup.
-- an incomplete activation anywhere blocks new activations: every batch is
-  scanned for markers before an activation is accepted, and recovery mode
-  exits only after a rescan confirms zero markers remain — resolving one
-  batch never re-enables signing while another batch is unreconciled.
-- a hard interruption leaves an activation marker. Unlock enters recovery
-  mode with signing blocked, then reconciles automatically: a single
-  interrupted activation is rolled back to the exact pre-activation state, a
-  single completed activation has its cleanup finished, and the identity
-  unlocks only when the rescan is clean. Multiple markers fail closed into
-  recovery for explicit operator resolution. The operator may also retry
-  activation with the recorded intent (rollback-first resume) or explicitly
-  roll back. Purge rejects a batch with incomplete activation state.
-- a rollback that fails after active-store mutation began transitions the
-  runtime into recovery mode immediately — signing stops at the failure, not
-  at the next unlock — and retains enough durable state for another exact
-  attempt.
+- activation applies the reviewed batch by minting a new generation
+  (`internal/genstore`): the parent generation's content is copied, the
+  batch's entries are applied on top, the staged result is validated under
+  `generations/.staging-<gen-id>`, every file and directory is fsynced
+  bottom-up, the staging directory is renamed into place, the outgoing
+  current generation is sealed, and the commit is a single durable `CURRENT`
+  rename. Either the pointer names the new generation or no committed state
+  exists. Partial activations are inexpressible: no active-store state
+  exists before the pointer flip.
+- uncommitted mint attempts and staging residue are discarded by generation
+  reconciliation at the next unlock; they are never resumed. Reload failure
+  after a committed activation rolls the pointer back to the parent — the
+  exact pre-activation state.
+- a commit whose durability cannot be confirmed (the pointer names the new
+  generation but the confirming directory sync failed) reports
+  `recovered_rollback_failed`, reloads the visible state, and enters
+  recovery mode with signing blocked; generation reconciliation at the next
+  unlock re-confirms the flip's durability.
+- operator rollback of a committed restore activation repoints `CURRENT` at
+  the sealed parent generation recorded in the current generation's
+  manifest, and is accepted only while the current generation was produced
+  by that restore. A rollback refused before any mutation reports
+  `recovered_rollback_refused` (the store is unchanged and no recovery mode
+  is entered); a rollback that fails after mutation began reports
+  `recovered_rollback_failed` and transitions the runtime into recovery mode
+  immediately — signing stops at the failure, not at the next unlock.
 - successful activation removes the inactive batch, reloads the bound identity,
   and only then makes the credentials available to signing
 - restore does not install archived policy documents or sidecars; restoring
@@ -2478,21 +2521,28 @@ Restore:
 - if an installed identity-local template exists but is disabled, explicit template restore can re-enable it; key restore does
   not require enabling a template for signing
 - the internal active-apply primitive remains transactional at the key level
-  for offline rebuild; live activation additionally wraps the whole recovered
-  batch in an exact pre-activation snapshot
-- live recovery is all-or-nothing and live activation either completes the
-  reviewed batch or restores/retains enough durable state for exact operator
-  reconciliation
+  for offline rebuild; live activation commits the whole reviewed batch
+  behind a single generation pointer flip
+- live recovery is all-or-nothing, and live activation either commits the
+  reviewed batch as a new generation or leaves the store on its prior
+  generation
 
 Local rescue surface:
 
 - live-store `apstore` mutations for managed backup, restore, template, key
   type, and changepass operations are admin-protocol operations owned by the
   daemon
-- `apstore initialize`, `apstore policy`, and `apstore rebuild` are local
-  offline mutations protected by the store lock
+- `apstore initialize`, `apstore policy`, `apstore rebuild`, and
+  `apstore generations` are local offline mutations protected by the store
+  lock
 - `apstore verify` is a read-only local archive inspection command
-- `apstore rebuild` is the only local mutating rescue command; it refuses to run when the destination identity directory already exists and uses the store lock to avoid concurrent signer access
+- `apstore generations list` inspects the generation chain;
+  `apstore generations prune [--all-priors]` deletes sealed prior
+  generations after validating the current one. Passphrase rotation requires
+  generation quiescence (no generation other than the current one), so
+  `generations prune --all-priors` may be required before `changepass`
+- `apstore rebuild` refuses to run when the destination identity directory
+  already exists and uses the store lock to avoid concurrent signer access
 
 ## Error Model
 

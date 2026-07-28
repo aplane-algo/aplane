@@ -219,6 +219,13 @@ credential rejection. A direct authenticated `unlock` request reports failed
 unlock/reload after passphrase verification through
 `unlock_result{success:false, code:"unlock_failed"}`.
 
+An unlock can also succeed into recovery mode: when the passphrase verifies
+but generation reconciliation or validation of the selected generation fails,
+the result reports `success:true` with a zero key count and
+`code:"recovery_blocked"`. The identity is unlocked for administration only;
+signing stays blocked until the operator resolves the store from recovery
+mode.
+
 ### Key Management
 
 - `generate_key`: `key_type`, optional `name`, optional `parameters`; accepted over IPC and SSH, but generated recovery material is not returned over the admin protocol
@@ -276,10 +283,7 @@ unlock/reload after passphrase verification through
   publishes one destination-encrypted inactive batch and does not reload
 - `list_recovered` -> `recovered_list`: optional `batches[]`, `code`, `error`;
   each batch carries restore ID, creation time, archive name/checksum, source
-  role and policy status/digest, entry count, and optional `activation_state`
-  (empty for an inactive batch; otherwise the durable activation journal
-  state: `applying`, `rolling_back`, `completed`, or `unknown` for an
-  unreadable journal)
+  role and policy status/digest, and entry count
 - `review_recovered`: `restore_id` -> `review_recovered_result`: `success`,
   restore/batch state, archive and policy digests, destination approval mode,
   optional unattended-signing warning, factual policy comparison, ordered

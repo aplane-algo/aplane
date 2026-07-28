@@ -18,7 +18,6 @@ import (
 // token files) never touch generations and stay out of scope.
 var storeOwningPackages = []string{
 	"internal/genstore",
-	"internal/storemigrate",
 	"internal/storeinit",
 	"internal/storepaths",
 	"internal/fsutil",

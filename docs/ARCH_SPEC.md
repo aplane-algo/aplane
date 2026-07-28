@@ -143,7 +143,7 @@ All under `cmd/`:
 | `apadmin` | TUI admin client over IPC or SSH admin transport |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
-| `apstore` | Local keystore management client: local `initialize`, policy integrity check/verify/sign, public endpoint export, public sentry reference import/export/list, local `verify`, and local `rebuild` rescue flows; daemon-owned backup, restore, template, key type, and changepass operations use the admin protocol |
+| `apstore` | Local keystore management client: local `initialize`, policy integrity check/verify/sign, public endpoint export, public sentry reference import/export/list, local `verify`, local `rebuild` rescue flows, and offline `generations list`/`prune` maintenance; daemon-owned backup, restore, template, key type, and changepass operations use the admin protocol |
 | `appolicy` | Offline policy checker/editor TUI that auto-targets the `policy.yaml` domain from the node role, plus scriptable save/check/export and signing-to-sentry-policy conversion while holding the store mutation lock |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, client (`apshell`) default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
@@ -167,7 +167,7 @@ Documentation notes:
 | Engine | `internal/apshellapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
-| Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
+| Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/registry`, `test/soak`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
@@ -275,7 +275,8 @@ Persistent sensitive state is stored on disk and unlocked into memory only via a
 - plaintext template library parsing and install preparation: `internal/templatelibrary`
 - template reload/registration outcome reporting: `internal/templatepolicy`
 - backup archives/validation: `internal/backup`
-- inactive recovery/journals/snapshots: `internal/backup/recovered`
+- inactive recovered batches: `internal/backup/recovered`
+- generation mint/seal/`CURRENT` commit/reconcile: `internal/genstore`
 
 ### Storage, Key, And Template Package Clusters
 
@@ -287,6 +288,7 @@ deciding where a change belongs:
 | Cluster | Package | Role |
 |---------|---------|------|
 | `store*` | `internal/storepaths` | Canonical signer/client path construction for data directories, identities, keys, templates, config, and library locations. |
+| `store*` | `internal/genstore` | Generation mint/seal/`CURRENT` flip, reconciliation of uncommitted attempts, sealed-prior validation, garbage collection, and inventory hashing for the active `keys/` + `keytypes/` namespaces (see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md)). |
 | `store*` | `internal/storelock` | Cooperative filesystem lock acquisition for signer-store mutation safety. |
 | `store*` | `internal/signerapp/storemut` | Higher-level store mutation coordination around operations that rewrite identity/store files. |
 | `store*` | `internal/storeinit` | Store initialization and bootstrap creation logic. |
@@ -308,6 +310,7 @@ deciding where a change belongs:
 Rule of thumb:
 
 - path/layout questions belong in `storepaths`, not in individual feature packages,
+- generation commit, reconciliation, and `CURRENT` resolution belong in `internal/genstore`; feature packages resolve the active namespaces through it rather than composing generation paths themselves,
 - lock/mutation ordering belongs in `storelock` or `storemut`,
 - key file bytes and encrypted key payload compatibility belong in `internal/keys` and `internal/keystore`,
 - key generation/provider registration belongs in `internal/keygen` and provider packages,
@@ -591,6 +594,7 @@ Operationally:
 
 - client-local state lives under the client data directory, including plugins (`plugins.available/`, `plugins.yaml`), scripts (`scripts/`), token (`aplane.token`), caches (`cache/`), swap state (`swap/<network>/`), and the cooperative `.apclient.lock`,
 - signer-local state lives under the signer data directory, with the plaintext key type library at `library/templates/`, signer-wide ASA metadata at `cache/<network>_asa_cache.json`, managed backup archives at `backups/<identity>/`, and all sensitive runtime assets rooted under `identities/<identity>/`,
+- active credentials and key-type state live under `identities/<identity>/generations/<gen-id>/`, selected by the `CURRENT` pointer file; see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) and the on-disk layout in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md),
 - admin IPC binds the resolved `ipc_path` (default `<data_dir>/aplane.sock`),
 - the effective layout is identity-scoped even though the default deployment uses only `"default"`.
 
@@ -1584,8 +1588,9 @@ The repo uses:
   metadata; `bounded_vocabulary_test.go` pins bounded naming boundaries;
   `keytype_inventory_test.go` pins the bundled key-type inventory;
   `managed_credential_files_test.go` pins managed credential extension
-  ownership; and `witness_boundary_test.go` pins witness custody and signing
-  boundaries,
+  ownership; `witness_boundary_test.go` pins witness custody and signing
+  boundaries; and `generation_storage_test.go` pins the no-hardlink rule and
+  store-owning package inventory from ARCH_GENERATIONS,
 - dedicated test harness packages,
 - analysis tools for security properties,
 - signer API and SDK contract tests backed by JSON fixtures in `test/contracts/signerapi/`.
@@ -1805,6 +1810,7 @@ Product-level boundaries:
 | Keystore | `internal/keystore/file.go`, `internal/keystore/session.go` |
 | Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/keyclass/keyclass.go`, `internal/sentry/keytypes/keytypes.go` |
 | Store Init/Passphrase | `internal/storeinit/initialize.go`, `internal/defaultkeytypes/defaults.go`, `internal/storepass/rotate.go`, `internal/signerapp/unlockconfig/unlock.go`, `cmd/apstore/main.go`, `internal/signerapp/daemon/admin_services.go` |
+| Generation Storage | `internal/genstore/*.go`, `internal/storepaths/generations.go`, `internal/storepaths/active.go`, `cmd/apstore/generations.go`, `docs/ARCH_GENERATIONS.md` |
 | Client Data | `internal/clientdata/lock.go`, `internal/clientstate/state.go`, `internal/refname/refname.go` |
 | Identity | `internal/signerapp/identity/runtime.go`, `internal/signerapp/identity/config.go` |
 | Release/Distribution | `Makefile`, `.github/workflows/release.yml`, `scripts/package-bootstrap-release.sh`, `scripts/build-algokit-localnet-plugin-target.sh`, `scripts/stage-bundled-plugins.sh`, `scripts/docker-systemd-smoke.sh`, `scripts/docker-local-four-node-smoke.sh`, `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`, `uninstall.sh`, `installer/`, `library/templates/` |
@@ -1816,19 +1822,20 @@ archive inspection, payload validation, the optional independently versioned
 `source_settings.json` projection, and the active-apply primitive used only by
 reviewed activation and offline rebuild. `internal/backup/sourcecontext` owns
 validation of that non-secret advisory projection. `internal/backup/recovered`
-owns destination-encrypted inactive batches, activation journals, rollback
-snapshots, and passphrase-rotation target discovery. `internal/signerapp/backupadmin`
-owns the live recover/review/activate/rollback/purge state machine. Recovery
+owns destination-encrypted inactive batches and passphrase-rotation target
+discovery. `internal/genstore` owns the generation commit protocol: mint,
+staged validation, sealing of the outgoing generation, the durable `CURRENT`
+flip, reconciliation of uncommitted attempts, rollback to the sealed parent,
+and garbage collection of sealed priors. `internal/signerapp/backupadmin`
+owns the live recover/review/activate/rollback/purge orchestration. Recovery
 does not write managed `.key`/`.sen` files or reload the runtime; activation is
 the only live operation that does so, after a destination-bound policy review
-and explicit acknowledgements. A durable incomplete activation puts the
-identity in recovery mode and blocks signing until exact resume or rollback;
-unlock reconciles a single incomplete activation automatically (rollback for
-an interrupted apply, cleanup completion for a completed one) and exits
-recovery only after a rescan finds no marker in any batch. Activation records
-completion durably after reload validation and before batch cleanup; active
-writes and namespace directories are fsynced before any recovery evidence is
-removed; a failed rollback transitions the runtime into recovery immediately.
+and explicit acknowledgements, and it commits by minting a new generation
+behind a single durable `CURRENT` flip. Uncommitted attempts and staging
+residue are discarded by generation reconciliation at unlock, never resumed.
+A commit with unconfirmed durability, or a rollback that fails after mutation
+began, transitions the runtime into recovery mode immediately and blocks
+signing until the store reconciles cleanly.
 Managed archives carry a verified-at-source policy snapshot under `policy/`,
 but no restore path installs that snapshot as active policy. Current writers
 also capture the source approval default (signer role only) and custom
