@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -349,7 +350,12 @@ func printRecoveredReview(review protocol.ReviewRecoveredResultMessage) {
 func formatRecoveredReviewSections(review protocol.ReviewRecoveredResultMessage) string {
 	var sb strings.Builder
 	sb.WriteString("Policy differences (informational)\n")
-	if len(review.SecurityChanges) == 0 {
+	if review.PolicyComparison == string(policy.RestoreComparisonUnavailable) {
+		// An empty change list here means "could not compare", never "no
+		// differences" — rendering "none" would read as an all-clear the
+		// comparison never established.
+		sb.WriteString("  comparison unavailable: the source policy could not be compared\n")
+	} else if len(review.SecurityChanges) == 0 {
 		sb.WriteString("  none\n")
 	}
 	for _, change := range review.SecurityChanges {

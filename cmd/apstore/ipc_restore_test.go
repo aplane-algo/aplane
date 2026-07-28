@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -491,5 +492,17 @@ func TestCmdRestoreRollbackAndPurgeUseExplicitOperations(t *testing.T) {
 	}
 	if len(purgeFake.requests) != 1 || purgeFake.requests[0] != protocol.MsgTypePurgeRecovered {
 		t.Fatalf("purge requests = %v", purgeFake.requests)
+	}
+}
+
+func TestFormatRecoveredReviewSectionsMarksUnavailableComparison(t *testing.T) {
+	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{
+		PolicyComparison: string(policy.RestoreComparisonUnavailable),
+	})
+	if strings.Contains(rendered, "  none") {
+		t.Fatalf("unavailable comparison rendered as a no-difference all-clear:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "comparison unavailable") {
+		t.Fatalf("unavailable comparison not surfaced:\n%s", rendered)
 	}
 }

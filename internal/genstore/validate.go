@@ -158,3 +158,25 @@ func isDurableWriteResidue(name string) bool {
 	return strings.HasPrefix(name, storepaths.GenerationSealName+".tmp-") ||
 		strings.HasPrefix(name, storepaths.GenerationManifestName+".tmp-")
 }
+
+// hasDurableWriteTempSuffix reports whether name ends in the exact temp-file
+// shape os.CreateTemp produces for durable writes: ".tmp-" followed by
+// digits. Namespace residue GC must anchor on this suffix — a substring
+// match on ".tmp-" would delete a legitimate record whose own name merely
+// contains it.
+func hasDurableWriteTempSuffix(name string) bool {
+	idx := strings.LastIndex(name, ".tmp-")
+	if idx < 0 {
+		return false
+	}
+	digits := name[idx+len(".tmp-"):]
+	if digits == "" {
+		return false
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}

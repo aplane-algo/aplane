@@ -123,7 +123,7 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 			// committing rename is atomic), and unswept namespace residue
 			// would be copied into every child generation and sealed there.
 			isResidue := isDurableWriteResidue(name) ||
-				(dir != currentDir && strings.Contains(name, ".tmp-"))
+				(dir != currentDir && hasDurableWriteTempSuffix(name))
 			if entry.IsDir() || !isResidue {
 				continue
 			}

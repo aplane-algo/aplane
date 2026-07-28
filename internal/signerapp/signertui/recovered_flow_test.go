@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -450,5 +451,32 @@ func TestReviewArrivalResetsScrollPosition(t *testing.T) {
 	got := next.(Model)
 	if got.panelScrollPosition != 0 {
 		t.Fatalf("review opened with stale scroll position %d; the credentials list would start off-screen", got.panelScrollPosition)
+	}
+}
+
+func TestRestoreReviewMarksUnavailablePolicyComparison(t *testing.T) {
+	m := Model{
+		viewState:   ViewRestoreReview,
+		signerState: signerRuntimeUnlocked,
+		restore: restoreState{
+			restoreID: "00000000000000000000000000000001",
+			review: ReviewRecoveredResultMessage{
+				Success:          true,
+				RestoreID:        "00000000000000000000000000000001",
+				PolicyComparison: string(policy.RestoreComparisonUnavailable),
+			},
+		},
+	}
+	view := stripANSI(m.renderRestoreReview())
+	idx := strings.Index(view, "Policy differences")
+	if idx < 0 {
+		t.Fatalf("policy differences section missing:\n%s", view)
+	}
+	section := view[idx:]
+	if strings.Contains(section, "none") {
+		t.Fatalf("unavailable comparison rendered as a no-difference all-clear:\n%s", section)
+	}
+	if !strings.Contains(section, "comparison unavailable") {
+		t.Fatalf("unavailable comparison not surfaced:\n%s", section)
 	}
 }

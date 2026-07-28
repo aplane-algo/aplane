@@ -859,3 +859,36 @@ func TestReconcileCollectsNamespaceDurableWriteResidue(t *testing.T) {
 		t.Fatalf("namespace durable-write residue survived reconciliation; it would be copied and sealed into every child generation: %v", err)
 	}
 }
+
+// TestReconcileKeepsRecordsWhoseNamesMerelyContainTmpDash pins the residue
+// matcher to the exact temp-file shape (".tmp-" + digits suffix). A substring
+// match would silently delete a structurally valid record whose own name
+// contains ".tmp-".
+func TestReconcileKeepsRecordsWhoseNamesMerelyContainTmpDash(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	gen := paths.GenerationPaths(testIdentity, testGenC)
+	kept := []string{
+		filepath.Join(gen.KeyTypeRecordsDir(), "custom.tmp-v2.template"),
+		filepath.Join(gen.KeysDir(), "weird.tmp-name.key"),
+		filepath.Join(gen.KeysDir(), "trailing.tmp-"),
+	}
+	for _, path := range kept {
+		if err := os.WriteFile(path, []byte("legitimate record"), 0o660); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	report, err := Reconcile(paths, testIdentity, nil)
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	for _, path := range kept {
+		if slices.Contains(report.DiscardedStaging, filepath.Base(path)) {
+			t.Fatalf("legitimate record %s classified as residue", filepath.Base(path))
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("legitimate record %s deleted by reconciliation: %v", filepath.Base(path), err)
+		}
+	}
+}

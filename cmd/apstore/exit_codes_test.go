@@ -18,6 +18,7 @@ func TestExitCodeForResultCode(t *testing.T) {
 		// so scripts can distinguish "retry after resolving" from failure.
 		{protocol.ResultCodeActivationConflict, apstoreExitConflict},
 		{protocol.ResultCodeActivationReviewStale, apstoreExitConflict},
+		{protocol.ResultCodeActivationAckRequired, apstoreExitConflict},
 		{protocol.ResultCodeKeyTypeInUse, apstoreExitConflict},
 		{protocol.ResultCodeActivationFailed, apstoreExitConflict},
 		{protocol.ResultCodeDeactivationFailed, apstoreExitConflict},
