@@ -1605,7 +1605,8 @@ The repo uses:
   `docs/formal/metrics.json`. It covers `sign_boundary`,
   `policy_precedence`, `composition`, `lifecycle`, `approval_coordinator`,
   `approval_composition`, `lifecycle_composition`, `session_ownership`,
-  `guarded_assembly`, `bounded_sentry`, and `plugin_signing`, plus liveness
+  `guarded_assembly`, `bounded_sentry`, `plugin_signing`, and
+  `generation_commit`, plus liveness
   configurations for `approval_coordinator`, `lifecycle`, and
   `lifecycle_composition`.
   `make formal-test-deep` uses `docs/formal/metrics_deep.json` for larger
