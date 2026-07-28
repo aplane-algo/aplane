@@ -303,3 +303,80 @@ func TestGenerationalActivationDurabilityUnknownEntersRecovery(t *testing.T) {
 		t.Fatalf("manifest = %+v", manifest)
 	}
 }
+
+// TestRollbackRefusedAfterPostActivationMutation pins the divergence guard:
+// once the store is mutated after an activation (here, a key file written
+// into the current generation), rolling back the restore would discard that
+// unrelated later change, so the server must refuse pre-mutation with
+// recovered_rollback_diverged — and accept again once the store matches the
+// at-mint inventory.
+func TestRollbackRefusedAfterPostActivationMutation(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	firstGen := convertToGenerationalStore(t, paths)
+
+	archivePath, _ := writeRecoverableManagedArchive(t, paths, auth.DefaultIdentityID)
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoverResult.Success {
+		t.Fatalf("RecoverBackup() = %+v", recoverResult)
+	}
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
+	})
+	if !activated.Success {
+		t.Fatalf("ActivateRecovered() = %+v", activated)
+	}
+	gen, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+
+	// Routine post-activation mutation: a new key file in the current
+	// generation. It is not part of the restore.
+	laterKey := filepath.Join(gen.KeysDir(), "LATERKEYADDR.key")
+	if err := os.WriteFile(laterKey, []byte("post-activation credential"), 0o660); err != nil {
+		t.Fatalf("write post-activation key: %v", err)
+	}
+
+	rollback := service.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{RestoreID: recoverResult.RestoreID})
+	if rollback.Success {
+		t.Fatalf("RollbackRecovered() = %+v, want divergence refusal", rollback)
+	}
+	if rollback.Code != protocol.ResultCodeRecoveredRollbackDiverged {
+		t.Fatalf("refusal code = %q, want %q", rollback.Code, protocol.ResultCodeRecoveredRollbackDiverged)
+	}
+	if ir.IsRecovery() {
+		t.Fatal("pre-mutation divergence refusal put the identity into recovery")
+	}
+	resolved, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	if err != nil || resolved.GenerationID() != gen.GenerationID() {
+		t.Fatalf("CURRENT after refusal = %s (%v), want %s unchanged", resolved.GenerationID(), err, gen.GenerationID())
+	}
+	if _, err := os.Stat(laterKey); err != nil {
+		t.Fatalf("post-activation key disturbed by refused rollback: %v", err)
+	}
+
+	// Restore the at-mint inventory and the same rollback is accepted.
+	if err := os.Remove(laterKey); err != nil {
+		t.Fatalf("remove post-activation key: %v", err)
+	}
+	rollback = service.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{RestoreID: recoverResult.RestoreID})
+	if !rollback.Success {
+		t.Fatalf("RollbackRecovered(after restoring inventory) = %+v", rollback)
+	}
+	resolved, err = genstore.Resolve(paths, auth.DefaultIdentityID)
+	if err != nil || resolved.GenerationID() != firstGen {
+		t.Fatalf("CURRENT after rollback = %s (%v), want %s", resolved.GenerationID(), err, firstGen)
+	}
+}

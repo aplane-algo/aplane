@@ -329,9 +329,13 @@ mode.
   `acknowledge_policy_transition` sent by an older protocol-v3 client is
   accepted and ignored; protocol v4 drops it entirely.
 - `rollback_recovered`: `restore_id` -> `rollback_recovered_result`: `success`,
-  restore ID, resulting `key_count`, `code`, `error`
+  restore ID, resulting `key_count`, `code`, `error`; refusals before any
+  mutation use `recovered_rollback_refused` (nothing to roll back) or
+  `recovered_rollback_diverged` (the current generation was mutated after
+  activation and no longer matches its at-mint inventory); failures after
+  mutation began use `recovered_rollback_failed` and enter recovery mode
 - `purge_recovered`: `restore_id` -> `purge_recovered_result`: `success`,
-  restore ID, `code`, `error`; incomplete activation state cannot be purged
+  restore ID, `code`, `error`
 - admin protocol v3 does not dispatch the v2 `restore_backup` mutation
 - restore `export_passphrase` fields are JSON strings on the wire but are parsed into mutable byte buffers at the protocol boundary so server handlers can zero them after use; raw JSON transport buffers are best-effort and may retain bytes until their normal lifetime ends
 

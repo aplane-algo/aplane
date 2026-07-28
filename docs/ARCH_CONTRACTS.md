@@ -2470,11 +2470,16 @@ Live signer-managed restore:
 - operator rollback of a committed restore activation repoints `CURRENT` at
   the sealed parent generation recorded in the current generation's
   manifest, and is accepted only while the current generation was produced
-  by that restore. A rollback refused before any mutation reports
-  `recovered_rollback_refused` (the store is unchanged and no recovery mode
-  is entered); a rollback that fails after mutation began reports
-  `recovered_rollback_failed` and transitions the runtime into recovery mode
-  immediately — signing stops at the failure, not at the next unlock.
+  by that restore **and still matches its at-mint inventory**. Any
+  post-activation mutation of the current generation (a generated key, an
+  installed template) diverges it, and rollback then refuses with
+  `recovered_rollback_diverged` rather than discarding the later changes.
+  A rollback refused before any mutation reports
+  `recovered_rollback_refused` or `recovered_rollback_diverged` (the store
+  is unchanged and no recovery mode is entered); a rollback that fails
+  after mutation began reports `recovered_rollback_failed` and transitions
+  the runtime into recovery mode immediately — signing stops at the
+  failure, not at the next unlock.
 - successful activation removes the inactive batch, reloads the bound identity,
   and only then makes the credentials available to signing
 - restore does not install archived policy documents or sidecars; restoring
