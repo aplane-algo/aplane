@@ -1,13 +1,23 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **proposal — open questions resolved, ready for acceptance review**.
+Status: **proposal — not yet accepted; amended after two design reviews**.
 
 Refreshed against the tree after the generation-storage branch merged: the
 design core is unchanged, but the version gate no longer needs a migration
 (the release policy retired in-place upgrades) and the sequencing note is
-spent. All five open questions below are now decided, with the reasoning
-recorded inline. What remains before implementation is an acceptance review
-of those decisions, not further scoping.
+spent. All five open questions below are decided, with the reasoning recorded
+inline. Two design reviews then found three defects that the decisions had
+not covered, all now folded in: the cryptographic root was split across two
+files and could not be changed atomically; retained terms would have stayed
+authorized for current state, losing a property the store has today; and the
+term reference inventory reached past generations to recovered batches,
+sidecars, and deleted archives.
+
+One question is deliberately left open for the next review rather than
+decided here: **rollback semantics** — whether repointing `CURRENT` at an
+older-term generation is acceptable, or whether rollback should mint a fresh
+generation re-encrypted under the current term. It interacts with the
+post-activation divergence guard and deserves its own argument.
 
 ## Problem
 
@@ -38,14 +48,32 @@ KEK        --wraps--> keyring file: [{term: 1, key: ...}, {term: 2, key: ...}]
 term key   --encrypts--> individual store files
 ```
 
-- `keyring.enc` lives beside `.keystore` in the identity metadata directory,
-  encrypted under the KEK. `.keystore` continues to carry KDF parameters,
-  verifier, version/layout gate.
+- `keyring.enc` is the store's **single cryptographic root** and is
+  self-contained: plaintext KDF parameters and salt, plus the AEAD-sealed
+  term set. `.keystore` is reduced to a static version/layout marker.
+
+  This is a correction to an earlier draft, which kept KDF parameters and
+  the passphrase verifier in `.keystore` while wrapping terms in
+  `keyring.enc` — and then called passphrase change "one durable
+  single-file write." It is not: changing the passphrase changes the
+  verifier (and possibly the salt) *and* rewraps the keyring, so two files
+  must agree. A crash between them leaves new `.keystore` with an
+  old-wrapped keyring, or the reverse, and neither passphrase necessarily
+  unlocks that pairing. A proposal whose premise is eliminating a
+  multi-file crash window must not introduce one at the most critical file
+  in the store.
+
+  Making the keyring self-contained also removes the separate verifier
+  entirely: a successful AEAD unwrap *is* the passphrase check. One file,
+  one atomic durable write, one thing to get right.
 - Every encrypted file gains a small header field `term: N` (the current
   AES-GCM envelope already has a versioned header to extend).
-- **Passphrase change** = re-derive KEK, rewrap `keyring.enc`. One durable
-  single-file write (`fsutil.WriteFileDurable`) — atomic today, no new
-  machinery. Data files untouched.
+- **Passphrase change** = re-derive the KEK from the new passphrase and
+  rewrap `keyring.enc`. Genuinely one durable single-file write
+  (`fsutil.WriteFileDurable`) now that the keyring is the only root — atomic
+  today, no new machinery. Data files untouched by the passphrase change
+  itself; the term append and rewrap that accompany it are separate steps
+  (open question 5).
 - **Master-key rotation** = append term N+1 to the keyring. New/updated files
   encrypt under the newest term. Old terms are never deleted while any file
   references them.
@@ -79,10 +107,25 @@ term key   --encrypts--> individual store files
   file at mint: have it collect the term set into the manifest, so GC reads
   authenticated metadata instead of rescanning headers — and the seal covers
   the term inventory for free.
-- **"Referenced" must mean every retained generation**: sealed priors kept
-  as rollback targets, the `RetainedUnsealedParent` damage case, and
-  anything in the recovery-metadata `referenced` set. Dropping a term a
-  rollback target needs destroys the ability to roll back, silently.
+- **"Referenced" must mean every retained durable object, not every
+  retained generation.** Generations are only part of the inventory:
+  - sealed priors kept as rollback targets, the `RetainedUnsealedParent`
+    damage case, and anything in the recovery-metadata `referenced` set;
+  - **recovered batches**, which are encrypted under the destination master
+    key (`internal/backup/recovered/store.go`) and are not generation
+    content at all;
+  - **policy and node-role sidecars**, which reference an integrity term;
+  - **`deleted/` archives**, which need an explicit keep-or-
+    cryptographically-erase classification rather than being overlooked.
+
+  Dropping a term any of these needs destroys the object silently.
+- **Defer term deletion out of the first implementation.** Term GC is
+  optional hygiene, the reference inventory spans four object classes, and
+  the cost of getting it wrong is unrecoverable. Removal should land only
+  once generation deletion is durable and a fail-closed scan proves no
+  supported durable object references the term. Until then the keyring
+  grows by one entry per passphrase change, which is bounded by operator
+  action and harmless.
 
 ### What terms do and do not accomplish (trust model)
 
@@ -113,9 +156,53 @@ can reconstruct that term.**
   a file under it is gone. Term retention is bounded by generation
   retention, not by rewrap.
 
-Two sections below follow directly from this: what `changepass` can honestly
-claim (open question 5), and what term garbage collection must treat as a
-reference (open question 4).
+### Decryptable is not authorized
+
+A term being *readable* must not make it *acceptable for current state*.
+This is a distinct rule from retention, and omitting it would lose a
+property the store has today.
+
+`ValidateCurrent` checks structure and manifest completeness only — its own
+comment notes that a stale seal is ignored — so content placed into the
+current generation is not caught by content validation. If `Open` accepted
+whatever term an envelope named, an attacker holding an old term key could
+write a credential under that term into the current generation and have it
+become an active signing key. **Today that attack fails**: `changepass`
+re-encrypts everything under the new master key, so old-key files simply do
+not decrypt. Term-scoped authority is therefore not defense in depth here;
+it is required to avoid regressing.
+
+The keyring exposes distinct authorities rather than one `Open`:
+
+| Context | Authorized terms |
+|---|---|
+| New and current-generation writes | newest only |
+| Reads during a durable `rewrap_pending` window | newest plus the terms being retired |
+| Opening a **validated sealed** generation | the historical terms that generation's seal covers |
+| Live policy / node-role sidecars | the designated current integrity term only |
+
+Verification of a live sidecar must require the current integrity term, not
+accept any retained term the sidecar names — otherwise an attacker who
+captured an old term forges sidecars indefinitely.
+
+One scoping note, so the risk is not overstated: *replaying* an existing
+ciphertext from a retained prior into the current generation already works
+today, since priors share the current master key. That is a pre-existing
+consequence of retaining generations, not something terms introduce. The
+new exposure is *forgery* under a retained term, which term-scoped authority
+closes.
+
+**Rollback needs a decision here too.** Repointing `CURRENT` at a generation
+written under an older term reauthorizes that term wholesale for current
+state. The safer semantics is to mint a fresh generation from the validated
+sealed target, re-encrypted under the current term, rather than repointing
+at the old one. That interacts with the post-activation divergence guard
+(`recovered_rollback_diverged`) and should be settled before implementation.
+
+Three sections below follow directly from these two: what `changepass` can
+honestly claim (open question 5), what term garbage collection must treat as
+a reference (open question 4), and what phase 1 does before term append
+exists (open question 3).
 
 ### Version gate
 
@@ -166,11 +253,20 @@ accepts everywhere else.
 
    ```go
    WithKeyring(func(kr *crypto.Keyring) error {
-       sealed, err := kr.Seal(plaintext)    // newest term, stamps the header
-       plain,  err := kr.Open(sealed)       // reads the header, selects the term
-       hk,     err := kr.IntegrityKey(term) // sidecar sign/verify
+       sealed, err := kr.Seal(plaintext)          // newest term, stamps the header
+       plain,  err := kr.OpenCurrent(sealed)      // newest term only
+       plain,  err := kr.OpenSealed(gen, sealed)  // historical terms, validated generation
+       mac,    err := kr.SignIntegrity(domain, b) // current integrity term
+       err          = kr.VerifyIntegrity(domain, b, mac, term)
    })
    ```
+
+   An earlier draft had `IntegrityKey(term) []byte`, which contradicts the
+   principle it was written under: it hands back raw derived key material.
+   Sidecar signing and verification are operations too, and the derived key
+   should be zeroed inside the keyring rather than handed out. The read path
+   is likewise split so the caller states which authority it is exercising —
+   see "Decryptable is not authorized".
 
    The ~99 non-test `WithMasterKey` call sites almost all open a closure
    purely to obtain bytes for `crypto.EncryptWithMasterKey`. Handing them an
@@ -239,12 +335,20 @@ accepts everywhere else.
    nothing records — silent, and only manifesting after the first rotation.
    Sequencing removes that risk:
 
-   1. **Keyring with exactly one term.** `.keystore` bumps to v4;
-      `keyring.enc` holds term 1 wrapping today's master key. Existing call
-      sites keep working through a compatibility accessor, because with one
-      term "newest" *is* "the only key" and every decrypt finds term 1. No
-      behavior change, no term append. Independently shippable, and the
+   1. **Keyring with exactly one term.** The store bumps to v4;
+      `keyring.enc` becomes the self-contained root holding term 1, which
+      wraps today's master key. Existing call sites keep working through a
+      compatibility accessor, because with one term "newest" *is* "the only
+      key" and every decrypt finds term 1. Independently shippable, and the
       easiest part to review carefully.
+
+      **`changepass` in phases 1-2 keeps today's semantics**: with append
+      disabled there is only ever one term, so it re-derives the KEK,
+      rewraps the keyring, and performs the existing bulk re-encryption of
+      data files. That preserves the current guarantee exactly while the
+      refactor is in flight — the two-phase swap and its crash window are
+      retired at phase 3, not before, and the proposal should not claim the
+      crash-safety win until then.
    2. **Migrate call sites package by package** to `WithKeyring`. Each
       package is separately reviewable, and a missed site is harmless while
       only one term exists.
@@ -270,6 +374,11 @@ accepts everywhere else.
      `//go:build testmode` (`cmd/apadmin/batch.go`), invisible to untagged
      builds. A gate that does not build with `-tags testmode` can pass while
      a tagged call site survives into phase 3.
+   - **Add an artifact-class test.** The gates above prove no code takes the
+     old path; they do not prove every written artifact carries a term. A
+     test that creates each durable class — managed keys, installed
+     templates, recovered batches, policy and node-role sidecars — and
+     asserts each carries a term closes that gap from the data side.
 
    **Phase 1 invariant to state explicitly:** the term stamp belongs to the
    envelope writer, not to `Keyring.Seal`. Every v4 write stamps `term: 1`
