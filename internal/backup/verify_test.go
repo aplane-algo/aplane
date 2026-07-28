@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -584,5 +585,106 @@ func sealTestArchiveManifest(t *testing.T, root string) {
 		[]byte("export-passphrase"),
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
+	}
+}
+
+// unreachableCompileClient models a TEAL compiler that cannot be reached.
+func unreachableCompileClient(t *testing.T) *algod.Client {
+	t.Helper()
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, unreachableCompileTransport{})
+	if err != nil {
+		t.Fatalf("MakeClientWithTransport() error = %v", err)
+	}
+	return client
+}
+
+type unreachableCompileTransport struct{}
+
+func (unreachableCompileTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("dial tcp: connect: connection refused")
+}
+
+// stageBundledTemplateArchive stages an archive whose key bundles a template,
+// returning the archive root and the bytecode the template must reproduce.
+func stageBundledTemplateArchive(t *testing.T) (string, []byte) {
+	t.Helper()
+	backupRoot := t.TempDir()
+	keysDir := filepath.Join(backupRoot, "apb")
+	compiled := compiledPushbytesSaltBytecode(0)
+	storedBytecode, address := saltedBytecodeForTest(t, compiled)
+	keyJSON := genericLSigKeyJSONForTest(t, address, "test.verify-template.v1", storedBytecode, nil)
+	bundleJSON := backupBundleForTest(t, keyJSON, genericTemplateYAMLForTest("verify-template"))
+	if err := os.MkdirAll(keysDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), bundleJSON, []byte("export-passphrase")); err != nil {
+		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+	}
+	sealTestArchiveManifest(t, backupRoot)
+	return backupRoot, compiled
+}
+
+// TestDeepVerifyReportsUnreachableCompilerAsProvenanceUnavailable pins the
+// distinction the import gate depends on: a compiler that cannot answer is
+// absence of evidence, so the key stays valid and the archive is merely
+// flagged. A template that compiles into the wrong bytecode is evidence of a
+// real problem and must stay a hard failure — covered by the mismatch test.
+func TestDeepVerifyReportsUnreachableCompilerAsProvenanceUnavailable(t *testing.T) {
+	backupRoot, _ := stageBundledTemplateArchive(t)
+
+	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
+		ValidateBundledTemplateBytecode: true,
+		AlgodClient:                     unreachableCompileClient(t),
+	})
+	if err != nil {
+		t.Fatalf("DeepVerifyBackupWithOptions() error = %v", err)
+	}
+	if report.FailedFiles != 0 || report.ValidFiles != 1 {
+		t.Fatalf("report = %+v, want the key valid despite an unreachable compiler", *report)
+	}
+	if report.ProvenanceUnavailableFiles != 1 {
+		t.Fatalf("ProvenanceUnavailableFiles = %d, want 1", report.ProvenanceUnavailableFiles)
+	}
+	if !report.Results[0].TemplateProvenanceUnavailable || report.Results[0].TemplateProvenanceNote == "" {
+		t.Fatalf("result = %+v, want a provenance-unavailable note", report.Results[0])
+	}
+}
+
+// TestDeepVerifyKeepsBytecodeMismatchFatal proves the promptable path cannot
+// swallow a genuine mismatch: the key fails and is never reported as merely
+// unverifiable.
+func TestDeepVerifyKeepsBytecodeMismatchFatal(t *testing.T) {
+	backupRoot, compiled := stageBundledTemplateArchive(t)
+	wrong := append([]byte(nil), compiled...)
+	wrong[len(wrong)-1] ^= 0xff
+
+	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
+		ValidateBundledTemplateBytecode: true,
+		AlgodClient:                     compileMockClient(t, wrong),
+	})
+	if err != nil {
+		t.Fatalf("DeepVerifyBackupWithOptions() error = %v", err)
+	}
+	if report.FailedFiles != 1 {
+		t.Fatalf("report = %+v, want the mismatched key to fail", *report)
+	}
+	if report.ProvenanceUnavailableFiles != 0 || report.Results[0].TemplateProvenanceUnavailable {
+		t.Fatalf("a bytecode mismatch was reported as merely unverifiable: %+v", report.Results[0])
+	}
+}
+
+// TestDeepVerifyReportsMissingCompilerClientAsUnavailable covers the
+// no-client-configured path through the same classification.
+func TestDeepVerifyReportsMissingCompilerClientAsUnavailable(t *testing.T) {
+	backupRoot, _ := stageBundledTemplateArchive(t)
+
+	report, err := DeepVerifyBackupWithOptions(backupRoot, "export-passphrase", DeepVerifyOptions{
+		ValidateBundledTemplateBytecode: true,
+	})
+	if err != nil {
+		t.Fatalf("DeepVerifyBackupWithOptions() error = %v", err)
+	}
+	if report.FailedFiles != 0 || report.ProvenanceUnavailableFiles != 1 {
+		t.Fatalf("report = %+v, want provenance unavailable without a client", *report)
 	}
 }

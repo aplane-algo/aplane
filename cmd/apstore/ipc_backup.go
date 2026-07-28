@@ -24,6 +24,8 @@ import (
 )
 
 const apstoreIPCTimeout = 30 * time.Second
+
+const importUsage = "usage: apstore backup import <archive-path> [--accept-unverified-template-provenance]"
 const backupImportValidationTimeout = 2 * time.Minute
 
 type apstoreAdminClient struct {
@@ -172,10 +174,7 @@ func cmdBackupManaged(args []string) error {
 	case "create":
 		return cmdBackupCreate(args[1:])
 	case "import":
-		if len(args) != 2 {
-			return fmt.Errorf("usage: apstore backup import <archive-path>")
-		}
-		return cmdBackupImport(args[1])
+		return cmdBackupImport(args[1:])
 	case "list":
 		if len(args) != 1 {
 			return fmt.Errorf("usage: apstore backup list")
@@ -297,7 +296,20 @@ func cmdBackupList() error {
 	return nil
 }
 
-func cmdBackupImport(source string) error {
+func cmdBackupImport(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("%s", importUsage)
+	}
+	source := args[0]
+	acceptUnverifiedProvenance := false
+	for _, arg := range args[1:] {
+		switch arg {
+		case "--accept-unverified-template-provenance":
+			acceptUnverifiedProvenance = true
+		default:
+			return fmt.Errorf("unknown backup import option: %s", arg)
+		}
+	}
 	if !backup.IsArchivePath(source) {
 		return fmt.Errorf("backup source must end in .tar.gz or .tgz: %s", source)
 	}
@@ -349,7 +361,7 @@ func cmdBackupImport(source string) error {
 		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
 	}
 	defer cleanup()
-	if err := validateImportedBackupContents(sourceRoot); err != nil {
+	if err := validateImportedBackupContents(sourceRoot, acceptUnverifiedProvenance); err != nil {
 		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup contents: %v", err)}
 	}
 	if err := os.Rename(tmpPath, dest); err != nil {
@@ -368,7 +380,7 @@ func cmdBackupImport(source string) error {
 	return nil
 }
 
-func validateImportedBackupContents(sourceRoot string) error {
+func validateImportedBackupContents(sourceRoot string, acceptUnverifiedProvenance bool) error {
 	logInfof("import validation requires the export passphrase")
 	fmt.Print("Enter export passphrase: ")
 	exportPassphrase, err := readPromptedPassword()
@@ -405,7 +417,41 @@ func validateImportedBackupContents(sourceRoot string) error {
 		}
 		return fmt.Errorf("%d of %d key file(s) failed validation", report.FailedFiles, report.TotalFiles)
 	}
+	if report.ProvenanceUnavailableFiles > 0 {
+		if err := confirmUnverifiedTemplateProvenance(report, acceptUnverifiedProvenance); err != nil {
+			return err
+		}
+	}
 	logInfof("backup contents verified: %d key file(s)", report.ValidFiles)
+	return nil
+}
+
+// confirmUnverifiedTemplateProvenance handles the one check that depends on an
+// external service. Every key validated; only the bundled templates'
+// correspondence to their keys is unproven because the TEAL compiler could not
+// be reached. A template that compiles into the wrong bytecode never reaches
+// here — that is a hard failure above.
+func confirmUnverifiedTemplateProvenance(report *backup.VerifyReport, preAccepted bool) error {
+	logWarnf(
+		"%d of %d key file(s) bundle a template whose provenance could not be checked: the TEAL compiler is unreachable",
+		report.ProvenanceUnavailableFiles, report.TotalFiles,
+	)
+	for _, result := range report.Results {
+		if result.TemplateProvenanceUnavailable {
+			logWarnf("  %s: %s", result.FileName, result.TemplateProvenanceNote)
+		}
+	}
+	logWarnf("the keys themselves decrypt and validate; their signing authority does not depend on this check")
+	logWarnf("unchecked: that each bundled template recompiles into its key's stored bytecode")
+	logWarnf("if a restore later installs one of these templates, it becomes the definition used to generate new keys of that type")
+
+	if preAccepted {
+		logWarnf("proceeding: --accept-unverified-template-provenance was given")
+		return nil
+	}
+	if !confirmYesNo("Import this backup without verifying bundled template provenance? ") {
+		return fmt.Errorf("import cancelled; re-run when the TEAL compiler is reachable, or pass --accept-unverified-template-provenance")
+	}
 	return nil
 }
 

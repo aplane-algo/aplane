@@ -2394,9 +2394,16 @@ Live signer-managed backup:
   import recompiles the bundled template with the key's stored creation
   parameters and verifies that the result exactly matches the key's stored
   LogicSig bytecode; mismatches reject the import
-- this bundled-template bytecode check requires a TEAL compile algod endpoint;
-  if compilation is unavailable, the import is rejected rather than admitted
-  without the provenance check
+- a template that compiles into different bytecode is evidence of a real
+  problem and always rejects the import. An unreachable TEAL compiler is a
+  different case — absence of evidence — and the two are never conflated: the
+  keys themselves have already validated, so import reports which payloads
+  could not be provenance-checked and asks the operator whether to proceed.
+  Declining cancels the import. `--accept-unverified-template-provenance`
+  records that decision for unattended runs. What goes unchecked is that each
+  bundled template recompiles into its key's stored bytecode; if a later
+  restore installs such a template, it becomes the definition used to generate
+  new keys of that type
 - restore preview/recover/review/activate perform passphrase-backed inspection
   and daemon-owned state transitions
 - the state-machine view of key restore, template restore, disabled key types,

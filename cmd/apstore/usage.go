@@ -14,7 +14,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] initialize [--role signer|sentry]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup create all\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup create address <ADDRESS>\n")
-	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup import <archive-path>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup import <archive-path> [--accept-unverified-template-provenance]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup list\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup export <backup-name|checksum> <destination-dir>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup delete <backup-id|name>\n")
