@@ -71,5 +71,10 @@
     "cfg": "lifecycle_composition_liveness",
     "distinct_states": 392,
     "depth": 12
+  },
+  {
+    "spec": "generation_commit",
+    "distinct_states": 44,
+    "depth": 10
   }
 ]
