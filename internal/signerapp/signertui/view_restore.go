@@ -233,6 +233,12 @@ func (m Model) renderRestoreReview() string {
 		}
 		sb.WriteString("\n")
 	}
+	// Authentication proves who packaged the archive, never when. Showing
+	// the packaging time lets an operator notice an archive older than the
+	// one they meant to activate.
+	if review.ArchiveCreatedAtUnix > 0 {
+		sb.WriteString(fmt.Sprintf("Archive packaged: %s\n", formatRestoreTime(review.ArchiveCreatedAtUnix)))
+	}
 	sb.WriteString(fmt.Sprintf("Destination approval mode: %s\n", review.DestinationApprovalMode))
 	// The operator is committing ACTIVATE for exactly these credentials;
 	// they must be visible on this screen, including via the

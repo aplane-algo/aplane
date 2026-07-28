@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -336,6 +337,12 @@ func activateRecovered(
 }
 
 func printRecoveredReview(review protocol.ReviewRecoveredResultMessage) {
+	// Authentication proves who packaged the archive, never when. Showing
+	// the packaging time lets an operator notice an archive older than the
+	// one they meant to activate.
+	if review.ArchiveCreatedAtUnix > 0 {
+		logInfof("archive packaged: %s", formatArchiveTime(review.ArchiveCreatedAtUnix))
+	}
 	logInfof("destination approval mode: %s", review.DestinationApprovalMode)
 	if review.UnattendedSigningWarning != "" {
 		logWarnf("%s", review.UnattendedSigningWarning)
@@ -469,4 +476,14 @@ func printRestorePreview(result protocol.RestorePreviewMessage) {
 			logErrorf("%s", item.Error)
 		}
 	}
+}
+
+// formatArchiveTime renders an archive's packaging time from the sealed
+// manifest. UTC keeps it comparable against a backup inventory taken on
+// another host.
+func formatArchiveTime(unix int64) string {
+	if unix <= 0 {
+		return "unknown"
+	}
+	return time.Unix(unix, 0).UTC().Format("2006-01-02 15:04:05 UTC")
 }

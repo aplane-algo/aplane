@@ -235,6 +235,7 @@ func ProtocolReviewRecoveredResultMessage(id string, result adminproto.ReviewRec
 		Success:                      result.Success,
 		RestoreID:                    result.RestoreID,
 		ArchiveChecksum:              result.ArchiveChecksum,
+		ArchiveCreatedAtUnix:         result.ArchiveCreatedAtUnix,
 		SourceNodeRole:               result.SourceNodeRole,
 		SourcePolicyStatus:           result.SourcePolicyStatus,
 		SourcePolicySHA256:           result.SourcePolicySHA256,

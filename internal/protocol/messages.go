@@ -412,6 +412,7 @@ type ReviewRecoveredResultMessage struct {
 	Success                      bool                         `json:"success"`
 	RestoreID                    string                       `json:"restore_id,omitempty"`
 	ArchiveChecksum              string                       `json:"archive_checksum,omitempty"`
+	ArchiveCreatedAtUnix         int64                        `json:"archive_created_at,omitempty"`
 	SourceNodeRole               string                       `json:"source_node_role,omitempty"`
 	SourcePolicyStatus           string                       `json:"source_policy_status,omitempty"`
 	SourcePolicySHA256           string                       `json:"source_policy_sha256,omitempty"`

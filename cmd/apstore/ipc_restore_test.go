@@ -491,3 +491,13 @@ func TestFormatRecoveredReviewSectionsMarksUnavailableComparison(t *testing.T) {
 		t.Fatalf("unavailable comparison not surfaced:\n%s", rendered)
 	}
 }
+
+func TestPrintRecoveredReviewShowsArchivePackagingTime(t *testing.T) {
+	if got := formatArchiveTime(1_700_000_000); got != "2023-11-14 22:13:20 UTC" {
+		t.Fatalf("formatArchiveTime = %q, want a UTC timestamp", got)
+	}
+	// Absent packaging time renders as unknown rather than an epoch date.
+	if got := formatArchiveTime(0); got != "unknown" {
+		t.Fatalf("formatArchiveTime(0) = %q, want unknown", got)
+	}
+}

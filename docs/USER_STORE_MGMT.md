@@ -526,6 +526,11 @@ review still presents source values as claims: they appear under a **Reported
 by the backup archive** heading, and policy differences under **Policy
 differences (informational)**.
 
+Review also shows when the archive was packaged. Authentication says who
+packaged an archive, never when, so an archive swapped for an older one
+sealed under the same passphrase would otherwise look identical. Check that
+the packaging time is the archive you meant to activate.
+
 Nothing the archive reports changes any prompt. A destination that auto-approves
 unmatched signing requests warns and requires acknowledgement whether the
 archive claims manual review, claims auto-approve, or reports nothing at all.

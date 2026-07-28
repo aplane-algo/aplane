@@ -1159,3 +1159,39 @@ func defaultSourceSettingsForRole(role noderole.Role, snapshot SourceSettingsSna
 	}
 	return snapshot
 }
+
+// TestRecoverManagedBackupRecordsArchivePackagingTime pins that the archive's
+// own packaging time reaches the batch. Authentication proves who packaged an
+// archive, never when, so review needs this to let an operator notice an
+// archive older than the one they meant to activate.
+func TestRecoverManagedBackupRecordsArchivePackagingTime(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+
+	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
+	identityID := "default"
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	archivePath := writeManagedRecoveryArchive(t, paths, identityID, noderole.RoleSigner, nil, func(keysDir string) {
+		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+			t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+		}
+	})
+
+	batch, err := RecoverManagedBackup(
+		paths,
+		identityID,
+		filepath.Base(archivePath),
+		nil,
+		testExportMasterKey,
+		[]byte("export-passphrase"),
+		noderole.RoleSigner,
+	)
+	if err != nil {
+		t.Fatalf("RecoverManagedBackup() error = %v", err)
+	}
+	// The fixture seals its manifest at this timestamp.
+	if batch.SourceArchiveCreatedAtUnix != 1_700_000_000 {
+		t.Fatalf("SourceArchiveCreatedAtUnix = %d, want the archive's sealed packaging time",
+			batch.SourceArchiveCreatedAtUnix)
+	}
+}

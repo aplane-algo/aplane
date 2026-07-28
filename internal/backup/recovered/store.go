@@ -72,16 +72,22 @@ const SourceNodeRoleUnknown = "unknown"
 // setting slices and pointers for the duration of the call. The caller retains
 // ownership and must clear its own secret buffers.
 type CreateRequest struct {
-	ArchiveName               string
-	ArchiveSHA256             string
-	SourceNodeRole            string
-	SourcePolicyStatus        SourcePolicyStatus
-	SourcePolicySHA256        string
-	SourcePolicyYAML          []byte
-	SourceUserAutoApprove     *bool
-	SourceGenesisHashMappings []sourcecontext.GenesisHashMapping
-	CreatedAt                 time.Time
-	Entries                   []Entry
+	ArchiveName   string
+	ArchiveSHA256 string
+	// SourceArchiveCreatedAtUnix is when the source packaged the archive,
+	// taken from its sealed manifest. Review shows it so an operator can
+	// notice an archive older than expected: the manifest binds members to
+	// each other, not to a point in time, so substituting an older archive
+	// sealed under the same passphrase is otherwise indistinguishable.
+	SourceArchiveCreatedAtUnix int64
+	SourceNodeRole             string
+	SourcePolicyStatus         SourcePolicyStatus
+	SourcePolicySHA256         string
+	SourcePolicyYAML           []byte
+	SourceUserAutoApprove      *bool
+	SourceGenesisHashMappings  []sourcecontext.GenesisHashMapping
+	CreatedAt                  time.Time
+	Entries                    []Entry
 }
 
 // Batch is the destination-encrypted manifest for one recovered batch.
@@ -91,18 +97,19 @@ type CreateRequest struct {
 // ignore additive JSON fields. Rotation re-encrypts the exact plaintext bytes;
 // activation and purge delete a batch but never rewrite it.
 type Batch struct {
-	Schema                    string                             `json:"schema"`
-	RestoreID                 string                             `json:"restore_id"`
-	CreatedAt                 time.Time                          `json:"created_at"`
-	ArchiveName               string                             `json:"archive_name"`
-	ArchiveSHA256             string                             `json:"archive_sha256"`
-	SourceNodeRole            string                             `json:"source_node_role"`
-	SourcePolicyStatus        SourcePolicyStatus                 `json:"source_policy_status"`
-	SourcePolicySHA256        string                             `json:"source_policy_sha256,omitempty"`
-	SourcePolicyYAML          []byte                             `json:"source_policy_yaml,omitempty"`
-	SourceUserAutoApprove     *bool                              `json:"source_user_auto_approve,omitempty"`
-	SourceGenesisHashMappings []sourcecontext.GenesisHashMapping `json:"source_genesis_hash_mappings,omitempty"`
-	Entries                   []BatchEntry                       `json:"entries"`
+	Schema                     string                             `json:"schema"`
+	RestoreID                  string                             `json:"restore_id"`
+	CreatedAt                  time.Time                          `json:"created_at"`
+	ArchiveName                string                             `json:"archive_name"`
+	ArchiveSHA256              string                             `json:"archive_sha256"`
+	SourceArchiveCreatedAtUnix int64                              `json:"source_archive_created_at,omitempty"`
+	SourceNodeRole             string                             `json:"source_node_role"`
+	SourcePolicyStatus         SourcePolicyStatus                 `json:"source_policy_status"`
+	SourcePolicySHA256         string                             `json:"source_policy_sha256,omitempty"`
+	SourcePolicyYAML           []byte                             `json:"source_policy_yaml,omitempty"`
+	SourceUserAutoApprove      *bool                              `json:"source_user_auto_approve,omitempty"`
+	SourceGenesisHashMappings  []sourcecontext.GenesisHashMapping `json:"source_genesis_hash_mappings,omitempty"`
+	Entries                    []BatchEntry                       `json:"entries"`
 }
 
 // BatchEntry commits batch metadata to one exact recovered-entry plaintext.
@@ -218,16 +225,17 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 	}
 
 	batch := &Batch{
-		Schema:             BatchSchema,
-		RestoreID:          restoreID,
-		CreatedAt:          createdAt,
-		ArchiveName:        req.ArchiveName,
-		ArchiveSHA256:      req.ArchiveSHA256,
-		SourceNodeRole:     req.SourceNodeRole,
-		SourcePolicyStatus: req.SourcePolicyStatus,
-		SourcePolicySHA256: req.SourcePolicySHA256,
-		SourcePolicyYAML:   slices.Clone(req.SourcePolicyYAML),
-		Entries:            batchEntries,
+		Schema:                     BatchSchema,
+		RestoreID:                  restoreID,
+		CreatedAt:                  createdAt,
+		ArchiveName:                req.ArchiveName,
+		ArchiveSHA256:              req.ArchiveSHA256,
+		SourceArchiveCreatedAtUnix: req.SourceArchiveCreatedAtUnix,
+		SourceNodeRole:             req.SourceNodeRole,
+		SourcePolicyStatus:         req.SourcePolicyStatus,
+		SourcePolicySHA256:         req.SourcePolicySHA256,
+		SourcePolicyYAML:           slices.Clone(req.SourcePolicyYAML),
+		Entries:                    batchEntries,
 	}
 	sourceProjection := sourcecontext.CloneProjection(sourcecontext.Projection{
 		UserAutoApprove:     req.SourceUserAutoApprove,
