@@ -36,7 +36,8 @@ The counterexample is worth reading, because it does not take the obvious
 route. MintSealParent carries its own publishedDurable guard, so a first
 mint attempt stays safe even with MintFlip weakened. The violation comes
 from the retry path: seal the parent, crash in the seal-before-flip
-window, reconcile discards the unpublished child but leaves the parent
+window, reconcile discards the published but uncommitted child (it is
+durable by then, and CURRENT never named it) while leaving the parent
 sealed, and the retry then reaches a weakened MintFlip on a freshly
 published — not yet synced — generation, because parentSealed is already
 satisfied from the first attempt. The conjunct on MintFlip is what holds
