@@ -1,6 +1,10 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **proposal — scoping only, not accepted**
+Status: **proposal — scoping only, not accepted**. Refreshed against the
+tree after the generation-storage branch merged: the design core is
+unchanged, but the version gate no longer needs a migration (the release
+policy retired in-place upgrades), open question 1 is answered, and the
+sequencing note is spent.
 
 ## Problem
 
@@ -63,35 +67,59 @@ term key   --encrypts--> individual store files
 
 ### Version gate
 
-The keyring layout is a store-format change: bump
-`.keystore` to version 4 (`keyring/v1`). Old binaries reject v4 exactly as
-pre-generation binaries reject v3. Migration v3→v4: wrap the existing single
-master key as term 1 — metadata-only, no data rewrite, same
-flip-then-bump discipline as the layout migration (and it should adopt the
-migration-in-progress completion hook added for that window).
+The keyring layout is a store-format change: bump `.keystore` to version 4
+(`keyring/v1`). Old binaries reject v4 exactly as pre-keyring binaries
+reject v3.
+
+**There is no v3→v4 migration, and none should be written.** The release
+policy is that a store is readable only by the release that initialized it;
+`internal/storemigrate`, `apstore migrate-layout`, and the
+migration-in-progress completion hook this proposal originally planned to
+reuse were all deleted with it. A v4 store is initialized as v4, and
+existing stores move across by exporting a backup archive and restoring it
+into a fresh store — the same path every other release boundary uses.
+
+That removes the riskiest workstream the proposal originally carried: a
+metadata migration with its own crash matrix. It also means the v4 envelope
+does not need to stay readable by v3 or vice versa, which simplifies the
+header change (see open question 3).
+
+The operational consequence is worth stating plainly: shipping v4 obsoletes
+every store initialized by an earlier release. That is free today — there
+are no operators — and it is the cost the no-backcompat policy already
+accepts everywhere else.
 
 ## What this retires
 
 - The `pendingFile` two-phase swap machinery and its unrecoverable crash
   window (rotate.go), including `rollbackPendingFiles`/`swapPendingFiles`.
 - The recovered-batch sibling reconciliation special case.
-- `requireGenerationQuiescence` and the `prune --all-priors` prerequisite.
+- `requireGenerationQuiescence` and the `prune --all-priors` prerequisite,
+  along with the destructive-prune confirmations and rollback-history
+  warnings that exist only because rotation forces that prune today.
 - The rotation/generation-rollback unreadability hazard noted at
   rotate.go's quiescence comment.
 
 ## Open questions (to resolve before acceptance)
 
-1. **Backup format.** `.apb` bundles and `apstore rebuild` decrypt with the
-   export passphrase — confirm they are independent of master-key terms
-   (expected: yes; they re-encrypt on restore).
+1. ~~**Backup format.**~~ **Answered: independent.** `.apb` payloads are
+   sealed with `crypto.EncryptStandalone` (envelope v2) under the export
+   passphrase, and the archive's sealed manifest uses the same envelope and
+   passphrase. Neither touches the store master key, and restore
+   re-encrypts under the destination's key on the way in. Archives are
+   therefore unaffected by terms, and remain the transfer path across the
+   v4 boundary.
 2. **Memory handling.** The keyring holds multiple live keys; zeroing
    discipline (`crypto.ZeroBytes`) must extend to the full term set, and
    `WithMasterKey` call sites need a term-aware lookup (decrypt path selects
    by header term; encrypt path always uses newest).
 3. **Blast-radius review of `crypto.EncryptWithMasterKey` call sites**
    (~keys, templatestore, recovered, cache) — each needs the term header on
-   write and term lookup on read; the envelope change must stay
-   backward-readable during the v3→v4 transition.
+   write and term lookup on read. `EncryptedDataMasterKey` already carries
+   `envelope_version: 1`, so the term is a header field added beside it.
+   With no migration, the envelope does **not** need to stay
+   backward-readable: v4 reads only what v4 wrote, so the header can change
+   shape freely as long as it changes once.
 4. **KDF/KEK caching** in the daemon unlock path (today the master key is
    cached; becomes the keyring).
 5. **Whether master-key rotation is even exposed** initially. Passphrase
@@ -100,13 +128,35 @@ migration-in-progress completion hook added for that window).
 
 ## Rough effort
 
-- Envelope header + keyring type + v4 metadata/migration: the core, touching
+- Envelope header + keyring type + v4 metadata: the core, touching
   `internal/crypto` and every encrypt/decrypt call site. Largest and
-  riskiest part; needs its own review cycle and crash matrix.
+  riskiest part; needs its own review cycle and crash matrix. Smaller than
+  originally scoped, since no migration is written.
 - changepass rewrite: net-negative code (deletes the swap machinery).
 - Daemon/keystore plumbing (keyring in place of master key): mechanical but
   wide.
-- Not a patch: this is a Phase-4-sized change and should not ride along with
-  the current branch. Recommended sequencing: land the current branch
-  (rotation refuses the crash window, fail-closed), then propose this as its
-  own reviewed migration.
+- Not a patch: this remains a Phase-4-sized change. Its blocking
+  predecessor — the generation-storage branch — has merged, so this is now
+  the next substantial piece of work rather than something to sequence
+  behind anything.
+
+## Suggested approach
+
+The archive-manifest change (`PROPOSAL_ARCHIVE_MANIFEST.md`) is the closest
+precedent and went from proposal to merged cleanly. What made it work, and
+is worth repeating here:
+
+- **Settle the open questions explicitly before writing code**, and record
+  the answers in this document. The manifest change resolved five questions
+  up front; reviewers then argued about the design rather than about what
+  the design was.
+- **Write the trust and lifecycle model down first.** For the keyring that
+  means stating plainly what a term is, what compromise of one term does
+  and does not imply, and what rotation is and is not claimed to
+  accomplish. Rotation is easy to over-read as revocation; it is not.
+- **Model the commit protocol.** `docs/formal/generation_commit.tla` covers
+  the generation flip under crashes; keyring rewrap and term append deserve
+  the same treatment, and the existing module is a working template.
+- **Expect the envelope change to be the risk**, not the keyring type. It
+  touches every encrypt/decrypt call site, and a missed one is a file
+  written under a term nothing records.
