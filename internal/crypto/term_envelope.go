@@ -74,6 +74,12 @@ func RecoveredBatchContext(restoreID string) ObjectContext {
 }
 
 // RecoveredEntryContext identifies one entry within a recovered batch.
+//
+// The two parts share one selector field, which is unambiguous because a
+// restore ID is a fixed-shape 128-bit lowercase hex string and so contains no
+// separator: the first "/" is always the boundary. If restore IDs ever gain a
+// free-form shape, this must become two length-prefixed AAD fields rather
+// than a join.
 func RecoveredEntryContext(restoreID, selector string) ObjectContext {
 	return ObjectContext{Class: ClassRecoveredEntry, Selector: restoreID + "/" + selector}
 }

@@ -442,3 +442,98 @@ func TestWriteKeyringIsPassphraseChange(t *testing.T) {
 		t.Fatalf("Open() = %q, %v; data should survive a passphrase change unchanged", plain, err)
 	}
 }
+
+// TestOpenKeyringRejectsEditedHeader pins that no edit to the root file's
+// plaintext header yields a readable keyring.
+//
+// Each field here is rejected by a mechanism that predates the header
+// binding: schema and envelope_version by OpenKeyring's equality checks, the
+// KDF parameters and salt because they feed the KEK, and the nonce because it
+// feeds the keystream. The binding in keyringHeaderAAD is a backstop for that
+// coverage, not its source — neutering it does not make this test fail. Its
+// value is that the property stops depending on those checks staying in
+// place, which is the same reason the term envelope binds its own header.
+func TestOpenKeyringRejectsEditedHeader(t *testing.T) {
+	passphrase := []byte("keyring-header-binding")
+	kr, err := NewKeyring()
+	if err != nil {
+		t.Fatalf("NewKeyring(): %v", err)
+	}
+	defer kr.Zero()
+	sealed, err := SealKeyring(kr, passphrase)
+	if err != nil {
+		t.Fatalf("SealKeyring(): %v", err)
+	}
+
+	edits := map[string]func(map[string]any){
+		"schema":           func(m map[string]any) { m["schema"] = "aplane.keyring.v2" },
+		"envelope_version": func(m map[string]any) { m["envelope_version"] = 2 },
+		"kdf_time":         func(m map[string]any) { m["kdf_time"] = 3 },
+		"kdf_memory":       func(m map[string]any) { m["kdf_memory"] = 32768 },
+		"kdf_threads":      func(m map[string]any) { m["kdf_threads"] = 2 },
+	}
+	for field, edit := range edits {
+		t.Run(field, func(t *testing.T) {
+			var file map[string]any
+			if err := json.Unmarshal(sealed, &file); err != nil {
+				t.Fatalf("Unmarshal(): %v", err)
+			}
+			edit(file)
+			edited, err := json.Marshal(file)
+			if err != nil {
+				t.Fatalf("Marshal(): %v", err)
+			}
+			opened, err := OpenKeyring(edited, passphrase)
+			if err == nil {
+				opened.Zero()
+				t.Fatalf("OpenKeyring() accepted an edited %s", field)
+			}
+		})
+	}
+
+	// The unedited file still opens, so the rejections above are the edits
+	// and not a broken seal.
+	reopened, err := OpenKeyring(sealed, passphrase)
+	if err != nil {
+		t.Fatalf("OpenKeyring(unedited): %v", err)
+	}
+	reopened.Zero()
+}
+
+// TestKeyringHeaderAADIsUnambiguous tests the header binding directly, since
+// no end-to-end path can isolate it: every header field is already covered by
+// a validation check or by the KEK derivation.
+//
+// What must hold is that the encoding is injective — no two distinct headers
+// share an AAD, including headers that differ only in where one field ends
+// and the next begins.
+func TestKeyringHeaderAADIsUnambiguous(t *testing.T) {
+	salt := bytes.Repeat([]byte{0x11}, masterSaltLen)
+	nonce := bytes.Repeat([]byte{0x22}, 12)
+	base := keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time, argon2Memory, argon2Threads, salt, nonce)
+
+	variants := map[string][]byte{
+		"schema":      keyringHeaderAAD("aplane.keyring.v2", KeyringFileVersion, argon2Time, argon2Memory, argon2Threads, salt, nonce),
+		"version":     keyringHeaderAAD(KeyringSchema, KeyringFileVersion+1, argon2Time, argon2Memory, argon2Threads, salt, nonce),
+		"kdf time":    keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time+1, argon2Memory, argon2Threads, salt, nonce),
+		"kdf memory":  keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time, argon2Memory+1, argon2Threads, salt, nonce),
+		"kdf threads": keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time, argon2Memory, argon2Threads+1, salt, nonce),
+		"salt":        keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time, argon2Memory, argon2Threads, bytes.Repeat([]byte{0x33}, masterSaltLen), nonce),
+		"nonce":       keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time, argon2Memory, argon2Threads, salt, bytes.Repeat([]byte{0x44}, 12)),
+	}
+	for field, variant := range variants {
+		if bytes.Equal(base, variant) {
+			t.Fatalf("changing %s left the header AAD unchanged", field)
+		}
+	}
+
+	// Field boundaries: moving a byte from the salt into the nonce must not
+	// produce the same AAD, which is what the length prefixes buy.
+	shiftedSalt := bytes.Repeat([]byte{0x55}, masterSaltLen+1)
+	shiftedNonce := bytes.Repeat([]byte{0x55}, 11)
+	longSalt := keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time, argon2Memory, argon2Threads, shiftedSalt, shiftedNonce)
+	evenSplit := keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time, argon2Memory, argon2Threads, shiftedSalt[:masterSaltLen], bytes.Repeat([]byte{0x55}, 12))
+	if bytes.Equal(longSalt, evenSplit) {
+		t.Fatal("two different field splits produced the same header AAD")
+	}
+}

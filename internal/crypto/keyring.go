@@ -25,6 +25,11 @@ const (
 	KeyringSchema = "aplane.keyring.v1"
 	// KeyringFileVersion is the on-disk envelope version for keyring.enc.
 	KeyringFileVersion = 1
+
+	// keyringAADDomain separates the root file's header binding from the term
+	// envelope's, so neither construction's bytes can be replayed as the
+	// other's.
+	keyringAADDomain = "aplane.keyring-file.v1"
 	// FirstTerm is the term every store is initialized with.
 	FirstTerm = 1
 
@@ -56,6 +61,17 @@ type sealedTerm struct {
 	Term int    `json:"term"`
 	Key  string `json:"key"`
 }
+
+// Sealing and opening the keyring route term keys through base64 in Go
+// strings, and through the encoder's own buffers. Strings are immutable, so
+// Zero cannot reach those copies and they survive until the collector runs.
+// The sealed payload []byte is zeroed; these copies are the residual.
+//
+// This is a small exposure the passphrase-derived master key did not have,
+// because that key was never serialized. It is bounded — the copies exist
+// only inside SealKeyring and OpenKeyring, never for the life of a session —
+// and removing it means a hand-rolled binary layout for the payload, which
+// is worth doing when the payload grows past one term.
 
 // Keyring holds the store's term keys for the duration of an unlocked
 // session. It deliberately exposes operations rather than key material:
@@ -151,8 +167,8 @@ func (kr *Keyring) Open(sealed []byte, ctx ObjectContext) ([]byte, error) {
 //
 // This is the phase-1 compatibility seam: it exists so call sites that still
 // take a raw key keep working while only one term exists. The copy is
-// deliberate — the caller owns the returned slice and should zero it when
-// done, and no caller can reach into the keyring's own storage through it.
+// deliberate — the caller owns the returned slice and must zero it when done,
+// and no caller can reach into the keyring's own storage through it.
 //
 // Phase 2 migrates those callers to Seal/Open and deletes this method, which
 // turns "did every site move?" into a compile error.
@@ -171,6 +187,13 @@ func (kr *Keyring) CurrentTermKey() ([]byte, error) {
 // current term. It returns key material because the HMAC construction lives
 // in callers today; phase 3 replaces it with SignIntegrity/VerifyIntegrity
 // so that material stops leaving this package.
+//
+// Nothing calls this yet — the integrity sidecars still reach the term key
+// through the WithMasterKey seam. When they move here, the output must stay
+// byte-identical to DerivePolicyIntegrityKey and DeriveNodeRoleIntegrityKey
+// for the same key and info: the HKDF inputs are (key, info) and adding a
+// salt or a domain string here would silently invalidate every sidecar
+// already on disk.
 func (kr *Keyring) IntegrityKey(info []byte, length int) ([]byte, error) {
 	if kr == nil || len(kr.terms) == 0 {
 		return nil, fmt.Errorf("keyring is not open")
@@ -223,10 +246,14 @@ func SealKeyring(kr *Keyring, passphrase []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	nonce, ciphertext, err := sealWithRandomNonce(gcm, plaintext)
+	nonce, err := randomBytes(gcm.NonceSize())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("generate keyring nonce: %w", err)
 	}
+	ciphertext := gcm.Seal(nil, nonce, plaintext, keyringHeaderAAD(
+		KeyringSchema, KeyringFileVersion,
+		argon2Time, argon2Memory, argon2Threads, salt, nonce,
+	))
 
 	encoded, err := json.MarshalIndent(keyringFile{
 		Schema:        KeyringSchema,
@@ -289,10 +316,13 @@ func OpenKeyring(encoded, passphrase []byte) (*Keyring, error) {
 	if err := validateGCMNonce(nonce, gcm); err != nil {
 		return nil, err
 	}
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, keyringHeaderAAD(
+		file.Schema, file.EnvelopeVer,
+		file.KDFTime, file.KDFMemory, file.KDFThreads, salt, nonce,
+	))
 	if err != nil {
-		// Indistinguishable from a wrong passphrase by construction, which
-		// is intended: the unwrap is the check.
+		// A wrong passphrase and an edited header are indistinguishable by
+		// construction, which is intended: the unwrap is the check.
 		return nil, fmt.Errorf("failed to open keyring: %w", err)
 	}
 	defer ZeroBytes(plaintext)
@@ -357,17 +387,46 @@ func randomBytes(n int) ([]byte, error) {
 // one of those moves produce undecryptable data.
 func aadFor(term int, ctx ObjectContext) []byte {
 	var out []byte
-	appendField := func(b []byte) {
-		var n [4]byte
-		binary.BigEndian.PutUint32(n[:], uint32(len(b)))
-		out = append(out, n[:]...)
-		out = append(out, b...)
-	}
-	appendField([]byte(aadDomain))
+	out = appendAADField(out, []byte(aadDomain))
 	var termBytes [8]byte
 	binary.BigEndian.PutUint64(termBytes[:], uint64(term))
-	appendField(termBytes[:])
-	appendField([]byte(ctx.Class))
-	appendField([]byte(ctx.Selector))
+	out = appendAADField(out, termBytes[:])
+	out = appendAADField(out, []byte(ctx.Class))
+	out = appendAADField(out, []byte(ctx.Selector))
+	return out
+}
+
+// appendAADField appends one length-prefixed field. The prefix is what stops
+// two different field splits from producing the same byte string.
+func appendAADField(out, field []byte) []byte {
+	var n [4]byte
+	binary.BigEndian.PutUint32(n[:], uint32(len(field)))
+	out = append(out, n[:]...)
+	return append(out, field...)
+}
+
+// keyringHeaderAAD binds the root file's plaintext header to its sealed body.
+//
+// Editing the salt, the KDF parameters, or the nonce already fails closed by
+// producing the wrong key or the wrong keystream, but the schema and version
+// fields have no such effect: without this, they are checked only by the
+// explicit comparisons in OpenKeyring, which is validation rather than
+// authentication. Binding the whole header makes it cryptographic, for the
+// same reason the term envelope binds its own header.
+func keyringHeaderAAD(schema string, version int, kdfTime, kdfMemory uint32, kdfThreads uint8, salt, nonce []byte) []byte {
+	var out []byte
+	out = appendAADField(out, []byte(keyringAADDomain))
+	out = appendAADField(out, []byte(schema))
+	var numeric [8]byte
+	binary.BigEndian.PutUint64(numeric[:], uint64(version))
+	out = appendAADField(out, numeric[:])
+	binary.BigEndian.PutUint64(numeric[:], uint64(kdfTime))
+	out = appendAADField(out, numeric[:])
+	binary.BigEndian.PutUint64(numeric[:], uint64(kdfMemory))
+	out = appendAADField(out, numeric[:])
+	binary.BigEndian.PutUint64(numeric[:], uint64(kdfThreads))
+	out = appendAADField(out, numeric[:])
+	out = appendAADField(out, salt)
+	out = appendAADField(out, nonce)
 	return out
 }

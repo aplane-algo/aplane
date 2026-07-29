@@ -325,6 +325,12 @@ The keyring is the store's cryptographic root, defined in
 Term keys are stored random keys, not passphrase-derived values. This release
 runs a single term.
 
+Sealing and opening the root route term keys through base64 in Go strings,
+which are immutable and so cannot be zeroed. Those copies live only inside the
+seal and open calls, not for the life of a session, but they are a residual
+the passphrase-derived master key did not have: that key was never serialized.
+Removing it requires a binary payload layout rather than JSON.
+
 ### `.keystore`
 
 `.keystore` is a static marker, defined in `internal/crypto/keyring_store.go`.
