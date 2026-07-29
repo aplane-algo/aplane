@@ -1297,8 +1297,8 @@ future-term inputs and any `rotation-snapshot` entry.
 
 The effective generation inventory digest uses
 `aplane.generation-inventory-digest.v1` plus a length-prefixed canonical
-encoding of entry count and each `(path, decoded SHA-256, size)`. It never
-depends on JSON formatting.
+encoding of entry count and each `(path, decoded SHA-256, size, term)`. It
+never depends on JSON formatting.
 
 The pending root carries only `snapshot_sha256` and `snapshot_size` for the
 exact encrypted file. `crypto.RotationSnapshotReference` validates and checks
@@ -1312,13 +1312,32 @@ root reference. This implements the first half of the required commit order;
 no production path yet commits a pending root. `OpenKeyring` still rejects all
 pending and multi-term payloads.
 
-The scanner, snapshot, and historical-generation primitives still describe
-preparation, not an enabled transition. Generation seal inventory entries now
-authenticate each member's term, and exact seal anchors gate the separate
-retired-term seal/member verification path. Pending-root commit integration
-must reference the durable snapshot and complete pre-retirement anchor set;
-pinned-input rewrap and the final exact-path/target-authority comparison also
-remain required before the runtime multi-term gate may be relaxed.
+`identities/<identity>/rotation.baseline.enc` is a current-term envelope with
+object context `rotation-baseline:current`. Its strict plaintext schema is
+`aplane.rotation-baseline.v1` and contains exactly `schema`, canonical
+`generation_id`, non-negative `entry_count`, and lowercase
+`inventory_sha256`. Plaintext parsing and the exact encrypted file are bounded
+to 4 KiB. `WriteBaseline` uses the durable file-replacement protocol;
+`ReadBaseline` performs a no-follow bounded read, requires the envelope term
+to be current, opens the same buffer under the fixed context, and rejects
+unknown fields, omitted/null required fields, and trailing JSON.
+
+`EvaluateRollbackCutover` compares the canonical live generation inventory
+against the immutable manifest or a matching authenticated prior baseline and
+records `clean` only on exact count/digest equality. A baseline for another
+generation is never authority. Preflight reconciliation keeps a valid
+matching baseline, durably removes a valid stale one, and preserves malformed
+or unauthorized records as blocking evidence. The K8 scanner strictly parses
+a baseline and requires it to name `CURRENT`.
+
+The scanner, snapshot, historical-generation, and divergence-baseline
+primitives still describe preparation, not an enabled transition. Generation
+seal inventory entries authenticate each member's term, and exact seal anchors
+gate the separate retired-term seal/member verification path. Pending-root
+commit integration must reference the durable snapshot and complete
+pre-retirement anchor set; pinned-input rewrap, completion-baseline ordering,
+rollback consumption, and the final exact-path/target-authority comparison
+also remain required before the runtime multi-term gate may be relaxed.
 
 ### Generation Store (`CURRENT` + `generations/`)
 

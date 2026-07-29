@@ -41,6 +41,7 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | K8 inventory foundation — canonical artifact kinds and root-relative paths across generations, recovered batches, deleted archives, integrity documents, and rotation records; exact term envelopes are opened under their logical context before being inventoried | `internal/rotationinventory` |
 | Cutover snapshot foundation — strict `aplane.rotation-snapshot.v1` body, recursive-snapshot exclusion, canonical rollback-authority digest, 16 MiB bounded durable storage, and exact encrypted-file root-reference verification | `internal/rotationinventory/snapshot.go`, `internal/crypto/keyring.go` |
 | Historical generation foundation — generation inventory entries authenticate each member's term, exact pre-retirement seal bytes can be root-anchored, and retired-term seals and members have a separate anchor-gated verification/open path | `internal/genstore`, `internal/crypto/keyring.go`, `internal/crypto/policy_integrity.go` |
+| Divergence-baseline foundation — strict `aplane.rotation-baseline.v1` codec, bounded current-term durable storage, manifest/prior-baseline cutover decision, and fail-closed preflight reconciliation | `internal/rotationinventory/baseline.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
 What that gives you: exactly one term (term 1), a single atomic root write, and
@@ -54,9 +55,10 @@ this does **not** give you is any enabled transition — no append, no window,
 no authority split, no root commit referencing a snapshot and the complete
 pre-retirement anchor set, and no rewrap or completion pass. The K8 taxonomy,
 settled-store scanner, sealed snapshot primitives, per-member term authority,
-and exact historical-opening primitives are present, but K8 remains a
-pre-append gate until those pieces are wired into root commit, rewrap, and the
-final exact-path/target-authority check.
+exact historical-opening primitives, and divergence-baseline primitives are
+present, but K8 remains a pre-append gate until those pieces are wired into
+root commit, rewrap, rollback, and the final exact-path/target-authority
+check.
 
 The properties that are proven today are K1–K7 in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against a named test.
@@ -424,11 +426,27 @@ open path. A retired key without its anchor is insufficient, and an anchor
 without the retained key is insufficient. The K8 scanner also rejects
 term-envelope/plaintext substitution for semantic plaintext members.
 
+The same package now owns `aplane.rotation-baseline.v1`. Its plaintext has
+exactly `generation_id`, `entry_count`, and the canonical inventory digest;
+the fixed record is strictly parsed, bounded to 4 KiB including its encrypted
+file, sealed under current-term context `rotation-baseline:current`, and
+published durably. `EvaluateRollbackCutover` makes the pre-rewrap
+clean/diverged decision against the at-mint manifest or a matching
+authenticated prior baseline. It rejects another generation's baseline and
+never converts a mismatch into `clean`.
+
+`ReconcileBaselineForPreflight` preserves a matching baseline, durably removes
+a valid stale one, and blocks without deleting malformed, wrong-context, or
+unauthorized-term evidence. The K8 scanner also parses the baseline and
+requires it to name `CURRENT`, so a caller cannot accidentally snapshot stale
+or semantically malformed baseline bytes.
+
 This is intentionally still a foundation. Before append is enabled, the root
 commit must atomically reference the already-durable snapshot and the complete
-pre-retirement anchor set, rewrap/resume must consume only pinned inputs, and
-completion must compare the fresh canonical path set and target authority
-against the pinned snapshot.
+pre-retirement anchor set, rewrap/resume must consume only pinned inputs,
+rollback must consult the effective baseline authority, and completion must
+write any required baseline before close and compare the fresh canonical path
+set and target authority against the pinned snapshot.
 
 ### The original blockers
 
@@ -449,8 +467,12 @@ atomically with the snapshot before the old term retires.
 digest, which trips the post-activation rollback guard that compares those
 digests against the at-mint manifest. Without a baseline recorded before the
 window closes, every later rollback of that generation is refused —
-permanently. The model's R3 is exactly this, and its negative control
-reproduces it.
+permanently. The strict record, current-term durable storage, effective
+authority decision, and preflight reconciliation are implemented. The
+remaining transition work is to write a required completion baseline before
+clearing the window and teach the rollback guard to consult a matching
+baseline. The model's R3 is exactly this, and its negative control reproduces
+the missing-order failure.
 
 **10. Plaintext generation members** — see item 8; listed separately because it
 may need its own fix rather than only an anchoring rule.

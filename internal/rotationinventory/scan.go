@@ -53,10 +53,11 @@ func scan(
 		return nil, fmt.Errorf("rotation inventory CURRENT: %w", err)
 	}
 	scanner := inventoryScanner{
-		paths:           paths,
-		identityID:      identityID,
-		kr:              kr,
-		excludeSnapshot: excludeSnapshot,
+		paths:             paths,
+		identityID:        identityID,
+		currentGeneration: current,
+		kr:                kr,
+		excludeSnapshot:   excludeSnapshot,
 	}
 	if err := scanner.scanGenerations(current); err != nil {
 		return nil, err
@@ -86,11 +87,12 @@ func scan(
 }
 
 type inventoryScanner struct {
-	paths           storepaths.Paths
-	identityID      string
-	kr              *crypto.Keyring
-	excludeSnapshot bool
-	entries         []Entry
+	paths             storepaths.Paths
+	identityID        string
+	currentGeneration string
+	kr                *crypto.Keyring
+	excludeSnapshot   bool
+	entries           []Entry
 }
 
 func (s *inventoryScanner) scanGenerations(current string) error {
@@ -423,12 +425,44 @@ func (s *inventoryScanner) scanOptionalRotationRecords() error {
 			return err
 		}
 		if present {
+			if record.kind == KindRotationBaseline {
+				if err := s.addRotationBaseline(record.path); err != nil {
+					return err
+				}
+				continue
+			}
 			if err := s.addEnvelope(record.path, record.kind, record.ctx); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func (s *inventoryScanner) addRotationBaseline(path string) error {
+	data, _, err := fsutil.ReadRegularFileLimited(path, MaxRotationBaselineBytes)
+	if err != nil {
+		return fmt.Errorf("rotation inventory read baseline %s: %w", path, err)
+	}
+	baseline, err := openBaselineBytes(data, s.kr)
+	if err != nil {
+		return fmt.Errorf("rotation inventory baseline %s: %w", path, err)
+	}
+	if baseline.GenerationID != s.currentGeneration {
+		return fmt.Errorf(
+			"rotation inventory baseline %s names stale generation %s, want CURRENT %s",
+			path,
+			baseline.GenerationID,
+			s.currentGeneration,
+		)
+	}
+	return s.addBytes(
+		path,
+		KindRotationBaseline,
+		data,
+		s.kr.CurrentTerm(),
+		crypto.RotationBaselineContext(),
+	)
 }
 
 func (s *inventoryScanner) addEnvelope(path string, kind ArtifactKind, ctx crypto.ObjectContext) error {

@@ -193,6 +193,18 @@ entries `(path, decoded SHA-256, size, term)` rather than JSON bytes, so
 manifest and rotation-baseline authorities use one formatting-independent
 definition.
 
+`rotation.baseline.enc` is the optional post-rewrap authority for the one
+rollback-eligible current generation. `internal/rotationinventory` strictly
+parses the bounded `aplane.rotation-baseline.v1` plaintext, requires its
+envelope to use the current term and fixed `rotation-baseline:current`
+context, and compares its entry count and canonical inventory digest. A
+matching authenticated baseline supersedes the at-mint manifest only for the
+clean/diverged comparison; a missing, malformed, wrong-term, or
+wrong-generation baseline cannot assert cleanness. Rotation preflight keeps a
+valid matching baseline, durably removes a valid stale one, and preserves
+invalid evidence while blocking. Runtime rollback consumption and
+completion-before-close ordering remain Phase 3 transition work.
+
 ## 6. Strict generation validator
 
 Fail-closed and explicitly **not** the tolerant runtime reload

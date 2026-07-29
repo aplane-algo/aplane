@@ -232,6 +232,37 @@ func TestScanRejectsTermEnvelopeSubstitutedForPlaintextMember(t *testing.T) {
 	}
 }
 
+func TestScanRejectsMalformedRotationBaseline(t *testing.T) {
+	fixture := newInventoryFixture(t)
+	if err := writeEnvelope(
+		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		[]byte(`{"schema":"broken"}`),
+		crypto.RotationBaselineContext(),
+		fixture.kr,
+	); err != nil {
+		t.Fatalf("write malformed rotation baseline: %v", err)
+	}
+	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err == nil ||
+		!strings.Contains(err.Error(), "rotation inventory baseline") {
+		t.Fatalf("Scan() error = %v, want malformed-baseline rejection", err)
+	}
+}
+
+func TestScanRejectsOversizedRotationBaseline(t *testing.T) {
+	fixture := newInventoryFixture(t)
+	if err := os.WriteFile(
+		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		bytes.Repeat([]byte{'x'}, int(MaxRotationBaselineBytes)+1),
+		fsutil.StoreFilePerm,
+	); err != nil {
+		t.Fatalf("write oversized rotation baseline: %v", err)
+	}
+	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err == nil ||
+		!strings.Contains(err.Error(), "size limit") {
+		t.Fatalf("Scan() error = %v, want baseline size-limit rejection", err)
+	}
+}
+
 func TestScanForSnapshotExcludesSnapshotButPinsExistingBaseline(t *testing.T) {
 	fixture := newInventoryFixture(t)
 	report, err := ScanForSnapshot(fixture.paths, inventoryIdentity, fixture.kr)
@@ -365,13 +396,18 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 	); err != nil {
 		t.Fatalf("write rotation snapshot: %v", err)
 	}
-	if err := writeEnvelope(
-		paths.RotationBaselinePath(inventoryIdentity),
-		[]byte("baseline"),
-		crypto.RotationBaselineContext(),
-		kr,
-	); err != nil {
-		t.Fatalf("write rotation baseline: %v", err)
+	currentInventory, err := genstore.BuildInventory(
+		paths.GenerationPaths(inventoryIdentity, inventoryGenB),
+	)
+	if err != nil {
+		t.Fatalf("BuildInventory(current) error = %v", err)
+	}
+	baseline, err := NewBaseline(inventoryGenB, currentInventory)
+	if err != nil {
+		t.Fatalf("NewBaseline() error = %v", err)
+	}
+	if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); err != nil {
+		t.Fatalf("WriteBaseline() error = %v", err)
 	}
 	for relative, data := range map[string]string{
 		"config.yaml":                             "root config\n",

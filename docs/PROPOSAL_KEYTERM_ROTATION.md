@@ -12,9 +12,11 @@ snapshot codec, durable bounded storage, canonical rollback-authority digest,
 and exact encrypted-file reference validation, without enabling a pending
 root. A fifth slice records and authenticates each generation member's term,
 pins exact pre-retirement generation seals with historical anchors, and
-provides a separate anchor-gated retired-term open path. The transition itself
-remains blocked on root-commit integration, rewrap, baseline, and completion
-items recorded below and in
+provides a separate anchor-gated retired-term open path. A sixth slice adds
+the strict bounded divergence-baseline record, effective-authority cutover
+decision, and fail-closed stale/malformed preflight reconciliation. The
+transition itself remains blocked on root-commit integration, rewrap, and
+completion wiring recorded below and in
 [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
 picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
 

@@ -192,7 +192,7 @@ func ParseSnapshot(data []byte) (*Snapshot, error) {
 		)
 	}
 	var snapshot Snapshot
-	if err := decodeSnapshotJSONStrict(data, &snapshot); err != nil {
+	if err := decodeRotationJSONStrict(data, &snapshot); err != nil {
 		return nil, fmt.Errorf("parse rotation snapshot: %w", err)
 	}
 	if err := ValidateSnapshot(&snapshot); err != nil {
@@ -353,7 +353,7 @@ func readSnapshotFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-func decodeSnapshotJSONStrict(data []byte, out any) error {
+func decodeRotationJSONStrict(data []byte, out any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(out); err != nil {

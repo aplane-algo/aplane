@@ -407,6 +407,12 @@ context-bound open. Snapshot recovery first verifies the pending root's exact
 encrypted-file size and digest, then opens that same bounded, no-follow buffer
 under `rotation-snapshot:pending`.
 
+The divergence baseline is a separate small current-state authority.
+`internal/rotationinventory` bounds its exact encrypted file to 4 KiB,
+requires its envelope term to equal the keyring current term, and opens the
+same buffer under `rotation-baseline:current` before strictly parsing the
+record. Retired-term membership never authorizes a baseline.
+
 Historical generation authority is deliberately separate from ordinary
 current-state opening. `VerifyHistoricalGenerationSealIntegrity` verifies only
 the generation-seal domain under a resident retired term, and
