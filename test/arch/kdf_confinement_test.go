@@ -8,22 +8,29 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-// keyDerivationPackages are the primitives that turn a passphrase into key
-// material. Any one of them outside internal/crypto is a second derivation
-// site by definition.
-var keyDerivationPackages = map[string]bool{
-	"golang.org/x/crypto/argon2": true,
-	"golang.org/x/crypto/hkdf":   true,
-	"golang.org/x/crypto/pbkdf2": true,
-	"golang.org/x/crypto/scrypt": true,
-	"golang.org/x/crypto/bcrypt": true,
-	"crypto/pbkdf2":              true,
+// keyDerivationPrimitives are the last path elements of packages that turn a
+// passphrase into key material. Any one of them outside internal/crypto is a
+// second derivation site by definition.
+//
+// The match is on the primitive's name rather than a fixed list of import
+// paths, because the same primitive ships from several places: hkdf and
+// pbkdf2 exist in both golang.org/x/crypto and, since Go 1.24, the standard
+// library. An enumerated denylist has to be updated every time one moves, and
+// silently passes until someone notices — which is exactly how crypto/hkdf was
+// missed here the first time.
+var keyDerivationPrimitives = map[string]bool{
+	"argon2": true,
+	"hkdf":   true,
+	"pbkdf2": true,
+	"scrypt": true,
+	"bcrypt": true,
 }
 
 // TestKeyDerivationLivesOnlyInCrypto proves the store has exactly one place
@@ -48,7 +55,7 @@ func TestKeyDerivationLivesOnlyInCrypto(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			if keyDerivationPackages[path] {
+			if keyDerivationPrimitives[pathpkg.Base(path)] {
 				t.Errorf(
 					"%s imports %s; passphrase derivation belongs to internal/crypto alone",
 					rel, path,
