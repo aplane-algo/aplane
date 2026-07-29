@@ -399,10 +399,11 @@ check: test contract-test
 formal-copy-sync-check:
 	@scripts/check-formal-copied-operators.py
 
-# The (spec, cfg) list and the expected state counts/depths live in
+# The (spec, cfg) list and expected outcomes/state counts/depths live in
 # docs/formal/metrics.json (metrics_deep.json for the -deep variant) —
-# adding a module means adding a metrics entry, and a spec edit that
-# changes the state space fails until the recorded metrics are updated.
+# adding a module or negative control means adding a metrics entry, and a spec
+# edit that changes the state space fails until the recorded metrics are
+# updated.
 formal-test: formal-copy-sync-check
 	@TLA2TOOLS_JAR="$(TLA2TOOLS_JAR)" scripts/run-formal-tests.py
 
@@ -933,7 +934,7 @@ help:
 	@echo "Testing:"
 	@echo "  make test            - Run unit tests (excludes integration tests)"
 	@echo "  make check           - Run Go unit tests plus signer API contract tests"
-	@echo "  make formal-test     - Run TLC over docs/formal specs, verify recorded metrics"
+	@echo "  make formal-test     - Run TLC and verify recorded outcomes and metrics"
 	@echo "  make formal-test-deep - Run TLC with larger bounds (pre-release; not in CI push)"
 	@echo "  make formal-copy-sync-check - Verify copied TLA operators are in sync"
 	@echo "  make race-test       - Run tests with race detector (slower, catches data races)"

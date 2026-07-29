@@ -1146,10 +1146,14 @@ is worth repeating here:
   means stating plainly what a term is, what compromise of one term does
   and does not imply, and what rotation is and is not claimed to
   accomplish. Rotation is easy to over-read as revocation; it is not.
-- **Model the commit protocol.** Done: `docs/formal/rotation_transition.tla`
-  checks this design's transition (R1-R5) against crashes, resume, and a
-  filesystem attacker, alongside `generation_commit.tla` for the storage
-  flip. Both run under `make formal-test`.
+- **Model the commit protocol.** Done:
+  `docs/formal/rotation_transition.tla` checks this design's transition
+  invariants R1-R5 against crashes, resume, and a filesystem attacker,
+  alongside `generation_commit.tla` for the storage flip. R5 uses a third term
+  plus a durable resident-term set. The standard harness also runs
+  `rotation_transition_negative.cfg` and requires the unguarded-resume
+  mutation to append the third term and violate R5. Both models and the
+  negative control run under `make formal-test`.
 
   Writing it was worth it beyond the checked invariants: TLC rejected the
   first formulation of R1, which demanded that *every* object on disk stay

@@ -432,7 +432,7 @@ Nothing required correction in this pass.
 | M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
 | M3: Deferred Companion English Models | In progress | Approval coordinator and cooperative/plugin signing delivered (`FORMAL_APPROVAL_COORDINATOR_MODEL.md`, `FORMAL_PLUGIN_SIGNING_MODEL.md`). LogicSig budget and template/bytecode generation models still pending. |
-| M4: Machine-Checkable Model | First wave complete | Thirteen TLA+ modules shipped. ~39 of 88 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam, `lifecycle_composition.tla` the end-to-end lifecycle gate, `approval_coordinator.tla` carries the first liveness check (`Progress` under fairness), `session_ownership.tla` guards the admin unlock-ownership invariant, `guarded_assembly.tla` checks legacy component assembly, `bounded_sentry.tla` checks user-first bounded assembly and the sentry-free admin branch (BS1-BS7), `plugin_signing.tla` checks the plugin trust boundary (PS2-PS7), `generation_commit.tla` checks the generation commit protocol against crashes at every step (G1-G5), and `rotation_transition.tla` checks the proposed key-term rotation against crashes, resume, and a filesystem attacker (R1-R5). The signing-authority S-series is unmodeled **by decision** (see FORMAL_TRACEABILITY.md "Unmodeled invariants"). |
+| M4: Machine-Checkable Model | First wave complete | Thirteen TLA+ modules shipped. ~39 of 88 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam, `lifecycle_composition.tla` the end-to-end lifecycle gate, `approval_coordinator.tla` carries the first liveness check (`Progress` under fairness), `session_ownership.tla` guards the admin unlock-ownership invariant, `guarded_assembly.tla` checks legacy component assembly, `bounded_sentry.tla` checks user-first bounded assembly and the sentry-free admin branch (BS1-BS7), `plugin_signing.tla` checks the plugin trust boundary (PS2-PS7), `generation_commit.tla` checks the generation commit protocol against crashes at every step (G1-G5), and `rotation_transition.tla` checks R1-R5 of the proposed key-term rotation against crashes, resume, and a filesystem attacker. Its standard negative-control config proves the pending-transition guard is load-bearing by requiring the unguarded resume mutation to violate R5. The signing-authority S-series is unmodeled **by decision** (see FORMAL_TRACEABILITY.md "Unmodeled invariants"). |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
 Machine-checked invariants by module:
@@ -451,16 +451,18 @@ Machine-checked invariants by module:
 | `bounded_sentry.tla` | BS1-BS7 (user-first ordering, authority/source/byte checks, atomic output, admin sentry bypass) | 99,584 | 4 |
 | `plugin_signing.tla` | PS2-PS7 (plugin trust boundary: digest, review fail-closed, plan preservation, byte match, approval gates) | 3,852 | 1 |
 | `rotation_transition.tla` | R1-R5 (key-term rotation: live data never stranded, no laundering of injected material into the new term, completed rotation leaves rollback available, divergence never erased, resume never appends a second term) | 52 | 9 |
+| `rotation_transition.tla` (`rotation_transition_negative.cfg`) | R5 negative control: unguarded resume must append T3 and violate `R5_NoSecondAppend` | 21 before expected violation | 4 |
 | `generation_commit.tla` | G1-G5 (generation commit under crash: pointer never names an unpublished generation, parent sealed before flip, uncommitted attempts discarded at reconcile on an undamaged store, durability-unknown blocks signing, reconcile restores durable CURRENT) | 41 | 10 |
 
-Not yet machine-checked: S1-S13 (entire signing-authority surface), the guarded
-signing invariants not covered by `guarded_assembly.tla` (A2-A5, A9-A13, and
-A15), AP1-AP3 (approval coordinator; modeled by construction), I4-I6, CS1-CS4,
-P1-P3, P8-P10, L1-L3, L9-L11.
+Not yet machine-checked: S1-S13 (entire signing-authority surface), the
+guarded signing invariants not covered by
+`guarded_assembly.tla` (A2-A5, A9-A13, and A15), AP1-AP3 (approval
+coordinator; modeled by construction), I4-I6, CS1-CS4, P1-P3, P8-P10, L1-L3,
+L9-L11.
 
 ### Verification methodology by module
 
-The eleven shipped modules are not all the same kind of check, and the
+The thirteen shipped modules are not all the same kind of check, and the
 distinction matters when judging what TLC has and has not done:
 
 - **`sign_boundary.tla`, `policy_precedence.tla`, `composition.tla`,
@@ -482,11 +484,13 @@ distinction matters when judging what TLC has and has not done:
   temporal properties.
 
 - **`lifecycle.tla`, `approval_coordinator.tla`, `lifecycle_composition.tla`,
-  `session_ownership.tla`, and `bounded_sentry.tla`** are temporal-transition specs with real
+  `session_ownership.tla`, `bounded_sentry.tla`, `generation_commit.tla`, and
+  `rotation_transition.tla`** are temporal-transition specs with real
   `Next` relations and genuine state-space exploration across action
   sequences or interleavings. `bounded_sentry.tla` explores the depth-4
-  base-release, sentry-release/skip, and final-output sequence; the other four
-  explore concurrent state machines. `lifecycle.tla` races two signer processes and one admin
+  base-release, sentry-release/skip, and final-output sequence; the remaining
+  modules explore concurrent or crash-interleaved state machines.
+  `lifecycle.tla` races two signer processes and one admin
   over a writer-priority RWMutex (depth 10); its L5 mutation test (removing
   the `readers = {}` guard from `AdminAcquireWrite`) confirms it would catch
   a lock-ordering regression. `approval_coordinator.tla` interleaves several
@@ -521,7 +525,12 @@ distinction matters when judging what TLC has and has not done:
   `authenticated && wasActiveClient`) reproduces the stranded-unlock audit
   finding as a three-state SO2 violation, and the pre-fix displacement
   ordering under the fixed condition shows the over-lock the atomic swap
-  avoids. All four are **true model checking** — invariants are evaluated at
+  avoids. `generation_commit.tla` explores crash and reconciliation around
+  publication and the durable `CURRENT` flip. `rotation_transition.tla`
+  explores append, per-object rewrap, baseline, close, crash/resume, and
+  attacker injection at depth 9. Its separate depth-4 negative config is an
+  expected-failure check: removing the pending guard appends T3 and violates
+  R5. All seven are **true model checking** — invariants are evaluated at
   every reachable state in the transition graph.
 
 Why call this out: TLA+ tooling does not distinguish the two styles, so
@@ -599,11 +608,12 @@ Tools used during the first iteration:
 Convention used during this work: the jar lives at `~/tla/tla2tools.jar`.
 Adjust paths if you put it elsewhere.
 
-The authoritative run list (spec, config, and expected state counts/depths)
-is `docs/formal/metrics.json` — `make formal-test` runs it via
-`scripts/run-formal-tests.py` and fails on any metric drift, so a spec edit
-that changes the state space must consciously update the recorded metrics
-and this document's module table. `make formal-test-deep` does the same
+The authoritative run list (spec, config, expected outcome, and expected state
+counts/depths) is `docs/formal/metrics.json` — `make formal-test` runs it via
+`scripts/run-formal-tests.py` and fails on any outcome or metric drift, so a
+spec edit that changes the result or state space must consciously update the
+recorded entry and this document's module table. `make formal-test-deep` does
+the same
 with larger bounds (`docs/formal/metrics_deep.json`, `*_deep.cfg`) for
 pre-release or scheduled runs; `guarded_assembly` has no deep variant
 (its per-entry checks are independent and `MaxEntries = 3` exceeds TLC's
@@ -625,12 +635,16 @@ java -jar ~/tla/tla2tools.jar -config docs/formal/plugin_signing.cfg       docs/
 java -jar ~/tla/tla2tools.jar -config docs/formal/approval_coordinator_liveness.cfg docs/formal/approval_coordinator.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle_liveness.cfg    docs/formal/lifecycle.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle_composition_liveness.cfg docs/formal/lifecycle_composition.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/generation_commit.cfg     docs/formal/generation_commit.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/rotation_transition.cfg   docs/formal/rotation_transition.tla
+java -jar ~/tla/tla2tools.jar -noGenerateSpecTE -config docs/formal/rotation_transition_negative.cfg docs/formal/rotation_transition.tla
 ```
 
-Expected results match the table above. Each module reports "Model
-checking completed. No error has been found." Sub-second runtime for
-sign_boundary, policy_precedence, and lifecycle; ~1 second for
-composition because of the larger joint state space.
+Expected results match the table above. Every positive configuration reports
+"Model checking completed. No error has been found." The final negative
+configuration must instead report that `R5_NoSecondAppend` is violated.
+Sub-second runtime for sign_boundary, policy_precedence, and lifecycle;
+~1 second for composition because of the larger joint state space.
 
 `docs/formal/states/` is TLC scratch state created by each run. It is not
 tracked in git and is regenerated on each invocation.
@@ -672,9 +686,10 @@ next slices are:
   property class.
 
 The previous operational cleanup is complete: `docs/formal/states/` is ignored,
-and the Formal Models CI job runs all eleven shipped TLC modules (plus three
-liveness configs) through `make formal-test`, which also verifies the
-recorded state counts/depths against `docs/formal/metrics.json`. The TLC jar
+and the Formal Models CI job runs all thirteen shipped TLC modules, three
+additional liveness configs, and the R5 expected-failure negative control
+through `make formal-test`, which also verifies the recorded outcomes, state
+counts, and depths against `docs/formal/metrics.json`. The TLC jar
 is vendored at `.tools/tla2tools.jar` (provenance and update procedure in
 `.tools/README.md`): the upstream v1.8.0 release asset is re-published under
 the same tag on every upstream build, so neither its URL nor a pinned

@@ -23,7 +23,7 @@ Each is expressible here, and each is a checked invariant below. The
 generation_commit module covers the storage commit; this covers the
 cryptographic transition layered over it.
 
-It covers five invariants:
+It covers five effective invariants:
 
   - R1 : the store's own data is never stranded on an unreadable term.
   - R2 : only objects pinned by the cutover snapshot ever reach the new
@@ -32,12 +32,17 @@ It covers five invariants:
          generation that was clean at cutover.
   - R4 : divergence is never erased — a generation diverged before the
          cutover never becomes clean.
-  - R5 : resume never appends a second term.
+  - R5 : resume never appends a second term. The state space includes T3 and
+         a durable resident-term set, so the invariant is not implied by
+         TypeOK. The negative-control config makes the violating second append
+         reachable and requires TLC to fail R5.
 
-Two negative controls are documented at their guards: removing the
-`snapshot` membership test from Rewrap violates R2, and allowing
-CloseWindow before BaselineWritten violates R3. Both reproduce the
-review findings mechanically.
+Three negative controls are documented at their guards: removing the
+`snapshot` membership test from Rewrap violates R2, allowing CloseWindow
+before BaselineWritten violates R3, and
+rotation_transition_negative.cfg runs ResumeAppendWithoutPendingGuard and
+requires an R5 violation. All three reproduce the review findings
+mechanically; the R5 control runs in the standard formal harness.
 
 Two assumptions this module makes are not yet true of the implementation, and
 are stated here because the model is only as good as the code that matches it
@@ -49,11 +54,14 @@ are stated here because the model is only as good as the code that matches it
     is the enforcement point for R1 and R2; leaving a retired term in the
     keyring after the window closes would keep it readable and neither
     invariant would transfer.
-  - `snapshot` is pinned in a single step. Enumerating a real store races an
-    attacker writing files, so the pin must be taken where concurrent
-    mutation is excluded — the equivalent of the generation quiescence and
-    identity mutation lock that changepass already requires. Without that,
-    R2 holds in the model and not on disk.
+  - `snapshot` is pinned in a single step. A real scan holds the identity
+    mutation lock to exclude cooperating writers, but that lock cannot exclude
+    the direct-filesystem attacker modelled here. The implementation must hash
+    and decrypt the same input buffer, then require exact final path-set and
+    output-authority equality. An attacker edit after an entry is pinned fails
+    closed; one before the entry is read is on the pre-cutover side of the
+    stated claim. Without those byte and inventory bindings, R2 holds in the
+    model and not on disk.
 
 The module intentionally omits:
 
@@ -78,16 +86,19 @@ EXTENDS Naturals, FiniteSets, TLC
 CONSTANTS
     T1,      \* the term in use before the rotation
     T2,      \* the term appended by the rotation
+    T3,      \* a forbidden second append, reachable in the R5 negative control
     Legit,   \* objects the store legitimately holds at cutover
     Evil,    \* an object an attacker writes directly, bypassing the daemon
     ABSENT   \* an object not present in the store
 
 ASSUME T1 # T2
+ASSUME T1 # T3
+ASSUME T2 # T3
 ASSUME Evil \notin Legit
-ASSUME ABSENT \notin {T1, T2}
+ASSUME ABSENT \notin {T1, T2, T3}
 
 Objects == Legit \cup {Evil}
-Terms == {T1, T2}
+Terms == {T1, T2, T3}
 
 ----------------------------------------------------------------------------
 (* Variables *)
@@ -95,6 +106,7 @@ Terms == {T1, T2}
 VARIABLES
     running,          \* process is up; FALSE between Crash and Resume
     currentTerm,      \* the term new and current-generation writes use
+    residentTerms,    \* terms durably present in the sealed keyring root
     retiring,         \* terms still authorized for reads while the window is open
     pending,          \* the rewrap window is open
     snapshot,         \* objects the cutover pinned as rewrap inputs
@@ -103,13 +115,15 @@ VARIABLES
     baseline,         \* a post-rewrap divergence baseline has been recorded
     diverged          \* the generation has semantic divergence (a later key)
 
-vars == <<running, currentTerm, retiring, pending, snapshot, cleanAtCutover,
-          objTerm, baseline, diverged>>
+vars == <<running, currentTerm, residentTerms, retiring, pending, snapshot,
+          cleanAtCutover, objTerm, baseline, diverged>>
 
 TypeOK ==
     /\ running \in BOOLEAN
     /\ currentTerm \in Terms
-    /\ retiring \subseteq Terms
+    /\ residentTerms \subseteq Terms
+    /\ currentTerm \in residentTerms
+    /\ retiring \subseteq residentTerms
     /\ pending \in BOOLEAN
     /\ snapshot \subseteq Objects
     /\ cleanAtCutover \in BOOLEAN
@@ -131,6 +145,7 @@ ReadAuthorized(t) == t = currentTerm \/ (pending /\ t \in retiring)
 Init ==
     /\ running = TRUE
     /\ currentTerm = T1
+    /\ residentTerms = {T1}
     /\ retiring = {}
     /\ pending = FALSE
     /\ snapshot = {}
@@ -149,11 +164,26 @@ OperatorMutation ==
     /\ ~pending
     /\ ~diverged
     /\ diverged' = TRUE
-    /\ UNCHANGED <<running, currentTerm, retiring, pending, snapshot,
-                   cleanAtCutover, objTerm, baseline>>
+    /\ UNCHANGED <<running, currentTerm, residentTerms, retiring, pending,
+                   snapshot, cleanAtCutover, objTerm, baseline>>
 
 ----------------------------------------------------------------------------
 (* The rotation transition *)
+
+\* The shared root mutation. The positive transition and the R5 negative
+\* control use the same append semantics; only the positive transition carries
+\* the ~pending guard. This keeps the mutation control tied mechanically to
+\* the operation whose guard it tests.
+AppendTerm(from, to) ==
+    /\ currentTerm = from
+    /\ currentTerm' = to
+    /\ residentTerms' = residentTerms \cup {to}
+    /\ retiring' = {from}
+    /\ pending' = TRUE
+    /\ snapshot' = {o \in Objects : objTerm[o] # ABSENT}
+    /\ cleanAtCutover' = ~diverged
+    /\ baseline' = FALSE
+    /\ UNCHANGED <<objTerm, diverged>>
 
 \* Step 1: one atomic root write. The new term is promoted here, not at the
 \* end: steps 3-4 must have a valid write authority, and writing the old
@@ -163,14 +193,8 @@ OperatorMutation ==
 StartRotation ==
     /\ running
     /\ ~pending
-    /\ currentTerm = T1
-    /\ currentTerm' = T2
-    /\ retiring' = {T1}
-    /\ pending' = TRUE
-    /\ snapshot' = {o \in Objects : objTerm[o] # ABSENT}
-    /\ cleanAtCutover' = ~diverged
-    /\ baseline' = FALSE
-    /\ UNCHANGED <<running, objTerm, diverged>>
+    /\ AppendTerm(T1, T2)
+    /\ UNCHANGED running
 
 \* Steps 3-4: rewrap one pinned object onto the current term.
 \*
@@ -183,8 +207,8 @@ Rewrap(o) ==
     /\ o \in snapshot
     /\ objTerm[o] \in retiring
     /\ objTerm' = [objTerm EXCEPT ![o] = currentTerm]
-    /\ UNCHANGED <<running, currentTerm, retiring, pending, snapshot,
-                   cleanAtCutover, baseline, diverged>>
+    /\ UNCHANGED <<running, currentTerm, residentTerms, retiring, pending,
+                   snapshot, cleanAtCutover, baseline, diverged>>
 
 \* Step 5a: record the post-rewrap divergence baseline. Only for a
 \* generation that was clean at cutover — a diverged generation must never
@@ -195,8 +219,8 @@ WriteBaseline ==
     /\ ~baseline
     /\ \A o \in snapshot : objTerm[o] = currentTerm
     /\ baseline' = cleanAtCutover
-    /\ UNCHANGED <<running, currentTerm, retiring, pending, snapshot,
-                   cleanAtCutover, objTerm, diverged>>
+    /\ UNCHANGED <<running, currentTerm, residentTerms, retiring, pending,
+                   snapshot, cleanAtCutover, objTerm, diverged>>
 
 \* Step 5b: close the window.
 \*
@@ -211,8 +235,8 @@ CloseWindow ==
     /\ (baseline \/ ~cleanAtCutover)
     /\ pending' = FALSE
     /\ retiring' = {}
-    /\ UNCHANGED <<running, currentTerm, snapshot, cleanAtCutover, objTerm,
-                   baseline, diverged>>
+    /\ UNCHANGED <<running, currentTerm, residentTerms, snapshot,
+                   cleanAtCutover, objTerm, baseline, diverged>>
 
 ----------------------------------------------------------------------------
 (* The attacker *)
@@ -227,8 +251,8 @@ AttackerInject ==
     /\ \E t \in retiring :
          /\ ReadAuthorized(t)
          /\ objTerm' = [objTerm EXCEPT ![Evil] = t]
-    /\ UNCHANGED <<running, currentTerm, retiring, pending, snapshot,
-                   cleanAtCutover, baseline, diverged>>
+    /\ UNCHANGED <<running, currentTerm, residentTerms, retiring, pending,
+                   snapshot, cleanAtCutover, baseline, diverged>>
 
 ----------------------------------------------------------------------------
 (* Crash and resume *)
@@ -239,18 +263,27 @@ AttackerInject ==
 Crash ==
     /\ running
     /\ running' = FALSE
-    /\ UNCHANGED <<currentTerm, retiring, pending, snapshot, cleanAtCutover,
-                   objTerm, baseline, diverged>>
+    /\ UNCHANGED <<currentTerm, residentTerms, retiring, pending, snapshot,
+                   cleanAtCutover, objTerm, baseline, diverged>>
 
 \* Resume runs at unlock, before the identity is enabled. It continues the
-\* existing transition and must never append another term (R5) — the guard
-\* is that StartRotation requires currentTerm = T1, which a resumed
-\* transition has already left.
+\* existing transition and must never append another term (R5). The root
+\* fields are unchanged here; StartRotation is a separate operator whose
+\* ~pending guard refuses a second append while this transition is open.
 Resume ==
     /\ ~running
     /\ running' = TRUE
-    /\ UNCHANGED <<currentTerm, retiring, pending, snapshot, cleanAtCutover,
-                   objTerm, baseline, diverged>>
+    /\ UNCHANGED <<currentTerm, residentTerms, retiring, pending, snapshot,
+                   cleanAtCutover, objTerm, baseline, diverged>>
+
+\* NEGATIVE CONTROL for R5. This is the bug the phase-3 implementation guard
+\* must exclude: unlock sees a pending transition but starts rotation again,
+\* appending T3 and replacing the root's transition metadata.
+ResumeAppendWithoutPendingGuard ==
+    /\ ~running
+    /\ pending
+    /\ running' = TRUE
+    /\ AppendTerm(T2, T3)
 
 ----------------------------------------------------------------------------
 
@@ -265,6 +298,15 @@ Next ==
     \/ Resume
 
 Spec == Init /\ [][Next]_vars
+
+\* The ordinary cfg checks Spec. rotation_transition_negative.cfg checks this
+\* mutation separately and must find an R5 counterexample. Keeping the
+\* negative control out of Next means the production model remains the guarded
+\* transition while the formal harness proves that the guard is load-bearing.
+NextWithoutPendingGuard ==
+    Next \/ ResumeAppendWithoutPendingGuard
+
+NegativeSpec == Init /\ [][NextWithoutPendingGuard]_vars
 
 ----------------------------------------------------------------------------
 (* Invariants *)
@@ -300,9 +342,12 @@ R3_CompletedRotationLeavesRollbackAvailable ==
 R4_DivergenceNeverErased ==
     (baseline /\ currentTerm = T2) => cleanAtCutover
 
-\* R5: resume never appends a second term. Only two terms ever exist.
+\* R5: resume must never append a second term. T3 is in the state space and
+\* residentTerms may contain it under TypeOK, so this is not a type invariant.
+\* rotation_transition_negative.cfg makes the unguarded append reachable and
+\* requires TLC to fail this predicate.
 R5_NoSecondAppend ==
-    currentTerm \in Terms /\ retiring \subseteq Terms
+    T3 \notin residentTerms
 
 Safety ==
     /\ TypeOK

@@ -81,5 +81,12 @@
     "spec": "rotation_transition",
     "distinct_states": 52,
     "depth": 9
+  },
+  {
+    "spec": "rotation_transition",
+    "cfg": "rotation_transition_negative",
+    "expected_invariant_violation": "R5_NoSecondAppend",
+    "distinct_states": 21,
+    "depth": 4
   }
 ]

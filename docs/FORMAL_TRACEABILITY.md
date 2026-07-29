@@ -25,7 +25,8 @@ deferred.
 1. Every invariant added to a `FORMAL_*_MODEL.md` must get a row here in the same change.
 2. A status downgrade (e.g. `implemented` -> `intended`) must update both the row and the invariant prose.
 3. `implemented` requires a named test function. If no test exists, the status is `implemented*` or `intended`.
-4. `deferred` rows must reference an open question in the source model.
+4. `deferred` rows must reference an open question or an explicit
+   implementation gate in the source model.
 
 ---
 
@@ -190,8 +191,36 @@ Source: [PROPOSAL_KEYTERM_ROTATION.md](PROPOSAL_KEYTERM_ROTATION.md)
 | K6 | implemented | This release holds exactly one term | `internal/crypto/keyring.go::OpenKeyring` | `internal/crypto/keyring_test.go::TestOpenKeyringRejectsMultipleTerms`; `::TestOpenKeyringZeroesRejectedTermKeys` | Relaxing it requires bumping the file version and the marker together. |
 | K7 | implemented | Passphrase derivation exists only inside `internal/crypto` | `internal/crypto` package boundary | `test/arch/kdf_confinement_test.go::TestKeyDerivationLivesOnlyInCrypto`; `::TestRawTermKeysAreNotAdoptedOutsideTests`; `::TestTestFixturesStayOutOfProduction` | Parses files directly, so `//go:build testmode` code is covered. |
 | K8 | **not implemented** | Every durable class carries a term | — | — | Pre-append gate for phase 3: a writer omitted from term stamping becomes unreadable data the first time a term is retired. |
+| R1 | deferred | Live store data is never stranded on an unauthorized term during rotation | Phase-3 authority-set open and resumable rewrap | `docs/formal/rotation_transition.tla::R1_LiveDataNeverStranded` | Machine-checked transition target; implementation gates are PHASE3_ONBOARDING items 4, 6, and 7. |
+| R2 | deferred | Only cutover-pinned objects may reach the target term | Phase-3 sealed snapshot and authority-set open | `docs/formal/rotation_transition.tla::R2_OnlyPinnedObjectsReachNewTerm` | Machine-checked transition target; implementation gates are PHASE3_ONBOARDING items 1, 4, and 7. |
+| R3 | deferred | A completed clean rotation leaves rollback available | Phase-3 divergence baseline | `docs/formal/rotation_transition.tla::R3_CompletedRotationLeavesRollbackAvailable` | Machine-checked transition target; implementation gates are PHASE3_ONBOARDING items 2 and 9. |
+| R4 | deferred | Rotation never erases pre-cutover divergence | Phase-3 snapshot decision and divergence baseline | `docs/formal/rotation_transition.tla::R4_DivergenceNeverErased` | Machine-checked transition target; implementation gates are PHASE3_ONBOARDING items 2 and 9. |
+| R5 | deferred | Resume never appends a second term to a pending rotation | Phase-3 `StartRotation` pending guard | `docs/formal/rotation_transition.tla::R5_NoSecondAppend`; `rotation_transition_negative.cfg` | Machine-checked with a third resident term; the standard harness requires the unguarded-resume mutation to violate R5. The implementation gate is PHASE3_ONBOARDING item 5. |
 
 ## Machine-Checkable Coverage
+
+### Rotation transition module
+
+[formal/rotation_transition.tla](formal/rotation_transition.tla) is a temporal
+transition model for append, rewrap, baseline, close, crash/resume, and
+filesystem-attacker interleavings. The positive configuration checks 52
+distinct states at depth 9 with no counterexamples.
+[formal/rotation_transition_negative.cfg](formal/rotation_transition_negative.cfg)
+enables an unguarded resume append; the standard harness requires the resulting
+third resident term to violate R5 after 21 distinct states at depth 4.
+
+| Invariant | TLA+ predicate |
+|---|---|
+| R1 (live data remains readable) | `R1_LiveDataNeverStranded` |
+| R2 (only cutover-pinned objects are promoted) | `R2_OnlyPinnedObjectsReachNewTerm` |
+| R3 (clean completion preserves rollback) | `R3_CompletedRotationLeavesRollbackAvailable` |
+| R4 (divergence is never erased) | `R4_DivergenceNeverErased` |
+| R5 (resume does not append again) | `R5_NoSecondAppend` |
+
+R2 and R3 retain their documented source mutations. R5's mutation is a
+first-class expected-failure run in `docs/formal/metrics.json`, so CI fails if
+the negative control stops producing the named counterexample or if the
+positive model admits it.
 
 ### Sign-boundary module
 

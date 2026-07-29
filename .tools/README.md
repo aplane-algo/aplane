@@ -19,5 +19,6 @@ Current jar:
 - sha256: `9e27b5e19a69ae1f56aabf8403a6ed5598dbfa6e638908e5278ac39736c1543d`
 
 To update: download a new jar, run `make formal-test TLA2TOOLS_JAR=<new>` and
-`make formal-test-deep TLA2TOOLS_JAR=<new>` (all recorded metrics must pass),
-then replace this file's provenance block and the jar in one commit.
+`make formal-test-deep TLA2TOOLS_JAR=<new>` (all recorded outcomes and metrics
+must match), then replace this file's provenance block and the jar in one
+commit.

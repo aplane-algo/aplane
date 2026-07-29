@@ -1602,14 +1602,15 @@ The repo uses:
   `approval_wait_seconds` for sizing `/sign` deadlines.
 - machine-checkable TLA+ models under `docs/formal/`, run locally with
   `make formal-test` and in CI by the Formal Models job. The authoritative
-  `(spec, cfg)` run list and expected metrics live in
+  `(spec, cfg)` run list and expected outcomes/metrics live in
   `docs/formal/metrics.json`. It covers `sign_boundary`,
   `policy_precedence`, `composition`, `lifecycle`, `approval_coordinator`,
   `approval_composition`, `lifecycle_composition`, `session_ownership`,
   `guarded_assembly`, `bounded_sentry`, `plugin_signing`, and
-  `generation_commit`, plus liveness
+  `generation_commit`, and `rotation_transition`, plus liveness
   configurations for `approval_coordinator`, `lifecycle`, and
-  `lifecycle_composition`.
+  `lifecycle_composition` and an expected-failure R5 negative control for
+  `rotation_transition`.
   `make formal-test-deep` uses `docs/formal/metrics_deep.json` for larger
   pre-release or scheduled bounds. Both targets run
   `formal-copy-sync-check` first and require `tla2tools.jar` through
