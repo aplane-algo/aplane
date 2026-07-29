@@ -165,6 +165,14 @@ func envelopeTerm(encryptedJSON []byte) (int64, error) {
 	return probe.Term, nil
 }
 
+// EnvelopeTerm reports the term named by a term envelope without returning
+// key material or decrypting its payload. Callers that use the result as
+// authority must also open the same byte buffer with its expected logical
+// ObjectContext.
+func EnvelopeTerm(encryptedJSON []byte) (int64, error) {
+	return envelopeTerm(encryptedJSON)
+}
+
 func sealUnderTerm(plaintext, key []byte, term int64, ctx ObjectContext) ([]byte, error) {
 	gcm, err := newGCM(key)
 	if err != nil {

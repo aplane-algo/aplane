@@ -1200,6 +1200,8 @@ selector:
 | `keytype-template` | key type |
 | `recovered-batch` | restore ID |
 | `recovered-entry` | restore ID and entry selector |
+| `rotation-snapshot` | fixed selector `pending` |
+| `rotation-baseline` | fixed selector `current` |
 
 Behavior:
 
@@ -1213,6 +1215,57 @@ Behavior:
   caller asked for
 - passphrase rotation re-encrypts under a new term key with the same context,
   so a rotation cannot relabel a file while it rewrites it
+- `crypto.EnvelopeTerm` exposes only the positive term header. Any caller
+  using that term as inventory authority must open the same byte buffer with
+  its expected logical context; inspecting the header alone is insufficient.
+
+### Rotation Artifact Inventory
+
+`internal/rotationinventory` owns the canonical K8 durable-artifact taxonomy
+and settled-store scan. It is an implementation foundation and does not
+enable term append.
+
+Each entry contains:
+
+- `path`: UTF-8, slash-separated, signer-data-root-relative canonical path;
+- `kind`: one of the explicit credential, template, recovered, integrity
+  document/sidecar, generation member, or rotation-record kinds;
+- positive exact byte `size` and canonical lowercase `sha256`;
+- for a term envelope, positive `term`, `object_class`, and
+  `object_selector`;
+- for an integrity sidecar, positive `term` with no envelope context;
+- for plaintext artifacts, no term or envelope context.
+
+Entries are strictly sorted by raw path bytes and paths are unique. Unknown
+fields are not inferred from extensions outside their owned namespace:
+unclassified files in generation, deleted, or recovered scope fail the scan.
+Independent state (`keyring.enc`, `.keystore`, backups, audit/config/unlock/
+token/SSH state, plaintext template library, and caches) is excluded.
+
+The scanner covers:
+
+- every published generation. Current structure is validated live; retained
+  generations require an authenticated seal;
+- active and retained credentials/templates, key-type state, witness public
+  metadata, exact manifest bytes, and any seal record;
+- published recovered batch metadata and entries;
+- identity-local deleted credential and template archives;
+- exact policy/node-role documents and their explicit-term sidecars;
+- optional rotation snapshot and baseline envelopes as classified durable
+  records.
+
+Encrypted entries are opened from the exact byte buffer that is hashed under
+the logical context derived from their canonical filename or recovered-batch
+metadata. Retained generation buffers are also compared to their seal entry
+before opening. `genstore.ParseManifestBytes`, `ParseSealBytes`, and
+`VerifyBytesAgainstSeal` are the buffer-based boundary; historical consumers
+must not validate a path and then consume a second read.
+
+This scanner describes a settled single-term store. Snapshot/root pinning,
+recursive-snapshot exclusion during a pending transition, per-member terms in
+generation seals, anchored retired-term historical opening, and the final
+exact-path/target-authority comparison remain required before the runtime
+multi-term gate may be relaxed.
 
 ### Generation Store (`CURRENT` + `generations/`)
 

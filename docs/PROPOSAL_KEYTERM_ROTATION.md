@@ -5,8 +5,11 @@ progress.** The formal R5 prerequisite is complete, and the first
 implementation slice writes the strict v2 keyring/v5 marker shape while
 deliberately retaining the one-term runtime gate. A second slice adds
 keyring-confined integrity operations, generation seal v2, and explicit-term
-policy/node-role sidecar v2. The transition itself remains blocked on the
-items recorded below and in
+policy/node-role sidecar v2. A third slice adds the canonical K8 artifact
+taxonomy and settled-store scanner with exact-buffer context opening and its
+durable-class mutation matrix. The transition itself remains blocked on the
+remaining snapshot, historical-authority, and completion items recorded below
+and in
 [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
 picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
 
@@ -892,13 +895,15 @@ accepts everywhere else.
      `//go:build testmode` (`cmd/apadmin/batch.go`), invisible to untagged
      builds. A gate that does not build with `-tags testmode` can pass while
      a tagged call site survives into phase 3.
-   - **Phase 2 status.** The compiler gate and the KDF-confinement
+   - **Current status.** The compiler gate and the KDF-confinement
      architecture test are in place: no code outside `internal/crypto`
      receives a raw term key, imports a KDF, or adopts raw bytes as a keyring.
-     The cross-artifact term/context inventory below is **not** in place, and
-     is a prerequisite for term append: without it, a writer omitted from the
-     term stamping turns into unreadable data the first time a term is
-     retired. Phase 3 must land it before enabling append.
+     `internal/rotationinventory` now supplies the canonical cross-artifact
+     taxonomy and settled-store scan, including exact-buffer logical-context
+     opening and mutation-tested durable-class coverage. It remains a
+     prerequisite rather than an enabled transition: snapshot/root pinning,
+     term-bearing seal entries, historical retired-term opening, and the final
+     exact-path/target-authority check still have to consume it before append.
    - **Add an artifact-class test.** The gates above prove no code takes the
      old path; they do not prove every written artifact carries a term. A
      test that creates each durable class — managed keys, installed

@@ -145,8 +145,18 @@ func WriteManifest(gen storepaths.GenPaths, manifest Manifest) error {
 
 // ReadManifest loads and validates the generation's manifest.
 func ReadManifest(gen storepaths.GenPaths) (*Manifest, error) {
+	data, _, err := fsutil.ReadRegularFile(gen.ManifestPath())
+	if err != nil {
+		return nil, fmt.Errorf("read generation manifest: %w", err)
+	}
+	return ParseManifestBytes(gen, data)
+}
+
+// ParseManifestBytes parses and validates the exact immutable manifest buffer
+// a caller intends to hash or otherwise consume.
+func ParseManifestBytes(gen storepaths.GenPaths, data []byte) (*Manifest, error) {
 	var manifest Manifest
-	if err := readJSONStrict(gen.ManifestPath(), &manifest); err != nil {
+	if err := decodeJSONStrict(data, &manifest); err != nil {
 		return nil, fmt.Errorf("read generation manifest: %w", err)
 	}
 	if err := validateManifest(&manifest, gen.GenerationID()); err != nil {
@@ -210,12 +220,30 @@ func ReadSeal(gen storepaths.GenPaths, kr *crypto.Keyring) (*Seal, error) {
 	if kr == nil {
 		return nil, fmt.Errorf("read generation seal: keyring is required")
 	}
-	data, _, err := fsutil.ReadRegularFile(gen.SealPath())
+	sealBytes, _, err := fsutil.ReadRegularFile(gen.SealPath())
 	if err != nil {
 		return nil, err
 	}
+	manifestBytes, _, err := fsutil.ReadRegularFile(gen.ManifestPath())
+	if err != nil {
+		return nil, fmt.Errorf("generation seal manifest: %w", err)
+	}
+	return ParseSealBytes(gen, sealBytes, manifestBytes, kr)
+}
+
+// ParseSealBytes validates exact seal and manifest buffers together. This is
+// the historical-open primitive: callers can hash, authenticate, and consume
+// the same bytes without a path-validation/read-again TOCTOU gap.
+func ParseSealBytes(
+	gen storepaths.GenPaths,
+	sealBytes, manifestBytes []byte,
+	kr *crypto.Keyring,
+) (*Seal, error) {
+	if kr == nil {
+		return nil, fmt.Errorf("read generation seal: keyring is required")
+	}
 	var seal Seal
-	if err := decodeJSONStrict(data, &seal); err != nil {
+	if err := decodeJSONStrict(sealBytes, &seal); err != nil {
 		return nil, err
 	}
 	if seal.Schema != SealSchema || seal.SchemaVersion != sealSchemaVersion {
@@ -236,7 +264,7 @@ func ReadSeal(gen storepaths.GenPaths, kr *crypto.Keyring) (*Seal, error) {
 	if err := validateCanonicalSHA256(seal.IntegrityMAC); err != nil {
 		return nil, fmt.Errorf("generation seal integrity_mac: %w", err)
 	}
-	manifestBytes, manifest, err := readManifestBytes(gen)
+	manifest, err := ParseManifestBytes(gen, manifestBytes)
 	if err != nil {
 		return nil, fmt.Errorf("generation seal manifest: %w", err)
 	}
@@ -333,17 +361,6 @@ func writeJSONDurable(path string, value any) error {
 	return fsutil.WriteFileDurable(path, append(data, '\n'))
 }
 
-func readJSONStrict(path string, out any) error {
-	data, _, err := fsutil.ReadRegularFile(path)
-	if err != nil {
-		return err
-	}
-	if err := decodeJSONStrict(data, out); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
-	}
-	return nil
-}
-
 func decodeJSONStrict(data []byte, out any) error {
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
@@ -366,14 +383,11 @@ func readManifestBytes(gen storepaths.GenPaths) ([]byte, *Manifest, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("read generation manifest: %w", err)
 	}
-	var manifest Manifest
-	if err := decodeJSONStrict(data, &manifest); err != nil {
-		return nil, nil, fmt.Errorf("read generation manifest: %w", err)
-	}
-	if err := validateManifest(&manifest, gen.GenerationID()); err != nil {
+	manifest, err := ParseManifestBytes(gen, data)
+	if err != nil {
 		return nil, nil, err
 	}
-	return data, &manifest, nil
+	return data, manifest, nil
 }
 
 func canonicalSealMACInput(seal *Seal) ([]byte, error) {

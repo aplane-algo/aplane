@@ -386,11 +386,18 @@ object's logical identity: a class and a canonical selector.
 | `keytype-template` | key type |
 | `recovered-batch` | restore ID |
 | `recovered-entry` | restore ID and entry selector |
+| `rotation-snapshot` | fixed selector `pending` |
+| `rotation-baseline` | fixed selector `current` |
 
 The identity is logical, never a path: generations copy ciphertext between
 namespaces and into `deleted/` without re-encrypting it. Binding it means a
 credential filed under another account, a template opened as a credential, or
 an entry lifted from another recovered batch fails to decrypt.
+
+`internal/rotationinventory` uses those contexts to open the same encrypted
+buffer it hashes for the Phase 3 K8 inventory. `crypto.EnvelopeTerm` exposes
+the envelope header for classification only; it is not authority without that
+context-bound open.
 
 Unlock opens the keyring once and reuses its term keys for key and template
 decryption until lock.

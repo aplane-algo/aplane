@@ -166,6 +166,13 @@ manifest inventory — a legitimately mutated generation would fail an at-mint
 check the moment it becomes prior. A non-current generation **without** a seal
 is, by construction, an uncommitted attempt (§7).
 
+Historical consumers operate on one read of each file:
+`ParseManifestBytes` validates the exact manifest buffer,
+`ParseSealBytes` binds that exact manifest buffer to the exact seal buffer,
+and `VerifyBytesAgainstSeal` checks the exact namespace-member buffer before
+it is consumed. Validating a path and then reading it again is not a historical
+integrity boundary.
+
 ## 6. Strict generation validator
 
 Fail-closed and explicitly **not** the tolerant runtime reload

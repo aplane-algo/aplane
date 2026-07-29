@@ -38,6 +38,7 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | Keyring-confined integrity operations — policy, node-role, and generation-seal callers receive or verify MACs without receiving derived key bytes | `internal/crypto/policy_integrity.go` |
 | Generation seal v2 — pins the exact manifest bytes, records the signing term, and authenticates every security-bearing seal field with a domain-separated MAC | `internal/genstore/records.go` |
 | Policy and node-role sidecar v2 — records the explicit integrity term and rejects unknown fields, trailing JSON, non-canonical MACs, and unauthorized terms | `internal/policy/integrity.go`, `internal/noderole/integrity.go` |
+| K8 inventory foundation — canonical artifact kinds and root-relative paths across generations, recovered batches, deleted archives, integrity documents, and rotation records; exact term envelopes are opened under their logical context before being inventoried | `internal/rotationinventory` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
 What that gives you: exactly one term (term 1), a single atomic root write, and
@@ -48,7 +49,10 @@ retained-parent pruning, and flip-away sealing) require an open keyring;
 pre-unlock reconciliation only uses seal presence to classify unreachable
 attempts and does not treat an unverified seal as a rollback authority. What
 this does **not** give you is any of the transition — no append, no window, no
-authority split, no historical anchors, and no complete K8 inventory.
+authority split, no historical anchors, and no sealed snapshot or completion
+pass. The K8 taxonomy and settled-store scanner are present, but K8 remains a
+pre-append gate until that scanner is wired into snapshot construction,
+historical opening, and the final exact-path/target-authority check.
 
 The properties that are proven today are K1–K7 in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against a named test.
@@ -352,6 +356,35 @@ explicit sidecar term and wrong-term refusal. For plaintext generation members
 it mutates the member and proves the seal MAC or anchor rejects it. Each gate
 must have a mutation-tested negative control. Without K8, a missed writer can
 become unreadable only when a term retires, long after the causal write.
+
+#### K8 implementation boundary
+
+`internal/rotationinventory` now defines the canonical artifact kinds and
+entry fields (`path`, `kind`, exact byte `size`/`sha256`, and term-envelope
+context or integrity term where applicable). Its settled-store scanner:
+
+- inventories current and retained generation members, recovered batches,
+  deleted credential/template archives, policy and node-role document pairs,
+  and optional rotation records;
+- rejects unknown in-scope files and unreconciled generation staging residue;
+- opens the exact encrypted buffer it hashes under the context derived from
+  the canonical filename or recovered-batch metadata;
+- verifies retained namespace buffers against the authenticated seal entry
+  before opening them, and parses exact manifest/seal buffers together;
+- excludes documented independent state from the inventory.
+
+`TestScanClassifiesEveryK8DurableClass` creates every applicable class,
+including generation copies, deleted moves, and recovered staging
+publication. Dedicated negative controls cover selector/class substitution,
+unauthorized sidecar terms, mutated sealed plaintext members, and unknown
+in-scope files.
+
+This is intentionally still a foundation. Before append is enabled, the
+rotation snapshot schema must consume this inventory, pending-state scans must
+exclude the root-pinned snapshot from recursive input, seal entries must carry
+the term of each term-bearing member, historical opening must authorize
+anchored retired terms, and completion must compare the fresh canonical path
+set and target authority against the pinned snapshot.
 
 ### The original blockers
 

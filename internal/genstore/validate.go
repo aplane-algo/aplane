@@ -78,19 +78,33 @@ func ValidateSealed(gen storepaths.GenPaths, kr *crypto.Keyring) error {
 // VerifyFileAgainstSeal checks one namespace-relative path ("keys/X.key")
 // against a loaded seal.
 func VerifyFileAgainstSeal(gen storepaths.GenPaths, seal *Seal, relativePath string) error {
-	index := slices.IndexFunc(seal.Inventory, func(e InventoryEntry) bool {
-		return e.Path == relativePath
-	})
-	if index < 0 {
-		return fmt.Errorf("%s is not in generation %s's seal", relativePath, gen.GenerationID())
-	}
 	data, _, err := fsutil.ReadRegularFile(filepath.Join(gen.Dir(), filepath.FromSlash(relativePath)))
 	if err != nil {
 		return err
 	}
+	if err := VerifyBytesAgainstSeal(seal, relativePath, data); err != nil {
+		return fmt.Errorf("%s does not match generation %s's seal: %w", relativePath, gen.GenerationID(), err)
+	}
+	return nil
+}
+
+// VerifyBytesAgainstSeal verifies the exact byte buffer a caller will consume
+// against one seal inventory entry. Historical consumers must use this form
+// rather than validate a path and then read it again.
+func VerifyBytesAgainstSeal(seal *Seal, relativePath string, data []byte) error {
+	if seal == nil {
+		return fmt.Errorf("missing generation seal")
+	}
+	index := slices.IndexFunc(seal.Inventory, func(e InventoryEntry) bool {
+		return e.Path == relativePath
+	})
+	if index < 0 {
+		return fmt.Errorf("path is absent from the seal")
+	}
 	sum := sha256.Sum256(data)
-	if hex.EncodeToString(sum[:]) != seal.Inventory[index].SHA256 {
-		return fmt.Errorf("%s does not match generation %s's seal", relativePath, gen.GenerationID())
+	entry := seal.Inventory[index]
+	if int64(len(data)) != entry.Size || hex.EncodeToString(sum[:]) != entry.SHA256 {
+		return fmt.Errorf("size or digest mismatch")
 	}
 	return nil
 }
