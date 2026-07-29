@@ -502,9 +502,11 @@ func TestDetectKeyInfoFromFileWithMasterKeyEncrypted(t *testing.T) {
 	keyFile := filepath.Join(dir, "encrypted.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 	plaintext := canonicalGenericKeyJSON(t, "aplane.falcon1024.v1", map[string]string{"network": "testnet"}, "")
-	encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		plaintext, masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
+		t.Fatalf("EncryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -642,9 +644,11 @@ func TestDetectKeyInfoFromFileWithMasterKeyWrongMasterKey(t *testing.T) {
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 	wrongKey := []byte("fedcba9876543210fedcba9876543210")
 	plaintext := []byte(`{"key_type":"test.timed-policy.v1","parameters":{"recipients":"ADDR"}}`)
-	encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		plaintext, masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
+		t.Fatalf("EncryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -660,9 +664,11 @@ func TestDetectKeyInfoFromFileWithMasterKeyInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "invalid.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
-	encrypted, err := crypto.EncryptWithMasterKey([]byte(`{invalid`), masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		[]byte(`{invalid`), masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
+		t.Fatalf("EncryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -679,9 +685,11 @@ func TestGetDisplayTEALWithMasterKeyEncrypted(t *testing.T) {
 	keyFile := filepath.Join(dir, "display.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 	plaintext := canonicalGenericKeyJSON(t, "aplane.display.v1", nil, "#pragma version 8\nint 1")
-	encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		plaintext, masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
+		t.Fatalf("EncryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -702,9 +710,11 @@ func TestGetDisplayTEALWithMasterKeyWrongMasterKey(t *testing.T) {
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 	wrongKey := []byte("fedcba9876543210fedcba9876543210")
 	plaintext := []byte(`{"teal_source":"#pragma version 8\nint 1"}`)
-	encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		plaintext, masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
+		t.Fatalf("EncryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -719,9 +729,11 @@ func TestGetDisplayTEALWithMasterKeyWrongMasterKey(t *testing.T) {
 func TestGetDisplayTEALWithMasterKeyInvalidJSON(t *testing.T) {
 	keyFile := filepath.Join(t.TempDir(), "display.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
-	encrypted, err := crypto.EncryptWithMasterKey([]byte(`{invalid`), masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		[]byte(`{invalid`), masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
+		t.Fatalf("EncryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -866,4 +878,15 @@ func activeKeysDirForKeymgmtTest(t *testing.T, paths storepaths.Paths, identityI
 		t.Fatalf("ResolveActive: %v", err)
 	}
 	return active.KeysDir()
+}
+
+// mustCredentialContextForTest derives the context the production reader will
+// use for path, so a test writing a credential directly binds it the same way.
+func mustCredentialContextForTest(t *testing.T, path string) crypto.ObjectContext {
+	t.Helper()
+	ctx, err := keys.CredentialContextForFile(path)
+	if err != nil {
+		t.Fatalf("CredentialContextForFile(%q): %v", path, err)
+	}
+	return ctx
 }

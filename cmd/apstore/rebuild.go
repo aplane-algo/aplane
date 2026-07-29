@@ -115,12 +115,17 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		return fmt.Errorf("passphrases do not match")
 	}
 
-	// Rebuilt stores use generation-based active storage: version-3
-	// keystore metadata plus the restored keys committed as the first
-	// generation behind a durable CURRENT flip.
-	_, masterKey, err := crypto.CreateKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()), storePassphrase)
+	// Rebuilt stores use generation-based active storage: a fresh keyring
+	// root plus the restored keys committed as the first generation behind a
+	// durable CURRENT flip.
+	kr, err := crypto.CreateKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), storePassphrase)
 	if err != nil {
-		return fmt.Errorf("failed to create keystore metadata: %w", err)
+		return fmt.Errorf("failed to create keyring store: %w", err)
+	}
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
+	if err != nil {
+		return err
 	}
 	defer crypto.ZeroBytes(masterKey)
 

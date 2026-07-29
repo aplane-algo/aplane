@@ -87,19 +87,20 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
-	if !apcrypto.KeystoreMetadataExistsIn(keystorePaths().KeystoreMetadataDir(productIdentityID())) {
+	if !apcrypto.KeyringExistsIn(keystorePaths().KeystoreMetadataDir(productIdentityID())) {
 		t.Fatal("keystore metadata missing after rebuild")
 	}
 	if _, err := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)); err != nil {
 		t.Fatalf("rebuilt key file missing: %v", err)
 	}
-	meta, err := apcrypto.LoadKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()))
+	kr, err := apcrypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), []byte("new-store-passphrase"))
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey([]byte("new-store-passphrase"))
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer apcrypto.ZeroBytes(masterKey)
 	role, err := noderole.LoadAndVerifyWithMasterKey(keystorePaths(), productIdentityID(), masterKey)
@@ -144,13 +145,14 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
 
-	meta, err := apcrypto.LoadKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()))
+	kr, err := apcrypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), []byte("new-store-passphrase"))
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey([]byte("new-store-passphrase"))
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer apcrypto.ZeroBytes(masterKey)
 	role, err := noderole.LoadAndVerifyWithMasterKey(keystorePaths(), productIdentityID(), masterKey)
@@ -243,13 +245,13 @@ func TestRestoreKeyRejectsLegacyEnvelopeVersion1Backup(t *testing.T) {
 	dataDirectory = t.TempDir()
 	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
-	address, keyJSON := testEd25519KeyJSON(t)
+	address, _ := testEd25519KeyJSON(t)
 
-	encrypted, err := apcrypto.EncryptWithMasterKey(keyJSON, bytes32(0x22))
-	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(backupDir, address+".apb"), encrypted, 0o600); err != nil {
+	// Written as a literal: envelope_version 1 is the retired master-key
+	// format that this release can no longer produce, and rejecting it is
+	// what this test is about.
+	legacy := []byte(`{"envelope_version":1,"nonce":"","ciphertext":""}`)
+	if err := os.WriteFile(filepath.Join(backupDir, address+".apb"), legacy, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 

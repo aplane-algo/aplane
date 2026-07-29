@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -35,7 +36,19 @@ type fakeKeyStore struct {
 	onScan       func()
 }
 
-func (f *fakeKeyStore) InitializeMasterKey(passphrase []byte) ([]byte, error) { return passphrase, nil }
+func (f *fakeKeyStore) Unlock(_ []byte) error { return nil }
+func (f *fakeKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
+	f.withMKCalled = true
+	if f.withMKErr != nil {
+		return f.withMKErr
+	}
+	kr, err := crypto.NewKeyringFromKey(testTemplateMasterKey())
+	if err != nil {
+		return err
+	}
+	defer kr.Zero()
+	return fn(kr)
+}
 func (f *fakeKeyStore) WithMasterKey(fn func(masterKey []byte) error) error {
 	f.withMKCalled = true
 	if f.withMKErr != nil {
@@ -53,7 +66,7 @@ func (f *fakeKeyStore) Scan(_ []byte) error {
 	}
 	return nil
 }
-func (f *fakeKeyStore) ClearMasterKey()                { f.clearCount++ }
+func (f *fakeKeyStore) ClearKeys()                     { f.clearCount++ }
 func (f *fakeKeyStore) ClearCache()                    { f.clearCache++ }
 func (f *fakeKeyStore) GetCache() map[string]string    { return f.cache }
 func (f *fakeKeyStore) GetKeyTypes() map[string]string { return f.keyTypes }
@@ -312,7 +325,7 @@ func TestReloadClearsInitializedMasterKeyOnBeforeKeyScanError(t *testing.T) {
 		t.Fatalf("Reload() error = %v, want %v", err, wantErr)
 	}
 	if store.clearCount != 1 {
-		t.Fatalf("ClearMasterKey() calls = %d, want 1", store.clearCount)
+		t.Fatalf("ClearKeys() calls = %d, want 1", store.clearCount)
 	}
 }
 
@@ -336,7 +349,7 @@ func TestReloadClearsInitializedMasterKeyOnScanError(t *testing.T) {
 		t.Fatalf("Reload() error = %v, want %v", err, wantErr)
 	}
 	if store.clearCount != 1 {
-		t.Fatalf("ClearMasterKey() calls = %d, want 1", store.clearCount)
+		t.Fatalf("ClearKeys() calls = %d, want 1", store.clearCount)
 	}
 }
 
@@ -360,7 +373,7 @@ func TestReloadDoesNotClearExistingUnlockOnScanError(t *testing.T) {
 		t.Fatalf("Reload() error = %v, want %v", err, wantErr)
 	}
 	if store.clearCount != 0 {
-		t.Fatalf("ClearMasterKey() calls = %d, want 0", store.clearCount)
+		t.Fatalf("ClearKeys() calls = %d, want 0", store.clearCount)
 	}
 }
 

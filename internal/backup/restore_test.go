@@ -741,11 +741,13 @@ func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T
 	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
-	encryptedExisting, err := apcrypto.EncryptWithMasterKey(keyJSON, testExportMasterKey)
-	if err != nil {
-		t.Fatalf("EncryptWithMasterKey(existing) error = %v", err)
-	}
 	duplicatePath := filepath.Join(paths.KeysDir(identityID), "duplicate.key")
+	encryptedExisting, err := apcrypto.EncryptWithTermKey(
+		keyJSON, testExportMasterKey, apcrypto.FirstTerm, apcrypto.AccountKeyContext("duplicate"),
+	)
+	if err != nil {
+		t.Fatalf("EncryptWithTermKey(existing) error = %v", err)
+	}
 	if err := os.WriteFile(duplicatePath, encryptedExisting, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(duplicate) error = %v", err)
 	}

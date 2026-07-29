@@ -113,8 +113,11 @@ func exportManagedCredential(paths storepaths.Paths, identityID, destDir string,
 		return "", 0, fmt.Errorf("failed to read managed credential: %w", err)
 	}
 
-	// Decrypt with master key
-	plaintext, err := crypto.DecryptWithMasterKey(data, masterKey)
+	ctx, err := source.Context()
+	if err != nil {
+		return "", 0, err
+	}
+	plaintext, err := crypto.DecryptWithTermKey(data, masterKey, crypto.FirstTerm, ctx)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to decrypt key: %w", err)
 	}

@@ -25,8 +25,8 @@ func newGenerationalTestStore(t *testing.T, passphrase string) (storepaths.Paths
 	if err := fsutil.MkdirAll(paths.KeystoreMetadataDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(metadata): %v", err)
 	}
-	if _, _, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), []byte(passphrase)); err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), []byte(passphrase)); err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
 	generationID, err := genstore.NewGenerationID(time.Unix(1_785_100_000, 0))
 	if err != nil {

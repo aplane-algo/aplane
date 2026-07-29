@@ -30,7 +30,9 @@ func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
-	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, testExportMasterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		keyJSON, testExportMasterKey, crypto.FirstTerm, crypto.SentryCredentialContext(selector),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +58,9 @@ func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
-	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, testExportMasterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		keyJSON, testExportMasterKey, crypto.FirstTerm, crypto.SentryCredentialContext(selector),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

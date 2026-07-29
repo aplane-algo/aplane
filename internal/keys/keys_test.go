@@ -81,20 +81,39 @@ func writeManagedCredentialFile(t *testing.T, paths storepaths.Paths, identityID
 		t.Fatalf("Failed to create keys dir: %v", err)
 	}
 
+	filePath := filepath.Join(keysDir, name)
 	dataToWrite := keyJSON
 	if len(masterKey) > 0 {
-		encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
+		ctx, err := CredentialContextForFile(filePath)
+		if err != nil {
+			t.Fatalf("CredentialContextForFile(%q): %v", name, err)
+		}
+		encrypted, err := crypto.EncryptWithTermKey(keyJSON, masterKey, crypto.FirstTerm, ctx)
 		if err != nil {
 			t.Fatalf("Failed to encrypt key: %v", err)
 		}
 		dataToWrite = encrypted
 	}
 
-	filePath := filepath.Join(keysDir, name)
 	if err := os.WriteFile(filePath, dataToWrite, 0600); err != nil {
 		t.Fatalf("Failed to write key file: %v", err)
 	}
 	return filePath
+}
+
+// readTestContext is the object identity the generic-reader tests seal and
+// open under. Its value does not matter; that both sides agree does.
+var readTestContext = crypto.AccountKeyContext("READTESTADDRESS")
+
+// mustCredentialContext derives the context a scan will use for path, so a
+// test writing a file directly binds it the same way the store would.
+func mustCredentialContext(t *testing.T, path string) crypto.ObjectContext {
+	t.Helper()
+	ctx, err := CredentialContextForFile(path)
+	if err != nil {
+		t.Fatalf("CredentialContextForFile(%q): %v", path, err)
+	}
+	return ctx
 }
 
 func TestReadAndDecryptFile(t *testing.T) {
@@ -107,7 +126,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err := ReadAndDecryptFile(path, nil, "test")
+		_, err := ReadAndDecryptFile(path, nil, readTestContext, "test")
 		if err == nil {
 			t.Fatal("expected error for plaintext file")
 		}
@@ -118,7 +137,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 
 	t.Run("encrypted file", func(t *testing.T) {
 		plaintext := []byte(`{"key_type":"ed25519","public_key":"abc"}`)
-		encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
+		encrypted, err := crypto.EncryptWithTermKey(plaintext, masterKey, crypto.FirstTerm, readTestContext)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,7 +146,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		got, err := ReadAndDecryptFile(path, masterKey, "test")
+		got, err := ReadAndDecryptFile(path, masterKey, readTestContext, "test")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -138,7 +157,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 
 	t.Run("encrypted file nil master key", func(t *testing.T) {
 		plaintext := []byte(`{"key_type":"ed25519"}`)
-		encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
+		encrypted, err := crypto.EncryptWithTermKey(plaintext, masterKey, crypto.FirstTerm, readTestContext)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -147,7 +166,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err = ReadAndDecryptFile(path, nil, "test")
+		_, err = ReadAndDecryptFile(path, nil, readTestContext, "test")
 		if err == nil {
 			t.Fatal("expected error for encrypted file without master key")
 		}
@@ -157,7 +176,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 	})
 
 	t.Run("missing file", func(t *testing.T) {
-		_, err := ReadAndDecryptFile("/nonexistent/path.key", masterKey, "test")
+		_, err := ReadAndDecryptFile("/nonexistent/path.key", masterKey, readTestContext, "test")
 		if err == nil {
 			t.Fatal("expected error for missing file")
 		}
@@ -168,7 +187,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 
 	t.Run("wrong master key", func(t *testing.T) {
 		plaintext := []byte(`{"key_type":"ed25519"}`)
-		encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
+		encrypted, err := crypto.EncryptWithTermKey(plaintext, masterKey, crypto.FirstTerm, readTestContext)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -178,7 +197,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 		}
 
 		wrongKey := testMasterKey(t)
-		_, err = ReadAndDecryptFile(path, wrongKey, "test")
+		_, err = ReadAndDecryptFile(path, wrongKey, readTestContext, "test")
 		if err == nil {
 			t.Fatal("expected error for wrong master key")
 		}
@@ -422,11 +441,13 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 		keyJSON, address := testEd25519Key(t)
 
 		firstPath := writeKeyFile(t, paths, "default", address, keyJSON, masterKey)
-		encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
-		if err != nil {
-			t.Fatalf("EncryptWithMasterKey() error = %v", err)
-		}
 		duplicatePath := filepath.Join(activeKeysDirForTest(t, paths, "default"), "duplicate.key")
+		encrypted, err := crypto.EncryptWithTermKey(
+			keyJSON, masterKey, crypto.FirstTerm, mustCredentialContext(t, duplicatePath),
+		)
+		if err != nil {
+			t.Fatalf("EncryptWithTermKey() error = %v", err)
+		}
 		if err := os.WriteFile(duplicatePath, encrypted, 0600); err != nil {
 			t.Fatalf("write duplicate key file: %v", err)
 		}
@@ -591,7 +612,9 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsSaltWarnings(t *testing.T) {
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
 	}`)
-	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		keyJSON, masterKey, crypto.FirstTerm, mustCredentialContext(t, keyFile),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -831,7 +854,9 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsIncompatibleFormatWarnings(t
 		"public_key": "abc",
 		"private_key": "def"
 	}`)
-	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		keyJSON, masterKey, crypto.FirstTerm, mustCredentialContext(t, keyFile),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -929,9 +954,13 @@ func TestScanKeysDirectoryWithMasterKey_KeyWithCreatedAt(t *testing.T) {
 func TestReadDecryptedKeyJSONWithMasterKey(t *testing.T) {
 	masterKey := testMasterKey(t)
 	plaintext := []byte(`{"key_type":"ed25519","public_key":"abc"}`)
-	encrypted, _ := crypto.EncryptWithMasterKey(plaintext, masterKey)
-
 	path := filepath.Join(t.TempDir(), "test.key")
+	encrypted, err := crypto.EncryptWithTermKey(
+		plaintext, masterKey, crypto.FirstTerm, mustCredentialContext(t, path),
+	)
+	if err != nil {
+		t.Fatalf("EncryptWithTermKey() error = %v", err)
+	}
 	if err := os.WriteFile(path, encrypted, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -971,4 +1000,39 @@ func mustResolveActiveForTest(t *testing.T, paths storepaths.Paths) storepaths.A
 		t.Fatalf("ResolveActive: %v", err)
 	}
 	return active
+}
+
+// TestCredentialDoesNotOpenUnderAnotherAddress proves a credential's envelope
+// is bound to the account it belongs to, not merely to the store's key.
+//
+// Without the binding, an attacker with write access to the keys directory can
+// swap two credential files and make the signer sign for one account with
+// another's key — every byte still decrypts, because one key protects them
+// all. The object context is what turns that swap into a decryption failure.
+func TestCredentialDoesNotOpenUnderAnotherAddress(t *testing.T) {
+	masterKey := testMasterKey(t)
+	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
+	keyJSON, address := testEd25519Key(t)
+
+	original := writeKeyFile(t, paths, "default", address, keyJSON, masterKey)
+	sealed, err := os.ReadFile(original)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", original, err)
+	}
+
+	// Byte-for-byte the same ciphertext, filed under a different account.
+	const otherAddress = "OTHERADDRESSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	moved := filepath.Join(filepath.Dir(original), otherAddress+AccountKeyExtension)
+	if err := os.WriteFile(moved, sealed, 0600); err != nil {
+		t.Fatalf("WriteFile(%s): %v", moved, err)
+	}
+
+	if _, err := ReadDecryptedKeyJSONWithMasterKey(moved, masterKey); err == nil {
+		t.Fatal("credential opened under another address: the object context is not bound")
+	}
+	// The original still opens, so the failure is the relabeling and not the key.
+	if _, err := ReadDecryptedKeyJSONWithMasterKey(original, masterKey); err != nil {
+		t.Fatalf("original credential no longer opens: %v", err)
+	}
 }

@@ -79,7 +79,7 @@ func (s signerAdminServices) ResolveIdentity(identityID string) (*identity.Runti
 }
 
 func (s signerAdminServices) VerifyPassphrase(ir *identity.Runtime, passphrase []byte) error {
-	return crypto.VerifyPassphraseWithMetadata(passphrase, ir.KeyPaths().KeystoreMetadataDir(ir.ID()))
+	return crypto.VerifyPassphraseWithKeyring(passphrase, ir.KeyPaths().KeystoreMetadataDir(ir.ID()))
 }
 
 func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string) {

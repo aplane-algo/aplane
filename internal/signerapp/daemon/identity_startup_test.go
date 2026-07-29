@@ -532,13 +532,14 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 
 func testMasterKeyForIdentity(t *testing.T, paths utilkeys.Paths, identityID string, passphrase []byte) []byte {
 	t.Helper()
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	return masterKey
 }

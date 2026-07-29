@@ -51,9 +51,11 @@ func TestSavePayloadEncrypted(t *testing.T) {
 	}
 	assertKeyFileMode(t, result.PrivateFile, fsutil.StoreFilePerm)
 
-	decrypted, err := crypto.DecryptWithMasterKey(data, masterKey)
+	decrypted, err := crypto.DecryptWithTermKey(
+		data, masterKey, crypto.FirstTerm, mustCredentialContext(t, result.PrivateFile),
+	)
 	if err != nil {
-		t.Fatalf("DecryptWithMasterKey() error = %v", err)
+		t.Fatalf("DecryptWithTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(decrypted)
 	roundTripped, err := ParsePayload(decrypted)

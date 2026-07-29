@@ -109,7 +109,7 @@ concurrent authentications, displacement chains, exits at any point — the
 modeled daemon never ends up with an unlocked identity, `lock_on_disconnect`
 set, and no live authenticated session responsible for re-locking. It does
 not model the keystore itself (a "locked" identity here is the daemon having
-called `Lock()`; the keystore's own session/master-key destruction is
+called `Lock()`; the keystore's own session/term-key destruction is
 lifecycle territory), and the mapping from this abstract state machine to the
 Go daemon is a code-review responsibility, anchored by the Go tests in the
 traceability SO rows (`TestAdminAuthPromotionFailureCleansUnlockedIdentity`,

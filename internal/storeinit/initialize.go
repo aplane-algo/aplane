@@ -57,7 +57,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 
 	metadataDir := opts.Paths.KeystoreMetadataDir(opts.IdentityID)
 	result.MetadataDir = metadataDir
-	if crypto.KeystoreMetadataExistsIn(metadataDir) {
+	if crypto.KeyringExistsIn(metadataDir) {
 		return result, fmt.Errorf("keystore already initialized (control file exists in %s)", metadataDir)
 	}
 	if HasPartialState(opts.Paths, opts.IdentityID) {
@@ -77,18 +77,24 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		}
 	}()
 
-	_, masterKey, err := crypto.CreateKeystoreMetadata(metadataDir, passphrase)
+	keyring, err := crypto.CreateKeyringStore(metadataDir, passphrase)
 	if err != nil {
-		return result, fmt.Errorf("failed to create keystore metadata: %w", err)
+		return result, fmt.Errorf("failed to create keystore: %w", err)
 	}
+	defer keyring.Zero()
+	// Phase-1 compatibility: sites that still take a raw key read the single
+	// term through this seam. Phase 2 migrates them to the keyring.
+	masterKey, err := keyring.CurrentTermKey()
+	if err != nil {
+		return result, err
+	}
+	defer crypto.ZeroBytes(masterKey)
 	roleBytes, _, err := noderole.SaveInitial(opts.Paths, role, time.Now())
 	if err != nil {
-		crypto.ZeroBytes(masterKey)
 		return result, fmt.Errorf("failed to create node role: %w", err)
 	}
 	createdNodeRole = true
 	if err := noderole.SaveIdentitySidecarWithMasterKey(opts.Paths, opts.IdentityID, roleBytes, masterKey, time.Now()); err != nil {
-		crypto.ZeroBytes(masterKey)
 		return result, fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 	}
 	var policyErr error
@@ -98,7 +104,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		policyErr = policy.SaveStoredConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now())
 	}
 	if policyErr != nil {
-		crypto.ZeroBytes(masterKey)
 		return result, fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)
 	}
 	{
@@ -107,7 +112,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		// durably.
 		generationID, err := genstore.NewGenerationID(time.Now())
 		if err != nil {
-			crypto.ZeroBytes(masterKey)
 			return result, err
 		}
 		if _, err := genstore.Mint(opts.Paths, opts.IdentityID, genstore.MintRequest{
@@ -120,10 +124,8 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 				return defaultkeytypes.InstallForNewIdentityActive(staged, role, masterKey, opts.Logf)
 			},
 		}); err != nil {
-			crypto.ZeroBytes(masterKey)
 			return result, fmt.Errorf("failed to mint initial generation: %w", err)
 		}
-		crypto.ZeroBytes(masterKey)
 	}
 
 	if _, err := tokenfile.LoadAPlaneToken(opts.Paths.Root(), opts.IdentityID); err != nil {

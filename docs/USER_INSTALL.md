@@ -91,6 +91,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   │   └── templates/     # Template YAML files for defaults and apstore imports
 │   ├── .ssh/              # SSH host key and process-global authorized_keys
 │   └── identities/default/ # Keystore (created during install)
+│       ├── keyring.enc
 │       ├── .keystore
 │       └── .ssh/          # Identity-scoped authorized_keys after token enrollment
 ├── apclient/              # Client data directory ($APCLIENT_DATA)
@@ -928,7 +929,8 @@ The installer creates `identities/default/` with the keystore. As the signer run
 
 ```
 $APSIGNER_DATA/identities/default/
-├── .keystore         # Keystore metadata (master salt and passphrase verifier)
+├── keyring.enc       # Cryptographic root (KDF header + sealed term set)
+├── .keystore         # Store format marker (version and layout only)
 ├── config.yaml       # Identity-scoped runtime setting overrides
 ├── policy.yaml       # Identity-scoped node-role policy
 ├── policy.yaml.hmac  # Integrity sidecar for policy.yaml
@@ -1041,8 +1043,9 @@ To rotate the keystore passphrase (auto-unlock mode):
 sudo apstore -d /var/lib/apsigner changepass
 ```
 
-This asks you to manually enter the current passphrase, atomically re-encrypts
-all keys with a new passphrase, re-signs the policy and node-role integrity
+This asks you to manually enter the current passphrase, generates a fresh key
+for the store, atomically re-encrypts all keys under it, re-signs the policy
+and node-role integrity
 sidecars, and updates `passphrase.cred`. Restart the service afterward:
 
 Systemd data directories contain a `.prod` marker. For those directories,
@@ -1128,7 +1131,9 @@ every retained path with a one-line label. Security-relevant entries:
   physical machine.** It is unreadable on a different host, and unreadable on
   this host if the TPM is reset, the disk is moved, or the host key changes.
   See "Migrating to a New Machine" for the safe relocation path.
-- **`identities/<id>/.keystore`** -- master salt and passphrase verifier.
+- **`identities/<id>/keyring.enc`** -- the store's cryptographic root; without
+  it no key file can be decrypted.
+- **`identities/<id>/.keystore`** -- store format marker.
 - **`identities/<id>/aplane.token`** -- HTTP API token; treat as a credential.
 - **`audit.log`** -- the signer's audit trail. Retain for compliance and
   forensics unless you have already exported it.

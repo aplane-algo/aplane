@@ -80,10 +80,12 @@ func createTestKeyFile(t *testing.T, keysDir, address string, masterKey []byte) 
 	}
 	defer crypto.ZeroBytes(keyJSON)
 
-	// Encrypt if master key provided
+	filePath := filepath.Join(keysDir, address+".key")
 	var dataToWrite []byte
 	if len(masterKey) > 0 {
-		encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
+		encrypted, err := crypto.EncryptWithTermKey(
+			keyJSON, masterKey, crypto.FirstTerm, crypto.AccountKeyContext(address),
+		)
 		if err != nil {
 			t.Fatalf("Failed to encrypt key: %v", err)
 		}
@@ -93,8 +95,6 @@ func createTestKeyFile(t *testing.T, keysDir, address string, masterKey []byte) 
 		copy(dataToWrite, keyJSON)
 	}
 
-	// Write to file
-	filePath := filepath.Join(keysDir, address+".key")
 	if err := os.WriteFile(filePath, dataToWrite, 0600); err != nil {
 		t.Fatalf("Failed to write test key file: %v", err)
 	}
@@ -208,13 +208,18 @@ func TestFileKeyStore_GetDecryptFailureIsNotInvalidPassphrase(t *testing.T) {
 	defer cleanup()
 
 	store := NewFileKeyStoreForPaths(paths, testIdentityID)
-	store.masterKey = testMasterKey
+	if err := store.setKeyringForTest(testMasterKey); err != nil {
+		t.Fatalf("setKeyringForTest(): %v", err)
+	}
 	ctx := context.Background()
 
 	addr := "CORRUPTEDKEY123"
-	encrypted, err := crypto.EncryptWithMasterKey([]byte(`{"key_type":"ed25519"}`), testMasterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		[]byte(`{"key_type":"ed25519"}`), testMasterKey, crypto.FirstTerm,
+		crypto.AccountKeyContext(addr),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey failed: %v", err)
+		t.Fatalf("EncryptWithTermKey failed: %v", err)
 	}
 
 	var envelope struct {
@@ -505,9 +510,11 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal(component key) error = %v", err)
 	}
-	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, testMasterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		keyJSON, testMasterKey, crypto.FirstTerm, crypto.SentryCredentialContext(componentKey),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
+		t.Fatalf("EncryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keys.SentryCredentialFilePath(paths, testIdentityID, componentKey), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(component key) error = %v", err)
@@ -580,16 +587,16 @@ func TestFileKeyStore_CacheConcurrency(t *testing.T) {
 	}
 }
 
-// TestClearMasterKeyBlocksDuringWithMasterKey proves that ClearMasterKey()
-// blocks while a WithMasterKey callback is running (RLock held).
-func TestClearMasterKeyBlocksDuringWithMasterKey(t *testing.T) {
-	fs := &FileKeyStore{
-		cache:     map[string]keys.KeyScanInfo{},
-		masterKey: make([]byte, 32),
+// TestClearKeysBlocksDuringWithMasterKey proves that ClearKeys() blocks while
+// a WithMasterKey callback is running (RLock held).
+func TestClearKeysBlocksDuringWithMasterKey(t *testing.T) {
+	fs := &FileKeyStore{cache: map[string]keys.KeyScanInfo{}}
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = 0xAB
 	}
-	// Fill with non-zero bytes
-	for i := range fs.masterKey {
-		fs.masterKey[i] = 0xAB
+	if err := fs.setKeyringForTest(key); err != nil {
+		t.Fatalf("setKeyringForTest(): %v", err)
 	}
 
 	started := make(chan struct{})
@@ -613,25 +620,25 @@ func TestClearMasterKeyBlocksDuringWithMasterKey(t *testing.T) {
 
 	<-started // wait for callback to be running
 
-	// ClearMasterKey should block until callback returns
+	// ClearKeys should block until callback returns
 	go func() {
-		fs.ClearMasterKey()
+		fs.ClearKeys()
 		close(cleared)
 	}()
 
 	// cleared should not fire for ~100ms (while callback holds RLock)
 	select {
 	case <-cleared:
-		t.Fatal("ClearMasterKey completed while WithMasterKey callback was still running")
+		t.Fatal("ClearKeys completed while WithMasterKey callback was still running")
 	case <-time.After(50 * time.Millisecond):
-		// expected — ClearMasterKey is still blocked
+		// expected — ClearKeys is still blocked
 	}
 
 	// Now wait for both to finish
 	<-cleared
 
-	// Verify master key was actually cleared
-	if fs.masterKey != nil {
-		t.Error("master key should be nil after ClearMasterKey")
+	// Verify the keyring was actually dropped
+	if fs.keyringIsLoaded() {
+		t.Error("keyring should be gone after ClearKeys")
 	}
 }

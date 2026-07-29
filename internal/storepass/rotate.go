@@ -4,7 +4,6 @@
 package storepass
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
 type Logger func(format string, args ...any)
@@ -45,11 +45,11 @@ type pendingFile struct {
 }
 
 func VerifyCurrentPassphrase(paths storepaths.Paths, identityID string, passphrase []byte) error {
-	masterKey, err := loadAndVerifyCurrentMasterKey(paths, identityID, passphrase)
+	kr, err := loadAndVerifyCurrentKeyring(paths, identityID, passphrase)
 	if err != nil {
 		return err
 	}
-	crypto.ZeroBytes(masterKey)
+	kr.Zero()
 	return nil
 }
 
@@ -59,12 +59,16 @@ func VerifyCurrentPassphrase(paths storepaths.Paths, identityID string, passphra
 func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphrase []byte, opts RotateOptions) (RotateResult, error) {
 	var result RotateResult
 	metaDir := paths.KeystoreMetadataDir(identityID)
-	keystorePath := filepath.Join(metaDir, ".keystore")
-	if _, err := os.Stat(keystorePath); os.IsNotExist(err) {
-		return result, fmt.Errorf("no .keystore file found in %s - store not initialized", metaDir)
+	if !crypto.KeyringExistsIn(metaDir) {
+		return result, fmt.Errorf("no keyring found in %s - store not initialized", metaDir)
 	}
 
-	oldMasterKey, err := loadAndVerifyCurrentMasterKey(paths, identityID, oldPassphrase)
+	oldKeyring, err := loadAndVerifyCurrentKeyring(paths, identityID, oldPassphrase)
+	if err != nil {
+		return result, err
+	}
+	defer oldKeyring.Zero()
+	oldMasterKey, err := oldKeyring.CurrentTermKey()
 	if err != nil {
 		return result, err
 	}
@@ -77,20 +81,35 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 	logTargets(opts.Logf, managedFiles, templateFiles, recoveredFiles)
 
 	var pendingFiles []pendingFile
-	newKeystorePath := keystorePath + ".new"
-	oldKeystorePath := keystorePath + ".old"
+	keyringPath := crypto.KeyringPath(metaDir)
+	newKeyringPath := keyringPath + ".new"
+	oldKeyringPath := keyringPath + ".old"
 
-	newMeta, newMasterKey, err := crypto.CreateKeystoreMetadataTemp(newPassphrase)
+	// A passphrase change must replace the term key, not merely rewrap it.
+	// The old master key was derived from the passphrase, so changing the
+	// passphrase changed the key for free; a keyring's term key is stored,
+	// so rewrapping it under a new KEK would leave every file readable to
+	// anyone holding the old keyring — including files written afterwards.
+	// Generating a fresh term here is what preserves today's guarantee.
+	newKeyring, err := crypto.NewKeyring()
 	if err != nil {
-		return result, fmt.Errorf("failed to create new keystore metadata: %w", err)
+		return result, fmt.Errorf("failed to create new keyring: %w", err)
+	}
+	defer newKeyring.Zero()
+	newMasterKey, err := newKeyring.CurrentTermKey()
+	if err != nil {
+		return result, err
 	}
 	defer crypto.ZeroBytes(newMasterKey)
-	// The new metadata carries the generational layout gate by
-	// construction (the only supported store format).
 
 	logf(opts.Logf, "phase 1: creating new encrypted files")
 	for _, managedFile := range managedFiles {
-		pf, ok, err := createPendingEncryptedFile(managedFile.Path, oldMasterKey, newMasterKey, managedFile.Name, opts.Logf)
+		credentialContext, err := managedFile.Context()
+		if err != nil {
+			cleanupPendingNewFiles(pendingFiles)
+			return result, err
+		}
+		pf, ok, err := createPendingEncryptedFile(managedFile.Path, credentialContext, oldMasterKey, newMasterKey, managedFile.Name, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -103,7 +122,12 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 
 	for _, templatePath := range templateFiles {
 		templateName := filepath.Base(templatePath)
-		pf, ok, err := createPendingEncryptedFile(templatePath, oldMasterKey, newMasterKey, templateName, opts.Logf)
+		templateContext, err := templatestore.TemplateContextForFile(templatePath)
+		if err != nil {
+			cleanupPendingNewFiles(pendingFiles)
+			return result, err
+		}
+		pf, ok, err := createPendingEncryptedFile(templatePath, templateContext, oldMasterKey, newMasterKey, templateName, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -114,9 +138,9 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		}
 	}
 
-	for _, recoveredPath := range recoveredFiles {
-		label := filepath.Base(filepath.Dir(recoveredPath)) + "/" + filepath.Base(recoveredPath)
-		pf, ok, err := createPendingEncryptedFile(recoveredPath, oldMasterKey, newMasterKey, label, opts.Logf)
+	for _, target := range recoveredFiles {
+		label := filepath.Base(filepath.Dir(target.Path)) + "/" + filepath.Base(target.Path)
+		pf, ok, err := createPendingEncryptedFile(target.Path, target.Context, oldMasterKey, newMasterKey, label, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -154,12 +178,16 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		result.NodeRoleSidecarsMigrated++
 	}
 
-	if err := writeVerifiedNewKeystore(keystorePath, newKeystorePath, newMeta, newPassphrase); err != nil {
+	// The root goes last in the swap set, so the store is readable under the
+	// old passphrase until the moment every data file already carries the new
+	// term key. The .keystore marker is static and does not participate: a
+	// passphrase change does not alter the format version or the layout.
+	if err := writeVerifiedNewKeyring(keyringPath, newKeyringPath, newKeyring, newPassphrase); err != nil {
 		cleanupPendingNewFiles(pendingFiles)
 		return result, err
 	}
-	pendingFiles = append(pendingFiles, pendingFile{keystorePath, newKeystorePath, oldKeystorePath})
-	logf(opts.Logf, "created: .keystore.new (verified)")
+	pendingFiles = append(pendingFiles, pendingFile{keyringPath, newKeyringPath, oldKeyringPath})
+	logf(opts.Logf, "created: keyring.enc.new (verified)")
 
 	logf(opts.Logf, "phase 2: atomic file swap")
 	if err := swapPendingFiles(pendingFiles, opts.Logf); err != nil {
@@ -183,23 +211,23 @@ func logf(log Logger, format string, args ...any) {
 	}
 }
 
-func loadAndVerifyCurrentMasterKey(paths storepaths.Paths, identityID string, oldPassphrase []byte) ([]byte, error) {
-	oldMeta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
-	if err != nil {
-		return nil, fmt.Errorf("failed to load keystore metadata: %w", err)
-	}
-	oldMasterKey, err := oldMeta.VerifyAndDeriveMasterKey(oldPassphrase)
+// loadAndVerifyCurrentKeyring opens the store's keyring with the current
+// passphrase. The unwrap is the verification: there is no separate verifier.
+//
+// The caller owns the returned keyring and must Zero it.
+func loadAndVerifyCurrentKeyring(paths storepaths.Paths, identityID string, oldPassphrase []byte) (*crypto.Keyring, error) {
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
 		return nil, fmt.Errorf("current passphrase verification failed: %w", err)
 	}
-	return oldMasterKey, nil
+	return kr, nil
 }
 
 func scanTargets(
 	paths storepaths.Paths,
 	identityID string,
 	masterKey []byte,
-) ([]keys.ManagedCredentialFile, []string, []string, error) {
+) ([]keys.ManagedCredentialFile, []string, []recovered.RotationTarget, error) {
 	// Rotation requires generation quiescence: it rewrites only what it can
 	// see through the resolved current namespaces, so a retained prior
 	// generation would silently keep material encrypted under the old
@@ -265,7 +293,8 @@ func requireGenerationQuiescence(paths storepaths.Paths, identityID string) erro
 func logTargets(
 	log Logger,
 	managedFiles []keys.ManagedCredentialFile,
-	templateFiles, recoveredFiles []string,
+	templateFiles []string,
+	recoveredFiles []recovered.RotationTarget,
 ) {
 	if len(managedFiles) == 0 && len(templateFiles) == 0 && len(recoveredFiles) == 0 {
 		logf(log, "no key, template, or recovered batch files found in keystore")
@@ -308,10 +337,14 @@ func cleanupPendingOldFiles(pendingFiles []pendingFile) {
 	}
 }
 
-// rewriteEncryptedFile re-encrypts path under the new master key, writing
+// rewriteEncryptedFile re-encrypts path under the new term key, writing
 // path.new. display is the human-readable name used in error messages (the
 // path itself, or a caller-supplied label).
-func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKey []byte) error {
+//
+// ctx is the object the file holds. Rotation changes the key, never the
+// identity, so the same context opens the old envelope and seals the new one —
+// which also means a rotation cannot silently relabel a file.
+func rewriteEncryptedFile(path, display string, ctx crypto.ObjectContext, oldMasterKey []byte, newMasterKey []byte) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", display, err)
@@ -320,11 +353,11 @@ func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKe
 		return nil
 	}
 
-	plaintext, err := crypto.DecryptWithMasterKey(data, oldMasterKey)
+	plaintext, err := crypto.DecryptWithTermKey(data, oldMasterKey, crypto.FirstTerm, ctx)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt %s: %w", display, err)
 	}
-	newData, err := crypto.EncryptWithMasterKey(plaintext, newMasterKey)
+	newData, err := crypto.EncryptWithTermKey(plaintext, newMasterKey, crypto.FirstTerm, ctx)
 	crypto.ZeroBytes(plaintext)
 	if err != nil {
 		return fmt.Errorf("failed to re-encrypt %s: %w", display, err)
@@ -347,7 +380,7 @@ func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKe
 	if err != nil {
 		return fmt.Errorf("failed to verify %s.new: %w", display, err)
 	}
-	verifyPlaintext, err := crypto.DecryptWithMasterKey(verifyData, newMasterKey)
+	verifyPlaintext, err := crypto.DecryptWithTermKey(verifyData, newMasterKey, crypto.FirstTerm, ctx)
 	if err != nil {
 		return fmt.Errorf("verification failed for %s.new: %w", display, err)
 	}
@@ -355,7 +388,7 @@ func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKe
 	return nil
 }
 
-func createPendingEncryptedFile(path string, oldMasterKey []byte, newMasterKey []byte, label string, log Logger) (*pendingFile, bool, error) {
+func createPendingEncryptedFile(path string, ctx crypto.ObjectContext, oldMasterKey []byte, newMasterKey []byte, label string, log Logger) (*pendingFile, bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to read %s: %w", label, err)
@@ -364,7 +397,7 @@ func createPendingEncryptedFile(path string, oldMasterKey []byte, newMasterKey [
 		logf(log, "skipping %s (not encrypted)", label)
 		return nil, false, nil
 	}
-	if err := rewriteEncryptedFile(path, label, oldMasterKey, newMasterKey); err != nil {
+	if err := rewriteEncryptedFile(path, label, ctx, oldMasterKey, newMasterKey); err != nil {
 		return nil, false, err
 	}
 
@@ -516,31 +549,36 @@ func ApplyFileMetadataFrom(sourcePath, targetPath string) error {
 	return os.Chmod(targetPath, info.Mode().Perm())
 }
 
-func writeVerifiedNewKeystore(
-	keystorePath string,
-	newKeystorePath string,
-	newMeta *crypto.KeystoreMetadata,
+// writeVerifiedNewKeyring stages the new root and proves it opens under the
+// new passphrase before the swap can promote it. A root that does not open is
+// an unrecoverable store, so it is verified from disk rather than from memory.
+func writeVerifiedNewKeyring(
+	keyringPath string,
+	newKeyringPath string,
+	newKeyring *crypto.Keyring,
 	newPassphrase []byte,
 ) error {
-	newMetaData, err := json.MarshalIndent(newMeta, "", "  ")
+	encoded, err := crypto.SealKeyring(newKeyring, newPassphrase)
 	if err != nil {
-		return fmt.Errorf("failed to marshal new keystore metadata: %w", err)
+		return fmt.Errorf("failed to seal new keyring: %w", err)
 	}
-	if err := fsutil.WriteFile(newKeystorePath, newMetaData); err != nil {
-		return fmt.Errorf("failed to write .keystore.new: %w", err)
+	if err := fsutil.WriteFile(newKeyringPath, encoded); err != nil {
+		return fmt.Errorf("failed to write keyring.enc.new: %w", err)
 	}
-	if err := ApplyFileMetadataFrom(keystorePath, newKeystorePath); err != nil {
-		return fmt.Errorf("failed to set metadata on .keystore.new: %w", err)
+	if err := ApplyFileMetadataFrom(keyringPath, newKeyringPath); err != nil {
+		return fmt.Errorf("failed to set metadata on keyring.enc.new: %w", err)
 	}
-	verifyMeta, err := crypto.LoadKeystoreMetadataFrom(newKeystorePath)
+	staged, err := os.ReadFile(newKeyringPath)
 	if err != nil {
-		return fmt.Errorf("failed to verify .keystore.new: %w", err)
+		return fmt.Errorf("failed to read back keyring.enc.new: %w", err)
 	}
-	if _, err := verifyMeta.VerifyAndDeriveMasterKey(newPassphrase); err != nil {
-		return fmt.Errorf("verification failed for .keystore.new")
+	verified, err := crypto.OpenKeyring(staged, newPassphrase)
+	if err != nil {
+		return fmt.Errorf("verification failed for keyring.enc.new: %w", err)
 	}
-	if err := fsutil.SyncFile(newKeystorePath); err != nil {
-		return fmt.Errorf("failed to sync .keystore.new: %w", err)
+	verified.Zero()
+	if err := fsutil.SyncFile(newKeyringPath); err != nil {
+		return fmt.Errorf("failed to sync keyring.enc.new: %w", err)
 	}
 	return nil
 }

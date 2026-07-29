@@ -75,7 +75,7 @@ func (s *KeySession) clearSession() {
 // Destroy clears the session state.
 // Call this when shutting down the server.
 // Blocks until any in-flight GetKey (which holds the lock) finishes.
-// With RLock held during decryption in FileKeyStore, ClearMasterKey()
+// With RLock held during decryption in FileKeyStore, ClearKeys()
 // naturally waits for in-flight operations to complete.
 func (s *KeySession) Destroy() {
 	s.lock.Lock()

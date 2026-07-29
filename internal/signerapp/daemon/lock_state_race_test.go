@@ -87,7 +87,7 @@ func TestHandleAdminGenerateReturnsForbiddenWhenMasterKeyClearedMidRequest(t *te
 	defer cleanup()
 
 	ir := server.registry.Get(auth.DefaultIdentityID)
-	ir.KeyStore().ClearMasterKey()
+	ir.KeyStore().ClearKeys()
 
 	reqBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	w := httptest.NewRecorder()

@@ -153,8 +153,8 @@ Used by apadmin for interactive key management and signer control over either:
        │                                             │
        │  4. Resolve identity (default if omitted)   │
        │     Reject if decommissioned                │
-       │     Verify against identity .keystore       │
-       │     (Argon2id + AES-256-GCM check field)    │
+       │     Open identity keyring.enc               │
+       │     (Argon2id KEK + AES-256-GCM unwrap)     │
        │                                             │
        │  5. AuthResultMessage { success: true }     │
        │<────────────────────────────────────────────│
@@ -173,15 +173,18 @@ Used by apadmin for interactive key management and signer control over either:
 **Characteristics:**
 - **Persistent session**: Authenticate once, connection stays trusted
 - **Interactive login**: Human enters passphrase
-- **Dual-purpose passphrase**: Authentication + encryption key derivation
+- **Dual-purpose passphrase**: Authentication + unwrapping the store's keyring
 - **Single active admin**: Only one admin client connection is allowed at a time across IPC and SSH admin transport
 
-**Passphrase Verification (Master Key):**
-1. Keystore metadata file (`.keystore`) contains master salt and encrypted check value
-2. Server derives master key from passphrase + salt using Argon2id (memory-hard)
-3. Attempts to decrypt check field (encrypted "APLANE_OK")
-4. If decryption succeeds and plaintext matches, passphrase is valid
-5. Master key is retained in memory for decrypting key files (see [Master Key Encryption](#master-key-encryption))
+**Passphrase Verification (Keyring):**
+1. The keyring root (`keyring.enc`) carries the Argon2id parameters and salt in
+   the clear, and the term keys sealed under a key-encryption key
+2. Server derives the KEK from passphrase + salt using Argon2id (memory-hard)
+3. Attempts the AEAD unwrap of the sealed term set
+4. If the unwrap authenticates, the passphrase is valid — there is no separate
+   check value to compare
+5. The term keys are retained in memory for decrypting key files; the KEK is
+   zeroed immediately (see [Keyring Encryption](#keyring-encryption))
 
 **Session Lifecycle:**
 ```
@@ -699,56 +702,71 @@ This pipeline keeps handler code behind the `Authorizer` interface.
 | Memory protection | `mlockall()` prevents swap when enabled successfully, keys zeroed after use (see below) |
 | Single active admin session | Only one apadmin/apapprover admin connection at a time across IPC and SSH |
 
-### Master Key Encryption
+### Keyring Encryption
 
-The keystore uses a master key architecture (similar to HashiCorp Vault) for efficient key management:
+The store keeps its data keys in a keyring (the arrangement HashiCorp Vault's
+barrier uses): the passphrase unwraps a stored key rather than becoming one.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  Unlock Flow                                                     │
 │                                                                  │
-│  Passphrase ──┬── Argon2id (memory-hard) ────► Master Key        │
-│               │        ▲                            │            │
-│               │        │                            ▼            │
-│               │   .keystore (salt)           Decrypt key files   │
-│               │                                                  │
-│               └── Verify via .keystore check field               │
+│  Passphrase ──── Argon2id (memory-hard) ────► KEK                │
+│                       ▲                        │                 │
+│                       │                        ▼                 │
+│              keyring.enc (salt)          Unwrap term keys        │
+│                                                │                 │
+│                                                ▼                 │
+│                                          Decrypt key files       │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 **Benefits:**
 - Single Argon2id derivation at unlock time instead of per-file
 - O(1) unlock regardless of number of keys
-- Master key held in signer memory during session and covered by process memory locking when that protection is enabled successfully
+- Term keys held in signer memory during session and covered by process memory
+  locking when that protection is enabled successfully
+- The KEK never outlives the unwrap, so a memory disclosure yields term keys but
+  not the ability to unwrap a future keyring
 
-**Keystore Metadata (`.keystore`):**
+**Keyring Root (`keyring.enc`), schema `aplane.keyring.v1`:**
 
 ```json
 {
-  "version": 2,
-  "salt": "<base64-encoded 32-byte master salt>",
-  "check": "<base64-encoded AES-GCM encrypted 'APLANE_OK'>",
-  "created": "2026-01-21T07:35:34Z",
+  "schema": "aplane.keyring.v1",
+  "envelope_version": 1,
   "kdf_time": 2,
   "kdf_memory": 65536,
-  "kdf_threads": 4
+  "kdf_threads": 4,
+  "salt": "<base64-encoded 32-byte KEK salt>",
+  "nonce": "<base64-encoded 12-byte nonce>",
+  "sealed_keyring": "<base64-encoded AES-GCM sealed term set>"
 }
 ```
 
-| Field | Purpose |
-|-------|---------|
-| `version` | Metadata format version (version 2) |
-| `salt` | Master salt for Argon2id key derivation |
-| `check` | Encrypted verification value (passphrase validation) |
-| `created` | Keystore creation timestamp |
-| `kdf_time`, `kdf_memory`, `kdf_threads` | Argon2id parameters |
+The KDF parameters and salt are in the clear because they are inputs to the
+unwrap, not secrets. Everything secret is inside `sealed_keyring`.
+
+**Keystore Marker (`.keystore`):**
+
+```json
+{
+  "version": 4,
+  "layout": "keyring/v1",
+  "created": "2026-07-27T07:35:34Z"
+}
+```
+
+The marker exists only so an older binary rejects the store before touching
+anything. It carries no salt, no verifier, and no KDF parameters, so nothing in
+it can disagree with the keyring.
 
 **Key File Envelope Versions:**
 
 | Version | Use | Description |
 |---------|-----|-------------|
-| 1 | In-keystore managed credentials | Master-key encryption for account `.key` and sentry witness `.sen` files; uses the keystore-wide master key (Argon2id derived) |
 | 2 | Standalone backup/export | Self-contained passphrase-based encryption with an embedded salt; used by `apstore` `.apb` files, not by in-keystore `.key` or `.sen` files |
+| 3 | In-keystore managed objects | Term envelope for account `.key`, sentry witness `.sen`, templates, and recovered batches; records the term that sealed it and binds the term plus the object's class and canonical selector into the AEAD's authenticated data |
 
 **Memory Protection:**
 
@@ -768,23 +786,24 @@ Set `require_memory_protection: true` in production environments where key secur
 
 **Note:** apshell does not require memory protection because it never handles private keys directly—it only constructs transactions and sends them to apsigner for signing.
 
-### Master Key Lifecycle and Concurrency
+### Term Key Lifecycle and Concurrency
 
 #### Lifecycle Overview
 
-The master key follows a strict lifecycle:
+Term keys follow a strict lifecycle:
 
-1. **Derivation** — at unlock the passphrase is fed to Argon2id via `VerifyAndDeriveMasterKey`, producing the master key.
-2. **Held in signer memory** — the key is stored in `FileKeyStore.masterKey` and is protected from swap when process memory locking is enabled successfully.
-3. **Zeroed on lock or shutdown** — `ClearMasterKey()` overwrites the backing byte slice with zeros and sets the reference to `nil`.
+1. **Unwrap** — at unlock the passphrase is fed to Argon2id to produce a KEK, which `crypto.OpenKeyringStore` uses to unwrap the stored term keys.
+2. **Held in signer memory** — the term keys are stored in `FileKeyStore.keyring` and are protected from swap when process memory locking is enabled successfully.
+3. **Zeroed on lock or shutdown** — `ClearKeys()` overwrites every term key with zeros and drops the keyring.
 
-Normal consumers go through `WithMasterKey`. `InitializeMasterKey` returns the
-store-owned slice only to startup/reload paths that need to scan templates before
-publishing the refreshed key snapshot; callers must not zero or retain it.
+`WithKeyring` is the primary accessor. `WithMasterKey` is a documented
+compatibility accessor for call sites that still take a raw key; it hands the
+callback a *copy* of the current term's key and zeroes that copy on return.
+`Unlock` returns no key material at all.
 
 #### WithMasterKey Callback
 
-Every operation that needs the master key (signing, export, key scan, store) calls:
+Every operation that needs a term key (signing, export, key scan, store) calls:
 
 ```go
 keyStore.WithMasterKey(func(masterKey []byte) error {
@@ -793,21 +812,21 @@ keyStore.WithMasterKey(func(masterKey []byte) error {
 })
 ```
 
-`WithMasterKey` acquires `cacheLock.RLock()` for the lifetime of the callback. This prevents `ClearMasterKey()` from zeroing the backing array while the caller is using it. If the keystore is locked (`masterKey == nil`), `WithMasterKey` returns an error immediately.
+`WithKeyring` and `WithMasterKey` acquire `cacheLock.RLock()` for the lifetime of the callback, so `ClearKeys()` cannot zero the keyring while a caller is reading it. If the keystore is locked (`keyring == nil`), both return an error immediately.
 
-The same RLock-through-operation pattern is used in `Get`, `Store`, `GetPublicKeyInfo`, and `Scan` — any code path that reads `masterKey` bytes holds `RLock` through the entire cryptographic operation.
+The same RLock-through-operation pattern is used in `Get`, `Store`, `GetPublicKeyInfo`, and `Scan` — any code path that reads term key bytes holds `RLock` through the entire cryptographic operation.
 
 #### RLock / WLock Concurrency
 
-`FileKeyStore.cacheLock` is a single `sync.RWMutex` guarding both the key cache and the master key:
+`FileKeyStore.cacheLock` is a single `sync.RWMutex` guarding both the key cache and the keyring:
 
 | Operation | Lock | Can overlap with |
 |-----------|------|------------------|
 | Sign, export, scan, store | `RLock` | Other `RLock` holders |
-| `ClearMasterKey()` | `WLock` | Nothing — blocks until all `RLock` holders finish |
-| `InitializeMasterKey()` (set new key) | `WLock` | Nothing |
+| `ClearKeys()` | `WLock` | Nothing — blocks until all `RLock` holders finish |
+| `Unlock()` (open the keyring) | `WLock` | Nothing |
 
-Multiple signing or export requests proceed concurrently under `RLock`. When the signer locks, `ClearMasterKey()` requests the exclusive `WLock` and blocks until every in-flight reader finishes. This guarantees no use-after-zero.
+Multiple signing or export requests proceed concurrently under `RLock`. When the signer locks, `ClearKeys()` requests the exclusive `WLock` and blocks until every in-flight reader finishes. This guarantees no use-after-zero.
 
 #### Lock Path
 
@@ -818,7 +837,7 @@ Multiple signing or export requests proceed concurrently under `RLock`. When the
 3. Acquire `passphraseLock.WLock`:
    - `keySession.Destroy()` — blocks until all in-flight signing goroutines exit.
    - Reinitialize the key session with the same `keyStore`.
-   - `keyStore.ClearMasterKey()` — zeros the master key under `cacheLock.WLock`.
+   - `keyStore.ClearKeys()` — zeros every term key under `cacheLock.WLock`.
 4. Release `passphraseLock`.
 5. Acquire `keysLock.WLock`, clear all identity key maps, release.
 6. Notify the admin hub that the signer identity is locked.
@@ -843,10 +862,10 @@ all identity runtimes:
 5. For each identity runtime, call `Destroy()`:
    - `StopKeyWatcher()` — prevents new reloads.
    - `keySession.Destroy()` — drain in-flight signing operations.
-   - `keyStore.ClearMasterKey()` — zero the master key.
+   - `keyStore.ClearKeys()` — zero every term key.
 
 The shutdown destroy path stops watcher dispatch before draining key operations
-and zeroing the master key.
+and zeroing the keyring.
 
 #### Passphrase Zeroing Discipline
 
@@ -859,8 +878,8 @@ defer crypto.ZeroBytes(passphraseBytes)
 
 This applies to:
 
-- **IPC auth** — passphrase verified against Argon2id metadata, then zeroed.
-- **Unlock** — passphrase used for master key derivation, zeroed immediately after `passphraseLock` is released.
+- **IPC auth** — passphrase verified by unwrapping the keyring, then zeroed.
+- **Unlock** — passphrase used to unwrap the keyring, zeroed immediately after `passphraseLock` is released.
 - **Export verification** — passphrase re-verified before export, then zeroed.
 - **Startup auto-unlock** — `startPassphrase` from `TEST_PASSPHRASE` or `passphrase_command_argv` is zeroed immediately after the initial `ReloadWithPassphrase` call completes.
 
@@ -1053,7 +1072,7 @@ submission. See [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 | LogicSig delegation | "Program" prefix blocked (prevents standing spend authorization) |
 | MITM on SSH | TOFU host key verification via known_hosts |
 | Cache tampering | HMAC-signed cache files (see below) |
-| Policy tampering | `policy.yaml.hmac` and `policy.yaml.hmac` authenticate identity-scoped policy documents with keys derived from the identity master key; missing or mismatched policy integrity fails closed |
+| Policy tampering | `policy.yaml.hmac` and `policy.yaml.hmac` authenticate identity-scoped policy documents with keys derived from the identity's current term key; missing or mismatched policy integrity fails closed |
 | Plugin filesystem access | External plugins require OS sandboxing and checksum verification |
 | Manual production startup | `.prod` signer data marker blocks startup unless systemd-managed |
 

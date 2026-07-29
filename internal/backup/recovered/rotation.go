@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -24,7 +25,15 @@ const (
 // A canonical file is restored from its .old or .new sibling only when that
 // sibling validates under masterKey. Unknown batch state and non-regular
 // artifacts fail closed. Unpublished StagingDirPrefix directories are ignored.
-func RotationTargets(paths storepaths.Paths, identityID string, masterKey []byte) ([]string, error) {
+// RotationTarget is one file a passphrase rotation must re-encrypt, together
+// with the object it holds. Rotation changes the key, never the identity, so
+// the context travels with the path rather than being re-derived downstream.
+type RotationTarget struct {
+	Path    string
+	Context crypto.ObjectContext
+}
+
+func RotationTargets(paths storepaths.Paths, identityID string, masterKey []byte) ([]RotationTarget, error) {
 	root := paths.RecoveredRootDir(identityID)
 	rootInfo, err := os.Lstat(root)
 	if os.IsNotExist(err) {
@@ -41,7 +50,7 @@ func RotationTargets(paths storepaths.Paths, identityID string, masterKey []byte
 	if err != nil {
 		return nil, fmt.Errorf("scan recovered batch root: %w", err)
 	}
-	var targets []string
+	var targets []RotationTarget
 	for _, batchDirEntry := range batchDirs {
 		restoreID := batchDirEntry.Name()
 		if strings.HasPrefix(restoreID, StagingDirPrefix) {
@@ -68,7 +77,7 @@ func rotationTargetsForBatch(
 	paths storepaths.Paths,
 	identityID, restoreID string,
 	masterKey []byte,
-) ([]string, error) {
+) ([]RotationTarget, error) {
 	batchDir := paths.RecoveredBatchDir(identityID, restoreID)
 	metadataPath := paths.RecoveredBatchMetadataPath(identityID, restoreID)
 	metadataName := filepath.Base(metadataPath)
@@ -123,8 +132,11 @@ func rotationTargetsForBatch(
 		}
 	}
 
-	targets := make([]string, 0, len(batch.Entries)+1)
-	targets = append(targets, metadataPath)
+	targets := make([]RotationTarget, 0, len(batch.Entries)+1)
+	targets = append(targets, RotationTarget{
+		Path:    metadataPath,
+		Context: crypto.RecoveredBatchContext(restoreID),
+	})
 	for _, meta := range batch.Entries {
 		entryPath := filepath.Join(entriesDir, meta.EntryFile)
 		if err := reconcileRotationFile(entryPath, func(candidate string) error {
@@ -136,7 +148,10 @@ func rotationTargetsForBatch(
 		}); err != nil {
 			return nil, fmt.Errorf("reconcile recovered entry %s/%s: %w", restoreID, meta.Selector, err)
 		}
-		targets = append(targets, entryPath)
+		targets = append(targets, RotationTarget{
+			Path:    entryPath,
+			Context: crypto.RecoveredEntryContext(restoreID, meta.Selector),
+		})
 	}
 	return targets, nil
 }

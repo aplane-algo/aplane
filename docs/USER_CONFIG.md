@@ -477,7 +477,7 @@ cp examples/config/apsigner/config.yaml.example "$APSIGNER_DATA/config.yaml"
 
 `apsigner` supports `-version`, `-print-manifest`, and `-d <data-dir>`.
 
-**Note:** Run `apstore initialize` locally to create the keystore metadata file (`.keystore`) containing the master salt and passphrase verification check. `apsigner` can start without it — it enters a forced-locked state until the keystore is initialized — but no signing operations work until it exists.
+**Note:** Run `apstore initialize` locally to create the store's cryptographic root (`keyring.enc`) and its format marker (`.keystore`). `apsigner` can start without it — it enters a forced-locked state until the keystore is initialized — but no signing operations work until it exists.
 
 ### Example (Interactive Mode with SSH)
 

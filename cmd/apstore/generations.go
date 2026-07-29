@@ -135,13 +135,14 @@ func verifyCurrentGenerationContent(paths storepaths.Paths, identityID string) e
 	fmt.Println()
 	defer crypto.ZeroBytes(passphrase)
 
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
-	if err != nil {
-		return fmt.Errorf("failed to load keystore metadata: %w", err)
-	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
 		return fmt.Errorf("passphrase verification failed: %w", err)
+	}
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
+	if err != nil {
+		return err
 	}
 	defer crypto.ZeroBytes(masterKey)
 

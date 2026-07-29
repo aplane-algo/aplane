@@ -69,9 +69,13 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 
 	// Create keystore metadata (.keystore file in identity directory)
 	userDir := filepath.Join(tmpDir, "identities", "default")
-	_, masterKey, err := crypto.CreateKeystoreMetadata(userDir, testPassphrase)
+	masterKeyRing, err := crypto.CreateKeyringStore(userDir, testPassphrase)
 	if err != nil {
 		t.Fatalf("Failed to create keystore metadata: %v", err)
+	}
+	masterKey, err := masterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	if err := policy.SaveStoredConfigWithMasterKey(tmpDir, auth.DefaultIdentityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
 		crypto.ZeroBytes(masterKey)
@@ -95,7 +99,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 
 	// Initialize FileKeyStore and derive master key
 	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
-	_, err = ks.InitializeMasterKey(testPassphrase)
+	err = ks.Unlock(testPassphrase)
 	if err != nil {
 		t.Fatalf("Failed to initialize master key: %v", err)
 	}

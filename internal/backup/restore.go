@@ -609,7 +609,11 @@ func (r Restorer) applyInspectedBackupEntry(entry *InspectedBackupEntry, masterK
 		}
 	}
 
-	encrypted, err := crypto.EncryptWithMasterKey(keyPayload, masterKey)
+	credentialContext, err := keys.CredentialContext(address, payload.Category)
+	if err != nil {
+		return "", rollbackPlans(err)
+	}
+	encrypted, err := crypto.EncryptWithTermKey(keyPayload, masterKey, crypto.FirstTerm, credentialContext)
 	if err != nil {
 		return "", rollbackPlans(fmt.Errorf("failed to encrypt key: %w", err))
 	}

@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -57,215 +55,6 @@ func TestIsEncrypted(t *testing.T) {
 			result := IsEncrypted(tt.data)
 			if result != tt.expected {
 				t.Errorf("IsEncrypted(%q) = %v, expected %v", tt.data, result, tt.expected)
-			}
-		})
-	}
-}
-
-// TestKeystoreMetadataWorkflow verifies keystore metadata creation and verification
-func TestKeystoreMetadataWorkflow(t *testing.T) {
-	// Create temporary keystore directory
-	tmpDir := t.TempDir()
-	keystoreDir := filepath.Join(tmpDir, "keystore")
-	if err := os.Mkdir(keystoreDir, 0750); err != nil {
-		t.Fatalf("Failed to create keystore dir: %v", err)
-	}
-
-	passphrase := []byte("test-keystore-passphrase")
-
-	// Verify metadata file doesn't exist initially
-	if KeystoreMetadataExistsIn(keystoreDir) {
-		t.Error("Keystore metadata should not exist initially")
-	}
-
-	// Create keystore metadata
-	meta, masterKey, err := CreateKeystoreMetadata(keystoreDir, passphrase)
-	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata failed: %v", err)
-	}
-	defer ZeroBytes(masterKey)
-
-	// Verify it exists now
-	if !KeystoreMetadataExistsIn(keystoreDir) {
-		t.Error("Keystore metadata should exist after creation")
-	}
-
-	// Verify metadata structure
-	if meta.Version != CurrentKeystoreMetadataVersion {
-		t.Errorf("Expected version %d, got %d", CurrentKeystoreMetadataVersion, meta.Version)
-	}
-	if meta.Salt == "" {
-		t.Error("Salt should not be empty")
-	}
-	if meta.Check == "" {
-		t.Error("Check should not be empty")
-	}
-	if meta.Created == "" {
-		t.Error("Created timestamp should not be empty")
-	}
-
-	// Verify correct passphrase returns master key
-	derivedKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
-	if err != nil {
-		t.Errorf("VerifyAndDeriveMasterKey failed with correct passphrase: %v", err)
-	}
-	defer ZeroBytes(derivedKey)
-
-	// Verify derived key matches original
-	if !bytes.Equal(masterKey, derivedKey) {
-		t.Error("Derived master key should match original")
-	}
-
-	// Verify wrong passphrase is rejected
-	wrongPass := []byte("wrong-passphrase")
-	_, err = meta.VerifyAndDeriveMasterKey(wrongPass)
-	if err == nil {
-		t.Error("VerifyAndDeriveMasterKey should fail with wrong passphrase")
-	}
-	if !strings.Contains(err.Error(), "incorrect passphrase") {
-		t.Errorf("Error should mention incorrect passphrase, got: %v", err)
-	}
-}
-
-func TestLoadKeystoreMetadataRejectsUnsupportedVersion(t *testing.T) {
-	passphrase := []byte("test-keystore-passphrase")
-	keystoreDir := t.TempDir()
-	meta, masterKey, err := CreateKeystoreMetadata(keystoreDir, passphrase)
-	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata failed: %v", err)
-	}
-	defer ZeroBytes(masterKey)
-
-	for _, tt := range []struct {
-		name    string
-		version int
-	}{
-		{name: "missing", version: 0},
-		{name: "future", version: GenerationalKeystoreMetadataVersion + 1},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			candidate := *meta
-			candidate.Version = tt.version
-			data, err := json.Marshal(candidate)
-			if err != nil {
-				t.Fatalf("Marshal metadata failed: %v", err)
-			}
-			metaPath := filepath.Join(t.TempDir(), ".keystore")
-			if err := os.WriteFile(metaPath, data, 0600); err != nil {
-				t.Fatalf("WriteFile metadata failed: %v", err)
-			}
-
-			_, err = LoadKeystoreMetadataFrom(metaPath)
-			if err == nil || !strings.Contains(err.Error(), "unsupported keystore metadata version") {
-				t.Fatalf("LoadKeystoreMetadataFrom() error = %v, want unsupported version", err)
-			}
-		})
-	}
-
-	// Version 3 requires the generations layout tag; without it the store
-	// is rejected rather than half-understood.
-	t.Run("v3-without-layout", func(t *testing.T) {
-		candidate := *meta
-		candidate.Version = GenerationalKeystoreMetadataVersion
-		candidate.Layout = ""
-		data, err := json.Marshal(candidate)
-		if err != nil {
-			t.Fatalf("Marshal metadata failed: %v", err)
-		}
-		metaPath := filepath.Join(t.TempDir(), ".keystore")
-		if err := os.WriteFile(metaPath, data, 0600); err != nil {
-			t.Fatalf("WriteFile metadata failed: %v", err)
-		}
-		if _, err := LoadKeystoreMetadataFrom(metaPath); err == nil ||
-			!strings.Contains(err.Error(), "unsupported layout") {
-			t.Fatalf("LoadKeystoreMetadataFrom() error = %v, want unsupported layout", err)
-		}
-	})
-}
-
-func TestCreateKeystoreMetadataGenerationalRoundTrip(t *testing.T) {
-	passphrase := []byte("test-keystore-passphrase")
-	keystoreDir := t.TempDir()
-	meta, masterKey, err := CreateKeystoreMetadata(keystoreDir, passphrase)
-	if err != nil {
-		t.Fatalf("CreateKeystoreMetadataGenerational failed: %v", err)
-	}
-	defer ZeroBytes(masterKey)
-	if meta.Version != GenerationalKeystoreMetadataVersion || meta.Layout != KeystoreLayoutGenerationsV1 {
-		t.Fatalf("metadata = version %d layout %q", meta.Version, meta.Layout)
-	}
-
-	loaded, err := LoadKeystoreMetadata(keystoreDir)
-	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata failed: %v", err)
-	}
-	if loaded == nil || loaded.Version != GenerationalKeystoreMetadataVersion {
-		t.Fatalf("loaded = %+v", loaded)
-	}
-	// The same passphrase verifies against v3 metadata: only the layout
-	// changed, not the KDF contract.
-	if err := VerifyPassphraseWithMetadata(passphrase, keystoreDir); err != nil {
-		t.Fatalf("VerifyPassphraseWithMetadata failed: %v", err)
-	}
-}
-
-func TestLoadKeystoreMetadataRejectsVersion2IncompleteKDFParams(t *testing.T) {
-	passphrase := []byte("test-keystore-passphrase")
-	keystoreDir := t.TempDir()
-	meta, masterKey, err := CreateKeystoreMetadata(keystoreDir, passphrase)
-	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata failed: %v", err)
-	}
-	defer ZeroBytes(masterKey)
-
-	tests := []struct {
-		name string
-		edit func(*KeystoreMetadata)
-	}{
-		{
-			name: "missing all",
-			edit: func(m *KeystoreMetadata) {
-				m.KDFTime = 0
-				m.KDFMemory = 0
-				m.KDFThreads = 0
-			},
-		},
-		{
-			name: "missing time",
-			edit: func(m *KeystoreMetadata) {
-				m.KDFTime = 0
-			},
-		},
-		{
-			name: "missing memory",
-			edit: func(m *KeystoreMetadata) {
-				m.KDFMemory = 0
-			},
-		},
-		{
-			name: "missing threads",
-			edit: func(m *KeystoreMetadata) {
-				m.KDFThreads = 0
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			candidate := *meta
-			tt.edit(&candidate)
-			data, err := json.Marshal(candidate)
-			if err != nil {
-				t.Fatalf("Marshal metadata failed: %v", err)
-			}
-			metaPath := filepath.Join(t.TempDir(), ".keystore")
-			if err := os.WriteFile(metaPath, data, 0o600); err != nil {
-				t.Fatalf("WriteFile metadata failed: %v", err)
-			}
-
-			_, err = LoadKeystoreMetadataFrom(metaPath)
-			if err == nil || !strings.Contains(err.Error(), "incomplete KDF parameters") {
-				t.Fatalf("LoadKeystoreMetadataFrom() error = %v, want incomplete KDF parameters", err)
 			}
 		})
 	}
@@ -419,19 +208,20 @@ func TestIsEncryptedVersion2(t *testing.T) {
 	}
 }
 
-// TestDecryptWithMasterKeyRejectsVersion2 verifies master key decryption rejects standalone format
-func TestDecryptWithMasterKeyRejectsVersion2(t *testing.T) {
+// TestDecryptWithTermKeyRejectsVersion2 verifies term decryption rejects the
+// standalone export format.
+func TestDecryptWithTermKeyRejectsVersion2(t *testing.T) {
 	encrypted, err := EncryptStandalone([]byte("data"), []byte("pass"))
 	if err != nil {
 		t.Fatalf("EncryptStandalone failed: %v", err)
 	}
 
 	fakeKey := make([]byte, 32)
-	_, err = DecryptWithMasterKey(encrypted, fakeKey)
+	_, err = DecryptWithTermKey(encrypted, fakeKey, FirstTerm, envelopeTestContext)
 	if err == nil {
-		t.Fatal("DecryptWithMasterKey should reject envelope_version 2")
+		t.Fatal("DecryptWithTermKey should reject envelope_version 2")
 	}
-	if !strings.Contains(err.Error(), "not supported by master key decryption") {
+	if !strings.Contains(err.Error(), "is not a term envelope") {
 		t.Errorf("Expected version mismatch error, got: %v", err)
 	}
 }
@@ -449,9 +239,10 @@ func TestDecryptStandaloneRejectsVersion1(t *testing.T) {
 	}
 }
 
-func TestDecryptWithMasterKeyRejectsInvalidNonceLength(t *testing.T) {
-	payload := EncryptedDataMasterKey{
-		EnvelopeVersion: 1,
+func TestDecryptWithTermKeyRejectsInvalidNonceLength(t *testing.T) {
+	payload := encryptedDataTerm{
+		EnvelopeVersion: TermEnvelopeVersion,
+		Term:            FirstTerm,
 		Nonce:           base64.StdEncoding.EncodeToString([]byte("short")),
 		Ciphertext:      base64.StdEncoding.EncodeToString([]byte("ciphertext")),
 	}
@@ -460,12 +251,12 @@ func TestDecryptWithMasterKeyRejectsInvalidNonceLength(t *testing.T) {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
-	_, err = DecryptWithMasterKey(data, bytes.Repeat([]byte{1}, 32))
+	_, err = DecryptWithTermKey(data, bytes.Repeat([]byte{1}, 32), FirstTerm, envelopeTestContext)
 	if err == nil {
-		t.Fatal("DecryptWithMasterKey() error = nil, want invalid nonce length")
+		t.Fatal("DecryptWithTermKey() error = nil, want invalid nonce length")
 	}
 	if !strings.Contains(err.Error(), "invalid nonce length") {
-		t.Fatalf("DecryptWithMasterKey() error = %v, want invalid nonce length", err)
+		t.Fatalf("DecryptWithTermKey() error = %v, want invalid nonce length", err)
 	}
 }
 

@@ -265,7 +265,7 @@ behavior should prefer `internal/signerclient` or `internal/engine/connect`.
 
 ### Storage/Crypto Layer
 
-Persistent sensitive state is stored on disk and unlocked into memory only via a master key flow:
+Persistent sensitive state is stored on disk and unlocked into memory only via the keyring flow:
 
 - encryption and secure memory: `internal/crypto`
 - key file IO and scanning: `internal/keys`
@@ -294,7 +294,7 @@ deciding where a change belongs:
 | `store*` | `internal/storeinit` | Store initialization and bootstrap creation logic. |
 | `store*` | `internal/storepass` | Passphrase-helper and passphrase-change support around store state. |
 | `key*` | `internal/keys` | Encrypted key file payload/envelope IO, scanning, metadata, and key-file compatibility behavior. |
-| `key*` | `internal/keystore` | File-backed keystore abstraction, master-key/session handling, and encrypted key persistence. |
+| `key*` | `internal/keystore` | File-backed keystore abstraction, keyring/session handling, and encrypted key persistence. |
 | `key*` | `internal/keygen` | Signer-side key generation registry and generation result model. |
 | `key*` | `internal/keymgmt` | Client/shell-facing key management request/result helpers. |
 | `key*` | `internal/signingargs` | Shared internal model for signing-time LogicSig argument metadata projected into key files, signer cache records, and wire DTOs. |
@@ -541,7 +541,7 @@ filename is direct sentry component policy. The default approval fallback is
 `user_auto_approve`, persisted in
 `identities/<identity>/config.yaml` and shown in `apadmin` as
 `User Auto-Approve`. Policy is verified with a key derived from the identity
-master key and loaded into the bound identity runtime on unlock/reload before
+term key and loaded into the bound identity runtime on unlock/reload before
 the key scan. Guided policy editing is implemented once in
 `internal/signerapp/policytui` and used through two stores: `appolicy` edits the selected
 domain offline while holding the store mutation lock, and `apadmin` edits the
@@ -625,8 +625,8 @@ and bootstrap grants; authentication does not bypass authorization.
 
 Important secret-handling contracts:
 
-- passphrases are used to derive a master key and should be zeroed promptly,
-- the file keystore caches the master key only while unlocked,
+- passphrases unwrap the store's keyring and should be zeroed promptly,
+- the file keystore caches the keyring only while unlocked,
 - individual keys are decrypted on demand, not fully preloaded,
 - key/session destruction zeros or invalidates in-memory sensitive state,
 - memory locking and core-dump disabling are best-effort unless configured as required.
@@ -655,7 +655,7 @@ cleanup, lock-on-disconnect, approval delivery, and notification delivery are
 identity-scoped internally. Product-mode clients operate against the
 single exposed product identity.
 
-Locking clears the active master key and deactivates the key session. Local
+Locking zeroes every term key and deactivates the key session. Local
 admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
 `lock_on_disconnect` when that disconnect is observed.
 
@@ -719,14 +719,14 @@ Implemented startup modes:
 - locked startup with later unlock through an authenticated admin session,
 - headless unlocked startup via passphrase command,
 - test unlocked startup via `TEST_PASSPHRASE`,
-- forced locked startup when keystore metadata does not exist.
+- forced locked startup when the keyring root does not exist.
 
 Both locked and headless paths converge through
 `identity.Runtime.reloadLocked`. Production wiring from
 `startup.WireReloadFunc` delegates the work to
 `templates.ReloadService.Reload`, which:
 
-1. initializes or reuses the master key,
+1. opens or reuses the keyring,
 2. verifies the identity's node role and loads its authenticated policy,
 3. registers templates,
 4. scans keys,
@@ -808,8 +808,8 @@ Goroutines:
 
 Unlocking must:
 
-- verify passphrase against `.keystore`,
-- derive the master key,
+- open `keyring.enc` with the passphrase,
+- hold the unsealed term keys,
 - initialize the key store,
 - scan templates before key scanning where needed,
 - scan keys and populate indexes,
@@ -819,7 +819,7 @@ Unlocking must:
 
 Locking must:
 
-- clear master key material,
+- zero every term key,
 - destroy the key session state,
 - clear or invalidate key caches as appropriate,
 - notify interested IPC clients.
@@ -1455,18 +1455,19 @@ Key type identifiers use the canonical form `publisher.family.vN` for APlane-def
 It owns:
 
 - identity-scoped key directory resolution,
-- master key derivation and caching,
+- keyring opening and caching,
 - decrypted scan metadata cache,
 - on-demand decryption for specific addresses.
 
 The keystore compatibility model is split between:
 
 - `.key` account-authority and `.sen` sentry-credential envelope/payload compatibility for individual entries,
-- `.keystore` metadata compatibility for master-key verification and KDF parameters.
+- `keyring.enc` compatibility for passphrase verification and KDF parameters,
+  and the `.keystore` marker for the store format gate.
 
 A scan:
 
-- requires an initialized master key,
+- requires an open keyring,
 - decrypts keys sufficiently to discover address, type, category, the
   post-signing LogicSig program+args size budget, and stored signing metadata,
 - populates a cache of `address -> KeyScanInfo`,
@@ -1478,7 +1479,7 @@ This split means:
 
 - lifetime policy lives above raw storage,
 - decryption remains on-demand,
-- signer lock state is modeled as master-key availability plus session activity.
+- signer lock state is modeled as keyring availability plus session activity.
 
 Offline mutation rules are compatibility-sensitive and are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
@@ -1680,7 +1681,7 @@ Verification expectations remain:
 - IPC notifications and request/response message shapes remain compatible with `apadmin` and `apapprover`,
 - token provisioning and revocation remain compatible with the SSH client flow,
 - plugin discovery precedence and manifest validation remain unchanged unless explicitly versioned,
-- on-disk compatibility is checked for `.keystore`, `.key`, `.sen`, `.template`, `config.yaml`, `audit.log`, and token files.
+- on-disk compatibility is checked for `keyring.enc`, `.keystore`, `.key`, `.sen`, `.template`, `config.yaml`, `audit.log`, and token files.
 - client endpoint compatibility is checked for `endpoints.yaml`,
   endpoint token files, endpoint handoff envelopes, and public sentry
   reference records when those surfaces change.
@@ -1730,7 +1731,7 @@ Architecturally:
 ## Architectural Invariants
 
 1. Signer-managed private keys never leave `apsigner`.
-2. Unlock state = master-key availability + active session state.
+2. Unlock state = keyring availability + active session state.
 3. Engine code is independent of UI parsing/formatting. Pinned transitively by `test/arch/client_layering_test.go`: nothing in the module-internal dependency closure of `internal/engine` (and subpackages) may import UI parsing/formatting packages (`cmdspec`, `shellrepl`, `apshellcli`, `apshellapp`, `keytypefmt`, `theme`, `addressdisplay`), with no exceptions. Shared semantic grammars live in engine-layer leaves (e.g. byte-value parsing in `internal/appinput`, key-type canonicalization in `internal/keytypecatalog`) and UI packages depend downward on them.
 4. Provider registration is explicit at startup via `RegisterProviders()` / `lsig.RegisterClient()` / `lsig/signerreg.RegisterSigner()`.
 5. Versioned key types are stable identifiers across storage, UI, and protocol.

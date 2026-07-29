@@ -51,7 +51,7 @@ means no successful load/sign/restore result exists for that input.
 
 `KeyFile` is an encrypted managed credential payload: account authority uses
 `.key`, and sentry witness authority uses `.sen`. It becomes observable only
-after the identity master key decrypts it. The model observes:
+after the identity's current term key decrypts it. The model observes:
 
 - key type,
 - key category,
@@ -65,7 +65,8 @@ after the identity master key decrypts it. The model observes:
 - creation parameters and provenance data.
 
 The encrypted envelope and KDF are outside this model except for the assumption
-that decryption succeeds only with the identity master key.
+that decryption succeeds only with the identity's current term key and the
+credential's own object context in the envelope's authenticated data.
 
 ### Signing Authority Record
 
@@ -420,7 +421,7 @@ anchors.
 
 This model assumes:
 
-- the identity master key correctly decrypts the key payload,
+- the identity's current term key correctly decrypts the key payload,
 - provider registration supplies required base cryptographic providers for DSA
   signing when the stored key references them,
 - transaction planning already selected a sign-mode slot and auth address,

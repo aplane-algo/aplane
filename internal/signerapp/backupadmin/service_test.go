@@ -91,7 +91,9 @@ func TestBackupIdentityCapturesSourceApprovalAndCustomGenesisMappings(t *testing
 	address, keyJSON := keystest.Ed25519KeyJSON(t)
 	defer crypto.ZeroBytes(keyJSON)
 	if err := ir.WithMasterKey(func(masterKey []byte) error {
-		encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
+		encrypted, err := crypto.EncryptWithTermKey(
+			keyJSON, masterKey, crypto.FirstTerm, crypto.AccountKeyContext(address),
+		)
 		if err != nil {
 			return err
 		}
@@ -309,7 +311,7 @@ func TestRecoveredBatchSurvivesPassphraseRotationAndActivation(t *testing.T) {
 	if rotation.RecoveredFilesMigrated != 2 {
 		t.Fatalf("RecoveredFilesMigrated = %d, want batch plus entry", rotation.RecoveredFilesMigrated)
 	}
-	if _, err := ir.KeyStore().InitializeMasterKey(newPassphrase); err != nil {
+	if err := ir.KeyStore().Unlock(newPassphrase); err != nil {
 		t.Fatalf("InitializeMasterKey(rotated passphrase) error = %v", err)
 	}
 
@@ -972,15 +974,15 @@ func testUnlockedBackupIdentityRuntimeForRole(
 ) *identity.Runtime {
 	t.Helper()
 
-	if _, _, err := crypto.CreateKeystoreMetadata(paths.IdentityDir(auth.DefaultIdentityID), backupAdminTestPassphrase); err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	if _, err := crypto.CreateKeyringStore(paths.IdentityDir(auth.DefaultIdentityID), backupAdminTestPassphrase); err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
 	// All stores are generational in this release; mint the first
 	// generation the way initialize does.
 	convertToGenerationalStore(t, paths)
 	keyStore := keystore.NewFileKeyStoreForPaths(paths, auth.DefaultIdentityID)
-	if _, err := keyStore.InitializeMasterKey(backupAdminTestPassphrase); err != nil {
-		t.Fatalf("InitializeMasterKey() error = %v", err)
+	if err := keyStore.Unlock(backupAdminTestPassphrase); err != nil {
+		t.Fatalf("Unlock() error = %v", err)
 	}
 	ir := identity.New(identity.Config{
 		ID:              auth.DefaultIdentityID,

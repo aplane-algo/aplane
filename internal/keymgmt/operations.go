@@ -368,8 +368,8 @@ type KeyFileInfo struct {
 	TemplateFingerprint string
 }
 
-// DetectKeyInfoFromFileWithMasterKey reads a key file and returns type and parameters.
-// Uses master key for decryption (envelope_version 2).
+// DetectKeyInfoFromFileWithMasterKey reads a managed credential and returns
+// its type and parameters.
 func DetectKeyInfoFromFileWithMasterKey(keyFile string, masterKey []byte) (*KeyFileInfo, error) {
 	data, err := os.ReadFile(keyFile)
 	if err != nil {
@@ -380,7 +380,11 @@ func DetectKeyInfoFromFileWithMasterKey(keyFile string, masterKey []byte) (*KeyF
 	if !crypto.IsEncrypted(data) {
 		return nil, fmt.Errorf("key file must be encrypted")
 	}
-	decrypted, err := crypto.DecryptWithMasterKey(data, masterKey)
+	ctx, err := keys.CredentialContextForFile(keyFile)
+	if err != nil {
+		return nil, err
+	}
+	decrypted, err := crypto.DecryptWithTermKey(data, masterKey, crypto.FirstTerm, ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -405,8 +409,8 @@ func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
 	}, nil
 }
 
-// GetDisplayTEALWithMasterKey returns the TEAL source code for generic LogicSigs.
-// Uses master key for decryption (envelope_version 2).
+// GetDisplayTEALWithMasterKey returns the TEAL source code for generic
+// LogicSigs held in a managed credential.
 func GetDisplayTEALWithMasterKey(keyFile string, masterKey []byte) (string, error) {
 	data, err := os.ReadFile(keyFile)
 	if err != nil {
@@ -417,7 +421,11 @@ func GetDisplayTEALWithMasterKey(keyFile string, masterKey []byte) (string, erro
 	if !crypto.IsEncrypted(data) {
 		return "", fmt.Errorf("key file must be encrypted")
 	}
-	decrypted, err := crypto.DecryptWithMasterKey(data, masterKey)
+	ctx, err := keys.CredentialContextForFile(keyFile)
+	if err != nil {
+		return "", err
+	}
+	decrypted, err := crypto.DecryptWithTermKey(data, masterKey, crypto.FirstTerm, ctx)
 	if err != nil {
 		return "", err
 	}

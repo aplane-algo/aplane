@@ -200,13 +200,14 @@ func readStoreMasterKey() ([]byte, error) {
 	defer crypto.ZeroBytes(passphrase)
 	fmt.Fprintln(os.Stderr)
 
-	meta, err := crypto.LoadKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to load keystore metadata: %w", err)
-	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	kr, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), passphrase)
 	if err != nil {
 		return nil, codedError{code: protocol.ErrCodeInvalidPassphrase, message: fmt.Sprintf("passphrase verification failed: %v", err)}
+	}
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
+	if err != nil {
+		return nil, err
 	}
 	return masterKey, nil
 }

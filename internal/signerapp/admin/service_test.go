@@ -112,13 +112,17 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *identity.Runtim
 	t.Helper()
 
 	passphrase := []byte("admin-policy-test-passphrase")
-	_, masterKey, err := securecrypto.CreateKeystoreMetadata(ir.KeyPaths().KeystoreMetadataDir(ir.ID()), passphrase)
+	masterKeyRing, err := securecrypto.CreateKeyringStore(ir.KeyPaths().KeystoreMetadataDir(ir.ID()), passphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata(): %v", err)
+		t.Fatalf("CreateKeyringStore(): %v", err)
+	}
+	masterKey, err := masterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	securecrypto.ZeroBytes(masterKey)
-	if _, err := ir.KeyStore().InitializeMasterKey(passphrase); err != nil {
-		t.Fatalf("InitializeMasterKey(): %v", err)
+	if err := ir.KeyStore().Unlock(passphrase); err != nil {
+		t.Fatalf("Unlock(): %v", err)
 	}
 	ir.SetUnlocked()
 

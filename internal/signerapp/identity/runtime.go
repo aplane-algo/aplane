@@ -412,7 +412,7 @@ func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 	return ir.lockRuntime.TryRecovery(func() error {
 		ir.passphraseLock.Lock()
 		defer ir.passphraseLock.Unlock()
-		if _, err := ir.keyStore.InitializeMasterKey(passphrase); err != nil {
+		if err := ir.keyStore.Unlock(passphrase); err != nil {
 			return fmt.Errorf("invalid passphrase")
 		}
 		return nil
@@ -1035,7 +1035,7 @@ func (ir *Runtime) Destroy() {
 		ir.keySession.Destroy()
 	}
 	if ir.keyStore != nil {
-		ir.keyStore.ClearMasterKey()
+		ir.keyStore.ClearKeys()
 	}
 }
 
@@ -1055,7 +1055,7 @@ func (ir *Runtime) performLockCleanup() {
 		}
 	}
 	if ir.keyStore != nil {
-		ir.keyStore.ClearMasterKey()
+		ir.keyStore.ClearKeys()
 	}
 	ir.passphraseLock.Unlock()
 
@@ -1078,7 +1078,7 @@ func (ir *Runtime) notifyLocked() {
 
 func (ir *Runtime) performUnlock(passphrase []byte) func() (int, error) {
 	return func() (int, error) {
-		if err := crypto.VerifyPassphraseWithMetadata(passphrase, ir.keyPaths.KeystoreMetadataDir(ir.id)); err != nil {
+		if err := crypto.VerifyPassphraseWithKeyring(passphrase, ir.keyPaths.KeystoreMetadataDir(ir.id)); err != nil {
 			return 0, fmt.Errorf("invalid passphrase")
 		}
 

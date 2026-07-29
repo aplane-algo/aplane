@@ -14,6 +14,7 @@ package templatestore
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -24,6 +25,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
+
+// TemplateFileExtension is the suffix every key-type template file carries.
+// The name before it is the key type, which is the template's logical
+// identity.
+const TemplateFileExtension = ".template"
 
 // BaseTemplateSpec contains fields common to all template types.
 // Specific template systems embed this and add their own fields.
@@ -165,8 +171,9 @@ func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType 
 		return "", fmt.Errorf("failed to create templates directory: %w", err)
 	}
 
-	// Encrypt with master key
-	encrypted, err := crypto.EncryptWithMasterKey(yamlData, masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		yamlData, masterKey, crypto.FirstTerm, crypto.KeyTypeTemplateContext(keyType),
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to encrypt template: %w", err)
 	}
@@ -181,9 +188,31 @@ func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType 
 	return outputPath, nil
 }
 
-// LoadTemplateFromPath reads and decrypts a template file from a specific path.
+// LoadTemplateFromPath reads and decrypts a template file from a specific
+// path, as the key type its filename names.
+//
+// The directory is deliberately not part of the identity: an installed
+// template and the same template under deleted/ are the same object, and
+// generations copy templates between namespaces without re-encrypting them.
 func LoadTemplateFromPath(path string, masterKey []byte) ([]byte, error) {
-	return keys.ReadAndDecryptFile(path, masterKey, "template file")
+	ctx, err := TemplateContextForFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return keys.ReadAndDecryptFile(path, masterKey, ctx, "template file")
+}
+
+// TemplateContextForFile recovers a template's object context from its
+// canonical filename, which is the key type plus the template extension.
+func TemplateContextForFile(path string) (crypto.ObjectContext, error) {
+	name := filepath.Base(path)
+	keyType := strings.TrimSuffix(name, TemplateFileExtension)
+	if keyType == name || keyType == "" {
+		return crypto.ObjectContext{}, fmt.Errorf(
+			"%q is not a canonical key-type template filename", name,
+		)
+	}
+	return crypto.KeyTypeTemplateContext(normalizeKeyType(keyType)), nil
 }
 
 func TemplateExistsForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) bool {

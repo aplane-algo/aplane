@@ -22,16 +22,17 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths, "default")
 	passphrase := []byte("component-generator-test-passphrase")
-	if _, _, err := securecrypto.CreateKeystoreMetadata(paths.IdentityDir("default"), passphrase); err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	if _, err := securecrypto.CreateKeyringStore(paths.IdentityDir("default"), passphrase); err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
-	meta, err := securecrypto.LoadKeystoreMetadata(paths.IdentityDir("default"))
+	kr, err := securecrypto.OpenKeyringStore(paths.IdentityDir("default"), passphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer securecrypto.ZeroBytes(masterKey)
 
@@ -75,8 +76,8 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	}
 
 	store := keystore.NewFileKeyStoreForPaths(paths, "default")
-	if _, err := store.InitializeMasterKey(passphrase); err != nil {
-		t.Fatalf("InitializeMasterKey() error = %v", err)
+	if err := store.Unlock(passphrase); err != nil {
+		t.Fatalf("Unlock() error = %v", err)
 	}
 	if err := store.Scan(nil); err != nil {
 		t.Fatalf("Scan() error = %v", err)

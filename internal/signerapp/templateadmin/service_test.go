@@ -55,11 +55,11 @@ func setupServiceWithReloadCounter(t *testing.T) (Service, *identity.Runtime, *a
 	if err := os.MkdirAll(keyPaths.KeysDir(auth.DefaultIdentityID), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}
-	if _, _, err := crypto.CreateKeystoreMetadata(userDir, testPassphrase); err != nil {
+	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {
 		t.Fatalf("CreateKeystoreMetadata: %v", err)
 	}
 	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
-	if _, err := ks.InitializeMasterKey(testPassphrase); err != nil {
+	if err := ks.Unlock(testPassphrase); err != nil {
 		t.Fatalf("InitializeMasterKey: %v", err)
 	}
 

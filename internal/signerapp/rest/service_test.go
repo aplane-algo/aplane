@@ -163,13 +163,13 @@ func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Rol
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}
-	if _, _, err := crypto.CreateKeystoreMetadata(userDir, restTestPassphrase); err != nil {
-		t.Fatalf("CreateKeystoreMetadata(): %v", err)
+	if _, err := crypto.CreateKeyringStore(userDir, restTestPassphrase); err != nil {
+		t.Fatalf("CreateKeyringStore(): %v", err)
 	}
 
 	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
-	if _, err := ks.InitializeMasterKey(restTestPassphrase); err != nil {
-		t.Fatalf("InitializeMasterKey(): %v", err)
+	if err := ks.Unlock(restTestPassphrase); err != nil {
+		t.Fatalf("Unlock(): %v", err)
 	}
 
 	ir := identity.New(identity.Config{

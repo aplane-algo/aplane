@@ -109,7 +109,7 @@ Window resizes, timers, IPC responses, server notifications, and background
 polling do not count. The TUI does not report local activity to the signer;
 keyboard activity only re-arms apadmin's own local idle-disconnect timer.
 
-The signer remains authoritative for lock state and master-key zeroing. After
+The signer remains authoritative for lock state and term-key zeroing. After
 `apadmin` learns the effective passphrase timeout from admin settings, it
 arms a local idle timer from the latest local activity baseline. If the UI is
 still idle when that timer fires, it disconnects the admin session. Any signer

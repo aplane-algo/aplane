@@ -21,7 +21,7 @@ It is separate from:
 - **Signing identity ownership:** Which identity owns keys, config, token files,
   runtime state, and approval state?
 - **Signing policy:** Is a specific transaction safe enough to sign?
-- **Encryption and key handling:** How passphrases, master keys, and key files
+- **Encryption and key handling:** How passphrases, term keys, and key files
   are protected.
 
 For broader authentication, SSH, passphrase, encryption, and defense-in-depth

@@ -42,8 +42,8 @@ installer upgrades are intentionally narrow:
   fresh install root unless the operator explicitly passes the installer
   `-f`/`--force` upgrade-check override,
 - no config, key, cache, or endpoint migration utility is shipped,
-- signer identity stores unlock only with keystore metadata version 3 and the
-  `generations/v1` layout tag; stores in any other format are rejected at
+- signer identity stores unlock only with keystore marker version 4 and the
+  `keyring/v1` layout tag; stores in any other format are rejected at
   unlock, rotation, rebuild, and policy-sign. Keys move between installs via
   backup archives restored into a freshly initialized store,
 - usable apclient signer routing is endpoint-based and lives in
@@ -722,7 +722,7 @@ Signer policy network identity is derived from transaction `GenesisHash`, not `G
 
 Operational rules:
 
-- missing `.keystore` is not a startup error; it forces locked-start behavior
+- missing `keyring.enc` is not a startup error; it forces locked-start behavior
 - a signer data dir containing `.prod` is systemd-managed; `apsigner`
   refuses manual startup unless `APLANE_SYSTEMD_MANAGED=1` or parent PID is 1
 - missing the effective `networks.<teal_compile_network>.algod.server` is a warning because TEAL-dependent generation will fail later
@@ -860,8 +860,10 @@ execution, output decoding, environment filtering, and validation.
       keys/*.wit.json       # derived public witness reference; not private authority
       keytypes/<key_type>.json      # key type state record
       keytypes/<key_type>.template  # encrypted key type template
-    .keystore               # version 3 + generations/v1 layout tag (the only
-                            # supported store format; other versions rejected)
+    keyring.enc             # cryptographic root: KDF header over the sealed
+                            # term set (aplane.keyring.v1)
+    .keystore               # static marker: version 4 + keyring/v1 layout (the
+                            # only supported store format; others rejected)
     node.yaml.hmac
     aplane.token
     config.yaml
@@ -1117,7 +1119,7 @@ removal is exposed through authenticated local IPC as `apstore template remove`.
 Disabling or removing an installed YAML template requires that no stored identity
 key depends on that `key_type`; compiled-provider disable has the same
 unused-key guard because it removes the identity's compiled-provider opt-in. The
-unused check requires the identity master key, scans existing keys, and returns
+unused check requires the identity's current term key, scans existing keys, and returns
 `key_type_in_use` on the live admin protocol when the guard blocks installed
 template disable/removal or compiled-provider disable. Live key type
 enable/disable, template install, non-generic key generation, key import, and
@@ -1125,22 +1127,83 @@ key delete operations are serialized per identity so key creation cannot race a
 lifecycle decision made from a stale state snapshot. The underlying IPC message
 names remain `activate_key_type` and `deactivate_key_type` for compatibility.
 
-### Keystore Metadata (`.keystore`)
+### Keyring Root (`keyring.enc`)
 
-Defined in `internal/crypto/encryption.go` as `crypto.KeystoreMetadata`.
+Defined in `internal/crypto/keyring.go`. Schema `aplane.keyring.v1`, file
+version 1. Fields: `schema`, `envelope_version`, `kdf_time`, `kdf_memory`,
+`kdf_threads`, `salt`, `nonce`, `sealed_keyring`.
 
-Version 3 is the only readable format. Fields: salt, encrypted check value,
-creation time, explicit `kdf_time`, `kdf_memory`, `kdf_threads` (Argon2id),
-and the layout tag `layout: "generations/v1"`.
+The KDF parameters and salt are plaintext because they are inputs to the
+unwrap. `sealed_keyring` holds the set of numbered term keys, sealed with
+AES-256-GCM under the passphrase-derived key-encryption key.
 
 Behavior:
 
-- new keystores are written as version 3 with the `generations/v1` layout tag
-- unlock derives the master key with the stored KDF parameters; metadata with
-  missing or zero KDF parameters is rejected before derivation
-- metadata with any other version, or version 3 without the `generations/v1`
+- unlock derives the KEK with the stored KDF parameters and unwraps the term
+  set; only this release's own KDF tuple is accepted, checked before
+  derivation because the KEK must exist before the AEAD can authenticate
+  anything, so an edited root cannot compel work this release did not choose
+- changing the KDF tuple requires bumping this file version and the keystore
+  marker version with it
+- the root is read as a regular file under a size limit, so an oversized or
+  non-regular path is refused rather than loaded
+- the header travels in the AEAD's authenticated data alongside the sealed
+  term set
+- exactly one term is accepted; a multi-term root belongs to a release with
+  retiring terms and the authority split that governs them, and relaxing this
+  requires bumping this file version and the marker together
+- a refused root's decoded term keys are zeroed on every exit path, not only
+  the successful one
+- the successful unwrap is the passphrase check; there is no separate verifier
+- the KEK is zeroed before seal and open return, and is never cached
+- a passphrase change replaces this file in one atomic write
+- this release runs a single term
+
+### Keystore Marker (`.keystore`)
+
+Defined in `internal/crypto/keyring_store.go` as `keyringMarker`.
+
+Version 4 is the only readable format. Fields: `version`, `layout`
+(`keyring/v1`), and `created`. It carries no salt, no verifier, and no KDF
+parameters, so nothing in it can disagree with the keyring.
+
+Behavior:
+
+- new stores are written as version 4 with the `keyring/v1` layout tag
+- initialization writes the marker before the root, so a crash between them
+  leaves a store that is recognizably uninitialized rather than one whose root
+  exists under an unknown version
+- a marker with any other version, or version 4 without the `keyring/v1`
   layout tag, is rejected with guidance to restore from a backup archive into
   a freshly initialized store; there is no in-place migration path
+
+### Term Envelope Object Context
+
+Every object encrypted under a keyring term records the term in the clear and
+binds both the term and the object's logical identity into the AEAD's
+additional authenticated data. The identity is a class plus a canonical
+selector:
+
+| Class | Selector |
+| --- | --- |
+| `account-key` | Algorand address |
+| `sentry-credential` | Witness Key ID |
+| `keytype-template` | key type |
+| `recovered-batch` | restore ID |
+| `recovered-entry` | restore ID and entry selector |
+
+Behavior:
+
+- the identity is logical, never a path: generations copy ciphertext between
+  namespaces and into `deleted/` without re-encrypting it, so a path-based
+  binding would break on the first commit
+- readers recover the identity from the canonical filename, so a file moved
+  under another name fails to open
+- a wrong key, an edited term header, and a mismatched object identity are
+  indistinguishable failures: all three mean the envelope is not what the
+  caller asked for
+- passphrase rotation re-encrypts under a new term key with the same context,
+  so a rotation cannot relabel a file while it rewrites it
 
 ### Generation Store (`CURRENT` + `generations/`)
 
@@ -1189,7 +1252,7 @@ client-signing policy. Sentry nodes parse that same file as direct sentry
 component policy. The JSON sidecar at `policy.yaml.hmac` authenticates the
 exact YAML bytes.
 
-The policy integrity key is derived from the identity master key with HKDF-SHA256
+The policy integrity key is derived from the identity's current term key with HKDF-SHA256
 using info string `aplane policy integrity v1`. The derived key is 32 bytes and
 is not persisted.
 
@@ -1243,7 +1306,10 @@ schema. Their extension is fixed by payload category:
 
 Managed credential files carry:
 
-- envelope versioning,
+- envelope versioning: `envelope_version: 3`, carrying
+  `{envelope_version, term, nonce, ciphertext}`,
+- the object's own identity in the AEAD's authenticated data, so a credential
+  filed under another name does not decrypt (see below),
 - payload format versioning,
 - enough metadata to recover address and key type after decryption,
 - for LogicSig keys, enough signing metadata to assemble LogicSig args without
@@ -1564,7 +1630,7 @@ option. Generation derives the ID from the public key.
 
 ### Template Files (`.template`)
 
-Encrypted YAML using master-key encryption. The parsed template spec
+Encrypted YAML in the term envelope, bound to its key type. The parsed template spec
 (`generictemplate.TemplateSpec`, which embeds `templatestore.BaseTemplateSpec`)
 contains:
 
@@ -1993,7 +2059,7 @@ Lifecycle:
 `identity.Runtime.reloadLocked` delegates through the production function wired
 by `startup.WireReloadFunc` to `templates.ReloadService.Reload`. Its order is:
 
-1. initialize or reuse the master key
+1. open or reuse the keyring
 2. verify the node role and load authenticated policy
 3. register templates
 4. scan keys
@@ -2319,7 +2385,7 @@ Export:
 1. discover the canonical managed credential: account authority from `.key`
    and sentry witness authority from `.sen`; external `.wit` artifacts are not
    managed backup inputs
-2. decrypt the credential using the store master key
+2. decrypt the credential using the current term key and the credential's own object context
 3. if a key is template-backed, bundle key JSON and template YAML into a
    `BackupBundle` using installed identity-local template YAML when available;
    generated bundles set `backup_bundle: 1` plus `payload_version: 1`
@@ -2375,7 +2441,7 @@ Live signer-managed backup:
 
 - `apadmin` can trigger a signer-managed backup for the bound, unlocked identity
 - the operator supplies an export passphrase over the authenticated admin session
-- the signer uses the unlocked runtime master key; it does not re-prompt for the store passphrase
+- the signer uses the unlocked runtime keyring; it does not re-prompt for the store passphrase
 - output path is signer-managed, not operator-chosen
 - archives are written under `backups/<identity>/aplane-backup-YYYYMMDD-HHMMSS.tar.gz` beneath the signer data root
 - archive layout matches managed backups: `manifest.sealed`, `README.md`,
@@ -2433,7 +2499,7 @@ Live signer-managed restore:
   with per-identity/archive exponential backoff; rate-limited responses use
   `code:"restore_rate_limited"`
 - recovery decrypts selected `addresses`; if omitted, all payloads are
-  validated, re-encrypted under the destination master key, and published
+  validated, re-encrypted under the destination term key, and published
   atomically as `recovered/<restore-id>/`; it does not write active key or
   key-type files and does not reload
 - recovery copies source-settings status, the exact valid-sidecar digest, and

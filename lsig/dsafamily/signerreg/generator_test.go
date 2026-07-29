@@ -342,7 +342,10 @@ func TestGenerateFromSeedWithEncryption(t *testing.T) {
 	}
 
 	// Verify we can decrypt it (using master key encryption)
-	_, err = crypto.DecryptWithMasterKey(data, masterKey)
+	_, err = crypto.DecryptWithTermKey(
+		data, masterKey, crypto.FirstTerm,
+		mustCredentialContextForTest(t, result.KeyFiles.PrivateFile),
+	)
 	if err != nil {
 		t.Errorf("Failed to decrypt private key file: %v", err)
 	}
@@ -634,7 +637,10 @@ func TestLSigBytecodeGeneration(t *testing.T) {
 		t.Fatalf("Failed to read key file: %v", err)
 	}
 
-	decrypted, err := crypto.DecryptWithMasterKey(data, testMasterKey)
+	decrypted, err := crypto.DecryptWithTermKey(
+		data, testMasterKey, crypto.FirstTerm,
+		mustCredentialContextForTest(t, result.KeyFiles.PrivateFile),
+	)
 	if err != nil {
 		t.Fatalf("Failed to decrypt key file: %v", err)
 	}
@@ -697,9 +703,12 @@ func TestMnemonicRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	decrypted, err := crypto.DecryptWithMasterKey(data, testMasterKey)
+	decrypted, err := crypto.DecryptWithTermKey(
+		data, testMasterKey, crypto.FirstTerm,
+		mustCredentialContextForTest(t, result2.KeyFiles.PrivateFile),
+	)
 	if err != nil {
-		t.Fatalf("DecryptWithMasterKey() error = %v", err)
+		t.Fatalf("DecryptWithTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(decrypted)
 	payload, err := apkeys.ParsePayload(decrypted)
@@ -716,4 +725,16 @@ func TestMnemonicRoundTrip(t *testing.T) {
 			t.Fatalf("mnemonic-backed key persisted removed field %q", removed)
 		}
 	}
+}
+
+// mustCredentialContextForTest derives the context the store binds into a
+// managed credential's envelope, so a test opening one directly agrees with
+// the writer.
+func mustCredentialContextForTest(t *testing.T, path string) crypto.ObjectContext {
+	t.Helper()
+	ctx, err := apkeys.CredentialContextForFile(path)
+	if err != nil {
+		t.Fatalf("CredentialContextForFile(%q): %v", path, err)
+	}
+	return ctx
 }

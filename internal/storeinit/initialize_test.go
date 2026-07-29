@@ -40,7 +40,7 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if result.MetadataDir != paths.KeystoreMetadataDir(identityID) {
 		t.Fatalf("MetadataDir = %q, want %q", result.MetadataDir, paths.KeystoreMetadataDir(identityID))
 	}
-	if !crypto.KeystoreMetadataExistsIn(paths.KeystoreMetadataDir(identityID)) {
+	if !crypto.KeyringExistsIn(paths.KeystoreMetadataDir(identityID)) {
 		t.Fatal("keystore metadata missing after initialize")
 	}
 	// New stores are generational: active namespaces live in the first
@@ -65,16 +65,14 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(paths.IdentityDir(identityID), "aplane.token")); err != nil {
 		t.Fatalf("token stat error = %v", err)
 	}
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	if meta.Version != crypto.GenerationalKeystoreMetadataVersion {
-		t.Fatalf("keystore version = %d, want %d", meta.Version, crypto.GenerationalKeystoreMetadataVersion)
-	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(masterKey)
 	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
@@ -120,13 +118,14 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(masterKey)
 	role, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, masterKey)
@@ -175,17 +174,17 @@ func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
 	}
 }
 
-func TestInitializeRejectsExistingMetadata(t *testing.T) {
+func TestInitializeRejectsExistingKeyring(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
 	identityID := "default"
-	if _, masterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), []byte("existing-passphrase")); err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
-	} else {
-		crypto.ZeroBytes(masterKey)
+	kr, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), []byte("existing-passphrase"))
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
+	kr.Zero()
 
-	_, err := Initialize([]byte("new-passphrase"), Options{
+	_, err = Initialize([]byte("new-passphrase"), Options{
 		DataDir:    dataDir,
 		Paths:      paths,
 		IdentityID: identityID,
