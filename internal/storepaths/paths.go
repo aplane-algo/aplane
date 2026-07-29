@@ -41,6 +41,18 @@ func (p Paths) NodeRoleIntegritySidecar(identityID string) string {
 	return filepath.Join(p.IdentityDir(identityID), "node.yaml.hmac")
 }
 
+// RotationSnapshotPath is the target-term-sealed cutover inventory pinned by
+// a pending keyring descriptor.
+func (p Paths) RotationSnapshotPath(identityID string) string {
+	return filepath.Join(p.IdentityDir(identityID), "rotation.snapshot.enc")
+}
+
+// RotationBaselinePath is the current-term-sealed post-rewrap inventory
+// baseline used by generation rollback validation.
+func (p Paths) RotationBaselinePath(identityID string) string {
+	return filepath.Join(p.IdentityDir(identityID), "rotation.baseline.enc")
+}
+
 func validatePathComponent(label, s string) {
 	if err := validatePathComponentValue(label, s); err != nil {
 		panic(err.Error())

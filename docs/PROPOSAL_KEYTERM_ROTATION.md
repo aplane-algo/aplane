@@ -1,7 +1,10 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **phases 1 and 2 implemented and merged; phase 3 not started.** Phase 3
-is blocked on the items recorded below and in
+Status: **phases 1 and 2 implemented and merged; phase 3 schema work is in
+progress.** The formal R5 prerequisite is complete, and the first
+implementation slice writes the strict v2 keyring/v5 marker shape while
+deliberately retaining the one-term runtime gate. The transition itself
+remains blocked on the items recorded below and in
 [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
 picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
 

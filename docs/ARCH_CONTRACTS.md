@@ -42,8 +42,8 @@ installer upgrades are intentionally narrow:
   fresh install root unless the operator explicitly passes the installer
   `-f`/`--force` upgrade-check override,
 - no config, key, cache, or endpoint migration utility is shipped,
-- signer identity stores unlock only with keystore marker version 4 and the
-  `keyring/v1` layout tag; stores in any other format are rejected at
+- signer identity stores unlock only with keystore marker version 5 and the
+  `keyring/v2` layout tag; stores in any other format are rejected at
   unlock, rotation, rebuild, and policy-sign. Keys move between installs via
   backup archives restored into a freshly initialized store,
 - usable apclient signer routing is endpoint-based and lives in
@@ -861,8 +861,8 @@ execution, output decoding, environment filtering, and validation.
       keytypes/<key_type>.json      # key type state record
       keytypes/<key_type>.template  # encrypted key type template
     keyring.enc             # cryptographic root: KDF header over the sealed
-                            # term set (aplane.keyring.v1)
-    .keystore               # static marker: version 4 + keyring/v1 layout (the
+                            # term set (aplane.keyring.v2)
+    .keystore               # static marker: version 5 + keyring/v2 layout (the
                             # only supported store format; others rejected)
     node.yaml.hmac
     aplane.token
@@ -1129,8 +1129,8 @@ names remain `activate_key_type` and `deactivate_key_type` for compatibility.
 
 ### Keyring Root (`keyring.enc`)
 
-Defined in `internal/crypto/keyring.go`. Schema `aplane.keyring.v1`, file
-version 1. Fields: `schema`, `envelope_version`, `kdf_time`, `kdf_memory`,
+Defined in `internal/crypto/keyring.go`. Schema `aplane.keyring.v2`, file
+version 2. Fields: `schema`, `envelope_version`, `kdf_time`, `kdf_memory`,
 `kdf_threads`, `salt`, `nonce`, `sealed_keyring`.
 
 The KDF parameters and salt are plaintext because they are inputs to the
@@ -1149,9 +1149,13 @@ Behavior:
   non-regular path is refused rather than loaded
 - the header travels in the AEAD's authenticated data alongside the sealed
   term set
-- exactly one term is accepted; a multi-term root belongs to a release with
-  retiring terms and the authority split that governs them, and relaxing this
-  requires bumping this file version and the marker together
+- the sealed payload has `schema`, `current_term`, sorted `terms`, required
+  `historical_anchors`, and optional `rotation`; v2 structural validation
+  rejects invalid term order, current-term selection, anchors, and pending
+  descriptors before runtime use
+- exactly one term, an empty anchor array, and no pending descriptor are
+  accepted by this implementation slice; multi-term runtime acceptance lands
+  only with the authority-set check and the R5 no-second-append guard
 - a refused root's decoded term keys are zeroed on every exit path, not only
   the successful one
 - the successful unwrap is the passphrase check; there is no separate verifier
@@ -1163,17 +1167,17 @@ Behavior:
 
 Defined in `internal/crypto/keyring_store.go` as `keyringMarker`.
 
-Version 4 is the only readable format. Fields: `version`, `layout`
-(`keyring/v1`), and `created`. It carries no salt, no verifier, and no KDF
+Version 5 is the only readable format. Fields: `version`, `layout`
+(`keyring/v2`), and `created`. It carries no salt, no verifier, and no KDF
 parameters, so nothing in it can disagree with the keyring.
 
 Behavior:
 
-- new stores are written as version 4 with the `keyring/v1` layout tag
+- new stores are written as version 5 with the `keyring/v2` layout tag
 - initialization writes the marker before the root, so a crash between them
   leaves a store that is recognizably uninitialized rather than one whose root
   exists under an unknown version
-- a marker with any other version, or version 4 without the `keyring/v1`
+- a marker with any other version, or version 5 without the `keyring/v2`
   layout tag, is rejected with guidance to restore from a backup archive into
   a freshly initialized store; there is no in-place migration path
 

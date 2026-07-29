@@ -314,11 +314,14 @@ For terminology and lifecycle rules, defer to
 The keyring is the store's cryptographic root, defined in
 `internal/crypto/keyring.go` and `internal/crypto/keyring_store.go`.
 
-- schema `aplane.keyring.v1`, one file per identity beside `.keystore`
+- schema `aplane.keyring.v2`, one file per identity beside `.keystore`
 - plaintext header: Argon2id parameters and the KEK salt, so the file is
   self-describing
 - sealed body: the set of numbered term keys, wrapped under the
   passphrase-derived KEK with AES-256-GCM
+- sealed payload fields are `schema`, `current_term`, sorted `terms`, required
+  `historical_anchors`, and optional `rotation`; this release writes the v2
+  shape with one term, an empty anchor array, and no pending rotation
 - a successful unwrap is the passphrase check; there is no separate verifier
 - the KEK exists only inside seal and open, and is zeroed before either returns
 
@@ -335,7 +338,7 @@ Removing it requires a binary payload layout rather than JSON.
 
 `.keystore` is a static marker, defined in `internal/crypto/keyring_store.go`.
 
-- `{"version": 4, "layout": "keyring/v1", "created": ...}`
+- `{"version": 5, "layout": "keyring/v2", "created": ...}`
 - it carries no salt, no verifier, and no KDF parameters, so nothing in it can
   disagree with the keyring
 - the version gate rejects any store this release did not initialize, before

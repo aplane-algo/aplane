@@ -31,8 +31,8 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 
 | | Where |
 |---|---|
-| `keyring.enc` — the store's only cryptographic root: plaintext Argon2id parameters and salt over an AEAD-sealed term set | `internal/crypto/keyring.go`, `keyring_store.go` |
-| `.keystore` — a static marker: `{version: 4, layout: "keyring/v1"}` plus a `created` timestamp | `internal/crypto/keyring_store.go` |
+| `keyring.enc` — the store's only cryptographic root: plaintext Argon2id parameters and salt over an AEAD-sealed term set; the first phase-3 slice writes strict schema `aplane.keyring.v2` but retains the one-term runtime gate | `internal/crypto/keyring.go`, `keyring_store.go` |
+| `.keystore` — a static marker: `{version: 5, layout: "keyring/v2"}` plus a `created` timestamp | `internal/crypto/keyring_store.go` |
 | Term envelope (`envelope_version: 3`) — records the term that sealed it, binds term + object identity into the AEAD's authenticated data | `internal/crypto/term_envelope.go` |
 | `Keyring.Seal` / `Keyring.Open` — the only way to encrypt or decrypt store data | `internal/crypto/keyring.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
@@ -275,6 +275,32 @@ and policy/node-role integrity sidecars receive their own version bumps when
 the seal MAC and explicit integrity term land; those versions are not
 overloaded into the keyring version.
 
+#### Schema review outcome
+
+The implementation review approved the three decisions above with these
+clarifications:
+
+- durable term IDs use signed 64-bit values, matching the stated
+  `[1, 2^63-1]` range independently of the host's native `int` width;
+- `terms` and `historical_anchors` are required JSON arrays. A settled fresh
+  store writes `historical_anchors: []`; absence or `null` is malformed.
+  `rotation` is omitted only when no transition is pending;
+- every SHA-256 field is exactly 64 lowercase hexadecimal characters and every
+  referenced size is positive. Historical anchors sort strictly by canonical
+  generation ID, and terms sort strictly by ID;
+- the sealed snapshot file has an independent 16 MiB read/reference cap
+  (`maxRotationSnapshotBytes`). This is a cap on the exact encrypted file
+  pinned by the root, not part of the 1 MiB `keyring.enc` allowance;
+- keyring and marker decoding rejects unknown fields and trailing JSON before
+  the data is used. Required-field and canonical-encoding checks then reject
+  missing arrays, non-canonical base64 header fields, invalid digests, and
+  inconsistent transition state;
+- the v2 root and version-5 marker land while the runtime still rejects every
+  multi-term, pending, or anchored root. This intentionally does not relax the
+  existing safety gate. Multi-term acceptance, `Keyring.Open` authority
+  enforcement, and the guarded `StartRotation` operation remain one later
+  inseparable change, as items 4 and 5 require.
+
 ### Enforcement that must land with the code it guards
 
 **4. `Keyring.Open` must consult an authority set, not term membership.**
@@ -285,9 +311,9 @@ outside authority. If retired terms simply stay in the keyring after the window
 closes, they stay readable and neither invariant transfers from model to code.
 
 **5. R5's guard must be installed in the same change that relaxes the
-multi-term rejection.** `OpenKeyring` currently refuses any root with more than
-one term — deliberately, so that a phase-1 binary cannot read a phase-3 store.
-Phase 3 relaxes that. The model's protection against a second append is
+multi-term rejection.** `OpenKeyring` still refuses any root with more than
+one term even though it now validates the v2 payload shape. The first schema
+slice deliberately retained that runtime gate. The model's protection against a second append is
 `StartRotation` requiring no rotation already in flight; that guard has to
 appear as the rejection disappears, or there is a window with neither. The
 formal half of this gate is complete: the positive model checks R5 and the

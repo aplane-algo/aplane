@@ -18,8 +18,8 @@ ownership sets, and the resume/rollback journal semantics are deleted.
 
 ```
 identities/<identity>/
-  keyring.enc                  # cryptographic root (aplane.keyring.v1)
-  .keystore                    # static marker: version 4 + keyring/v1
+  keyring.enc                  # cryptographic root (aplane.keyring.v2)
+  .keystore                    # static marker: version 5 + keyring/v2
   CURRENT                      # one line: the active generation ID
   generations/
     <generation-id>/

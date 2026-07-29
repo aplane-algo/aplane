@@ -26,11 +26,11 @@ const (
 	// KeyringKeystoreMetadataVersion marks a store whose keys live in a
 	// keyring. Older binaries reject it at the version gate, exactly as
 	// pre-generation binaries reject version 3.
-	KeyringKeystoreMetadataVersion = 4
+	KeyringKeystoreMetadataVersion = 5
 
-	// KeystoreLayoutKeyringV1 is the layout tag recorded in version-4
+	// KeystoreLayoutKeyringV2 is the layout tag recorded in version-5
 	// metadata.
-	KeystoreLayoutKeyringV1 = "keyring/v1"
+	KeystoreLayoutKeyringV2 = "keyring/v2"
 )
 
 // KeyringPath returns the keyring root's path within a metadata directory.
@@ -168,7 +168,7 @@ type keyringMarker struct {
 func writeKeyringMarker(keystoreDir string) error {
 	data, err := json.MarshalIndent(keyringMarker{
 		Version: KeyringKeystoreMetadataVersion,
-		Layout:  KeystoreLayoutKeyringV1,
+		Layout:  KeystoreLayoutKeyringV2,
 		Created: time.Now().UTC().Format(time.RFC3339),
 	}, "", "  ")
 	if err != nil {
@@ -192,7 +192,7 @@ func checkKeyringMarker(keystoreDir string) error {
 		return fmt.Errorf("failed to read keystore marker: %w", err)
 	}
 	var marker keyringMarker
-	if err := json.Unmarshal(data, &marker); err != nil {
+	if err := decodeJSONStrict(data, &marker); err != nil {
 		return fmt.Errorf("failed to parse keystore marker: %w", err)
 	}
 	if marker.Version != KeyringKeystoreMetadataVersion {
@@ -201,11 +201,15 @@ func checkKeyringMarker(keystoreDir string) error {
 			marker.Version, KeyringKeystoreMetadataVersion,
 		)
 	}
-	if marker.Layout != KeystoreLayoutKeyringV1 {
+	if marker.Layout != KeystoreLayoutKeyringV2 {
 		return fmt.Errorf(
 			"keystore metadata version %d has unsupported layout %q",
 			marker.Version, marker.Layout,
 		)
+	}
+	created, err := time.Parse(time.RFC3339, marker.Created)
+	if err != nil || created.UTC().Format(time.RFC3339) != marker.Created {
+		return fmt.Errorf("keystore marker has invalid created timestamp %q", marker.Created)
 	}
 	return nil
 }

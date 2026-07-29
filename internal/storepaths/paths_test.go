@@ -28,6 +28,17 @@ func TestNodeRolePaths(t *testing.T) {
 	}
 }
 
+func TestRotationPathsAreIdentityScoped(t *testing.T) {
+	paths := NewPaths("/tmp/test-keystore")
+	identityDir := filepath.Join("/tmp/test-keystore", "identities", "default")
+	if got, want := paths.RotationSnapshotPath("default"), filepath.Join(identityDir, "rotation.snapshot.enc"); got != want {
+		t.Fatalf("RotationSnapshotPath() = %q, want %q", got, want)
+	}
+	if got, want := paths.RotationBaselinePath("default"), filepath.Join(identityDir, "rotation.baseline.enc"); got != want {
+		t.Fatalf("RotationBaselinePath() = %q, want %q", got, want)
+	}
+}
+
 func TestKeyTypePathsAreIdentityScoped(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	wantDir := filepath.Join("/tmp/test-keystore", "identities", "default", "keytypes")

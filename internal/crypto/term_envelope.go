@@ -42,6 +42,12 @@ const (
 	// ClassRecoveredEntry is one recovered entry, selected by restore ID and
 	// entry selector.
 	ClassRecoveredEntry ObjectClass = "recovered-entry"
+	// ClassRotationSnapshot is the root-pinned cutover inventory for a
+	// pending term transition.
+	ClassRotationSnapshot ObjectClass = "rotation-snapshot"
+	// ClassRotationBaseline is the post-rewrap inventory baseline for the
+	// rollback-eligible current generation.
+	ClassRotationBaseline ObjectClass = "rotation-baseline"
 )
 
 // ObjectContext is an object's logical identity: stable across every move
@@ -84,10 +90,21 @@ func RecoveredEntryContext(restoreID, selector string) ObjectContext {
 	return ObjectContext{Class: ClassRecoveredEntry, Selector: restoreID + "/" + selector}
 }
 
+// RotationSnapshotContext identifies the single pending cutover snapshot.
+func RotationSnapshotContext() ObjectContext {
+	return ObjectContext{Class: ClassRotationSnapshot, Selector: "pending"}
+}
+
+// RotationBaselineContext identifies the current post-rewrap baseline.
+func RotationBaselineContext() ObjectContext {
+	return ObjectContext{Class: ClassRotationBaseline, Selector: "current"}
+}
+
 func (c ObjectContext) validate() error {
 	switch c.Class {
 	case ClassAccountKey, ClassSentryCredential, ClassKeyTypeTemplate,
-		ClassRecoveredBatch, ClassRecoveredEntry:
+		ClassRecoveredBatch, ClassRecoveredEntry, ClassRotationSnapshot,
+		ClassRotationBaseline:
 	case "":
 		return fmt.Errorf("object context requires a class")
 	default:
@@ -98,6 +115,16 @@ func (c ObjectContext) validate() error {
 	}
 	if strings.ContainsRune(c.Selector, 0) {
 		return fmt.Errorf("object selector must not contain NUL")
+	}
+	switch c.Class {
+	case ClassRotationSnapshot:
+		if c.Selector != "pending" {
+			return fmt.Errorf("rotation snapshot selector must be %q", "pending")
+		}
+	case ClassRotationBaseline:
+		if c.Selector != "current" {
+			return fmt.Errorf("rotation baseline selector must be %q", "current")
+		}
 	}
 	return nil
 }
@@ -112,16 +139,16 @@ func (c ObjectContext) String() string {
 // cannot be edited.
 type encryptedDataTerm struct {
 	EnvelopeVersion int    `json:"envelope_version"`
-	Term            int    `json:"term"`
+	Term            int64  `json:"term"`
 	Nonce           string `json:"nonce"`
 	Ciphertext      string `json:"ciphertext"`
 }
 
 // envelopeTerm reads the term a term-envelope names, without decrypting.
-func envelopeTerm(encryptedJSON []byte) (int, error) {
+func envelopeTerm(encryptedJSON []byte) (int64, error) {
 	var probe struct {
-		EnvelopeVersion int `json:"envelope_version"`
-		Term            int `json:"term"`
+		EnvelopeVersion int   `json:"envelope_version"`
+		Term            int64 `json:"term"`
 	}
 	if err := json.Unmarshal(encryptedJSON, &probe); err != nil {
 		return 0, fmt.Errorf("failed to parse encrypted data: %w", err)
@@ -138,7 +165,7 @@ func envelopeTerm(encryptedJSON []byte) (int, error) {
 	return probe.Term, nil
 }
 
-func sealUnderTerm(plaintext, key []byte, term int, ctx ObjectContext) ([]byte, error) {
+func sealUnderTerm(plaintext, key []byte, term int64, ctx ObjectContext) ([]byte, error) {
 	gcm, err := newGCM(key)
 	if err != nil {
 		return nil, err
@@ -156,7 +183,7 @@ func sealUnderTerm(plaintext, key []byte, term int, ctx ObjectContext) ([]byte, 
 	}, "", "  ")
 }
 
-func openUnderTerm(encryptedJSON, key []byte, term int, ctx ObjectContext) ([]byte, error) {
+func openUnderTerm(encryptedJSON, key []byte, term int64, ctx ObjectContext) ([]byte, error) {
 	var encrypted encryptedDataTerm
 	if err := json.Unmarshal(encryptedJSON, &encrypted); err != nil {
 		return nil, fmt.Errorf("failed to parse encrypted data: %w", err)
