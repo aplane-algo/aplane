@@ -278,15 +278,15 @@ func TestRecoveredBatchSurvivesPassphraseRotationAndActivation(t *testing.T) {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
 	if err := ir.WithMasterKey(func(masterKey []byte) error {
-		return noderole.SaveIdentitySidecarWithMasterKey(
+		return noderole.SaveIdentitySidecarWithKeyring(
 			paths,
 			auth.DefaultIdentityID,
 			roleBytes,
-			masterKey,
+			keyringForTest(t, masterKey),
 			time.Unix(1_700_000_000, 0),
 		)
 	}); err != nil {
-		t.Fatalf("SaveIdentitySidecarWithMasterKey() error = %v", err)
+		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
 
 	recoveredResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
@@ -1018,15 +1018,15 @@ func installBackupAdminPolicyForRole(
 ) {
 	t.Helper()
 	if err := ir.WithMasterKey(func(masterKey []byte) error {
-		return policy.SaveStoredConfigWithMasterKey(
+		return policy.SaveStoredConfigWithKeyring(
 			paths.Root(),
 			auth.DefaultIdentityID,
 			stored,
-			masterKey,
+			keyringForTest(t, masterKey),
 			time.Unix(1_700_000_000, 0),
 		)
 	}); err != nil {
-		t.Fatalf("SaveStoredConfigWithMasterKey() error = %v", err)
+		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 	var effective *policy.Config
 	var err error
@@ -1095,4 +1095,16 @@ func (d failingBackupDeps) WithIdentityMutation(identityID string, fn func() err
 func (d failingBackupDeps) Logf(format string, args ...interface{}) {
 	_ = format
 	_ = args
+}
+
+// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
+// holds while phase 2 migrates callers from raw keys to the keyring.
+func keyringForTest(t *testing.T, masterKey []byte) *crypto.Keyring {
+	t.Helper()
+	kr, err := crypto.NewKeyringFromKey(masterKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromKey(): %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	return kr
 }

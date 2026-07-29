@@ -129,19 +129,19 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *identity.Runtim
 	err = ir.WithMasterKey(func(masterKey []byte) error {
 		switch target {
 		case adminproto.PolicyTargetSentry:
-			if err := policy.SaveStoredSentryConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
+			if err := policy.SaveStoredSentryConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), stored, keyringForTest(t, masterKey), testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedSentryWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
+			verified, effective, err := policyruntime.LoadVerifiedSentryWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), keyringForTest(t, masterKey))
 			if err != nil {
 				return err
 			}
 			ir.SetSentryPolicyState(verified, effective)
 		default:
-			if err := policy.SaveStoredConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
+			if err := policy.SaveStoredConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), stored, keyringForTest(t, masterKey), testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
+			verified, effective, err := policyruntime.LoadVerifiedWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), keyringForTest(t, masterKey))
 			if err != nil {
 				return err
 			}
@@ -497,11 +497,11 @@ func TestReplaceSentryPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 	var verified *policy.StoredConfig
 	err := ir.WithMasterKey(func(masterKey []byte) error {
 		var err error
-		verified, err = policy.LoadVerifiedSentryConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), masterKey)
+		verified, err = policy.LoadVerifiedSentryConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), keyringForTest(t, masterKey))
 		return err
 	})
 	if err != nil {
-		t.Fatalf("LoadVerifiedSentryConfigWithMasterKey(): %v", err)
+		t.Fatalf("LoadVerifiedSentryConfigWithKeyring(): %v", err)
 	}
 	verifiedData, err := policy.MarshalStoredSentryConfig(verified)
 	if err != nil {
@@ -555,4 +555,16 @@ func sentryPolicyYAMLForAdminTest(routeID string) string {
       destinations:
         - '*'
 `, routeID)
+}
+
+// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
+// holds while phase 2 migrates callers from raw keys to the keyring.
+func keyringForTest(t *testing.T, masterKey []byte) *securecrypto.Keyring {
+	t.Helper()
+	kr, err := securecrypto.NewKeyringFromKey(masterKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromKey(): %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	return kr
 }

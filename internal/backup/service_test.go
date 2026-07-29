@@ -46,8 +46,8 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.SaveStoredConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, testExportMasterKey, timeForBackupTest()); err != nil {
-		t.Fatalf("SaveStoredConfigWithMasterKey() error = %v", err)
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, keyringForTest(t, testExportMasterKey), timeForBackupTest()); err != nil {
+		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 
 	archivePath := BuildManagedArchivePath(paths, identityID, "20260428-010203")
@@ -127,7 +127,7 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSentry, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.SaveStoredSentryConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, testExportMasterKey, timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredSentryConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, keyringForTest(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -253,8 +253,8 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.SaveStoredConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, testExportMasterKey, timeForBackupTest()); err != nil {
-		t.Fatalf("SaveStoredConfigWithMasterKey() error = %v", err)
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, keyringForTest(t, testExportMasterKey), timeForBackupTest()); err != nil {
+		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 
 	archivePath := BuildManagedArchivePath(paths, identityID, "20260710-010203")
@@ -358,4 +358,16 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "failed to export") {
 		t.Fatalf("ExportAllKeys() error = %v, want decrypt-failure abort", err)
 	}
+}
+
+// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
+// holds while phase 2 migrates callers from raw keys to the keyring.
+func keyringForTest(t *testing.T, masterKey []byte) *crypto.Keyring {
+	t.Helper()
+	kr, err := crypto.NewKeyringFromKey(masterKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromKey(): %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	return kr
 }

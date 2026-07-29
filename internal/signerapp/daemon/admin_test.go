@@ -77,7 +77,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	if err != nil {
 		t.Fatalf("CurrentTermKey(): %v", err)
 	}
-	if err := policy.SaveStoredConfigWithMasterKey(tmpDir, auth.DefaultIdentityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(tmpDir, auth.DefaultIdentityID, &policy.StoredConfig{}, keyringForTest(t, masterKey), time.Now()); err != nil {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Failed to create policy baseline: %v", err)
 	}
@@ -86,11 +86,11 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Failed to create node role: %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithMasterKey(keyPaths, auth.DefaultIdentityID, roleBytes, masterKey, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(keyPaths, auth.DefaultIdentityID, roleBytes, keyringForTest(t, masterKey), time.Now()); err != nil {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Failed to create node role sidecar: %v", err)
 	}
-	initialPolicy, err := policyruntime.LoadVerified(tmpDir, auth.DefaultIdentityID, serverConfigForTest(), masterKey)
+	initialPolicy, err := policyruntime.LoadVerified(tmpDir, auth.DefaultIdentityID, serverConfigForTest(), keyringForTest(t, masterKey))
 	if err != nil {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Failed to verify policy baseline: %v", err)

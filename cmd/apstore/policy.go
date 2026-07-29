@@ -21,9 +21,9 @@ type policyCommandDocument struct {
 	path      string
 	sidecar   string
 	loadCheck func() (*policy.StoredConfig, error)
-	verify    func(masterKey []byte) (*policy.StoredConfig, error)
+	verify    func(kr *crypto.Keyring) (*policy.StoredConfig, error)
 	apply     func(*policy.StoredConfig) (*policy.Config, error)
-	sign      func(masterKey []byte, signedAt time.Time) error
+	sign      func(kr *crypto.Keyring, signedAt time.Time) error
 }
 
 func cmdPolicy(args []string) error {
@@ -72,14 +72,14 @@ func cmdPolicyVerify() error {
 	if err != nil {
 		return err
 	}
-	masterKey, err := readPolicyMasterKey()
+	kr, err := readPolicyKeyring()
 	if err != nil {
 		return err
 	}
-	defer crypto.ZeroBytes(masterKey)
+	defer kr.Zero()
 
 	for _, doc := range docs {
-		stored, err := doc.verify(masterKey)
+		stored, err := doc.verify(kr)
 		if err != nil {
 			return codedError{code: policyIntegrityFailedCode, message: fmt.Sprintf("%s integrity verification failed: %v", doc.name, err)}
 		}
@@ -101,18 +101,18 @@ func cmdPolicySign() error {
 			return err
 		}
 	}
-	masterKey, err := readPolicyMasterKey()
+	kr, err := readPolicyKeyring()
 	if err != nil {
 		return err
 	}
-	defer crypto.ZeroBytes(masterKey)
+	defer kr.Zero()
 
 	now := time.Now()
 	for _, doc := range docs {
-		if err := doc.sign(masterKey, now); err != nil {
+		if err := doc.sign(kr, now); err != nil {
 			return fmt.Errorf("failed to sign %s integrity sidecar: %w", doc.name, err)
 		}
-		if _, err := doc.verify(masterKey); err != nil {
+		if _, err := doc.verify(kr); err != nil {
 			return codedError{code: policyIntegrityFailedCode, message: fmt.Sprintf("%s sidecar written but verification failed: %v", doc.name, err)}
 		}
 		logInfof("%s sidecar signed: %s", doc.name, doc.sidecar)
@@ -139,14 +139,14 @@ func policyCommandDocuments() ([]policyCommandDocument, error) {
 				return policyruntime.ApplySentryStoredConfig(dataDirectory, &config, stored)
 			})
 		}
-		doc.verify = func(masterKey []byte) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedSentryConfigWithMasterKey(dataDirectory, identityID, masterKey)
+		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
+			return policy.LoadVerifiedSentryConfigWithKeyring(dataDirectory, identityID, kr)
 		}
 		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
 			return policyruntime.ApplySentryStoredConfig(dataDirectory, &config, stored)
 		}
-		doc.sign = func(masterKey []byte, signedAt time.Time) error {
-			return policy.SignSentryFileIntegrityWithMasterKey(dataDirectory, identityID, masterKey, signedAt)
+		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
+			return policy.SignSentryFileIntegrityWithKeyring(dataDirectory, identityID, kr, signedAt)
 		}
 	case noderole.RoleSigner:
 		doc.loadCheck = func() (*policy.StoredConfig, error) {
@@ -154,14 +154,14 @@ func policyCommandDocuments() ([]policyCommandDocument, error) {
 				return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
 			})
 		}
-		doc.verify = func(masterKey []byte) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedStoredConfigWithMasterKey(dataDirectory, identityID, masterKey)
+		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
+			return policy.LoadVerifiedStoredConfigWithKeyring(dataDirectory, identityID, kr)
 		}
 		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
 			return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
 		}
-		doc.sign = func(masterKey []byte, signedAt time.Time) error {
-			return policy.SignPolicyFileIntegrityWithMasterKey(dataDirectory, identityID, masterKey, signedAt)
+		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
+			return policy.SignPolicyFileIntegrityWithKeyring(dataDirectory, identityID, kr, signedAt)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported node role %q", nodeDoc.Role)
@@ -187,11 +187,11 @@ func loadPolicyDocumentForCheck(name, path string, parser func([]byte) (*policy.
 	return stored, nil
 }
 
-func readPolicyMasterKey() ([]byte, error) {
-	return readStoreMasterKey()
+func readPolicyKeyring() (*crypto.Keyring, error) {
+	return readStoreKeyring()
 }
 
-func readStoreMasterKey() ([]byte, error) {
+func readStoreKeyring() (*crypto.Keyring, error) {
 	fmt.Fprint(os.Stderr, "Enter store passphrase: ")
 	passphrase, err := readPassword()
 	if err != nil {
@@ -204,10 +204,5 @@ func readStoreMasterKey() ([]byte, error) {
 	if err != nil {
 		return nil, codedError{code: protocol.ErrCodeInvalidPassphrase, message: fmt.Sprintf("passphrase verification failed: %v", err)}
 	}
-	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		return nil, err
-	}
-	return masterKey, nil
+	return kr, nil
 }

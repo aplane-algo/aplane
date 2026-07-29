@@ -98,10 +98,10 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	if _, err := recovered.LoadBatch(paths, identityID, recoveredBatch.RestoreID, oldMasterKey); err == nil {
 		t.Fatal("recovered batch still decrypts with old master key after rotation")
 	}
-	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(paths.Root(), identityID, oldMasterKey); err == nil {
+	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(paths.Root(), identityID, keyringForTest(t, oldMasterKey)); err == nil {
 		t.Fatal("policy sidecar still verifies with old master key after rotation")
 	}
-	if _, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, oldMasterKey); err == nil {
+	if _, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, keyringForTest(t, oldMasterKey)); err == nil {
 		t.Fatal("node role sidecar still verifies with old master key after rotation")
 	}
 }
@@ -491,7 +491,7 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 	assertDecryptsWithMasterKey(t, keyPath, oldMasterKey)
 	assertDecryptsWithMasterKey(t, templatePath, oldMasterKey)
 	assertPolicyVerifiesWithMasterKey(t, paths, identityID, oldMasterKey)
-	if _, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, oldMasterKey); err == nil {
+	if _, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, keyringForTest(t, oldMasterKey)); err == nil {
 		t.Fatal("tampered node role unexpectedly verifies after failed rotation")
 	}
 	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(identityID), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), paths.NodeRoleIntegritySidecar(identityID))
@@ -652,8 +652,8 @@ func writeEncryptedForRotateTest(t *testing.T, path string, plaintext []byte, ma
 
 func writePolicyBaselineForRotateTest(t *testing.T, paths storepaths.Paths, identityID string, masterKey []byte, cfg *policy.StoredConfig) {
 	t.Helper()
-	if err := policy.SaveStoredConfigWithMasterKey(paths.Root(), identityID, cfg, masterKey, time.Unix(1700000000, 0)); err != nil {
-		t.Fatalf("SaveStoredConfigWithMasterKey() error = %v", err)
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, cfg, keyringForTest(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 }
 
@@ -663,21 +663,21 @@ func writeNodeRoleBaselineForRotateTest(t *testing.T, paths storepaths.Paths, id
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithMasterKey(paths, identityID, roleBytes, masterKey, time.Unix(1700000000, 0)); err != nil {
-		t.Fatalf("SaveIdentitySidecarWithMasterKey() error = %v", err)
+	if err := noderole.SaveIdentitySidecarWithKeyring(paths, identityID, roleBytes, keyringForTest(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
 }
 
 func assertPolicyVerifiesWithMasterKey(t *testing.T, paths storepaths.Paths, identityID string, masterKey []byte) {
 	t.Helper()
-	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(paths.Root(), identityID, masterKey); err != nil {
+	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(paths.Root(), identityID, keyringForTest(t, masterKey)); err != nil {
 		t.Fatalf("policy sidecar did not verify: %v", err)
 	}
 }
 
 func assertNodeRoleVerifiesWithMasterKey(t *testing.T, paths storepaths.Paths, identityID string, masterKey []byte, want noderole.Role) {
 	t.Helper()
-	doc, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, masterKey)
+	doc, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, keyringForTest(t, masterKey))
 	if err != nil {
 		t.Fatalf("node role sidecar did not verify: %v", err)
 	}
@@ -1090,4 +1090,16 @@ func TestRotateReplacesTheTermKey(t *testing.T) {
 	// The rotated file really is under the new key, so the change is a
 	// re-encryption and not merely a discarded key.
 	assertDecryptsWithMasterKey(t, keyPath, after)
+}
+
+// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
+// holds while phase 2 migrates callers from raw keys to the keyring.
+func keyringForTest(t *testing.T, masterKey []byte) *crypto.Keyring {
+	t.Helper()
+	kr, err := crypto.NewKeyringFromKey(masterKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromKey(): %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	return kr
 }

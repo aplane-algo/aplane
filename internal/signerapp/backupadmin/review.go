@@ -194,15 +194,21 @@ func loadDestinationRestorePolicy(
 	role noderole.Role,
 	masterKey []byte,
 ) (*policy.Config, string, error) {
+	// Boundary adapter: backupadmin still threads a raw key and migrates in
+	// its own slice.
+	kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
+	if err != nil {
+		return nil, "", err
+	}
+	defer kr.Zero()
 	var (
 		stored    *policy.StoredConfig
 		effective *policy.Config
 		encoded   []byte
-		err       error
 	)
 	switch role {
 	case noderole.RoleSigner:
-		stored, err = policy.LoadVerifiedStoredConfigWithMasterKey(dataRoot, identityID, masterKey)
+		stored, err = policy.LoadVerifiedStoredConfigWithKeyring(dataRoot, identityID, kr)
 		if err == nil {
 			effective, err = stored.ApplySigning(nil)
 		}
@@ -210,7 +216,7 @@ func loadDestinationRestorePolicy(
 			encoded, err = policy.MarshalStoredConfig(stored)
 		}
 	case noderole.RoleSentry:
-		stored, err = policy.LoadVerifiedSentryConfigWithMasterKey(dataRoot, identityID, masterKey)
+		stored, err = policy.LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID, kr)
 		if err == nil {
 			effective, err = stored.ApplySentry(nil)
 		}

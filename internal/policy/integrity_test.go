@@ -170,9 +170,9 @@ func TestLoadPolicyIntegritySidecar(t *testing.T) {
 
 func policyIntegrityTestKey(t *testing.T) []byte {
 	t.Helper()
-	key, err := apcrypto.DerivePolicyIntegrityKey([]byte("01234567890123456789012345678901"))
+	key, err := keyringForTest(t, []byte("01234567890123456789012345678901")).PolicyIntegrityKey()
 	if err != nil {
-		t.Fatalf("DerivePolicyIntegrityKey() error = %v", err)
+		t.Fatalf("PolicyIntegrityKey() error = %v", err)
 	}
 	t.Cleanup(func() { apcrypto.ZeroBytes(key) })
 	return key

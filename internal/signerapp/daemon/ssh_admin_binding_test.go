@@ -126,20 +126,20 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 	if err != nil {
 		t.Fatalf("CurrentTermKey(): %v", err)
 	}
-	if err := policy.SaveStoredConfigWithMasterKey(server.dataDir, identityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(server.dataDir, identityID, &policy.StoredConfig{}, keyringForTest(t, masterKey), time.Now()); err != nil {
 		crypto.ZeroBytes(masterKey)
-		t.Fatalf("SaveStoredConfigWithMasterKey(%q): %v", identityID, err)
+		t.Fatalf("SaveStoredConfigWithKeyring(%q): %v", identityID, err)
 	}
 	roleDoc, roleBytes, err := noderole.Load(server.keyPaths)
 	if err != nil {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Load node role: %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithMasterKey(server.keyPaths, identityID, roleBytes, masterKey, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(server.keyPaths, identityID, roleBytes, keyringForTest(t, masterKey), time.Now()); err != nil {
 		crypto.ZeroBytes(masterKey)
-		t.Fatalf("SaveIdentitySidecarWithMasterKey(%q): %v", identityID, err)
+		t.Fatalf("SaveIdentitySidecarWithKeyring(%q): %v", identityID, err)
 	}
-	initialPolicy, err := policyruntime.LoadVerified(server.dataDir, identityID, server.config, masterKey)
+	initialPolicy, err := policyruntime.LoadVerified(server.dataDir, identityID, server.config, keyringForTest(t, masterKey))
 	if err != nil {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("LoadVerified(%q): %v", identityID, err)

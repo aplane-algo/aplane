@@ -10,14 +10,14 @@ import (
 
 func TestDerivePolicyIntegrityKey(t *testing.T) {
 	masterKey := bytes.Repeat([]byte{0x42}, 32)
-	key1, err := DerivePolicyIntegrityKey(masterKey)
+	key1, err := derivePolicyIntegrityKey(masterKey)
 	if err != nil {
-		t.Fatalf("DerivePolicyIntegrityKey() error = %v", err)
+		t.Fatalf("derivePolicyIntegrityKey() error = %v", err)
 	}
 	defer ZeroBytes(key1)
-	key2, err := DerivePolicyIntegrityKey(masterKey)
+	key2, err := derivePolicyIntegrityKey(masterKey)
 	if err != nil {
-		t.Fatalf("DerivePolicyIntegrityKey() second error = %v", err)
+		t.Fatalf("derivePolicyIntegrityKey() second error = %v", err)
 	}
 	defer ZeroBytes(key2)
 
@@ -28,9 +28,9 @@ func TestDerivePolicyIntegrityKey(t *testing.T) {
 		t.Fatal("derivation is not deterministic")
 	}
 
-	otherKey, err := DerivePolicyIntegrityKey(bytes.Repeat([]byte{0x43}, 32))
+	otherKey, err := derivePolicyIntegrityKey(bytes.Repeat([]byte{0x43}, 32))
 	if err != nil {
-		t.Fatalf("DerivePolicyIntegrityKey(other) error = %v", err)
+		t.Fatalf("derivePolicyIntegrityKey(other) error = %v", err)
 	}
 	defer ZeroBytes(otherKey)
 	if bytes.Equal(key1, otherKey) {
@@ -39,7 +39,7 @@ func TestDerivePolicyIntegrityKey(t *testing.T) {
 }
 
 func TestDerivePolicyIntegrityKeyRejectsEmptyMasterKey(t *testing.T) {
-	if _, err := DerivePolicyIntegrityKey(nil); err == nil {
-		t.Fatal("DerivePolicyIntegrityKey(nil) error = nil, want failure")
+	if _, err := derivePolicyIntegrityKey(nil); err == nil {
+		t.Fatal("derivePolicyIntegrityKey(nil) error = nil, want failure")
 	}
 }

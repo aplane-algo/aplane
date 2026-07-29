@@ -210,9 +210,9 @@ transfer_policy:
 		t.Fatalf("unlock() error = %v", err)
 	}
 	defer clear()
-	stored, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataDir, DefaultIdentityID, masterKey)
+	stored, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, DefaultIdentityID, masterKey)
 	if err != nil {
-		t.Fatalf("LoadVerifiedSentryConfigWithMasterKey() after SaveSentryYAML() error = %v", err)
+		t.Fatalf("LoadVerifiedSentryConfigWithKeyring() after SaveSentryYAML() error = %v", err)
 	}
 	if stored.RejectRekey == nil || !*stored.RejectRekey {
 		t.Fatalf("RejectRekey = %v, want true", stored.RejectRekey)

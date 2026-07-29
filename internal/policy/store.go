@@ -61,10 +61,10 @@ func loadVerifiedStoredConfigAtPath(path string, key []byte, parser storedConfig
 	return cfg, nil
 }
 
-// LoadVerifiedStoredConfigWithMasterKey derives the policy integrity key from
+// LoadVerifiedStoredConfigWithKeyring derives the policy integrity key from
 // the identity master key, verifies policy.yaml, and parses it.
-func LoadVerifiedStoredConfigWithMasterKey(dataRoot, identityID string, masterKey []byte) (*StoredConfig, error) {
-	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
+func LoadVerifiedStoredConfigWithKeyring(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, error) {
+	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
 		return nil, err
 	}
@@ -72,11 +72,11 @@ func LoadVerifiedStoredConfigWithMasterKey(dataRoot, identityID string, masterKe
 	return LoadVerifiedStoredConfig(dataRoot, identityID, key)
 }
 
-// LoadVerifiedSentryConfigWithMasterKey derives the policy integrity key
+// LoadVerifiedSentryConfigWithKeyring derives the policy integrity key
 // from the identity master key, verifies policy.yaml as a sentry policy, and
 // parses it.
-func LoadVerifiedSentryConfigWithMasterKey(dataRoot, identityID string, masterKey []byte) (*StoredConfig, error) {
-	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
+func LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, error) {
+	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
 		return nil, err
 	}
@@ -171,10 +171,10 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, key []b
 	return nil
 }
 
-// SaveStoredConfigWithMasterKey derives the policy integrity key from the
+// SaveStoredConfigWithKeyring derives the policy integrity key from the
 // identity master key and writes policy.yaml plus policy.yaml.hmac.
-func SaveStoredConfigWithMasterKey(dataRoot, identityID string, cfg *StoredConfig, masterKey []byte, signedAt time.Time) error {
-	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
+func SaveStoredConfigWithKeyring(dataRoot, identityID string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
 		return err
 	}
@@ -182,11 +182,11 @@ func SaveStoredConfigWithMasterKey(dataRoot, identityID string, cfg *StoredConfi
 	return SaveStoredConfigWithIntegrity(dataRoot, identityID, cfg, key, signedAt)
 }
 
-// SaveStoredSentryConfigWithMasterKey derives the policy integrity key
+// SaveStoredSentryConfigWithKeyring derives the policy integrity key
 // from the identity master key and writes sentry policy.yaml plus
 // policy.yaml.hmac.
-func SaveStoredSentryConfigWithMasterKey(dataRoot, identityID string, cfg *StoredConfig, masterKey []byte, signedAt time.Time) error {
-	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
+func SaveStoredSentryConfigWithKeyring(dataRoot, identityID string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
 		return err
 	}
@@ -194,10 +194,10 @@ func SaveStoredSentryConfigWithMasterKey(dataRoot, identityID string, cfg *Store
 	return SaveStoredSentryConfigWithIntegrity(dataRoot, identityID, cfg, key, signedAt)
 }
 
-// SavePolicyBytesWithMasterKey derives the policy integrity key from the
+// SavePolicyBytesWithKeyring derives the policy integrity key from the
 // identity master key and writes exact policy.yaml bytes plus policy.yaml.hmac.
-func SavePolicyBytesWithMasterKey(dataRoot, identityID string, policyBytes []byte, masterKey []byte, signedAt time.Time) error {
-	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
+func SavePolicyBytesWithKeyring(dataRoot, identityID string, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
 		return err
 	}
@@ -205,11 +205,11 @@ func SavePolicyBytesWithMasterKey(dataRoot, identityID string, policyBytes []byt
 	return SavePolicyBytesWithIntegrity(dataRoot, identityID, policyBytes, key, signedAt)
 }
 
-// SaveSentryBytesWithMasterKey derives the policy integrity key from the
+// SaveSentryBytesWithKeyring derives the policy integrity key from the
 // identity master key and writes exact sentry-policy bytes plus
 // policy.yaml.hmac.
-func SaveSentryBytesWithMasterKey(dataRoot, identityID string, sentryBytes []byte, masterKey []byte, signedAt time.Time) error {
-	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
+func SaveSentryBytesWithKeyring(dataRoot, identityID string, sentryBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
 		return err
 	}
@@ -274,10 +274,10 @@ func signPolicyFileIntegrityAtPath(path string, key []byte, signedAt time.Time, 
 	return nil
 }
 
-// SignPolicyFileIntegrityWithMasterKey derives the policy integrity key from
+// SignPolicyFileIntegrityWithKeyring derives the policy integrity key from
 // the identity master key and signs the current policy.yaml bytes.
-func SignPolicyFileIntegrityWithMasterKey(dataRoot, identityID string, masterKey []byte, signedAt time.Time) error {
-	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
+func SignPolicyFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.Keyring, signedAt time.Time) error {
+	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
 		return err
 	}
@@ -285,11 +285,11 @@ func SignPolicyFileIntegrityWithMasterKey(dataRoot, identityID string, masterKey
 	return SignPolicyFileIntegrity(dataRoot, identityID, key, signedAt)
 }
 
-// SignSentryFileIntegrityWithMasterKey derives the policy integrity key
+// SignSentryFileIntegrityWithKeyring derives the policy integrity key
 // from the identity master key and signs the current sentry-policy bytes in
 // policy.yaml.
-func SignSentryFileIntegrityWithMasterKey(dataRoot, identityID string, masterKey []byte, signedAt time.Time) error {
-	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
+func SignSentryFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.Keyring, signedAt time.Time) error {
+	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
 		return err
 	}

@@ -23,7 +23,14 @@ func cmdKeys(args []string) error {
 }
 
 func cmdKeysList() error {
-	masterKey, err := readStoreMasterKey()
+	kr, err := readStoreKeyring()
+	if err != nil {
+		return err
+	}
+	defer kr.Zero()
+	// Boundary adapter: this command's key operations migrate in a later
+	// slice and still take raw bytes.
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
 		return err
 	}

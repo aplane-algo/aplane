@@ -13,27 +13,30 @@ import (
 
 const (
 	// PolicyIntegrityKeyLength is the byte length of policy HMAC keys derived
-	// from an identity keystore master key.
+	// from an identity's current term key.
 	PolicyIntegrityKeyLength = 32
 
 	// NodeRoleIntegrityKeyLength is the byte length of node-role HMAC keys
-	// derived from an identity keystore master key.
+	// derived from an identity's current term key.
 	NodeRoleIntegrityKeyLength = 32
 
 	policyIntegrityHKDFInfo   = "aplane policy integrity v1"
 	nodeRoleIntegrityHKDFInfo = "aplane node role integrity v1"
 )
 
-// DerivePolicyIntegrityKey derives the identity policy-integrity HMAC key from
-// a keystore master key. The caller owns the returned key and should zero it
-// after use.
-func DerivePolicyIntegrityKey(masterKey []byte) ([]byte, error) {
+// derivePolicyIntegrityKey derives the identity policy-integrity HMAC key
+// from a term key.
+//
+// Callers reach this through Keyring.PolicyIntegrityKey. It stays here,
+// unexported, as the reference the keyring's derivation is tested against:
+// every sidecar already on disk was signed with its output.
+func derivePolicyIntegrityKey(masterKey []byte) ([]byte, error) {
 	return deriveIntegrityKey(masterKey, []byte(policyIntegrityHKDFInfo), PolicyIntegrityKeyLength, "policy")
 }
 
-// DeriveNodeRoleIntegrityKey derives the node-role HMAC key from a keystore
-// master key. The caller owns the returned key and should zero it after use.
-func DeriveNodeRoleIntegrityKey(masterKey []byte) ([]byte, error) {
+// deriveNodeRoleIntegrityKey derives the node-role HMAC key from a term key.
+// Callers reach this through Keyring.NodeRoleIntegrityKey.
+func deriveNodeRoleIntegrityKey(masterKey []byte) ([]byte, error) {
 	return deriveIntegrityKey(masterKey, []byte(nodeRoleIntegrityHKDFInfo), NodeRoleIntegrityKeyLength, "node role")
 }
 

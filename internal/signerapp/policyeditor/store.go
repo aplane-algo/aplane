@@ -58,13 +58,13 @@ func (s OfflineStore) Load(ctx context.Context) (*policy.StoredConfig, error) {
 	if err := s.validateOptions(); err != nil {
 		return nil, err
 	}
-	masterKey, clear, err := s.unlock(ctx)
+	kr, clear, err := s.unlock(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer clear()
 
-	stored, err := s.loadVerifiedWithMasterKey(masterKey)
+	stored, err := s.loadVerifiedWithKeyring(kr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load verified %s: %w", s.target().StatusNoun(), err)
 	}
@@ -119,13 +119,13 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 	}
 	defer func() { _ = guard.Close() }()
 
-	masterKey, clear, err := s.unlock(ctx)
+	kr, clear, err := s.unlock(ctx)
 	if err != nil {
 		return err
 	}
 	defer clear()
 
-	if _, err := s.loadVerifiedWithMasterKey(masterKey); err != nil {
+	if _, err := s.loadVerifiedWithKeyring(kr); err != nil {
 		return fmt.Errorf("refusing to overwrite unverified %s: %w", s.target().StatusNoun(), err)
 	}
 	serverCfg, err := s.serverConfig()
@@ -134,29 +134,29 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 	}
 	switch s.target() {
 	case TargetSentry:
-		if _, err := policyruntime.SaveStoredSentryConfigWithMasterKey(
+		if _, err := policyruntime.SaveStoredSentryConfigWithKeyring(
 			s.DataDir,
 			s.identityID(),
 			&serverCfg,
 			stored,
-			masterKey,
+			kr,
 			s.now(),
 		); err != nil {
 			return err
 		}
 	default:
-		if _, err := policyruntime.SaveStoredConfigWithMasterKey(
+		if _, err := policyruntime.SaveStoredConfigWithKeyring(
 			s.DataDir,
 			s.identityID(),
 			&serverCfg,
 			stored,
-			masterKey,
+			kr,
 			s.now(),
 		); err != nil {
 			return err
 		}
 	}
-	if _, err := s.loadVerifiedWithMasterKey(masterKey); err != nil {
+	if _, err := s.loadVerifiedWithKeyring(kr); err != nil {
 		return fmt.Errorf("saved %s failed verification: %w", s.target().StatusNoun(), err)
 	}
 	return nil
@@ -182,22 +182,22 @@ func (s OfflineStore) SaveYAML(ctx context.Context, data []byte) error {
 	}
 	defer func() { _ = guard.Close() }()
 
-	masterKey, clear, err := s.unlock(ctx)
+	kr, clear, err := s.unlock(ctx)
 	if err != nil {
 		return err
 	}
 	defer clear()
 
-	if _, err := s.loadVerifiedWithMasterKey(masterKey); err != nil {
+	if _, err := s.loadVerifiedWithKeyring(kr); err != nil {
 		return fmt.Errorf("refusing to overwrite unverified %s: %w", s.target().StatusNoun(), err)
 	}
 	if err := s.Validate(ctx, stored); err != nil {
 		return err
 	}
-	if err := s.saveBytesWithMasterKey(data, masterKey); err != nil {
+	if err := s.saveBytesWithKeyring(data, kr); err != nil {
 		return err
 	}
-	if _, err := s.loadVerifiedWithMasterKey(masterKey); err != nil {
+	if _, err := s.loadVerifiedWithKeyring(kr); err != nil {
 		return fmt.Errorf("saved %s failed verification: %w", s.target().StatusNoun(), err)
 	}
 	return nil
@@ -319,7 +319,7 @@ func (s OfflineStore) serverConfig() (serverconfig.ServerConfig, error) {
 	return cfg, nil
 }
 
-func (s OfflineStore) unlock(ctx context.Context) ([]byte, func(), error) {
+func (s OfflineStore) unlock(ctx context.Context) (*apcrypto.Keyring, func(), error) {
 	passphrase := s.Passphrase
 	clearPassphrase := func() {}
 	if len(passphrase) == 0 && s.PassphraseProvider != nil {
@@ -344,28 +344,23 @@ func (s OfflineStore) unlock(ctx context.Context) ([]byte, func(), error) {
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("failed to unlock keystore: %w", err)
 	}
-	defer kr.Zero()
-	termKey, err := kr.CurrentTermKey()
-	if err != nil {
-		return nil, func() {}, err
-	}
-	return termKey, func() { apcrypto.ZeroBytes(termKey) }, nil
+	return kr, func() { kr.Zero() }, nil
 }
 
-func (s OfflineStore) loadVerifiedWithMasterKey(masterKey []byte) (*policy.StoredConfig, error) {
+func (s OfflineStore) loadVerifiedWithKeyring(kr *apcrypto.Keyring) (*policy.StoredConfig, error) {
 	switch s.target() {
 	case TargetSentry:
-		return policy.LoadVerifiedSentryConfigWithMasterKey(s.DataDir, s.identityID(), masterKey)
+		return policy.LoadVerifiedSentryConfigWithKeyring(s.DataDir, s.identityID(), kr)
 	default:
-		return policy.LoadVerifiedStoredConfigWithMasterKey(s.DataDir, s.identityID(), masterKey)
+		return policy.LoadVerifiedStoredConfigWithKeyring(s.DataDir, s.identityID(), kr)
 	}
 }
 
-func (s OfflineStore) saveBytesWithMasterKey(data, masterKey []byte) error {
+func (s OfflineStore) saveBytesWithKeyring(data []byte, kr *apcrypto.Keyring) error {
 	switch s.target() {
 	case TargetSentry:
-		return policy.SaveSentryBytesWithMasterKey(s.DataDir, s.identityID(), data, masterKey, s.now())
+		return policy.SaveSentryBytesWithKeyring(s.DataDir, s.identityID(), data, kr, s.now())
 	default:
-		return policy.SavePolicyBytesWithMasterKey(s.DataDir, s.identityID(), data, masterKey, s.now())
+		return policy.SavePolicyBytesWithKeyring(s.DataDir, s.identityID(), data, kr, s.now())
 	}
 }
