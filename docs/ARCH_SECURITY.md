@@ -796,25 +796,30 @@ Term keys follow a strict lifecycle:
 2. **Held in signer memory** — the term keys are stored in `FileKeyStore.keyring` and are protected from swap when process memory locking is enabled successfully.
 3. **Zeroed on lock or shutdown** — `ClearKeys()` overwrites every term key with zeros and drops the keyring.
 
-`WithKeyring` is the primary accessor. `WithMasterKey` is a documented
-compatibility accessor for call sites that still take a raw key; it hands the
-callback a *copy* of the current term's key and zeroes that copy on return.
-`Unlock` returns no key material at all.
+`WithKeyring` is the only accessor. `Unlock` returns no key material, and
+nothing hands out a term key's bytes: callers receive the keyring and ask it to
+seal or open.
 
-#### WithMasterKey Callback
+#### WithKeyring Callback
 
-Every operation that needs a term key (signing, export, key scan, store) calls:
+Every operation that needs to seal or open (signing, export, key scan, store)
+calls:
 
 ```go
-keyStore.WithMasterKey(func(masterKey []byte) error {
-    // use masterKey — guaranteed non-nil and non-zeroed
-    // for the duration of this callback
+keyStore.WithKeyring(func(kr *crypto.Keyring) error {
+    // kr is open for the duration of this callback
+    plaintext, err := kr.Open(sealed, crypto.AccountKeyContext(address))
 })
 ```
 
-`WithKeyring` and `WithMasterKey` acquire `cacheLock.RLock()` for the lifetime of the callback, so `ClearKeys()` cannot zero the keyring while a caller is reading it. If the keystore is locked (`keyring == nil`), both return an error immediately.
+`WithKeyring` acquires `cacheLock.RLock()` for the lifetime of the callback, so
+`ClearKeys()` cannot zero the keyring while a caller is using it. If the
+keystore is locked (`keyring == nil`) it returns an error immediately.
 
-The same RLock-through-operation pattern is used in `Get`, `Store`, `GetPublicKeyInfo`, and `Scan` — any code path that reads term key bytes holds `RLock` through the entire cryptographic operation.
+The same RLock-through-operation pattern is used in `Get`, `Store`,
+`GetPublicKeyInfo`, and `Scan` — any code path that uses the keyring holds
+`RLock` through the entire cryptographic operation. Because no copy of a term
+key is ever handed out, there is nothing to outlive the lock.
 
 #### RLock / WLock Concurrency
 

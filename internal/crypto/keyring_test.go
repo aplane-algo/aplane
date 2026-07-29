@@ -755,3 +755,68 @@ func TestKeyringIntegrityKeysMatchTheDerivedOnes(t *testing.T) {
 		t.Fatal("policy and node-role integrity keys are identical")
 	}
 }
+
+// TestOpenKeyringStoreRejectsUnsupportedMarkerVersion proves the format gate
+// refuses a store this release did not initialize.
+//
+// The marker is the only thing standing between a binary and a store written
+// in a layout it does not understand, and its rejection has to be actionable:
+// the operator's route forward is a backup archive into a fresh store, not a
+// migration, so the error has to say that.
+func TestOpenKeyringStoreRejectsUnsupportedMarkerVersion(t *testing.T) {
+	passphrase := []byte("marker-version-gate")
+	dir := t.TempDir()
+	kr, err := CreateKeyringStore(dir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore(): %v", err)
+	}
+	kr.Zero()
+
+	markerPath := filepath.Join(dir, keystoreMetaFile)
+	cases := map[string]struct {
+		marker map[string]any
+		want   string
+	}{
+		"older version": {
+			map[string]any{"version": KeyringKeystoreMetadataVersion - 1, "layout": KeystoreLayoutKeyringV1},
+			"restore from a backup archive",
+		},
+		"newer version": {
+			map[string]any{"version": KeyringKeystoreMetadataVersion + 1, "layout": KeystoreLayoutKeyringV1},
+			"restore from a backup archive",
+		},
+		"right version, foreign layout": {
+			map[string]any{"version": KeyringKeystoreMetadataVersion, "layout": "generations/v1"},
+			"unsupported layout",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			encoded, err := json.Marshal(tc.marker)
+			if err != nil {
+				t.Fatalf("Marshal(): %v", err)
+			}
+			if err := os.WriteFile(markerPath, encoded, 0o600); err != nil {
+				t.Fatalf("WriteFile(): %v", err)
+			}
+			opened, err := OpenKeyringStore(dir, passphrase)
+			if err == nil {
+				opened.Zero()
+				t.Fatal("OpenKeyringStore() accepted a marker this release cannot read")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("OpenKeyringStore() error = %v, want it to mention %q", err, tc.want)
+			}
+		})
+	}
+
+	// The gate runs before the root is touched: a store whose marker is
+	// unreadable must not have its keyring unwrapped on the way to failing.
+	if err := os.WriteFile(markerPath, []byte("{not json"), 0o600); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	if opened, err := OpenKeyringStore(dir, passphrase); err == nil {
+		opened.Zero()
+		t.Fatal("OpenKeyringStore() accepted an unparseable marker")
+	}
+}

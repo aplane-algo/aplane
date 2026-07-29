@@ -96,14 +96,14 @@ Source: [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md)
 | S3 | implemented | S3 | `internal/keys.Payload.Selector` derives address from bytecode | `internal/keys/payload_codec_test.go`; `internal/keys/template_fingerprint_test.go` | |
 | S4 | implemented | S4 | `internal/signingargs` orders runtime args by stored signing_args | `internal/signerapp/signing/runtime_args_test.go` | |
 | S5 | implemented | S5 | `internal/keys/keys.go` reads stored payload only; reload paths preserve already-registered templates | `internal/signerapp/daemon/template_reload_test.go::TestReloadKeysKeepsOriginalGenericTemplateDefinition`; `*PreservesAlreadyRegisteredGenericDefinition` | |
-| S6 | implemented | Off-Curve Requirement; S6 | `internal/lsigsalt` enforces off-curve at create; `internal/keys.Payload.Validate` rejects on-curve stored LogicSig bytecode during parse/scan/restore | `internal/keys/payload_codec_test.go`; `*TestScanKeysDirectoryWithMasterKeyRejectsDSALSigInvalidBytecode` | |
+| S6 | implemented | Off-Curve Requirement; S6 | `internal/lsigsalt` enforces off-curve at create; `internal/keys.Payload.Validate` rejects on-curve stored LogicSig bytecode during parse/scan/restore | `internal/keys/payload_codec_test.go`; `internal/keys/keys_test.go::TestScanKeysDirectoryWithKeyringRejectsDSALSigInvalidBytecode` | |
 | S7 | implemented | S7 | `internal/keys.Payload.Validate` requires `salt_counter` for LogicSig payloads | `internal/keys/payload_codec_test.go`; scan/restore use `ErrMissingLogicSigSaltCounter` through canonical payload parsing | |
 | S8 | implemented | S8 | Template fingerprint check is inventory-only; not consulted at sign time | `internal/keys/template_fingerprint_test.go::TestTemplateFingerprintComparison`; `*Unavailable`. Sign-time isolation follows from S5 anchors. | |
 | S9 | implemented | S9 | `internal/keys.ParsePayload` rejects duplicate JSON object members, unknown fields, and obsolete payload aliases | `internal/keys/payload_codec_test.go` | Fresh-system canonical schema removes cosmetic alias normalization. |
 | S10 | implemented | Runtime Key Index; S10 | `internal/signerapp/identity/runtime.go::KeyIndexSnapshot`; `internal/signerapp/signing/planner.go::PlanGroup`; `internal/signerapp/signing/planner_runtime.go::verifySignableKeys` | `internal/signerapp/identity/identity_test.go::TestKeyIndexSnapshotMaterializesConsistentCopy`; `internal/signerapp/signing/planner_runtime_test.go::TestPlannerUsesSingleIdentitySnapshot` | Planning materializes key files, key types, LogicSig sizes, and signer-local known addresses from one copied snapshot. |
 | S11 | implemented | Auth Address Binding; S11 | `internal/signerapp/signing/planner_runtime.go` resolves auth addresses through `PlannerIdentitySnapshot.KeyFiles` | `internal/signerapp/signing/planner_runtime_test.go::TestVerifySignableKeysRequiresKeyFileInSnapshot`; `::TestVerifySignableKeysRequiresKeyTypeMetadata` | |
 | S12 | implemented | S12 | `service.go::authPolicyKeysFromRequest` uses `txReq.AuthAddress` for policy override selection; `policyCfg.ForKey` consumes it | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesUsesKeyOverride`; `service_test.go::TestEvaluateAutoRejectionRulesAppliesKeyOverrides` | |
-| S13 | implemented | Canonical Filename Binding; S13 | `internal/keys/managed_files.go` owns `CanonicalName = Selector || ExtensionForCategory`; scan rejects selector and category/extension mismatches; save, backup/restore, deletion, rotation, and watching consume the central classes | `internal/keys/managed_files_test.go`; `internal/keys/keys_test.go::TestScanKeysDirectoryWithMasterKey`; `internal/keys/save_test.go::TestSavePayloadWritesWitnessPublicMetadata`; `internal/backup/restore_test.go::TestRestoreKeyRejectsContradictoryManagedCredentialClass`; `test/arch/managed_credential_files_test.go` | Account authority is `.key`; sentry witness authority is `.sen`; `.wit` is excluded. Accepted-selector collision invalidation remains a defensive fallback. |
+| S13 | implemented | Canonical Filename Binding; S13 | `internal/keys/managed_files.go` owns `CanonicalName = Selector || ExtensionForCategory`; scan rejects selector and category/extension mismatches; save, backup/restore, deletion, rotation, and watching consume the central classes | `internal/keys/managed_files_test.go`; `internal/keys/keys_test.go::TestScanKeysDirectoryWithKeyring`; `internal/keys/save_test.go::TestSavePayloadWritesWitnessPublicMetadata`; `internal/backup/restore_test.go::TestRestoreKeyRejectsContradictoryManagedCredentialClass`; `test/arch/managed_credential_files_test.go` | Account authority is `.key`; sentry witness authority is `.sen`; `.wit` is excluded. Accepted-selector collision invalidation remains a defensive fallback. |
 
 ## Guarded Signing Model
 
@@ -175,6 +175,21 @@ No open cross-cutting gaps. The concrete sketches that previously lived
 in [FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md) have all been closed or
 are deferred behind explicit design decisions; see that file for the
 status of deferred items.
+
+## Store Cryptography
+
+Source: [PROPOSAL_KEYTERM_ROTATION.md](PROPOSAL_KEYTERM_ROTATION.md)
+
+| ID | Status | Property | Code anchor | Test anchor | Notes |
+|---|---|---|---|---|---|
+| K1 | implemented | The keyring is the store's only cryptographic root; opening it is the passphrase check | `internal/crypto/keyring.go::OpenKeyring`; `internal/crypto/keyring_store.go::OpenKeyringStore` | `internal/crypto/keyring_test.go::TestOpenKeyringRejectsEditedHeader`; `::TestKeyringHeaderAADIsUnambiguous` | Header travels in the AEAD's authenticated data. |
+| K2 | implemented | Only stores this release initialized are readable | `internal/crypto/keyring_store.go::checkKeyringMarker` | `internal/crypto/keyring_test.go::TestOpenKeyringStoreRejectsUnsupportedMarkerVersion` | Rejection names the backup-archive remedy; no migration path exists. |
+| K3 | implemented | Every encrypted object is bound to its own logical identity | `internal/crypto/term_envelope.go`; `internal/crypto/keyring.go::aadFor` | `internal/keys/keys_test.go::TestCredentialDoesNotOpenUnderAnotherAddress`; `internal/backup/recovered/store_test.go::TestLoadRecoveredEntryRejectsCrossBatchSubstitution` | Identity is logical, never a path. |
+| K4 | implemented | A passphrase change replaces the term key rather than rewrapping it | `internal/storepass/rotate.go::Rotate` | `internal/storepass/rotate_test.go::TestRotateReplacesTheTermKey` | A probe sealed before rotation must not open after it. |
+| K5 | implemented | An edited root cannot compel work this release did not choose | `internal/crypto/keyring.go::checkKDFParams` | `internal/crypto/keyring_test.go::TestOpenKeyringRejectsForeignKDFParameters` | Checked before derivation; the AEAD cannot help there. |
+| K6 | implemented | This release holds exactly one term | `internal/crypto/keyring.go::OpenKeyring` | `internal/crypto/keyring_test.go::TestOpenKeyringRejectsMultipleTerms`; `::TestOpenKeyringZeroesRejectedTermKeys` | Relaxing it requires bumping the file version and the marker together. |
+| K7 | implemented | Passphrase derivation exists only inside `internal/crypto` | `internal/crypto` package boundary | `test/arch/kdf_confinement_test.go::TestKeyDerivationLivesOnlyInCrypto`; `::TestRawTermKeysAreNotAdoptedOutsideTests`; `::TestTestFixturesStayOutOfProduction` | Parses files directly, so `//go:build testmode` code is covered. |
+| K8 | **not implemented** | Every durable class carries a term | — | — | Pre-append gate for phase 3: a writer omitted from term stamping becomes unreadable data the first time a term is retired. |
 
 ## Machine-Checkable Coverage
 
