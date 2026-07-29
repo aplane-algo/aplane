@@ -6,7 +6,6 @@ package admin
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -113,36 +112,30 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *identity.Runtim
 	t.Helper()
 
 	passphrase := []byte("admin-policy-test-passphrase")
-	masterKeyRing, err := securecrypto.CreateKeyringStore(ir.KeyPaths().KeystoreMetadataDir(ir.ID()), passphrase)
-	if err != nil {
+	if _, err := securecrypto.CreateKeyringStore(ir.KeyPaths().KeystoreMetadataDir(ir.ID()), passphrase); err != nil {
 		t.Fatalf("CreateKeyringStore(): %v", err)
 	}
-	masterKey, err := masterKeyRing.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey(): %v", err)
-	}
-	securecrypto.ZeroBytes(masterKey)
 	if err := ir.KeyStore().Unlock(passphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
 	ir.SetUnlocked()
 
-	err = ir.WithMasterKey(func(masterKey []byte) error {
+	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
 		switch target {
 		case adminproto.PolicyTargetSentry:
-			if err := policy.SaveStoredSentryConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), stored, cryptotest.Keyring(t, masterKey), testPolicyTime()); err != nil {
+			if err := policy.SaveStoredSentryConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedSentryWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), cryptotest.Keyring(t, masterKey))
+			verified, effective, err := policyruntime.LoadVerifiedSentryWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
 			if err != nil {
 				return err
 			}
 			ir.SetSentryPolicyState(verified, effective)
 		default:
-			if err := policy.SaveStoredConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), stored, cryptotest.Keyring(t, masterKey), testPolicyTime()); err != nil {
+			if err := policy.SaveStoredConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), cryptotest.Keyring(t, masterKey))
+			verified, effective, err := policyruntime.LoadVerifiedWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
 			if err != nil {
 				return err
 			}
@@ -496,9 +489,9 @@ func TestReplaceSentryPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 	}
 
 	var verified *policy.StoredConfig
-	err := ir.WithMasterKey(func(masterKey []byte) error {
+	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
 		var err error
-		verified, err = policy.LoadVerifiedSentryConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), cryptotest.Keyring(t, masterKey))
+		verified, err = policy.LoadVerifiedSentryConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), masterKey)
 		return err
 	})
 	if err != nil {

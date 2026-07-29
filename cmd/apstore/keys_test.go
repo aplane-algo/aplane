@@ -4,19 +4,16 @@
 package main
 
 import (
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 )
 
 func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
-		masterKey := deriveTestMasterKey(t, passphrase)
-		edResult, err := keymgmt.GenerateKey(keystorePaths(), productIdentityID(), "ed25519", cryptotest.Keyring(t, masterKey), nil)
-		crypto.ZeroBytes(masterKey)
+		kr := deriveTestKeyring(t, passphrase)
+		edResult, err := keymgmt.GenerateKey(keystorePaths(), productIdentityID(), "ed25519", kr, nil)
 		if err != nil {
 			t.Fatalf("GenerateKey(ed25519) error = %v", err)
 		}

@@ -854,15 +854,6 @@ func (ir *Runtime) WithKeyring(fn func(*crypto.Keyring) error) error {
 	return ir.keyStore.WithKeyring(fn)
 }
 
-// WithMasterKey runs fn with the cached master key.
-// Returns ErrDecommissioned if the identity has been decommissioned.
-func (ir *Runtime) WithMasterKey(fn func([]byte) error) error {
-	if ir.decommissioned.Load() {
-		return ErrDecommissioned
-	}
-	return ir.keyStore.WithMasterKey(fn)
-}
-
 // SnapshotKeySession returns the current key session under the passphrase lock.
 // Returns nil if the identity is decommissioned.
 func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {

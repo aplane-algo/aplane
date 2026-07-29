@@ -49,19 +49,12 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 				sourceSettings.UserAutoApprove = &userAutoApprove
 			}
 			var backupErr error
-			// Boundary adapter: backup's archive API still takes a raw key
-			// and migrates in slice 3.
-			archiveKey, keyErr := masterKey.CurrentTermKey()
-			if keyErr != nil {
-				return keyErr
-			}
-			defer crypto.ZeroBytes(archiveKey)
 			result, backupErr = backup.CreateKeysArchive(backup.CreateKeysArchiveRequest{
 				Paths:            s.Deps.KeyPaths(),
 				IdentityID:       ir.ID(),
 				ArchivePath:      archivePath,
 				Addresses:        req.Addresses,
-				MasterKey:        archiveKey,
+				Keyring:          masterKey,
 				ExportPassphrase: passphraseBytes,
 				SourceSettings:   sourceSettings,
 			})
@@ -206,20 +199,13 @@ func (s Service) RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBacku
 	var batch *recovered.Batch
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-			// Boundary adapter: backup's recover API still takes a raw key
-			// and migrates in slice 3.
-			recoverKey, keyErr := masterKey.CurrentTermKey()
-			if keyErr != nil {
-				return keyErr
-			}
-			defer crypto.ZeroBytes(recoverKey)
 			var recoverErr error
 			batch, recoverErr = backup.RecoverManagedBackup(
 				s.Deps.KeyPaths(),
 				ir.ID(),
 				archivePath,
 				req.Addresses,
-				recoverKey,
+				masterKey,
 				passphraseBytes,
 				ir.NodeRole(),
 			)

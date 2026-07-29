@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"io"
 	"net/http"
@@ -642,8 +641,8 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	address := logicSigAddressString(t, bytecode)
 	payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "", nil, "1:"+strings.Repeat("b", 64))
-	if err := ir.WithMasterKey(func(mk []byte) error {
-		result, saveErr := keys.SavePayload(ir.KeyPaths(), ir.ID(), payload, cryptotest.Keyring(t, mk))
+	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
+		result, saveErr := keys.SavePayload(ir.KeyPaths(), ir.ID(), payload, mk)
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
 		}
@@ -740,12 +739,12 @@ func TestServiceImportKeyFalcon1024V1PersistsKey(t *testing.T) {
 	}
 
 	var stored *keymgmt.KeyFileInfo
-	if err := ir.WithMasterKey(func(mk []byte) error {
+	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var detectErr error
-		stored, detectErr = keymgmt.DetectKeyInfoFromFileWithMasterKey(result.KeyFile, cryptotest.Keyring(t, mk))
+		stored, detectErr = keymgmt.DetectKeyInfoFromFileWithKeyring(result.KeyFile, mk)
 		return detectErr
 	}); err != nil {
-		t.Fatalf("DetectKeyInfoFromFileWithMasterKey() error = %v", err)
+		t.Fatalf("DetectKeyInfoFromFileWithKeyring() error = %v", err)
 	}
 	if stored.Type != "aplane.falcon1024.v1" {
 		t.Fatalf("stored key type = %q, want aplane.falcon1024.v1", stored.Type)
@@ -814,15 +813,15 @@ func TestServiceImportKeyCanonicalizesAddressListParams(t *testing.T) {
 	}
 
 	var storedParams map[string]string
-	if err := ir.WithMasterKey(func(mk []byte) error {
-		info, detectErr := keymgmt.DetectKeyInfoFromFileWithMasterKey(second.KeyFile, cryptotest.Keyring(t, mk))
+	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
+		info, detectErr := keymgmt.DetectKeyInfoFromFileWithKeyring(second.KeyFile, mk)
 		if detectErr != nil {
 			return detectErr
 		}
 		storedParams = info.Parameters
 		return nil
 	}); err != nil {
-		t.Fatalf("DetectKeyInfoFromFileWithMasterKey() error = %v", err)
+		t.Fatalf("DetectKeyInfoFromFileWithKeyring() error = %v", err)
 	}
 	if storedParams["recipients"] != canonicalRecipients {
 		t.Fatalf("stored recipients = %q, want %q", storedParams["recipients"], canonicalRecipients)
@@ -859,8 +858,8 @@ func registerServiceGenericTemplate(t *testing.T) {
 
 func installServiceGenericTemplate(t *testing.T, ir *identity.Runtime) {
 	t.Helper()
-	if err := ir.WithMasterKey(func(mk []byte) error {
-		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, mk))
+	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
+		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateForPaths(service generic template) error = %v", err)

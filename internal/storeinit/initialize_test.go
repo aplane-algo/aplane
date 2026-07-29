@@ -4,7 +4,6 @@
 package storeinit
 
 import (
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,15 +70,10 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey() error = %v", err)
-	}
-	defer crypto.ZeroBytes(masterKey)
-	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, identityID, cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, identityID, kr); err != nil {
 		t.Fatalf("policy integrity baseline did not verify: %v", err)
 	}
-	role, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, cryptotest.Keyring(t, masterKey))
+	role, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, kr)
 	if err != nil {
 		t.Fatalf("node role integrity baseline did not verify: %v", err)
 	}
@@ -124,19 +118,14 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey() error = %v", err)
-	}
-	defer crypto.ZeroBytes(masterKey)
-	role, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, cryptotest.Keyring(t, masterKey))
+	role, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, kr)
 	if err != nil {
 		t.Fatalf("node role integrity baseline did not verify: %v", err)
 	}
 	if role.Role != noderole.RoleSentry {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSentry)
 	}
-	if _, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, identityID, cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, identityID, kr); err != nil {
 		t.Fatalf("sentry policy integrity baseline did not verify: %v", err)
 	}
 	active, err := genstore.ResolveActive(paths, identityID)

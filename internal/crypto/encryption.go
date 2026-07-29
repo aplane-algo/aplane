@@ -97,14 +97,15 @@ func deriveMasterKeyParams(passphrase, salt []byte, time, memory uint32, threads
 	return argon2.IDKey(passphrase, salt, time, memory, threads, argon2KeyLen)
 }
 
-// EncryptWithTermKey seals plaintext under one keyring term's key, binding
+// encryptWithTermKey seals plaintext under one keyring term's key, binding
 // the term and the object's logical identity into the AEAD's authenticated
 // data. Returns envelope_version 3.
 //
-// The context is required, not optional: it is what stops a file from being
-// opened as a different object. Because it is a parameter rather than a
-// setting, an encrypt that does not name its object cannot compile.
-func EncryptWithTermKey(plaintext, termKey []byte, term int, ctx ObjectContext) ([]byte, error) {
+// Unexported since phase 2: every caller goes through Keyring.Seal, so no
+// code outside this package can hold a raw term key to encrypt with. The
+// context is required rather than optional, which is what stops a file from
+// being opened as a different object.
+func encryptWithTermKey(plaintext, termKey []byte, term int, ctx ObjectContext) ([]byte, error) {
 	if err := ctx.validate(); err != nil {
 		return nil, err
 	}
@@ -114,10 +115,12 @@ func EncryptWithTermKey(plaintext, termKey []byte, term int, ctx ObjectContext) 
 	return sealUnderTerm(plaintext, termKey, term, ctx)
 }
 
-// DecryptWithTermKey opens a term envelope that must name term and hold the
+// decryptWithTermKey opens a term envelope that must name term and hold the
 // object ctx identifies. A wrong key, an edited term header, and an envelope
 // belonging to a different object all fail the same way.
-func DecryptWithTermKey(encryptedJSON, termKey []byte, term int, ctx ObjectContext) ([]byte, error) {
+//
+// Unexported since phase 2: callers go through Keyring.Open.
+func decryptWithTermKey(encryptedJSON, termKey []byte, term int, ctx ObjectContext) ([]byte, error) {
 	if err := ctx.validate(); err != nil {
 		return nil, err
 	}

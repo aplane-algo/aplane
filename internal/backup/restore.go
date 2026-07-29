@@ -489,28 +489,28 @@ func readBackupPayload(keysDir, address string, exportPassphrase []byte) (keyJSO
 //
 // Backup files may contain a BackupBundle (key plus embedded template) or a
 // plain canonical key payload.
-func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphrase []byte) (string, error) {
+func (r Restorer) RestoreKey(keysDir, address string, kr *crypto.Keyring, exportPassphrase []byte) (string, error) {
 	entry, err := r.InspectBackupEntry(keysDir, address, exportPassphrase)
 	if err != nil {
 		return "", err
 	}
 	defer entry.ZeroSecrets()
-	return r.applyInspectedBackupEntry(entry, masterKey)
+	return r.applyInspectedBackupEntry(entry, kr)
 }
 
 // RestoreActiveForRebuild restores one inspected archive entry directly into
 // an offline store being rebuilt. Live restore workflows must recover an
 // inactive batch and activate it through the admin protocol instead.
-func (r Restorer) RestoreActiveForRebuild(keysDir, address string, masterKey, exportPassphrase []byte) (string, error) {
+func (r Restorer) RestoreActiveForRebuild(keysDir, address string, kr *crypto.Keyring, exportPassphrase []byte) (string, error) {
 	entry, err := r.InspectBackupEntry(keysDir, address, exportPassphrase)
 	if err != nil {
 		return "", err
 	}
 	defer entry.ZeroSecrets()
-	return r.applyInspectedBackupEntry(entry, masterKey)
+	return r.applyInspectedBackupEntry(entry, kr)
 }
 
-func (r Restorer) applyInspectedBackupEntry(entry *InspectedBackupEntry, masterKey []byte) (string, error) {
+func (r Restorer) applyInspectedBackupEntry(entry *InspectedBackupEntry, kr *crypto.Keyring) (string, error) {
 	if entry == nil {
 		return "", fmt.Errorf("inspected backup entry is nil")
 	}
@@ -554,11 +554,11 @@ func (r Restorer) applyInspectedBackupEntry(entry *InspectedBackupEntry, masterK
 	if len(templateYAML) > 0 {
 		templateFingerprint, _ = bundledTemplateFingerprint(templateYAML, tmplType)
 	}
-	templateRestorePlan, err := r.buildTemplateRestorePlan(templateYAML, keyType, tmplType, masterKey, signingMeta.SigningMetadataVersion > 0)
+	templateRestorePlan, err := r.buildTemplateRestorePlan(templateYAML, keyType, tmplType, kr, signingMeta.SigningMetadataVersion > 0)
 	if err != nil {
 		return "", err
 	}
-	keyTypeRestorePlan, err := r.buildKeyTypeRestorePlan(keyType, hasLogicSigBytecode, masterKey, signingMeta)
+	keyTypeRestorePlan, err := r.buildKeyTypeRestorePlan(keyType, hasLogicSigBytecode, kr, signingMeta)
 	if err != nil {
 		return "", err
 	}
@@ -613,7 +613,7 @@ func (r Restorer) applyInspectedBackupEntry(entry *InspectedBackupEntry, masterK
 	if err != nil {
 		return "", rollbackPlans(err)
 	}
-	encrypted, err := crypto.EncryptWithTermKey(keyPayload, masterKey, crypto.FirstTerm, credentialContext)
+	encrypted, err := kr.Seal(keyPayload, credentialContext)
 	if err != nil {
 		return "", rollbackPlans(fmt.Errorf("failed to encrypt key: %w", err))
 	}
@@ -714,11 +714,11 @@ func parseRestoreCredentialMetadata(keyJSON []byte) (restoreCredentialMetadata, 
 
 // RestoreTemplate saves a template extracted from a backup bundle to the
 // identity template store.
-func (r Restorer) RestoreTemplate(templateYAML []byte, keyType, tmplType string, masterKey []byte) error {
+func (r Restorer) RestoreTemplate(templateYAML []byte, keyType, tmplType string, kr *crypto.Keyring) error {
 	if err := r.validateKeyTypeAllowed(keyType); err != nil {
 		return err
 	}
-	restorePlan, err := r.buildTemplateRestorePlan(templateYAML, keyType, tmplType, masterKey, false)
+	restorePlan, err := r.buildTemplateRestorePlan(templateYAML, keyType, tmplType, kr, false)
 	if err != nil {
 		return err
 	}
@@ -737,7 +737,7 @@ func (p restorePlan) Apply() (func() error, error) {
 	return p.apply()
 }
 
-func (r Restorer) buildTemplateRestorePlan(templateYAML []byte, keyType, tmplType string, masterKey []byte, standaloneSigningMetadata bool) (restorePlan, error) {
+func (r Restorer) buildTemplateRestorePlan(templateYAML []byte, keyType, tmplType string, kr *crypto.Keyring, standaloneSigningMetadata bool) (restorePlan, error) {
 	if err := validateBackupKeyType(keyType); err != nil {
 		return restorePlan{}, err
 	}
@@ -746,18 +746,18 @@ func (r Restorer) buildTemplateRestorePlan(templateYAML []byte, keyType, tmplTyp
 		if standaloneSigningMetadata {
 			return restorePlan{}, nil
 		}
-		if existingType, _, ok, err := r.loadKeystoreTemplateForKeyType(keyType, masterKey); err != nil {
+		if existingType, _, ok, err := r.loadKeystoreTemplateForKeyType(keyType, kr); err != nil {
 			return restorePlan{}, err
 		} else if ok {
 			if r.keyTypeRecordDisabled(keyType) {
-				return r.enableInstalledTemplatePlan(keyType, existingType, masterKey), nil
+				return r.enableInstalledTemplatePlan(keyType, existingType, kr), nil
 			}
 			return restorePlan{}, nil
 		}
 		if authType, _, ok, err := r.authoritativeTemplateForKeyType(keyType); err != nil {
 			return restorePlan{}, err
 		} else if ok {
-			return r.installLibraryTemplatePlan(keyType, authType, masterKey), nil
+			return r.installLibraryTemplatePlan(keyType, authType, kr), nil
 		}
 		return restorePlan{}, nil
 	}
@@ -806,7 +806,7 @@ func (r Restorer) buildTemplateRestorePlan(templateYAML []byte, keyType, tmplTyp
 			}
 			return restorePlan{}, fmt.Errorf("template conflict for %s: backup template does not match authoritative local definition", keyType)
 		}
-		if existingType, existingYAML, exists, err := r.loadKeystoreTemplateForKeyType(keyType, masterKey); err != nil {
+		if existingType, existingYAML, exists, err := r.loadKeystoreTemplateForKeyType(keyType, kr); err != nil {
 			return restorePlan{}, err
 		} else if exists {
 			if existingType != authType {
@@ -828,14 +828,14 @@ func (r Restorer) buildTemplateRestorePlan(templateYAML []byte, keyType, tmplTyp
 				return restorePlan{}, fmt.Errorf("template conflict for %s: existing keystore template does not match authoritative local definition", keyType)
 			}
 			if r.keyTypeRecordDisabled(keyType) {
-				return r.enableInstalledTemplatePlan(keyType, existingType, masterKey), nil
+				return r.enableInstalledTemplatePlan(keyType, existingType, kr), nil
 			}
 			return restorePlan{}, nil
 		}
-		return r.installLibraryTemplatePlan(keyType, authType, masterKey), nil
+		return r.installLibraryTemplatePlan(keyType, authType, kr), nil
 	}
 
-	if existingType, existingYAML, ok, err := r.loadKeystoreTemplateForKeyType(keyType, masterKey); err != nil {
+	if existingType, existingYAML, ok, err := r.loadKeystoreTemplateForKeyType(keyType, kr); err != nil {
 		return restorePlan{}, err
 	} else if ok {
 		if existingType != tt {
@@ -857,7 +857,7 @@ func (r Restorer) buildTemplateRestorePlan(templateYAML []byte, keyType, tmplTyp
 			return restorePlan{}, fmt.Errorf("template conflict for %s: backup template does not match existing keystore definition", keyType)
 		}
 		if r.keyTypeRecordDisabled(keyType) {
-			return r.enableInstalledTemplatePlan(keyType, existingType, masterKey), nil
+			return r.enableInstalledTemplatePlan(keyType, existingType, kr), nil
 		}
 		return restorePlan{}, nil
 	}
@@ -870,10 +870,10 @@ func (r Restorer) buildTemplateRestorePlan(templateYAML []byte, keyType, tmplTyp
 		return restorePlan{}, fmt.Errorf("template conflict for %s: key type is already provided by a built-in non-template provider", keyType)
 	}
 
-	return r.installIncomingTemplatePlan(keyType, tt, templateYAML, masterKey), nil
+	return r.installIncomingTemplatePlan(keyType, tt, templateYAML, kr), nil
 }
 
-func (r Restorer) buildKeyTypeRestorePlan(keyType string, hasLogicSigBytecode bool, masterKey []byte, signingMeta keys.SigningMetadata) (restorePlan, error) {
+func (r Restorer) buildKeyTypeRestorePlan(keyType string, hasLogicSigBytecode bool, kr *crypto.Keyring, signingMeta keys.SigningMetadata) (restorePlan, error) {
 	if err := validateBackupKeyType(keyType); err != nil {
 		return restorePlan{}, err
 	}
@@ -888,7 +888,7 @@ func (r Restorer) buildKeyTypeRestorePlan(keyType string, hasLogicSigBytecode bo
 		if !lsigprovider.Has(keyType) {
 			return restorePlan{}, fmt.Errorf("key type %s is library-visible but is not registered in this binary", keyType)
 		}
-		return r.activateCompiledProviderPlan(keyType, masterKey), nil
+		return r.activateCompiledProviderPlan(keyType, kr), nil
 	}
 
 	if signingMeta.Category == keys.CategoryGenericLsig {
@@ -928,13 +928,7 @@ func (r Restorer) authoritativeTemplateForKeyType(keyType string) (templatestore
 	return "", nil, false, nil
 }
 
-func (r Restorer) loadKeystoreTemplateForKeyType(keyType string, masterKey []byte) (templatestore.TemplateType, []byte, bool, error) {
-	// Boundary adapter: backup migrates in slice 3 and still threads a raw key.
-	kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
-	if err != nil {
-		return "", nil, false, err
-	}
-	defer kr.Zero()
+func (r Restorer) loadKeystoreTemplateForKeyType(keyType string, kr *crypto.Keyring) (templatestore.TemplateType, []byte, bool, error) {
 	for _, tt := range templatestore.ActiveTemplateTypes() {
 		if !r.templateExists(keyType, tt) {
 			continue
@@ -952,8 +946,8 @@ func (r Restorer) loadKeystoreTemplateForKeyType(keyType string, masterKey []byt
 	return "", nil, false, nil
 }
 
-func (r Restorer) enableInstalledTemplatePlan(keyType string, templateType templatestore.TemplateType, masterKey []byte) restorePlan {
-	_ = masterKey
+func (r Restorer) enableInstalledTemplatePlan(keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) restorePlan {
+	_ = kr
 	return restorePlan{apply: func() (func() error, error) {
 		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
@@ -976,14 +970,8 @@ func (r Restorer) enableInstalledTemplatePlan(keyType string, templateType templ
 	}}
 }
 
-func (r Restorer) installLibraryTemplatePlan(keyType string, templateType templatestore.TemplateType, masterKey []byte) restorePlan {
+func (r Restorer) installLibraryTemplatePlan(keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) restorePlan {
 	return restorePlan{apply: func() (func() error, error) {
-		// Boundary adapter: backup migrates in slice 3.
-		kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
-		if err != nil {
-			return nil, err
-		}
-		defer kr.Zero()
 		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
 			return nil, err
@@ -1014,14 +1002,8 @@ func (r Restorer) installLibraryTemplatePlan(keyType string, templateType templa
 	}}
 }
 
-func (r Restorer) installIncomingTemplatePlan(keyType string, templateType templatestore.TemplateType, templateYAML, masterKey []byte) restorePlan {
+func (r Restorer) installIncomingTemplatePlan(keyType string, templateType templatestore.TemplateType, templateYAML []byte, kr *crypto.Keyring) restorePlan {
 	return restorePlan{apply: func() (func() error, error) {
-		// Boundary adapter: backup migrates in slice 3.
-		kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
-		if err != nil {
-			return nil, err
-		}
-		defer kr.Zero()
 		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
 			return nil, err
@@ -1056,14 +1038,8 @@ func (r Restorer) installIncomingTemplatePlan(keyType string, templateType templ
 	}}
 }
 
-func (r Restorer) activateCompiledProviderPlan(keyType string, masterKey []byte) restorePlan {
+func (r Restorer) activateCompiledProviderPlan(keyType string, kr *crypto.Keyring) restorePlan {
 	return restorePlan{apply: func() (func() error, error) {
-		// Boundary adapter: backup migrates in slice 3.
-		kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
-		if err != nil {
-			return nil, err
-		}
-		defer kr.Zero()
 		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
 			return nil, err

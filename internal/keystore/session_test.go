@@ -222,11 +222,6 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create keystore metadata: %v", err)
 	}
-	masterKey, err := masterKeyRing.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey(): %v", err)
-	}
-	defer crypto.ZeroBytes(masterKey)
 
 	// Generate ed25519 key pair
 	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
@@ -246,9 +241,7 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 		t.Fatalf("MarshalPayload() error = %v", err)
 	}
 
-	encrypted, err := crypto.EncryptWithTermKey(
-		keyJSON, masterKey, crypto.FirstTerm, crypto.AccountKeyContext(testAddr),
-	)
+	encrypted, err := masterKeyRing.Seal(keyJSON, crypto.AccountKeyContext(testAddr))
 	if err != nil {
 		t.Fatalf("Failed to encrypt: %v", err)
 	}
@@ -262,9 +255,7 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 	// Create FileKeyStore and set up cache and master key
 	fileStore := NewFileKeyStoreForPaths(utilkeys.NewPaths(keystoreRoot), "default")
 	fileStore.cache[testAddr] = keys.KeyScanInfo{KeyFile: keyFile, KeyType: "ed25519", Category: keys.CategoryEd25519}
-	if err := fileStore.setKeyringForTest(masterKey); err != nil {
-		t.Fatalf("setKeyringForTest(): %v", err)
-	}
+	fileStore.setKeyringDirectlyForTest(masterKeyRing)
 
 	// Create KeySession with FileKeyStore
 	session := NewKeySession(fileStore)

@@ -16,7 +16,6 @@ import (
 type KeyStore interface {
 	Unlock(passphrase []byte) error
 	WithKeyring(fn func(kr *crypto.Keyring) error) error
-	WithMasterKey(fn func(masterKey []byte) error) error
 	ClearKeys()
 	Scan(passphrase []byte) error
 	GetCache() map[string]string

@@ -27,7 +27,7 @@ func (g *Ed25519Generator) RoutingFamily() string {
 
 // GenerateFromSeed generates an Ed25519 key from a deterministic seed.
 // keyType must be "ed25519".
-func (g *Ed25519Generator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
+func (g *Ed25519Generator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
 	_ = params
 	if keyType != "ed25519" {
@@ -45,7 +45,7 @@ func (g *Ed25519Generator) GenerateFromSeed(ctx context.Context, paths storepath
 	publicKey := privateKey.Public().(ed25519.PublicKey)
 
 	// Save key files
-	keyFiles, err := saveEd25519Keys(paths, identityID, publicKey, privateKey, masterKey)
+	keyFiles, err := saveEd25519Keys(paths, identityID, publicKey, privateKey, kr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save keys: %w", err)
 	}
@@ -61,7 +61,7 @@ func (g *Ed25519Generator) GenerateFromSeed(ctx context.Context, paths storepath
 
 // GenerateFromMnemonic generates an Ed25519 key from Algorand mnemonic words.
 // keyType must be "ed25519".
-func (g *Ed25519Generator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonicStr string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
+func (g *Ed25519Generator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonicStr string, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = params
 	if keyType != "ed25519" {
 		return nil, fmt.Errorf("ed25519 generator only supports keyType \"ed25519\", got %q", keyType)
@@ -79,7 +79,7 @@ func (g *Ed25519Generator) GenerateFromMnemonic(ctx context.Context, paths store
 	defer securecrypto.ZeroBytes(seed)
 
 	// Generate key from seed
-	result, err := g.GenerateFromSeed(ctx, paths, identityID, seed, masterKey, keyType, nil)
+	result, err := g.GenerateFromSeed(ctx, paths, identityID, seed, kr, keyType, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (g *Ed25519Generator) GenerateFromMnemonic(ctx context.Context, paths store
 
 // GenerateRandom generates a new random Ed25519 key.
 // keyType must be "ed25519".
-func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
+func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
 	_ = params
 	if keyType != "ed25519" {
@@ -109,7 +109,7 @@ func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.
 	}
 
 	// Save key files
-	keyFiles, err := saveEd25519Keys(paths, identityID, account.PublicKey, account.PrivateKey, masterKey)
+	keyFiles, err := saveEd25519Keys(paths, identityID, account.PublicKey, account.PrivateKey, kr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save keys: %w", err)
 	}
@@ -124,16 +124,9 @@ func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.
 }
 
 // saveEd25519Keys saves an Ed25519 key under its payload-derived address.
-func saveEd25519Keys(paths storepaths.Paths, identityID string, publicKey []byte, privateKey []byte, masterKey []byte) (*keys.ImportKeyResult, error) {
+func saveEd25519Keys(paths storepaths.Paths, identityID string, publicKey []byte, privateKey []byte, kr *securecrypto.Keyring) (*keys.ImportKeyResult, error) {
 	payload := keys.NewEd25519Payload(publicKey, privateKey)
 	defer payload.ZeroSecrets()
-	// Boundary adapter: the generator interface still threads a raw key and
-	// migrates with the lsig generators in its own slice.
-	kr, err := securecrypto.KeyringFromMasterKeyForMigration(masterKey)
-	if err != nil {
-		return nil, err
-	}
-	defer kr.Zero()
 	return keys.SavePayload(paths, identityID, payload, kr)
 }
 

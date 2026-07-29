@@ -35,11 +35,9 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	}
 
 	address, keyJSON := testEd25519BackupKeyJSON(t)
-	encryptedKey, err := crypto.EncryptWithTermKey(
-		keyJSON, testExportMasterKey, crypto.FirstTerm, crypto.AccountKeyContext(address),
-	)
+	encryptedKey, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.AccountKeyContext(address))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey() error = %v", err)
+		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
@@ -58,6 +56,7 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 		archivePath,
 		nil,
 		noderole.RoleSigner,
+		cryptotest.Keyring(t, testExportMasterKey),
 	)); err != nil {
 		t.Fatalf("CreateKeysArchive() error = %v", err)
 	}
@@ -116,9 +115,7 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
-	encrypted, err := crypto.EncryptWithTermKey(
-		keyJSON, testExportMasterKey, crypto.FirstTerm, crypto.SentryCredentialContext(selector),
-	)
+	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,6 +136,7 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 		archivePath,
 		nil,
 		noderole.RoleSentry,
+		cryptotest.Keyring(t, testExportMasterKey),
 	))
 	if err != nil {
 		t.Fatalf("CreateKeysArchive() error = %v", err)
@@ -164,6 +162,7 @@ func testCreateKeysArchiveRequest(
 	identityID, archivePath string,
 	addresses []string,
 	role noderole.Role,
+	kr *crypto.Keyring,
 ) CreateKeysArchiveRequest {
 	var userAutoApprove *bool
 	if role == noderole.RoleSigner {
@@ -175,7 +174,7 @@ func testCreateKeysArchiveRequest(
 		IdentityID:       identityID,
 		ArchivePath:      archivePath,
 		Addresses:        addresses,
-		MasterKey:        testExportMasterKey,
+		Keyring:          kr,
 		ExportPassphrase: []byte("export-passphrase"),
 		SourceSettings: SourceSettingsSnapshot{
 			UserAutoApprove: userAutoApprove,
@@ -229,23 +228,21 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	}
 
 	address, keyJSON := testEd25519BackupKeyJSON(t)
-	encryptedKey, err := crypto.EncryptWithTermKey(
-		keyJSON, testExportMasterKey, crypto.FirstTerm, crypto.AccountKeyContext(address),
-	)
+	encryptedKey, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.AccountKeyContext(address))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey() error = %v", err)
+		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 
 	// Decryptable but non-canonical payload (pre-cutover shape with alias field).
-	encryptedBad, err := crypto.EncryptWithTermKey(
-		[]byte(`{"key_type":"ed25519","params":{"a":"b"}}`), testExportMasterKey,
-		crypto.FirstTerm, crypto.AccountKeyContext(badAddress),
+	encryptedBad, err := cryptotest.Keyring(t, testExportMasterKey).Seal(
+		[]byte(`{"key_type":"ed25519","params":{"a":"b"}}`),
+		crypto.AccountKeyContext(badAddress),
 	)
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey(bad) error = %v", err)
+		t.Fatalf("Seal(bad) error = %v", err)
 	}
 	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
@@ -265,6 +262,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 		archivePath,
 		nil,
 		noderole.RoleSigner,
+		cryptotest.Keyring(t, testExportMasterKey),
 	))
 	if err != nil {
 		t.Fatalf("CreateKeysArchive() error = %v", err)
@@ -299,6 +297,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 		selectedPath,
 		[]string{badAddress},
 		noderole.RoleSigner,
+		cryptotest.Keyring(t, testExportMasterKey),
 	)); err == nil {
 		t.Fatal("CreateKeysArchive(selected invalid key) should fail closed")
 	}
@@ -314,12 +313,9 @@ func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 	const badAddress = "ONLYINVALIDKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	encryptedBad, err := crypto.EncryptWithTermKey(
-		[]byte(`{"key_type":"ed25519"}`), testExportMasterKey,
-		crypto.FirstTerm, crypto.AccountKeyContext(badAddress),
-	)
+	encryptedBad, err := cryptotest.Keyring(t, testExportMasterKey).Seal([]byte(`{"key_type":"ed25519"}`), crypto.AccountKeyContext(badAddress))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey(bad) error = %v", err)
+		t.Fatalf("Seal(bad) error = %v", err)
 	}
 	badFile := apkeys.AccountKeyFilePath(paths, identityID, badAddress)
 	if err := os.WriteFile(badFile, encryptedBad, fsutil.StoreFilePerm); err != nil {
@@ -333,6 +329,7 @@ func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
 		archivePath,
 		nil,
 		noderole.RoleSigner,
+		cryptotest.Keyring(t, testExportMasterKey),
 	))
 	if err == nil || !strings.Contains(err.Error(), "no exportable keys") {
 		t.Fatalf("CreateKeysArchive() error = %v, want no-exportable-keys failure", err)
@@ -355,7 +352,7 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}
 
-	_, _, err = ExportAllKeys(paths, identityID, srcDir, t.TempDir(), testExportMasterKey, []byte("export-passphrase"))
+	_, _, err = ExportAllKeys(paths, identityID, srcDir, t.TempDir(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "failed to export") {
 		t.Fatalf("ExportAllKeys() error = %v, want decrypt-failure abort", err)
 	}

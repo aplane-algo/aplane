@@ -6,6 +6,7 @@ package identity
 import (
 	"context"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -370,9 +371,9 @@ func TestDecommission(t *testing.T) {
 		t.Fatal("KeySnapshot should return nil maps for decommissioned identity")
 	}
 
-	// WithMasterKey rejected
-	if err := ir.WithMasterKey(func([]byte) error { return nil }); err != ErrDecommissioned {
-		t.Fatalf("WithMasterKey error = %v, want ErrDecommissioned", err)
+	// WithKeyring rejected
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != ErrDecommissioned {
+		t.Fatalf("WithKeyring error = %v, want ErrDecommissioned", err)
 	}
 
 	storedCfg, err := LoadStoredConfig(root, "test")

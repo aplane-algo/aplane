@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -27,7 +26,6 @@ func TestInstallForNewIdentityInstallsDefaultAllowlistTemplatesForSigner(t *test
 	mintFirstGenerationForTest(t, paths, "default")
 	identityID := "default"
 	masterKey := bytes.Repeat([]byte{1}, 32)
-	defer crypto.ZeroBytes(masterKey)
 
 	if err := InstallForNewIdentity(paths, identityID, noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
 		t.Fatalf("InstallForNewIdentity() error = %v", err)
@@ -74,7 +72,6 @@ func TestInstallForNewIdentitySkipsSentryRole(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForTest(t, paths, "default")
 	masterKey := bytes.Repeat([]byte{2}, 32)
-	defer crypto.ZeroBytes(masterKey)
 
 	if err := InstallForNewIdentity(paths, "default", noderole.RoleSentry, cryptotest.Keyring(t, masterKey), nil); err != nil {
 		t.Fatalf("InstallForNewIdentity() error = %v", err)
@@ -92,7 +89,6 @@ func TestInstallForNewIdentityIsIdempotent(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForTest(t, paths, "default")
 	masterKey := bytes.Repeat([]byte{3}, 32)
-	defer crypto.ZeroBytes(masterKey)
 
 	if err := InstallForNewIdentity(paths, "default", noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
 		t.Fatalf("first InstallForNewIdentity() error = %v", err)

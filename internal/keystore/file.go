@@ -140,32 +140,6 @@ func (f *FileKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
 	return fn(f.keyring)
 }
 
-// WithMasterKey is the phase-1 compatibility accessor: it hands out the
-// current term's key bytes so call sites that have not yet moved to
-// WithKeyring keep working. With one term, "current" is the only key there
-// is.
-//
-// The slice is valid only for the duration of fn. It is a private copy, and
-// it is zeroed when fn returns — a caller that retains it past fn reads
-// zeros, not key material. Callers must not zero it themselves.
-//
-// This is deliberately temporary. Phase 2 migrates the remaining callers and
-// deletes this method, which makes completeness a compile error rather than
-// something a lint has to police.
-func (f *FileKeyStore) WithMasterKey(fn func(masterKey []byte) error) error {
-	f.cacheLock.RLock()
-	defer f.cacheLock.RUnlock()
-	if f.keyring == nil {
-		return fmt.Errorf("keystore not unlocked (master key not available): %w", ErrStoreLocked)
-	}
-	key, err := f.keyring.CurrentTermKey()
-	if err != nil {
-		return err
-	}
-	defer crypto.ZeroBytes(key)
-	return fn(key)
-}
-
 // ClearKeys securely zeros every term key and drops the keyring. Called when
 // the signer locks so no key material remains resident.
 func (f *FileKeyStore) ClearKeys() {

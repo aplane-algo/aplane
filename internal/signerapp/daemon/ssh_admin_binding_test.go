@@ -4,7 +4,6 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"os"
@@ -123,29 +122,21 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 	if err != nil {
 		t.Fatalf("CreateKeyringStore(%q): %v", identityID, err)
 	}
-	masterKey, err := masterKeyRing.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey(): %v", err)
-	}
-	if err := policy.SaveStoredConfigWithKeyring(server.dataDir, identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
-		crypto.ZeroBytes(masterKey)
+	if err := policy.SaveStoredConfigWithKeyring(server.dataDir, identityID, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring(%q): %v", identityID, err)
 	}
 	roleDoc, roleBytes, err := noderole.Load(server.keyPaths)
 	if err != nil {
-		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Load node role: %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(server.keyPaths, identityID, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
-		crypto.ZeroBytes(masterKey)
+	if err := noderole.SaveIdentitySidecarWithKeyring(server.keyPaths, identityID, roleBytes, masterKeyRing, time.Now()); err != nil {
 		t.Fatalf("SaveIdentitySidecarWithKeyring(%q): %v", identityID, err)
 	}
-	initialPolicy, err := policyruntime.LoadVerified(server.dataDir, identityID, server.config, cryptotest.Keyring(t, masterKey))
+	initialPolicy, err := policyruntime.LoadVerified(server.dataDir, identityID, server.config, masterKeyRing)
 	if err != nil {
-		crypto.ZeroBytes(masterKey)
 		t.Fatalf("LoadVerified(%q): %v", identityID, err)
 	}
-	crypto.ZeroBytes(masterKey)
+	masterKeyRing.Zero()
 	ks := keystore.NewFileKeyStoreForPaths(server.keyPaths, identityID)
 	if err := ks.Unlock(testPassphrase); err != nil {
 		t.Fatalf("Unlock(%q): %v", identityID, err)

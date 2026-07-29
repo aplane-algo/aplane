@@ -4,7 +4,6 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -351,9 +350,8 @@ func TestBuildIdentityRuntimeLoadsStoredPolicy(t *testing.T) {
 		},
 	}},
 	}
-	masterKey := testMasterKeyForIdentity(t, server.keyPaths, "alice", passphrase)
-	defer crypto.ZeroBytes(masterKey)
-	if err := policy.SaveStoredConfigWithKeyring(root, "alice", stored, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+	masterKey := testKeyringForIdentity(t, server.keyPaths, "alice", passphrase)
+	if err := policy.SaveStoredConfigWithKeyring(root, "alice", stored, masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -495,9 +493,8 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	}
 	maxFee := uint64(1234)
 	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}
-	masterKey := testMasterKeyForIdentity(t, server.keyPaths, "alice", passphrase)
-	defer crypto.ZeroBytes(masterKey)
-	if err := policy.SaveStoredConfigWithKeyring(root, "alice", stored, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+	masterKey := testKeyringForIdentity(t, server.keyPaths, "alice", passphrase)
+	if err := policy.SaveStoredConfigWithKeyring(root, "alice", stored, masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -531,18 +528,14 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	}
 }
 
-func testMasterKeyForIdentity(t *testing.T, paths utilkeys.Paths, identityID string, passphrase []byte) []byte {
+func testKeyringForIdentity(t *testing.T, paths utilkeys.Paths, identityID string, passphrase []byte) *crypto.Keyring {
 	t.Helper()
 	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey() error = %v", err)
-	}
-	return masterKey
+	t.Cleanup(kr.Zero)
+	return kr
 }
 
 func boolPtr(v bool) *bool { return &v }

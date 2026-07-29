@@ -14,10 +14,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestSaveInitialAndVerifyWithMasterKey(t *testing.T) {
+func TestSaveInitialAndVerifyWithKeyring(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	masterKey := []byte("01234567890123456789012345678901")
-	defer apcrypto.ZeroBytes(masterKey)
 
 	roleBytes, doc, err := SaveInitial(paths, RoleSigner, time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -52,7 +51,6 @@ func TestSaveInitialRefusesOverwrite(t *testing.T) {
 func TestVerifyRejectsTamperedNodeRole(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	masterKey := []byte("01234567890123456789012345678901")
-	defer apcrypto.ZeroBytes(masterKey)
 
 	roleBytes, _, err := SaveInitial(paths, RoleSigner, time.Now())
 	if err != nil {
@@ -74,7 +72,6 @@ func TestVerifyRejectsWrongMasterKey(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	masterKey := []byte("01234567890123456789012345678901")
 	wrongKey := []byte("abcdefghijklmnopqrstuvwxyz123456")
-	defer apcrypto.ZeroBytes(masterKey)
 	defer apcrypto.ZeroBytes(wrongKey)
 
 	roleBytes, _, err := SaveInitial(paths, RoleSigner, time.Now())

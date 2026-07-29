@@ -48,13 +48,6 @@ func (f *fakeKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
 	defer kr.Zero()
 	return fn(kr)
 }
-func (f *fakeKeyStore) WithMasterKey(fn func(masterKey []byte) error) error {
-	f.withMKCalled = true
-	if f.withMKErr != nil {
-		return f.withMKErr
-	}
-	return fn(testTemplateMasterKey())
-}
 func (f *fakeKeyStore) Scan(_ []byte) error {
 	f.scanCalled = true
 	if f.onScan != nil {

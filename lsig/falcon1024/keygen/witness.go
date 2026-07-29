@@ -30,7 +30,7 @@ func (g *WitnessFalcon1024Generator) RoutingFamily() string {
 	return witness.Falcon1024V1
 }
 
-func (g *WitnessFalcon1024Generator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string) (*internalkeygen.GenerationResult, error) {
+func (g *WitnessFalcon1024Generator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, kr *securecrypto.Keyring, keyType string, params map[string]string) (*internalkeygen.GenerationResult, error) {
 	_ = ctx
 	_ = params
 	if keyType != witness.Falcon1024V1 {
@@ -49,20 +49,20 @@ func (g *WitnessFalcon1024Generator) GenerateFromSeed(ctx context.Context, paths
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
-	return internalkeygen.SaveWitnessKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
+	return internalkeygen.SaveWitnessKey(paths, identityID, keyType, publicKey, privateKey, kr)
 }
 
-func (g *WitnessFalcon1024Generator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, masterKey []byte, keyType string, params map[string]string) (*internalkeygen.GenerationResult, error) {
+func (g *WitnessFalcon1024Generator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, kr *securecrypto.Keyring, keyType string, params map[string]string) (*internalkeygen.GenerationResult, error) {
 	_ = ctx
 	_ = paths
 	_ = identityID
 	_ = mnemonic
-	_ = masterKey
+	_ = kr
 	_ = params
 	return nil, fmt.Errorf("mnemonic import not supported for key type: %s", keyType)
 }
 
-func (g *WitnessFalcon1024Generator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*internalkeygen.GenerationResult, error) {
+func (g *WitnessFalcon1024Generator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, kr *securecrypto.Keyring, keyType string, params map[string]string) (*internalkeygen.GenerationResult, error) {
 	_ = ctx
 	_ = params
 	if keyType != witness.Falcon1024V1 {
@@ -81,7 +81,7 @@ func (g *WitnessFalcon1024Generator) GenerateRandom(ctx context.Context, paths s
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
-	return internalkeygen.SaveWitnessKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
+	return internalkeygen.SaveWitnessKey(paths, identityID, keyType, publicKey, privateKey, kr)
 }
 
 func (g *WitnessFalcon1024Generator) signerOps() *signerops.Ops {

@@ -444,11 +444,9 @@ func TestLoadBatchRejectsRestoreIDMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(batch) error = %v", err)
 	}
-	plaintext, err := crypto.DecryptWithTermKey(
-		encrypted, masterKey, crypto.FirstTerm, crypto.RecoveredBatchContext(batch.RestoreID),
-	)
+	plaintext, err := cryptotest.Keyring(t, masterKey).Open(encrypted, crypto.RecoveredBatchContext(batch.RestoreID))
 	if err != nil {
-		t.Fatalf("DecryptWithTermKey(batch) error = %v", err)
+		t.Fatalf("decryptWithTermKey(batch) error = %v", err)
 	}
 	defer crypto.ZeroBytes(plaintext)
 	var stored Batch
@@ -463,11 +461,9 @@ func TestLoadBatchRejectsRestoreIDMismatch(t *testing.T) {
 	defer crypto.ZeroBytes(reencoded)
 	// Sealed under the batch's on-disk identity, so the payload's edited
 	// restore ID is what the load path has to catch.
-	reEncrypted, err := crypto.EncryptWithTermKey(
-		reencoded, masterKey, crypto.FirstTerm, crypto.RecoveredBatchContext(batch.RestoreID),
-	)
+	reEncrypted, err := cryptotest.Keyring(t, masterKey).Seal(reencoded, crypto.RecoveredBatchContext(batch.RestoreID))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey(batch) error = %v", err)
+		t.Fatalf("encryptWithTermKey(batch) error = %v", err)
 	}
 	if err := os.WriteFile(path, reEncrypted, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(batch) error = %v", err)

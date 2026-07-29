@@ -413,7 +413,7 @@ func TestGenerateKeySentryComponent(t *testing.T) {
 	}
 }
 
-func TestDetectKeyInfoFromFileWithMasterKeyRejectsPlaintext(t *testing.T) {
+func TestDetectKeyInfoFromFileWithKeyringRejectsPlaintext(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "plain.key")
 	content := []byte(`{"key_type":"test.timed-policy.v1","parameters":{"recipients":"ADDR"}}`)
@@ -421,12 +421,12 @@ func TestDetectKeyInfoFromFileWithMasterKeyRejectsPlaintext(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := DetectKeyInfoFromFileWithMasterKey(keyFile, nil)
+	_, err := DetectKeyInfoFromFileWithKeyring(keyFile, nil)
 	if err == nil {
-		t.Fatal("DetectKeyInfoFromFileWithMasterKey() error = nil, want plaintext rejection")
+		t.Fatal("DetectKeyInfoFromFileWithKeyring() error = nil, want plaintext rejection")
 	}
 	if !strings.Contains(err.Error(), "must be encrypted") {
-		t.Fatalf("DetectKeyInfoFromFileWithMasterKey() error = %v, want encrypted rejection", err)
+		t.Fatalf("DetectKeyInfoFromFileWithKeyring() error = %v, want encrypted rejection", err)
 	}
 }
 
@@ -498,24 +498,22 @@ func canonicalDSAKeyJSON(t *testing.T, keyType string, publicKey []byte) []byte 
 	return keystest.DSALSigKeyJSON(t, keyType, "test.base.v1", publicKey, []byte{0x01}, salted.Bytecode, salted.Counter)
 }
 
-func TestDetectKeyInfoFromFileWithMasterKeyEncrypted(t *testing.T) {
+func TestDetectKeyInfoFromFileWithKeyringEncrypted(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "encrypted.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 	plaintext := canonicalGenericKeyJSON(t, "aplane.falcon1024.v1", map[string]string{"network": "testnet"}, "")
-	encrypted, err := crypto.EncryptWithTermKey(
-		plaintext, masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
-	)
+	encrypted, err := cryptotest.Keyring(t, masterKey).Seal(plaintext, mustCredentialContextForTest(t, keyFile))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey() error = %v", err)
+		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	info, err := DetectKeyInfoFromFileWithMasterKey(keyFile, cryptotest.Keyring(t, masterKey))
+	info, err := DetectKeyInfoFromFileWithKeyring(keyFile, cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("DetectKeyInfoFromFileWithMasterKey() error = %v", err)
+		t.Fatalf("DetectKeyInfoFromFileWithKeyring() error = %v", err)
 	}
 	if info.Type != "aplane.falcon1024.v1" {
 		t.Fatalf("Type = %q, want aplane.falcon1024.v1", info.Type)
@@ -632,115 +630,105 @@ func TestDeleteKey_RenameFailure(t *testing.T) {
 	}
 }
 
-func TestDetectKeyInfoFromFileWithMasterKeyMissingFile(t *testing.T) {
-	_, err := DetectKeyInfoFromFileWithMasterKey("/nonexistent/path.key", nil)
+func TestDetectKeyInfoFromFileWithKeyringMissingFile(t *testing.T) {
+	_, err := DetectKeyInfoFromFileWithKeyring("/nonexistent/path.key", nil)
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
 }
 
-func TestDetectKeyInfoFromFileWithMasterKeyWrongMasterKey(t *testing.T) {
+func TestDetectKeyInfoFromFileWithKeyringWrongMasterKey(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "encrypted.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 	wrongKey := []byte("fedcba9876543210fedcba9876543210")
 	plaintext := []byte(`{"key_type":"test.timed-policy.v1","parameters":{"recipients":"ADDR"}}`)
-	encrypted, err := crypto.EncryptWithTermKey(
-		plaintext, masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
-	)
+	encrypted, err := cryptotest.Keyring(t, masterKey).Seal(plaintext, mustCredentialContextForTest(t, keyFile))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey() error = %v", err)
+		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err = DetectKeyInfoFromFileWithMasterKey(keyFile, cryptotest.Keyring(t, wrongKey))
+	_, err = DetectKeyInfoFromFileWithKeyring(keyFile, cryptotest.Keyring(t, wrongKey))
 	if err == nil {
 		t.Fatal("expected decrypt error, got nil")
 	}
 }
 
-func TestDetectKeyInfoFromFileWithMasterKeyInvalidJSON(t *testing.T) {
+func TestDetectKeyInfoFromFileWithKeyringInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "invalid.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
-	encrypted, err := crypto.EncryptWithTermKey(
-		[]byte(`{invalid`), masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
-	)
+	encrypted, err := cryptotest.Keyring(t, masterKey).Seal([]byte(`{invalid`), mustCredentialContextForTest(t, keyFile))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey() error = %v", err)
+		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err = DetectKeyInfoFromFileWithMasterKey(keyFile, cryptotest.Keyring(t, masterKey))
+	_, err = DetectKeyInfoFromFileWithKeyring(keyFile, cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("expected parse error, got nil")
 	}
 }
 
-func TestGetDisplayTEALWithMasterKeyEncrypted(t *testing.T) {
+func TestGetDisplayTEALWithKeyringEncrypted(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "display.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 	plaintext := canonicalGenericKeyJSON(t, "aplane.display.v1", nil, "#pragma version 8\nint 1")
-	encrypted, err := crypto.EncryptWithTermKey(
-		plaintext, masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
-	)
+	encrypted, err := cryptotest.Keyring(t, masterKey).Seal(plaintext, mustCredentialContextForTest(t, keyFile))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey() error = %v", err)
+		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	teal, err := GetDisplayTEALWithMasterKey(keyFile, cryptotest.Keyring(t, masterKey))
+	teal, err := GetDisplayTEALWithKeyring(keyFile, cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("GetDisplayTEALWithMasterKey() error = %v", err)
+		t.Fatalf("GetDisplayTEALWithKeyring() error = %v", err)
 	}
 	if teal != "#pragma version 8\nint 1" {
 		t.Fatalf("TEAL = %q, want stored source", teal)
 	}
 }
 
-func TestGetDisplayTEALWithMasterKeyWrongMasterKey(t *testing.T) {
+func TestGetDisplayTEALWithKeyringWrongMasterKey(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "display.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 	wrongKey := []byte("fedcba9876543210fedcba9876543210")
 	plaintext := []byte(`{"teal_source":"#pragma version 8\nint 1"}`)
-	encrypted, err := crypto.EncryptWithTermKey(
-		plaintext, masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
-	)
+	encrypted, err := cryptotest.Keyring(t, masterKey).Seal(plaintext, mustCredentialContextForTest(t, keyFile))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey() error = %v", err)
+		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err = GetDisplayTEALWithMasterKey(keyFile, cryptotest.Keyring(t, wrongKey))
+	_, err = GetDisplayTEALWithKeyring(keyFile, cryptotest.Keyring(t, wrongKey))
 	if err == nil {
 		t.Fatal("expected decrypt error, got nil")
 	}
 }
 
-func TestGetDisplayTEALWithMasterKeyInvalidJSON(t *testing.T) {
+func TestGetDisplayTEALWithKeyringInvalidJSON(t *testing.T) {
 	keyFile := filepath.Join(t.TempDir(), "display.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
-	encrypted, err := crypto.EncryptWithTermKey(
-		[]byte(`{invalid`), masterKey, crypto.FirstTerm, mustCredentialContextForTest(t, keyFile),
-	)
+	encrypted, err := cryptotest.Keyring(t, masterKey).Seal([]byte(`{invalid`), mustCredentialContextForTest(t, keyFile))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey() error = %v", err)
+		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err = GetDisplayTEALWithMasterKey(keyFile, cryptotest.Keyring(t, masterKey))
+	_, err = GetDisplayTEALWithKeyring(keyFile, cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("expected parse error, got nil")
 	}

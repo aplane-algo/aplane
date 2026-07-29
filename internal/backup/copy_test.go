@@ -31,9 +31,7 @@ func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
-	encrypted, err := crypto.EncryptWithTermKey(
-		keyJSON, testExportMasterKey, crypto.FirstTerm, crypto.SentryCredentialContext(selector),
-	)
+	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +44,7 @@ func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
-	if _, _, err := ExportKey(paths, identityID, active.KeysDir(), destination, selector, testExportMasterKey, []byte("export-passphrase")); err != nil {
+	if _, _, err := ExportKey(paths, identityID, active.KeysDir(), destination, selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("ExportKey() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(destination, selector+".apb")); err != nil {
@@ -59,9 +57,7 @@ func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
-	encrypted, err := crypto.EncryptWithTermKey(
-		keyJSON, testExportMasterKey, crypto.FirstTerm, crypto.SentryCredentialContext(selector),
-	)
+	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +69,7 @@ func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, _, err = ExportKey(paths, identityID, paths.KeysDir(identityID), t.TempDir(), selector, testExportMasterKey, []byte("export-passphrase"))
+	_, _, err = ExportKey(paths, identityID, paths.KeysDir(identityID), t.TempDir(), selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous managed credential") {
 		t.Fatalf("ExportKey() error = %v, want ambiguity rejection", err)
 	}
@@ -120,7 +116,7 @@ func TestBuildExportPayloadBundlesKeystoreTemplate(t *testing.T) {
 	}
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
-	payload, err := buildExportPayload(paths, identityID, keyJSON, testExportMasterKey)
+	payload, err := buildExportPayload(paths, identityID, keyJSON, cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
 		t.Fatalf("buildExportPayload() error = %v", err)
 	}
@@ -239,7 +235,7 @@ func TestBuildExportPayloadDoesNotBundleLibraryGenericTemplateWithoutKeystoreCop
 		keyType    = "aplane.htlc.v1"
 	)
 
-	payload, err := buildExportPayload(storepaths.NewPaths(t.TempDir()), identityID, testKeyJSON(t, keyType), testExportMasterKey)
+	payload, err := buildExportPayload(storepaths.NewPaths(t.TempDir()), identityID, testKeyJSON(t, keyType), cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
 		t.Fatalf("buildExportPayload() error = %v", err)
 	}
@@ -274,7 +270,7 @@ func TestBuildExportPayloadBundlesLibraryGenericTemplateFromKeystore(t *testing.
 	}
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
-	payload, err := buildExportPayload(paths, identityID, testKeyJSON(t, keyType), testExportMasterKey)
+	payload, err := buildExportPayload(paths, identityID, testKeyJSON(t, keyType), cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
 		t.Fatalf("buildExportPayload() error = %v", err)
 	}
@@ -297,7 +293,7 @@ func TestBuildExportPayloadDoesNotBundleLibraryComposedTemplateWithoutKeystoreCo
 		keyType    = "aplane.falcon1024-allowlist.v1"
 	)
 
-	payload, err := buildExportPayload(storepaths.NewPaths(t.TempDir()), identityID, testKeyJSON(t, keyType), testExportMasterKey)
+	payload, err := buildExportPayload(storepaths.NewPaths(t.TempDir()), identityID, testKeyJSON(t, keyType), cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
 		t.Fatalf("buildExportPayload() error = %v", err)
 	}
@@ -332,7 +328,7 @@ func TestBuildExportPayloadBundlesLibraryComposedTemplateFromKeystore(t *testing
 	}
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeComposed, keytypestate.StateEnabled)
 
-	payload, err := buildExportPayload(paths, identityID, testKeyJSON(t, keyType), testExportMasterKey)
+	payload, err := buildExportPayload(paths, identityID, testKeyJSON(t, keyType), cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
 		t.Fatalf("buildExportPayload() error = %v", err)
 	}
@@ -365,7 +361,7 @@ func TestBuildExportPayloadBundlesKeystoreTemplateEvenWhenProviderRegistered(t *
 	}
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
-	payload, err := buildExportPayload(paths, identityID, testKeyJSON(t, keyType), testExportMasterKey)
+	payload, err := buildExportPayload(paths, identityID, testKeyJSON(t, keyType), cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
 		t.Fatalf("buildExportPayload() error = %v", err)
 	}

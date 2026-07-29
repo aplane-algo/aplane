@@ -1461,7 +1461,7 @@ func (s *componentKeyStore) Delete(context.Context, string) error {
 	return nil
 }
 
-func (s *componentKeyStore) WithMasterKey(func([]byte) error) error {
+func (s *componentKeyStore) WithKeyring(func([]byte) error) error {
 	return nil
 }
 

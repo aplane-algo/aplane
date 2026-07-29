@@ -122,7 +122,7 @@ func (s Service) applyRecoveredBatchTo(
 		if err != nil {
 			return err
 		}
-		_, applyErr := restorer.ApplyRecoveredEntryWithKeyring(entry, masterKey)
+		_, applyErr := restorer.ApplyRecoveredEntry(entry, masterKey)
 		entry.ZeroSecrets()
 		if applyErr != nil {
 			return fmt.Errorf("apply recovered credential %s: %w", meta.Selector, applyErr)

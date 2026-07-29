@@ -99,12 +99,7 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey() error = %v", err)
-	}
-	defer apcrypto.ZeroBytes(masterKey)
-	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), cryptotest.Keyring(t, masterKey))
+	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), kr)
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
@@ -151,12 +146,7 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey() error = %v", err)
-	}
-	defer apcrypto.ZeroBytes(masterKey)
-	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), cryptotest.Keyring(t, masterKey))
+	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), kr)
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
@@ -256,7 +246,7 @@ func TestRestoreKeyRejectsLegacyEnvelopeVersion1Backup(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	keyType, err := restoreKey(backupDir, address, bytes32(0x33), []byte("unused"))
+	keyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, bytes32(0x33)), []byte("unused"))
 	if err == nil {
 		t.Fatal("restoreKey() error = nil, want legacy envelope rejection")
 	}
@@ -281,7 +271,7 @@ func TestRestoreKeyRejectsUnsupportedEnvelopeVersion(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	keyType, err := restoreKey(backupDir, address, bytes32(0x44), []byte("unused"))
+	keyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, bytes32(0x44)), []byte("unused"))
 	if err == nil {
 		t.Fatal("restoreKey() error = nil, want unsupported envelope rejection")
 	}
@@ -328,11 +318,11 @@ func TestRestoreKeyIsIdempotentForSameBackup(t *testing.T) {
 	}
 
 	masterKey := bytes32(0x55)
-	firstType, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase"))
+	firstType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("first restoreKey() error = %v", err)
 	}
-	secondType, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase"))
+	secondType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("second restoreKey() error = %v", err)
 	}
@@ -360,7 +350,7 @@ func TestRestoreTemplateRejectsConflictingDestinationTemplate(t *testing.T) {
 	}
 	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
-	err := restoreTemplate(backupTemplate, keyType, "generic", masterKey)
+	err := restoreTemplate(backupTemplate, keyType, "generic", cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("restoreTemplate() error = nil, want conflict")
 	}
@@ -391,7 +381,7 @@ func TestRestoreTemplateSavesLibraryDefinitionWhenNotInstalled(t *testing.T) {
 		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
 
-	if err := restoreTemplate(templateYAML, "aplane.htlc.v1", "generic", masterKey); err != nil {
+	if err := restoreTemplate(templateYAML, "aplane.htlc.v1", "generic", cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("restoreTemplate() error = %v", err)
 	}
 
@@ -408,7 +398,7 @@ func TestRestoreTemplateRejectsBuiltInProviderCollision(t *testing.T) {
 	masterKey := bytes32(0x88)
 	conflictingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: aplane\nfamily: falcon1024\nversion: 1\ndisplay_name: Backup Override\nteal: |\n  #pragma version 8\n  int 0\n")
 
-	err := restoreTemplate(conflictingTemplate, "aplane.falcon1024.v1", "generic", masterKey)
+	err := restoreTemplate(conflictingTemplate, "aplane.falcon1024.v1", "generic", cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("restoreTemplate() error = nil, want built-in provider conflict")
 	}
@@ -443,7 +433,7 @@ func TestRestoreKeySkipsTemplateConflictForStandaloneKey(t *testing.T) {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 
-	restoredKeyType, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase"))
+	restoredKeyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("restoreKey() error = %v", err)
 	}
@@ -486,7 +476,7 @@ func TestRestoreKeyActivatesLibraryVisibleCompiledProvider(t *testing.T) {
 		t.Fatal("test setup unexpectedly has activation record")
 	}
 
-	restoredKeyType, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase"))
+	restoredKeyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("restoreKey() error = %v", err)
 	}
@@ -519,7 +509,7 @@ func TestRestoreKeyRollsBackCompiledProviderActivationOnKeyWriteFailure(t *testi
 		t.Fatalf("MkdirAll(destPath) error = %v", err)
 	}
 
-	if _, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase")); err == nil {
+	if _, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase")); err == nil {
 		t.Fatal("restoreKey() error = nil, want key write failure")
 	} else if !strings.Contains(err.Error(), "failed to write key file") {
 		t.Fatalf("restoreKey() error = %v, want write failure", err)
@@ -555,7 +545,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 
-	restoredKeyType, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase"))
+	restoredKeyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("restoreKey() error = %v", err)
 	}
@@ -581,7 +571,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 
-	restoredKeyType, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase"))
+	restoredKeyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
 	if err == nil {
 		t.Fatal("restoreKey() error = nil, want missing signing metadata rejection")
 	}
@@ -621,7 +611,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryGenericTemplateWithoutBundle(t *t
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 
-	restoredKeyType, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase"))
+	restoredKeyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("restoreKey() error = %v", err)
 	}
@@ -660,7 +650,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 
-	restoredKeyType, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase"))
+	restoredKeyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("restoreKey() error = %v", err)
 	}
@@ -700,7 +690,7 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 
-	if _, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase")); err != nil {
+	if _, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("restoreKey() error = %v", err)
 	}
 	if !keyTypeDisabled(paths, identityID, keyType) {
@@ -734,7 +724,7 @@ func TestRestoreKeyRollsBackDisabledTemplateStateOnKeyWriteFailure(t *testing.T)
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 
-	if _, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase")); err == nil {
+	if _, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase")); err == nil {
 		t.Fatal("restoreKey() error = nil, want key write failure")
 	} else if !strings.Contains(err.Error(), "failed to write key file") {
 		t.Fatalf("restoreKey() error = %v, want write failure", err)
@@ -791,7 +781,7 @@ func TestRestoreKeyRollsBackTemplateInstallOnKeyWriteFailure(t *testing.T) {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 
-	restoredKeyType, err := restoreKey(backupDir, address, masterKey, []byte("export-passphrase"))
+	restoredKeyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
 	if err == nil {
 		t.Fatal("restoreKey() error = nil, want key write failure")
 	}

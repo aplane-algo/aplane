@@ -95,7 +95,7 @@ func (s cancelAfterGetKeyStore) GetMetadata(context.Context, string) (*keystore.
 	return nil, nil
 }
 func (s cancelAfterGetKeyStore) Delete(context.Context, string) error { return nil }
-func (s cancelAfterGetKeyStore) WithMasterKey(func([]byte) error) error {
+func (s cancelAfterGetKeyStore) WithKeyring(func([]byte) error) error {
 	return nil
 }
 func (s cancelAfterGetKeyStore) Type() string { return "test" }
