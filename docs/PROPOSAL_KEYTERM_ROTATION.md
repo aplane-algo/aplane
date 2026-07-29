@@ -1,6 +1,6 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **proposal — phase 1 design-ready; phase 3 blocked on three items**. Amended across four rounds of design review.
+Status: **proposal — phase 1 gated on one decision; phase 3 blocked on four items**. Amended across five rounds of design review.
 
 Refreshed against the tree after the generation-storage branch merged: the
 design core is unchanged, but the version gate no longer needs a migration
@@ -37,6 +37,18 @@ below:**
 - **the divergence baseline** — mandatory rewrap changes every ciphertext
   digest and so trips the post-activation rollback guard, which compares
   those digests against the at-mint manifest.
+
+A fourth blocker joined them: **generations contain plaintext members**
+(key-type state, witness public metadata) and `seal.json` is unkeyed, so a
+filesystem attacker holding no keys can alter a sealed generation and
+recompute its seal. That predates rotation but rotation's anchoring rules
+have to account for it — see the seal MAC.
+
+Phase 1 is no longer unconditionally ready either. The envelope's AAD
+carries an object context, and phase 1's compatibility writer cannot supply
+one, so the phase rule for context-free files must be decided **before**
+phase 1 ships or everything it writes stops decrypting when phase 3
+enforces the context.
 
 The attacker model is also scoped explicitly: AEAD makes the root
 authentic but not fresh, so replacing `keyring.enc` with an older authentic
@@ -357,6 +369,12 @@ snapshot body to its own file sealed under the target term, and have step
 stays atomic, and a missing or mismatched body fails closed into
 rotation-pending recovery — never into a false-clean state.
 
+The ordering must be explicit, or "fails closed" turns an ordinary rotation
+crash into permanent recovery: write and rename the snapshot body durably,
+sync its directory, and only then commit `keyring.enc` with its digest. A
+crash before the root commit leaves a removable orphan; after it, the
+referenced body is always present.
+
 **Why it is required (the laundering attack).** The window deliberately
 authorizes retiring terms for reads, so the rewrap pass will decrypt
 anything encrypted under one. An attacker holding a compromised old term
@@ -392,8 +410,18 @@ random nonce — so a naive check can only establish that every snapshot input
 was consumed and every expected path now holds *some* target-term
 ciphertext. That leaves output swapping: two valid target-term envelopes
 exchanged between paths. **Extend the GCM additional authenticated data to
-include the object's identity** (its path or selector) alongside the term
-header. A swapped output then fails authentication on open, the one-to-one
+include the object's logical identity** alongside the term header.
+
+That identity must be *logical*, never a physical path. Ciphertext moves
+without re-encryption all over this system: `copyNamespaces` copies a parent
+generation's files byte-for-byte into a child, staging directories are
+renamed into place, `DeleteKey` renames a key into `deleted/keys`, and
+recovered batches are staged then published. Binding a path into the AAD
+would make every one of those moves produce undecryptable data. Bind a
+class-scoped logical context instead — `(artifact class, canonical
+selector)` for managed credentials and templates, `(restore ID, entry ID)`
+for recovered entries — explicitly excluding generation IDs and any
+staging, current, or deleted directory component. A swapped output then fails authentication on open, the one-to-one
 property becomes cryptographic rather than asserted, and it costs one more
 field in an envelope change already committed to happen. Without that, the
 completion check must be described as "all inputs consumed, all outputs on
@@ -460,9 +488,30 @@ deliberately not cached.
 
 - **Anchored generation**: require exact anchor equality, in addition to
   ordinary seal validation.
-- **Unanchored generation**: accept only if every inventory entry is on the
-  current term. That is exactly the population no retired key can have
-  written.
+- **Unanchored generation**: the rule cannot be "every inventory entry is on
+  the current term," because not every entry carries a term. Generations
+  hold plaintext members — key-type state records and witness public
+  metadata are both `json.MarshalIndent` to `WriteFileDurable`, with no
+  encryption — and `seal.json` is unkeyed, so a filesystem attacker holding
+  **no keys at all** can alter a plaintext entry and recompute the seal to
+  match.
+
+  **Seal the seal.** At seal time, MAC the canonical seal with the current
+  term's integrity key. Then an unanchored generation is accepted when its
+  seal MAC verifies under the current integrity term *and* its term-bearing
+  entries are on the current term — which covers plaintext members too,
+  since the MAC spans the whole inventory. At rotation, step 1 pins the
+  seal-and-MAC digest into the new root, so once the former current term is
+  retired and possibly compromised, the root anchor rather than the MAC is
+  authoritative.
+
+  This also closes a weakness that predates rotation: an unkeyed seal has
+  never protected a sealed prior against an attacker with filesystem write
+  access, and rollback trusts sealed priors.
+
+  The proposal must therefore classify inventory entries as term-bearing or
+  plaintext wherever it reasons about terms; several statements above are
+  written as if every entry has one.
 
 **Opening must bind bytes, not just validate the generation.** An
 `OpenSealed(gen, ciphertext)` that takes arbitrary bytes leaves a TOCTOU
@@ -713,6 +762,18 @@ accepts everywhere else.
       key" and every decrypt finds term 1. Independently shippable, and the
       easiest part to review carefully.
 
+      **The AAD context needs a phase rule, or phase 1 writes unreadable
+      files.** Phase 1's compatibility writer has no object context to
+      supply, so if phase 3 begins enforcing contextual AAD, everything
+      phase 1 wrote stops decrypting. Pick one before phase 1 ships: supply
+      the context from the start (preferred — the logical identity is
+      derivable at every write site that has a selector), or version the AAD
+      mode and accept context-free term-1 mutable files only until their
+      first mandatory rewrap, with anchored sealed priors still readable
+      historically. This is why phase 1 cannot be treated as
+      behavior-neutral in the envelope: the header format decision reaches
+      forward into phase 3.
+
       **`changepass` in phases 1-2 keeps today's semantics, which requires
       replacing the term key — not merely rewrapping it.** Today's master
       key is *derived* from the passphrase, so changing the passphrase
@@ -766,6 +827,13 @@ accepts everywhere else.
      test that creates each durable class — managed keys, installed
      templates, recovered batches, policy and node-role sidecars — and
      asserts each carries a term closes that gap from the data side.
+
+     If contextual AAD is adopted, term presence is not enough: the test
+     must also show that the correct logical context decrypts, that a
+     different selector or class fails, and that generation copy and the
+     supported archival moves (`deleted/`, staging publication) preserve
+     the intended context. Compiler gates prove which code path ran; only
+     this proves callers supplied the right logical identity.
 
    **Phase 1 invariant to state explicitly:** the term stamp belongs to the
    envelope writer, not to `Keyring.Seal`. Every v4 write stamps `term: 1`
@@ -931,6 +999,12 @@ is worth repeating here:
   readable. An attacker-injected object stranded on a retired term after
   the window closes is the success case, not a violation — the model
   corrected the invariant, not the design.
+
+  What the models do **not** cover, so nobody mistakes green for complete:
+  envelope AAD and object context, seal authentication, and historical
+  anchors. Those are data-format properties rather than transition ordering,
+  and the artifact-class test plus a future anchors module are where they
+  get checked.
 - **Expect the envelope change to be the risk**, not the keyring type. It
   touches every encrypt/decrypt call site, and a missed one is a file
   written under a term nothing records.
