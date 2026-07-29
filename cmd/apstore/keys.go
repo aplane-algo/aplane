@@ -11,7 +11,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 )
 
@@ -28,13 +27,6 @@ func cmdKeysList() error {
 		return err
 	}
 	defer kr.Zero()
-	// Boundary adapter: this command's key operations migrate in a later
-	// slice and still take raw bytes.
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		return err
-	}
-	defer crypto.ZeroBytes(masterKey)
 
 	report, err := apkeys.ScanKeysDirectoryWithKeyringReport(keystorePaths(), productIdentityID(), kr)
 	if err != nil {

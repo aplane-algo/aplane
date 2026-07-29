@@ -140,11 +140,6 @@ func verifyCurrentGenerationContent(paths storepaths.Paths, identityID string) e
 		return fmt.Errorf("passphrase verification failed: %w", err)
 	}
 	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		return err
-	}
-	defer crypto.ZeroBytes(masterKey)
 
 	templateReport, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates(identityID, kr)
 	if err != nil {
