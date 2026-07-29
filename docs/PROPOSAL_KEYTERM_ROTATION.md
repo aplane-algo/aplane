@@ -1057,6 +1057,60 @@ should be re-read before phase 3 begins, along with
 `docs/formal/rotation_transition.tla`, which checks the transition's
 ordering and the laundering defence mechanically.
 
+## Model review against the shipped implementation
+
+`docs/formal/rotation_transition.tla` was written before phase 1 and 2 landed.
+Re-reading it against the merged code found six places where the model and the
+implementation do not yet meet. None invalidates the model; all are work phase
+3 must do, and three change what the transition costs.
+
+1. **The read-authority function has no counterpart.** The model's
+   `ReadAuthorized(t)` accepts the current term always and a retiring term
+   only while the window is open. `Keyring.Open` looks a term up in
+   `kr.terms` and reads it if present. That is vacuous with one term, but it
+   means R1 and R2 rest on a check that does not exist: if phase 3 leaves a
+   retired term in the keyring after closing the window, it stays readable.
+   `Open` is the enforcement point, and it must consult an authority set
+   rather than membership.
+
+2. **Five model variables have nowhere durable to live.** The module treats
+   `pending`, `retiring`, `snapshot`, `cleanAtCutover`, and `baseline` as
+   surviving a crash. The sealed payload holds `schema`, `current_term`, and
+   `terms`. Extending it changes the file format, which by the store's own
+   rule means bumping `KeyringFileVersion` and the `.keystore` marker version
+   together.
+
+3. **The snapshot cannot be as large as the model implies.** It pins one
+   entry per object, and the root is read under a 1 MiB limit
+   (`maxKeyringBytes`). A store with enough credentials and templates would
+   exceed it. Either the snapshot lives outside the root, or it is a digest
+   over the inventory rather than the inventory itself. This is a design
+   decision phase 3 owes an answer to before it writes the schema.
+
+4. **The snapshot is pinned atomically in the model and cannot be on disk.**
+   Enumerating the store races an attacker writing files. The pin must be
+   taken where concurrent mutation is excluded — changepass already requires
+   generation quiescence and holds the identity mutation lock; term append
+   needs the same, and it should be stated rather than inherited by accident.
+
+5. **Term append must not reuse the changepass swap.** The model's root write
+   is one atomic file write, which `WriteKeyring` provides. changepass instead
+   carries the root through the two-phase `.new`/`.old` swap alongside every
+   data file. Reusing that machinery for append would give up the atomicity
+   R5 depends on.
+
+6. **`StartRotation`'s guard has no counterpart either.** R5 holds because
+   `StartRotation` requires `currentTerm = T1`. The code's current equivalent
+   is stronger and inverted: `OpenKeyring` refuses a multi-term root outright,
+   which is precisely what phase 3 relaxes. The relaxation has to install the
+   real guard in the same change, or R5 goes unenforced.
+
+One thing the re-read confirmed rather than found: the object context added in
+phase 1 does **not** subsume the cutover snapshot. An attacker holding a
+retired term key also controls the filename the context is derived from, so
+they can produce a correctly-contexted envelope. The snapshot remains
+necessary, and the model's silence about context stays conservative.
+
 ## Rough effort
 
 - Envelope header + keyring type + v4 metadata: the core, touching

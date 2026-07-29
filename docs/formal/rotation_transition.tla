@@ -39,6 +39,22 @@ Two negative controls are documented at their guards: removing the
 CloseWindow before BaselineWritten violates R3. Both reproduce the
 review findings mechanically.
 
+Two assumptions this module makes are not yet true of the implementation, and
+are stated here because the model is only as good as the code that matches it
+(the gaps are enumerated in the proposal's model-review section):
+
+  - `ReadAuthorized` has no counterpart. `Keyring.Open` selects a term by
+    membership in the keyring, not by authority, which is vacuous while one
+    term exists and is exactly what must change when a second appears. Open
+    is the enforcement point for R1 and R2; leaving a retired term in the
+    keyring after the window closes would keep it readable and neither
+    invariant would transfer.
+  - `snapshot` is pinned in a single step. Enumerating a real store races an
+    attacker writing files, so the pin must be taken where concurrent
+    mutation is excluded — the equivalent of the generation quiescence and
+    identity mutation lock that changepass already requires. Without that,
+    R2 holds in the model and not on disk.
+
 The module intentionally omits:
 
   - The KEK, the passphrase, and the keyring's wrapping. Rotation's
