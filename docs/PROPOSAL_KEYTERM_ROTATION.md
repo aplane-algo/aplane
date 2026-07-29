@@ -1,6 +1,6 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **proposal — phase 1 gated on one decision; phase 3 blocked on four items**. Amended across five rounds of design review.
+Status: **proposal — phase 1 gated on one decision; phase 3 blocked on four items**. Amended across six rounds of design review; both reviewers now call the design review closed.
 
 Refreshed against the tree after the generation-storage branch merged: the
 design core is unchanged, but the version gate no longer needs a migration
@@ -241,7 +241,7 @@ The keyring exposes distinct authorities rather than one `Open`:
 |---|---|
 | New and current-generation writes | `current_term` only |
 | Reads and sidecar verification during the rewrap window | `current_term` plus `retiring_terms` |
-| Opening a **validated sealed** generation | the historical terms that generation's seal covers |
+| Opening a **validated sealed** generation | the historical terms its seal covers — **and** the anchor rule below, which conditions this row |
 | Live policy / node-role sidecars | the designated current integrity term only |
 
 Verification of a live sidecar must require the current integrity term, not
@@ -258,7 +258,7 @@ two-record crash window at the same root this design just consolidated.
 
 Keeping the window in the keyring makes each step individually crash-safe
 and gives resumption a single source of truth: whoever reads the keyring
-sees the pending transition. `retiring_terms` is a set as reserved generality — every path this document
+sees the pending transition. `retiring_terms` is a set for reserved generality — every path this document
 defines produces exactly one retiring term, since appending while a window
 is open is forbidden and windows close before the next append. A future
 term-GC pass folding several retirements into one transition would produce
@@ -284,7 +284,11 @@ step. Ordering matters because current-term-only authority makes each
 half-finished state visible to the next reader.
 
 1. Under the identity mutation lock, atomically write the keyring under the
-   new KEK with the appended term **already promoted**:
+   new KEK with the appended term **already promoted**. Budget this step as
+   a full-store scan rather than a metadata write: it hashes every retained
+   sealed generation (for anchors) and every mutable consumer (for the
+   cutover snapshot) before the commit, all under the lock. The write itself
+   is atomic; the preparation is not cheap:
    `current_term = to`, `retiring_terms = {from}`, `rewrap_pending`. One
    durable write. From this instant `Seal` and `SignIntegrity` use the
    target term, and the window authorizes reads and sidecar verification
@@ -454,11 +458,20 @@ be laundered into a store whose root is the one the transition committed.**
 Replacing the root is not injection into the store — it is substitution of
 the store, which no in-store cryptography detects.
 
-Two things make that boundary tolerable. Root replacement is loud: the
-operator's new passphrase stops working, since the reverted root only opens
-with the old one. And an attacker with write access to the identity
-directory can already substitute the entire store, so root replacement
-grants nothing that whole-store substitution did not.
+Three things make that boundary tolerable, and the third is the strongest.
+Root replacement is loud: the operator's new passphrase stops working, since
+the reverted root only opens with the old one. An attacker with write access
+to the identity directory can already substitute the entire store, so root
+replacement grants nothing whole-store substitution did not.
+
+And a reverted root is **store-breaking, not quietly subversive**. From step
+1 onward the live store progressively moves onto the target term, and after
+step 5 all of it is there — but a reverted root does not contain the target
+term key, so every current-generation file fails to decrypt and the daemon
+fails closed everywhere. The attacker does not gain a store operating under
+old-term authority; they gain a store that will not open. To get the former
+they would have to revert the files as well as the root, which is exactly
+whole-store substitution, already excluded.
 
 State it in the threat model rather than leaving "nothing can be laundered"
 to be read as unconditional.
@@ -519,9 +532,24 @@ window: validation reads the files, then rollback reads them again, and the
 filesystem attacker swaps one in between. Current validation already
 performs separate reads, and even `VerifyFileAgainstSeal` hashes a file
 without returning the bytes it verified. Historical opening must therefore
-hash the exact buffer it is about to decrypt and match it against the
-anchored `(generation ID, path, digest, size)` entry — whole-generation
-validation is not sufficient under this attacker model.
+hash the exact buffer it is about to decrypt and match it against a
+per-file entry — whole-generation validation is not sufficient under this
+attacker model.
+
+**Anchoring is two-level, and the levels must not be confused.** Putting
+per-file entries in the root would make it O(files across every retained
+generation), which is precisely the growth the cutover snapshot was
+restructured to avoid. Instead:
+
+- the **root** anchors one digest per retained sealed generation — that of
+  its `seal.json` (with the seal MAC, above);
+- the **anchor-verified seal's own `Inventory`** supplies the per-file
+  `(path, digest, size, term)` entries;
+- historical opening hashes the buffer it will decrypt and matches that
+  per-file entry.
+
+Same binding, small root. An implementer reading only one of the two
+paragraphs above could have built either level, so both are named here.
 
 **Anchor lifecycle:** pruning a generation cannot drop its anchor, since
 prune has no KEK. Stale anchors accumulate in the root until the next
