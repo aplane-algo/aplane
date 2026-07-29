@@ -37,7 +37,7 @@ func (m Model) canTrackLocalIdle() bool {
 	if m.connectionState != ConnectionConnected || m.adminClient == nil {
 		return false
 	}
-	// Recovery mode holds the master key resident with recovery-admin
+	// Recovery mode holds the keyring resident with recovery-admin
 	// operations live; a walked-away operator must not leave it available
 	// indefinitely. Batch state is durable, so an idle disconnect
 	// mid-recovery loses nothing.

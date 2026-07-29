@@ -87,7 +87,7 @@ func ParseBackup(decryptedJSON []byte) (keyJSON []byte, templateYAML []byte, tem
 }
 
 // ExportKey exports a single key file from the keystore to a standalone backup.
-// It decrypts the key with the store's master key, then re-encrypts it with the
+// It decrypts the key with the store's keyring, then re-encrypts it with the
 // export passphrase using standalone encryption (envelope_version 2).
 // If the key is template-backed, the template YAML is bundled into the same
 // encrypted payload (no separate .template file) when an installed
@@ -259,7 +259,7 @@ func findKeystoreTemplate(paths storepaths.Paths, identityID, keyType string) (t
 }
 
 // ExportAllKeys exports all managed credential files from the keystore to a standalone backup directory.
-// Each file is decrypted with the store's master key and re-encrypted with the export
+// Each file is decrypted with the store's keyring and re-encrypted with the export
 // passphrase using standalone encryption (envelope_version 2).
 // No .keystore file is written — each backup file is self-contained.
 //

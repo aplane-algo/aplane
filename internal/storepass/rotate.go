@@ -221,7 +221,7 @@ func scanTargets(
 	// Rotation requires generation quiescence: it rewrites only what it can
 	// see through the resolved current namespaces, so a retained prior
 	// generation would silently keep material encrypted under the old
-	// master key and make generation rollback produce an unreadable store.
+	// term key and make generation rollback produce an unreadable store.
 	if err := requireGenerationQuiescence(paths, identityID); err != nil {
 		return nil, nil, nil, err
 	}

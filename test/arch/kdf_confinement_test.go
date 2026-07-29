@@ -87,6 +87,23 @@ func TestRawTermKeysAreNotAdoptedOutsideTests(t *testing.T) {
 	})
 }
 
+// TestTestFixturesStayOutOfProduction proves the keyring test fixture is not
+// reachable from a shipped binary.
+//
+// cryptotest exists to build a keyring from known bytes, which is exactly the
+// capability production must not have. An import from a non-test file would
+// route around both gates above without tripping either.
+func TestTestFixturesStayOutOfProduction(t *testing.T) {
+	forEachProductionFile(t, func(rel string, parsed *ast.File) {
+		for _, spec := range parsed.Imports {
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err == nil && strings.HasSuffix(path, "/internal/crypto/cryptotest") {
+				t.Errorf("%s imports the cryptotest fixture; it is for tests only", rel)
+			}
+		}
+	})
+}
+
 // forEachProductionFile parses every non-test Go file in the repository,
 // ignoring build tags so tagged production code is included.
 func forEachProductionFile(t *testing.T, visit func(rel string, parsed *ast.File)) {

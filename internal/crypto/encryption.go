@@ -82,10 +82,10 @@ func IsEncrypted(data []byte) bool {
 }
 
 // ============================================================================
-// Master Key encryption (envelope_version 1)
+// Term encryption (envelope_version 3)
 // ============================================================================
-// These functions use a pre-derived master key instead of per-file PBKDF2.
-// The master key is derived once at unlock time from the keystore salt.
+// These functions seal and open under a keyring term's key. Callers reach them
+// through Keyring.Seal and Keyring.Open; the key never leaves this package.
 
 const (
 	keystoreMetaFile = ".keystore"

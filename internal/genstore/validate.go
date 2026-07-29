@@ -21,7 +21,7 @@ import (
 // and still succeeds, and reload audits rejected keys rather than failing —
 // those semantics cannot back "selected generation fails validation →
 // recovery". Content-level (decryption) validation happens at reload with
-// the master key; everything structural and digest-shaped is enforced here.
+// the keyring; everything structural and digest-shaped is enforced here.
 
 // ValidateCurrent structurally validates the generation CURRENT selects:
 // manifest present, schema-valid, and complete; only permitted entries in

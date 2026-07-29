@@ -93,7 +93,7 @@ func (r *Runtime) PromoteRecoveryToUnlocked() bool {
 	return true
 }
 
-// SetRecovery marks the runtime master-key-available for explicit recovery
+// SetRecovery marks the runtime keyring-available for explicit recovery
 // administration without permitting signing.
 func (r *Runtime) SetRecovery() {
 	r.stateMu.Lock()
@@ -128,7 +128,7 @@ func (r *Runtime) Lock() bool {
 	return true
 }
 
-// TryRecovery runs the master-key unlock function and enters recovery state
+// TryRecovery runs the keyring unlock function and enters recovery state
 // unless a concurrent lock wins.
 func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 	r.stateMu.RLock()

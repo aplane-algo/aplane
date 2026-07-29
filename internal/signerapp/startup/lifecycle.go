@@ -103,7 +103,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 
 	if plan.Registry != nil {
 		if plan.Info != nil {
-			plan.Info("zeroing cached keys and master key")
+			plan.Info("zeroing cached keys and the keyring")
 		}
 		for _, rt := range plan.Registry.All() {
 			rt.Destroy()

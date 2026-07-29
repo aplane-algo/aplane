@@ -60,10 +60,9 @@ func NewFileKeyStoreForPaths(paths storepaths.Paths, identityID string) *FileKey
 // Unlock opens the store's keyring with the passphrase and holds it for the
 // session.
 //
-// The keyring replaces the derived master key: a successful unwrap is the
-// passphrase check, so there is no separate verifier to consult. Callers do
-// not receive key material — every caller of the old InitializeMasterKey
-// discarded it, and the keyring hands out operations instead.
+// A successful unwrap is the passphrase check, so there is no separate
+// verifier to consult. Callers receive no key material: the keyring hands out
+// operations, not bytes.
 func (f *FileKeyStore) Unlock(passphrase []byte) error {
 	keystoreRoot := f.paths.KeystoreMetadataDir(f.identityID)
 	kr, err := crypto.OpenKeyringStore(keystoreRoot, passphrase)

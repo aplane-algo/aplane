@@ -485,7 +485,7 @@ func readBackupPayload(keysDir, address string, exportPassphrase []byte) (keyJSO
 // RestoreKey restores one .apb backup file into the restorer identity.
 // keysDir is the directory containing .apb backup files. Backup files use
 // standalone encryption (envelope_version 2) and are decrypted with the export
-// passphrase. Restored key files use master-key encryption.
+// passphrase. Restored key files are sealed under the destination keyring.
 //
 // Backup files may contain a BackupBundle (key plus embedded template) or a
 // plain canonical key payload.

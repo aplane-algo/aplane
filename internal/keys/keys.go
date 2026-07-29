@@ -249,7 +249,7 @@ func ReadAndDecryptFile(path string, kr *crypto.Keyring, ctx crypto.ObjectContex
 
 	decrypted, err := kr.Open(data, ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt %s with master key: %w", entityName, err)
+		return nil, fmt.Errorf("failed to decrypt %s: %w", entityName, err)
 	}
 	return decrypted, nil
 }
@@ -264,8 +264,8 @@ func ReadDecryptedKeyJSONWithKeyring(keyFile string, kr *crypto.Keyring) ([]byte
 	return ReadAndDecryptFile(keyFile, kr, ctx, "key file")
 }
 
-// ScanKeysDirectoryWithKeyring scans the identity-scoped keys subdirectory using a master key for decryption.
-// Only supports envelope_version 2 files.
+// ScanKeysDirectoryWithKeyring scans the identity-scoped keys subdirectory,
+// opening each credential with the keyring. Only term envelopes are read.
 func ScanKeysDirectoryWithKeyring(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
@@ -303,8 +303,8 @@ func ScanKeysDirectoryWithKeyringReportActive(active storepaths.ActivePaths, kr 
 }
 
 // scanKeysDirectoryInternalReport is the shared implementation for scanning
-// keys. The decryptFunc parameter allows using either passphrase or master key
-// decryption.
+// keys. The decryptFunc parameter lets the caller supply either passphrase or
+// keyring decryption.
 func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
 	keysMap := make(map[string]KeyScanInfo)
 	addressFiles := make(map[string][]string)
