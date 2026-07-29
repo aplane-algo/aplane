@@ -185,7 +185,7 @@ Key/template watching is identity-owned:
 
 Reload order is:
 
-1. master key,
+1. keyring,
 2. template registration,
 3. key scan,
 4. index replacement,
@@ -321,7 +321,7 @@ against pre-reload state of an earlier one.
 
 ```text
 ReloadSucceeds(runtime) =>
-  steps = (master_key, template_registration, key_scan,
+  steps = (keyring, template_registration, key_scan,
           index_replacement, session_activation, notifications)
   forall i < j: steps[i] completes before steps[j] begins
 ```

@@ -186,7 +186,7 @@ before the command reports success.
 `apstore` reports the archive checksum and size after creation.
 
 It does **not** include:
-- the store `.keystore` metadata file
+- the store's `keyring.enc` root and `.keystore` marker
 - the live signer token
 - any unlocked runtime state
 - algod URLs, algod tokens, endpoints, or other network credentials
@@ -230,10 +230,13 @@ Before using apsigner for the first time, you must initialize the keystore:
 ./apstore initialize --role sentry
 ```
 
-This creates the identity-scoped `.keystore` metadata file containing:
-- Master salt for key derivation (Argon2id)
-- Passphrase verification check
-- Explicit Argon2id KDF parameters for current-format stores
+This creates the identity-scoped `keyring.enc` root containing:
+- Explicit Argon2id KDF parameters and the salt, in the clear
+- The store's key material, sealed under the passphrase-derived key
+
+Opening the root is itself the passphrase check, so there is no separate
+verifier. It also writes the `.keystore` format marker, which records only the
+version and layout.
 
 It also creates the identity-scoped `aplane.token` if one does not already
 exist. Normal clients should use the operator-approved `request-token`
@@ -250,7 +253,7 @@ sentry nodes use separate top-level signer data directories.
 
 `apstore initialize` is a local bootstrap command and does not require
 `apsigner` to be running. It is accepted only before the identity has a
-`.keystore` file; if a partial or existing identity directory is present, move
+`keyring.enc` file; if a partial or existing identity directory is present, move
 it aside explicitly before trying to initialize again.
 
 For non-interactive or scripted use (e.g., CI, automated provisioning), set `APSIGNER_PASSPHRASE` to skip the interactive prompt:
@@ -289,9 +292,10 @@ When run against systemd data, `apstore` returns managed store files to the
 signer data directory owner/group after successful mutations, while
 `appass-systemd-creds` files remain root-owned.
 
-This safely re-encrypts all keys, templates, and published recovered-batch
-files, and re-signs the policy and node-role integrity sidecars with the new
-master key, using a two-phase atomic operation. Rotation rejects unresolved
+A passphrase change generates a fresh key for the store rather than deriving
+one from the passphrase, then safely re-encrypts all keys, templates, and
+published recovered-batch files and re-signs the policy and node-role integrity
+sidecars under it, using a two-phase atomic operation. Rotation rejects unresolved
 recovered-batch state instead of silently leaving it under the old key:
 1. **Phase 1**: Creates new encrypted files (`.new`) and verifies each one
 2. **Phase 2**: Atomically swaps old files for new files
@@ -454,7 +458,7 @@ conflicting keys informationally and never collects that consent.
 
 **Note:** `apstore restore` operates on archives in the managed backup locker;
 it does not restore directly from extracted directories. Backups do not include
-a `.keystore` metadata file. The backup passphrase is the export passphrase you
+the store's `keyring.enc` root. The backup passphrase is the export passphrase you
 entered when the backup was created, and it may differ from your current store
 passphrase.
 
@@ -507,7 +511,7 @@ policy documents.
 The archived policy sidecars are source-store provenance material. They are not
 destination restore artifacts and should not be copied into the active identity
 directory. The destination cannot verify the archived HMAC without the source
-master key. Backup creation verified the live source policy before copying it;
+term key. Backup creation verified the live source policy before copying it;
 activation review treats the archived policy as source material and the
 destination policy as authoritative.
 
@@ -623,7 +627,7 @@ not already exist.
 ```
 
 If an existing keystore or identity directory is present, move it aside
-explicitly before rebuilding. `rebuild` creates fresh `.keystore` metadata,
+explicitly before rebuilding. `rebuild` creates a fresh `keyring.enc` root,
 restores keys from the backup archive, and writes a new store encrypted under
 the new store passphrase you enter. Rebuild uses `manifest.json`
 `source_node_role` metadata as the default destination role when present.
@@ -650,7 +654,7 @@ put these files in the signer data directory or import them with `apstore`.
 
 Sentry-role witnesses are different operational custody of the same key form:
 they are stored under the sentry identity as `<WitnessKeyID>.sen`, encrypted by
-that identity's master key, included in normal `.apb` backup/restore, and usable
+that identity's term key, included in normal `.apb` backup/restore, and usable
 only for the sentry component-signing domain. Account authority remains in
 `<AlgorandAddress>.key`.
 

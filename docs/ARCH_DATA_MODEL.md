@@ -135,8 +135,9 @@ DTOs and contract fixtures.
 | Signing identity | Signer identity | `identities/<identity>/` | `identity.Runtime` | HTTP identity routing, admin session target | `internal/signerapp/identity` |
 | Identity config | Signer identity | `identities/<identity>/config.yaml` (parsed as `identity.StoredConfig`) | `identity.EffectiveConfig` (resolved, excluding key-class role) | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
 | Unlock config | Signer identity | `identities/<identity>/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/unlockconfig` (identity re-exports helpers), `cmd/appass` |
-| Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
-| Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
+| Keyring root | Signer identity | `identities/<identity>/keyring.enc` (`aplane.keyring.v1`) | term keys after unlock | none | `internal/crypto`, `internal/keystore` |
+| Keystore marker | Signer identity | `identities/<identity>/.keystore` | store format gate only | none | `internal/crypto` |
+| Term keys/session | Signer identity runtime | unsealed from `keyring.enc`, resident only while unlocked | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Account authority | Signer identity | `identities/<identity>/keys/<address>.key` | address -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
 | Sentry witness authority | Sentry identity | `identities/<identity>/keys/<witness_key_id>.sen` | Witness Key ID -> witness credential index | `/keys`, sentry component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
 | Sentry public sidecar | Signer identity | `identities/<identity>/keys/<witness_key_id>.wit.json` | public sentry-key export metadata | `apstore sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
@@ -183,7 +184,7 @@ Signer data dir
   -> process config
   -> identity registry
       -> identity runtime
-          -> keystore metadata -> derived master key -> key session
+          -> keyring.enc -> unsealed term keys -> key session
           -> key files -> runtime key indexes -> /keys and signing
           -> sentries public references -> /keytypes generation options
           -> key type state + installed templates -> /keytypes and generation
@@ -196,7 +197,7 @@ Signer data dir
 The strongest authority chain is:
 
 ```text
-identity master key
+identity term key
   -> decrypts key files and installed templates
   -> derives policy integrity key used to verify policy.yaml sidecar
   -> enables runtime signing session
@@ -252,8 +253,10 @@ identities/<identity>/
     keys/*.wit.json        # public sentry metadata sidecar (not private authority)
     keytypes/*.json        # key-type state records
     keytypes/*.template    # encrypted template documents
-  .keystore                # version 3 + generations/v1 layout tag (the only
-                           # supported store format)
+  keyring.enc              # cryptographic root: KDF header plus the sealed
+                           # term set (aplane.keyring.v1)
+  .keystore                # static marker: version 4 + keyring/v1 layout, the
+                           # only supported store format
   node.yaml.hmac
   aplane.token
   config.yaml
@@ -272,8 +275,9 @@ identities/<identity>/
 ```
 
 Recovered batches are inactive, identity-scoped recovery state. Their metadata
-and entries are authenticated encryption under the destination identity master
-key, but they are not managed `.key` or `.sen` files and have no signing-runtime
+and entries are authenticated encryption under the destination identity term
+key, bound to the `recovered-batch` and `recovered-entry` object classes, but
+they are not managed `.key` or `.sen` files and have no signing-runtime
 projection. The batch commits to each exact entry plaintext, and each entry
 also carries its restore ID. Batch v1 may add optional source-context fields;
 absence means `missing` to current readers. Published batch plaintext is
@@ -282,7 +286,7 @@ passphrase rotation preserves exact plaintext bytes, including unknown
 additive fields. Before rotation, the recovered
 store removes exact `.new`/`.old` siblings after the canonical file validates,
 or restores a missing/invalid canonical file only from an exact sibling that
-validates under the current master key. Unknown state fails closed. Directories
+validates under the current term key. Unknown state fails closed. Directories
 prefixed `.recovering-` are unpublished staging state and must be ignored by
 inventory operations. Activation consumes a batch by minting a new generation
 behind a single durable `CURRENT` flip and deletes the batch after reload
@@ -308,7 +312,8 @@ identity-scoped.
 
 ### Key Files
 
-Key files are encrypted JSON payloads using master-key encryption. The current
+Key files are encrypted JSON payloads in the term envelope, bound to the
+account address or Witness Key ID they belong to. The current
 payload families are:
 
 | Category | Meaning |
@@ -452,8 +457,8 @@ policy.yaml
 policy.yaml.hmac
 ```
 
-The HMAC authenticates exact YAML bytes with a key derived from the identity
-master key. Policy load verifies the sidecar before applying policy; a missing
+The HMAC authenticates exact YAML bytes with a key derived from the identity's
+current term key. Policy load verifies the sidecar before applying policy; a missing
 or mismatched sidecar fails closed according to the policy contract.
 
 `policy.yaml` is parsed according to node role. On signer nodes, it is the
@@ -780,8 +785,8 @@ projections of shell application results, not a separate backend model.
 
 ### Unlock And Reload
 
-1. Verify passphrase against `.keystore`.
-2. Derive master key.
+1. Open `keyring.enc` with the passphrase; the unwrap is the check.
+2. Hold the unsealed term keys for the unlocked session.
 3. Verify root `node.yaml` against the identity's role HMAC sidecar.
 4. Verify and load the node-role policy domain from `policy.yaml`.
 5. Apply node role gates.
@@ -804,7 +809,7 @@ current. Existing key signing still depends on key files.
 | Disable YAML template | set state disabled after unused-key guard | hidden from discovery/generation |
 | Remove YAML template | archive `.template`, delete record after unused-key guard | inactive and outside active scans |
 
-Unused-key guards require the identity master key because they scan encrypted
+Unused-key guards require the unlocked keyring because they scan encrypted
 keys.
 
 ### Signing Lifecycle
@@ -896,7 +901,7 @@ credentials directly because no live signer identity is being mutated.
 | Data | Sensitivity | Handling rule |
 |------|-------------|---------------|
 | Passphrase | secret | parsed into mutable buffers where possible; zero promptly |
-| Master key | secret | derived at unlock; cached only while unlocked; zero on lock |
+| Term keys | secret | unsealed from `keyring.enc` at unlock; cached only while unlocked; zeroed on lock |
 | `.key` account private material | secret | encrypted at rest; decrypted on demand |
 | `.sen` sentry witness material | secret | encrypted at rest; usable only in the sentry component-signing domain |
 | External `.wit` contract-admin private material | secret | standalone `aplane.witness-key-bundle.v1`; never signer-managed; not backed up by `apstore` |

@@ -85,7 +85,7 @@ The configured `passphrase_timeout` is implemented as an apadmin-local idle
 disconnect timer. Keyboard input rearms the timer. When the timer expires,
 apadmin closes its authenticated admin connection. Apsigner then observes the
 disconnect and applies its signer-owned `lock_on_disconnect` setting, which may
-lock the identity and clear the master-key session.
+lock the identity and clear the term-key session.
 
 The signer therefore owns the lock transition and key zeroing, but it does not
 own the event that normally initiates idle expiration. As long as the
@@ -115,7 +115,7 @@ The signer can enforce security properties that do not depend on claims of
 human activity:
 
 - an absolute authenticated-session lifetime;
-- an absolute unlock or master-key lease;
+- an absolute unlock or term-key lease;
 - a server-observed protocol-inactivity timeout;
 - forced closure of expired sessions;
 - cancellation of pending approvals on expiration; and
@@ -192,7 +192,7 @@ but silently activating the key under different policy creates room for a
 materially different authorization result.
 
 The archived policy sidecar also has a trust limitation. Its HMAC was produced
-with a key derived from the source identity master key. The destination cannot
+with a key derived from the source identity's term key. The destination cannot
 independently authenticate that HMAC without source-store authority. The
 snapshot can be compared and displayed as source-provenance material, but it
 must not be represented as destination-verified policy merely because it was

@@ -340,7 +340,7 @@ apsigner supports four startup modes that share a unified initialization path:
 | **Headless** | `passphrase_command_argv` config | Unlocked | Automation, CI/CD, systemd services |
 | **Locked** | apadmin IPC connection | Locked | Interactive operation, manual approval |
 | **Test** | `TEST_PASSPHRASE` env | Unlocked | Test harness / integration environments |
-| **Forced locked** | No `.keystore` present | Locked | Uninitialized signer state |
+| **Forced locked** | No `keyring.enc` present | Locked | Uninitialized signer state |
 
 Before these modes are selected, a signer data directory containing `.prod` is
 treated as systemd-managed. Manual `apsigner` startup is refused unless the
@@ -368,7 +368,7 @@ can be discovered, generated, or imported.
 
 Each identity owns an `identity.Runtime` containing:
 - key maps (`keys`, `keyTypes`, `keyLsigSizes`) protected by `keysLock`
-- key session and master key access protected by `passphraseLock`
+- key session and keyring access protected by `passphraseLock`
 - approval coordinator (atomic pointer)
 - effective policy config
 - lock state

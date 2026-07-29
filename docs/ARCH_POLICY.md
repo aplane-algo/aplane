@@ -51,7 +51,7 @@ identities/<identity>/policy.yaml.hmac
 ```
 
 The HMAC covers the exact YAML bytes for the document and uses a key derived
-from the identity master key. Sidecar metadata such as signing time, policy
+from the identity's current term key. Sidecar metadata such as signing time, policy
 SHA-256, and file mtime is diagnostic; the HMAC is the security check. After
 the signed baseline exists, a missing or mismatched sidecar fails closed
 instead of loading defaults. On reload failure, the previous in-memory policy
@@ -80,7 +80,8 @@ identities/<identity>/policy.yaml
 identities/<identity>/policy.yaml.hmac
 ```
 
-The sidecar uses the policy integrity key derived from the identity master key.
+The sidecar uses the policy integrity key derived from the identity's current
+term key.
 Unlock/reload verifies the active document before publishing runtime state; a
 missing, malformed, or mismatched sidecar fails closed.
 
@@ -892,7 +893,7 @@ policy/policy.yaml.hmac
 
 The backup path verifies the live policy before copying that snapshot. Recovery
 records the archived YAML and digest as source material but cannot verify the
-source HMAC with the destination master key. Review compares the parseable
+source HMAC with the destination term key. Review compares the parseable
 source projection with the current verified destination policy, foregrounding
 hard rejects, ceilings, review requirements, routing restrictions, and the
 known effective destination `user_auto_approve` mode. It reports a factual

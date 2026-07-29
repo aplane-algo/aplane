@@ -309,7 +309,8 @@ This creates `/tmp/aplane-test-env/` containing:
 │   └── identities/default/
 │       ├── .ssh/
 │       │   └── authorized_keys        # Identity-scoped SSH client key authorization
-│       ├── .keystore              # Initialized keystore metadata
+│       ├── keyring.enc            # Cryptographic root
+│       ├── .keystore              # Store format marker
 │       ├── aplane.token           # Generated API token
 │       ├── policy.yaml            # Permissive integration-test node-role policy
 │       ├── policy.yaml.hmac       # Integrity sidecar for policy.yaml

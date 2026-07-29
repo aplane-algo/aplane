@@ -309,22 +309,38 @@ For terminology and lifecycle rules, defer to
 
 ## Storage And Encryption
 
+### `keyring.enc`
+
+The keyring is the store's cryptographic root, defined in
+`internal/crypto/keyring.go` and `internal/crypto/keyring_store.go`.
+
+- schema `aplane.keyring.v1`, one file per identity beside `.keystore`
+- plaintext header: Argon2id parameters and the KEK salt, so the file is
+  self-describing
+- sealed body: the set of numbered term keys, wrapped under the
+  passphrase-derived KEK with AES-256-GCM
+- a successful unwrap is the passphrase check; there is no separate verifier
+- the KEK exists only inside seal and open, and is zeroed before either returns
+
+Term keys are stored random keys, not passphrase-derived values. This release
+runs a single term.
+
 ### `.keystore`
 
-Keystore metadata is defined in `internal/crypto/encryption.go`.
+`.keystore` is a static marker, defined in `internal/crypto/keyring_store.go`.
 
-- new keystores are version 2
-- version 1 metadata remains readable for compatibility
-- version 2 metadata must include nonzero `kdf_time`, `kdf_memory`, and
-  `kdf_threads`
-- passphrases are verified and converted into a master key using Argon2id
+- `{"version": 4, "layout": "keyring/v1", "created": ...}`
+- it carries no salt, no verifier, and no KDF parameters, so nothing in it can
+  disagree with the keyring
+- the version gate rejects any store this release did not initialize, before
+  anything else is read
 
 ### `.key` and `.sen`
 
 Encrypted `.key` files hold Algorand account authority: native keys,
 DSA-backed LogicSig keys, and generic LogicSig instances. Encrypted `.sen`
 files hold sentry-custodied witness authority. Both use the same keystore
-envelope and canonical payload codec; category determines the sole valid
+term envelope and canonical payload codec; category determines the sole valid
 extension. Compatibility is split across:
 
 - `envelope_version` for the encryption envelope
@@ -346,12 +362,29 @@ than treating the library YAML as active state.
 
 `internal/crypto` uses AES-256-GCM for encryption.
 
-- master-key encryption is `envelope_version: 1`
+- at-rest encryption under a keyring term is `envelope_version: 3`, carrying
+  `{envelope_version, term, nonce, ciphertext}`
 - standalone passphrase-based encryption used for backup/export is
   `envelope_version: 2`
 
-The master key is derived once at unlock time from `.keystore` metadata and is
-then reused for key/template decryption until lock.
+The term envelope's additional authenticated data binds the term and the
+object's logical identity: a class and a canonical selector.
+
+| Class | Selector |
+| --- | --- |
+| `account-key` | Algorand address |
+| `sentry-credential` | Witness Key ID |
+| `keytype-template` | key type |
+| `recovered-batch` | restore ID |
+| `recovered-entry` | restore ID and entry selector |
+
+The identity is logical, never a path: generations copy ciphertext between
+namespaces and into `deleted/` without re-encrypting it. Binding it means a
+credential filed under another account, a template opened as a credential, or
+an entry lifted from another recovered batch fails to decrypt.
+
+Unlock opens the keyring once and reuses its term keys for key and template
+decryption until lock.
 
 ## Keystore Runtime
 
@@ -360,17 +393,17 @@ then reused for key/template decryption until lock.
 It owns:
 
 - identity-scoped key directory resolution
-- master-key caching and zeroing
+- keyring caching and zeroing
 - scan-time `address -> KeyScanInfo` caching
 - on-demand decryption of specific keys
 
 `internal/keystore.KeySession` is the runtime guard that tracks whether key use
 is allowed. The signer's lock/unlock lifecycle uses this split:
 
-- unlock derives the master key, scans templates, scans keys, and activates the
-  key session
-- lock clears master-key material, destroys the key session, and invalidates
-  runtime access
+- unlock opens the keyring, scans templates, scans keys, and activates the key
+  session
+- lock zeroes every term key, destroys the key session, and invalidates runtime
+  access
 
 ## Signing Behavior
 
@@ -423,7 +456,7 @@ the identity's compiled-provider opt-in.
 - Private key material stays on the signer host.
 - Passphrases and decrypted key data are zeroed promptly with
   `crypto.ZeroBytes`.
-- The master key is cached only while unlocked.
+- Term keys are cached only while unlocked.
 - Template registration happens before key scanning on reload/unlock so key
   discovery sees the correct enabled provider set.
 - The versioned `key_type` is the stable compatibility identifier across
@@ -440,6 +473,9 @@ Start here when changing the subsystem:
 - `lsig/all.go`
 - `internal/keytypecatalog/catalog.go`
 - `internal/keytypestate/state.go`
+- `internal/crypto/keyring.go`
+- `internal/crypto/keyring_store.go`
+- `internal/crypto/term_envelope.go`
 - `internal/crypto/encryption.go`
 - `internal/keys/file_types.go`
 - `internal/keys/payload_codec.go`

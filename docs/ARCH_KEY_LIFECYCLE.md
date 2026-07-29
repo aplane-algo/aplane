@@ -89,7 +89,7 @@ field names.
 `node.yaml` is plaintext so the process can report its role during early
 startup. That plaintext is only a hint until each initialized identity verifies
 its HMAC sidecar after unlock. The sidecar key is derived from that identity's
-master key, following the same tamper-detection model used by policy sidecars.
+term key, following the same tamper-detection model used by policy sidecars.
 
 ## Node Role Gate
 
@@ -248,7 +248,7 @@ key is rejected during reload rather than published as a signable key.
 | Restore recover | Selected payloads pass validation and destination node role allows every key class. | Atomically publish one destination-encrypted recovered batch outside active scans. | Whole batch remains inactive; no reload. |
 | Restore review | Recovered batch and current destination state validate. | Compare source material with current verified policy, report effective destination approval mode and active conflicts, and issue a review token. | No durable active-state mutation. |
 | Restore activate | Review token is current, acknowledgements are present, and replacement conflicts are explicitly accepted. | Mint a new generation containing the whole batch, commit it with a single durable `CURRENT` flip, reload, then remove the inactive batch. | All credentials become active together; an uncommitted attempt leaves the prior generation active, and reload failure rolls the pointer back to it. |
-| Unlock/reload | Master key is available. | Verify node role integrity, register enabled templates, scan key files, validate node inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
+| Unlock/reload | The keyring is open. | Verify node role integrity, register enabled templates, scan key files, validate node inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 
 ## Backup And Restore Matrix
@@ -289,7 +289,7 @@ The restore path never silently changes what a local `key_type` means.
 Unlock/reload publishes a new runtime snapshot only after validation succeeds.
 The relevant order is:
 
-1. derive or reuse the identity master key,
+1. open or reuse the identity keyring,
 2. load root `node.yaml` and verify the identity's `node.yaml.hmac`,
 3. load and validate identity config and the node-role policy domain from
    `policy.yaml`,
@@ -318,7 +318,7 @@ is not published as valid runtime inventory.
 
 | Operation | Key type state effect | Key file effect | Notes |
 |---|---|---|---|
-| Initialize node role | Writes root `node.yaml`; each initialized identity writes a matching HMAC sidecar when its master key is available. | None. | Default role is `signer`; sentry role is explicit at initialization. |
+| Initialize node role | Writes root `node.yaml`; each initialized identity writes a matching HMAC sidecar when its term key is available. | None. | Default role is `signer`; sentry role is explicit at initialization. |
 | Verify node role integrity | None. | None. | Required before unlock-dependent key scan, signing, generation, key/store/template/mnemonic import, restore, or sentry component signing. Client endpoint import is routing state and is outside this key lifecycle. |
 | `apstore keytype enable` | Writes/refreshes compiled enabled state, or enables an installed YAML template. | None. | Does not rewrite existing keys. |
 | `apstore keytype disable` | Deletes compiled state or disables an installed YAML template after the unused-key guard. | None. | Provider code and installed template files remain available to the store. |
@@ -333,7 +333,7 @@ is not published as valid runtime inventory.
 | Restore review | None. | None. | Security-first policy comparison, destination auto-approve warning, conflicts, and review token. |
 | Restore activate | May install/enable required template or activate compiled provider when node role allows it. | Commits the reviewed batch as a new generation behind the `CURRENT` flip. | Reload publishes all entries; a commit with unconfirmed durability enters recovery mode until reconciliation. |
 | Rebuild absent store | Writes root `node.yaml` from explicit `--role`, manifest source role metadata, or `signer` fallback. | Restores selected keys into a new identity store. | Manifest role is diagnostic/default only; destination key-class gates remain authoritative. |
-| Store passphrase change | Re-encrypts installed templates and keys and rewrites role HMAC sidecars. | Re-encrypts keys. | Authority and state are unchanged. |
+| Store passphrase change | Mints a fresh term key, re-encrypts installed templates and keys under it, rewrites role HMAC sidecars, and replaces `keyring.enc`. | Re-encrypts keys. | Authority and state are unchanged. |
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
 | Sign request | None. | Reads already-loaded key metadata. | Key type discovery state is not a sign-time authorization gate. |
 

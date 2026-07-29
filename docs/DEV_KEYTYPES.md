@@ -50,7 +50,7 @@ The source model is:
 | Source | Meaning | Registration time | Scope |
 |---|---|---|---|
 | Go-defined | Provider/template implemented directly in Go and registered from code | Process startup | Built into the binary; visibility is governed by `internal/keytypecatalog` |
-| User-loaded YAML | YAML installed into the signer keystore from the template library or a supplied path | Unlock/reload after the identity master key is available, unless the installed template is disabled for the identity | Identity-scoped runtime capability |
+| User-loaded YAML | YAML installed into the signer keystore from the template library or a supplied path | Unlock/reload after the identity keyring is open, unless the installed template is disabled for the identity | Identity-scoped runtime capability |
 
 Built-in compiled key types are Go-defined in the default build. Default-enabled
 compiled key types are immediately visible. Library-visible compiled key types

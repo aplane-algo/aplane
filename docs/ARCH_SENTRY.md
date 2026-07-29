@@ -70,7 +70,8 @@ Algorand accounts and cannot spend funds directly.
 
 Their canonical private record is
 `identities/<identity>/keys/<WitnessKeyID>.sen`. The `.sen` container uses the
-identity keystore master key and canonical `category: witness` payload. It is
+identity's current term key, bound to the credential's Witness Key ID, and a
+canonical `category: witness` payload. It is
 distinct from the independently encrypted external `.wit` artifact opened only
 by `aprekey`; signer scanning never opens `.wit` or `.wit.json` as private state.
 

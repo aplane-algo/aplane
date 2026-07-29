@@ -18,7 +18,8 @@ ownership sets, and the resume/rollback journal semantics are deleted.
 
 ```
 identities/<identity>/
-  .keystore                    # version bumped 2 -> 3 at migration (§8)
+  keyring.enc                  # cryptographic root (aplane.keyring.v1)
+  .keystore                    # static marker: version 4 + keyring/v1
   CURRENT                      # one line: the active generation ID
   generations/
     <generation-id>/
@@ -43,7 +44,7 @@ and the `internal/keys` file constructors rooted at them
 |---|---|
 | `recovered/**` (batches, entries, activation state) | must survive pointer changes; own durability machinery |
 | `deleted/keys/`, `deleted/keytypes/` | tombstone namespace, not active state; a deleted key is *supposed* to reappear on generation rollback — the prior generation's copy is the rollback semantic, the tombstone is just an archive |
-| `.keystore` | cryptographic root; moving it is the Phase-B epoch design, explicitly out of v1 |
+| `keyring.enc` and `.keystore` | the cryptographic root and its format marker are identity-scoped, not generation-scoped |
 | `policy.yaml(+.hmac)`, `node.yaml.hmac`, `config.yaml`, `unlock.yaml`, `aplane.token`, `.ssh/`, `sentries/`, `files/`, `passphrase*` | not part of any activation transaction |
 | `<root>/backups`, `<root>/library`, `<root>/node.yaml` | not identity-active state |
 
@@ -175,7 +176,7 @@ seal/inventory mismatch. Orphaned durable-write temp files
 residue never carries state — and reconciliation garbage-collects them.
 Content-level defects (undecryptable or malformed keys, template and
 key-type record defects, unexpected or noncanonical namespace filenames)
-are enforced by the fail-closed reload gate with the master key.
+are enforced by the fail-closed reload gate with the term key.
 
 - **Current generation at startup:** manifest schema + completion state, then
   a strict scan of live files. No at-mint digest equality (mutable current);
@@ -211,7 +212,7 @@ ID. Published-but-uncommitted generations are **never resumed**.
 Every release is incompatible with every prior release and documented as
 such. A store is readable only by the release that initialized it:
 `.keystore` carries exactly one supported metadata version
-(`validateVersion` rejects everything else with a restore-from-backup
+(`checkKeyringMarker` rejects everything else with a restore-from-backup
 remediation), and no layout-migration or downgrade machinery exists. Key
 transfer between releases is by backup archive — standalone
 release-independent encryption — restored into a freshly initialized store.
@@ -249,14 +250,14 @@ reference safety has soaked.
 ## 11. Rotation boundary (and the interaction v1 must decide)
 
 Passphrase rotation keeps its existing `.new`/`.old` transaction; key/keytype
-generations cannot commit a rotation (it also rewrites `.keystore`,
-recovered batches, and both HMAC sidecars). Phase B (cryptographic epochs,
-`.keystore` successor as the single commit record) and Phase C (key
-wrapping) remain future options requiring their own accepted designs.
+generations cannot commit a rotation (it also rewrites `keyring.enc`,
+recovered batches, and both HMAC sidecars). Cryptographic epochs — a keyring
+of numbered terms so rotation appends rather than rewrites — remain a future
+option requiring their own accepted design.
 
 **New decision forced by the inventory:** `storepass.scanTargets` discovers
 key/template targets by walking the *resolved current* namespaces — prior
-generations would silently keep material encrypted under the **old** master
+generations would silently keep material encrypted under the **old** term
 key, making generation rollback after a rotation produce an unreadable
 store. Therefore: **rotation requires quiescence — it refuses to run while
 any non-current generation or incomplete operation exists (operator prunes
@@ -305,7 +306,7 @@ corruption; unsealed-non-current discard including superseded-parent
 collection; watcher re-arm across a flip (extending
 `daemon/key_watcher_test.go`); `FileKeyStore` cache invalidation across a
 flip; migration retry at every interruption; old-binary rejection
-(`TestLoadKeystoreMetadataRejectsUnsupportedVersion` already proves the
+(`TestOpenKeyringStoreRejectsUnsupportedMarkerVersion` already proves the
 mechanism — add the migrated-store end-to-end case); rebuild/changepass/
 `keys list` offline resolution; rotation-quiescence refusal; ownership of
 copied files; Linux+Darwin. The ~25 hardcoded-layout test fixtures found in
