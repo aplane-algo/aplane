@@ -141,7 +141,7 @@ teal: |
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
 	restorer := NewRestorer(paths, identityID)
-	_, err := restorer.buildTemplateRestorePlan(authoritativeTemplate, keyType, string(templatestore.TemplateTypeGeneric), testExportMasterKey, false)
+	_, err := restorer.buildTemplateRestorePlan(authoritativeTemplate, keyType, string(templatestore.TemplateTypeGeneric), cryptotest.Keyring(t, testExportMasterKey), false)
 	if err == nil {
 		t.Fatal("buildTemplateRestorePlan() error = nil, want stale local template conflict")
 	}
@@ -401,7 +401,7 @@ func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
 		identityID,
 		filepath.Base(archivePath),
 		nil,
-		testExportMasterKey,
+		cryptotest.Keyring(t, testExportMasterKey),
 		[]byte("export-passphrase"),
 		noderole.RoleSigner,
 	)
@@ -481,7 +481,7 @@ func TestRecoverManagedBackupRejectsTamperedArchive(t *testing.T) {
 		identityID,
 		archivePath,
 		nil,
-		testExportMasterKey,
+		cryptotest.Keyring(t, testExportMasterKey),
 		[]byte("export-passphrase"),
 		noderole.RoleSigner,
 	)
@@ -553,7 +553,7 @@ func TestRecoverManagedBackupIsAllOrNothing(t *testing.T) {
 		identityID,
 		archivePath,
 		nil,
-		testExportMasterKey,
+		cryptotest.Keyring(t, testExportMasterKey),
 		[]byte("export-passphrase"),
 		noderole.RoleSigner,
 	); err == nil {
@@ -585,7 +585,7 @@ func TestRestoreKeyWritesStorePermissions(t *testing.T) {
 	}
 
 	restorer := NewRestorer(paths, identityID)
-	if _, err := restorer.RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); err != nil {
+	if _, err := restorer.RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
 
@@ -611,7 +611,7 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	}
 
 	restorer := NewRestorer(paths, identityID).WithNodeRole(noderole.RoleSigner)
-	_, err := restorer.RestoreKey(keysDir, componentKey, testExportMasterKey, []byte("export-passphrase"))
+	_, err := restorer.RestoreKey(keysDir, componentKey, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil {
 		t.Fatal("RestoreKey() error = nil, want role-forbidden rejection")
 	}
@@ -642,7 +642,7 @@ func TestRestoreKeyWritesWitnessPublicMetadataOnSentryNode(t *testing.T) {
 	defer payload.ZeroSecrets()
 
 	restorer := NewRestorer(paths, identityID).WithNodeRole(noderole.RoleSentry)
-	keyType, err := restorer.RestoreKey(keysDir, componentKey, testExportMasterKey, []byte("export-passphrase"))
+	keyType, err := restorer.RestoreKey(keysDir, componentKey, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
@@ -690,13 +690,13 @@ func TestRestoreKeyRequiresExplicitOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	restorer := NewRestorer(paths, identityID)
-	if _, err := restorer.RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); err != nil {
+	if _, err := restorer.RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("first RestoreKey() error = %v", err)
 	}
-	if _, err := restorer.RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); !errors.Is(err, apkeys.ErrManagedCredentialExists) {
+	if _, err := restorer.RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); !errors.Is(err, apkeys.ErrManagedCredentialExists) {
 		t.Fatalf("second RestoreKey() error = %v, want existing credential", err)
 	}
-	if _, err := restorer.WithOverwrite(true).RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); err != nil {
+	if _, err := restorer.WithOverwrite(true).RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("overwrite RestoreKey() error = %v", err)
 	}
 }
@@ -723,7 +723,7 @@ func TestRestoreKeyRejectsContradictoryManagedCredentialClass(t *testing.T) {
 	_, err := NewRestorer(paths, identityID).
 		WithNodeRole(noderole.RoleSentry).
 		WithOverwrite(true).
-		RestoreKey(keysDir, componentKey, testExportMasterKey, []byte("export-passphrase"))
+		RestoreKey(keysDir, componentKey, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if !errors.Is(err, apkeys.ErrManagedCredentialClassConflict) {
 		t.Fatalf("RestoreKey() error = %v, want class conflict", err)
 	}
@@ -743,11 +743,9 @@ func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 	duplicatePath := filepath.Join(paths.KeysDir(identityID), "duplicate.key")
-	encryptedExisting, err := apcrypto.EncryptWithTermKey(
-		keyJSON, testExportMasterKey, apcrypto.FirstTerm, apcrypto.AccountKeyContext("duplicate"),
-	)
+	encryptedExisting, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, apcrypto.AccountKeyContext("duplicate"))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey(existing) error = %v", err)
+		t.Fatalf("encryptWithTermKey(existing) error = %v", err)
 	}
 	if err := os.WriteFile(duplicatePath, encryptedExisting, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(duplicate) error = %v", err)
@@ -762,7 +760,7 @@ func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T
 	}
 
 	restorer := NewRestorer(paths, identityID)
-	keyType, err := restorer.RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase"))
+	keyType, err := restorer.RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
@@ -824,7 +822,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	}
 
 	restorer := NewRestorer(paths, identityID)
-	if _, err := restorer.RestoreKey(keysDir, address.String(), testExportMasterKey, []byte("export-passphrase")); err == nil {
+	if _, err := restorer.RestoreKey(keysDir, address.String(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err == nil {
 		t.Fatal("RestoreKey() error = nil, want signing metadata rejection")
 	} else if !strings.Contains(err.Error(), "signing_metadata_version") {
 		t.Fatalf("RestoreKey() error = %v, want signing metadata rejection", err)
@@ -888,7 +886,7 @@ func TestRestoreKeyPreservesBoundedSigningMetadata(t *testing.T) {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
 	restorer := NewRestorer(paths, identityID)
-	if _, err := restorer.RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); err != nil {
+	if _, err := restorer.RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
 	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(apkeys.AccountKeyFilePath(paths, identityID, address), cryptotest.Keyring(t, testExportMasterKey))
@@ -944,7 +942,7 @@ func TestRestoreKeyRejectsInvalidKeyTypeBeforeTemplatePathUse(t *testing.T) {
 	}
 
 	restorer := NewRestorer(paths, identityID)
-	if _, err := restorer.RestoreKey(keysDir, address.String(), testExportMasterKey, []byte("export-passphrase")); err == nil {
+	if _, err := restorer.RestoreKey(keysDir, address.String(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err == nil {
 		t.Fatal("RestoreKey() error = nil, want invalid key_type rejection")
 	} else if !strings.Contains(err.Error(), "invalid key_type") || !strings.Contains(err.Error(), invalidKeyType) {
 		t.Fatalf("RestoreKey() error = %v, want invalid key_type rejection", err)
@@ -1017,7 +1015,7 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 	}).WithWarningHandler(func(keyType, warning string) {
 		warnings = append(warnings, keyType+": "+warning)
 	})
-	if _, err := restorer.RestoreKey(keysDir, address.String(), testExportMasterKey, []byte("export-passphrase")); err != nil {
+	if _, err := restorer.RestoreKey(keysDir, address.String(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
 
@@ -1185,7 +1183,7 @@ func TestRecoverManagedBackupRecordsArchivePackagingTime(t *testing.T) {
 		identityID,
 		filepath.Base(archivePath),
 		nil,
-		testExportMasterKey,
+		cryptotest.Keyring(t, testExportMasterKey),
 		[]byte("export-passphrase"),
 		noderole.RoleSigner,
 	)

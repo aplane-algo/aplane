@@ -5,7 +5,6 @@ package keygen
 
 import (
 	"context"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"testing"
 
@@ -31,14 +30,9 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey() error = %v", err)
-	}
-	defer securecrypto.ZeroBytes(masterKey)
 
 	g := &WitnessFalcon1024Generator{}
-	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, witness.Falcon1024V1, nil)
+	result, err := g.GenerateRandom(context.Background(), paths, "default", kr, witness.Falcon1024V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom() error = %v", err)
 	}
@@ -58,7 +52,7 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("KeyFiles = %#v, want private file", result.KeyFiles)
 	}
 
-	scan, err := keys.ScanKeysDirectoryWithKeyring(paths, "default", cryptotest.Keyring(t, masterKey))
+	scan, err := keys.ScanKeysDirectoryWithKeyring(paths, "default", kr)
 	if err != nil {
 		t.Fatalf("ScanKeysDirectoryWithKeyring() error = %v", err)
 	}

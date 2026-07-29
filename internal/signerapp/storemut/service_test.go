@@ -5,7 +5,6 @@ package storemut
 
 import (
 	"context"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
@@ -45,7 +44,7 @@ func registerProviders() {
 	})
 }
 
-func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, []byte, func()) {
+func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, *crypto.Keyring, func()) {
 	t.Helper()
 	registerProviders()
 
@@ -62,16 +61,8 @@ func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, []byte, fun
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey() error = %v", err)
-	}
-
-	cleanup := func() {
-		crypto.ZeroBytes(masterKey)
-	}
-	return paths, masterKey, cleanup
+	cleanup := kr.Zero
+	return paths, kr, cleanup
 }
 
 func TestRevokeTokenWritesAndUpdatesDependents(t *testing.T) {
@@ -139,7 +130,7 @@ func TestGenerateKeyCreatesPersistedKey(t *testing.T) {
 	defer cleanup()
 
 	svc := New(identityID, paths, nil, nil)
-	result, err := svc.GenerateKeyWithActivatedContext(context.Background(), "ed25519", cryptotest.Keyring(t, masterKey), nil, nil)
+	result, err := svc.GenerateKeyWithActivatedContext(context.Background(), "ed25519", masterKey, nil, nil)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
@@ -163,7 +154,7 @@ func TestImportKeyFromMnemonicCreatesPersistedKey(t *testing.T) {
 	defer cleanup()
 
 	svc := New(identityID, paths, nil, nil)
-	result, err := svc.ImportKeyFromMnemonicWithActivated("ed25519", testMnemonic, cryptotest.Keyring(t, masterKey), nil, nil)
+	result, err := svc.ImportKeyFromMnemonicWithActivated("ed25519", testMnemonic, masterKey, nil, nil)
 	if err != nil {
 		t.Fatalf("ImportKeyFromMnemonic() error = %v", err)
 	}
@@ -197,7 +188,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		salted.Counter,
 		"#pragma version 10\nint 1\nreturn",
 		nil,
-		cryptotest.Keyring(t, masterKey),
+		masterKey,
 	)
 	if err != nil {
 		t.Fatalf("SaveGenericLSig() error = %v", err)
@@ -215,9 +206,9 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CredentialContextForFile() error = %v", err)
 	}
-	decrypted, err := crypto.DecryptWithTermKey(encrypted, masterKey, crypto.FirstTerm, credentialContext)
+	decrypted, err := masterKey.Open(encrypted, credentialContext)
 	if err != nil {
-		t.Fatalf("DecryptWithTermKey() error = %v", err)
+		t.Fatalf("decryptWithTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(decrypted)
 	payload, err := keys.ParsePayload(decrypted)

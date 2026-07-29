@@ -793,7 +793,7 @@ type ShowInstalledTemplateResultMessage struct {
 }
 
 // ShowLibraryTemplateMessage requests the plaintext YAML for a library entry.
-// Library YAMLs are unencrypted on disk; no master key is required.
+// Library YAMLs are unencrypted on disk; no keyring is required.
 type ShowLibraryTemplateMessage struct {
 	BaseMessage
 	KeyType      string `json:"key_type"`

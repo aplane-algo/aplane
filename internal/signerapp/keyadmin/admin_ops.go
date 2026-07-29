@@ -34,7 +34,7 @@ func (s Service) ListKeys(ir *identity.Runtime) ([]ListKeyInfo, *Error) {
 		for addr, keyFile := range keysSnapshot {
 			keyType := "unknown"
 			var templateProvenanceStatus, templateProvenanceNote string
-			if info, err := keymgmt.DetectKeyInfoFromFileWithMasterKey(keyFile, mk); err == nil {
+			if info, err := keymgmt.DetectKeyInfoFromFileWithKeyring(keyFile, mk); err == nil {
 				keyType = info.Type
 				templateProvenanceStatus, templateProvenanceNote = keys.CompareTemplateFingerprint(keyType, info.TemplateFingerprint)
 			}
@@ -69,7 +69,7 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 		KeyType: "unknown",
 	}
 	err = ir.WithKeyring(func(mk *crypto.Keyring) error {
-		info, err := keymgmt.DetectKeyInfoFromFileWithMasterKey(keyFile, mk)
+		info, err := keymgmt.DetectKeyInfoFromFileWithKeyring(keyFile, mk)
 		if err == nil {
 			result.KeyType = info.Type
 			if witness.IsKeyType(info.Type) {
@@ -77,7 +77,7 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 			}
 			result.Parameters = keyDetailsParameters(info.Type, info.Parameters)
 			result.TemplateProvenanceStatus, result.TemplateProvenanceNote = keys.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
-			result.DisplayTEAL, _ = keymgmt.GetDisplayTEALWithMasterKey(keyFile, mk)
+			result.DisplayTEAL, _ = keymgmt.GetDisplayTEALWithKeyring(keyFile, mk)
 		}
 		return nil
 	})

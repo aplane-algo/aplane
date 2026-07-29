@@ -32,14 +32,14 @@ type ArchiveResult struct {
 }
 
 // CreateKeysArchiveRequest contains one managed backup creation snapshot.
-// MasterKey and ExportPassphrase are borrowed for the duration of the call and
+// Keyring and ExportPassphrase are borrowed for the duration of the call and
 // are not cleared.
 type CreateKeysArchiveRequest struct {
 	Paths            storepaths.Paths
 	IdentityID       string
 	ArchivePath      string
 	Addresses        []string
-	MasterKey        []byte
+	Keyring          *crypto.Keyring
 	ExportPassphrase []byte
 	SourceSettings   SourceSettingsSnapshot
 }
@@ -75,7 +75,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 			req.IdentityID,
 			activeKeysDir,
 			stageDir,
-			req.MasterKey,
+			req.Keyring,
 			req.ExportPassphrase,
 		)
 		if err != nil {
@@ -99,7 +99,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 				activeKeysDir,
 				keysDestDir,
 				address,
-				req.MasterKey,
+				req.Keyring,
 				req.ExportPassphrase,
 			)
 			if err != nil {
@@ -115,7 +115,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	if err := WriteReadme(stageDir); err != nil {
 		return nil, err
 	}
-	if err := copyPolicyFilesToArchiveWithMasterKey(req.Paths, req.IdentityID, stageDir, req.MasterKey); err != nil {
+	if err := copyPolicyFilesToArchive(req.Paths, req.IdentityID, stageDir, req.Keyring); err != nil {
 		return nil, err
 	}
 	nodeRole, _, err := noderole.Load(req.Paths)
@@ -161,17 +161,6 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 		Verified:        true,
 		Skipped:         skipped,
 	}, nil
-}
-
-// copyPolicyFilesToArchiveWithMasterKey is the boundary adapter: backup still
-// threads a raw key and migrates in its own slice.
-func copyPolicyFilesToArchiveWithMasterKey(paths storepaths.Paths, identityID, stageDir string, masterKey []byte) error {
-	kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
-	if err != nil {
-		return err
-	}
-	defer kr.Zero()
-	return copyPolicyFilesToArchive(paths, identityID, stageDir, kr)
 }
 
 func copyPolicyFilesToArchive(paths storepaths.Paths, identityID, stageDir string, kr *crypto.Keyring) error {

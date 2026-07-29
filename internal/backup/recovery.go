@@ -94,7 +94,7 @@ func (r Restorer) InspectBackupEntry(keysDir, selector string, exportPassphrase 
 // provider state and returns inactive recovered material. It never applies the
 // generated restore plans. The caller owns the returned plaintext buffers and
 // must call Entry.ZeroSecrets.
-func (r Restorer) RecoverEntry(entry *InspectedBackupEntry, masterKey []byte) (*recovered.Entry, error) {
+func (r Restorer) RecoverEntry(entry *InspectedBackupEntry, kr *crypto.Keyring) (*recovered.Entry, error) {
 	if entry == nil {
 		return nil, fmt.Errorf("inspected backup entry is nil")
 	}
@@ -119,7 +119,7 @@ func (r Restorer) RecoverEntry(entry *InspectedBackupEntry, masterKey []byte) (*
 		entry.TemplateYAML,
 		payload.KeyType,
 		entry.TemplateType,
-		masterKey,
+		kr,
 		signingMeta.SigningMetadataVersion > 0,
 	); err != nil {
 		return nil, err
@@ -127,7 +127,7 @@ func (r Restorer) RecoverEntry(entry *InspectedBackupEntry, masterKey []byte) (*
 	if _, err := r.buildKeyTypeRestorePlan(
 		payload.KeyType,
 		len(payload.LogicSigBytecode) > 0,
-		masterKey,
+		kr,
 		signingMeta,
 	); err != nil {
 		return nil, err
@@ -146,19 +146,7 @@ func (r Restorer) RecoverEntry(entry *InspectedBackupEntry, masterKey []byte) (*
 // ApplyRecoveredEntry applies one already validated recovered entry to active
 // storage. The caller must establish durable rollback intent before calling
 // this method.
-// ApplyRecoveredEntryWithKeyring applies one recovered entry to the active
-// store. Backup still threads a raw key internally and migrates in slice 3,
-// so the keyring is unwrapped at this boundary rather than below it.
-func (r Restorer) ApplyRecoveredEntryWithKeyring(entry *recovered.Entry, kr *crypto.Keyring) (string, error) {
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		return "", err
-	}
-	defer crypto.ZeroBytes(masterKey)
-	return r.ApplyRecoveredEntry(entry, masterKey)
-}
-
-func (r Restorer) ApplyRecoveredEntry(entry *recovered.Entry, masterKey []byte) (string, error) {
+func (r Restorer) ApplyRecoveredEntry(entry *recovered.Entry, kr *crypto.Keyring) (string, error) {
 	if entry == nil {
 		return "", fmt.Errorf("recovered entry is nil")
 	}
@@ -170,29 +158,23 @@ func (r Restorer) ApplyRecoveredEntry(entry *recovered.Entry, masterKey []byte) 
 		TemplateYAML: entry.TemplateYAML,
 		TemplateType: entry.TemplateType,
 	}
-	return r.applyInspectedBackupEntry(inspected, masterKey)
+	return r.applyInspectedBackupEntry(inspected, kr)
 }
 
 // RecoverManagedBackup decrypts selected entries from one identity-managed
 // archive and atomically publishes an inactive destination-encrypted batch.
 // An empty selectors slice recovers every entry in the archive.
 //
-// masterKey and exportPassphrase are borrowed and are not cleared.
+// kr and exportPassphrase are borrowed and are not cleared.
 func RecoverManagedBackup(
 	paths storepaths.Paths,
 	identityID string,
 	archivePath string,
 	selectors []string,
-	masterKey []byte,
+	kr *crypto.Keyring,
 	exportPassphrase []byte,
 	role noderole.Role,
 ) (*recovered.Batch, error) {
-	// Boundary adapter: backup migrates in slice 3 and still threads a raw key.
-	recoveredKeyring, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
-	if err != nil {
-		return nil, err
-	}
-	defer recoveredKeyring.Zero()
 	resolvedArchive, err := ResolveManagedBackupPath(paths, identityID, archivePath)
 	if err != nil {
 		return nil, err
@@ -244,7 +226,7 @@ func RecoverManagedBackup(
 		if err != nil {
 			return nil, fmt.Errorf("failed to inspect backup entry %s: %w", selector, err)
 		}
-		recoveredEntry, recoverErr := restorer.RecoverEntry(inspected, masterKey)
+		recoveredEntry, recoverErr := restorer.RecoverEntry(inspected, kr)
 		inspected.ZeroSecrets()
 		if recoverErr != nil {
 			return nil, fmt.Errorf("failed to recover backup entry %s: %w", selector, recoverErr)
@@ -264,7 +246,7 @@ func RecoverManagedBackup(
 		SourceGenesisHashMappings:  sourceProjection.GenesisHashMappings,
 		CreatedAt:                  time.Now().UTC(),
 		Entries:                    entries,
-	}, recoveredKeyring)
+	}, kr)
 }
 
 func normalizeRecoverySelectors(keysDir string, selectors []string) ([]string, error) {

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net/http"
 	"net/http/httptest"
@@ -191,7 +192,7 @@ func TestRestoreKeyRejectsWrongExportPassphrase(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	keyType, err := restoreKey(backupDir, address, bytes32(0x11), []byte("wrong-export-passphrase"))
+	keyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, bytes32(0x11)), []byte("wrong-export-passphrase"))
 	if err == nil {
 		t.Fatal("restoreKey() error = nil, want wrong passphrase failure")
 	}

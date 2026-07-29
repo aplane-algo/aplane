@@ -68,11 +68,6 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		return result, err
 	}
 	defer oldKeyring.Zero()
-	oldMasterKey, err := oldKeyring.CurrentTermKey()
-	if err != nil {
-		return result, err
-	}
-	defer crypto.ZeroBytes(oldMasterKey)
 
 	managedFiles, templateFiles, recoveredFiles, err := scanTargets(paths, identityID, oldKeyring)
 	if err != nil {
@@ -96,11 +91,6 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		return result, fmt.Errorf("failed to create new keyring: %w", err)
 	}
 	defer newKeyring.Zero()
-	newMasterKey, err := newKeyring.CurrentTermKey()
-	if err != nil {
-		return result, err
-	}
-	defer crypto.ZeroBytes(newMasterKey)
 
 	logf(opts.Logf, "phase 1: creating new encrypted files")
 	for _, managedFile := range managedFiles {
@@ -109,7 +99,7 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
 		}
-		pf, ok, err := createPendingEncryptedFile(managedFile.Path, credentialContext, oldMasterKey, newMasterKey, managedFile.Name, opts.Logf)
+		pf, ok, err := createPendingEncryptedFile(managedFile.Path, credentialContext, oldKeyring, newKeyring, managedFile.Name, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -127,7 +117,7 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
 		}
-		pf, ok, err := createPendingEncryptedFile(templatePath, templateContext, oldMasterKey, newMasterKey, templateName, opts.Logf)
+		pf, ok, err := createPendingEncryptedFile(templatePath, templateContext, oldKeyring, newKeyring, templateName, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -140,7 +130,7 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 
 	for _, target := range recoveredFiles {
 		label := filepath.Base(filepath.Dir(target.Path)) + "/" + filepath.Base(target.Path)
-		pf, ok, err := createPendingEncryptedFile(target.Path, target.Context, oldMasterKey, newMasterKey, label, opts.Logf)
+		pf, ok, err := createPendingEncryptedFile(target.Path, target.Context, oldKeyring, newKeyring, label, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -231,7 +221,7 @@ func scanTargets(
 	// Rotation requires generation quiescence: it rewrites only what it can
 	// see through the resolved current namespaces, so a retained prior
 	// generation would silently keep material encrypted under the old
-	// master key and make generation rollback produce an unreadable store.
+	// term key and make generation rollback produce an unreadable store.
 	if err := requireGenerationQuiescence(paths, identityID); err != nil {
 		return nil, nil, nil, err
 	}
@@ -344,7 +334,7 @@ func cleanupPendingOldFiles(pendingFiles []pendingFile) {
 // ctx is the object the file holds. Rotation changes the key, never the
 // identity, so the same context opens the old envelope and seals the new one —
 // which also means a rotation cannot silently relabel a file.
-func rewriteEncryptedFile(path, display string, ctx crypto.ObjectContext, oldMasterKey []byte, newMasterKey []byte) error {
+func rewriteEncryptedFile(path, display string, ctx crypto.ObjectContext, oldKeyring, newKeyring *crypto.Keyring) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", display, err)
@@ -353,11 +343,11 @@ func rewriteEncryptedFile(path, display string, ctx crypto.ObjectContext, oldMas
 		return nil
 	}
 
-	plaintext, err := crypto.DecryptWithTermKey(data, oldMasterKey, crypto.FirstTerm, ctx)
+	plaintext, err := oldKeyring.Open(data, ctx)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt %s: %w", display, err)
 	}
-	newData, err := crypto.EncryptWithTermKey(plaintext, newMasterKey, crypto.FirstTerm, ctx)
+	newData, err := newKeyring.Seal(plaintext, ctx)
 	crypto.ZeroBytes(plaintext)
 	if err != nil {
 		return fmt.Errorf("failed to re-encrypt %s: %w", display, err)
@@ -380,7 +370,7 @@ func rewriteEncryptedFile(path, display string, ctx crypto.ObjectContext, oldMas
 	if err != nil {
 		return fmt.Errorf("failed to verify %s.new: %w", display, err)
 	}
-	verifyPlaintext, err := crypto.DecryptWithTermKey(verifyData, newMasterKey, crypto.FirstTerm, ctx)
+	verifyPlaintext, err := newKeyring.Open(verifyData, ctx)
 	if err != nil {
 		return fmt.Errorf("verification failed for %s.new: %w", display, err)
 	}
@@ -388,7 +378,7 @@ func rewriteEncryptedFile(path, display string, ctx crypto.ObjectContext, oldMas
 	return nil
 }
 
-func createPendingEncryptedFile(path string, ctx crypto.ObjectContext, oldMasterKey []byte, newMasterKey []byte, label string, log Logger) (*pendingFile, bool, error) {
+func createPendingEncryptedFile(path string, ctx crypto.ObjectContext, oldKeyring, newKeyring *crypto.Keyring, label string, log Logger) (*pendingFile, bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to read %s: %w", label, err)
@@ -397,7 +387,7 @@ func createPendingEncryptedFile(path string, ctx crypto.ObjectContext, oldMaster
 		logf(log, "skipping %s (not encrypted)", label)
 		return nil, false, nil
 	}
-	if err := rewriteEncryptedFile(path, label, ctx, oldMasterKey, newMasterKey); err != nil {
+	if err := rewriteEncryptedFile(path, label, ctx, oldKeyring, newKeyring); err != nil {
 		return nil, false, err
 	}
 

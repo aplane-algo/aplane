@@ -198,14 +198,7 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		return nil, fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	// Boundary adapter: the generator interface still threads a raw key and
-	// migrates with the lsig generators in slice 3.
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		return nil, err
-	}
-	defer crypto.ZeroBytes(masterKey)
-	genResult, err := generator.GenerateRandom(ctx, paths, identityID, masterKey, keyType, params)
+	genResult, err := generator.GenerateRandom(ctx, paths, identityID, kr, keyType, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate key: %w", err)
 	}
@@ -313,13 +306,7 @@ func ImportKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, 
 		return nil, fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	// Boundary adapter: see GenerateKey.
-	mnemonicMasterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		return nil, err
-	}
-	defer crypto.ZeroBytes(mnemonicMasterKey)
-	genResult, err := generator.GenerateFromMnemonic(ctx, paths, identityID, mnemonicStr, mnemonicMasterKey, keyType, params)
+	genResult, err := generator.GenerateFromMnemonic(ctx, paths, identityID, mnemonicStr, kr, keyType, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import key: %w", err)
 	}
@@ -381,9 +368,9 @@ type KeyFileInfo struct {
 	TemplateFingerprint string
 }
 
-// DetectKeyInfoFromFileWithMasterKey reads a managed credential and returns
+// DetectKeyInfoFromFileWithKeyring reads a managed credential and returns
 // its type and parameters.
-func DetectKeyInfoFromFileWithMasterKey(keyFile string, kr *crypto.Keyring) (*KeyFileInfo, error) {
+func DetectKeyInfoFromFileWithKeyring(keyFile string, kr *crypto.Keyring) (*KeyFileInfo, error) {
 	data, err := os.ReadFile(keyFile)
 	if err != nil {
 		return nil, err
@@ -422,9 +409,9 @@ func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
 	}, nil
 }
 
-// GetDisplayTEALWithMasterKey returns the TEAL source code for generic
+// GetDisplayTEALWithKeyring returns the TEAL source code for generic
 // LogicSigs held in a managed credential.
-func GetDisplayTEALWithMasterKey(keyFile string, kr *crypto.Keyring) (string, error) {
+func GetDisplayTEALWithKeyring(keyFile string, kr *crypto.Keyring) (string, error) {
 	data, err := os.ReadFile(keyFile)
 	if err != nil {
 		return "", err

@@ -123,11 +123,6 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		return fmt.Errorf("failed to create keyring store: %w", err)
 	}
 	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		return err
-	}
-	defer crypto.ZeroBytes(masterKey)
 
 	if err := initializeRebuildNodeRole(nodeRole, kr); err != nil {
 		return err
@@ -143,7 +138,7 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		OperationID:     "rebuild-" + generationID,
 		CreatedAt:       time.Now(),
 		Apply: func(staged storepaths.GenPaths) error {
-			return rebuildRestoreKeys(sourceRoot, addresses, nodeRole, masterKey, exportPassphrase, staged)
+			return rebuildRestoreKeys(sourceRoot, addresses, nodeRole, kr, exportPassphrase, staged)
 		},
 	}); err != nil {
 		return fmt.Errorf("rebuild failed; nothing was committed: %w", err)
@@ -203,7 +198,7 @@ func initializeRebuildNodeRole(role noderole.Role, kr *crypto.Keyring) error {
 	return nil
 }
 
-func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Role, masterKey, exportPassphrase []byte, staged storepaths.GenPaths) error {
+func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Role, kr *crypto.Keyring, exportPassphrase []byte, staged storepaths.GenPaths) error {
 	keysDir := resolveBackupKeysDir(sourceRoot)
 	if len(addresses) == 0 {
 		var err error
@@ -222,7 +217,7 @@ func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Rol
 			WithNodeRole(role).
 			WithLogger(logInfof).
 			WithActiveNamespace(staged).
-			RestoreActiveForRebuild(keysDir, address, masterKey, exportPassphrase)
+			RestoreActiveForRebuild(keysDir, address, kr, exportPassphrase)
 		if err != nil {
 			return fmt.Errorf("failed to rebuild %s: %w", address, err)
 		}

@@ -93,9 +93,13 @@ func NewKeyring() (*Keyring, error) {
 	}, nil
 }
 
-// NewKeyringFromKey adopts an existing key as the first term. It exists so a
-// store can be created with a key derived elsewhere; ordinary creation uses
-// NewKeyring.
+// NewKeyringFromKey adopts an existing key as the first term.
+//
+// It exists for test fixtures that hold a known key. Production code opens a
+// keyring rather than constructing one, and an architecture test enforces
+// that: this is the one remaining way to place arbitrary bytes behind the
+// keyring API, so using it in production would undo the confinement that keeps
+// passphrase derivation inside this package.
 func NewKeyringFromKey(key []byte) (*Keyring, error) {
 	if len(key) != argon2KeyLen {
 		return nil, fmt.Errorf("term key must be %d bytes, got %d", argon2KeyLen, len(key))
@@ -160,26 +164,6 @@ func (kr *Keyring) Open(sealed []byte, ctx ObjectContext) ([]byte, error) {
 		return nil, fmt.Errorf("keyring has no key for term %d", term)
 	}
 	return openUnderTerm(sealed, key, term, ctx)
-}
-
-// CurrentTermKey returns a copy of the current term's key bytes.
-//
-// This is the phase-1 compatibility seam: it exists so call sites that still
-// take a raw key keep working while only one term exists. The copy is
-// deliberate — the caller owns the returned slice and must zero it when done,
-// and no caller can reach into the keyring's own storage through it.
-//
-// Phase 2 migrates those callers to Seal/Open and deletes this method, which
-// turns "did every site move?" into a compile error.
-func (kr *Keyring) CurrentTermKey() ([]byte, error) {
-	if kr == nil || len(kr.terms) == 0 {
-		return nil, fmt.Errorf("keyring is not open")
-	}
-	key, ok := kr.terms[kr.currentTerm]
-	if !ok {
-		return nil, fmt.Errorf("keyring has no key for current term %d", kr.currentTerm)
-	}
-	return append([]byte(nil), key...), nil
 }
 
 // PolicyIntegrityKey derives the identity's policy-integrity HMAC key from

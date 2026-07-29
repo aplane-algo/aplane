@@ -62,7 +62,7 @@ func loadVerifiedStoredConfigAtPath(path string, key []byte, parser storedConfig
 }
 
 // LoadVerifiedStoredConfigWithKeyring derives the policy integrity key from
-// the identity master key, verifies policy.yaml, and parses it.
+// the identity keyring, verifies policy.yaml, and parses it.
 func LoadVerifiedStoredConfigWithKeyring(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, error) {
 	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
@@ -73,7 +73,7 @@ func LoadVerifiedStoredConfigWithKeyring(dataRoot, identityID string, kr *crypto
 }
 
 // LoadVerifiedSentryConfigWithKeyring derives the policy integrity key
-// from the identity master key, verifies policy.yaml as a sentry policy, and
+// from the identity keyring, verifies policy.yaml as a sentry policy, and
 // parses it.
 func LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, error) {
 	key, err := kr.PolicyIntegrityKey()
@@ -172,7 +172,7 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, key []b
 }
 
 // SaveStoredConfigWithKeyring derives the policy integrity key from the
-// identity master key and writes policy.yaml plus policy.yaml.hmac.
+// identity keyring and writes policy.yaml plus policy.yaml.hmac.
 func SaveStoredConfigWithKeyring(dataRoot, identityID string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
 	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
@@ -183,7 +183,7 @@ func SaveStoredConfigWithKeyring(dataRoot, identityID string, cfg *StoredConfig,
 }
 
 // SaveStoredSentryConfigWithKeyring derives the policy integrity key
-// from the identity master key and writes sentry policy.yaml plus
+// from the identity keyring and writes sentry policy.yaml plus
 // policy.yaml.hmac.
 func SaveStoredSentryConfigWithKeyring(dataRoot, identityID string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
 	key, err := kr.PolicyIntegrityKey()
@@ -195,7 +195,7 @@ func SaveStoredSentryConfigWithKeyring(dataRoot, identityID string, cfg *StoredC
 }
 
 // SavePolicyBytesWithKeyring derives the policy integrity key from the
-// identity master key and writes exact policy.yaml bytes plus policy.yaml.hmac.
+// identity keyring and writes exact policy.yaml bytes plus policy.yaml.hmac.
 func SavePolicyBytesWithKeyring(dataRoot, identityID string, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
 	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
@@ -206,7 +206,7 @@ func SavePolicyBytesWithKeyring(dataRoot, identityID string, policyBytes []byte,
 }
 
 // SaveSentryBytesWithKeyring derives the policy integrity key from the
-// identity master key and writes exact sentry-policy bytes plus
+// identity keyring and writes exact sentry-policy bytes plus
 // policy.yaml.hmac.
 func SaveSentryBytesWithKeyring(dataRoot, identityID string, sentryBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
 	key, err := kr.PolicyIntegrityKey()
@@ -275,7 +275,7 @@ func signPolicyFileIntegrityAtPath(path string, key []byte, signedAt time.Time, 
 }
 
 // SignPolicyFileIntegrityWithKeyring derives the policy integrity key from
-// the identity master key and signs the current policy.yaml bytes.
+// the identity keyring and signs the current policy.yaml bytes.
 func SignPolicyFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.Keyring, signedAt time.Time) error {
 	key, err := kr.PolicyIntegrityKey()
 	if err != nil {
@@ -286,7 +286,7 @@ func SignPolicyFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.
 }
 
 // SignSentryFileIntegrityWithKeyring derives the policy integrity key
-// from the identity master key and signs the current sentry-policy bytes in
+// from the identity keyring and signs the current sentry-policy bytes in
 // policy.yaml.
 func SignSentryFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.Keyring, signedAt time.Time) error {
 	key, err := kr.PolicyIntegrityKey()

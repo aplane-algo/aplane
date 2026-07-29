@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -74,29 +73,20 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	if err != nil {
 		t.Fatalf("Failed to create keystore metadata: %v", err)
 	}
-	masterKey, err := masterKeyRing.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey(): %v", err)
-	}
-	if err := policy.SaveStoredConfigWithKeyring(tmpDir, auth.DefaultIdentityID, &policy.StoredConfig{}, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
-		crypto.ZeroBytes(masterKey)
+	if err := policy.SaveStoredConfigWithKeyring(tmpDir, auth.DefaultIdentityID, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
 		t.Fatalf("Failed to create policy baseline: %v", err)
 	}
 	roleBytes, _, err := noderole.SaveInitial(keyPaths, noderole.RoleSigner, time.Now())
 	if err != nil {
-		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Failed to create node role: %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(keyPaths, auth.DefaultIdentityID, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
-		crypto.ZeroBytes(masterKey)
+	if err := noderole.SaveIdentitySidecarWithKeyring(keyPaths, auth.DefaultIdentityID, roleBytes, masterKeyRing, time.Now()); err != nil {
 		t.Fatalf("Failed to create node role sidecar: %v", err)
 	}
-	initialPolicy, err := policyruntime.LoadVerified(tmpDir, auth.DefaultIdentityID, serverConfigForTest(), cryptotest.Keyring(t, masterKey))
+	initialPolicy, err := policyruntime.LoadVerified(tmpDir, auth.DefaultIdentityID, serverConfigForTest(), masterKeyRing)
 	if err != nil {
-		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Failed to verify policy baseline: %v", err)
 	}
-	crypto.ZeroBytes(masterKey)
 
 	// Initialize FileKeyStore and derive master key
 	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)

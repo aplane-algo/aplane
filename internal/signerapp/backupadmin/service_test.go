@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,10 +90,8 @@ func TestBackupIdentityCapturesSourceApprovalAndCustomGenesisMappings(t *testing
 	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
 	address, keyJSON := keystest.Ed25519KeyJSON(t)
 	defer crypto.ZeroBytes(keyJSON)
-	if err := ir.WithMasterKey(func(masterKey []byte) error {
-		encrypted, err := crypto.EncryptWithTermKey(
-			keyJSON, masterKey, crypto.FirstTerm, crypto.AccountKeyContext(address),
-		)
+	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+		encrypted, err := masterKey.Seal(keyJSON, crypto.AccountKeyContext(address))
 		if err != nil {
 			return err
 		}
@@ -278,12 +275,12 @@ func TestRecoveredBatchSurvivesPassphraseRotationAndActivation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := ir.WithMasterKey(func(masterKey []byte) error {
+	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		return noderole.SaveIdentitySidecarWithKeyring(
 			paths,
 			auth.DefaultIdentityID,
 			roleBytes,
-			cryptotest.Keyring(t, masterKey),
+			masterKey,
 			time.Unix(1_700_000_000, 0),
 		)
 	}); err != nil {
@@ -1018,12 +1015,12 @@ func installBackupAdminPolicyForRole(
 	role noderole.Role,
 ) {
 	t.Helper()
-	if err := ir.WithMasterKey(func(masterKey []byte) error {
+	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		return policy.SaveStoredConfigWithKeyring(
 			paths.Root(),
 			auth.DefaultIdentityID,
 			stored,
-			cryptotest.Keyring(t, masterKey),
+			masterKey,
 			time.Unix(1_700_000_000, 0),
 		)
 	}); err != nil {

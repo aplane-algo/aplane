@@ -51,11 +51,11 @@ func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T)
 			ir.KeyCount(),
 		)
 	}
-	if err := ir.WithMasterKey(func([]byte) error { return nil }); err != nil {
-		t.Fatalf("WithMasterKey(recovery) error = %v", err)
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
+		t.Fatalf("WithKeyring(recovery) error = %v", err)
 	}
 	ir.Lock()
-	if err := ir.WithMasterKey(func([]byte) error { return nil }); err == nil {
-		t.Fatal("WithMasterKey(after lock) error = nil")
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err == nil {
+		t.Fatal("WithKeyring(after lock) error = nil")
 	}
 }

@@ -48,15 +48,15 @@ func TestTermEnvelopeEncryptDecrypt_RoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Encrypt with master key
-			encrypted, err := EncryptWithTermKey(tt.plaintext, masterKey, FirstTerm, envelopeTestContext)
+			encrypted, err := encryptWithTermKey(tt.plaintext, masterKey, FirstTerm, envelopeTestContext)
 			if err != nil {
-				t.Fatalf("EncryptWithMasterKey failed: %v", err)
+				t.Fatalf("EncryptWithKeyring failed: %v", err)
 			}
 
 			// Decrypt with master key
-			decrypted, err := DecryptWithTermKey(encrypted, masterKey, FirstTerm, envelopeTestContext)
+			decrypted, err := decryptWithTermKey(encrypted, masterKey, FirstTerm, envelopeTestContext)
 			if err != nil {
-				t.Fatalf("DecryptWithMasterKey failed: %v", err)
+				t.Fatalf("DecryptWithKeyring failed: %v", err)
 			}
 			defer ZeroBytes(decrypted)
 
@@ -78,14 +78,14 @@ func TestTermEnvelopeEncrypt_Randomness(t *testing.T) {
 
 	plaintext := []byte("test data")
 
-	encrypted1, err := EncryptWithTermKey(plaintext, masterKey, FirstTerm, envelopeTestContext)
+	encrypted1, err := encryptWithTermKey(plaintext, masterKey, FirstTerm, envelopeTestContext)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey 1 failed: %v", err)
+		t.Fatalf("EncryptWithKeyring 1 failed: %v", err)
 	}
 
-	encrypted2, err := EncryptWithTermKey(plaintext, masterKey, FirstTerm, envelopeTestContext)
+	encrypted2, err := encryptWithTermKey(plaintext, masterKey, FirstTerm, envelopeTestContext)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey 2 failed: %v", err)
+		t.Fatalf("EncryptWithKeyring 2 failed: %v", err)
 	}
 
 	// The encrypted outputs should be different (different nonce each time)
@@ -94,8 +94,8 @@ func TestTermEnvelopeEncrypt_Randomness(t *testing.T) {
 	}
 
 	// But both should decrypt to the same plaintext
-	decrypted1, _ := DecryptWithTermKey(encrypted1, masterKey, FirstTerm, envelopeTestContext)
-	decrypted2, _ := DecryptWithTermKey(encrypted2, masterKey, FirstTerm, envelopeTestContext)
+	decrypted1, _ := decryptWithTermKey(encrypted1, masterKey, FirstTerm, envelopeTestContext)
+	decrypted2, _ := decryptWithTermKey(encrypted2, masterKey, FirstTerm, envelopeTestContext)
 	defer ZeroBytes(decrypted1)
 	defer ZeroBytes(decrypted2)
 
@@ -119,14 +119,14 @@ func TestTermEnvelopeDecrypt_WrongKey(t *testing.T) {
 
 	plaintext := []byte("secret data")
 
-	encrypted, err := EncryptWithTermKey(plaintext, masterKey, FirstTerm, envelopeTestContext)
+	encrypted, err := encryptWithTermKey(plaintext, masterKey, FirstTerm, envelopeTestContext)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey failed: %v", err)
+		t.Fatalf("EncryptWithKeyring failed: %v", err)
 	}
 
 	// Try to decrypt with wrong key
-	_, err = DecryptWithTermKey(encrypted, wrongKey, FirstTerm, envelopeTestContext)
+	_, err = decryptWithTermKey(encrypted, wrongKey, FirstTerm, envelopeTestContext)
 	if err == nil {
-		t.Fatal("DecryptWithMasterKey should fail with wrong key")
+		t.Fatal("DecryptWithKeyring should fail with wrong key")
 	}
 }

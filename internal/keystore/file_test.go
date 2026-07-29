@@ -84,9 +84,7 @@ func createTestKeyFile(t *testing.T, keysDir, address string, masterKey []byte) 
 	filePath := filepath.Join(keysDir, address+".key")
 	var dataToWrite []byte
 	if len(masterKey) > 0 {
-		encrypted, err := crypto.EncryptWithTermKey(
-			keyJSON, masterKey, crypto.FirstTerm, crypto.AccountKeyContext(address),
-		)
+		encrypted, err := cryptotest.Keyring(t, masterKey).Seal(keyJSON, crypto.AccountKeyContext(address))
 		if err != nil {
 			t.Fatalf("Failed to encrypt key: %v", err)
 		}
@@ -215,12 +213,9 @@ func TestFileKeyStore_GetDecryptFailureIsNotInvalidPassphrase(t *testing.T) {
 	ctx := context.Background()
 
 	addr := "CORRUPTEDKEY123"
-	encrypted, err := crypto.EncryptWithTermKey(
-		[]byte(`{"key_type":"ed25519"}`), testMasterKey, crypto.FirstTerm,
-		crypto.AccountKeyContext(addr),
-	)
+	encrypted, err := cryptotest.Keyring(t, testMasterKey).Seal([]byte(`{"key_type":"ed25519"}`), crypto.AccountKeyContext(addr))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey failed: %v", err)
+		t.Fatalf("encryptWithTermKey failed: %v", err)
 	}
 
 	var envelope struct {
@@ -511,11 +506,9 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal(component key) error = %v", err)
 	}
-	encrypted, err := crypto.EncryptWithTermKey(
-		keyJSON, testMasterKey, crypto.FirstTerm, crypto.SentryCredentialContext(componentKey),
-	)
+	encrypted, err := cryptotest.Keyring(t, testMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(componentKey))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey() error = %v", err)
+		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keys.SentryCredentialFilePath(paths, testIdentityID, componentKey), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(component key) error = %v", err)
@@ -588,9 +581,9 @@ func TestFileKeyStore_CacheConcurrency(t *testing.T) {
 	}
 }
 
-// TestClearKeysBlocksDuringWithMasterKey proves that ClearKeys() blocks while
-// a WithMasterKey callback is running (RLock held).
-func TestClearKeysBlocksDuringWithMasterKey(t *testing.T) {
+// TestClearKeysBlocksDuringWithKeyring proves that ClearKeys() blocks while
+// a WithKeyring callback is running (RLock held).
+func TestClearKeysBlocksDuringWithKeyring(t *testing.T) {
 	fs := &FileKeyStore{cache: map[string]keys.KeyScanInfo{}}
 	key := make([]byte, 32)
 	for i := range key {
@@ -603,17 +596,16 @@ func TestClearKeysBlocksDuringWithMasterKey(t *testing.T) {
 	started := make(chan struct{})
 	cleared := make(chan struct{})
 
-	// Hold the RLock via WithMasterKey for a bit
+	// Hold the RLock via WithKeyring for a bit
 	go func() {
-		_ = fs.WithMasterKey(func(mk []byte) error {
+		_ = fs.WithKeyring(func(kr *crypto.Keyring) error {
 			close(started) // signal we're inside the callback
 			time.Sleep(100 * time.Millisecond)
-			// Master key should still be non-zero here
-			for _, b := range mk {
-				if b == 0 {
-					t.Errorf("master key was zeroed while WithMasterKey callback was running")
-					return nil
-				}
+			// The keyring must still be usable here, which is what the
+			// read lock guarantees against a concurrent ClearKeys.
+			if _, err := kr.Seal([]byte("probe"), crypto.AccountKeyContext("PROBE")); err != nil {
+				t.Errorf("keyring unusable while WithKeyring callback was running: %v", err)
+				return nil
 			}
 			return nil
 		})
@@ -630,7 +622,7 @@ func TestClearKeysBlocksDuringWithMasterKey(t *testing.T) {
 	// cleared should not fire for ~100ms (while callback holds RLock)
 	select {
 	case <-cleared:
-		t.Fatal("ClearKeys completed while WithMasterKey callback was still running")
+		t.Fatal("ClearKeys completed while WithKeyring callback was still running")
 	case <-time.After(50 * time.Millisecond):
 		// expected — ClearKeys is still blocked
 	}

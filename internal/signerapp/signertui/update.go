@@ -162,7 +162,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			// Signer locked; show unlock screen immediately regardless of
 			// current view. Any in-progress operation would fail anyway since
-			// the master key has been zeroed.
+			// the keyring has been zeroed.
 			m.applySignerLockedState()
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd())
 		}

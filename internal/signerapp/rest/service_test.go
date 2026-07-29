@@ -952,8 +952,8 @@ teal: |
 		t.Fatalf("ValidateSpec() error = %v", err)
 	}
 	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
-	if err := ir.WithMasterKey(func(mk []byte) error {
-		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, mk))
+	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
+		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), yamlData, keyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
@@ -1387,8 +1387,8 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 		},
 	}
 	registerRestGenericTemplate(t)
-	if err := ir.WithMasterKey(func(mk []byte) error {
-		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), restGenericTemplateYAML(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, mk))
+	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
+		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), restGenericTemplateYAML(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateForPaths(rest generic template) error = %v", err)

@@ -60,10 +60,9 @@ func NewFileKeyStoreForPaths(paths storepaths.Paths, identityID string) *FileKey
 // Unlock opens the store's keyring with the passphrase and holds it for the
 // session.
 //
-// The keyring replaces the derived master key: a successful unwrap is the
-// passphrase check, so there is no separate verifier to consult. Callers do
-// not receive key material — every caller of the old InitializeMasterKey
-// discarded it, and the keyring hands out operations instead.
+// A successful unwrap is the passphrase check, so there is no separate
+// verifier to consult. Callers receive no key material: the keyring hands out
+// operations, not bytes.
 func (f *FileKeyStore) Unlock(passphrase []byte) error {
 	keystoreRoot := f.paths.KeystoreMetadataDir(f.identityID)
 	kr, err := crypto.OpenKeyringStore(keystoreRoot, passphrase)
@@ -138,32 +137,6 @@ func (f *FileKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
 		return fmt.Errorf("keystore not unlocked (keyring not available): %w", ErrStoreLocked)
 	}
 	return fn(f.keyring)
-}
-
-// WithMasterKey is the phase-1 compatibility accessor: it hands out the
-// current term's key bytes so call sites that have not yet moved to
-// WithKeyring keep working. With one term, "current" is the only key there
-// is.
-//
-// The slice is valid only for the duration of fn. It is a private copy, and
-// it is zeroed when fn returns — a caller that retains it past fn reads
-// zeros, not key material. Callers must not zero it themselves.
-//
-// This is deliberately temporary. Phase 2 migrates the remaining callers and
-// deletes this method, which makes completeness a compile error rather than
-// something a lint has to police.
-func (f *FileKeyStore) WithMasterKey(fn func(masterKey []byte) error) error {
-	f.cacheLock.RLock()
-	defer f.cacheLock.RUnlock()
-	if f.keyring == nil {
-		return fmt.Errorf("keystore not unlocked (master key not available): %w", ErrStoreLocked)
-	}
-	key, err := f.keyring.CurrentTermKey()
-	if err != nil {
-		return err
-	}
-	defer crypto.ZeroBytes(key)
-	return fn(key)
 }
 
 // ClearKeys securely zeros every term key and drops the keyring. Called when

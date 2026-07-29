@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"sort"
 	"sync"
 
@@ -19,22 +20,22 @@ import (
 // Generator defines the interface for key generation.
 // All methods require an explicit keyType parameter - the system never
 // implicitly chooses a key type for the user.
-// masterKey is the derived encryption key from the keystore (not raw passphrase).
+// kr is the derived encryption key from the keystore (not raw passphrase).
 type Generator interface {
 	// RoutingFamily returns the algorithm family this generator supports (e.g., "falcon1024", "ed25519")
 	RoutingFamily() string
 
 	// GenerateFromSeed generates a key from a deterministic seed.
 	// keyType must be explicitly specified (e.g., "aplane.falcon1024.v1", "ed25519").
-	GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error)
+	GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, kr *crypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error)
 
 	// GenerateFromMnemonic generates a key from mnemonic words.
 	// keyType must be explicitly specified (e.g., "aplane.falcon1024.v1", "ed25519").
-	GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error)
+	GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, kr *crypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error)
 
 	// GenerateRandom generates a new random key.
 	// keyType must be explicitly specified (e.g., "aplane.falcon1024.v1", "ed25519").
-	GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error)
+	GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, kr *crypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error)
 }
 
 // ErrInvalidParams marks key-generation failures caused by invalid

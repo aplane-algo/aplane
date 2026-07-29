@@ -217,9 +217,9 @@ func TestDecryptWithTermKeyRejectsVersion2(t *testing.T) {
 	}
 
 	fakeKey := make([]byte, 32)
-	_, err = DecryptWithTermKey(encrypted, fakeKey, FirstTerm, envelopeTestContext)
+	_, err = decryptWithTermKey(encrypted, fakeKey, FirstTerm, envelopeTestContext)
 	if err == nil {
-		t.Fatal("DecryptWithTermKey should reject envelope_version 2")
+		t.Fatal("decryptWithTermKey should reject envelope_version 2")
 	}
 	if !strings.Contains(err.Error(), "is not a term envelope") {
 		t.Errorf("Expected version mismatch error, got: %v", err)
@@ -251,12 +251,12 @@ func TestDecryptWithTermKeyRejectsInvalidNonceLength(t *testing.T) {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
-	_, err = DecryptWithTermKey(data, bytes.Repeat([]byte{1}, 32), FirstTerm, envelopeTestContext)
+	_, err = decryptWithTermKey(data, bytes.Repeat([]byte{1}, 32), FirstTerm, envelopeTestContext)
 	if err == nil {
-		t.Fatal("DecryptWithTermKey() error = nil, want invalid nonce length")
+		t.Fatal("decryptWithTermKey() error = nil, want invalid nonce length")
 	}
 	if !strings.Contains(err.Error(), "invalid nonce length") {
-		t.Fatalf("DecryptWithTermKey() error = %v, want invalid nonce length", err)
+		t.Fatalf("decryptWithTermKey() error = %v, want invalid nonce length", err)
 	}
 }
 

@@ -192,7 +192,7 @@ func reconcileRotationFile(path string, validate func(string) error) error {
 			return nil
 		}
 		return fmt.Errorf(
-			"canonical file is not valid under the current master key and no rotation artifact can restore it: %w",
+			"canonical file is not valid under the current term key and no rotation artifact can restore it: %w",
 			canonicalErr,
 		)
 	}

@@ -52,7 +52,7 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //
 // Per-lock scope:
 //
-//	passphraseLock  guards keySession, reloadFn, and master-key-derivation paths.
+//	passphraseLock  guards keySession, reloadFn, and keyring-unlock paths.
 //	keysLock        guards the keys/keyTypes/keyLsigSizes maps. keysetRev is
 //	                bumped while keysLock is held (and atomically readable).
 //	watcherMu       guards watcherCancel, dirty, and the reloadLock callback
@@ -380,7 +380,7 @@ func (ir *Runtime) IsUnlocked() bool {
 	return ir.lockRuntime.IsUnlocked()
 }
 
-// IsRecovery reports that the master key is available only for explicit
+// IsRecovery reports that the keyring is available only for explicit
 // activation reconciliation; signing remains locked.
 func (ir *Runtime) IsRecovery() bool {
 	return ir.lockRuntime.IsRecovery()
@@ -403,7 +403,7 @@ func (ir *Runtime) SetRecovery() {
 	ir.lockRuntime.SetRecovery()
 }
 
-// TryRecoveryUnlock derives the master key without scanning or publishing
+// TryRecoveryUnlock opens the keyring without scanning or publishing
 // active credentials, then enters recovery state.
 func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
 	if ir.decommissioned.Load() {
@@ -854,15 +854,6 @@ func (ir *Runtime) WithKeyring(fn func(*crypto.Keyring) error) error {
 	return ir.keyStore.WithKeyring(fn)
 }
 
-// WithMasterKey runs fn with the cached master key.
-// Returns ErrDecommissioned if the identity has been decommissioned.
-func (ir *Runtime) WithMasterKey(fn func([]byte) error) error {
-	if ir.decommissioned.Load() {
-		return ErrDecommissioned
-	}
-	return ir.keyStore.WithMasterKey(fn)
-}
-
 // SnapshotKeySession returns the current key session under the passphrase lock.
 // Returns nil if the identity is decommissioned.
 func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
@@ -877,7 +868,7 @@ func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
 
 // --- Reload ---
 
-// Reload rescans keys using the cached master key (no passphrase needed).
+// Reload rescans keys using the cached keyring (no passphrase needed).
 // Admin mutation paths call this directly while holding the identity mutation lock;
 // watcher paths must use reloadFromWatcher so they acquire that lock themselves.
 func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
@@ -889,7 +880,7 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 	return ir.reloadLocked(nil)
 }
 
-// ReloadWithPassphrase initializes the master key from passphrase and scans keys.
+// ReloadWithPassphrase opens the keyring with the passphrase and scans keys.
 // Caller must NOT hold passphraseLock.
 func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.ReloadReport, error) {
 	if ir.decommissioned.Load() {

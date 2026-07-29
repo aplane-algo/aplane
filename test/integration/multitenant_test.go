@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"net/http"
 	"os"
@@ -124,21 +123,17 @@ func createIntegrationIdentityWithTemplate(t *testing.T, env *harness.TestEnvClo
 	if err != nil {
 		t.Fatalf("failed to create %s keystore metadata: %v", identityID, err)
 	}
-	masterKey, err := masterKeyRing.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey(): %v", err)
-	}
-	t.Cleanup(func() { apcrypto.ZeroBytes(masterKey) })
+	t.Cleanup(masterKeyRing.Zero)
 
 	_, roleBytes, err := noderole.Load(paths)
 	if err != nil {
 		t.Fatalf("failed to load node role for %s: %v", identityID, err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(paths, identityID, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(paths, identityID, roleBytes, masterKeyRing, time.Now()); err != nil {
 		t.Fatalf("failed to create %s node role sidecar: %v", identityID, err)
 	}
 
-	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
 		t.Fatalf("failed to create signed %s policy: %v", identityID, err)
 	}
 
@@ -164,7 +159,7 @@ func createIntegrationIdentityWithTemplate(t *testing.T, env *harness.TestEnvClo
 
 	family := fmt.Sprintf("integration-%s-template-%d", identityID, time.Now().UnixNano())
 	keyType := integrationTemplateKeyType(family)
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, integrationGenericTemplateYAML(family), keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, integrationGenericTemplateYAML(family), keyType, templatestore.TemplateTypeGeneric, masterKeyRing); err != nil {
 		t.Fatalf("failed to save %s template %s: %v", identityID, keyType, err)
 	}
 	if err := keytypestate.Put(paths, identityID, keytypestate.Record{

@@ -89,7 +89,7 @@ func writeManagedCredentialFile(t *testing.T, paths storepaths.Paths, identityID
 		if err != nil {
 			t.Fatalf("CredentialContextForFile(%q): %v", name, err)
 		}
-		encrypted, err := crypto.EncryptWithTermKey(keyJSON, masterKey, crypto.FirstTerm, ctx)
+		encrypted, err := cryptotest.Keyring(t, masterKey).Seal(keyJSON, ctx)
 		if err != nil {
 			t.Fatalf("Failed to encrypt key: %v", err)
 		}
@@ -138,7 +138,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 
 	t.Run("encrypted file", func(t *testing.T) {
 		plaintext := []byte(`{"key_type":"ed25519","public_key":"abc"}`)
-		encrypted, err := crypto.EncryptWithTermKey(plaintext, masterKey, crypto.FirstTerm, readTestContext)
+		encrypted, err := cryptotest.Keyring(t, masterKey).Seal(plaintext, readTestContext)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -158,7 +158,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 
 	t.Run("encrypted file with no keyring", func(t *testing.T) {
 		plaintext := []byte(`{"key_type":"ed25519"}`)
-		encrypted, err := crypto.EncryptWithTermKey(plaintext, masterKey, crypto.FirstTerm, readTestContext)
+		encrypted, err := cryptotest.Keyring(t, masterKey).Seal(plaintext, readTestContext)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -188,7 +188,7 @@ func TestReadAndDecryptFile(t *testing.T) {
 
 	t.Run("wrong master key", func(t *testing.T) {
 		plaintext := []byte(`{"key_type":"ed25519"}`)
-		encrypted, err := crypto.EncryptWithTermKey(plaintext, masterKey, crypto.FirstTerm, readTestContext)
+		encrypted, err := cryptotest.Keyring(t, masterKey).Seal(plaintext, readTestContext)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -443,11 +443,9 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 
 		firstPath := writeKeyFile(t, paths, "default", address, keyJSON, masterKey)
 		duplicatePath := filepath.Join(activeKeysDirForTest(t, paths, "default"), "duplicate.key")
-		encrypted, err := crypto.EncryptWithTermKey(
-			keyJSON, masterKey, crypto.FirstTerm, mustCredentialContext(t, duplicatePath),
-		)
+		encrypted, err := cryptotest.Keyring(t, masterKey).Seal(keyJSON, mustCredentialContext(t, duplicatePath))
 		if err != nil {
-			t.Fatalf("EncryptWithTermKey() error = %v", err)
+			t.Fatalf("encryptWithTermKey() error = %v", err)
 		}
 		if err := os.WriteFile(duplicatePath, encrypted, 0600); err != nil {
 			t.Fatalf("write duplicate key file: %v", err)
@@ -613,9 +611,7 @@ func TestScanKeysDirectoryWithKeyringReportRecordsSaltWarnings(t *testing.T) {
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
 	}`)
-	encrypted, err := crypto.EncryptWithTermKey(
-		keyJSON, masterKey, crypto.FirstTerm, mustCredentialContext(t, keyFile),
-	)
+	encrypted, err := cryptotest.Keyring(t, masterKey).Seal(keyJSON, mustCredentialContext(t, keyFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -855,9 +851,7 @@ func TestScanKeysDirectoryWithKeyringReportRecordsIncompatibleFormatWarnings(t *
 		"public_key": "abc",
 		"private_key": "def"
 	}`)
-	encrypted, err := crypto.EncryptWithTermKey(
-		keyJSON, masterKey, crypto.FirstTerm, mustCredentialContext(t, keyFile),
-	)
+	encrypted, err := cryptotest.Keyring(t, masterKey).Seal(keyJSON, mustCredentialContext(t, keyFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -956,11 +950,9 @@ func TestReadDecryptedKeyJSONWithKeyring(t *testing.T) {
 	masterKey := testMasterKey(t)
 	plaintext := []byte(`{"key_type":"ed25519","public_key":"abc"}`)
 	path := filepath.Join(t.TempDir(), "test.key")
-	encrypted, err := crypto.EncryptWithTermKey(
-		plaintext, masterKey, crypto.FirstTerm, mustCredentialContext(t, path),
-	)
+	encrypted, err := cryptotest.Keyring(t, masterKey).Seal(plaintext, mustCredentialContext(t, path))
 	if err != nil {
-		t.Fatalf("EncryptWithTermKey() error = %v", err)
+		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(path, encrypted, 0600); err != nil {
 		t.Fatal(err)

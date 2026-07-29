@@ -42,7 +42,7 @@ func deriveNodeRoleIntegrityKey(masterKey []byte) ([]byte, error) {
 
 func deriveIntegrityKey(masterKey []byte, info []byte, length int, label string) ([]byte, error) {
 	if len(masterKey) == 0 {
-		return nil, fmt.Errorf("master key is required")
+		return nil, fmt.Errorf("a term key is required")
 	}
 	reader := hkdf.New(sha256.New, masterKey, nil, info)
 	key := make([]byte, length)

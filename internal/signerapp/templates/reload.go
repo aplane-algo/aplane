@@ -16,7 +16,6 @@ import (
 type KeyStore interface {
 	Unlock(passphrase []byte) error
 	WithKeyring(fn func(kr *crypto.Keyring) error) error
-	WithMasterKey(fn func(masterKey []byte) error) error
 	ClearKeys()
 	Scan(passphrase []byte) error
 	GetCache() map[string]string
@@ -104,7 +103,7 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 
 	if len(passphrase) > 0 {
 		if err := s.KeyStore.Unlock(passphrase); err != nil {
-			return nil, fmt.Errorf("failed to initialize master key: %w", err)
+			return nil, fmt.Errorf("failed to unlock the keystore: %w", err)
 		}
 		initializedMasterKey = true
 	}

@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,10 +95,9 @@ func TestCmdSentryExportRequiresPublicSidecar(t *testing.T) {
 
 func TestCmdSentryExportRejectsSpendingKey(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
-		masterKey := deriveTestMasterKey(t, passphrase)
-		defer crypto.ZeroBytes(masterKey)
+		kr := deriveTestKeyring(t, passphrase)
 
-		result, err := keymgmt.GenerateKey(keystorePaths(), productIdentityID(), "ed25519", cryptotest.Keyring(t, masterKey), nil)
+		result, err := keymgmt.GenerateKey(keystorePaths(), productIdentityID(), "ed25519", kr, nil)
 		if err != nil {
 			t.Fatalf("GenerateKey(ed25519) error = %v", err)
 		}
@@ -117,11 +115,10 @@ func TestCmdSentryExportRejectsSpendingKey(t *testing.T) {
 
 func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.GenerationResult, string) {
 	t.Helper()
-	masterKey := deriveTestMasterKey(t, passphrase)
-	defer crypto.ZeroBytes(masterKey)
+	kr := deriveTestKeyring(t, passphrase)
 
 	g := &falconkeygen.WitnessFalcon1024Generator{}
-	result, err := g.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), masterKey, witness.Falcon1024V1, nil)
+	result, err := g.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), kr, witness.Falcon1024V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom(sentry-falcon1024) error = %v", err)
 	}
@@ -131,16 +128,12 @@ func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.Ge
 	return result, result.PublicKeyHex
 }
 
-func deriveTestMasterKey(t *testing.T, passphrase []byte) []byte {
+func deriveTestKeyring(t *testing.T, passphrase []byte) *crypto.Keyring {
 	t.Helper()
 	kr, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), passphrase)
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		t.Fatalf("CurrentTermKey() error = %v", err)
-	}
-	return masterKey
+	t.Cleanup(kr.Zero)
+	return kr
 }

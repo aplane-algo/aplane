@@ -87,21 +87,21 @@ func ParseBackup(decryptedJSON []byte) (keyJSON []byte, templateYAML []byte, tem
 }
 
 // ExportKey exports a single key file from the keystore to a standalone backup.
-// It decrypts the key with the store's master key, then re-encrypts it with the
+// It decrypts the key with the store's keyring, then re-encrypts it with the
 // export passphrase using standalone encryption (envelope_version 2).
 // If the key is template-backed, the template YAML is bundled into the same
 // encrypted payload (no separate .template file) when an installed
 // identity-local template is available.
 // Returns the SHA256 checksum of the written key file and its size.
-func ExportKey(paths storepaths.Paths, identityID, srcDir, destDir, address string, masterKey, exportPassphrase []byte) (string, int64, error) {
+func ExportKey(paths storepaths.Paths, identityID, srcDir, destDir, address string, kr *crypto.Keyring, exportPassphrase []byte) (string, int64, error) {
 	source, err := resolveManagedCredentialFile(srcDir, address)
 	if err != nil {
 		return "", 0, err
 	}
-	return exportManagedCredential(paths, identityID, destDir, source, masterKey, exportPassphrase)
+	return exportManagedCredential(paths, identityID, destDir, source, kr, exportPassphrase)
 }
 
-func exportManagedCredential(paths storepaths.Paths, identityID, destDir string, source keys.ManagedCredentialFile, masterKey, exportPassphrase []byte) (string, int64, error) {
+func exportManagedCredential(paths storepaths.Paths, identityID, destDir string, source keys.ManagedCredentialFile, kr *crypto.Keyring, exportPassphrase []byte) (string, int64, error) {
 	destFile := filepath.Join(destDir, source.Selector+".apb")
 
 	// Read source key file
@@ -117,7 +117,7 @@ func exportManagedCredential(paths storepaths.Paths, identityID, destDir string,
 	if err != nil {
 		return "", 0, err
 	}
-	plaintext, err := crypto.DecryptWithTermKey(data, masterKey, crypto.FirstTerm, ctx)
+	plaintext, err := kr.Open(data, ctx)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to decrypt key: %w", err)
 	}
@@ -127,7 +127,7 @@ func exportManagedCredential(paths storepaths.Paths, identityID, destDir string,
 	}
 
 	// Determine what to encrypt: plain key or bundle with template
-	payload, err := buildExportPayload(paths, identityID, plaintext, masterKey)
+	payload, err := buildExportPayload(paths, identityID, plaintext, kr)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to build export payload for %s: %w", source.Selector, err)
 	}
@@ -191,7 +191,7 @@ func validateExportSource(source keys.ManagedCredentialFile, plaintext []byte) e
 // buildExportPayload returns the plaintext to encrypt for export.
 // If the key is template-backed, it builds a BackupBundle JSON containing both
 // the key and the template YAML. Otherwise it returns the key JSON as-is.
-func buildExportPayload(paths storepaths.Paths, identityID string, keyJSON, masterKey []byte) ([]byte, error) {
+func buildExportPayload(paths storepaths.Paths, identityID string, keyJSON []byte, kr *crypto.Keyring) ([]byte, error) {
 	// Parse key to get key type
 	payload, err := keys.ParsePayload(keyJSON)
 	if err != nil {
@@ -199,7 +199,7 @@ func buildExportPayload(paths storepaths.Paths, identityID string, keyJSON, mast
 	}
 	defer payload.ZeroSecrets()
 
-	templateType, templatePlain, err := loadTemplateForExport(paths, identityID, payload.KeyType, masterKey)
+	templateType, templatePlain, err := loadTemplateForExport(paths, identityID, payload.KeyType, kr)
 	if err != nil {
 		return nil, err
 	}
@@ -227,13 +227,7 @@ func buildExportPayload(paths storepaths.Paths, identityID string, keyJSON, mast
 
 // loadTemplateForExport returns the template YAML to bundle with a key export.
 // Installed identity-local templates are exported when available.
-func loadTemplateForExport(paths storepaths.Paths, identityID, keyType string, masterKey []byte) (templatestore.TemplateType, []byte, error) {
-	// Boundary adapter: backup migrates in slice 3 and still threads a raw key.
-	kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
-	if err != nil {
-		return "", nil, err
-	}
-	defer kr.Zero()
+func loadTemplateForExport(paths storepaths.Paths, identityID, keyType string, kr *crypto.Keyring) (templatestore.TemplateType, []byte, error) {
 	templateType, templatePath := findKeystoreTemplate(paths, identityID, keyType)
 	if templatePath != "" {
 		templatePlain, err := templatestore.LoadTemplateFromPath(templatePath, kr)
@@ -265,7 +259,7 @@ func findKeystoreTemplate(paths storepaths.Paths, identityID, keyType string) (t
 }
 
 // ExportAllKeys exports all managed credential files from the keystore to a standalone backup directory.
-// Each file is decrypted with the store's master key and re-encrypted with the export
+// Each file is decrypted with the store's keyring and re-encrypted with the export
 // passphrase using standalone encryption (envelope_version 2).
 // No .keystore file is written — each backup file is self-contained.
 //
@@ -273,7 +267,7 @@ func findKeystoreTemplate(paths storepaths.Paths, identityID, keyType string) (t
 // and reported in the returned skipped map (address -> reason) so a single
 // damaged key cannot block backing up the remaining healthy keys. All other
 // failures (read, decrypt, template, IO) still abort the export.
-func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, masterKey, exportPassphrase []byte) (checksums, skipped map[string]string, err error) {
+func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, kr *crypto.Keyring, exportPassphrase []byte) (checksums, skipped map[string]string, err error) {
 	managedFiles, err := keys.ScanManagedCredentialFiles(srcDir)
 	if err != nil {
 		return nil, nil, err
@@ -301,7 +295,7 @@ func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, m
 	skipped = make(map[string]string)
 	for _, managedFile := range managedFiles {
 		selector := managedFile.Selector
-		checksum, _, err := exportManagedCredential(paths, identityID, keysDestDir, managedFile, masterKey, exportPassphrase)
+		checksum, _, err := exportManagedCredential(paths, identityID, keysDestDir, managedFile, kr, exportPassphrase)
 		if err != nil {
 			if isCanonicalPayloadRejection(err) {
 				skipped[selector] = err.Error()

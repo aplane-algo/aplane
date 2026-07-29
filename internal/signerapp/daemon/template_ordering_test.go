@@ -5,7 +5,7 @@ package daemon
 
 import (
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"testing"
 	"time"
 
@@ -55,7 +55,7 @@ teal: |
 `, family)))
 
 	ir := server.registry.Get(auth.DefaultIdentityID)
-	err = ir.WithMasterKey(func(masterKey []byte) error {
+	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		signingArgs := []keys.StoredSigningArg{{
 			Name:       "preimage",
 			Label:      "Preimage",
@@ -64,7 +64,7 @@ teal: |
 			ByteLength: 32,
 		}}
 		payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "#pragma version 6\nint 1", signingArgs, "")
-		result, saveErr := keys.SavePayload(server.keyPaths, auth.DefaultIdentityID, payload, cryptotest.Keyring(t, masterKey))
+		result, saveErr := keys.SavePayload(server.keyPaths, auth.DefaultIdentityID, payload, masterKey)
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
 		}
