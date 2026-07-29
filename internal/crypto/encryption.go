@@ -65,22 +65,6 @@ const (
 	argon2Memory  = 64 * 1024 // 64 MB
 	argon2Threads = 4         // parallelism
 	argon2KeyLen  = 32        // AES-256
-
-	// CurrentKeystoreMetadataVersion is the .keystore schema version this
-	// release writes and the only version it reads.
-	CurrentKeystoreMetadataVersion = GenerationalKeystoreMetadataVersion
-
-	// GenerationalKeystoreMetadataVersion marks a store whose active
-	// key/key-type namespaces live under identities/<id>/generations/ behind
-	// the CURRENT pointer (docs/ARCH_GENERATIONS.md). Older binaries reject
-	// it at unlock, rotation, rebuild, and policy-sign — before reading a
-	// single stale legacy path.
-	GenerationalKeystoreMetadataVersion = 3
-
-	// KeystoreLayoutGenerationsV1 is the layout tag recorded in version-3
-	// metadata; the version gate does the rejection, the field documents
-	// the reason.
-	KeystoreLayoutGenerationsV1 = "generations/v1"
 )
 
 // EncryptedData stores the encrypted content with metadata
@@ -107,14 +91,6 @@ const (
 	keystoreMetaFile = ".keystore"
 	masterSaltLen    = 32
 )
-
-// DeriveMasterKey derives a key from passphrase and salt using current default parameters.
-// Uses Argon2id (memory-hard, GPU-resistant).
-// For keystores, prefer VerifyAndDeriveMasterKey which reads stored KDF parameters.
-// Caller is responsible for zeroing the returned key when done.
-func DeriveMasterKey(passphrase []byte, salt []byte) []byte {
-	return argon2.IDKey(passphrase, salt, argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
-}
 
 // deriveMasterKeyParams derives a key using explicit Argon2id parameters.
 func deriveMasterKeyParams(passphrase, salt []byte, time, memory uint32, threads uint8) []byte {
