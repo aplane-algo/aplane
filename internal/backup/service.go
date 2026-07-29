@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -114,7 +115,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	if err := WriteReadme(stageDir); err != nil {
 		return nil, err
 	}
-	if err := copyPolicyFilesToArchive(req.Paths, req.IdentityID, stageDir, req.MasterKey); err != nil {
+	if err := copyPolicyFilesToArchiveWithMasterKey(req.Paths, req.IdentityID, stageDir, req.MasterKey); err != nil {
 		return nil, err
 	}
 	nodeRole, _, err := noderole.Load(req.Paths)
@@ -162,7 +163,18 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	}, nil
 }
 
-func copyPolicyFilesToArchive(paths storepaths.Paths, identityID, stageDir string, masterKey []byte) error {
+// copyPolicyFilesToArchiveWithMasterKey is the boundary adapter: backup still
+// threads a raw key and migrates in its own slice.
+func copyPolicyFilesToArchiveWithMasterKey(paths storepaths.Paths, identityID, stageDir string, masterKey []byte) error {
+	kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
+	if err != nil {
+		return err
+	}
+	defer kr.Zero()
+	return copyPolicyFilesToArchive(paths, identityID, stageDir, kr)
+}
+
+func copyPolicyFilesToArchive(paths storepaths.Paths, identityID, stageDir string, kr *crypto.Keyring) error {
 	dstDir := filepath.Join(stageDir, "policy")
 	if err := os.MkdirAll(dstDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create policy backup directory: %w", err)
@@ -173,11 +185,11 @@ func copyPolicyFilesToArchive(paths storepaths.Paths, identityID, stageDir strin
 	}
 	switch nodeRole.Role {
 	case noderole.RoleSentry:
-		if _, err := policy.LoadVerifiedSentryConfigWithMasterKey(paths.Root(), identityID, masterKey); err != nil {
+		if _, err := policy.LoadVerifiedSentryConfigWithKeyring(paths.Root(), identityID, kr); err != nil {
 			return fmt.Errorf("failed to verify policy.yaml before backup: %w", err)
 		}
 	case noderole.RoleSigner:
-		if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(paths.Root(), identityID, masterKey); err != nil {
+		if _, err := policy.LoadVerifiedStoredConfigWithKeyring(paths.Root(), identityID, kr); err != nil {
 			return fmt.Errorf("failed to verify policy.yaml before backup: %w", err)
 		}
 	default:

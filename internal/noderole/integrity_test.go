@@ -25,12 +25,12 @@ func TestSaveInitialAndVerifyWithMasterKey(t *testing.T) {
 	if doc.Role != RoleSigner {
 		t.Fatalf("Role = %q, want %q", doc.Role, RoleSigner)
 	}
-	if err := SaveIdentitySidecarWithMasterKey(paths, "default", roleBytes, masterKey, time.Unix(100, 0)); err != nil {
-		t.Fatalf("SaveIdentitySidecarWithMasterKey() error = %v", err)
+	if err := SaveIdentitySidecarWithKeyring(paths, "default", roleBytes, keyringForTest(t, masterKey), time.Unix(100, 0)); err != nil {
+		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
-	verified, err := LoadAndVerifyWithMasterKey(paths, "default", masterKey)
+	verified, err := LoadAndVerifyWithKeyring(paths, "default", keyringForTest(t, masterKey))
 	if err != nil {
-		t.Fatalf("LoadAndVerifyWithMasterKey() error = %v", err)
+		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
 	if verified.Role != RoleSigner {
 		t.Fatalf("verified Role = %q, want %q", verified.Role, RoleSigner)
@@ -57,15 +57,15 @@ func TestVerifyRejectsTamperedNodeRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
-	if err := SaveIdentitySidecarWithMasterKey(paths, "default", roleBytes, masterKey, time.Now()); err != nil {
-		t.Fatalf("SaveIdentitySidecarWithMasterKey() error = %v", err)
+	if err := SaveIdentitySidecarWithKeyring(paths, "default", roleBytes, keyringForTest(t, masterKey), time.Now()); err != nil {
+		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
 	if err := os.WriteFile(paths.NodeRolePath(), []byte("schema_version: 1\nrole: sentry\n"), 0o660); err != nil {
 		t.Fatalf("WriteFile(tamper) error = %v", err)
 	}
-	_, err = LoadAndVerifyWithMasterKey(paths, "default", masterKey)
+	_, err = LoadAndVerifyWithKeyring(paths, "default", keyringForTest(t, masterKey))
 	if !errors.Is(err, ErrRoleMismatch) {
-		t.Fatalf("LoadAndVerifyWithMasterKey(tampered) error = %v, want ErrRoleMismatch", err)
+		t.Fatalf("LoadAndVerifyWithKeyring(tampered) error = %v, want ErrRoleMismatch", err)
 	}
 }
 
@@ -80,11 +80,23 @@ func TestVerifyRejectsWrongMasterKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
-	if err := SaveIdentitySidecarWithMasterKey(paths, "default", roleBytes, masterKey, time.Now()); err != nil {
-		t.Fatalf("SaveIdentitySidecarWithMasterKey() error = %v", err)
+	if err := SaveIdentitySidecarWithKeyring(paths, "default", roleBytes, keyringForTest(t, masterKey), time.Now()); err != nil {
+		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
-	_, err = LoadAndVerifyWithMasterKey(paths, "default", wrongKey)
+	_, err = LoadAndVerifyWithKeyring(paths, "default", keyringForTest(t, wrongKey))
 	if !errors.Is(err, ErrRoleMismatch) {
-		t.Fatalf("LoadAndVerifyWithMasterKey(wrong key) error = %v, want ErrRoleMismatch", err)
+		t.Fatalf("LoadAndVerifyWithKeyring(wrong key) error = %v, want ErrRoleMismatch", err)
 	}
+}
+
+// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
+// holds while phase 2 migrates callers from raw keys to the keyring.
+func keyringForTest(t *testing.T, masterKey []byte) *apcrypto.Keyring {
+	t.Helper()
+	kr, err := apcrypto.NewKeyringFromKey(masterKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromKey(): %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	return kr
 }

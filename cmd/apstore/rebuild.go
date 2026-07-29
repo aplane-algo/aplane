@@ -129,7 +129,7 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	}
 	defer crypto.ZeroBytes(masterKey)
 
-	if err := initializeRebuildNodeRole(nodeRole, masterKey); err != nil {
+	if err := initializeRebuildNodeRole(nodeRole, kr); err != nil {
 		return err
 	}
 	generationID, err := genstore.NewGenerationID(time.Now())
@@ -192,12 +192,12 @@ func verifyRebuildSource(sourceRoot string, exportPassphrase []byte) error {
 	return nil
 }
 
-func initializeRebuildNodeRole(role noderole.Role, masterKey []byte) error {
+func initializeRebuildNodeRole(role noderole.Role, kr *crypto.Keyring) error {
 	roleBytes, _, err := noderole.SaveInitial(keystorePaths(), role, time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to create node role: %w", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithMasterKey(keystorePaths(), productIdentityID(), roleBytes, masterKey, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(keystorePaths(), productIdentityID(), roleBytes, kr, time.Now()); err != nil {
 		return fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 	}
 	return nil

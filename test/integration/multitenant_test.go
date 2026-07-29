@@ -133,11 +133,11 @@ func createIntegrationIdentityWithTemplate(t *testing.T, env *harness.TestEnvClo
 	if err != nil {
 		t.Fatalf("failed to load node role for %s: %v", identityID, err)
 	}
-	if err := noderole.SaveIdentitySidecarWithMasterKey(paths, identityID, roleBytes, masterKey, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(paths, identityID, roleBytes, keyringForTest(t, masterKey), time.Now()); err != nil {
 		t.Fatalf("failed to create %s node role sidecar: %v", identityID, err)
 	}
 
-	if err := policy.SaveStoredConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, keyringForTest(t, masterKey), time.Now()); err != nil {
 		t.Fatalf("failed to create signed %s policy: %v", identityID, err)
 	}
 
@@ -246,4 +246,16 @@ func keyTypesContain(items []signerapi.KeyTypeInfo, keyType string) bool {
 		}
 	}
 	return false
+}
+
+// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
+// holds while phase 2 migrates callers from raw keys to the keyring.
+func keyringForTest(t *testing.T, masterKey []byte) *apcrypto.Keyring {
+	t.Helper()
+	kr, err := apcrypto.NewKeyringFromKey(masterKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromKey(): %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	return kr
 }

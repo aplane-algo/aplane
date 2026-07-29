@@ -15,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -239,8 +240,8 @@ type policyTargetOps struct {
 	snapshotUnavailableErr  string
 	marshal                 func(*policy.StoredConfig) ([]byte, error)
 	parse                   func([]byte) (*policy.StoredConfig, error)
-	loadVerified            func(dataDir, identityID string, masterKey []byte) (*policy.StoredConfig, error)
-	saveBytes               func(dataDir, identityID string, data []byte, masterKey []byte, signedAt time.Time) error
+	loadVerified            func(dataDir, identityID string, kr *crypto.Keyring) (*policy.StoredConfig, error)
+	saveBytes               func(dataDir, identityID string, data []byte, kr *crypto.Keyring, signedAt time.Time) error
 	apply                   func(dataDir string, cfg *serverconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error)
 	activeSnapshot          func(*identity.Runtime) (*policy.StoredConfig, *policy.Config)
 	setState                func(*identity.Runtime, *policy.StoredConfig, *policy.Config)
@@ -308,8 +309,8 @@ func (s Service) policyTargetOps(ir *identity.Runtime, target adminproto.PolicyT
 			snapshotUnavailableErr:  "active stored policy snapshot is unavailable; reload or unlock the identity",
 			marshal:                 policy.MarshalStoredConfig,
 			parse:                   policy.ParseStoredConfig,
-			loadVerified:            policy.LoadVerifiedStoredConfigWithMasterKey,
-			saveBytes:               policy.SavePolicyBytesWithMasterKey,
+			loadVerified:            policy.LoadVerifiedStoredConfigWithKeyring,
+			saveBytes:               policy.SavePolicyBytesWithKeyring,
 			apply:                   policyruntime.ApplyStoredConfig,
 			activeSnapshot:          (*identity.Runtime).PolicySnapshot,
 			setState: func(ir *identity.Runtime, stored *policy.StoredConfig, effective *policy.Config) {
@@ -322,8 +323,8 @@ func (s Service) policyTargetOps(ir *identity.Runtime, target adminproto.PolicyT
 			snapshotUnavailableErr:  "active stored sentry policy snapshot is unavailable; reload or unlock the identity",
 			marshal:                 policy.MarshalStoredSentryConfig,
 			parse:                   policy.ParseStoredSentryConfig,
-			loadVerified:            policy.LoadVerifiedSentryConfigWithMasterKey,
-			saveBytes:               policy.SaveSentryBytesWithMasterKey,
+			loadVerified:            policy.LoadVerifiedSentryConfigWithKeyring,
+			saveBytes:               policy.SaveSentryBytesWithKeyring,
 			apply:                   policyruntime.ApplySentryStoredConfig,
 			activeSnapshot:          (*identity.Runtime).SentryPolicySnapshot,
 			setState: func(ir *identity.Runtime, stored *policy.StoredConfig, effective *policy.Config) {
@@ -442,8 +443,8 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 			}
 		}
 
-		if err := ir.WithMasterKey(func(masterKey []byte) error {
-			if _, err := ops.loadVerified(s.Deps.DataDir(), ir.ID(), masterKey); err != nil {
+		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+			if _, err := ops.loadVerified(s.Deps.DataDir(), ir.ID(), kr); err != nil {
 				return newPolicyReplaceError(
 					"policy_verify_failed",
 					fmt.Errorf("failed to verify existing %s: %w", policyTargetFileName(), err),
@@ -452,11 +453,11 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 			if _, err := ops.apply(s.Deps.DataDir(), s.Deps.Config(), stored); err != nil {
 				return newPolicyReplaceError("policy_validation_failed", fmt.Errorf("invalid policy: %w", err))
 			}
-			if err := ops.saveBytes(s.Deps.DataDir(), ir.ID(), data, masterKey, time.Now()); err != nil {
+			if err := ops.saveBytes(s.Deps.DataDir(), ir.ID(), data, kr, time.Now()); err != nil {
 				return newPolicyReplaceError("policy_save_failed", fmt.Errorf("failed to save %s: %w", policyTargetFileName(), err))
 			}
 
-			verified, err := ops.loadVerified(s.Deps.DataDir(), ir.ID(), masterKey)
+			verified, err := ops.loadVerified(s.Deps.DataDir(), ir.ID(), kr)
 			if err != nil {
 				return newPolicyReplaceError("policy_verify_failed", fmt.Errorf("saved policy failed verification: %w", err))
 			}

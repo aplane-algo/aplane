@@ -70,8 +70,8 @@ func SaveInitial(paths storepaths.Paths, role Role, createdAt time.Time) ([]byte
 	return data, doc, nil
 }
 
-func SaveIdentitySidecarWithMasterKey(paths storepaths.Paths, identityID string, roleBytes, masterKey []byte, signedAt time.Time) error {
-	key, err := apcrypto.DeriveNodeRoleIntegrityKey(masterKey)
+func SaveIdentitySidecarWithKeyring(paths storepaths.Paths, identityID string, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
+	key, err := kr.NodeRoleIntegrityKey()
 	if err != nil {
 		return err
 	}
@@ -105,8 +105,8 @@ func SaveIdentitySidecar(paths storepaths.Paths, identityID string, roleBytes, k
 	return nil
 }
 
-func LoadAndVerifyWithMasterKey(paths storepaths.Paths, identityID string, masterKey []byte) (Document, error) {
-	key, err := apcrypto.DeriveNodeRoleIntegrityKey(masterKey)
+func LoadAndVerifyWithKeyring(paths storepaths.Paths, identityID string, kr *apcrypto.Keyring) (Document, error) {
+	key, err := kr.NodeRoleIntegrityKey()
 	if err != nil {
 		return Document{}, err
 	}

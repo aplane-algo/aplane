@@ -94,14 +94,14 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to create node role: %w", err)
 	}
 	createdNodeRole = true
-	if err := noderole.SaveIdentitySidecarWithMasterKey(opts.Paths, opts.IdentityID, roleBytes, masterKey, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(opts.Paths, opts.IdentityID, roleBytes, keyring, time.Now()); err != nil {
 		return result, fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 	}
 	var policyErr error
 	if role == noderole.RoleSentry {
-		policyErr = policy.SaveStoredSentryConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now())
+		policyErr = policy.SaveStoredSentryConfigWithKeyring(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, keyring, time.Now())
 	} else {
-		policyErr = policy.SaveStoredConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now())
+		policyErr = policy.SaveStoredConfigWithKeyring(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, keyring, time.Now())
 	}
 	if policyErr != nil {
 		return result, fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)

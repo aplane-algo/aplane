@@ -352,7 +352,7 @@ func TestBuildIdentityRuntimeLoadsStoredPolicy(t *testing.T) {
 	}
 	masterKey := testMasterKeyForIdentity(t, server.keyPaths, "alice", passphrase)
 	defer crypto.ZeroBytes(masterKey)
-	if err := policy.SaveStoredConfigWithMasterKey(root, "alice", stored, masterKey, time.Unix(1700000000, 0)); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(root, "alice", stored, keyringForTest(t, masterKey), time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -496,7 +496,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}
 	masterKey := testMasterKeyForIdentity(t, server.keyPaths, "alice", passphrase)
 	defer crypto.ZeroBytes(masterKey)
-	if err := policy.SaveStoredConfigWithMasterKey(root, "alice", stored, masterKey, time.Unix(1700000000, 0)); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(root, "alice", stored, keyringForTest(t, masterKey), time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 

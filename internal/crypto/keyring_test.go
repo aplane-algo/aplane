@@ -694,3 +694,64 @@ func TestOpenKeyringZeroesRejectedTermKeys(t *testing.T) {
 		})
 	}
 }
+
+// TestKeyringIntegrityKeysMatchTheDerivedOnes proves the keyring reaches the
+// same HMAC keys the raw-key functions do.
+//
+// Every policy and node-role sidecar already on disk was signed with a key
+// from derivePolicyIntegrityKey or deriveNodeRoleIntegrityKey. Phase 2 moves
+// the callers to the keyring; if that changed the derivation by even a salt,
+// every one of those sidecars would fail verification and the store would
+// fail closed on load.
+func TestKeyringIntegrityKeysMatchTheDerivedOnes(t *testing.T) {
+	termKey := bytes.Repeat([]byte{0x5A}, argon2KeyLen)
+	kr, err := NewKeyringFromKey(termKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromKey(): %v", err)
+	}
+	defer kr.Zero()
+
+	cases := map[string]struct {
+		fromKeyring func() ([]byte, error)
+		fromKey     func([]byte) ([]byte, error)
+	}{
+		"policy":    {kr.PolicyIntegrityKey, derivePolicyIntegrityKey},
+		"node role": {kr.NodeRoleIntegrityKey, deriveNodeRoleIntegrityKey},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			viaKeyring, err := tc.fromKeyring()
+			if err != nil {
+				t.Fatalf("keyring derivation: %v", err)
+			}
+			defer ZeroBytes(viaKeyring)
+			viaKey, err := tc.fromKey(termKey)
+			if err != nil {
+				t.Fatalf("raw-key derivation: %v", err)
+			}
+			defer ZeroBytes(viaKey)
+			if len(viaKeyring) == 0 {
+				t.Fatal("derived an empty key; nothing was proved")
+			}
+			if !bytes.Equal(viaKeyring, viaKey) {
+				t.Fatal("keyring derivation diverged; every sidecar on disk would stop verifying")
+			}
+		})
+	}
+
+	// The two domains must not collide, or a policy sidecar would verify
+	// under the node-role key.
+	policyKey, err := kr.PolicyIntegrityKey()
+	if err != nil {
+		t.Fatalf("PolicyIntegrityKey(): %v", err)
+	}
+	defer ZeroBytes(policyKey)
+	roleKey, err := kr.NodeRoleIntegrityKey()
+	if err != nil {
+		t.Fatalf("NodeRoleIntegrityKey(): %v", err)
+	}
+	defer ZeroBytes(roleKey)
+	if bytes.Equal(policyKey, roleKey) {
+		t.Fatal("policy and node-role integrity keys are identical")
+	}
+}

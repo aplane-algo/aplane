@@ -4,6 +4,7 @@
 package policy
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -40,36 +41,40 @@ func TestSaveAndLoadVerifiedStoredConfig(t *testing.T) {
 	}
 }
 
-func TestSaveAndLoadVerifiedStoredConfigWithMasterKey(t *testing.T) {
+func TestSaveAndLoadVerifiedStoredConfigWithKeyring(t *testing.T) {
 	root := t.TempDir()
-	masterKey := []byte("test master key")
+	// A real term key length: the keyring requires 32 bytes where the
+	// bare HKDF helper accepted anything non-empty.
+	masterKey := bytes.Repeat([]byte{0x7B}, 32)
 	wantReject := false
 	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &wantReject}}
 
-	if err := SaveStoredConfigWithMasterKey(root, "alice", want, masterKey, time.Unix(1700000000, 0)); err != nil {
-		t.Fatalf("SaveStoredConfigWithMasterKey() error = %v", err)
+	if err := SaveStoredConfigWithKeyring(root, "alice", want, keyringForTest(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
-	got, err := LoadVerifiedStoredConfigWithMasterKey(root, "alice", masterKey)
+	got, err := LoadVerifiedStoredConfigWithKeyring(root, "alice", keyringForTest(t, masterKey))
 	if err != nil {
-		t.Fatalf("LoadVerifiedStoredConfigWithMasterKey() error = %v", err)
+		t.Fatalf("LoadVerifiedStoredConfigWithKeyring() error = %v", err)
 	}
 	if got.RejectForeignRekey == nil || *got.RejectForeignRekey != wantReject {
 		t.Fatalf("RejectForeignRekey = %#v, want %v", got.RejectForeignRekey, wantReject)
 	}
 }
 
-func TestSaveAndLoadVerifiedSentryConfigWithMasterKey(t *testing.T) {
+func TestSaveAndLoadVerifiedSentryConfigWithKeyring(t *testing.T) {
 	root := t.TempDir()
-	masterKey := []byte("test master key")
+	// A real term key length: the keyring requires 32 bytes where the
+	// bare HKDF helper accepted anything non-empty.
+	masterKey := bytes.Repeat([]byte{0x7B}, 32)
 	rejectRekey := true
 	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectRekey: &rejectRekey}}
 
-	if err := SaveStoredSentryConfigWithMasterKey(root, "alice", want, masterKey, time.Unix(1700000000, 0)); err != nil {
-		t.Fatalf("SaveStoredSentryConfigWithMasterKey() error = %v", err)
+	if err := SaveStoredSentryConfigWithKeyring(root, "alice", want, keyringForTest(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+		t.Fatalf("SaveStoredSentryConfigWithKeyring() error = %v", err)
 	}
-	got, err := LoadVerifiedSentryConfigWithMasterKey(root, "alice", masterKey)
+	got, err := LoadVerifiedSentryConfigWithKeyring(root, "alice", keyringForTest(t, masterKey))
 	if err != nil {
-		t.Fatalf("LoadVerifiedSentryConfigWithMasterKey() error = %v", err)
+		t.Fatalf("LoadVerifiedSentryConfigWithKeyring() error = %v", err)
 	}
 	if got.RejectRekey == nil || !*got.RejectRekey {
 		t.Fatalf("RejectRekey = %#v, want true", got.RejectRekey)
@@ -224,9 +229,9 @@ func TestLoadVerifiedStoredConfigRejectsWrongKey(t *testing.T) {
 	if err := SaveStoredConfigWithIntegrity(root, "alice", &StoredConfig{}, key, time.Time{}); err != nil {
 		t.Fatalf("SaveStoredConfigWithIntegrity() error = %v", err)
 	}
-	wrongKey, err := apcrypto.DerivePolicyIntegrityKey([]byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+	wrongKey, err := keyringForTest(t, []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).PolicyIntegrityKey()
 	if err != nil {
-		t.Fatalf("DerivePolicyIntegrityKey(wrong) error = %v", err)
+		t.Fatalf("PolicyIntegrityKey(wrong) error = %v", err)
 	}
 	defer apcrypto.ZeroBytes(wrongKey)
 
@@ -234,4 +239,16 @@ func TestLoadVerifiedStoredConfigRejectsWrongKey(t *testing.T) {
 	if !errors.Is(err, ErrPolicyIntegrityMismatch) {
 		t.Fatalf("LoadVerifiedStoredConfig() error = %v, want ErrPolicyIntegrityMismatch", err)
 	}
+}
+
+// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
+// holds while phase 2 migrates callers from raw keys to the keyring.
+func keyringForTest(t *testing.T, masterKey []byte) *apcrypto.Keyring {
+	t.Helper()
+	kr, err := apcrypto.NewKeyringFromKey(masterKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromKey(): %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	return kr
 }

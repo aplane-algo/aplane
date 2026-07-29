@@ -75,10 +75,10 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(masterKey)
-	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
+	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, identityID, keyringForTest(t, masterKey)); err != nil {
 		t.Fatalf("policy integrity baseline did not verify: %v", err)
 	}
-	role, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, masterKey)
+	role, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, keyringForTest(t, masterKey))
 	if err != nil {
 		t.Fatalf("node role integrity baseline did not verify: %v", err)
 	}
@@ -128,14 +128,14 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(masterKey)
-	role, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, masterKey)
+	role, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, keyringForTest(t, masterKey))
 	if err != nil {
 		t.Fatalf("node role integrity baseline did not verify: %v", err)
 	}
 	if role.Role != noderole.RoleSentry {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSentry)
 	}
-	if _, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
+	if _, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, identityID, keyringForTest(t, masterKey)); err != nil {
 		t.Fatalf("sentry policy integrity baseline did not verify: %v", err)
 	}
 	active, err := genstore.ResolveActive(paths, identityID)
@@ -225,4 +225,16 @@ func TestHasPartialState(t *testing.T) {
 	if HasPartialState(paths, identityID) {
 		t.Fatal("presence of .keystore should not be considered partial initialization")
 	}
+}
+
+// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
+// holds while phase 2 migrates callers from raw keys to the keyring.
+func keyringForTest(t *testing.T, masterKey []byte) *crypto.Keyring {
+	t.Helper()
+	kr, err := crypto.NewKeyringFromKey(masterKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromKey(): %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	return kr
 }

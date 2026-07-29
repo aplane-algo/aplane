@@ -157,7 +157,7 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		return result, err
 	}
 	for _, doc := range policyDocs {
-		policySidecar, ok, err := createPendingPolicySidecar(doc, oldMasterKey, newMasterKey, opts.Logf)
+		policySidecar, ok, err := createPendingPolicySidecar(doc, oldKeyring, newKeyring, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -168,7 +168,7 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		}
 	}
 
-	nodeRoleSidecar, ok, err := createPendingNodeRoleSidecar(paths, identityID, oldMasterKey, newMasterKey, opts.Logf)
+	nodeRoleSidecar, ok, err := createPendingNodeRoleSidecar(paths, identityID, oldKeyring, newKeyring, opts.Logf)
 	if err != nil {
 		cleanupPendingNewFiles(pendingFiles)
 		return result, err
@@ -409,7 +409,7 @@ func createPendingEncryptedFile(path string, ctx crypto.ObjectContext, oldMaster
 type policyRotationDocument struct {
 	name       string
 	path       string
-	verifyFunc func(masterKey []byte) error
+	verifyFunc func(kr *crypto.Keyring) error
 }
 
 func policyDocumentsForRotation(paths storepaths.Paths, identityID string) ([]policyRotationDocument, error) {
@@ -424,13 +424,13 @@ func policyDocumentsForRotation(paths storepaths.Paths, identityID string) ([]po
 	}
 	switch nodeDoc.Role {
 	case noderole.RoleSentry:
-		doc.verifyFunc = func(masterKey []byte) error {
-			_, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataRoot, identityID, masterKey)
+		doc.verifyFunc = func(kr *crypto.Keyring) error {
+			_, err := policy.LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID, kr)
 			return err
 		}
 	case noderole.RoleSigner:
-		doc.verifyFunc = func(masterKey []byte) error {
-			_, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataRoot, identityID, masterKey)
+		doc.verifyFunc = func(kr *crypto.Keyring) error {
+			_, err := policy.LoadVerifiedStoredConfigWithKeyring(dataRoot, identityID, kr)
 			return err
 		}
 	default:
@@ -439,8 +439,8 @@ func policyDocumentsForRotation(paths storepaths.Paths, identityID string) ([]po
 	return []policyRotationDocument{doc}, nil
 }
 
-func createPendingPolicySidecar(doc policyRotationDocument, oldMasterKey, newMasterKey []byte, log Logger) (*pendingFile, bool, error) {
-	if err := doc.verifyFunc(oldMasterKey); err != nil {
+func createPendingPolicySidecar(doc policyRotationDocument, oldKeyring, newKeyring *crypto.Keyring, log Logger) (*pendingFile, bool, error) {
+	if err := doc.verifyFunc(oldKeyring); err != nil {
 		return nil, false, fmt.Errorf("failed to verify %s integrity before passphrase rotation: %w", doc.name, err)
 	}
 
@@ -454,7 +454,7 @@ func createPendingPolicySidecar(doc policyRotationDocument, oldMasterKey, newMas
 		return nil, false, fmt.Errorf("failed to stat %s: %w", doc.name, err)
 	}
 
-	newPolicyKey, err := crypto.DerivePolicyIntegrityKey(newMasterKey)
+	newPolicyKey, err := newKeyring.PolicyIntegrityKey()
 	if err != nil {
 		return nil, false, err
 	}
@@ -488,8 +488,8 @@ func createPendingPolicySidecar(doc policyRotationDocument, oldMasterKey, newMas
 	return &pendingFile{original: sidecarPath, newPath: newPath, oldPath: sidecarPath + ".old"}, true, nil
 }
 
-func createPendingNodeRoleSidecar(paths storepaths.Paths, identityID string, oldMasterKey, newMasterKey []byte, log Logger) (*pendingFile, bool, error) {
-	if _, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, oldMasterKey); err != nil {
+func createPendingNodeRoleSidecar(paths storepaths.Paths, identityID string, oldKeyring, newKeyring *crypto.Keyring, log Logger) (*pendingFile, bool, error) {
+	if _, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, oldKeyring); err != nil {
 		return nil, false, fmt.Errorf("failed to verify node role integrity before passphrase rotation: %w", err)
 	}
 
@@ -502,7 +502,7 @@ func createPendingNodeRoleSidecar(paths storepaths.Paths, identityID string, old
 		return nil, false, fmt.Errorf("failed to stat node.yaml: %w", err)
 	}
 
-	newNodeRoleKey, err := crypto.DeriveNodeRoleIntegrityKey(newMasterKey)
+	newNodeRoleKey, err := newKeyring.NodeRoleIntegrityKey()
 	if err != nil {
 		return nil, false, err
 	}

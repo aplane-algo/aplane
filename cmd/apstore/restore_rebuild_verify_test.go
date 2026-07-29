@@ -103,9 +103,9 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer apcrypto.ZeroBytes(masterKey)
-	role, err := noderole.LoadAndVerifyWithMasterKey(keystorePaths(), productIdentityID(), masterKey)
+	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), keyringForTest(t, masterKey))
 	if err != nil {
-		t.Fatalf("LoadAndVerifyWithMasterKey() error = %v", err)
+		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
 	if role.Role != noderole.RoleSigner {
 		t.Fatalf("rebuilt node role = %q, want signer", role.Role)
@@ -155,9 +155,9 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer apcrypto.ZeroBytes(masterKey)
-	role, err := noderole.LoadAndVerifyWithMasterKey(keystorePaths(), productIdentityID(), masterKey)
+	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), keyringForTest(t, masterKey))
 	if err != nil {
-		t.Fatalf("LoadAndVerifyWithMasterKey() error = %v", err)
+		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
 	if role.Role != noderole.RoleSentry {
 		t.Fatalf("rebuilt node role = %q, want sentry", role.Role)
@@ -827,4 +827,16 @@ func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 func testSentryComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
 	t.Helper()
 	return keystest.SentryComponentFalcon1024KeyJSON(t, 0xcd)
+}
+
+// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
+// holds while phase 2 migrates callers from raw keys to the keyring.
+func keyringForTest(t *testing.T, masterKey []byte) *apcrypto.Keyring {
+	t.Helper()
+	kr, err := apcrypto.NewKeyringFromKey(masterKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromKey(): %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	return kr
 }

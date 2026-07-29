@@ -845,6 +845,15 @@ func (ir *Runtime) KeyPaths() storepaths.Paths {
 	return ir.keyPaths
 }
 
+// WithKeyring runs fn with the identity's open keyring.
+// Returns ErrDecommissioned if the identity has been decommissioned.
+func (ir *Runtime) WithKeyring(fn func(*crypto.Keyring) error) error {
+	if ir.decommissioned.Load() {
+		return ErrDecommissioned
+	}
+	return ir.keyStore.WithKeyring(fn)
+}
+
 // WithMasterKey runs fn with the cached master key.
 // Returns ErrDecommissioned if the identity has been decommissioned.
 func (ir *Runtime) WithMasterKey(fn func([]byte) error) error {
