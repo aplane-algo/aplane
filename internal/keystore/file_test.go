@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
@@ -520,9 +521,9 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 		t.Fatalf("WriteFile(component key) error = %v", err)
 	}
 
-	report, err := keys.ScanKeysDirectoryWithMasterKeyReport(paths, testIdentityID, testMasterKey)
+	report, err := keys.ScanKeysDirectoryWithKeyringReport(paths, testIdentityID, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithMasterKeyReport() error = %v", err)
+		t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
 	}
 	if len(report.Keys) != 0 || len(report.Warnings) != 1 {
 		t.Fatalf("scan report = %#v, want one rejected key", report)

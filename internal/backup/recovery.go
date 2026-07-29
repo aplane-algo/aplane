@@ -146,6 +146,18 @@ func (r Restorer) RecoverEntry(entry *InspectedBackupEntry, masterKey []byte) (*
 // ApplyRecoveredEntry applies one already validated recovered entry to active
 // storage. The caller must establish durable rollback intent before calling
 // this method.
+// ApplyRecoveredEntryWithKeyring applies one recovered entry to the active
+// store. Backup still threads a raw key internally and migrates in slice 3,
+// so the keyring is unwrapped at this boundary rather than below it.
+func (r Restorer) ApplyRecoveredEntryWithKeyring(entry *recovered.Entry, kr *crypto.Keyring) (string, error) {
+	masterKey, err := kr.CurrentTermKey()
+	if err != nil {
+		return "", err
+	}
+	defer crypto.ZeroBytes(masterKey)
+	return r.ApplyRecoveredEntry(entry, masterKey)
+}
+
 func (r Restorer) ApplyRecoveredEntry(entry *recovered.Entry, masterKey []byte) (string, error) {
 	if entry == nil {
 		return "", fmt.Errorf("recovered entry is nil")
@@ -175,6 +187,12 @@ func RecoverManagedBackup(
 	exportPassphrase []byte,
 	role noderole.Role,
 ) (*recovered.Batch, error) {
+	// Boundary adapter: backup migrates in slice 3 and still threads a raw key.
+	recoveredKeyring, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
+	if err != nil {
+		return nil, err
+	}
+	defer recoveredKeyring.Zero()
 	resolvedArchive, err := ResolveManagedBackupPath(paths, identityID, archivePath)
 	if err != nil {
 		return nil, err
@@ -246,7 +264,7 @@ func RecoverManagedBackup(
 		SourceGenesisHashMappings:  sourceProjection.GenesisHashMappings,
 		CreatedAt:                  time.Now().UTC(),
 		Entries:                    entries,
-	}, masterKey)
+	}, recoveredKeyring)
 }
 
 func normalizeRecoverySelectors(keysDir string, selectors []string) ([]string, error) {

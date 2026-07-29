@@ -167,9 +167,9 @@ func (e *Entry) ZeroSecrets() {
 // Create validates, destination-encrypts, and atomically publishes one
 // recovered batch without mutating active key or key-type storage.
 //
-// req and masterKey are borrowed. Create does not clear caller-owned buffers
+// req and kr are borrowed. Create does not clear caller-owned buffers
 // and stores independently owned copies of all optional source context.
-func Create(paths storepaths.Paths, identityID string, req CreateRequest, masterKey []byte) (*Batch, error) {
+func Create(paths storepaths.Paths, identityID string, req CreateRequest, kr *crypto.Keyring) (*Batch, error) {
 	if len(req.Entries) == 0 {
 		return nil, fmt.Errorf("recovered batch requires at least one entry")
 	}
@@ -271,9 +271,8 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 
 	for i := range entries {
 		plaintext := entryPlaintexts[i]
-		encrypted, encryptErr := crypto.EncryptWithTermKey(
-			plaintext, masterKey, crypto.FirstTerm,
-			crypto.RecoveredEntryContext(restoreID, entries[i].Selector),
+		encrypted, encryptErr := kr.Seal(
+			plaintext, crypto.RecoveredEntryContext(restoreID, entries[i].Selector),
 		)
 		crypto.ZeroBytes(plaintext)
 		entryPlaintexts[i] = nil
@@ -296,9 +295,7 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 	if err != nil {
 		return nil, fmt.Errorf("marshal recovered batch: %w", err)
 	}
-	encrypted, encryptErr := crypto.EncryptWithTermKey(
-		plaintext, masterKey, crypto.FirstTerm, crypto.RecoveredBatchContext(restoreID),
-	)
+	encrypted, encryptErr := kr.Seal(plaintext, crypto.RecoveredBatchContext(restoreID))
 	crypto.ZeroBytes(plaintext)
 	if encryptErr != nil {
 		return nil, fmt.Errorf("encrypt recovered batch: %w", encryptErr)
@@ -332,21 +329,19 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 }
 
 // LoadBatch decrypts and validates one recovered-batch manifest.
-func LoadBatch(paths storepaths.Paths, identityID, restoreID string, masterKey []byte) (*Batch, error) {
+func LoadBatch(paths storepaths.Paths, identityID, restoreID string, kr *crypto.Keyring) (*Batch, error) {
 	if err := ValidateRestoreID(restoreID); err != nil {
 		return nil, err
 	}
-	return loadBatchAt(paths.RecoveredBatchMetadataPath(identityID, restoreID), restoreID, masterKey)
+	return loadBatchAt(paths.RecoveredBatchMetadataPath(identityID, restoreID), restoreID, kr)
 }
 
-func loadBatchAt(path, restoreID string, masterKey []byte) (*Batch, error) {
+func loadBatchAt(path, restoreID string, kr *crypto.Keyring) (*Batch, error) {
 	data, err := readRegularFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read recovered batch: %w", err)
 	}
-	plaintext, err := crypto.DecryptWithTermKey(
-		data, masterKey, crypto.FirstTerm, crypto.RecoveredBatchContext(restoreID),
-	)
+	plaintext, err := kr.Open(data, crypto.RecoveredBatchContext(restoreID))
 	if err != nil {
 		return nil, fmt.Errorf("decrypt recovered batch: %w", err)
 	}
@@ -368,7 +363,7 @@ func loadBatchAt(path, restoreID string, masterKey []byte) (*Batch, error) {
 //
 // The returned Entry owns plaintext key and template buffers. The caller must
 // call Entry.ZeroSecrets when finished.
-func LoadEntry(paths storepaths.Paths, identityID, restoreID string, meta BatchEntry, masterKey []byte) (*Entry, error) {
+func LoadEntry(paths storepaths.Paths, identityID, restoreID string, meta BatchEntry, kr *crypto.Keyring) (*Entry, error) {
 	if err := ValidateRestoreID(restoreID); err != nil {
 		return nil, err
 	}
@@ -376,18 +371,15 @@ func LoadEntry(paths storepaths.Paths, identityID, restoreID string, meta BatchE
 		return nil, err
 	}
 	path := filepath.Join(paths.RecoveredBatchEntriesDir(identityID, restoreID), meta.EntryFile)
-	return loadEntryAt(path, restoreID, meta, masterKey)
+	return loadEntryAt(path, restoreID, meta, kr)
 }
 
-func loadEntryAt(path, restoreID string, meta BatchEntry, masterKey []byte) (*Entry, error) {
+func loadEntryAt(path, restoreID string, meta BatchEntry, kr *crypto.Keyring) (*Entry, error) {
 	data, err := readRegularFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read recovered entry %q: %w", meta.Selector, err)
 	}
-	plaintext, err := crypto.DecryptWithTermKey(
-		data, masterKey, crypto.FirstTerm,
-		crypto.RecoveredEntryContext(restoreID, meta.Selector),
-	)
+	plaintext, err := kr.Open(data, crypto.RecoveredEntryContext(restoreID, meta.Selector))
 	if err != nil {
 		return nil, fmt.Errorf("decrypt recovered entry %q: %w", meta.Selector, err)
 	}

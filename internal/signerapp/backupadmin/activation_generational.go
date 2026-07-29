@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"slices"
 	"time"
 
@@ -33,9 +34,9 @@ func (s Service) activateRecoveredGenerational(
 	result *adminproto.ActivateRecoveredResult,
 ) error {
 	var review adminproto.ReviewRecoveredResult
-	err := ir.WithMasterKey(func(masterKey []byte) error {
+	err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		var reviewErr error
-		review, reviewErr = s.reviewRecoveredWithMasterKey(ir, req.RestoreID, masterKey)
+		review, reviewErr = s.reviewRecoveredWithKeyring(ir, req.RestoreID, masterKey)
 		return reviewErr
 	})
 	if err != nil {
@@ -87,7 +88,7 @@ func (s Service) activateRecoveredGenerational(
 		ReviewTokenSHA256: hex.EncodeToString(tokenDigest[:]),
 		CreatedAt:         time.Now(),
 		Apply: func(staged storepaths.GenPaths) error {
-			return ir.WithMasterKey(func(masterKey []byte) error {
+			return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 				return s.applyRecoveredBatchTo(ir, req, masterKey, &result.Warnings, staged)
 			})
 		},

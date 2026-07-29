@@ -8,6 +8,7 @@ package storemut
 import (
 	"context"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -74,24 +75,24 @@ func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, err
 
 // GenerateKeyWithActivatedContext creates and persists a key type using the
 // identity-scoped activated compiled key type set.
-func (s *Service) GenerateKeyWithActivatedContext(ctx context.Context, keyType string, masterKey []byte, params map[string]string, activated []string) (*keymgmt.GenerateResult, error) {
-	return keymgmt.GenerateKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, masterKey, params, activated)
+func (s *Service) GenerateKeyWithActivatedContext(ctx context.Context, keyType string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.GenerateResult, error) {
+	return keymgmt.GenerateKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, kr, params, activated)
 }
 
 // ImportKeyFromMnemonicWithActivated imports and persists a standard key using
 // the identity-scoped activated compiled key type set.
-func (s *Service) ImportKeyFromMnemonicWithActivated(keyType, mnemonic string, masterKey []byte, params map[string]string, activated []string) (*keymgmt.ImportResult, error) {
-	return s.ImportKeyFromMnemonicWithActivatedContext(context.Background(), keyType, mnemonic, masterKey, params, activated)
+func (s *Service) ImportKeyFromMnemonicWithActivated(keyType, mnemonic string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.ImportResult, error) {
+	return s.ImportKeyFromMnemonicWithActivatedContext(context.Background(), keyType, mnemonic, kr, params, activated)
 }
 
 // ImportKeyFromMnemonicWithActivatedContext imports and persists a standard key
 // using the identity-scoped activated compiled key type set.
-func (s *Service) ImportKeyFromMnemonicWithActivatedContext(ctx context.Context, keyType, mnemonic string, masterKey []byte, params map[string]string, activated []string) (*keymgmt.ImportResult, error) {
-	return keymgmt.ImportKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, mnemonic, masterKey, params, activated)
+func (s *Service) ImportKeyFromMnemonicWithActivatedContext(ctx context.Context, keyType, mnemonic string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.ImportResult, error) {
+	return keymgmt.ImportKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, mnemonic, kr, params, activated)
 }
 
 // SaveGenericLSig persists a generated generic LogicSig key file.
-func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, bytecode []byte, saltCounter byte, tealSource string, signingArgs []keys.StoredSigningArg, masterKey []byte) error {
+func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, bytecode []byte, saltCounter byte, tealSource string, signingArgs []keys.StoredSigningArg, kr *crypto.Keyring) error {
 	payload := keys.NewGenericLSigPayload(
 		keyType,
 		parameters,
@@ -101,7 +102,7 @@ func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, 
 		signingArgs,
 		keys.TemplateFingerprintForKeyType(keyType),
 	)
-	_, err := keys.SavePayload(s.keyPaths, s.identityID, payload, masterKey)
+	_, err := keys.SavePayload(s.keyPaths, s.identityID, payload, kr)
 	return err
 }
 

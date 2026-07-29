@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
@@ -298,9 +299,9 @@ func TestGenerateFromSeedPersistsBoundedMetadataAfterDerivation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateFromSeed() error = %v", err)
 	}
-	keyJSON, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(result.KeyFiles.PrivateFile, testMasterKey)
+	keyJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
-		t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
+		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
 	}
 	defer crypto.ZeroBytes(keyJSON)
 	payload, err := apkeys.ParsePayload(keyJSON)

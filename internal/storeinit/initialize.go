@@ -82,13 +82,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to create keystore: %w", err)
 	}
 	defer keyring.Zero()
-	// Phase-1 compatibility: sites that still take a raw key read the single
-	// term through this seam. Phase 2 migrates them to the keyring.
-	masterKey, err := keyring.CurrentTermKey()
-	if err != nil {
-		return result, err
-	}
-	defer crypto.ZeroBytes(masterKey)
 	roleBytes, _, err := noderole.SaveInitial(opts.Paths, role, time.Now())
 	if err != nil {
 		return result, fmt.Errorf("failed to create node role: %w", err)
@@ -121,7 +114,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 			OperationID:     "init-" + generationID,
 			CreatedAt:       time.Now(),
 			Apply: func(staged storepaths.GenPaths) error {
-				return defaultkeytypes.InstallForNewIdentityActive(staged, role, masterKey, opts.Logf)
+				return defaultkeytypes.InstallForNewIdentityActive(staged, role, keyring, opts.Logf)
 			},
 		}); err != nil {
 			return result, fmt.Errorf("failed to mint initial generation: %w", err)

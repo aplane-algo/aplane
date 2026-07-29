@@ -29,7 +29,7 @@ type BatchInfo struct {
 // List validates and returns published recovered batches newest first.
 // Unpublished StagingDirPrefix directories are ignored. Any other unknown or
 // invalid root entry fails closed.
-func List(paths storepaths.Paths, identityID string, masterKey []byte) ([]BatchInfo, error) {
+func List(paths storepaths.Paths, identityID string, kr *crypto.Keyring) ([]BatchInfo, error) {
 	root := paths.RecoveredRootDir(identityID)
 	rootInfo, err := os.Lstat(root)
 	if os.IsNotExist(err) {
@@ -58,7 +58,7 @@ func List(paths storepaths.Paths, identityID string, masterKey []byte) ([]BatchI
 		if err := requireRegularDirectory(paths.RecoveredBatchDir(identityID, restoreID)); err != nil {
 			return nil, err
 		}
-		batch, err := LoadBatch(paths, identityID, restoreID, masterKey)
+		batch, err := LoadBatch(paths, identityID, restoreID, kr)
 		if err != nil {
 			return nil, fmt.Errorf("load recovered batch %s: %w", restoreID, err)
 		}

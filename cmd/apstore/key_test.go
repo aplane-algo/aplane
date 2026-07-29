@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,7 +99,7 @@ func TestCmdSentryExportRejectsSpendingKey(t *testing.T) {
 		masterKey := deriveTestMasterKey(t, passphrase)
 		defer crypto.ZeroBytes(masterKey)
 
-		result, err := keymgmt.GenerateKey(keystorePaths(), productIdentityID(), "ed25519", masterKey, nil)
+		result, err := keymgmt.GenerateKey(keystorePaths(), productIdentityID(), "ed25519", cryptotest.Keyring(t, masterKey), nil)
 		if err != nil {
 			t.Fatalf("GenerateKey(ed25519) error = %v", err)
 		}

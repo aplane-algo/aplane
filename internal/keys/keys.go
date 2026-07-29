@@ -233,7 +233,7 @@ type KeyScanWarningProvider interface {
 // object ctx names. Runtime key files must be encrypted; plaintext key
 // payloads belong in explicit import or migration paths, not normal signing
 // paths.
-func ReadAndDecryptFile(path string, masterKey []byte, ctx crypto.ObjectContext, entityName string) ([]byte, error) {
+func ReadAndDecryptFile(path string, kr *crypto.Keyring, ctx crypto.ObjectContext, entityName string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", entityName, err)
@@ -243,62 +243,62 @@ func ReadAndDecryptFile(path string, masterKey []byte, ctx crypto.ObjectContext,
 		return nil, fmt.Errorf("%s must be encrypted", entityName)
 	}
 
-	if len(masterKey) == 0 {
-		return nil, fmt.Errorf("%s is encrypted but no master key provided", entityName)
+	if kr == nil {
+		return nil, fmt.Errorf("%s is encrypted but the keystore is locked", entityName)
 	}
 
-	decrypted, err := crypto.DecryptWithTermKey(data, masterKey, crypto.FirstTerm, ctx)
+	decrypted, err := kr.Open(data, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt %s with master key: %w", entityName, err)
 	}
 	return decrypted, nil
 }
 
-// ReadDecryptedKeyJSONWithMasterKey reads a managed credential and decrypts
+// ReadDecryptedKeyJSONWithKeyring reads a managed credential and decrypts
 // it as the object its canonical filename names.
-func ReadDecryptedKeyJSONWithMasterKey(keyFile string, masterKey []byte) ([]byte, error) {
+func ReadDecryptedKeyJSONWithKeyring(keyFile string, kr *crypto.Keyring) ([]byte, error) {
 	ctx, err := CredentialContextForFile(keyFile)
 	if err != nil {
 		return nil, err
 	}
-	return ReadAndDecryptFile(keyFile, masterKey, ctx, "key file")
+	return ReadAndDecryptFile(keyFile, kr, ctx, "key file")
 }
 
-// ScanKeysDirectoryWithMasterKey scans the identity-scoped keys subdirectory using a master key for decryption.
+// ScanKeysDirectoryWithKeyring scans the identity-scoped keys subdirectory using a master key for decryption.
 // Only supports envelope_version 2 files.
-func ScanKeysDirectoryWithMasterKey(paths storepaths.Paths, identityID string, masterKey []byte) (map[string]KeyScanInfo, error) {
+func ScanKeysDirectoryWithKeyring(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
 		return nil, err
 	}
-	return ScanKeysDirectoryWithMasterKeyActive(active, masterKey)
+	return ScanKeysDirectoryWithKeyringActive(active, kr)
 }
 
-// ScanKeysDirectoryWithMasterKeyActive is ScanKeysDirectoryWithMasterKey
+// ScanKeysDirectoryWithKeyringActive is ScanKeysDirectoryWithKeyring
 // against resolved active-store paths (generational or legacy).
-func ScanKeysDirectoryWithMasterKeyActive(active storepaths.ActivePaths, masterKey []byte) (map[string]KeyScanInfo, error) {
-	report, err := ScanKeysDirectoryWithMasterKeyReportActive(active, masterKey)
+func ScanKeysDirectoryWithKeyringActive(active storepaths.ActivePaths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
+	report, err := ScanKeysDirectoryWithKeyringReportActive(active, kr)
 	if err != nil {
 		return nil, err
 	}
 	return report.Keys, nil
 }
 
-// ScanKeysDirectoryWithMasterKeyReport scans the identity-scoped keys
+// ScanKeysDirectoryWithKeyringReport scans the identity-scoped keys
 // subdirectory and returns structured warnings for key files that were skipped.
-func ScanKeysDirectoryWithMasterKeyReport(paths storepaths.Paths, identityID string, masterKey []byte) (*KeyScanReport, error) {
+func ScanKeysDirectoryWithKeyringReport(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (*KeyScanReport, error) {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
 		return nil, err
 	}
-	return ScanKeysDirectoryWithMasterKeyReportActive(active, masterKey)
+	return ScanKeysDirectoryWithKeyringReportActive(active, kr)
 }
 
-// ScanKeysDirectoryWithMasterKeyReportActive is
-// ScanKeysDirectoryWithMasterKeyReport against resolved active-store paths.
-func ScanKeysDirectoryWithMasterKeyReportActive(active storepaths.ActivePaths, masterKey []byte) (*KeyScanReport, error) {
+// ScanKeysDirectoryWithKeyringReportActive is
+// ScanKeysDirectoryWithKeyringReport against resolved active-store paths.
+func ScanKeysDirectoryWithKeyringReportActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*KeyScanReport, error) {
 	return scanKeysDirectoryInternalReport(active, func(keyFile string) ([]byte, error) {
-		return ReadDecryptedKeyJSONWithMasterKey(keyFile, masterKey)
+		return ReadDecryptedKeyJSONWithKeyring(keyFile, kr)
 	})
 }
 

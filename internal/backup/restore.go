@@ -929,6 +929,12 @@ func (r Restorer) authoritativeTemplateForKeyType(keyType string) (templatestore
 }
 
 func (r Restorer) loadKeystoreTemplateForKeyType(keyType string, masterKey []byte) (templatestore.TemplateType, []byte, bool, error) {
+	// Boundary adapter: backup migrates in slice 3 and still threads a raw key.
+	kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
+	if err != nil {
+		return "", nil, false, err
+	}
+	defer kr.Zero()
 	for _, tt := range templatestore.ActiveTemplateTypes() {
 		if !r.templateExists(keyType, tt) {
 			continue
@@ -937,7 +943,7 @@ func (r Restorer) loadKeystoreTemplateForKeyType(keyType string, masterKey []byt
 		if err != nil {
 			return "", nil, false, err
 		}
-		templateYAML, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
+		templateYAML, err := templatestore.LoadTemplateFromPath(templatePath, kr)
 		if err != nil {
 			return "", nil, false, fmt.Errorf("failed to read existing keystore template: %w", err)
 		}
@@ -972,6 +978,12 @@ func (r Restorer) enableInstalledTemplatePlan(keyType string, templateType templ
 
 func (r Restorer) installLibraryTemplatePlan(keyType string, templateType templatestore.TemplateType, masterKey []byte) restorePlan {
 	return restorePlan{apply: func() (func() error, error) {
+		// Boundary adapter: backup migrates in slice 3.
+		kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
+		if err != nil {
+			return nil, err
+		}
+		defer kr.Zero()
 		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
 			return nil, err
@@ -984,7 +996,7 @@ func (r Restorer) installLibraryTemplatePlan(keyType string, templateType templa
 		result, err := templatelibrary.InstallFromLibraryActive(r.Paths, active, templatelibrary.TemplateRef{
 			KeyType:      keyType,
 			TemplateType: templateType,
-		}, masterKey)
+		}, kr)
 		if err != nil {
 			return nil, err
 		}
@@ -1004,6 +1016,12 @@ func (r Restorer) installLibraryTemplatePlan(keyType string, templateType templa
 
 func (r Restorer) installIncomingTemplatePlan(keyType string, templateType templatestore.TemplateType, templateYAML, masterKey []byte) restorePlan {
 	return restorePlan{apply: func() (func() error, error) {
+		// Boundary adapter: backup migrates in slice 3.
+		kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
+		if err != nil {
+			return nil, err
+		}
+		defer kr.Zero()
 		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
 			return nil, err
@@ -1020,7 +1038,7 @@ func (r Restorer) installIncomingTemplatePlan(keyType string, templateType templ
 		if err != nil {
 			return nil, err
 		}
-		result, err := templatelibrary.InstallParsedActive(active, parsed, masterKey)
+		result, err := templatelibrary.InstallParsedActive(active, parsed, kr)
 		if err != nil {
 			return nil, err
 		}
@@ -1040,6 +1058,12 @@ func (r Restorer) installIncomingTemplatePlan(keyType string, templateType templ
 
 func (r Restorer) activateCompiledProviderPlan(keyType string, masterKey []byte) restorePlan {
 	return restorePlan{apply: func() (func() error, error) {
+		// Boundary adapter: backup migrates in slice 3.
+		kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
+		if err != nil {
+			return nil, err
+		}
+		defer kr.Zero()
 		prior, priorOK, err := r.ktGet(keyType)
 		if err != nil {
 			return nil, err
@@ -1059,7 +1083,7 @@ func (r Restorer) activateCompiledProviderPlan(keyType string, masterKey []byte)
 			if err != nil {
 				return nil, err
 			}
-			if err := keytypestate.RequireUnusedActive(activeNS, keyType, masterKey); err != nil {
+			if err := keytypestate.RequireUnusedActive(activeNS, keyType, kr); err != nil {
 				return nil, err
 			}
 		}

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -433,7 +434,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 		bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 		payload := apkeys.NewDSALSigPayload(keyType, keyType, []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
 		defer payload.ZeroSecrets()
-		_, saveErr := apkeys.SavePayload(server.keyPaths, ir.ID(), payload, masterKey)
+		_, saveErr := apkeys.SavePayload(server.keyPaths, ir.ID(), payload, cryptotest.Keyring(t, masterKey))
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
@@ -572,7 +573,7 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	}
 	ir := server.registry.Get(auth.CurrentProductIdentityID())
 	if err := ir.WithMasterKey(func(masterKey []byte) error {
-		_, installErr := templatelibrary.InstallParsed(server.keyPaths, ir.ID(), parsed, masterKey)
+		_, installErr := templatelibrary.InstallParsed(server.keyPaths, ir.ID(), parsed, cryptotest.Keyring(t, masterKey))
 		return installErr
 	}); err != nil {
 		t.Fatalf("preinstall template: %v", err)

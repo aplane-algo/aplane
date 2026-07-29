@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"os"
 	"sort"
 	"strings"
@@ -80,7 +81,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 	var installResult templatelibrary.InstallResult
 	var out adminproto.InstallLibraryTemplateResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		if err := ir.WithMasterKey(func(masterKey []byte) error {
+		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var installErr error
 			installResult, installErr = templatelibrary.InstallFromLibrary(s.Deps.KeyPaths(), ir.ID(), ref, masterKey)
 			return installErr
@@ -257,7 +258,7 @@ func (s Service) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.Show
 		}
 	}
 	var data []byte
-	err = ir.WithMasterKey(func(masterKey []byte) error {
+	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		var loadErr error
 		data, loadErr = templatestore.LoadTemplateFromPath(path, masterKey)
 		return loadErr
@@ -300,7 +301,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 	var installResult templatelibrary.InstallResult
 	var out adminproto.ImportInstalledTemplateResult
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		if err := ir.WithMasterKey(func(masterKey []byte) error {
+		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var installErr error
 			installResult, installErr = templatelibrary.InstallParsed(s.Deps.KeyPaths(), ir.ID(), parsed, masterKey)
 			return installErr
@@ -390,7 +391,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 	var removeResult templatelibrary.RemoveResult
 	var out adminproto.RemoveInstalledTemplateResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		if err := ir.WithMasterKey(func(masterKey []byte) error {
+		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var removeErr error
 			removeResult, removeErr = templatelibrary.RemoveInstalledTemplate(s.Deps.KeyPaths(), ir.ID(), keyType, templateType, masterKey)
 			return removeErr
@@ -547,7 +548,7 @@ func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.Deactiva
 	var disabledTemplate bool
 	var out adminproto.DeactivateKeyTypeResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		if err := ir.WithMasterKey(func(masterKey []byte) error {
+		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var removeErr error
 			if templateType, _, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), ir.ID(), keyType); stateErr != nil {
 				return stateErr
@@ -602,11 +603,11 @@ func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.Deactiva
 	}
 }
 
-func (s Service) disableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyType string, templateType templatestore.TemplateType, masterKey []byte) (templatelibrary.RemoveResult, error) {
+func (s Service) disableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyType string, templateType templatestore.TemplateType, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
 	return templatelibrary.DisableInstalledTemplate(s.Deps.KeyPaths(), ir.ID(), keyType, templateType, masterKey)
 }
 
-func (s Service) deactivateCompiledProviderKeyTypeLocked(ir *identity.Runtime, keyType string, masterKey []byte) (templatelibrary.RemoveResult, error) {
+func (s Service) deactivateCompiledProviderKeyTypeLocked(ir *identity.Runtime, keyType string, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
 	return templatelibrary.DeactivateCompiledProvider(s.Deps.KeyPaths(), ir.ID(), keyType, masterKey)
 }
 

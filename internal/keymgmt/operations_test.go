@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"io"
@@ -72,13 +73,13 @@ func TestValidateKnownWitnessRoleExclusivityRejectsLocalWitness(t *testing.T) {
 	const identityID = "test-identity"
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-	generated, err := GenerateKey(paths, identityID, witness.Falcon1024V1, masterKey, nil)
+	generated, err := GenerateKey(paths, identityID, witness.Falcon1024V1, cryptotest.Keyring(t, masterKey), nil)
 	if err != nil {
 		t.Fatalf("GenerateKey(witness) error = %v", err)
 	}
 	err = validateKnownWitnessRoleExclusivity(paths, identityID, "aplane.falcon1024-allowlist-alock.v1", map[string]string{
 		boundedmeta.AdminPublicKeyParameter: generated.PublicKeyHex,
-	}, masterKey)
+	}, cryptotest.Keyring(t, masterKey))
 	if err == nil || !strings.Contains(err.Error(), "sentry custody") {
 		t.Fatalf("validateKnownWitnessRoleExclusivity() error = %v, want local sentry-custody collision", err)
 	}
@@ -157,7 +158,7 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 	genstoretest.MintFirst(t, paths, "default")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-	first, err := GenerateKey(paths, "test-identity", "ed25519", masterKey, nil)
+	first, err := GenerateKey(paths, "test-identity", "ed25519", cryptotest.Keyring(t, masterKey), nil)
 	if err != nil {
 		t.Fatalf("GenerateKey(first) error = %v", err)
 	}
@@ -166,7 +167,7 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 		t.Fatalf("Rename(%q, %q) error = %v", first.KeyFile, duplicatePath, err)
 	}
 
-	second, err := ImportKey(paths, "test-identity", "ed25519", first.Mnemonic, masterKey, nil)
+	second, err := ImportKey(paths, "test-identity", "ed25519", first.Mnemonic, cryptotest.Keyring(t, masterKey), nil)
 	if err != nil {
 		t.Fatalf("ImportKey(second) error = %v", err)
 	}
@@ -281,7 +282,7 @@ func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
 		falcon1024guarded.KeyTypeV1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
-			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, masterKey, nil, []string{keyType})
+			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, cryptotest.Keyring(t, masterKey), nil, []string{keyType})
 			if err == nil || !strings.Contains(err.Error(), "missing required parameter: sentry_public_key") {
 				t.Fatalf("GenerateKey(guarded missing params) error = %v, want missing sentry_public_key", err)
 			}
@@ -314,7 +315,7 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 				paths,
 				"test-identity",
 				tt.keyType,
-				masterKey,
+				cryptotest.Keyring(t, masterKey),
 				map[string]string{
 					falcon1024guarded.ParamSentryPublicKey: tt.sentryPublicKey,
 				},
@@ -333,9 +334,9 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 				t.Fatalf("guarded account marked as component: %#v", result)
 			}
 
-			decrypted, err := keys.ReadDecryptedKeyJSONWithMasterKey(result.KeyFile, masterKey)
+			decrypted, err := keys.ReadDecryptedKeyJSONWithKeyring(result.KeyFile, cryptotest.Keyring(t, masterKey))
 			if err != nil {
-				t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
+				t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
 			}
 			defer crypto.ZeroBytes(decrypted)
 
@@ -383,7 +384,7 @@ func TestGenerateKeySentryComponent(t *testing.T) {
 			genstoretest.MintFirst(t, paths, "default")
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-			result, err := GenerateKey(paths, "test-identity", keyType, masterKey, nil)
+			result, err := GenerateKey(paths, "test-identity", keyType, cryptotest.Keyring(t, masterKey), nil)
 			if err != nil {
 				t.Fatalf("GenerateKey(component) error = %v", err)
 			}
@@ -512,7 +513,7 @@ func TestDetectKeyInfoFromFileWithMasterKeyEncrypted(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	info, err := DetectKeyInfoFromFileWithMasterKey(keyFile, masterKey)
+	info, err := DetectKeyInfoFromFileWithMasterKey(keyFile, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("DetectKeyInfoFromFileWithMasterKey() error = %v", err)
 	}
@@ -654,7 +655,7 @@ func TestDetectKeyInfoFromFileWithMasterKeyWrongMasterKey(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err = DetectKeyInfoFromFileWithMasterKey(keyFile, wrongKey)
+	_, err = DetectKeyInfoFromFileWithMasterKey(keyFile, cryptotest.Keyring(t, wrongKey))
 	if err == nil {
 		t.Fatal("expected decrypt error, got nil")
 	}
@@ -674,7 +675,7 @@ func TestDetectKeyInfoFromFileWithMasterKeyInvalidJSON(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err = DetectKeyInfoFromFileWithMasterKey(keyFile, masterKey)
+	_, err = DetectKeyInfoFromFileWithMasterKey(keyFile, cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("expected parse error, got nil")
 	}
@@ -695,7 +696,7 @@ func TestGetDisplayTEALWithMasterKeyEncrypted(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	teal, err := GetDisplayTEALWithMasterKey(keyFile, masterKey)
+	teal, err := GetDisplayTEALWithMasterKey(keyFile, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("GetDisplayTEALWithMasterKey() error = %v", err)
 	}
@@ -720,7 +721,7 @@ func TestGetDisplayTEALWithMasterKeyWrongMasterKey(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err = GetDisplayTEALWithMasterKey(keyFile, wrongKey)
+	_, err = GetDisplayTEALWithMasterKey(keyFile, cryptotest.Keyring(t, wrongKey))
 	if err == nil {
 		t.Fatal("expected decrypt error, got nil")
 	}
@@ -739,7 +740,7 @@ func TestGetDisplayTEALWithMasterKeyInvalidJSON(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err = GetDisplayTEALWithMasterKey(keyFile, masterKey)
+	_, err = GetDisplayTEALWithMasterKey(keyFile, cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("expected parse error, got nil")
 	}

@@ -167,12 +167,12 @@ func keyTypeEnabledForGeneration(keyType string, activated map[string]bool) bool
 
 // GenerateKey creates a new random key with mnemonic backup.
 // keyType must be explicitly specified (e.g., "ed25519", "aplane.falcon1024.v1").
-// masterKey is the derived encryption key from the keystore (not raw passphrase).
-func GenerateKey(paths storepaths.Paths, identityID string, keyType string, masterKey []byte, params map[string]string) (*GenerateResult, error) {
-	return GenerateKeyWithActivatedContext(context.Background(), paths, identityID, keyType, masterKey, params, nil)
+// kr is the derived encryption key from the keystore (not raw passphrase).
+func GenerateKey(paths storepaths.Paths, identityID string, keyType string, kr *crypto.Keyring, params map[string]string) (*GenerateResult, error) {
+	return GenerateKeyWithActivatedContext(context.Background(), paths, identityID, keyType, kr, params, nil)
 }
 
-func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, identityID string, keyType string, masterKey []byte, params map[string]string, activated []string) (*GenerateResult, error) {
+func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, identityID string, keyType string, kr *crypto.Keyring, params map[string]string, activated []string) (*GenerateResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -189,7 +189,7 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 	if resolveErr != nil {
 		return nil, fmt.Errorf("%w: sentry reference resolution failed: %v", keygen.ErrInvalidParams, resolveErr)
 	}
-	if err := validateKnownWitnessRoleExclusivity(paths, identityID, keyType, params, masterKey); err != nil {
+	if err := validateKnownWitnessRoleExclusivity(paths, identityID, keyType, params, kr); err != nil {
 		return nil, fmt.Errorf("%w: %v", keygen.ErrInvalidParams, err)
 	}
 
@@ -198,6 +198,13 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		return nil, fmt.Errorf("failed to get generator: %w", err)
 	}
 
+	// Boundary adapter: the generator interface still threads a raw key and
+	// migrates with the lsig generators in slice 3.
+	masterKey, err := kr.CurrentTermKey()
+	if err != nil {
+		return nil, err
+	}
+	defer crypto.ZeroBytes(masterKey)
 	genResult, err := generator.GenerateRandom(ctx, paths, identityID, masterKey, keyType, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate key: %w", err)
@@ -218,7 +225,7 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 	return result, nil
 }
 
-func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, identityID, keyType string, params map[string]string, masterKey []byte) error {
+func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, identityID, keyType string, params map[string]string, kr *crypto.Keyring) error {
 	if adminPublicKeyHex := strings.ToLower(strings.TrimSpace(params[boundedmeta.AdminPublicKeyParameter])); adminPublicKeyHex != "" {
 		if _, err := boundedmeta.ParseAdminPublicKey(adminPublicKeyHex); err != nil {
 			return nil // The provider owns the detailed parameter error.
@@ -227,7 +234,7 @@ func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, identityID, key
 		if err != nil {
 			return fmt.Errorf("check sentry witness references: %w", err)
 		}
-		scanned, err := keys.ScanKeysDirectoryWithMasterKey(paths, identityID, masterKey)
+		scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, identityID, kr)
 		if err != nil {
 			return fmt.Errorf("check local sentry witness keys: %w", err)
 		}
@@ -251,7 +258,7 @@ func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, identityID, key
 	if err != nil {
 		return nil // The guarded provider owns the detailed parameter error.
 	}
-	scanned, err := keys.ScanKeysDirectoryWithMasterKey(paths, identityID, masterKey)
+	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, identityID, kr)
 	if err != nil {
 		return fmt.Errorf("check existing contract-admin enrollments: %w", err)
 	}
@@ -283,12 +290,12 @@ func rejectSentryWitnessKnownAsAdmin(sentryPublicKeyHex, sentryWitnessID string,
 }
 
 // ImportKey imports a key from a mnemonic phrase.
-// masterKey is the derived encryption key from the keystore (not raw passphrase).
-func ImportKey(paths storepaths.Paths, identityID string, keyType string, mnemonicStr string, masterKey []byte, params map[string]string) (*ImportResult, error) {
-	return ImportKeyWithActivatedContext(context.Background(), paths, identityID, keyType, mnemonicStr, masterKey, params, nil)
+// kr is the derived encryption key from the keystore (not raw passphrase).
+func ImportKey(paths storepaths.Paths, identityID string, keyType string, mnemonicStr string, kr *crypto.Keyring, params map[string]string) (*ImportResult, error) {
+	return ImportKeyWithActivatedContext(context.Background(), paths, identityID, keyType, mnemonicStr, kr, params, nil)
 }
 
-func ImportKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, identityID string, keyType string, mnemonicStr string, masterKey []byte, params map[string]string, activated []string) (*ImportResult, error) {
+func ImportKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, identityID string, keyType string, mnemonicStr string, kr *crypto.Keyring, params map[string]string, activated []string) (*ImportResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -306,7 +313,13 @@ func ImportKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, 
 		return nil, fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	genResult, err := generator.GenerateFromMnemonic(ctx, paths, identityID, mnemonicStr, masterKey, keyType, params)
+	// Boundary adapter: see GenerateKey.
+	mnemonicMasterKey, err := kr.CurrentTermKey()
+	if err != nil {
+		return nil, err
+	}
+	defer crypto.ZeroBytes(mnemonicMasterKey)
+	genResult, err := generator.GenerateFromMnemonic(ctx, paths, identityID, mnemonicStr, mnemonicMasterKey, keyType, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import key: %w", err)
 	}
@@ -370,7 +383,7 @@ type KeyFileInfo struct {
 
 // DetectKeyInfoFromFileWithMasterKey reads a managed credential and returns
 // its type and parameters.
-func DetectKeyInfoFromFileWithMasterKey(keyFile string, masterKey []byte) (*KeyFileInfo, error) {
+func DetectKeyInfoFromFileWithMasterKey(keyFile string, kr *crypto.Keyring) (*KeyFileInfo, error) {
 	data, err := os.ReadFile(keyFile)
 	if err != nil {
 		return nil, err
@@ -384,7 +397,7 @@ func DetectKeyInfoFromFileWithMasterKey(keyFile string, masterKey []byte) (*KeyF
 	if err != nil {
 		return nil, err
 	}
-	decrypted, err := crypto.DecryptWithTermKey(data, masterKey, crypto.FirstTerm, ctx)
+	decrypted, err := kr.Open(data, ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -411,7 +424,7 @@ func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
 
 // GetDisplayTEALWithMasterKey returns the TEAL source code for generic
 // LogicSigs held in a managed credential.
-func GetDisplayTEALWithMasterKey(keyFile string, masterKey []byte) (string, error) {
+func GetDisplayTEALWithMasterKey(keyFile string, kr *crypto.Keyring) (string, error) {
 	data, err := os.ReadFile(keyFile)
 	if err != nil {
 		return "", err
@@ -425,7 +438,7 @@ func GetDisplayTEALWithMasterKey(keyFile string, masterKey []byte) (string, erro
 	if err != nil {
 		return "", err
 	}
-	decrypted, err := crypto.DecryptWithTermKey(data, masterKey, crypto.FirstTerm, ctx)
+	decrypted, err := kr.Open(data, ctx)
 	if err != nil {
 		return "", err
 	}

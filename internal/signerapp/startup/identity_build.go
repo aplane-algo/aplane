@@ -246,14 +246,7 @@ func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ide
 		KeyStore:        ir.KeyStore(),
 		Session:         session,
 		TemplateManager: newTemplateManager(ir.KeyPaths()),
-		BeforeKeyScan: func(masterKey []byte) error {
-			// Boundary adapter: the templates reload service still hands out
-			// a raw key and migrates in its own slice.
-			kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
-			if err != nil {
-				return err
-			}
-			defer kr.Zero()
+		BeforeKeyScan: func(kr *crypto.Keyring) error {
 			if verifiedRole, err := noderole.LoadAndVerifyWithKeyring(opts.KeyPaths, identityID, kr); err != nil {
 				return fmt.Errorf("node role verification failed for identity %q: %w", identityID, err)
 			} else if verifiedRole.Role != ir.NodeRole() {

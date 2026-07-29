@@ -150,17 +150,17 @@ func GetTemplateFilePathActive(active storepaths.ActivePaths, keyType string, _ 
 	return active.KeyTypeTemplate(normalizeKeyType(keyType))
 }
 
-func SaveTemplateForPaths(paths storepaths.Paths, identityID string, yamlData []byte, keyType string, templateType TemplateType, masterKey []byte) (string, error) {
+func SaveTemplateForPaths(paths storepaths.Paths, identityID string, yamlData []byte, keyType string, templateType TemplateType, kr *crypto.Keyring) (string, error) {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
 		return "", err
 	}
-	return SaveTemplateActive(active, yamlData, keyType, templateType, masterKey)
+	return SaveTemplateActive(active, yamlData, keyType, templateType, kr)
 }
 
 // SaveTemplateActive is SaveTemplateForPaths against resolved active-store
 // paths.
-func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType string, templateType TemplateType, masterKey []byte) (string, error) {
+func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType string, templateType TemplateType, kr *crypto.Keyring) (string, error) {
 	keyType = normalizeKeyType(keyType)
 	if _, ok := sourceForTemplateType(templateType); !ok {
 		return "", fmt.Errorf("unsupported template_type %q", templateType)
@@ -171,9 +171,7 @@ func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType 
 		return "", fmt.Errorf("failed to create templates directory: %w", err)
 	}
 
-	encrypted, err := crypto.EncryptWithTermKey(
-		yamlData, masterKey, crypto.FirstTerm, crypto.KeyTypeTemplateContext(keyType),
-	)
+	encrypted, err := kr.Seal(yamlData, crypto.KeyTypeTemplateContext(keyType))
 	if err != nil {
 		return "", fmt.Errorf("failed to encrypt template: %w", err)
 	}
@@ -194,12 +192,12 @@ func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType 
 // The directory is deliberately not part of the identity: an installed
 // template and the same template under deleted/ are the same object, and
 // generations copy templates between namespaces without re-encrypting them.
-func LoadTemplateFromPath(path string, masterKey []byte) ([]byte, error) {
+func LoadTemplateFromPath(path string, kr *crypto.Keyring) ([]byte, error) {
 	ctx, err := TemplateContextForFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return keys.ReadAndDecryptFile(path, masterKey, ctx, "template file")
+	return keys.ReadAndDecryptFile(path, kr, ctx, "template file")
 }
 
 // TemplateContextForFile recovers a template's object context from its
@@ -279,7 +277,7 @@ func ScanTemplateDirectoryForPaths(paths storepaths.Paths, identityID string, te
 	return files, nil
 }
 
-func LoadAllTemplatesForPaths(paths storepaths.Paths, identityID string, templateType TemplateType, masterKey []byte) (map[string][]byte, error) {
+func LoadAllTemplatesForPaths(paths storepaths.Paths, identityID string, templateType TemplateType, kr *crypto.Keyring) (map[string][]byte, error) {
 	files, err := ScanTemplateDirectoryForPaths(paths, identityID, templateType)
 	if err != nil {
 		return nil, err
@@ -287,7 +285,7 @@ func LoadAllTemplatesForPaths(paths storepaths.Paths, identityID string, templat
 
 	result := make(map[string][]byte)
 	for _, file := range files {
-		data, err := LoadTemplateFromPath(file.FilePath, masterKey)
+		data, err := LoadTemplateFromPath(file.FilePath, kr)
 		if err != nil {
 			fmt.Printf("Warning: Failed to load template %s: %v\n", file.KeyType, err)
 			continue

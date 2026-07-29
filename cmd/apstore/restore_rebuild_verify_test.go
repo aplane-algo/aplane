@@ -4,6 +4,7 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
@@ -103,7 +104,7 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer apcrypto.ZeroBytes(masterKey)
-	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), keyringForTest(t, masterKey))
+	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
@@ -155,7 +156,7 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer apcrypto.ZeroBytes(masterKey)
-	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), keyringForTest(t, masterKey))
+	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
@@ -354,7 +355,7 @@ func TestRestoreTemplateRejectsConflictingDestinationTemplate(t *testing.T) {
 	existingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Existing\ntemplate_type: generic\nteal: |\n  int 1\n")
 	backupTemplate := []byte("schema_version: 1\ntemplate_mode: generated\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Backup\ntemplate_type: generic\nteal: |\n  int 0\n")
 
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths(existing) error = %v", err)
 	}
 	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
@@ -371,7 +372,7 @@ func TestRestoreTemplateRejectsConflictingDestinationTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", err)
 	}
-	loaded, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
+	loaded, err := templatestore.LoadTemplateFromPath(templatePath, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath() error = %v", err)
 	}
@@ -432,7 +433,7 @@ func TestRestoreKeySkipsTemplateConflictForStandaloneKey(t *testing.T) {
 	existingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Existing Override\nteal: |\n  #pragma version 8\n  int 1\n")
 	backupTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Backup Override\nteal: |\n  #pragma version 8\n  int 0\n")
 
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths(existing) error = %v", err)
 	}
 	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
@@ -456,7 +457,7 @@ func TestRestoreKeySkipsTemplateConflictForStandaloneKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", err)
 	}
-	loaded, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
+	loaded, err := templatestore.LoadTemplateFromPath(templatePath, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath() error = %v", err)
 	}
@@ -544,7 +545,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
 	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
@@ -686,7 +687,7 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
 	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
@@ -718,7 +719,7 @@ func TestRestoreKeyRollsBackDisabledTemplateStateOnKeyWriteFailure(t *testing.T)
 	templateYAML := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: test\nfamily: rollback-disabled-template\nversion: 1\ndisplay_name: Rollback Disabled Template\nteal: |\n  #pragma version 8\n  int 1\n")
 	address, keyJSON := testAllowlistBackupBundle(t, keyType, templateYAML)
 
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
 	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
@@ -827,16 +828,4 @@ func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 func testSentryComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
 	t.Helper()
 	return keystest.SentryComponentFalcon1024KeyJSON(t, 0xcd)
-}
-
-// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
-// holds while phase 2 migrates callers from raw keys to the keyring.
-func keyringForTest(t *testing.T, masterKey []byte) *apcrypto.Keyring {
-	t.Helper()
-	kr, err := apcrypto.NewKeyringFromKey(masterKey)
-	if err != nil {
-		t.Fatalf("NewKeyringFromKey(): %v", err)
-	}
-	t.Cleanup(kr.Zero)
-	return kr
 }

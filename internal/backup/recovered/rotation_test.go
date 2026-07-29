@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,7 +29,7 @@ func TestRotationTargetsSkipsStagingDirectories(t *testing.T) {
 		t.Fatalf("WriteFile(staging file) error = %v", err)
 	}
 
-	targets, err := RotationTargets(paths, "default", bytes.Repeat([]byte{0x11}, 32))
+	targets, err := RotationTargets(paths, "default", cryptotest.Keyring(t, bytes.Repeat([]byte{0x11}, 32)))
 	if err != nil {
 		t.Fatalf("RotationTargets() error = %v", err)
 	}
@@ -55,7 +56,7 @@ func TestRotationTargetsCleansStaleArtifacts(t *testing.T) {
 		t.Fatalf("WriteFile(entry .new) error = %v", err)
 	}
 
-	targets, err := RotationTargets(paths, "default", masterKey)
+	targets, err := RotationTargets(paths, "default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RotationTargets() error = %v", err)
 	}
@@ -86,14 +87,14 @@ func TestRotationTargetsRestoresCurrentKeyOldArtifacts(t *testing.T) {
 		}
 	}
 
-	if _, err := RotationTargets(paths, "default", masterKey); err != nil {
+	if _, err := RotationTargets(paths, "default", cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("RotationTargets() error = %v", err)
 	}
-	loadedBatch, err := LoadBatch(paths, "default", batch.RestoreID, masterKey)
+	loadedBatch, err := LoadBatch(paths, "default", batch.RestoreID, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadBatch(reconciled) error = %v", err)
 	}
-	entry, err := LoadEntry(paths, "default", batch.RestoreID, loadedBatch.Entries[0], masterKey)
+	entry, err := LoadEntry(paths, "default", batch.RestoreID, loadedBatch.Entries[0], cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadEntry(reconciled) error = %v", err)
 	}
@@ -110,10 +111,10 @@ func TestRotationTargetsRejectsNonRegularArtifacts(t *testing.T) {
 		t.Fatalf("Symlink(metadata .old) error = %v", err)
 	}
 
-	if _, err := RotationTargets(paths, "default", masterKey); err == nil {
+	if _, err := RotationTargets(paths, "default", cryptotest.Keyring(t, masterKey)); err == nil {
 		t.Fatal("RotationTargets() error = nil, want non-regular artifact rejection")
 	}
-	if _, err := LoadBatch(paths, "default", batch.RestoreID, masterKey); err != nil {
+	if _, err := LoadBatch(paths, "default", batch.RestoreID, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("LoadBatch() after rejected reconciliation error = %v", err)
 	}
 }
@@ -134,7 +135,7 @@ func createRotationTestBatch(t *testing.T, paths storepaths.Paths, masterKey []b
 			KeyType:  "ed25519",
 			KeyJSON:  keyJSON,
 		}},
-	}, masterKey)
+	}, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}

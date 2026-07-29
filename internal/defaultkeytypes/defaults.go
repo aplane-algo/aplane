@@ -7,6 +7,7 @@ package defaultkeytypes
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -38,24 +39,24 @@ var signerDefaultTemplates = []bundledTemplate{
 // The caller must be in an initialization or identity-mutation context and must
 // have already registered built-in LogicSig providers. Sentry nodes skip signer
 // account key types.
-func InstallForNewIdentity(paths storepaths.Paths, identityID string, role noderole.Role, masterKey []byte, logf func(format string, args ...any)) error {
+func InstallForNewIdentity(paths storepaths.Paths, identityID string, role noderole.Role, kr *crypto.Keyring, logf func(format string, args ...any)) error {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
 		return err
 	}
-	return InstallForNewIdentityActive(active, role, masterKey, logf)
+	return InstallForNewIdentityActive(active, role, kr, logf)
 }
 
 // InstallForNewIdentityActive is InstallForNewIdentity against resolved
 // active-store paths — including a staged, not-yet-published generation
 // during store initialization or migration.
-func InstallForNewIdentityActive(active storepaths.ActivePaths, role noderole.Role, masterKey []byte, logf func(format string, args ...any)) error {
+func InstallForNewIdentityActive(active storepaths.ActivePaths, role noderole.Role, kr *crypto.Keyring, logf func(format string, args ...any)) error {
 	if role != noderole.RoleSigner {
 		return nil
 	}
 
 	for _, tmpl := range signerDefaultTemplates {
-		if err := installBundledTemplate(active, tmpl, masterKey); err != nil {
+		if err := installBundledTemplate(active, tmpl, kr); err != nil {
 			return err
 		}
 		log(logf, "enabled default key type: %s", tmpl.keyType)
@@ -63,7 +64,7 @@ func InstallForNewIdentityActive(active storepaths.ActivePaths, role noderole.Ro
 	return nil
 }
 
-func installBundledTemplate(active storepaths.ActivePaths, tmpl bundledTemplate, masterKey []byte) error {
+func installBundledTemplate(active storepaths.ActivePaths, tmpl bundledTemplate, kr *crypto.Keyring) error {
 	data, err := librarytemplates.ReadFile(tmpl.fileName)
 	if err != nil {
 		return fmt.Errorf("failed to read bundled template %s: %w", tmpl.fileName, err)
@@ -76,7 +77,7 @@ func installBundledTemplate(active storepaths.ActivePaths, tmpl bundledTemplate,
 		return fmt.Errorf("bundled template %s declared %s (%s), want %s (%s)",
 			tmpl.fileName, parsed.KeyType, parsed.TemplateType, tmpl.keyType, tmpl.templateType)
 	}
-	if _, err := templatelibrary.InstallParsedActive(active, parsed, masterKey); err != nil {
+	if _, err := templatelibrary.InstallParsedActive(active, parsed, kr); err != nil {
 		return fmt.Errorf("failed to install default key type %s: %w", tmpl.keyType, err)
 	}
 	return nil

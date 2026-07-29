@@ -5,6 +5,7 @@ package keytypestate
 
 import (
 	"errors"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
@@ -184,11 +185,11 @@ func TestRequireUnusedRejectsKeyTypeInUse(t *testing.T) {
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	payload := apkeys.NewDSALSigPayload("custom-v1", "custom-v1", []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
 	defer payload.ZeroSecrets()
-	if _, err := apkeys.SavePayload(paths, "default", payload, masterKey); err != nil {
+	if _, err := apkeys.SavePayload(paths, "default", payload, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
 	}
 
-	err := RequireUnused(paths, "default", "custom-v1", masterKey)
+	err := RequireUnused(paths, "default", "custom-v1", cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("RequireUnused() error = nil, want in-use rejection")
 	}

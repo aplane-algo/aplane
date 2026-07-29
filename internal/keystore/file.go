@@ -105,14 +105,6 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("keystore not unlocked after unlock")
 	}
-	masterKey, keyErr := f.keyring.CurrentTermKey()
-	if keyErr != nil {
-		f.cacheLock.RUnlock()
-		return keyErr
-	}
-	// CurrentTermKey hands back a private copy; without this the daemon
-	// leaves one live 32-byte key on the heap per scan, surviving ClearKeys.
-	defer crypto.ZeroBytes(masterKey)
 	// Resolve the active layout once per scan: on a generational store this
 	// binds the scan (and the absolute KeyFile paths it caches) to the
 	// generation CURRENT names right now, so every reload after a pointer
@@ -122,7 +114,7 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("failed to resolve active key store layout: %w", resolveErr)
 	}
-	report, err := keys.ScanKeysDirectoryWithMasterKeyReportActive(active, masterKey)
+	report, err := keys.ScanKeysDirectoryWithKeyringReportActive(active, f.keyring)
 	f.cacheLock.RUnlock()
 	if err != nil {
 		return fmt.Errorf("failed to scan keys directory: %w", err)
@@ -234,20 +226,17 @@ func (f *FileKeyStore) List(ctx context.Context) ([]KeyMetadata, error) {
 func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMaterial, error) {
 	f.cacheLock.RLock()
 	info, exists := f.cache[address]
-	masterKey, keyErr := f.keyring.CurrentTermKey()
-	// One copy per signing request would otherwise accumulate on the heap and
-	// outlive the lock.
-	defer crypto.ZeroBytes(masterKey)
 	if !exists {
 		f.cacheLock.RUnlock()
 		return nil, ErrKeyNotFound
 	}
-	if keyErr != nil {
+	if f.keyring == nil {
 		f.cacheLock.RUnlock()
-		return nil, fmt.Errorf("keystore not unlocked (master key not available): %w", ErrStoreLocked)
+		return nil, fmt.Errorf("keystore not unlocked: %w", ErrStoreLocked)
 	}
-	// Read and decrypt the key file using master key (under RLock)
-	decryptedData, err := keys.ReadDecryptedKeyJSONWithMasterKey(info.KeyFile, masterKey)
+	// Decrypt under the read lock, straight from the keyring: no term key
+	// copy is made, so none can outlive the lock or survive ClearKeys.
+	decryptedData, err := keys.ReadDecryptedKeyJSONWithKeyring(info.KeyFile, f.keyring)
 	f.cacheLock.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read key file: %w", err)

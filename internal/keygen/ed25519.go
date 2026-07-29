@@ -127,7 +127,14 @@ func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.
 func saveEd25519Keys(paths storepaths.Paths, identityID string, publicKey []byte, privateKey []byte, masterKey []byte) (*keys.ImportKeyResult, error) {
 	payload := keys.NewEd25519Payload(publicKey, privateKey)
 	defer payload.ZeroSecrets()
-	return keys.SavePayload(paths, identityID, payload, masterKey)
+	// Boundary adapter: the generator interface still threads a raw key and
+	// migrates with the lsig generators in its own slice.
+	kr, err := securecrypto.KeyringFromMasterKeyForMigration(masterKey)
+	if err != nil {
+		return nil, err
+	}
+	defer kr.Zero()
+	return keys.SavePayload(paths, identityID, payload, kr)
 }
 
 var registerEd25519GeneratorOnce sync.Once

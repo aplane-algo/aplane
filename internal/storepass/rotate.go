@@ -74,7 +74,7 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
-	managedFiles, templateFiles, recoveredFiles, err := scanTargets(paths, identityID, oldMasterKey)
+	managedFiles, templateFiles, recoveredFiles, err := scanTargets(paths, identityID, oldKeyring)
 	if err != nil {
 		return result, err
 	}
@@ -226,7 +226,7 @@ func loadAndVerifyCurrentKeyring(paths storepaths.Paths, identityID string, oldP
 func scanTargets(
 	paths storepaths.Paths,
 	identityID string,
-	masterKey []byte,
+	kr *crypto.Keyring,
 ) ([]keys.ManagedCredentialFile, []string, []recovered.RotationTarget, error) {
 	// Rotation requires generation quiescence: it rewrites only what it can
 	// see through the resolved current namespaces, so a retained prior
@@ -255,7 +255,7 @@ func scanTargets(
 		}
 		return nil
 	})
-	recoveredFiles, err := recovered.RotationTargets(paths, identityID, masterKey)
+	recoveredFiles, err := recovered.RotationTargets(paths, identityID, kr)
 	if err != nil {
 		return nil, nil, nil, err
 	}

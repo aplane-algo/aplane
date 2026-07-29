@@ -13,6 +13,12 @@ package crypto
 // The caller owns the returned keyring and must Zero it. Phase 2's last slice
 // deletes this function, which turns any remaining boundary into a build
 // failure rather than something to notice.
+//
+// That slice also deletes FileKeyStore.WithMasterKey and Keyring.CurrentTermKey
+// and unexports the raw-key envelope functions. Run those deletions against
+// the tagged tree as well as the untagged one: cmd/apadmin/batch.go sits behind
+// //go:build testmode and is invisible to a plain `go build ./...`, so a
+// surviving tagged call site would break only the integration harness.
 func KeyringFromMasterKeyForMigration(masterKey []byte) (*Keyring, error) {
 	return NewKeyringFromKey(masterKey)
 }

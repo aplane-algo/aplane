@@ -7,6 +7,7 @@ package templatelibrary
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"os"
 	"path/filepath"
 	"sort"
@@ -257,18 +258,18 @@ func validateBaseImportableSchema(base templatestore.BaseTemplateSpec, templateM
 	return nil
 }
 
-func InstallParsed(paths storepaths.Paths, identityID string, tmpl ParsedTemplate, masterKey []byte) (InstallResult, error) {
+func InstallParsed(paths storepaths.Paths, identityID string, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
 		return InstallResult{KeyType: tmpl.KeyType, TemplateType: tmpl.TemplateType}, err
 	}
-	return InstallParsedActive(active, tmpl, masterKey)
+	return InstallParsedActive(active, tmpl, kr)
 }
 
 // InstallParsedActive is InstallParsed against resolved active-store paths
 // (generational or legacy); the caller resolved the layout once for the
 // whole operation.
-func InstallParsedActive(active storepaths.ActivePaths, tmpl ParsedTemplate, masterKey []byte) (InstallResult, error) {
+func InstallParsedActive(active storepaths.ActivePaths, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {
 	result := InstallResult{
 		KeyType:      tmpl.KeyType,
 		TemplateType: tmpl.TemplateType,
@@ -282,7 +283,7 @@ func InstallParsedActive(active storepaths.ActivePaths, tmpl ParsedTemplate, mas
 
 	if templatestore.TemplateExistsActive(active, tmpl.KeyType, tmpl.TemplateType) {
 		result.OutputPath = templatestore.GetTemplateFilePathActive(active, tmpl.KeyType, tmpl.TemplateType)
-		if err := requireInstalledTemplateMatch(result.OutputPath, tmpl, masterKey); err != nil {
+		if err := requireInstalledTemplateMatch(result.OutputPath, tmpl, kr); err != nil {
 			return result, err
 		}
 		stateChange, err := putTemplateState(active, tmpl, keytypestate.StateEnabled)
@@ -303,7 +304,7 @@ func InstallParsedActive(active storepaths.ActivePaths, tmpl ParsedTemplate, mas
 		return result, err
 	}
 
-	outputPath, err := templatestore.SaveTemplateActive(active, tmpl.YAMLData, tmpl.KeyType, tmpl.TemplateType, masterKey)
+	outputPath, err := templatestore.SaveTemplateActive(active, tmpl.YAMLData, tmpl.KeyType, tmpl.TemplateType, kr)
 	if err != nil {
 		return result, err
 	}
@@ -321,8 +322,8 @@ func InstallParsedActive(active storepaths.ActivePaths, tmpl ParsedTemplate, mas
 	return result, nil
 }
 
-func requireInstalledTemplateMatch(installedPath string, tmpl ParsedTemplate, masterKey []byte) error {
-	existingYAML, err := templatestore.LoadTemplateFromPath(installedPath, masterKey)
+func requireInstalledTemplateMatch(installedPath string, tmpl ParsedTemplate, kr *crypto.Keyring) error {
+	existingYAML, err := templatestore.LoadTemplateFromPath(installedPath, kr)
 	if err != nil {
 		return fmt.Errorf("failed to load existing template for compatibility check: %w", err)
 	}
@@ -400,7 +401,7 @@ func stateSourceForTemplateType(templateType templatestore.TemplateType) (keytyp
 	}
 }
 
-func InstallFromLibrary(paths storepaths.Paths, identityID string, ref TemplateRef, masterKey []byte) (InstallResult, error) {
+func InstallFromLibrary(paths storepaths.Paths, identityID string, ref TemplateRef, kr *crypto.Keyring) (InstallResult, error) {
 	matches, err := findLibraryMatches(paths, ref)
 	if err != nil {
 		return InstallResult{KeyType: ref.KeyType, TemplateType: ref.TemplateType}, err
@@ -411,13 +412,13 @@ func InstallFromLibrary(paths storepaths.Paths, identityID string, ref TemplateR
 	if len(matches) > 1 {
 		return InstallResult{KeyType: ref.KeyType, TemplateType: ref.TemplateType}, fmt.Errorf("multiple library files declare %s template %s", ref.TemplateType, ref.KeyType)
 	}
-	return InstallParsed(paths, identityID, matches[0], masterKey)
+	return InstallParsed(paths, identityID, matches[0], kr)
 }
 
 // InstallFromLibraryActive is InstallFromLibrary with the install targeted
 // at resolved active-store paths (e.g. a staged generation); paths is still
 // consulted for the process-scoped template library source.
-func InstallFromLibraryActive(paths storepaths.Paths, active storepaths.ActivePaths, ref TemplateRef, masterKey []byte) (InstallResult, error) {
+func InstallFromLibraryActive(paths storepaths.Paths, active storepaths.ActivePaths, ref TemplateRef, kr *crypto.Keyring) (InstallResult, error) {
 	matches, err := findLibraryMatches(paths, ref)
 	if err != nil {
 		return InstallResult{KeyType: ref.KeyType, TemplateType: ref.TemplateType}, err
@@ -428,7 +429,7 @@ func InstallFromLibraryActive(paths storepaths.Paths, active storepaths.ActivePa
 	if len(matches) > 1 {
 		return InstallResult{KeyType: ref.KeyType, TemplateType: ref.TemplateType}, fmt.Errorf("multiple library files declare %s template %s", ref.TemplateType, ref.KeyType)
 	}
-	return InstallParsedActive(active, matches[0], masterKey)
+	return InstallParsedActive(active, matches[0], kr)
 }
 
 func ActivateCompiledProvider(paths storepaths.Paths, identityID, keyType string) (InstallResult, error) {
@@ -484,7 +485,7 @@ func ActivateCompiledProvider(paths storepaths.Paths, identityID, keyType string
 	return result, nil
 }
 
-func DeactivateCompiledProvider(paths storepaths.Paths, identityID, keyType string, masterKey []byte) (RemoveResult, error) {
+func DeactivateCompiledProvider(paths storepaths.Paths, identityID, keyType string, kr *crypto.Keyring) (RemoveResult, error) {
 	result := RemoveResult{
 		KeyType: strings.ToLower(strings.TrimSpace(keyType)),
 	}
@@ -496,7 +497,7 @@ func DeactivateCompiledProvider(paths storepaths.Paths, identityID, keyType stri
 		return result, err
 	}
 	result.OutputPath = active.KeyTypeRecord(result.KeyType)
-	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, masterKey); err != nil {
+	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, kr); err != nil {
 		return result, err
 	}
 	_, ok, err := keytypestate.Get(paths, identityID, result.KeyType)
@@ -552,7 +553,7 @@ func EnableInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 	return result, nil
 }
 
-func DisableInstalledTemplate(paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType, masterKey []byte) (RemoveResult, error) {
+func DisableInstalledTemplate(paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) (RemoveResult, error) {
 	result := RemoveResult{
 		KeyType:      strings.ToLower(strings.TrimSpace(keyType)),
 		TemplateType: templateType,
@@ -583,7 +584,7 @@ func DisableInstalledTemplate(paths storepaths.Paths, identityID, keyType string
 		result.OutputPath = active.KeyTypeRecord(result.KeyType)
 		return result, nil
 	}
-	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, masterKey); err != nil {
+	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, kr); err != nil {
 		return result, err
 	}
 	rec.State = keytypestate.StateDisabled
@@ -595,7 +596,7 @@ func DisableInstalledTemplate(paths storepaths.Paths, identityID, keyType string
 	return result, nil
 }
 
-func RemoveInstalledTemplate(paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType, masterKey []byte) (RemoveResult, error) {
+func RemoveInstalledTemplate(paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) (RemoveResult, error) {
 	result := RemoveResult{
 		KeyType:      strings.ToLower(strings.TrimSpace(keyType)),
 		TemplateType: templateType,
@@ -617,7 +618,7 @@ func RemoveInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 	if !templatestore.TemplateExistsForPaths(paths, identityID, result.KeyType, templateType) {
 		return result, nil
 	}
-	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, masterKey); err != nil {
+	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, kr); err != nil {
 		return result, err
 	}
 	rec, hadState, err := keytypestate.Get(paths, identityID, result.KeyType)

@@ -5,6 +5,7 @@ package templates
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"os"
 	"path/filepath"
 	"sort"
@@ -179,7 +180,7 @@ func DefaultTemplateRegistrars() []TemplateRegistrar {
 // Recoverable reload problems are surfaced through the returned report; the
 // error return is reserved for manager misconfiguration and unrecoverable work
 // that should stop the caller's reload flow.
-func (m *Manager) RegisterKeystoreTemplates(identityID string, masterKey []byte) (RegistrationReport, error) {
+func (m *Manager) RegisterKeystoreTemplates(identityID string, kr *crypto.Keyring) (RegistrationReport, error) {
 	registrars, err := m.templateRegistrars()
 	if err != nil {
 		return RegistrationReport{}, err
@@ -210,7 +211,7 @@ func (m *Manager) RegisterKeystoreTemplates(identityID string, masterKey []byte)
 		if !ok {
 			continue
 		}
-		outcome := registerTemplateRecord(active, identityID, masterKey, rec, registrar)
+		outcome := registerTemplateRecord(active, identityID, kr, rec, registrar)
 		appendOutcome(&report, registrar.Source, outcome)
 	}
 
@@ -218,7 +219,7 @@ func (m *Manager) RegisterKeystoreTemplates(identityID string, masterKey []byte)
 		report.InvalidStateRecordKeyTypes = append(report.InvalidStateRecordKeyTypes, invalid...)
 	}
 	// The namespace sweep backs the fail-closed reload gate.
-	report.NamespaceDefects = sweepKeyTypeNamespace(active, masterKey, records, registrarsBySource)
+	report.NamespaceDefects = sweepKeyTypeNamespace(active, kr, records, registrarsBySource)
 
 	compiledOutcome := validateCompiledProviderRecords(records)
 	report.CompiledIdempotentKeyTypes = append(report.CompiledIdempotentKeyTypes, compiledOutcome.IdempotentKeyTypes...)
@@ -257,7 +258,7 @@ func (m *Manager) templateRegistrars() ([]TemplateRegistrar, error) {
 // Enabled templates and malformed records are already covered by
 // registration and ListInvalidActive; the sweep does not re-report them.
 // Defects feed the fail-closed reload gate (docs/ARCH_GENERATIONS.md §6).
-func sweepKeyTypeNamespace(active storepaths.ActivePaths, masterKey []byte, records []keytypestate.Record, registrarsBySource map[keytypestate.Source]TemplateRegistrar) []string {
+func sweepKeyTypeNamespace(active storepaths.ActivePaths, kr *crypto.Keyring, records []keytypestate.Record, registrarsBySource map[keytypestate.Source]TemplateRegistrar) []string {
 	dir := active.KeyTypeRecordsDir()
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -324,7 +325,7 @@ func sweepKeyTypeNamespace(active storepaths.ActivePaths, masterKey []byte, reco
 			// without registering the provider. Enabled templates were just
 			// loaded by registration.
 			if rec.State == keytypestate.StateDisabled {
-				if err := validateTemplateContent(dir, name, keyType, masterKey, registrarsBySource[rec.Source]); err != nil {
+				if err := validateTemplateContent(dir, name, keyType, kr, registrarsBySource[rec.Source]); err != nil {
 					defects = append(defects, fmt.Sprintf("disabled template %q failed validation: %v", name, err))
 				}
 			}
@@ -349,8 +350,8 @@ func sweepKeyTypeNamespace(active storepaths.ActivePaths, masterKey []byte, reco
 
 // validateTemplateContent decrypts a template file and runs its registrar's
 // Prepare validation without registering anything.
-func validateTemplateContent(dir, name, keyType string, masterKey []byte, registrar TemplateRegistrar) error {
-	data, err := templatestore.LoadTemplateFromPath(filepath.Join(dir, name), masterKey)
+func validateTemplateContent(dir, name, keyType string, kr *crypto.Keyring, registrar TemplateRegistrar) error {
+	data, err := templatestore.LoadTemplateFromPath(filepath.Join(dir, name), kr)
 	if err != nil {
 		return err
 	}
@@ -363,7 +364,7 @@ func validateTemplateContent(dir, name, keyType string, masterKey []byte, regist
 	return nil
 }
 
-func registerTemplateRecord(active storepaths.ActivePaths, identityID string, masterKey []byte, rec keytypestate.Record, registrar TemplateRegistrar) templatepolicy.RegistrationOutcome {
+func registerTemplateRecord(active storepaths.ActivePaths, identityID string, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar) templatepolicy.RegistrationOutcome {
 	var outcome templatepolicy.RegistrationOutcome
 	path := templatestore.GetTemplateFilePathActive(active, rec.KeyType, registrar.TemplateType)
 	if _, err := os.Stat(path); err != nil {
@@ -381,7 +382,7 @@ func registerTemplateRecord(active storepaths.ActivePaths, identityID string, ma
 		return outcome
 	}
 
-	data, err := templatestore.LoadTemplateFromPath(path, masterKey)
+	data, err := templatestore.LoadTemplateFromPath(path, kr)
 	if err != nil {
 		outcome.InvalidKeyTypes = append(outcome.InvalidKeyTypes, rec.KeyType)
 		return outcome

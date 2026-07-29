@@ -6,6 +6,7 @@ package policy
 import (
 	"bytes"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,10 +50,10 @@ func TestSaveAndLoadVerifiedStoredConfigWithKeyring(t *testing.T) {
 	wantReject := false
 	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &wantReject}}
 
-	if err := SaveStoredConfigWithKeyring(root, "alice", want, keyringForTest(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+	if err := SaveStoredConfigWithKeyring(root, "alice", want, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
-	got, err := LoadVerifiedStoredConfigWithKeyring(root, "alice", keyringForTest(t, masterKey))
+	got, err := LoadVerifiedStoredConfigWithKeyring(root, "alice", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadVerifiedStoredConfigWithKeyring() error = %v", err)
 	}
@@ -69,10 +70,10 @@ func TestSaveAndLoadVerifiedSentryConfigWithKeyring(t *testing.T) {
 	rejectRekey := true
 	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectRekey: &rejectRekey}}
 
-	if err := SaveStoredSentryConfigWithKeyring(root, "alice", want, keyringForTest(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+	if err := SaveStoredSentryConfigWithKeyring(root, "alice", want, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveStoredSentryConfigWithKeyring() error = %v", err)
 	}
-	got, err := LoadVerifiedSentryConfigWithKeyring(root, "alice", keyringForTest(t, masterKey))
+	got, err := LoadVerifiedSentryConfigWithKeyring(root, "alice", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadVerifiedSentryConfigWithKeyring() error = %v", err)
 	}
@@ -229,7 +230,7 @@ func TestLoadVerifiedStoredConfigRejectsWrongKey(t *testing.T) {
 	if err := SaveStoredConfigWithIntegrity(root, "alice", &StoredConfig{}, key, time.Time{}); err != nil {
 		t.Fatalf("SaveStoredConfigWithIntegrity() error = %v", err)
 	}
-	wrongKey, err := keyringForTest(t, []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).PolicyIntegrityKey()
+	wrongKey, err := cryptotest.Keyring(t, []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).PolicyIntegrityKey()
 	if err != nil {
 		t.Fatalf("PolicyIntegrityKey(wrong) error = %v", err)
 	}
@@ -239,16 +240,4 @@ func TestLoadVerifiedStoredConfigRejectsWrongKey(t *testing.T) {
 	if !errors.Is(err, ErrPolicyIntegrityMismatch) {
 		t.Fatalf("LoadVerifiedStoredConfig() error = %v, want ErrPolicyIntegrityMismatch", err)
 	}
-}
-
-// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
-// holds while phase 2 migrates callers from raw keys to the keyring.
-func keyringForTest(t *testing.T, masterKey []byte) *apcrypto.Keyring {
-	t.Helper()
-	kr, err := apcrypto.NewKeyringFromKey(masterKey)
-	if err != nil {
-		t.Fatalf("NewKeyringFromKey(): %v", err)
-	}
-	t.Cleanup(kr.Zero)
-	return kr
 }

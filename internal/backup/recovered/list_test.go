@@ -5,6 +5,7 @@ package recovered
 
 import (
 	"bytes"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,7 +23,7 @@ func TestListRecoveredBatchesSkipsStagingDirectories(t *testing.T) {
 		t.Fatalf("Mkdir(staging) error = %v", err)
 	}
 
-	got, err := List(paths, "default", masterKey)
+	got, err := List(paths, "default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -43,7 +44,7 @@ func TestListRecoveredBatchesFailsClosedOnUnknownRootEntry(t *testing.T) {
 		t.Fatalf("WriteFile(unknown) error = %v", err)
 	}
 
-	if _, err := List(paths, "default", bytes.Repeat([]byte{0x6a}, 32)); err == nil {
+	if _, err := List(paths, "default", cryptotest.Keyring(t, bytes.Repeat([]byte{0x6a}, 32))); err == nil {
 		t.Fatal("List() error = nil, want unknown root entry rejection")
 	} else if !strings.Contains(err.Error(), "unexpected recovered batch directory") {
 		t.Fatalf("List() error = %v, want unexpected entry context", err)

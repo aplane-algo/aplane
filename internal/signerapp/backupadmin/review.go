@@ -35,9 +35,9 @@ const unattendedSigningWarning = "you are activating into an auto-approving iden
 func (s Service) ReviewRecovered(ir *identity.Runtime, restoreID string) adminproto.ReviewRecoveredResult {
 	var result adminproto.ReviewRecoveredResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return ir.WithMasterKey(func(masterKey []byte) error {
+		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var reviewErr error
-			result, reviewErr = s.reviewRecoveredWithMasterKey(ir, restoreID, masterKey)
+			result, reviewErr = s.reviewRecoveredWithKeyring(ir, restoreID, masterKey)
 			return reviewErr
 		})
 	})
@@ -52,10 +52,10 @@ func (s Service) ReviewRecovered(ir *identity.Runtime, restoreID string) adminpr
 	return result
 }
 
-func (s Service) reviewRecoveredWithMasterKey(
+func (s Service) reviewRecoveredWithKeyring(
 	ir *identity.Runtime,
 	restoreID string,
-	masterKey []byte,
+	masterKey *crypto.Keyring,
 ) (adminproto.ReviewRecoveredResult, error) {
 	if err := recovered.ValidateRestoreID(restoreID); err != nil {
 		return adminproto.ReviewRecoveredResult{}, err
@@ -192,23 +192,17 @@ func projectRecoveredSourceSettings(batch *recovered.Batch) recoveredSourceSetti
 func loadDestinationRestorePolicy(
 	dataRoot, identityID string,
 	role noderole.Role,
-	masterKey []byte,
+	masterKey *crypto.Keyring,
 ) (*policy.Config, string, error) {
-	// Boundary adapter: backupadmin still threads a raw key and migrates in
-	// its own slice.
-	kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
-	if err != nil {
-		return nil, "", err
-	}
-	defer kr.Zero()
 	var (
 		stored    *policy.StoredConfig
 		effective *policy.Config
 		encoded   []byte
+		err       error
 	)
 	switch role {
 	case noderole.RoleSigner:
-		stored, err = policy.LoadVerifiedStoredConfigWithKeyring(dataRoot, identityID, kr)
+		stored, err = policy.LoadVerifiedStoredConfigWithKeyring(dataRoot, identityID, masterKey)
 		if err == nil {
 			effective, err = stored.ApplySigning(nil)
 		}
@@ -216,7 +210,7 @@ func loadDestinationRestorePolicy(
 			encoded, err = policy.MarshalStoredConfig(stored)
 		}
 	case noderole.RoleSentry:
-		stored, err = policy.LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID, kr)
+		stored, err = policy.LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID, masterKey)
 		if err == nil {
 			effective, err = stored.ApplySentry(nil)
 		}

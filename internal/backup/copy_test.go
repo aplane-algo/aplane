@@ -6,6 +6,7 @@ package backup
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"io"
 	"os"
@@ -114,7 +115,7 @@ func TestBuildExportPayloadBundlesKeystoreTemplate(t *testing.T) {
 	keyJSON := testKeyJSON(t, keyType)
 	wantTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Override\nteal: |\n  int 1\n")
 
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeGeneric, testExportMasterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testExportMasterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
@@ -268,7 +269,7 @@ func TestBuildExportPayloadBundlesLibraryGenericTemplateFromKeystore(t *testing.
 
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeGeneric, testExportMasterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testExportMasterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
@@ -326,7 +327,7 @@ func TestBuildExportPayloadBundlesLibraryComposedTemplateFromKeystore(t *testing
 
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeComposed, testExportMasterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeComposed, cryptotest.Keyring(t, testExportMasterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeComposed, keytypestate.StateEnabled)
@@ -359,7 +360,7 @@ func TestBuildExportPayloadBundlesKeystoreTemplateEvenWhenProviderRegistered(t *
 	wantTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: test\nfamily: backup-registered-template\nversion: 1\ndisplay_name: Backup Registered Template\nteal: |\n  int 1\n")
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeGeneric, testExportMasterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testExportMasterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)

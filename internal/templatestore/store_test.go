@@ -4,6 +4,7 @@
 package templatestore
 
 import (
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
@@ -109,7 +110,7 @@ teal: |
 	keyType := "test.test-template.v1"
 
 	// Save template
-	outputPath, err := SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeGeneric, testMasterKey)
+	outputPath, err := SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
@@ -126,7 +127,7 @@ teal: |
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
-	loadedData, err := LoadTemplateFromPath(templatePath, testMasterKey)
+	loadedData, err := LoadTemplateFromPath(templatePath, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath failed: %v", err)
 	}
@@ -175,7 +176,7 @@ teal: |
 	keyType := "test.falcon1024-test.v1"
 
 	// Save template
-	outputPath, err := SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeComposed, testMasterKey)
+	outputPath, err := SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
@@ -191,7 +192,7 @@ teal: |
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
-	loadedData, err := LoadTemplateFromPath(templatePath, testMasterKey)
+	loadedData, err := LoadTemplateFromPath(templatePath, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath failed: %v", err)
 	}
@@ -251,7 +252,7 @@ func TestTemplateExists(t *testing.T) {
 
 	// Save template
 	yamlData := []byte("test: data")
-	_, err = SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeGeneric, testMasterKey)
+	_, err = SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
@@ -278,7 +279,7 @@ func TestTemplateStoreRejectsUnknownTemplateType(t *testing.T) {
 	keyType := "test.unknown-template-type.v1"
 	unknownType := TemplateType("compiled_provider")
 
-	if _, err := SaveTemplateForPaths(paths, testIdentityID, []byte("test: data"), keyType, unknownType, testMasterKey); err == nil {
+	if _, err := SaveTemplateForPaths(paths, testIdentityID, []byte("test: data"), keyType, unknownType, cryptotest.Keyring(t, testMasterKey)); err == nil {
 		t.Fatal("SaveTemplateForPaths() error = nil, want unsupported template_type")
 	}
 	if TemplateExistsForPaths(paths, testIdentityID, keyType, unknownType) {
@@ -287,7 +288,7 @@ func TestTemplateStoreRejectsUnknownTemplateType(t *testing.T) {
 	if _, err := ScanTemplateDirectoryForPaths(paths, testIdentityID, unknownType); err == nil {
 		t.Fatal("ScanTemplateDirectoryForPaths() error = nil, want unsupported template_type")
 	}
-	if _, err := LoadAllTemplatesForPaths(paths, testIdentityID, unknownType, testMasterKey); err == nil {
+	if _, err := LoadAllTemplatesForPaths(paths, testIdentityID, unknownType, cryptotest.Keyring(t, testMasterKey)); err == nil {
 		t.Fatal("LoadAllTemplatesForPaths() error = nil, want unsupported template_type")
 	}
 	if _, ok, err := keytypestate.Get(paths, testIdentityID, keyType); err != nil {
@@ -317,7 +318,7 @@ func TestLoadAllTemplates(t *testing.T) {
 	}
 
 	for keyType, data := range templates {
-		_, err := SaveTemplateForPaths(paths, testIdentityID, data, keyType, TemplateTypeGeneric, testMasterKey)
+		_, err := SaveTemplateForPaths(paths, testIdentityID, data, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 		if err != nil {
 			t.Fatalf("SaveTemplate failed for %s: %v", keyType, err)
 		}
@@ -325,7 +326,7 @@ func TestLoadAllTemplates(t *testing.T) {
 	}
 
 	// Load all templates
-	loaded, err := LoadAllTemplatesForPaths(paths, testIdentityID, TemplateTypeGeneric, testMasterKey)
+	loaded, err := LoadAllTemplatesForPaths(paths, testIdentityID, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("LoadAllTemplates failed: %v", err)
 	}

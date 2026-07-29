@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"os"
@@ -126,7 +127,7 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 	if err != nil {
 		t.Fatalf("CurrentTermKey(): %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(server.dataDir, identityID, &policy.StoredConfig{}, keyringForTest(t, masterKey), time.Now()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(server.dataDir, identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("SaveStoredConfigWithKeyring(%q): %v", identityID, err)
 	}
@@ -135,11 +136,11 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Load node role: %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(server.keyPaths, identityID, roleBytes, keyringForTest(t, masterKey), time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(server.keyPaths, identityID, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("SaveIdentitySidecarWithKeyring(%q): %v", identityID, err)
 	}
-	initialPolicy, err := policyruntime.LoadVerified(server.dataDir, identityID, server.config, keyringForTest(t, masterKey))
+	initialPolicy, err := policyruntime.LoadVerified(server.dataDir, identityID, server.config, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("LoadVerified(%q): %v", identityID, err)

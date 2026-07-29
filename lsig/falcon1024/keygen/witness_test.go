@@ -5,6 +5,7 @@ package keygen
 
 import (
 	"context"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"testing"
 
@@ -57,9 +58,9 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("KeyFiles = %#v, want private file", result.KeyFiles)
 	}
 
-	scan, err := keys.ScanKeysDirectoryWithMasterKey(paths, "default", masterKey)
+	scan, err := keys.ScanKeysDirectoryWithKeyring(paths, "default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithMasterKey() error = %v", err)
+		t.Fatalf("ScanKeysDirectoryWithKeyring() error = %v", err)
 	}
 	info, ok := scan[result.Address]
 	if !ok {

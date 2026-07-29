@@ -228,9 +228,15 @@ func buildExportPayload(paths storepaths.Paths, identityID string, keyJSON, mast
 // loadTemplateForExport returns the template YAML to bundle with a key export.
 // Installed identity-local templates are exported when available.
 func loadTemplateForExport(paths storepaths.Paths, identityID, keyType string, masterKey []byte) (templatestore.TemplateType, []byte, error) {
+	// Boundary adapter: backup migrates in slice 3 and still threads a raw key.
+	kr, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
+	if err != nil {
+		return "", nil, err
+	}
+	defer kr.Zero()
 	templateType, templatePath := findKeystoreTemplate(paths, identityID, keyType)
 	if templatePath != "" {
-		templatePlain, err := templatestore.LoadTemplateFromPath(templatePath, masterKey)
+		templatePlain, err := templatestore.LoadTemplateFromPath(templatePath, kr)
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to read template: %w", err)
 		}

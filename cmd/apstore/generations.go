@@ -140,20 +140,15 @@ func verifyCurrentGenerationContent(paths storepaths.Paths, identityID string) e
 		return fmt.Errorf("passphrase verification failed: %w", err)
 	}
 	defer kr.Zero()
-	masterKey, err := kr.CurrentTermKey()
-	if err != nil {
-		return err
-	}
-	defer crypto.ZeroBytes(masterKey)
 
-	templateReport, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates(identityID, masterKey)
+	templateReport, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates(identityID, kr)
 	if err != nil {
 		return fmt.Errorf("template validation failed: %w", err)
 	}
 	if defects := templateReport.ContentDefectKeyTypes(); len(defects) > 0 {
 		return fmt.Errorf("refusing to prune: %d template/key-type defect(s) in the current generation (first: %s)", len(defects), defects[0])
 	}
-	scan, err := keys.ScanKeysDirectoryWithMasterKeyReport(paths, identityID, masterKey)
+	scan, err := keys.ScanKeysDirectoryWithKeyringReport(paths, identityID, kr)
 	if err != nil {
 		return fmt.Errorf("key validation failed: %w", err)
 	}

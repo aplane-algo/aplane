@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -282,7 +283,7 @@ func TestRecoveredBatchSurvivesPassphraseRotationAndActivation(t *testing.T) {
 			paths,
 			auth.DefaultIdentityID,
 			roleBytes,
-			keyringForTest(t, masterKey),
+			cryptotest.Keyring(t, masterKey),
 			time.Unix(1_700_000_000, 0),
 		)
 	}); err != nil {
@@ -1022,7 +1023,7 @@ func installBackupAdminPolicyForRole(
 			paths.Root(),
 			auth.DefaultIdentityID,
 			stored,
-			keyringForTest(t, masterKey),
+			cryptotest.Keyring(t, masterKey),
 			time.Unix(1_700_000_000, 0),
 		)
 	}); err != nil {
@@ -1095,16 +1096,4 @@ func (d failingBackupDeps) WithIdentityMutation(identityID string, fn func() err
 func (d failingBackupDeps) Logf(format string, args ...interface{}) {
 	_ = format
 	_ = args
-}
-
-// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
-// holds while phase 2 migrates callers from raw keys to the keyring.
-func keyringForTest(t *testing.T, masterKey []byte) *crypto.Keyring {
-	t.Helper()
-	kr, err := crypto.NewKeyringFromKey(masterKey)
-	if err != nil {
-		t.Fatalf("NewKeyringFromKey(): %v", err)
-	}
-	t.Cleanup(kr.Zero)
-	return kr
 }

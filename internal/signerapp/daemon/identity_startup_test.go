@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -352,7 +353,7 @@ func TestBuildIdentityRuntimeLoadsStoredPolicy(t *testing.T) {
 	}
 	masterKey := testMasterKeyForIdentity(t, server.keyPaths, "alice", passphrase)
 	defer crypto.ZeroBytes(masterKey)
-	if err := policy.SaveStoredConfigWithKeyring(root, "alice", stored, keyringForTest(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(root, "alice", stored, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -496,7 +497,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}
 	masterKey := testMasterKeyForIdentity(t, server.keyPaths, "alice", passphrase)
 	defer crypto.ZeroBytes(masterKey)
-	if err := policy.SaveStoredConfigWithKeyring(root, "alice", stored, keyringForTest(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(root, "alice", stored, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
