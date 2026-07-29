@@ -119,9 +119,13 @@ func createIntegrationIdentityWithTemplate(t *testing.T, env *harness.TestEnvClo
 	defer apcrypto.ZeroBytes(passphrase)
 	identityDir := paths.IdentityDir(identityID)
 	genstoretest.MintFirst(t, paths, identityID)
-	_, masterKey, err := apcrypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), passphrase)
+	masterKeyRing, err := apcrypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
 		t.Fatalf("failed to create %s keystore metadata: %v", identityID, err)
+	}
+	masterKey, err := masterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	t.Cleanup(func() { apcrypto.ZeroBytes(masterKey) })
 

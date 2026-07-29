@@ -92,8 +92,8 @@ func TestBuildUnlockPlanUsesTestPassphrase(t *testing.T) {
 	root := t.TempDir()
 	passphrase := []byte("test-passphrase")
 	paths := storepaths.NewPaths(root)
-	if _, _, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir("default"), passphrase); err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir("default"), passphrase); err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
 
 	opts := &Options{

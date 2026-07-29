@@ -8,14 +8,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 )
 
 type KeyStore interface {
-	InitializeMasterKey(passphrase []byte) ([]byte, error)
+	Unlock(passphrase []byte) error
+	WithKeyring(fn func(kr *crypto.Keyring) error) error
 	WithMasterKey(fn func(masterKey []byte) error) error
-	ClearMasterKey()
+	ClearKeys()
 	Scan(passphrase []byte) error
 	GetCache() map[string]string
 	GetKeyTypes() map[string]string
@@ -95,13 +97,13 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 	initializedMasterKey := false
 	clearInitializedMasterKey := func() {
 		if initializedMasterKey {
-			s.KeyStore.ClearMasterKey()
+			s.KeyStore.ClearKeys()
 			initializedMasterKey = false
 		}
 	}
 
 	if len(passphrase) > 0 {
-		if _, err := s.KeyStore.InitializeMasterKey(passphrase); err != nil {
+		if err := s.KeyStore.Unlock(passphrase); err != nil {
 			return nil, fmt.Errorf("failed to initialize master key: %w", err)
 		}
 		initializedMasterKey = true

@@ -6,9 +6,6 @@ package crypto
 import (
 	"bytes"
 	"crypto/rand"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -126,107 +123,5 @@ func TestMasterKeyDecrypt_WrongKey(t *testing.T) {
 	_, err = DecryptWithMasterKey(encrypted, wrongKey)
 	if err == nil {
 		t.Fatal("DecryptWithMasterKey should fail with wrong key")
-	}
-}
-
-// TestVerifyPassphraseWithMetadata_Correct verifies correct passphrase is accepted
-func TestVerifyPassphraseWithMetadata_Correct(t *testing.T) {
-	tmpDir := t.TempDir()
-	keystoreDir := filepath.Join(tmpDir, "keystore")
-	if err := os.Mkdir(keystoreDir, 0750); err != nil {
-		t.Fatalf("Failed to create keystore dir: %v", err)
-	}
-
-	passphrase := []byte("correct-passphrase")
-
-	// Create keystore metadata
-	_, masterKey, err := CreateKeystoreMetadata(keystoreDir, passphrase)
-	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata failed: %v", err)
-	}
-	defer ZeroBytes(masterKey)
-
-	// Verify with correct passphrase - should succeed
-	err = VerifyPassphraseWithMetadata(passphrase, keystoreDir)
-	if err != nil {
-		t.Errorf("VerifyPassphraseWithMetadata should succeed with correct passphrase: %v", err)
-	}
-}
-
-// TestVerifyPassphraseWithMetadata_Incorrect verifies wrong passphrase is rejected
-func TestVerifyPassphraseWithMetadata_Incorrect(t *testing.T) {
-	tmpDir := t.TempDir()
-	keystoreDir := filepath.Join(tmpDir, "keystore")
-	if err := os.Mkdir(keystoreDir, 0750); err != nil {
-		t.Fatalf("Failed to create keystore dir: %v", err)
-	}
-
-	correctPass := []byte("correct-passphrase")
-	wrongPass := []byte("wrong-passphrase")
-
-	// Create keystore metadata with correct passphrase
-	_, masterKey, err := CreateKeystoreMetadata(keystoreDir, correctPass)
-	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata failed: %v", err)
-	}
-	defer ZeroBytes(masterKey)
-
-	// Verify with wrong passphrase - should fail
-	err = VerifyPassphraseWithMetadata(wrongPass, keystoreDir)
-	if err == nil {
-		t.Error("VerifyPassphraseWithMetadata should fail with wrong passphrase")
-	}
-
-	if !strings.Contains(err.Error(), "incorrect passphrase") {
-		t.Errorf("Error should mention incorrect passphrase, got: %v", err)
-	}
-}
-
-// TestVerifyPassphraseWithMetadata_NoMetadata verifies error when metadata missing
-func TestVerifyPassphraseWithMetadata_NoMetadata(t *testing.T) {
-	tmpDir := t.TempDir()
-	keystoreDir := filepath.Join(tmpDir, "keystore")
-	if err := os.Mkdir(keystoreDir, 0750); err != nil {
-		t.Fatalf("Failed to create keystore dir: %v", err)
-	}
-
-	err := VerifyPassphraseWithMetadata([]byte("any-passphrase"), keystoreDir)
-	if err == nil {
-		t.Error("VerifyPassphraseWithMetadata should fail when metadata doesn't exist")
-	}
-
-	if !strings.Contains(err.Error(), "not initialized") && !strings.Contains(err.Error(), "missing") {
-		t.Errorf("Error should mention keystore not initialized, got: %v", err)
-	}
-}
-
-// TestCreateKeystoreMetadata_CreatesDir verifies function creates dir if needed
-func TestCreateKeystoreMetadata_CreatesDir(t *testing.T) {
-	tmpDir := t.TempDir()
-	// Keystore dir doesn't exist yet
-	keystoreDir := filepath.Join(tmpDir, "keystore")
-
-	passphrase := []byte("test-passphrase")
-
-	_, masterKey, err := CreateKeystoreMetadata(keystoreDir, passphrase)
-	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata should create dir: %v", err)
-	}
-	defer ZeroBytes(masterKey)
-
-	// Verify keystore dir was created
-	info, err := os.Stat(keystoreDir)
-	if err != nil {
-		t.Fatalf("keystore directory should exist: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("keystore should be a directory")
-	}
-
-	// Verify .keystore file was created
-	metaPath := filepath.Join(keystoreDir, ".keystore")
-	_, err = os.Stat(metaPath)
-	if err != nil {
-		t.Fatalf(".keystore file should exist: %v", err)
 	}
 }

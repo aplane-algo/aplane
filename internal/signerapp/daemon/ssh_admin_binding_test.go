@@ -118,9 +118,13 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 		t.Fatalf("create keys dir for %q: %v", identityID, err)
 	}
 	metadataDir := server.keyPaths.KeystoreMetadataDir(identityID)
-	_, masterKey, err := crypto.CreateKeystoreMetadata(metadataDir, testPassphrase)
+	masterKeyRing, err := crypto.CreateKeyringStore(metadataDir, testPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata(%q): %v", identityID, err)
+		t.Fatalf("CreateKeyringStore(%q): %v", identityID, err)
+	}
+	masterKey, err := masterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	if err := policy.SaveStoredConfigWithMasterKey(server.dataDir, identityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
 		crypto.ZeroBytes(masterKey)
@@ -142,8 +146,8 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 	}
 	crypto.ZeroBytes(masterKey)
 	ks := keystore.NewFileKeyStoreForPaths(server.keyPaths, identityID)
-	if _, err := ks.InitializeMasterKey(testPassphrase); err != nil {
-		t.Fatalf("InitializeMasterKey(%q): %v", identityID, err)
+	if err := ks.Unlock(testPassphrase); err != nil {
+		t.Fatalf("Unlock(%q): %v", identityID, err)
 	}
 
 	ir := identity.New(identity.Config{

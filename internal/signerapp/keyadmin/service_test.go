@@ -132,13 +132,13 @@ func setupIdentityRuntimeWithRole(t *testing.T, role noderole.Role) *identity.Ru
 	keyPaths := storepaths.NewPaths(tmpDir)
 	genstoretest.MintFirst(t, keyPaths, auth.DefaultIdentityID)
 	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
-	if _, _, err := crypto.CreateKeystoreMetadata(userDir, testPassphrase); err != nil {
-		t.Fatalf("CreateKeystoreMetadata(): %v", err)
+	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {
+		t.Fatalf("CreateKeyringStore(): %v", err)
 	}
 
 	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
-	if _, err := ks.InitializeMasterKey(testPassphrase); err != nil {
-		t.Fatalf("InitializeMasterKey(): %v", err)
+	if err := ks.Unlock(testPassphrase); err != nil {
+		t.Fatalf("Unlock(): %v", err)
 	}
 
 	ir := identity.New(identity.Config{

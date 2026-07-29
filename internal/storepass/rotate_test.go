@@ -36,9 +36,13 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
@@ -65,19 +69,17 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 		)
 	}
 
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), newPassphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	newMasterKey, err := meta.VerifyAndDeriveMasterKey(newPassphrase)
+	defer kr.Zero()
+	newMasterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("new passphrase does not verify rotated metadata: %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(newMasterKey)
-	if oldKey, err := meta.VerifyAndDeriveMasterKey(oldPassphrase); err == nil {
-		crypto.ZeroBytes(oldKey)
-		t.Fatal("old passphrase still verifies rotated metadata")
-	}
+	assertKeyringRejectsPassphrase(t, paths, identityID, oldPassphrase)
 	assertDecryptsWithMasterKey(t, keyPath, newMasterKey)
 	assertDecryptsWithMasterKey(t, sentryPath, newMasterKey)
 	assertDecryptsWithMasterKey(t, templatePath, newMasterKey)
@@ -138,9 +140,13 @@ func TestRotateReconcilesRecoveredRotationArtifacts(t *testing.T) {
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
@@ -171,13 +177,14 @@ func TestRotateReconcilesRecoveredRotationArtifacts(t *testing.T) {
 	if result.RecoveredFilesMigrated != 2 {
 		t.Fatalf("Rotate().RecoveredFilesMigrated = %d, want 2", result.RecoveredFilesMigrated)
 	}
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), newPassphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	newMasterKey, err := meta.VerifyAndDeriveMasterKey(newPassphrase)
+	defer kr.Zero()
+	newMasterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey(new passphrase) error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(newMasterKey)
 	if _, err := recovered.LoadBatch(paths, identityID, batch.RestoreID, newMasterKey); err != nil {
@@ -193,9 +200,13 @@ func TestRotatePreservesRecoveredBatchPlaintextWithUnknownFields(t *testing.T) {
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
@@ -249,13 +260,14 @@ func TestRotatePreservesRecoveredBatchPlaintextWithUnknownFields(t *testing.T) {
 	if result.RecoveredFilesMigrated != 2 {
 		t.Fatalf("RecoveredFilesMigrated = %d, want 2", result.RecoveredFilesMigrated)
 	}
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), newPassphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	newMasterKey, err := meta.VerifyAndDeriveMasterKey(newPassphrase)
+	defer kr.Zero()
+	newMasterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey(new passphrase) error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(newMasterKey)
 	rotatedPlaintext, err := decryptForRotateTest(batchPath, newMasterKey)
@@ -286,9 +298,13 @@ func TestRotateRejectsRecoveredBatchWithUnresolvedState(t *testing.T) {
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
@@ -303,7 +319,7 @@ func TestRotateRejectsRecoveredBatchWithUnresolvedState(t *testing.T) {
 		t.Fatalf("Rotate() error = %v, want unresolved recovered-state rejection", err)
 	}
 	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
-	assertMetadataRejectsPassphrase(t, paths, identityID, newPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, identityID, newPassphrase)
 	if _, err := recovered.LoadBatch(paths, identityID, batch.RestoreID, oldMasterKey); err != nil {
 		t.Fatalf("LoadBatch(old master key) error = %v", err)
 	}
@@ -316,9 +332,13 @@ func TestRotatePreservesCanonicalKeyPayloadBytes(t *testing.T) {
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
@@ -353,13 +373,14 @@ func TestRotatePreservesCanonicalKeyPayloadBytes(t *testing.T) {
 		t.Fatalf("KeysMigrated = %d, want 1", result.KeysMigrated)
 	}
 
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), newPassphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	newMasterKey, err := meta.VerifyAndDeriveMasterKey(newPassphrase)
+	defer kr.Zero()
+	newMasterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("new passphrase does not verify rotated metadata: %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(newMasterKey)
 
@@ -380,9 +401,13 @@ func TestRotateRejectsWrongCurrentPassphraseBeforeMutation(t *testing.T) {
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
@@ -405,7 +430,7 @@ func TestRotateRejectsWrongCurrentPassphraseBeforeMutation(t *testing.T) {
 	}
 
 	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
-	assertMetadataRejectsPassphrase(t, paths, identityID, newPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, identityID, newPassphrase)
 	assertDecryptsWithMasterKey(t, keyPath, oldMasterKey)
 	assertDecryptsWithMasterKey(t, templatePath, oldMasterKey)
 	assertPolicyVerifiesWithMasterKey(t, paths, identityID, oldMasterKey)
@@ -420,9 +445,13 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
@@ -457,7 +486,7 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 	}
 
 	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
-	assertMetadataRejectsPassphrase(t, paths, identityID, newPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, identityID, newPassphrase)
 	assertDecryptsWithMasterKey(t, keyPath, oldMasterKey)
 	assertDecryptsWithMasterKey(t, templatePath, oldMasterKey)
 	assertPolicyVerifiesWithMasterKey(t, paths, identityID, oldMasterKey)
@@ -474,9 +503,13 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
@@ -506,7 +539,7 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 	}
 
 	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
-	assertMetadataRejectsPassphrase(t, paths, identityID, newPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, identityID, newPassphrase)
 	assertDecryptsWithMasterKey(t, keyPath, oldMasterKey)
 	assertDecryptsWithMasterKey(t, templatePath, oldMasterKey)
 	assertPolicyVerifiesWithMasterKey(t, paths, identityID, oldMasterKey)
@@ -538,9 +571,13 @@ func TestRotateFailsWhenPolicyBaselineMissing(t *testing.T) {
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
@@ -556,7 +593,7 @@ func TestRotateFailsWhenPolicyBaselineMissing(t *testing.T) {
 		t.Fatalf("Rotate() result = %+v, want no migrations", result)
 	}
 	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
-	assertMetadataRejectsPassphrase(t, paths, identityID, newPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, identityID, newPassphrase)
 }
 
 func writeEncryptedForRotateTest(t *testing.T, path string, plaintext []byte, masterKey []byte) {
@@ -628,27 +665,24 @@ func decryptForRotateTest(path string, masterKey []byte) ([]byte, error) {
 
 func assertMetadataAcceptsPassphrase(t *testing.T, paths storepaths.Paths, identityID string, passphrase []byte) {
 	t.Helper()
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey(%q) error = %v", string(passphrase), err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	crypto.ZeroBytes(masterKey)
 }
 
-func assertMetadataRejectsPassphrase(t *testing.T, paths storepaths.Paths, identityID string, passphrase []byte) {
+func assertKeyringRejectsPassphrase(t *testing.T, paths storepaths.Paths, identityID string, passphrase []byte) {
 	t.Helper()
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
-	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
-	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err == nil {
-		crypto.ZeroBytes(masterKey)
-		t.Fatalf("VerifyAndDeriveMasterKey(%q) succeeded, want failure", string(passphrase))
+		kr.Zero()
+		t.Fatalf("OpenKeyringStore(%q) succeeded, want failure", string(passphrase))
 	}
 }
 
@@ -664,19 +698,23 @@ func assertNoRotationArtifacts(t *testing.T, paths ...string) {
 	}
 }
 
-// TestRotatePreservesGenerationalLayoutGate proves rotation cannot strip the
-// keystore version/layout marker: a downgraded record would let
-// pre-generation binaries accept the store and read its retired flat paths.
-func TestRotatePreservesGenerationalLayoutGate(t *testing.T) {
+// TestRotatePreservesKeystoreVersionGate proves rotation cannot strip the
+// keystore version/layout marker: a downgraded marker would let an older
+// binary accept the store and read a layout it does not understand.
+func TestRotatePreservesKeystoreVersionGate(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths, "default")
 	identityID := "default"
 	oldPassphrase := []byte("rotate-generational-old")
 	newPassphrase := []byte("rotate-generational-new")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
@@ -688,19 +726,13 @@ func TestRotatePreservesGenerationalLayoutGate(t *testing.T) {
 		t.Fatalf("Rotate() error = %v", err)
 	}
 
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	// Rotation replaces the root but leaves the format marker alone, so the
+	// version gate still recognizes the store and the new passphrase opens it.
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), newPassphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore(new) error = %v", err)
 	}
-	if !meta.IsGenerationalLayout() {
-		t.Fatalf("rotation stripped the generational layout gate: version %d layout %q", meta.Version, meta.Layout)
-	}
-	// The new passphrase verifies against the preserved-version metadata.
-	newMasterKey, err := meta.VerifyAndDeriveMasterKey(newPassphrase)
-	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey(new) error = %v", err)
-	}
-	crypto.ZeroBytes(newMasterKey)
+	kr.Zero()
 }
 
 // TestRotateRefusedUntilPriorGenerationsPruned proves the documented
@@ -710,9 +742,13 @@ func TestRotateRefusedUntilPriorGenerationsPruned(t *testing.T) {
 	identityID := "default"
 	passphrase := []byte("rotate-quiescence")
 
-	_, masterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), passphrase)
+	masterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	masterKey, err := masterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(masterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, masterKey, &policy.StoredConfig{})
@@ -753,9 +789,13 @@ func TestRotateSyncsNewFilesAndSwapDirectories(t *testing.T) {
 	identityID := "default"
 	oldPassphrase := []byte("old-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 	keyPath := apkeys.AccountKeyFilePath(paths, identityID, "ADDR")
@@ -783,7 +823,7 @@ func TestRotateSyncsNewFilesAndSwapDirectories(t *testing.T) {
 	}
 
 	// Every staged .new file was fsynced before the swap could publish it.
-	for _, want := range []string{"ADDR.key.new", ".keystore.new"} {
+	for _, want := range []string{"ADDR.key.new", "keyring.enc.new"} {
 		if !newFileSyncs[want] {
 			t.Fatalf("no file sync observed for %s (synced: %v)", want, newFileSyncs)
 		}
@@ -819,9 +859,13 @@ func TestRotateReconcilesMidSwapCrashBeforeKeystoreSwap(t *testing.T) {
 	oldPassphrase := []byte("old-passphrase")
 	finalPassphrase := []byte("final-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
@@ -873,9 +917,13 @@ func TestRotateReconcilesMidSwapCrashAfterKeystoreSwap(t *testing.T) {
 	newPassphrase := []byte("new-passphrase")
 	finalPassphrase := []byte("final-passphrase")
 
-	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
 	if err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	oldMasterKey, err := oldMasterKeyRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
@@ -934,16 +982,71 @@ func TestRotateReconcilesMidSwapCrashAfterKeystoreSwap(t *testing.T) {
 // master key derived from the given passphrase after rotation.
 func assertRotatedBatchLoads(t *testing.T, paths storepaths.Paths, identityID, restoreID string, passphrase []byte) {
 	t.Helper()
-	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(masterKey)
 	if _, err := recovered.LoadBatch(paths, identityID, restoreID, masterKey); err != nil {
 		t.Fatalf("LoadBatch(rotated master key) error = %v", err)
 	}
+}
+
+// TestRotateReplacesTheTermKey proves a passphrase change generates new key
+// material rather than rewrapping the existing term under a new KEK.
+//
+// This is the property the old design got for free: the master key was derived
+// from the passphrase, so changing the passphrase changed the key. A keyring
+// stores its term keys, so rewrapping alone would leave every file — including
+// files written after the change — readable to anyone who kept a copy of the
+// old keyring.
+func TestRotateReplacesTheTermKey(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	genstoretest.MintFirst(t, paths, identityID)
+	oldPassphrase := []byte("term-replacement-old")
+	newPassphrase := []byte("term-replacement-new")
+
+	beforeRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	before, err := beforeRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
+	}
+	beforeRing.Zero()
+	defer crypto.ZeroBytes(before)
+
+	keyPath := apkeys.AccountKeyFilePath(paths, identityID, "ADDR")
+	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), before)
+	writePolicyBaselineForRotateTest(t, paths, identityID, before, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, before, noderole.RoleSigner)
+
+	if _, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+
+	afterRing, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), newPassphrase)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore(new) error = %v", err)
+	}
+	defer afterRing.Zero()
+	after, err := afterRing.CurrentTermKey()
+	if err != nil {
+		t.Fatalf("CurrentTermKey(): %v", err)
+	}
+	defer crypto.ZeroBytes(after)
+
+	if bytes.Equal(before, after) {
+		t.Fatal("rotation preserved the term key: a rewrap leaves the old keyring able to read everything written afterwards")
+	}
+	// The rotated file really is under the new key, so the change is a
+	// re-encryption and not merely a discarded key.
+	assertDecryptsWithMasterKey(t, keyPath, after)
 }

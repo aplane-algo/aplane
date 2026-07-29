@@ -132,13 +132,14 @@ func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.Ge
 
 func deriveTestMasterKey(t *testing.T, passphrase []byte) []byte {
 	t.Helper()
-	meta, err := crypto.LoadKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()))
+	kr, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), passphrase)
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	return masterKey
 }

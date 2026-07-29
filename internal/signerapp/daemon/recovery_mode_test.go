@@ -18,11 +18,11 @@ import (
 func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	passphrase := []byte("recovery-mode-test-passphrase")
-	if _, _, err := crypto.CreateKeystoreMetadata(
+	if _, err := crypto.CreateKeyringStore(
 		paths.IdentityDir(auth.DefaultIdentityID),
 		passphrase,
 	); err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
 	// A present-but-invalid CURRENT pointer fails generational
 	// reconciliation at unlock: the recovery condition under test.

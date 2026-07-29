@@ -34,9 +34,8 @@ type FileKeyStore struct {
 	scanWarnings []keys.KeyScanWarning
 	cacheLock    sync.RWMutex
 
-	// Master key for envelope_version 2 decryption
-	// Derived once during Scan() from keystore metadata salt
-	masterKey []byte
+	// The store's keyring, opened once at unlock. Phase 1 holds one term.
+	keyring *crypto.Keyring
 }
 
 // SigningSummary is the non-sensitive key-file signing metadata cached at scan time.
@@ -58,73 +57,58 @@ func NewFileKeyStoreForPaths(paths storepaths.Paths, identityID string) *FileKey
 	}
 }
 
-// InitializeMasterKey derives and stores the master key from the passphrase.
-// This should be called before Scan() when you need the master key early
-// (e.g., for template scanning that happens before key scanning).
-// Returns the master key for external use (e.g., template scanning).
-// Caller should NOT zero the returned key - it's owned by FileKeyStore, and
-// a concurrent lock (identity.Runtime.performLock under passphraseLock)
-// zeroes it via ClearMasterKey. The returned slice is therefore only valid
-// while the caller holds whatever lock serializes it against locking - in
-// the daemon that is identity.Runtime's passphraseLock.
-func (f *FileKeyStore) InitializeMasterKey(passphrase []byte) ([]byte, error) {
-	// The .keystore metadata is in the identity directory (identities/<identityID>/).
+// Unlock opens the store's keyring with the passphrase and holds it for the
+// session.
+//
+// The keyring replaces the derived master key: a successful unwrap is the
+// passphrase check, so there is no separate verifier to consult. Callers do
+// not receive key material — every caller of the old InitializeMasterKey
+// discarded it, and the keyring hands out operations instead.
+func (f *FileKeyStore) Unlock(passphrase []byte) error {
 	keystoreRoot := f.paths.KeystoreMetadataDir(f.identityID)
-
-	// Load keystore metadata to get master salt
-	meta, err := crypto.LoadKeystoreMetadata(keystoreRoot)
+	kr, err := crypto.OpenKeyringStore(keystoreRoot, passphrase)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load keystore metadata: %w", err)
+		return fmt.Errorf("failed to unlock keystore: %w", err)
 	}
-	if meta == nil {
-		return nil, fmt.Errorf("keystore not initialized (missing .keystore file in %s) - run migration first", keystoreRoot)
-	}
-
-	// Verify passphrase and derive master key
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unlock keystore: %w", err)
-	}
-
 	f.cacheLock.Lock()
-	// Zero old master key if present
-	if f.masterKey != nil {
-		crypto.ZeroBytes(f.masterKey)
+	if f.keyring != nil {
+		f.keyring.Zero()
 	}
-	f.masterKey = masterKey
+	f.keyring = kr
 	f.cacheLock.Unlock()
-
-	return masterKey, nil
+	return nil
 }
 
 // Scan populates the internal cache by scanning the keys directory.
-// If InitializeMasterKey was already called, the passphrase is ignored and
-// the existing master key is reused. Otherwise, the passphrase is required
-// to derive the master key.
+// If Unlock was already called, the passphrase is ignored and the existing
+// keyring is reused. Otherwise the passphrase is required to open it.
 // Each key is decrypted only once to extract address, type, and path.
 func (f *FileKeyStore) Scan(passphrase []byte) error {
 	f.cacheLock.RLock()
-	masterKey := f.masterKey
+	unlocked := f.keyring != nil
 	f.cacheLock.RUnlock()
 
-	// If master key not already initialized, derive it now
-	if masterKey == nil {
+	if !unlocked {
 		if len(passphrase) == 0 {
-			return fmt.Errorf("master key not initialized and no passphrase provided")
+			return fmt.Errorf("keystore not unlocked and no passphrase provided")
 		}
-		if _, err := f.InitializeMasterKey(passphrase); err != nil {
+		if err := f.Unlock(passphrase); err != nil {
 			return err
 		}
 	}
 
 	// Re-read and hold RLock through the entire scan to prevent
-	// ClearMasterKey() from zeroing the bytes mid-operation.
-	// This also closes the gap after InitializeMasterKey returns.
+	// ClearKeys() from zeroing the terms mid-operation. This also closes the
+	// gap after Unlock returns.
 	f.cacheLock.RLock()
-	masterKey = f.masterKey
-	if masterKey == nil {
+	if f.keyring == nil {
 		f.cacheLock.RUnlock()
-		return fmt.Errorf("master key not available after initialization")
+		return fmt.Errorf("keystore not unlocked after unlock")
+	}
+	masterKey, keyErr := f.keyring.CurrentTermKey()
+	if keyErr != nil {
+		f.cacheLock.RUnlock()
+		return keyErr
 	}
 	// Resolve the active layout once per scan: on a generational store this
 	// binds the scan (and the absolute KeyFile paths it caches) to the
@@ -149,25 +133,47 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 	return nil
 }
 
-// WithMasterKey executes fn while holding the cache read lock, ensuring
-// the master key bytes cannot be zeroed by ClearMasterKey() during use.
-// Returns an error if the master key is nil (keystore not unlocked).
+// WithKeyring executes fn with the store's keyring while holding the cache
+// read lock, so no term can be zeroed mid-use. This is the API callers
+// should use: it hands out operations, not key material.
+func (f *FileKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+	if f.keyring == nil {
+		return fmt.Errorf("keystore not unlocked (keyring not available): %w", ErrStoreLocked)
+	}
+	return fn(f.keyring)
+}
+
+// WithMasterKey is the phase-1 compatibility accessor: it hands out the
+// current term's key bytes so call sites that have not yet moved to
+// WithKeyring keep working. With one term, "current" is the only key there
+// is.
+//
+// This is deliberately temporary. Phase 2 migrates the remaining callers and
+// deletes this method, which makes completeness a compile error rather than
+// something a lint has to police.
 func (f *FileKeyStore) WithMasterKey(fn func(masterKey []byte) error) error {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()
-	if f.masterKey == nil {
+	if f.keyring == nil {
 		return fmt.Errorf("keystore not unlocked (master key not available): %w", ErrStoreLocked)
 	}
-	return fn(f.masterKey)
+	key, err := f.keyring.CurrentTermKey()
+	if err != nil {
+		return err
+	}
+	defer crypto.ZeroBytes(key)
+	return fn(key)
 }
 
-// ClearMasterKey securely zeros and removes the master key from memory.
-// Called when the signer locks to ensure no key material remains resident.
-func (f *FileKeyStore) ClearMasterKey() {
+// ClearKeys securely zeros every term key and drops the keyring. Called when
+// the signer locks so no key material remains resident.
+func (f *FileKeyStore) ClearKeys() {
 	f.cacheLock.Lock()
-	if f.masterKey != nil {
-		crypto.ZeroBytes(f.masterKey)
-		f.masterKey = nil
+	if f.keyring != nil {
+		f.keyring.Zero()
+		f.keyring = nil
 	}
 	f.cacheLock.Unlock()
 }
@@ -215,18 +221,18 @@ func (f *FileKeyStore) List(ctx context.Context) ([]KeyMetadata, error) {
 }
 
 // Get retrieves key material for signing.
-// The keystore must be unlocked (via InitializeMasterKey or Scan) before calling Get.
-// Holds the cache read lock through decryption to prevent ClearMasterKey() from
-// zeroing the master key bytes mid-operation.
+// The keystore must be unlocked (via Unlock or Scan) before calling Get.
+// Holds the cache read lock through decryption to prevent ClearKeys() from
+// zeroing the term keys mid-operation.
 func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMaterial, error) {
 	f.cacheLock.RLock()
 	info, exists := f.cache[address]
-	masterKey := f.masterKey
+	masterKey, keyErr := f.keyring.CurrentTermKey()
 	if !exists {
 		f.cacheLock.RUnlock()
 		return nil, ErrKeyNotFound
 	}
-	if masterKey == nil {
+	if keyErr != nil {
 		f.cacheLock.RUnlock()
 		return nil, fmt.Errorf("keystore not unlocked (master key not available): %w", ErrStoreLocked)
 	}

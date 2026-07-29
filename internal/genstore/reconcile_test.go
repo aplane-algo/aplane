@@ -578,8 +578,8 @@ func TestMintRefusesFirstMintWhenCurrentMissingOnEstablishedStore(t *testing.T) 
 		if err := fsutil.MkdirAll(paths.KeystoreMetadataDir(testIdentity)); err != nil {
 			t.Fatalf("MkdirAll(metadata): %v", err)
 		}
-		if _, _, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(testIdentity), []byte("pw")); err != nil {
-			t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+		if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(testIdentity), []byte("pw")); err != nil {
+			t.Fatalf("CreateKeyringStore() error = %v", err)
 		}
 		mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
 		if err := os.Remove(paths.CurrentPointerPath(testIdentity)); err != nil {

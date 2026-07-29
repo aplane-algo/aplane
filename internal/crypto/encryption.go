@@ -10,10 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
-	"time"
 
-	"github.com/aplane-algo/aplane/internal/fsutil"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -60,36 +57,6 @@ func checkEnvelopeVersion(data []byte, expected int, context string) error {
 		return fmt.Errorf("envelope_version %d not supported by %s (expected %d)", v.EnvelopeVersion, context, expected)
 	}
 	return nil
-}
-
-// buildKeystoreMetadata generates a random salt, derives a master key, and creates
-// the metadata struct with a check value. Does not write to disk.
-func buildKeystoreMetadata(passphrase []byte) (*KeystoreMetadata, []byte, error) {
-	salt := make([]byte, masterSaltLen)
-	if _, err := rand.Read(salt); err != nil {
-		return nil, nil, fmt.Errorf("failed to generate master salt: %w", err)
-	}
-
-	masterKey := DeriveMasterKey(passphrase, salt)
-
-	checkCiphertext, err := encryptCheckValue(masterKey)
-	if err != nil {
-		ZeroBytes(masterKey)
-		return nil, nil, fmt.Errorf("failed to create check value: %w", err)
-	}
-
-	meta := &KeystoreMetadata{
-		Version:    CurrentKeystoreMetadataVersion,
-		Layout:     KeystoreLayoutGenerationsV1,
-		Salt:       base64.StdEncoding.EncodeToString(salt),
-		Check:      base64.StdEncoding.EncodeToString(checkCiphertext),
-		Created:    time.Now().UTC().Format(time.RFC3339),
-		KDFTime:    argon2Time,
-		KDFMemory:  argon2Memory,
-		KDFThreads: argon2Threads,
-	}
-
-	return meta, masterKey, nil
 }
 
 const (
@@ -139,33 +106,6 @@ func IsEncrypted(data []byte) bool {
 const (
 	keystoreMetaFile = ".keystore"
 	masterSaltLen    = 32
-)
-
-// KeystoreMetadata holds keystore-wide encryption metadata.
-//
-// Version 1: KDF parameters are not stored; implies argon2Time=1, argon2Memory=64MB, argon2Threads=4.
-// Version 2: KDF parameters are required so they can be upgraded independently of code.
-type KeystoreMetadata struct {
-	Version int    `json:"version"`
-	Salt    string `json:"salt"`  // Base64-encoded master salt
-	Check   string `json:"check"` // Base64-encoded AES-GCM encrypted verification value
-	Created string `json:"created"`
-
-	// KDF parameters. Version 1 files omit these and use legacy defaults;
-	// version 2+ files must set all fields to nonzero values.
-	KDFTime    uint32 `json:"kdf_time,omitempty"`
-	KDFMemory  uint32 `json:"kdf_memory,omitempty"`
-	KDFThreads uint8  `json:"kdf_threads,omitempty"`
-
-	// Layout documents the on-disk store layout for version 3+ metadata
-	// (KeystoreLayoutGenerationsV1). The version gate is what rejects the
-	// store on older binaries; this field records why.
-	Layout string `json:"layout,omitempty"`
-}
-
-const (
-	// checkPlaintext is the known value encrypted in the Check field.
-	checkPlaintext = "APLANE_OK"
 )
 
 // EncryptedDataMasterKey stores encrypted content using master key (no per-file salt)
@@ -246,174 +186,6 @@ func DecryptWithMasterKey(encryptedJSON []byte, masterKey []byte) ([]byte, error
 	}
 
 	return plaintext, nil
-}
-
-// CreateKeystoreMetadata creates a new keystore metadata file with a random master salt.
-// The passphrase is used to derive the master key and create the check field.
-// Returns the metadata and the derived master key.
-func CreateKeystoreMetadata(keystoreDir string, passphrase []byte) (*KeystoreMetadata, []byte, error) {
-	meta, masterKey, err := buildKeystoreMetadata(passphrase)
-	if err != nil {
-		return nil, nil, err
-	}
-	return writeKeystoreMetadata(keystoreDir, meta, masterKey)
-}
-
-// IsGenerationalLayout reports whether metadata records the generation
-// layout marker.
-func (m *KeystoreMetadata) IsGenerationalLayout() bool {
-	return m != nil && m.Version >= GenerationalKeystoreMetadataVersion &&
-		m.Layout == KeystoreLayoutGenerationsV1
-}
-
-// MarshalKeystoreMetadata encodes metadata in the canonical .keystore file
-// format after validating it.
-func MarshalKeystoreMetadata(meta *KeystoreMetadata) ([]byte, error) {
-	if err := meta.validateVersion(); err != nil {
-		return nil, err
-	}
-	return json.MarshalIndent(meta, "", "  ")
-}
-
-func writeKeystoreMetadata(keystoreDir string, meta *KeystoreMetadata, masterKey []byte) (*KeystoreMetadata, []byte, error) {
-
-	data, err := json.MarshalIndent(meta, "", "  ")
-	if err != nil {
-		ZeroBytes(masterKey)
-		return nil, nil, fmt.Errorf("failed to marshal keystore metadata: %w", err)
-	}
-
-	if err := fsutil.MkdirAll(keystoreDir); err != nil {
-		ZeroBytes(masterKey)
-		return nil, nil, fmt.Errorf("failed to create keystore directory: %w", err)
-	}
-
-	metaPath := keystoreDir + "/" + keystoreMetaFile
-	if err := fsutil.WriteFile(metaPath, data); err != nil {
-		ZeroBytes(masterKey)
-		return nil, nil, fmt.Errorf("failed to write keystore metadata: %w", err)
-	}
-
-	return meta, masterKey, nil
-}
-
-// encryptCheckValue encrypts the check plaintext with the master key.
-// Returns raw bytes: nonce (12 bytes) + ciphertext + tag (16 bytes)
-func encryptCheckValue(masterKey []byte) ([]byte, error) {
-	gcm, err := newGCM(masterKey)
-	if err != nil {
-		return nil, err
-	}
-
-	nonce, ciphertext, err := sealWithRandomNonce(gcm, []byte(checkPlaintext))
-	if err != nil {
-		return nil, err
-	}
-
-	return append(nonce, ciphertext...), nil
-}
-
-// decryptCheckValue decrypts the check value with the master key.
-// Input is raw bytes: nonce (12 bytes) + ciphertext + tag (16 bytes)
-func decryptCheckValue(checkData, masterKey []byte) ([]byte, error) {
-	gcm, err := newGCM(masterKey)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(checkData) < gcm.NonceSize() {
-		return nil, fmt.Errorf("check data too short")
-	}
-
-	nonce := checkData[:gcm.NonceSize()]
-	ciphertext := checkData[gcm.NonceSize():]
-
-	return gcm.Open(nil, nonce, ciphertext, nil)
-}
-
-// LoadKeystoreMetadata loads the keystore metadata file.
-// Returns nil if the file doesn't exist (v1 keystore).
-func LoadKeystoreMetadata(keystoreDir string) (*KeystoreMetadata, error) {
-	metaPath := keystoreDir + "/" + keystoreMetaFile
-	return LoadKeystoreMetadataFrom(metaPath)
-}
-
-// LoadKeystoreMetadataFrom loads keystore metadata from a specific file path.
-func LoadKeystoreMetadataFrom(metaPath string) (*KeystoreMetadata, error) {
-	data, err := os.ReadFile(metaPath)
-	if os.IsNotExist(err) {
-		return nil, nil // No metadata file
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to read keystore metadata: %w", err)
-	}
-
-	var meta KeystoreMetadata
-	if err := json.Unmarshal(data, &meta); err != nil {
-		return nil, fmt.Errorf("failed to parse keystore metadata: %w", err)
-	}
-	if err := meta.validateVersion(); err != nil {
-		return nil, err
-	}
-
-	return &meta, nil
-}
-
-// CreateKeystoreMetadataTemp creates keystore metadata in memory without writing to disk.
-// Used for atomic passphrase change operations.
-// Returns the metadata and the derived master key.
-func CreateKeystoreMetadataTemp(passphrase []byte) (*KeystoreMetadata, []byte, error) {
-	return buildKeystoreMetadata(passphrase)
-}
-
-// GetMasterSalt returns the decoded master salt from keystore metadata.
-func (m *KeystoreMetadata) GetMasterSalt() ([]byte, error) {
-	return base64.StdEncoding.DecodeString(m.Salt)
-}
-
-func (m *KeystoreMetadata) validateVersion() error {
-	if m.Version != GenerationalKeystoreMetadataVersion {
-		return fmt.Errorf("unsupported keystore metadata version %d: this release only reads stores it initialized (version %d); restore from a backup archive into a fresh store", m.Version, GenerationalKeystoreMetadataVersion)
-	}
-	if m.KDFTime == 0 || m.KDFMemory == 0 || m.KDFThreads == 0 {
-		return fmt.Errorf("keystore metadata version %d has incomplete KDF parameters", m.Version)
-	}
-	if m.Layout != KeystoreLayoutGenerationsV1 {
-		return fmt.Errorf("keystore metadata version %d has unsupported layout %q", m.Version, m.Layout)
-	}
-	return nil
-}
-
-// kdfParams returns the stored Argon2id parameters for this keystore.
-func (m *KeystoreMetadata) kdfParams() (time, memory uint32, threads uint8) {
-	return m.KDFTime, m.KDFMemory, m.KDFThreads
-}
-
-// KeystoreMetadataExistsIn checks if the .keystore metadata file exists in the specified directory.
-func KeystoreMetadataExistsIn(keystoreDir string) bool {
-	metaPath := keystoreDir + "/" + keystoreMetaFile
-	_, err := os.Stat(metaPath)
-	return err == nil
-}
-
-// VerifyPassphraseWithMetadata verifies the passphrase using the .keystore metadata file.
-// This replaces VerifyPassphraseBytesIn for keystores using master key encryption.
-// Returns nil on success, or an error if passphrase is incorrect.
-func VerifyPassphraseWithMetadata(passphrase []byte, keystoreDir string) error {
-	meta, err := LoadKeystoreMetadata(keystoreDir)
-	if err != nil {
-		return fmt.Errorf("failed to load keystore metadata: %w", err)
-	}
-	if meta == nil {
-		return fmt.Errorf("keystore not initialized (missing .keystore file)")
-	}
-
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
-	if err != nil {
-		return err
-	}
-	ZeroBytes(masterKey) // Don't need the key, just verifying
-	return nil
 }
 
 // ============================================================================
@@ -528,49 +300,4 @@ func (e EncryptedDataStandalone) kdfParams() (time, memory uint32, threads uint8
 		return 0, 0, 0, fmt.Errorf("standalone envelope has incomplete KDF parameters")
 	}
 	return e.KDFTime, e.KDFMemory, e.KDFThreads, nil
-}
-
-// VerifyAndDeriveMasterKey verifies the passphrase and returns the master key if valid.
-// Uses KDF parameters from the metadata (version 2+) or legacy defaults (version 1).
-// Returns the master key on success, or an error if passphrase is incorrect.
-func (m *KeystoreMetadata) VerifyAndDeriveMasterKey(passphrase []byte) ([]byte, error) {
-	if err := m.validateVersion(); err != nil {
-		return nil, err
-	}
-
-	// Get salt
-	salt, err := m.GetMasterSalt()
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode master salt: %w", err)
-	}
-
-	// Use stored KDF parameters if present (version 2+), otherwise legacy defaults.
-	kdfTime, kdfMemory, kdfThreads := m.kdfParams()
-
-	// Derive master key
-	masterKey := deriveMasterKeyParams(passphrase, salt, kdfTime, kdfMemory, kdfThreads)
-
-	// Verify by decrypting the check value
-	checkData, err := base64.StdEncoding.DecodeString(m.Check)
-	if err != nil {
-		ZeroBytes(masterKey)
-		return nil, fmt.Errorf("failed to decode check value: %w", err)
-	}
-
-	plaintext, err := decryptCheckValue(checkData, masterKey)
-	if err != nil {
-		ZeroBytes(masterKey)
-		return nil, fmt.Errorf("incorrect passphrase")
-	}
-
-	if !isValidCheckPlaintext(string(plaintext)) {
-		ZeroBytes(masterKey)
-		return nil, fmt.Errorf("incorrect passphrase (check mismatch)")
-	}
-
-	return masterKey, nil
-}
-
-func isValidCheckPlaintext(plaintext string) bool {
-	return plaintext == checkPlaintext
 }

@@ -53,17 +53,18 @@ func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, []byte, fun
 	genstoretest.MintFirst(t, paths, identityID)
 
 	userDir := paths.IdentityDir(identityID)
-	if _, _, err := crypto.CreateKeystoreMetadata(userDir, []byte("test-passphrase-for-storemut")); err != nil {
-		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	if _, err := crypto.CreateKeyringStore(userDir, []byte("test-passphrase-for-storemut")); err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
 
-	meta, err := crypto.LoadKeystoreMetadata(userDir)
+	kr, err := crypto.OpenKeyringStore(userDir, []byte("test-passphrase-for-storemut"))
 	if err != nil {
-		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-	masterKey, err := meta.VerifyAndDeriveMasterKey([]byte("test-passphrase-for-storemut"))
+	defer kr.Zero()
+	masterKey, err := kr.CurrentTermKey()
 	if err != nil {
-		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 
 	cleanup := func() {

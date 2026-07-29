@@ -339,22 +339,17 @@ func (s OfflineStore) unlock(ctx context.Context) ([]byte, func(), error) {
 	}
 
 	metadataDir := storepaths.NewPaths(s.DataDir).KeystoreMetadataDir(s.identityID())
-	meta, err := apcrypto.LoadKeystoreMetadata(metadataDir)
-	if err != nil {
-		clearPassphrase()
-		return nil, func() {}, fmt.Errorf("failed to load keystore metadata: %w", err)
-	}
-	if meta == nil {
-		clearPassphrase()
-		return nil, func() {}, fmt.Errorf("keystore not initialized (missing .keystore file in %s) - run migration first", metadataDir)
-	}
-
-	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	kr, err := apcrypto.OpenKeyringStore(metadataDir, passphrase)
 	clearPassphrase()
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("failed to unlock keystore: %w", err)
 	}
-	return masterKey, func() { apcrypto.ZeroBytes(masterKey) }, nil
+	defer kr.Zero()
+	termKey, err := kr.CurrentTermKey()
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return termKey, func() { apcrypto.ZeroBytes(termKey) }, nil
 }
 
 func (s OfflineStore) loadVerifiedWithMasterKey(masterKey []byte) (*policy.StoredConfig, error) {
