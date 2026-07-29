@@ -159,6 +159,25 @@ func TestObjectContextValidation(t *testing.T) {
 	}
 }
 
+func TestInspectTermEnvelopeDistinguishesPlaintextAndMalformedEnvelope(t *testing.T) {
+	kr := newTestKeyring(t)
+	sealed, err := kr.Seal([]byte("secret"), AccountKeyContext("ADDR"))
+	if err != nil {
+		t.Fatalf("Seal() error = %v", err)
+	}
+	if term, present, err := InspectTermEnvelope(sealed); err != nil || !present || term != FirstTerm {
+		t.Fatalf("InspectTermEnvelope(sealed) = %d, %t, %v", term, present, err)
+	}
+	if term, present, err := InspectTermEnvelope([]byte(`{"schema":"plaintext.v1"}`)); err != nil ||
+		present ||
+		term != 0 {
+		t.Fatalf("InspectTermEnvelope(plaintext) = %d, %t, %v", term, present, err)
+	}
+	if _, present, err := InspectTermEnvelope([]byte(`{"envelope_version":2}`)); err == nil || !present {
+		t.Fatalf("InspectTermEnvelope(foreign envelope) = present %t, error %v", present, err)
+	}
+}
+
 // TestAADFieldsAreUnambiguous proves the length-prefixed encoding cannot be
 // confused: no rearrangement of class and selector produces the same AAD.
 func TestAADFieldsAreUnambiguous(t *testing.T) {
@@ -358,6 +377,55 @@ func TestRotationSnapshotReferencePinsExactBytesAndSize(t *testing.T) {
 				t.Fatal("Validate() accepted an invalid snapshot reference")
 			}
 		})
+	}
+}
+
+func TestHistoricalGenerationAnchorPinsExactSealBytes(t *testing.T) {
+	generationID := "gen-1785400000-deadbeef"
+	exact := []byte(`{"schema":"aplane.generation-seal.v2"}`)
+	anchor, err := NewHistoricalGenerationAnchor(generationID, exact)
+	if err != nil {
+		t.Fatalf("NewHistoricalGenerationAnchor() error = %v", err)
+	}
+	if anchor.GenerationID != generationID ||
+		anchor.SealSize != int64(len(exact)) ||
+		anchor.SealSHA256 != sha256Hex(exact) {
+		t.Fatalf("anchor = %+v, want exact generation, size, and digest", anchor)
+	}
+	if err := anchor.VerifyExact(generationID, exact); err != nil {
+		t.Fatalf("VerifyExact(exact) error = %v", err)
+	}
+	mutated := slices.Clone(exact)
+	mutated[len(mutated)-1] ^= 1
+	if err := anchor.VerifyExact(generationID, mutated); err == nil {
+		t.Fatal("VerifyExact() accepted mutated seal bytes")
+	}
+	if err := anchor.VerifyExact("gen-1785400001-feedface", exact); err == nil {
+		t.Fatal("VerifyExact() accepted a different generation")
+	}
+}
+
+func TestNewKeyringFromTermKeysCopiesAndValidatesTerms(t *testing.T) {
+	key1 := bytes.Repeat([]byte{1}, argon2KeyLen)
+	key2 := bytes.Repeat([]byte{2}, argon2KeyLen)
+	kr, err := NewKeyringFromTermKeys(2, map[int64][]byte{1: key1, 2: key2})
+	if err != nil {
+		t.Fatalf("NewKeyringFromTermKeys() error = %v", err)
+	}
+	defer kr.Zero()
+	ZeroBytes(key1)
+	ZeroBytes(key2)
+	if kr.CurrentTerm() != 2 {
+		t.Fatalf("CurrentTerm() = %d, want 2", kr.CurrentTerm())
+	}
+	if _, err := kr.Seal([]byte("current"), AccountKeyContext("A")); err != nil {
+		t.Fatalf("Seal(current term) error = %v after inputs were zeroed", err)
+	}
+	if _, err := NewKeyringFromTermKeys(1, map[int64][]byte{
+		1: bytes.Repeat([]byte{1}, argon2KeyLen),
+		2: bytes.Repeat([]byte{2}, argon2KeyLen),
+	}); err == nil {
+		t.Fatal("NewKeyringFromTermKeys() accepted a non-greatest current term")
 	}
 }
 
@@ -799,7 +867,7 @@ func TestValidateKeyringPayloadV2(t *testing.T) {
 				{Term: 1, Key: slices.Clone(key1)},
 				{Term: 2, Key: slices.Clone(key2)},
 			},
-			HistoricalAnchors: []historicalAnchor{{
+			HistoricalAnchors: []HistoricalGenerationAnchor{{
 				GenerationID: "gen-1700000000-0123abcd",
 				SealSize:     123,
 				SealSHA256:   digest,
@@ -884,7 +952,7 @@ func TestOpenKeyringStrictJSON(t *testing.T) {
 		Schema:            KeyringSchema,
 		CurrentTerm:       FirstTerm,
 		Terms:             []sealedTerm{{Term: FirstTerm, Key: bytes.Repeat([]byte{7}, argon2KeyLen)}},
-		HistoricalAnchors: []historicalAnchor{},
+		HistoricalAnchors: []HistoricalGenerationAnchor{},
 	}
 	plain, err := json.Marshal(validPayload)
 	if err != nil {

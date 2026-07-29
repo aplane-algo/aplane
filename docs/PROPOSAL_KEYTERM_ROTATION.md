@@ -10,9 +10,11 @@ taxonomy and settled-store scanner with exact-buffer context opening and its
 durable-class mutation matrix. A fourth slice adds the strict sealed cutover
 snapshot codec, durable bounded storage, canonical rollback-authority digest,
 and exact encrypted-file reference validation, without enabling a pending
-root. The transition itself remains blocked on root-commit integration,
-historical authority, rewrap, baseline, and completion items recorded below
-and in
+root. A fifth slice records and authenticates each generation member's term,
+pins exact pre-retirement generation seals with historical anchors, and
+provides a separate anchor-gated retired-term open path. The transition itself
+remains blocked on root-commit integration, rewrap, baseline, and completion
+items recorded below and in
 [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
 picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
 
@@ -903,10 +905,12 @@ accepts everywhere else.
      receives a raw term key, imports a KDF, or adopts raw bytes as a keyring.
      `internal/rotationinventory` now supplies the canonical cross-artifact
      taxonomy and settled-store scan, including exact-buffer logical-context
-     opening and mutation-tested durable-class coverage. It remains a
-     prerequisite rather than an enabled transition: snapshot/root pinning,
-     term-bearing seal entries, historical retired-term opening, and the final
-     exact-path/target-authority check still have to consume it before append.
+     opening and mutation-tested durable-class coverage. The sealed snapshot,
+     per-member seal terms, exact historical anchors, and anchor-gated
+     retired-term opening are also implemented as foundations. This remains a
+     prerequisite rather than an enabled transition: the pending root must pin
+     the snapshot and complete anchor set, and rewrap plus the final
+     exact-path/target-authority check still have to consume them before append.
    - **Add an artifact-class test.** The gates above prove no code takes the
      old path; they do not prove every written artifact carries a term. A
      test that creates each durable class — managed keys, installed

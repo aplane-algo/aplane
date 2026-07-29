@@ -472,6 +472,15 @@ func (s *inventoryScanner) addPlaintextFromSeal(
 	if err != nil {
 		return fmt.Errorf("rotation inventory read %s: %w", path, err)
 	}
+	if term, present, err := crypto.InspectTermEnvelope(data); err != nil {
+		return fmt.Errorf("rotation inventory plaintext %s: %w", path, err)
+	} else if present {
+		return fmt.Errorf(
+			"rotation inventory plaintext %s unexpectedly carries term envelope %d",
+			path,
+			term,
+		)
+	}
 	return s.addBytes(path, kind, data, 0, crypto.ObjectContext{})
 }
 

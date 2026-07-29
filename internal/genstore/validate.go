@@ -75,6 +75,32 @@ func ValidateSealed(gen storepaths.GenPaths, kr *crypto.Keyring) error {
 	return nil
 }
 
+// ValidateAnchoredSealed validates a retained generation whose exact seal is
+// pinned by the root. Unlike ValidateSealed, term-bearing entries may name
+// resident retired terms because the pre-retirement anchor, not that term's
+// MAC alone, is the historical authority.
+func ValidateAnchoredSealed(
+	gen storepaths.GenPaths,
+	anchor crypto.HistoricalGenerationAnchor,
+	kr *crypto.Keyring,
+) error {
+	if err := validateStructure(gen); err != nil {
+		return err
+	}
+	seal, err := ReadAnchoredSeal(gen, anchor, kr)
+	if err != nil {
+		return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
+	}
+	live, err := BuildInventory(gen)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(live, seal.Inventory) {
+		return fmt.Errorf("generation %s content does not match its anchored seal", gen.GenerationID())
+	}
+	return nil
+}
+
 // VerifyFileAgainstSeal checks one namespace-relative path ("keys/X.key")
 // against a loaded seal.
 func VerifyFileAgainstSeal(gen storepaths.GenPaths, seal *Seal, relativePath string) error {
@@ -106,7 +132,83 @@ func VerifyBytesAgainstSeal(seal *Seal, relativePath string, data []byte) error 
 	if int64(len(data)) != entry.Size || hex.EncodeToString(sum[:]) != entry.SHA256 {
 		return fmt.Errorf("size or digest mismatch")
 	}
+	term, present, err := crypto.InspectTermEnvelope(data)
+	if err != nil {
+		return fmt.Errorf("inspect term envelope: %w", err)
+	}
+	if !present {
+		term = 0
+	}
+	if term != entry.Term {
+		return fmt.Errorf("term %d does not match seal term %d", term, entry.Term)
+	}
 	return nil
+}
+
+// ReadAnchoredBytes returns the exact member buffer verified against both the
+// root anchor and the anchor-authenticated seal entry.
+func ReadAnchoredBytes(
+	gen storepaths.GenPaths,
+	anchor crypto.HistoricalGenerationAnchor,
+	relativePath string,
+	kr *crypto.Keyring,
+) ([]byte, InventoryEntry, error) {
+	manifestBytes, _, err := fsutil.ReadRegularFile(gen.ManifestPath())
+	if err != nil {
+		return nil, InventoryEntry{}, err
+	}
+	sealBytes, _, err := fsutil.ReadRegularFile(gen.SealPath())
+	if err != nil {
+		return nil, InventoryEntry{}, err
+	}
+	seal, err := ParseAnchoredSealBytes(gen, anchor, sealBytes, manifestBytes, kr)
+	if err != nil {
+		return nil, InventoryEntry{}, err
+	}
+	index := slices.IndexFunc(seal.Inventory, func(entry InventoryEntry) bool {
+		return entry.Path == relativePath
+	})
+	if index < 0 {
+		return nil, InventoryEntry{}, fmt.Errorf("path %q is absent from the anchored seal", relativePath)
+	}
+	data, _, err := fsutil.ReadRegularFile(
+		filepath.Join(gen.Dir(), filepath.FromSlash(relativePath)),
+	)
+	if err != nil {
+		return nil, InventoryEntry{}, err
+	}
+	if err := VerifyBytesAgainstSeal(seal, relativePath, data); err != nil {
+		return nil, InventoryEntry{}, fmt.Errorf(
+			"%s does not match generation %s's anchored seal: %w",
+			relativePath,
+			gen.GenerationID(),
+			err,
+		)
+	}
+	return data, seal.Inventory[index], nil
+}
+
+// OpenAnchoredEnvelope opens one exact historical term envelope only after
+// the root anchor, complete seal, and per-member seal entry all match.
+func OpenAnchoredEnvelope(
+	gen storepaths.GenPaths,
+	anchor crypto.HistoricalGenerationAnchor,
+	relativePath string,
+	ctx crypto.ObjectContext,
+	kr *crypto.Keyring,
+) ([]byte, error) {
+	data, entry, err := ReadAnchoredBytes(gen, anchor, relativePath, kr)
+	if err != nil {
+		return nil, err
+	}
+	if entry.Term <= 0 {
+		return nil, fmt.Errorf("anchored member %q is not a term envelope", relativePath)
+	}
+	plaintext, err := kr.OpenHistoricalGenerationEnvelope(data, ctx, entry.Term)
+	if err != nil {
+		return nil, fmt.Errorf("open anchored member %q: %w", relativePath, err)
+	}
+	return plaintext, nil
 }
 
 // validateStructure enforces the generation directory's shape: a regular

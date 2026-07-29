@@ -64,6 +64,35 @@ func (kr *Keyring) VerifyIntegrity(domain IntegrityDomain, payload []byte, term 
 	if term != kr.currentTerm {
 		return fmt.Errorf("term %d is not authorized for current integrity state", term)
 	}
+	return kr.verifyIntegrityForTerm(domain, payload, term, encodedMAC)
+}
+
+// VerifyHistoricalGenerationSealIntegrity verifies a generation-seal MAC
+// under a resident term without granting that term current-state authority.
+// Callers must first match the exact complete seal bytes to a root historical
+// anchor; genstore's anchored APIs enforce that ordering.
+func (kr *Keyring) VerifyHistoricalGenerationSealIntegrity(
+	payload []byte,
+	term int64,
+	encodedMAC string,
+) error {
+	if kr == nil || len(kr.terms) == 0 {
+		return fmt.Errorf("keyring is not open")
+	}
+	return kr.verifyIntegrityForTerm(
+		IntegrityDomainGenerationSeal,
+		payload,
+		term,
+		encodedMAC,
+	)
+}
+
+func (kr *Keyring) verifyIntegrityForTerm(
+	domain IntegrityDomain,
+	payload []byte,
+	term int64,
+	encodedMAC string,
+) error {
 	got, err := hex.DecodeString(encodedMAC)
 	if err != nil || len(got) != sha256.Size || hex.EncodeToString(got) != encodedMAC {
 		return fmt.Errorf("integrity MAC must be %d lowercase hexadecimal characters", sha256.Size*2)

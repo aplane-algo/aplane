@@ -215,6 +215,23 @@ func TestScanRejectsUnsupportedInScopeArtifact(t *testing.T) {
 	}
 }
 
+func TestScanRejectsTermEnvelopeSubstitutedForPlaintextMember(t *testing.T) {
+	fixture := newInventoryFixture(t)
+	gen := fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB)
+	envelope, err := os.ReadFile(filepath.Join(gen.KeysDir(), "ACCOUNT.key"))
+	if err != nil {
+		t.Fatalf("ReadFile(account envelope) error = %v", err)
+	}
+	path := gen.KeyTypeRecord("example.type.v1")
+	if err := os.WriteFile(path, envelope, fsutil.StoreFilePerm); err != nil {
+		t.Fatalf("WriteFile(substituted plaintext member) error = %v", err)
+	}
+	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err == nil ||
+		!strings.Contains(err.Error(), "unexpectedly carries term envelope") {
+		t.Fatalf("Scan() error = %v, want plaintext/envelope classification rejection", err)
+	}
+}
+
 func TestScanForSnapshotExcludesSnapshotButPinsExistingBaseline(t *testing.T) {
 	fixture := newInventoryFixture(t)
 	report, err := ScanForSnapshot(fixture.paths, inventoryIdentity, fixture.kr)

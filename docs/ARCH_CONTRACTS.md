@@ -1312,11 +1312,13 @@ root reference. This implements the first half of the required commit order;
 no production path yet commits a pending root. `OpenKeyring` still rejects all
 pending and multi-term payloads.
 
-The scanner and snapshot primitives still describe preparation, not an
-enabled transition. Pending-root commit integration, per-member terms in
-generation seals, anchored retired-term historical opening, pinned-input
-rewrap, and the final exact-path/target-authority comparison remain required
-before the runtime multi-term gate may be relaxed.
+The scanner, snapshot, and historical-generation primitives still describe
+preparation, not an enabled transition. Generation seal inventory entries now
+authenticate each member's term, and exact seal anchors gate the separate
+retired-term seal/member verification path. Pending-root commit integration
+must reference the durable snapshot and complete pre-retirement anchor set;
+pinned-input rewrap and the final exact-path/target-authority comparison also
+remain required before the runtime multi-term gate may be relaxed.
 
 ### Generation Store (`CURRENT` + `generations/`)
 
@@ -1341,9 +1343,22 @@ specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
   generation stops being current and is the content authority for sealed
   priors. It pins the SHA-256 of the exact immutable manifest bytes, records a
   positive `integrity_term`, and carries a canonical HMAC-SHA256 over all
-  security-bearing seal fields and the full two-namespace inventory.
-  Rollback and retained-parent pruning verify it with an open identity
-  keyring; an unanchored seal is accepted only under the current term.
+  security-bearing seal fields and the full two-namespace inventory. Each
+  inventory entry records `term`: zero for plaintext, or the positive
+  term-envelope term. The seal MAC and canonical inventory digest bind
+  `(path, digest, size, term)`. Rollback and retained-parent pruning verify it
+  with an open identity keyring; an unanchored seal is accepted only when both
+  its integrity term and every term-bearing entry use the current term.
+- `crypto.HistoricalGenerationAnchor` pins a canonical generation ID and the
+  exact seal byte size and SHA-256. `genstore.BuildHistoricalAnchor` creates
+  one only after ordinary current-authority seal verification, so anchors are
+  collected before that term retires.
+- anchored historical validation verifies the exact seal anchor first, then
+  accepts the seal MAC under its retained term, binds the exact manifest, and
+  checks live inventory. `ReadAnchoredBytes` verifies the same member buffer's
+  size, digest, and term before consumption; `OpenAnchoredEnvelope` then uses
+  the dedicated historical open path. A retained key without its exact anchor
+  is insufficient, as is an anchor without the retained key.
 - single-file writes into the current generation's namespaces are the
   routine mutation path (key generation, template install); multi-file
   transactions (restore activation) commit by minting a new generation

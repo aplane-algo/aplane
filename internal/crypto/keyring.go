@@ -65,11 +65,11 @@ type keyringFile struct {
 
 // keyringPayload is the sealed plaintext.
 type keyringPayload struct {
-	Schema            string              `json:"schema"`
-	CurrentTerm       int64               `json:"current_term"`
-	Terms             []sealedTerm        `json:"terms"`
-	HistoricalAnchors []historicalAnchor  `json:"historical_anchors"`
-	Rotation          *rotationDescriptor `json:"rotation,omitempty"`
+	Schema            string                       `json:"schema"`
+	CurrentTerm       int64                        `json:"current_term"`
+	Terms             []sealedTerm                 `json:"terms"`
+	HistoricalAnchors []HistoricalGenerationAnchor `json:"historical_anchors"`
+	Rotation          *rotationDescriptor          `json:"rotation,omitempty"`
 }
 
 type sealedTerm struct {
@@ -77,7 +77,9 @@ type sealedTerm struct {
 	Key  []byte `json:"key"`
 }
 
-type historicalAnchor struct {
+// HistoricalGenerationAnchor is the root's exact reference to one retained
+// generation's complete seal.json bytes.
+type HistoricalGenerationAnchor struct {
 	GenerationID string `json:"generation_id"`
 	SealSize     int64  `json:"seal_size"`
 	SealSHA256   string `json:"seal_sha256"`
@@ -156,6 +158,36 @@ func NewKeyringFromTermKey(term int64, key []byte) (*Keyring, error) {
 	}, nil
 }
 
+// NewKeyringFromTermKeys adopts known keys for test fixtures that exercise
+// mixed-term or historical behavior before durable multi-term roots are
+// enabled. Production use is forbidden by the architecture test.
+func NewKeyringFromTermKeys(currentTerm int64, terms map[int64][]byte) (*Keyring, error) {
+	if len(terms) == 0 {
+		return nil, fmt.Errorf("keyring terms must not be empty")
+	}
+	greatest := int64(0)
+	adopted := make(map[int64][]byte, len(terms))
+	for term, key := range terms {
+		if term < FirstTerm {
+			zeroTermMap(adopted)
+			return nil, fmt.Errorf("term must be at least %d, got %d", FirstTerm, term)
+		}
+		if len(key) != argon2KeyLen {
+			zeroTermMap(adopted)
+			return nil, fmt.Errorf("term %d key must be %d bytes, got %d", term, argon2KeyLen, len(key))
+		}
+		adopted[term] = slices.Clone(key)
+		if term > greatest {
+			greatest = term
+		}
+	}
+	if currentTerm != greatest {
+		zeroTermMap(adopted)
+		return nil, fmt.Errorf("current term %d is not greatest resident term %d", currentTerm, greatest)
+	}
+	return &Keyring{terms: adopted, currentTerm: currentTerm}, nil
+}
+
 // CurrentTerm returns the term new writes use.
 func (kr *Keyring) CurrentTerm() int64 { return kr.currentTerm }
 
@@ -212,6 +244,42 @@ func (kr *Keyring) Open(sealed []byte, ctx ObjectContext) ([]byte, error) {
 	return openUnderTerm(sealed, key, term, ctx)
 }
 
+// OpenHistoricalGenerationEnvelope opens a resident term only for an exact
+// generation member whose root anchor and seal entry were already verified.
+// It is deliberately separate from Open: retired terms must never regain
+// current-state authority merely because their keys remain resident.
+func (kr *Keyring) OpenHistoricalGenerationEnvelope(
+	sealed []byte,
+	ctx ObjectContext,
+	expectedTerm int64,
+) ([]byte, error) {
+	if kr == nil || len(kr.terms) == 0 {
+		return nil, fmt.Errorf("keyring is not open")
+	}
+	if err := ctx.validate(); err != nil {
+		return nil, err
+	}
+	if expectedTerm < FirstTerm {
+		return nil, fmt.Errorf("historical generation envelope requires a positive term")
+	}
+	term, err := envelopeTerm(sealed)
+	if err != nil {
+		return nil, err
+	}
+	if term != expectedTerm {
+		return nil, fmt.Errorf(
+			"historical generation envelope term %d does not match sealed entry term %d",
+			term,
+			expectedTerm,
+		)
+	}
+	key, ok := kr.terms[term]
+	if !ok {
+		return nil, fmt.Errorf("keyring has no key for historical term %d", term)
+	}
+	return openUnderTerm(sealed, key, term, ctx)
+}
+
 // ----------------------------------------------------------------------------
 // keyring.enc
 
@@ -238,7 +306,7 @@ func SealKeyring(kr *Keyring, passphrase []byte) ([]byte, error) {
 		Schema:            KeyringSchema,
 		CurrentTerm:       kr.currentTerm,
 		Terms:             terms,
-		HistoricalAnchors: []historicalAnchor{},
+		HistoricalAnchors: []HistoricalGenerationAnchor{},
 	}
 	if err := validateKeyringPayload(&payload); err != nil {
 		return nil, fmt.Errorf("invalid keyring state: %w", err)
@@ -488,17 +556,11 @@ func validateKeyringPayload(payload *keyringPayload) error {
 
 	previousGeneration := ""
 	for i, anchor := range payload.HistoricalAnchors {
-		if err := storepaths.ValidateGenerationID(anchor.GenerationID); err != nil {
+		if err := anchor.Validate(); err != nil {
 			return fmt.Errorf("historical anchor: %w", err)
 		}
 		if i > 0 && anchor.GenerationID <= previousGeneration {
 			return fmt.Errorf("historical anchors are not strictly increasing by generation_id")
-		}
-		if anchor.SealSize <= 0 {
-			return fmt.Errorf("historical anchor %s has invalid seal_size %d", anchor.GenerationID, anchor.SealSize)
-		}
-		if err := validateCanonicalSHA256(anchor.SealSHA256); err != nil {
-			return fmt.Errorf("historical anchor %s seal_sha256: %w", anchor.GenerationID, err)
 		}
 		previousGeneration = anchor.GenerationID
 	}
@@ -564,6 +626,80 @@ func (ref RotationSnapshotReference) VerifyExact(data []byte) error {
 		return fmt.Errorf("snapshot digest does not match root reference")
 	}
 	return nil
+}
+
+// NewHistoricalGenerationAnchor pins the exact complete seal bytes for one
+// retained generation.
+func NewHistoricalGenerationAnchor(
+	generationID string,
+	exactSeal []byte,
+) (HistoricalGenerationAnchor, error) {
+	sum := sha256.Sum256(exactSeal)
+	anchor := HistoricalGenerationAnchor{
+		GenerationID: generationID,
+		SealSize:     int64(len(exactSeal)),
+		SealSHA256:   hex.EncodeToString(sum[:]),
+	}
+	if err := anchor.Validate(); err != nil {
+		return HistoricalGenerationAnchor{}, err
+	}
+	return anchor, nil
+}
+
+// Validate enforces the canonical historical-anchor record shape.
+func (anchor HistoricalGenerationAnchor) Validate() error {
+	if err := storepaths.ValidateGenerationID(anchor.GenerationID); err != nil {
+		return err
+	}
+	if anchor.SealSize <= 0 {
+		return fmt.Errorf(
+			"historical anchor %s has invalid seal_size %d",
+			anchor.GenerationID,
+			anchor.SealSize,
+		)
+	}
+	if err := validateCanonicalSHA256(anchor.SealSHA256); err != nil {
+		return fmt.Errorf(
+			"historical anchor %s seal_sha256: %w",
+			anchor.GenerationID,
+			err,
+		)
+	}
+	return nil
+}
+
+// VerifyExact proves data is the exact complete seal file pinned by the root.
+func (anchor HistoricalGenerationAnchor) VerifyExact(generationID string, data []byte) error {
+	if err := anchor.Validate(); err != nil {
+		return err
+	}
+	if anchor.GenerationID != generationID {
+		return fmt.Errorf(
+			"historical anchor names generation %s, want %s",
+			anchor.GenerationID,
+			generationID,
+		)
+	}
+	if int64(len(data)) != anchor.SealSize {
+		return fmt.Errorf(
+			"generation %s seal size %d does not match anchor size %d",
+			generationID,
+			len(data),
+			anchor.SealSize,
+		)
+	}
+	sum := sha256.Sum256(data)
+	if digest := hex.EncodeToString(sum[:]); digest != anchor.SealSHA256 {
+		return fmt.Errorf("generation %s seal digest does not match historical anchor", generationID)
+	}
+	return nil
+}
+
+func zeroTermMap(terms map[int64][]byte) {
+	for term, key := range terms {
+		ZeroBytes(key)
+		delete(terms, term)
+	}
 }
 
 func validateCanonicalSHA256(value string) error {

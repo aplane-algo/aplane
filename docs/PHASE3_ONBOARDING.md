@@ -40,6 +40,7 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | Policy and node-role sidecar v2 — records the explicit integrity term and rejects unknown fields, trailing JSON, non-canonical MACs, and unauthorized terms | `internal/policy/integrity.go`, `internal/noderole/integrity.go` |
 | K8 inventory foundation — canonical artifact kinds and root-relative paths across generations, recovered batches, deleted archives, integrity documents, and rotation records; exact term envelopes are opened under their logical context before being inventoried | `internal/rotationinventory` |
 | Cutover snapshot foundation — strict `aplane.rotation-snapshot.v1` body, recursive-snapshot exclusion, canonical rollback-authority digest, 16 MiB bounded durable storage, and exact encrypted-file root-reference verification | `internal/rotationinventory/snapshot.go`, `internal/crypto/keyring.go` |
+| Historical generation foundation — generation inventory entries authenticate each member's term, exact pre-retirement seal bytes can be root-anchored, and retired-term seals and members have a separate anchor-gated verification/open path | `internal/genstore`, `internal/crypto/keyring.go`, `internal/crypto/policy_integrity.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
 What that gives you: exactly one term (term 1), a single atomic root write, and
@@ -50,11 +51,12 @@ retained-parent pruning, and flip-away sealing) require an open keyring;
 pre-unlock reconciliation only uses seal presence to classify unreachable
 attempts and does not treat an unverified seal as a rollback authority. What
 this does **not** give you is any enabled transition — no append, no window,
-no authority split, no historical anchors, no root commit referencing a
-snapshot, and no rewrap or completion pass. The K8 taxonomy, settled-store
-scanner, and sealed snapshot primitives are present, but K8 remains a
-pre-append gate until those pieces are wired into root commit, historical
-opening, rewrap, and the final exact-path/target-authority check.
+no authority split, no root commit referencing a snapshot and the complete
+pre-retirement anchor set, and no rewrap or completion pass. The K8 taxonomy,
+settled-store scanner, sealed snapshot primitives, per-member term authority,
+and exact historical-opening primitives are present, but K8 remains a
+pre-append gate until those pieces are wired into root commit, rewrap, and the
+final exact-path/target-authority check.
 
 The properties that are proven today are K1–K7 in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against a named test.
@@ -405,26 +407,43 @@ publication. Dedicated negative controls cover selector/class substitution,
 unauthorized sidecar terms, mutated sealed plaintext members, and unknown
 in-scope files.
 
+Generation inventory entries now record `term`: zero for plaintext and the
+positive envelope term for term-encrypted members. The canonical inventory
+digest and seal MAC both bind that field. Exact member verification derives
+the term from the same byte buffer whose size and digest are checked, so an
+envelope cannot be substituted for a plaintext member or vice versa. An
+unanchored seal remains valid only when its seal term and every term-bearing
+entry use the current keyring term.
+
+`BuildHistoricalAnchor` is intentionally usable only while the seal remains
+ordinary current authority. It pins the exact seal byte length and SHA-256.
+Historical validation checks that anchor before accepting the seal MAC under a
+retained term; `ReadAnchoredBytes` then checks one exact member against its
+authenticated entry, and `OpenAnchoredEnvelope` uses the dedicated historical
+open path. A retired key without its anchor is insufficient, and an anchor
+without the retained key is insufficient. The K8 scanner also rejects
+term-envelope/plaintext substitution for semantic plaintext members.
+
 This is intentionally still a foundation. Before append is enabled, the root
-commit must atomically reference the already-durable snapshot, seal entries
-must carry the term of each term-bearing member, historical opening must
-authorize anchored retired terms, rewrap/resume must consume only pinned
-inputs, and completion must compare the fresh canonical path set and target
-authority against the pinned snapshot.
+commit must atomically reference the already-durable snapshot and the complete
+pre-retirement anchor set, rewrap/resume must consume only pinned inputs, and
+completion must compare the fresh canonical path set and target authority
+against the pinned snapshot.
 
 ### The original blockers
 
 **7. The cutover snapshot** (design in item 1) — an authenticated pin of what
 the rewrap may consume. Without it, laundering.
 
-**8. Historical anchors and the seal MAC.** Generation seal v2 now authenticates
-the exact manifest digest, explicit integrity term, and canonical inventory
-under the current term's generation-seal integrity key. This closes the
-pre-rotation unkeyed-seal defect: a filesystem attacker holding no key cannot
-alter a plaintext generation member and recompute an accepted seal. Historical
-anchors are still required before a term can retire. A holder of that retired
-term could otherwise forge a seal under its old MAC key and have
-mint-on-rollback bless the result under the current term.
+**8. Historical anchors and the seal MAC.** Generation seal v2 authenticates
+the exact manifest digest, explicit integrity term, and canonical inventory,
+including every member's term, under the seal term's generation-seal integrity
+key. Exact pre-retirement seal anchors and the anchor-gated historical
+verification/open primitives are implemented. This closes both the
+pre-rotation no-key forgery and the retired-key-only forgery: historical
+acceptance requires an exact root-pinned seal and its retained key. The
+remaining transition work is to collect the complete anchor set and commit it
+atomically with the snapshot before the old term retires.
 
 **9. The divergence baseline.** Mandatory rewrap changes every ciphertext
 digest, which trips the post-activation rollback guard that compares those

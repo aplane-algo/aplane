@@ -173,6 +173,40 @@ func EnvelopeTerm(encryptedJSON []byte) (int64, error) {
 	return envelopeTerm(encryptedJSON)
 }
 
+// InspectTermEnvelope reports whether data declares an encryption-envelope
+// version and, when it does, requires the current term-envelope format and a
+// positive term. Plaintext generation members do not declare the field and
+// return present=false.
+func InspectTermEnvelope(data []byte) (term int64, present bool, err error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil {
+		// Generation structural inventory is content-agnostic. Higher-level
+		// validators reject malformed plaintext; a non-JSON member cannot be
+		// mistaken for an envelope because it declares no parsed version.
+		return 0, false, nil
+	}
+	rawVersion, present := object["envelope_version"]
+	if !present {
+		return 0, false, nil
+	}
+	var version int
+	if err := json.Unmarshal(rawVersion, &version); err != nil {
+		return 0, true, fmt.Errorf("invalid envelope_version: %w", err)
+	}
+	if version != TermEnvelopeVersion {
+		return 0, true, fmt.Errorf(
+			"envelope_version %d is not a term envelope (expected %d)",
+			version,
+			TermEnvelopeVersion,
+		)
+	}
+	term, err = EnvelopeTerm(data)
+	if err != nil {
+		return 0, true, err
+	}
+	return term, true, nil
+}
+
 func sealUnderTerm(plaintext, key []byte, term int64, ctx ObjectContext) ([]byte, error) {
 	gcm, err := newGCM(key)
 	if err != nil {

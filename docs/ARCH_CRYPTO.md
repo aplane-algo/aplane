@@ -322,6 +322,8 @@ The keyring is the store's cryptographic root, defined in
 - sealed payload fields are `schema`, `current_term`, sorted `terms`, required
   `historical_anchors`, and optional `rotation`; this release writes the v2
   shape with one term, an empty anchor array, and no pending rotation
+- each `HistoricalGenerationAnchor` binds a canonical generation ID to the
+  exact byte size and SHA-256 of its pre-retirement generation seal
 - a rotation descriptor's snapshot size/digest uses
   `RotationSnapshotReference`, which pins the exact encrypted snapshot under
   an independent 16 MiB cap; the payload validator enforces this shape even
@@ -404,6 +406,17 @@ the envelope header for classification only; it is not authority without that
 context-bound open. Snapshot recovery first verifies the pending root's exact
 encrypted-file size and digest, then opens that same bounded, no-follow buffer
 under `rotation-snapshot:pending`.
+
+Historical generation authority is deliberately separate from ordinary
+current-state opening. `VerifyHistoricalGenerationSealIntegrity` verifies only
+the generation-seal domain under a resident retired term, and
+`OpenHistoricalGenerationEnvelope` opens only an explicitly expected resident
+term. Callers do not receive a general retired-term grant:
+`internal/genstore` must first match the exact `HistoricalGenerationAnchor`,
+verify the anchored seal and exact manifest, and match an exact member
+buffer's authenticated size, digest, and term before invoking the historical
+open. Neither possession of the retired key nor possession of the anchor alone
+is sufficient.
 
 Unlock opens the keyring once and reuses its term keys for key and template
 decryption until lock.

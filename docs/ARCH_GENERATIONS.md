@@ -157,14 +157,18 @@ audit correlation — the operation ID is what unlock-time reconciliation logs).
 `seal.json` — final content authority, schema
 `aplane.generation-seal.v2`: generation ID, sealed_at, SHA-256 of the exact
 immutable `manifest.json` bytes, explicit integrity term, full inventory with
-digests, and a domain-separated HMAC over a canonical length-prefixed encoding
-of every security-bearing seal field except the MAC itself. Written durably
-**before every pointer flip** (commit step 8; rollback does the same for its
-outgoing generation). Prior-generation and rollback-target validation require
-the identity keyring and use the authenticated seal, never the at-mint
-manifest inventory — a legitimately mutated generation would fail an at-mint
-check the moment it becomes prior. A non-current generation **without** a seal
-is, by construction, an uncommitted attempt (§7).
+digests and member terms, and a domain-separated HMAC over a canonical
+length-prefixed encoding of every security-bearing seal field except the MAC
+itself. An inventory entry's `term` is zero for plaintext and the positive
+term-envelope term otherwise. Written durably **before every pointer flip**
+(commit step 8; rollback does the same for its outgoing generation).
+Prior-generation and rollback-target validation require the identity keyring
+and use the authenticated seal, never the at-mint manifest inventory — a
+legitimately mutated generation would fail an at-mint check the moment it
+becomes prior. An unanchored seal is current authority only: its seal term and
+all term-bearing entries must equal the current keyring term. A non-current
+generation **without** a seal is, by construction, an uncommitted attempt
+(§7).
 
 Historical consumers operate on one read of each file:
 `ParseManifestBytes` validates the exact manifest buffer,
@@ -173,10 +177,21 @@ and `VerifyBytesAgainstSeal` checks the exact namespace-member buffer before
 it is consumed. Validating a path and then reading it again is not a historical
 integrity boundary.
 
+Before a seal term retires, `BuildHistoricalAnchor` performs ordinary
+current-authority validation and pins the exact seal byte size and SHA-256.
+Later historical access is deliberately two-level: anchored seal validation
+first checks that exact root anchor and then verifies the seal MAC using the
+retained term; `ReadAnchoredBytes` checks one exact member buffer against its
+authenticated size, digest, and term before `OpenAnchoredEnvelope` may decrypt
+it through the specialized historical path. A retained term key alone does
+not authorize a historical generation, and an anchor alone cannot replace the
+key.
+
 `CanonicalInventoryDigest` supplies the Phase 3 rollback-authority digest. It
 hashes a domain string and a length-prefixed encoding of the sorted inventory
-entries `(path, decoded SHA-256, size)` rather than JSON bytes, so manifest and
-rotation-baseline authorities use one formatting-independent definition.
+entries `(path, decoded SHA-256, size, term)` rather than JSON bytes, so
+manifest and rotation-baseline authorities use one formatting-independent
+definition.
 
 ## 6. Strict generation validator
 
