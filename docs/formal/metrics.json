@@ -76,5 +76,10 @@
     "spec": "generation_commit",
     "distinct_states": 41,
     "depth": 10
+  },
+  {
+    "spec": "rotation_transition",
+    "distinct_states": 52,
+    "depth": 9
   }
 ]

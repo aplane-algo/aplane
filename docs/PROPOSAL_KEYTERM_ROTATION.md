@@ -535,8 +535,10 @@ first — it would describe active credential structure in the clear.
 
 **This is a phase-3 blocker.** It cannot be discovered by unit-testing
 either mechanism alone; only exercising rotation and rollback together
-surfaces it, which is an argument for the crash-and-rotation TLA+ module
-covering both.
+surfaces it. `docs/formal/rotation_transition.tla` now checks the resulting
+rule mechanically: R3 fails if the rewrap window is closed before the
+baseline is durable, which is the state where every later rollback is
+refused permanently.
 
 **Rollback: mint, do not repoint.** This was left open in an earlier draft,
 but the authority rule decides it. `RollbackTo` repoints `CURRENT` directly,
@@ -919,9 +921,16 @@ is worth repeating here:
   means stating plainly what a term is, what compromise of one term does
   and does not imply, and what rotation is and is not claimed to
   accomplish. Rotation is easy to over-read as revocation; it is not.
-- **Model the commit protocol.** `docs/formal/generation_commit.tla` covers
-  the generation flip under crashes; keyring rewrap and term append deserve
-  the same treatment, and the existing module is a working template.
+- **Model the commit protocol.** Done: `docs/formal/rotation_transition.tla`
+  checks this design's transition (R1-R5) against crashes, resume, and a
+  filesystem attacker, alongside `generation_commit.tla` for the storage
+  flip. Both run under `make formal-test`.
+
+  Writing it was worth it beyond the checked invariants: TLC rejected the
+  first formulation of R1, which demanded that *every* object on disk stay
+  readable. An attacker-injected object stranded on a retired term after
+  the window closes is the success case, not a violation — the model
+  corrected the invariant, not the design.
 - **Expect the envelope change to be the risk**, not the keyring type. It
   touches every encrypt/decrypt call site, and a missed one is a file
   written under a term nothing records.
