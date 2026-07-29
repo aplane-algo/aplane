@@ -93,9 +93,13 @@ func NewKeyring() (*Keyring, error) {
 	}, nil
 }
 
-// NewKeyringFromKey adopts an existing key as the first term. It exists so a
-// store can be created with a key derived elsewhere; ordinary creation uses
-// NewKeyring.
+// NewKeyringFromKey adopts an existing key as the first term.
+//
+// It exists for test fixtures that hold a known key. Production code opens a
+// keyring rather than constructing one, and an architecture test enforces
+// that: this is the one remaining way to place arbitrary bytes behind the
+// keyring API, so using it in production would undo the confinement that keeps
+// passphrase derivation inside this package.
 func NewKeyringFromKey(key []byte) (*Keyring, error) {
 	if len(key) != argon2KeyLen {
 		return nil, fmt.Errorf("term key must be %d bytes, got %d", argon2KeyLen, len(key))

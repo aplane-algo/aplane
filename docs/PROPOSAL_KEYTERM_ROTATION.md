@@ -882,6 +882,13 @@ accepts everywhere else.
      `//go:build testmode` (`cmd/apadmin/batch.go`), invisible to untagged
      builds. A gate that does not build with `-tags testmode` can pass while
      a tagged call site survives into phase 3.
+   - **Phase 2 status.** The compiler gate and the KDF-confinement
+     architecture test are in place: no code outside `internal/crypto`
+     receives a raw term key, imports a KDF, or adopts raw bytes as a keyring.
+     The cross-artifact term/context inventory below is **not** in place, and
+     is a prerequisite for term append: without it, a writer omitted from the
+     term stamping turns into unreadable data the first time a term is
+     retired. Phase 3 must land it before enabling append.
    - **Add an artifact-class test.** The gates above prove no code takes the
      old path; they do not prove every written artifact carries a term. A
      test that creates each durable class — managed keys, installed
