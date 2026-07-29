@@ -1,6 +1,9 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **design review closed. Phase 1 ready for implementation; phase 3 blocked on four items.** Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
+Status: **phases 1 and 2 implemented and merged; phase 3 not started.** Phase 3
+is blocked on the items recorded below and in
+[PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
+picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
 
 Refreshed against the tree after the generation-storage branch merged: the
 design core is unchanged, but the version gate no longer needs a migration
@@ -1028,10 +1031,14 @@ accepts everywhere else.
    that unlock to take longer than usual while the remainder completes
    before the identity is enabled — long, not hung.
 
-## Where implementation starts
+## What phase 1 committed to (implemented)
 
-The design review is closed. Phase 1 is the first implementation PR, and it
-is deliberately the smallest reviewable unit:
+Kept as the record of what the first implementation PR scoped itself to. It
+shipped as described; phase 2 then removed the compatibility seam it left
+behind. For what remains, see
+[PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
+
+Phase 1 was deliberately the smallest reviewable unit:
 
 1. `keyring.enc` as the self-contained cryptographic root — plaintext KDF
    parameters and salt, AEAD-sealed term set holding a single term 1 that
