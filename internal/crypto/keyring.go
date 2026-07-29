@@ -30,6 +30,19 @@ const (
 	// envelope's, so neither construction's bytes can be replayed as the
 	// other's.
 	keyringAADDomain = "aplane.keyring-file.v1"
+
+	// KDF ceilings bound the work a root file can ask for. The parameters
+	// are recorded per file so they can be raised without a code change, but
+	// they are read before anything authenticates them: the header binding
+	// cannot help here, because the KEK must be derived before the AEAD can
+	// verify anything. An unbounded value in a damaged or edited root would
+	// otherwise hang or OOM a daemon that serves every other identity too.
+	//
+	// The ceilings sit far above the current tuple (t=2, 64 MiB, p=4) so
+	// future hardening does not need to move them.
+	maxKDFTime    = 16
+	maxKDFMemory  = 1 << 20 // 1 GiB, expressed in KiB as Argon2 takes it
+	maxKDFThreads = 16
 	// FirstTerm is the term every store is initialized with.
 	FirstTerm = 1
 
@@ -59,19 +72,17 @@ type keyringPayload struct {
 
 type sealedTerm struct {
 	Term int    `json:"term"`
-	Key  string `json:"key"`
+	Key  []byte `json:"key"`
 }
 
-// Sealing and opening the keyring route term keys through base64 in Go
-// strings, and through the encoder's own buffers. Strings are immutable, so
-// Zero cannot reach those copies and they survive until the collector runs.
-// The sealed payload []byte is zeroed; these copies are the residual.
+// Key is []byte rather than a base64 string so the decoder writes term key
+// material into a slice that can be zeroed. A string would be immutable and
+// would survive Zero until the collector ran.
 //
-// This is a small exposure the passphrase-derived master key did not have,
-// because that key was never serialized. It is bounded — the copies exist
-// only inside SealKeyring and OpenKeyring, never for the life of a session —
-// and removing it means a hand-rolled binary layout for the payload, which
-// is worth doing when the payload grows past one term.
+// The residual is the encoder's own scratch buffers on the seal path, which
+// json.Marshal owns and does not expose. Removing that too means a
+// hand-rolled binary payload, which is worth doing when the payload grows
+// past one term.
 
 // Keyring holds the store's term keys for the duration of an unlocked
 // session. It deliberately exposes operations rather than key material:
@@ -225,10 +236,7 @@ func SealKeyring(kr *Keyring, passphrase []byte) ([]byte, error) {
 
 	terms := make([]sealedTerm, 0, len(kr.terms))
 	for _, term := range kr.sortedTerms() {
-		terms = append(terms, sealedTerm{
-			Term: term,
-			Key:  base64.StdEncoding.EncodeToString(kr.terms[term]),
-		})
+		terms = append(terms, sealedTerm{Term: term, Key: kr.terms[term]})
 	}
 	plaintext, err := json.Marshal(keyringPayload{
 		Schema:      KeyringSchema,
@@ -291,8 +299,8 @@ func OpenKeyring(encoded, passphrase []byte) (*Keyring, error) {
 	if file.EnvelopeVer != KeyringFileVersion {
 		return nil, fmt.Errorf("unsupported keyring envelope version %d", file.EnvelopeVer)
 	}
-	if file.KDFTime == 0 || file.KDFMemory == 0 || file.KDFThreads == 0 {
-		return nil, fmt.Errorf("keyring has incomplete KDF parameters")
+	if err := checkKDFParams(file.KDFTime, file.KDFMemory, file.KDFThreads); err != nil {
+		return nil, err
 	}
 	salt, err := base64.StdEncoding.DecodeString(file.Salt)
 	if err != nil {
@@ -334,27 +342,55 @@ func OpenKeyring(encoded, passphrase []byte) (*Keyring, error) {
 	if payload.Schema != KeyringSchema {
 		return nil, fmt.Errorf("unsupported sealed keyring schema %q", payload.Schema)
 	}
-	if len(payload.Terms) == 0 {
-		return nil, fmt.Errorf("keyring contains no terms")
+	// This release holds exactly term 1, and enforces it rather than assuming
+	// it. Accepting a multi-term root here would let a phase-1 binary read a
+	// keyring written by a release that has retiring terms and an authority
+	// split, and read it without either — reauthorizing a retired term for
+	// current state. Relaxing this is phase 3's job, and doing so requires
+	// bumping the file version and the marker alongside it.
+	if len(payload.Terms) != 1 {
+		return nil, fmt.Errorf(
+			"keyring holds %d terms; this release supports exactly one",
+			len(payload.Terms),
+		)
+	}
+	if payload.Terms[0].Term != FirstTerm || payload.CurrentTerm != FirstTerm {
+		return nil, fmt.Errorf(
+			"keyring names term %d current %d; this release supports only term %d",
+			payload.Terms[0].Term, payload.CurrentTerm, FirstTerm,
+		)
 	}
 	kr := &Keyring{terms: make(map[int][]byte, len(payload.Terms)), currentTerm: payload.CurrentTerm}
-	for _, t := range payload.Terms {
-		key, err := base64.StdEncoding.DecodeString(t.Key)
-		if err != nil {
+	for i := range payload.Terms {
+		t := &payload.Terms[i]
+		// The decoder wrote these bytes into a slice we own, so they can be
+		// zeroed once copied into the keyring.
+		defer ZeroBytes(t.Key)
+		if len(t.Key) != argon2KeyLen {
 			kr.Zero()
-			return nil, fmt.Errorf("decode term %d key: %w", t.Term, err)
+			return nil, fmt.Errorf("term %d key has wrong length %d", t.Term, len(t.Key))
 		}
-		if len(key) != argon2KeyLen {
-			kr.Zero()
-			return nil, fmt.Errorf("term %d key has wrong length %d", t.Term, len(key))
-		}
-		kr.terms[t.Term] = key
-	}
-	if _, ok := kr.terms[kr.currentTerm]; !ok {
-		kr.Zero()
-		return nil, fmt.Errorf("keyring current term %d has no key", kr.currentTerm)
+		kr.terms[t.Term] = append([]byte(nil), t.Key...)
 	}
 	return kr, nil
+}
+
+// checkKDFParams rejects a root whose KDF parameters are absent or beyond
+// what this release is willing to spend, before any of them reach Argon2.
+func checkKDFParams(kdfTime, kdfMemory uint32, kdfThreads uint8) error {
+	if kdfTime == 0 || kdfMemory == 0 || kdfThreads == 0 {
+		return fmt.Errorf("keyring has incomplete KDF parameters")
+	}
+	if kdfTime > maxKDFTime {
+		return fmt.Errorf("keyring kdf_time %d exceeds the limit %d", kdfTime, maxKDFTime)
+	}
+	if kdfMemory > maxKDFMemory {
+		return fmt.Errorf("keyring kdf_memory %d exceeds the limit %d", kdfMemory, maxKDFMemory)
+	}
+	if kdfThreads > maxKDFThreads {
+		return fmt.Errorf("keyring kdf_threads %d exceeds the limit %d", kdfThreads, maxKDFThreads)
+	}
+	return nil
 }
 
 // sortedTerms returns the keyring's term numbers in ascending order, so the

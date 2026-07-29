@@ -110,6 +110,9 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 		f.cacheLock.RUnlock()
 		return keyErr
 	}
+	// CurrentTermKey hands back a private copy; without this the daemon
+	// leaves one live 32-byte key on the heap per scan, surviving ClearKeys.
+	defer crypto.ZeroBytes(masterKey)
 	// Resolve the active layout once per scan: on a generational store this
 	// binds the scan (and the absolute KeyFile paths it caches) to the
 	// generation CURRENT names right now, so every reload after a pointer
@@ -232,6 +235,9 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	f.cacheLock.RLock()
 	info, exists := f.cache[address]
 	masterKey, keyErr := f.keyring.CurrentTermKey()
+	// One copy per signing request would otherwise accumulate on the heap and
+	// outlive the lock.
+	defer crypto.ZeroBytes(masterKey)
 	if !exists {
 		f.cacheLock.RUnlock()
 		return nil, ErrKeyNotFound

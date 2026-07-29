@@ -144,6 +144,7 @@ func verifyCurrentGenerationContent(paths storepaths.Paths, identityID string) e
 	if err != nil {
 		return err
 	}
+	defer crypto.ZeroBytes(masterKey)
 
 	templateReport, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates(identityID, masterKey)
 	if err != nil {

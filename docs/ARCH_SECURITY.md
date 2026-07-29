@@ -734,7 +734,7 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
 ```json
 {
   "schema": "aplane.keyring.v1",
-  "version": 1,
+  "envelope_version": 1,
   "kdf_time": 2,
   "kdf_memory": 65536,
   "kdf_threads": 4,

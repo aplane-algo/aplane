@@ -127,6 +127,7 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	if err != nil {
 		return err
 	}
+	defer crypto.ZeroBytes(masterKey)
 
 	if err := initializeRebuildNodeRole(nodeRole, masterKey); err != nil {
 		return err

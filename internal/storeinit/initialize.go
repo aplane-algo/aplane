@@ -88,6 +88,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	if err != nil {
 		return result, err
 	}
+	defer crypto.ZeroBytes(masterKey)
 	roleBytes, _, err := noderole.SaveInitial(opts.Paths, role, time.Now())
 	if err != nil {
 		return result, fmt.Errorf("failed to create node role: %w", err)

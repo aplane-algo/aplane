@@ -537,3 +537,90 @@ func TestKeyringHeaderAADIsUnambiguous(t *testing.T) {
 		t.Fatal("two different field splits produced the same header AAD")
 	}
 }
+
+// TestOpenKeyringRejectsExcessiveKDFParameters proves the root cannot ask for
+// unbounded work.
+//
+// The KDF parameters are read before anything authenticates them — the KEK
+// has to exist before the AEAD can verify the header — so the header binding
+// is no defence here. A damaged or edited root naming a huge memory cost
+// would otherwise hang or OOM a daemon that also serves every other identity.
+func TestOpenKeyringRejectsExcessiveKDFParameters(t *testing.T) {
+	passphrase := []byte("keyring-kdf-ceilings")
+	kr, err := NewKeyring()
+	if err != nil {
+		t.Fatalf("NewKeyring(): %v", err)
+	}
+	defer kr.Zero()
+	sealed, err := SealKeyring(kr, passphrase)
+	if err != nil {
+		t.Fatalf("SealKeyring(): %v", err)
+	}
+
+	cases := map[string]struct {
+		field string
+		value any
+	}{
+		"kdf_time above ceiling":    {"kdf_time", maxKDFTime + 1},
+		"kdf_memory above ceiling":  {"kdf_memory", maxKDFMemory + 1},
+		"kdf_threads above ceiling": {"kdf_threads", maxKDFThreads + 1},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var file map[string]any
+			if err := json.Unmarshal(sealed, &file); err != nil {
+				t.Fatalf("Unmarshal(): %v", err)
+			}
+			file[tc.field] = tc.value
+			edited, err := json.Marshal(file)
+			if err != nil {
+				t.Fatalf("Marshal(): %v", err)
+			}
+			opened, err := OpenKeyring(edited, passphrase)
+			if err == nil {
+				opened.Zero()
+				t.Fatalf("OpenKeyring() accepted %s beyond its ceiling", tc.field)
+			}
+			if !strings.Contains(err.Error(), "exceeds the limit") {
+				t.Fatalf("OpenKeyring() error = %v, want a ceiling rejection", err)
+			}
+		})
+	}
+}
+
+// TestOpenKeyringRejectsMultipleTerms proves this release enforces its
+// single-term format rather than assuming it.
+//
+// A multi-term root belongs to a release that has retiring terms and the
+// authority split that governs them. Reading one here would reauthorize a
+// retired term for current state, so the format gate refuses it and phase 3
+// has to bump the version to relax that.
+func TestOpenKeyringRejectsMultipleTerms(t *testing.T) {
+	passphrase := []byte("keyring-single-term")
+	kr, err := NewKeyring()
+	if err != nil {
+		t.Fatalf("NewKeyring(): %v", err)
+	}
+	defer kr.Zero()
+
+	second, err := randomBytes(argon2KeyLen)
+	if err != nil {
+		t.Fatalf("randomBytes(): %v", err)
+	}
+	forged := &Keyring{
+		terms:       map[int][]byte{FirstTerm: kr.terms[FirstTerm], FirstTerm + 1: second},
+		currentTerm: FirstTerm + 1,
+	}
+	sealed, err := SealKeyring(forged, passphrase)
+	if err != nil {
+		t.Fatalf("SealKeyring(): %v", err)
+	}
+	opened, err := OpenKeyring(sealed, passphrase)
+	if err == nil {
+		opened.Zero()
+		t.Fatal("OpenKeyring() accepted a multi-term root; a phase-1 binary must not read one")
+	}
+	if !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("OpenKeyring() error = %v, want a single-term rejection", err)
+	}
+}

@@ -72,6 +72,7 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 	if err != nil {
 		return result, err
 	}
+	defer crypto.ZeroBytes(oldMasterKey)
 
 	managedFiles, templateFiles, recoveredFiles, err := scanTargets(paths, identityID, oldMasterKey)
 	if err != nil {
@@ -99,6 +100,7 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 	if err != nil {
 		return result, err
 	}
+	defer crypto.ZeroBytes(newMasterKey)
 
 	logf(opts.Logf, "phase 1: creating new encrypted files")
 	for _, managedFile := range managedFiles {
