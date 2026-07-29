@@ -1,6 +1,6 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **proposal — phase 1 gated on one decision; phase 3 blocked on four items**. Amended across six rounds of design review; both reviewers now call the design review closed.
+Status: **design review closed. Phase 1 ready for implementation; phase 3 blocked on four items.** Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
 
 Refreshed against the tree after the generation-storage branch merged: the
 design core is unchanged, but the version gate no longer needs a migration
@@ -44,11 +44,10 @@ filesystem attacker holding no keys can alter a sealed generation and
 recompute its seal. That predates rotation but rotation's anchoring rules
 have to account for it — see the seal MAC.
 
-Phase 1 is no longer unconditionally ready either. The envelope's AAD
-carries an object context, and phase 1's compatibility writer cannot supply
-one, so the phase rule for context-free files must be decided **before**
-phase 1 ships or everything it writes stops decrypting when phase 3
-enforces the context.
+The envelope's AAD context question that briefly gated phase 1 is decided:
+the context ships in phase 1, because it touches only the 18 direct
+encryption sites and each already holds the identity it needs. Phase 1 is
+ready to implement.
 
 The attacker model is also scoped explicitly: AEAD makes the root
 authentic but not fresh, so replacing `keyring.enc` with an older authentic
@@ -790,17 +789,50 @@ accepts everywhere else.
       key" and every decrypt finds term 1. Independently shippable, and the
       easiest part to review carefully.
 
-      **The AAD context needs a phase rule, or phase 1 writes unreadable
-      files.** Phase 1's compatibility writer has no object context to
-      supply, so if phase 3 begins enforcing contextual AAD, everything
-      phase 1 wrote stops decrypting. Pick one before phase 1 ships: supply
-      the context from the start (preferred — the logical identity is
-      derivable at every write site that has a selector), or version the AAD
-      mode and accept context-free term-1 mutable files only until their
-      first mandatory rewrap, with anchored sealed priors still readable
-      historically. This is why phase 1 cannot be treated as
-      behavior-neutral in the envelope: the header format decision reaches
-      forward into phase 3.
+      **Decided: the object context ships in phase 1.** The alternative —
+      versioning the AAD mode and accepting context-free term-1 files until
+      their first rewrap — was rejected.
+
+      The decisive fact is that this change touches **ring 1 only**. The 18
+      direct `Encrypt`/`DecryptWithMasterKey` sites *are* the class-specific
+      persistence layer, and each already holds the identity it needs:
+      `keys/save.go` has the payload (hence `Selector()` and `Category`),
+      `templatestore` has the key type, and both `recovered/store.go` sites
+      have the restore ID and entry. The wide rings — 99 `WithMasterKey`
+      callers, 103 signature-threading functions — do not encrypt; they pass
+      a key around, and are untouched by the AAD change. So supplying the
+      context does **not** pull phase 2's refactor forward; the two are
+      nearly disjoint.
+
+      Three further reasons:
+
+      - A mode-versioned envelope leaves mode-0 files swap-vulnerable until
+        their first mandatory rewrap, which happens at the first passphrase
+        change — and a store whose operator never rotates would stay that
+        way permanently. "Temporarily weaker" is not bounded here.
+      - A mode marker means two reader paths forever, and two states that
+        must agree. This design has spent its entire review removing exactly
+        that construct: the split cryptographic root, the separate pending
+        marker, the standalone `Terms` field. Reintroducing one to save 18
+        call sites is a poor trade.
+      - Version negotiation exists to protect an installed base. The release
+        policy already says a store is readable only by the release that
+        initialized it, so there is none; and if phases 1 and 3 ever ship as
+        separate releases, phase 3 cannot read a phase-1 store at all,
+        making the compatibility question moot in production.
+
+      **A context-free encrypt is a compile error, not a runtime default.**
+      Then "did every write site supply an identity?" is answered by the
+      build, consistent with the phase-2/3 gate philosophy.
+
+      One item to confirm during implementation rather than assume: four of
+      the eighteen sites were checked directly. The archive paths
+      (`backup/copy.go`, `backup/restore.go`) use `EncryptStandalone` under
+      the *export* passphrase and carry no term, so they are outside term
+      AAD entirely — the sealed manifest already binds those members by path
+      and digest. The remaining master-key sites should be confirmed to have
+      identity in hand; a site that genuinely does not is the only case that
+      would justify a narrow mode marker.
 
       **`changepass` in phases 1-2 keeps today's semantics, which requires
       replacing the term key — not merely rewrapping it.** Today's master
@@ -988,6 +1020,35 @@ accepts everywhere else.
    re-running `changepass`, which rejects an unchanged passphrase. Expect
    that unlock to take longer than usual while the remainder completes
    before the identity is enabled — long, not hung.
+
+## Where implementation starts
+
+The design review is closed. Phase 1 is the first implementation PR, and it
+is deliberately the smallest reviewable unit:
+
+1. `keyring.enc` as the self-contained cryptographic root — plaintext KDF
+   parameters and salt, AEAD-sealed term set holding a single term 1 that
+   wraps what is today the master key. `.keystore` drops to a static
+   version/layout marker, and successful AEAD unwrap replaces the separate
+   verifier.
+2. The envelope gains the term header and the logical object context in its
+   AAD, applied at the 18 direct encryption sites. A context-free encrypt
+   does not compile.
+3. `changepass` keeps today's semantics: generate a fresh term-1 key,
+   re-encrypt through the existing swap, rewrap the keyring under the new
+   KEK. The two-phase swap and its crash window are retired at phase 3, not
+   here.
+4. No term append, no rewrap window, no anchors. Everything the transition
+   sections describe is phase 3.
+
+Nothing in phase 1 changes observable behavior except the store format,
+which under the release policy is a new store rather than a migration.
+
+The four phase-3 blockers — cutover snapshot, historical anchors and the
+seal MAC, the divergence baseline, and the AAD phase rule now settled —
+should be re-read before phase 3 begins, along with
+`docs/formal/rotation_transition.tla`, which checks the transition's
+ordering and the laundering defence mechanically.
 
 ## Rough effort
 
