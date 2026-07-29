@@ -52,6 +52,7 @@ func TestMintSealFlipCrashWindowIsRecoverable(t *testing.T) {
 	_, err = Mint(paths, identity, MintRequest{
 		GenerationID: g2,
 		Parent:       g1,
+		Integrity:    testKeyring(t),
 		Operation:    "test-op",
 		OperationID:  "op-" + g2,
 		CreatedAt:    time.Unix(2000, 0),
@@ -115,18 +116,19 @@ func TestMintSealFlipCrashWindowIsRecoverable(t *testing.T) {
 	// target.
 	g3 := mintSealWindowGeneration(t, paths, identity, MintRequest{
 		Parent:    g1,
+		Integrity: testKeyring(t),
 		Operation: "test-op-2",
 		CreatedAt: time.Unix(3000, 0),
 	})
 	if current, err := ReadCurrent(paths, identity); err != nil || current != g3 {
 		t.Fatalf("CURRENT = %q (%v), want %s", current, err, g3)
 	}
-	if err := ValidateSealed(g1p); err != nil {
+	if err := ValidateSealed(g1p, testKeyring(t)); err != nil {
 		t.Fatalf("rewritten seal does not cover the post-window mutation: %v", err)
 	}
 
 	// The rollback chain survived the whole window.
-	if err := RollbackTo(paths, identity, g1, time.Unix(4000, 0)); err != nil {
+	if err := RollbackTo(paths, identity, g1, time.Unix(4000, 0), testKeyring(t)); err != nil {
 		t.Fatalf("RollbackTo(%s) error = %v", g1, err)
 	}
 	if current, err := ReadCurrent(paths, identity); err != nil || current != g1 {

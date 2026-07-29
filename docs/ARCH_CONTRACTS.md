@@ -710,6 +710,11 @@ Validation:
 - node role parsing and `node.yaml` integrity sidecars are owned by
   `internal/noderole`; role-versus-key-type allowance decisions are owned by
   `internal/keyclass`.
+- each identity's `node.yaml.hmac` is strict sidecar version 2 with algorithm
+  `hmac-sha256`, key ID `keystore-master-hkdf-node-role-v1`, an explicit
+  positive `integrity_term`, and a canonical lowercase HMAC-SHA256 over the
+  exact root `node.yaml` bytes. Only the current term is authorized while the
+  keyring remains settled and single-term.
 - `require_memory_protection:true` requires disabled core dumps and successful memory locking
 
 Built-in Algorand genesis-hash mappings are source-defined:
@@ -1228,10 +1233,13 @@ specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
 - `manifest.json` (schema `aplane.generation-manifest.v1`) is the immutable
   at-mint operation record: operation, operation ID, parent generation ID,
   and timestamps
-- `seal.json` (schema `aplane.generation-seal.v1`) is written when a
+- `seal.json` (schema `aplane.generation-seal.v2`) is written when a
   generation stops being current and is the content authority for sealed
-  priors: an inventory hash over both namespaces that later validation
-  checks byte-for-byte
+  priors. It pins the SHA-256 of the exact immutable manifest bytes, records a
+  positive `integrity_term`, and carries a canonical HMAC-SHA256 over all
+  security-bearing seal fields and the full two-namespace inventory.
+  Rollback and retained-parent pruning verify it with an open identity
+  keyring; an unanchored seal is accepted only under the current term.
 - single-file writes into the current generation's namespaces are the
   routine mutation path (key generation, template install); multi-file
   transactions (restore activation) commit by minting a new generation
@@ -1256,21 +1264,26 @@ client-signing policy. Sentry nodes parse that same file as direct sentry
 component policy. The JSON sidecar at `policy.yaml.hmac` authenticates the
 exact YAML bytes.
 
-The policy integrity key is derived from the identity's current term key with HKDF-SHA256
-using info string `aplane policy integrity v1`. The derived key is 32 bytes and
-is not persisted.
+The policy integrity key is derived inside `internal/crypto` from the named
+identity term key with HKDF-SHA256 using info string
+`aplane policy integrity v1`. The derived 32-byte key is neither persisted nor
+returned to policy callers; they use keyring-confined sign/verify operations.
 
 Sidecar JSON fields:
 
-- `version`: integer sidecar version; currently `1`
+- `version`: integer sidecar version; currently `2`
 - `algorithm`: currently `hmac-sha256`
 - `key_id`: currently `keystore-master-hkdf-v1`
+- `integrity_term`: positive term whose derived policy-integrity key signs the
+  document
 - `hmac`: hex HMAC-SHA256 over the exact policy document bytes
 - `policy_sha256`: optional diagnostic SHA-256 of the policy document
 - `signed_at_unix`: optional diagnostic signing timestamp
 - `policy_mtime_ns`: optional diagnostic policy-file mtime
 
-Only `version`, `algorithm`, `key_id`, and `hmac` are security fields.
+Only `version`, `algorithm`, `key_id`, `integrity_term`, and `hmac` are
+security fields. Sidecar JSON is strict: unknown fields, trailing documents,
+and non-canonical MAC encodings are rejected.
 `policy_sha256`, `signed_at_unix`, and `policy_mtime_ns` are diagnostic
 metadata; tampering with those fields does not affect the policy integrity
 decision.

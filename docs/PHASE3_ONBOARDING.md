@@ -35,12 +35,20 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | `.keystore` — a static marker: `{version: 5, layout: "keyring/v2"}` plus a `created` timestamp | `internal/crypto/keyring_store.go` |
 | Term envelope (`envelope_version: 3`) — records the term that sealed it, binds term + object identity into the AEAD's authenticated data | `internal/crypto/term_envelope.go` |
 | `Keyring.Seal` / `Keyring.Open` — the only way to encrypt or decrypt store data | `internal/crypto/keyring.go` |
+| Keyring-confined integrity operations — policy, node-role, and generation-seal callers receive or verify MACs without receiving derived key bytes | `internal/crypto/policy_integrity.go` |
+| Generation seal v2 — pins the exact manifest bytes, records the signing term, and authenticates every security-bearing seal field with a domain-separated MAC | `internal/genstore/records.go` |
+| Policy and node-role sidecar v2 — records the explicit integrity term and rejects unknown fields, trailing JSON, non-canonical MACs, and unauthorized terms | `internal/policy/integrity.go`, `internal/noderole/integrity.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
 What that gives you: exactly one term (term 1), a single atomic root write, and
-every object already carrying a term number and an identity binding. What it
-does **not** give you is any of the transition — no append, no window, no
-authority split, no anchors.
+every encrypted object already carrying a term number and an identity binding.
+The plaintext integrity documents and generation seals now carry the same
+explicit current-term authority. Trusted generation operations (rollback,
+retained-parent pruning, and flip-away sealing) require an open keyring;
+pre-unlock reconciliation only uses seal presence to classify unreachable
+attempts and does not treat an unverified seal as a rollback authority. What
+this does **not** give you is any of the transition — no append, no window, no
+authority split, no historical anchors, and no complete K8 inventory.
 
 The properties that are proven today are K1–K7 in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against a named test.
@@ -350,13 +358,14 @@ become unreadable only when a term retires, long after the causal write.
 **7. The cutover snapshot** (design in item 1) — an authenticated pin of what
 the rewrap may consume. Without it, laundering.
 
-**8. Historical anchors and the seal MAC.** `seal.json` is unkeyed, so a
-retired term can forge a sealed generation and recompute its seal, which
-mint-on-rollback would then bless under the current term. Compounding this:
-generations contain plaintext members (key-type state, witness public
-metadata), so a filesystem attacker holding *no keys at all* can alter a sealed
-generation and recompute its seal. That predates rotation, but rotation's
-anchoring rules have to account for it.
+**8. Historical anchors and the seal MAC.** Generation seal v2 now authenticates
+the exact manifest digest, explicit integrity term, and canonical inventory
+under the current term's generation-seal integrity key. This closes the
+pre-rotation unkeyed-seal defect: a filesystem attacker holding no key cannot
+alter a plaintext generation member and recompute an accepted seal. Historical
+anchors are still required before a term can retire. A holder of that retired
+term could otherwise forge a seal under its old MAC key and have
+mint-on-rollback bless the result under the current term.
 
 **9. The divergence baseline.** Mandatory rewrap changes every ciphertext
 digest, which trips the post-activation rollback guard that compares those

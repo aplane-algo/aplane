@@ -3,8 +3,10 @@
 Status: **phases 1 and 2 implemented and merged; phase 3 schema work is in
 progress.** The formal R5 prerequisite is complete, and the first
 implementation slice writes the strict v2 keyring/v5 marker shape while
-deliberately retaining the one-term runtime gate. The transition itself
-remains blocked on the items recorded below and in
+deliberately retaining the one-term runtime gate. A second slice adds
+keyring-confined integrity operations, generation seal v2, and explicit-term
+policy/node-role sidecar v2. The transition itself remains blocked on the
+items recorded below and in
 [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
 picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
 
@@ -37,18 +39,19 @@ below:**
   the rewrap may consume, an attacker holding a retired term can inject
   material during the window and have the rewrap launder it into the new
   term;
-- **historical anchors** — `seal.json` is unkeyed, so a retired term can
-  forge a sealed generation and recompute its seal, which mint-on-rollback
-  would then bless under the current term;
+- **historical anchors** — generation seal v2 is now keyed, but a holder of a
+  retired term can forge a new valid MAC under that retired key unless the
+  root pins the exact pre-retirement seal bytes;
 - **the divergence baseline** — mandatory rewrap changes every ciphertext
   digest and so trips the post-activation rollback guard, which compares
   those digests against the at-mint manifest.
 
 A fourth blocker joined them: **generations contain plaintext members**
-(key-type state, witness public metadata) and `seal.json` is unkeyed, so a
-filesystem attacker holding no keys can alter a sealed generation and
-recompute its seal. That predates rotation but rotation's anchoring rules
-have to account for it — see the seal MAC.
+(key-type state and witness public metadata). Generation seal v2 now closes
+the pre-rotation no-key forgery by MACing the complete inventory, exact
+manifest digest, and integrity term. Rotation still has to inventory those
+members and anchor retained historical seals before their signing term
+retires.
 
 The envelope's AAD context question that briefly gated phase 1 is decided:
 the context ships in phase 1, because it touches only the 18 direct
@@ -484,13 +487,14 @@ to be read as unconditional.
 ### Retained sealed generations need an authenticity anchor
 
 Adding `Term` to each `InventoryEntry` prevents accidental GC mistakes. It
-does not prevent malicious modification, because `seal.json` is unkeyed:
-`WriteSeal` writes plain JSON and `ValidateSealed` merely recomputes the
-inventory and compares (`slices.Equal(live, seal.Inventory)`). An attacker
-holding a retired term can therefore forge that generation's ciphertext and
-recompute its seal to match — and mint-on-rollback would then validate the
-forgery and re-encrypt it under the current term, which is the laundering
-attack again by a historical route.
+does not by itself prevent malicious modification. Before generation seal v2,
+`WriteSeal` wrote unauthenticated JSON and `ValidateSealed` merely recomputed
+the inventory and compared it. Generation seal v2 now authenticates the exact
+manifest digest, integrity term, and canonical inventory. That is sufficient
+while the seal's term is current, but a future holder of a retired term could
+forge both content and a valid old-term MAC — and mint-on-rollback would then
+launder the forgery under the current term unless the exact historical seal
+was anchored before retirement.
 
 At step 1 of the rotation, anchor every retained sealed generation —
 authenticated digests recorded in the new `keyring.enc` — **before** its
@@ -510,11 +514,11 @@ deliberately not cached.
   the current term," because not every entry carries a term. Generations
   hold plaintext members — key-type state records and witness public
   metadata are both `json.MarshalIndent` to `WriteFileDurable`, with no
-  encryption — and `seal.json` is unkeyed, so a filesystem attacker holding
-  **no keys at all** can alter a plaintext entry and recompute the seal to
-  match.
+  encryption. The seal therefore needs keyed integrity over the whole
+  inventory; a digest-only seal would let a filesystem attacker holding
+  **no keys at all** alter a plaintext entry and recompute the seal to match.
 
-  **Seal the seal.** At seal time, MAC the canonical seal with the current
+  **Seal the seal (implemented by generation seal v2).** At seal time, MAC the canonical seal with the current
   term's integrity key. Then an unanchored generation is accepted when its
   seal MAC verifies under the current integrity term *and* its term-bearing
   entries are on the current term — which covers plaintext members too,

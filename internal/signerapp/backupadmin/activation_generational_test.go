@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -125,7 +126,10 @@ func TestGenerationalActivationCommitsWithPointerFlip(t *testing.T) {
 		t.Fatalf("activated generation failed validation: %v", err)
 	}
 	parent := paths.GenerationPaths(auth.DefaultIdentityID, firstGen)
-	if err := genstore.ValidateSealed(parent); err != nil {
+	err = ir.WithKeyring(func(kr *crypto.Keyring) error {
+		return genstore.ValidateSealed(parent, kr)
+	})
+	if err != nil {
 		t.Fatalf("parent generation not sealed by activation: %v", err)
 	}
 	// The credential lives in the new generation; nothing was written to

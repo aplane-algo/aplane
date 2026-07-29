@@ -72,6 +72,7 @@ func TestMintSecondGenerationSealsParentAndCopiesIndependently(t *testing.T) {
 	second, err := Mint(paths, testIdentity, MintRequest{
 		GenerationID: testGenB,
 		Parent:       first.GenerationID(),
+		Integrity:    testKeyring(t),
 		Operation:    "test-activation",
 		OperationID:  "op-2",
 		CreatedAt:    time.Unix(1_753_500_100, 0),
@@ -84,7 +85,7 @@ func TestMintSecondGenerationSealsParentAndCopiesIndependently(t *testing.T) {
 	}
 
 	// Parent is sealed and validates as a rollback target.
-	if err := ValidateSealed(first); err != nil {
+	if err := ValidateSealed(first, testKeyring(t)); err != nil {
 		t.Fatalf("parent not sealed after flip: %v", err)
 	}
 	// The copy is content-complete...
@@ -101,7 +102,7 @@ func TestMintSecondGenerationSealsParentAndCopiesIndependently(t *testing.T) {
 	if err != nil || string(parentData) != "original" {
 		t.Fatalf("parent content after child mutation = %q, %v (shared inode?)", parentData, err)
 	}
-	if err := ValidateSealed(first); err != nil {
+	if err := ValidateSealed(first, testKeyring(t)); err != nil {
 		t.Fatalf("parent seal broken by child mutation: %v", err)
 	}
 }
@@ -114,6 +115,7 @@ func TestMintApplyFailureLeavesOldGenerationAuthoritative(t *testing.T) {
 	_, err := Mint(paths, testIdentity, MintRequest{
 		GenerationID: testGenB,
 		Parent:       first.GenerationID(),
+		Integrity:    testKeyring(t),
 		Operation:    "test-activation",
 		OperationID:  "op-2",
 		CreatedAt:    time.Unix(1_753_500_100, 0),
@@ -164,6 +166,7 @@ func TestMintCrashMatrix(t *testing.T) {
 			_, err := Mint(paths, testIdentity, MintRequest{
 				GenerationID: testGenB,
 				Parent:       first.GenerationID(),
+				Integrity:    testKeyring(t),
 				Operation:    "test-activation",
 				OperationID:  "op-2",
 				CreatedAt:    time.Unix(1_753_500_100, 0),
@@ -207,6 +210,7 @@ func TestRollbackToRequiresSealAndSealsOutgoing(t *testing.T) {
 	_, err := Mint(paths, testIdentity, MintRequest{
 		GenerationID: testGenB,
 		Parent:       first.GenerationID(),
+		Integrity:    testKeyring(t),
 		Operation:    "test-activation",
 		OperationID:  "op-2",
 		CreatedAt:    time.Unix(1_753_500_100, 0),
@@ -215,7 +219,7 @@ func TestRollbackToRequiresSealAndSealsOutgoing(t *testing.T) {
 		t.Fatalf("Mint(second) error = %v", err)
 	}
 
-	if err := RollbackTo(paths, testIdentity, first.GenerationID(), time.Unix(1_753_500_200, 0)); err != nil {
+	if err := RollbackTo(paths, testIdentity, first.GenerationID(), time.Unix(1_753_500_200, 0), testKeyring(t)); err != nil {
 		t.Fatalf("RollbackTo() error = %v", err)
 	}
 	resolved, err := Resolve(paths, testIdentity)
@@ -225,7 +229,7 @@ func TestRollbackToRequiresSealAndSealsOutgoing(t *testing.T) {
 	// The rolled-away generation was sealed on the way out, so rolling
 	// forward validates too.
 	second := paths.GenerationPaths(testIdentity, testGenB)
-	if err := ValidateSealed(second); err != nil {
+	if err := ValidateSealed(second, testKeyring(t)); err != nil {
 		t.Fatalf("outgoing generation not sealed by rollback: %v", err)
 	}
 
@@ -233,7 +237,7 @@ func TestRollbackToRequiresSealAndSealsOutgoing(t *testing.T) {
 	if err := os.Remove(second.SealPath()); err != nil {
 		t.Fatalf("remove seal: %v", err)
 	}
-	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_300, 0)); err == nil {
+	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_300, 0), testKeyring(t)); err == nil {
 		t.Fatal("RollbackTo accepted an unsealed target")
 	}
 }
@@ -257,6 +261,7 @@ func TestMintPointerFlipDirSyncFailureIsCommittedButUnverified(t *testing.T) {
 	_, err := Mint(paths, testIdentity, MintRequest{
 		GenerationID: testGenB,
 		Parent:       first.GenerationID(),
+		Integrity:    testKeyring(t),
 		Operation:    "test-activation",
 		OperationID:  "op-2",
 		CreatedAt:    time.Unix(1_753_500_100, 0),
@@ -275,7 +280,7 @@ func TestMintPointerFlipDirSyncFailureIsCommittedButUnverified(t *testing.T) {
 	if err := ValidateCurrent(resolved); err != nil {
 		t.Fatalf("committed generation invalid: %v", err)
 	}
-	if err := ValidateSealed(first); err != nil {
+	if err := ValidateSealed(first, testKeyring(t)); err != nil {
 		t.Fatalf("parent not sealed: %v", err)
 	}
 }

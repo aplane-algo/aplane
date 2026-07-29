@@ -857,15 +857,16 @@ func sealKeyringPlaintextForTest(t *testing.T, plaintext, passphrase []byte) []b
 
 func ptr[T any](value T) *T { return &value }
 
-// TestKeyringIntegrityKeysMatchTheDerivedOnes proves the keyring reaches the
-// same HMAC keys the raw-key functions do.
+// TestKeyringIntegrityOperationsMatchTheDerivedKeys proves the confined
+// operations preserve the established per-domain derivations without
+// exposing those derived keys to callers.
 //
 // Every policy and node-role sidecar already on disk was signed with a key
 // from derivePolicyIntegrityKey or deriveNodeRoleIntegrityKey. Phase 2 moves
 // the callers to the keyring; if that changed the derivation by even a salt,
 // every one of those sidecars would fail verification and the store would
 // fail closed on load.
-func TestKeyringIntegrityKeysMatchTheDerivedOnes(t *testing.T) {
+func TestKeyringIntegrityOperationsMatchTheDerivedKeys(t *testing.T) {
 	termKey := bytes.Repeat([]byte{0x5A}, argon2KeyLen)
 	kr, err := NewKeyringFromKey(termKey)
 	if err != nil {
@@ -874,47 +875,55 @@ func TestKeyringIntegrityKeysMatchTheDerivedOnes(t *testing.T) {
 	defer kr.Zero()
 
 	cases := map[string]struct {
-		fromKeyring func() ([]byte, error)
-		fromKey     func([]byte) ([]byte, error)
+		domain  IntegrityDomain
+		fromKey func([]byte) ([]byte, error)
 	}{
-		"policy":    {kr.PolicyIntegrityKey, derivePolicyIntegrityKey},
-		"node role": {kr.NodeRoleIntegrityKey, deriveNodeRoleIntegrityKey},
+		"policy":    {IntegrityDomainPolicy, derivePolicyIntegrityKey},
+		"node role": {IntegrityDomainNodeRole, deriveNodeRoleIntegrityKey},
 	}
+	payload := []byte("integrity payload")
+	macs := make(map[string]string)
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			viaKeyring, err := tc.fromKeyring()
+			term, viaKeyring, err := kr.SignIntegrity(tc.domain, payload)
 			if err != nil {
-				t.Fatalf("keyring derivation: %v", err)
+				t.Fatalf("SignIntegrity(): %v", err)
 			}
-			defer ZeroBytes(viaKeyring)
 			viaKey, err := tc.fromKey(termKey)
 			if err != nil {
 				t.Fatalf("raw-key derivation: %v", err)
 			}
 			defer ZeroBytes(viaKey)
-			if len(viaKeyring) == 0 {
-				t.Fatal("derived an empty key; nothing was proved")
-			}
-			if !bytes.Equal(viaKeyring, viaKey) {
+			if viaKeyring != computeIntegrityMAC(payload, viaKey) {
 				t.Fatal("keyring derivation diverged; every sidecar on disk would stop verifying")
 			}
+			if err := kr.VerifyIntegrity(tc.domain, payload, term, viaKeyring); err != nil {
+				t.Fatalf("VerifyIntegrity(): %v", err)
+			}
+			macs[name] = viaKeyring
 		})
 	}
 
 	// The two domains must not collide, or a policy sidecar would verify
 	// under the node-role key.
-	policyKey, err := kr.PolicyIntegrityKey()
-	if err != nil {
-		t.Fatalf("PolicyIntegrityKey(): %v", err)
+	if macs["policy"] == macs["node role"] {
+		t.Fatal("policy and node-role integrity MACs are identical")
 	}
-	defer ZeroBytes(policyKey)
-	roleKey, err := kr.NodeRoleIntegrityKey()
-	if err != nil {
-		t.Fatalf("NodeRoleIntegrityKey(): %v", err)
+	if err := kr.VerifyIntegrity(
+		IntegrityDomainNodeRole,
+		payload,
+		FirstTerm,
+		macs["policy"],
+	); err == nil {
+		t.Fatal("policy MAC verified in the node-role domain")
 	}
-	defer ZeroBytes(roleKey)
-	if bytes.Equal(policyKey, roleKey) {
-		t.Fatal("policy and node-role integrity keys are identical")
+	if err := kr.VerifyIntegrity(
+		IntegrityDomainPolicy,
+		payload,
+		FirstTerm+1,
+		macs["policy"],
+	); err == nil {
+		t.Fatal("MAC under an unauthorized term verified")
 	}
 }
 

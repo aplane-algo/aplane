@@ -8,12 +8,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"slices"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup/recovered"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -79,20 +79,23 @@ func (s Service) activateRecoveredGenerational(
 	}
 	tokenDigest := sha256.Sum256([]byte(req.ReviewToken))
 
-	if _, err := genstore.Mint(paths, ir.ID(), genstore.MintRequest{
-		GenerationID:      generationID,
-		Parent:            parent,
-		Operation:         "restore-activation",
-		OperationID:       req.RestoreID + "-" + generationID,
-		SourceRestoreID:   req.RestoreID,
-		ReviewTokenSHA256: hex.EncodeToString(tokenDigest[:]),
-		CreatedAt:         time.Now(),
-		Apply: func(staged storepaths.GenPaths) error {
-			return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+		_, mintErr := genstore.Mint(paths, ir.ID(), genstore.MintRequest{
+			GenerationID:      generationID,
+			Parent:            parent,
+			Operation:         "restore-activation",
+			OperationID:       req.RestoreID + "-" + generationID,
+			SourceRestoreID:   req.RestoreID,
+			ReviewTokenSHA256: hex.EncodeToString(tokenDigest[:]),
+			CreatedAt:         time.Now(),
+			Integrity:         masterKey,
+			Apply: func(staged storepaths.GenPaths) error {
 				return s.applyRecoveredBatchTo(ir, req, masterKey, &result.Warnings, staged)
-			})
-		},
-	}); err != nil {
+			},
+		})
+		return mintErr
+	})
+	if err != nil {
 		if errors.Is(err, genstore.ErrCommitDurabilityUnknown) {
 			// The flip is visible: the activation IS committed for every
 			// subsequent resolution, but its durability across a power loss
@@ -119,7 +122,10 @@ func (s Service) activateRecoveredGenerational(
 	// failure rolls the pointer back to the parent — the exact pre-state.
 	reloadReport, reloadErr := ir.Reload()
 	if reloadErr != nil {
-		if rollbackErr := genstore.RollbackTo(paths, ir.ID(), parent, time.Now()); rollbackErr != nil {
+		rollbackErr := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+			return genstore.RollbackTo(paths, ir.ID(), parent, time.Now(), masterKey)
+		})
+		if rollbackErr != nil {
 			ir.SetRecovery()
 			return activationFailure(
 				protocol.ResultCodeRecoveredRollbackFailed,
@@ -215,7 +221,10 @@ func (s Service) rollbackRecoveredGenerational(
 	// from here the store is being mutated, and a failure must classify as
 	// recovered_rollback_failed, never as a pre-mutation refusal.
 	*mutated = true
-	if err := genstore.RollbackTo(paths, ir.ID(), manifest.ParentID, time.Now()); err != nil {
+	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+		return genstore.RollbackTo(paths, ir.ID(), manifest.ParentID, time.Now(), masterKey)
+	})
+	if err != nil {
 		if errors.Is(err, genstore.ErrCommitDurabilityUnknown) {
 			ir.SetRecovery()
 		}

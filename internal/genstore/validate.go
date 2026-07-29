@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -43,12 +44,13 @@ func ValidateCurrent(gen storepaths.GenPaths) error {
 	return nil
 }
 
-// ValidateSealed validates a non-current generation against its final seal:
-// full inventory and digest equality. The at-mint manifest is not the
+// ValidateSealed validates a non-current generation against its authenticated
+// final seal: exact manifest binding plus full inventory and digest equality.
+// The at-mint manifest is not the
 // content authority for a generation that was mutable while current; the
 // seal is. This is the integrity check rollback targets depend on. A prior
 // generation with no seal fails here — the seal precedes every flip.
-func ValidateSealed(gen storepaths.GenPaths) error {
+func ValidateSealed(gen storepaths.GenPaths, kr *crypto.Keyring) error {
 	if err := validateStructure(gen); err != nil {
 		return err
 	}
@@ -59,7 +61,7 @@ func ValidateSealed(gen storepaths.GenPaths) error {
 	if !manifest.Complete {
 		return fmt.Errorf("generation %s manifest is not complete", gen.GenerationID())
 	}
-	seal, err := ReadSeal(gen)
+	seal, err := ReadSeal(gen, kr)
 	if err != nil {
 		return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
 	}

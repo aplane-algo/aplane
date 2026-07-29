@@ -81,11 +81,22 @@ func cmdGenerations(args []string) error {
 			}
 		}
 		if !retainRollbackParent {
-			if err := verifyCurrentGenerationContent(paths, identityID); err != nil {
+			if err := validateCurrentGenerationForContent(paths, identityID); err != nil {
+				return err
+			}
+			logInfof("pruning all priors abandons every rollback fallback; validating current generation content first")
+		}
+		kr, err := readStoreKeyring()
+		if err != nil {
+			return err
+		}
+		defer kr.Zero()
+		if !retainRollbackParent {
+			if err := verifyCurrentGenerationContentWithKeyring(paths, identityID, kr); err != nil {
 				return err
 			}
 		}
-		removed, err := genstore.CollectGarbage(paths, identityID, nil, retainRollbackParent)
+		removed, err := genstore.CollectGarbage(paths, identityID, nil, retainRollbackParent, kr)
 		if err != nil {
 			return err
 		}
@@ -118,12 +129,8 @@ func verifyCurrentGenerationContent(paths storepaths.Paths, identityID string) e
 	// content read: a symlinked or otherwise malformed namespace must be
 	// rejected here, not followed by the scans below (only the structural
 	// validator checks that namespace entries are regular files).
-	gen, err := genstore.Resolve(paths, identityID)
-	if err != nil {
+	if err := validateCurrentGenerationForContent(paths, identityID); err != nil {
 		return err
-	}
-	if err := genstore.ValidateCurrent(gen); err != nil {
-		return fmt.Errorf("refusing to prune: current generation failed validation: %w", err)
 	}
 
 	logInfof("pruning all priors abandons every rollback fallback; validating current generation content first")
@@ -140,7 +147,21 @@ func verifyCurrentGenerationContent(paths storepaths.Paths, identityID string) e
 		return fmt.Errorf("passphrase verification failed: %w", err)
 	}
 	defer kr.Zero()
+	return verifyCurrentGenerationContentWithKeyring(paths, identityID, kr)
+}
 
+func validateCurrentGenerationForContent(paths storepaths.Paths, identityID string) error {
+	gen, err := genstore.Resolve(paths, identityID)
+	if err != nil {
+		return err
+	}
+	if err := genstore.ValidateCurrent(gen); err != nil {
+		return fmt.Errorf("refusing to prune: current generation failed validation: %w", err)
+	}
+	return nil
+}
+
+func verifyCurrentGenerationContentWithKeyring(paths storepaths.Paths, identityID string, kr *crypto.Keyring) error {
 	templateReport, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates(identityID, kr)
 	if err != nil {
 		return fmt.Errorf("template validation failed: %w", err)

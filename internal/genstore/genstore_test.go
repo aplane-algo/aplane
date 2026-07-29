@@ -4,12 +4,15 @@
 package genstore
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -19,6 +22,11 @@ const (
 	testGenA     = "gen-1753500000-0badc0de"
 	testGenB     = "gen-1753500001-1badc0de"
 )
+
+func testKeyring(t *testing.T) *crypto.Keyring {
+	t.Helper()
+	return cryptotest.Keyring(t, bytes.Repeat([]byte{0x5a}, 32))
+}
 
 // mintTestGeneration lays down a structurally valid generation with a
 // complete manifest and the given namespace files.
@@ -131,18 +139,28 @@ func TestSealRoundTripAndTamperDetection(t *testing.T) {
 		"keytypes/ed25519.json": "{}",
 	})
 
-	if err := WriteSeal(gen, 1_753_500_100); err != nil {
+	if err := WriteSeal(gen, 1_753_500_100, testKeyring(t)); err != nil {
 		t.Fatalf("WriteSeal() error = %v", err)
 	}
-	if err := ValidateSealed(gen); err != nil {
+	if err := ValidateSealed(gen, testKeyring(t)); err != nil {
 		t.Fatalf("ValidateSealed(untampered) error = %v", err)
+	}
+	seal, err := ReadSeal(gen, testKeyring(t))
+	if err != nil {
+		t.Fatalf("ReadSeal() error = %v", err)
+	}
+	if seal.Schema != SealSchema || seal.SchemaVersion != sealSchemaVersion {
+		t.Fatalf("seal schema = %s/%d, want %s/%d", seal.Schema, seal.SchemaVersion, SealSchema, sealSchemaVersion)
+	}
+	if seal.IntegrityTerm != 1 || len(seal.IntegrityMAC) != 64 || len(seal.ManifestSHA256) != 64 {
+		t.Fatalf("seal integrity metadata = term %d, mac %q, manifest %q", seal.IntegrityTerm, seal.IntegrityMAC, seal.ManifestSHA256)
 	}
 
 	// Content change after sealing must be detected.
 	if err := os.WriteFile(filepath.Join(gen.KeysDir(), "A.key"), []byte("tampered"), 0o660); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}
-	if err := ValidateSealed(gen); err == nil {
+	if err := ValidateSealed(gen, testKeyring(t)); err == nil {
 		t.Fatal("ValidateSealed accepted content that does not match the seal")
 	}
 
@@ -153,15 +171,85 @@ func TestSealRoundTripAndTamperDetection(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(gen.KeysDir(), "B.key"), []byte("new"), 0o660); err != nil {
 		t.Fatalf("extra write: %v", err)
 	}
-	if err := ValidateSealed(gen); err == nil {
+	if err := ValidateSealed(gen, testKeyring(t)); err == nil {
 		t.Fatal("ValidateSealed accepted an unsealed extra file")
+	}
+}
+
+func TestSealAuthenticatesExactManifestBytes(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	gen := mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
+	if err := WriteSeal(gen, 1_753_500_100, testKeyring(t)); err != nil {
+		t.Fatalf("WriteSeal() error = %v", err)
+	}
+	manifestBytes, err := os.ReadFile(gen.ManifestPath())
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	// Appending JSON whitespace preserves the parsed manifest but changes
+	// the exact immutable bytes pinned by manifest_sha256.
+	if err := os.WriteFile(gen.ManifestPath(), append(manifestBytes, '\n'), 0o660); err != nil {
+		t.Fatalf("WriteFile(manifest) error = %v", err)
+	}
+	if _, err := ReadSeal(gen, testKeyring(t)); err == nil || !strings.Contains(err.Error(), "manifest digest mismatch") {
+		t.Fatalf("ReadSeal() error = %v, want exact manifest digest mismatch", err)
+	}
+}
+
+func TestSealRejectsForgedSecurityFieldsAndWrongAuthority(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	gen := mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
+	kr := testKeyring(t)
+	if err := WriteSeal(gen, 1_753_500_100, kr); err != nil {
+		t.Fatalf("WriteSeal() error = %v", err)
+	}
+	if _, err := ReadSeal(gen, cryptotest.Keyring(t, bytes.Repeat([]byte{0x6b}, 32))); err == nil {
+		t.Fatal("ReadSeal() accepted a different integrity authority")
+	}
+
+	seal, err := ReadSeal(gen, kr)
+	if err != nil {
+		t.Fatalf("ReadSeal() error = %v", err)
+	}
+	seal.SealedAtUnix++
+	if err := writeJSONDurable(gen.SealPath(), seal); err != nil {
+		t.Fatalf("writeJSONDurable(forged seal) error = %v", err)
+	}
+	if _, err := ReadSeal(gen, kr); err == nil || !strings.Contains(err.Error(), "integrity verification failed") {
+		t.Fatalf("ReadSeal() error = %v, want integrity verification failure", err)
+	}
+}
+
+func TestSealParsingIsStrict(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	gen := mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
+	if err := WriteSeal(gen, 1_753_500_100, testKeyring(t)); err != nil {
+		t.Fatalf("WriteSeal() error = %v", err)
+	}
+	sealBytes, err := os.ReadFile(gen.SealPath())
+	if err != nil {
+		t.Fatalf("ReadFile(seal) error = %v", err)
+	}
+	if err := os.WriteFile(gen.SealPath(), append(sealBytes, []byte("{}\n")...), 0o660); err != nil {
+		t.Fatalf("WriteFile(seal) error = %v", err)
+	}
+	if _, err := ReadSeal(gen, testKeyring(t)); err == nil || !strings.Contains(err.Error(), "trailing data") {
+		t.Fatalf("ReadSeal() error = %v, want strict trailing-data rejection", err)
+	}
+}
+
+func TestWriteSealRejectsInvalidMetadata(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	gen := mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
+	if err := WriteSeal(gen, 0, testKeyring(t)); err == nil {
+		t.Fatal("WriteSeal() accepted a non-positive sealed_at")
 	}
 }
 
 func TestUnsealedGenerationFailsSealedValidation(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	gen := mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
-	if err := ValidateSealed(gen); err == nil {
+	if err := ValidateSealed(gen, testKeyring(t)); err == nil {
 		t.Fatal("ValidateSealed accepted a generation with no seal (uncommitted attempts must fail here)")
 	}
 	sealed, err := HasSeal(gen)
@@ -173,7 +261,7 @@ func TestUnsealedGenerationFailsSealedValidation(t *testing.T) {
 func TestValidateCurrentIgnoresStaleSealButChecksStructure(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	gen := mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
-	if err := WriteSeal(gen, 1_753_500_100); err != nil {
+	if err := WriteSeal(gen, 1_753_500_100, testKeyring(t)); err != nil {
 		t.Fatalf("WriteSeal() error = %v", err)
 	}
 	// Mutate after sealing: the current generation is mutable, so current

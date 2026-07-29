@@ -5,12 +5,12 @@ package noderole
 
 import (
 	"errors"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"testing"
 	"time"
 
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -27,6 +27,13 @@ func TestSaveInitialAndVerifyWithKeyring(t *testing.T) {
 	}
 	if err := SaveIdentitySidecarWithKeyring(paths, "default", roleBytes, cryptotest.Keyring(t, masterKey), time.Unix(100, 0)); err != nil {
 		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
+	}
+	sidecar, err := LoadSidecar(paths.NodeRoleIntegritySidecar("default"))
+	if err != nil {
+		t.Fatalf("LoadSidecar() error = %v", err)
+	}
+	if sidecar.Version != IntegritySidecarVersion || sidecar.IntegrityTerm != 1 {
+		t.Fatalf("sidecar version/term = %d/%d, want %d/1", sidecar.Version, sidecar.IntegrityTerm, IntegritySidecarVersion)
 	}
 	verified, err := LoadAndVerifyWithKeyring(paths, "default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
@@ -84,5 +91,29 @@ func TestVerifyRejectsWrongMasterKey(t *testing.T) {
 	_, err = LoadAndVerifyWithKeyring(paths, "default", cryptotest.Keyring(t, wrongKey))
 	if !errors.Is(err, ErrRoleMismatch) {
 		t.Fatalf("LoadAndVerifyWithKeyring(wrong key) error = %v, want ErrRoleMismatch", err)
+	}
+}
+
+func TestVerifyRejectsUnauthorizedIntegrityTerm(t *testing.T) {
+	kr := cryptotest.Keyring(t, []byte("01234567890123456789012345678901"))
+	roleBytes := []byte("schema_version: 1\nrole: signer\n")
+	sidecar, err := Sign(roleBytes, kr, time.Now(), 0)
+	if err != nil {
+		t.Fatalf("Sign() error = %v", err)
+	}
+	sidecar.IntegrityTerm++
+	if err := Verify(roleBytes, sidecar, kr); !errors.Is(err, ErrRoleMismatch) {
+		t.Fatalf("Verify() error = %v, want ErrRoleMismatch", err)
+	}
+}
+
+func TestIntegritySidecarParsingIsStrict(t *testing.T) {
+	for _, data := range [][]byte{
+		[]byte(`{"version":2,"unknown":true}`),
+		[]byte(`{"version":2}{}`),
+	} {
+		if _, err := ParseSidecar(data); !errors.Is(err, ErrRoleSidecarBad) {
+			t.Fatalf("ParseSidecar(%q) error = %v, want ErrRoleSidecarBad", data, err)
+		}
 	}
 }

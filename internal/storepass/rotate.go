@@ -444,13 +444,7 @@ func createPendingPolicySidecar(doc policyRotationDocument, oldKeyring, newKeyri
 		return nil, false, fmt.Errorf("failed to stat %s: %w", doc.name, err)
 	}
 
-	newPolicyKey, err := newKeyring.PolicyIntegrityKey()
-	if err != nil {
-		return nil, false, err
-	}
-	defer crypto.ZeroBytes(newPolicyKey)
-
-	sidecar, err := policy.SignPolicyIntegrity(policyBytes, newPolicyKey, time.Now(), info.ModTime().UnixNano())
+	sidecar, err := policy.SignPolicyIntegrity(policyBytes, newKeyring, time.Now(), info.ModTime().UnixNano())
 	if err != nil {
 		return nil, false, err
 	}
@@ -471,7 +465,7 @@ func createPendingPolicySidecar(doc policyRotationDocument, oldKeyring, newKeyri
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to verify %s.hmac.new: %w", doc.name, err)
 	}
-	if err := policy.VerifyPolicyIntegrity(policyBytes, verifySidecar, newPolicyKey); err != nil {
+	if err := policy.VerifyPolicyIntegrity(policyBytes, verifySidecar, newKeyring); err != nil {
 		return nil, false, fmt.Errorf("verification failed for %s.hmac.new: %w", doc.name, err)
 	}
 	logf(log, "created: %s.hmac.new (verified)", doc.name)
@@ -492,13 +486,7 @@ func createPendingNodeRoleSidecar(paths storepaths.Paths, identityID string, old
 		return nil, false, fmt.Errorf("failed to stat node.yaml: %w", err)
 	}
 
-	newNodeRoleKey, err := newKeyring.NodeRoleIntegrityKey()
-	if err != nil {
-		return nil, false, err
-	}
-	defer crypto.ZeroBytes(newNodeRoleKey)
-
-	sidecar, err := noderole.Sign(roleBytes, newNodeRoleKey, time.Now(), info.ModTime().UnixNano())
+	sidecar, err := noderole.Sign(roleBytes, newKeyring, time.Now(), info.ModTime().UnixNano())
 	if err != nil {
 		return nil, false, err
 	}
@@ -519,7 +507,7 @@ func createPendingNodeRoleSidecar(paths storepaths.Paths, identityID string, old
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to verify node.yaml.hmac.new: %w", err)
 	}
-	if err := noderole.Verify(roleBytes, verifySidecar, newNodeRoleKey); err != nil {
+	if err := noderole.Verify(roleBytes, verifySidecar, newKeyring); err != nil {
 		return nil, false, fmt.Errorf("verification failed for node.yaml.hmac.new: %w", err)
 	}
 	logf(log, "created: node.yaml.hmac.new (verified)")

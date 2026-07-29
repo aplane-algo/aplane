@@ -724,7 +724,7 @@ func TestRotateRefusedUntilPriorGenerationsPruned(t *testing.T) {
 	}
 	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
 		GenerationID: second, Parent: first, Operation: "test-activation", OperationID: "op-2",
-		CreatedAt: time.Unix(1_753_900_001, 0),
+		CreatedAt: time.Unix(1_753_900_001, 0), Integrity: masterKeyRing,
 	}); err != nil {
 		t.Fatalf("Mint(second): %v", err)
 	}
@@ -735,7 +735,7 @@ func TestRotateRefusedUntilPriorGenerationsPruned(t *testing.T) {
 		t.Fatalf("Rotate() error = %v, want quiescence refusal", err)
 	}
 	// ...and the supported prune restores rotatability.
-	if _, err := genstore.CollectGarbage(paths, identityID, nil, false); err != nil {
+	if _, err := genstore.CollectGarbage(paths, identityID, nil, false, masterKeyRing); err != nil {
 		t.Fatalf("CollectGarbage() error = %v", err)
 	}
 	if _, err := Rotate(paths, identityID, passphrase, []byte("new-pass"), RotateOptions{}); err != nil {

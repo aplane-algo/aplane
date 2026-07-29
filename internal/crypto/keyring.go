@@ -187,38 +187,6 @@ func (kr *Keyring) Open(sealed []byte, ctx ObjectContext) ([]byte, error) {
 	return openUnderTerm(sealed, key, term, ctx)
 }
 
-// PolicyIntegrityKey derives the identity's policy-integrity HMAC key from
-// the current term. The caller owns the returned key and should zero it.
-func (kr *Keyring) PolicyIntegrityKey() ([]byte, error) {
-	return kr.IntegrityKey([]byte(policyIntegrityHKDFInfo), PolicyIntegrityKeyLength)
-}
-
-// NodeRoleIntegrityKey derives the identity's node-role HMAC key from the
-// current term. The caller owns the returned key and should zero it.
-func (kr *Keyring) NodeRoleIntegrityKey() ([]byte, error) {
-	return kr.IntegrityKey([]byte(nodeRoleIntegrityHKDFInfo), NodeRoleIntegrityKeyLength)
-}
-
-// IntegrityKey derives the HMAC key for one integrity domain from the
-// current term. It returns key material because the HMAC construction lives
-// in callers today; phase 3 replaces it with SignIntegrity/VerifyIntegrity
-// so that material stops leaving this package.
-//
-// It shares deriveIntegrityKey with the domain helpers above, which is what
-// keeps every sidecar already on disk verifiable: the HKDF inputs are
-// (term key, info), and adding a salt or a domain string here would silently
-// invalidate all of them.
-func (kr *Keyring) IntegrityKey(info []byte, length int) ([]byte, error) {
-	if kr == nil || len(kr.terms) == 0 {
-		return nil, fmt.Errorf("keyring is not open")
-	}
-	key, ok := kr.terms[kr.currentTerm]
-	if !ok {
-		return nil, fmt.Errorf("keyring has no key for current term %d", kr.currentTerm)
-	}
-	return deriveIntegrityKey(key, info, length, "keyring")
-}
-
 // ----------------------------------------------------------------------------
 // keyring.enc
 

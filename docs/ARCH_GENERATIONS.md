@@ -154,13 +154,17 @@ mint do not falsify it. `CURRENT` answers *which state committed*; the
 manifest answers *which operation produced it* (post-crash idempotency and
 audit correlation — the operation ID is what unlock-time reconciliation logs).
 
-`seal.json` — final content authority: schema, generation ID, sealed_at, full
-inventory with digests. Written durably **before every pointer flip** (commit
-step 8; rollback does the same for its outgoing generation). Prior-generation
-and rollback-target validation use the seal, never the at-mint manifest — a
-legitimately mutated generation would fail an at-mint check the moment it
-becomes prior. A non-current generation **without** a seal is, by
-construction, an uncommitted attempt (§7).
+`seal.json` — final content authority, schema
+`aplane.generation-seal.v2`: generation ID, sealed_at, SHA-256 of the exact
+immutable `manifest.json` bytes, explicit integrity term, full inventory with
+digests, and a domain-separated HMAC over a canonical length-prefixed encoding
+of every security-bearing seal field except the MAC itself. Written durably
+**before every pointer flip** (commit step 8; rollback does the same for its
+outgoing generation). Prior-generation and rollback-target validation require
+the identity keyring and use the authenticated seal, never the at-mint
+manifest inventory — a legitimately mutated generation would fail an at-mint
+check the moment it becomes prior. A non-current generation **without** a seal
+is, by construction, an uncommitted attempt (§7).
 
 ## 6. Strict generation validator
 
@@ -205,7 +209,9 @@ the retained rollback set, not referenced by incomplete-operation or audit
 recovery metadata, and unsealed (every committed-then-superseded generation
 has a seal). `.staging-*` directories are unconditionally garbage. fsync
 `generations/` after removals; audit the abort with the manifest's operation
-ID. Published-but-uncommitted generations are **never resumed**.
+ID. This pre-unlock classification checks seal presence only; it never grants
+rollback authority from an unauthenticated seal. Published-but-uncommitted
+generations are **never resumed**.
 
 ## 8. Release compatibility (no migration)
 
@@ -220,9 +226,10 @@ The pre-generation flat layout, the Tier-1 activation protocol, and the
 `migrate-layout` transaction were removed with this policy.
 ## 9. Rollback and GC
 
-Rollback = validate the target against its seal → seal the outgoing current
+Rollback = validate the target against its authenticated seal → seal the outgoing current
 generation → durable temp pointer → rename over `CURRENT` → fsync identity
-dir → reload. Retention: current + the previous valid generation + anything
+dir → reload. Rollback and retained-parent pruning require an open identity
+keyring. Retention: current + the previous valid generation + anything
 referenced by incomplete-operation or audit recovery metadata. GC resolves
 references under the mutation lock, never runs during
 activation/rotation/reload/migration, fsyncs `generations/` after removals,
