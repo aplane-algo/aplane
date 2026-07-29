@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"os"
 	"path/filepath"
@@ -134,7 +135,7 @@ teal: |
   int 0
   return
 `)
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, staleTemplate, keyType, templatestore.TemplateTypeGeneric, testExportMasterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, staleTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testExportMasterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths(stale) error = %v", err)
 	}
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
@@ -433,11 +434,11 @@ func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
 		}
 	}
 
-	loaded, err := recovered.LoadBatch(paths, identityID, batch.RestoreID, testExportMasterKey)
+	loaded, err := recovered.LoadBatch(paths, identityID, batch.RestoreID, cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
 		t.Fatalf("recovered.LoadBatch() error = %v", err)
 	}
-	entry, err := recovered.LoadEntry(paths, identityID, batch.RestoreID, loaded.Entries[0], testExportMasterKey)
+	entry, err := recovered.LoadEntry(paths, identityID, batch.RestoreID, loaded.Entries[0], cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
 		t.Fatalf("recovered.LoadEntry() error = %v", err)
 	}
@@ -890,9 +891,9 @@ func TestRestoreKeyPreservesBoundedSigningMetadata(t *testing.T) {
 	if _, err := restorer.RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
-	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(apkeys.AccountKeyFilePath(paths, identityID, address), testExportMasterKey)
+	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(apkeys.AccountKeyFilePath(paths, identityID, address), cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
-		t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
+		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
 	}
 	defer apcrypto.ZeroBytes(restoredJSON)
 	restored, err := apkeys.ParsePayload(restoredJSON)
@@ -986,7 +987,7 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 
 	existingTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: test\nfamily: standalone-conflict\nversion: 1\ndisplay_name: Existing\nteal: |\n  int 1\n")
 	incomingTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: test\nfamily: standalone-conflict\nversion: 1\ndisplay_name: Incoming\nteal: |\n  int 0\n")
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, testExportMasterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testExportMasterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
 	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
@@ -1023,9 +1024,9 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); err != nil {
 		t.Fatalf("expected restored key file: %v", err)
 	}
-	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(apkeys.AccountKeyFilePath(paths, identityID, address.String()), testExportMasterKey)
+	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(apkeys.AccountKeyFilePath(paths, identityID, address.String()), cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
-		t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
+		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
 	}
 	defer apcrypto.ZeroBytes(restoredJSON)
 	var restoredKey struct {
@@ -1052,7 +1053,7 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
-	gotTemplate, err := templatestore.LoadTemplateFromPath(templatePath, testExportMasterKey)
+	gotTemplate, err := templatestore.LoadTemplateFromPath(templatePath, cryptotest.Keyring(t, testExportMasterKey))
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath() error = %v", err)
 	}

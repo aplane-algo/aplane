@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"testing"
 	"time"
 
@@ -63,7 +64,7 @@ teal: |
 			ByteLength: 32,
 		}}
 		payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "#pragma version 6\nint 1", signingArgs, "")
-		result, saveErr := keys.SavePayload(server.keyPaths, auth.DefaultIdentityID, payload, masterKey)
+		result, saveErr := keys.SavePayload(server.keyPaths, auth.DefaultIdentityID, payload, cryptotest.Keyring(t, masterKey))
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
 		}

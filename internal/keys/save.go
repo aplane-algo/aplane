@@ -14,20 +14,20 @@ import (
 
 // SavePayload validates and saves a canonical payload under the selector
 // derived from its authoritative key material.
-func SavePayload(paths storepaths.Paths, identityID string, payload *Payload, masterKey []byte) (*ImportKeyResult, error) {
+func SavePayload(paths storepaths.Paths, identityID string, payload *Payload, kr *crypto.Keyring) (*ImportKeyResult, error) {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
 		return nil, err
 	}
-	return SavePayloadActive(active, payload, masterKey)
+	return SavePayloadActive(active, payload, kr)
 }
 
 // SavePayloadActive is SavePayload against resolved active-store paths
 // (generational or legacy); the caller resolved the layout once for the
 // whole operation.
-func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, masterKey []byte) (*ImportKeyResult, error) {
-	if len(masterKey) == 0 {
-		return nil, fmt.Errorf("master key is required to save key file")
+func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, kr *crypto.Keyring) (*ImportKeyResult, error) {
+	if kr == nil {
+		return nil, fmt.Errorf("an open keyring is required to save a key file")
 	}
 	if payload == nil {
 		return nil, fmt.Errorf("key payload is required")
@@ -47,7 +47,7 @@ func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, masterKe
 	if err != nil {
 		return nil, err
 	}
-	dataToWrite, err := crypto.EncryptWithTermKey(keyJSON, masterKey, crypto.FirstTerm, ctx)
+	dataToWrite, err := kr.Seal(keyJSON, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt key: %w", err)
 	}

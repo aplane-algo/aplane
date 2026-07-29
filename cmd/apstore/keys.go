@@ -36,7 +36,7 @@ func cmdKeysList() error {
 	}
 	defer crypto.ZeroBytes(masterKey)
 
-	report, err := apkeys.ScanKeysDirectoryWithMasterKeyReport(keystorePaths(), productIdentityID(), masterKey)
+	report, err := apkeys.ScanKeysDirectoryWithKeyringReport(keystorePaths(), productIdentityID(), kr)
 	if err != nil {
 		return err
 	}

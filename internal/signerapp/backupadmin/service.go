@@ -40,7 +40,7 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 
 	var result *backup.ArchiveResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return ir.WithMasterKey(func(masterKey []byte) error {
+		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			sourceSettings := backup.SourceSettingsSnapshot{
 				GenesisHashMappings: s.Deps.GenesisHashMappings(),
 			}
@@ -49,12 +49,19 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 				sourceSettings.UserAutoApprove = &userAutoApprove
 			}
 			var backupErr error
+			// Boundary adapter: backup's archive API still takes a raw key
+			// and migrates in slice 3.
+			archiveKey, keyErr := masterKey.CurrentTermKey()
+			if keyErr != nil {
+				return keyErr
+			}
+			defer crypto.ZeroBytes(archiveKey)
 			result, backupErr = backup.CreateKeysArchive(backup.CreateKeysArchiveRequest{
 				Paths:            s.Deps.KeyPaths(),
 				IdentityID:       ir.ID(),
 				ArchivePath:      archivePath,
 				Addresses:        req.Addresses,
-				MasterKey:        masterKey,
+				MasterKey:        archiveKey,
 				ExportPassphrase: passphraseBytes,
 				SourceSettings:   sourceSettings,
 			})
@@ -198,14 +205,21 @@ func (s Service) RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBacku
 
 	var batch *recovered.Batch
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return ir.WithMasterKey(func(masterKey []byte) error {
+		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+			// Boundary adapter: backup's recover API still takes a raw key
+			// and migrates in slice 3.
+			recoverKey, keyErr := masterKey.CurrentTermKey()
+			if keyErr != nil {
+				return keyErr
+			}
+			defer crypto.ZeroBytes(recoverKey)
 			var recoverErr error
 			batch, recoverErr = backup.RecoverManagedBackup(
 				s.Deps.KeyPaths(),
 				ir.ID(),
 				archivePath,
 				req.Addresses,
-				masterKey,
+				recoverKey,
 				passphraseBytes,
 				ir.NodeRole(),
 			)
@@ -236,7 +250,7 @@ func (s Service) RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBacku
 func (s Service) ListRecovered(ir *identity.Runtime) adminproto.ListRecoveredResult {
 	var batches []recovered.BatchInfo
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return ir.WithMasterKey(func(masterKey []byte) error {
+		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var listErr error
 			batches, listErr = recovered.List(s.Deps.KeyPaths(), ir.ID(), masterKey)
 			return listErr
@@ -272,7 +286,7 @@ func (s Service) PurgeRecovered(
 ) adminproto.PurgeRecoveredResult {
 	result := adminproto.PurgeRecoveredResult{RestoreID: req.RestoreID}
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return ir.WithMasterKey(func(masterKey []byte) error {
+		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
 				return err
 			}

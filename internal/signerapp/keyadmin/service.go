@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
@@ -186,7 +187,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 
 	mut := storemut.New(ir.ID(), ir.KeyPaths(), nil, nil)
 	var genResult *keymgmt.GenerateResult
-	err := ir.WithMasterKey(func(mk []byte) error {
+	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var genErr error
 		genResult, genErr = mut.GenerateKeyWithActivatedContext(ctx, keyType, mk, params, activated)
 		return genErr

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,7 +45,7 @@ func TestCreateAndLoadRecoveredBatch(t *testing.T) {
 			KeyType:  "ed25519",
 			KeyJSON:  keyJSON,
 		}},
-	}, masterKey)
+	}, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -57,7 +58,7 @@ func TestCreateAndLoadRecoveredBatch(t *testing.T) {
 	assertMode(t, paths.RecoveredBatchEntriesDir("default", batch.RestoreID), fsutil.StoreDirPerm)
 	assertMode(t, paths.RecoveredBatchMetadataPath("default", batch.RestoreID), fsutil.StoreFilePerm)
 
-	loaded, err := LoadBatch(paths, "default", batch.RestoreID, masterKey)
+	loaded, err := LoadBatch(paths, "default", batch.RestoreID, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadBatch() error = %v", err)
 	}
@@ -71,7 +72,7 @@ func TestCreateAndLoadRecoveredBatch(t *testing.T) {
 
 	entryPath := filepath.Join(paths.RecoveredBatchEntriesDir("default", batch.RestoreID), meta.EntryFile)
 	assertMode(t, entryPath, fsutil.StoreFilePerm)
-	entry, err := LoadEntry(paths, "default", batch.RestoreID, meta, masterKey)
+	entry, err := LoadEntry(paths, "default", batch.RestoreID, meta, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadEntry() error = %v", err)
 	}
@@ -115,7 +116,7 @@ func TestCreateRecoveredBatchIsAllOrNothing(t *testing.T) {
 				KeyJSON:  keyJSON,
 			},
 		},
-	}, masterKey)
+	}, cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("Create() error = nil, want invalid entry")
 	}
@@ -144,7 +145,7 @@ func TestLoadRecoveredBatchRejectsTampering(t *testing.T) {
 			KeyType:  "ed25519",
 			KeyJSON:  keyJSON,
 		}},
-	}, masterKey)
+	}, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -167,7 +168,7 @@ func TestLoadRecoveredBatchRejectsTampering(t *testing.T) {
 	if err := os.WriteFile(path, data, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(tampered batch) error = %v", err)
 	}
-	if _, err := LoadBatch(paths, "default", batch.RestoreID, masterKey); err == nil {
+	if _, err := LoadBatch(paths, "default", batch.RestoreID, cryptotest.Keyring(t, masterKey)); err == nil {
 		t.Fatal("LoadBatch() error = nil, want tamper rejection")
 	}
 }
@@ -205,7 +206,7 @@ func TestLoadRecoveredEntryRejectsCrossBatchSubstitution(t *testing.T) {
 				KeyType:  "ed25519",
 				KeyJSON:  key,
 			}},
-		}, masterKey)
+		}, cryptotest.Keyring(t, masterKey))
 		if createErr != nil {
 			t.Fatalf("Create() error = %v", createErr)
 		}
@@ -226,7 +227,7 @@ func TestLoadRecoveredEntryRejectsCrossBatchSubstitution(t *testing.T) {
 	// The entry's restore ID is bound into the envelope's authenticated data,
 	// so an entry lifted from another batch fails to open at all. The digest
 	// check behind it stays as defence in depth for a same-batch swap.
-	if _, err := LoadEntry(paths, "default", first.RestoreID, firstMeta, masterKey); err == nil ||
+	if _, err := LoadEntry(paths, "default", first.RestoreID, firstMeta, cryptotest.Keyring(t, masterKey)); err == nil ||
 		!strings.Contains(err.Error(), "failed to decrypt recovered-entry:"+first.RestoreID) {
 		t.Fatalf("LoadEntry(substituted) error = %v, want an authentication failure", err)
 	}
@@ -248,7 +249,7 @@ func TestLoadRecoveredBatchRejectsSymlink(t *testing.T) {
 			KeyType:  "ed25519",
 			KeyJSON:  keyJSON,
 		}},
-	}, masterKey)
+	}, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -260,7 +261,7 @@ func TestLoadRecoveredBatchRejectsSymlink(t *testing.T) {
 	if err := os.Symlink(realPath, batchPath); err != nil {
 		t.Fatalf("Symlink(batch) error = %v", err)
 	}
-	if _, err := LoadBatch(paths, "default", batch.RestoreID, masterKey); err == nil {
+	if _, err := LoadBatch(paths, "default", batch.RestoreID, cryptotest.Keyring(t, masterKey)); err == nil {
 		t.Fatal("LoadBatch(symlink) error = nil, want rejection")
 	}
 }
@@ -285,7 +286,7 @@ func TestCreateRejectsInvalidArchiveNamesAndTemplateTypes(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
 			req := baseRequest
 			req.ArchiveName = name
-			if _, err := Create(paths, "default", req, bytes.Repeat([]byte{0x68}, 32)); err == nil {
+			if _, err := Create(paths, "default", req, cryptotest.Keyring(t, bytes.Repeat([]byte{0x68}, 32))); err == nil {
 				t.Fatalf("Create(archive_name=%q) error = nil", name)
 			}
 		})
@@ -296,7 +297,7 @@ func TestCreateRejectsInvalidArchiveNamesAndTemplateTypes(t *testing.T) {
 	req.Entries = append([]Entry(nil), baseRequest.Entries...)
 	req.Entries[0].TemplateYAML = []byte("schema_version: 1\n")
 	req.Entries[0].TemplateType = "unsupported"
-	if _, err := Create(paths, "default", req, bytes.Repeat([]byte{0x79}, 32)); err == nil ||
+	if _, err := Create(paths, "default", req, cryptotest.Keyring(t, bytes.Repeat([]byte{0x79}, 32))); err == nil ||
 		!strings.Contains(err.Error(), "unsupported recovered entry template_type") {
 		t.Fatalf("Create(unsupported template type) error = %v", err)
 	}
@@ -472,7 +473,7 @@ func TestLoadBatchRejectsRestoreIDMismatch(t *testing.T) {
 		t.Fatalf("WriteFile(batch) error = %v", err)
 	}
 
-	if _, err := LoadBatch(paths, "default", batch.RestoreID, masterKey); err == nil ||
+	if _, err := LoadBatch(paths, "default", batch.RestoreID, cryptotest.Keyring(t, masterKey)); err == nil ||
 		!strings.Contains(err.Error(), "restore ID mismatch") {
 		t.Fatalf("LoadBatch() error = %v, want restore ID mismatch", err)
 	}

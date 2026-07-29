@@ -5,6 +5,7 @@ package recovered
 
 import (
 	"bytes"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"testing"
 
@@ -22,7 +23,7 @@ func TestRemoveBatchRemovesPublishedInventory(t *testing.T) {
 	if _, err := os.Lstat(paths.RecoveredBatchDir("default", batch.RestoreID)); !os.IsNotExist(err) {
 		t.Fatalf("removed batch stat error = %v, want not found", err)
 	}
-	listed, err := List(paths, "default", masterKey)
+	listed, err := List(paths, "default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}

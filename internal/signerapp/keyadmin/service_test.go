@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"io"
 	"net/http"
@@ -642,7 +643,7 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 	address := logicSigAddressString(t, bytecode)
 	payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "", nil, "1:"+strings.Repeat("b", 64))
 	if err := ir.WithMasterKey(func(mk []byte) error {
-		result, saveErr := keys.SavePayload(ir.KeyPaths(), ir.ID(), payload, mk)
+		result, saveErr := keys.SavePayload(ir.KeyPaths(), ir.ID(), payload, cryptotest.Keyring(t, mk))
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
 		}
@@ -741,7 +742,7 @@ func TestServiceImportKeyFalcon1024V1PersistsKey(t *testing.T) {
 	var stored *keymgmt.KeyFileInfo
 	if err := ir.WithMasterKey(func(mk []byte) error {
 		var detectErr error
-		stored, detectErr = keymgmt.DetectKeyInfoFromFileWithMasterKey(result.KeyFile, mk)
+		stored, detectErr = keymgmt.DetectKeyInfoFromFileWithMasterKey(result.KeyFile, cryptotest.Keyring(t, mk))
 		return detectErr
 	}); err != nil {
 		t.Fatalf("DetectKeyInfoFromFileWithMasterKey() error = %v", err)
@@ -814,7 +815,7 @@ func TestServiceImportKeyCanonicalizesAddressListParams(t *testing.T) {
 
 	var storedParams map[string]string
 	if err := ir.WithMasterKey(func(mk []byte) error {
-		info, detectErr := keymgmt.DetectKeyInfoFromFileWithMasterKey(second.KeyFile, mk)
+		info, detectErr := keymgmt.DetectKeyInfoFromFileWithMasterKey(second.KeyFile, cryptotest.Keyring(t, mk))
 		if detectErr != nil {
 			return detectErr
 		}
@@ -859,7 +860,7 @@ func registerServiceGenericTemplate(t *testing.T) {
 func installServiceGenericTemplate(t *testing.T, ir *identity.Runtime) {
 	t.Helper()
 	if err := ir.WithMasterKey(func(mk []byte) error {
-		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, mk))
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateForPaths(service generic template) error = %v", err)

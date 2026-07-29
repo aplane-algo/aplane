@@ -4,7 +4,6 @@
 package templates
 
 import (
-	"bytes"
 	"errors"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"reflect"
@@ -207,10 +206,10 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 				},
 			},
 		},
-		BeforeKeyScan: func(masterKey []byte) error {
+		BeforeKeyScan: func(kr *crypto.Keyring) error {
 			events = append(events, "before")
-			if !bytes.Equal(masterKey, testTemplateMasterKey()) {
-				t.Fatalf("BeforeKeyScan master key = %x, want test master key", masterKey)
+			if kr == nil {
+				t.Fatal("BeforeKeyScan received no keyring")
 			}
 			return nil
 		},
@@ -262,7 +261,7 @@ func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
 				},
 			},
 		},
-		BeforeKeyScan: func([]byte) error {
+		BeforeKeyScan: func(*crypto.Keyring) error {
 			return wantErr
 		},
 		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {
@@ -314,7 +313,7 @@ func TestReloadClearsInitializedMasterKeyOnBeforeKeyScanError(t *testing.T) {
 		KeyStore:        store,
 		Session:         &fakeSession{},
 		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
-		BeforeKeyScan: func([]byte) error {
+		BeforeKeyScan: func(*crypto.Keyring) error {
 			return wantErr
 		},
 		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {},

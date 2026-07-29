@@ -23,7 +23,7 @@ const (
 // encrypted files that must be re-encrypted.
 //
 // A canonical file is restored from its .old or .new sibling only when that
-// sibling validates under masterKey. Unknown batch state and non-regular
+// sibling validates under kr. Unknown batch state and non-regular
 // artifacts fail closed. Unpublished StagingDirPrefix directories are ignored.
 // RotationTarget is one file a passphrase rotation must re-encrypt, together
 // with the object it holds. Rotation changes the key, never the identity, so
@@ -33,7 +33,7 @@ type RotationTarget struct {
 	Context crypto.ObjectContext
 }
 
-func RotationTargets(paths storepaths.Paths, identityID string, masterKey []byte) ([]RotationTarget, error) {
+func RotationTargets(paths storepaths.Paths, identityID string, kr *crypto.Keyring) ([]RotationTarget, error) {
 	root := paths.RecoveredRootDir(identityID)
 	rootInfo, err := os.Lstat(root)
 	if os.IsNotExist(err) {
@@ -64,7 +64,7 @@ func RotationTargets(paths storepaths.Paths, identityID string, masterKey []byte
 			return nil, err
 		}
 
-		batchTargets, err := rotationTargetsForBatch(paths, identityID, restoreID, masterKey)
+		batchTargets, err := rotationTargetsForBatch(paths, identityID, restoreID, kr)
 		if err != nil {
 			return nil, err
 		}
@@ -76,7 +76,7 @@ func RotationTargets(paths storepaths.Paths, identityID string, masterKey []byte
 func rotationTargetsForBatch(
 	paths storepaths.Paths,
 	identityID, restoreID string,
-	masterKey []byte,
+	kr *crypto.Keyring,
 ) ([]RotationTarget, error) {
 	batchDir := paths.RecoveredBatchDir(identityID, restoreID)
 	metadataPath := paths.RecoveredBatchMetadataPath(identityID, restoreID)
@@ -98,12 +98,12 @@ func rotationTargetsForBatch(
 	}
 
 	if err := reconcileRotationFile(metadataPath, func(candidate string) error {
-		_, err := loadBatchAt(candidate, restoreID, masterKey)
+		_, err := loadBatchAt(candidate, restoreID, kr)
 		return err
 	}); err != nil {
 		return nil, fmt.Errorf("reconcile recovered batch %s metadata: %w", restoreID, err)
 	}
-	batch, err := loadBatchAt(metadataPath, restoreID, masterKey)
+	batch, err := loadBatchAt(metadataPath, restoreID, kr)
 	if err != nil {
 		return nil, fmt.Errorf("validate recovered batch %s before passphrase rotation: %w", restoreID, err)
 	}
@@ -140,7 +140,7 @@ func rotationTargetsForBatch(
 	for _, meta := range batch.Entries {
 		entryPath := filepath.Join(entriesDir, meta.EntryFile)
 		if err := reconcileRotationFile(entryPath, func(candidate string) error {
-			entry, err := loadEntryAt(candidate, restoreID, meta, masterKey)
+			entry, err := loadEntryAt(candidate, restoreID, meta, kr)
 			if entry != nil {
 				entry.ZeroSecrets()
 			}

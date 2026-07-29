@@ -170,8 +170,16 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 		return nil, fmt.Errorf("derived LogicSig address mismatch: generated %s, payload derives %s", address, selector)
 	}
 
+	// Boundary adapter: the generator interface still threads a raw key and
+	// migrates in slice 3.
+	savePayloadKeyring, err := crypto.KeyringFromMasterKeyForMigration(masterKey)
+	if err != nil {
+		return nil, err
+	}
+	defer savePayloadKeyring.Zero()
+
 	// Save key file
-	keyFiles, err := keys.SavePayload(paths, identityID, payload, masterKey)
+	keyFiles, err := keys.SavePayload(paths, identityID, payload, savePayloadKeyring)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save keys: %w", err)
 	}

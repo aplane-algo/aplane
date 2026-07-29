@@ -38,7 +38,7 @@ type KeysChangedNotification struct {
 }
 
 type NotifyKeysChangedFunc func(notification KeysChangedNotification)
-type BeforeKeyScanFunc func(masterKey []byte) error
+type BeforeKeyScanFunc func(kr *crypto.Keyring) error
 type BeforePublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int) error
 type PublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int)
 type WarnFunc func(msg string)
@@ -110,14 +110,14 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 	}
 
 	var beforeKeyScanErr error
-	if err := s.KeyStore.WithMasterKey(func(mk []byte) error {
+	if err := s.KeyStore.WithKeyring(func(kr *crypto.Keyring) error {
 		if s.BeforeKeyScan != nil {
-			if err := s.BeforeKeyScan(mk); err != nil {
+			if err := s.BeforeKeyScan(kr); err != nil {
 				beforeKeyScanErr = err
 				return err
 			}
 		}
-		registrationReport, err := s.TemplateManager.RegisterKeystoreTemplates(identityID, mk)
+		registrationReport, err := s.TemplateManager.RegisterKeystoreTemplates(identityID, kr)
 		if err != nil {
 			return err
 		}

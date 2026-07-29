@@ -6,6 +6,7 @@ package templates
 import (
 	"bytes"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
@@ -60,7 +61,7 @@ func TestRegisterKeystoreTemplatesReportsActivatedAndConflictingKeyTypes(t *test
 		},
 	}
 
-	report, err := manager.RegisterKeystoreTemplates("default", masterKey)
+	report, err := manager.RegisterKeystoreTemplates("default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -138,7 +139,7 @@ func TestRegisterKeystoreTemplatesReturnsStateListError(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates("default", testTemplateMasterKey())
+	report, err := NewManager(paths).RegisterKeystoreTemplates("default", cryptotest.Keyring(t, testTemplateMasterKey()))
 	if err == nil || !strings.Contains(err.Error(), "failed to load keystore templates") {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v, want state list failure", err)
 	}
@@ -157,7 +158,7 @@ func TestRegisterKeystoreTemplatesRegistersGenericAndComposedProviders(t *testin
 	saveTemplateYAML(t, paths, genericKeyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("manager-generic"), masterKey)
 	saveTemplateYAML(t, paths, composedKeyType, templatestore.TemplateTypeComposed, managerComposedTemplateYAML("manager-base", "manager-composed"), masterKey)
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates("default", masterKey)
+	report, err := NewManager(paths).RegisterKeystoreTemplates("default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -217,14 +218,14 @@ func TestTemplateProviderOwnersKeepSharedProviderUntilLastIdentityRelease(t *tes
 		},
 	}
 
-	aliceReport, err := manager.RegisterKeystoreTemplates("alice", masterKey)
+	aliceReport, err := manager.RegisterKeystoreTemplates("alice", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates(alice) error = %v", err)
 	}
 	if !containsString(aliceReport.GenericActivatedKeyTypes, keyType) {
 		t.Fatalf("alice GenericActivatedKeyTypes = %#v, want %s", aliceReport.GenericActivatedKeyTypes, keyType)
 	}
-	bobReport, err := manager.RegisterKeystoreTemplates("bob", masterKey)
+	bobReport, err := manager.RegisterKeystoreTemplates("bob", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates(bob) error = %v", err)
 	}
@@ -257,7 +258,7 @@ func TestRegisterKeystoreTemplatesSkipsDisabledComposedTemplate(t *testing.T) {
 		t.Fatalf("SetState() error = %v", err)
 	}
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates("default", masterKey)
+	report, err := NewManager(paths).RegisterKeystoreTemplates("default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -401,7 +402,7 @@ func TestRegisterKeystoreTemplatesLifecycleMatrix(t *testing.T) {
 			registered := make(map[string]bool)
 			tt.setup(t, paths, tt.keyType, tt.templateType, masterKey)
 
-			report, err := lifecycleMatrixManager(paths, registered).RegisterKeystoreTemplates("default", masterKey)
+			report, err := lifecycleMatrixManager(paths, registered).RegisterKeystoreTemplates("default", cryptotest.Keyring(t, masterKey))
 			if err != nil {
 				t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 			}
@@ -434,7 +435,7 @@ func TestRegisterKeystoreTemplatesReportsOrphanedTemplateRecords(t *testing.T) {
 		t.Fatalf("Put(composed orphan) error = %v", err)
 	}
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates("default", testTemplateMasterKey())
+	report, err := NewManager(paths).RegisterKeystoreTemplates("default", cryptotest.Keyring(t, testTemplateMasterKey()))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -456,7 +457,7 @@ func TestRegisterKeystoreTemplatesReportsInvalidStateRecord(t *testing.T) {
 		t.Fatalf("WriteFile(corrupt record) error = %v", err)
 	}
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates("default", masterKey)
+	report, err := NewManager(paths).RegisterKeystoreTemplates("default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -496,7 +497,7 @@ func TestRegisterKeystoreTemplatesReportsUnreadableTemplateAsInvalid(t *testing.
 		t.Fatalf("Put(state record) error = %v", err)
 	}
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates("default", masterKey)
+	report, err := NewManager(paths).RegisterKeystoreTemplates("default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -524,7 +525,7 @@ func saveTemplateRecord(t *testing.T, paths storepaths.Paths, keyType string, te
 
 func saveTemplateRecordForIdentity(t *testing.T, paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType, masterKey []byte) {
 	t.Helper()
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, []byte("ignored"), keyType, templateType, masterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, []byte("ignored"), keyType, templateType, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths(%s) error = %v", keyType, err)
 	}
 	writeTemplateStateForIdentityTest(t, paths, identityID, keyType, templateType, keytypestate.StateEnabled)
@@ -532,7 +533,7 @@ func saveTemplateRecordForIdentity(t *testing.T, paths storepaths.Paths, identit
 
 func saveTemplateYAML(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, yamlData []byte, masterKey []byte) {
 	t.Helper()
-	if _, err := templatestore.SaveTemplateForPaths(paths, "default", yamlData, keyType, templateType, masterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, "default", yamlData, keyType, templateType, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths(%s) error = %v", keyType, err)
 	}
 	writeTemplateStateForTest(t, paths, keyType, templateType, keytypestate.StateEnabled)
@@ -748,7 +749,7 @@ func sweepForTest(t *testing.T, paths storepaths.Paths, masterKey []byte) []stri
 	for _, registrar := range registrars {
 		registrarsBySource[registrar.Source] = registrar
 	}
-	return sweepKeyTypeNamespace(active, masterKey, records, registrarsBySource)
+	return sweepKeyTypeNamespace(active, cryptotest.Keyring(t, masterKey), records, registrarsBySource)
 }
 
 func TestSweepKeyTypeNamespaceCleanStore(t *testing.T) {
@@ -828,7 +829,7 @@ func TestSweepKeyTypeNamespaceValidatesDisabledTemplateContent(t *testing.T) {
 	keyType := "test.sweep-disabled-yaml.v1"
 	// Validly encrypted but semantically malformed template: decryption
 	// succeeds, Prepare must reject it.
-	if _, err := templatestore.SaveTemplateForPaths(paths, "default", []byte("not a template"), keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, "default", []byte("not a template"), keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
 	writeTemplateStateForTest(t, paths, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
@@ -873,7 +874,7 @@ func TestSweepKeyTypeNamespaceFlagsTemplatePairedWithCompiledRecord(t *testing.T
 	}
 	// Compiled providers own no template files; a stray one is unaccounted
 	// encrypted content.
-	if _, err := templatestore.SaveTemplateForPaths(paths, "default", []byte("stray"), keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
+	if _, err := templatestore.SaveTemplateForPaths(paths, "default", []byte("stray"), keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
 	}
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -195,7 +196,7 @@ func saveGenericTemplateForTest(t *testing.T, server *Signer, keyType string, ya
 
 	ir := server.registry.Get(auth.DefaultIdentityID)
 	err := ir.WithMasterKey(func(masterKey []byte) error {
-		_, err := templatestore.SaveTemplateForPaths(server.keyPaths, auth.DefaultIdentityID, yamlData, keyType, templatestore.TemplateTypeGeneric, masterKey)
+		_, err := templatestore.SaveTemplateForPaths(server.keyPaths, auth.DefaultIdentityID, yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey))
 		return err
 	})
 	if err != nil {

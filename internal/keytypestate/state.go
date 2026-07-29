@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -312,24 +313,24 @@ func ListEnabledActive(active storepaths.ActivePaths) ([]string, error) {
 
 // RequireUnused scans existing identity keys and returns ErrKeyTypeInUse if any
 // key uses keyType.
-func RequireUnused(paths storepaths.Paths, identityID, keyType string, masterKey []byte) error {
+func RequireUnused(paths storepaths.Paths, identityID, keyType string, kr *apcrypto.Keyring) error {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
 		return err
 	}
-	return RequireUnusedActive(active, keyType, masterKey)
+	return RequireUnusedActive(active, keyType, kr)
 }
 
 // RequireUnusedActive is RequireUnused against resolved active-store paths.
-func RequireUnusedActive(active storepaths.ActivePaths, keyType string, masterKey []byte) error {
+func RequireUnusedActive(active storepaths.ActivePaths, keyType string, kr *apcrypto.Keyring) error {
 	keyType, err := normalizeKeyType(keyType)
 	if err != nil {
 		return err
 	}
-	if len(masterKey) == 0 {
-		return fmt.Errorf("master key is required to verify key type is unused")
+	if kr == nil {
+		return fmt.Errorf("an open keyring is required to verify a key type is unused")
 	}
-	scan, err := keys.ScanKeysDirectoryWithMasterKeyActive(active, masterKey)
+	scan, err := keys.ScanKeysDirectoryWithKeyringActive(active, kr)
 	if err != nil {
 		return err
 	}

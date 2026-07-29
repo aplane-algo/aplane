@@ -5,6 +5,7 @@ package storemut
 
 import (
 	"context"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
@@ -138,7 +139,7 @@ func TestGenerateKeyCreatesPersistedKey(t *testing.T) {
 	defer cleanup()
 
 	svc := New(identityID, paths, nil, nil)
-	result, err := svc.GenerateKeyWithActivatedContext(context.Background(), "ed25519", masterKey, nil, nil)
+	result, err := svc.GenerateKeyWithActivatedContext(context.Background(), "ed25519", cryptotest.Keyring(t, masterKey), nil, nil)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
@@ -162,7 +163,7 @@ func TestImportKeyFromMnemonicCreatesPersistedKey(t *testing.T) {
 	defer cleanup()
 
 	svc := New(identityID, paths, nil, nil)
-	result, err := svc.ImportKeyFromMnemonicWithActivated("ed25519", testMnemonic, masterKey, nil, nil)
+	result, err := svc.ImportKeyFromMnemonicWithActivated("ed25519", testMnemonic, cryptotest.Keyring(t, masterKey), nil, nil)
 	if err != nil {
 		t.Fatalf("ImportKeyFromMnemonic() error = %v", err)
 	}
@@ -196,7 +197,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		salted.Counter,
 		"#pragma version 10\nint 1\nreturn",
 		nil,
-		masterKey,
+		cryptotest.Keyring(t, masterKey),
 	)
 	if err != nil {
 		t.Fatalf("SaveGenericLSig() error = %v", err)

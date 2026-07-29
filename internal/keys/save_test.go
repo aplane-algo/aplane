@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"testing"
@@ -31,7 +32,7 @@ func TestSavePayloadEncrypted(t *testing.T) {
 		t.Fatalf("Selector() error = %v", err)
 	}
 
-	result, err := SavePayload(paths, "default", payload, masterKey)
+	result, err := SavePayload(paths, "default", payload, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
 	}
@@ -82,7 +83,7 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 		t.Fatalf("Selector() error = %v", err)
 	}
 
-	result, err := SavePayload(paths, "default", payload, masterKey)
+	result, err := SavePayload(paths, "default", payload, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
 	}
@@ -143,7 +144,7 @@ func TestSavePayloadDirectoryCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
-	if _, err := SavePayload(paths, "default", NewEd25519Payload(publicKey, privateKey), masterKey); err != nil {
+	if _, err := SavePayload(paths, "default", NewEd25519Payload(publicKey, privateKey), cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SavePayload() error = %v, keys dir should be created automatically", err)
 	}
 	info, err := os.Stat(activeKeysDirForTest(t, paths, "default"))

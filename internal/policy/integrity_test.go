@@ -5,6 +5,7 @@ package policy
 
 import (
 	"errors"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -170,7 +171,7 @@ func TestLoadPolicyIntegritySidecar(t *testing.T) {
 
 func policyIntegrityTestKey(t *testing.T) []byte {
 	t.Helper()
-	key, err := keyringForTest(t, []byte("01234567890123456789012345678901")).PolicyIntegrityKey()
+	key, err := cryptotest.Keyring(t, []byte("01234567890123456789012345678901")).PolicyIntegrityKey()
 	if err != nil {
 		t.Fatalf("PolicyIntegrityKey() error = %v", err)
 	}

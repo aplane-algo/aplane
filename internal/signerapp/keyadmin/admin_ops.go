@@ -6,6 +6,7 @@ package keyadmin
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"maps"
 	"strings"
 
@@ -29,7 +30,7 @@ func (s Service) ListKeys(ir *identity.Runtime) ([]ListKeyInfo, *Error) {
 	keysSnapshot, _, _ := ir.KeySnapshot()
 	keysList := make([]ListKeyInfo, 0, len(keysSnapshot))
 
-	err := ir.WithMasterKey(func(mk []byte) error {
+	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		for addr, keyFile := range keysSnapshot {
 			keyType := "unknown"
 			var templateProvenanceStatus, templateProvenanceNote string
@@ -67,7 +68,7 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 		Address: address,
 		KeyType: "unknown",
 	}
-	err = ir.WithMasterKey(func(mk []byte) error {
+	err = ir.WithKeyring(func(mk *crypto.Keyring) error {
 		info, err := keymgmt.DetectKeyInfoFromFileWithMasterKey(keyFile, mk)
 		if err == nil {
 			result.KeyType = info.Type
@@ -164,7 +165,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 
 	mut := storemut.New(ir.ID(), ir.KeyPaths(), nil, nil)
 	var importResult *keymgmt.ImportResult
-	err := ir.WithMasterKey(func(mk []byte) error {
+	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var importErr error
 		importResult, importErr = mut.ImportKeyFromMnemonicWithActivated(keyType, mnemonic, mk, params, activated)
 		return importErr

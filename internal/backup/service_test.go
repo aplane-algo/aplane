@@ -4,6 +4,7 @@
 package backup
 
 import (
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"os"
 	"path/filepath"
@@ -46,7 +47,7 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, keyringForTest(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 
@@ -127,7 +128,7 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSentry, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.SaveStoredSentryConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, keyringForTest(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredSentryConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -253,7 +254,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, keyringForTest(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 
@@ -358,16 +359,4 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "failed to export") {
 		t.Fatalf("ExportAllKeys() error = %v, want decrypt-failure abort", err)
 	}
-}
-
-// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
-// holds while phase 2 migrates callers from raw keys to the keyring.
-func keyringForTest(t *testing.T, masterKey []byte) *crypto.Keyring {
-	t.Helper()
-	kr, err := crypto.NewKeyringFromKey(masterKey)
-	if err != nil {
-		t.Fatalf("NewKeyringFromKey(): %v", err)
-	}
-	t.Cleanup(kr.Zero)
-	return kr
 }

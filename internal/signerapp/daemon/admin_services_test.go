@@ -4,7 +4,7 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -505,21 +505,9 @@ func TestReplacePolicyFailsWhenLocked(t *testing.T) {
 func assertPolicySidecarVerifies(t *testing.T, ir *identity.Runtime, dataDir string) {
 	t.Helper()
 	if err := ir.WithMasterKey(func(masterKey []byte) error {
-		_, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, ir.ID(), keyringForTest(t, masterKey))
+		_, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, ir.ID(), cryptotest.Keyring(t, masterKey))
 		return err
 	}); err != nil {
 		t.Fatalf("policy sidecar did not verify: %v", err)
 	}
-}
-
-// keyringForTest wraps a raw term-1 key as a keyring, matching what the store
-// holds while phase 2 migrates callers from raw keys to the keyring.
-func keyringForTest(t *testing.T, masterKey []byte) *crypto.Keyring {
-	t.Helper()
-	kr, err := crypto.NewKeyringFromKey(masterKey)
-	if err != nil {
-		t.Fatalf("NewKeyringFromKey(): %v", err)
-	}
-	t.Cleanup(kr.Zero)
-	return kr
 }
