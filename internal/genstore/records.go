@@ -31,6 +31,7 @@ const (
 	sealSchemaVersion     = 2
 
 	generationSealMACDomain = "aplane.generation-seal-mac.v1"
+	inventoryDigestDomain   = "aplane.generation-inventory-digest.v1"
 )
 
 // generationNamespaces are the directories a generation carries. Order is
@@ -85,6 +86,29 @@ type Seal struct {
 	IntegrityTerm  int64            `json:"integrity_term"`
 	Inventory      []InventoryEntry `json:"inventory"`
 	IntegrityMAC   string           `json:"integrity_mac"`
+}
+
+// CanonicalInventoryDigest returns the domain-separated digest used when a
+// rotation snapshot or baseline names an effective generation inventory
+// authority. It is independent of JSON formatting.
+func CanonicalInventoryDigest(inventory []InventoryEntry) (string, error) {
+	if err := validateInventory(inventory); err != nil {
+		return "", err
+	}
+	var encoded []byte
+	encoded = appendSealField(encoded, []byte(inventoryDigestDomain))
+	encoded = appendSealUint64(encoded, uint64(len(inventory)))
+	for _, entry := range inventory {
+		digest, err := decodeCanonicalSHA256(entry.SHA256)
+		if err != nil {
+			return "", fmt.Errorf("inventory %s: %w", entry.Path, err)
+		}
+		encoded = appendSealField(encoded, []byte(entry.Path))
+		encoded = appendSealField(encoded, digest)
+		encoded = appendSealUint64(encoded, uint64(entry.Size))
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // BuildInventory walks the generation's namespaces and pins every regular

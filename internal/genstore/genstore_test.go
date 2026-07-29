@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -173,6 +174,38 @@ func TestSealRoundTripAndTamperDetection(t *testing.T) {
 	}
 	if err := ValidateSealed(gen, testKeyring(t)); err == nil {
 		t.Fatal("ValidateSealed accepted an unsealed extra file")
+	}
+}
+
+func TestCanonicalInventoryDigestIsStableAndDomainSeparated(t *testing.T) {
+	inventory := []InventoryEntry{
+		{Path: "keys/A.key", SHA256: strings.Repeat("1", 64), Size: 10},
+		{Path: "keytypes/example.v1.json", SHA256: strings.Repeat("2", 64), Size: 20},
+	}
+	first, err := CanonicalInventoryDigest(inventory)
+	if err != nil {
+		t.Fatalf("CanonicalInventoryDigest() error = %v", err)
+	}
+	second, err := CanonicalInventoryDigest(slices.Clone(inventory))
+	if err != nil {
+		t.Fatalf("CanonicalInventoryDigest(copy) error = %v", err)
+	}
+	if first != second || len(first) != 64 {
+		t.Fatalf("canonical digest = %q then %q", first, second)
+	}
+	mutated := slices.Clone(inventory)
+	mutated[0].Size++
+	changed, err := CanonicalInventoryDigest(mutated)
+	if err != nil {
+		t.Fatalf("CanonicalInventoryDigest(mutated) error = %v", err)
+	}
+	if changed == first {
+		t.Fatal("canonical digest did not bind entry size")
+	}
+	reordered := slices.Clone(inventory)
+	reordered[0], reordered[1] = reordered[1], reordered[0]
+	if _, err := CanonicalInventoryDigest(reordered); err == nil {
+		t.Fatal("CanonicalInventoryDigest() accepted non-canonical ordering")
 	}
 }
 

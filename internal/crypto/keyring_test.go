@@ -5,7 +5,9 @@ package crypto
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -22,6 +24,11 @@ func newTestKeyring(t *testing.T) *Keyring {
 	}
 	t.Cleanup(kr.Zero)
 	return kr
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func TestKeyringSealOpenRoundTrip(t *testing.T) {
@@ -295,6 +302,65 @@ func TestNewKeyringFromKeyCopiesInput(t *testing.T) {
 	}
 }
 
+func TestNewKeyringFromTermKeyUsesSpecifiedTermAndCopiesInput(t *testing.T) {
+	source := bytes.Repeat([]byte{9}, argon2KeyLen)
+	kr, err := NewKeyringFromTermKey(2, source)
+	if err != nil {
+		t.Fatalf("NewKeyringFromTermKey() error = %v", err)
+	}
+	defer kr.Zero()
+	ZeroBytes(source)
+	if kr.CurrentTerm() != 2 {
+		t.Fatalf("CurrentTerm() = %d, want 2", kr.CurrentTerm())
+	}
+	sealed, err := kr.Seal([]byte("snapshot"), RotationSnapshotContext())
+	if err != nil {
+		t.Fatalf("Seal() error = %v after caller input was zeroed", err)
+	}
+	if term, err := EnvelopeTerm(sealed); err != nil || term != 2 {
+		t.Fatalf("EnvelopeTerm() = %d, %v, want 2, nil", term, err)
+	}
+	if _, err := NewKeyringFromTermKey(0, bytes.Repeat([]byte{1}, argon2KeyLen)); err == nil {
+		t.Fatal("NewKeyringFromTermKey() accepted term zero")
+	}
+}
+
+func TestRotationSnapshotReferencePinsExactBytesAndSize(t *testing.T) {
+	exact := []byte("exact encrypted snapshot")
+	ref, err := NewRotationSnapshotReference(exact)
+	if err != nil {
+		t.Fatalf("NewRotationSnapshotReference() error = %v", err)
+	}
+	if ref.Size != int64(len(exact)) || ref.SHA256 != sha256Hex(exact) {
+		t.Fatalf("reference = %+v, want exact size and digest", ref)
+	}
+	if err := ref.VerifyExact(exact); err != nil {
+		t.Fatalf("VerifyExact(exact) error = %v", err)
+	}
+	mutated := slices.Clone(exact)
+	mutated[0] ^= 1
+	if err := ref.VerifyExact(mutated); err == nil {
+		t.Fatal("VerifyExact() accepted same-size mutated bytes")
+	}
+	if err := ref.VerifyExact(append(slices.Clone(exact), 0)); err == nil {
+		t.Fatal("VerifyExact() accepted wrong-size bytes")
+	}
+	for name, invalid := range map[string]RotationSnapshotReference{
+		"uppercase digest": {SHA256: strings.Repeat("A", sha256HexLength), Size: 1},
+		"zero size":        {SHA256: strings.Repeat("a", sha256HexLength), Size: 0},
+		"oversize": {
+			SHA256: strings.Repeat("a", sha256HexLength),
+			Size:   MaxRotationSnapshotBytes + 1,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := invalid.Validate(); err == nil {
+				t.Fatal("Validate() accepted an invalid snapshot reference")
+			}
+		})
+	}
+}
+
 // ----------------------------------------------------------------------------
 // keyring store
 
@@ -342,6 +408,27 @@ func TestOpenKeyringStoreRejectsWrongPassphrase(t *testing.T) {
 	}
 	if err := VerifyPassphraseWithKeyring([]byte("wrong"), dir); err == nil {
 		t.Fatal("VerifyPassphraseWithKeyring accepted a wrong passphrase")
+	}
+}
+
+func TestOpenKeyringStoreRejectsSymlinkRoot(t *testing.T) {
+	dir := t.TempDir()
+	passphrase := []byte("passphrase")
+	kr, err := CreateKeyringStore(dir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	kr.Zero()
+	root := KeyringPath(dir)
+	target := filepath.Join(dir, "moved-keyring.enc")
+	if err := os.Rename(root, target); err != nil {
+		t.Fatalf("Rename(keyring) error = %v", err)
+	}
+	if err := os.Symlink(target, root); err != nil {
+		t.Fatalf("Symlink(keyring) error = %v", err)
+	}
+	if _, err := OpenKeyringStore(dir, passphrase); err == nil {
+		t.Fatal("OpenKeyringStore() followed a symlinked keyring root")
 	}
 }
 
@@ -755,7 +842,7 @@ func TestValidateKeyringPayloadV2(t *testing.T) {
 		"bad snapshot digest": func(p *keyringPayload) { p.Rotation.SnapshotSHA256 = "not-a-digest" },
 		"zero snapshot size":  func(p *keyringPayload) { p.Rotation.SnapshotSize = 0 },
 		"oversize snapshot": func(p *keyringPayload) {
-			p.Rotation.SnapshotSize = maxRotationSnapshotBytes + 1
+			p.Rotation.SnapshotSize = MaxRotationSnapshotBytes + 1
 		},
 	}
 	for name, mutate := range cases {

@@ -6,7 +6,6 @@ package crypto
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -120,26 +119,9 @@ func OpenKeyringStore(keystoreDir string, passphrase []byte) (*Keyring, error) {
 // follow a symlink to a device or pull an oversized file entirely into memory
 // before the limit could reject it.
 func readKeyringFile(path string) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = file.Close() }()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("inspect keyring: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("keyring %s is not a regular file", path)
-	}
-	// One byte past the limit, so an oversized file is detected rather than
-	// silently truncated into a parse error.
-	encoded, err := io.ReadAll(io.LimitReader(file, maxKeyringBytes+1))
+	encoded, _, err := fsutil.ReadRegularFileLimited(path, maxKeyringBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read keyring: %w", err)
-	}
-	if len(encoded) > maxKeyringBytes {
-		return nil, fmt.Errorf("keyring exceeds size limit %d", maxKeyringBytes)
 	}
 	return encoded, nil
 }

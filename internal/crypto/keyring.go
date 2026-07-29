@@ -6,6 +6,7 @@ package crypto
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -40,8 +41,12 @@ const (
 	// FirstTerm is the term every store is initialized with.
 	FirstTerm = 1
 
-	maxKeyringBytes          = 1 << 20
-	maxRotationSnapshotBytes = 16 << 20
+	maxKeyringBytes = 1 << 20
+
+	// MaxRotationSnapshotBytes bounds the exact encrypted snapshot file
+	// referenced by a pending keyring root. It is deliberately independent
+	// of the much smaller keyring.enc cap.
+	MaxRotationSnapshotBytes = 16 << 20
 )
 
 // keyringFile is the on-disk shape of keyring.enc. The KDF parameters and
@@ -84,6 +89,13 @@ type rotationDescriptor struct {
 	SnapshotSize   int64  `json:"snapshot_size"`
 }
 
+// RotationSnapshotReference is the exact encrypted-file reference carried
+// by a pending keyring root. It contains no inventory or key material.
+type RotationSnapshotReference struct {
+	SHA256 string
+	Size   int64
+}
+
 // Key is []byte rather than a base64 string so the decoder writes term key
 // material into a slice that can be zeroed. A string would be immutable and
 // would survive Zero until the collector ran.
@@ -122,12 +134,25 @@ func NewKeyring() (*Keyring, error) {
 // keyring API, so using it in production would undo the confinement that keeps
 // passphrase derivation inside this package.
 func NewKeyringFromKey(key []byte) (*Keyring, error) {
+	return NewKeyringFromTermKey(FirstTerm, key)
+}
+
+// NewKeyringFromTermKey adopts an existing key as one specified term.
+//
+// Like NewKeyringFromKey, this exists for test fixtures. Production opens a
+// durable keyring. The architecture test forbids production callers outside
+// internal/crypto/cryptotest; accepting an arbitrary term here lets snapshot
+// tests exercise target-term sealing without enabling multi-term roots.
+func NewKeyringFromTermKey(term int64, key []byte) (*Keyring, error) {
+	if term < FirstTerm {
+		return nil, fmt.Errorf("term must be at least %d, got %d", FirstTerm, term)
+	}
 	if len(key) != argon2KeyLen {
 		return nil, fmt.Errorf("term key must be %d bytes, got %d", argon2KeyLen, len(key))
 	}
 	return &Keyring{
-		terms:       map[int64][]byte{FirstTerm: slices.Clone(key)},
-		currentTerm: FirstTerm,
+		terms:       map[int64][]byte{term: slices.Clone(key)},
+		currentTerm: term,
 	}, nil
 }
 
@@ -489,15 +514,54 @@ func validateKeyringPayload(payload *keyringPayload) error {
 				rotation.FromTerm, payload.CurrentTerm,
 			)
 		}
-		if err := validateCanonicalSHA256(rotation.SnapshotSHA256); err != nil {
-			return fmt.Errorf("rotation snapshot_sha256: %w", err)
+		if err := (RotationSnapshotReference{
+			SHA256: rotation.SnapshotSHA256,
+			Size:   rotation.SnapshotSize,
+		}).Validate(); err != nil {
+			return fmt.Errorf("rotation snapshot reference: %w", err)
 		}
-		if rotation.SnapshotSize <= 0 || rotation.SnapshotSize > maxRotationSnapshotBytes {
-			return fmt.Errorf(
-				"rotation snapshot_size %d is outside [1, %d]",
-				rotation.SnapshotSize, maxRotationSnapshotBytes,
-			)
-		}
+	}
+	return nil
+}
+
+// NewRotationSnapshotReference pins the exact encrypted snapshot bytes for a
+// pending root.
+func NewRotationSnapshotReference(exact []byte) (RotationSnapshotReference, error) {
+	ref := RotationSnapshotReference{Size: int64(len(exact))}
+	sum := sha256.Sum256(exact)
+	ref.SHA256 = hex.EncodeToString(sum[:])
+	if err := ref.Validate(); err != nil {
+		return RotationSnapshotReference{}, err
+	}
+	return ref, nil
+}
+
+// Validate enforces the canonical root-reference contract.
+func (ref RotationSnapshotReference) Validate() error {
+	if err := validateCanonicalSHA256(ref.SHA256); err != nil {
+		return fmt.Errorf("snapshot_sha256: %w", err)
+	}
+	if ref.Size <= 0 || ref.Size > MaxRotationSnapshotBytes {
+		return fmt.Errorf(
+			"snapshot_size %d is outside [1, %d]",
+			ref.Size, MaxRotationSnapshotBytes,
+		)
+	}
+	return nil
+}
+
+// VerifyExact proves data is the exact encrypted snapshot file pinned by the
+// root. Callers verify before decrypting or parsing the same buffer.
+func (ref RotationSnapshotReference) VerifyExact(data []byte) error {
+	if err := ref.Validate(); err != nil {
+		return err
+	}
+	if int64(len(data)) != ref.Size {
+		return fmt.Errorf("snapshot size %d does not match referenced size %d", len(data), ref.Size)
+	}
+	sum := sha256.Sum256(data)
+	if digest := hex.EncodeToString(sum[:]); digest != ref.SHA256 {
+		return fmt.Errorf("snapshot digest does not match root reference")
 	}
 	return nil
 }

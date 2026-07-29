@@ -28,6 +28,23 @@ import (
 // before its canonical files are read; unpublished generation staging residue
 // must already have been reconciled and is rejected.
 func Scan(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (*Report, error) {
+	return scan(paths, identityID, kr, false)
+}
+
+// ScanForSnapshot builds the cutover input inventory. The snapshot file is
+// deliberately excluded so a pending root never recursively inventories the
+// record that contains the inventory. A pre-existing baseline remains an
+// input and is classified normally.
+func ScanForSnapshot(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (*Report, error) {
+	return scan(paths, identityID, kr, true)
+}
+
+func scan(
+	paths storepaths.Paths,
+	identityID string,
+	kr *crypto.Keyring,
+	excludeSnapshot bool,
+) (*Report, error) {
 	if kr == nil {
 		return nil, fmt.Errorf("rotation inventory requires an open keyring")
 	}
@@ -36,9 +53,10 @@ func Scan(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (*Repor
 		return nil, fmt.Errorf("rotation inventory CURRENT: %w", err)
 	}
 	scanner := inventoryScanner{
-		paths:      paths,
-		identityID: identityID,
-		kr:         kr,
+		paths:           paths,
+		identityID:      identityID,
+		kr:              kr,
+		excludeSnapshot: excludeSnapshot,
 	}
 	if err := scanner.scanGenerations(current); err != nil {
 		return nil, err
@@ -68,10 +86,11 @@ func Scan(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (*Repor
 }
 
 type inventoryScanner struct {
-	paths      storepaths.Paths
-	identityID string
-	kr         *crypto.Keyring
-	entries    []Entry
+	paths           storepaths.Paths
+	identityID      string
+	kr              *crypto.Keyring
+	excludeSnapshot bool
+	entries         []Entry
 }
 
 func (s *inventoryScanner) scanGenerations(current string) error {
@@ -396,6 +415,9 @@ func (s *inventoryScanner) scanOptionalRotationRecords() error {
 		{s.paths.RotationSnapshotPath(s.identityID), KindRotationSnapshot, crypto.RotationSnapshotContext()},
 		{s.paths.RotationBaselinePath(s.identityID), KindRotationBaseline, crypto.RotationBaselineContext()},
 	} {
+		if s.excludeSnapshot && record.kind == KindRotationSnapshot {
+			continue
+		}
 		present, err := regularFileExists(record.path)
 		if err != nil {
 			return err

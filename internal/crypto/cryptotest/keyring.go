@@ -29,6 +29,18 @@ func Keyring(t *testing.T, masterKey []byte) *crypto.Keyring {
 	return kr
 }
 
+// KeyringAtTerm wraps a known key as a single specified term. It is used to
+// exercise target-term records before persisted multi-term roots are enabled.
+func KeyringAtTerm(t *testing.T, term int64, termKey []byte) *crypto.Keyring {
+	t.Helper()
+	kr, err := crypto.NewKeyringFromTermKey(term, termKey)
+	if err != nil {
+		t.Fatalf("NewKeyringFromTermKey(): %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	return kr
+}
+
 // NewKeyring returns a fresh single-term keyring, zeroed when the test ends.
 func NewKeyring(t *testing.T) *crypto.Keyring {
 	t.Helper()

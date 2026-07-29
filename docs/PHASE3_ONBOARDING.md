@@ -39,6 +39,7 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | Generation seal v2 — pins the exact manifest bytes, records the signing term, and authenticates every security-bearing seal field with a domain-separated MAC | `internal/genstore/records.go` |
 | Policy and node-role sidecar v2 — records the explicit integrity term and rejects unknown fields, trailing JSON, non-canonical MACs, and unauthorized terms | `internal/policy/integrity.go`, `internal/noderole/integrity.go` |
 | K8 inventory foundation — canonical artifact kinds and root-relative paths across generations, recovered batches, deleted archives, integrity documents, and rotation records; exact term envelopes are opened under their logical context before being inventoried | `internal/rotationinventory` |
+| Cutover snapshot foundation — strict `aplane.rotation-snapshot.v1` body, recursive-snapshot exclusion, canonical rollback-authority digest, 16 MiB bounded durable storage, and exact encrypted-file root-reference verification | `internal/rotationinventory/snapshot.go`, `internal/crypto/keyring.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
 What that gives you: exactly one term (term 1), a single atomic root write, and
@@ -48,15 +49,17 @@ explicit current-term authority. Trusted generation operations (rollback,
 retained-parent pruning, and flip-away sealing) require an open keyring;
 pre-unlock reconciliation only uses seal presence to classify unreachable
 attempts and does not treat an unverified seal as a rollback authority. What
-this does **not** give you is any of the transition — no append, no window, no
-authority split, no historical anchors, and no sealed snapshot or completion
-pass. The K8 taxonomy and settled-store scanner are present, but K8 remains a
-pre-append gate until that scanner is wired into snapshot construction,
-historical opening, and the final exact-path/target-authority check.
+this does **not** give you is any enabled transition — no append, no window,
+no authority split, no historical anchors, no root commit referencing a
+snapshot, and no rewrap or completion pass. The K8 taxonomy, settled-store
+scanner, and sealed snapshot primitives are present, but K8 remains a
+pre-append gate until those pieces are wired into root commit, historical
+opening, rewrap, and the final exact-path/target-authority check.
 
 The properties that are proven today are K1–K7 in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against a named test.
-K8 is listed there as not implemented on purpose; it is yours.
+K8 remains listed there as not implemented until all of its pre-append
+enforcement points are connected.
 
 ## Read the model early
 
@@ -125,8 +128,8 @@ contain no empty, `.` or `..` component, never begin with `/`, are unique,
 and sort by raw UTF-8 byte order. Digests cover the exact bytes read from the
 regular file, not a parsed or re-encoded form.
 
-The body is size-limited independently of `keyring.enc`; the implementation
-must choose and test an explicit `maxRotationSnapshotBytes` before append is
+The body is size-limited independently of `keyring.enc`;
+`crypto.MaxRotationSnapshotBytes` is 16 MiB and is tested before append is
 enabled. The root stores only the SHA-256 digest and byte size of the exact
 sealed snapshot file. It never stores the inventory itself.
 
@@ -301,7 +304,7 @@ clarifications:
   referenced size is positive. Historical anchors sort strictly by canonical
   generation ID, and terms sort strictly by ID;
 - the sealed snapshot file has an independent 16 MiB read/reference cap
-  (`maxRotationSnapshotBytes`). This is a cap on the exact encrypted file
+  (`crypto.MaxRotationSnapshotBytes`). This is a cap on the exact encrypted file
   pinned by the root, not part of the 1 MiB `keyring.enc` allowance;
 - keyring and marker decoding rejects unknown fields and trailing JSON before
   the data is used. Required-field and canonical-encoding checks then reject
@@ -373,18 +376,41 @@ context or integrity term where applicable). Its settled-store scanner:
   before opening them, and parses exact manifest/seal buffers together;
 - excludes documented independent state from the inventory.
 
+The same package now implements the strict
+`aplane.rotation-snapshot.v1` plaintext body and target-term envelope:
+
+- `ScanForSnapshot` excludes `rotation.snapshot.enc` itself while retaining a
+  valid pre-existing baseline as an input;
+- the body requires consecutive positive `{from_term,to_term}`, the canonical
+  K8 inventory, and optional rollback cutover metadata naming the current
+  generation, its `clean`/`diverged` decision, and the effective manifest or
+  prior-baseline inventory authority;
+- future-term inputs and recursive snapshot entries are rejected;
+- the effective generation inventory digest is a domain-separated canonical
+  encoding, not JSON bytes;
+- `WriteSnapshot` uses `WriteFileDurable` and returns the exact encrypted
+  size/digest that a future pending root must carry;
+- `ReadReferencedSnapshot` performs a no-follow bounded read, verifies that
+  exact root reference before opening the same buffer under
+  `rotation-snapshot:pending`, and requires the envelope and body to name the
+  root's target transition.
+
+The independent encrypted-file bound is 16 MiB. The v2 keyring payload
+validator uses the same exact-reference contract, but `OpenKeyring` still
+rejects pending and multi-term roots.
+
 `TestScanClassifiesEveryK8DurableClass` creates every applicable class,
 including generation copies, deleted moves, and recovered staging
 publication. Dedicated negative controls cover selector/class substitution,
 unauthorized sidecar terms, mutated sealed plaintext members, and unknown
 in-scope files.
 
-This is intentionally still a foundation. Before append is enabled, the
-rotation snapshot schema must consume this inventory, pending-state scans must
-exclude the root-pinned snapshot from recursive input, seal entries must carry
-the term of each term-bearing member, historical opening must authorize
-anchored retired terms, and completion must compare the fresh canonical path
-set and target authority against the pinned snapshot.
+This is intentionally still a foundation. Before append is enabled, the root
+commit must atomically reference the already-durable snapshot, seal entries
+must carry the term of each term-bearing member, historical opening must
+authorize anchored retired terms, rewrap/resume must consume only pinned
+inputs, and completion must compare the fresh canonical path set and target
+authority against the pinned snapshot.
 
 ### The original blockers
 

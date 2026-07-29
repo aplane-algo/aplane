@@ -7,8 +7,11 @@ deliberately retaining the one-term runtime gate. A second slice adds
 keyring-confined integrity operations, generation seal v2, and explicit-term
 policy/node-role sidecar v2. A third slice adds the canonical K8 artifact
 taxonomy and settled-store scanner with exact-buffer context opening and its
-durable-class mutation matrix. The transition itself remains blocked on the
-remaining snapshot, historical-authority, and completion items recorded below
+durable-class mutation matrix. A fourth slice adds the strict sealed cutover
+snapshot codec, durable bounded storage, canonical rollback-authority digest,
+and exact encrypted-file reference validation, without enabling a pending
+root. The transition itself remains blocked on root-commit integration,
+historical authority, rewrap, baseline, and completion items recorded below
 and in
 [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
 picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.

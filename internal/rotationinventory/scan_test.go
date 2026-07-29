@@ -215,6 +215,24 @@ func TestScanRejectsUnsupportedInScopeArtifact(t *testing.T) {
 	}
 }
 
+func TestScanForSnapshotExcludesSnapshotButPinsExistingBaseline(t *testing.T) {
+	fixture := newInventoryFixture(t)
+	report, err := ScanForSnapshot(fixture.paths, inventoryIdentity, fixture.kr)
+	if err != nil {
+		t.Fatalf("ScanForSnapshot() error = %v", err)
+	}
+	if slices.ContainsFunc(report.Entries, func(entry Entry) bool {
+		return entry.Kind == KindRotationSnapshot
+	}) {
+		t.Fatal("ScanForSnapshot() recursively included rotation.snapshot.enc")
+	}
+	if !slices.ContainsFunc(report.Entries, func(entry Entry) bool {
+		return entry.Kind == KindRotationBaseline
+	}) {
+		t.Fatal("ScanForSnapshot() omitted the pre-existing rotation baseline input")
+	}
+}
+
 func newInventoryFixture(t *testing.T) inventoryFixture {
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())

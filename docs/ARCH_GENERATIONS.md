@@ -173,6 +173,11 @@ and `VerifyBytesAgainstSeal` checks the exact namespace-member buffer before
 it is consumed. Validating a path and then reading it again is not a historical
 integrity boundary.
 
+`CanonicalInventoryDigest` supplies the Phase 3 rollback-authority digest. It
+hashes a domain string and a length-prefixed encoding of the sorted inventory
+entries `(path, decoded SHA-256, size)` rather than JSON bytes, so manifest and
+rotation-baseline authorities use one formatting-independent definition.
+
 ## 6. Strict generation validator
 
 Fail-closed and explicitly **not** the tolerant runtime reload

@@ -1254,6 +1254,10 @@ The scanner covers:
 - optional rotation snapshot and baseline envelopes as classified durable
   records.
 
+`ScanForSnapshot` is the cutover-construction variant. It excludes
+`rotation.snapshot.enc` so the body never recursively inventories itself,
+while a valid baseline that predates cutover remains a classified input.
+
 Encrypted entries are opened from the exact byte buffer that is hashed under
 the logical context derived from their canonical filename or recovered-batch
 metadata. Retained generation buffers are also compared to their seal entry
@@ -1261,11 +1265,58 @@ before opening. `genstore.ParseManifestBytes`, `ParseSealBytes`, and
 `VerifyBytesAgainstSeal` are the buffer-based boundary; historical consumers
 must not validate a path and then consume a second read.
 
-This scanner describes a settled single-term store. Snapshot/root pinning,
-recursive-snapshot exclusion during a pending transition, per-member terms in
-generation seals, anchored retired-term historical opening, and the final
-exact-path/target-authority comparison remain required before the runtime
-multi-term gate may be relaxed.
+#### Sealed Cutover Snapshot
+
+`identities/<identity>/rotation.snapshot.enc` is a term envelope with object
+context `rotation-snapshot:pending`. Its strict plaintext schema is
+`aplane.rotation-snapshot.v1`:
+
+```json
+{
+  "schema": "aplane.rotation-snapshot.v1",
+  "from_term": 1,
+  "to_term": 2,
+  "inventory": [],
+  "rollback": {
+    "generation_id": "gen-1700000000-0123abcd",
+    "decision": "clean",
+    "authority": {
+      "source": "generation-manifest",
+      "entry_count": 0,
+      "inventory_sha256": "<lowercase hex>"
+    }
+  }
+}
+```
+
+`rollback` is omitted when the current generation has no rollback-divergence
+decision to preserve. Its decision is exactly `clean` or `diverged`; authority
+source is exactly `generation-manifest` or `rotation-baseline`. The inventory
+is a required sorted array of the K8 entries above. The snapshot rejects
+future-term inputs and any `rotation-snapshot` entry.
+
+The effective generation inventory digest uses
+`aplane.generation-inventory-digest.v1` plus a length-prefixed canonical
+encoding of entry count and each `(path, decoded SHA-256, size)`. It never
+depends on JSON formatting.
+
+The pending root carries only `snapshot_sha256` and `snapshot_size` for the
+exact encrypted file. `crypto.RotationSnapshotReference` validates and checks
+that pair. The encrypted file has an independent 16 MiB limit and is read via
+the no-follow bounded regular-file reader. Validation order is exact
+size/digest, envelope target term, context-bound open of the same buffer,
+strict plaintext parse, then `{from_term,to_term}` equality with the root.
+
+`WriteSnapshot` durably publishes the encrypted body before returning its
+root reference. This implements the first half of the required commit order;
+no production path yet commits a pending root. `OpenKeyring` still rejects all
+pending and multi-term payloads.
+
+The scanner and snapshot primitives still describe preparation, not an
+enabled transition. Pending-root commit integration, per-member terms in
+generation seals, anchored retired-term historical opening, pinned-input
+rewrap, and the final exact-path/target-authority comparison remain required
+before the runtime multi-term gate may be relaxed.
 
 ### Generation Store (`CURRENT` + `generations/`)
 

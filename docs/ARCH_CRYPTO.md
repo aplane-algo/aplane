@@ -322,6 +322,10 @@ The keyring is the store's cryptographic root, defined in
 - sealed payload fields are `schema`, `current_term`, sorted `terms`, required
   `historical_anchors`, and optional `rotation`; this release writes the v2
   shape with one term, an empty anchor array, and no pending rotation
+- a rotation descriptor's snapshot size/digest uses
+  `RotationSnapshotReference`, which pins the exact encrypted snapshot under
+  an independent 16 MiB cap; the payload validator enforces this shape even
+  though the runtime still rejects pending and multi-term roots
 - a successful unwrap is the passphrase check; there is no separate verifier
 - the KEK exists only inside seal and open, and is zeroed before either returns
 
@@ -397,7 +401,9 @@ an entry lifted from another recovered batch fails to decrypt.
 `internal/rotationinventory` uses those contexts to open the same encrypted
 buffer it hashes for the Phase 3 K8 inventory. `crypto.EnvelopeTerm` exposes
 the envelope header for classification only; it is not authority without that
-context-bound open.
+context-bound open. Snapshot recovery first verifies the pending root's exact
+encrypted-file size and digest, then opens that same bounded, no-follow buffer
+under `rotation-snapshot:pending`.
 
 Unlock opens the keyring once and reuses its term keys for key and template
 decryption until lock.

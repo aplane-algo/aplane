@@ -68,10 +68,10 @@ func TestKeyDerivationLivesOnlyInCrypto(t *testing.T) {
 // TestRawTermKeysAreNotAdoptedOutsideTests proves nothing in production wraps
 // bytes it derived itself as a keyring.
 //
-// NewKeyringFromKey has to stay exported for test fixtures to build a keyring
-// from a known key. It is also the one remaining way to place arbitrary bytes
-// behind the keyring API, so production use of it would undo the confinement
-// the test above enforces.
+// NewKeyringFromKey and NewKeyringFromTermKey have to stay exported for test
+// fixtures to build a keyring from a known key. They are also the remaining
+// ways to place arbitrary bytes behind the keyring API, so production use
+// would undo the confinement the test above enforces.
 func TestRawTermKeysAreNotAdoptedOutsideTests(t *testing.T) {
 	forEachProductionFile(t, func(rel string, parsed *ast.File) {
 		switch {
@@ -82,7 +82,9 @@ func TestRawTermKeysAreNotAdoptedOutsideTests(t *testing.T) {
 		}
 		ast.Inspect(parsed, func(node ast.Node) bool {
 			selector, ok := node.(*ast.SelectorExpr)
-			if !ok || selector.Sel.Name != "NewKeyringFromKey" {
+			if !ok ||
+				(selector.Sel.Name != "NewKeyringFromKey" &&
+					selector.Sel.Name != "NewKeyringFromTermKey") {
 				return true
 			}
 			t.Errorf(
