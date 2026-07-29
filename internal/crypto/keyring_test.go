@@ -538,14 +538,14 @@ func TestKeyringHeaderAADIsUnambiguous(t *testing.T) {
 	}
 }
 
-// TestOpenKeyringRejectsExcessiveKDFParameters proves the root cannot ask for
-// unbounded work.
+// TestOpenKeyringRejectsForeignKDFParameters proves the root cannot compel
+// work this release did not choose.
 //
 // The KDF parameters are read before anything authenticates them — the KEK
-// has to exist before the AEAD can verify the header — so the header binding
-// is no defence here. A damaged or edited root naming a huge memory cost
-// would otherwise hang or OOM a daemon that also serves every other identity.
-func TestOpenKeyringRejectsExcessiveKDFParameters(t *testing.T) {
+// has to exist before the AEAD can verify the header — so whatever OpenKeyring
+// accepts is work an edited root can demand. Only this release's own tuple is
+// accepted, which leaves no budget to spend.
+func TestOpenKeyringRejectsForeignKDFParameters(t *testing.T) {
 	passphrase := []byte("keyring-kdf-ceilings")
 	kr, err := NewKeyring()
 	if err != nil {
@@ -561,9 +561,13 @@ func TestOpenKeyringRejectsExcessiveKDFParameters(t *testing.T) {
 		field string
 		value any
 	}{
-		"kdf_time above ceiling":    {"kdf_time", maxKDFTime + 1},
-		"kdf_memory above ceiling":  {"kdf_memory", maxKDFMemory + 1},
-		"kdf_threads above ceiling": {"kdf_threads", maxKDFThreads + 1},
+		// Raised: the work an edited root could compel.
+		"kdf_time raised":    {"kdf_time", argon2Time + 1},
+		"kdf_memory raised":  {"kdf_memory", argon2Memory * 16},
+		"kdf_threads raised": {"kdf_threads", argon2Threads + 1},
+		// Lowered: weakening the KDF is equally not this release's tuple.
+		"kdf_time lowered":   {"kdf_time", argon2Time - 1},
+		"kdf_memory lowered": {"kdf_memory", argon2Memory / 2},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -579,10 +583,10 @@ func TestOpenKeyringRejectsExcessiveKDFParameters(t *testing.T) {
 			opened, err := OpenKeyring(edited, passphrase)
 			if err == nil {
 				opened.Zero()
-				t.Fatalf("OpenKeyring() accepted %s beyond its ceiling", tc.field)
+				t.Fatalf("OpenKeyring() accepted a foreign %s", tc.field)
 			}
-			if !strings.Contains(err.Error(), "exceeds the limit") {
-				t.Fatalf("OpenKeyring() error = %v, want a ceiling rejection", err)
+			if !strings.Contains(err.Error(), "not this release's") {
+				t.Fatalf("OpenKeyring() error = %v, want a KDF tuple rejection", err)
 			}
 		})
 	}
@@ -622,5 +626,71 @@ func TestOpenKeyringRejectsMultipleTerms(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "exactly one") {
 		t.Fatalf("OpenKeyring() error = %v, want a single-term rejection", err)
+	}
+}
+
+// TestOpenKeyringZeroesRejectedTermKeys proves a keyring this release refuses
+// does not leave its term keys on the heap.
+//
+// The rejection paths sit after the decode: by the time OpenKeyring decides a
+// root has too many terms or names the wrong one, the decoder has already
+// written key material into the payload. Those slices have to be zeroed on
+// every exit, not only the successful one.
+func TestOpenKeyringZeroesRejectedTermKeys(t *testing.T) {
+	passphrase := []byte("keyring-rejected-cleanup")
+	kr, err := NewKeyring()
+	if err != nil {
+		t.Fatalf("NewKeyring(): %v", err)
+	}
+	defer kr.Zero()
+	second, err := randomBytes(argon2KeyLen)
+	if err != nil {
+		t.Fatalf("randomBytes(): %v", err)
+	}
+
+	cases := map[string]*Keyring{
+		"multi-term": {
+			terms:       map[int][]byte{FirstTerm: kr.terms[FirstTerm], FirstTerm + 1: second},
+			currentTerm: FirstTerm + 1,
+		},
+		"wrong term number": {
+			terms:       map[int][]byte{FirstTerm + 5: second},
+			currentTerm: FirstTerm + 5,
+		},
+	}
+	for name, forged := range cases {
+		t.Run(name, func(t *testing.T) {
+			sealed, err := SealKeyring(forged, passphrase)
+			if err != nil {
+				t.Fatalf("SealKeyring(): %v", err)
+			}
+
+			var decoded [][]byte
+			keyringDecodeHook = func(terms []sealedTerm) {
+				for i := range terms {
+					decoded = append(decoded, terms[i].Key)
+				}
+			}
+			defer func() { keyringDecodeHook = nil }()
+
+			opened, err := OpenKeyring(sealed, passphrase)
+			if err == nil {
+				opened.Zero()
+				t.Fatal("OpenKeyring() accepted a keyring this release must refuse")
+			}
+			if len(decoded) == 0 {
+				t.Fatal("decode hook never fired; the test is not reaching the payload")
+			}
+			for i, key := range decoded {
+				if len(key) == 0 {
+					t.Fatalf("decoded term %d was empty; nothing was proved", i)
+				}
+				for _, b := range key {
+					if b != 0 {
+						t.Fatalf("decoded term %d survived rejection unzeroed", i)
+					}
+				}
+			}
+		})
 	}
 }

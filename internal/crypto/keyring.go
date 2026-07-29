@@ -31,18 +31,6 @@ const (
 	// other's.
 	keyringAADDomain = "aplane.keyring-file.v1"
 
-	// KDF ceilings bound the work a root file can ask for. The parameters
-	// are recorded per file so they can be raised without a code change, but
-	// they are read before anything authenticates them: the header binding
-	// cannot help here, because the KEK must be derived before the AEAD can
-	// verify anything. An unbounded value in a damaged or edited root would
-	// otherwise hang or OOM a daemon that serves every other identity too.
-	//
-	// The ceilings sit far above the current tuple (t=2, 64 MiB, p=4) so
-	// future hardening does not need to move them.
-	maxKDFTime    = 16
-	maxKDFMemory  = 1 << 20 // 1 GiB, expressed in KiB as Argon2 takes it
-	maxKDFThreads = 16
 	// FirstTerm is the term every store is initialized with.
 	FirstTerm = 1
 
@@ -335,9 +323,22 @@ func OpenKeyring(encoded, passphrase []byte) (*Keyring, error) {
 	}
 	defer ZeroBytes(plaintext)
 
+	// Registered before the decode, not after the validation below: an
+	// authenticated payload this release refuses — a multi-term root from a
+	// later one — has already had its term keys written into these slices,
+	// and a partial decode of malformed JSON can populate them too. Every
+	// exit from here on zeroes them.
 	var payload keyringPayload
+	defer func() {
+		for i := range payload.Terms {
+			ZeroBytes(payload.Terms[i].Key)
+		}
+	}()
 	if err := json.Unmarshal(plaintext, &payload); err != nil {
 		return nil, fmt.Errorf("parse sealed keyring: %w", err)
+	}
+	if keyringDecodeHook != nil {
+		keyringDecodeHook(payload.Terms)
 	}
 	if payload.Schema != KeyringSchema {
 		return nil, fmt.Errorf("unsupported sealed keyring schema %q", payload.Schema)
@@ -363,9 +364,6 @@ func OpenKeyring(encoded, passphrase []byte) (*Keyring, error) {
 	kr := &Keyring{terms: make(map[int][]byte, len(payload.Terms)), currentTerm: payload.CurrentTerm}
 	for i := range payload.Terms {
 		t := &payload.Terms[i]
-		// The decoder wrote these bytes into a slice we own, so they can be
-		// zeroed once copied into the keyring.
-		defer ZeroBytes(t.Key)
 		if len(t.Key) != argon2KeyLen {
 			kr.Zero()
 			return nil, fmt.Errorf("term %d key has wrong length %d", t.Term, len(t.Key))
@@ -375,20 +373,31 @@ func OpenKeyring(encoded, passphrase []byte) (*Keyring, error) {
 	return kr, nil
 }
 
-// checkKDFParams rejects a root whose KDF parameters are absent or beyond
-// what this release is willing to spend, before any of them reach Argon2.
+// keyringDecodeHook is a test seam. When set it receives the decoded terms
+// immediately after unmarshal and before any validation, so a test can hold
+// the exact slices the decoder wrote and check they were zeroed on every exit
+// path. Production leaves it nil.
+var keyringDecodeHook func([]sealedTerm)
+
+// checkKDFParams requires the exact tuple this release writes, before any of
+// it reaches Argon2.
+//
+// These values are read before anything authenticates them — the KEK has to
+// exist before the AEAD can verify the header — so whatever this accepts is
+// work an edited root can compel. Ceilings would still leave a budget an
+// attacker could spend, and there is nothing to spend it on: a store is
+// readable only by the release that initialized it, so any tuple other than
+// this one is corruption or tampering, never a store written elsewhere.
+//
+// Changing argon2Time, argon2Memory, or argon2Threads therefore means bumping
+// KeyringFileVersion and the keystore marker version with them. Without that,
+// every store the previous build wrote stops opening.
 func checkKDFParams(kdfTime, kdfMemory uint32, kdfThreads uint8) error {
-	if kdfTime == 0 || kdfMemory == 0 || kdfThreads == 0 {
-		return fmt.Errorf("keyring has incomplete KDF parameters")
-	}
-	if kdfTime > maxKDFTime {
-		return fmt.Errorf("keyring kdf_time %d exceeds the limit %d", kdfTime, maxKDFTime)
-	}
-	if kdfMemory > maxKDFMemory {
-		return fmt.Errorf("keyring kdf_memory %d exceeds the limit %d", kdfMemory, maxKDFMemory)
-	}
-	if kdfThreads > maxKDFThreads {
-		return fmt.Errorf("keyring kdf_threads %d exceeds the limit %d", kdfThreads, maxKDFThreads)
+	if kdfTime != argon2Time || kdfMemory != argon2Memory || kdfThreads != argon2Threads {
+		return fmt.Errorf(
+			"keyring KDF parameters (%d, %d, %d) are not this release's (%d, %d, %d)",
+			kdfTime, kdfMemory, kdfThreads, argon2Time, argon2Memory, argon2Threads,
+		)
 	}
 	return nil
 }

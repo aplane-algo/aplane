@@ -1140,9 +1140,11 @@ AES-256-GCM under the passphrase-derived key-encryption key.
 Behavior:
 
 - unlock derives the KEK with the stored KDF parameters and unwraps the term
-  set; a root whose KDF parameters are missing, zero, or beyond this release's
-  ceilings is rejected before derivation, because the KEK must exist before
-  the AEAD can authenticate anything
+  set; only this release's own KDF tuple is accepted, checked before
+  derivation because the KEK must exist before the AEAD can authenticate
+  anything, so an edited root cannot compel work this release did not choose
+- changing the KDF tuple requires bumping this file version and the keystore
+  marker version with it
 - the root is read as a regular file under a size limit, so an oversized or
   non-regular path is refused rather than loaded
 - the header travels in the AEAD's authenticated data alongside the sealed
@@ -1150,6 +1152,8 @@ Behavior:
 - exactly one term is accepted; a multi-term root belongs to a release with
   retiring terms and the authority split that governs them, and relaxing this
   requires bumping this file version and the marker together
+- a refused root's decoded term keys are zeroed on every exit path, not only
+  the successful one
 - the successful unwrap is the passphrase check; there is no separate verifier
 - the KEK is zeroed before seal and open return, and is never cached
 - a passphrase change replaces this file in one atomic write
