@@ -6,6 +6,8 @@ package crypto
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -284,5 +286,159 @@ func TestNewKeyringFromKeyCopiesInput(t *testing.T) {
 	// disturb it.
 	if _, err := kr.Seal([]byte("x"), AccountKeyContext("ADDR")); err != nil {
 		t.Fatalf("Seal() error = %v after the caller zeroed its input", err)
+	}
+}
+
+// ----------------------------------------------------------------------------
+// keyring store
+
+func TestCreateAndOpenKeyringStore(t *testing.T) {
+	dir := t.TempDir()
+	passphrase := []byte("store-passphrase")
+
+	created, err := CreateKeyringStore(dir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	ctx := AccountKeyContext("ADDR")
+	sealed, err := created.Seal([]byte("secret"), ctx)
+	if err != nil {
+		t.Fatalf("Seal() error = %v", err)
+	}
+	created.Zero()
+
+	if !KeyringExistsIn(dir) {
+		t.Fatal("KeyringExistsIn() = false after CreateKeyringStore")
+	}
+	opened, err := OpenKeyringStore(dir, passphrase)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore() error = %v", err)
+	}
+	defer opened.Zero()
+	plain, err := opened.Open(sealed, ctx)
+	if err != nil || string(plain) != "secret" {
+		t.Fatalf("Open() = %q, %v", plain, err)
+	}
+}
+
+func TestOpenKeyringStoreRejectsWrongPassphrase(t *testing.T) {
+	dir := t.TempDir()
+	kr, err := CreateKeyringStore(dir, []byte("right"))
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	kr.Zero()
+	if _, err := OpenKeyringStore(dir, []byte("wrong")); err == nil {
+		t.Fatal("OpenKeyringStore() accepted a wrong passphrase")
+	}
+	if err := VerifyPassphraseWithKeyring([]byte("right"), dir); err != nil {
+		t.Fatalf("VerifyPassphraseWithKeyring(correct) error = %v", err)
+	}
+	if err := VerifyPassphraseWithKeyring([]byte("wrong"), dir); err == nil {
+		t.Fatal("VerifyPassphraseWithKeyring accepted a wrong passphrase")
+	}
+}
+
+// TestKeyringMarkerCarriesNoSecrets pins that the version gate is inert: all
+// key material and KDF state live in the root, so the marker cannot disagree
+// with it.
+func TestKeyringMarkerCarriesNoSecrets(t *testing.T) {
+	dir := t.TempDir()
+	kr, err := CreateKeyringStore(dir, []byte("passphrase"))
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	kr.Zero()
+
+	data, err := os.ReadFile(filepath.Join(dir, keystoreMetaFile))
+	if err != nil {
+		t.Fatalf("ReadFile(marker) error = %v", err)
+	}
+	var marker map[string]any
+	if err := json.Unmarshal(data, &marker); err != nil {
+		t.Fatalf("Unmarshal(marker) error = %v", err)
+	}
+	if marker["version"] != float64(KeyringKeystoreMetadataVersion) ||
+		marker["layout"] != KeystoreLayoutKeyringV1 {
+		t.Fatalf("marker = %v, want version %d layout %q",
+			marker, KeyringKeystoreMetadataVersion, KeystoreLayoutKeyringV1)
+	}
+	for _, forbidden := range []string{"salt", "check", "kdf_time", "kdf_memory", "kdf_threads"} {
+		if _, present := marker[forbidden]; present {
+			t.Fatalf("marker carries %q; secrets and KDF state belong in the root: %v", forbidden, marker)
+		}
+	}
+}
+
+func TestOpenKeyringStoreRejectsOtherVersions(t *testing.T) {
+	dir := t.TempDir()
+	kr, err := CreateKeyringStore(dir, []byte("passphrase"))
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	kr.Zero()
+
+	markerPath := filepath.Join(dir, keystoreMetaFile)
+	for _, tc := range []struct {
+		name    string
+		marker  string
+		wantErr string
+	}{
+		{"older version", `{"version":3,"layout":"generations/v1"}`, "only reads stores it initialized"},
+		{"unknown layout", `{"version":4,"layout":"invented/v9"}`, "unsupported layout"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(markerPath, []byte(tc.marker), 0o600); err != nil {
+				t.Fatalf("WriteFile(marker) error = %v", err)
+			}
+			_, err := OpenKeyringStore(dir, []byte("passphrase"))
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("OpenKeyringStore() error = %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestCreateKeyringStoreRefusesExisting(t *testing.T) {
+	dir := t.TempDir()
+	kr, err := CreateKeyringStore(dir, []byte("passphrase"))
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	kr.Zero()
+	if _, err := CreateKeyringStore(dir, []byte("passphrase")); err == nil {
+		t.Fatal("CreateKeyringStore() overwrote an existing keyring")
+	}
+}
+
+// TestWriteKeyringIsPassphraseChange pins that changing the passphrase is one
+// file write: the same terms, resealed, with nothing else to update.
+func TestWriteKeyringIsPassphraseChange(t *testing.T) {
+	dir := t.TempDir()
+	old, err := CreateKeyringStore(dir, []byte("old-passphrase"))
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	ctx := KeyTypeTemplateContext("example-v1")
+	sealed, err := old.Seal([]byte("template"), ctx)
+	if err != nil {
+		t.Fatalf("Seal() error = %v", err)
+	}
+	if err := WriteKeyring(dir, old, []byte("new-passphrase")); err != nil {
+		t.Fatalf("WriteKeyring() error = %v", err)
+	}
+	old.Zero()
+
+	if _, err := OpenKeyringStore(dir, []byte("old-passphrase")); err == nil {
+		t.Fatal("the old passphrase still opens the store after a passphrase change")
+	}
+	reopened, err := OpenKeyringStore(dir, []byte("new-passphrase"))
+	if err != nil {
+		t.Fatalf("OpenKeyringStore(new) error = %v", err)
+	}
+	defer reopened.Zero()
+	// Data is untouched by a passphrase change: same terms, new wrapping.
+	if plain, err := reopened.Open(sealed, ctx); err != nil || string(plain) != "template" {
+		t.Fatalf("Open() = %q, %v; data should survive a passphrase change unchanged", plain, err)
 	}
 }
