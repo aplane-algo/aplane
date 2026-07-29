@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
 type Logger func(format string, args ...any)
@@ -101,7 +102,12 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 
 	logf(opts.Logf, "phase 1: creating new encrypted files")
 	for _, managedFile := range managedFiles {
-		pf, ok, err := createPendingEncryptedFile(managedFile.Path, oldMasterKey, newMasterKey, managedFile.Name, opts.Logf)
+		credentialContext, err := managedFile.Context()
+		if err != nil {
+			cleanupPendingNewFiles(pendingFiles)
+			return result, err
+		}
+		pf, ok, err := createPendingEncryptedFile(managedFile.Path, credentialContext, oldMasterKey, newMasterKey, managedFile.Name, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -114,7 +120,12 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 
 	for _, templatePath := range templateFiles {
 		templateName := filepath.Base(templatePath)
-		pf, ok, err := createPendingEncryptedFile(templatePath, oldMasterKey, newMasterKey, templateName, opts.Logf)
+		templateContext, err := templatestore.TemplateContextForFile(templatePath)
+		if err != nil {
+			cleanupPendingNewFiles(pendingFiles)
+			return result, err
+		}
+		pf, ok, err := createPendingEncryptedFile(templatePath, templateContext, oldMasterKey, newMasterKey, templateName, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -125,9 +136,9 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		}
 	}
 
-	for _, recoveredPath := range recoveredFiles {
-		label := filepath.Base(filepath.Dir(recoveredPath)) + "/" + filepath.Base(recoveredPath)
-		pf, ok, err := createPendingEncryptedFile(recoveredPath, oldMasterKey, newMasterKey, label, opts.Logf)
+	for _, target := range recoveredFiles {
+		label := filepath.Base(filepath.Dir(target.Path)) + "/" + filepath.Base(target.Path)
+		pf, ok, err := createPendingEncryptedFile(target.Path, target.Context, oldMasterKey, newMasterKey, label, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -214,7 +225,7 @@ func scanTargets(
 	paths storepaths.Paths,
 	identityID string,
 	masterKey []byte,
-) ([]keys.ManagedCredentialFile, []string, []string, error) {
+) ([]keys.ManagedCredentialFile, []string, []recovered.RotationTarget, error) {
 	// Rotation requires generation quiescence: it rewrites only what it can
 	// see through the resolved current namespaces, so a retained prior
 	// generation would silently keep material encrypted under the old
@@ -280,7 +291,8 @@ func requireGenerationQuiescence(paths storepaths.Paths, identityID string) erro
 func logTargets(
 	log Logger,
 	managedFiles []keys.ManagedCredentialFile,
-	templateFiles, recoveredFiles []string,
+	templateFiles []string,
+	recoveredFiles []recovered.RotationTarget,
 ) {
 	if len(managedFiles) == 0 && len(templateFiles) == 0 && len(recoveredFiles) == 0 {
 		logf(log, "no key, template, or recovered batch files found in keystore")
@@ -323,10 +335,14 @@ func cleanupPendingOldFiles(pendingFiles []pendingFile) {
 	}
 }
 
-// rewriteEncryptedFile re-encrypts path under the new master key, writing
+// rewriteEncryptedFile re-encrypts path under the new term key, writing
 // path.new. display is the human-readable name used in error messages (the
 // path itself, or a caller-supplied label).
-func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKey []byte) error {
+//
+// ctx is the object the file holds. Rotation changes the key, never the
+// identity, so the same context opens the old envelope and seals the new one —
+// which also means a rotation cannot silently relabel a file.
+func rewriteEncryptedFile(path, display string, ctx crypto.ObjectContext, oldMasterKey []byte, newMasterKey []byte) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", display, err)
@@ -335,11 +351,11 @@ func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKe
 		return nil
 	}
 
-	plaintext, err := crypto.DecryptWithMasterKey(data, oldMasterKey)
+	plaintext, err := crypto.DecryptWithTermKey(data, oldMasterKey, crypto.FirstTerm, ctx)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt %s: %w", display, err)
 	}
-	newData, err := crypto.EncryptWithMasterKey(plaintext, newMasterKey)
+	newData, err := crypto.EncryptWithTermKey(plaintext, newMasterKey, crypto.FirstTerm, ctx)
 	crypto.ZeroBytes(plaintext)
 	if err != nil {
 		return fmt.Errorf("failed to re-encrypt %s: %w", display, err)
@@ -362,7 +378,7 @@ func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKe
 	if err != nil {
 		return fmt.Errorf("failed to verify %s.new: %w", display, err)
 	}
-	verifyPlaintext, err := crypto.DecryptWithMasterKey(verifyData, newMasterKey)
+	verifyPlaintext, err := crypto.DecryptWithTermKey(verifyData, newMasterKey, crypto.FirstTerm, ctx)
 	if err != nil {
 		return fmt.Errorf("verification failed for %s.new: %w", display, err)
 	}
@@ -370,7 +386,7 @@ func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKe
 	return nil
 }
 
-func createPendingEncryptedFile(path string, oldMasterKey []byte, newMasterKey []byte, label string, log Logger) (*pendingFile, bool, error) {
+func createPendingEncryptedFile(path string, ctx crypto.ObjectContext, oldMasterKey []byte, newMasterKey []byte, label string, log Logger) (*pendingFile, bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to read %s: %w", label, err)
@@ -379,7 +395,7 @@ func createPendingEncryptedFile(path string, oldMasterKey []byte, newMasterKey [
 		logf(log, "skipping %s (not encrypted)", label)
 		return nil, false, nil
 	}
-	if err := rewriteEncryptedFile(path, label, oldMasterKey, newMasterKey); err != nil {
+	if err := rewriteEncryptedFile(path, label, ctx, oldMasterKey, newMasterKey); err != nil {
 		return nil, false, err
 	}
 

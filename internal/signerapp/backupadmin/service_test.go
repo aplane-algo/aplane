@@ -91,7 +91,9 @@ func TestBackupIdentityCapturesSourceApprovalAndCustomGenesisMappings(t *testing
 	address, keyJSON := keystest.Ed25519KeyJSON(t)
 	defer crypto.ZeroBytes(keyJSON)
 	if err := ir.WithMasterKey(func(masterKey []byte) error {
-		encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
+		encrypted, err := crypto.EncryptWithTermKey(
+			keyJSON, masterKey, crypto.FirstTerm, crypto.AccountKeyContext(address),
+		)
 		if err != nil {
 			return err
 		}

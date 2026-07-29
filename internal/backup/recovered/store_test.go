@@ -223,9 +223,12 @@ func TestLoadRecoveredEntryRejectsCrossBatchSubstitution(t *testing.T) {
 	if err := os.WriteFile(firstEntryPath, substitute, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(substitute) error = %v", err)
 	}
+	// The entry's restore ID is bound into the envelope's authenticated data,
+	// so an entry lifted from another batch fails to open at all. The digest
+	// check behind it stays as defence in depth for a same-batch swap.
 	if _, err := LoadEntry(paths, "default", first.RestoreID, firstMeta, masterKey); err == nil ||
-		!strings.Contains(err.Error(), "digest mismatch") {
-		t.Fatalf("LoadEntry(substituted) error = %v, want digest mismatch", err)
+		!strings.Contains(err.Error(), "failed to decrypt recovered-entry:"+first.RestoreID) {
+		t.Fatalf("LoadEntry(substituted) error = %v, want an authentication failure", err)
 	}
 }
 
@@ -440,9 +443,11 @@ func TestLoadBatchRejectsRestoreIDMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(batch) error = %v", err)
 	}
-	plaintext, err := crypto.DecryptWithMasterKey(encrypted, masterKey)
+	plaintext, err := crypto.DecryptWithTermKey(
+		encrypted, masterKey, crypto.FirstTerm, crypto.RecoveredBatchContext(batch.RestoreID),
+	)
 	if err != nil {
-		t.Fatalf("DecryptWithMasterKey(batch) error = %v", err)
+		t.Fatalf("DecryptWithTermKey(batch) error = %v", err)
 	}
 	defer crypto.ZeroBytes(plaintext)
 	var stored Batch
@@ -455,9 +460,13 @@ func TestLoadBatchRejectsRestoreIDMismatch(t *testing.T) {
 		t.Fatalf("Marshal(batch) error = %v", err)
 	}
 	defer crypto.ZeroBytes(reencoded)
-	reEncrypted, err := crypto.EncryptWithMasterKey(reencoded, masterKey)
+	// Sealed under the batch's on-disk identity, so the payload's edited
+	// restore ID is what the load path has to catch.
+	reEncrypted, err := crypto.EncryptWithTermKey(
+		reencoded, masterKey, crypto.FirstTerm, crypto.RecoveredBatchContext(batch.RestoreID),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey(batch) error = %v", err)
+		t.Fatalf("EncryptWithTermKey(batch) error = %v", err)
 	}
 	if err := os.WriteFile(path, reEncrypted, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(batch) error = %v", err)

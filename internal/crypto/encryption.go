@@ -108,13 +108,6 @@ const (
 	masterSaltLen    = 32
 )
 
-// EncryptedDataMasterKey stores encrypted content using master key (no per-file salt)
-type EncryptedDataMasterKey struct {
-	EnvelopeVersion int    `json:"envelope_version"` // Always 1 for master key encryption
-	Nonce           string `json:"nonce"`            // Base64-encoded nonce for AES-GCM
-	Ciphertext      string `json:"ciphertext"`       // Base64-encoded encrypted data
-}
-
 // DeriveMasterKey derives a key from passphrase and salt using current default parameters.
 // Uses Argon2id (memory-hard, GPU-resistant).
 // For keystores, prefer VerifyAndDeriveMasterKey which reads stored KDF parameters.
@@ -128,64 +121,40 @@ func deriveMasterKeyParams(passphrase, salt []byte, time, memory uint32, threads
 	return argon2.IDKey(passphrase, salt, time, memory, threads, argon2KeyLen)
 }
 
-// EncryptWithMasterKey encrypts plaintext using a pre-derived master key.
-// Returns envelope_version 1 format (no per-file salt, uses master key).
-func EncryptWithMasterKey(plaintext []byte, masterKey []byte) ([]byte, error) {
-	gcm, err := newGCM(masterKey)
-	if err != nil {
+// EncryptWithTermKey seals plaintext under one keyring term's key, binding
+// the term and the object's logical identity into the AEAD's authenticated
+// data. Returns envelope_version 3.
+//
+// The context is required, not optional: it is what stops a file from being
+// opened as a different object. Because it is a parameter rather than a
+// setting, an encrypt that does not name its object cannot compile.
+func EncryptWithTermKey(plaintext, termKey []byte, term int, ctx ObjectContext) ([]byte, error) {
+	if err := ctx.validate(); err != nil {
 		return nil, err
 	}
-
-	nonce, ciphertext, err := sealWithRandomNonce(gcm, plaintext)
-	if err != nil {
-		return nil, err
+	if term <= 0 {
+		return nil, fmt.Errorf("sealing %s requires a term", ctx)
 	}
-
-	encrypted := EncryptedDataMasterKey{
-		EnvelopeVersion: 1,
-		Nonce:           base64.StdEncoding.EncodeToString(nonce),
-		Ciphertext:      base64.StdEncoding.EncodeToString(ciphertext),
-	}
-
-	return json.MarshalIndent(encrypted, "", "  ")
+	return sealUnderTerm(plaintext, termKey, term, ctx)
 }
 
-// DecryptWithMasterKey decrypts ciphertext using a pre-derived master key.
-// Only supports envelope_version 1 (master key encryption).
-func DecryptWithMasterKey(encryptedJSON []byte, masterKey []byte) ([]byte, error) {
-	if err := checkEnvelopeVersion(encryptedJSON, 1, "master key decryption"); err != nil {
+// DecryptWithTermKey opens a term envelope that must name term and hold the
+// object ctx identifies. A wrong key, an edited term header, and an envelope
+// belonging to a different object all fail the same way.
+func DecryptWithTermKey(encryptedJSON, termKey []byte, term int, ctx ObjectContext) ([]byte, error) {
+	if err := ctx.validate(); err != nil {
 		return nil, err
 	}
-
-	var encrypted EncryptedDataMasterKey
-	if err := json.Unmarshal(encryptedJSON, &encrypted); err != nil {
-		return nil, fmt.Errorf("failed to parse encrypted data: %w", err)
-	}
-
-	nonce, err := base64.StdEncoding.DecodeString(encrypted.Nonce)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode nonce: %w", err)
-	}
-
-	ciphertext, err := base64.StdEncoding.DecodeString(encrypted.Ciphertext)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode ciphertext: %w", err)
-	}
-
-	gcm, err := newGCM(masterKey)
+	onDisk, err := envelopeTerm(encryptedJSON)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateGCMNonce(nonce, gcm); err != nil {
-		return nil, err
+	if onDisk != term {
+		return nil, fmt.Errorf(
+			"envelope for %s names term %d, not term %d", ctx, onDisk, term,
+		)
 	}
-
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt data: %w", err)
-	}
-
-	return plaintext, nil
+	return openUnderTerm(encryptedJSON, termKey, term, ctx)
 }
 
 // ============================================================================

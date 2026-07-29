@@ -210,9 +210,13 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	decrypted, err := crypto.DecryptWithMasterKey(encrypted, masterKey)
+	credentialContext, err := keys.CredentialContextForFile(keyPath)
 	if err != nil {
-		t.Fatalf("DecryptWithMasterKey() error = %v", err)
+		t.Fatalf("CredentialContextForFile() error = %v", err)
+	}
+	decrypted, err := crypto.DecryptWithTermKey(encrypted, masterKey, crypto.FirstTerm, credentialContext)
+	if err != nil {
+		t.Fatalf("DecryptWithTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(decrypted)
 	payload, err := keys.ParsePayload(decrypted)

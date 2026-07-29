@@ -229,10 +229,11 @@ type KeyScanWarningProvider interface {
 	GetScanWarnings() []KeyScanWarning
 }
 
-// ReadAndDecryptFile reads a file and decrypts it with the master key.
-// Runtime key files must be encrypted; plaintext key payloads belong in
-// explicit import or migration paths, not normal signing paths.
-func ReadAndDecryptFile(path string, masterKey []byte, entityName string) ([]byte, error) {
+// ReadAndDecryptFile reads a file and opens it under the current term as the
+// object ctx names. Runtime key files must be encrypted; plaintext key
+// payloads belong in explicit import or migration paths, not normal signing
+// paths.
+func ReadAndDecryptFile(path string, masterKey []byte, ctx crypto.ObjectContext, entityName string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", entityName, err)
@@ -246,16 +247,21 @@ func ReadAndDecryptFile(path string, masterKey []byte, entityName string) ([]byt
 		return nil, fmt.Errorf("%s is encrypted but no master key provided", entityName)
 	}
 
-	decrypted, err := crypto.DecryptWithMasterKey(data, masterKey)
+	decrypted, err := crypto.DecryptWithTermKey(data, masterKey, crypto.FirstTerm, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt %s with master key: %w", entityName, err)
 	}
 	return decrypted, nil
 }
 
-// ReadDecryptedKeyJSONWithMasterKey reads a key file and decrypts with the master key.
+// ReadDecryptedKeyJSONWithMasterKey reads a managed credential and decrypts
+// it as the object its canonical filename names.
 func ReadDecryptedKeyJSONWithMasterKey(keyFile string, masterKey []byte) ([]byte, error) {
-	return ReadAndDecryptFile(keyFile, masterKey, "key file")
+	ctx, err := CredentialContextForFile(keyFile)
+	if err != nil {
+		return nil, err
+	}
+	return ReadAndDecryptFile(keyFile, masterKey, ctx, "key file")
 }
 
 // ScanKeysDirectoryWithMasterKey scans the identity-scoped keys subdirectory using a master key for decryption.

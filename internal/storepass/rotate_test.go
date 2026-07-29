@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
 func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
@@ -234,7 +235,7 @@ func TestRotatePreservesRecoveredBatchPlaintextWithUnknownFields(t *testing.T) {
 	}
 
 	batchPath := paths.RecoveredBatchMetadataPath(identityID, batch.RestoreID)
-	originalPlaintext, err := decryptForRotateTest(batchPath, oldMasterKey)
+	originalPlaintext, err := decryptForRotateTest(t, batchPath, oldMasterKey)
 	if err != nil {
 		t.Fatalf("decrypt recovered batch: %v", err)
 	}
@@ -270,7 +271,7 @@ func TestRotatePreservesRecoveredBatchPlaintextWithUnknownFields(t *testing.T) {
 		t.Fatalf("CurrentTermKey() error = %v", err)
 	}
 	defer crypto.ZeroBytes(newMasterKey)
-	rotatedPlaintext, err := decryptForRotateTest(batchPath, newMasterKey)
+	rotatedPlaintext, err := decryptForRotateTest(t, batchPath, newMasterKey)
 	if err != nil {
 		t.Fatalf("decrypt rotated recovered batch: %v", err)
 	}
@@ -384,7 +385,7 @@ func TestRotatePreservesCanonicalKeyPayloadBytes(t *testing.T) {
 	}
 	defer crypto.ZeroBytes(newMasterKey)
 
-	rotatedPayload, err := decryptForRotateTest(keyPath, newMasterKey)
+	rotatedPayload, err := decryptForRotateTest(t, keyPath, newMasterKey)
 	if err != nil {
 		t.Fatalf("decrypt rotated key payload: %v", err)
 	}
@@ -596,11 +597,50 @@ func TestRotateFailsWhenPolicyBaselineMissing(t *testing.T) {
 	assertKeyringRejectsPassphrase(t, paths, identityID, newPassphrase)
 }
 
+// contextForRotateTest is the object identity the store binds into a managed
+// file's envelope, chosen the same way production chooses it: from the file's
+// canonical location and name.
+func contextForRotateTest(t *testing.T, path string) crypto.ObjectContext {
+	t.Helper()
+	if ctx, ok := recoveredContextForRotateTest(path); ok {
+		return ctx
+	}
+	var ctx crypto.ObjectContext
+	var err error
+	if strings.HasSuffix(path, templatestore.TemplateFileExtension) {
+		ctx, err = templatestore.TemplateContextForFile(path)
+	} else {
+		ctx, err = apkeys.CredentialContextForFile(path)
+	}
+	if err != nil {
+		t.Fatalf("object context for %s: %v", path, err)
+	}
+	return ctx
+}
+
+// recoveredContextForRotateTest recognizes the two shapes inside a recovered
+// batch directory: <restoreID>/batch.enc and <restoreID>/entries/<file>.
+func recoveredContextForRotateTest(path string) (crypto.ObjectContext, bool) {
+	name := filepath.Base(path)
+	parent := filepath.Dir(path)
+	if name == "batch.enc" {
+		return crypto.RecoveredBatchContext(filepath.Base(parent)), true
+	}
+	if filepath.Base(parent) == "entries" {
+		restoreID := filepath.Base(filepath.Dir(parent))
+		selector := strings.TrimSuffix(name, filepath.Ext(name))
+		return crypto.RecoveredEntryContext(restoreID, selector), true
+	}
+	return crypto.ObjectContext{}, false
+}
+
 func writeEncryptedForRotateTest(t *testing.T, path string, plaintext []byte, masterKey []byte) {
 	t.Helper()
-	encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		plaintext, masterKey, crypto.FirstTerm, contextForRotateTest(t, path),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
+		t.Fatalf("EncryptWithTermKey() error = %v", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -648,19 +688,20 @@ func assertNodeRoleVerifiesWithMasterKey(t *testing.T, paths storepaths.Paths, i
 
 func assertDecryptsWithMasterKey(t *testing.T, path string, masterKey []byte) {
 	t.Helper()
-	plaintext, err := decryptForRotateTest(path, masterKey)
+	plaintext, err := decryptForRotateTest(t, path, masterKey)
 	if err != nil {
-		t.Fatalf("DecryptWithMasterKey(%s) error = %v", path, err)
+		t.Fatalf("DecryptWithTermKey(%s) error = %v", path, err)
 	}
 	crypto.ZeroBytes(plaintext)
 }
 
-func decryptForRotateTest(path string, masterKey []byte) ([]byte, error) {
+func decryptForRotateTest(t *testing.T, path string, masterKey []byte) ([]byte, error) {
+	t.Helper()
 	encrypted, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return crypto.DecryptWithMasterKey(encrypted, masterKey)
+	return crypto.DecryptWithTermKey(encrypted, masterKey, crypto.FirstTerm, contextForRotateTest(t, path))
 }
 
 func assertMetadataAcceptsPassphrase(t *testing.T, paths storepaths.Paths, identityID string, passphrase []byte) {

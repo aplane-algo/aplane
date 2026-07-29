@@ -43,7 +43,11 @@ func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, masterKe
 	}
 	defer crypto.ZeroBytes(keyJSON)
 
-	dataToWrite, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
+	ctx, err := CredentialContext(selector, payload.Category)
+	if err != nil {
+		return nil, err
+	}
+	dataToWrite, err := crypto.EncryptWithTermKey(keyJSON, masterKey, crypto.FirstTerm, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt key: %w", err)
 	}

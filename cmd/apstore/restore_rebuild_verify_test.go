@@ -245,13 +245,13 @@ func TestRestoreKeyRejectsLegacyEnvelopeVersion1Backup(t *testing.T) {
 	dataDirectory = t.TempDir()
 	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
-	address, keyJSON := testEd25519KeyJSON(t)
+	address, _ := testEd25519KeyJSON(t)
 
-	encrypted, err := apcrypto.EncryptWithMasterKey(keyJSON, bytes32(0x22))
-	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(backupDir, address+".apb"), encrypted, 0o600); err != nil {
+	// Written as a literal: envelope_version 1 is the retired master-key
+	// format that this release can no longer produce, and rejecting it is
+	// what this test is about.
+	legacy := []byte(`{"envelope_version":1,"nonce":"","ciphertext":""}`)
+	if err := os.WriteFile(filepath.Join(backupDir, address+".apb"), legacy, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 

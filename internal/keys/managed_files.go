@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -278,5 +279,50 @@ func validateManagedSelector(selector string, class ManagedCredentialClass) erro
 		return nil
 	default:
 		return fmt.Errorf("unsupported managed credential class %q", class)
+	}
+}
+
+// CredentialContext returns the envelope object context for a managed
+// credential identified by its canonical selector and payload category.
+func CredentialContext(selector, category string) (crypto.ObjectContext, error) {
+	class, err := ManagedCredentialClassForCategory(category)
+	if err != nil {
+		return crypto.ObjectContext{}, err
+	}
+	return contextForClass(selector, class)
+}
+
+// CredentialContextForFile recovers the object context from a managed
+// credential's canonical filename.
+//
+// Reading identity out of the name is safe because the name is canonical and
+// derived from the selector: the store never renames a credential, and a file
+// moved under another name simply fails to open, which is the detection this
+// binding exists to provide. The directory the file sits in is deliberately
+// ignored — generations copy credentials between namespaces without
+// re-encrypting them.
+func CredentialContextForFile(path string) (crypto.ObjectContext, error) {
+	selector, class, ok := ParseManagedCredentialFilename(filepath.Base(path))
+	if !ok {
+		return crypto.ObjectContext{}, fmt.Errorf(
+			"%q is not a canonical managed credential filename", filepath.Base(path),
+		)
+	}
+	return contextForClass(selector, class)
+}
+
+// Context returns the object context for a scanned managed credential.
+func (f ManagedCredentialFile) Context() (crypto.ObjectContext, error) {
+	return contextForClass(f.Selector, f.Class)
+}
+
+func contextForClass(selector string, class ManagedCredentialClass) (crypto.ObjectContext, error) {
+	switch class {
+	case ManagedCredentialAccount:
+		return crypto.AccountKeyContext(selector), nil
+	case ManagedCredentialSentry:
+		return crypto.SentryCredentialContext(selector), nil
+	default:
+		return crypto.ObjectContext{}, fmt.Errorf("unsupported managed credential class %q", class)
 	}
 }

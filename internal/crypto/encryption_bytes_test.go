@@ -10,7 +10,12 @@ import (
 )
 
 // TestMasterKeyEncryptDecrypt_RoundTrip tests master key encrypt/decrypt cycle
-func TestMasterKeyEncryptDecrypt_RoundTrip(t *testing.T) {
+// envelopeTestContext is the object identity these envelope tests seal and
+// open under. Which object it names does not matter here; that both sides
+// name the same one does.
+var envelopeTestContext = AccountKeyContext("ENVELOPETESTADDRESS")
+
+func TestTermEnvelopeEncryptDecrypt_RoundTrip(t *testing.T) {
 	// Create a master key (32 bytes)
 	masterKey := make([]byte, 32)
 	if _, err := rand.Read(masterKey); err != nil {
@@ -43,13 +48,13 @@ func TestMasterKeyEncryptDecrypt_RoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Encrypt with master key
-			encrypted, err := EncryptWithMasterKey(tt.plaintext, masterKey)
+			encrypted, err := EncryptWithTermKey(tt.plaintext, masterKey, FirstTerm, envelopeTestContext)
 			if err != nil {
 				t.Fatalf("EncryptWithMasterKey failed: %v", err)
 			}
 
 			// Decrypt with master key
-			decrypted, err := DecryptWithMasterKey(encrypted, masterKey)
+			decrypted, err := DecryptWithTermKey(encrypted, masterKey, FirstTerm, envelopeTestContext)
 			if err != nil {
 				t.Fatalf("DecryptWithMasterKey failed: %v", err)
 			}
@@ -64,7 +69,7 @@ func TestMasterKeyEncryptDecrypt_RoundTrip(t *testing.T) {
 }
 
 // TestMasterKeyEncrypt_Randomness verifies each encryption uses different nonce
-func TestMasterKeyEncrypt_Randomness(t *testing.T) {
+func TestTermEnvelopeEncrypt_Randomness(t *testing.T) {
 	masterKey := make([]byte, 32)
 	if _, err := rand.Read(masterKey); err != nil {
 		t.Fatalf("Failed to generate master key: %v", err)
@@ -73,12 +78,12 @@ func TestMasterKeyEncrypt_Randomness(t *testing.T) {
 
 	plaintext := []byte("test data")
 
-	encrypted1, err := EncryptWithMasterKey(plaintext, masterKey)
+	encrypted1, err := EncryptWithTermKey(plaintext, masterKey, FirstTerm, envelopeTestContext)
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey 1 failed: %v", err)
 	}
 
-	encrypted2, err := EncryptWithMasterKey(plaintext, masterKey)
+	encrypted2, err := EncryptWithTermKey(plaintext, masterKey, FirstTerm, envelopeTestContext)
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey 2 failed: %v", err)
 	}
@@ -89,8 +94,8 @@ func TestMasterKeyEncrypt_Randomness(t *testing.T) {
 	}
 
 	// But both should decrypt to the same plaintext
-	decrypted1, _ := DecryptWithMasterKey(encrypted1, masterKey)
-	decrypted2, _ := DecryptWithMasterKey(encrypted2, masterKey)
+	decrypted1, _ := DecryptWithTermKey(encrypted1, masterKey, FirstTerm, envelopeTestContext)
+	decrypted2, _ := DecryptWithTermKey(encrypted2, masterKey, FirstTerm, envelopeTestContext)
 	defer ZeroBytes(decrypted1)
 	defer ZeroBytes(decrypted2)
 
@@ -100,7 +105,7 @@ func TestMasterKeyEncrypt_Randomness(t *testing.T) {
 }
 
 // TestMasterKeyDecrypt_WrongKey verifies wrong key is rejected
-func TestMasterKeyDecrypt_WrongKey(t *testing.T) {
+func TestTermEnvelopeDecrypt_WrongKey(t *testing.T) {
 	masterKey := make([]byte, 32)
 	wrongKey := make([]byte, 32)
 	if _, err := rand.Read(masterKey); err != nil {
@@ -114,13 +119,13 @@ func TestMasterKeyDecrypt_WrongKey(t *testing.T) {
 
 	plaintext := []byte("secret data")
 
-	encrypted, err := EncryptWithMasterKey(plaintext, masterKey)
+	encrypted, err := EncryptWithTermKey(plaintext, masterKey, FirstTerm, envelopeTestContext)
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey failed: %v", err)
 	}
 
 	// Try to decrypt with wrong key
-	_, err = DecryptWithMasterKey(encrypted, wrongKey)
+	_, err = DecryptWithTermKey(encrypted, wrongKey, FirstTerm, envelopeTestContext)
 	if err == nil {
 		t.Fatal("DecryptWithMasterKey should fail with wrong key")
 	}

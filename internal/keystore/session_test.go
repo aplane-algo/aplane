@@ -246,8 +246,9 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 		t.Fatalf("MarshalPayload() error = %v", err)
 	}
 
-	// Encrypt with master key (v2 format)
-	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		keyJSON, masterKey, crypto.FirstTerm, crypto.AccountKeyContext(testAddr),
+	)
 	if err != nil {
 		t.Fatalf("Failed to encrypt: %v", err)
 	}

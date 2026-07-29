@@ -366,7 +366,10 @@ func TestSaveEd25519KeysWithEncryption(t *testing.T) {
 	}
 
 	// Decrypt and verify contents (using master key encryption)
-	decrypted, err := algocrypto.DecryptWithMasterKey(encryptedData, masterKey)
+	decrypted, err := algocrypto.DecryptWithTermKey(
+		encryptedData, masterKey, algocrypto.FirstTerm,
+		mustCredentialContextForTest(t, keyFiles.PrivateFile),
+	)
 	if err != nil {
 		t.Fatalf("Failed to decrypt key file: %v", err)
 	}
@@ -520,4 +523,16 @@ func TestPublicKeyHexFormat(t *testing.T) {
 	if len(pubKeyBytes) != 32 {
 		t.Errorf("Decoded public key length = %d, want 32", len(pubKeyBytes))
 	}
+}
+
+// mustCredentialContextForTest derives the context the store binds into a
+// managed credential's envelope, so a test opening one directly agrees with
+// the writer.
+func mustCredentialContextForTest(t *testing.T, path string) algocrypto.ObjectContext {
+	t.Helper()
+	ctx, err := apkeys.CredentialContextForFile(path)
+	if err != nil {
+		t.Fatalf("CredentialContextForFile(%q): %v", path, err)
+	}
+	return ctx
 }

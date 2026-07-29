@@ -59,7 +59,7 @@ func TestRotationTargetsCleansStaleArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RotationTargets() error = %v", err)
 	}
-	if len(targets) != 2 || targets[0] != metadataPath || targets[1] != entryPath {
+	if len(targets) != 2 || targets[0].Path != metadataPath || targets[1].Path != entryPath {
 		t.Fatalf("RotationTargets() = %v, want metadata and entry", targets)
 	}
 	assertRotationArtifactsAbsent(t, metadataPath, entryPath)

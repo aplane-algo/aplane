@@ -208,19 +208,20 @@ func TestIsEncryptedVersion2(t *testing.T) {
 	}
 }
 
-// TestDecryptWithMasterKeyRejectsVersion2 verifies master key decryption rejects standalone format
-func TestDecryptWithMasterKeyRejectsVersion2(t *testing.T) {
+// TestDecryptWithTermKeyRejectsVersion2 verifies term decryption rejects the
+// standalone export format.
+func TestDecryptWithTermKeyRejectsVersion2(t *testing.T) {
 	encrypted, err := EncryptStandalone([]byte("data"), []byte("pass"))
 	if err != nil {
 		t.Fatalf("EncryptStandalone failed: %v", err)
 	}
 
 	fakeKey := make([]byte, 32)
-	_, err = DecryptWithMasterKey(encrypted, fakeKey)
+	_, err = DecryptWithTermKey(encrypted, fakeKey, FirstTerm, envelopeTestContext)
 	if err == nil {
-		t.Fatal("DecryptWithMasterKey should reject envelope_version 2")
+		t.Fatal("DecryptWithTermKey should reject envelope_version 2")
 	}
-	if !strings.Contains(err.Error(), "not supported by master key decryption") {
+	if !strings.Contains(err.Error(), "is not a term envelope") {
 		t.Errorf("Expected version mismatch error, got: %v", err)
 	}
 }
@@ -238,9 +239,10 @@ func TestDecryptStandaloneRejectsVersion1(t *testing.T) {
 	}
 }
 
-func TestDecryptWithMasterKeyRejectsInvalidNonceLength(t *testing.T) {
-	payload := EncryptedDataMasterKey{
-		EnvelopeVersion: 1,
+func TestDecryptWithTermKeyRejectsInvalidNonceLength(t *testing.T) {
+	payload := encryptedDataTerm{
+		EnvelopeVersion: TermEnvelopeVersion,
+		Term:            FirstTerm,
 		Nonce:           base64.StdEncoding.EncodeToString([]byte("short")),
 		Ciphertext:      base64.StdEncoding.EncodeToString([]byte("ciphertext")),
 	}
@@ -249,12 +251,12 @@ func TestDecryptWithMasterKeyRejectsInvalidNonceLength(t *testing.T) {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
-	_, err = DecryptWithMasterKey(data, bytes.Repeat([]byte{1}, 32))
+	_, err = DecryptWithTermKey(data, bytes.Repeat([]byte{1}, 32), FirstTerm, envelopeTestContext)
 	if err == nil {
-		t.Fatal("DecryptWithMasterKey() error = nil, want invalid nonce length")
+		t.Fatal("DecryptWithTermKey() error = nil, want invalid nonce length")
 	}
 	if !strings.Contains(err.Error(), "invalid nonce length") {
-		t.Fatalf("DecryptWithMasterKey() error = %v, want invalid nonce length", err)
+		t.Fatalf("DecryptWithTermKey() error = %v, want invalid nonce length", err)
 	}
 }
 

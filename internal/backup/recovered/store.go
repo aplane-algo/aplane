@@ -271,7 +271,10 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 
 	for i := range entries {
 		plaintext := entryPlaintexts[i]
-		encrypted, encryptErr := crypto.EncryptWithMasterKey(plaintext, masterKey)
+		encrypted, encryptErr := crypto.EncryptWithTermKey(
+			plaintext, masterKey, crypto.FirstTerm,
+			crypto.RecoveredEntryContext(restoreID, entries[i].Selector),
+		)
 		crypto.ZeroBytes(plaintext)
 		entryPlaintexts[i] = nil
 		if encryptErr != nil {
@@ -293,7 +296,9 @@ func Create(paths storepaths.Paths, identityID string, req CreateRequest, master
 	if err != nil {
 		return nil, fmt.Errorf("marshal recovered batch: %w", err)
 	}
-	encrypted, encryptErr := crypto.EncryptWithMasterKey(plaintext, masterKey)
+	encrypted, encryptErr := crypto.EncryptWithTermKey(
+		plaintext, masterKey, crypto.FirstTerm, crypto.RecoveredBatchContext(restoreID),
+	)
 	crypto.ZeroBytes(plaintext)
 	if encryptErr != nil {
 		return nil, fmt.Errorf("encrypt recovered batch: %w", encryptErr)
@@ -339,7 +344,9 @@ func loadBatchAt(path, restoreID string, masterKey []byte) (*Batch, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read recovered batch: %w", err)
 	}
-	plaintext, err := crypto.DecryptWithMasterKey(data, masterKey)
+	plaintext, err := crypto.DecryptWithTermKey(
+		data, masterKey, crypto.FirstTerm, crypto.RecoveredBatchContext(restoreID),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt recovered batch: %w", err)
 	}
@@ -377,7 +384,10 @@ func loadEntryAt(path, restoreID string, meta BatchEntry, masterKey []byte) (*En
 	if err != nil {
 		return nil, fmt.Errorf("read recovered entry %q: %w", meta.Selector, err)
 	}
-	plaintext, err := crypto.DecryptWithMasterKey(data, masterKey)
+	plaintext, err := crypto.DecryptWithTermKey(
+		data, masterKey, crypto.FirstTerm,
+		crypto.RecoveredEntryContext(restoreID, meta.Selector),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt recovered entry %q: %w", meta.Selector, err)
 	}

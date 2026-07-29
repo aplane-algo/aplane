@@ -80,10 +80,12 @@ func createTestKeyFile(t *testing.T, keysDir, address string, masterKey []byte) 
 	}
 	defer crypto.ZeroBytes(keyJSON)
 
-	// Encrypt if master key provided
+	filePath := filepath.Join(keysDir, address+".key")
 	var dataToWrite []byte
 	if len(masterKey) > 0 {
-		encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
+		encrypted, err := crypto.EncryptWithTermKey(
+			keyJSON, masterKey, crypto.FirstTerm, crypto.AccountKeyContext(address),
+		)
 		if err != nil {
 			t.Fatalf("Failed to encrypt key: %v", err)
 		}
@@ -93,8 +95,6 @@ func createTestKeyFile(t *testing.T, keysDir, address string, masterKey []byte) 
 		copy(dataToWrite, keyJSON)
 	}
 
-	// Write to file
-	filePath := filepath.Join(keysDir, address+".key")
 	if err := os.WriteFile(filePath, dataToWrite, 0600); err != nil {
 		t.Fatalf("Failed to write test key file: %v", err)
 	}
@@ -214,9 +214,12 @@ func TestFileKeyStore_GetDecryptFailureIsNotInvalidPassphrase(t *testing.T) {
 	ctx := context.Background()
 
 	addr := "CORRUPTEDKEY123"
-	encrypted, err := crypto.EncryptWithMasterKey([]byte(`{"key_type":"ed25519"}`), testMasterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		[]byte(`{"key_type":"ed25519"}`), testMasterKey, crypto.FirstTerm,
+		crypto.AccountKeyContext(addr),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey failed: %v", err)
+		t.Fatalf("EncryptWithTermKey failed: %v", err)
 	}
 
 	var envelope struct {
@@ -507,9 +510,11 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal(component key) error = %v", err)
 	}
-	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, testMasterKey)
+	encrypted, err := crypto.EncryptWithTermKey(
+		keyJSON, testMasterKey, crypto.FirstTerm, crypto.SentryCredentialContext(componentKey),
+	)
 	if err != nil {
-		t.Fatalf("EncryptWithMasterKey() error = %v", err)
+		t.Fatalf("EncryptWithTermKey() error = %v", err)
 	}
 	if err := os.WriteFile(keys.SentryCredentialFilePath(paths, testIdentityID, componentKey), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(component key) error = %v", err)
