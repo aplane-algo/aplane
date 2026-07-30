@@ -11,7 +11,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -78,7 +77,7 @@ func CompleteRotation(
 	if err != nil {
 		return report, fmt.Errorf("complete rotation pre-baseline scan: %w", err)
 	}
-	baseline, err := completionBaseline(paths, identityID, snapshot, before)
+	baseline, err := completionBaseline(snapshot, before)
 	if err != nil {
 		return report, err
 	}
@@ -120,7 +119,7 @@ func CompleteRotation(
 	if err != nil {
 		return report, fmt.Errorf("complete rotation post-baseline scan: %w", err)
 	}
-	finalBaseline, err := completionBaseline(paths, identityID, snapshot, after)
+	finalBaseline, err := completionBaseline(snapshot, after)
 	if err != nil {
 		return report, err
 	}
@@ -161,8 +160,6 @@ func CompleteRotation(
 }
 
 func completionBaseline(
-	paths storepaths.Paths,
-	identityID string,
 	snapshot *Snapshot,
 	report *Report,
 ) (*Baseline, error) {
@@ -183,13 +180,7 @@ func completionBaseline(
 			snapshot.Rollback.GenerationID,
 		)
 	}
-	inventory, err := genstore.BuildInventory(
-		paths.GenerationPaths(identityID, report.CurrentGeneration),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("complete rotation generation inventory: %w", err)
-	}
-	return NewBaseline(report.CurrentGeneration, inventory)
+	return NewBaseline(report.CurrentGeneration, report.currentInventory)
 }
 
 func verifyCompletionInventory(

@@ -228,6 +228,9 @@ func (kr *Keyring) PendingRotation() (RotationState, bool) {
 // RequireSettled rejects ordinary signing and mutation while the durable
 // root carries a pending transition. Resume uses its own explicit path.
 func (kr *Keyring) RequireSettled() error {
+	if kr == nil {
+		return ErrKeyringNotOpen
+	}
 	state, pending := kr.PendingRotation()
 	if !pending {
 		return nil
@@ -302,10 +305,8 @@ func (kr *Keyring) Seal(plaintext []byte, ctx ObjectContext) ([]byte, error) {
 // Open decrypts an envelope, selecting the term the envelope names and
 // verifying the object context it was sealed with.
 //
-// This release holds one term, so "the term the envelope names" is always the
-// current one. The lookup is written term-generally because the next phase-3
-// slice adds retiring terms, but the decoder below keeps multi-term roots
-// disabled until Open can enforce the transition's authority set.
+// Settled roots authorize the current term. A pending transition additionally
+// authorizes its retiring term only for explicit resume and recovery paths.
 func (kr *Keyring) Open(sealed []byte, ctx ObjectContext) ([]byte, error) {
 	if kr == nil || len(kr.terms) == 0 {
 		return nil, fmt.Errorf("keyring is not open")
@@ -622,7 +623,7 @@ func validateKeyringPayload(payload *keyringPayload) error {
 	if payload.Schema != KeyringSchema {
 		return fmt.Errorf("unsupported sealed keyring schema %q", payload.Schema)
 	}
-	if payload.Terms == nil || len(payload.Terms) == 0 {
+	if len(payload.Terms) == 0 {
 		return fmt.Errorf("keyring terms must be a non-empty array")
 	}
 	if payload.HistoricalAnchors == nil {

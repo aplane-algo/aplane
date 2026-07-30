@@ -180,6 +180,96 @@ func TestCollectGarbageHonorsReferences(t *testing.T) {
 	}
 }
 
+func TestCollectGarbageValidatesRotatedRollbackParentWithHistoricalAnchor(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityDir := paths.IdentityDir(testIdentity)
+	passphrase := []byte("collect-anchored-parent")
+	kr, err := crypto.CreateKeyringStore(identityDir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	t.Cleanup(kr.Zero)
+
+	mint := func(id, parent string, first bool, created int64) {
+		t.Helper()
+		_, mintErr := Mint(paths, testIdentity, MintRequest{
+			GenerationID:    id,
+			Parent:          parent,
+			FirstGeneration: first,
+			Integrity:       kr,
+			Operation:       "test-activation",
+			OperationID:     "op-" + id,
+			CreatedAt:       time.Unix(created, 0),
+			Apply: func(staged storepaths.GenPaths) error {
+				return os.WriteFile(
+					filepath.Join(staged.KeysDir(), "ACCOUNT.key"),
+					[]byte(id),
+					0o660,
+				)
+			},
+		})
+		if mintErr != nil {
+			t.Fatalf("Mint(%s) error = %v", id, mintErr)
+		}
+	}
+	mint(testGenA, "", true, 1_753_500_000)
+	mint(testGenB, testGenA, false, 1_753_500_001)
+	mint(testGenC, testGenB, false, 1_753_500_002)
+
+	var anchors []crypto.HistoricalGenerationAnchor
+	for _, id := range []string{testGenA, testGenB} {
+		anchor, anchorErr := BuildHistoricalAnchor(
+			paths.GenerationPaths(testIdentity, id),
+			kr,
+		)
+		if anchorErr != nil {
+			t.Fatalf("BuildHistoricalAnchor(%s) error = %v", id, anchorErr)
+		}
+		anchors = append(anchors, anchor)
+	}
+	if err := crypto.StartRotation(
+		identityDir,
+		kr,
+		passphrase,
+		anchors,
+		func(
+			target *crypto.Keyring,
+			_, _ int64,
+		) (crypto.RotationSnapshotReference, error) {
+			sealed, sealErr := target.Seal(
+				[]byte("snapshot"),
+				crypto.RotationSnapshotContext(),
+			)
+			if sealErr != nil {
+				return crypto.RotationSnapshotReference{}, sealErr
+			}
+			return crypto.NewRotationSnapshotReference(sealed)
+		},
+	); err != nil {
+		t.Fatalf("StartRotation() error = %v", err)
+	}
+	if err := crypto.CloseRotation(identityDir, kr, passphrase); err != nil {
+		t.Fatalf("CloseRotation() error = %v", err)
+	}
+	if err := ValidateSealed(
+		paths.GenerationPaths(testIdentity, testGenB),
+		kr,
+	); err == nil {
+		t.Fatal("ValidateSealed() accepted a parent authenticated by the retired term")
+	}
+
+	removed, err := CollectGarbage(paths, testIdentity, nil, true, kr)
+	if err != nil {
+		t.Fatalf("CollectGarbage() error = %v", err)
+	}
+	if !slices.Equal(removed, []string{testGenA}) {
+		t.Fatalf("removed = %v, want oldest prior [%s]", removed, testGenA)
+	}
+	if _, err := os.Stat(paths.GenerationPaths(testIdentity, testGenB).Dir()); err != nil {
+		t.Fatalf("anchored rollback parent was not retained: %v", err)
+	}
+}
+
 func TestCollectGarbageAllPriorsReachesRotationQuiescence(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A, B sealed priors; C current

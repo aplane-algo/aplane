@@ -61,6 +61,15 @@ func cmdChangepass() error {
 		return err
 	}
 	if !result.Success {
+		if result.HelperWarning != "" {
+			logWarnf(result.HelperWarning)
+		}
+		if result.RootCommitted {
+			logWarnf("the new passphrase is authoritative despite the incomplete operation")
+			if result.RotationPending {
+				logWarnf("unlock with the new passphrase to resume the pending rotation")
+			}
+		}
 		return resultError("passphrase change failed", result.Code, result.Error)
 	}
 

@@ -27,6 +27,28 @@ func TestProtocolKeyDetailsMessageIncludesPublicKey(t *testing.T) {
 	}
 }
 
+func TestProtocolChangeStorePassphraseResultPreservesFailureRecoveryState(t *testing.T) {
+	msg := ProtocolChangeStorePassphraseResultMessage(
+		"change-1",
+		adminproto.ChangeStorePassphraseResult{
+			PriorGenerations: 2,
+			HelperWarning:    "helper still has old passphrase",
+			RootCommitted:    true,
+			RotationPending:  true,
+			Code:             "passphrase_change_failed",
+			Error:            "injected completion failure",
+		},
+	)
+	if msg.Success ||
+		msg.PriorGenerations != 2 ||
+		msg.HelperWarning == "" ||
+		!msg.RootCommitted ||
+		!msg.RotationPending ||
+		msg.Code != "passphrase_change_failed" {
+		t.Fatalf("failure recovery state was not preserved: %#v", msg)
+	}
+}
+
 func TestProtocolReviewRecoveredResultCopiesTypedSourceContext(t *testing.T) {
 	autoApprove := false
 	result := adminproto.ReviewRecoveredResult{

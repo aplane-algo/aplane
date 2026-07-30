@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -88,6 +89,34 @@ func TestResumeRotationRewrapsOnlyPinnedMutableConsumers(t *testing.T) {
 	if retry.Rewrapped != 0 || retry.Resigned != 0 ||
 		retry.AlreadyTarget != report.Rewrapped+report.Resigned {
 		t.Fatalf("ResumeRotation(retry) report = %#v, first = %#v", retry, report)
+	}
+}
+
+func TestResumeRotationReconcilesCrashOrphanedDurableTemp(t *testing.T) {
+	fixture, snapshot := startResumeFixture(t)
+	index := slices.IndexFunc(snapshot.Inventory, func(entry Entry) bool {
+		return entry.Kind == KindRecoveredEntry
+	})
+	if index < 0 {
+		t.Fatal("fixture snapshot has no recovered entry")
+	}
+	target := filepath.Join(
+		fixture.paths.Root(),
+		filepath.FromSlash(snapshot.Inventory[index].Path),
+	)
+	residue := target + ".tmp-crash"
+	if err := os.WriteFile(residue, []byte("orphaned durable temp"), 0o600); err != nil {
+		t.Fatalf("WriteFile(residue) error = %v", err)
+	}
+
+	if _, err := ResumeRotation(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+		t.Fatalf("ResumeRotation() error = %v", err)
+	}
+	if _, err := os.Stat(residue); !os.IsNotExist(err) {
+		t.Fatalf("durable temp residue survived resume: %v", err)
+	}
+	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+		t.Fatalf("Scan() after residue reconciliation error = %v", err)
 	}
 }
 

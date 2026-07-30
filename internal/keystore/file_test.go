@@ -304,6 +304,7 @@ func TestFileKeyStore_Delete_Success(t *testing.T) {
 	defer cleanup()
 
 	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store.keyring = cryptotest.Keyring(t, testMasterKey)
 	ctx := context.Background()
 
 	// Create test key
@@ -333,6 +334,7 @@ func TestFileKeyStore_Delete_NotFound(t *testing.T) {
 	defer cleanup()
 
 	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store.keyring = cryptotest.Keyring(t, testMasterKey)
 	ctx := context.Background()
 
 	err := store.Delete(ctx, "NONEXISTENT")
@@ -346,6 +348,7 @@ func TestFileKeyStoreDeleteKeepsCacheWhenRemoveFails(t *testing.T) {
 	defer cleanup()
 
 	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store.keyring = cryptotest.Keyring(t, testMasterKey)
 	ctx := context.Background()
 
 	addr := "DELETEFAIL12345"
@@ -527,7 +530,7 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 }
 
 func TestFileKeyStoreScanRejectsPendingRotation(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
+	keysDir, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
 	passphrase := []byte("pending-rotation-passphrase")
@@ -574,6 +577,37 @@ func TestFileKeyStoreScanRejectsPendingRotation(t *testing.T) {
 	}
 	if callbackCalled {
 		t.Fatal("WithKeyring() exposed a pending keyring to an ordinary runtime caller")
+	}
+	keyPath := createTestKeyFile(t, keysDir, "PENDINGDELETE", nil)
+	store.cache["PENDINGDELETE"] = keys.KeyScanInfo{
+		KeyFile: keyPath,
+		KeyType: "ed25519",
+	}
+	err = store.Delete(context.Background(), "PENDINGDELETE")
+	if !errors.Is(err, crypto.ErrRotationPending) {
+		t.Fatalf("Delete() error = %v, want pending rotation failure", err)
+	}
+	if _, statErr := os.Stat(keyPath); statErr != nil {
+		t.Fatalf("Delete() removed a snapshot-pinned key during rotation: %v", statErr)
+	}
+}
+
+func TestFileKeyStoreDeleteRejectsLockedStoreWithCachedEntry(t *testing.T) {
+	keysDir, paths, cleanup := setupTestKeysDir(t)
+	defer cleanup()
+
+	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	keyPath := createTestKeyFile(t, keysDir, "LOCKEDDELETE", nil)
+	store.cache["LOCKEDDELETE"] = keys.KeyScanInfo{
+		KeyFile: keyPath,
+		KeyType: "ed25519",
+	}
+	err := store.Delete(context.Background(), "LOCKEDDELETE")
+	if !errors.Is(err, ErrStoreLocked) {
+		t.Fatalf("Delete() error = %v, want locked-store failure", err)
+	}
+	if _, statErr := os.Stat(keyPath); statErr != nil {
+		t.Fatalf("Delete() removed a cached key while locked: %v", statErr)
 	}
 }
 

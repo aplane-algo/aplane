@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 )
 
 // ArtifactKind is the durable semantic class of one inventory entry.
@@ -59,6 +60,13 @@ type Entry struct {
 type Report struct {
 	CurrentGeneration string  `json:"current_generation"`
 	Entries           []Entry `json:"entries"`
+
+	// currentManifest and currentInventory are derived from the same exact
+	// buffers authenticated into Entries. Security decisions made after a
+	// scan must consume these pinned values instead of rereading mutable
+	// generation files.
+	currentManifest  *genstore.Manifest
+	currentInventory []genstore.InventoryEntry
 }
 
 // ValidateEntries enforces the canonical snapshot-entry contract.

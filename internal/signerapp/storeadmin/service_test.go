@@ -4,13 +4,17 @@
 package storeadmin
 
 import (
-	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/lsig"
 )
 
 type auditEvent struct {
@@ -61,6 +65,67 @@ func TestInitializeStoreRejectsEmptyPassphraseAndAudits(t *testing.T) {
 	}
 	if got := audit.events[0]; got.kind != "store_initialize_failed" || got.identity != "alice" || got.reason != "passphrase is required" {
 		t.Fatalf("audit event = %#v, want store initialize failure for alice", got)
+	}
+}
+
+type initializeTestDeps struct {
+	dataDir string
+	paths   storepaths.Paths
+	cfg     serverconfig.ServerConfig
+	mu      sync.Mutex
+}
+
+func (d *initializeTestDeps) DataDir() string                    { return d.dataDir }
+func (d *initializeTestDeps) Config() *serverconfig.ServerConfig { return &d.cfg }
+func (d *initializeTestDeps) KeyPaths() storepaths.Paths         { return d.paths }
+func (d *initializeTestDeps) Logf(string, ...interface{})        {}
+func (d *initializeTestDeps) WithIdentityMutation(_ string, fn func() error) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return fn()
+}
+
+func TestInitializeStoreReleasesMutationLockBeforeUnlock(t *testing.T) {
+	lsig.RegisterClient()
+	dataDir := t.TempDir()
+	deps := &initializeTestDeps{
+		dataDir: dataDir,
+		paths:   storepaths.NewPaths(dataDir),
+	}
+	ir := testIdentityRuntime("alice")
+	unlockCalled := false
+	service := Service{
+		Deps: deps,
+		UnlockIdentity: func(
+			_ *identity.Runtime,
+			_ []byte,
+		) (bool, int, string, string) {
+			unlockCalled = true
+			if err := deps.WithIdentityMutation("alice", func() error {
+				return nil
+			}); err != nil {
+				return false, 0, err.Error(), ""
+			}
+			return true, 0, "", ""
+		},
+	}
+	done := make(chan adminproto.InitializeStoreResult, 1)
+	go func() {
+		done <- service.InitializeStore(ir, adminproto.InitializeStoreRequest{
+			Passphrase: []byte("initialize-passphrase"),
+		})
+	}()
+
+	select {
+	case result := <-done:
+		if !result.Success {
+			t.Fatalf("InitializeStore() result = %#v", result)
+		}
+		if !unlockCalled {
+			t.Fatal("InitializeStore() did not invoke unlock")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("InitializeStore() deadlocked by re-entering the identity mutation lock")
 	}
 }
 

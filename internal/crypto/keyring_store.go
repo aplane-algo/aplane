@@ -38,6 +38,10 @@ const (
 )
 
 var (
+	// ErrKeyringNotOpen prevents nil receivers from being mistaken for a
+	// settled authority by guards used at signing and mutation boundaries.
+	ErrKeyringNotOpen = errors.New("keyring is not open")
+
 	// ErrRotationPending prevents ordinary signing and mutation from using a
 	// root that only the explicit resume path may advance.
 	ErrRotationPending = errors.New("keyring rotation is pending")
@@ -192,12 +196,12 @@ func StartRotation(
 	candidate.terms[toTerm] = targetKey
 	candidate.currentTerm = toTerm
 	candidate.historicalAnchors = slices.Clone(anchors)
-	if err := requirePreservedHistoricalAnchors(kr.historicalAnchors, anchors); err != nil {
-		return fmt.Errorf("start rotation: %w", err)
-	}
 	payload := payloadFromKeyring(candidate)
 	if err := validateKeyringPayload(&payload); err != nil {
 		return fmt.Errorf("start rotation candidate: %w", err)
+	}
+	if err := requirePreservedHistoricalAnchors(kr.historicalAnchors, anchors); err != nil {
+		return fmt.Errorf("start rotation: %w", err)
 	}
 
 	ref, err := writeSnapshot(candidate, fromTerm, toTerm)

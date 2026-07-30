@@ -1273,6 +1273,16 @@ generation members use the dedicated historical open operation rather than
 regaining ordinary current-state authority. `genstore.ParseManifestBytes`,
 `ParseSealBytes`, and `VerifyBytesAgainstSeal` are the buffer-based boundary;
 historical consumers must not validate a path and then consume a second read.
+The scanner also retains the current manifest and generation inventory
+derived from those exact buffers. Rotation-start rollback decisions and
+completion baselines consume that retained authority and must not rebuild it
+from a second filesystem read.
+
+While a rotation is pending, `WriteFileDurable` names
+`<canonical-basename>.tmp-*` are reserved crash residue. Resume removes only
+regular matching temps for each root-pinned target, fsyncs the containing
+directory, and rejects non-regular matching artifacts before consuming the
+canonical file.
 
 #### Sealed Cutover Snapshot
 
@@ -1419,7 +1429,10 @@ durably only after the `CURRENT` flip.
 `apstore changepass` invokes the durable transition under the identity
 mutation lock. It first fences signing and clears the published runtime; only
 verified completion plus reload may republish it, and a racing explicit lock
-wins. The new root is the point of no return: it is published under the new
+wins. Unlock and recovery entrypoints refuse to load or publish authority
+while that maintenance fence is active, including the gap between unlock
+reconciliation and its final key load. The new root is the point of no return:
+it is published under the new
 passphrase before consumer rewrap. A configured passphrase helper is updated
 immediately after that commit. Helper failure is returned as a warning, never
 as a rollback request or completion barrier. Any later error leaves a
@@ -1427,8 +1440,11 @@ resumable pending root and the runtime locked; the new passphrase is
 authoritative and the next interactive or headless unlock resumes
 automatically before enabling the identity. `changepass` itself refuses to
 append over a pending root.
-Successful results report migrated artifact counts, helper warnings, and the
-number of retained prior generations still readable under historical terms.
+Results report migrated artifact counts, helper warnings, root-commit and
+pending-rotation state, and the number of retained prior generations still
+readable under historical terms. Post-commit failures preserve those fields
+so clients can tell operators that the new passphrase is authoritative and
+that unlock will resume the transition.
 
 ### Generation Store (`CURRENT` + `generations/`)
 

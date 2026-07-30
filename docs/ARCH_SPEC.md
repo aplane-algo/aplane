@@ -824,6 +824,14 @@ Locking must:
 - clear or invalidate key caches as appropriate,
 - notify interested IPC clients.
 
+Store maintenance adds an identity-local state fence in `Runtime.stateMu`.
+Beginning maintenance clears and locks the published key session before any
+root transition. Unlock and recovery attempts that start during the fence are
+rejected without loading authority; attempts already in flight lose on the
+generation check and clear anything they loaded. Only the matching successful
+maintenance token may republish after verified reload. Failure, a stale token,
+or a racing explicit lock leaves the runtime locked.
+
 The watcher model is identity-owned but not tied to every lock transition:
 
 - when an identity is unlocked, the watcher reloads immediately on qualifying filesystem changes,

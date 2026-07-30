@@ -121,38 +121,6 @@ func cmdGenerations(args []string) error {
 	}
 }
 
-// verifyCurrentGenerationContent decrypt-validates the current generation
-// with the same checks the signer's fail-closed reload gate applies: a clean
-// key scan and no template/key-type content defects. An --all-priors prune
-// abandons every rollback fallback, and passphrase rotation — the workflow
-// this prune prepares — re-encrypts all of this content next; defects must
-// surface while a rollback target still exists.
-func verifyCurrentGenerationContent(paths storepaths.Paths, identityID string) error {
-	// Structural validation precedes the passphrase prompt and every
-	// content read: a symlinked or otherwise malformed namespace must be
-	// rejected here, not followed by the scans below (only the structural
-	// validator checks that namespace entries are regular files).
-	if err := validateCurrentGenerationForContent(paths, identityID); err != nil {
-		return err
-	}
-
-	logInfof("pruning all priors abandons every rollback fallback; validating current generation content first")
-	fmt.Print("Enter passphrase: ")
-	passphrase, err := readPassword()
-	if err != nil {
-		return fmt.Errorf("failed to read passphrase: %w", err)
-	}
-	fmt.Println()
-	defer crypto.ZeroBytes(passphrase)
-
-	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
-	if err != nil {
-		return fmt.Errorf("passphrase verification failed: %w", err)
-	}
-	defer kr.Zero()
-	return verifyCurrentGenerationContentWithKeyring(paths, identityID, kr)
-}
-
 func validateCurrentGenerationForContent(paths storepaths.Paths, identityID string) error {
 	gen, err := genstore.Resolve(paths, identityID)
 	if err != nil {

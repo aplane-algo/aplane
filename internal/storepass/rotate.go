@@ -100,6 +100,12 @@ func Rotate(
 				startErr,
 			)
 		}
+		if errors.Is(startErr, crypto.ErrRotationCommitStateUnknown) {
+			return result, fmt.Errorf(
+				"rotation root commit state is unknown; stop and reopen the store with the new passphrase first, then try the old passphrase only if the new one is rejected: %w",
+				startErr,
+			)
+		}
 		return result, startErr
 	}
 	if snapshot == nil {
@@ -125,6 +131,12 @@ func Rotate(
 	)
 	applyCompletionReport(&result, completion)
 	if err != nil {
+		if !result.RotationPending {
+			return result, fmt.Errorf(
+				"new passphrase committed and rotation closed, but final cleanup requires recovery: %w",
+				err,
+			)
+		}
 		return result, fmt.Errorf(
 			"new passphrase committed but rotation remains resumable: %w",
 			err,

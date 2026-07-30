@@ -131,6 +131,55 @@ func TestScanClassifiesEveryK8DurableClass(t *testing.T) {
 	}
 }
 
+func TestScanRetainsCurrentDecisionInputsFromExactScannedBytes(t *testing.T) {
+	fixture := newInventoryFixture(t)
+	report, err := Scan(fixture.paths, inventoryIdentity, fixture.kr)
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	if report.currentManifest == nil {
+		t.Fatal("Scan() did not retain the parsed current manifest")
+	}
+	accountPath := filepath.Join(
+		fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB).KeysDir(),
+		"ACCOUNT.key",
+	)
+	account := findEntry(
+		t,
+		report,
+		"identities/default/generations/"+inventoryGenB+"/keys/ACCOUNT.key",
+	)
+	pinned := slices.IndexFunc(report.currentInventory, func(entry genstore.InventoryEntry) bool {
+		return entry.Path == "keys/ACCOUNT.key"
+	})
+	if pinned < 0 {
+		t.Fatal("Scan() did not retain the current account inventory entry")
+	}
+	if got := report.currentInventory[pinned]; got.SHA256 != account.SHA256 ||
+		got.Size != account.Size ||
+		got.Term != account.Term {
+		t.Fatalf("current decision input = %#v, want exact scanned entry %#v", got, account)
+	}
+
+	manifestOperation := report.currentManifest.Operation
+	if err := os.WriteFile(accountPath, []byte("substituted after scan"), fsutil.StoreFilePerm); err != nil {
+		t.Fatalf("substitute account after scan: %v", err)
+	}
+	manifestPath := fixture.paths.GenerationPaths(
+		inventoryIdentity,
+		inventoryGenB,
+	).ManifestPath()
+	if err := os.WriteFile(manifestPath, []byte("{\"substituted\":true}"), fsutil.StoreFilePerm); err != nil {
+		t.Fatalf("substitute manifest after scan: %v", err)
+	}
+	if report.currentInventory[pinned].SHA256 != account.SHA256 {
+		t.Fatal("post-scan file substitution changed the pinned current inventory")
+	}
+	if report.currentManifest.Operation != manifestOperation {
+		t.Fatal("post-scan manifest substitution changed the pinned parsed manifest")
+	}
+}
+
 func TestScanRejectsWrongEnvelopeContext(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -89,9 +89,6 @@ func ResumeRotation(
 	report := &ResumeReport{SnapshotEntries: len(snapshot.Inventory)}
 	for _, entry := range snapshot.Inventory {
 		historical := hasCanonicalPrefix(entry.Path, historicalPrefixes)
-		if !historical {
-			countMigrationTarget(report, entry.Kind)
-		}
 		switch {
 		case historical:
 			if err := verifyPinnedEntry(paths, entry); err != nil {
@@ -125,6 +122,9 @@ func ResumeRotation(
 				)
 			}
 			report.VerifiedUnchanged++
+		}
+		if !historical {
+			countMigrationTarget(report, entry.Kind)
 		}
 	}
 	return report, nil
@@ -362,6 +362,13 @@ func readResumeEntry(
 	path, err := resolveResumePath(paths, entry.Path)
 	if err != nil {
 		return nil, err
+	}
+	if err := fsutil.RemoveDurableWriteTemps(path); err != nil {
+		return nil, fmt.Errorf(
+			"reconcile durable-write residue for %q: %w",
+			entry.Path,
+			err,
+		)
 	}
 	limit := entry.Size
 	if allowTargetOutput {

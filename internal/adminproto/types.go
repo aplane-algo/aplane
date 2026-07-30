@@ -130,6 +130,8 @@ type ChangeStorePassphraseResult struct {
 	NodeRoleSidecarsMigrated int
 	PriorGenerations         int
 	HelperWarning            string
+	RootCommitted            bool
+	RotationPending          bool
 	Code                     string
 	Error                    string
 }

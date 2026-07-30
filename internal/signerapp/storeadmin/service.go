@@ -84,17 +84,23 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 				helperWarning = fmt.Sprintf("could not store passphrase via passphrase command helper: %v", err)
 			}
 		}
-		success, _, errMsg, _ := s.UnlockIdentity(ir, req.Passphrase)
-		if !success {
-			return fmt.Errorf("store initialized but signer unlock failed: %s", errMsg)
-		}
 		return nil
 	})
+	// UnlockIdentity owns its own generation/rotation reconciliation
+	// mutations. Invoke it only after releasing the non-reentrant identity
+	// mutation lock used for initialization.
+	if err == nil {
+		success, _, errMsg, _ := s.UnlockIdentity(ir, req.Passphrase)
+		if !success {
+			err = fmt.Errorf("store initialized but signer unlock failed: %s", errMsg)
+		}
+	}
 	if err != nil {
 		s.logStoreInitializeFailed(ir.ID(), err.Error())
 		return adminproto.InitializeStoreResult{
-			Code:  "initialize_store_failed",
-			Error: err.Error(),
+			Code:          "initialize_store_failed",
+			Error:         err.Error(),
+			HelperWarning: helperWarning,
 		}
 	}
 	s.logStoreInitialized(ir.ID(), initResult.MetadataDir)
@@ -178,8 +184,17 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 	if err != nil {
 		s.logPassphraseChangeFailed(ir.ID(), err.Error())
 		return adminproto.ChangeStorePassphraseResult{
-			Code:  "passphrase_change_failed",
-			Error: err.Error(),
+			KeysMigrated:             rotation.KeysMigrated,
+			TemplatesMigrated:        rotation.TemplatesMigrated,
+			RecoveredFilesMigrated:   rotation.RecoveredFilesMigrated,
+			PolicySidecarsMigrated:   rotation.PolicySidecarsMigrated,
+			NodeRoleSidecarsMigrated: rotation.NodeRoleSidecarsMigrated,
+			PriorGenerations:         rotation.PriorGenerations,
+			HelperWarning:            rotation.HelperWarning,
+			RootCommitted:            rotation.RootCommitted,
+			RotationPending:          rotation.RotationPending,
+			Code:                     "passphrase_change_failed",
+			Error:                    err.Error(),
 		}
 	}
 	s.logPassphraseChanged(
@@ -197,6 +212,8 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 		NodeRoleSidecarsMigrated: rotation.NodeRoleSidecarsMigrated,
 		PriorGenerations:         rotation.PriorGenerations,
 		HelperWarning:            rotation.HelperWarning,
+		RootCommitted:            rotation.RootCommitted,
+		RotationPending:          rotation.RotationPending,
 	}
 }
 

@@ -54,12 +54,10 @@ func StartRotation(
 	if err != nil {
 		return nil, err
 	}
-	manifest, err := genstore.ReadManifest(
-		paths.GenerationPaths(identityID, current),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("start rotation manifest: %w", err)
+	if report.currentManifest == nil {
+		return nil, fmt.Errorf("start rotation scan did not retain current manifest")
 	}
+	manifest := report.currentManifest
 	rollbackEligible := manifest.ParentID != "" && manifest.SourceRestoreID != ""
 	if baseline != nil && !rollbackEligible {
 		return nil, fmt.Errorf(
@@ -69,13 +67,12 @@ func StartRotation(
 	}
 	var rollback *RollbackCutover
 	if rollbackEligible {
-		live, err := genstore.BuildInventory(
-			paths.GenerationPaths(identityID, current),
+		rollback, err = EvaluateRollbackCutover(
+			current,
+			report.currentInventory,
+			manifest,
+			baseline,
 		)
-		if err != nil {
-			return nil, fmt.Errorf("start rotation live generation inventory: %w", err)
-		}
-		rollback, err = EvaluateRollbackCutover(current, live, manifest, baseline)
 		if err != nil {
 			return nil, err
 		}

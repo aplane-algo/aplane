@@ -391,6 +391,8 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				RecoveredFilesMigrated: 3,
 				PriorGenerations:       1,
 				HelperWarning:          "helper update failed",
+				RootCommitted:          true,
+				RotationPending:        true,
 			},
 			wantMap: map[string]any{
 				"type":                     MsgTypeChangeStorePassResult,
@@ -401,6 +403,8 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"recovered_files_migrated": float64(3),
 				"prior_generations":        float64(1),
 				"helper_warning":           "helper update failed",
+				"root_committed":           true,
+				"rotation_pending":         true,
 			},
 		},
 		{

@@ -380,9 +380,18 @@ context or integrity term where applicable). Its settled-store scanner:
 - rejects unknown in-scope files and unreconciled generation staging residue;
 - opens the exact encrypted buffer it hashes under the context derived from
   the canonical filename or recovered-batch metadata;
+- retains the current manifest and current generation inventory derived from
+  those same exact buffers; rollback clean/diverged decisions and completion
+  baselines consume these retained values and never reread mutable paths;
 - verifies retained namespace buffers against the authenticated seal entry
   before opening them, and parses exact manifest/seal buffers together;
 - excludes documented independent state from the inventory.
+
+During pending-rotation resume, the `basename.tmp-*` namespace used by
+`WriteFileDurable` is reserved implementation state. Resume durably removes
+regular crash-orphaned temps for each pinned target before reading it and
+rejects non-regular residue; this keeps a crash before atomic rename
+idempotently resumable without treating a temp as an additional K8 artifact.
 
 The same package now implements the strict
 `aplane.rotation-snapshot.v1` plaintext body and target-term envelope:

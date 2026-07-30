@@ -83,6 +83,8 @@ func scan(
 	return &Report{
 		CurrentGeneration: current,
 		Entries:           scanner.entries,
+		currentManifest:   scanner.currentManifest,
+		currentInventory:  scanner.currentInventory,
 	}, nil
 }
 
@@ -93,6 +95,8 @@ type inventoryScanner struct {
 	kr                *crypto.Keyring
 	excludeSnapshot   bool
 	entries           []Entry
+	currentManifest   *genstore.Manifest
+	currentInventory  []genstore.InventoryEntry
 }
 
 type historicalGenerationAuthority struct {
@@ -138,8 +142,12 @@ func (s *inventoryScanner) scanGenerations(current string) error {
 		if err != nil {
 			return fmt.Errorf("rotation inventory generation %s manifest: %w", name, err)
 		}
-		if _, err := genstore.ParseManifestBytes(gen, manifestBytes); err != nil {
+		manifest, err := genstore.ParseManifestBytes(gen, manifestBytes)
+		if err != nil {
 			return fmt.Errorf("rotation inventory generation %s manifest: %w", name, err)
+		}
+		if name == current {
+			s.currentManifest = manifest
 		}
 		if name == current {
 			if err := genstore.ValidateCurrent(gen); err != nil {
@@ -554,10 +562,6 @@ func (s *inventoryScanner) addEnvelopeFromSeal(
 	return s.addBytes(path, kind, data, term, ctx)
 }
 
-func (s *inventoryScanner) addPlaintext(path string, kind ArtifactKind) error {
-	return s.addPlaintextFromSeal(path, kind, nil, "")
-}
-
 func (s *inventoryScanner) addPlaintextFromSeal(
 	path string,
 	kind ArtifactKind,
@@ -612,6 +616,21 @@ func (s *inventoryScanner) addBytes(path string, kind ArtifactKind, data []byte,
 		ObjectClass:    ctx.Class,
 		ObjectSelector: ctx.Selector,
 	})
+	currentGen := s.paths.GenerationPaths(s.identityID, s.currentGeneration)
+	generationRelative, err := filepath.Rel(currentGen.Dir(), path)
+	if err != nil {
+		return err
+	}
+	generationRelative = filepath.ToSlash(generationRelative)
+	if strings.HasPrefix(generationRelative, "keys/") ||
+		strings.HasPrefix(generationRelative, "keytypes/") {
+		s.currentInventory = append(s.currentInventory, genstore.InventoryEntry{
+			Path:   generationRelative,
+			SHA256: hex.EncodeToString(sum[:]),
+			Size:   int64(len(data)),
+			Term:   term,
+		})
+	}
 	return nil
 }
 

@@ -34,7 +34,7 @@ type FileKeyStore struct {
 	scanWarnings []keys.KeyScanWarning
 	cacheLock    sync.RWMutex
 
-	// The store's keyring, opened once at unlock. Phase 1 holds one term.
+	// The store's keyring, opened once at unlock and zeroed on lock.
 	keyring *crypto.Keyring
 }
 
@@ -370,11 +370,13 @@ func (f *FileKeyStore) GetMetadata(ctx context.Context, address string) (*KeyMet
 // Delete removes a key from the store
 func (f *FileKeyStore) Delete(ctx context.Context, address string) error {
 	f.cacheLock.RLock()
-	if f.keyring != nil {
-		if err := f.keyring.RequireSettled(); err != nil {
-			f.cacheLock.RUnlock()
-			return fmt.Errorf("keystore mutation blocked: %w", err)
-		}
+	if f.keyring == nil {
+		f.cacheLock.RUnlock()
+		return fmt.Errorf("keystore mutation blocked: %w", ErrStoreLocked)
+	}
+	if err := f.keyring.RequireSettled(); err != nil {
+		f.cacheLock.RUnlock()
+		return fmt.Errorf("keystore mutation blocked: %w", err)
 	}
 	info, exists := f.cache[address]
 	f.cacheLock.RUnlock()

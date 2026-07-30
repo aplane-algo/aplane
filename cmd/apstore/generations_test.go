@@ -45,27 +45,31 @@ func newGenerationalTestStore(t *testing.T, passphrase string) (storepaths.Paths
 }
 
 func TestVerifyCurrentGenerationContentPassesOnCleanStore(t *testing.T) {
-	t.Setenv("APSIGNER_PASSPHRASE", "prune-pass")
 	paths, identityID := newGenerationalTestStore(t, "prune-pass")
-
-	if err := verifyCurrentGenerationContent(paths, identityID); err != nil {
-		t.Fatalf("verifyCurrentGenerationContent() error = %v, want clean pass", err)
+	kr, err := crypto.OpenKeyringStore(
+		paths.KeystoreMetadataDir(identityID),
+		[]byte("prune-pass"),
+	)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
-}
+	defer kr.Zero()
 
-func TestVerifyCurrentGenerationContentRejectsWrongPassphrase(t *testing.T) {
-	t.Setenv("APSIGNER_PASSPHRASE", "wrong-pass")
-	paths, identityID := newGenerationalTestStore(t, "prune-pass")
-
-	err := verifyCurrentGenerationContent(paths, identityID)
-	if err == nil || !strings.Contains(err.Error(), "passphrase verification failed") {
-		t.Fatalf("verifyCurrentGenerationContent() error = %v, want passphrase rejection", err)
+	if err := verifyCurrentGenerationContentWithKeyring(paths, identityID, kr); err != nil {
+		t.Fatalf("verifyCurrentGenerationContentWithKeyring() error = %v, want clean pass", err)
 	}
 }
 
 func TestVerifyCurrentGenerationContentFailsOnMalformedKey(t *testing.T) {
-	t.Setenv("APSIGNER_PASSPHRASE", "prune-pass")
 	paths, identityID := newGenerationalTestStore(t, "prune-pass")
+	kr, err := crypto.OpenKeyringStore(
+		paths.KeystoreMetadataDir(identityID),
+		[]byte("prune-pass"),
+	)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore() error = %v", err)
+	}
+	defer kr.Zero()
 
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
@@ -76,9 +80,9 @@ func TestVerifyCurrentGenerationContentFailsOnMalformedKey(t *testing.T) {
 		t.Fatalf("WriteFile(garbage): %v", err)
 	}
 
-	err = verifyCurrentGenerationContent(paths, identityID)
+	err = verifyCurrentGenerationContentWithKeyring(paths, identityID, kr)
 	if err == nil || !strings.Contains(err.Error(), "refusing to prune") {
-		t.Fatalf("verifyCurrentGenerationContent() error = %v, want content rejection", err)
+		t.Fatalf("verifyCurrentGenerationContentWithKeyring() error = %v, want content rejection", err)
 	}
 }
 
@@ -104,8 +108,8 @@ func TestVerifyCurrentGenerationContentRejectsSymlinkedNamespaceBeforePrompt(t *
 		t.Fatalf("symlink keys namespace: %v", err)
 	}
 
-	err = verifyCurrentGenerationContent(paths, identityID)
+	err = validateCurrentGenerationForContent(paths, identityID)
 	if err == nil || !strings.Contains(err.Error(), "current generation failed validation") {
-		t.Fatalf("verifyCurrentGenerationContent() error = %v, want structural rejection before prompt", err)
+		t.Fatalf("validateCurrentGenerationForContent() error = %v, want structural rejection", err)
 	}
 }

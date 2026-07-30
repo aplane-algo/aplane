@@ -157,6 +157,47 @@ func TestWriteFileDurableDirSyncFailureIsReported(t *testing.T) {
 	}
 }
 
+func TestRemoveDurableWriteTempsRemovesOnlyReservedRegularFiles(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.bin")
+	temp := filepath.Join(dir, "target.bin.tmp-crash")
+	unrelated := filepath.Join(dir, "other.tmp-crash")
+	for _, path := range []string{target, temp, unrelated} {
+		if err := os.WriteFile(path, []byte("data"), 0o600); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", path, err)
+		}
+	}
+	if err := RemoveDurableWriteTemps(target); err != nil {
+		t.Fatalf("RemoveDurableWriteTemps() error = %v", err)
+	}
+	if _, err := os.Stat(temp); !os.IsNotExist(err) {
+		t.Fatalf("reserved temp survived cleanup: %v", err)
+	}
+	for _, path := range []string{target, unrelated} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("cleanup removed %s: %v", path, err)
+		}
+	}
+}
+
+func TestRemoveDurableWriteTempsRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.bin")
+	if err := os.WriteFile(target, []byte("data"), 0o600); err != nil {
+		t.Fatalf("WriteFile(target) error = %v", err)
+	}
+	temp := filepath.Join(dir, "target.bin.tmp-crash")
+	if err := os.Symlink(target, temp); err != nil {
+		t.Fatalf("Symlink(temp) error = %v", err)
+	}
+	if err := RemoveDurableWriteTemps(target); err == nil {
+		t.Fatal("RemoveDurableWriteTemps() accepted symlink residue")
+	}
+	if _, err := os.Lstat(temp); err != nil {
+		t.Fatalf("rejected symlink residue was removed: %v", err)
+	}
+}
+
 func TestSyncDir(t *testing.T) {
 	if err := SyncDir(t.TempDir()); err != nil {
 		t.Fatalf("SyncDir: %v", err)

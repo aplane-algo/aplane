@@ -144,8 +144,8 @@ func TestMaintenanceClearsStateAndRepublishesOnlyOnMatchingToken(t *testing.T) {
 	if cleanups != 1 {
 		t.Fatalf("maintenance cleanups = %d, want 1", cleanups)
 	}
-	if !r.CompleteMaintenance(token) {
-		t.Fatal("CompleteMaintenance() refused current token")
+	if !r.FinishMaintenance(token, true) {
+		t.Fatal("FinishMaintenance() refused current token")
 	}
 	if !r.IsUnlocked() {
 		t.Fatal("runtime not republished after maintenance")
@@ -160,11 +160,95 @@ func TestMaintenanceRepublishLosesToRacingLock(t *testing.T) {
 	// Lock increments the fence even though maintenance already made the
 	// visible state locked. That explicit lock must prevent republish.
 	r.Lock()
-	if r.CompleteMaintenance(token) {
-		t.Fatal("CompleteMaintenance() overrode a racing Lock")
+	if r.FinishMaintenance(token, true) {
+		t.Fatal("FinishMaintenance() overrode a racing Lock")
 	}
 	if r.IsUnlocked() {
 		t.Fatal("runtime unlocked despite racing Lock")
+	}
+}
+
+func TestMaintenanceRejectsUnlockAndRecoveryWithoutRunningCallbacks(t *testing.T) {
+	r := New()
+	r.SetUnlocked()
+	token := r.BeginMaintenance()
+	unlockRan := false
+	recoveryRan := false
+
+	ok, _, errMsg := r.TryUnlock(func() (int, error) {
+		unlockRan = true
+		return 1, nil
+	}, nil)
+	if ok || errMsg != MaintenanceInProgressMessage || unlockRan {
+		t.Fatalf(
+			"TryUnlock during maintenance = (%v, %q, ran=%v)",
+			ok,
+			errMsg,
+			unlockRan,
+		)
+	}
+	recoveryOK, recoveryErr := r.TryRecovery(func() error {
+		recoveryRan = true
+		return nil
+	})
+	if recoveryOK || recoveryErr != MaintenanceInProgressMessage || recoveryRan {
+		t.Fatalf(
+			"TryRecovery during maintenance = (%v, %q, ran=%v)",
+			recoveryOK,
+			recoveryErr,
+			recoveryRan,
+		)
+	}
+	if r.FinishMaintenance(token, false) {
+		t.Fatal("failed maintenance unexpectedly republished runtime")
+	}
+	if r.GetState() != SignerStateLocked {
+		t.Fatalf("state after failed maintenance = %v, want locked", r.GetState())
+	}
+}
+
+func TestInFlightUnlockLosesToRacingMaintenance(t *testing.T) {
+	r := New()
+	cleanups := 0
+	r.SetOnLock(func() { cleanups++ })
+	var token MaintenanceToken
+
+	ok, _, errMsg := r.TryUnlock(func() (int, error) {
+		token = r.BeginMaintenance()
+		return 1, nil
+	}, nil)
+	if ok || errMsg != LockedDuringUnlockMessage {
+		t.Fatalf("TryUnlock racing maintenance = (%v, %q)", ok, errMsg)
+	}
+	if r.GetState() != SignerStateLocked {
+		t.Fatalf("state after racing maintenance = %v, want locked", r.GetState())
+	}
+	// BeginMaintenance clears the old session; the losing TryUnlock clears
+	// whatever its callback may have loaded.
+	if cleanups != 2 {
+		t.Fatalf("maintenance race cleanups = %d, want 2", cleanups)
+	}
+	if !r.FinishMaintenance(token, true) {
+		t.Fatal("successful maintenance could not republish after rejecting the racing unlock")
+	}
+}
+
+func TestMaintenanceFailureForcesLockedState(t *testing.T) {
+	r := New()
+	r.SetUnlocked()
+	token := r.BeginMaintenance()
+
+	// Model the old defect directly: even if another path has managed to
+	// publish Unlocked, a failed maintenance finish must force Locked.
+	r.stateMu.Lock()
+	r.state = SignerStateUnlocked
+	r.stateMu.Unlock()
+
+	if r.FinishMaintenance(token, false) {
+		t.Fatal("failed maintenance unexpectedly republished runtime")
+	}
+	if r.GetState() != SignerStateLocked {
+		t.Fatalf("state after failed maintenance = %v, want locked", r.GetState())
 	}
 }
 

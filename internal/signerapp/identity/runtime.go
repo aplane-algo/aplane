@@ -446,7 +446,7 @@ func (ir *Runtime) FinishStoreMaintenance(
 	token StoreMaintenanceToken,
 	republish bool,
 ) bool {
-	if republish && ir.lockRuntime.CompleteMaintenance(token.runtime) {
+	if ir.lockRuntime.FinishMaintenance(token.runtime, republish) {
 		return true
 	}
 	ir.notifyLocked()
