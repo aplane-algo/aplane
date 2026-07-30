@@ -339,6 +339,10 @@ The keyring is the store's cryptographic root, defined in
 - `Keyring.RequireSettled` blocks ordinary signing and mutation during that
   descriptor's lifetime; normal reload maps `ErrRotationPending` to recovery,
   and offline passphrase/policy/generation mutation uses the same guard
+- `rotationinventory.ResumeRotation` is the explicit internal bypass: it
+  reopens the root-pinned snapshot, promotes only exact retiring-term inputs,
+  and accepts already-written target-term outputs only after context-bound
+  authentication; it does not close the descriptor
 - a successful unwrap is the passphrase check; there is no separate verifier
 - the KEK exists only inside seal and open, and is zeroed before either returns
 

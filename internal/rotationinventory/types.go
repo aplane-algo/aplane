@@ -3,8 +3,9 @@
 
 // Package rotationinventory owns the canonical cross-artifact inventory used
 // by Phase 3 key-term rotation. It classifies every durable artifact whose
-// term authority or exact bytes affect a transition; it does not enable term
-// append or implement the rotation state machine.
+// term authority or exact bytes affect a transition and owns the internal
+// guarded start and snapshot-pinned resume boundaries. Completion and
+// operator-facing orchestration remain separate lifecycle steps.
 package rotationinventory
 
 import (

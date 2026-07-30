@@ -44,24 +44,16 @@ rotation_transition_negative.cfg runs ResumeAppendWithoutPendingGuard and
 requires an R5 violation. All three reproduce the review findings
 mechanically; the R5 control runs in the standard formal harness.
 
-Two assumptions this module makes are not yet true of the implementation, and
-are stated here because the model is only as good as the code that matches it
-(the gaps are enumerated in the proposal's model-review section):
-
-  - `ReadAuthorized` has no counterpart. `Keyring.Open` selects a term by
-    membership in the keyring, not by authority, which is vacuous while one
-    term exists and is exactly what must change when a second appears. Open
-    is the enforcement point for R1 and R2; leaving a retired term in the
-    keyring after the window closes would keep it readable and neither
-    invariant would transfer.
-  - `snapshot` is pinned in a single step. A real scan holds the identity
-    mutation lock to exclude cooperating writers, but that lock cannot exclude
-    the direct-filesystem attacker modelled here. The implementation must hash
-    and decrypt the same input buffer, then require exact final path-set and
-    output-authority equality. An attacker edit after an entry is pinned fails
-    closed; one before the entry is read is on the pre-cutover side of the
-    stated claim. Without those byte and inventory bindings, R2 holds in the
-    model and not on disk.
+The implementation now supplies the model's term-authority and pinned-input
+boundaries: ordinary reads use the settled/pending authority set, historical
+reads require exact root anchors, and resume promotes only a snapshot-pinned
+retiring-term buffer while authenticating already-written target outputs.
+The remaining transfer obligation is at CloseWindow: a real scan must require
+exact final path-set and output-authority equality before clearing the pending
+descriptor. The identity mutation lock excludes cooperating writers, but not
+the direct-filesystem attacker modelled here. An edit after an entry is pinned
+therefore fails its exact digest or final comparison; one before the entry is
+read is on the pre-cutover side of the stated claim.
 
 The module intentionally omits:
 

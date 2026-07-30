@@ -308,9 +308,12 @@ mutation lock so the snapshot is taken against a cooperating-mutation-stable
 view. Direct filesystem changes are handled by exact input digests and the
 required final path/target-authority comparison, not by the lock. While the
 root is pending, normal signer reload and key scans fail closed until the
-snapshot-pinned resume path completes. Rewrap/resume, completion-baseline
-ordering, rollback consumption, and the final comparison remain Phase 3 work;
-see [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
+snapshot-pinned lifecycle completes. The internal resume pass now preserves
+root-anchored prior generations byte-for-byte while rewrapping only exact
+pinned mutable current-generation envelopes; target outputs are authenticated
+and accepted idempotently after a crash. Completion-baseline ordering,
+rollback consumption, the final comparison, and operator wiring remain Phase
+3 work; see [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
 
 ## 12. Filesystems, crash ordering, ownership
 

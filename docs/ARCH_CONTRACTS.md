@@ -1227,9 +1227,9 @@ Behavior:
 ### Rotation Artifact Inventory
 
 `internal/rotationinventory` owns the canonical K8 durable-artifact taxonomy,
-snapshot scan, and guarded transition-start orchestration. The internal start
-boundary enables the atomic append/root publication; rewrap, completion,
-rollback consumption, and operator-facing wiring are not yet implemented.
+snapshot scan, guarded transition-start orchestration, and the internal
+snapshot-pinned resume pass. Completion, rollback consumption, and
+operator-facing wiring are not yet implemented.
 
 Each entry contains:
 
@@ -1361,10 +1361,25 @@ a baseline and requires it to name `CURRENT`.
 Generation seal inventory entries authenticate each member's term, and exact
 seal anchors gate the separate retired-term seal/member verification path.
 The pending-root commit now references the durable snapshot and complete
-pre-retirement anchor set. Pinned-input rewrap/resume,
-completion-baseline ordering, rollback consumption, and the final
-exact-path/target-authority comparison remain required before a pending
-transition may close or become operator-facing.
+pre-retirement anchor set.
+
+`rotationinventory.ResumeRotation` requires a pending root and reopens that
+exact root-referenced snapshot on every pass. Root-anchored historical
+generation entries and plaintext entries remain exact snapshot bytes.
+Mutable envelopes on `from_term` must match their pinned size and SHA-256
+before the same buffer is context-opened and durably sealed onto `to_term`.
+Policy and node-role sidecars are similarly renewed only after their exact
+pinned document and retiring-term sidecar authenticate. On retry, an envelope
+or sidecar already on `to_term` is accepted only after target-term
+authentication succeeds. This makes a visible rename followed by a directory
+sync error safely resumable and prevents a holder of the retiring term from
+laundering substituted bytes. Reads are bounded and reject final-component
+symlinks.
+
+Resume reports durable progress but deliberately leaves the root pending and
+the referenced snapshot present. Completion-baseline ordering, rollback
+consumption, and the final exact-path/target-authority comparison remain
+required before a pending transition may close or become operator-facing.
 
 ### Generation Store (`CURRENT` + `generations/`)
 

@@ -19,9 +19,13 @@ slice adds guarded multi-term acceptance, the exact settled/pending
 current-state authority sets, durable snapshot-before-root publication with
 the complete historical-anchor set, and the R5 no-second-append guard. A
 pending root now fails closed into recovery before runtime state is
-published. The remaining transition work is the snapshot-pinned rewrap/resume
-loop, completion and divergence-baseline ordering, rollback consumption, and
-operator-facing wiring recorded below and in
+published. An eighth slice adds the snapshot-pinned, idempotent rewrap/resume
+loop: retained anchored generations remain exact, mutable retiring-term
+envelopes are promoted only from their pinned bytes, integrity sidecars are
+re-signed over pinned documents, and authenticated target outputs are
+accepted after a crash. The remaining transition work is completion and
+divergence-baseline ordering, rollback consumption, and operator-facing
+wiring recorded below and in
 [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
 picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
 

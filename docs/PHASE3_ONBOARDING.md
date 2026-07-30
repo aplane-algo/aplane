@@ -43,6 +43,7 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | Historical generation foundation — generation inventory entries authenticate each member's term, exact pre-retirement seal bytes can be root-anchored, and retired-term seals and members have a separate anchor-gated verification/open path | `internal/genstore`, `internal/crypto/keyring.go`, `internal/crypto/policy_integrity.go` |
 | Divergence-baseline foundation — strict `aplane.rotation-baseline.v1` codec, bounded current-term durable storage, manifest/prior-baseline cutover decision, and fail-closed preflight reconciliation | `internal/rotationinventory/baseline.go` |
 | Guarded transition start — baseline preflight, cutover inventory, complete historical-anchor collection, target-term snapshot durability, atomic pending-root publication, R5 retry refusal, and fail-closed pending runtime | `internal/rotationinventory/start.go`, `internal/crypto/keyring_store.go`, `internal/keystore/file.go`, `internal/signerapp/templates/reload.go` |
+| Snapshot-pinned resume — idempotent mutable-envelope rewrap, pinned-document sidecar renewal, exact preservation of anchored generations and plaintext, target-output authentication on retry, and partial-progress crash recovery | `internal/rotationinventory/resume.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
 What that gives you: fresh stores begin at term 1; a guarded internal
@@ -57,11 +58,12 @@ attempts and does not treat an unverified seal as a rollback authority.
 Settled current-state reads accept exactly `{current_term}`; pending reads
 accept exactly `{current_term, rotation.from_term}`, regardless of what older
 keys remain resident. Normal signer reload and direct key scanning reject a
-pending root before publishing runtime state, because resume is not yet
-implemented. There is still no operator-facing transition or
-snapshot-consuming rewrap/completion pass. K8 therefore remains incomplete
-until rewrap, rollback, completion-baseline ordering, and the final
-exact-path/target-authority check consume the pinned state.
+pending root before publishing runtime state, because completion is not yet
+implemented or operator-wired. The internal snapshot-consuming resume pass is
+implemented, but it deliberately leaves the pending descriptor and snapshot
+in place. There is still no operator-facing transition or completion pass. K8
+therefore remains incomplete until rollback, completion-baseline ordering,
+and the final exact-path/target-authority check consume the pinned state.
 
 The properties that are proven today are K1–K7 in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against a named test.
@@ -85,8 +87,9 @@ negative control is the evidence that the positive model's guard is
 load-bearing rather than a vacuous consequence of its types.
 
 Read it before the proposal's prose. It is the most compact statement of what
-the transition must do, and its header now states the two places where the
-model assumes something the code does not yet provide.
+the transition must do, and its header distinguishes the implemented
+authority/pinned-input boundaries from the final comparison and close steps
+that the code does not yet provide.
 
 Run it with `python3 scripts/run-formal-tests.py`, which runs all 17 recorded
 TLC checks — 13 modules, three additional liveness configurations, and the R5
@@ -456,15 +459,29 @@ retried as a fresh start. An unclassifiable root state similarly requires
 recovery, not retry.
 
 This is still an internal transition boundary, not a complete lifecycle.
-Rewrap/resume must consume only pinned inputs, rollback must consult the
-effective baseline authority, and completion must write any required baseline
-before close and compare the fresh canonical path set and target authority
-against the pinned snapshot. Until resume exists, normal reload and key scans
-fail closed on a pending root. `Keyring.RequireSettled` also blocks ordinary
-runtime keyring access, signing-key loads, direct keystore mutation, offline
-passphrase change, policy signing/editing, and generation pruning; those paths
-return the stable `ErrRotationPending` classification rather than treating
-the resident terms as permission to proceed.
+`ResumeRotation` reopens the exact root-referenced snapshot on every pass.
+For mutable envelopes it accepts a target-term file only after opening that
+same bounded buffer under its pinned logical context; it otherwise requires
+the retiring-term bytes to match the snapshot exactly before opening and
+durably re-sealing them. It re-signs policy and node-role sidecars only over
+the exact pinned document bytes. Anchored historical generations and all
+other plaintext entries must remain byte-for-byte unchanged. A durable-write
+failure can return a partial report; if rename was visible, the next pass
+authenticates that target output and continues without rewriting it. Missing,
+substituted, oversized, symlinked, wrong-term, or digest-mismatched inputs
+fail closed rather than being blessed onto the target term.
+
+Resume deliberately does not write a completion baseline, clear the pending
+root, or remove the snapshot. Rollback must still consult the effective
+baseline authority, and completion must write any required baseline before
+close and compare the fresh canonical path set and target authority against
+the pinned snapshot. Until that lifecycle is wired, normal reload and key
+scans continue to fail closed on a pending root. `Keyring.RequireSettled`
+also blocks ordinary runtime keyring access, signing-key loads, direct
+keystore mutation, offline passphrase change, policy signing/editing, and
+generation pruning; those paths return the stable `ErrRotationPending`
+classification rather than treating the resident terms as permission to
+proceed.
 
 ### The original blockers
 
