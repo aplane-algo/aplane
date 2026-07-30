@@ -30,6 +30,50 @@ import (
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
+func TestRotateRejectsPendingTermRotationBeforeScanningTargets(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	oldPassphrase := []byte("old-passphrase")
+	kr, err := crypto.CreateKeyringStore(
+		paths.KeystoreMetadataDir(identityID),
+		oldPassphrase,
+	)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	if err := crypto.StartRotation(
+		paths.KeystoreMetadataDir(identityID),
+		kr,
+		oldPassphrase,
+		[]crypto.HistoricalGenerationAnchor{},
+		func(target *crypto.Keyring, _, _ int64) (crypto.RotationSnapshotReference, error) {
+			sealed, err := target.Seal([]byte("cutover"), crypto.RotationSnapshotContext())
+			if err != nil {
+				return crypto.RotationSnapshotReference{}, err
+			}
+			return crypto.NewRotationSnapshotReference(sealed)
+		},
+	); err != nil {
+		kr.Zero()
+		t.Fatalf("StartRotation() error = %v", err)
+	}
+	kr.Zero()
+
+	result, err := Rotate(
+		paths,
+		identityID,
+		oldPassphrase,
+		[]byte("new-passphrase"),
+		RotateOptions{},
+	)
+	if !errors.Is(err, crypto.ErrRotationPending) {
+		t.Fatalf("Rotate() error = %v, want pending rotation failure", err)
+	}
+	if result != (RotateResult{}) {
+		t.Fatalf("Rotate() result = %+v, want no mutation", result)
+	}
+}
+
 func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths, "default")

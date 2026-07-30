@@ -526,6 +526,57 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	}
 }
 
+func TestFileKeyStoreScanRejectsPendingRotation(t *testing.T) {
+	_, paths, cleanup := setupTestKeysDir(t)
+	defer cleanup()
+
+	passphrase := []byte("pending-rotation-passphrase")
+	keystoreDir := paths.KeystoreMetadataDir(testIdentityID)
+	kr, err := crypto.CreateKeyringStore(keystoreDir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	if err := crypto.StartRotation(
+		keystoreDir,
+		kr,
+		passphrase,
+		[]crypto.HistoricalGenerationAnchor{},
+		func(target *crypto.Keyring, _, _ int64) (crypto.RotationSnapshotReference, error) {
+			sealed, err := target.Seal([]byte("cutover"), crypto.RotationSnapshotContext())
+			if err != nil {
+				return crypto.RotationSnapshotReference{}, err
+			}
+			return crypto.NewRotationSnapshotReference(sealed)
+		},
+	); err != nil {
+		kr.Zero()
+		t.Fatalf("StartRotation() error = %v", err)
+	}
+	kr.Zero()
+
+	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	if err := store.Unlock(passphrase); err != nil {
+		t.Fatalf("Unlock() error = %v", err)
+	}
+	t.Cleanup(store.ClearKeys)
+	err = store.Scan(nil)
+	if !errors.Is(err, crypto.ErrRotationPending) ||
+		!strings.Contains(err.Error(), "rotation 1 -> 2 requires resume") {
+		t.Fatalf("Scan() error = %v, want pending rotation failure", err)
+	}
+	callbackCalled := false
+	err = store.WithKeyring(func(*crypto.Keyring) error {
+		callbackCalled = true
+		return nil
+	})
+	if !errors.Is(err, crypto.ErrRotationPending) {
+		t.Fatalf("WithKeyring() error = %v, want pending rotation failure", err)
+	}
+	if callbackCalled {
+		t.Fatal("WithKeyring() exposed a pending keyring to an ordinary runtime caller")
+	}
+}
+
 // TestFileKeyStore_CacheConcurrency tests thread-safe cache operations
 func TestFileKeyStore_CacheConcurrency(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)

@@ -68,6 +68,9 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		return result, err
 	}
 	defer oldKeyring.Zero()
+	if err := oldKeyring.RequireSettled(); err != nil {
+		return result, fmt.Errorf("passphrase change blocked: %w", err)
+	}
 
 	managedFiles, templateFiles, recoveredFiles, err := scanTargets(paths, identityID, oldKeyring)
 	if err != nil {

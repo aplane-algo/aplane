@@ -320,19 +320,31 @@ The keyring is the store's cryptographic root, defined in
 - sealed body: the set of numbered term keys, wrapped under the
   passphrase-derived KEK with AES-256-GCM
 - sealed payload fields are `schema`, `current_term`, sorted `terms`, required
-  `historical_anchors`, and optional `rotation`; this release writes the v2
-  shape with one term, an empty anchor array, and no pending rotation
+  `historical_anchors`, and optional `rotation`; fresh stores write one term
+  and no pending rotation, while transition start appends one successor and
+  publishes the pending descriptor
 - each `HistoricalGenerationAnchor` binds a canonical generation ID to the
   exact byte size and SHA-256 of its pre-retirement generation seal
 - a rotation descriptor's snapshot size/digest uses
   `RotationSnapshotReference`, which pins the exact encrypted snapshot under
-  an independent 16 MiB cap; the payload validator enforces this shape even
-  though the runtime still rejects pending and multi-term roots
+  an independent 16 MiB cap; the payload validator and runtime enforce the
+  same shape for pending multi-term roots
+- ordinary envelope and integrity reads authorize exactly the current term
+  when settled and the current plus `rotation.from_term` when pending; older
+  resident terms are usable only through exact-anchor-gated historical APIs
+- `crypto.StartRotation` rejects an existing descriptor, appends exactly one
+  successor term, requires the target-term snapshot to be durable first, and
+  publishes the descriptor, exact snapshot reference, and historical anchors
+  in one root replacement
+- `Keyring.RequireSettled` blocks ordinary signing and mutation during that
+  descriptor's lifetime; normal reload maps `ErrRotationPending` to recovery,
+  and offline passphrase/policy/generation mutation uses the same guard
 - a successful unwrap is the passphrase check; there is no separate verifier
 - the KEK exists only inside seal and open, and is zeroed before either returns
 
-Term keys are stored random keys, not passphrase-derived values. This release
-runs a single term.
+Term keys are stored random keys, not passphrase-derived values. Fresh stores
+start at term 1; multi-term residency does not itself grant current-state
+authority.
 
 Sealing and opening the root route term keys through base64 in Go strings,
 which are immutable and so cannot be zeroed. Those copies live only inside the

@@ -124,6 +124,9 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 		return err
 	}
 	defer clear()
+	if err := kr.RequireSettled(); err != nil {
+		return fmt.Errorf("%s save blocked: %w", s.target().StatusNoun(), err)
+	}
 
 	if _, err := s.loadVerifiedWithKeyring(kr); err != nil {
 		return fmt.Errorf("refusing to overwrite unverified %s: %w", s.target().StatusNoun(), err)
@@ -187,6 +190,9 @@ func (s OfflineStore) SaveYAML(ctx context.Context, data []byte) error {
 		return err
 	}
 	defer clear()
+	if err := kr.RequireSettled(); err != nil {
+		return fmt.Errorf("%s save blocked: %w", s.target().StatusNoun(), err)
+	}
 
 	if _, err := s.loadVerifiedWithKeyring(kr); err != nil {
 		return fmt.Errorf("refusing to overwrite unverified %s: %w", s.target().StatusNoun(), err)

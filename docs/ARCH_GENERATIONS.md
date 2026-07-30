@@ -293,25 +293,24 @@ reference safety has soaked.
 - The rescue surface stays admin-protocol-owned; offline `apstore` commands
   take the store lock exactly as today.
 
-## 11. Rotation boundary (and the interaction v1 must decide)
+## 11. Rotation boundary
 
-Passphrase rotation keeps its existing `.new`/`.old` transaction; key/keytype
-generations cannot commit a rotation (it also rewrites `keyring.enc`,
-recovered batches, and both HMAC sidecars). Cryptographic epochs — a keyring
-of numbered terms so rotation appends rather than rewrites — remain a future
-option requiring their own accepted design.
+The accepted Phase 3 design replaces bulk passphrase rotation with numbered
+key terms. Guarded transition start inventories both current and retained
+generation namespaces, authenticates retained members through their exact
+root-pinned historical seals, and durably writes a target-term cutover
+snapshot before atomically publishing the pending root. Retained generations
+therefore do not require prune-all-priors quiescence and are not silently
+stranded on an unauthorized term.
 
-**New decision forced by the inventory:** `storepass.scanTargets` discovers
-key/template targets by walking the *resolved current* namespaces — prior
-generations would silently keep material encrypted under the **old** term
-key, making generation rollback after a rotation produce an unreadable
-store. Therefore: **rotation requires quiescence — it refuses to run while
-any non-current generation or incomplete operation exists (operator prunes
-via GC first, mirroring rotation's existing fail-closed stance toward
-unsupported recovered-batch state), and after a successful rotation the
-retention window restarts empty.** Prior-generation retention and passphrase
-rotation never coexist. (`deleted/` remains outside rotation today — the
-open decide-or-fix item is unchanged by this design.)
+Generation mutation and transition start still require the same identity
+mutation lock so the snapshot is taken against a cooperating-mutation-stable
+view. Direct filesystem changes are handled by exact input digests and the
+required final path/target-authority comparison, not by the lock. While the
+root is pending, normal signer reload and key scans fail closed until the
+snapshot-pinned resume path completes. Rewrap/resume, completion-baseline
+ordering, rollback consumption, and the final comparison remain Phase 3 work;
+see [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
 
 ## 12. Filesystems, crash ordering, ownership
 

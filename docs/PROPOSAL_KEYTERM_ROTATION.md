@@ -1,9 +1,9 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **phases 1 and 2 implemented and merged; phase 3 schema work is in
+Status: **phases 1 and 2 implemented and merged; phase 3 transition work is in
 progress.** The formal R5 prerequisite is complete, and the first
 implementation slice writes the strict v2 keyring/v5 marker shape while
-deliberately retaining the one-term runtime gate. A second slice adds
+initially retaining the one-term runtime gate. A second slice adds
 keyring-confined integrity operations, generation seal v2, and explicit-term
 policy/node-role sidecar v2. A third slice adds the canonical K8 artifact
 taxonomy and settled-store scanner with exact-buffer context opening and its
@@ -14,9 +14,14 @@ root. A fifth slice records and authenticates each generation member's term,
 pins exact pre-retirement generation seals with historical anchors, and
 provides a separate anchor-gated retired-term open path. A sixth slice adds
 the strict bounded divergence-baseline record, effective-authority cutover
-decision, and fail-closed stale/malformed preflight reconciliation. The
-transition itself remains blocked on root-commit integration, rewrap, and
-completion wiring recorded below and in
+decision, and fail-closed stale/malformed preflight reconciliation. A seventh
+slice adds guarded multi-term acceptance, the exact settled/pending
+current-state authority sets, durable snapshot-before-root publication with
+the complete historical-anchor set, and the R5 no-second-append guard. A
+pending root now fails closed into recovery before runtime state is
+published. The remaining transition work is the snapshot-pinned rewrap/resume
+loop, completion and divergence-baseline ordering, rollback consumption, and
+operator-facing wiring recorded below and in
 [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
 picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
 
@@ -909,10 +914,11 @@ accepts everywhere else.
      taxonomy and settled-store scan, including exact-buffer logical-context
      opening and mutation-tested durable-class coverage. The sealed snapshot,
      per-member seal terms, exact historical anchors, and anchor-gated
-     retired-term opening are also implemented as foundations. This remains a
-     prerequisite rather than an enabled transition: the pending root must pin
-     the snapshot and complete anchor set, and rewrap plus the final
-     exact-path/target-authority check still have to consume them before append.
+     retired-term opening are also implemented as foundations. The guarded
+     transition start now pins the durable snapshot and complete anchor set in
+     the same atomic root publication. Snapshot-pinned rewrap/resume and the
+     final exact-path/target-authority check still have to consume them before
+     completion.
    - **Add an artifact-class test.** The gates above prove no code takes the
      old path; they do not prove every written artifact carries a term. A
      test that creates each durable class — managed keys, installed
@@ -1127,11 +1133,12 @@ implementation do not yet meet. None invalidates the model; all are work phase
    data file. Reusing that machinery for append would give up the atomicity
    R5 depends on.
 
-6. **`StartRotation`'s guard has no counterpart either.** R5 holds because
-   `StartRotation` requires `currentTerm = T1`. The code's current equivalent
-   is stronger and inverted: `OpenKeyring` refuses a multi-term root outright,
-   which is precisely what phase 3 relaxes. The relaxation has to install the
-   real guard in the same change, or R5 goes unenforced.
+6. **`StartRotation`'s guard had no counterpart either.** R5 holds because
+   `StartRotation` refuses a root whose rotation descriptor is already
+   present. The guarded transition-start slice relaxed the old multi-term
+   rejection and installed that real guard in the same change. Tests exercise
+   both direct retry and the durable reopened pending root, so resume cannot
+   append a third term.
 
 One thing the re-read confirmed rather than found: the object context added in
 phase 1 does **not** subsume the cutover snapshot. An attacker holding a

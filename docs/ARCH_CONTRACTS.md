@@ -1158,15 +1158,20 @@ Behavior:
   `historical_anchors`, and optional `rotation`; v2 structural validation
   rejects invalid term order, current-term selection, anchors, and pending
   descriptors before runtime use
-- exactly one term, an empty anchor array, and no pending descriptor are
-  accepted by this implementation slice; multi-term runtime acceptance lands
-  only with the authority-set check and the R5 no-second-append guard
+- settled and pending multi-term payloads are accepted; ordinary current-state
+  envelope and integrity reads authorize exactly `{current_term}` while
+  settled and exactly `{current_term, rotation.from_term}` while pending.
+  Other resident terms require the separate historical-anchor path
+- `StartRotation` refuses an existing descriptor before any snapshot or root
+  write, appends exactly `current_term + 1`, and publishes the new current
+  term plus former-current descriptor in the same root replacement
 - a refused root's decoded term keys are zeroed on every exit path, not only
   the successful one
 - the successful unwrap is the passphrase check; there is no separate verifier
 - the KEK is zeroed before seal and open return, and is never cached
 - a passphrase change replaces this file in one atomic write
-- this release runs a single term
+- fresh stores begin with term 1; completed roots may retain historical terms,
+  and a pending root has one current and one retiring current-state authority
 
 ### Keystore Marker (`.keystore`)
 
@@ -1221,9 +1226,10 @@ Behavior:
 
 ### Rotation Artifact Inventory
 
-`internal/rotationinventory` owns the canonical K8 durable-artifact taxonomy
-and settled-store scan. It is an implementation foundation and does not
-enable term append.
+`internal/rotationinventory` owns the canonical K8 durable-artifact taxonomy,
+snapshot scan, and guarded transition-start orchestration. The internal start
+boundary enables the atomic append/root publication; rewrap, completion,
+rollback consumption, and operator-facing wiring are not yet implemented.
 
 Each entry contains:
 
@@ -1307,10 +1313,32 @@ the no-follow bounded regular-file reader. Validation order is exact
 size/digest, envelope target term, context-bound open of the same buffer,
 strict plaintext parse, then `{from_term,to_term}` equality with the root.
 
-`WriteSnapshot` durably publishes the encrypted body before returning its
-root reference. This implements the first half of the required commit order;
-no production path yet commits a pending root. `OpenKeyring` still rejects all
-pending and multi-term payloads.
+`rotationinventory.StartRotation` reconciles the baseline, scans the cutover
+inventory, evaluates the rollback-eligible current generation, and collects
+the complete retained-generation anchor set before invoking
+`crypto.StartRotation`. `WriteSnapshot` durably publishes the target-term
+encrypted body before returning its exact root reference. Only then does
+`crypto.StartRotation` atomically replace `keyring.enc` with the appended
+current term, former-current descriptor, snapshot reference, and anchor set.
+The caller must hold the identity mutation lock.
+
+A failure before root rename leaves the old root and in-memory authority
+unchanged; the durable snapshot may be an unreferenced orphan. If the root
+rename is visible but directory sync fails, the exact candidate is adopted in
+memory and the caller receives `ErrRotationCommitDurabilityUnknown`. If root
+visibility cannot be classified, `ErrRotationCommitStateUnknown` requires
+recovery. Neither result authorizes retrying `StartRotation` as a fresh
+append. The descriptor itself is the durable R5 guard.
+
+`OpenKeyring` accepts settled and pending multi-term roots and enforces the
+current-state authority set described above. Normal signer reload and direct
+key scanning reject a pending root before keys, templates, snapshots, or a
+session can be published; the recovery unlock path may retain it for the
+future resume operation. `Keyring.RequireSettled` is the common guard for
+ordinary runtime keyring access, signing-key loads, and direct keystore
+mutation. Offline passphrase change, policy signing/editing, and generation
+pruning apply the same guard. `ErrRotationPending` is the stable error
+classification; only the explicit future resume path may bypass it.
 
 `identities/<identity>/rotation.baseline.enc` is a current-term envelope with
 object context `rotation-baseline:current`. Its strict plaintext schema is
@@ -1330,14 +1358,13 @@ matching baseline, durably removes a valid stale one, and preserves malformed
 or unauthorized records as blocking evidence. The K8 scanner strictly parses
 a baseline and requires it to name `CURRENT`.
 
-The scanner, snapshot, historical-generation, and divergence-baseline
-primitives still describe preparation, not an enabled transition. Generation
-seal inventory entries authenticate each member's term, and exact seal anchors
-gate the separate retired-term seal/member verification path. Pending-root
-commit integration must reference the durable snapshot and complete
-pre-retirement anchor set; pinned-input rewrap, completion-baseline ordering,
-rollback consumption, and the final exact-path/target-authority comparison
-also remain required before the runtime multi-term gate may be relaxed.
+Generation seal inventory entries authenticate each member's term, and exact
+seal anchors gate the separate retired-term seal/member verification path.
+The pending-root commit now references the durable snapshot and complete
+pre-retirement anchor set. Pinned-input rewrap/resume,
+completion-baseline ordering, rollback consumption, and the final
+exact-path/target-authority comparison remain required before a pending
+transition may close or become operator-facing.
 
 ### Generation Store (`CURRENT` + `generations/`)
 

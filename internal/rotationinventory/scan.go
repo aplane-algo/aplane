@@ -125,6 +125,7 @@ func (s *inventoryScanner) scanGenerations(current string) error {
 	for _, name := range names {
 		gen := s.paths.GenerationPaths(s.identityID, name)
 		var contentSeal *genstore.Seal
+		var historicalAnchor *crypto.HistoricalGenerationAnchor
 		manifestBytes, _, err := fsutil.ReadRegularFile(gen.ManifestPath())
 		if err != nil {
 			return fmt.Errorf("rotation inventory generation %s manifest: %w", name, err)
@@ -136,6 +137,11 @@ func (s *inventoryScanner) scanGenerations(current string) error {
 			if err := genstore.ValidateCurrent(gen); err != nil {
 				return fmt.Errorf("rotation inventory current generation %s: %w", name, err)
 			}
+		} else if anchor, anchored := s.kr.HistoricalGenerationAnchor(name); anchored {
+			if err := genstore.ValidateAnchoredSealed(gen, anchor, s.kr); err != nil {
+				return fmt.Errorf("rotation inventory retained generation %s: %w", name, err)
+			}
+			historicalAnchor = &anchor
 		} else if err := genstore.ValidateSealed(gen, s.kr); err != nil {
 			return fmt.Errorf("rotation inventory retained generation %s: %w", name, err)
 		}
@@ -149,7 +155,18 @@ func (s *inventoryScanner) scanGenerations(current string) error {
 			if err != nil {
 				return fmt.Errorf("rotation inventory generation %s seal: %w", name, err)
 			}
-			seal, err := genstore.ParseSealBytes(gen, sealBytes, manifestBytes, s.kr)
+			var seal *genstore.Seal
+			if historicalAnchor != nil {
+				seal, err = genstore.ParseAnchoredSealBytes(
+					gen,
+					*historicalAnchor,
+					sealBytes,
+					manifestBytes,
+					s.kr,
+				)
+			} else {
+				seal, err = genstore.ParseSealBytes(gen, sealBytes, manifestBytes, s.kr)
+			}
 			if err != nil {
 				return fmt.Errorf("rotation inventory generation %s seal: %w", name, err)
 			}

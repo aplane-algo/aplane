@@ -55,13 +55,13 @@ func (kr *Keyring) SignIntegrity(domain IntegrityDomain, payload []byte) (int64,
 }
 
 // VerifyIntegrity authenticates payload under the named term only when that
-// term has current-state read authority. Today that is exactly the current
-// term; the pending transition later extends this check to its retiring term.
+// term has current-state read authority: the current term, plus the one
+// retiring term while a rotation descriptor is pending.
 func (kr *Keyring) VerifyIntegrity(domain IntegrityDomain, payload []byte, term int64, encodedMAC string) error {
 	if kr == nil || len(kr.terms) == 0 {
 		return fmt.Errorf("keyring is not open")
 	}
-	if term != kr.currentTerm {
+	if !kr.authorizesCurrentStateTerm(term) {
 		return fmt.Errorf("term %d is not authorized for current integrity state", term)
 	}
 	return kr.verifyIntegrityForTerm(domain, payload, term, encodedMAC)

@@ -753,19 +753,19 @@ func TestOpenKeyringRejectsForeignKDFParameters(t *testing.T) {
 	}
 }
 
-// TestOpenKeyringRejectsMultipleTerms proves this release enforces its
-// single-term format rather than assuming it.
-//
-// The v2 schema can represent multiple terms, but accepting them belongs to
-// the slice that adds the authority split and guarded StartRotation. Reading
-// one before then would reauthorize a retired term for current state.
-func TestOpenKeyringRejectsMultipleTerms(t *testing.T) {
-	passphrase := []byte("keyring-single-term")
+// TestOpenKeyringAcceptsSettledMultipleTermsButDeniesRetiredAuthority proves
+// resident historical keys do not regain current-state read authority.
+func TestOpenKeyringAcceptsSettledMultipleTermsButDeniesRetiredAuthority(t *testing.T) {
+	passphrase := []byte("keyring-multiple-terms")
 	kr, err := NewKeyring()
 	if err != nil {
 		t.Fatalf("NewKeyring(): %v", err)
 	}
 	defer kr.Zero()
+	retiredEnvelope, err := kr.Seal([]byte("retired"), AccountKeyContext("ACCOUNT"))
+	if err != nil {
+		t.Fatalf("Seal(retired): %v", err)
+	}
 
 	second, err := randomBytes(argon2KeyLen)
 	if err != nil {
@@ -780,50 +780,54 @@ func TestOpenKeyringRejectsMultipleTerms(t *testing.T) {
 		t.Fatalf("SealKeyring(): %v", err)
 	}
 	opened, err := OpenKeyring(sealed, passphrase)
-	if err == nil {
-		opened.Zero()
-		t.Fatal("OpenKeyring() accepted a multi-term root before the authority guard landed")
+	if err != nil {
+		t.Fatalf("OpenKeyring() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "exactly one") {
-		t.Fatalf("OpenKeyring() error = %v, want a single-term rejection", err)
+	defer opened.Zero()
+	if _, err := opened.Open(retiredEnvelope, AccountKeyContext("ACCOUNT")); err == nil ||
+		!strings.Contains(err.Error(), "not authorized") {
+		t.Fatalf("Open(retired settled term) error = %v, want authority rejection", err)
+	}
+	currentEnvelope, err := opened.Seal([]byte("current"), AccountKeyContext("ACCOUNT"))
+	if err != nil {
+		t.Fatalf("Seal(current): %v", err)
+	}
+	if _, err := opened.Open(currentEnvelope, AccountKeyContext("ACCOUNT")); err != nil {
+		t.Fatalf("Open(current) error = %v", err)
 	}
 }
 
-// TestOpenKeyringZeroesRejectedTermKeys proves a keyring this release refuses
-// does not leave its term keys on the heap.
-//
-// The rejection paths sit after the decode: by the time OpenKeyring decides a
-// root has too many terms or names the wrong one, the decoder has already
-// written key material into the payload. Those slices have to be zeroed on
-// every exit, not only the successful one.
+// TestOpenKeyringZeroesRejectedTermKeys proves invalid authenticated
+// multi-term payloads do not leave decoded keys on the heap.
 func TestOpenKeyringZeroesRejectedTermKeys(t *testing.T) {
 	passphrase := []byte("keyring-rejected-cleanup")
-	kr, err := NewKeyring()
-	if err != nil {
-		t.Fatalf("NewKeyring(): %v", err)
+	key1 := bytes.Repeat([]byte{1}, argon2KeyLen)
+	key2 := bytes.Repeat([]byte{2}, argon2KeyLen)
+	valid := func() keyringPayload {
+		return keyringPayload{
+			Schema:            KeyringSchema,
+			CurrentTerm:       2,
+			Terms:             []sealedTerm{{Term: 1, Key: key1}, {Term: 2, Key: key2}},
+			HistoricalAnchors: []HistoricalGenerationAnchor{},
+		}
 	}
-	defer kr.Zero()
-	second, err := randomBytes(argon2KeyLen)
-	if err != nil {
-		t.Fatalf("randomBytes(): %v", err)
-	}
-
-	cases := map[string]*Keyring{
-		"multi-term": {
-			terms:       map[int64][]byte{FirstTerm: kr.terms[FirstTerm], FirstTerm + 1: second},
-			currentTerm: FirstTerm + 1,
+	cases := map[string]func(*keyringPayload){
+		"duplicate term": func(payload *keyringPayload) {
+			payload.Terms[1].Term = payload.Terms[0].Term
 		},
-		"wrong term number": {
-			terms:       map[int64][]byte{FirstTerm + 5: second},
-			currentTerm: FirstTerm + 5,
+		"current not greatest": func(payload *keyringPayload) {
+			payload.CurrentTerm = payload.Terms[0].Term
 		},
 	}
-	for name, forged := range cases {
+	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
-			sealed, err := SealKeyring(forged, passphrase)
+			payload := valid()
+			mutate(&payload)
+			plaintext, err := json.Marshal(payload)
 			if err != nil {
-				t.Fatalf("SealKeyring(): %v", err)
+				t.Fatalf("Marshal(payload): %v", err)
 			}
+			sealed := sealKeyringPlaintextForTest(t, plaintext, passphrase)
 
 			var decoded [][]byte
 			keyringDecodeHook = func(terms []sealedTerm) {

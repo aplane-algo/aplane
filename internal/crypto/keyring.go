@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -24,9 +25,10 @@ import (
 // terms. Successful unwrap is the passphrase check, so no separate verifier
 // exists and a passphrase change is one atomic file write.
 //
-// This release writes the phase-3 payload shape but still accepts exactly one
-// term. Term append and the rewrap window remain disabled until their
-// authority checks and R5 guard can land in the same change.
+// Phase 3 accepts multi-term roots only with exact current-state authority:
+// current while settled, current plus from_term while pending. Transition
+// start is guarded and durable; rewrap/resume and completion remain separate
+// lifecycle work.
 const (
 	// KeyringSchema identifies the sealed keyring payload.
 	KeyringSchema = "aplane.keyring.v2"
@@ -112,8 +114,10 @@ type RotationSnapshotReference struct {
 // callers seal and open, and never hold a key they could use with the wrong
 // term or forget to zero.
 type Keyring struct {
-	terms       map[int64][]byte
-	currentTerm int64
+	terms             map[int64][]byte
+	currentTerm       int64
+	historicalAnchors []HistoricalGenerationAnchor
+	rotation          *rotationDescriptor
 }
 
 // NewKeyring creates a keyring holding one freshly generated term.
@@ -123,8 +127,9 @@ func NewKeyring() (*Keyring, error) {
 		return nil, fmt.Errorf("generate term key: %w", err)
 	}
 	return &Keyring{
-		terms:       map[int64][]byte{FirstTerm: key},
-		currentTerm: FirstTerm,
+		terms:             map[int64][]byte{FirstTerm: key},
+		currentTerm:       FirstTerm,
+		historicalAnchors: []HistoricalGenerationAnchor{},
 	}, nil
 }
 
@@ -153,8 +158,9 @@ func NewKeyringFromTermKey(term int64, key []byte) (*Keyring, error) {
 		return nil, fmt.Errorf("term key must be %d bytes, got %d", argon2KeyLen, len(key))
 	}
 	return &Keyring{
-		terms:       map[int64][]byte{term: slices.Clone(key)},
-		currentTerm: term,
+		terms:             map[int64][]byte{term: slices.Clone(key)},
+		currentTerm:       term,
+		historicalAnchors: []HistoricalGenerationAnchor{},
 	}, nil
 }
 
@@ -185,11 +191,83 @@ func NewKeyringFromTermKeys(currentTerm int64, terms map[int64][]byte) (*Keyring
 		zeroTermMap(adopted)
 		return nil, fmt.Errorf("current term %d is not greatest resident term %d", currentTerm, greatest)
 	}
-	return &Keyring{terms: adopted, currentTerm: currentTerm}, nil
+	return &Keyring{
+		terms:             adopted,
+		currentTerm:       currentTerm,
+		historicalAnchors: []HistoricalGenerationAnchor{},
+	}, nil
 }
 
 // CurrentTerm returns the term new writes use.
 func (kr *Keyring) CurrentTerm() int64 { return kr.currentTerm }
+
+// RotationState is the durable pending transition projected without exposing
+// key material or the private payload representation.
+type RotationState struct {
+	FromTerm int64
+	ToTerm   int64
+	Snapshot RotationSnapshotReference
+}
+
+// PendingRotation reports the one transition carried by the cryptographic
+// root.
+func (kr *Keyring) PendingRotation() (RotationState, bool) {
+	if kr == nil || kr.rotation == nil {
+		return RotationState{}, false
+	}
+	return RotationState{
+		FromTerm: kr.rotation.FromTerm,
+		ToTerm:   kr.currentTerm,
+		Snapshot: RotationSnapshotReference{
+			SHA256: kr.rotation.SnapshotSHA256,
+			Size:   kr.rotation.SnapshotSize,
+		},
+	}, true
+}
+
+// RequireSettled rejects ordinary signing and mutation while the durable
+// root carries a pending transition. Resume uses its own explicit path.
+func (kr *Keyring) RequireSettled() error {
+	state, pending := kr.PendingRotation()
+	if !pending {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: rotation %d -> %d requires resume",
+		ErrRotationPending,
+		state.FromTerm,
+		state.ToTerm,
+	)
+}
+
+// HistoricalGenerationAnchors returns a defensive copy of the exact
+// generation-seal references carried by the root.
+func (kr *Keyring) HistoricalGenerationAnchors() []HistoricalGenerationAnchor {
+	if kr == nil {
+		return nil
+	}
+	return slices.Clone(kr.historicalAnchors)
+}
+
+// HistoricalGenerationAnchor returns the root anchor for generationID.
+func (kr *Keyring) HistoricalGenerationAnchor(
+	generationID string,
+) (HistoricalGenerationAnchor, bool) {
+	if kr == nil {
+		return HistoricalGenerationAnchor{}, false
+	}
+	index, found := slices.BinarySearchFunc(
+		kr.historicalAnchors,
+		generationID,
+		func(anchor HistoricalGenerationAnchor, target string) int {
+			return strings.Compare(anchor.GenerationID, target)
+		},
+	)
+	if !found {
+		return HistoricalGenerationAnchor{}, false
+	}
+	return kr.historicalAnchors[index], true
+}
 
 // Zero clears every term key. Callers must call it when locking.
 func (kr *Keyring) Zero() {
@@ -201,6 +279,8 @@ func (kr *Keyring) Zero() {
 		delete(kr.terms, term)
 	}
 	kr.currentTerm = 0
+	kr.historicalAnchors = nil
+	kr.rotation = nil
 }
 
 // Seal encrypts plaintext under the current term, binding the object's
@@ -237,11 +317,24 @@ func (kr *Keyring) Open(sealed []byte, ctx ObjectContext) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !kr.authorizesCurrentStateTerm(term) {
+		return nil, fmt.Errorf("term %d is not authorized for current state", term)
+	}
 	key, ok := kr.terms[term]
 	if !ok {
 		return nil, fmt.Errorf("keyring has no key for term %d", term)
 	}
 	return openUnderTerm(sealed, key, term, ctx)
+}
+
+func (kr *Keyring) authorizesCurrentStateTerm(term int64) bool {
+	if kr == nil {
+		return false
+	}
+	if term == kr.currentTerm {
+		return true
+	}
+	return kr.rotation != nil && term == kr.rotation.FromTerm
 }
 
 // OpenHistoricalGenerationEnvelope opens a resident term only for an exact
@@ -298,16 +391,7 @@ func SealKeyring(kr *Keyring, passphrase []byte) ([]byte, error) {
 		return nil, fmt.Errorf("generate keyring salt: %w", err)
 	}
 
-	terms := make([]sealedTerm, 0, len(kr.terms))
-	for _, term := range kr.sortedTerms() {
-		terms = append(terms, sealedTerm{Term: term, Key: kr.terms[term]})
-	}
-	payload := keyringPayload{
-		Schema:            KeyringSchema,
-		CurrentTerm:       kr.currentTerm,
-		Terms:             terms,
-		HistoricalAnchors: []HistoricalGenerationAnchor{},
-	}
+	payload := payloadFromKeyring(kr)
 	if err := validateKeyringPayload(&payload); err != nil {
 		return nil, fmt.Errorf("invalid keyring state: %w", err)
 	}
@@ -427,26 +511,12 @@ func OpenKeyring(encoded, passphrase []byte) (*Keyring, error) {
 	if err := validateKeyringPayload(&payload); err != nil {
 		return nil, err
 	}
-	// The v2 schema is durable now, but the runtime still holds exactly term
-	// 1. Accepting its multi-term states before Open has an authority set and
-	// StartRotation has the R5 pending guard would create the unguarded
-	// transition the formal model's negative control demonstrates.
-	if len(payload.Terms) != 1 {
-		return nil, fmt.Errorf(
-			"keyring holds %d terms; this release supports exactly one",
-			len(payload.Terms),
-		)
+	kr := &Keyring{
+		terms:             make(map[int64][]byte, len(payload.Terms)),
+		currentTerm:       payload.CurrentTerm,
+		historicalAnchors: slices.Clone(payload.HistoricalAnchors),
+		rotation:          cloneRotationDescriptor(payload.Rotation),
 	}
-	if payload.Terms[0].Term != FirstTerm || payload.CurrentTerm != FirstTerm {
-		return nil, fmt.Errorf(
-			"keyring names term %d current %d; this release supports only term %d",
-			payload.Terms[0].Term, payload.CurrentTerm, FirstTerm,
-		)
-	}
-	if len(payload.HistoricalAnchors) != 0 || payload.Rotation != nil {
-		return nil, fmt.Errorf("this release does not yet accept rotation state or historical anchors")
-	}
-	kr := &Keyring{terms: make(map[int64][]byte, len(payload.Terms)), currentTerm: payload.CurrentTerm}
 	for i := range payload.Terms {
 		t := &payload.Terms[i]
 		kr.terms[t.Term] = append([]byte(nil), t.Key...)
@@ -492,6 +562,32 @@ func (kr *Keyring) sortedTerms() []int64 {
 	}
 	slices.Sort(terms)
 	return terms
+}
+
+func payloadFromKeyring(kr *Keyring) keyringPayload {
+	terms := make([]sealedTerm, 0, len(kr.terms))
+	for _, term := range kr.sortedTerms() {
+		terms = append(terms, sealedTerm{Term: term, Key: kr.terms[term]})
+	}
+	anchors := slices.Clone(kr.historicalAnchors)
+	if anchors == nil {
+		anchors = []HistoricalGenerationAnchor{}
+	}
+	return keyringPayload{
+		Schema:            KeyringSchema,
+		CurrentTerm:       kr.currentTerm,
+		Terms:             terms,
+		HistoricalAnchors: anchors,
+		Rotation:          cloneRotationDescriptor(kr.rotation),
+	}
+}
+
+func cloneRotationDescriptor(rotation *rotationDescriptor) *rotationDescriptor {
+	if rotation == nil {
+		return nil
+	}
+	cloned := *rotation
+	return &cloned
 }
 
 // randomBytes returns n cryptographically random bytes.

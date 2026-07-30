@@ -4,10 +4,15 @@
 package crypto
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -31,6 +36,37 @@ const (
 	// metadata.
 	KeystoreLayoutKeyringV2 = "keyring/v2"
 )
+
+var (
+	// ErrRotationPending prevents ordinary signing and mutation from using a
+	// root that only the explicit resume path may advance.
+	ErrRotationPending = errors.New("keyring rotation is pending")
+
+	// ErrRotationAlreadyPending is the R5 guard: a pending root can only be
+	// resumed, never appended again.
+	ErrRotationAlreadyPending = fmt.Errorf(
+		"%w: cannot append another term",
+		ErrRotationPending,
+	)
+
+	// ErrRotationCommitDurabilityUnknown means the exact new root is visible
+	// after an error syncing its directory. The in-memory keyring is advanced
+	// to the visible pending state, but the caller must enter recovery until
+	// durability is reconciled.
+	ErrRotationCommitDurabilityUnknown = errors.New("rotation root commit durability is unknown")
+
+	// ErrRotationCommitStateUnknown means root publication could not be
+	// classified after a durable-write failure. The caller must reopen the
+	// store and must not retry StartRotation with stale in-memory state.
+	ErrRotationCommitStateUnknown = errors.New("rotation root commit state is unknown")
+)
+
+// RotationSnapshotWriter durably publishes a snapshot sealed by target and
+// returns the exact reference to carry in the pending root.
+type RotationSnapshotWriter func(
+	target *Keyring,
+	fromTerm, toTerm int64,
+) (RotationSnapshotReference, error)
 
 // KeyringPath returns the keyring root's path within a metadata directory.
 func KeyringPath(keystoreDir string) string {
@@ -95,6 +131,111 @@ func WriteKeyring(keystoreDir string, kr *Keyring, passphrase []byte) error {
 	return nil
 }
 
+// StartRotation atomically publishes the root transition after its target-
+// term snapshot is durable. It installs the R5 guard, appends exactly one
+// term, promotes it, records the former current term as retiring, and adopts
+// the visible pending state into kr.
+//
+// The caller holds the identity mutation lock. writeSnapshot must use target
+// only to seal and durably publish the cutover snapshot; the root is written
+// only after it returns a valid exact-file reference.
+func StartRotation(
+	keystoreDir string,
+	kr *Keyring,
+	passphrase []byte,
+	anchors []HistoricalGenerationAnchor,
+	writeSnapshot RotationSnapshotWriter,
+) error {
+	if kr == nil || len(kr.terms) == 0 {
+		return fmt.Errorf("start rotation: keyring is not open")
+	}
+	if len(passphrase) == 0 {
+		return fmt.Errorf("start rotation: passphrase is required")
+	}
+	if writeSnapshot == nil {
+		return fmt.Errorf("start rotation: snapshot writer is required")
+	}
+	if anchors == nil {
+		return fmt.Errorf("start rotation: historical anchors must be an array")
+	}
+	if kr.rotation != nil {
+		return ErrRotationAlreadyPending
+	}
+	if kr.currentTerm == math.MaxInt64 {
+		return fmt.Errorf("start rotation: current term is exhausted")
+	}
+	if err := checkKeyringMarker(keystoreDir); err != nil {
+		return err
+	}
+
+	candidate, err := cloneKeyring(kr)
+	if err != nil {
+		return fmt.Errorf("start rotation: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			candidate.Zero()
+		}
+	}()
+
+	fromTerm := candidate.currentTerm
+	toTerm := fromTerm + 1
+	targetKey, err := randomBytes(argon2KeyLen)
+	if err != nil {
+		return fmt.Errorf("start rotation: generate target term: %w", err)
+	}
+	candidate.terms[toTerm] = targetKey
+	candidate.currentTerm = toTerm
+	candidate.historicalAnchors = slices.Clone(anchors)
+	if err := requirePreservedHistoricalAnchors(kr.historicalAnchors, anchors); err != nil {
+		return fmt.Errorf("start rotation: %w", err)
+	}
+	payload := payloadFromKeyring(candidate)
+	if err := validateKeyringPayload(&payload); err != nil {
+		return fmt.Errorf("start rotation candidate: %w", err)
+	}
+
+	ref, err := writeSnapshot(candidate, fromTerm, toTerm)
+	if err != nil {
+		return fmt.Errorf("start rotation snapshot: %w", err)
+	}
+	if err := ref.Validate(); err != nil {
+		return fmt.Errorf("start rotation snapshot reference: %w", err)
+	}
+	candidate.rotation = &rotationDescriptor{
+		FromTerm:       fromTerm,
+		SnapshotSHA256: ref.SHA256,
+		SnapshotSize:   ref.Size,
+	}
+	encoded, err := SealKeyring(candidate, passphrase)
+	if err != nil {
+		return fmt.Errorf("start rotation root: %w", err)
+	}
+	rootPath := KeyringPath(keystoreDir)
+	if err := fsutil.WriteFileDurable(rootPath, encoded); err != nil {
+		onDisk, readErr := readKeyringFile(rootPath)
+		switch {
+		case readErr == nil && bytes.Equal(onDisk, encoded):
+			adoptKeyring(kr, candidate)
+			committed = true
+			return fmt.Errorf("%w: %w", ErrRotationCommitDurabilityUnknown, err)
+		case readErr != nil:
+			return fmt.Errorf(
+				"%w: write error: %v; classify visible root: %v",
+				ErrRotationCommitStateUnknown,
+				err,
+				readErr,
+			)
+		default:
+			return fmt.Errorf("start rotation root commit: %w", err)
+		}
+	}
+	adoptKeyring(kr, candidate)
+	committed = true
+	return nil
+}
+
 // OpenKeyringStore checks the version gate and opens the root with
 // passphrase. A successful unwrap is the passphrase check.
 func OpenKeyringStore(keystoreDir string, passphrase []byte) (*Keyring, error) {
@@ -112,6 +253,58 @@ func OpenKeyringStore(keystoreDir string, passphrase []byte) (*Keyring, error) {
 		return nil, err
 	}
 	return OpenKeyring(encoded, passphrase)
+}
+
+func cloneKeyring(kr *Keyring) (*Keyring, error) {
+	if kr == nil || len(kr.terms) == 0 {
+		return nil, fmt.Errorf("keyring is not open")
+	}
+	cloned := &Keyring{
+		terms:             make(map[int64][]byte, len(kr.terms)),
+		currentTerm:       kr.currentTerm,
+		historicalAnchors: slices.Clone(kr.historicalAnchors),
+		rotation:          cloneRotationDescriptor(kr.rotation),
+	}
+	for term, key := range kr.terms {
+		cloned.terms[term] = slices.Clone(key)
+	}
+	return cloned, nil
+}
+
+func adoptKeyring(dst, src *Keyring) {
+	for term, key := range dst.terms {
+		ZeroBytes(key)
+		delete(dst.terms, term)
+	}
+	dst.terms = src.terms
+	dst.currentTerm = src.currentTerm
+	dst.historicalAnchors = src.historicalAnchors
+	dst.rotation = src.rotation
+	src.terms = nil
+	src.currentTerm = 0
+	src.historicalAnchors = nil
+	src.rotation = nil
+}
+
+func requirePreservedHistoricalAnchors(
+	existing, replacement []HistoricalGenerationAnchor,
+) error {
+	for _, anchor := range existing {
+		index, found := slices.BinarySearchFunc(
+			replacement,
+			anchor.GenerationID,
+			func(candidate HistoricalGenerationAnchor, generationID string) int {
+				return strings.Compare(candidate.GenerationID, generationID)
+			},
+		)
+		if !found || replacement[index] != anchor {
+			return fmt.Errorf(
+				"historical anchor for generation %s would be dropped or changed",
+				anchor.GenerationID,
+			)
+		}
+	}
+	return nil
 }
 
 // readKeyringFile reads the root, refusing anything that is not a regular
