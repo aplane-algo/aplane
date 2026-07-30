@@ -311,6 +311,27 @@ func TestAnchoredHistoricalSealAndExactMemberOpen(t *testing.T) {
 	if string(plaintext) != "historical credential" {
 		t.Fatalf("OpenAnchoredEnvelope() = %q", plaintext)
 	}
+	manifestBytes, err := os.ReadFile(gen.ManifestPath())
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	bufferPlaintext, err := OpenAnchoredEnvelopeBytes(
+		gen,
+		anchor,
+		sealBytes,
+		manifestBytes,
+		"keys/A.key",
+		sealed,
+		crypto.AccountKeyContext("A"),
+		multi,
+	)
+	if err != nil {
+		t.Fatalf("OpenAnchoredEnvelopeBytes() error = %v", err)
+	}
+	if string(bufferPlaintext) != "historical credential" {
+		t.Fatalf("OpenAnchoredEnvelopeBytes() = %q", bufferPlaintext)
+	}
+	crypto.ZeroBytes(bufferPlaintext)
 	if _, err := OpenAnchoredEnvelope(
 		gen,
 		anchor,

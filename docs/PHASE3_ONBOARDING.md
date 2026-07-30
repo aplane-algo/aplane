@@ -44,6 +44,7 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | Divergence-baseline foundation — strict `aplane.rotation-baseline.v1` codec, bounded current-term durable storage, manifest/prior-baseline cutover decision, and fail-closed preflight reconciliation | `internal/rotationinventory/baseline.go` |
 | Guarded transition start — baseline preflight, cutover inventory, complete historical-anchor collection, target-term snapshot durability, atomic pending-root publication, R5 retry refusal, and fail-closed pending runtime | `internal/rotationinventory/start.go`, `internal/crypto/keyring_store.go`, `internal/keystore/file.go`, `internal/signerapp/templates/reload.go` |
 | Snapshot-pinned resume — idempotent mutable-envelope rewrap, pinned-document sidecar renewal, exact preservation of anchored generations and plaintext, target-output authentication on retry, and partial-progress crash recovery | `internal/rotationinventory/resume.go` |
+| Verified completion — pre/post-baseline final scans, exact path and target-authority comparison, clean-only baseline publication, atomic pending-root close, and post-close snapshot cleanup/recovery | `internal/rotationinventory/complete.go`, `internal/crypto/keyring_store.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
 What that gives you: fresh stores begin at term 1; a guarded internal
@@ -59,16 +60,16 @@ Settled current-state reads accept exactly `{current_term}`; pending reads
 accept exactly `{current_term, rotation.from_term}`, regardless of what older
 keys remain resident. Normal signer reload and direct key scanning reject a
 pending root before publishing runtime state, because completion is not yet
-implemented or operator-wired. The internal snapshot-consuming resume pass is
-implemented, but it deliberately leaves the pending descriptor and snapshot
-in place. There is still no operator-facing transition or completion pass. K8
-therefore remains incomplete until rollback, completion-baseline ordering,
-and the final exact-path/target-authority check consume the pinned state.
+operator-wired. The internal completion pass now consumes the snapshot,
+publishes a required baseline before atomically closing the root, and removes
+the snapshot afterward. K8 remains incomplete until rollback consumes the
+baseline authority and the transition is connected to the operator/runtime
+path.
 
-The properties that are proven today are K1–K7 in
-[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against a named test.
-K8 remains listed there as not implemented until all of its pre-append
-enforcement points are connected.
+The properties implemented today are K1–K7, R1, R2, and R5 in
+[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against named code and
+test anchors. K8 remains listed there as not implemented until rollback
+consumption and the operator/runtime enforcement points are connected.
 
 ## Read the model early
 
@@ -87,9 +88,9 @@ negative control is the evidence that the positive model's guard is
 load-bearing rather than a vacuous consequence of its types.
 
 Read it before the proposal's prose. It is the most compact statement of what
-the transition must do, and its header distinguishes the implemented
-authority/pinned-input boundaries from the final comparison and close steps
-that the code does not yet provide.
+the transition must do, and its header identifies the implementation anchors
+for authority, pinned rewrap, baseline-before-close ordering, and final
+comparison.
 
 Run it with `python3 scripts/run-formal-tests.py`, which runs all 17 recorded
 TLC checks — 13 modules, three additional liveness configurations, and the R5
@@ -471,17 +472,27 @@ authenticates that target output and continues without rewriting it. Missing,
 substituted, oversized, symlinked, wrong-term, or digest-mismatched inputs
 fail closed rather than being blessed onto the target term.
 
-Resume deliberately does not write a completion baseline, clear the pending
-root, or remove the snapshot. Rollback must still consult the effective
-baseline authority, and completion must write any required baseline before
-close and compare the fresh canonical path set and target authority against
-the pinned snapshot. Until that lifecycle is wired, normal reload and key
-scans continue to fail closed on a pending root. `Keyring.RequireSettled`
-also blocks ordinary runtime keyring access, signing-key loads, direct
-keystore mutation, offline passphrase change, policy signing/editing, and
-generation pruning; those paths return the stable `ErrRotationPending`
-classification rather than treating the resident terms as permission to
-proceed.
+`CompleteRotation` owns the next boundary. It first runs resume, then scans
+the complete K8 scope and compares it with the snapshot: anchored historical
+and plaintext entries remain exact; mutable envelopes retain their pinned
+kind/context on the target term; sidecars carry target integrity authority;
+the exact root-referenced snapshot is present; and no unpinned path exists.
+A clean rollback cutover computes and durably publishes its post-rewrap
+current-generation baseline. A second complete scan repeats the path and
+authority checks and requires that baseline to match the final generation
+inventory. Only then does `crypto.CloseRotation` atomically clear the pending
+descriptor. Snapshot removal is ordered after the settled root is durable.
+
+If close rename is visible but directory sync fails, the settled root is
+adopted while the snapshot remains. A later completion call authenticates the
+unreferenced snapshot against the visible settled root, syncs the root
+directory, and removes the snapshot. A clean baseline already visible after a
+durability error is authenticated and reused on retry. Diverged cutovers
+never receive a new baseline. Normal reload and key scans continue to fail
+closed only while a pending root remains. `Keyring.RequireSettled` also
+blocks ordinary runtime keyring access, signing-key loads, direct keystore
+mutation, offline passphrase change, policy signing/editing, and generation
+pruning during that window.
 
 ### The original blockers
 
@@ -504,10 +515,11 @@ digests against the at-mint manifest. Without a baseline recorded before the
 window closes, every later rollback of that generation is refused —
 permanently. The strict record, current-term durable storage, effective
 authority decision, and preflight reconciliation are implemented. The
-remaining transition work is to write a required completion baseline before
-clearing the window and teach the rollback guard to consult a matching
-baseline. The model's R3 is exactly this, and its negative control reproduces
-the missing-order failure.
+completion boundary now writes a required clean baseline before clearing the
+window and refuses to write one for a diverged cutover. The remaining work is
+to teach the rollback guard to consume a matching baseline. The model's R3 is
+exactly this ordering, and its negative control reproduces the
+baseline-after-close failure.
 
 **10. Plaintext generation members** — see item 8; listed separately because it
 may need its own fix rather than only an anchoring rule.

@@ -301,6 +301,178 @@ func TestStartRotationPreservesExistingHistoricalAnchors(t *testing.T) {
 	}
 }
 
+func TestCloseRotationCommitsSettledAuthority(t *testing.T) {
+	dir := t.TempDir()
+	passphrase := []byte("rotation-close-passphrase")
+	kr, err := CreateKeyringStore(dir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	oldEnvelope, err := kr.Seal(
+		[]byte("retiring"),
+		AccountKeyContext("ACCOUNT"),
+	)
+	if err != nil {
+		t.Fatalf("Seal(retiring) error = %v", err)
+	}
+	anchor, err := NewHistoricalGenerationAnchor(
+		"gen-1785300000-cafef00d",
+		[]byte("historical seal"),
+	)
+	if err != nil {
+		t.Fatalf("NewHistoricalGenerationAnchor() error = %v", err)
+	}
+	if err := StartRotation(
+		dir,
+		kr,
+		passphrase,
+		[]HistoricalGenerationAnchor{anchor},
+		func(target *Keyring, _, _ int64) (RotationSnapshotReference, error) {
+			sealed, err := target.Seal(
+				[]byte("cutover"),
+				RotationSnapshotContext(),
+			)
+			if err != nil {
+				return RotationSnapshotReference{}, err
+			}
+			return NewRotationSnapshotReference(sealed)
+		},
+	); err != nil {
+		t.Fatalf("StartRotation() error = %v", err)
+	}
+
+	if err := CloseRotation(dir, kr, passphrase); err != nil {
+		t.Fatalf("CloseRotation() error = %v", err)
+	}
+	if _, pending := kr.PendingRotation(); pending {
+		t.Fatal("CloseRotation() left the in-memory root pending")
+	}
+	if kr.CurrentTerm() != 2 {
+		t.Fatalf("CurrentTerm() = %d, want 2", kr.CurrentTerm())
+	}
+	if anchors := kr.HistoricalGenerationAnchors(); !slices.Equal(
+		anchors,
+		[]HistoricalGenerationAnchor{anchor},
+	) {
+		t.Fatalf("historical anchors = %#v", anchors)
+	}
+	if _, err := kr.Open(
+		oldEnvelope,
+		AccountKeyContext("ACCOUNT"),
+	); err == nil || !strings.Contains(err.Error(), "not authorized") {
+		t.Fatalf("Open(retired current-state envelope) error = %v", err)
+	}
+
+	reopened, err := OpenKeyringStore(dir, passphrase)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore() error = %v", err)
+	}
+	defer reopened.Zero()
+	if _, pending := reopened.PendingRotation(); pending {
+		t.Fatal("reopened root is pending")
+	}
+	if reopened.CurrentTerm() != 2 ||
+		!slices.Equal(
+			reopened.HistoricalGenerationAnchors(),
+			[]HistoricalGenerationAnchor{anchor},
+		) {
+		t.Fatalf("reopened settled root has wrong authority")
+	}
+	if err := CloseRotation(dir, kr, passphrase); !errors.Is(
+		err,
+		ErrNoRotationPending,
+	) {
+		t.Fatalf("CloseRotation(second) error = %v, want no-pending guard", err)
+	}
+}
+
+func TestCloseRotationFailureBeforeRenameLeavesPendingAuthority(t *testing.T) {
+	dir, kr, passphrase := pendingCryptoRotation(t)
+	injected := errors.New("injected close rename failure")
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpRename && path == KeyringPath(dir) {
+			return injected
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+
+	if err := CloseRotation(dir, kr, passphrase); !errors.Is(err, injected) {
+		t.Fatalf("CloseRotation() error = %v, want injected failure", err)
+	}
+	if _, pending := kr.PendingRotation(); !pending {
+		t.Fatal("pre-publish close failure cleared in-memory pending authority")
+	}
+	reopened, err := OpenKeyringStore(dir, passphrase)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore() error = %v", err)
+	}
+	defer reopened.Zero()
+	if _, pending := reopened.PendingRotation(); !pending {
+		t.Fatal("pre-publish close failure cleared on-disk pending authority")
+	}
+}
+
+func TestCloseRotationAdoptsVisibleRootOnDirectorySyncFailure(t *testing.T) {
+	dir, kr, passphrase := pendingCryptoRotation(t)
+	injected := errors.New("injected close directory sync failure")
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == dir {
+			return injected
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+
+	err := CloseRotation(dir, kr, passphrase)
+	if !errors.Is(err, ErrRotationCommitDurabilityUnknown) ||
+		!errors.Is(err, injected) {
+		t.Fatalf("CloseRotation() error = %v, want visible durability unknown", err)
+	}
+	if _, pending := kr.PendingRotation(); pending {
+		t.Fatal("visible settled root was not adopted in memory")
+	}
+	reopened, err := OpenKeyringStore(dir, passphrase)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore() error = %v", err)
+	}
+	defer reopened.Zero()
+	if _, pending := reopened.PendingRotation(); pending {
+		t.Fatal("visible on-disk root is still pending")
+	}
+}
+
+func pendingCryptoRotation(t *testing.T) (string, *Keyring, []byte) {
+	t.Helper()
+	dir := t.TempDir()
+	passphrase := []byte("pending-rotation-passphrase")
+	kr, err := CreateKeyringStore(dir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	t.Cleanup(kr.Zero)
+	if err := StartRotation(
+		dir,
+		kr,
+		passphrase,
+		[]HistoricalGenerationAnchor{},
+		func(target *Keyring, _, _ int64) (RotationSnapshotReference, error) {
+			sealed, err := target.Seal(
+				[]byte("cutover"),
+				RotationSnapshotContext(),
+			)
+			if err != nil {
+				return RotationSnapshotReference{}, err
+			}
+			return NewRotationSnapshotReference(sealed)
+		},
+	); err != nil {
+		t.Fatalf("StartRotation() error = %v", err)
+	}
+	return dir, kr, passphrase
+}
+
 func TestPendingAuthoritySetExcludesOlderResidentTerms(t *testing.T) {
 	key1 := bytes.Repeat([]byte{0xd1}, argon2KeyLen)
 	key2 := bytes.Repeat([]byte{0xd2}, argon2KeyLen)

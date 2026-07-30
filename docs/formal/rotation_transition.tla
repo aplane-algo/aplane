@@ -44,16 +44,16 @@ rotation_transition_negative.cfg runs ResumeAppendWithoutPendingGuard and
 requires an R5 violation. All three reproduce the review findings
 mechanically; the R5 control runs in the standard formal harness.
 
-The implementation now supplies the model's term-authority and pinned-input
-boundaries: ordinary reads use the settled/pending authority set, historical
-reads require exact root anchors, and resume promotes only a snapshot-pinned
-retiring-term buffer while authenticating already-written target outputs.
-The remaining transfer obligation is at CloseWindow: a real scan must require
-exact final path-set and output-authority equality before clearing the pending
-descriptor. The identity mutation lock excludes cooperating writers, but not
-the direct-filesystem attacker modelled here. An edit after an entry is pinned
-therefore fails its exact digest or final comparison; one before the entry is
-read is on the pre-cutover side of the stated claim.
+The implementation supplies the model's term-authority, pinned-input, and
+completion boundaries: ordinary reads use the settled/pending authority set,
+historical reads require exact root anchors, resume promotes only a
+snapshot-pinned retiring-term buffer, and completion requires fresh final
+path-set/output-authority equality plus a clean baseline before atomically
+clearing the pending descriptor. The identity mutation lock excludes
+cooperating writers, but not the direct-filesystem attacker modelled here.
+The implementation scans both before and after baseline publication so an
+edit after an entry is pinned fails its exact digest or final comparison; one
+before the entry is read is on the pre-cutover side of the stated claim.
 
 The module intentionally omits:
 

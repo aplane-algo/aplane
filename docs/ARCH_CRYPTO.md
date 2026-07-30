@@ -343,6 +343,10 @@ The keyring is the store's cryptographic root, defined in
   reopens the root-pinned snapshot, promotes only exact retiring-term inputs,
   and accepts already-written target-term outputs only after context-bound
   authentication; it does not close the descriptor
+- `rotationinventory.CompleteRotation` verifies the final path/authority
+  shape and baseline-before-close ordering before calling
+  `crypto.CloseRotation`; close preserves terms and anchors while atomically
+  removing only the pending descriptor
 - a successful unwrap is the passphrase check; there is no separate verifier
 - the KEK exists only inside seal and open, and is zeroed before either returns
 

@@ -6,7 +6,6 @@ package rotationinventory
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -23,8 +22,9 @@ import (
 
 const rewrapOutputSizeAllowance int64 = 4 << 10
 
-// ErrNoRotationPending reports that resume was requested for a settled root.
-var ErrNoRotationPending = errors.New("no keyring rotation is pending")
+// ErrNoRotationPending reports that resume or completion was requested for a
+// settled root.
+var ErrNoRotationPending = crypto.ErrNoRotationPending
 
 // ResumeReport describes one idempotent pass over the root-pinned snapshot.
 // A non-nil report may accompany an error and records the durable progress

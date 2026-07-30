@@ -23,9 +23,12 @@ published. An eighth slice adds the snapshot-pinned, idempotent rewrap/resume
 loop: retained anchored generations remain exact, mutable retiring-term
 envelopes are promoted only from their pinned bytes, integrity sidecars are
 re-signed over pinned documents, and authenticated target outputs are
-accepted after a crash. The remaining transition work is completion and
-divergence-baseline ordering, rollback consumption, and operator-facing
-wiring recorded below and in
+accepted after a crash. A ninth slice adds the completion boundary: two fresh
+final scans enforce exact path and target-authority shape, a clean cutover's
+post-rewrap baseline is durable before atomic root close, divergence never
+creates a new baseline, and the root-referenced snapshot is removed only
+after close. The remaining transition work is rollback consumption and
+operator-facing wiring recorded below and in
 [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
 picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
 
@@ -921,8 +924,8 @@ accepts everywhere else.
      retired-term opening are also implemented as foundations. The guarded
      transition start now pins the durable snapshot and complete anchor set in
      the same atomic root publication. Snapshot-pinned rewrap/resume and the
-     final exact-path/target-authority check still have to consume them before
-     completion.
+     final exact-path/target-authority completion boundary now consume them;
+     rollback consumption and operator-facing automatic resume remain.
    - **Add an artifact-class test.** The gates above prove no code takes the
      old path; they do not prove every written artifact carries a term. A
      test that creates each durable class — managed keys, installed

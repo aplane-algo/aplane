@@ -49,15 +49,19 @@ var (
 		ErrRotationPending,
 	)
 
+	// ErrNoRotationPending reports that completion was requested for a root
+	// with no transition descriptor.
+	ErrNoRotationPending = errors.New("no keyring rotation is pending")
+
 	// ErrRotationCommitDurabilityUnknown means the exact new root is visible
-	// after an error syncing its directory. The in-memory keyring is advanced
-	// to the visible pending state, but the caller must enter recovery until
-	// durability is reconciled.
+	// after an error syncing its directory. The in-memory keyring adopts the
+	// visible pending or settled state, but the caller must enter recovery
+	// until durability is reconciled.
 	ErrRotationCommitDurabilityUnknown = errors.New("rotation root commit durability is unknown")
 
 	// ErrRotationCommitStateUnknown means root publication could not be
 	// classified after a durable-write failure. The caller must reopen the
-	// store and must not retry StartRotation with stale in-memory state.
+	// store and must not retry a transition write with stale in-memory state.
 	ErrRotationCommitStateUnknown = errors.New("rotation root commit state is unknown")
 )
 
@@ -229,6 +233,76 @@ func StartRotation(
 			)
 		default:
 			return fmt.Errorf("start rotation root commit: %w", err)
+		}
+	}
+	adoptKeyring(kr, candidate)
+	committed = true
+	return nil
+}
+
+// CloseRotation atomically clears the pending descriptor after the caller has
+// verified every snapshot-pinned output and durably published any required
+// completion baseline. It preserves every resident term and historical
+// generation anchor; only current-state authority changes from
+// {current, from} back to {current}.
+//
+// The caller holds the identity mutation lock. The referenced snapshot must
+// remain present until this function succeeds.
+func CloseRotation(
+	keystoreDir string,
+	kr *Keyring,
+	passphrase []byte,
+) error {
+	if kr == nil || len(kr.terms) == 0 {
+		return fmt.Errorf("close rotation: keyring is not open")
+	}
+	if len(passphrase) == 0 {
+		return fmt.Errorf("close rotation: passphrase is required")
+	}
+	if kr.rotation == nil {
+		return ErrNoRotationPending
+	}
+	if err := checkKeyringMarker(keystoreDir); err != nil {
+		return err
+	}
+
+	candidate, err := cloneKeyring(kr)
+	if err != nil {
+		return fmt.Errorf("close rotation: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			candidate.Zero()
+		}
+	}()
+
+	candidate.rotation = nil
+	payload := payloadFromKeyring(candidate)
+	if err := validateKeyringPayload(&payload); err != nil {
+		return fmt.Errorf("close rotation candidate: %w", err)
+	}
+	encoded, err := SealKeyring(candidate, passphrase)
+	if err != nil {
+		return fmt.Errorf("close rotation root: %w", err)
+	}
+	rootPath := KeyringPath(keystoreDir)
+	if err := fsutil.WriteFileDurable(rootPath, encoded); err != nil {
+		onDisk, readErr := readKeyringFile(rootPath)
+		switch {
+		case readErr == nil && bytes.Equal(onDisk, encoded):
+			adoptKeyring(kr, candidate)
+			committed = true
+			return fmt.Errorf("%w: %w", ErrRotationCommitDurabilityUnknown, err)
+		case readErr != nil:
+			return fmt.Errorf(
+				"%w: write error: %v; classify visible root: %v",
+				ErrRotationCommitStateUnknown,
+				err,
+				readErr,
+			)
+		default:
+			return fmt.Errorf("close rotation root commit: %w", err)
 		}
 	}
 	adoptKeyring(kr, candidate)

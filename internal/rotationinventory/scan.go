@@ -95,6 +95,13 @@ type inventoryScanner struct {
 	entries           []Entry
 }
 
+type historicalGenerationAuthority struct {
+	gen           storepaths.GenPaths
+	anchor        crypto.HistoricalGenerationAnchor
+	sealBytes     []byte
+	manifestBytes []byte
+}
+
 func (s *inventoryScanner) scanGenerations(current string) error {
 	root := s.paths.GenerationsDir(s.identityID)
 	if err := requireDirectory(root); err != nil {
@@ -126,6 +133,7 @@ func (s *inventoryScanner) scanGenerations(current string) error {
 		gen := s.paths.GenerationPaths(s.identityID, name)
 		var contentSeal *genstore.Seal
 		var historicalAnchor *crypto.HistoricalGenerationAnchor
+		var historical *historicalGenerationAuthority
 		manifestBytes, _, err := fsutil.ReadRegularFile(gen.ManifestPath())
 		if err != nil {
 			return fmt.Errorf("rotation inventory generation %s manifest: %w", name, err)
@@ -173,21 +181,43 @@ func (s *inventoryScanner) scanGenerations(current string) error {
 			if name != current {
 				contentSeal = seal
 			}
+			if historicalAnchor != nil {
+				historical = &historicalGenerationAuthority{
+					gen:           gen,
+					anchor:        *historicalAnchor,
+					sealBytes:     sealBytes,
+					manifestBytes: manifestBytes,
+				}
+			}
 			if err := s.addBytes(gen.SealPath(), KindGenerationSeal, sealBytes, 0, crypto.ObjectContext{}); err != nil {
 				return err
 			}
 		}
-		if err := s.scanGenerationNamespace(gen.KeysDir(), "keys", contentSeal); err != nil {
+		if err := s.scanGenerationNamespace(
+			gen.KeysDir(),
+			"keys",
+			contentSeal,
+			historical,
+		); err != nil {
 			return fmt.Errorf("rotation inventory generation %s: %w", name, err)
 		}
-		if err := s.scanGenerationNamespace(gen.KeyTypeRecordsDir(), "keytypes", contentSeal); err != nil {
+		if err := s.scanGenerationNamespace(
+			gen.KeyTypeRecordsDir(),
+			"keytypes",
+			contentSeal,
+			historical,
+		); err != nil {
 			return fmt.Errorf("rotation inventory generation %s: %w", name, err)
 		}
 	}
 	return nil
 }
 
-func (s *inventoryScanner) scanGenerationNamespace(dir, namespace string, seal *genstore.Seal) error {
+func (s *inventoryScanner) scanGenerationNamespace(
+	dir, namespace string,
+	seal *genstore.Seal,
+	historical *historicalGenerationAuthority,
+) error {
 	if err := requireDirectory(dir); err != nil {
 		return err
 	}
@@ -215,11 +245,11 @@ func (s *inventoryScanner) scanGenerationNamespace(dir, namespace string, seal *
 				}
 				switch class {
 				case keys.ManagedCredentialAccount:
-					if err := s.addEnvelopeFromSeal(path, KindAccountKey, crypto.AccountKeyContext(selector), seal, inventoryPath); err != nil {
+					if err := s.addEnvelopeFromSeal(path, KindAccountKey, crypto.AccountKeyContext(selector), seal, inventoryPath, historical); err != nil {
 						return err
 					}
 				case keys.ManagedCredentialSentry:
-					if err := s.addEnvelopeFromSeal(path, KindSentryCredential, crypto.SentryCredentialContext(selector), seal, inventoryPath); err != nil {
+					if err := s.addEnvelopeFromSeal(path, KindSentryCredential, crypto.SentryCredentialContext(selector), seal, inventoryPath, historical); err != nil {
 						return err
 					}
 				default:
@@ -233,7 +263,7 @@ func (s *inventoryScanner) scanGenerationNamespace(dir, namespace string, seal *
 				if err != nil {
 					return err
 				}
-				if err := s.addEnvelopeFromSeal(path, KindKeyTypeTemplate, ctx, seal, inventoryPath); err != nil {
+				if err := s.addEnvelopeFromSeal(path, KindKeyTypeTemplate, ctx, seal, inventoryPath, historical); err != nil {
 					return err
 				}
 			case strings.HasSuffix(entry.Name(), ".json"):
@@ -483,7 +513,7 @@ func (s *inventoryScanner) addRotationBaseline(path string) error {
 }
 
 func (s *inventoryScanner) addEnvelope(path string, kind ArtifactKind, ctx crypto.ObjectContext) error {
-	return s.addEnvelopeFromSeal(path, kind, ctx, nil, "")
+	return s.addEnvelopeFromSeal(path, kind, ctx, nil, "", nil)
 }
 
 func (s *inventoryScanner) addEnvelopeFromSeal(
@@ -492,6 +522,7 @@ func (s *inventoryScanner) addEnvelopeFromSeal(
 	ctx crypto.ObjectContext,
 	seal *genstore.Seal,
 	inventoryPath string,
+	historical *historicalGenerationAuthority,
 ) error {
 	data, err := readArtifactBytes(path, seal, inventoryPath)
 	if err != nil {
@@ -501,7 +532,21 @@ func (s *inventoryScanner) addEnvelopeFromSeal(
 	if err != nil {
 		return fmt.Errorf("rotation inventory term %s: %w", path, err)
 	}
-	plaintext, err := s.kr.Open(data, ctx)
+	var plaintext []byte
+	if historical != nil {
+		plaintext, err = genstore.OpenAnchoredEnvelopeBytes(
+			historical.gen,
+			historical.anchor,
+			historical.sealBytes,
+			historical.manifestBytes,
+			inventoryPath,
+			data,
+			ctx,
+			s.kr,
+		)
+	} else {
+		plaintext, err = s.kr.Open(data, ctx)
+	}
 	if err != nil {
 		return fmt.Errorf("rotation inventory open %s as %s: %w", path, ctx, err)
 	}

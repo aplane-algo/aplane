@@ -1228,7 +1228,7 @@ Behavior:
 
 `internal/rotationinventory` owns the canonical K8 durable-artifact taxonomy,
 snapshot scan, guarded transition-start orchestration, and the internal
-snapshot-pinned resume pass. Completion, rollback consumption, and
+snapshot-pinned resume and completion passes. Rollback consumption and
 operator-facing wiring are not yet implemented.
 
 Each entry contains:
@@ -1267,9 +1267,11 @@ while a valid baseline that predates cutover remains a classified input.
 Encrypted entries are opened from the exact byte buffer that is hashed under
 the logical context derived from their canonical filename or recovered-batch
 metadata. Retained generation buffers are also compared to their seal entry
-before opening. `genstore.ParseManifestBytes`, `ParseSealBytes`, and
-`VerifyBytesAgainstSeal` are the buffer-based boundary; historical consumers
-must not validate a path and then consume a second read.
+before opening. Once ordinary retiring-term authority closes, anchored
+generation members use the dedicated historical open operation rather than
+regaining ordinary current-state authority. `genstore.ParseManifestBytes`,
+`ParseSealBytes`, and `VerifyBytesAgainstSeal` are the buffer-based boundary;
+historical consumers must not validate a path and then consume a second read.
 
 #### Sealed Cutover Snapshot
 
@@ -1377,9 +1379,28 @@ laundering substituted bytes. Reads are bounded and reject final-component
 symlinks.
 
 Resume reports durable progress but deliberately leaves the root pending and
-the referenced snapshot present. Completion-baseline ordering, rollback
-consumption, and the final exact-path/target-authority comparison remain
-required before a pending transition may close or become operator-facing.
+the referenced snapshot present.
+
+`rotationinventory.CompleteRotation` runs resume and then performs fresh K8
+scans on both sides of baseline publication. Each scan must contain the exact
+root-referenced snapshot, every cutover path, no unpinned path, exact
+historical/plaintext bytes, and the pinned mutable kind/context under target
+authority. A clean rollback cutover receives a baseline over the final
+current-generation inventory; a diverged cutover never receives a new one.
+The second scan requires the clean baseline to match that final inventory.
+The only extra path permitted relative to the cutover snapshot is that
+authenticated clean completion baseline when none existed at cutover.
+
+`crypto.CloseRotation` preserves all resident terms and historical anchors
+while atomically removing only the pending descriptor. The snapshot remains
+until the settled root has been durably published and is then removed with a
+directory sync. A visible close followed by directory-sync failure adopts the
+settled root but retains the snapshot; retry authenticates the unreferenced
+snapshot against the visible settled root, syncs the root directory, and
+removes it. A pre-rename close failure leaves both in-memory and on-disk roots
+pending. A snapshot-removal directory-sync failure is reported with the root
+still settled; it never reopens retiring authority. Rollback consumption and
+operator-facing automatic resume remain.
 
 ### Generation Store (`CURRENT` + `generations/`)
 

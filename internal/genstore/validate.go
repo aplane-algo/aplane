@@ -211,6 +211,64 @@ func OpenAnchoredEnvelope(
 	return plaintext, nil
 }
 
+// OpenAnchoredEnvelopeBytes opens an already-read member buffer only after
+// exact anchor, seal, manifest, and per-member validation. It lets inventory
+// and completion scans consume the same member bytes they hash without
+// exposing the keyring's low-level historical operation outside genstore.
+func OpenAnchoredEnvelopeBytes(
+	gen storepaths.GenPaths,
+	anchor crypto.HistoricalGenerationAnchor,
+	sealBytes, manifestBytes []byte,
+	relativePath string,
+	memberBytes []byte,
+	ctx crypto.ObjectContext,
+	kr *crypto.Keyring,
+) ([]byte, error) {
+	seal, err := ParseAnchoredSealBytes(
+		gen,
+		anchor,
+		sealBytes,
+		manifestBytes,
+		kr,
+	)
+	if err != nil {
+		return nil, err
+	}
+	index := slices.IndexFunc(seal.Inventory, func(entry InventoryEntry) bool {
+		return entry.Path == relativePath
+	})
+	if index < 0 {
+		return nil, fmt.Errorf(
+			"path %q is absent from the anchored seal",
+			relativePath,
+		)
+	}
+	if err := VerifyBytesAgainstSeal(seal, relativePath, memberBytes); err != nil {
+		return nil, fmt.Errorf(
+			"%s does not match generation %s's anchored seal: %w",
+			relativePath,
+			gen.GenerationID(),
+			err,
+		)
+	}
+	entry := seal.Inventory[index]
+	if entry.Term <= 0 {
+		return nil, fmt.Errorf(
+			"anchored member %q is not a term envelope",
+			relativePath,
+		)
+	}
+	plaintext, err := kr.OpenHistoricalGenerationEnvelope(
+		memberBytes,
+		ctx,
+		entry.Term,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("open anchored member %q: %w", relativePath, err)
+	}
+	return plaintext, nil
+}
+
 // validateStructure enforces the generation directory's shape: a regular
 // directory containing only manifest.json, seal.json, and the namespace
 // directories; both namespaces present (Mint creates them unconditionally,

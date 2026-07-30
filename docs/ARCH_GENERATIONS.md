@@ -183,9 +183,10 @@ Later historical access is deliberately two-level: anchored seal validation
 first checks that exact root anchor and then verifies the seal MAC using the
 retained term; `ReadAnchoredBytes` checks one exact member buffer against its
 authenticated size, digest, and term before `OpenAnchoredEnvelope` may decrypt
-it through the specialized historical path. A retained term key alone does
-not authorize a historical generation, and an anchor alone cannot replace the
-key.
+it through the specialized historical path. Inventory scans use
+`OpenAnchoredEnvelopeBytes` to apply the same anchor/seal/member checks to the
+exact member buffer they already hashed. A retained term key alone does not
+authorize a historical generation, and an anchor alone cannot replace the key.
 
 `CanonicalInventoryDigest` supplies the Phase 3 rollback-authority digest. It
 hashes a domain string and a length-prefixed encoding of the sorted inventory
@@ -202,8 +203,10 @@ matching authenticated baseline supersedes the at-mint manifest only for the
 clean/diverged comparison; a missing, malformed, wrong-term, or
 wrong-generation baseline cannot assert cleanness. Rotation preflight keeps a
 valid matching baseline, durably removes a valid stale one, and preserves
-invalid evidence while blocking. Runtime rollback consumption and
-completion-before-close ordering remain Phase 3 transition work.
+invalid evidence while blocking. Rotation completion now writes a required
+clean baseline before closing the pending root and never writes one for a
+cutover already recorded as diverged. Runtime rollback consumption remains
+Phase 3 transition work.
 
 ## 6. Strict generation validator
 
@@ -311,9 +314,11 @@ root is pending, normal signer reload and key scans fail closed until the
 snapshot-pinned lifecycle completes. The internal resume pass now preserves
 root-anchored prior generations byte-for-byte while rewrapping only exact
 pinned mutable current-generation envelopes; target outputs are authenticated
-and accepted idempotently after a crash. Completion-baseline ordering,
-rollback consumption, the final comparison, and operator wiring remain Phase
-3 work; see [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
+and accepted idempotently after a crash. The completion pass performs
+pre/post-baseline final scans, writes a clean cutover's post-rewrap baseline
+before atomically closing the root, and only then removes the snapshot.
+Rollback consumption and operator wiring remain Phase 3 work; see
+[PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
 
 ## 12. Filesystems, crash ordering, ownership
 
