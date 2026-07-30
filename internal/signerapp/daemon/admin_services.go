@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -101,6 +103,14 @@ func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []b
 		logWarnf("identity is recovery-blocked: %v", reconcileErr)
 		return true, 0, "", protocol.ResultCodeRecoveryBlocked
 	}
+	if rotationErr := s.completePendingRotation(ir, passphrase); rotationErr != nil {
+		success, errMsg := ir.TryRecoveryUnlock(passphrase)
+		if !success {
+			return false, 0, errMsg, unlockFailureCode(errMsg)
+		}
+		logWarnf("identity is recovery-blocked by incomplete key rotation: %v", rotationErr)
+		return true, 0, "", protocol.ResultCodeRecoveryBlocked
+	}
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
@@ -116,6 +126,50 @@ func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []b
 		return true, 0, "", protocol.ResultCodeRecoveryBlocked
 	}
 	return success, keyCount, errMsg, unlockFailureCode(errMsg)
+}
+
+// completePendingRotation resumes a root-pinned rotation before ordinary
+// reload can publish signing authority. It also removes a snapshot left behind
+// by a crash after the root was durably closed.
+func (s signerAdminServices) completePendingRotation(
+	ir *identity.Runtime,
+	passphrase []byte,
+) error {
+	complete := func() error {
+		kr, err := crypto.OpenKeyringStore(
+			ir.KeyPaths().KeystoreMetadataDir(ir.ID()),
+			passphrase,
+		)
+		if err != nil {
+			return err
+		}
+		defer kr.Zero()
+		report, err := rotationinventory.CompleteRotation(
+			ir.KeyPaths(),
+			ir.ID(),
+			kr,
+			passphrase,
+		)
+		if errors.Is(err, rotationinventory.ErrNoRotationPending) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if report != nil && report.Resume != nil {
+			logInfof(
+				"completed pending key rotation for identity %s (%d rewrapped, %d re-signed)",
+				ir.ID(),
+				report.Resume.Rewrapped,
+				report.Resume.Resigned,
+			)
+		}
+		return nil
+	}
+	if s.signer == nil {
+		return complete()
+	}
+	return s.signer.withIdentityMutation(ir.ID(), complete)
 }
 
 // reconcileGenerations enforces CURRENT as the sole commit record at unlock

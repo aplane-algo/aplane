@@ -128,6 +128,8 @@ type ChangeStorePassphraseResult struct {
 	RecoveredFilesMigrated   int
 	PolicySidecarsMigrated   int
 	NodeRoleSidecarsMigrated int
+	PriorGenerations         int
+	HelperWarning            string
 	Code                     string
 	Error                    string
 }

@@ -30,10 +30,12 @@ creates a new baseline, and the root-referenced snapshot is removed only
 after close. A tenth slice makes restore rollback consume the matching
 authenticated baseline, preserve divergence refusal, and mint the sealed
 target's content into fresh current-term envelopes rather than reauthorizing
-an older generation. The remaining transition work is operator-facing wiring
-recorded below and in
-[PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
-picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
+an older generation. An eleventh slice rewrites `changepass` onto that durable
+transition, makes helper failure a post-commit warning, reports retained
+priors, and automatically completes pending rotation during interactive and
+headless unlock before runtime publication. This document is the design record
+behind it. Amended across six rounds of review by two independent reviewers,
+both of whom now call the design settled.
 
 Refreshed against the tree after the generation-storage branch merged: the
 design core is unchanged, but the version gate no longer needs a migration
@@ -92,8 +94,9 @@ The passphrase-helper contract and the resume path are decided, not blocked.
 
 ## Problem
 
-`apstore changepass` re-encrypts every managed file under the new master key
-using a two-phase `.new`/`.old` swap (`internal/storepass/rotate.go`). Review
+Before phase 3, `apstore changepass` re-encrypted every managed file under the
+new master key using a two-phase `.new`/`.old` swap
+(`internal/storepass/rotate.go`). Review
 finding (migration/CLI round): a crash during phase 2 leaves the current
 generation with **mixed-key content** — some files under the old key, some
 under the new — and no supported recovery path. The documented sibling-retry
@@ -928,8 +931,8 @@ accepts everywhere else.
      transition start now pins the durable snapshot and complete anchor set in
      the same atomic root publication. Snapshot-pinned rewrap/resume and the
      final exact-path/target-authority completion boundary now consume them;
-     rollback consumption is implemented; operator-facing automatic resume
-     remains.
+     rollback consumption, `changepass` integration, and automatic
+     pre-publication unlock resume are implemented.
    - **Add an artifact-class test.** The gates above prove no code takes the
      old path; they do not prove every written artifact carries a term. A
      test that creates each durable class — managed keys, installed

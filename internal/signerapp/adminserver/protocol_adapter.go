@@ -175,6 +175,8 @@ func ProtocolChangeStorePassphraseResultMessage(id string, result adminproto.Cha
 		RecoveredFilesMigrated:   result.RecoveredFilesMigrated,
 		PolicySidecarsMigrated:   result.PolicySidecarsMigrated,
 		NodeRoleSidecarsMigrated: result.NodeRoleSidecarsMigrated,
+		PriorGenerations:         result.PriorGenerations,
+		HelperWarning:            result.HelperWarning,
 		Code:                     result.Code,
 		Error:                    result.Error,
 	}

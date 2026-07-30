@@ -34,14 +34,22 @@ func (s SignerState) String() string {
 // Runtime owns signer lock state.
 type Runtime struct {
 	state SignerState
-	// lockGen increments on every Lock call. TryUnlock snapshots it before
-	// running the unlock function and re-checks it under stateMu before
-	// transitioning to unlocked, so a lock that raced the unlock wins instead
-	// of leaving the runtime reporting unlocked over a destroyed key session.
+	// lockGen increments on every Lock and maintenance fence. TryUnlock and
+	// maintenance completion re-check it before publishing unlocked state, so
+	// a racing lock wins instead of leaving the runtime reporting unlocked
+	// over a destroyed key session.
 	lockGen uint64
 	stateMu sync.RWMutex
 
 	onLock func()
+}
+
+// MaintenanceToken identifies one temporary transition from active runtime
+// state to locked state. Its fields are deliberately private so only the
+// runtime that issued it can decide whether a later publication is still
+// current.
+type MaintenanceToken struct {
+	lockGen uint64
 }
 
 // New creates a runtime owner initialized in the locked state.
@@ -126,6 +134,44 @@ func (r *Runtime) Lock() bool {
 		onLock()
 	}
 	return true
+}
+
+// BeginMaintenance clears published signing state through the normal on-lock
+// callback without emitting an external lock decision. CompleteMaintenance
+// may restore unlocked state only if no later Lock changed lockGen.
+func (r *Runtime) BeginMaintenance() MaintenanceToken {
+	r.stateMu.Lock()
+	r.state = SignerStateLocked
+	r.lockGen++
+	token := MaintenanceToken{lockGen: r.lockGen}
+	onLock := r.onLock
+	r.stateMu.Unlock()
+
+	if onLock != nil {
+		onLock()
+	}
+	return token
+}
+
+// CompleteMaintenance restores unlocked state only when token still names the
+// latest lock transition. A racing explicit Lock therefore wins.
+func (r *Runtime) CompleteMaintenance(token MaintenanceToken) bool {
+	r.stateMu.Lock()
+	defer r.stateMu.Unlock()
+	if token.lockGen == 0 || r.lockGen != token.lockGen {
+		return false
+	}
+	switch r.state {
+	case SignerStateLocked:
+		r.state = SignerStateUnlocked
+		return true
+	case SignerStateUnlocked:
+		// A concurrent successful unlock already published the same settled
+		// store after maintenance; do not turn that into a false lock notice.
+		return true
+	default:
+		return false
+	}
 }
 
 // TryRecovery runs the keyring unlock function and enters recovery state

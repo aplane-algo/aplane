@@ -30,11 +30,16 @@ var ErrNoRotationPending = crypto.ErrNoRotationPending
 // A non-nil report may accompany an error and records the durable progress
 // completed before that failure.
 type ResumeReport struct {
-	SnapshotEntries   int
-	Rewrapped         int
-	Resigned          int
-	AlreadyTarget     int
-	VerifiedUnchanged int
+	SnapshotEntries          int
+	Rewrapped                int
+	Resigned                 int
+	AlreadyTarget            int
+	VerifiedUnchanged        int
+	KeysMigrated             int
+	TemplatesMigrated        int
+	RecoveredFilesMigrated   int
+	PolicySidecarsMigrated   int
+	NodeRoleSidecarsMigrated int
 }
 
 // ResumeRotation rewraps snapshot-pinned mutable consumers onto the target
@@ -83,8 +88,12 @@ func ResumeRotation(
 
 	report := &ResumeReport{SnapshotEntries: len(snapshot.Inventory)}
 	for _, entry := range snapshot.Inventory {
+		historical := hasCanonicalPrefix(entry.Path, historicalPrefixes)
+		if !historical {
+			countMigrationTarget(report, entry.Kind)
+		}
 		switch {
-		case hasCanonicalPrefix(entry.Path, historicalPrefixes):
+		case historical:
 			if err := verifyPinnedEntry(paths, entry); err != nil {
 				return report, fmt.Errorf(
 					"resume rotation immutable historical entry %q: %w",
@@ -119,6 +128,21 @@ func ResumeRotation(
 		}
 	}
 	return report, nil
+}
+
+func countMigrationTarget(report *ResumeReport, kind ArtifactKind) {
+	switch kind {
+	case KindAccountKey, KindSentryCredential:
+		report.KeysMigrated++
+	case KindKeyTypeTemplate:
+		report.TemplatesMigrated++
+	case KindRecoveredBatch, KindRecoveredEntry:
+		report.RecoveredFilesMigrated++
+	case KindPolicySidecar:
+		report.PolicySidecarsMigrated++
+	case KindNodeRoleSidecar:
+		report.NodeRoleSidecarsMigrated++
+	}
 }
 
 func resumeEnvelope(

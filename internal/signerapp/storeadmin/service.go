@@ -141,15 +141,24 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 
 	var rotation storepass.RotateResult
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
+		// A pending root authorizes its retiring term only for the explicit
+		// resume path. Clear the already-published runtime before the root can
+		// enter that window so concurrent signing cannot keep using a cached
+		// settled keyring. A racing explicit Lock must still win.
+		maintenance := ir.BeginStoreMaintenance()
+		republish := false
+		defer func() {
+			ir.FinishStoreMaintenance(maintenance, republish)
+		}()
 		var rotateErr error
 		rotation, rotateErr = storepass.Rotate(s.Deps.KeyPaths(), ir.ID(), req.CurrentPassphrase, req.NewPassphrase, storepass.RotateOptions{
 			Logf: s.Deps.Logf,
-			AfterSwap: func() error {
+			AfterRootCommit: func() error {
 				if passphraseCmdCfg == nil {
 					return nil
 				}
 				if err := serverconfig.WritePassphrase(passphraseCmdCfg, req.NewPassphrase); err != nil {
-					return fmt.Errorf("passphrase change aborted: helper write failed: %w", err)
+					return fmt.Errorf("helper write failed: %w", err)
 				}
 				return nil
 			},
@@ -160,6 +169,10 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 		if _, reloadErr := ir.ReloadWithPassphrase(req.NewPassphrase); reloadErr != nil {
 			return fmt.Errorf("passphrase changed but identity reload failed: %w", reloadErr)
 		}
+		// Completion has closed the root and reload has rebuilt every runtime
+		// index under the new passphrase, so signing authority may be
+		// published again before the mutation lock is released.
+		republish = true
 		return nil
 	})
 	if err != nil {
@@ -182,6 +195,8 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 		RecoveredFilesMigrated:   rotation.RecoveredFilesMigrated,
 		PolicySidecarsMigrated:   rotation.PolicySidecarsMigrated,
 		NodeRoleSidecarsMigrated: rotation.NodeRoleSidecarsMigrated,
+		PriorGenerations:         rotation.PriorGenerations,
+		HelperWarning:            rotation.HelperWarning,
 	}
 }
 

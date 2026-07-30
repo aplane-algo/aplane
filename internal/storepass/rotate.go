@@ -4,30 +4,23 @@
 package storepass
 
 import (
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-	"syscall"
-	"time"
 
-	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
 type Logger func(format string, args ...any)
 
 type RotateOptions struct {
-	Logf      Logger
-	AfterSwap func() error
+	Logf Logger
+
+	// AfterRootCommit updates passphrase helpers after the new cryptographic
+	// root becomes authoritative. Its failure is a warning, never a rollback
+	// request or a barrier to completing the already-committed rotation.
+	AfterRootCommit func() error
 }
 
 type RotateResult struct {
@@ -36,12 +29,10 @@ type RotateResult struct {
 	RecoveredFilesMigrated   int
 	PolicySidecarsMigrated   int
 	NodeRoleSidecarsMigrated int
-}
-
-type pendingFile struct {
-	original string
-	newPath  string
-	oldPath  string
+	PriorGenerations         int
+	HelperWarning            string
+	RootCommitted            bool
+	RotationPending          bool
 }
 
 func VerifyCurrentPassphrase(paths storepaths.Paths, identityID string, passphrase []byte) error {
@@ -53,149 +44,122 @@ func VerifyCurrentPassphrase(paths storepaths.Paths, identityID string, passphra
 	return nil
 }
 
-// Rotate re-encrypts the identity keystore metadata, active keys, installed
-// templates, and published recovered batches under a new passphrase using a
-// write-new, verify, swap pattern.
-func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphrase []byte, opts RotateOptions) (RotateResult, error) {
+// Rotate appends a fresh key term, commits that root under newPassphrase, and
+// synchronously completes the snapshot-pinned migration. Once StartRotation
+// commits, the new passphrase is authoritative. Later failures deliberately
+// leave a resumable pending root instead of attempting cryptographic rollback.
+//
+// The caller holds the identity mutation lock.
+func Rotate(
+	paths storepaths.Paths,
+	identityID string,
+	oldPassphrase, newPassphrase []byte,
+	opts RotateOptions,
+) (RotateResult, error) {
 	var result RotateResult
 	metaDir := paths.KeystoreMetadataDir(identityID)
 	if !crypto.KeyringExistsIn(metaDir) {
 		return result, fmt.Errorf("no keyring found in %s - store not initialized", metaDir)
 	}
+	if len(oldPassphrase) == 0 || len(newPassphrase) == 0 {
+		return result, fmt.Errorf("current and new passphrases are required")
+	}
 
-	oldKeyring, err := loadAndVerifyCurrentKeyring(paths, identityID, oldPassphrase)
+	kr, err := loadAndVerifyCurrentKeyring(paths, identityID, oldPassphrase)
 	if err != nil {
 		return result, err
 	}
-	defer oldKeyring.Zero()
-	if err := oldKeyring.RequireSettled(); err != nil {
-		return result, fmt.Errorf("passphrase change blocked: %w", err)
+	defer kr.Zero()
+	if state, pending := kr.PendingRotation(); pending {
+		return result, fmt.Errorf(
+			"passphrase change blocked: %w (%d -> %d); unlock with the committed passphrase to resume",
+			crypto.ErrRotationAlreadyPending,
+			state.FromTerm,
+			state.ToTerm,
+		)
 	}
 
-	managedFiles, templateFiles, recoveredFiles, err := scanTargets(paths, identityID, oldKeyring)
+	logf(opts.Logf, "starting durable key-term rotation")
+	snapshot, startErr := rotationinventory.StartRotation(
+		paths,
+		identityID,
+		kr,
+		newPassphrase,
+	)
+	_, rootCommitted := kr.PendingRotation()
+	if rootCommitted {
+		result.RootCommitted = true
+		result.RotationPending = true
+		result.PriorGenerations = len(kr.HistoricalGenerationAnchors())
+	}
+	if startErr != nil {
+		if result.RootCommitted {
+			updatePassphraseHelper(&result, opts)
+			return result, fmt.Errorf(
+				"new passphrase committed but rotation requires recovery: %w",
+				startErr,
+			)
+		}
+		return result, startErr
+	}
+	if snapshot == nil {
+		return result, fmt.Errorf("rotation root committed without a snapshot")
+	}
+	if !rootCommitted {
+		return result, fmt.Errorf("rotation returned without committing a pending root")
+	}
+	updatePassphraseHelper(&result, opts)
+
+	logf(
+		opts.Logf,
+		"completing key-term rotation %d -> %d over %d pinned artifacts",
+		snapshot.FromTerm,
+		snapshot.ToTerm,
+		len(snapshot.Inventory),
+	)
+	completion, err := rotationinventory.CompleteRotation(
+		paths,
+		identityID,
+		kr,
+		newPassphrase,
+	)
+	applyCompletionReport(&result, completion)
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf(
+			"new passphrase committed but rotation remains resumable: %w",
+			err,
+		)
 	}
-	logTargets(opts.Logf, managedFiles, templateFiles, recoveredFiles)
-
-	var pendingFiles []pendingFile
-	keyringPath := crypto.KeyringPath(metaDir)
-	newKeyringPath := keyringPath + ".new"
-	oldKeyringPath := keyringPath + ".old"
-
-	// A passphrase change must replace the term key, not merely rewrap it.
-	// The old master key was derived from the passphrase, so changing the
-	// passphrase changed the key for free; a keyring's term key is stored,
-	// so rewrapping it under a new KEK would leave every file readable to
-	// anyone holding the old keyring — including files written afterwards.
-	// Generating a fresh term here is what preserves today's guarantee.
-	newKeyring, err := crypto.NewKeyring()
-	if err != nil {
-		return result, fmt.Errorf("failed to create new keyring: %w", err)
-	}
-	defer newKeyring.Zero()
-
-	logf(opts.Logf, "phase 1: creating new encrypted files")
-	for _, managedFile := range managedFiles {
-		credentialContext, err := managedFile.Context()
-		if err != nil {
-			cleanupPendingNewFiles(pendingFiles)
-			return result, err
-		}
-		pf, ok, err := createPendingEncryptedFile(managedFile.Path, credentialContext, oldKeyring, newKeyring, managedFile.Name, opts.Logf)
-		if err != nil {
-			cleanupPendingNewFiles(pendingFiles)
-			return result, err
-		}
-		if ok {
-			pendingFiles = append(pendingFiles, *pf)
-			result.KeysMigrated++
-		}
-	}
-
-	for _, templatePath := range templateFiles {
-		templateName := filepath.Base(templatePath)
-		templateContext, err := templatestore.TemplateContextForFile(templatePath)
-		if err != nil {
-			cleanupPendingNewFiles(pendingFiles)
-			return result, err
-		}
-		pf, ok, err := createPendingEncryptedFile(templatePath, templateContext, oldKeyring, newKeyring, templateName, opts.Logf)
-		if err != nil {
-			cleanupPendingNewFiles(pendingFiles)
-			return result, err
-		}
-		if ok {
-			pendingFiles = append(pendingFiles, *pf)
-			result.TemplatesMigrated++
-		}
-	}
-
-	for _, target := range recoveredFiles {
-		label := filepath.Base(filepath.Dir(target.Path)) + "/" + filepath.Base(target.Path)
-		pf, ok, err := createPendingEncryptedFile(target.Path, target.Context, oldKeyring, newKeyring, label, opts.Logf)
-		if err != nil {
-			cleanupPendingNewFiles(pendingFiles)
-			return result, err
-		}
-		if ok {
-			pendingFiles = append(pendingFiles, *pf)
-			result.RecoveredFilesMigrated++
-		}
-	}
-
-	policyDocs, err := policyDocumentsForRotation(paths, identityID)
-	if err != nil {
-		cleanupPendingNewFiles(pendingFiles)
-		return result, err
-	}
-	for _, doc := range policyDocs {
-		policySidecar, ok, err := createPendingPolicySidecar(doc, oldKeyring, newKeyring, opts.Logf)
-		if err != nil {
-			cleanupPendingNewFiles(pendingFiles)
-			return result, err
-		}
-		if ok {
-			pendingFiles = append(pendingFiles, *policySidecar)
-			result.PolicySidecarsMigrated++
-		}
-	}
-
-	nodeRoleSidecar, ok, err := createPendingNodeRoleSidecar(paths, identityID, oldKeyring, newKeyring, opts.Logf)
-	if err != nil {
-		cleanupPendingNewFiles(pendingFiles)
-		return result, err
-	}
-	if ok {
-		pendingFiles = append(pendingFiles, *nodeRoleSidecar)
-		result.NodeRoleSidecarsMigrated++
-	}
-
-	// The root goes last in the swap set, so the store is readable under the
-	// old passphrase until the moment every data file already carries the new
-	// term key. The .keystore marker is static and does not participate: a
-	// passphrase change does not alter the format version or the layout.
-	if err := writeVerifiedNewKeyring(keyringPath, newKeyringPath, newKeyring, newPassphrase); err != nil {
-		cleanupPendingNewFiles(pendingFiles)
-		return result, err
-	}
-	pendingFiles = append(pendingFiles, pendingFile{keyringPath, newKeyringPath, oldKeyringPath})
-	logf(opts.Logf, "created: keyring.enc.new (verified)")
-
-	logf(opts.Logf, "phase 2: atomic file swap")
-	if err := swapPendingFiles(pendingFiles, opts.Logf); err != nil {
-		return result, err
-	}
-
-	if opts.AfterSwap != nil {
-		if err := opts.AfterSwap(); err != nil {
-			rollbackPendingFiles(pendingFiles, opts.Logf)
-			return result, err
-		}
-	}
-
-	cleanupPendingOldFiles(pendingFiles)
+	result.RotationPending = false
 	return result, nil
+}
+
+func updatePassphraseHelper(result *RotateResult, opts RotateOptions) {
+	if opts.AfterRootCommit == nil {
+		return
+	}
+	if err := opts.AfterRootCommit(); err != nil {
+		result.HelperWarning = fmt.Sprintf(
+			"passphrase changed, but helper update failed; unlock manually with the new passphrase: %v",
+			err,
+		)
+		logf(opts.Logf, "%s", result.HelperWarning)
+	}
+}
+
+func applyCompletionReport(result *RotateResult, completion *rotationinventory.CompletionReport) {
+	if completion == nil || completion.Resume == nil {
+		return
+	}
+	resume := completion.Resume
+	result.KeysMigrated = resume.KeysMigrated
+	result.TemplatesMigrated = resume.TemplatesMigrated
+	result.RecoveredFilesMigrated = resume.RecoveredFilesMigrated
+	result.PolicySidecarsMigrated = resume.PolicySidecarsMigrated
+	result.NodeRoleSidecarsMigrated = resume.NodeRoleSidecarsMigrated
+	if completion.RootClosed {
+		result.RotationPending = false
+	}
 }
 
 func logf(log Logger, format string, args ...any) {
@@ -208,401 +172,20 @@ func logf(log Logger, format string, args ...any) {
 // passphrase. The unwrap is the verification: there is no separate verifier.
 //
 // The caller owns the returned keyring and must Zero it.
-func loadAndVerifyCurrentKeyring(paths storepaths.Paths, identityID string, oldPassphrase []byte) (*crypto.Keyring, error) {
-	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+func loadAndVerifyCurrentKeyring(
+	paths storepaths.Paths,
+	identityID string,
+	passphrase []byte,
+) (*crypto.Keyring, error) {
+	kr, err := crypto.OpenKeyringStore(
+		paths.KeystoreMetadataDir(identityID),
+		passphrase,
+	)
 	if err != nil {
+		if errors.Is(err, crypto.ErrRotationPending) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("current passphrase verification failed: %w", err)
 	}
 	return kr, nil
-}
-
-func scanTargets(
-	paths storepaths.Paths,
-	identityID string,
-	kr *crypto.Keyring,
-) ([]keys.ManagedCredentialFile, []string, []recovered.RotationTarget, error) {
-	// Rotation requires generation quiescence: it rewrites only what it can
-	// see through the resolved current namespaces, so a retained prior
-	// generation would silently keep material encrypted under the old
-	// term key and make generation rollback produce an unreadable store.
-	if err := requireGenerationQuiescence(paths, identityID); err != nil {
-		return nil, nil, nil, err
-	}
-	active, err := genstore.ResolveActive(paths, identityID)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to resolve active key store layout: %w", err)
-	}
-	managedFiles, err := keys.ScanManagedCredentialFiles(active.KeysDir())
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to scan keystore: %w", err)
-	}
-
-	var templateFiles []string
-	templatesRootDir := active.KeyTypeRecordsDir()
-	_ = filepath.WalkDir(templatesRootDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() && strings.HasSuffix(d.Name(), ".template") {
-			templateFiles = append(templateFiles, path)
-		}
-		return nil
-	})
-	recoveredFiles, err := recovered.RotationTargets(paths, identityID, kr)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return managedFiles, templateFiles, recoveredFiles, nil
-}
-
-// requireGenerationQuiescence refuses rotation on a generational store while
-// any generation other than the current one exists (docs/ARCH_GENERATIONS.md
-// §11). The operator prunes prior generations first; after a successful
-// rotation the retention window restarts empty. Prior-generation retention
-// and passphrase rotation never coexist.
-func requireGenerationQuiescence(paths storepaths.Paths, identityID string) error {
-	current, err := genstore.ReadCurrent(paths, identityID)
-	if err != nil {
-		return fmt.Errorf("passphrase rotation requires a valid CURRENT generation: %w", err)
-	}
-	entries, err := os.ReadDir(paths.GenerationsDir(identityID))
-	if err != nil {
-		return err
-	}
-	var extra []string
-	for _, entry := range entries {
-		if entry.Name() != current {
-			extra = append(extra, entry.Name())
-		}
-	}
-	if len(extra) > 0 {
-		return fmt.Errorf(
-			"passphrase rotation requires generation quiescence: %d other generation(s) exist (%s); run 'apstore generations prune --all-priors' first — this permanently deletes the generation rollback history",
-			len(extra), strings.Join(extra, ", "))
-	}
-	return nil
-}
-
-func logTargets(
-	log Logger,
-	managedFiles []keys.ManagedCredentialFile,
-	templateFiles []string,
-	recoveredFiles []recovered.RotationTarget,
-) {
-	if len(managedFiles) == 0 && len(templateFiles) == 0 && len(recoveredFiles) == 0 {
-		logf(log, "no key, template, or recovered batch files found in keystore")
-		return
-	}
-	if len(managedFiles) > 0 {
-		logf(log, "found %d managed credential file(s) to migrate", len(managedFiles))
-	}
-	if len(templateFiles) > 0 {
-		logf(log, "found %d template file(s) to migrate", len(templateFiles))
-	}
-	if len(recoveredFiles) > 0 {
-		logf(log, "found %d recovered batch file(s) to migrate", len(recoveredFiles))
-	}
-}
-
-func cleanupPendingNewFiles(pendingFiles []pendingFile) {
-	for _, pf := range pendingFiles {
-		_ = os.Remove(pf.newPath)
-	}
-}
-
-func rollbackPendingFiles(pendingFiles []pendingFile, log Logger) {
-	logf(log, "rolling back changes")
-	for _, pf := range pendingFiles {
-		if _, err := os.Stat(pf.oldPath); err == nil {
-			if err := os.Rename(pf.oldPath, pf.original); err != nil {
-				logf(log, "failed to restore %s: %v", pf.original, err)
-			} else {
-				logf(log, "restored: %s", filepath.Base(pf.original))
-			}
-		}
-		_ = os.Remove(pf.newPath)
-	}
-}
-
-func cleanupPendingOldFiles(pendingFiles []pendingFile) {
-	for _, pf := range pendingFiles {
-		_ = os.Remove(pf.oldPath)
-	}
-}
-
-// rewriteEncryptedFile re-encrypts path under the new term key, writing
-// path.new. display is the human-readable name used in error messages (the
-// path itself, or a caller-supplied label).
-//
-// ctx is the object the file holds. Rotation changes the key, never the
-// identity, so the same context opens the old envelope and seals the new one —
-// which also means a rotation cannot silently relabel a file.
-func rewriteEncryptedFile(path, display string, ctx crypto.ObjectContext, oldKeyring, newKeyring *crypto.Keyring) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", display, err)
-	}
-	if !crypto.IsEncrypted(data) {
-		return nil
-	}
-
-	plaintext, err := oldKeyring.Open(data, ctx)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt %s: %w", display, err)
-	}
-	newData, err := newKeyring.Seal(plaintext, ctx)
-	crypto.ZeroBytes(plaintext)
-	if err != nil {
-		return fmt.Errorf("failed to re-encrypt %s: %w", display, err)
-	}
-	if err := fsutil.WriteFile(path+".new", newData); err != nil {
-		return fmt.Errorf("failed to write %s.new: %w", display, err)
-	}
-	if err := ApplyFileMetadataFrom(path, path+".new"); err != nil {
-		return fmt.Errorf("failed to set metadata on %s.new: %w", display, err)
-	}
-	// The swap in phase 2 renames this file over the canonical one and then
-	// removes the .old fallback. Its data blocks must be on disk before the
-	// rename can ever become durable, or a power loss leaves a canonical
-	// file that decrypts under neither key.
-	if err := fsutil.SyncFile(path + ".new"); err != nil {
-		return fmt.Errorf("failed to sync %s.new: %w", display, err)
-	}
-
-	verifyData, err := os.ReadFile(path + ".new")
-	if err != nil {
-		return fmt.Errorf("failed to verify %s.new: %w", display, err)
-	}
-	verifyPlaintext, err := newKeyring.Open(verifyData, ctx)
-	if err != nil {
-		return fmt.Errorf("verification failed for %s.new: %w", display, err)
-	}
-	crypto.ZeroBytes(verifyPlaintext)
-	return nil
-}
-
-func createPendingEncryptedFile(path string, ctx crypto.ObjectContext, oldKeyring, newKeyring *crypto.Keyring, label string, log Logger) (*pendingFile, bool, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to read %s: %w", label, err)
-	}
-	if !crypto.IsEncrypted(data) {
-		logf(log, "skipping %s (not encrypted)", label)
-		return nil, false, nil
-	}
-	if err := rewriteEncryptedFile(path, label, ctx, oldKeyring, newKeyring); err != nil {
-		return nil, false, err
-	}
-
-	pf := &pendingFile{original: path, newPath: path + ".new", oldPath: path + ".old"}
-	logf(log, "created: %s.new (verified)", label)
-	return pf, true, nil
-}
-
-type policyRotationDocument struct {
-	name       string
-	path       string
-	verifyFunc func(kr *crypto.Keyring) error
-}
-
-func policyDocumentsForRotation(paths storepaths.Paths, identityID string) ([]policyRotationDocument, error) {
-	nodeDoc, _, err := noderole.Load(paths)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load node role: %w", err)
-	}
-	dataRoot := paths.Root()
-	doc := policyRotationDocument{
-		name: "policy.yaml",
-		path: policy.PolicyPath(dataRoot, identityID),
-	}
-	switch nodeDoc.Role {
-	case noderole.RoleSentry:
-		doc.verifyFunc = func(kr *crypto.Keyring) error {
-			_, err := policy.LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID, kr)
-			return err
-		}
-	case noderole.RoleSigner:
-		doc.verifyFunc = func(kr *crypto.Keyring) error {
-			_, err := policy.LoadVerifiedStoredConfigWithKeyring(dataRoot, identityID, kr)
-			return err
-		}
-	default:
-		return nil, fmt.Errorf("unsupported node role %q", nodeDoc.Role)
-	}
-	return []policyRotationDocument{doc}, nil
-}
-
-func createPendingPolicySidecar(doc policyRotationDocument, oldKeyring, newKeyring *crypto.Keyring, log Logger) (*pendingFile, bool, error) {
-	if err := doc.verifyFunc(oldKeyring); err != nil {
-		return nil, false, fmt.Errorf("failed to verify %s integrity before passphrase rotation: %w", doc.name, err)
-	}
-
-	policyPath := doc.path
-	policyBytes, err := os.ReadFile(policyPath)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to read %s: %w", doc.name, err)
-	}
-	info, err := os.Stat(policyPath)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to stat %s: %w", doc.name, err)
-	}
-
-	sidecar, err := policy.SignPolicyIntegrity(policyBytes, newKeyring, time.Now(), info.ModTime().UnixNano())
-	if err != nil {
-		return nil, false, err
-	}
-	sidecarBytes, err := policy.MarshalPolicyIntegritySidecar(sidecar)
-	if err != nil {
-		return nil, false, err
-	}
-
-	sidecarPath := policy.PolicyIntegritySidecarPath(policyPath)
-	newPath := sidecarPath + ".new"
-	if err := fsutil.WriteFile(newPath, sidecarBytes); err != nil {
-		return nil, false, fmt.Errorf("failed to write %s.hmac.new: %w", doc.name, err)
-	}
-	if err := ApplyFileMetadataFrom(sidecarPath, newPath); err != nil {
-		return nil, false, fmt.Errorf("failed to set metadata on %s.hmac.new: %w", doc.name, err)
-	}
-	verifySidecar, err := policy.LoadPolicyIntegritySidecar(newPath)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to verify %s.hmac.new: %w", doc.name, err)
-	}
-	if err := policy.VerifyPolicyIntegrity(policyBytes, verifySidecar, newKeyring); err != nil {
-		return nil, false, fmt.Errorf("verification failed for %s.hmac.new: %w", doc.name, err)
-	}
-	logf(log, "created: %s.hmac.new (verified)", doc.name)
-	return &pendingFile{original: sidecarPath, newPath: newPath, oldPath: sidecarPath + ".old"}, true, nil
-}
-
-func createPendingNodeRoleSidecar(paths storepaths.Paths, identityID string, oldKeyring, newKeyring *crypto.Keyring, log Logger) (*pendingFile, bool, error) {
-	if _, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, oldKeyring); err != nil {
-		return nil, false, fmt.Errorf("failed to verify node role integrity before passphrase rotation: %w", err)
-	}
-
-	_, roleBytes, err := noderole.Load(paths)
-	if err != nil {
-		return nil, false, err
-	}
-	info, err := os.Stat(paths.NodeRolePath())
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to stat node.yaml: %w", err)
-	}
-
-	sidecar, err := noderole.Sign(roleBytes, newKeyring, time.Now(), info.ModTime().UnixNano())
-	if err != nil {
-		return nil, false, err
-	}
-	sidecarBytes, err := noderole.MarshalSidecar(sidecar)
-	if err != nil {
-		return nil, false, err
-	}
-
-	sidecarPath := paths.NodeRoleIntegritySidecar(identityID)
-	newPath := sidecarPath + ".new"
-	if err := fsutil.WriteFile(newPath, sidecarBytes); err != nil {
-		return nil, false, fmt.Errorf("failed to write node.yaml.hmac.new: %w", err)
-	}
-	if err := ApplyFileMetadataFrom(sidecarPath, newPath); err != nil {
-		return nil, false, fmt.Errorf("failed to set metadata on node.yaml.hmac.new: %w", err)
-	}
-	verifySidecar, err := noderole.LoadSidecar(newPath)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to verify node.yaml.hmac.new: %w", err)
-	}
-	if err := noderole.Verify(roleBytes, verifySidecar, newKeyring); err != nil {
-		return nil, false, fmt.Errorf("verification failed for node.yaml.hmac.new: %w", err)
-	}
-	logf(log, "created: node.yaml.hmac.new (verified)")
-	return &pendingFile{original: sidecarPath, newPath: newPath, oldPath: sidecarPath + ".old"}, true, nil
-}
-
-func ApplyFileMetadataFrom(sourcePath, targetPath string) error {
-	info, err := os.Stat(sourcePath)
-	if err != nil {
-		return err
-	}
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok && os.Geteuid() == 0 {
-		if err := os.Chown(targetPath, int(stat.Uid), int(stat.Gid)); err != nil {
-			return err
-		}
-	}
-	return os.Chmod(targetPath, info.Mode().Perm())
-}
-
-// writeVerifiedNewKeyring stages the new root and proves it opens under the
-// new passphrase before the swap can promote it. A root that does not open is
-// an unrecoverable store, so it is verified from disk rather than from memory.
-func writeVerifiedNewKeyring(
-	keyringPath string,
-	newKeyringPath string,
-	newKeyring *crypto.Keyring,
-	newPassphrase []byte,
-) error {
-	encoded, err := crypto.SealKeyring(newKeyring, newPassphrase)
-	if err != nil {
-		return fmt.Errorf("failed to seal new keyring: %w", err)
-	}
-	if err := fsutil.WriteFile(newKeyringPath, encoded); err != nil {
-		return fmt.Errorf("failed to write keyring.enc.new: %w", err)
-	}
-	if err := ApplyFileMetadataFrom(keyringPath, newKeyringPath); err != nil {
-		return fmt.Errorf("failed to set metadata on keyring.enc.new: %w", err)
-	}
-	staged, err := os.ReadFile(newKeyringPath)
-	if err != nil {
-		return fmt.Errorf("failed to read back keyring.enc.new: %w", err)
-	}
-	verified, err := crypto.OpenKeyring(staged, newPassphrase)
-	if err != nil {
-		return fmt.Errorf("verification failed for keyring.enc.new: %w", err)
-	}
-	verified.Zero()
-	if err := fsutil.SyncFile(newKeyringPath); err != nil {
-		return fmt.Errorf("failed to sync keyring.enc.new: %w", err)
-	}
-	return nil
-}
-
-func swapPendingFiles(pendingFiles []pendingFile, log Logger) error {
-	for i, pf := range pendingFiles {
-		if _, err := os.Stat(pf.original); err == nil {
-			if err := os.Rename(pf.original, pf.oldPath); err != nil {
-				rollbackPendingFiles(pendingFiles[:i], log)
-				return fmt.Errorf("failed to backup %s: %w", filepath.Base(pf.original), err)
-			}
-		}
-		if err := os.Rename(pf.newPath, pf.original); err != nil {
-			_ = os.Rename(pf.oldPath, pf.original)
-			rollbackPendingFiles(pendingFiles[:i], log)
-			return fmt.Errorf("failed to install %s: %w", filepath.Base(pf.original), err)
-		}
-		logf(log, "swapped: %s", filepath.Base(pf.original))
-	}
-	// The renames above are metadata operations; without a directory fsync a
-	// power loss can revert any subset of them after cleanup has removed the
-	// .old fallbacks. Make the whole swap durable before cleanup may run.
-	for _, dir := range uniqueParentDirs(pendingFiles) {
-		if err := fsutil.SyncDir(dir); err != nil {
-			return fmt.Errorf("failed to sync directory %s after swap: %w", dir, err)
-		}
-	}
-	return nil
-}
-
-// uniqueParentDirs returns the sorted set of directories holding the
-// canonical files of pendingFiles.
-func uniqueParentDirs(pendingFiles []pendingFile) []string {
-	seen := make(map[string]struct{}, len(pendingFiles))
-	var dirs []string
-	for _, pf := range pendingFiles {
-		dir := filepath.Dir(pf.original)
-		if _, ok := seen[dir]; ok {
-			continue
-		}
-		seen[dir] = struct{}{}
-		dirs = append(dirs, dir)
-	}
-	sort.Strings(dirs)
-	return dirs
 }

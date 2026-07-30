@@ -81,6 +81,16 @@ func cmdChangepass() error {
 		logInfof("  - %d node role sidecar(s) re-signed", result.NodeRoleSidecarsMigrated)
 	}
 	logInfof("  - keystore metadata updated")
+	if result.HelperWarning != "" {
+		logWarnf(result.HelperWarning)
+	}
+	if result.PriorGenerations > 0 {
+		logWarnf(
+			"%d prior generation(s) remain readable under historical key terms",
+			result.PriorGenerations,
+		)
+		logWarnf("run 'apstore generations prune --all-priors' when rollback retention is no longer required")
+	}
 	return nil
 }
 

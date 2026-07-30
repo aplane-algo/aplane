@@ -468,7 +468,7 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 	if err == nil {
 		t.Fatal("Rotate() error = nil, want node role integrity failure")
 	}
-	if !strings.Contains(err.Error(), "failed to verify node role integrity before passphrase rotation") {
+	if !strings.Contains(err.Error(), "node role integrity check failed") {
 		t.Fatalf("Rotate() error = %v, want node role verification context", err)
 	}
 	if result.NodeRoleSidecarsMigrated != 0 {
@@ -486,7 +486,7 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(identityID), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), paths.NodeRoleIntegritySidecar(identityID))
 }
 
-func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
+func TestRotateTreatsHelperFailureAsPostCommitWarning(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths, "default")
 	identityID := "default"
@@ -506,16 +506,21 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
 	recoveredBatch := createRecoveredBatchForRotateTest(t, paths, identityID, oldMasterKeyRing)
 
+	helperCalls := 0
 	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{
-		AfterSwap: func() error {
+		AfterRootCommit: func() error {
+			helperCalls++
 			return errors.New("helper write failed")
 		},
 	})
-	if err == nil {
-		t.Fatal("Rotate() error = nil, want after-swap failure")
+	if err != nil {
+		t.Fatalf("Rotate() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "helper write failed") {
-		t.Fatalf("Rotate() error = %v, want helper failure context", err)
+	if !strings.Contains(result.HelperWarning, "helper write failed") {
+		t.Fatalf("Rotate() HelperWarning = %q, want helper failure context", result.HelperWarning)
+	}
+	if helperCalls != 1 {
+		t.Fatalf("helper calls = %d, want 1", helperCalls)
 	}
 	if result.KeysMigrated != 1 || result.TemplatesMigrated != 1 ||
 		result.RecoveredFilesMigrated != 2 || result.PolicySidecarsMigrated != 1 ||
@@ -523,14 +528,19 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 		t.Fatalf("Rotate() result = %+v, want attempted key, template, recovered, policy, and node role migration", result)
 	}
 
-	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
-	assertKeyringRejectsPassphrase(t, paths, identityID, newPassphrase)
-	assertDecryptsWithKeyring(t, keyPath, oldMasterKeyRing)
-	assertDecryptsWithKeyring(t, templatePath, oldMasterKeyRing)
-	assertPolicyVerifiesWithKeyring(t, paths, identityID, oldMasterKeyRing)
-	assertNodeRoleVerifiesWithKeyring(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
-	if _, err := recovered.LoadBatch(paths, identityID, recoveredBatch.RestoreID, oldMasterKeyRing); err != nil {
-		t.Fatalf("LoadBatch(old master key after rollback) error = %v", err)
+	assertMetadataAcceptsPassphrase(t, paths, identityID, newPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, identityID, oldPassphrase)
+	newKeyring, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), newPassphrase)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore(new passphrase) error = %v", err)
+	}
+	defer newKeyring.Zero()
+	assertDecryptsWithKeyring(t, keyPath, newKeyring)
+	assertDecryptsWithKeyring(t, templatePath, newKeyring)
+	assertPolicyVerifiesWithKeyring(t, paths, identityID, newKeyring)
+	assertNodeRoleVerifiesWithKeyring(t, paths, identityID, newKeyring, noderole.RoleSigner)
+	if _, err := recovered.LoadBatch(paths, identityID, recoveredBatch.RestoreID, newKeyring); err != nil {
+		t.Fatalf("LoadBatch(new key after helper warning) error = %v", err)
 	}
 	recoveredMetadataPath := paths.RecoveredBatchMetadataPath(identityID, recoveredBatch.RestoreID)
 	recoveredEntryPath := filepath.Join(
@@ -566,7 +576,7 @@ func TestRotateFailsWhenPolicyBaselineMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("Rotate() error = nil, want missing policy baseline failure")
 	}
-	if !strings.Contains(err.Error(), "failed to verify policy.yaml integrity") {
+	if !strings.Contains(err.Error(), "rotation inventory policy") {
 		t.Fatalf("Rotate() error = %v, want policy integrity context", err)
 	}
 	if result.KeysMigrated != 0 || result.TemplatesMigrated != 0 || result.PolicySidecarsMigrated != 0 {
@@ -744,9 +754,7 @@ func TestRotatePreservesKeystoreVersionGate(t *testing.T) {
 	kr.Zero()
 }
 
-// TestRotateRefusedUntilPriorGenerationsPruned proves the documented
-// quiescence workflow is completable with supported tooling.
-func TestRotateRefusedUntilPriorGenerationsPruned(t *testing.T) {
+func TestRotateAnchorsPriorGenerationsWithoutPruning(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
 	passphrase := []byte("rotate-quiescence")
@@ -773,21 +781,25 @@ func TestRotateRefusedUntilPriorGenerationsPruned(t *testing.T) {
 		t.Fatalf("Mint(second): %v", err)
 	}
 
-	// A sealed prior blocks rotation...
-	if _, err := Rotate(paths, identityID, passphrase, []byte("new-pass"), RotateOptions{}); err == nil ||
-		!strings.Contains(err.Error(), "quiescence") {
-		t.Fatalf("Rotate() error = %v, want quiescence refusal", err)
+	result, err := Rotate(paths, identityID, passphrase, []byte("new-pass"), RotateOptions{})
+	if err != nil {
+		t.Fatalf("Rotate() error = %v", err)
 	}
-	// ...and the supported prune restores rotatability.
-	if _, err := genstore.CollectGarbage(paths, identityID, nil, false, masterKeyRing); err != nil {
-		t.Fatalf("CollectGarbage() error = %v", err)
+	if result.PriorGenerations != 1 {
+		t.Fatalf("Rotate().PriorGenerations = %d, want 1", result.PriorGenerations)
 	}
-	if _, err := Rotate(paths, identityID, passphrase, []byte("new-pass"), RotateOptions{}); err != nil {
-		t.Fatalf("Rotate(after prune) error = %v", err)
+	rotated, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), []byte("new-pass"))
+	if err != nil {
+		t.Fatalf("OpenKeyringStore(new-pass) error = %v", err)
+	}
+	defer rotated.Zero()
+	anchors := rotated.HistoricalGenerationAnchors()
+	if len(anchors) != 1 || anchors[0].GenerationID != first {
+		t.Fatalf("historical anchors = %+v, want %s", anchors, first)
 	}
 }
 
-func TestRotateSyncsNewFilesAndSwapDirectories(t *testing.T) {
+func TestRotateDurablyWritesRootAndConsumers(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths, "default")
 	identityID := "default"
@@ -802,14 +814,12 @@ func TestRotateSyncsNewFilesAndSwapDirectories(t *testing.T) {
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, &policy.StoredConfig{})
 	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
 
-	newFileSyncs := map[string]bool{}
+	fileSyncs := map[string]bool{}
 	dirSyncs := map[string]bool{}
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		switch op {
 		case fsutil.OpFileSync:
-			if strings.HasSuffix(path, ".new") {
-				newFileSyncs[filepath.Base(path)] = true
-			}
+			fileSyncs[path] = true
 		case fsutil.OpDirSync:
 			dirSyncs[path] = true
 		}
@@ -821,13 +831,9 @@ func TestRotateSyncsNewFilesAndSwapDirectories(t *testing.T) {
 		t.Fatalf("Rotate() error = %v", err)
 	}
 
-	// Every staged .new file was fsynced before the swap could publish it.
-	for _, want := range []string{"ADDR.key.new", "keyring.enc.new"} {
-		if !newFileSyncs[want] {
-			t.Fatalf("no file sync observed for %s (synced: %v)", want, newFileSyncs)
-		}
+	if len(fileSyncs) == 0 {
+		t.Fatal("rotation performed no durable file writes")
 	}
-	// The swap's renames were made durable in each affected directory.
 	for _, dir := range []string{filepath.Dir(keyPath), paths.KeystoreMetadataDir(identityID)} {
 		if !dirSyncs[dir] {
 			t.Fatalf("no directory sync observed for %s (synced: %v)", dir, dirSyncs)

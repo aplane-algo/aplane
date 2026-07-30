@@ -240,6 +240,8 @@ type ChangeStorePassphraseResultMessage struct {
 	RecoveredFilesMigrated   int    `json:"recovered_files_migrated,omitempty"`
 	PolicySidecarsMigrated   int    `json:"policy_sidecars_migrated,omitempty"`
 	NodeRoleSidecarsMigrated int    `json:"node_role_sidecars_migrated,omitempty"`
+	PriorGenerations         int    `json:"prior_generations,omitempty"`
+	HelperWarning            string `json:"helper_warning,omitempty"`
 	Code                     string `json:"code,omitempty"`
 	Error                    string `json:"error,omitempty"`
 }

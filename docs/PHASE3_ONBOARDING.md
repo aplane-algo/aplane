@@ -12,10 +12,10 @@ sections you need and which are archive.
 
 ## The one-paragraph version
 
-`apstore changepass` re-encrypts every managed file under a new key using a
-two-phase `.new`/`.old` swap. A crash partway through leaves the store with
-some files under the old key and some under the new, and there is no recovery
-path for managed keys or templates — validation fails closed into a state whose
+Before phase 3, `apstore changepass` re-encrypted every managed file under a
+new key using a two-phase `.new`/`.old` swap. A crash partway through left the
+store with some files under the old key and some under the new, and there was no
+recovery path for managed keys or templates — validation failed closed into a state whose
 only exit is restore-from-backup. Phase 3 removes that failure mode by changing
 what rotation *is*: instead of re-encrypting everything under one new key,
 append a numbered key *term*, record on each file which term sealed it, and
@@ -46,6 +46,7 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | Snapshot-pinned resume — idempotent mutable-envelope rewrap, pinned-document sidecar renewal, exact preservation of anchored generations and plaintext, target-output authentication on retry, and partial-progress crash recovery | `internal/rotationinventory/resume.go` |
 | Verified completion — pre/post-baseline final scans, exact path and target-authority comparison, clean-only baseline publication, atomic pending-root close, and post-close snapshot cleanup/recovery | `internal/rotationinventory/complete.go`, `internal/crypto/keyring_store.go` |
 | Rollback consumption — matching authenticated baselines supersede at-mint inventory, divergence remains fail-closed, and restore rollback reconstructs an authenticated target into a fresh current-term generation | `internal/rotationinventory/baseline.go`, `internal/signerapp/backupadmin/rollback_generation.go` |
+| Operator/runtime lifecycle — `changepass` appends and synchronously completes a durable term rotation under the identity mutation lock; helper failure is a post-commit warning; interactive and headless unlock automatically resume before publishing the identity and enter recovery on failure | `internal/storepass/rotate.go`, `internal/signerapp/storeadmin/service.go`, `internal/signerapp/daemon/admin_services.go`, `internal/signerapp/daemon/run.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
 What that gives you: fresh stores begin at term 1; a guarded internal
@@ -59,18 +60,16 @@ pre-unlock reconciliation only uses seal presence to classify unreachable
 attempts and does not treat an unverified seal as a rollback authority.
 Settled current-state reads accept exactly `{current_term}`; pending reads
 accept exactly `{current_term, rotation.from_term}`, regardless of what older
-keys remain resident. Normal signer reload and direct key scanning reject a
-pending root before publishing runtime state, because completion is not yet
-operator-wired. The internal completion pass now consumes the snapshot,
-publishes a required baseline before atomically closing the root, and removes
-the snapshot afterward. Restore rollback now consumes a matching baseline and
-mints the authenticated target content under the current term. K8 remains
-incomplete until the transition is connected to the operator/runtime path.
+keys remain resident. `changepass` now commits the new root first and completes
+the snapshot-pinned transition synchronously. Interactive and headless unlock
+run that same completion boundary before publishing runtime state; a failure
+opens only recovery mode. Direct key scanning still rejects a pending root.
+Restore rollback consumes a matching baseline and mints the authenticated
+target content under the current term.
 
-The properties implemented today are K1–K7 and R1–R5 in
+The properties implemented today are K1–K8 and R1–R5 in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against named code and
-test anchors. K8 remains listed there as not implemented until the
-operator/runtime enforcement points are connected.
+test anchors.
 
 ## Read the model early
 
@@ -460,7 +459,6 @@ adopts it in memory, and returns a durability-unknown error that must not be
 retried as a fresh start. An unclassifiable root state similarly requires
 recovery, not retry.
 
-This is still an internal transition boundary, not a complete lifecycle.
 `ResumeRotation` reopens the exact root-referenced snapshot on every pass.
 For mutable envelopes it accepts a target-term file only after opening that
 same bounded buffer under its pinned logical context; it otherwise requires
@@ -494,6 +492,18 @@ closed only while a pending root remains. `Keyring.RequireSettled` also
 blocks ordinary runtime keyring access, signing-key loads, direct keystore
 mutation, offline passphrase change, policy signing/editing, and generation
 pruning during that window.
+
+`storepass.Rotate` is the operator start path. The service fences signing and
+clears published runtime state before entering the identity mutation lock's
+transition; only verified completion and reload republish it, and a racing
+explicit lock wins. Rotation appends the term, updates any configured
+passphrase helper after the root commit, and calls completion. A helper-write
+failure is reported as a warning and cannot roll back the new authority or
+block completion. A later failure leaves the root pending and the runtime
+locked, and tells the operator to unlock manually with the new passphrase.
+Interactive and headless daemon unlock call completion after generation
+reconciliation and before ordinary reload; an authenticated failure enters
+recovery with signing disabled.
 
 ### The original blockers
 
@@ -530,19 +540,13 @@ may need its own fix rather than only an anchoring rule.
 
 **11. Two things the code would otherwise lose by accident.** Snapshot
 construction must exclude cooperating store and generation mutations.
-`changepass` gets that exclusion today from the identity mutation lock plus
-generation quiescence — but be careful which half of quiescence you carry
-forward. The proposal retires `requireGenerationQuiescence` (in
-`internal/storepass/rotate.go`) along with its prune-all-priors prerequisite;
-that retention sense of quiescence dissolves in phase 3. The mutual-exclusion
-sense — no cooperating generation mutation while the inventory is being
-pinned — must survive under the identity mutation lock as a requirement term
-append states itself rather than inherits by luck. Direct filesystem writes
-are handled by the exact-byte and final-inventory checks in item 1, not by
-claiming the lock excludes the attacker. And term append must use the atomic
-`WriteKeyring`, **not** the two-phase `.new`/`.old` swap that `changepass`
-currently carries the root through — that swap is what phase 3 exists to
-retire, and reusing it would give up the atomicity R5 depends on.
+`changepass` gets that exclusion from the identity mutation lock. The former
+`requireGenerationQuiescence` and prune-all-priors prerequisite are retired;
+retained generations are instead authenticated by historical anchors.
+Direct filesystem writes are handled by the exact-byte and final-inventory
+checks in item 1, not by claiming the lock excludes the attacker. Term append
+uses atomic keyring root publication and no longer carries the root through
+the two-phase `.new`/`.old` swap.
 
 ## Two things that are easy to get wrong
 

@@ -129,6 +129,45 @@ func TestTryUnlockSucceedsWithoutRacingLock(t *testing.T) {
 	}
 }
 
+func TestMaintenanceClearsStateAndRepublishesOnlyOnMatchingToken(t *testing.T) {
+	r := New()
+	r.SetUnlocked()
+	cleanups := 0
+	r.SetOnLock(func() {
+		cleanups++
+	})
+
+	token := r.BeginMaintenance()
+	if r.IsUnlocked() {
+		t.Fatal("runtime remained unlocked during maintenance")
+	}
+	if cleanups != 1 {
+		t.Fatalf("maintenance cleanups = %d, want 1", cleanups)
+	}
+	if !r.CompleteMaintenance(token) {
+		t.Fatal("CompleteMaintenance() refused current token")
+	}
+	if !r.IsUnlocked() {
+		t.Fatal("runtime not republished after maintenance")
+	}
+}
+
+func TestMaintenanceRepublishLosesToRacingLock(t *testing.T) {
+	r := New()
+	r.SetUnlocked()
+	token := r.BeginMaintenance()
+
+	// Lock increments the fence even though maintenance already made the
+	// visible state locked. That explicit lock must prevent republish.
+	r.Lock()
+	if r.CompleteMaintenance(token) {
+		t.Fatal("CompleteMaintenance() overrode a racing Lock")
+	}
+	if r.IsUnlocked() {
+		t.Fatal("runtime unlocked despite racing Lock")
+	}
+}
+
 func TestTryRecoveryBlocksSigningAndLockRunsCleanup(t *testing.T) {
 	r := New()
 	var lockCalls atomic.Int32

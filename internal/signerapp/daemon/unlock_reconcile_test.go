@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -68,6 +70,122 @@ func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 		}
 	}
 	return generationID
+}
+
+func startPendingTestRotation(
+	t *testing.T,
+	server *Signer,
+	passphrase []byte,
+) *crypto.Keyring {
+	t.Helper()
+	convertTestSignerToGenerational(t, server)
+	kr, err := crypto.OpenKeyringStore(
+		server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID),
+		testPassphrase,
+	)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore: %v", err)
+	}
+	if _, err := rotationinventory.StartRotation(
+		server.keyPaths,
+		auth.DefaultIdentityID,
+		kr,
+		passphrase,
+	); err != nil {
+		kr.Zero()
+		t.Fatalf("StartRotation: %v", err)
+	}
+	return kr
+}
+
+func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	newPassphrase := []byte("new-unlock-passphrase")
+	kr := startPendingTestRotation(t, server, newPassphrase)
+	if _, pending := kr.PendingRotation(); !pending {
+		t.Fatal("rotation is not pending after start")
+	}
+	kr.Zero()
+	ir.Lock()
+
+	success, _, errMsg, code := (signerAdminServices{signer: server}).
+		UnlockIdentity(ir, newPassphrase)
+	if !success || errMsg != "" || code != "" {
+		t.Fatalf(
+			"UnlockIdentity() = (%v, %q, %q), want normal unlock",
+			success,
+			errMsg,
+			code,
+		)
+	}
+	if !ir.IsUnlocked() || ir.IsRecovery() {
+		t.Fatalf(
+			"identity state = unlocked %v recovery %v, want ordinary unlocked",
+			ir.IsUnlocked(),
+			ir.IsRecovery(),
+		)
+	}
+	settled, err := crypto.OpenKeyringStore(
+		server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID),
+		newPassphrase,
+	)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore(new passphrase): %v", err)
+	}
+	defer settled.Zero()
+	if _, pending := settled.PendingRotation(); pending {
+		t.Fatal("unlock left the rotation pending")
+	}
+	if _, err := os.Stat(
+		server.keyPaths.RotationSnapshotPath(auth.DefaultIdentityID),
+	); !os.IsNotExist(err) {
+		t.Fatalf("rotation snapshot still present after unlock completion: %v", err)
+	}
+}
+
+func TestUnlockEntersRecoveryWhenPendingRotationCannotComplete(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	newPassphrase := []byte("new-recovery-passphrase")
+	kr := startPendingTestRotation(t, server, newPassphrase)
+	kr.Zero()
+	if err := os.WriteFile(
+		server.keyPaths.RotationSnapshotPath(auth.DefaultIdentityID),
+		[]byte("tampered snapshot"),
+		0o600,
+	); err != nil {
+		t.Fatalf("tamper rotation snapshot: %v", err)
+	}
+	ir.Lock()
+
+	success, keyCount, errMsg, code := (signerAdminServices{signer: server}).
+		UnlockIdentity(ir, newPassphrase)
+	if !success || keyCount != 0 || errMsg != "" ||
+		code != protocol.ResultCodeRecoveryBlocked {
+		t.Fatalf(
+			"UnlockIdentity() = (%v, %d, %q, %q), want recovery entry",
+			success,
+			keyCount,
+			errMsg,
+			code,
+		)
+	}
+	if !ir.IsRecovery() || ir.IsUnlocked() {
+		t.Fatalf(
+			"identity state = recovery %v unlocked %v, want recovery",
+			ir.IsRecovery(),
+			ir.IsUnlocked(),
+		)
+	}
 }
 
 func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {

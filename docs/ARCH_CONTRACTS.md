@@ -1228,8 +1228,9 @@ Behavior:
 
 `internal/rotationinventory` owns the canonical K8 durable-artifact taxonomy,
 snapshot scan, guarded transition-start orchestration, and the internal
-snapshot-pinned resume and completion passes. Rollback consumption and
-operator-facing wiring are not yet implemented.
+snapshot-pinned resume and completion passes. `internal/storepass` owns the
+operator start/complete workflow, and signer unlock owns automatic resume
+before runtime publication.
 
 Each entry contains:
 
@@ -1333,14 +1334,15 @@ recovery. Neither result authorizes retrying `StartRotation` as a fresh
 append. The descriptor itself is the durable R5 guard.
 
 `OpenKeyring` accepts settled and pending multi-term roots and enforces the
-current-state authority set described above. Normal signer reload and direct
-key scanning reject a pending root before keys, templates, snapshots, or a
-session can be published; the recovery unlock path may retain it for the
-future resume operation. `Keyring.RequireSettled` is the common guard for
+current-state authority set described above. Interactive and headless signer
+unlock automatically run completion after generation reconciliation and
+before keys, templates, snapshots, or a session can be published. Failure
+enters recovery mode with signing blocked. Direct key scanning still rejects
+a pending root. `Keyring.RequireSettled` is the common guard for
 ordinary runtime keyring access, signing-key loads, and direct keystore
 mutation. Offline passphrase change, policy signing/editing, and generation
 pruning apply the same guard. `ErrRotationPending` is the stable error
-classification; only the explicit future resume path may bypass it.
+classification; only the explicit resume/completion path may bypass it.
 
 `identities/<identity>/rotation.baseline.enc` is a current-term envelope with
 object context `rotation-baseline:current`. Its strict plaintext schema is
@@ -1412,8 +1414,21 @@ through the corresponding ordinary or anchor-gated path and sealed under the
 current term; plaintext members remain exact. The rollback manifest keeps the
 outgoing generation as `parent_id` and records the content source separately
 as `rollback_source_generation_id`. The superseded baseline is removed
-durably only after the `CURRENT` flip. Operator-facing automatic resume
-remains.
+durably only after the `CURRENT` flip.
+
+`apstore changepass` invokes the durable transition under the identity
+mutation lock. It first fences signing and clears the published runtime; only
+verified completion plus reload may republish it, and a racing explicit lock
+wins. The new root is the point of no return: it is published under the new
+passphrase before consumer rewrap. A configured passphrase helper is updated
+immediately after that commit. Helper failure is returned as a warning, never
+as a rollback request or completion barrier. Any later error leaves a
+resumable pending root and the runtime locked; the new passphrase is
+authoritative and the next interactive or headless unlock resumes
+automatically before enabling the identity. `changepass` itself refuses to
+append over a pending root.
+Successful results report migrated artifact counts, helper warnings, and the
+number of retained prior generations still readable under historical terms.
 
 ### Generation Store (`CURRENT` + `generations/`)
 
@@ -2869,10 +2884,10 @@ Local rescue surface:
   `apstore generations prune [--all-priors]` deletes sealed prior
   generations after validating the current one and asking for explicit
   confirmation — pruning permanently deletes rollback targets. Passphrase
-  rotation requires generation quiescence (no generation other than the
-  current one), so `generations prune --all-priors` may be required before
-  `changepass`; the rotation refusal names that command and its
-  consequence
+  rotation does not require pruning. Retained prior generations remain
+  readable under historical key terms, and `changepass` warns about them;
+  `generations prune --all-priors` is the explicit way to abandon those
+  rollback targets
 - `apstore rebuild` refuses to run when the destination identity directory
   already exists and uses the store lock to avoid concurrent signer access
 
