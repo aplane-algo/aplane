@@ -45,6 +45,7 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | Guarded transition start — baseline preflight, cutover inventory, complete historical-anchor collection, target-term snapshot durability, atomic pending-root publication, R5 retry refusal, and fail-closed pending runtime | `internal/rotationinventory/start.go`, `internal/crypto/keyring_store.go`, `internal/keystore/file.go`, `internal/signerapp/templates/reload.go` |
 | Snapshot-pinned resume — idempotent mutable-envelope rewrap, pinned-document sidecar renewal, exact preservation of anchored generations and plaintext, target-output authentication on retry, and partial-progress crash recovery | `internal/rotationinventory/resume.go` |
 | Verified completion — pre/post-baseline final scans, exact path and target-authority comparison, clean-only baseline publication, atomic pending-root close, and post-close snapshot cleanup/recovery | `internal/rotationinventory/complete.go`, `internal/crypto/keyring_store.go` |
+| Rollback consumption — matching authenticated baselines supersede at-mint inventory, divergence remains fail-closed, and restore rollback reconstructs an authenticated target into a fresh current-term generation | `internal/rotationinventory/baseline.go`, `internal/signerapp/backupadmin/rollback_generation.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
 What that gives you: fresh stores begin at term 1; a guarded internal
@@ -62,14 +63,14 @@ keys remain resident. Normal signer reload and direct key scanning reject a
 pending root before publishing runtime state, because completion is not yet
 operator-wired. The internal completion pass now consumes the snapshot,
 publishes a required baseline before atomically closing the root, and removes
-the snapshot afterward. K8 remains incomplete until rollback consumes the
-baseline authority and the transition is connected to the operator/runtime
-path.
+the snapshot afterward. Restore rollback now consumes a matching baseline and
+mints the authenticated target content under the current term. K8 remains
+incomplete until the transition is connected to the operator/runtime path.
 
-The properties implemented today are K1–K7, R1, R2, and R5 in
+The properties implemented today are K1–K7 and R1–R5 in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against named code and
-test anchors. K8 remains listed there as not implemented until rollback
-consumption and the operator/runtime enforcement points are connected.
+test anchors. K8 remains listed there as not implemented until the
+operator/runtime enforcement points are connected.
 
 ## Read the model early
 
@@ -514,12 +515,13 @@ digest, which trips the post-activation rollback guard that compares those
 digests against the at-mint manifest. Without a baseline recorded before the
 window closes, every later rollback of that generation is refused —
 permanently. The strict record, current-term durable storage, effective
-authority decision, and preflight reconciliation are implemented. The
-completion boundary now writes a required clean baseline before clearing the
-window and refuses to write one for a diverged cutover. The remaining work is
-to teach the rollback guard to consume a matching baseline. The model's R3 is
-exactly this ordering, and its negative control reproduces the
-baseline-after-close failure.
+authority decision, preflight reconciliation, and rollback consumption are
+implemented. The completion boundary writes a required clean baseline before
+clearing the window and refuses to write one for a diverged cutover. Restore
+rollback uses only a matching authenticated baseline to supersede the
+manifest, validates the sealed target, and mints its exact content under the
+current term. The model's R3 is exactly this ordering, and its negative
+control reproduces the baseline-after-close failure.
 
 **10. Plaintext generation members** — see item 8; listed separately because it
 may need its own fix rather than only an anchoring rule.

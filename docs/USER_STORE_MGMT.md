@@ -469,8 +469,10 @@ storage: `identities/<identity>/CURRENT` names the active generation under
 `generations/`, and every restore activation commits as a complete new
 generation with one durable pointer flip. Activation on these stores cannot
 be left half-applied — a failure before the flip leaves the batch inactive
-and nothing published, and `restore rollback <restore-id>` repoints the
-store at the pre-activation generation.
+and nothing published, and `restore rollback <restore-id>` restores the
+pre-activation content by minting a fresh generation.
+Encrypted members stay on the current key term; the command does not make an
+older generation current again.
 
 Every release is incompatible with every prior release: this release reads
 only stores it initialized. There is no layout migration — to move keys

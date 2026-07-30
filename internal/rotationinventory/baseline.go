@@ -203,6 +203,34 @@ func EvaluateRollbackCutover(
 	}, nil
 }
 
+// EvaluateRollback compares the current rollback-eligible generation with
+// its effective authority. A valid matching current-term baseline supersedes
+// the immutable at-mint manifest. Missing, malformed, wrong-term, and stale
+// baseline files are never authority; the manifest fallback keeps their
+// failure direction fail-closed because they cannot assert cleanness.
+//
+// Unlike rotation preflight, rollback does not delete or reject an invalid
+// optional record before making the clean/diverged decision. Successful
+// generation mints reconcile the now-stale record after CURRENT flips.
+func EvaluateRollback(
+	paths storepaths.Paths,
+	identityID string,
+	generationID string,
+	live []genstore.InventoryEntry,
+	manifest *genstore.Manifest,
+	kr *crypto.Keyring,
+) (*RollbackCutover, error) {
+	if kr == nil {
+		return nil, fmt.Errorf("evaluate rollback: keyring is required")
+	}
+	var baseline *Baseline
+	candidate, err := ReadBaseline(paths, identityID, kr)
+	if err == nil && candidate.GenerationID == generationID {
+		baseline = candidate
+	}
+	return EvaluateRollbackCutover(generationID, live, manifest, baseline)
+}
+
 // WriteBaseline seals a validated completion record under the current term
 // and durably publishes it before a pending rotation may be cleared.
 func WriteBaseline(

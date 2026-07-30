@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -16,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -80,6 +80,14 @@ func (s Service) activateRecoveredGenerational(
 	tokenDigest := sha256.Sum256([]byte(req.ReviewToken))
 
 	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+		if _, err := rotationinventory.ReconcileBaselineForPreflight(
+			paths,
+			ir.ID(),
+			parent,
+			masterKey,
+		); err != nil {
+			return fmt.Errorf("activation rotation baseline preflight: %w", err)
+		}
 		_, mintErr := genstore.Mint(paths, ir.ID(), genstore.MintRequest{
 			GenerationID:      generationID,
 			Parent:            parent,
@@ -93,19 +101,31 @@ func (s Service) activateRecoveredGenerational(
 				return s.applyRecoveredBatchTo(ir, req, masterKey, &result.Warnings, staged)
 			},
 		})
-		return mintErr
+		if mintErr != nil {
+			return mintErr
+		}
+		_, err := rotationinventory.ReconcileBaselineForPreflight(
+			paths,
+			ir.ID(),
+			generationID,
+			masterKey,
+		)
+		return err
 	})
 	if err != nil {
-		if errors.Is(err, genstore.ErrCommitDurabilityUnknown) {
+		visible, visibleErr := genstore.ReadCurrent(paths, ir.ID())
+		if errors.Is(err, genstore.ErrCommitDurabilityUnknown) ||
+			(visibleErr == nil && visible == generationID) {
 			// The flip is visible: the activation IS committed for every
 			// subsequent resolution, but its durability across a power loss
-			// is unproven. Reload the visible state and block signing until
-			// reconciliation confirms the store.
+			// or its post-commit baseline cleanup is unconfirmed. Reload the
+			// visible state and block signing until reconciliation confirms
+			// the store.
 			_, reloadErr := ir.Reload()
 			ir.SetRecovery()
 			return activationFailure(
 				protocol.ResultCodeRecoveredRollbackFailed,
-				"activation committed as generation %s but the commit's durability is unconfirmed; signing is blocked pending reconciliation (reload: %v): %v",
+				"activation committed as generation %s but post-commit durability is unconfirmed; signing is blocked pending reconciliation (reload: %v): %v",
 				generationID,
 				reloadErr,
 				err,
@@ -173,10 +193,11 @@ func (s Service) activateRecoveredGenerational(
 }
 
 // rollbackRecoveredGenerational undoes the most recent committed activation
-// by repointing CURRENT at its parent generation. Valid only when the
-// current generation was minted from the requested batch; there are no
-// incomplete activations on a generational store (uncommitted attempts are
-// discarded at unlock, never resumed).
+// by minting a fresh generation from its authenticated parent content. The
+// content rolls back, but every encrypted member is freshly sealed under the
+// current term and CURRENT never points back at a historical cryptographic
+// epoch. Valid only when the current generation was minted from the requested
+// batch; uncommitted attempts are discarded at unlock, never resumed.
 func (s Service) rollbackRecoveredGenerational(
 	ir *identity.Runtime,
 	req adminproto.RollbackRecoveredRequest,
@@ -202,52 +223,114 @@ func (s Service) rollbackRecoveredGenerational(
 		return fmt.Errorf("generation %s has no parent to roll back to", gen.GenerationID())
 	}
 	// The current generation is mutable: a key generated or a template
-	// installed after the activation lives in this generation but is not
-	// part of the restore. Repointing CURRENT at the parent would discard
-	// it, so rollback is permitted only while the generation still matches
-	// its at-mint inventory. Refused before any mutation.
+	// installed after activation lives in this generation but is not part
+	// of the restore. Rolling its content back would discard that state, so
+	// compare it with the effective authenticated authority before staging
+	// anything. A matching rotation baseline supersedes the at-mint
+	// manifest; invalid or stale baseline data can never assert cleanness.
 	inventory, err := genstore.BuildInventory(gen)
 	if err != nil {
 		return err
 	}
-	if !inventoriesEqual(manifest.Inventory, inventory) {
-		return activationFailure(
-			protocol.ResultCodeRecoveredRollbackDiverged,
-			"generation %s no longer matches its at-mint inventory: the store was mutated after activation of batch %s, and rolling back would discard those later changes; nothing was rolled back",
-			gen.GenerationID(), req.RestoreID,
-		)
-	}
-	// RollbackTo seals the outgoing generation before flipping the pointer:
-	// from here the store is being mutated, and a failure must classify as
-	// recovered_rollback_failed, never as a pre-mutation refusal.
-	*mutated = true
+	target := paths.GenerationPaths(ir.ID(), manifest.ParentID)
+	var source *rollbackGenerationSource
 	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-		return genstore.RollbackTo(paths, ir.ID(), manifest.ParentID, time.Now(), masterKey)
+		cutover, err := rotationinventory.EvaluateRollback(
+			paths,
+			ir.ID(),
+			gen.GenerationID(),
+			inventory,
+			manifest,
+			masterKey,
+		)
+		if err != nil {
+			return err
+		}
+		if cutover.Decision != rotationinventory.DecisionClean {
+			return activationFailure(
+				protocol.ResultCodeRecoveredRollbackDiverged,
+				"generation %s no longer matches its effective rollback inventory: the store was mutated after activation of batch %s, and rolling back would discard those later changes; nothing was rolled back",
+				gen.GenerationID(),
+				req.RestoreID,
+			)
+		}
+		if anchor, anchored := masterKey.HistoricalGenerationAnchor(
+			target.GenerationID(),
+		); anchored {
+			if err := genstore.ValidateAnchoredSealed(target, anchor, masterKey); err != nil {
+				return fmt.Errorf("rollback target: %w", err)
+			}
+		} else if err := genstore.ValidateSealed(target, masterKey); err != nil {
+			return fmt.Errorf("rollback target: %w", err)
+		}
+		source, err = loadRollbackGenerationSource(target, masterKey)
+		return err
 	})
 	if err != nil {
+		return err
+	}
+
+	generationID, err := genstore.NewGenerationID(time.Now())
+	if err != nil {
+		return err
+	}
+	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+		_, mintErr := genstore.Mint(paths, ir.ID(), genstore.MintRequest{
+			GenerationID:               generationID,
+			Parent:                     gen.GenerationID(),
+			Operation:                  "restore-rollback",
+			OperationID:                req.RestoreID + "-" + generationID,
+			RollbackSourceGenerationID: manifest.ParentID,
+			CreatedAt:                  time.Now(),
+			Integrity:                  masterKey,
+			StartEmpty:                 true,
+			Apply: func(staged storepaths.GenPaths) error {
+				return populateRollbackGeneration(source, staged, masterKey)
+			},
+		})
+		if mintErr != nil {
+			return mintErr
+		}
+		// CURRENT now names generationID. The old baseline is stale and must
+		// be removed durably after, never before, that commit.
+		_, reconcileErr := rotationinventory.ReconcileBaselineForPreflight(
+			paths,
+			ir.ID(),
+			generationID,
+			masterKey,
+		)
+		return reconcileErr
+	})
+	if err != nil {
+		current, currentErr := genstore.ReadCurrent(paths, ir.ID())
+		if currentErr == nil && current == generationID {
+			*mutated = true
+		}
 		if errors.Is(err, genstore.ErrCommitDurabilityUnknown) {
 			ir.SetRecovery()
 		}
 		return err
 	}
+	*mutated = true
 	reloadReport, err := ir.Reload()
 	if err != nil {
 		ir.SetRecovery()
-		return fmt.Errorf("rolled back to generation %s but reload failed: %w", manifest.ParentID, err)
+		return fmt.Errorf(
+			"rolled back into generation %s from source %s but reload failed: %w",
+			generationID,
+			manifest.ParentID,
+			err,
+		)
 	}
 	if reloadReport != nil {
 		result.KeyCount = reloadReport.KeyCount
 	}
-	s.Deps.Logf("rolled back activation of batch %s: CURRENT repointed from %s to %s",
-		req.RestoreID, gen.GenerationID(), manifest.ParentID)
+	s.Deps.Logf(
+		"rolled back activation of batch %s: minted generation %s from sealed source %s (outgoing %s)",
+		req.RestoreID,
+		generationID,
+		manifest.ParentID,
+		gen.GenerationID(),
+	)
 	return nil
-}
-
-// inventoriesEqual compares two content inventories entry by entry. Both
-// sides are sorted by path at construction (BuildInventory sorts; manifest
-// validation requires sorted order), so positional comparison is exact.
-func inventoriesEqual(a, b []genstore.InventoryEntry) bool {
-	return slices.EqualFunc(a, b, func(x, y genstore.InventoryEntry) bool {
-		return x.Path == y.Path && x.SHA256 == y.SHA256 && x.Size == y.Size
-	})
 }

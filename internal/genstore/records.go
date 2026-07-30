@@ -68,6 +68,11 @@ type Manifest struct {
 	// reviewed batch.
 	SourceRestoreID   string `json:"source_restore_id,omitempty"`
 	ReviewTokenSHA256 string `json:"review_token_sha256,omitempty"`
+	// RollbackSourceGenerationID names the sealed generation whose content
+	// was reconstructed into this mint. ParentID remains the outgoing
+	// current generation, preserving commit lineage; the rollback source is
+	// separate because rollback mints content instead of rewinding CURRENT.
+	RollbackSourceGenerationID string `json:"rollback_source_generation_id,omitempty"`
 	// Inventory is the at-mint content record.
 	Inventory []InventoryEntry `json:"inventory"`
 	// Complete is written true before publication; a manifest without it is
@@ -451,6 +456,20 @@ func validateManifest(manifest *Manifest, generationID string) error {
 			// current generation itself — reporting a rollback that never
 			// moved CURRENT.
 			return fmt.Errorf("generation manifest names itself as its parent")
+		}
+	}
+	if manifest.RollbackSourceGenerationID != "" {
+		if manifest.ParentID == "" {
+			return fmt.Errorf("generation manifest rollback source requires a parent")
+		}
+		if err := storepaths.ValidateGenerationID(manifest.RollbackSourceGenerationID); err != nil {
+			return fmt.Errorf("generation manifest rollback source: %w", err)
+		}
+		if manifest.RollbackSourceGenerationID == manifest.GenerationID {
+			return fmt.Errorf("generation manifest names itself as its rollback source")
+		}
+		if manifest.RollbackSourceGenerationID == manifest.ParentID {
+			return fmt.Errorf("generation manifest rollback source is its outgoing parent")
 		}
 	}
 	if manifest.CreatedAtUnix <= 0 || manifest.Operation == "" || manifest.OperationID == "" {

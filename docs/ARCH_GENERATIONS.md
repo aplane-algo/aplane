@@ -147,8 +147,9 @@ AST-walk pattern) proving no `os.Link` call exists in the tree.
 `schema "aplane.generation-manifest.v1"` (following the
 `aplane.backup.manifest.v1` precedent), schema_version, generation ID, parent
 generation ID, created_at, operation type + stable operation ID, source
-restore ID and review-token digest when applicable, at-mint inventory and
-digests, completion state (written before publication). It describes **the
+restore ID and review-token digest when applicable, rollback source generation
+when a mint reconstructs older content, at-mint inventory and digests,
+completion state (written before publication). It describes **the
 minting transaction, not the live directory** — single-file mutations after
 mint do not falsify it. `CURRENT` answers *which state committed*; the
 manifest answers *which operation produced it* (post-crash idempotency and
@@ -205,8 +206,9 @@ wrong-generation baseline cannot assert cleanness. Rotation preflight keeps a
 valid matching baseline, durably removes a valid stale one, and preserves
 invalid evidence while blocking. Rotation completion now writes a required
 clean baseline before closing the pending root and never writes one for a
-cutover already recorded as diverged. Runtime rollback consumption remains
-Phase 3 transition work.
+cutover already recorded as diverged. Restore rollback consumes only a
+matching authenticated baseline; missing, invalid, unauthorized, or stale
+records cannot assert cleanness.
 
 ## 6. Strict generation validator
 
@@ -268,11 +270,17 @@ The pre-generation flat layout, the Tier-1 activation protocol, and the
 `migrate-layout` transaction were removed with this policy.
 ## 9. Rollback and GC
 
-Rollback = validate the target against its authenticated seal → seal the outgoing current
-generation → durable temp pointer → rename over `CURRENT` → fsync identity
-dir → reload. Rollback and retained-parent pruning require an open identity
-keyring. Retention: current + the previous valid generation + anything
-referenced by incomplete-operation or audit recovery metadata. GC resolves
+Restore rollback = compare the mutable current generation with its effective
+manifest/baseline authority → validate the target against its authenticated
+seal or exact historical anchor → reconstruct only seal-pinned target members
+into an empty staging generation, re-encrypting every envelope under the
+current term → commit the fresh generation through the ordinary mint protocol
+→ remove the superseded baseline after the `CURRENT` flip → reload. The new
+manifest keeps the outgoing current generation as `parent_id` and separately
+records `rollback_source_generation_id`; rollback never makes historical
+ciphertext current again. Rollback and retained-parent pruning require an open
+identity keyring. Retention: current + the previous valid generation +
+anything referenced by incomplete-operation or audit recovery metadata. GC resolves
 references under the mutation lock, never runs during
 activation/rotation/reload/migration, fsyncs `generations/` after removals,
 and starts at exactly current+previous — no age/operator policies until
@@ -317,7 +325,7 @@ pinned mutable current-generation envelopes; target outputs are authenticated
 and accepted idempotently after a crash. The completion pass performs
 pre/post-baseline final scans, writes a clean cutover's post-rewrap baseline
 before atomically closing the root, and only then removes the snapshot.
-Rollback consumption and operator wiring remain Phase 3 work; see
+Rollback consumption is implemented; operator wiring remains Phase 3 work; see
 [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
 
 ## 12. Filesystems, crash ordering, ownership

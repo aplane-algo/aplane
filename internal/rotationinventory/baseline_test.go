@@ -447,6 +447,120 @@ func TestEvaluateRollbackCutoverUsesEffectiveAuthority(t *testing.T) {
 	}
 }
 
+func TestEvaluateRollbackOnlyMatchingAuthenticatedBaselineCanAssertClean(t *testing.T) {
+	atMint := baselineInventory()
+	rewrapped := slices.Clone(atMint)
+	rewrapped[0].SHA256 = strings.Repeat("3", 64)
+	rewrapped[0].Term = 2
+	manifest := &genstore.Manifest{
+		GenerationID: baselineGeneration,
+		Inventory:    slices.Clone(atMint),
+	}
+	key2 := bytes.Repeat([]byte{0xd2}, 32)
+
+	assertDiverged := func(t *testing.T, paths storepaths.Paths, kr *crypto.Keyring) {
+		t.Helper()
+		cutover, err := EvaluateRollback(
+			paths,
+			inventoryIdentity,
+			baselineGeneration,
+			rewrapped,
+			manifest,
+			kr,
+		)
+		if err != nil {
+			t.Fatalf("EvaluateRollback() error = %v", err)
+		}
+		if cutover.Decision != DecisionDiverged ||
+			cutover.Authority.Source != AuthorityGenerationManifest {
+			t.Fatalf("EvaluateRollback() = %#v, want manifest divergence", cutover)
+		}
+	}
+
+	t.Run("missing", func(t *testing.T) {
+		paths := baselineTestPaths(t)
+		assertDiverged(t, paths, cryptotest.KeyringAtTerm(t, 2, key2))
+	})
+
+	t.Run("malformed", func(t *testing.T) {
+		paths := baselineTestPaths(t)
+		kr := cryptotest.KeyringAtTerm(t, 2, key2)
+		sealed, err := kr.Seal(
+			[]byte(`{"schema":"not-a-baseline"}`),
+			crypto.RotationBaselineContext(),
+		)
+		if err != nil {
+			t.Fatalf("Seal(malformed baseline) error = %v", err)
+		}
+		if err := fsutil.WriteFileDurable(
+			paths.RotationBaselinePath(inventoryIdentity),
+			sealed,
+		); err != nil {
+			t.Fatalf("WriteFileDurable(malformed baseline) error = %v", err)
+		}
+		assertDiverged(t, paths, kr)
+	})
+
+	t.Run("wrong generation", func(t *testing.T) {
+		paths := baselineTestPaths(t)
+		kr := cryptotest.KeyringAtTerm(t, 2, key2)
+		baseline, err := NewBaseline(baselinePrior, rewrapped)
+		if err != nil {
+			t.Fatalf("NewBaseline(stale) error = %v", err)
+		}
+		if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); err != nil {
+			t.Fatalf("WriteBaseline(stale) error = %v", err)
+		}
+		assertDiverged(t, paths, kr)
+	})
+
+	t.Run("wrong term", func(t *testing.T) {
+		paths := baselineTestPaths(t)
+		key1 := bytes.Repeat([]byte{0xd1}, 32)
+		old := cryptotest.Keyring(t, key1)
+		baseline, err := NewBaseline(baselineGeneration, rewrapped)
+		if err != nil {
+			t.Fatalf("NewBaseline() error = %v", err)
+		}
+		if err := WriteBaseline(paths, inventoryIdentity, baseline, old); err != nil {
+			t.Fatalf("WriteBaseline(old term) error = %v", err)
+		}
+		current := cryptotest.KeyringWithTerms(
+			t,
+			2,
+			map[int64][]byte{1: key1, 2: key2},
+		)
+		assertDiverged(t, paths, current)
+	})
+
+	t.Run("matching current term", func(t *testing.T) {
+		paths := baselineTestPaths(t)
+		kr := cryptotest.KeyringAtTerm(t, 2, key2)
+		baseline, err := NewBaseline(baselineGeneration, rewrapped)
+		if err != nil {
+			t.Fatalf("NewBaseline() error = %v", err)
+		}
+		if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); err != nil {
+			t.Fatalf("WriteBaseline() error = %v", err)
+		}
+		cutover, err := EvaluateRollback(
+			paths,
+			inventoryIdentity,
+			baselineGeneration,
+			rewrapped,
+			manifest,
+			kr,
+		)
+		if err != nil {
+			t.Fatalf("EvaluateRollback() error = %v", err)
+		}
+		if cutover.Decision != DecisionClean ||
+			cutover.Authority.Source != AuthorityRotationBaseline {
+			t.Fatalf("EvaluateRollback() = %#v, want baseline clean", cutover)
+		}
+	})
+}
+
 func baselineInventory() []genstore.InventoryEntry {
 	return []genstore.InventoryEntry{
 		{

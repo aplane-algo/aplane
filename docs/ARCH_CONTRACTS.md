@@ -1399,8 +1399,21 @@ settled root but retains the snapshot; retry authenticates the unreferenced
 snapshot against the visible settled root, syncs the root directory, and
 removes it. A pre-rename close failure leaves both in-memory and on-disk roots
 pending. A snapshot-removal directory-sync failure is reported with the root
-still settled; it never reopens retiring authority. Rollback consumption and
-operator-facing automatic resume remain.
+still settled; it never reopens retiring authority.
+
+Restore rollback calls `rotationinventory.EvaluateRollback`: only a baseline
+that authenticates under the settled current term and names the current
+rollback-eligible generation supersedes its at-mint manifest. Missing,
+malformed, wrong-term, and wrong-generation records cannot assert cleanness.
+After the guard accepts, rollback validates the sealed target through ordinary
+current authority or its exact root historical anchor and mints a fresh
+generation from only the seal-pinned member buffers. Envelopes are opened
+through the corresponding ordinary or anchor-gated path and sealed under the
+current term; plaintext members remain exact. The rollback manifest keeps the
+outgoing generation as `parent_id` and records the content source separately
+as `rollback_source_generation_id`. The superseded baseline is removed
+durably only after the `CURRENT` flip. Operator-facing automatic resume
+remains.
 
 ### Generation Store (`CURRENT` + `generations/`)
 
@@ -2773,10 +2786,16 @@ Live signer-managed restore:
   `recovered_rollback_failed`, reloads the visible state, and enters
   recovery mode with signing blocked; generation reconciliation at the next
   unlock re-confirms the flip's durability.
-- operator rollback of a committed restore activation repoints `CURRENT` at
-  the sealed parent generation recorded in the current generation's
-  manifest, and is accepted only while the current generation was produced
-  by that restore **and still matches its at-mint inventory**. Any
+- operator rollback of a committed restore activation validates the sealed
+  parent generation recorded in the current generation's manifest, then
+  mints its authenticated content as a fresh generation under the current
+  key term. The new manifest records the outgoing current generation as its
+  parent and the older content authority as
+  `rollback_source_generation_id`; `CURRENT` is never repointed at
+  historical ciphertext. Rollback is accepted only while the current
+  generation was produced by that restore **and still matches its effective
+  inventory authority**: a matching authenticated rotation baseline when
+  present, otherwise the at-mint manifest. Any
   post-activation mutation of the current generation (a generated key, an
   installed template) diverges it, and rollback then refuses with
   `recovered_rollback_diverged` rather than discarding the later changes.
