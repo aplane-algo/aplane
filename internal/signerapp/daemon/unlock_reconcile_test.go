@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/rotationinventory"
@@ -145,6 +147,69 @@ func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T)
 		server.keyPaths.RotationSnapshotPath(auth.DefaultIdentityID),
 	); !os.IsNotExist(err) {
 		t.Fatalf("rotation snapshot still present after unlock completion: %v", err)
+	}
+}
+
+func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	convertTestSignerToGenerational(t, server)
+	kr, err := crypto.OpenKeyringStore(
+		server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID),
+		testPassphrase,
+	)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore() error = %v", err)
+	}
+	injected := errors.New("injected pre-root rename failure")
+	rootPath := crypto.KeyringPath(
+		server.keyPaths.IdentityDir(auth.DefaultIdentityID),
+	)
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpRename && path == rootPath {
+			return injected
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+	if _, err := rotationinventory.StartRotation(
+		server.keyPaths,
+		auth.DefaultIdentityID,
+		kr,
+		[]byte("uncommitted-new-passphrase"),
+	); !errors.Is(err, injected) {
+		kr.Zero()
+		t.Fatalf("StartRotation() error = %v, want injected failure", err)
+	}
+	kr.Zero()
+	fsutil.TestHook = nil
+	ir.Lock()
+
+	success, _, errMsg, code := (signerAdminServices{signer: server}).
+		UnlockIdentity(ir, testPassphrase)
+	if !success || errMsg != "" || code != "" {
+		t.Fatalf(
+			"UnlockIdentity(old authority) = (%v, %q, %q), want normal unlock",
+			success,
+			errMsg,
+			code,
+		)
+	}
+	if !ir.IsUnlocked() || ir.IsRecovery() {
+		t.Fatalf(
+			"identity state = unlocked %v recovery %v, want ordinary unlocked",
+			ir.IsUnlocked(),
+			ir.IsRecovery(),
+		)
+	}
+	if _, err := os.Stat(
+		server.keyPaths.RotationSnapshotPath(auth.DefaultIdentityID),
+	); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("pre-root rotation snapshot survived unlock: %v", err)
 	}
 }
 

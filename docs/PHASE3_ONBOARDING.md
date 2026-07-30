@@ -172,10 +172,13 @@ Commit ordering is:
 5. atomically clear the pending descriptor from `keyring.enc`;
 6. remove the now-unreferenced snapshot durably.
 
-A crash before step 2 leaves an unreferenced orphan that can be removed. A
-crash after step 2 must find the exact referenced snapshot or remain in
-rotation-pending recovery. Deleting the snapshot before clearing the root is
-forbidden.
+A crash before step 2 leaves a target-term snapshot beside the unchanged
+settled root. Unlock reopens and confirms that settled root, recognizes the
+unreferenced `current_term+1` snapshot as pre-root residue, and removes it
+durably; the unavailable target key is neither needed nor treated as
+authority. A crash after step 2 must find the exact referenced snapshot or
+remain in rotation-pending recovery. Deleting the snapshot before clearing a
+root that actually carries its descriptor is forbidden.
 
 **2. Where the transition's durable state lives.** The model treats five
 variables as surviving a crash: `pending`, `retiring`, `snapshot`,
@@ -352,7 +355,7 @@ every plaintext file to carry an encryption term:
 |---|---|---|
 | Term-encrypted | active `.key` and `.sen` credentials; installed `.template` files; published recovered batch metadata and entries; deleted key, sentry-credential, and template archives; rotation snapshot and baseline | Envelope carries a term and the class-specific logical context. Mutable and inactive store consumers, including `deleted/`, are snapshot-pinned and rewrapped onto the target term. The snapshot itself is a new target-term record pinned by the root and is not recursively inventoried. A valid matching baseline that exists before cutover is pinned as an input; the baseline written during completion is a target-term output and is not recursively inventoried as another input. |
 | Plaintext plus term integrity | `policy.yaml` and root `node.yaml`, through their identity-local HMAC sidecars | Sidecar v2 carries an explicit integrity term. Snapshot pins the exact document input; completion requires a target-term sidecar. |
-| Plaintext generation member | key-type state records, witness public metadata, generation manifest, and generation seal | No per-file encryption term is invented. Namespace members are covered by the seal inventory; `manifest.json` is covered by the seal's manifest digest; the seal MAC, historical anchor, and exact-byte historical open provide the term authority described above. |
+| Plaintext generation member | key-type state records, witness public metadata, generation manifest, and retained-generation seal | No per-file encryption term is invented. Namespace members are covered by the seal inventory; `manifest.json` is covered by the seal's manifest digest; the retained seal MAC, historical anchor, and exact-byte historical open provide the term authority described above. A seal beside `CURRENT` is precommit crash residue: its structure is tolerated but its content is never parsed or inventoried by rotation. |
 | Independent or excluded | `keyring.enc` and `.keystore`; standalone-passphrase backups; audit/config/unlock/token/SSH state; plaintext template library; caches; unpublished staging residue | Not opened as a term-encrypted store object. The KEK-sealed root and static marker keep their own versioned contract; other existing independent validation applies. Staging residue is reconciled or rejected before cutover, never promoted by rewrap. |
 
 The `deleted/` choice is deliberate: these paths are durable inactive archives
@@ -376,7 +379,9 @@ context or integrity term where applicable). Its settled-store scanner:
 
 - inventories current and retained generation members, recovered batches,
   deleted credential/template archives, policy and node-role document pairs,
-  and optional rotation records;
+  retained-generation seals, and optional rotation records; a seal beside
+  `CURRENT` remains structurally checked by generation validation but is
+  excluded as non-authoritative precommit residue;
 - rejects unknown in-scope files and unreconciled generation staging residue;
 - opens the exact encrypted buffer it hashes under the context derived from
   the canonical filename or recovered-batch metadata;
@@ -432,7 +437,8 @@ unanchored seal remains valid only when its seal term and every term-bearing
 entry use the current keyring term.
 
 `BuildHistoricalAnchor` is intentionally usable only while the seal remains
-ordinary current authority. It pins the exact seal byte length and SHA-256.
+ordinary current authority after that generation becomes non-current. It pins
+the exact seal byte length and SHA-256.
 Historical validation checks that anchor before accepting the seal MAC under a
 retained term; `ReadAnchoredBytes` then checks one exact member against its
 authenticated entry, and `OpenAnchoredEnvelope` uses the dedicated historical
@@ -491,6 +497,8 @@ authority checks and requires that baseline to match the final generation
 inventory. Only then does `crypto.CloseRotation` atomically clear the pending
 descriptor. Snapshot removal is ordered after the settled root is durable.
 
+If start never publishes its root, a later completion call confirms the old
+settled root and durably discards the unreferenced `current_term+1` snapshot.
 If close rename is visible but directory sync fails, the settled root is
 adopted while the snapshot remains. A later completion call authenticates the
 unreferenced snapshot against the visible settled root, syncs the root

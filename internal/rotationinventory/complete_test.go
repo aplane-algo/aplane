@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -55,6 +56,146 @@ func TestCompleteRotationClosesVerifiedTransition(t *testing.T) {
 	}
 	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
 		t.Fatalf("Scan(settled store) error = %v", err)
+	}
+}
+
+func TestCompleteRotationDiscardsPreRootSnapshotOrphan(t *testing.T) {
+	fixture := newInventoryFixture(t)
+	oldPassphrase := []byte("pre-root-old-passphrase")
+	newPassphrase := []byte("pre-root-new-passphrase")
+	prepareInventoryFixtureKeyringStore(t, fixture, oldPassphrase)
+	for _, path := range []string{
+		fixture.paths.RotationSnapshotPath(inventoryIdentity),
+		fixture.paths.RotationBaselinePath(inventoryIdentity),
+	} {
+		if err := fsutil.RemoveDurable(path); err != nil {
+			t.Fatalf("RemoveDurable(%s) error = %v", path, err)
+		}
+	}
+
+	injected := errors.New("injected pre-root rename failure")
+	rootPath := crypto.KeyringPath(
+		fixture.paths.IdentityDir(inventoryIdentity),
+	)
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpRename && path == rootPath {
+			return injected
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+
+	if _, err := StartRotation(
+		fixture.paths,
+		inventoryIdentity,
+		fixture.kr,
+		newPassphrase,
+	); !errors.Is(err, injected) {
+		t.Fatalf("StartRotation() error = %v, want injected root failure", err)
+	}
+	if _, pending := fixture.kr.PendingRotation(); pending {
+		t.Fatal("failed root publication left the in-memory root pending")
+	}
+	if fixture.kr.CurrentTerm() != 1 {
+		t.Fatalf("current term = %d, want old settled term 1", fixture.kr.CurrentTerm())
+	}
+	snapshotPath := fixture.paths.RotationSnapshotPath(inventoryIdentity)
+	if _, err := os.Stat(snapshotPath); err != nil {
+		t.Fatalf("pre-root snapshot orphan is missing: %v", err)
+	}
+	fsutil.TestHook = nil
+
+	report, err := CompleteRotation(
+		fixture.paths,
+		inventoryIdentity,
+		fixture.kr,
+		oldPassphrase,
+	)
+	if err != nil {
+		t.Fatalf("CompleteRotation(pre-root cleanup) error = %v", err)
+	}
+	if report == nil ||
+		!report.PreRootSnapshotDiscarded ||
+		!report.SnapshotRemoved ||
+		report.RootClosed ||
+		report.RecoveredClosedRoot {
+		t.Fatalf("CompleteRotation(pre-root cleanup) report = %#v", report)
+	}
+	if _, err := os.Stat(snapshotPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("pre-root snapshot survived cleanup: %v", err)
+	}
+	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+		t.Fatalf("Scan() after pre-root cleanup error = %v", err)
+	}
+}
+
+func TestCompleteRotationIgnoresStaleSealOnCurrentGeneration(t *testing.T) {
+	fixture := newInventoryFixture(t)
+	passphrase := []byte("stale-current-seal-passphrase")
+	prepareInventoryFixtureKeyringStore(t, fixture, passphrase)
+	for _, path := range []string{
+		fixture.paths.RotationSnapshotPath(inventoryIdentity),
+		fixture.paths.RotationBaselinePath(inventoryIdentity),
+	} {
+		if err := fsutil.RemoveDurable(path); err != nil {
+			t.Fatalf("RemoveDurable(%s) error = %v", path, err)
+		}
+	}
+
+	current := fixture.paths.GenerationPaths(
+		inventoryIdentity,
+		inventoryGenB,
+	)
+	if err := genstore.WriteSeal(
+		current,
+		time.Unix(1_785_400_000, 0).Unix(),
+		fixture.kr,
+	); err != nil {
+		t.Fatalf("WriteSeal(current) error = %v", err)
+	}
+	staleSeal, err := os.ReadFile(current.SealPath())
+	if err != nil {
+		t.Fatalf("ReadFile(current seal) error = %v", err)
+	}
+
+	snapshot, err := StartRotation(
+		fixture.paths,
+		inventoryIdentity,
+		fixture.kr,
+		passphrase,
+	)
+	if err != nil {
+		t.Fatalf("StartRotation() error = %v", err)
+	}
+	currentSealPath := "identities/default/generations/" +
+		inventoryGenB + "/seal.json"
+	if slices.ContainsFunc(snapshot.Inventory, func(entry Entry) bool {
+		return entry.Path == currentSealPath
+	}) {
+		t.Fatal("rotation snapshot inventoried non-authoritative CURRENT seal")
+	}
+
+	report, err := CompleteRotation(
+		fixture.paths,
+		inventoryIdentity,
+		fixture.kr,
+		passphrase,
+	)
+	if err != nil {
+		t.Fatalf("CompleteRotation() error = %v", err)
+	}
+	if !report.RootClosed || !report.SnapshotRemoved {
+		t.Fatalf("CompleteRotation() report = %#v", report)
+	}
+	after, err := os.ReadFile(current.SealPath())
+	if err != nil {
+		t.Fatalf("ReadFile(current seal after rotation) error = %v", err)
+	}
+	if !bytes.Equal(after, staleSeal) {
+		t.Fatal("rotation rewrote non-authoritative CURRENT seal residue")
+	}
+	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+		t.Fatalf("Scan(settled store with stale CURRENT seal) error = %v", err)
 	}
 }
 

@@ -164,6 +164,12 @@ func (s signerAdminServices) completePendingRotation(
 				report.Resume.Resigned,
 			)
 		}
+		if report != nil && report.PreRootSnapshotDiscarded {
+			logInfof(
+				"discarded unreferenced pre-root rotation snapshot for identity %s",
+				ir.ID(),
+			)
+		}
 		return nil
 	}
 	if s.signer == nil {

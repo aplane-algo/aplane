@@ -6,6 +6,7 @@ package rotationinventory
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 
@@ -17,13 +18,14 @@ import (
 // CompletionReport describes durable progress through the completion
 // boundary. A non-nil report may accompany an error.
 type CompletionReport struct {
-	Resume                 *ResumeReport
-	FinalEntries           int
-	BaselineWritten        bool
-	BaselineAlreadyCurrent bool
-	RootClosed             bool
-	SnapshotRemoved        bool
-	RecoveredClosedRoot    bool
+	Resume                   *ResumeReport
+	FinalEntries             int
+	BaselineWritten          bool
+	BaselineAlreadyCurrent   bool
+	RootClosed               bool
+	SnapshotRemoved          bool
+	RecoveredClosedRoot      bool
+	PreRootSnapshotDiscarded bool
 }
 
 // CompleteRotation resumes the pinned transformation, verifies a fresh final
@@ -48,7 +50,7 @@ func CompleteRotation(
 	}
 	state, pending := kr.PendingRotation()
 	if !pending {
-		return cleanupClosedRotationSnapshot(paths, identityID, kr, passphrase)
+		return cleanupUnreferencedRotationSnapshot(paths, identityID, kr, passphrase)
 	}
 
 	report := &CompletionReport{}
@@ -368,13 +370,13 @@ func readMatchingCompletionBaseline(
 	return *got == *want, nil
 }
 
-func cleanupClosedRotationSnapshot(
+func cleanupUnreferencedRotationSnapshot(
 	paths storepaths.Paths,
 	identityID string,
 	kr *crypto.Keyring,
 	passphrase []byte,
 ) (*CompletionReport, error) {
-	report := &CompletionReport{RootClosed: true}
+	report := &CompletionReport{}
 	snapshotPath := paths.RotationSnapshotPath(identityID)
 	sealed, err := readSnapshotFile(snapshotPath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -386,29 +388,6 @@ func cleanupClosedRotationSnapshot(
 	term, err := crypto.EnvelopeTerm(sealed)
 	if err != nil {
 		return report, fmt.Errorf("unreferenced rotation snapshot term: %w", err)
-	}
-	if term != kr.CurrentTerm() {
-		return report, fmt.Errorf(
-			"unreferenced rotation snapshot term %d does not match settled current term %d",
-			term,
-			kr.CurrentTerm(),
-		)
-	}
-	plaintext, err := kr.Open(sealed, crypto.RotationSnapshotContext())
-	if err != nil {
-		return report, fmt.Errorf("open unreferenced rotation snapshot: %w", err)
-	}
-	snapshot, parseErr := ParseSnapshot(plaintext)
-	crypto.ZeroBytes(plaintext)
-	if parseErr != nil {
-		return report, parseErr
-	}
-	if snapshot.ToTerm != kr.CurrentTerm() {
-		return report, fmt.Errorf(
-			"unreferenced rotation snapshot target term %d does not match settled current term %d",
-			snapshot.ToTerm,
-			kr.CurrentTerm(),
-		)
 	}
 
 	onDisk, err := crypto.OpenKeyringStore(
@@ -429,24 +408,60 @@ func cleanupClosedRotationSnapshot(
 			"visible rotation root does not match the settled in-memory authority",
 		)
 	}
-	diskPlaintext, err := onDisk.Open(
-		sealed,
-		crypto.RotationSnapshotContext(),
-	)
-	if err != nil {
+
+	switch {
+	case term == kr.CurrentTerm():
+		plaintext, err := kr.Open(sealed, crypto.RotationSnapshotContext())
+		if err != nil {
+			return report, fmt.Errorf("open unreferenced rotation snapshot: %w", err)
+		}
+		snapshot, parseErr := ParseSnapshot(plaintext)
+		crypto.ZeroBytes(plaintext)
+		if parseErr != nil {
+			return report, parseErr
+		}
+		if snapshot.ToTerm != kr.CurrentTerm() {
+			return report, fmt.Errorf(
+				"unreferenced rotation snapshot target term %d does not match settled current term %d",
+				snapshot.ToTerm,
+				kr.CurrentTerm(),
+			)
+		}
+		diskPlaintext, err := onDisk.Open(
+			sealed,
+			crypto.RotationSnapshotContext(),
+		)
+		if err != nil {
+			return report, fmt.Errorf(
+				"unreferenced snapshot does not authenticate under the visible settled root: %w",
+				err,
+			)
+		}
+		crypto.ZeroBytes(diskPlaintext)
+		report.RootClosed = true
+		report.RecoveredClosedRoot = true
+	case kr.CurrentTerm() < math.MaxInt64 &&
+		term == kr.CurrentTerm()+1:
+		// The snapshot is the durable first half of StartRotation, but the
+		// settled root proves its publication never committed. Its target
+		// key is therefore absent and the envelope cannot be authenticated;
+		// the root's lack of a descriptor is the authority to discard this
+		// reserved, unreferenced artifact.
+		report.PreRootSnapshotDiscarded = true
+	default:
 		return report, fmt.Errorf(
-			"unreferenced snapshot does not authenticate under the visible settled root: %w",
-			err,
+			"unreferenced rotation snapshot term %d is incompatible with settled current term %d",
+			term,
+			kr.CurrentTerm(),
 		)
 	}
-	crypto.ZeroBytes(diskPlaintext)
+
 	if err := fsutil.SyncDir(paths.IdentityDir(identityID)); err != nil {
 		return report, fmt.Errorf("sync settled rotation root directory: %w", err)
 	}
 	if err := fsutil.RemoveDurable(snapshotPath); err != nil {
-		return report, fmt.Errorf("remove completed rotation snapshot: %w", err)
+		return report, fmt.Errorf("remove unreferenced rotation snapshot: %w", err)
 	}
 	report.SnapshotRemoved = true
-	report.RecoveredClosedRoot = true
 	return report, nil
 }

@@ -1254,7 +1254,7 @@ The scanner covers:
 - every published generation. Current structure is validated live; retained
   generations require an authenticated seal;
 - active and retained credentials/templates, key-type state, witness public
-  metadata, exact manifest bytes, and any seal record;
+  metadata, exact manifest bytes, and retained-generation seal records;
 - published recovered batch metadata and entries;
 - identity-local deleted credential and template archives;
 - exact policy/node-role documents and their explicit-term sidecars;
@@ -1264,6 +1264,10 @@ The scanner covers:
 `ScanForSnapshot` is the cutover-construction variant. It excludes
 `rotation.snapshot.enc` so the body never recursively inventories itself,
 while a valid baseline that predates cutover remains a classified input.
+A `seal.json` beside `CURRENT` is also excluded: the generation commit
+contract defines it as non-authoritative precommit crash residue. Current
+generation validation still checks its structural shape, but rotation never
+parses, pins, rewrites, or completion-validates its stale content.
 
 Encrypted entries are opened from the exact byte buffer that is hashed under
 the logical context derived from their canonical filename or recovered-batch
@@ -1336,7 +1340,11 @@ current term, former-current descriptor, snapshot reference, and anchor set.
 The caller must hold the identity mutation lock.
 
 A failure before root rename leaves the old root and in-memory authority
-unchanged; the durable snapshot may be an unreferenced orphan. If the root
+unchanged; the durable target-term snapshot may be an unreferenced orphan.
+On unlock, completion reopens and confirms the old settled root, classifies
+an unreferenced `current_term+1` snapshot as pre-root residue, syncs the root
+directory, and removes that reserved artifact durably without attempting to
+authenticate it under a key the root never adopted. If the root
 rename is visible but directory sync fails, the exact candidate is adopted in
 memory and the caller receives `ErrRotationCommitDurabilityUnknown`. If root
 visibility cannot be classified, `ErrRotationCommitStateUnknown` requires
@@ -1412,6 +1420,13 @@ snapshot against the visible settled root, syncs the root directory, and
 removes it. A pre-rename close failure leaves both in-memory and on-disk roots
 pending. A snapshot-removal directory-sync failure is reported with the root
 still settled; it never reopens retiring authority.
+
+The settled-root cleanup distinguishes that post-close case from a pre-root
+orphan. A same-term snapshot must authenticate and strictly parse under the
+matching visible settled root before removal. A consecutive future-term
+snapshot is removable only after the visible root is confirmed settled with
+no descriptor; it is the unreferenced first half of start, not a completed
+rotation.
 
 Restore rollback calls `rotationinventory.EvaluateRollback`: only a baseline
 that authenticates under the settled current term and names the current

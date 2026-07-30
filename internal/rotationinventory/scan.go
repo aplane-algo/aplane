@@ -164,9 +164,10 @@ func (s *inventoryScanner) scanGenerations(current string) error {
 		if err := s.addBytes(gen.ManifestPath(), KindGenerationManifest, manifestBytes, 0, crypto.ObjectContext{}); err != nil {
 			return err
 		}
-		if present, err := regularFileExists(gen.SealPath()); err != nil {
-			return err
-		} else if present {
+		// A seal on CURRENT is non-authoritative precommit crash residue.
+		// ValidateCurrent has already checked its structural shape; do not
+		// parse, inventory, or carry it across a key-term transition.
+		if name != current {
 			sealBytes, _, err := fsutil.ReadRegularFile(gen.SealPath())
 			if err != nil {
 				return fmt.Errorf("rotation inventory generation %s seal: %w", name, err)
@@ -186,9 +187,7 @@ func (s *inventoryScanner) scanGenerations(current string) error {
 			if err != nil {
 				return fmt.Errorf("rotation inventory generation %s seal: %w", name, err)
 			}
-			if name != current {
-				contentSeal = seal
-			}
+			contentSeal = seal
 			if historicalAnchor != nil {
 				historical = &historicalGenerationAuthority{
 					gen:           gen,
