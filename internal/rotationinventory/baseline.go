@@ -257,7 +257,11 @@ func WriteBaseline(
 			MaxRotationBaselineBytes,
 		)
 	}
-	if err := fsutil.WriteFileDurable(paths.RotationBaselinePath(identityID), sealed); err != nil {
+	baselinePath := paths.RotationBaselinePath(identityID)
+	if err := fsutil.RemoveDurableWriteTemps(baselinePath); err != nil {
+		return fmt.Errorf("reconcile rotation baseline durable-write residue: %w", err)
+	}
+	if err := fsutil.WriteFileDurable(baselinePath, sealed); err != nil {
 		return fmt.Errorf("write rotation baseline: %w", err)
 	}
 	return nil

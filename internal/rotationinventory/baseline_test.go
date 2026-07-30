@@ -252,6 +252,38 @@ func TestWriteBaselineReportsDurabilityFailure(t *testing.T) {
 	}
 }
 
+func TestWriteBaselineReconcilesCrashOrphanedDurableTemp(t *testing.T) {
+	paths := baselineTestPaths(t)
+	kr := cryptotest.KeyringAtTerm(t, 2, bytes.Repeat([]byte{0xb2}, 32))
+	baseline, err := NewBaseline(baselineGeneration, baselineInventory())
+	if err != nil {
+		t.Fatalf("NewBaseline() error = %v", err)
+	}
+	baselinePath := paths.RotationBaselinePath(inventoryIdentity)
+	residuePath := baselinePath + ".tmp-crash"
+	if err := os.WriteFile(
+		residuePath,
+		[]byte("orphaned durable-write temp"),
+		fsutil.StoreFilePerm,
+	); err != nil {
+		t.Fatalf("WriteFile(residue) error = %v", err)
+	}
+
+	if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); err != nil {
+		t.Fatalf("WriteBaseline() error = %v", err)
+	}
+	if _, err := os.Stat(residuePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("residue still exists after WriteBaseline(): %v", err)
+	}
+	opened, err := ReadBaseline(paths, inventoryIdentity, kr)
+	if err != nil {
+		t.Fatalf("ReadBaseline() error = %v", err)
+	}
+	if *opened != *baseline {
+		t.Fatalf("ReadBaseline() = %+v, want %+v", opened, baseline)
+	}
+}
+
 func TestReconcileBaselineForPreflight(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		paths := baselineTestPaths(t)

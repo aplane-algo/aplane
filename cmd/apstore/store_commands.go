@@ -62,7 +62,7 @@ func cmdChangepass() error {
 	}
 	if !result.Success {
 		if result.HelperWarning != "" {
-			logWarnf(result.HelperWarning)
+			logWarnf("%s", result.HelperWarning)
 		}
 		if result.RootCommitted {
 			logWarnf("the new passphrase is authoritative despite the incomplete operation")
@@ -91,7 +91,7 @@ func cmdChangepass() error {
 	}
 	logInfof("  - keystore metadata updated")
 	if result.HelperWarning != "" {
-		logWarnf(result.HelperWarning)
+		logWarnf("%s", result.HelperWarning)
 	}
 	if result.PriorGenerations > 0 {
 		logWarnf(
@@ -166,7 +166,7 @@ func cmdInitialize(args []string) error {
 	logInfof("keystore initialized successfully")
 	logInfof("  keystore metadata: %s/.keystore", result.MetadataDir)
 	if result.HelperWarning != "" {
-		logWarnf(result.HelperWarning)
+		logWarnf("%s", result.HelperWarning)
 		logWarnf("store the passphrase manually in your secrets backend")
 	}
 	logInfof("start apsigner to unlock and use this keystore")
