@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -50,10 +51,23 @@ type MintRequest struct {
 	// reviewed batch (optional).
 	SourceRestoreID   string
 	ReviewTokenSHA256 string
-	CreatedAt         time.Time
+	// RollbackSourceGenerationID records a sealed generation whose content
+	// is reconstructed into the new generation. It is distinct from Parent,
+	// which must still be the outgoing CURRENT generation.
+	RollbackSourceGenerationID string
+	CreatedAt                  time.Time
+	// Integrity authenticates the outgoing generation seal. It is required
+	// whenever Parent is non-empty and unused for a first generation.
+	Integrity *crypto.Keyring
+	// StartEmpty creates empty generation namespaces instead of copying the
+	// parent. It is used when Apply reconstructs an authenticated historical
+	// source into current-term envelopes; copying the mutable parent first
+	// would risk carrying unrelated files into the rollback result.
+	StartEmpty bool
 	// Apply performs the transaction's changes inside the staged
 	// generation. The staged namespaces already contain independent copies
-	// of the parent's content (or are empty for a first generation).
+	// of the parent's content, or are empty for a first generation or an
+	// authenticated StartEmpty reconstruction.
 	Apply func(staged storepaths.GenPaths) error
 }
 
@@ -73,6 +87,26 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	}
 	if req.Operation == "" || req.OperationID == "" {
 		return storepaths.GenPaths{}, fmt.Errorf("mint requires a durable operation identity")
+	}
+	if req.StartEmpty {
+		if req.Parent == "" || req.RollbackSourceGenerationID == "" || req.Apply == nil {
+			return storepaths.GenPaths{}, fmt.Errorf(
+				"empty reconstruction requires a parent, rollback source, and apply function",
+			)
+		}
+	} else if req.RollbackSourceGenerationID != "" {
+		return storepaths.GenPaths{}, fmt.Errorf(
+			"rollback source requires an empty authenticated reconstruction",
+		)
+	}
+	if req.RollbackSourceGenerationID == req.Parent &&
+		req.RollbackSourceGenerationID != "" {
+		return storepaths.GenPaths{}, fmt.Errorf(
+			"rollback source must differ from the outgoing parent",
+		)
+	}
+	if req.Parent != "" && req.Integrity == nil {
+		return storepaths.GenPaths{}, fmt.Errorf("mint with a parent requires an integrity keyring")
 	}
 	// The parent must be exactly the generation CURRENT names: Mint seals
 	// req.Parent as "the outgoing generation", so a stale parent — or an
@@ -141,7 +175,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	// Independent copies of the parent's live content — never hardlinks: a
 	// later in-place write must be unable to reach an inode a prior
 	// generation shares.
-	if req.Parent != "" {
+	if req.Parent != "" && !req.StartEmpty {
 		parent := paths.GenerationPaths(identityID, req.Parent)
 		if err := copyNamespaces(parent, staged); err != nil {
 			return storepaths.GenPaths{}, fmt.Errorf("copy parent generation: %w", err)
@@ -170,15 +204,16 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 		return storepaths.GenPaths{}, err
 	}
 	if err := WriteManifest(staged, Manifest{
-		GenerationID:      req.GenerationID,
-		ParentID:          req.Parent,
-		CreatedAtUnix:     req.CreatedAt.Unix(),
-		Operation:         req.Operation,
-		OperationID:       req.OperationID,
-		SourceRestoreID:   req.SourceRestoreID,
-		ReviewTokenSHA256: req.ReviewTokenSHA256,
-		Inventory:         inventory,
-		Complete:          true,
+		GenerationID:               req.GenerationID,
+		ParentID:                   req.Parent,
+		CreatedAtUnix:              req.CreatedAt.Unix(),
+		Operation:                  req.Operation,
+		OperationID:                req.OperationID,
+		SourceRestoreID:            req.SourceRestoreID,
+		ReviewTokenSHA256:          req.ReviewTokenSHA256,
+		RollbackSourceGenerationID: req.RollbackSourceGenerationID,
+		Inventory:                  inventory,
+		Complete:                   true,
 	}); err != nil {
 		return storepaths.GenPaths{}, err
 	}
@@ -200,7 +235,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	// Seal the outgoing generation while it is still current: the last
 	// write it ever receives, and what makes it a valid rollback target.
 	if req.Parent != "" {
-		if err := WriteSeal(paths.GenerationPaths(identityID, req.Parent), req.CreatedAt.Unix()); err != nil {
+		if err := WriteSeal(paths.GenerationPaths(identityID, req.Parent), req.CreatedAt.Unix(), req.Integrity); err != nil {
 			return storepaths.GenPaths{}, fmt.Errorf("seal outgoing generation: %w", err)
 		}
 	}
@@ -214,7 +249,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 // RollbackTo repoints CURRENT at a previous sealed generation after
 // validating it, sealing the outgoing generation first: a rollback is a
 // pointer flip like any other. The caller holds the identity mutation lock.
-func RollbackTo(paths storepaths.Paths, identityID, targetID string, now time.Time) error {
+func RollbackTo(paths storepaths.Paths, identityID, targetID string, now time.Time, kr *crypto.Keyring) error {
 	current, err := ReadCurrent(paths, identityID)
 	if err != nil {
 		return err
@@ -227,10 +262,10 @@ func RollbackTo(paths storepaths.Paths, identityID, targetID string, now time.Ti
 		return fmt.Errorf("rollback target %s is already the current generation", targetID)
 	}
 	target := paths.GenerationPaths(identityID, targetID)
-	if err := ValidateSealed(target); err != nil {
+	if err := ValidateSealed(target, kr); err != nil {
 		return fmt.Errorf("rollback target: %w", err)
 	}
-	if err := WriteSeal(paths.GenerationPaths(identityID, current), now.Unix()); err != nil {
+	if err := WriteSeal(paths.GenerationPaths(identityID, current), now.Unix(), kr); err != nil {
 		return fmt.Errorf("seal outgoing generation: %w", err)
 	}
 	return WriteCurrent(paths, identityID, targetID)

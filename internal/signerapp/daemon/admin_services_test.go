@@ -51,6 +51,78 @@ func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 	}
 }
 
+func TestChangeStorePassphraseCompletesRotationAndRepublishesRuntime(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	convertTestSignerToGenerational(t, server)
+	newPassphrase := []byte("new-admin-passphrase")
+
+	result := (signerAdminServices{signer: server}).ChangeStorePassphrase(
+		ir,
+		adminproto.ChangeStorePassphraseRequest{
+			CurrentPassphrase: testPassphrase,
+			NewPassphrase:     newPassphrase,
+		},
+	)
+	if !result.Success {
+		t.Fatalf("ChangeStorePassphrase() = %+v", result)
+	}
+	if !ir.IsUnlocked() || ir.IsRecovery() {
+		t.Fatalf(
+			"identity state = unlocked %v recovery %v, want ordinary unlocked",
+			ir.IsUnlocked(),
+			ir.IsRecovery(),
+		)
+	}
+	if err := crypto.VerifyPassphraseWithKeyring(
+		newPassphrase,
+		server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID),
+	); err != nil {
+		t.Fatalf("new passphrase does not open rotated root: %v", err)
+	}
+	if err := crypto.VerifyPassphraseWithKeyring(
+		testPassphrase,
+		server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID),
+	); err == nil {
+		t.Fatal("old passphrase still opens rotated root")
+	}
+}
+
+func TestChangeStorePassphraseFailureLeavesRuntimeLocked(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+	convertTestSignerToGenerational(t, server)
+	if err := os.WriteFile(server.keyPaths.NodeRolePath(), []byte("role: sentry\n"), 0o600); err != nil {
+		t.Fatalf("tamper node role: %v", err)
+	}
+
+	result := (signerAdminServices{signer: server}).ChangeStorePassphrase(
+		ir,
+		adminproto.ChangeStorePassphraseRequest{
+			CurrentPassphrase: testPassphrase,
+			NewPassphrase:     []byte("new-failing-passphrase"),
+		},
+	)
+	if result.Success {
+		t.Fatalf("ChangeStorePassphrase() = %+v, want failure", result)
+	}
+	if ir.IsUnlocked() || ir.IsRecovery() {
+		t.Fatalf(
+			"identity state = unlocked %v recovery %v, want locked",
+			ir.IsUnlocked(),
+			ir.IsRecovery(),
+		)
+	}
+}
+
 func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()

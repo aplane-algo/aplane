@@ -36,6 +36,7 @@ func buildGenerationChain(t *testing.T, paths storepaths.Paths) {
 		if _, err := Mint(paths, testIdentity, MintRequest{
 			GenerationID: id,
 			Parent:       parent,
+			Integrity:    testKeyring(t),
 			Operation:    "test-activation",
 			OperationID:  "op-" + id,
 			CreatedAt:    time.Unix(1_753_500_100+int64(i), 0),
@@ -149,7 +150,7 @@ func TestCollectGarbageRetainsCurrentPlusNewestSealedPrior(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A, B sealed priors; C current
 
-	removed, err := CollectGarbage(paths, testIdentity, nil, true)
+	removed, err := CollectGarbage(paths, testIdentity, nil, true, testKeyring(t))
 	if err != nil {
 		t.Fatalf("CollectGarbage() error = %v", err)
 	}
@@ -162,7 +163,7 @@ func TestCollectGarbageRetainsCurrentPlusNewestSealedPrior(t *testing.T) {
 		}
 	}
 	// Rollback to the retained prior still works.
-	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_400, 0)); err != nil {
+	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_400, 0), testKeyring(t)); err != nil {
 		t.Fatalf("RollbackTo(retained prior) error = %v", err)
 	}
 }
@@ -170,7 +171,7 @@ func TestCollectGarbageRetainsCurrentPlusNewestSealedPrior(t *testing.T) {
 func TestCollectGarbageHonorsReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths)
-	removed, err := CollectGarbage(paths, testIdentity, map[string]bool{testGenA: true}, true)
+	removed, err := CollectGarbage(paths, testIdentity, map[string]bool{testGenA: true}, true, testKeyring(t))
 	if err != nil {
 		t.Fatalf("CollectGarbage() error = %v", err)
 	}
@@ -179,11 +180,101 @@ func TestCollectGarbageHonorsReferences(t *testing.T) {
 	}
 }
 
+func TestCollectGarbageValidatesRotatedRollbackParentWithHistoricalAnchor(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityDir := paths.IdentityDir(testIdentity)
+	passphrase := []byte("collect-anchored-parent")
+	kr, err := crypto.CreateKeyringStore(identityDir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	t.Cleanup(kr.Zero)
+
+	mint := func(id, parent string, first bool, created int64) {
+		t.Helper()
+		_, mintErr := Mint(paths, testIdentity, MintRequest{
+			GenerationID:    id,
+			Parent:          parent,
+			FirstGeneration: first,
+			Integrity:       kr,
+			Operation:       "test-activation",
+			OperationID:     "op-" + id,
+			CreatedAt:       time.Unix(created, 0),
+			Apply: func(staged storepaths.GenPaths) error {
+				return os.WriteFile(
+					filepath.Join(staged.KeysDir(), "ACCOUNT.key"),
+					[]byte(id),
+					0o660,
+				)
+			},
+		})
+		if mintErr != nil {
+			t.Fatalf("Mint(%s) error = %v", id, mintErr)
+		}
+	}
+	mint(testGenA, "", true, 1_753_500_000)
+	mint(testGenB, testGenA, false, 1_753_500_001)
+	mint(testGenC, testGenB, false, 1_753_500_002)
+
+	var anchors []crypto.HistoricalGenerationAnchor
+	for _, id := range []string{testGenA, testGenB} {
+		anchor, anchorErr := BuildHistoricalAnchor(
+			paths.GenerationPaths(testIdentity, id),
+			kr,
+		)
+		if anchorErr != nil {
+			t.Fatalf("BuildHistoricalAnchor(%s) error = %v", id, anchorErr)
+		}
+		anchors = append(anchors, anchor)
+	}
+	if err := crypto.StartRotation(
+		identityDir,
+		kr,
+		passphrase,
+		anchors,
+		func(
+			target *crypto.Keyring,
+			_, _ int64,
+		) (crypto.RotationSnapshotReference, error) {
+			sealed, sealErr := target.Seal(
+				[]byte("snapshot"),
+				crypto.RotationSnapshotContext(),
+			)
+			if sealErr != nil {
+				return crypto.RotationSnapshotReference{}, sealErr
+			}
+			return crypto.NewRotationSnapshotReference(sealed)
+		},
+	); err != nil {
+		t.Fatalf("StartRotation() error = %v", err)
+	}
+	if err := crypto.CloseRotation(identityDir, kr, passphrase); err != nil {
+		t.Fatalf("CloseRotation() error = %v", err)
+	}
+	if err := ValidateSealed(
+		paths.GenerationPaths(testIdentity, testGenB),
+		kr,
+	); err == nil {
+		t.Fatal("ValidateSealed() accepted a parent authenticated by the retired term")
+	}
+
+	removed, err := CollectGarbage(paths, testIdentity, nil, true, kr)
+	if err != nil {
+		t.Fatalf("CollectGarbage() error = %v", err)
+	}
+	if !slices.Equal(removed, []string{testGenA}) {
+		t.Fatalf("removed = %v, want oldest prior [%s]", removed, testGenA)
+	}
+	if _, err := os.Stat(paths.GenerationPaths(testIdentity, testGenB).Dir()); err != nil {
+		t.Fatalf("anchored rollback parent was not retained: %v", err)
+	}
+}
+
 func TestCollectGarbageAllPriorsReachesRotationQuiescence(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A, B sealed priors; C current
 
-	removed, err := CollectGarbage(paths, testIdentity, nil, false)
+	removed, err := CollectGarbage(paths, testIdentity, nil, false, testKeyring(t))
 	if err != nil {
 		t.Fatalf("CollectGarbage(all priors) error = %v", err)
 	}
@@ -203,13 +294,13 @@ func TestCollectGarbageAllPriorsReachesRotationQuiescence(t *testing.T) {
 func TestCollectGarbageRetainsManifestParentAfterRollback(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
-	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_500, 0)); err != nil {
+	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_500, 0), testKeyring(t)); err != nil {
 		t.Fatalf("RollbackTo(B) error = %v", err)
 	}
 	// CURRENT=B; sealed priors are A (B's parent) and C (the rolled-away
 	// child, lexicographically newest).
 
-	removed, err := CollectGarbage(paths, testIdentity, nil, true)
+	removed, err := CollectGarbage(paths, testIdentity, nil, true, testKeyring(t))
 	if err != nil {
 		t.Fatalf("CollectGarbage() error = %v", err)
 	}
@@ -217,10 +308,10 @@ func TestCollectGarbageRetainsManifestParentAfterRollback(t *testing.T) {
 		t.Fatalf("removed = %v, want the rolled-away child [%s]", removed, testGenC)
 	}
 	// The manifest parent survives and remains a valid rollback target.
-	if err := ValidateSealed(paths.GenerationPaths(testIdentity, testGenA)); err != nil {
+	if err := ValidateSealed(paths.GenerationPaths(testIdentity, testGenA), testKeyring(t)); err != nil {
 		t.Fatalf("manifest parent A invalid after prune: %v", err)
 	}
-	if err := RollbackTo(paths, testIdentity, testGenA, time.Unix(1_753_500_600, 0)); err != nil {
+	if err := RollbackTo(paths, testIdentity, testGenA, time.Unix(1_753_500_600, 0), testKeyring(t)); err != nil {
 		t.Fatalf("RollbackTo(parent) error = %v", err)
 	}
 }
@@ -228,7 +319,7 @@ func TestCollectGarbageRetainsManifestParentAfterRollback(t *testing.T) {
 func TestCollectGarbageRefusesToPruneWhenRollbackParentInvalid(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
-	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_500, 0)); err != nil {
+	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_500, 0), testKeyring(t)); err != nil {
 		t.Fatalf("RollbackTo(B) error = %v", err)
 	}
 	// CURRENT=B, rollback parent A. Corrupt A's seal: A can no longer serve
@@ -239,7 +330,7 @@ func TestCollectGarbageRefusesToPruneWhenRollbackParentInvalid(t *testing.T) {
 		t.Fatalf("corrupt seal: %v", err)
 	}
 
-	removed, err := CollectGarbage(paths, testIdentity, nil, true)
+	removed, err := CollectGarbage(paths, testIdentity, nil, true, testKeyring(t))
 	if err == nil {
 		t.Fatalf("CollectGarbage() = %v, want error for invalid rollback parent", removed)
 	}
@@ -266,7 +357,7 @@ func TestCollectGarbageRefusesToPruneWhenCurrentInvalid(t *testing.T) {
 				t.Fatalf("remove manifest: %v", err)
 			}
 
-			removed, err := CollectGarbage(paths, testIdentity, nil, retainParent)
+			removed, err := CollectGarbage(paths, testIdentity, nil, retainParent, testKeyring(t))
 			if err == nil {
 				t.Fatalf("CollectGarbage() = %v, want error for invalid current generation", removed)
 			}
@@ -285,19 +376,19 @@ func TestCollectGarbageRefusesToPruneWhenCurrentInvalid(t *testing.T) {
 func TestCollectGarbageIsIdempotentAfterAllPriorsPrune(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
-	if _, err := CollectGarbage(paths, testIdentity, nil, false); err != nil {
+	if _, err := CollectGarbage(paths, testIdentity, nil, false, testKeyring(t)); err != nil {
 		t.Fatalf("CollectGarbage(all priors) error = %v", err)
 	}
 	// Current's immutable manifest still names the deleted parent B; an
 	// ordinary prune must be a successful no-op, not a missing-parent error.
-	removed, err := CollectGarbage(paths, testIdentity, nil, true)
+	removed, err := CollectGarbage(paths, testIdentity, nil, true, testKeyring(t))
 	if err != nil {
 		t.Fatalf("CollectGarbage(after all-priors) error = %v, want no-op", err)
 	}
 	if len(removed) != 0 {
 		t.Fatalf("removed = %v, want nothing", removed)
 	}
-	if _, err := CollectGarbage(paths, testIdentity, nil, false); err != nil {
+	if _, err := CollectGarbage(paths, testIdentity, nil, false, testKeyring(t)); err != nil {
 		t.Fatalf("CollectGarbage(all priors, repeated) error = %v, want no-op", err)
 	}
 }
@@ -318,7 +409,7 @@ func TestValidateCurrentRequiresBothNamespaces(t *testing.T) {
 				t.Fatalf("ValidateCurrent accepted a generation missing %s/", namespace)
 			}
 			// The prune path inherits the rejection: nothing is deleted.
-			removed, err := CollectGarbage(paths, testIdentity, nil, false)
+			removed, err := CollectGarbage(paths, testIdentity, nil, false, testKeyring(t))
 			if err == nil {
 				t.Fatalf("CollectGarbage() = %v, want error for missing namespace", removed)
 			}
@@ -357,7 +448,7 @@ func TestReconcileRetainsUnsealedRollbackParent(t *testing.T) {
 
 	// Both prune modes refuse while the damaged parent exists.
 	for _, retainParent := range []bool{true, false} {
-		removed, err := CollectGarbage(paths, testIdentity, nil, retainParent)
+		removed, err := CollectGarbage(paths, testIdentity, nil, retainParent, testKeyring(t))
 		if err == nil || len(removed) != 0 {
 			t.Fatalf("CollectGarbage(retain=%v) = (%v, %v), want fail-closed refusal", retainParent, removed, err)
 		}
@@ -405,6 +496,7 @@ func TestSelfParentLineageIsRejectedEverywhere(t *testing.T) {
 		_, err := Mint(paths, testIdentity, MintRequest{
 			GenerationID: testGenD,
 			Parent:       testGenD,
+			Integrity:    testKeyring(t),
 			Operation:    "test-activation",
 			OperationID:  "op-self",
 			CreatedAt:    time.Unix(1_753_500_700, 0),
@@ -418,6 +510,7 @@ func TestSelfParentLineageIsRejectedEverywhere(t *testing.T) {
 		_, err := Mint(paths, testIdentity, MintRequest{
 			GenerationID: testGenD,
 			Parent:       "gen-1753500009-99999999",
+			Integrity:    testKeyring(t),
 			Operation:    "test-activation",
 			OperationID:  "op-ghost",
 			CreatedAt:    time.Unix(1_753_500_701, 0),
@@ -448,7 +541,7 @@ func TestSelfParentLineageIsRejectedEverywhere(t *testing.T) {
 	})
 
 	t.Run("rollback to current is an error not a silent success", func(t *testing.T) {
-		if err := RollbackTo(paths, testIdentity, testGenC, time.Unix(1_753_500_702, 0)); err == nil {
+		if err := RollbackTo(paths, testIdentity, testGenC, time.Unix(1_753_500_702, 0), testKeyring(t)); err == nil {
 			t.Fatal("RollbackTo(current) reported success without moving CURRENT")
 		}
 		current, err := ReadCurrent(paths, testIdentity)
@@ -468,6 +561,7 @@ func TestMintRequiresParentToBeCurrent(t *testing.T) {
 		_, err := Mint(paths, testIdentity, MintRequest{
 			GenerationID: testGenD,
 			Parent:       testGenA,
+			Integrity:    testKeyring(t),
 			Operation:    "test-activation",
 			OperationID:  "op-stale",
 			CreatedAt:    time.Unix(1_753_500_800, 0),
@@ -687,6 +781,7 @@ func TestMintPreservesStoreModesUnderUmask(t *testing.T) {
 	if _, err := Mint(paths, testIdentity, MintRequest{
 		GenerationID: testGenB,
 		Parent:       testGenA,
+		Integrity:    testKeyring(t),
 		Operation:    "test-activation",
 		OperationID:  "op-umask",
 		CreatedAt:    time.Unix(1_754_200_000, 0),
@@ -757,6 +852,7 @@ func TestMintRefusesMissingParentNamespace(t *testing.T) {
 	_, err := Mint(paths, testIdentity, MintRequest{
 		GenerationID: testGenB,
 		Parent:       testGenA,
+		Integrity:    testKeyring(t),
 		Operation:    "test-activation",
 		OperationID:  "op-damaged-parent",
 		CreatedAt:    time.Unix(1_754_200_100, 0),
@@ -786,7 +882,7 @@ func TestCrashedPruneRetriesAsNoOp(t *testing.T) {
 
 	// The retry neither wedges on the residue nor misclassifies it: the
 	// tombstone is staging garbage, and the remaining prior still prunes.
-	removed, err := CollectGarbage(paths, testIdentity, nil, false)
+	removed, err := CollectGarbage(paths, testIdentity, nil, false, testKeyring(t))
 	if err != nil {
 		t.Fatalf("CollectGarbage(retry) error = %v, want crash-idempotent retry", err)
 	}
@@ -827,6 +923,7 @@ func TestMintRejectsStagedSeal(t *testing.T) {
 	_, err := Mint(paths, testIdentity, MintRequest{
 		GenerationID: testGenB,
 		Parent:       testGenA,
+		Integrity:    testKeyring(t),
 		Operation:    "test-activation",
 		OperationID:  "op-staged-seal",
 		CreatedAt:    time.Unix(1_754_300_000, 0),

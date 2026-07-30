@@ -138,6 +138,12 @@ type Runtime struct {
 	persistDecommission func(identityID string) error
 }
 
+// StoreMaintenanceToken is an opaque authorization to republish an identity
+// after a store-wide mutation has cleared its runtime signing state.
+type StoreMaintenanceToken struct {
+	runtime signerruntime.MaintenanceToken
+}
+
 // KeyIndexSnapshot is a materialized copy of the runtime key index at one
 // published revision.
 type KeyIndexSnapshot struct {
@@ -424,6 +430,27 @@ func (ir *Runtime) Lock() {
 	if ir.lockRuntime.Lock() {
 		ir.notifyLocked()
 	}
+}
+
+// BeginStoreMaintenance blocks signing and clears sensitive runtime state
+// without broadcasting a user-visible lock transition. The caller must pair
+// it with FinishStoreMaintenance.
+func (ir *Runtime) BeginStoreMaintenance() StoreMaintenanceToken {
+	return StoreMaintenanceToken{runtime: ir.lockRuntime.BeginMaintenance()}
+}
+
+// FinishStoreMaintenance republishes the identity only after the caller has
+// rebuilt it from a settled store. Failure, or a racing explicit Lock, leaves
+// the identity locked and broadcasts that final state.
+func (ir *Runtime) FinishStoreMaintenance(
+	token StoreMaintenanceToken,
+	republish bool,
+) bool {
+	if ir.lockRuntime.FinishMaintenance(token.runtime, republish) {
+		return true
+	}
+	ir.notifyLocked()
+	return false
 }
 
 // TryUnlock attempts to unlock with the given passphrase.

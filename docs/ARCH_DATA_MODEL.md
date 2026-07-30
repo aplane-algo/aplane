@@ -135,7 +135,7 @@ DTOs and contract fixtures.
 | Signing identity | Signer identity | `identities/<identity>/` | `identity.Runtime` | HTTP identity routing, admin session target | `internal/signerapp/identity` |
 | Identity config | Signer identity | `identities/<identity>/config.yaml` (parsed as `identity.StoredConfig`) | `identity.EffectiveConfig` (resolved, excluding key-class role) | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
 | Unlock config | Signer identity | `identities/<identity>/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/unlockconfig` (identity re-exports helpers), `cmd/appass` |
-| Keyring root | Signer identity | `identities/<identity>/keyring.enc` (`aplane.keyring.v1`) | term keys after unlock | none | `internal/crypto`, `internal/keystore` |
+| Keyring root | Signer identity | `identities/<identity>/keyring.enc` (`aplane.keyring.v2`) | term keys after unlock | none | `internal/crypto`, `internal/keystore` |
 | Keystore marker | Signer identity | `identities/<identity>/.keystore` | store format gate only | none | `internal/crypto` |
 | Term keys/session | Signer identity runtime | unsealed from `keyring.enc`, resident only while unlocked | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Account authority | Signer identity | `identities/<identity>/keys/<address>.key` | address -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
@@ -254,8 +254,8 @@ identities/<identity>/
     keytypes/*.json        # key-type state records
     keytypes/*.template    # encrypted template documents
   keyring.enc              # cryptographic root: KDF header plus the sealed
-                           # term set (aplane.keyring.v1)
-  .keystore                # static marker: version 4 + keyring/v1 layout, the
+                           # term set (aplane.keyring.v2)
+  .keystore                # static marker: version 5 + keyring/v2 layout, the
                            # only supported store format
   node.yaml.hmac
   aplane.token

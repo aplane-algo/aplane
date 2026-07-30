@@ -314,16 +314,45 @@ For terminology and lifecycle rules, defer to
 The keyring is the store's cryptographic root, defined in
 `internal/crypto/keyring.go` and `internal/crypto/keyring_store.go`.
 
-- schema `aplane.keyring.v1`, one file per identity beside `.keystore`
+- schema `aplane.keyring.v2`, one file per identity beside `.keystore`
 - plaintext header: Argon2id parameters and the KEK salt, so the file is
   self-describing
 - sealed body: the set of numbered term keys, wrapped under the
   passphrase-derived KEK with AES-256-GCM
+- sealed payload fields are `schema`, `current_term`, sorted `terms`, required
+  `historical_anchors`, and optional `rotation`; fresh stores write one term
+  and no pending rotation, while transition start appends one successor and
+  publishes the pending descriptor
+- each `HistoricalGenerationAnchor` binds a canonical generation ID to the
+  exact byte size and SHA-256 of its pre-retirement generation seal
+- a rotation descriptor's snapshot size/digest uses
+  `RotationSnapshotReference`, which pins the exact encrypted snapshot under
+  an independent 16 MiB cap; the payload validator and runtime enforce the
+  same shape for pending multi-term roots
+- ordinary envelope and integrity reads authorize exactly the current term
+  when settled and the current plus `rotation.from_term` when pending; older
+  resident terms are usable only through exact-anchor-gated historical APIs
+- `crypto.StartRotation` rejects an existing descriptor, appends exactly one
+  successor term, requires the target-term snapshot to be durable first, and
+  publishes the descriptor, exact snapshot reference, and historical anchors
+  in one root replacement
+- `Keyring.RequireSettled` blocks ordinary signing and mutation during that
+  descriptor's lifetime; normal reload maps `ErrRotationPending` to recovery,
+  and offline passphrase/policy/generation mutation uses the same guard
+- `rotationinventory.ResumeRotation` is the explicit internal bypass: it
+  reopens the root-pinned snapshot, promotes only exact retiring-term inputs,
+  and accepts already-written target-term outputs only after context-bound
+  authentication; it does not close the descriptor
+- `rotationinventory.CompleteRotation` verifies the final path/authority
+  shape and baseline-before-close ordering before calling
+  `crypto.CloseRotation`; close preserves terms and anchors while atomically
+  removing only the pending descriptor
 - a successful unwrap is the passphrase check; there is no separate verifier
 - the KEK exists only inside seal and open, and is zeroed before either returns
 
-Term keys are stored random keys, not passphrase-derived values. This release
-runs a single term.
+Term keys are stored random keys, not passphrase-derived values. Fresh stores
+start at term 1; multi-term residency does not itself grant current-state
+authority.
 
 Sealing and opening the root route term keys through base64 in Go strings,
 which are immutable and so cannot be zeroed. Those copies live only inside the
@@ -335,7 +364,7 @@ Removing it requires a binary payload layout rather than JSON.
 
 `.keystore` is a static marker, defined in `internal/crypto/keyring_store.go`.
 
-- `{"version": 4, "layout": "keyring/v1", "created": ...}`
+- `{"version": 5, "layout": "keyring/v2", "created": ...}`
 - it carries no salt, no verifier, and no KDF parameters, so nothing in it can
   disagree with the keyring
 - the version gate rejects any store this release did not initialize, before
@@ -383,11 +412,37 @@ object's logical identity: a class and a canonical selector.
 | `keytype-template` | key type |
 | `recovered-batch` | restore ID |
 | `recovered-entry` | restore ID and entry selector |
+| `rotation-snapshot` | fixed selector `pending` |
+| `rotation-baseline` | fixed selector `current` |
 
 The identity is logical, never a path: generations copy ciphertext between
 namespaces and into `deleted/` without re-encrypting it. Binding it means a
 credential filed under another account, a template opened as a credential, or
 an entry lifted from another recovered batch fails to decrypt.
+
+`internal/rotationinventory` uses those contexts to open the same encrypted
+buffer it hashes for the Phase 3 K8 inventory. `crypto.EnvelopeTerm` exposes
+the envelope header for classification only; it is not authority without that
+context-bound open. Snapshot recovery first verifies the pending root's exact
+encrypted-file size and digest, then opens that same bounded, no-follow buffer
+under `rotation-snapshot:pending`.
+
+The divergence baseline is a separate small current-state authority.
+`internal/rotationinventory` bounds its exact encrypted file to 4 KiB,
+requires its envelope term to equal the keyring current term, and opens the
+same buffer under `rotation-baseline:current` before strictly parsing the
+record. Retired-term membership never authorizes a baseline.
+
+Historical generation authority is deliberately separate from ordinary
+current-state opening. `VerifyHistoricalGenerationSealIntegrity` verifies only
+the generation-seal domain under a resident retired term, and
+`OpenHistoricalGenerationEnvelope` opens only an explicitly expected resident
+term. Callers do not receive a general retired-term grant:
+`internal/genstore` must first match the exact `HistoricalGenerationAnchor`,
+verify the anchored seal and exact manifest, and match an exact member
+buffer's authenticated size, digest, and term before invoking the historical
+open. Neither possession of the retired key nor possession of the anchor alone
+is sufficient.
 
 Unlock opens the keyring once and reuses its term keys for key and template
 decryption until lock.

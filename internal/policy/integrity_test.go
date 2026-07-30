@@ -5,13 +5,13 @@ package policy
 
 import (
 	"errors"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 )
 
 func TestPolicyIntegrityRoundTrip(t *testing.T) {
@@ -30,6 +30,9 @@ func TestPolicyIntegrityRoundTrip(t *testing.T) {
 	}
 	if sidecar.KeyID != PolicyIntegrityKeyID {
 		t.Fatalf("KeyID = %q, want %q", sidecar.KeyID, PolicyIntegrityKeyID)
+	}
+	if sidecar.IntegrityTerm != 1 {
+		t.Fatalf("IntegrityTerm = %d, want 1", sidecar.IntegrityTerm)
 	}
 	if got := sidecar.PolicySHA256; got != PolicySHA256(policyBytes) {
 		t.Fatalf("PolicySHA256 = %q, want %q", got, PolicySHA256(policyBytes))
@@ -95,7 +98,7 @@ func TestPolicyIntegrityRejectsUnsupportedSecurityFields(t *testing.T) {
 		name   string
 		mutate func(*IntegritySidecar)
 	}{
-		{name: "version", mutate: func(s *IntegritySidecar) { s.Version = 2 }},
+		{name: "version", mutate: func(s *IntegritySidecar) { s.Version = 1 }},
 		{name: "algorithm", mutate: func(s *IntegritySidecar) { s.Algorithm = "hmac-sha3-256" }},
 		{name: "key id", mutate: func(s *IntegritySidecar) { s.KeyID = "other-key" }},
 	}
@@ -125,15 +128,39 @@ func TestPolicyIntegrityRejectsBadSidecarHMAC(t *testing.T) {
 	}
 }
 
-func TestPolicyIntegrityRejectsInvalidKey(t *testing.T) {
-	_, err := SignPolicyIntegrity([]byte("{}\n"), []byte("short"), time.Time{}, 0)
-	if !errors.Is(err, ErrPolicyIntegrityInvalidKey) {
-		t.Fatalf("SignPolicyIntegrity() error = %v, want ErrPolicyIntegrityInvalidKey", err)
+func TestPolicyIntegrityRejectsUnauthorizedTerm(t *testing.T) {
+	kr := policyIntegrityTestKey(t)
+	sidecar, err := SignPolicyIntegrity([]byte("{}\n"), kr, time.Time{}, 0)
+	if err != nil {
+		t.Fatalf("SignPolicyIntegrity() error = %v", err)
+	}
+	sidecar.IntegrityTerm++
+	err = VerifyPolicyIntegrity([]byte("{}\n"), sidecar, kr)
+	if !errors.Is(err, ErrPolicyIntegrityMismatch) {
+		t.Fatalf("VerifyPolicyIntegrity() error = %v, want ErrPolicyIntegrityMismatch", err)
+	}
+}
+
+func TestPolicyIntegritySidecarParsingIsStrict(t *testing.T) {
+	for _, data := range [][]byte{
+		[]byte(`{"version":2,"unknown":true}`),
+		[]byte(`{"version":2}{}`),
+	} {
+		if _, err := ParsePolicyIntegritySidecar(data); !errors.Is(err, ErrPolicyIntegrityBadSidecar) {
+			t.Fatalf("ParsePolicyIntegritySidecar(%q) error = %v, want ErrPolicyIntegrityBadSidecar", data, err)
+		}
+	}
+}
+
+func TestPolicyIntegrityRejectsMissingKeyring(t *testing.T) {
+	_, err := SignPolicyIntegrity([]byte("{}\n"), nil, time.Time{}, 0)
+	if !errors.Is(err, ErrPolicyIntegrityBadSidecar) {
+		t.Fatalf("SignPolicyIntegrity() error = %v, want ErrPolicyIntegrityBadSidecar", err)
 	}
 
-	err = VerifyPolicyIntegrity([]byte("{}\n"), &IntegritySidecar{}, []byte("short"))
-	if !errors.Is(err, ErrPolicyIntegrityInvalidKey) {
-		t.Fatalf("VerifyPolicyIntegrity() error = %v, want ErrPolicyIntegrityInvalidKey", err)
+	err = VerifyPolicyIntegrity([]byte("{}\n"), &IntegritySidecar{}, nil)
+	if !errors.Is(err, ErrPolicyIntegrityBadSidecar) {
+		t.Fatalf("VerifyPolicyIntegrity() error = %v, want ErrPolicyIntegrityBadSidecar", err)
 	}
 }
 
@@ -169,12 +196,7 @@ func TestLoadPolicyIntegritySidecar(t *testing.T) {
 	}
 }
 
-func policyIntegrityTestKey(t *testing.T) []byte {
+func policyIntegrityTestKey(t *testing.T) *apcrypto.Keyring {
 	t.Helper()
-	key, err := cryptotest.Keyring(t, []byte("01234567890123456789012345678901")).PolicyIntegrityKey()
-	if err != nil {
-		t.Fatalf("PolicyIntegrityKey() error = %v", err)
-	}
-	t.Cleanup(func() { apcrypto.ZeroBytes(key) })
-	return key
+	return cryptotest.Keyring(t, []byte("01234567890123456789012345678901"))
 }

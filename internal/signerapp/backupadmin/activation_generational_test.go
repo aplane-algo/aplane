@@ -14,11 +14,13 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -125,7 +127,10 @@ func TestGenerationalActivationCommitsWithPointerFlip(t *testing.T) {
 		t.Fatalf("activated generation failed validation: %v", err)
 	}
 	parent := paths.GenerationPaths(auth.DefaultIdentityID, firstGen)
-	if err := genstore.ValidateSealed(parent); err != nil {
+	err = ir.WithKeyring(func(kr *crypto.Keyring) error {
+		return genstore.ValidateSealed(parent, kr)
+	})
+	if err != nil {
 		t.Fatalf("parent generation not sealed by activation: %v", err)
 	}
 	// The credential lives in the new generation; nothing was written to
@@ -148,14 +153,31 @@ func TestGenerationalActivationCommitsWithPointerFlip(t *testing.T) {
 		t.Fatalf("batch still present after generational activation: %v", err)
 	}
 
-	// Rollback: repoint CURRENT at the parent.
+	// Rollback: mint the parent's content into a fresh generation. The
+	// content returns to the pre-activation state without rewinding the
+	// generation lineage or cryptographic epoch.
 	rollback := service.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{RestoreID: recoverResult.RestoreID})
 	if !rollback.Success {
 		t.Fatalf("RollbackRecovered() = %+v", rollback)
 	}
 	resolved, err := genstore.Resolve(paths, auth.DefaultIdentityID)
-	if err != nil || resolved.GenerationID() != firstGen {
-		t.Fatalf("CURRENT after rollback = %s (%v), want %s", resolved.GenerationID(), err, firstGen)
+	if err != nil || resolved.GenerationID() == firstGen ||
+		resolved.GenerationID() == gen.GenerationID() {
+		t.Fatalf(
+			"CURRENT after rollback = %s (%v), want a fresh generation",
+			resolved.GenerationID(),
+			err,
+		)
+	}
+	rollbackManifest, err := genstore.ReadManifest(resolved)
+	if err != nil {
+		t.Fatalf("ReadManifest(rollback) error = %v", err)
+	}
+	if rollbackManifest.Operation != "restore-rollback" ||
+		rollbackManifest.ParentID != gen.GenerationID() ||
+		rollbackManifest.RollbackSourceGenerationID != firstGen ||
+		rollbackManifest.SourceRestoreID != "" {
+		t.Fatalf("rollback manifest = %+v", rollbackManifest)
 	}
 	activeAfterRollback, err := genstore.ResolveActive(paths, auth.DefaultIdentityID)
 	if err != nil {
@@ -376,7 +398,220 @@ func TestRollbackRefusedAfterPostActivationMutation(t *testing.T) {
 		t.Fatalf("RollbackRecovered(after restoring inventory) = %+v", rollback)
 	}
 	resolved, err = genstore.Resolve(paths, auth.DefaultIdentityID)
-	if err != nil || resolved.GenerationID() != firstGen {
-		t.Fatalf("CURRENT after rollback = %s (%v), want %s", resolved.GenerationID(), err, firstGen)
+	if err != nil || resolved.GenerationID() == firstGen ||
+		resolved.GenerationID() == gen.GenerationID() {
+		t.Fatalf(
+			"CURRENT after rollback = %s (%v), want a fresh generation",
+			resolved.GenerationID(),
+			err,
+		)
+	}
+}
+
+func TestRollbackConsumesMatchingRotationBaselineAndRemovesItAfterMint(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+
+	archivePath, address := writeRecoverableManagedArchive(
+		t,
+		paths,
+		auth.DefaultIdentityID,
+	)
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoverResult.Success {
+		t.Fatalf("RecoverBackup() = %+v", recoverResult)
+	}
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
+	})
+	if !activated.Success {
+		t.Fatalf("ActivateRecovered() = %+v", activated)
+	}
+	current, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	if err != nil {
+		t.Fatalf("Resolve(activated) error = %v", err)
+	}
+
+	// Re-seal the live credential to model rotation's ciphertext rewrite,
+	// then publish the authenticated post-rewrap inventory. The at-mint
+	// manifest no longer matches, so only baseline consumption can keep the
+	// rollback available.
+	err = ir.WithKeyring(func(kr *crypto.Keyring) error {
+		keyPath := filepath.Join(current.KeysDir(), address+keys.AccountKeyExtension)
+		sealed, _, err := fsutil.ReadRegularFile(keyPath)
+		if err != nil {
+			return err
+		}
+		plaintext, err := kr.Open(sealed, crypto.AccountKeyContext(address))
+		if err != nil {
+			return err
+		}
+		defer crypto.ZeroBytes(plaintext)
+		rewrapped, err := kr.Seal(plaintext, crypto.AccountKeyContext(address))
+		if err != nil {
+			return err
+		}
+		defer crypto.ZeroBytes(rewrapped)
+		if err := fsutil.WriteFileDurable(keyPath, rewrapped); err != nil {
+			return err
+		}
+		inventory, err := genstore.BuildInventory(current)
+		if err != nil {
+			return err
+		}
+		baseline, err := rotationinventory.NewBaseline(
+			current.GenerationID(),
+			inventory,
+		)
+		if err != nil {
+			return err
+		}
+		return rotationinventory.WriteBaseline(
+			paths,
+			auth.DefaultIdentityID,
+			baseline,
+			kr,
+		)
+	})
+	if err != nil {
+		t.Fatalf("prepare post-rewrap baseline: %v", err)
+	}
+
+	rollback := service.RollbackRecovered(
+		ir,
+		adminproto.RollbackRecoveredRequest{RestoreID: recoverResult.RestoreID},
+	)
+	if !rollback.Success {
+		t.Fatalf("RollbackRecovered() = %+v", rollback)
+	}
+	rolledBack, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	if err != nil {
+		t.Fatalf("Resolve(rollback) error = %v", err)
+	}
+	if rolledBack.GenerationID() == current.GenerationID() {
+		t.Fatal("rollback did not mint a fresh generation")
+	}
+	if _, err := os.Stat(
+		paths.RotationBaselinePath(auth.DefaultIdentityID),
+	); !os.IsNotExist(err) {
+		t.Fatalf("stale rotation baseline survived rollback mint: %v", err)
+	}
+	if _, err := os.Stat(
+		filepath.Join(rolledBack.KeysDir(), address+keys.AccountKeyExtension),
+	); !os.IsNotExist(err) {
+		t.Fatalf("restored credential survived content rollback: %v", err)
+	}
+}
+
+func TestRollbackBaselineCleanupFailureOccursAfterFreshGenerationCommit(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	service := Service{Deps: backupServiceTestDeps{
+		paths:   paths,
+		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
+	}}
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+
+	archivePath, _ := writeRecoverableManagedArchive(
+		t,
+		paths,
+		auth.DefaultIdentityID,
+	)
+	recoverResult := service.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !recoverResult.Success {
+		t.Fatalf("RecoverBackup() = %+v", recoverResult)
+	}
+	review := service.ReviewRecovered(ir, recoverResult.RestoreID)
+	activated := service.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
+		RestoreID:   recoverResult.RestoreID,
+		ReviewToken: review.ReviewToken,
+	})
+	if !activated.Success {
+		t.Fatalf("ActivateRecovered() = %+v", activated)
+	}
+	current, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	if err != nil {
+		t.Fatalf("Resolve(activated) error = %v", err)
+	}
+	err = ir.WithKeyring(func(kr *crypto.Keyring) error {
+		inventory, err := genstore.BuildInventory(current)
+		if err != nil {
+			return err
+		}
+		baseline, err := rotationinventory.NewBaseline(
+			current.GenerationID(),
+			inventory,
+		)
+		if err != nil {
+			return err
+		}
+		return rotationinventory.WriteBaseline(
+			paths,
+			auth.DefaultIdentityID,
+			baseline,
+			kr,
+		)
+	})
+	if err != nil {
+		t.Fatalf("WriteBaseline() error = %v", err)
+	}
+
+	injected := errors.New("baseline cleanup directory sync failed")
+	baselinePath := paths.RotationBaselinePath(auth.DefaultIdentityID)
+	injectedOnce := false
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if injectedOnce || op != fsutil.OpDirSync ||
+			path != filepath.Dir(baselinePath) {
+			return nil
+		}
+		if _, err := os.Lstat(baselinePath); os.IsNotExist(err) {
+			injectedOnce = true
+			return injected
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+
+	rollback := service.RollbackRecovered(
+		ir,
+		adminproto.RollbackRecoveredRequest{RestoreID: recoverResult.RestoreID},
+	)
+	if rollback.Success ||
+		rollback.Code != protocol.ResultCodeRecoveredRollbackFailed {
+		t.Fatalf("RollbackRecovered(cleanup failure) = %+v", rollback)
+	}
+	if !strings.Contains(rollback.Error, injected.Error()) {
+		t.Fatalf("rollback error = %q, want injected cleanup failure", rollback.Error)
+	}
+	if !injectedOnce {
+		t.Fatal("baseline cleanup failure was not injected")
+	}
+	if !ir.IsRecovery() {
+		t.Fatal("post-commit cleanup failure did not enter recovery")
+	}
+	visible, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	if err != nil {
+		t.Fatalf("Resolve(after cleanup failure) error = %v", err)
+	}
+	if visible.GenerationID() == current.GenerationID() {
+		t.Fatal("baseline cleanup ran before the fresh CURRENT commit")
+	}
+	if _, err := os.Lstat(baselinePath); !os.IsNotExist(err) {
+		t.Fatalf("failed cleanup is not visibly removed: %v", err)
 	}
 }

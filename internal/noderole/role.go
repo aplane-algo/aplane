@@ -37,7 +37,6 @@ var (
 	ErrRoleSidecarMiss = errors.New("node role integrity sidecar missing")
 	ErrRoleUnsupported = errors.New("node role integrity sidecar unsupported")
 	ErrRoleMismatch    = errors.New("node role integrity mismatch")
-	ErrRoleKeyInvalid  = errors.New("node role integrity key invalid")
 )
 
 type Document struct {

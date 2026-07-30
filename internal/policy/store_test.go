@@ -6,14 +6,13 @@ package policy
 import (
 	"bytes"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 )
 
 func TestSaveAndLoadVerifiedStoredConfig(t *testing.T) {
@@ -230,13 +229,8 @@ func TestLoadVerifiedStoredConfigRejectsWrongKey(t *testing.T) {
 	if err := SaveStoredConfigWithIntegrity(root, "alice", &StoredConfig{}, key, time.Time{}); err != nil {
 		t.Fatalf("SaveStoredConfigWithIntegrity() error = %v", err)
 	}
-	wrongKey, err := cryptotest.Keyring(t, []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).PolicyIntegrityKey()
-	if err != nil {
-		t.Fatalf("PolicyIntegrityKey(wrong) error = %v", err)
-	}
-	defer apcrypto.ZeroBytes(wrongKey)
-
-	_, err = LoadVerifiedStoredConfig(root, "alice", wrongKey)
+	wrongKeyring := cryptotest.Keyring(t, []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+	_, err := LoadVerifiedStoredConfig(root, "alice", wrongKeyring)
 	if !errors.Is(err, ErrPolicyIntegrityMismatch) {
 		t.Fatalf("LoadVerifiedStoredConfig() error = %v, want ErrPolicyIntegrityMismatch", err)
 	}

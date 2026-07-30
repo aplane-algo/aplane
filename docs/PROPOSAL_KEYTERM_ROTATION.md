@@ -1,9 +1,41 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **phases 1 and 2 implemented and merged; phase 3 not started.** Phase 3
-is blocked on the items recorded below and in
-[PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md), which is the working brief for
-picking that work up. This document is the design record behind it. Amended across six rounds of review by two independent reviewers, both of whom now call the design settled.
+Status: **phases 1 and 2 implemented and merged; phase 3 transition work is in
+progress.** The formal R5 prerequisite is complete, and the first
+implementation slice writes the strict v2 keyring/v5 marker shape while
+initially retaining the one-term runtime gate. A second slice adds
+keyring-confined integrity operations, generation seal v2, and explicit-term
+policy/node-role sidecar v2. A third slice adds the canonical K8 artifact
+taxonomy and settled-store scanner with exact-buffer context opening and its
+durable-class mutation matrix. A fourth slice adds the strict sealed cutover
+snapshot codec, durable bounded storage, canonical rollback-authority digest,
+and exact encrypted-file reference validation, without enabling a pending
+root. A fifth slice records and authenticates each generation member's term,
+pins exact pre-retirement generation seals with historical anchors, and
+provides a separate anchor-gated retired-term open path. A sixth slice adds
+the strict bounded divergence-baseline record, effective-authority cutover
+decision, and fail-closed stale/malformed preflight reconciliation. A seventh
+slice adds guarded multi-term acceptance, the exact settled/pending
+current-state authority sets, durable snapshot-before-root publication with
+the complete historical-anchor set, and the R5 no-second-append guard. A
+pending root now fails closed into recovery before runtime state is
+published. An eighth slice adds the snapshot-pinned, idempotent rewrap/resume
+loop: retained anchored generations remain exact, mutable retiring-term
+envelopes are promoted only from their pinned bytes, integrity sidecars are
+re-signed over pinned documents, and authenticated target outputs are
+accepted after a crash. A ninth slice adds the completion boundary: two fresh
+final scans enforce exact path and target-authority shape, a clean cutover's
+post-rewrap baseline is durable before atomic root close, divergence never
+creates a new baseline, and the root-referenced snapshot is removed only
+after close. A tenth slice makes restore rollback consume the matching
+authenticated baseline, preserve divergence refusal, and mint the sealed
+target's content into fresh current-term envelopes rather than reauthorizing
+an older generation. An eleventh slice rewrites `changepass` onto that durable
+transition, makes helper failure a post-commit warning, reports retained
+priors, and automatically completes pending rotation during interactive and
+headless unlock before runtime publication. This document is the design record
+behind it. Amended across six rounds of review by two independent reviewers,
+both of whom now call the design settled.
 
 Refreshed against the tree after the generation-storage branch merged: the
 design core is unchanged, but the version gate no longer needs a migration
@@ -34,18 +66,19 @@ below:**
   the rewrap may consume, an attacker holding a retired term can inject
   material during the window and have the rewrap launder it into the new
   term;
-- **historical anchors** — `seal.json` is unkeyed, so a retired term can
-  forge a sealed generation and recompute its seal, which mint-on-rollback
-  would then bless under the current term;
+- **historical anchors** — generation seal v2 is now keyed, but a holder of a
+  retired term can forge a new valid MAC under that retired key unless the
+  root pins the exact pre-retirement seal bytes;
 - **the divergence baseline** — mandatory rewrap changes every ciphertext
   digest and so trips the post-activation rollback guard, which compares
   those digests against the at-mint manifest.
 
 A fourth blocker joined them: **generations contain plaintext members**
-(key-type state, witness public metadata) and `seal.json` is unkeyed, so a
-filesystem attacker holding no keys can alter a sealed generation and
-recompute its seal. That predates rotation but rotation's anchoring rules
-have to account for it — see the seal MAC.
+(key-type state and witness public metadata). Generation seal v2 now closes
+the pre-rotation no-key forgery by MACing the complete inventory, exact
+manifest digest, and integrity term. Rotation still has to inventory those
+members and anchor retained historical seals before their signing term
+retires.
 
 The envelope's AAD context question that briefly gated phase 1 is decided:
 the context ships in phase 1, because it touches only the 18 direct
@@ -61,8 +94,9 @@ The passphrase-helper contract and the resume path are decided, not blocked.
 
 ## Problem
 
-`apstore changepass` re-encrypts every managed file under the new master key
-using a two-phase `.new`/`.old` swap (`internal/storepass/rotate.go`). Review
+Before phase 3, `apstore changepass` re-encrypted every managed file under the
+new master key using a two-phase `.new`/`.old` swap
+(`internal/storepass/rotate.go`). Review
 finding (migration/CLI round): a crash during phase 2 leaves the current
 generation with **mixed-key content** — some files under the old key, some
 under the new — and no supported recovery path. The documented sibling-retry
@@ -481,13 +515,14 @@ to be read as unconditional.
 ### Retained sealed generations need an authenticity anchor
 
 Adding `Term` to each `InventoryEntry` prevents accidental GC mistakes. It
-does not prevent malicious modification, because `seal.json` is unkeyed:
-`WriteSeal` writes plain JSON and `ValidateSealed` merely recomputes the
-inventory and compares (`slices.Equal(live, seal.Inventory)`). An attacker
-holding a retired term can therefore forge that generation's ciphertext and
-recompute its seal to match — and mint-on-rollback would then validate the
-forgery and re-encrypt it under the current term, which is the laundering
-attack again by a historical route.
+does not by itself prevent malicious modification. Before generation seal v2,
+`WriteSeal` wrote unauthenticated JSON and `ValidateSealed` merely recomputed
+the inventory and compared it. Generation seal v2 now authenticates the exact
+manifest digest, integrity term, and canonical inventory. That is sufficient
+while the seal's term is current, but a future holder of a retired term could
+forge both content and a valid old-term MAC — and mint-on-rollback would then
+launder the forgery under the current term unless the exact historical seal
+was anchored before retirement.
 
 At step 1 of the rotation, anchor every retained sealed generation —
 authenticated digests recorded in the new `keyring.enc` — **before** its
@@ -507,11 +542,11 @@ deliberately not cached.
   the current term," because not every entry carries a term. Generations
   hold plaintext members — key-type state records and witness public
   metadata are both `json.MarshalIndent` to `WriteFileDurable`, with no
-  encryption — and `seal.json` is unkeyed, so a filesystem attacker holding
-  **no keys at all** can alter a plaintext entry and recompute the seal to
-  match.
+  encryption. The seal therefore needs keyed integrity over the whole
+  inventory; a digest-only seal would let a filesystem attacker holding
+  **no keys at all** alter a plaintext entry and recompute the seal to match.
 
-  **Seal the seal.** At seal time, MAC the canonical seal with the current
+  **Seal the seal (implemented by generation seal v2).** At seal time, MAC the canonical seal with the current
   term's integrity key. Then an unanchored generation is accepted when its
   seal MAC verifies under the current integrity term *and* its term-bearing
   entries are on the current term — which covers plaintext members too,
@@ -885,13 +920,19 @@ accepts everywhere else.
      `//go:build testmode` (`cmd/apadmin/batch.go`), invisible to untagged
      builds. A gate that does not build with `-tags testmode` can pass while
      a tagged call site survives into phase 3.
-   - **Phase 2 status.** The compiler gate and the KDF-confinement
+   - **Current status.** The compiler gate and the KDF-confinement
      architecture test are in place: no code outside `internal/crypto`
      receives a raw term key, imports a KDF, or adopts raw bytes as a keyring.
-     The cross-artifact term/context inventory below is **not** in place, and
-     is a prerequisite for term append: without it, a writer omitted from the
-     term stamping turns into unreadable data the first time a term is
-     retired. Phase 3 must land it before enabling append.
+     `internal/rotationinventory` now supplies the canonical cross-artifact
+     taxonomy and settled-store scan, including exact-buffer logical-context
+     opening and mutation-tested durable-class coverage. The sealed snapshot,
+     per-member seal terms, exact historical anchors, and anchor-gated
+     retired-term opening are also implemented as foundations. The guarded
+     transition start now pins the durable snapshot and complete anchor set in
+     the same atomic root publication. Snapshot-pinned rewrap/resume and the
+     final exact-path/target-authority completion boundary now consume them;
+     rollback consumption, `changepass` integration, and automatic
+     pre-publication unlock resume are implemented.
    - **Add an artifact-class test.** The gates above prove no code takes the
      old path; they do not prove every written artifact carries a term. A
      test that creates each durable class — managed keys, installed
@@ -1106,11 +1147,12 @@ implementation do not yet meet. None invalidates the model; all are work phase
    data file. Reusing that machinery for append would give up the atomicity
    R5 depends on.
 
-6. **`StartRotation`'s guard has no counterpart either.** R5 holds because
-   `StartRotation` requires `currentTerm = T1`. The code's current equivalent
-   is stronger and inverted: `OpenKeyring` refuses a multi-term root outright,
-   which is precisely what phase 3 relaxes. The relaxation has to install the
-   real guard in the same change, or R5 goes unenforced.
+6. **`StartRotation`'s guard had no counterpart either.** R5 holds because
+   `StartRotation` refuses a root whose rotation descriptor is already
+   present. The guarded transition-start slice relaxed the old multi-term
+   rejection and installed that real guard in the same change. Tests exercise
+   both direct retry and the durable reopened pending root, so resume cannot
+   append a third term.
 
 One thing the re-read confirmed rather than found: the object context added in
 phase 1 does **not** subsume the cutover snapshot. An attacker holding a

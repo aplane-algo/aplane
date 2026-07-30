@@ -5,9 +5,13 @@ package crypto
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -20,6 +24,11 @@ func newTestKeyring(t *testing.T) *Keyring {
 	}
 	t.Cleanup(kr.Zero)
 	return kr
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func TestKeyringSealOpenRoundTrip(t *testing.T) {
@@ -58,6 +67,8 @@ func TestKeyringOpenRejectsMismatchedContext(t *testing.T) {
 		{"different class, same selector", SentryCredentialContext("ADDR-ONE")},
 		{"template class", KeyTypeTemplateContext("ADDR-ONE")},
 		{"recovered batch class", RecoveredBatchContext("ADDR-ONE")},
+		{"rotation snapshot class", RotationSnapshotContext()},
+		{"rotation baseline class", RotationBaselineContext()},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -136,6 +147,8 @@ func TestObjectContextValidation(t *testing.T) {
 		{"unknown class", ObjectContext{Class: "invented", Selector: "s"}},
 		{"empty selector", ObjectContext{Class: ClassAccountKey}},
 		{"NUL in selector", ObjectContext{Class: ClassAccountKey, Selector: "a\x00b"}},
+		{"wrong rotation snapshot selector", ObjectContext{Class: ClassRotationSnapshot, Selector: "current"}},
+		{"wrong rotation baseline selector", ObjectContext{Class: ClassRotationBaseline, Selector: "pending"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -143,6 +156,25 @@ func TestObjectContextValidation(t *testing.T) {
 				t.Fatal("Seal() accepted an invalid object context")
 			}
 		})
+	}
+}
+
+func TestInspectTermEnvelopeDistinguishesPlaintextAndMalformedEnvelope(t *testing.T) {
+	kr := newTestKeyring(t)
+	sealed, err := kr.Seal([]byte("secret"), AccountKeyContext("ADDR"))
+	if err != nil {
+		t.Fatalf("Seal() error = %v", err)
+	}
+	if term, present, err := InspectTermEnvelope(sealed); err != nil || !present || term != FirstTerm {
+		t.Fatalf("InspectTermEnvelope(sealed) = %d, %t, %v", term, present, err)
+	}
+	if term, present, err := InspectTermEnvelope([]byte(`{"schema":"plaintext.v1"}`)); err != nil ||
+		present ||
+		term != 0 {
+		t.Fatalf("InspectTermEnvelope(plaintext) = %d, %t, %v", term, present, err)
+	}
+	if _, present, err := InspectTermEnvelope([]byte(`{"envelope_version":2}`)); err == nil || !present {
+		t.Fatalf("InspectTermEnvelope(foreign envelope) = present %t, error %v", present, err)
 	}
 }
 
@@ -289,6 +321,114 @@ func TestNewKeyringFromKeyCopiesInput(t *testing.T) {
 	}
 }
 
+func TestNewKeyringFromTermKeyUsesSpecifiedTermAndCopiesInput(t *testing.T) {
+	source := bytes.Repeat([]byte{9}, argon2KeyLen)
+	kr, err := NewKeyringFromTermKey(2, source)
+	if err != nil {
+		t.Fatalf("NewKeyringFromTermKey() error = %v", err)
+	}
+	defer kr.Zero()
+	ZeroBytes(source)
+	if kr.CurrentTerm() != 2 {
+		t.Fatalf("CurrentTerm() = %d, want 2", kr.CurrentTerm())
+	}
+	sealed, err := kr.Seal([]byte("snapshot"), RotationSnapshotContext())
+	if err != nil {
+		t.Fatalf("Seal() error = %v after caller input was zeroed", err)
+	}
+	if term, err := EnvelopeTerm(sealed); err != nil || term != 2 {
+		t.Fatalf("EnvelopeTerm() = %d, %v, want 2, nil", term, err)
+	}
+	if _, err := NewKeyringFromTermKey(0, bytes.Repeat([]byte{1}, argon2KeyLen)); err == nil {
+		t.Fatal("NewKeyringFromTermKey() accepted term zero")
+	}
+}
+
+func TestRotationSnapshotReferencePinsExactBytesAndSize(t *testing.T) {
+	exact := []byte("exact encrypted snapshot")
+	ref, err := NewRotationSnapshotReference(exact)
+	if err != nil {
+		t.Fatalf("NewRotationSnapshotReference() error = %v", err)
+	}
+	if ref.Size != int64(len(exact)) || ref.SHA256 != sha256Hex(exact) {
+		t.Fatalf("reference = %+v, want exact size and digest", ref)
+	}
+	if err := ref.VerifyExact(exact); err != nil {
+		t.Fatalf("VerifyExact(exact) error = %v", err)
+	}
+	mutated := slices.Clone(exact)
+	mutated[0] ^= 1
+	if err := ref.VerifyExact(mutated); err == nil {
+		t.Fatal("VerifyExact() accepted same-size mutated bytes")
+	}
+	if err := ref.VerifyExact(append(slices.Clone(exact), 0)); err == nil {
+		t.Fatal("VerifyExact() accepted wrong-size bytes")
+	}
+	for name, invalid := range map[string]RotationSnapshotReference{
+		"uppercase digest": {SHA256: strings.Repeat("A", sha256HexLength), Size: 1},
+		"zero size":        {SHA256: strings.Repeat("a", sha256HexLength), Size: 0},
+		"oversize": {
+			SHA256: strings.Repeat("a", sha256HexLength),
+			Size:   MaxRotationSnapshotBytes + 1,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := invalid.Validate(); err == nil {
+				t.Fatal("Validate() accepted an invalid snapshot reference")
+			}
+		})
+	}
+}
+
+func TestHistoricalGenerationAnchorPinsExactSealBytes(t *testing.T) {
+	generationID := "gen-1785400000-deadbeef"
+	exact := []byte(`{"schema":"aplane.generation-seal.v2"}`)
+	anchor, err := NewHistoricalGenerationAnchor(generationID, exact)
+	if err != nil {
+		t.Fatalf("NewHistoricalGenerationAnchor() error = %v", err)
+	}
+	if anchor.GenerationID != generationID ||
+		anchor.SealSize != int64(len(exact)) ||
+		anchor.SealSHA256 != sha256Hex(exact) {
+		t.Fatalf("anchor = %+v, want exact generation, size, and digest", anchor)
+	}
+	if err := anchor.VerifyExact(generationID, exact); err != nil {
+		t.Fatalf("VerifyExact(exact) error = %v", err)
+	}
+	mutated := slices.Clone(exact)
+	mutated[len(mutated)-1] ^= 1
+	if err := anchor.VerifyExact(generationID, mutated); err == nil {
+		t.Fatal("VerifyExact() accepted mutated seal bytes")
+	}
+	if err := anchor.VerifyExact("gen-1785400001-feedface", exact); err == nil {
+		t.Fatal("VerifyExact() accepted a different generation")
+	}
+}
+
+func TestNewKeyringFromTermKeysCopiesAndValidatesTerms(t *testing.T) {
+	key1 := bytes.Repeat([]byte{1}, argon2KeyLen)
+	key2 := bytes.Repeat([]byte{2}, argon2KeyLen)
+	kr, err := NewKeyringFromTermKeys(2, map[int64][]byte{1: key1, 2: key2})
+	if err != nil {
+		t.Fatalf("NewKeyringFromTermKeys() error = %v", err)
+	}
+	defer kr.Zero()
+	ZeroBytes(key1)
+	ZeroBytes(key2)
+	if kr.CurrentTerm() != 2 {
+		t.Fatalf("CurrentTerm() = %d, want 2", kr.CurrentTerm())
+	}
+	if _, err := kr.Seal([]byte("current"), AccountKeyContext("A")); err != nil {
+		t.Fatalf("Seal(current term) error = %v after inputs were zeroed", err)
+	}
+	if _, err := NewKeyringFromTermKeys(1, map[int64][]byte{
+		1: bytes.Repeat([]byte{1}, argon2KeyLen),
+		2: bytes.Repeat([]byte{2}, argon2KeyLen),
+	}); err == nil {
+		t.Fatal("NewKeyringFromTermKeys() accepted a non-greatest current term")
+	}
+}
+
 // ----------------------------------------------------------------------------
 // keyring store
 
@@ -339,6 +479,27 @@ func TestOpenKeyringStoreRejectsWrongPassphrase(t *testing.T) {
 	}
 }
 
+func TestOpenKeyringStoreRejectsSymlinkRoot(t *testing.T) {
+	dir := t.TempDir()
+	passphrase := []byte("passphrase")
+	kr, err := CreateKeyringStore(dir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	kr.Zero()
+	root := KeyringPath(dir)
+	target := filepath.Join(dir, "moved-keyring.enc")
+	if err := os.Rename(root, target); err != nil {
+		t.Fatalf("Rename(keyring) error = %v", err)
+	}
+	if err := os.Symlink(target, root); err != nil {
+		t.Fatalf("Symlink(keyring) error = %v", err)
+	}
+	if _, err := OpenKeyringStore(dir, passphrase); err == nil {
+		t.Fatal("OpenKeyringStore() followed a symlinked keyring root")
+	}
+}
+
 // TestKeyringMarkerCarriesNoSecrets pins that the version gate is inert: all
 // key material and KDF state live in the root, so the marker cannot disagree
 // with it.
@@ -359,9 +520,9 @@ func TestKeyringMarkerCarriesNoSecrets(t *testing.T) {
 		t.Fatalf("Unmarshal(marker) error = %v", err)
 	}
 	if marker["version"] != float64(KeyringKeystoreMetadataVersion) ||
-		marker["layout"] != KeystoreLayoutKeyringV1 {
+		marker["layout"] != KeystoreLayoutKeyringV2 {
 		t.Fatalf("marker = %v, want version %d layout %q",
-			marker, KeyringKeystoreMetadataVersion, KeystoreLayoutKeyringV1)
+			marker, KeyringKeystoreMetadataVersion, KeystoreLayoutKeyringV2)
 	}
 	for _, forbidden := range []string{"salt", "check", "kdf_time", "kdf_memory", "kdf_threads"} {
 		if _, present := marker[forbidden]; present {
@@ -384,8 +545,8 @@ func TestOpenKeyringStoreRejectsOtherVersions(t *testing.T) {
 		marker  string
 		wantErr string
 	}{
-		{"older version", `{"version":3,"layout":"generations/v1"}`, "only reads stores it initialized"},
-		{"unknown layout", `{"version":4,"layout":"invented/v9"}`, "unsupported layout"},
+		{"older version", `{"version":4,"layout":"keyring/v1"}`, "only reads stores it initialized"},
+		{"unknown layout", `{"version":5,"layout":"invented/v9"}`, "unsupported layout"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := os.WriteFile(markerPath, []byte(tc.marker), 0o600); err != nil {
@@ -466,8 +627,8 @@ func TestOpenKeyringRejectsEditedHeader(t *testing.T) {
 	}
 
 	edits := map[string]func(map[string]any){
-		"schema":           func(m map[string]any) { m["schema"] = "aplane.keyring.v2" },
-		"envelope_version": func(m map[string]any) { m["envelope_version"] = 2 },
+		"schema":           func(m map[string]any) { m["schema"] = "aplane.keyring.v3" },
+		"envelope_version": func(m map[string]any) { m["envelope_version"] = KeyringFileVersion + 1 },
 		"kdf_time":         func(m map[string]any) { m["kdf_time"] = 3 },
 		"kdf_memory":       func(m map[string]any) { m["kdf_memory"] = 32768 },
 		"kdf_threads":      func(m map[string]any) { m["kdf_threads"] = 2 },
@@ -513,7 +674,7 @@ func TestKeyringHeaderAADIsUnambiguous(t *testing.T) {
 	base := keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time, argon2Memory, argon2Threads, salt, nonce)
 
 	variants := map[string][]byte{
-		"schema":      keyringHeaderAAD("aplane.keyring.v2", KeyringFileVersion, argon2Time, argon2Memory, argon2Threads, salt, nonce),
+		"schema":      keyringHeaderAAD("aplane.keyring.v3", KeyringFileVersion, argon2Time, argon2Memory, argon2Threads, salt, nonce),
 		"version":     keyringHeaderAAD(KeyringSchema, KeyringFileVersion+1, argon2Time, argon2Memory, argon2Threads, salt, nonce),
 		"kdf time":    keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time+1, argon2Memory, argon2Threads, salt, nonce),
 		"kdf memory":  keyringHeaderAAD(KeyringSchema, KeyringFileVersion, argon2Time, argon2Memory+1, argon2Threads, salt, nonce),
@@ -592,27 +753,26 @@ func TestOpenKeyringRejectsForeignKDFParameters(t *testing.T) {
 	}
 }
 
-// TestOpenKeyringRejectsMultipleTerms proves this release enforces its
-// single-term format rather than assuming it.
-//
-// A multi-term root belongs to a release that has retiring terms and the
-// authority split that governs them. Reading one here would reauthorize a
-// retired term for current state, so the format gate refuses it and phase 3
-// has to bump the version to relax that.
-func TestOpenKeyringRejectsMultipleTerms(t *testing.T) {
-	passphrase := []byte("keyring-single-term")
+// TestOpenKeyringAcceptsSettledMultipleTermsButDeniesRetiredAuthority proves
+// resident historical keys do not regain current-state read authority.
+func TestOpenKeyringAcceptsSettledMultipleTermsButDeniesRetiredAuthority(t *testing.T) {
+	passphrase := []byte("keyring-multiple-terms")
 	kr, err := NewKeyring()
 	if err != nil {
 		t.Fatalf("NewKeyring(): %v", err)
 	}
 	defer kr.Zero()
+	retiredEnvelope, err := kr.Seal([]byte("retired"), AccountKeyContext("ACCOUNT"))
+	if err != nil {
+		t.Fatalf("Seal(retired): %v", err)
+	}
 
 	second, err := randomBytes(argon2KeyLen)
 	if err != nil {
 		t.Fatalf("randomBytes(): %v", err)
 	}
 	forged := &Keyring{
-		terms:       map[int][]byte{FirstTerm: kr.terms[FirstTerm], FirstTerm + 1: second},
+		terms:       map[int64][]byte{FirstTerm: kr.terms[FirstTerm], FirstTerm + 1: second},
 		currentTerm: FirstTerm + 1,
 	}
 	sealed, err := SealKeyring(forged, passphrase)
@@ -620,50 +780,54 @@ func TestOpenKeyringRejectsMultipleTerms(t *testing.T) {
 		t.Fatalf("SealKeyring(): %v", err)
 	}
 	opened, err := OpenKeyring(sealed, passphrase)
-	if err == nil {
-		opened.Zero()
-		t.Fatal("OpenKeyring() accepted a multi-term root; a phase-1 binary must not read one")
+	if err != nil {
+		t.Fatalf("OpenKeyring() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "exactly one") {
-		t.Fatalf("OpenKeyring() error = %v, want a single-term rejection", err)
+	defer opened.Zero()
+	if _, err := opened.Open(retiredEnvelope, AccountKeyContext("ACCOUNT")); err == nil ||
+		!strings.Contains(err.Error(), "not authorized") {
+		t.Fatalf("Open(retired settled term) error = %v, want authority rejection", err)
+	}
+	currentEnvelope, err := opened.Seal([]byte("current"), AccountKeyContext("ACCOUNT"))
+	if err != nil {
+		t.Fatalf("Seal(current): %v", err)
+	}
+	if _, err := opened.Open(currentEnvelope, AccountKeyContext("ACCOUNT")); err != nil {
+		t.Fatalf("Open(current) error = %v", err)
 	}
 }
 
-// TestOpenKeyringZeroesRejectedTermKeys proves a keyring this release refuses
-// does not leave its term keys on the heap.
-//
-// The rejection paths sit after the decode: by the time OpenKeyring decides a
-// root has too many terms or names the wrong one, the decoder has already
-// written key material into the payload. Those slices have to be zeroed on
-// every exit, not only the successful one.
+// TestOpenKeyringZeroesRejectedTermKeys proves invalid authenticated
+// multi-term payloads do not leave decoded keys on the heap.
 func TestOpenKeyringZeroesRejectedTermKeys(t *testing.T) {
 	passphrase := []byte("keyring-rejected-cleanup")
-	kr, err := NewKeyring()
-	if err != nil {
-		t.Fatalf("NewKeyring(): %v", err)
+	key1 := bytes.Repeat([]byte{1}, argon2KeyLen)
+	key2 := bytes.Repeat([]byte{2}, argon2KeyLen)
+	valid := func() keyringPayload {
+		return keyringPayload{
+			Schema:            KeyringSchema,
+			CurrentTerm:       2,
+			Terms:             []sealedTerm{{Term: 1, Key: key1}, {Term: 2, Key: key2}},
+			HistoricalAnchors: []HistoricalGenerationAnchor{},
+		}
 	}
-	defer kr.Zero()
-	second, err := randomBytes(argon2KeyLen)
-	if err != nil {
-		t.Fatalf("randomBytes(): %v", err)
-	}
-
-	cases := map[string]*Keyring{
-		"multi-term": {
-			terms:       map[int][]byte{FirstTerm: kr.terms[FirstTerm], FirstTerm + 1: second},
-			currentTerm: FirstTerm + 1,
+	cases := map[string]func(*keyringPayload){
+		"duplicate term": func(payload *keyringPayload) {
+			payload.Terms[1].Term = payload.Terms[0].Term
 		},
-		"wrong term number": {
-			terms:       map[int][]byte{FirstTerm + 5: second},
-			currentTerm: FirstTerm + 5,
+		"current not greatest": func(payload *keyringPayload) {
+			payload.CurrentTerm = payload.Terms[0].Term
 		},
 	}
-	for name, forged := range cases {
+	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
-			sealed, err := SealKeyring(forged, passphrase)
+			payload := valid()
+			mutate(&payload)
+			plaintext, err := json.Marshal(payload)
 			if err != nil {
-				t.Fatalf("SealKeyring(): %v", err)
+				t.Fatalf("Marshal(payload): %v", err)
 			}
+			sealed := sealKeyringPlaintextForTest(t, plaintext, passphrase)
 
 			var decoded [][]byte
 			keyringDecodeHook = func(terms []sealedTerm) {
@@ -695,15 +859,173 @@ func TestOpenKeyringZeroesRejectedTermKeys(t *testing.T) {
 	}
 }
 
-// TestKeyringIntegrityKeysMatchTheDerivedOnes proves the keyring reaches the
-// same HMAC keys the raw-key functions do.
+func TestValidateKeyringPayloadV2(t *testing.T) {
+	key1 := bytes.Repeat([]byte{1}, argon2KeyLen)
+	key2 := bytes.Repeat([]byte{2}, argon2KeyLen)
+	digest := strings.Repeat("a", sha256HexLength)
+	valid := func() keyringPayload {
+		return keyringPayload{
+			Schema:      KeyringSchema,
+			CurrentTerm: 2,
+			Terms: []sealedTerm{
+				{Term: 1, Key: slices.Clone(key1)},
+				{Term: 2, Key: slices.Clone(key2)},
+			},
+			HistoricalAnchors: []HistoricalGenerationAnchor{{
+				GenerationID: "gen-1700000000-0123abcd",
+				SealSize:     123,
+				SealSHA256:   digest,
+			}},
+			Rotation: &rotationDescriptor{
+				FromTerm:       1,
+				SnapshotSHA256: digest,
+				SnapshotSize:   456,
+			},
+		}
+	}
+
+	if err := validateKeyringPayload(ptr(valid())); err != nil {
+		t.Fatalf("validateKeyringPayload(valid) error = %v", err)
+	}
+
+	cases := map[string]func(*keyringPayload){
+		"missing terms": func(p *keyringPayload) { p.Terms = nil },
+		"missing anchors array": func(p *keyringPayload) {
+			p.HistoricalAnchors = nil
+		},
+		"duplicate term": func(p *keyringPayload) { p.Terms[1].Term = 1 },
+		"current not greatest": func(p *keyringPayload) {
+			p.CurrentTerm = 1
+			p.Rotation = nil
+		},
+		"wrong key length": func(p *keyringPayload) { p.Terms[0].Key = []byte{1} },
+		"bad generation": func(p *keyringPayload) {
+			p.HistoricalAnchors[0].GenerationID = "../generation"
+		},
+		"uppercase anchor digest": func(p *keyringPayload) {
+			p.HistoricalAnchors[0].SealSHA256 = strings.Repeat("A", sha256HexLength)
+		},
+		"zero anchor size":    func(p *keyringPayload) { p.HistoricalAnchors[0].SealSize = 0 },
+		"wrong retiring term": func(p *keyringPayload) { p.Rotation.FromTerm = 2 },
+		"skipped appended term": func(p *keyringPayload) {
+			p.Terms[1].Term = 3
+			p.CurrentTerm = 3
+		},
+		"bad snapshot digest": func(p *keyringPayload) { p.Rotation.SnapshotSHA256 = "not-a-digest" },
+		"zero snapshot size":  func(p *keyringPayload) { p.Rotation.SnapshotSize = 0 },
+		"oversize snapshot": func(p *keyringPayload) {
+			p.Rotation.SnapshotSize = MaxRotationSnapshotBytes + 1
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			payload := valid()
+			mutate(&payload)
+			if err := validateKeyringPayload(&payload); err == nil {
+				t.Fatal("validateKeyringPayload() accepted invalid v2 state")
+			}
+		})
+	}
+}
+
+func TestOpenKeyringStrictJSON(t *testing.T) {
+	passphrase := []byte("strict-keyring-json")
+	kr := newTestKeyring(t)
+	encoded, err := SealKeyring(kr, passphrase)
+	if err != nil {
+		t.Fatalf("SealKeyring() error = %v", err)
+	}
+
+	var outer map[string]any
+	if err := json.Unmarshal(encoded, &outer); err != nil {
+		t.Fatalf("Unmarshal(outer) error = %v", err)
+	}
+	outer["unknown"] = true
+	unknownOuter, err := json.Marshal(outer)
+	if err != nil {
+		t.Fatalf("Marshal(outer) error = %v", err)
+	}
+	if _, err := OpenKeyring(unknownOuter, passphrase); err == nil {
+		t.Fatal("OpenKeyring() accepted an unknown outer field")
+	}
+	if _, err := OpenKeyring(append(slices.Clone(encoded), []byte(` {}`)...), passphrase); err == nil {
+		t.Fatal("OpenKeyring() accepted trailing outer JSON")
+	}
+
+	validPayload := keyringPayload{
+		Schema:            KeyringSchema,
+		CurrentTerm:       FirstTerm,
+		Terms:             []sealedTerm{{Term: FirstTerm, Key: bytes.Repeat([]byte{7}, argon2KeyLen)}},
+		HistoricalAnchors: []HistoricalGenerationAnchor{},
+	}
+	plain, err := json.Marshal(validPayload)
+	if err != nil {
+		t.Fatalf("Marshal(payload) error = %v", err)
+	}
+	unknownInner := bytes.Replace(plain, []byte(`"historical_anchors":[]`), []byte(`"historical_anchors":[],"unknown":true`), 1)
+	for name, malformed := range map[string][]byte{
+		"unknown inner field": unknownInner,
+		"trailing inner JSON": append(slices.Clone(plain), []byte(` {}`)...),
+	} {
+		t.Run(name, func(t *testing.T) {
+			sealed := sealKeyringPlaintextForTest(t, malformed, passphrase)
+			opened, err := OpenKeyring(sealed, passphrase)
+			if err == nil {
+				opened.Zero()
+				t.Fatal("OpenKeyring() accepted malformed authenticated payload JSON")
+			}
+		})
+	}
+}
+
+func sealKeyringPlaintextForTest(t *testing.T, plaintext, passphrase []byte) []byte {
+	t.Helper()
+	salt, err := randomBytes(masterSaltLen)
+	if err != nil {
+		t.Fatalf("randomBytes(salt) error = %v", err)
+	}
+	kek := deriveMasterKeyParams(passphrase, salt, argon2Time, argon2Memory, argon2Threads)
+	defer ZeroBytes(kek)
+	gcm, err := newGCM(kek)
+	if err != nil {
+		t.Fatalf("newGCM() error = %v", err)
+	}
+	nonce, err := randomBytes(gcm.NonceSize())
+	if err != nil {
+		t.Fatalf("randomBytes(nonce) error = %v", err)
+	}
+	ciphertext := gcm.Seal(nil, nonce, plaintext, keyringHeaderAAD(
+		KeyringSchema, KeyringFileVersion,
+		argon2Time, argon2Memory, argon2Threads, salt, nonce,
+	))
+	encoded, err := json.Marshal(keyringFile{
+		Schema:        KeyringSchema,
+		EnvelopeVer:   KeyringFileVersion,
+		KDFTime:       argon2Time,
+		KDFMemory:     argon2Memory,
+		KDFThreads:    argon2Threads,
+		Salt:          base64.StdEncoding.EncodeToString(salt),
+		Nonce:         base64.StdEncoding.EncodeToString(nonce),
+		SealedKeyring: base64.StdEncoding.EncodeToString(ciphertext),
+	})
+	if err != nil {
+		t.Fatalf("Marshal(keyring file) error = %v", err)
+	}
+	return encoded
+}
+
+func ptr[T any](value T) *T { return &value }
+
+// TestKeyringIntegrityOperationsMatchTheDerivedKeys proves the confined
+// operations preserve the established per-domain derivations without
+// exposing those derived keys to callers.
 //
 // Every policy and node-role sidecar already on disk was signed with a key
 // from derivePolicyIntegrityKey or deriveNodeRoleIntegrityKey. Phase 2 moves
 // the callers to the keyring; if that changed the derivation by even a salt,
 // every one of those sidecars would fail verification and the store would
 // fail closed on load.
-func TestKeyringIntegrityKeysMatchTheDerivedOnes(t *testing.T) {
+func TestKeyringIntegrityOperationsMatchTheDerivedKeys(t *testing.T) {
 	termKey := bytes.Repeat([]byte{0x5A}, argon2KeyLen)
 	kr, err := NewKeyringFromKey(termKey)
 	if err != nil {
@@ -712,47 +1034,55 @@ func TestKeyringIntegrityKeysMatchTheDerivedOnes(t *testing.T) {
 	defer kr.Zero()
 
 	cases := map[string]struct {
-		fromKeyring func() ([]byte, error)
-		fromKey     func([]byte) ([]byte, error)
+		domain  IntegrityDomain
+		fromKey func([]byte) ([]byte, error)
 	}{
-		"policy":    {kr.PolicyIntegrityKey, derivePolicyIntegrityKey},
-		"node role": {kr.NodeRoleIntegrityKey, deriveNodeRoleIntegrityKey},
+		"policy":    {IntegrityDomainPolicy, derivePolicyIntegrityKey},
+		"node role": {IntegrityDomainNodeRole, deriveNodeRoleIntegrityKey},
 	}
+	payload := []byte("integrity payload")
+	macs := make(map[string]string)
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			viaKeyring, err := tc.fromKeyring()
+			term, viaKeyring, err := kr.SignIntegrity(tc.domain, payload)
 			if err != nil {
-				t.Fatalf("keyring derivation: %v", err)
+				t.Fatalf("SignIntegrity(): %v", err)
 			}
-			defer ZeroBytes(viaKeyring)
 			viaKey, err := tc.fromKey(termKey)
 			if err != nil {
 				t.Fatalf("raw-key derivation: %v", err)
 			}
 			defer ZeroBytes(viaKey)
-			if len(viaKeyring) == 0 {
-				t.Fatal("derived an empty key; nothing was proved")
-			}
-			if !bytes.Equal(viaKeyring, viaKey) {
+			if viaKeyring != computeIntegrityMAC(payload, viaKey) {
 				t.Fatal("keyring derivation diverged; every sidecar on disk would stop verifying")
 			}
+			if err := kr.VerifyIntegrity(tc.domain, payload, term, viaKeyring); err != nil {
+				t.Fatalf("VerifyIntegrity(): %v", err)
+			}
+			macs[name] = viaKeyring
 		})
 	}
 
 	// The two domains must not collide, or a policy sidecar would verify
 	// under the node-role key.
-	policyKey, err := kr.PolicyIntegrityKey()
-	if err != nil {
-		t.Fatalf("PolicyIntegrityKey(): %v", err)
+	if macs["policy"] == macs["node role"] {
+		t.Fatal("policy and node-role integrity MACs are identical")
 	}
-	defer ZeroBytes(policyKey)
-	roleKey, err := kr.NodeRoleIntegrityKey()
-	if err != nil {
-		t.Fatalf("NodeRoleIntegrityKey(): %v", err)
+	if err := kr.VerifyIntegrity(
+		IntegrityDomainNodeRole,
+		payload,
+		FirstTerm,
+		macs["policy"],
+	); err == nil {
+		t.Fatal("policy MAC verified in the node-role domain")
 	}
-	defer ZeroBytes(roleKey)
-	if bytes.Equal(policyKey, roleKey) {
-		t.Fatal("policy and node-role integrity keys are identical")
+	if err := kr.VerifyIntegrity(
+		IntegrityDomainPolicy,
+		payload,
+		FirstTerm+1,
+		macs["policy"],
+	); err == nil {
+		t.Fatal("MAC under an unauthorized term verified")
 	}
 }
 
@@ -778,11 +1108,11 @@ func TestOpenKeyringStoreRejectsUnsupportedMarkerVersion(t *testing.T) {
 		want   string
 	}{
 		"older version": {
-			map[string]any{"version": KeyringKeystoreMetadataVersion - 1, "layout": KeystoreLayoutKeyringV1},
+			map[string]any{"version": KeyringKeystoreMetadataVersion - 1, "layout": KeystoreLayoutKeyringV2},
 			"restore from a backup archive",
 		},
 		"newer version": {
-			map[string]any{"version": KeyringKeystoreMetadataVersion + 1, "layout": KeystoreLayoutKeyringV1},
+			map[string]any{"version": KeyringKeystoreMetadataVersion + 1, "layout": KeystoreLayoutKeyringV2},
 			"restore from a backup archive",
 		},
 		"right version, foreign layout": {

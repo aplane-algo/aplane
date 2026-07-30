@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -209,7 +210,7 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 // migration; the caller holds the mutation locks. Reconcile runs first
 // (staging and unsealed attempts are discarded, an invalid CURRENT aborts
 // with nothing deleted).
-func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[string]bool, retainRollbackParent bool) ([]string, error) {
+func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[string]bool, retainRollbackParent bool, kr *crypto.Keyring) ([]string, error) {
 	report, err := Reconcile(paths, identityID, referenced)
 	if err != nil {
 		return nil, err
@@ -245,8 +246,15 @@ func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[st
 			// a parent that fails seal validation cannot serve that role,
 			// and deleting the alternatives would destroy the only other
 			// recovery material. Abort the prune before removing anything.
-			if err := ValidateSealed(paths.GenerationPaths(identityID, manifest.ParentID)); err != nil {
-				return nil, fmt.Errorf("collect: rollback parent %s failed seal validation, refusing to prune: %w", manifest.ParentID, err)
+			parent := paths.GenerationPaths(identityID, manifest.ParentID)
+			var validateErr error
+			if anchor, anchored := kr.HistoricalGenerationAnchor(manifest.ParentID); anchored {
+				validateErr = ValidateAnchoredSealed(parent, anchor, kr)
+			} else {
+				validateErr = ValidateSealed(parent, kr)
+			}
+			if validateErr != nil {
+				return nil, fmt.Errorf("collect: rollback parent %s failed seal validation, refusing to prune: %w", manifest.ParentID, validateErr)
 			}
 			retain[manifest.ParentID] = true
 		}

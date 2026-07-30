@@ -106,6 +106,9 @@ func cmdPolicySign() error {
 		return err
 	}
 	defer kr.Zero()
+	if err := kr.RequireSettled(); err != nil {
+		return fmt.Errorf("policy signing blocked: %w", err)
+	}
 
 	now := time.Now()
 	for _, doc := range docs {

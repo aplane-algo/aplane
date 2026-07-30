@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -42,6 +43,28 @@ func ReadRegularFile(path string) ([]byte, os.FileMode, error) {
 	data, err := io.ReadAll(file)
 	if err != nil {
 		return nil, 0, err
+	}
+	return data, info.Mode().Perm(), nil
+}
+
+// ReadRegularFileLimited reads no more than max+1 bytes without following a
+// final-component symlink, then rejects rather than truncates an oversized
+// regular file.
+func ReadRegularFileLimited(path string, max int64) ([]byte, os.FileMode, error) {
+	if max < 0 || max == math.MaxInt64 {
+		return nil, 0, fmt.Errorf("invalid regular-file size limit %d", max)
+	}
+	file, info, err := openRegularFile(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, max+1))
+	if err != nil {
+		return nil, 0, err
+	}
+	if int64(len(data)) > max {
+		return nil, 0, fmt.Errorf("file exceeds size limit %d", max)
 	}
 	return data, info.Mode().Perm(), nil
 }

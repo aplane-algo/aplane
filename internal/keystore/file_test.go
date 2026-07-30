@@ -304,6 +304,7 @@ func TestFileKeyStore_Delete_Success(t *testing.T) {
 	defer cleanup()
 
 	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store.keyring = cryptotest.Keyring(t, testMasterKey)
 	ctx := context.Background()
 
 	// Create test key
@@ -333,6 +334,7 @@ func TestFileKeyStore_Delete_NotFound(t *testing.T) {
 	defer cleanup()
 
 	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store.keyring = cryptotest.Keyring(t, testMasterKey)
 	ctx := context.Background()
 
 	err := store.Delete(ctx, "NONEXISTENT")
@@ -346,6 +348,7 @@ func TestFileKeyStoreDeleteKeepsCacheWhenRemoveFails(t *testing.T) {
 	defer cleanup()
 
 	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store.keyring = cryptotest.Keyring(t, testMasterKey)
 	ctx := context.Background()
 
 	addr := "DELETEFAIL12345"
@@ -523,6 +526,88 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	}
 	if !strings.Contains(report.Warnings[0].Reason(), "witness public key does not match private key") {
 		t.Fatalf("scan warning = %v, want witness key mismatch", report.Warnings[0])
+	}
+}
+
+func TestFileKeyStoreScanRejectsPendingRotation(t *testing.T) {
+	keysDir, paths, cleanup := setupTestKeysDir(t)
+	defer cleanup()
+
+	passphrase := []byte("pending-rotation-passphrase")
+	keystoreDir := paths.KeystoreMetadataDir(testIdentityID)
+	kr, err := crypto.CreateKeyringStore(keystoreDir, passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	if err := crypto.StartRotation(
+		keystoreDir,
+		kr,
+		passphrase,
+		[]crypto.HistoricalGenerationAnchor{},
+		func(target *crypto.Keyring, _, _ int64) (crypto.RotationSnapshotReference, error) {
+			sealed, err := target.Seal([]byte("cutover"), crypto.RotationSnapshotContext())
+			if err != nil {
+				return crypto.RotationSnapshotReference{}, err
+			}
+			return crypto.NewRotationSnapshotReference(sealed)
+		},
+	); err != nil {
+		kr.Zero()
+		t.Fatalf("StartRotation() error = %v", err)
+	}
+	kr.Zero()
+
+	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	if err := store.Unlock(passphrase); err != nil {
+		t.Fatalf("Unlock() error = %v", err)
+	}
+	t.Cleanup(store.ClearKeys)
+	err = store.Scan(nil)
+	if !errors.Is(err, crypto.ErrRotationPending) ||
+		!strings.Contains(err.Error(), "rotation 1 -> 2 requires resume") {
+		t.Fatalf("Scan() error = %v, want pending rotation failure", err)
+	}
+	callbackCalled := false
+	err = store.WithKeyring(func(*crypto.Keyring) error {
+		callbackCalled = true
+		return nil
+	})
+	if !errors.Is(err, crypto.ErrRotationPending) {
+		t.Fatalf("WithKeyring() error = %v, want pending rotation failure", err)
+	}
+	if callbackCalled {
+		t.Fatal("WithKeyring() exposed a pending keyring to an ordinary runtime caller")
+	}
+	keyPath := createTestKeyFile(t, keysDir, "PENDINGDELETE", nil)
+	store.cache["PENDINGDELETE"] = keys.KeyScanInfo{
+		KeyFile: keyPath,
+		KeyType: "ed25519",
+	}
+	err = store.Delete(context.Background(), "PENDINGDELETE")
+	if !errors.Is(err, crypto.ErrRotationPending) {
+		t.Fatalf("Delete() error = %v, want pending rotation failure", err)
+	}
+	if _, statErr := os.Stat(keyPath); statErr != nil {
+		t.Fatalf("Delete() removed a snapshot-pinned key during rotation: %v", statErr)
+	}
+}
+
+func TestFileKeyStoreDeleteRejectsLockedStoreWithCachedEntry(t *testing.T) {
+	keysDir, paths, cleanup := setupTestKeysDir(t)
+	defer cleanup()
+
+	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	keyPath := createTestKeyFile(t, keysDir, "LOCKEDDELETE", nil)
+	store.cache["LOCKEDDELETE"] = keys.KeyScanInfo{
+		KeyFile: keyPath,
+		KeyType: "ed25519",
+	}
+	err := store.Delete(context.Background(), "LOCKEDDELETE")
+	if !errors.Is(err, ErrStoreLocked) {
+		t.Fatalf("Delete() error = %v, want locked-store failure", err)
+	}
+	if _, statErr := os.Stat(keyPath); statErr != nil {
+		t.Fatalf("Delete() removed a cached key while locked: %v", statErr)
 	}
 }
 

@@ -12,10 +12,10 @@ sections you need and which are archive.
 
 ## The one-paragraph version
 
-`apstore changepass` re-encrypts every managed file under a new key using a
-two-phase `.new`/`.old` swap. A crash partway through leaves the store with
-some files under the old key and some under the new, and there is no recovery
-path for managed keys or templates — validation fails closed into a state whose
+Before phase 3, `apstore changepass` re-encrypted every managed file under a
+new key using a two-phase `.new`/`.old` swap. A crash partway through left the
+store with some files under the old key and some under the new, and there was no
+recovery path for managed keys or templates — validation failed closed into a state whose
 only exit is restore-from-backup. Phase 3 removes that failure mode by changing
 what rotation *is*: instead of re-encrypting everything under one new key,
 append a numbered key *term*, record on each file which term sealed it, and
@@ -31,20 +31,45 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 
 | | Where |
 |---|---|
-| `keyring.enc` — the store's only cryptographic root: plaintext Argon2id parameters and salt over an AEAD-sealed term set | `internal/crypto/keyring.go`, `keyring_store.go` |
-| `.keystore` — a static marker: `{version: 4, layout: "keyring/v1"}` plus a `created` timestamp | `internal/crypto/keyring_store.go` |
+| `keyring.enc` — the store's only cryptographic root: plaintext Argon2id parameters and salt over an AEAD-sealed term set; strict schema `aplane.keyring.v2` now accepts settled and pending multi-term roots while enforcing the exact current-state authority set | `internal/crypto/keyring.go`, `keyring_store.go` |
+| `.keystore` — a static marker: `{version: 5, layout: "keyring/v2"}` plus a `created` timestamp | `internal/crypto/keyring_store.go` |
 | Term envelope (`envelope_version: 3`) — records the term that sealed it, binds term + object identity into the AEAD's authenticated data | `internal/crypto/term_envelope.go` |
 | `Keyring.Seal` / `Keyring.Open` — the only way to encrypt or decrypt store data | `internal/crypto/keyring.go` |
+| Keyring-confined integrity operations — policy, node-role, and generation-seal callers receive or verify MACs without receiving derived key bytes | `internal/crypto/policy_integrity.go` |
+| Generation seal v2 — pins the exact manifest bytes, records the signing term, and authenticates every security-bearing seal field with a domain-separated MAC | `internal/genstore/records.go` |
+| Policy and node-role sidecar v2 — records the explicit integrity term and rejects unknown fields, trailing JSON, non-canonical MACs, and unauthorized terms | `internal/policy/integrity.go`, `internal/noderole/integrity.go` |
+| K8 inventory foundation — canonical artifact kinds and root-relative paths across generations, recovered batches, deleted archives, integrity documents, and rotation records; exact term envelopes are opened under their logical context before being inventoried | `internal/rotationinventory` |
+| Cutover snapshot foundation — strict `aplane.rotation-snapshot.v1` body, recursive-snapshot exclusion, canonical rollback-authority digest, 16 MiB bounded durable storage, and exact encrypted-file root-reference verification | `internal/rotationinventory/snapshot.go`, `internal/crypto/keyring.go` |
+| Historical generation foundation — generation inventory entries authenticate each member's term, exact pre-retirement seal bytes can be root-anchored, and retired-term seals and members have a separate anchor-gated verification/open path | `internal/genstore`, `internal/crypto/keyring.go`, `internal/crypto/policy_integrity.go` |
+| Divergence-baseline foundation — strict `aplane.rotation-baseline.v1` codec, bounded current-term durable storage, manifest/prior-baseline cutover decision, and fail-closed preflight reconciliation | `internal/rotationinventory/baseline.go` |
+| Guarded transition start — baseline preflight, cutover inventory, complete historical-anchor collection, target-term snapshot durability, atomic pending-root publication, R5 retry refusal, and fail-closed pending runtime | `internal/rotationinventory/start.go`, `internal/crypto/keyring_store.go`, `internal/keystore/file.go`, `internal/signerapp/templates/reload.go` |
+| Snapshot-pinned resume — idempotent mutable-envelope rewrap, pinned-document sidecar renewal, exact preservation of anchored generations and plaintext, target-output authentication on retry, and partial-progress crash recovery | `internal/rotationinventory/resume.go` |
+| Verified completion — pre/post-baseline final scans, exact path and target-authority comparison, clean-only baseline publication, atomic pending-root close, and post-close snapshot cleanup/recovery | `internal/rotationinventory/complete.go`, `internal/crypto/keyring_store.go` |
+| Rollback consumption — matching authenticated baselines supersede at-mint inventory, divergence remains fail-closed, and restore rollback reconstructs an authenticated target into a fresh current-term generation | `internal/rotationinventory/baseline.go`, `internal/signerapp/backupadmin/rollback_generation.go` |
+| Operator/runtime lifecycle — `changepass` appends and synchronously completes a durable term rotation under the identity mutation lock; helper failure is a post-commit warning; interactive and headless unlock automatically resume before publishing the identity and enter recovery on failure | `internal/storepass/rotate.go`, `internal/signerapp/storeadmin/service.go`, `internal/signerapp/daemon/admin_services.go`, `internal/signerapp/daemon/run.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
-What that gives you: exactly one term (term 1), a single atomic root write, and
-every object already carrying a term number and an identity binding. What it
-does **not** give you is any of the transition — no append, no window, no
-authority split, no anchors.
+What that gives you: fresh stores begin at term 1; a guarded internal
+transition start can append exactly one successor term and publish a pending
+root only after its target-term snapshot is durable. Every encrypted object
+already carries a term number and an identity binding.
+The plaintext integrity documents and generation seals now carry the same
+explicit current-term authority. Trusted generation operations (rollback,
+retained-parent pruning, and flip-away sealing) require an open keyring;
+pre-unlock reconciliation only uses seal presence to classify unreachable
+attempts and does not treat an unverified seal as a rollback authority.
+Settled current-state reads accept exactly `{current_term}`; pending reads
+accept exactly `{current_term, rotation.from_term}`, regardless of what older
+keys remain resident. `changepass` now commits the new root first and completes
+the snapshot-pinned transition synchronously. Interactive and headless unlock
+run that same completion boundary before publishing runtime state; a failure
+opens only recovery mode. Direct key scanning still rejects a pending root.
+Restore rollback consumes a matching baseline and mints the authenticated
+target content under the current term.
 
-The properties that are proven today are K1–K7 in
-[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against a named test.
-K8 is listed there as not implemented on purpose; it is yours.
+The properties implemented today are K1–K8 and R1–R5 in
+[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md), each against named code and
+test anchors.
 
 ## Read the model early
 
@@ -63,8 +88,9 @@ negative control is the evidence that the positive model's guard is
 load-bearing rather than a vacuous consequence of its types.
 
 Read it before the proposal's prose. It is the most compact statement of what
-the transition must do, and its header now states the two places where the
-model assumes something the code does not yet provide.
+the transition must do, and its header identifies the implementation anchors
+for authority, pinned rewrap, baseline-before-close ordering, and final
+comparison.
 
 Run it with `python3 scripts/run-formal-tests.py`, which runs all 17 recorded
 TLC checks — 13 modules, three additional liveness configurations, and the R5
@@ -113,8 +139,8 @@ contain no empty, `.` or `..` component, never begin with `/`, are unique,
 and sort by raw UTF-8 byte order. Digests cover the exact bytes read from the
 regular file, not a parsed or re-encoded form.
 
-The body is size-limited independently of `keyring.enc`; the implementation
-must choose and test an explicit `maxRotationSnapshotBytes` before append is
+The body is size-limited independently of `keyring.enc`;
+`crypto.MaxRotationSnapshotBytes` is 16 MiB and is tested before append is
 enabled. The root stores only the SHA-256 digest and byte size of the exact
 sealed snapshot file. It never stores the inventory itself.
 
@@ -146,10 +172,13 @@ Commit ordering is:
 5. atomically clear the pending descriptor from `keyring.enc`;
 6. remove the now-unreferenced snapshot durably.
 
-A crash before step 2 leaves an unreferenced orphan that can be removed. A
-crash after step 2 must find the exact referenced snapshot or remain in
-rotation-pending recovery. Deleting the snapshot before clearing the root is
-forbidden.
+A crash before step 2 leaves a target-term snapshot beside the unchanged
+settled root. Unlock reopens and confirms that settled root, recognizes the
+unreferenced `current_term+1` snapshot as pre-root residue, and removes it
+durably; the unavailable target key is neither needed nor treated as
+authority. A crash after step 2 must find the exact referenced snapshot or
+remain in rotation-pending recovery. Deleting the snapshot before clearing a
+root that actually carries its descriptor is forbidden.
 
 **2. Where the transition's durable state lives.** The model treats five
 variables as surviving a crash: `pending`, `retiring`, `snapshot`,
@@ -275,27 +304,50 @@ and policy/node-role integrity sidecars receive their own version bumps when
 the seal MAC and explicit integrity term land; those versions are not
 overloaded into the keyring version.
 
+#### Schema review outcome
+
+The implementation review approved the three decisions above with these
+clarifications:
+
+- durable term IDs use signed 64-bit values, matching the stated
+  `[1, 2^63-1]` range independently of the host's native `int` width;
+- `terms` and `historical_anchors` are required JSON arrays. A settled fresh
+  store writes `historical_anchors: []`; absence or `null` is malformed.
+  `rotation` is omitted only when no transition is pending;
+- every SHA-256 field is exactly 64 lowercase hexadecimal characters and every
+  referenced size is positive. Historical anchors sort strictly by canonical
+  generation ID, and terms sort strictly by ID;
+- the sealed snapshot file has an independent 16 MiB read/reference cap
+  (`crypto.MaxRotationSnapshotBytes`). This is a cap on the exact encrypted file
+  pinned by the root, not part of the 1 MiB `keyring.enc` allowance;
+- keyring and marker decoding rejects unknown fields and trailing JSON before
+  the data is used. Required-field and canonical-encoding checks then reject
+  missing arrays, non-canonical base64 header fields, invalid digests, and
+  inconsistent transition state;
+- the v2 root and version-5 marker initially landed with the old one-term
+  rejection. The guarded transition-start slice later accepted multi-term,
+  pending, and anchored roots while adding `Keyring.Open` authority-set
+  enforcement and the R5 `StartRotation` guard in the same change, as items 4
+  and 5 require.
+
 ### Enforcement that must land with the code it guards
 
-**4. `Keyring.Open` must consult an authority set, not term membership.**
-Today it looks a term up in `kr.terms` and reads it if present. The model's
-rule is that the current term is always readable and a retiring term only while
-the window is open. Invariants R1 and R2 both rest on reads being *refused*
-outside authority. If retired terms simply stay in the keyring after the window
-closes, they stay readable and neither invariant transfers from model to code.
+**4. `Keyring.Open` consults an authority set, not term membership.**
+Implemented: settled roots authorize only `current_term`; pending roots
+authorize only `current_term` and `rotation.from_term`. An older resident term
+is refused for both envelopes and integrity records. Historical generation
+access remains a separate exact-anchor-gated operation rather than an
+exception to current-state authority. Invariants R1 and R2 rely on this
+refusal; the rewrap/completion code must preserve it.
 
-**5. R5's guard must be installed in the same change that relaxes the
-multi-term rejection.** `OpenKeyring` currently refuses any root with more than
-one term — deliberately, so that a phase-1 binary cannot read a phase-3 store.
-Phase 3 relaxes that. The model's protection against a second append is
-`StartRotation` requiring no rotation already in flight; that guard has to
-appear as the rejection disappears, or there is a window with neither. The
-formal half of this gate is complete: the positive model checks R5 and the
-standard harness requires the unguarded resume mutation to violate it. The
-implementation guard remains part of the same code change that relaxes the
-multi-term rejection, not follow-up work.
+**5. R5's guard landed with multi-term acceptance.** `StartRotation` refuses
+any root with a rotation descriptor before snapshot construction or durable
+write, appends only `current_term + 1`, and rejects integer overflow. The
+positive model checks R5 and the standard harness requires the unguarded
+resume mutation to violate it. Implementation tests prove a direct second
+call and a reopened pending root cannot append again.
 
-**6. K8 — the cross-artifact term inventory — before append is enabled.**
+**6. K8 — the cross-artifact term inventory and lifecycle enforcement.**
 K8 classifies every durable store artifact rather than incorrectly requiring
 every plaintext file to carry an encryption term:
 
@@ -303,7 +355,7 @@ every plaintext file to carry an encryption term:
 |---|---|---|
 | Term-encrypted | active `.key` and `.sen` credentials; installed `.template` files; published recovered batch metadata and entries; deleted key, sentry-credential, and template archives; rotation snapshot and baseline | Envelope carries a term and the class-specific logical context. Mutable and inactive store consumers, including `deleted/`, are snapshot-pinned and rewrapped onto the target term. The snapshot itself is a new target-term record pinned by the root and is not recursively inventoried. A valid matching baseline that exists before cutover is pinned as an input; the baseline written during completion is a target-term output and is not recursively inventoried as another input. |
 | Plaintext plus term integrity | `policy.yaml` and root `node.yaml`, through their identity-local HMAC sidecars | Sidecar v2 carries an explicit integrity term. Snapshot pins the exact document input; completion requires a target-term sidecar. |
-| Plaintext generation member | key-type state records, witness public metadata, generation manifest, and generation seal | No per-file encryption term is invented. Namespace members are covered by the seal inventory; `manifest.json` is covered by the seal's manifest digest; the seal MAC, historical anchor, and exact-byte historical open provide the term authority described above. |
+| Plaintext generation member | key-type state records, witness public metadata, generation manifest, and retained-generation seal | No per-file encryption term is invented. Namespace members are covered by the seal inventory; `manifest.json` is covered by the seal's manifest digest; the retained seal MAC, historical anchor, and exact-byte historical open provide the term authority described above. A seal beside `CURRENT` is precommit crash residue: its structure is tolerated but its content is never parsed or inventoried by rotation. |
 | Independent or excluded | `keyring.enc` and `.keystore`; standalone-passphrase backups; audit/config/unlock/token/SSH state; plaintext template library; caches; unpublished staging residue | Not opened as a term-encrypted store object. The KEK-sealed root and static marker keep their own versioned contract; other existing independent validation applies. Staging residue is reconciled or rejected before cutover, never promoted by rewrap. |
 
 The `deleted/` choice is deliberate: these paths are durable inactive archives
@@ -319,25 +371,184 @@ it mutates the member and proves the seal MAC or anchor rejects it. Each gate
 must have a mutation-tested negative control. Without K8, a missed writer can
 become unreadable only when a term retires, long after the causal write.
 
+#### K8 implementation boundary
+
+`internal/rotationinventory` now defines the canonical artifact kinds and
+entry fields (`path`, `kind`, exact byte `size`/`sha256`, and term-envelope
+context or integrity term where applicable). Its settled-store scanner:
+
+- inventories current and retained generation members, recovered batches,
+  deleted credential/template archives, policy and node-role document pairs,
+  retained-generation seals, and optional rotation records; a seal beside
+  `CURRENT` remains structurally checked by generation validation but is
+  excluded as non-authoritative precommit residue;
+- rejects unknown in-scope files and unreconciled generation staging residue;
+- opens the exact encrypted buffer it hashes under the context derived from
+  the canonical filename or recovered-batch metadata;
+- retains the current manifest and current generation inventory derived from
+  those same exact buffers; rollback clean/diverged decisions and completion
+  baselines consume these retained values and never reread mutable paths;
+- verifies retained namespace buffers against the authenticated seal entry
+  before opening them, and parses exact manifest/seal buffers together;
+- excludes documented independent state from the inventory.
+
+During pending-rotation resume, the `basename.tmp-*` namespace used by
+`WriteFileDurable` is reserved implementation state. Resume durably removes
+regular crash-orphaned temps for each pinned target before reading it and
+rejects non-regular residue; this keeps a crash before atomic rename
+idempotently resumable without treating a temp as an additional K8 artifact.
+
+The same package now implements the strict
+`aplane.rotation-snapshot.v1` plaintext body and target-term envelope:
+
+- `ScanForSnapshot` excludes `rotation.snapshot.enc` itself while retaining a
+  valid pre-existing baseline as an input;
+- the body requires consecutive positive `{from_term,to_term}`, the canonical
+  K8 inventory, and optional rollback cutover metadata naming the current
+  generation, its `clean`/`diverged` decision, and the effective manifest or
+  prior-baseline inventory authority;
+- future-term inputs and recursive snapshot entries are rejected;
+- the effective generation inventory digest is a domain-separated canonical
+  encoding, not JSON bytes;
+- `WriteSnapshot` uses `WriteFileDurable` and returns the exact encrypted
+  size/digest that the pending root carries;
+- `ReadReferencedSnapshot` performs a no-follow bounded read, verifies that
+  exact root reference before opening the same buffer under
+  `rotation-snapshot:pending`, and requires the envelope and body to name the
+  root's target transition.
+
+The independent encrypted-file bound is 16 MiB. The v2 keyring payload
+validator and `OpenKeyring` accept the same exact-reference contract.
+Multi-term acceptance does not authorize every resident term: ordinary open
+and integrity verification apply the authority set in item 4.
+
+`TestScanClassifiesEveryK8DurableClass` creates every applicable class,
+including generation copies, deleted moves, and recovered staging
+publication. Dedicated negative controls cover selector/class substitution,
+unauthorized sidecar terms, mutated sealed plaintext members, and unknown
+in-scope files.
+
+Generation inventory entries now record `term`: zero for plaintext and the
+positive envelope term for term-encrypted members. The canonical inventory
+digest and seal MAC both bind that field. Exact member verification derives
+the term from the same byte buffer whose size and digest are checked, so an
+envelope cannot be substituted for a plaintext member or vice versa. An
+unanchored seal remains valid only when its seal term and every term-bearing
+entry use the current keyring term.
+
+`BuildHistoricalAnchor` is intentionally usable only while the seal remains
+ordinary current authority after that generation becomes non-current. It pins
+the exact seal byte length and SHA-256.
+Historical validation checks that anchor before accepting the seal MAC under a
+retained term; `ReadAnchoredBytes` then checks one exact member against its
+authenticated entry, and `OpenAnchoredEnvelope` uses the dedicated historical
+open path. A retired key without its anchor is insufficient, and an anchor
+without the retained key is insufficient. The K8 scanner also rejects
+term-envelope/plaintext substitution for semantic plaintext members.
+
+The same package now owns `aplane.rotation-baseline.v1`. Its plaintext has
+exactly `generation_id`, `entry_count`, and the canonical inventory digest;
+the fixed record is strictly parsed, bounded to 4 KiB including its encrypted
+file, sealed under current-term context `rotation-baseline:current`, and
+published durably. `EvaluateRollbackCutover` makes the pre-rewrap
+clean/diverged decision against the at-mint manifest or a matching
+authenticated prior baseline. It rejects another generation's baseline and
+never converts a mismatch into `clean`.
+
+`ReconcileBaselineForPreflight` preserves a matching baseline, durably removes
+a valid stale one, and blocks without deleting malformed, wrong-context, or
+unauthorized-term evidence. The K8 scanner also parses the baseline and
+requires it to name `CURRENT`, so a caller cannot accidentally snapshot stale
+or semantically malformed baseline bytes.
+
+`rotationinventory.StartRotation` now runs baseline reconciliation before the
+snapshot scan, evaluates rollback divergence for the rollback-eligible
+current generation, collects and preserves the complete retained-generation
+anchor set, and calls `crypto.StartRotation`. Its snapshot callback durably
+publishes the exact target-term body before the root write; the pending root
+then publishes the snapshot reference, new current term, former current term,
+and anchor set atomically. A pre-root failure leaves the old authority in
+memory and on disk (an orphan snapshot may remain). If rename succeeded but
+directory sync failed, the implementation classifies the visible exact root,
+adopts it in memory, and returns a durability-unknown error that must not be
+retried as a fresh start. An unclassifiable root state similarly requires
+recovery, not retry.
+
+`ResumeRotation` reopens the exact root-referenced snapshot on every pass.
+For mutable envelopes it accepts a target-term file only after opening that
+same bounded buffer under its pinned logical context; it otherwise requires
+the retiring-term bytes to match the snapshot exactly before opening and
+durably re-sealing them. It re-signs policy and node-role sidecars only over
+the exact pinned document bytes. Anchored historical generations and all
+other plaintext entries must remain byte-for-byte unchanged. A durable-write
+failure can return a partial report; if rename was visible, the next pass
+authenticates that target output and continues without rewriting it. Missing,
+substituted, oversized, symlinked, wrong-term, or digest-mismatched inputs
+fail closed rather than being blessed onto the target term.
+
+`CompleteRotation` owns the next boundary. It first runs resume, then scans
+the complete K8 scope and compares it with the snapshot: anchored historical
+and plaintext entries remain exact; mutable envelopes retain their pinned
+kind/context on the target term; sidecars carry target integrity authority;
+the exact root-referenced snapshot is present; and no unpinned path exists.
+A clean rollback cutover computes and durably publishes its post-rewrap
+current-generation baseline. A second complete scan repeats the path and
+authority checks and requires that baseline to match the final generation
+inventory. Only then does `crypto.CloseRotation` atomically clear the pending
+descriptor. Snapshot removal is ordered after the settled root is durable.
+
+If start never publishes its root, a later completion call confirms the old
+settled root and durably discards the unreferenced `current_term+1` snapshot.
+If close rename is visible but directory sync fails, the settled root is
+adopted while the snapshot remains. A later completion call authenticates the
+unreferenced snapshot against the visible settled root, syncs the root
+directory, and removes the snapshot. A clean baseline already visible after a
+durability error is authenticated and reused on retry. Diverged cutovers
+never receive a new baseline. Normal reload and key scans continue to fail
+closed only while a pending root remains. `Keyring.RequireSettled` also
+blocks ordinary runtime keyring access, signing-key loads, direct keystore
+mutation, offline passphrase change, policy signing/editing, and generation
+pruning during that window.
+
+`storepass.Rotate` is the operator start path. The service fences signing and
+clears published runtime state before entering the identity mutation lock's
+transition; only verified completion and reload republish it, and a racing
+explicit lock wins. Rotation appends the term, updates any configured
+passphrase helper after the root commit, and calls completion. A helper-write
+failure is reported as a warning and cannot roll back the new authority or
+block completion. A later failure leaves the root pending and the runtime
+locked, and tells the operator to unlock manually with the new passphrase.
+Interactive and headless daemon unlock call completion after generation
+reconciliation and before ordinary reload; an authenticated failure enters
+recovery with signing disabled.
+
 ### The original blockers
 
 **7. The cutover snapshot** (design in item 1) — an authenticated pin of what
 the rewrap may consume. Without it, laundering.
 
-**8. Historical anchors and the seal MAC.** `seal.json` is unkeyed, so a
-retired term can forge a sealed generation and recompute its seal, which
-mint-on-rollback would then bless under the current term. Compounding this:
-generations contain plaintext members (key-type state, witness public
-metadata), so a filesystem attacker holding *no keys at all* can alter a sealed
-generation and recompute its seal. That predates rotation, but rotation's
-anchoring rules have to account for it.
+**8. Historical anchors and the seal MAC.** Generation seal v2 authenticates
+the exact manifest digest, explicit integrity term, and canonical inventory,
+including every member's term, under the seal term's generation-seal integrity
+key. Exact pre-retirement seal anchors and the anchor-gated historical
+verification/open primitives are implemented. This closes both the
+pre-rotation no-key forgery and the retired-key-only forgery: historical
+acceptance requires an exact root-pinned seal and its retained key.
+Transition start now collects the complete retained-generation anchor set and
+commits it atomically with the snapshot reference before the old term retires.
 
 **9. The divergence baseline.** Mandatory rewrap changes every ciphertext
 digest, which trips the post-activation rollback guard that compares those
 digests against the at-mint manifest. Without a baseline recorded before the
 window closes, every later rollback of that generation is refused —
-permanently. The model's R3 is exactly this, and its negative control
-reproduces it.
+permanently. The strict record, current-term durable storage, effective
+authority decision, preflight reconciliation, and rollback consumption are
+implemented. The completion boundary writes a required clean baseline before
+clearing the window and refuses to write one for a diverged cutover. Restore
+rollback uses only a matching authenticated baseline to supersede the
+manifest, validates the sealed target, and mints its exact content under the
+current term. The model's R3 is exactly this ordering, and its negative
+control reproduces the baseline-after-close failure.
 
 **10. Plaintext generation members** — see item 8; listed separately because it
 may need its own fix rather than only an anchoring rule.
@@ -346,19 +557,13 @@ may need its own fix rather than only an anchoring rule.
 
 **11. Two things the code would otherwise lose by accident.** Snapshot
 construction must exclude cooperating store and generation mutations.
-`changepass` gets that exclusion today from the identity mutation lock plus
-generation quiescence — but be careful which half of quiescence you carry
-forward. The proposal retires `requireGenerationQuiescence` (in
-`internal/storepass/rotate.go`) along with its prune-all-priors prerequisite;
-that retention sense of quiescence dissolves in phase 3. The mutual-exclusion
-sense — no cooperating generation mutation while the inventory is being
-pinned — must survive under the identity mutation lock as a requirement term
-append states itself rather than inherits by luck. Direct filesystem writes
-are handled by the exact-byte and final-inventory checks in item 1, not by
-claiming the lock excludes the attacker. And term append must use the atomic
-`WriteKeyring`, **not** the two-phase `.new`/`.old` swap that `changepass`
-currently carries the root through — that swap is what phase 3 exists to
-retire, and reusing it would give up the atomicity R5 depends on.
+`changepass` gets that exclusion from the identity mutation lock. The former
+`requireGenerationQuiescence` and prune-all-priors prerequisite are retired;
+retained generations are instead authenticated by historical anchors.
+Direct filesystem writes are handled by the exact-byte and final-inventory
+checks in item 1, not by claiming the lock excludes the attacker. Term append
+uses atomic keyring root publication and no longer carries the root through
+the two-phase `.new`/`.old` swap.
 
 ## Two things that are easy to get wrong
 

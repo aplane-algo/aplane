@@ -280,7 +280,13 @@ To change your keystore passphrase:
 ./apstore changepass
 ```
 
-For security, `changepass` requires you to manually enter the current passphrase. It does not read the current passphrase from `passphrase_command_argv`, `appass-file`, `appass-systemd-creds`, or `APSIGNER_PASSPHRASE`. If an auto-unlock helper is configured, `changepass` updates that helper with the new passphrase after the keystore files are rotated.
+For security, `changepass` requires you to manually enter the current
+passphrase. It does not read the current passphrase from
+`passphrase_command_argv`, `appass-file`, `appass-systemd-creds`, or
+`APSIGNER_PASSPHRASE`. If an auto-unlock helper is configured, `changepass`
+updates that helper immediately after the new cryptographic root is committed.
+A helper-update failure is a warning: the new passphrase remains authoritative,
+and you can unlock manually with it while repairing the helper.
 
 Systemd installs mark the signer data directory with `.prod`. In that
 mode, run `sudo apstore -d /var/lib/apsigner changepass`; non-root attempts are
@@ -292,22 +298,23 @@ When run against systemd data, `apstore` returns managed store files to the
 signer data directory owner/group after successful mutations, while
 `appass-systemd-creds` files remain root-owned.
 
-A passphrase change generates a fresh key for the store rather than deriving
-one from the passphrase, then safely re-encrypts all keys, templates, and
-published recovered-batch files and re-signs the policy and node-role integrity
-sidecars under it, using a two-phase atomic operation. Rotation rejects unresolved
-recovered-batch state instead of silently leaving it under the old key:
-1. **Phase 1**: Creates new encrypted files (`.new`) and verifies each one
-2. **Phase 2**: Atomically swaps old files for new files
+A passphrase change appends a fresh numbered key term and atomically commits
+the new root under the new passphrase. It then re-encrypts live keys,
+templates, and published recovered-batch files and re-signs policy and
+node-role integrity sidecars from an authenticated cutover snapshot. Retained
+generations stay byte-for-byte unchanged and readable through their historical
+term anchors.
 
-If a step returns an error while the process is running, the operation is
-rolled back automatically.
-If the process stops after writing or swapping recovered-batch files, retrying
-`changepass` removes exact stale `.new` and `.old` siblings when the canonical
-file validates, or restores the canonical file from an exact sibling that
-validates under the current store key. Other files or activation state inside a
-recovered batch remain a hard error and must be resolved through the recovery
-workflow; do not rename or delete recovered credential files manually.
+The root commit is the point of no return. If the process stops later, do not
+rerun `changepass`: unlock with the new passphrase. Interactive and automatic
+startup unlock resume the exact pending transition before enabling signing. If
+resume cannot authenticate or complete the snapshot, the signer enters
+recovery mode instead of publishing a partially rotated identity.
+
+When prior generations are retained, `changepass` warns that they remain
+readable under pre-change terms. Run
+`apstore generations prune --all-priors` only when you intentionally want to
+give up those rollback targets.
 
 ### Template Management
 
@@ -469,8 +476,10 @@ storage: `identities/<identity>/CURRENT` names the active generation under
 `generations/`, and every restore activation commits as a complete new
 generation with one durable pointer flip. Activation on these stores cannot
 be left half-applied — a failure before the flip leaves the batch inactive
-and nothing published, and `restore rollback <restore-id>` repoints the
-store at the pre-activation generation.
+and nothing published, and `restore rollback <restore-id>` restores the
+pre-activation content by minting a fresh generation.
+Encrypted members stay on the current key term; the command does not make an
+older generation current again.
 
 Every release is incompatible with every prior release: this release reads
 only stores it initialized. There is no layout migration — to move keys
@@ -485,12 +494,11 @@ Manage generations offline (daemon stopped):
 ./apstore generations prune --all-priors  # keep only current
 ```
 
-Passphrase rotation on a generational store requires generation quiescence —
-run `apstore generations prune --all-priors` first; after a successful
-rotation the retention window restarts empty. **Pruning permanently deletes
-the generation rollback history**: after `prune --all-priors`, rolling back
-the most recent operation (including a restore activation) is no longer
-possible.
+Passphrase rotation does not require generation pruning. Retained generations
+remain rollback targets and stay readable under their historical key terms.
+**Pruning permanently deletes the generation rollback history**: after
+`prune --all-priors`, rolling back the most recent operation (including a
+restore activation) is no longer possible.
 
 Both prune modes ask for explicit confirmation before deleting anything,
 stating what is being given up. `prune --all-priors` additionally abandons

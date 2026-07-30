@@ -110,6 +110,15 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 
 	var beforeKeyScanErr error
 	if err := s.KeyStore.WithKeyring(func(kr *crypto.Keyring) error {
+		if state, pending := kr.PendingRotation(); pending {
+			beforeKeyScanErr = fmt.Errorf(
+				"%w: key rotation %d -> %d is pending; resume is required before reload",
+				ErrGenerationValidation,
+				state.FromTerm,
+				state.ToTerm,
+			)
+			return beforeKeyScanErr
+		}
 		if s.BeforeKeyScan != nil {
 			if err := s.BeforeKeyScan(kr); err != nil {
 				beforeKeyScanErr = err
@@ -140,6 +149,9 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 		return nil
 	}); err != nil {
 		clearInitializedMasterKey()
+		if errors.Is(err, crypto.ErrRotationPending) {
+			return nil, fmt.Errorf("%w: %v", ErrGenerationValidation, err)
+		}
 		if beforeKeyScanErr != nil {
 			return nil, fmt.Errorf("reload pre-scan hook failed: %w", beforeKeyScanErr)
 		}

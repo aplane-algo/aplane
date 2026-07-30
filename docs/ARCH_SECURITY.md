@@ -729,12 +729,12 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
 - The KEK never outlives the unwrap, so a memory disclosure yields term keys but
   not the ability to unwrap a future keyring
 
-**Keyring Root (`keyring.enc`), schema `aplane.keyring.v1`:**
+**Keyring Root (`keyring.enc`), schema `aplane.keyring.v2`:**
 
 ```json
 {
-  "schema": "aplane.keyring.v1",
-  "envelope_version": 1,
+  "schema": "aplane.keyring.v2",
+  "envelope_version": 2,
   "kdf_time": 2,
   "kdf_memory": 65536,
   "kdf_threads": 4,
@@ -751,8 +751,8 @@ unwrap, not secrets. Everything secret is inside `sealed_keyring`.
 
 ```json
 {
-  "version": 4,
-  "layout": "keyring/v1",
+  "version": 5,
+  "layout": "keyring/v2",
   "created": "2026-07-27T07:35:34Z"
 }
 ```

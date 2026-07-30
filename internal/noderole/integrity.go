@@ -4,11 +4,12 @@
 package noderole
 
 import (
-	"crypto/hmac"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -19,19 +20,20 @@ import (
 )
 
 const (
-	IntegritySidecarVersion = 1
+	IntegritySidecarVersion = 2
 	IntegrityAlgorithm      = "hmac-sha256"
 	IntegrityKeyID          = "keystore-master-hkdf-node-role-v1"
 )
 
 type IntegritySidecar struct {
-	Version      int    `json:"version"`
-	Algorithm    string `json:"algorithm"`
-	KeyID        string `json:"key_id"`
-	HMAC         string `json:"hmac"`
-	NodeSHA256   string `json:"node_sha256,omitempty"`
-	SignedAtUnix int64  `json:"signed_at_unix,omitempty"`
-	NodeMTimeNS  int64  `json:"node_mtime_ns,omitempty"`
+	Version       int    `json:"version"`
+	Algorithm     string `json:"algorithm"`
+	KeyID         string `json:"key_id"`
+	IntegrityTerm int64  `json:"integrity_term"`
+	HMAC          string `json:"hmac"`
+	NodeSHA256    string `json:"node_sha256,omitempty"`
+	SignedAtUnix  int64  `json:"signed_at_unix,omitempty"`
+	NodeMTimeNS   int64  `json:"node_mtime_ns,omitempty"`
 }
 
 func Load(paths storepaths.Paths) (Document, []byte, error) {
@@ -71,15 +73,10 @@ func SaveInitial(paths storepaths.Paths, role Role, createdAt time.Time) ([]byte
 }
 
 func SaveIdentitySidecarWithKeyring(paths storepaths.Paths, identityID string, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
-	key, err := kr.NodeRoleIntegrityKey()
-	if err != nil {
-		return err
-	}
-	defer apcrypto.ZeroBytes(key)
-	return SaveIdentitySidecar(paths, identityID, roleBytes, key, signedAt)
+	return SaveIdentitySidecar(paths, identityID, roleBytes, kr, signedAt)
 }
 
-func SaveIdentitySidecar(paths storepaths.Paths, identityID string, roleBytes, key []byte, signedAt time.Time) error {
+func SaveIdentitySidecar(paths storepaths.Paths, identityID string, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
 	if _, err := ParseDocument(roleBytes); err != nil {
 		return err
 	}
@@ -87,7 +84,7 @@ func SaveIdentitySidecar(paths storepaths.Paths, identityID string, roleBytes, k
 	if err != nil {
 		return fmt.Errorf("failed to stat node role %s: %w", paths.NodeRolePath(), err)
 	}
-	sidecar, err := Sign(roleBytes, key, signedAt, info.ModTime().UnixNano())
+	sidecar, err := Sign(roleBytes, kr, signedAt, info.ModTime().UnixNano())
 	if err != nil {
 		return err
 	}
@@ -106,15 +103,10 @@ func SaveIdentitySidecar(paths storepaths.Paths, identityID string, roleBytes, k
 }
 
 func LoadAndVerifyWithKeyring(paths storepaths.Paths, identityID string, kr *apcrypto.Keyring) (Document, error) {
-	key, err := kr.NodeRoleIntegrityKey()
-	if err != nil {
-		return Document{}, err
-	}
-	defer apcrypto.ZeroBytes(key)
-	return LoadAndVerify(paths, identityID, key)
+	return LoadAndVerify(paths, identityID, kr)
 }
 
-func LoadAndVerify(paths storepaths.Paths, identityID string, key []byte) (Document, error) {
+func LoadAndVerify(paths storepaths.Paths, identityID string, kr *apcrypto.Keyring) (Document, error) {
 	doc, roleBytes, err := Load(paths)
 	if err != nil {
 		return Document{}, err
@@ -123,34 +115,39 @@ func LoadAndVerify(paths storepaths.Paths, identityID string, key []byte) (Docum
 	if err != nil {
 		return Document{}, err
 	}
-	if err := Verify(roleBytes, sidecar, key); err != nil {
+	if err := Verify(roleBytes, sidecar, kr); err != nil {
 		return Document{}, err
 	}
 	return doc, nil
 }
 
-func Sign(roleBytes, key []byte, signedAt time.Time, nodeMTimeNS int64) (*IntegritySidecar, error) {
-	if err := validateKey(key); err != nil {
-		return nil, err
+func Sign(roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time, nodeMTimeNS int64) (*IntegritySidecar, error) {
+	if kr == nil {
+		return nil, roleError(ErrRoleSidecarBad, "keyring is required")
 	}
 	if signedAt.IsZero() {
 		signedAt = time.Now()
 	}
+	term, mac, err := kr.SignIntegrity(apcrypto.IntegrityDomainNodeRole, roleBytes)
+	if err != nil {
+		return nil, roleWrap(ErrRoleSidecarBad, err, "failed to sign node role integrity")
+	}
 	sum := sha256.Sum256(roleBytes)
 	return &IntegritySidecar{
-		Version:      IntegritySidecarVersion,
-		Algorithm:    IntegrityAlgorithm,
-		KeyID:        IntegrityKeyID,
-		HMAC:         computeHMAC(roleBytes, key),
-		NodeSHA256:   hex.EncodeToString(sum[:]),
-		SignedAtUnix: signedAt.UTC().Unix(),
-		NodeMTimeNS:  nodeMTimeNS,
+		Version:       IntegritySidecarVersion,
+		Algorithm:     IntegrityAlgorithm,
+		KeyID:         IntegrityKeyID,
+		IntegrityTerm: term,
+		HMAC:          mac,
+		NodeSHA256:    hex.EncodeToString(sum[:]),
+		SignedAtUnix:  signedAt.UTC().Unix(),
+		NodeMTimeNS:   nodeMTimeNS,
 	}, nil
 }
 
-func Verify(roleBytes []byte, sidecar *IntegritySidecar, key []byte) error {
-	if err := validateKey(key); err != nil {
-		return err
+func Verify(roleBytes []byte, sidecar *IntegritySidecar, kr *apcrypto.Keyring) error {
+	if kr == nil {
+		return roleError(ErrRoleSidecarBad, "keyring is required")
 	}
 	if sidecar == nil {
 		return roleError(ErrRoleSidecarBad, "missing sidecar data")
@@ -164,17 +161,19 @@ func Verify(roleBytes []byte, sidecar *IntegritySidecar, key []byte) error {
 	if sidecar.KeyID != IntegrityKeyID {
 		return roleError(ErrRoleUnsupported, "key_id %q", sidecar.KeyID)
 	}
-	got, err := hex.DecodeString(sidecar.HMAC)
-	if err != nil {
+	if sidecar.IntegrityTerm <= 0 {
+		return roleError(ErrRoleSidecarBad, "missing integrity_term")
+	}
+	if err := validateCanonicalHMAC(sidecar.HMAC); err != nil {
 		return roleWrap(ErrRoleSidecarBad, err, "invalid hmac encoding")
 	}
-	expectedHex := computeHMAC(roleBytes, key)
-	expected, err := hex.DecodeString(expectedHex)
-	if err != nil {
-		return roleWrap(ErrRoleSidecarBad, err, "internal hmac encoding failure")
-	}
-	if !hmac.Equal(expected, got) {
-		return roleError(ErrRoleMismatch, "hmac mismatch")
+	if err := kr.VerifyIntegrity(
+		apcrypto.IntegrityDomainNodeRole,
+		roleBytes,
+		sidecar.IntegrityTerm,
+		sidecar.HMAC,
+	); err != nil {
+		return roleWrap(ErrRoleMismatch, err, "HMAC verification failed")
 	}
 	return nil
 }
@@ -192,7 +191,12 @@ func MarshalSidecar(sidecar *IntegritySidecar) ([]byte, error) {
 
 func ParseSidecar(data []byte) (*IntegritySidecar, error) {
 	var sidecar IntegritySidecar
-	if err := json.Unmarshal(data, &sidecar); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&sidecar); err != nil {
+		return nil, roleWrap(ErrRoleSidecarBad, err, "failed to parse sidecar")
+	}
+	if err := requireJSONEOF(decoder); err != nil {
 		return nil, roleWrap(ErrRoleSidecarBad, err, "failed to parse sidecar")
 	}
 	return &sidecar, nil
@@ -209,17 +213,27 @@ func LoadSidecar(path string) (*IntegritySidecar, error) {
 	return ParseSidecar(data)
 }
 
-func computeHMAC(roleBytes, key []byte) string {
-	mac := hmac.New(sha256.New, key)
-	mac.Write(roleBytes)
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
-func validateKey(key []byte) error {
-	if len(key) != apcrypto.NodeRoleIntegrityKeyLength {
-		return roleError(ErrRoleKeyInvalid, "expected %d bytes, got %d", apcrypto.NodeRoleIntegrityKeyLength, len(key))
+func validateCanonicalHMAC(encoded string) error {
+	decoded, err := hex.DecodeString(encoded)
+	if err != nil {
+		return err
+	}
+	if len(decoded) != sha256.Size || encoded != hex.EncodeToString(decoded) {
+		return fmt.Errorf("expected canonical lowercase SHA-256 hex")
 	}
 	return nil
+}
+
+func requireJSONEOF(decoder *json.Decoder) error {
+	var trailing any
+	switch err := decoder.Decode(&trailing); err {
+	case io.EOF:
+		return nil
+	case nil:
+		return fmt.Errorf("trailing data after JSON document")
+	default:
+		return fmt.Errorf("trailing data after JSON document: %w", err)
+	}
 }
 
 func roleError(kind error, format string, args ...any) error {

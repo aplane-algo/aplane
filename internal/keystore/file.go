@@ -34,7 +34,7 @@ type FileKeyStore struct {
 	scanWarnings []keys.KeyScanWarning
 	cacheLock    sync.RWMutex
 
-	// The store's keyring, opened once at unlock. Phase 1 holds one term.
+	// The store's keyring, opened once at unlock and zeroed on lock.
 	keyring *crypto.Keyring
 }
 
@@ -104,6 +104,10 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("keystore not unlocked after unlock")
 	}
+	if err := f.keyring.RequireSettled(); err != nil {
+		f.cacheLock.RUnlock()
+		return fmt.Errorf("keystore key scan blocked: %w", err)
+	}
 	// Resolve the active layout once per scan: on a generational store this
 	// binds the scan (and the absolute KeyFile paths it caches) to the
 	// generation CURRENT names right now, so every reload after a pointer
@@ -135,6 +139,9 @@ func (f *FileKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
 	defer f.cacheLock.RUnlock()
 	if f.keyring == nil {
 		return fmt.Errorf("keystore not unlocked (keyring not available): %w", ErrStoreLocked)
+	}
+	if err := f.keyring.RequireSettled(); err != nil {
+		return err
 	}
 	return fn(f.keyring)
 }
@@ -206,6 +213,10 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	if f.keyring == nil {
 		f.cacheLock.RUnlock()
 		return nil, fmt.Errorf("keystore not unlocked: %w", ErrStoreLocked)
+	}
+	if err := f.keyring.RequireSettled(); err != nil {
+		f.cacheLock.RUnlock()
+		return nil, fmt.Errorf("keystore signing blocked: %w", err)
 	}
 	// Decrypt under the read lock, straight from the keyring: no term key
 	// copy is made, so none can outlive the lock or survive ClearKeys.
@@ -359,6 +370,14 @@ func (f *FileKeyStore) GetMetadata(ctx context.Context, address string) (*KeyMet
 // Delete removes a key from the store
 func (f *FileKeyStore) Delete(ctx context.Context, address string) error {
 	f.cacheLock.RLock()
+	if f.keyring == nil {
+		f.cacheLock.RUnlock()
+		return fmt.Errorf("keystore mutation blocked: %w", ErrStoreLocked)
+	}
+	if err := f.keyring.RequireSettled(); err != nil {
+		f.cacheLock.RUnlock()
+		return fmt.Errorf("keystore mutation blocked: %w", err)
+	}
 	info, exists := f.cache[address]
 	f.cacheLock.RUnlock()
 	if !exists {

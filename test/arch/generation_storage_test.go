@@ -29,6 +29,7 @@ var storeOwningPackages = []string{
 	"internal/templatelibrary",
 	"internal/defaultkeytypes",
 	"internal/backup",
+	"internal/rotationinventory",
 	"internal/storepass",
 	"internal/signerapp/backupadmin",
 	"internal/signerapp/identity",

@@ -16,6 +16,8 @@ const (
 	SignerStateRecovery
 )
 
+const MaintenanceInProgressMessage = "store maintenance in progress"
+
 const LockedDuringUnlockMessage = "signer locked during unlock"
 
 func (s SignerState) String() string {
@@ -34,14 +36,25 @@ func (s SignerState) String() string {
 // Runtime owns signer lock state.
 type Runtime struct {
 	state SignerState
-	// lockGen increments on every Lock call. TryUnlock snapshots it before
-	// running the unlock function and re-checks it under stateMu before
-	// transitioning to unlocked, so a lock that raced the unlock wins instead
-	// of leaving the runtime reporting unlocked over a destroyed key session.
+	// lockGen increments on every Lock and maintenance fence. TryUnlock and
+	// maintenance completion re-check it before publishing unlocked state, so
+	// a racing lock wins instead of leaving the runtime reporting unlocked
+	// over a destroyed key session.
 	lockGen uint64
 	stateMu sync.RWMutex
 
-	onLock func()
+	onLock              func()
+	nextMaintenanceID   uint64
+	activeMaintenanceID uint64
+}
+
+// MaintenanceToken identifies one temporary transition from active runtime
+// state to locked state. Its fields are deliberately private so only the
+// runtime that issued it can decide whether a later publication is still
+// current.
+type MaintenanceToken struct {
+	id      uint64
+	lockGen uint64
 }
 
 // New creates a runtime owner initialized in the locked state.
@@ -73,7 +86,9 @@ func (r *Runtime) IsUnlocked() bool {
 // SetUnlocked marks the signer as unlocked without performing side effects.
 func (r *Runtime) SetUnlocked() {
 	r.stateMu.Lock()
-	r.state = SignerStateUnlocked
+	if r.activeMaintenanceID == 0 {
+		r.state = SignerStateUnlocked
+	}
 	r.stateMu.Unlock()
 }
 
@@ -97,7 +112,9 @@ func (r *Runtime) PromoteRecoveryToUnlocked() bool {
 // administration without permitting signing.
 func (r *Runtime) SetRecovery() {
 	r.stateMu.Lock()
-	r.state = SignerStateRecovery
+	if r.activeMaintenanceID == 0 {
+		r.state = SignerStateRecovery
+	}
 	r.stateMu.Unlock()
 }
 
@@ -128,10 +145,62 @@ func (r *Runtime) Lock() bool {
 	return true
 }
 
+// BeginMaintenance clears published signing state through the normal on-lock
+// callback without emitting an external lock decision. FinishMaintenance may
+// restore unlocked state only if no later Lock changed lockGen.
+func (r *Runtime) BeginMaintenance() MaintenanceToken {
+	r.stateMu.Lock()
+	r.state = SignerStateLocked
+	r.lockGen++
+	r.nextMaintenanceID++
+	if r.nextMaintenanceID == 0 {
+		r.nextMaintenanceID++
+	}
+	r.activeMaintenanceID = r.nextMaintenanceID
+	token := MaintenanceToken{
+		id:      r.activeMaintenanceID,
+		lockGen: r.lockGen,
+	}
+	onLock := r.onLock
+	r.stateMu.Unlock()
+
+	if onLock != nil {
+		onLock()
+	}
+	return token
+}
+
+// FinishMaintenance closes the maintenance fence. It restores unlocked state
+// only when the caller requests publication and no later Lock changed
+// lockGen. Failure and racing locks force the final state to locked.
+func (r *Runtime) FinishMaintenance(
+	token MaintenanceToken,
+	republish bool,
+) bool {
+	r.stateMu.Lock()
+	defer r.stateMu.Unlock()
+	if token.id == 0 || r.activeMaintenanceID != token.id {
+		return false
+	}
+	r.activeMaintenanceID = 0
+	if republish &&
+		r.lockGen == token.lockGen &&
+		r.state == SignerStateLocked {
+		r.state = SignerStateUnlocked
+		return true
+	}
+	r.state = SignerStateLocked
+	return false
+}
+
 // TryRecovery runs the keyring unlock function and enters recovery state
 // unless a concurrent lock wins.
 func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 	r.stateMu.RLock()
+	if r.activeMaintenanceID != 0 {
+		r.stateMu.RUnlock()
+		return false, MaintenanceInProgressMessage
+	}
 	gen := r.lockGen
 	r.stateMu.RUnlock()
 
@@ -140,7 +209,7 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 	}
 
 	r.stateMu.Lock()
-	if r.lockGen != gen {
+	if r.lockGen != gen || r.activeMaintenanceID != 0 {
 		onLock := r.onLock
 		r.stateMu.Unlock()
 		if onLock != nil {
@@ -159,6 +228,10 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 // function loaded, the state stays locked, and the unlock reports failure.
 func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bool, int, string) {
 	r.stateMu.RLock()
+	if r.activeMaintenanceID != 0 {
+		r.stateMu.RUnlock()
+		return false, 0, MaintenanceInProgressMessage
+	}
 	gen := r.lockGen
 	r.stateMu.RUnlock()
 
@@ -168,7 +241,7 @@ func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bo
 	}
 
 	r.stateMu.Lock()
-	if r.lockGen != gen {
+	if r.lockGen != gen || r.activeMaintenanceID != 0 {
 		onLock := r.onLock
 		r.stateMu.Unlock()
 		if onLock != nil {

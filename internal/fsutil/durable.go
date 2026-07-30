@@ -4,8 +4,10 @@
 package fsutil
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // HookOp identifies a durability-relevant operation intercepted by TestHook.
@@ -145,4 +147,42 @@ func RemoveDurable(path string) error {
 		return err
 	}
 	return SyncDir(filepath.Dir(path))
+}
+
+// RemoveDurableWriteTemps reconciles crash residue created by
+// WriteFileDurable for path. The basename+".tmp-" namespace is reserved for
+// that helper. Unexpected non-regular artifacts fail closed.
+func RemoveDurableWriteTemps(path string) error {
+	dir := filepath.Dir(path)
+	prefix := filepath.Base(path) + ".tmp-"
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	var temps []string
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("inspect durable-write temp %s: %w", entry.Name(), err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf(
+				"durable-write temp is not a regular file: %s",
+				filepath.Join(dir, entry.Name()),
+			)
+		}
+		temps = append(temps, filepath.Join(dir, entry.Name()))
+	}
+	for _, temp := range temps {
+		if err := os.Remove(temp); err != nil {
+			return fmt.Errorf("remove durable-write temp %s: %w", filepath.Base(temp), err)
+		}
+	}
+	if len(temps) > 0 {
+		return SyncDir(dir)
+	}
+	return nil
 }

@@ -42,8 +42,8 @@ installer upgrades are intentionally narrow:
   fresh install root unless the operator explicitly passes the installer
   `-f`/`--force` upgrade-check override,
 - no config, key, cache, or endpoint migration utility is shipped,
-- signer identity stores unlock only with keystore marker version 4 and the
-  `keyring/v1` layout tag; stores in any other format are rejected at
+- signer identity stores unlock only with keystore marker version 5 and the
+  `keyring/v2` layout tag; stores in any other format are rejected at
   unlock, rotation, rebuild, and policy-sign. Keys move between installs via
   backup archives restored into a freshly initialized store,
 - usable apclient signer routing is endpoint-based and lives in
@@ -710,6 +710,11 @@ Validation:
 - node role parsing and `node.yaml` integrity sidecars are owned by
   `internal/noderole`; role-versus-key-type allowance decisions are owned by
   `internal/keyclass`.
+- each identity's `node.yaml.hmac` is strict sidecar version 2 with algorithm
+  `hmac-sha256`, key ID `keystore-master-hkdf-node-role-v1`, an explicit
+  positive `integrity_term`, and a canonical lowercase HMAC-SHA256 over the
+  exact root `node.yaml` bytes. Only the current term is authorized while the
+  keyring remains settled and single-term.
 - `require_memory_protection:true` requires disabled core dumps and successful memory locking
 
 Built-in Algorand genesis-hash mappings are source-defined:
@@ -861,8 +866,8 @@ execution, output decoding, environment filtering, and validation.
       keytypes/<key_type>.json      # key type state record
       keytypes/<key_type>.template  # encrypted key type template
     keyring.enc             # cryptographic root: KDF header over the sealed
-                            # term set (aplane.keyring.v1)
-    .keystore               # static marker: version 4 + keyring/v1 layout (the
+                            # term set (aplane.keyring.v2)
+    .keystore               # static marker: version 5 + keyring/v2 layout (the
                             # only supported store format; others rejected)
     node.yaml.hmac
     aplane.token
@@ -1129,8 +1134,8 @@ names remain `activate_key_type` and `deactivate_key_type` for compatibility.
 
 ### Keyring Root (`keyring.enc`)
 
-Defined in `internal/crypto/keyring.go`. Schema `aplane.keyring.v1`, file
-version 1. Fields: `schema`, `envelope_version`, `kdf_time`, `kdf_memory`,
+Defined in `internal/crypto/keyring.go`. Schema `aplane.keyring.v2`, file
+version 2. Fields: `schema`, `envelope_version`, `kdf_time`, `kdf_memory`,
 `kdf_threads`, `salt`, `nonce`, `sealed_keyring`.
 
 The KDF parameters and salt are plaintext because they are inputs to the
@@ -1149,31 +1154,40 @@ Behavior:
   non-regular path is refused rather than loaded
 - the header travels in the AEAD's authenticated data alongside the sealed
   term set
-- exactly one term is accepted; a multi-term root belongs to a release with
-  retiring terms and the authority split that governs them, and relaxing this
-  requires bumping this file version and the marker together
+- the sealed payload has `schema`, `current_term`, sorted `terms`, required
+  `historical_anchors`, and optional `rotation`; v2 structural validation
+  rejects invalid term order, current-term selection, anchors, and pending
+  descriptors before runtime use
+- settled and pending multi-term payloads are accepted; ordinary current-state
+  envelope and integrity reads authorize exactly `{current_term}` while
+  settled and exactly `{current_term, rotation.from_term}` while pending.
+  Other resident terms require the separate historical-anchor path
+- `StartRotation` refuses an existing descriptor before any snapshot or root
+  write, appends exactly `current_term + 1`, and publishes the new current
+  term plus former-current descriptor in the same root replacement
 - a refused root's decoded term keys are zeroed on every exit path, not only
   the successful one
 - the successful unwrap is the passphrase check; there is no separate verifier
 - the KEK is zeroed before seal and open return, and is never cached
 - a passphrase change replaces this file in one atomic write
-- this release runs a single term
+- fresh stores begin with term 1; completed roots may retain historical terms,
+  and a pending root has one current and one retiring current-state authority
 
 ### Keystore Marker (`.keystore`)
 
 Defined in `internal/crypto/keyring_store.go` as `keyringMarker`.
 
-Version 4 is the only readable format. Fields: `version`, `layout`
-(`keyring/v1`), and `created`. It carries no salt, no verifier, and no KDF
+Version 5 is the only readable format. Fields: `version`, `layout`
+(`keyring/v2`), and `created`. It carries no salt, no verifier, and no KDF
 parameters, so nothing in it can disagree with the keyring.
 
 Behavior:
 
-- new stores are written as version 4 with the `keyring/v1` layout tag
+- new stores are written as version 5 with the `keyring/v2` layout tag
 - initialization writes the marker before the root, so a crash between them
   leaves a store that is recognizably uninitialized rather than one whose root
   exists under an unknown version
-- a marker with any other version, or version 4 without the `keyring/v1`
+- a marker with any other version, or version 5 without the `keyring/v2`
   layout tag, is rejected with guidance to restore from a backup archive into
   a freshly initialized store; there is no in-place migration path
 
@@ -1191,6 +1205,8 @@ selector:
 | `keytype-template` | key type |
 | `recovered-batch` | restore ID |
 | `recovered-entry` | restore ID and entry selector |
+| `rotation-snapshot` | fixed selector `pending` |
+| `rotation-baseline` | fixed selector `current` |
 
 Behavior:
 
@@ -1204,6 +1220,246 @@ Behavior:
   caller asked for
 - passphrase rotation re-encrypts under a new term key with the same context,
   so a rotation cannot relabel a file while it rewrites it
+- `crypto.EnvelopeTerm` exposes only the positive term header. Any caller
+  using that term as inventory authority must open the same byte buffer with
+  its expected logical context; inspecting the header alone is insufficient.
+
+### Rotation Artifact Inventory
+
+`internal/rotationinventory` owns the canonical K8 durable-artifact taxonomy,
+snapshot scan, guarded transition-start orchestration, and the internal
+snapshot-pinned resume and completion passes. `internal/storepass` owns the
+operator start/complete workflow, and signer unlock owns automatic resume
+before runtime publication.
+
+Each entry contains:
+
+- `path`: UTF-8, slash-separated, signer-data-root-relative canonical path;
+- `kind`: one of the explicit credential, template, recovered, integrity
+  document/sidecar, generation member, or rotation-record kinds;
+- positive exact byte `size` and canonical lowercase `sha256`;
+- for a term envelope, positive `term`, `object_class`, and
+  `object_selector`;
+- for an integrity sidecar, positive `term` with no envelope context;
+- for plaintext artifacts, no term or envelope context.
+
+Entries are strictly sorted by raw path bytes and paths are unique. Unknown
+fields are not inferred from extensions outside their owned namespace:
+unclassified files in generation, deleted, or recovered scope fail the scan.
+Independent state (`keyring.enc`, `.keystore`, backups, audit/config/unlock/
+token/SSH state, plaintext template library, and caches) is excluded.
+
+The scanner covers:
+
+- every published generation. Current structure is validated live; retained
+  generations require an authenticated seal;
+- active and retained credentials/templates, key-type state, witness public
+  metadata, exact manifest bytes, and retained-generation seal records;
+- published recovered batch metadata and entries;
+- identity-local deleted credential and template archives;
+- exact policy/node-role documents and their explicit-term sidecars;
+- optional rotation snapshot and baseline envelopes as classified durable
+  records.
+
+`ScanForSnapshot` is the cutover-construction variant. It excludes
+`rotation.snapshot.enc` so the body never recursively inventories itself,
+while a valid baseline that predates cutover remains a classified input.
+A `seal.json` beside `CURRENT` is also excluded: the generation commit
+contract defines it as non-authoritative precommit crash residue. Current
+generation validation still checks its structural shape, but rotation never
+parses, pins, rewrites, or completion-validates its stale content.
+
+Encrypted entries are opened from the exact byte buffer that is hashed under
+the logical context derived from their canonical filename or recovered-batch
+metadata. Retained generation buffers are also compared to their seal entry
+before opening. Once ordinary retiring-term authority closes, anchored
+generation members use the dedicated historical open operation rather than
+regaining ordinary current-state authority. `genstore.ParseManifestBytes`,
+`ParseSealBytes`, and `VerifyBytesAgainstSeal` are the buffer-based boundary;
+historical consumers must not validate a path and then consume a second read.
+The scanner also retains the current manifest and generation inventory
+derived from those exact buffers. Rotation-start rollback decisions and
+completion baselines consume that retained authority and must not rebuild it
+from a second filesystem read.
+
+While a rotation is pending, `WriteFileDurable` names
+`<canonical-basename>.tmp-*` are reserved crash residue. Resume removes only
+regular matching temps for each root-pinned target, fsyncs the containing
+directory, and rejects non-regular matching artifacts before consuming the
+canonical file.
+
+#### Sealed Cutover Snapshot
+
+`identities/<identity>/rotation.snapshot.enc` is a term envelope with object
+context `rotation-snapshot:pending`. Its strict plaintext schema is
+`aplane.rotation-snapshot.v1`:
+
+```json
+{
+  "schema": "aplane.rotation-snapshot.v1",
+  "from_term": 1,
+  "to_term": 2,
+  "inventory": [],
+  "rollback": {
+    "generation_id": "gen-1700000000-0123abcd",
+    "decision": "clean",
+    "authority": {
+      "source": "generation-manifest",
+      "entry_count": 0,
+      "inventory_sha256": "<lowercase hex>"
+    }
+  }
+}
+```
+
+`rollback` is omitted when the current generation has no rollback-divergence
+decision to preserve. Its decision is exactly `clean` or `diverged`; authority
+source is exactly `generation-manifest` or `rotation-baseline`. The inventory
+is a required sorted array of the K8 entries above. The snapshot rejects
+future-term inputs and any `rotation-snapshot` entry.
+
+The effective generation inventory digest uses
+`aplane.generation-inventory-digest.v1` plus a length-prefixed canonical
+encoding of entry count and each `(path, decoded SHA-256, size, term)`. It
+never depends on JSON formatting.
+
+The pending root carries only `snapshot_sha256` and `snapshot_size` for the
+exact encrypted file. `crypto.RotationSnapshotReference` validates and checks
+that pair. The encrypted file has an independent 16 MiB limit and is read via
+the no-follow bounded regular-file reader. Validation order is exact
+size/digest, envelope target term, context-bound open of the same buffer,
+strict plaintext parse, then `{from_term,to_term}` equality with the root.
+
+`rotationinventory.StartRotation` reconciles the baseline, scans the cutover
+inventory, evaluates the rollback-eligible current generation, and collects
+the complete retained-generation anchor set before invoking
+`crypto.StartRotation`. `WriteSnapshot` durably publishes the target-term
+encrypted body before returning its exact root reference. Only then does
+`crypto.StartRotation` atomically replace `keyring.enc` with the appended
+current term, former-current descriptor, snapshot reference, and anchor set.
+The caller must hold the identity mutation lock.
+
+A failure before root rename leaves the old root and in-memory authority
+unchanged; the durable target-term snapshot may be an unreferenced orphan.
+On unlock, completion reopens and confirms the old settled root, classifies
+an unreferenced `current_term+1` snapshot as pre-root residue, syncs the root
+directory, and removes that reserved artifact durably without attempting to
+authenticate it under a key the root never adopted. If the root
+rename is visible but directory sync fails, the exact candidate is adopted in
+memory and the caller receives `ErrRotationCommitDurabilityUnknown`. If root
+visibility cannot be classified, `ErrRotationCommitStateUnknown` requires
+recovery. Neither result authorizes retrying `StartRotation` as a fresh
+append. The descriptor itself is the durable R5 guard.
+
+`OpenKeyring` accepts settled and pending multi-term roots and enforces the
+current-state authority set described above. Interactive and headless signer
+unlock automatically run completion after generation reconciliation and
+before keys, templates, snapshots, or a session can be published. Failure
+enters recovery mode with signing blocked. Direct key scanning still rejects
+a pending root. `Keyring.RequireSettled` is the common guard for
+ordinary runtime keyring access, signing-key loads, and direct keystore
+mutation. Offline passphrase change, policy signing/editing, and generation
+pruning apply the same guard. `ErrRotationPending` is the stable error
+classification; only the explicit resume/completion path may bypass it.
+
+`identities/<identity>/rotation.baseline.enc` is a current-term envelope with
+object context `rotation-baseline:current`. Its strict plaintext schema is
+`aplane.rotation-baseline.v1` and contains exactly `schema`, canonical
+`generation_id`, non-negative `entry_count`, and lowercase
+`inventory_sha256`. Plaintext parsing and the exact encrypted file are bounded
+to 4 KiB. `WriteBaseline` uses the durable file-replacement protocol;
+`ReadBaseline` performs a no-follow bounded read, requires the envelope term
+to be current, opens the same buffer under the fixed context, and rejects
+unknown fields, omitted/null required fields, and trailing JSON.
+
+`EvaluateRollbackCutover` compares the canonical live generation inventory
+against the immutable manifest or a matching authenticated prior baseline and
+records `clean` only on exact count/digest equality. A baseline for another
+generation is never authority. Preflight reconciliation keeps a valid
+matching baseline, durably removes a valid stale one, and preserves malformed
+or unauthorized records as blocking evidence. The K8 scanner strictly parses
+a baseline and requires it to name `CURRENT`.
+
+Generation seal inventory entries authenticate each member's term, and exact
+seal anchors gate the separate retired-term seal/member verification path.
+The pending-root commit now references the durable snapshot and complete
+pre-retirement anchor set.
+
+`rotationinventory.ResumeRotation` requires a pending root and reopens that
+exact root-referenced snapshot on every pass. Root-anchored historical
+generation entries and plaintext entries remain exact snapshot bytes.
+Mutable envelopes on `from_term` must match their pinned size and SHA-256
+before the same buffer is context-opened and durably sealed onto `to_term`.
+Policy and node-role sidecars are similarly renewed only after their exact
+pinned document and retiring-term sidecar authenticate. On retry, an envelope
+or sidecar already on `to_term` is accepted only after target-term
+authentication succeeds. This makes a visible rename followed by a directory
+sync error safely resumable and prevents a holder of the retiring term from
+laundering substituted bytes. Reads are bounded and reject final-component
+symlinks.
+
+Resume reports durable progress but deliberately leaves the root pending and
+the referenced snapshot present.
+
+`rotationinventory.CompleteRotation` runs resume and then performs fresh K8
+scans on both sides of baseline publication. Each scan must contain the exact
+root-referenced snapshot, every cutover path, no unpinned path, exact
+historical/plaintext bytes, and the pinned mutable kind/context under target
+authority. A clean rollback cutover receives a baseline over the final
+current-generation inventory; a diverged cutover never receives a new one.
+The second scan requires the clean baseline to match that final inventory.
+The only extra path permitted relative to the cutover snapshot is that
+authenticated clean completion baseline when none existed at cutover.
+
+`crypto.CloseRotation` preserves all resident terms and historical anchors
+while atomically removing only the pending descriptor. The snapshot remains
+until the settled root has been durably published and is then removed with a
+directory sync. A visible close followed by directory-sync failure adopts the
+settled root but retains the snapshot; retry authenticates the unreferenced
+snapshot against the visible settled root, syncs the root directory, and
+removes it. A pre-rename close failure leaves both in-memory and on-disk roots
+pending. A snapshot-removal directory-sync failure is reported with the root
+still settled; it never reopens retiring authority.
+
+The settled-root cleanup distinguishes that post-close case from a pre-root
+orphan. A same-term snapshot must authenticate and strictly parse under the
+matching visible settled root before removal. A consecutive future-term
+snapshot is removable only after the visible root is confirmed settled with
+no descriptor; it is the unreferenced first half of start, not a completed
+rotation.
+
+Restore rollback calls `rotationinventory.EvaluateRollback`: only a baseline
+that authenticates under the settled current term and names the current
+rollback-eligible generation supersedes its at-mint manifest. Missing,
+malformed, wrong-term, and wrong-generation records cannot assert cleanness.
+After the guard accepts, rollback validates the sealed target through ordinary
+current authority or its exact root historical anchor and mints a fresh
+generation from only the seal-pinned member buffers. Envelopes are opened
+through the corresponding ordinary or anchor-gated path and sealed under the
+current term; plaintext members remain exact. The rollback manifest keeps the
+outgoing generation as `parent_id` and records the content source separately
+as `rollback_source_generation_id`. The superseded baseline is removed
+durably only after the `CURRENT` flip.
+
+`apstore changepass` invokes the durable transition under the identity
+mutation lock. It first fences signing and clears the published runtime; only
+verified completion plus reload may republish it, and a racing explicit lock
+wins. Unlock and recovery entrypoints refuse to load or publish authority
+while that maintenance fence is active, including the gap between unlock
+reconciliation and its final key load. The new root is the point of no return:
+it is published under the new
+passphrase before consumer rewrap. A configured passphrase helper is updated
+immediately after that commit. Helper failure is returned as a warning, never
+as a rollback request or completion barrier. Any later error leaves a
+resumable pending root and the runtime locked; the new passphrase is
+authoritative and the next interactive or headless unlock resumes
+automatically before enabling the identity. `changepass` itself refuses to
+append over a pending root.
+Results report migrated artifact counts, helper warnings, root-commit and
+pending-rotation state, and the number of retained prior generations still
+readable under historical terms. Post-commit failures preserve those fields
+so clients can tell operators that the new passphrase is authoritative and
+that unlock will resume the transition.
 
 ### Generation Store (`CURRENT` + `generations/`)
 
@@ -1224,10 +1480,26 @@ specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
 - `manifest.json` (schema `aplane.generation-manifest.v1`) is the immutable
   at-mint operation record: operation, operation ID, parent generation ID,
   and timestamps
-- `seal.json` (schema `aplane.generation-seal.v1`) is written when a
+- `seal.json` (schema `aplane.generation-seal.v2`) is written when a
   generation stops being current and is the content authority for sealed
-  priors: an inventory hash over both namespaces that later validation
-  checks byte-for-byte
+  priors. It pins the SHA-256 of the exact immutable manifest bytes, records a
+  positive `integrity_term`, and carries a canonical HMAC-SHA256 over all
+  security-bearing seal fields and the full two-namespace inventory. Each
+  inventory entry records `term`: zero for plaintext, or the positive
+  term-envelope term. The seal MAC and canonical inventory digest bind
+  `(path, digest, size, term)`. Rollback and retained-parent pruning verify it
+  with an open identity keyring; an unanchored seal is accepted only when both
+  its integrity term and every term-bearing entry use the current term.
+- `crypto.HistoricalGenerationAnchor` pins a canonical generation ID and the
+  exact seal byte size and SHA-256. `genstore.BuildHistoricalAnchor` creates
+  one only after ordinary current-authority seal verification, so anchors are
+  collected before that term retires.
+- anchored historical validation verifies the exact seal anchor first, then
+  accepts the seal MAC under its retained term, binds the exact manifest, and
+  checks live inventory. `ReadAnchoredBytes` verifies the same member buffer's
+  size, digest, and term before consumption; `OpenAnchoredEnvelope` then uses
+  the dedicated historical open path. A retained key without its exact anchor
+  is insufficient, as is an anchor without the retained key.
 - single-file writes into the current generation's namespaces are the
   routine mutation path (key generation, template install); multi-file
   transactions (restore activation) commit by minting a new generation
@@ -1252,21 +1524,26 @@ client-signing policy. Sentry nodes parse that same file as direct sentry
 component policy. The JSON sidecar at `policy.yaml.hmac` authenticates the
 exact YAML bytes.
 
-The policy integrity key is derived from the identity's current term key with HKDF-SHA256
-using info string `aplane policy integrity v1`. The derived key is 32 bytes and
-is not persisted.
+The policy integrity key is derived inside `internal/crypto` from the named
+identity term key with HKDF-SHA256 using info string
+`aplane policy integrity v1`. The derived 32-byte key is neither persisted nor
+returned to policy callers; they use keyring-confined sign/verify operations.
 
 Sidecar JSON fields:
 
-- `version`: integer sidecar version; currently `1`
+- `version`: integer sidecar version; currently `2`
 - `algorithm`: currently `hmac-sha256`
 - `key_id`: currently `keystore-master-hkdf-v1`
+- `integrity_term`: positive term whose derived policy-integrity key signs the
+  document
 - `hmac`: hex HMAC-SHA256 over the exact policy document bytes
 - `policy_sha256`: optional diagnostic SHA-256 of the policy document
 - `signed_at_unix`: optional diagnostic signing timestamp
 - `policy_mtime_ns`: optional diagnostic policy-file mtime
 
-Only `version`, `algorithm`, `key_id`, and `hmac` are security fields.
+Only `version`, `algorithm`, `key_id`, `integrity_term`, and `hmac` are
+security fields. Sidecar JSON is strict: unknown fields, trailing documents,
+and non-canonical MAC encodings are rejected.
 `policy_sha256`, `signed_at_unix`, and `policy_mtime_ns` are diagnostic
 metadata; tampering with those fields does not affect the policy integrity
 decision.
@@ -2555,10 +2832,16 @@ Live signer-managed restore:
   `recovered_rollback_failed`, reloads the visible state, and enters
   recovery mode with signing blocked; generation reconciliation at the next
   unlock re-confirms the flip's durability.
-- operator rollback of a committed restore activation repoints `CURRENT` at
-  the sealed parent generation recorded in the current generation's
-  manifest, and is accepted only while the current generation was produced
-  by that restore **and still matches its at-mint inventory**. Any
+- operator rollback of a committed restore activation validates the sealed
+  parent generation recorded in the current generation's manifest, then
+  mints its authenticated content as a fresh generation under the current
+  key term. The new manifest records the outgoing current generation as its
+  parent and the older content authority as
+  `rollback_source_generation_id`; `CURRENT` is never repointed at
+  historical ciphertext. Rollback is accepted only while the current
+  generation was produced by that restore **and still matches its effective
+  inventory authority**: a matching authenticated rotation baseline when
+  present, otherwise the at-mint manifest. Any
   post-activation mutation of the current generation (a generated key, an
   installed template) diverges it, and rollback then refuses with
   `recovered_rollback_diverged` rather than discarding the later changes.
@@ -2632,10 +2915,10 @@ Local rescue surface:
   `apstore generations prune [--all-priors]` deletes sealed prior
   generations after validating the current one and asking for explicit
   confirmation — pruning permanently deletes rollback targets. Passphrase
-  rotation requires generation quiescence (no generation other than the
-  current one), so `generations prune --all-priors` may be required before
-  `changepass`; the rotation refusal names that command and its
-  consequence
+  rotation does not require pruning. Retained prior generations remain
+  readable under historical key terms, and `changepass` warns about them;
+  `generations prune --all-priors` is the explicit way to abandon those
+  rollback targets
 - `apstore rebuild` refuses to run when the destination identity directory
   already exists and uses the store lock to avoid concurrent signer access
 

@@ -61,6 +61,15 @@ func cmdChangepass() error {
 		return err
 	}
 	if !result.Success {
+		if result.HelperWarning != "" {
+			logWarnf("%s", result.HelperWarning)
+		}
+		if result.RootCommitted {
+			logWarnf("the new passphrase is authoritative despite the incomplete operation")
+			if result.RotationPending {
+				logWarnf("unlock with the new passphrase to resume the pending rotation")
+			}
+		}
 		return resultError("passphrase change failed", result.Code, result.Error)
 	}
 
@@ -81,6 +90,16 @@ func cmdChangepass() error {
 		logInfof("  - %d node role sidecar(s) re-signed", result.NodeRoleSidecarsMigrated)
 	}
 	logInfof("  - keystore metadata updated")
+	if result.HelperWarning != "" {
+		logWarnf("%s", result.HelperWarning)
+	}
+	if result.PriorGenerations > 0 {
+		logWarnf(
+			"%d prior generation(s) remain readable under historical key terms",
+			result.PriorGenerations,
+		)
+		logWarnf("run 'apstore generations prune --all-priors' when rollback retention is no longer required")
+	}
 	return nil
 }
 
@@ -147,7 +166,7 @@ func cmdInitialize(args []string) error {
 	logInfof("keystore initialized successfully")
 	logInfof("  keystore metadata: %s/.keystore", result.MetadataDir)
 	if result.HelperWarning != "" {
-		logWarnf(result.HelperWarning)
+		logWarnf("%s", result.HelperWarning)
 		logWarnf("store the passphrase manually in your secrets backend")
 	}
 	logInfof("start apsigner to unlock and use this keystore")

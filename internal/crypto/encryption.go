@@ -105,7 +105,7 @@ func deriveMasterKeyParams(passphrase, salt []byte, time, memory uint32, threads
 // code outside this package can hold a raw term key to encrypt with. The
 // context is required rather than optional, which is what stops a file from
 // being opened as a different object.
-func encryptWithTermKey(plaintext, termKey []byte, term int, ctx ObjectContext) ([]byte, error) {
+func encryptWithTermKey(plaintext, termKey []byte, term int64, ctx ObjectContext) ([]byte, error) {
 	if err := ctx.validate(); err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func encryptWithTermKey(plaintext, termKey []byte, term int, ctx ObjectContext) 
 // belonging to a different object all fail the same way.
 //
 // Unexported since phase 2: callers go through Keyring.Open.
-func decryptWithTermKey(encryptedJSON, termKey []byte, term int, ctx ObjectContext) ([]byte, error) {
+func decryptWithTermKey(encryptedJSON, termKey []byte, term int64, ctx ObjectContext) ([]byte, error) {
 	if err := ctx.validate(); err != nil {
 		return nil, err
 	}

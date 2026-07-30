@@ -4,12 +4,13 @@
 package policy
 
 import (
-	"crypto/hmac"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 )
 
 const (
-	PolicyIntegritySidecarVersion = 1
+	PolicyIntegritySidecarVersion = 2
 	PolicyIntegrityAlgorithm      = "hmac-sha256"
 	PolicyIntegrityKeyID          = "keystore-master-hkdf-v1"
 )
@@ -30,7 +31,6 @@ var (
 	ErrPolicyIntegrityBadSidecar     = errors.New("policy integrity sidecar invalid")
 	ErrPolicyIntegrityUnsupported    = errors.New("policy integrity sidecar unsupported")
 	ErrPolicyIntegrityMismatch       = errors.New("policy integrity mismatch")
-	ErrPolicyIntegrityInvalidKey     = errors.New("policy integrity key invalid")
 )
 
 // IntegritySidecar is the JSON representation stored next to policy.yaml.
@@ -41,6 +41,7 @@ type IntegritySidecar struct {
 	Version       int    `json:"version"`
 	Algorithm     string `json:"algorithm"`
 	KeyID         string `json:"key_id"`
+	IntegrityTerm int64  `json:"integrity_term"`
 	HMAC          string `json:"hmac"`
 	PolicySHA256  string `json:"policy_sha256,omitempty"`
 	SignedAtUnix  int64  `json:"signed_at_unix,omitempty"`
@@ -52,20 +53,26 @@ func PolicyIntegritySidecarPath(policyPath string) string {
 	return policyPath + ".hmac"
 }
 
-// SignPolicyIntegrity returns the sidecar for policyBytes using key.
-func SignPolicyIntegrity(policyBytes, key []byte, signedAt time.Time, policyMTimeNS int64) (*IntegritySidecar, error) {
-	if err := validatePolicyIntegrityKey(key); err != nil {
-		return nil, err
+// SignPolicyIntegrity returns the sidecar for policyBytes using the keyring's
+// current policy-integrity authority.
+func SignPolicyIntegrity(policyBytes []byte, kr *apcrypto.Keyring, signedAt time.Time, policyMTimeNS int64) (*IntegritySidecar, error) {
+	if kr == nil {
+		return nil, policyIntegrityError(ErrPolicyIntegrityBadSidecar, "keyring is required")
 	}
 	if signedAt.IsZero() {
 		signedAt = time.Now()
+	}
+	term, mac, err := kr.SignIntegrity(apcrypto.IntegrityDomainPolicy, policyBytes)
+	if err != nil {
+		return nil, policyIntegrityWrap(ErrPolicyIntegrityBadSidecar, err, "failed to sign policy integrity")
 	}
 	sum := sha256.Sum256(policyBytes)
 	return &IntegritySidecar{
 		Version:       PolicyIntegritySidecarVersion,
 		Algorithm:     PolicyIntegrityAlgorithm,
 		KeyID:         PolicyIntegrityKeyID,
-		HMAC:          computePolicyHMAC(policyBytes, key),
+		IntegrityTerm: term,
+		HMAC:          mac,
 		PolicySHA256:  hex.EncodeToString(sum[:]),
 		SignedAtUnix:  signedAt.UTC().Unix(),
 		PolicyMTimeNS: policyMTimeNS,
@@ -75,9 +82,9 @@ func SignPolicyIntegrity(policyBytes, key []byte, signedAt time.Time, policyMTim
 // VerifyPolicyIntegrity verifies sidecar security fields and HMAC against
 // policyBytes. Diagnostic metadata such as PolicySHA256 and PolicyMTimeNS is
 // not trusted and does not affect the verification decision.
-func VerifyPolicyIntegrity(policyBytes []byte, sidecar *IntegritySidecar, key []byte) error {
-	if err := validatePolicyIntegrityKey(key); err != nil {
-		return err
+func VerifyPolicyIntegrity(policyBytes []byte, sidecar *IntegritySidecar, kr *apcrypto.Keyring) error {
+	if kr == nil {
+		return policyIntegrityError(ErrPolicyIntegrityBadSidecar, "keyring is required")
 	}
 	if sidecar == nil {
 		return policyIntegrityError(ErrPolicyIntegrityBadSidecar, "missing sidecar data")
@@ -91,18 +98,19 @@ func VerifyPolicyIntegrity(policyBytes []byte, sidecar *IntegritySidecar, key []
 	if sidecar.KeyID != PolicyIntegrityKeyID {
 		return policyIntegrityError(ErrPolicyIntegrityUnsupported, "key_id %q", sidecar.KeyID)
 	}
-
-	got, err := hex.DecodeString(sidecar.HMAC)
-	if err != nil {
+	if sidecar.IntegrityTerm <= 0 {
+		return policyIntegrityError(ErrPolicyIntegrityBadSidecar, "missing integrity_term")
+	}
+	if err := validateCanonicalPolicyHMAC(sidecar.HMAC); err != nil {
 		return policyIntegrityWrap(ErrPolicyIntegrityBadSidecar, err, "invalid hmac encoding")
 	}
-	expectedHex := computePolicyHMAC(policyBytes, key)
-	expected, err := hex.DecodeString(expectedHex)
-	if err != nil {
-		return policyIntegrityWrap(ErrPolicyIntegrityBadSidecar, err, "internal hmac encoding failure")
-	}
-	if !hmac.Equal(expected, got) {
-		return policyIntegrityError(ErrPolicyIntegrityMismatch, "hmac mismatch")
+	if err := kr.VerifyIntegrity(
+		apcrypto.IntegrityDomainPolicy,
+		policyBytes,
+		sidecar.IntegrityTerm,
+		sidecar.HMAC,
+	); err != nil {
+		return policyIntegrityWrap(ErrPolicyIntegrityMismatch, err, "HMAC verification failed")
 	}
 	return nil
 }
@@ -123,7 +131,12 @@ func MarshalPolicyIntegritySidecar(sidecar *IntegritySidecar) ([]byte, error) {
 // validated by VerifyPolicyIntegrity.
 func ParsePolicyIntegritySidecar(data []byte) (*IntegritySidecar, error) {
 	var sidecar IntegritySidecar
-	if err := json.Unmarshal(data, &sidecar); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&sidecar); err != nil {
+		return nil, policyIntegrityWrap(ErrPolicyIntegrityBadSidecar, err, "failed to parse sidecar")
+	}
+	if err := requireJSONEOF(decoder); err != nil {
 		return nil, policyIntegrityWrap(ErrPolicyIntegrityBadSidecar, err, "failed to parse sidecar")
 	}
 	return &sidecar, nil
@@ -147,17 +160,27 @@ func PolicySHA256(policyBytes []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func computePolicyHMAC(policyBytes, key []byte) string {
-	mac := hmac.New(sha256.New, key)
-	mac.Write(policyBytes)
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
-func validatePolicyIntegrityKey(key []byte) error {
-	if len(key) != apcrypto.PolicyIntegrityKeyLength {
-		return policyIntegrityError(ErrPolicyIntegrityInvalidKey, "expected %d bytes, got %d", apcrypto.PolicyIntegrityKeyLength, len(key))
+func validateCanonicalPolicyHMAC(encoded string) error {
+	decoded, err := hex.DecodeString(encoded)
+	if err != nil {
+		return err
+	}
+	if len(decoded) != sha256.Size || encoded != hex.EncodeToString(decoded) {
+		return fmt.Errorf("expected canonical lowercase SHA-256 hex")
 	}
 	return nil
+}
+
+func requireJSONEOF(decoder *json.Decoder) error {
+	var trailing any
+	switch err := decoder.Decode(&trailing); err {
+	case io.EOF:
+		return nil
+	case nil:
+		return fmt.Errorf("trailing data after JSON document")
+	default:
+		return fmt.Errorf("trailing data after JSON document: %w", err)
+	}
 }
 
 func policyIntegrityError(kind error, format string, args ...any) error {

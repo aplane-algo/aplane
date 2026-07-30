@@ -167,7 +167,7 @@ Documentation notes:
 | Engine | `internal/apshellapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
-| Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
+| Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/rotationinventory`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/registry`, `test/soak`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
@@ -823,6 +823,14 @@ Locking must:
 - destroy the key session state,
 - clear or invalidate key caches as appropriate,
 - notify interested IPC clients.
+
+Store maintenance adds an identity-local state fence in `Runtime.stateMu`.
+Beginning maintenance clears and locks the published key session before any
+root transition. Unlock and recovery attempts that start during the fence are
+rejected without loading authority; attempts already in flight lose on the
+generation check and clear anything they loaded. Only the matching successful
+maintenance token may republish after verified reload. Failure, a stale token,
+or a racing explicit lock leaves the runtime locked.
 
 The watcher model is identity-owned but not tied to every lock transition:
 
@@ -1814,6 +1822,7 @@ Product-level boundaries:
 | Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/keyclass/keyclass.go`, `internal/sentry/keytypes/keytypes.go` |
 | Store Init/Passphrase | `internal/storeinit/initialize.go`, `internal/defaultkeytypes/defaults.go`, `internal/storepass/rotate.go`, `internal/signerapp/unlockconfig/unlock.go`, `cmd/apstore/main.go`, `internal/signerapp/daemon/admin_services.go` |
 | Generation Storage | `internal/genstore/*.go`, `internal/storepaths/generations.go`, `internal/storepaths/active.go`, `cmd/apstore/generations.go`, `docs/ARCH_GENERATIONS.md` |
+| Rotation Inventory | `internal/rotationinventory/*.go`, `internal/crypto/term_envelope.go`, `internal/genstore/records.go`, `internal/genstore/validate.go`, `docs/PHASE3_ONBOARDING.md` |
 | Client Data | `internal/clientdata/lock.go`, `internal/clientstate/state.go`, `internal/refname/refname.go` |
 | Identity | `internal/signerapp/identity/runtime.go`, `internal/signerapp/identity/config.go` |
 | Release/Distribution | `Makefile`, `.github/workflows/release.yml`, `scripts/package-bootstrap-release.sh`, `scripts/build-algokit-localnet-plugin-target.sh`, `scripts/stage-bundled-plugins.sh`, `scripts/docker-systemd-smoke.sh`, `scripts/docker-local-four-node-smoke.sh`, `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`, `uninstall.sh`, `installer/`, `library/templates/` |

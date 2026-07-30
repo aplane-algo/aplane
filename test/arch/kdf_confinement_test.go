@@ -68,10 +68,10 @@ func TestKeyDerivationLivesOnlyInCrypto(t *testing.T) {
 // TestRawTermKeysAreNotAdoptedOutsideTests proves nothing in production wraps
 // bytes it derived itself as a keyring.
 //
-// NewKeyringFromKey has to stay exported for test fixtures to build a keyring
-// from a known key. It is also the one remaining way to place arbitrary bytes
-// behind the keyring API, so production use of it would undo the confinement
-// the test above enforces.
+// NewKeyringFromKey, NewKeyringFromTermKey, and NewKeyringFromTermKeys have to
+// stay exported for test fixtures to build keyrings from known keys. They are
+// also the remaining ways to place arbitrary bytes behind the keyring API, so
+// production use would undo the confinement the test above enforces.
 func TestRawTermKeysAreNotAdoptedOutsideTests(t *testing.T) {
 	forEachProductionFile(t, func(rel string, parsed *ast.File) {
 		switch {
@@ -82,7 +82,10 @@ func TestRawTermKeysAreNotAdoptedOutsideTests(t *testing.T) {
 		}
 		ast.Inspect(parsed, func(node ast.Node) bool {
 			selector, ok := node.(*ast.SelectorExpr)
-			if !ok || selector.Sel.Name != "NewKeyringFromKey" {
+			if !ok ||
+				(selector.Sel.Name != "NewKeyringFromKey" &&
+					selector.Sel.Name != "NewKeyringFromTermKey" &&
+					selector.Sel.Name != "NewKeyringFromTermKeys") {
 				return true
 			}
 			t.Errorf(
@@ -108,6 +111,34 @@ func TestTestFixturesStayOutOfProduction(t *testing.T) {
 				t.Errorf("%s imports the cryptotest fixture; it is for tests only", rel)
 			}
 		}
+	})
+}
+
+// TestHistoricalTermPrimitivesStayBehindGenerationAnchors keeps direct
+// retired-term verification and opening confined to genstore. Those exported
+// crypto methods exist only to cross the package boundary; callers must use
+// genstore's APIs so the exact root anchor, seal, manifest, and member entry
+// are checked first.
+func TestHistoricalTermPrimitivesStayBehindGenerationAnchors(t *testing.T) {
+	forEachProductionFile(t, func(rel string, parsed *ast.File) {
+		if strings.HasPrefix(rel, "internal/crypto/") ||
+			strings.HasPrefix(rel, "internal/genstore/") {
+			return
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if !ok ||
+				(selector.Sel.Name != "OpenHistoricalGenerationEnvelope" &&
+					selector.Sel.Name != "VerifyHistoricalGenerationSealIntegrity") {
+				return true
+			}
+			t.Errorf(
+				"%s calls %s directly; historical term access must pass through internal/genstore",
+				rel,
+				selector.Sel.Name,
+			)
+			return true
+		})
 	})
 }
 

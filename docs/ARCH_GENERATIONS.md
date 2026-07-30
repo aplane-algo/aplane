@@ -18,8 +18,8 @@ ownership sets, and the resume/rollback journal semantics are deleted.
 
 ```
 identities/<identity>/
-  keyring.enc                  # cryptographic root (aplane.keyring.v1)
-  .keystore                    # static marker: version 4 + keyring/v1
+  keyring.enc                  # cryptographic root (aplane.keyring.v2)
+  .keystore                    # static marker: version 5 + keyring/v2
   CURRENT                      # one line: the active generation ID
   generations/
     <generation-id>/
@@ -147,20 +147,68 @@ AST-walk pattern) proving no `os.Link` call exists in the tree.
 `schema "aplane.generation-manifest.v1"` (following the
 `aplane.backup.manifest.v1` precedent), schema_version, generation ID, parent
 generation ID, created_at, operation type + stable operation ID, source
-restore ID and review-token digest when applicable, at-mint inventory and
-digests, completion state (written before publication). It describes **the
+restore ID and review-token digest when applicable, rollback source generation
+when a mint reconstructs older content, at-mint inventory and digests,
+completion state (written before publication). It describes **the
 minting transaction, not the live directory** — single-file mutations after
 mint do not falsify it. `CURRENT` answers *which state committed*; the
 manifest answers *which operation produced it* (post-crash idempotency and
 audit correlation — the operation ID is what unlock-time reconciliation logs).
 
-`seal.json` — final content authority: schema, generation ID, sealed_at, full
-inventory with digests. Written durably **before every pointer flip** (commit
-step 8; rollback does the same for its outgoing generation). Prior-generation
-and rollback-target validation use the seal, never the at-mint manifest — a
+`seal.json` — final content authority, schema
+`aplane.generation-seal.v2`: generation ID, sealed_at, SHA-256 of the exact
+immutable `manifest.json` bytes, explicit integrity term, full inventory with
+digests and member terms, and a domain-separated HMAC over a canonical
+length-prefixed encoding of every security-bearing seal field except the MAC
+itself. An inventory entry's `term` is zero for plaintext and the positive
+term-envelope term otherwise. Written durably **before every pointer flip**
+(commit step 8; rollback does the same for its outgoing generation).
+Prior-generation and rollback-target validation require the identity keyring
+and use the authenticated seal, never the at-mint manifest inventory — a
 legitimately mutated generation would fail an at-mint check the moment it
-becomes prior. A non-current generation **without** a seal is, by
-construction, an uncommitted attempt (§7).
+becomes prior. An unanchored seal is current authority only: its seal term and
+all term-bearing entries must equal the current keyring term. A non-current
+generation **without** a seal is, by construction, an uncommitted attempt
+(§7).
+
+Historical consumers operate on one read of each file:
+`ParseManifestBytes` validates the exact manifest buffer,
+`ParseSealBytes` binds that exact manifest buffer to the exact seal buffer,
+and `VerifyBytesAgainstSeal` checks the exact namespace-member buffer before
+it is consumed. Validating a path and then reading it again is not a historical
+integrity boundary.
+
+Before a seal term retires, `BuildHistoricalAnchor` performs ordinary
+current-authority validation and pins the exact seal byte size and SHA-256.
+Later historical access is deliberately two-level: anchored seal validation
+first checks that exact root anchor and then verifies the seal MAC using the
+retained term; `ReadAnchoredBytes` checks one exact member buffer against its
+authenticated size, digest, and term before `OpenAnchoredEnvelope` may decrypt
+it through the specialized historical path. Inventory scans use
+`OpenAnchoredEnvelopeBytes` to apply the same anchor/seal/member checks to the
+exact member buffer they already hashed. A retained term key alone does not
+authorize a historical generation, and an anchor alone cannot replace the key.
+
+`CanonicalInventoryDigest` supplies the Phase 3 rollback-authority digest. It
+hashes a domain string and a length-prefixed encoding of the sorted inventory
+entries `(path, decoded SHA-256, size, term)` rather than JSON bytes, so
+manifest and rotation-baseline authorities use one formatting-independent
+definition.
+
+`rotation.baseline.enc` is the optional post-rewrap authority for the one
+rollback-eligible current generation. `internal/rotationinventory` strictly
+parses the bounded `aplane.rotation-baseline.v1` plaintext, requires its
+envelope to use the current term and fixed `rotation-baseline:current`
+context, and compares its entry count and canonical inventory digest. A
+matching authenticated baseline supersedes the at-mint manifest only for the
+clean/diverged comparison; a missing, malformed, wrong-term, or
+wrong-generation baseline cannot assert cleanness. Rotation preflight keeps a
+valid matching baseline, durably removes a valid stale one, and preserves
+invalid evidence while blocking. Rotation completion now writes a required
+clean baseline before closing the pending root and never writes one for a
+cutover already recorded as diverged. Restore rollback consumes only a
+matching authenticated baseline; missing, invalid, unauthorized, or stale
+records cannot assert cleanness.
 
 ## 6. Strict generation validator
 
@@ -205,7 +253,9 @@ the retained rollback set, not referenced by incomplete-operation or audit
 recovery metadata, and unsealed (every committed-then-superseded generation
 has a seal). `.staging-*` directories are unconditionally garbage. fsync
 `generations/` after removals; audit the abort with the manifest's operation
-ID. Published-but-uncommitted generations are **never resumed**.
+ID. This pre-unlock classification checks seal presence only; it never grants
+rollback authority from an unauthenticated seal. Published-but-uncommitted
+generations are **never resumed**.
 
 ## 8. Release compatibility (no migration)
 
@@ -220,10 +270,17 @@ The pre-generation flat layout, the Tier-1 activation protocol, and the
 `migrate-layout` transaction were removed with this policy.
 ## 9. Rollback and GC
 
-Rollback = validate the target against its seal → seal the outgoing current
-generation → durable temp pointer → rename over `CURRENT` → fsync identity
-dir → reload. Retention: current + the previous valid generation + anything
-referenced by incomplete-operation or audit recovery metadata. GC resolves
+Restore rollback = compare the mutable current generation with its effective
+manifest/baseline authority → validate the target against its authenticated
+seal or exact historical anchor → reconstruct only seal-pinned target members
+into an empty staging generation, re-encrypting every envelope under the
+current term → commit the fresh generation through the ordinary mint protocol
+→ remove the superseded baseline after the `CURRENT` flip → reload. The new
+manifest keeps the outgoing current generation as `parent_id` and separately
+records `rollback_source_generation_id`; rollback never makes historical
+ciphertext current again. Rollback and retained-parent pruning require an open
+identity keyring. Retention: current + the previous valid generation +
+anything referenced by incomplete-operation or audit recovery metadata. GC resolves
 references under the mutation lock, never runs during
 activation/rotation/reload/migration, fsyncs `generations/` after removals,
 and starts at exactly current+previous — no age/operator policies until
@@ -247,25 +304,29 @@ reference safety has soaked.
 - The rescue surface stays admin-protocol-owned; offline `apstore` commands
   take the store lock exactly as today.
 
-## 11. Rotation boundary (and the interaction v1 must decide)
+## 11. Rotation boundary
 
-Passphrase rotation keeps its existing `.new`/`.old` transaction; key/keytype
-generations cannot commit a rotation (it also rewrites `keyring.enc`,
-recovered batches, and both HMAC sidecars). Cryptographic epochs — a keyring
-of numbered terms so rotation appends rather than rewrites — remain a future
-option requiring their own accepted design.
+The accepted Phase 3 design replaces bulk passphrase rotation with numbered
+key terms. Guarded transition start inventories both current and retained
+generation namespaces, authenticates retained members through their exact
+root-pinned historical seals, and durably writes a target-term cutover
+snapshot before atomically publishing the pending root. Retained generations
+therefore do not require prune-all-priors quiescence and are not silently
+stranded on an unauthorized term.
 
-**New decision forced by the inventory:** `storepass.scanTargets` discovers
-key/template targets by walking the *resolved current* namespaces — prior
-generations would silently keep material encrypted under the **old** term
-key, making generation rollback after a rotation produce an unreadable
-store. Therefore: **rotation requires quiescence — it refuses to run while
-any non-current generation or incomplete operation exists (operator prunes
-via GC first, mirroring rotation's existing fail-closed stance toward
-unsupported recovered-batch state), and after a successful rotation the
-retention window restarts empty.** Prior-generation retention and passphrase
-rotation never coexist. (`deleted/` remains outside rotation today — the
-open decide-or-fix item is unchanged by this design.)
+Generation mutation and transition start still require the same identity
+mutation lock so the snapshot is taken against a cooperating-mutation-stable
+view. Direct filesystem changes are handled by exact input digests and the
+required final path/target-authority comparison, not by the lock. While the
+root is pending, normal signer reload and key scans fail closed until the
+snapshot-pinned lifecycle completes. The internal resume pass now preserves
+root-anchored prior generations byte-for-byte while rewrapping only exact
+pinned mutable current-generation envelopes; target outputs are authenticated
+and accepted idempotently after a crash. The completion pass performs
+pre/post-baseline final scans, writes a clean cutover's post-rewrap baseline
+before atomically closing the root, and only then removes the snapshot.
+Rollback consumption is implemented; operator wiring remains Phase 3 work; see
+[PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
 
 ## 12. Filesystems, crash ordering, ownership
 

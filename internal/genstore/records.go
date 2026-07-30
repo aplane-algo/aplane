@@ -5,6 +5,7 @@ package genstore
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -23,9 +25,13 @@ const (
 	ManifestSchema = "aplane.generation-manifest.v1"
 	// SealSchema identifies the final content record written before a
 	// generation stops being current.
-	SealSchema = "aplane.generation-seal.v1"
-	// schemaVersion is shared by both records.
-	schemaVersion = 1
+	SealSchema = "aplane.generation-seal.v2"
+
+	manifestSchemaVersion = 1
+	sealSchemaVersion     = 2
+
+	generationSealMACDomain = "aplane.generation-seal-mac.v1"
+	inventoryDigestDomain   = "aplane.generation-inventory-digest.v1"
 )
 
 // generationNamespaces are the directories a generation carries. Order is
@@ -37,6 +43,9 @@ type InventoryEntry struct {
 	Path   string `json:"path"` // e.g. "keys/ADDR.key"
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
+	// Term is zero for plaintext generation members and positive for a term
+	// envelope. In a seal it is security-bearing and MAC-authenticated.
+	Term int64 `json:"term,omitempty"`
 }
 
 // Manifest is the immutable at-mint operation record. It describes the
@@ -59,6 +68,11 @@ type Manifest struct {
 	// reviewed batch.
 	SourceRestoreID   string `json:"source_restore_id,omitempty"`
 	ReviewTokenSHA256 string `json:"review_token_sha256,omitempty"`
+	// RollbackSourceGenerationID names the sealed generation whose content
+	// was reconstructed into this mint. ParentID remains the outgoing
+	// current generation, preserving commit lineage; the rollback source is
+	// separate because rollback mints content instead of rewinding CURRENT.
+	RollbackSourceGenerationID string `json:"rollback_source_generation_id,omitempty"`
 	// Inventory is the at-mint content record.
 	Inventory []InventoryEntry `json:"inventory"`
 	// Complete is written true before publication; a manifest without it is
@@ -72,11 +86,38 @@ type Manifest struct {
 // at-mint manifest. A non-current generation without a seal is by
 // construction an uncommitted attempt.
 type Seal struct {
-	Schema        string           `json:"schema"`
-	SchemaVersion int              `json:"schema_version"`
-	GenerationID  string           `json:"generation_id"`
-	SealedAtUnix  int64            `json:"sealed_at"`
-	Inventory     []InventoryEntry `json:"inventory"`
+	Schema         string           `json:"schema"`
+	SchemaVersion  int              `json:"schema_version"`
+	GenerationID   string           `json:"generation_id"`
+	SealedAtUnix   int64            `json:"sealed_at"`
+	ManifestSHA256 string           `json:"manifest_sha256"`
+	IntegrityTerm  int64            `json:"integrity_term"`
+	Inventory      []InventoryEntry `json:"inventory"`
+	IntegrityMAC   string           `json:"integrity_mac"`
+}
+
+// CanonicalInventoryDigest returns the domain-separated digest used when a
+// rotation snapshot or baseline names an effective generation inventory
+// authority. It is independent of JSON formatting.
+func CanonicalInventoryDigest(inventory []InventoryEntry) (string, error) {
+	if err := validateInventory(inventory); err != nil {
+		return "", err
+	}
+	var encoded []byte
+	encoded = appendSealField(encoded, []byte(inventoryDigestDomain))
+	encoded = appendSealUint64(encoded, uint64(len(inventory)))
+	for _, entry := range inventory {
+		digest, err := decodeCanonicalSHA256(entry.SHA256)
+		if err != nil {
+			return "", fmt.Errorf("inventory %s: %w", entry.Path, err)
+		}
+		encoded = appendSealField(encoded, []byte(entry.Path))
+		encoded = appendSealField(encoded, digest)
+		encoded = appendSealUint64(encoded, uint64(entry.Size))
+		encoded = appendSealUint64(encoded, uint64(entry.Term))
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // BuildInventory walks the generation's namespaces and pins every regular
@@ -107,10 +148,18 @@ func BuildInventory(gen storepaths.GenPaths) ([]InventoryEntry, error) {
 				return nil, fmt.Errorf("inventory %s/%s: %w", namespace, entry.Name(), err)
 			}
 			sum := sha256.Sum256(data)
+			term, present, err := crypto.InspectTermEnvelope(data)
+			if err != nil {
+				return nil, fmt.Errorf("inventory %s/%s term: %w", namespace, entry.Name(), err)
+			}
+			if !present {
+				term = 0
+			}
 			inventory = append(inventory, InventoryEntry{
 				Path:   namespace + "/" + entry.Name(),
 				SHA256: hex.EncodeToString(sum[:]),
 				Size:   int64(len(data)),
+				Term:   term,
 			})
 		}
 	}
@@ -127,7 +176,7 @@ func WriteManifest(gen storepaths.GenPaths, manifest Manifest) error {
 		manifest.Schema = ManifestSchema
 	}
 	if manifest.SchemaVersion == 0 {
-		manifest.SchemaVersion = schemaVersion
+		manifest.SchemaVersion = manifestSchemaVersion
 	}
 	if err := validateManifest(&manifest, gen.GenerationID()); err != nil {
 		return err
@@ -137,8 +186,18 @@ func WriteManifest(gen storepaths.GenPaths, manifest Manifest) error {
 
 // ReadManifest loads and validates the generation's manifest.
 func ReadManifest(gen storepaths.GenPaths) (*Manifest, error) {
+	data, _, err := fsutil.ReadRegularFile(gen.ManifestPath())
+	if err != nil {
+		return nil, fmt.Errorf("read generation manifest: %w", err)
+	}
+	return ParseManifestBytes(gen, data)
+}
+
+// ParseManifestBytes parses and validates the exact immutable manifest buffer
+// a caller intends to hash or otherwise consume.
+func ParseManifestBytes(gen storepaths.GenPaths, data []byte) (*Manifest, error) {
 	var manifest Manifest
-	if err := readJSONStrict(gen.ManifestPath(), &manifest); err != nil {
+	if err := decodeJSONStrict(data, &manifest); err != nil {
 		return nil, fmt.Errorf("read generation manifest: %w", err)
 	}
 	if err := validateManifest(&manifest, gen.GenerationID()); err != nil {
@@ -150,18 +209,46 @@ func ReadManifest(gen storepaths.GenPaths) (*Manifest, error) {
 // WriteSeal durably records the generation's final inventory. Must be
 // called while the generation is still current, before the pointer flip
 // away from it; sealing is the last write a generation ever receives.
-func WriteSeal(gen storepaths.GenPaths, sealedAtUnix int64) error {
+func WriteSeal(gen storepaths.GenPaths, sealedAtUnix int64, kr *crypto.Keyring) error {
+	if kr == nil {
+		return fmt.Errorf("seal generation %s: keyring is required", gen.GenerationID())
+	}
+	if sealedAtUnix <= 0 {
+		return fmt.Errorf("seal generation %s: sealed_at must be positive", gen.GenerationID())
+	}
+	manifestBytes, manifest, err := readManifestBytes(gen)
+	if err != nil {
+		return fmt.Errorf("seal generation %s: %w", gen.GenerationID(), err)
+	}
+	if !manifest.Complete {
+		return fmt.Errorf("seal generation %s: manifest is not complete", gen.GenerationID())
+	}
 	inventory, err := BuildInventory(gen)
 	if err != nil {
 		return fmt.Errorf("seal generation %s: %w", gen.GenerationID(), err)
 	}
+	manifestSum := sha256.Sum256(manifestBytes)
 	seal := Seal{
-		Schema:        SealSchema,
-		SchemaVersion: schemaVersion,
-		GenerationID:  gen.GenerationID(),
-		SealedAtUnix:  sealedAtUnix,
-		Inventory:     inventory,
+		Schema:         SealSchema,
+		SchemaVersion:  sealSchemaVersion,
+		GenerationID:   gen.GenerationID(),
+		SealedAtUnix:   sealedAtUnix,
+		ManifestSHA256: hex.EncodeToString(manifestSum[:]),
+		IntegrityTerm:  kr.CurrentTerm(),
+		Inventory:      inventory,
 	}
+	macInput, err := canonicalSealMACInput(&seal)
+	if err != nil {
+		return fmt.Errorf("seal generation %s: %w", gen.GenerationID(), err)
+	}
+	term, mac, err := kr.SignIntegrity(crypto.IntegrityDomainGenerationSeal, macInput)
+	if err != nil {
+		return fmt.Errorf("seal generation %s: %w", gen.GenerationID(), err)
+	}
+	if term != seal.IntegrityTerm {
+		return fmt.Errorf("seal generation %s: integrity term changed during signing", gen.GenerationID())
+	}
+	seal.IntegrityMAC = mac
 	if err := writeJSONDurable(gen.SealPath(), seal); err != nil {
 		return err
 	}
@@ -170,21 +257,173 @@ func WriteSeal(gen storepaths.GenPaths, sealedAtUnix int64) error {
 
 // ReadSeal loads and validates the generation's seal. os.IsNotExist errors
 // pass through so reconciliation can classify unsealed generations.
-func ReadSeal(gen storepaths.GenPaths) (*Seal, error) {
-	var seal Seal
-	if err := readJSONStrict(gen.SealPath(), &seal); err != nil {
+func ReadSeal(gen storepaths.GenPaths, kr *crypto.Keyring) (*Seal, error) {
+	if kr == nil {
+		return nil, fmt.Errorf("read generation seal: keyring is required")
+	}
+	sealBytes, _, err := fsutil.ReadRegularFile(gen.SealPath())
+	if err != nil {
 		return nil, err
 	}
-	if seal.Schema != SealSchema || seal.SchemaVersion != schemaVersion {
-		return nil, fmt.Errorf("unsupported generation seal schema")
+	manifestBytes, _, err := fsutil.ReadRegularFile(gen.ManifestPath())
+	if err != nil {
+		return nil, fmt.Errorf("generation seal manifest: %w", err)
+	}
+	return ParseSealBytes(gen, sealBytes, manifestBytes, kr)
+}
+
+// BuildHistoricalAnchor validates an unanchored seal under current authority
+// and returns the exact complete-seal reference to commit into the root before
+// that authority retires.
+func BuildHistoricalAnchor(
+	gen storepaths.GenPaths,
+	kr *crypto.Keyring,
+) (crypto.HistoricalGenerationAnchor, error) {
+	if kr == nil {
+		return crypto.HistoricalGenerationAnchor{}, fmt.Errorf(
+			"build historical anchor: keyring is required",
+		)
+	}
+	sealBytes, _, err := fsutil.ReadRegularFile(gen.SealPath())
+	if err != nil {
+		return crypto.HistoricalGenerationAnchor{}, err
+	}
+	manifestBytes, _, err := fsutil.ReadRegularFile(gen.ManifestPath())
+	if err != nil {
+		return crypto.HistoricalGenerationAnchor{}, fmt.Errorf(
+			"historical anchor manifest: %w",
+			err,
+		)
+	}
+	if _, err := ParseSealBytes(gen, sealBytes, manifestBytes, kr); err != nil {
+		return crypto.HistoricalGenerationAnchor{}, fmt.Errorf(
+			"historical anchor generation %s: %w",
+			gen.GenerationID(),
+			err,
+		)
+	}
+	return crypto.NewHistoricalGenerationAnchor(gen.GenerationID(), sealBytes)
+}
+
+// ReadAnchoredSeal loads exact seal and manifest buffers and validates them
+// through the root's historical anchor.
+func ReadAnchoredSeal(
+	gen storepaths.GenPaths,
+	anchor crypto.HistoricalGenerationAnchor,
+	kr *crypto.Keyring,
+) (*Seal, error) {
+	sealBytes, _, err := fsutil.ReadRegularFile(gen.SealPath())
+	if err != nil {
+		return nil, err
+	}
+	manifestBytes, _, err := fsutil.ReadRegularFile(gen.ManifestPath())
+	if err != nil {
+		return nil, fmt.Errorf("anchored generation seal manifest: %w", err)
+	}
+	return ParseAnchoredSealBytes(gen, anchor, sealBytes, manifestBytes, kr)
+}
+
+// ParseSealBytes validates exact seal and manifest buffers together. This is
+// the historical-open primitive: callers can hash, authenticate, and consume
+// the same bytes without a path-validation/read-again TOCTOU gap.
+func ParseSealBytes(
+	gen storepaths.GenPaths,
+	sealBytes, manifestBytes []byte,
+	kr *crypto.Keyring,
+) (*Seal, error) {
+	if kr == nil {
+		return nil, fmt.Errorf("read generation seal: keyring is required")
+	}
+	seal, macInput, err := parseSealRecord(gen, sealBytes, manifestBytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := kr.VerifyIntegrity(
+		crypto.IntegrityDomainGenerationSeal,
+		macInput,
+		seal.IntegrityTerm,
+		seal.IntegrityMAC,
+	); err != nil {
+		return nil, fmt.Errorf("generation seal integrity verification failed: %w", err)
+	}
+	if err := requireCurrentInventoryTerms(seal, kr.CurrentTerm()); err != nil {
+		return nil, err
+	}
+	return seal, nil
+}
+
+// ParseAnchoredSealBytes validates exact seal and manifest buffers after the
+// complete seal bytes match a root historical anchor. The anchor authorizes
+// verification under a resident retired term; the retired-term MAC alone
+// never grants historical authority.
+func ParseAnchoredSealBytes(
+	gen storepaths.GenPaths,
+	anchor crypto.HistoricalGenerationAnchor,
+	sealBytes, manifestBytes []byte,
+	kr *crypto.Keyring,
+) (*Seal, error) {
+	if kr == nil {
+		return nil, fmt.Errorf("read anchored generation seal: keyring is required")
+	}
+	if err := anchor.VerifyExact(gen.GenerationID(), sealBytes); err != nil {
+		return nil, fmt.Errorf("generation %s historical anchor: %w", gen.GenerationID(), err)
+	}
+	seal, macInput, err := parseSealRecord(gen, sealBytes, manifestBytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := kr.VerifyHistoricalGenerationSealIntegrity(
+		macInput,
+		seal.IntegrityTerm,
+		seal.IntegrityMAC,
+	); err != nil {
+		return nil, fmt.Errorf("anchored generation seal integrity verification failed: %w", err)
+	}
+	return seal, nil
+}
+
+func parseSealRecord(
+	gen storepaths.GenPaths,
+	sealBytes, manifestBytes []byte,
+) (*Seal, []byte, error) {
+	var seal Seal
+	if err := decodeJSONStrict(sealBytes, &seal); err != nil {
+		return nil, nil, err
+	}
+	if seal.Schema != SealSchema || seal.SchemaVersion != sealSchemaVersion {
+		return nil, nil, fmt.Errorf("unsupported generation seal schema")
 	}
 	if seal.GenerationID != gen.GenerationID() {
-		return nil, fmt.Errorf("generation seal names %s, want %s", seal.GenerationID, gen.GenerationID())
+		return nil, nil, fmt.Errorf("generation seal names %s, want %s", seal.GenerationID, gen.GenerationID())
 	}
 	if err := validateInventory(seal.Inventory); err != nil {
-		return nil, fmt.Errorf("generation seal: %w", err)
+		return nil, nil, fmt.Errorf("generation seal: %w", err)
 	}
-	return &seal, nil
+	if seal.SealedAtUnix <= 0 || seal.IntegrityTerm <= 0 {
+		return nil, nil, fmt.Errorf("generation seal metadata is incomplete")
+	}
+	if err := validateCanonicalSHA256(seal.ManifestSHA256); err != nil {
+		return nil, nil, fmt.Errorf("generation seal manifest_sha256: %w", err)
+	}
+	if err := validateCanonicalSHA256(seal.IntegrityMAC); err != nil {
+		return nil, nil, fmt.Errorf("generation seal integrity_mac: %w", err)
+	}
+	manifest, err := ParseManifestBytes(gen, manifestBytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generation seal manifest: %w", err)
+	}
+	if !manifest.Complete {
+		return nil, nil, fmt.Errorf("generation seal manifest is not complete")
+	}
+	manifestSum := sha256.Sum256(manifestBytes)
+	if hex.EncodeToString(manifestSum[:]) != seal.ManifestSHA256 {
+		return nil, nil, fmt.Errorf("generation seal manifest digest mismatch")
+	}
+	macInput, err := canonicalSealMACInput(&seal)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generation seal: %w", err)
+	}
+	return &seal, macInput, nil
 }
 
 // HasSeal reports whether the generation carries a seal file. Every
@@ -202,7 +441,7 @@ func HasSeal(gen storepaths.GenPaths) (bool, error) {
 }
 
 func validateManifest(manifest *Manifest, generationID string) error {
-	if manifest.Schema != ManifestSchema || manifest.SchemaVersion != schemaVersion {
+	if manifest.Schema != ManifestSchema || manifest.SchemaVersion != manifestSchemaVersion {
 		return fmt.Errorf("unsupported generation manifest schema")
 	}
 	if manifest.GenerationID != generationID {
@@ -217,6 +456,20 @@ func validateManifest(manifest *Manifest, generationID string) error {
 			// current generation itself — reporting a rollback that never
 			// moved CURRENT.
 			return fmt.Errorf("generation manifest names itself as its parent")
+		}
+	}
+	if manifest.RollbackSourceGenerationID != "" {
+		if manifest.ParentID == "" {
+			return fmt.Errorf("generation manifest rollback source requires a parent")
+		}
+		if err := storepaths.ValidateGenerationID(manifest.RollbackSourceGenerationID); err != nil {
+			return fmt.Errorf("generation manifest rollback source: %w", err)
+		}
+		if manifest.RollbackSourceGenerationID == manifest.GenerationID {
+			return fmt.Errorf("generation manifest names itself as its rollback source")
+		}
+		if manifest.RollbackSourceGenerationID == manifest.ParentID {
+			return fmt.Errorf("generation manifest rollback source is its outgoing parent")
 		}
 	}
 	if manifest.CreatedAtUnix <= 0 || manifest.Operation == "" || manifest.OperationID == "" {
@@ -238,7 +491,9 @@ func validateInventory(inventory []InventoryEntry) error {
 			return fmt.Errorf("duplicate inventory path %q", entry.Path)
 		}
 		seen[entry.Path] = struct{}{}
-		if len(entry.SHA256) != 64 || entry.Size < 0 {
+		if err := validateCanonicalSHA256(entry.SHA256); err != nil ||
+			entry.Size < 0 ||
+			entry.Term < 0 {
 			return fmt.Errorf("invalid inventory record for %q", entry.Path)
 		}
 	}
@@ -258,11 +513,7 @@ func writeJSONDurable(path string, value any) error {
 	return fsutil.WriteFileDurable(path, append(data, '\n'))
 }
 
-func readJSONStrict(path string, out any) error {
-	data, _, err := fsutil.ReadRegularFile(path)
-	if err != nil {
-		return err
-	}
+func decodeJSONStrict(data []byte, out any) error {
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(out); err != nil {
@@ -273,8 +524,99 @@ func readJSONStrict(path string, out any) error {
 	case io.EOF:
 		return nil
 	case nil:
-		return fmt.Errorf("%s: trailing data after JSON document", path)
+		return fmt.Errorf("trailing data after JSON document")
 	default:
-		return fmt.Errorf("%s: trailing data after JSON document: %w", path, err)
+		return fmt.Errorf("trailing data after JSON document: %w", err)
 	}
+}
+
+func readManifestBytes(gen storepaths.GenPaths) ([]byte, *Manifest, error) {
+	data, _, err := fsutil.ReadRegularFile(gen.ManifestPath())
+	if err != nil {
+		return nil, nil, fmt.Errorf("read generation manifest: %w", err)
+	}
+	manifest, err := ParseManifestBytes(gen, data)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, manifest, nil
+}
+
+func canonicalSealMACInput(seal *Seal) ([]byte, error) {
+	if seal == nil {
+		return nil, fmt.Errorf("missing generation seal")
+	}
+	if seal.SealedAtUnix <= 0 || seal.IntegrityTerm <= 0 {
+		return nil, fmt.Errorf("generation seal metadata is incomplete")
+	}
+	if err := validateInventory(seal.Inventory); err != nil {
+		return nil, err
+	}
+	manifestDigest, err := decodeCanonicalSHA256(seal.ManifestSHA256)
+	if err != nil {
+		return nil, fmt.Errorf("manifest_sha256: %w", err)
+	}
+	var out []byte
+	out = appendSealField(out, []byte(generationSealMACDomain))
+	out = appendSealField(out, []byte(seal.Schema))
+	out = appendSealUint64(out, uint64(seal.SchemaVersion))
+	out = appendSealField(out, []byte(seal.GenerationID))
+	out = appendSealUint64(out, uint64(seal.SealedAtUnix))
+	out = appendSealField(out, manifestDigest)
+	out = appendSealUint64(out, uint64(seal.IntegrityTerm))
+	out = appendSealUint64(out, uint64(len(seal.Inventory)))
+	for _, entry := range seal.Inventory {
+		digest, err := decodeCanonicalSHA256(entry.SHA256)
+		if err != nil {
+			return nil, fmt.Errorf("inventory %s: %w", entry.Path, err)
+		}
+		out = appendSealField(out, []byte(entry.Path))
+		out = appendSealField(out, digest)
+		out = appendSealUint64(out, uint64(entry.Size))
+		out = appendSealUint64(out, uint64(entry.Term))
+	}
+	return out, nil
+}
+
+func requireCurrentInventoryTerms(seal *Seal, currentTerm int64) error {
+	for _, entry := range seal.Inventory {
+		if entry.Term != 0 && entry.Term != currentTerm {
+			return fmt.Errorf(
+				"unanchored generation seal entry %q names term %d, want current term %d",
+				entry.Path,
+				entry.Term,
+				currentTerm,
+			)
+		}
+	}
+	return nil
+}
+
+func appendSealUint64(out []byte, value uint64) []byte {
+	var encoded [8]byte
+	binary.BigEndian.PutUint64(encoded[:], value)
+	return appendSealField(out, encoded[:])
+}
+
+func appendSealField(out, field []byte) []byte {
+	var length [4]byte
+	binary.BigEndian.PutUint32(length[:], uint32(len(field)))
+	out = append(out, length[:]...)
+	return append(out, field...)
+}
+
+func validateCanonicalSHA256(value string) error {
+	_, err := decodeCanonicalSHA256(value)
+	return err
+}
+
+func decodeCanonicalSHA256(value string) ([]byte, error) {
+	if len(value) != sha256.Size*2 {
+		return nil, fmt.Errorf("must be %d lowercase hexadecimal characters", sha256.Size*2)
+	}
+	decoded, err := hex.DecodeString(value)
+	if err != nil || hex.EncodeToString(decoded) != value {
+		return nil, fmt.Errorf("must be %d lowercase hexadecimal characters", sha256.Size*2)
+	}
+	return decoded, nil
 }
