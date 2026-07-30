@@ -9,9 +9,9 @@
 # SSH token provisioning, client reachability, shared LocalNet wiring, sentry
 # endpoint enrollment, sentry-key discovery, guarded transaction-signing flows,
 # and corridor allowlist enforcement. It also validates the guarded account
-# with SDK intent prep plus SDK guarded component signing. Local mode uses the
-# local Python SDK checkout; release mode uses the Python package from PyPI and
-# the TypeScript package from npm.
+# and bounded-sentry Corridor with SDK intent prep plus component signing.
+# Local mode uses the local Python SDK checkout; release mode uses the Python
+# package from PyPI and the TypeScript package from npm.
 
 set -euo pipefail
 
@@ -84,9 +84,11 @@ imports the optional Corridor template, and verifies apshell can create, fund,
 and validate guarded, Corridor, and plain Falcon accounts against the shared
 LocalNet. It then
 submits the same guarded 0 ALGO self-send with SDK preparation and guarded
-signing helpers. The Corridor flow also proves that sentry loss blocks spend
-while its external admin can still rekey the account. By default the Python SDK
-comes from the local aplanesdk repo;
+signing helpers. It also sends an allowlisted Corridor payment through the
+SDK's bounded-component, sentry-component, and bounded-assembly choreography,
+and proves a non-allowlisted recipient is rejected. The Corridor flow also
+proves that sentry loss blocks spend while its external admin can still rekey
+the account. By default the Python SDK comes from the local aplanesdk repo;
 with --release-install, Python comes from PyPI and TypeScript comes from npm.
 EOF
 }
@@ -989,6 +991,143 @@ PY
         python /tmp/sdk-guarded-validate.py"
 }
 
+run_python_sdk_corridor_validate() {
+    [ -n "$CORRIDOR_ADDRESS" ] || die "Corridor address is not set"
+    [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "Corridor allowed address is not set"
+    [ -n "$CORRIDOR_BLOCKED_ADDRESS" ] || die "Corridor blocked address is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+
+    local py_file
+    py_file="$(mktemp)"
+    cat > "$py_file" <<'PY'
+import base64
+import os
+import sys
+
+from algosdk import transaction
+from algosdk.v2client import algod
+
+from aplanesdk import (
+    PreparedGroup,
+    SignerClient,
+    SignerError,
+    send_raw_transaction,
+    sign_prepared_bounded_sentry_group,
+)
+
+MIN_TXN_FEE = 1000
+
+
+def require_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise RuntimeError(f"{name} is required")
+    return value
+
+
+def signed_group_b64(signed_hexes: list[str]) -> str:
+    return base64.b64encode(
+        b"".join(bytes.fromhex(item) for item in signed_hexes)
+    ).decode()
+
+
+def main() -> int:
+    primary_data = require_env("APCLIENT_DATA")
+    sentry_data = require_env("APLANE_SENTRY_DATA")
+    corridor_address = require_env("APLANE_CORRIDOR_ADDRESS")
+    allowed_address = require_env("APLANE_CORRIDOR_ALLOWED_ADDRESS")
+    blocked_address = require_env("APLANE_CORRIDOR_BLOCKED_ADDRESS")
+    sentry_component_key = require_env("APLANE_SENTRY_COMPONENT_KEY")
+    algod_url = require_env("APLANE_ALGOD_URL")
+    algod_token = require_env("APLANE_ALGOD_TOKEN")
+
+    algod_client = algod.AlgodClient(algod_token, algod_url)
+    with SignerClient.from_env(
+        data_dir=primary_data,
+        timeout=180,
+    ) as user_client, SignerClient.from_env(
+        data_dir=sentry_data,
+        timeout=180,
+    ) as sentry_client:
+        allowed = user_client.prepare_payment(
+            algod_client,
+            sender=corridor_address,
+            receiver=allowed_address,
+            amount=0,
+            note=b"aplane python sdk corridor allow",
+            fee=MIN_TXN_FEE,
+            use_flat_fee=True,
+        )
+        result = sign_prepared_bounded_sentry_group(
+            user_client=user_client,
+            sentry_client=sentry_client,
+            sentry_component_key=sentry_component_key,
+            prepared_group=PreparedGroup([allowed]),
+        )
+        if not result.signed_group:
+            raise RuntimeError(
+                "SDK bounded-sentry signing returned an empty signed group"
+            )
+        print(
+            "Python SDK bounded-sentry Corridor group size: "
+            f"{len(result.signed_group)}"
+        )
+        txid = send_raw_transaction(
+            algod_client,
+            signed_group_b64(result.signed_group),
+        )
+        transaction.wait_for_confirmation(algod_client, txid, 10)
+        print(f"Python SDK bounded-sentry Corridor submitted: {txid}")
+
+        blocked = user_client.prepare_payment(
+            algod_client,
+            sender=corridor_address,
+            receiver=blocked_address,
+            amount=0,
+            note=b"aplane python sdk corridor deny",
+            fee=MIN_TXN_FEE,
+            use_flat_fee=True,
+        )
+        try:
+            sign_prepared_bounded_sentry_group(
+                user_client=user_client,
+                sentry_client=sentry_client,
+                sentry_component_key=sentry_component_key,
+                prepared_group=PreparedGroup([blocked]),
+            )
+        except SignerError as exc:
+            if "not in allowlist" not in str(exc):
+                raise RuntimeError(
+                    "SDK Corridor denial did not report allowlist rejection"
+                ) from exc
+            print("Python SDK bounded-sentry Corridor denial verified")
+        else:
+            raise RuntimeError(
+                "SDK Corridor unexpectedly signed a non-allowlisted payment"
+            )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+PY
+    docker cp "$py_file" "$CLIENT_CONTAINER:/tmp/sdk-corridor-validate.py"
+    rm -f "$py_file"
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sdk-corridor-validate.py
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" ". '$SDK_VENV/bin/activate' && \
+        APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
+        APLANE_SENTRY_DATA=/home/$TEST_USER/aplane/apclient-sdk-sentry \
+        APLANE_CORRIDOR_ADDRESS='$CORRIDOR_ADDRESS' \
+        APLANE_CORRIDOR_ALLOWED_ADDRESS='$CORRIDOR_ALLOWED_ADDRESS' \
+        APLANE_CORRIDOR_BLOCKED_ADDRESS='$CORRIDOR_BLOCKED_ADDRESS' \
+        APLANE_SENTRY_COMPONENT_KEY='$SENTRY_COMPONENT_KEY' \
+        APLANE_ALGOD_URL='$ALGOD_URL' \
+        APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
+        PYTHONUNBUFFERED=1 \
+        python /tmp/sdk-corridor-validate.py"
+}
+
 run_typescript_sdk_guarded_validate() {
     [ "$RELEASE_INSTALL" = "1" ] || return 0
     [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
@@ -1626,6 +1765,9 @@ main() {
     log "Funding generated corridor account from shared LocalNet"
     fund_corridor_key_from_localnet
     verify_corridor_funded
+
+    log "Validating bounded-sentry Corridor through Python SDK"
+    run_python_sdk_corridor_validate
 
     log "Verifying corridor allowlisted recipient succeeds"
     validate_corridor_allowed_send
