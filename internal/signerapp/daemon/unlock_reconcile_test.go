@@ -38,8 +38,8 @@ func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 		CreatedAt:       time.Unix(1_753_800_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
 			for src, dst := range map[string]string{
-				server.keyPaths.KeysDir(auth.DefaultIdentityID):           staged.KeysDir(),
-				server.keyPaths.KeyTypeRecordsDir(auth.DefaultIdentityID): staged.KeyTypeRecordsDir(),
+				server.keyPaths.LegacyKeysDir(auth.DefaultIdentityID):           staged.KeysDir(),
+				server.keyPaths.LegacyKeyTypeRecordsDir(auth.DefaultIdentityID): staged.KeyTypeRecordsDir(),
 			} {
 				entries, err := os.ReadDir(src)
 				if os.IsNotExist(err) {
@@ -64,8 +64,8 @@ func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 		t.Fatalf("Mint: %v", err)
 	}
 	for _, legacy := range []string{
-		server.keyPaths.KeysDir(auth.DefaultIdentityID),
-		server.keyPaths.KeyTypeRecordsDir(auth.DefaultIdentityID),
+		server.keyPaths.LegacyKeysDir(auth.DefaultIdentityID),
+		server.keyPaths.LegacyKeyTypeRecordsDir(auth.DefaultIdentityID),
 	} {
 		if err := os.RemoveAll(legacy); err != nil {
 			t.Fatalf("remove legacy namespace: %v", err)

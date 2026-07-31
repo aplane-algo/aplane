@@ -114,7 +114,7 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 	t.Helper()
 
 	genstoretest.MintFirst(t, server.keyPaths, identityID)
-	if err := os.MkdirAll(server.keyPaths.KeysDir(identityID), 0o750); err != nil {
+	if err := os.MkdirAll(server.keyPaths.LegacyKeysDir(identityID), 0o750); err != nil {
 		t.Fatalf("create keys dir for %q: %v", identityID, err)
 	}
 	metadataDir := server.keyPaths.KeystoreMetadataDir(identityID)

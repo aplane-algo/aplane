@@ -310,6 +310,13 @@ generation reconciliation discards at the next unlock.
 Product mode exposes only `default`, but the runtime model is internally
 identity-scoped.
 
+Active `keys/` and `keytypes/` namespaces exist only inside the generation
+named by `CURRENT`. Normal consumers resolve `storepaths.ActivePaths` once
+through `genstore.ResolveActive`. The explicitly named
+`storepaths.Paths.LegacyKeysDir` and `LegacyKeyType*` helpers address
+pre-generation root-level locations only for recovery probes and tests; those
+locations are not an alternate active layout.
+
 ### Key Files
 
 Key files are encrypted JSON payloads in the term envelope, bound to the
@@ -720,8 +727,8 @@ Primary projections:
 
 HTTP token authentication resolves exactly one identity, and handlers route to
 that identity runtime. Clients route signing on inventory `signing_flow`
-labels (`sentry1`, `bounded1`, or empty for plain `/sign`) and must fail closed
-on unknown labels.
+labels (`sentry1`, `bounded1`, `bounded-sentry1`, or empty for plain `/sign`)
+and must fail closed on unknown labels.
 
 ### Admin Protocol
 

@@ -85,7 +85,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *iden
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	if err := os.MkdirAll(keyPaths.KeysDir(auth.DefaultIdentityID), 0o750); err != nil {
+	if err := os.MkdirAll(keyPaths.LegacyKeysDir(auth.DefaultIdentityID), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}
 

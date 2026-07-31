@@ -973,7 +973,11 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	} else {
 		// An unresolvable layout still gets the identity-dir watch so a
 		// repaired CURRENT triggers a reload; reload itself fails closed.
-		dirs = append(dirs, ir.keyPaths.KeysDir(ir.id), ir.keyPaths.KeyTypeRecordsDir(ir.id))
+		dirs = append(
+			dirs,
+			ir.keyPaths.LegacyKeysDir(ir.id),
+			ir.keyPaths.LegacyKeyTypeRecordsDir(ir.id),
+		)
 	}
 
 	// The reload callback either reloads (if unlocked) or marks dirty (if locked)

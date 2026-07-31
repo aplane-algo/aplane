@@ -61,15 +61,15 @@ func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(paths.KeysDir(identityID), 0o700); err != nil {
+	if err := os.MkdirAll(paths.LegacyKeysDir(identityID), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	for _, extension := range []string{keys.AccountKeyExtension, keys.SentryCredentialExtension} {
-		if err := os.WriteFile(filepath.Join(paths.KeysDir(identityID), selector+extension), encrypted, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(paths.LegacyKeysDir(identityID), selector+extension), encrypted, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	_, _, err = ExportKey(paths, identityID, paths.KeysDir(identityID), t.TempDir(), selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
+	_, _, err = ExportKey(paths, identityID, paths.LegacyKeysDir(identityID), t.TempDir(), selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous managed credential") {
 		t.Fatalf("ExportKey() error = %v, want ambiguity rejection", err)
 	}

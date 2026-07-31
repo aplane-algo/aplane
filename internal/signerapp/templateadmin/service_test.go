@@ -52,7 +52,7 @@ func setupServiceWithReloadCounter(t *testing.T) (Service, *identity.Runtime, *a
 	keyPaths := storepaths.NewPaths(tmpDir)
 	genstoretest.MintFirst(t, keyPaths, "default")
 	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
-	if err := os.MkdirAll(keyPaths.KeysDir(auth.DefaultIdentityID), 0o750); err != nil {
+	if err := os.MkdirAll(keyPaths.LegacyKeysDir(auth.DefaultIdentityID), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}
 	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {

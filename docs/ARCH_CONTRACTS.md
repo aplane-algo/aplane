@@ -3074,6 +3074,10 @@ Committed JSON golden fixtures for signer API contract tests live under
 `pkg/signerapi`. These fixtures are compatibility source material for this
 repository and the external SDK repository: update them intentionally with any
 wire-contract change, not as generated test runtime state.
+With an SDK checkout available,
+`make contract-sync-check APLANESDK_DIR=/path/to/aplanesdk` verifies that the
+copied fixture trees match. The normal in-repo `contract-test` target does not
+perform that cross-repository comparison.
 Cross-language SDK prep parity fixtures are owned in the external SDK
 repository because they exercise SDK transaction builders rather than signer
 HTTP DTOs; update them when SDK prep request-shape behavior intentionally

@@ -317,12 +317,13 @@ These decisions are part of the current data model and contract surface:
 | `release.json` is release provenance metadata. | It helps identify the installed distribution and apply installer compatibility gates, but does not authenticate code or authorize upgrades by itself. |
 | Release archive labels are not upgrade authority. | Local packaging and smoke tests may use simple archive labels while embedding a semver-comparable `release.json.version`; installers compare the metadata file, not the tarball filename. |
 | `endpoints.yaml` is the client routing authority. | Client `config.yaml` owns network/theme/polling, not signer or sentry endpoint routes. |
+| `CURRENT` is the active key/keytype namespace authority. | Normal readers and writers resolve `storepaths.ActivePaths` through `genstore.ResolveActive`; explicitly named `LegacyKeysDir` / `LegacyKeyType*` paths are recovery probes for pre-generation root locations, not an alternate active layout. |
 | Endpoint import and `/keys` discovery are routing metadata. | The trust anchor is the sentry public key embedded in the guarded account key, then `/sign/assemble` verification and on-chain LogicSig verification. |
 | `Config.SentryEndpoints` is derived runtime state. | Durable sentry endpoint inventory lives under endpoint records in `endpoints.yaml`. |
 | `sentries/<name>.json` records are public generation references. | They help the TUI select a sentry public key but do not prove endpoint ownership or signer custody. |
 | Guarded account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
 | External `.wit` bundles are not signer-managed credentials. | Contract-admin private material stays in standalone custody (`aprekey`); signer and `apstore` never treat `.wit` as `.key`/`.sen`. |
-| Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `sentry1`, and `bounded1` and fail closed on unknown labels. |
+| Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `sentry1`, `bounded1`, and `bounded-sentry1` and fail closed on unknown labels. |
 | `signerapi.SignResponse` is not the live `/sign` wire shape. | Live `/sign` uses `GroupSignResponse`; `SignResponse` is not a separate wire authority. |
 | Admin mnemonic export messages do not release recovery material. | Servers deny `export_key`, `GenerateResultMessage.Mnemonic` is omitted, and recovery material is handled through encrypted backups instead of admin result payloads. |
 | `internal/signerapp/signing` uses SDK DTOs at the service boundary. | It is not a duplicate durable authority; request DTO changes belong in `pkg/signerapi` with fixtures. |

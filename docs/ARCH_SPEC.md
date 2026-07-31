@@ -1608,6 +1608,11 @@ The repo uses:
   prepared-request parity fixtures for the SDK prep layer. `/status` is
   SDK-facing because clients use `keyset_revision` for refresh decisions and
   `approval_wait_seconds` for sizing `/sign` deadlines.
+- `make contract-sync-check APLANESDK_DIR=/path/to/aplanesdk` compares the
+  committed `test/contracts/signerapi/` fixture tree with the external SDK
+  repository. Run it when changing shared signer HTTP fixtures; ordinary CI
+  runs `make contract-test` but does not check out the SDK repository for this
+  comparison.
 - machine-checkable TLA+ models under `docs/formal/`, run locally with
   `make formal-test` and in CI by the Formal Models job. The authoritative
   `(spec, cfg)` run list and expected outcomes/metrics live in

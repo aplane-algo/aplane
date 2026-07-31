@@ -30,7 +30,7 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 
@@ -111,7 +111,7 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
 		t.Fatal(err)
 	}
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
@@ -223,7 +223,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	const badAddress = "BADCANONICALKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 
@@ -309,7 +309,7 @@ func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 	const badAddress = "ONLYINVALIDKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"

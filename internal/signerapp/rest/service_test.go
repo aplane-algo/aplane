@@ -160,7 +160,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Rol
 	genstoretest.MintFirst(t, keyPaths, "alice")
 	genstoretest.MintFirst(t, keyPaths, "bob")
 	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
-	keysDir := keyPaths.KeysDir(auth.DefaultIdentityID)
+	keysDir := keyPaths.LegacyKeysDir(auth.DefaultIdentityID)
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}

@@ -102,3 +102,72 @@ func TestNoHardlinksInStoreCode(t *testing.T) {
 		t.Fatalf("walk error = %v", err)
 	}
 }
+
+// TestLegacyRootStorePathsStayRecoveryOnly prevents the pre-generation
+// identity-root keys/ and keytypes/ namespaces from becoming an alternate
+// active store again. Production reads and writes must resolve ActivePaths
+// through genstore.ResolveActive. The identity watcher is the sole exception:
+// it probes legacy paths only when CURRENT cannot be resolved so a repair can
+// trigger a fail-closed reload.
+func TestLegacyRootStorePathsStayRecoveryOnly(t *testing.T) {
+	root := filepath.Join("..", "..")
+	allowed := map[string]struct{}{
+		filepath.ToSlash("internal/signerapp/identity/runtime.go"): {},
+		filepath.ToSlash("internal/storepaths/paths.go"):           {},
+	}
+	legacySelectors := map[string]struct{}{
+		"LegacyKeysDir":           {},
+		"LegacyKeyTypeRecordsDir": {},
+		"LegacyKeyTypeRecord":     {},
+		"LegacyKeyTypeTemplate":   {},
+	}
+
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "temp", "vendor", "node_modules":
+				if path != root {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		if _, ok := allowed[filepath.ToSlash(rel)]; ok {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		file, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			return parseErr
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if _, legacy := legacySelectors[selector.Sel.Name]; legacy {
+				t.Errorf(
+					"%s: legacy root store path %s is recovery-only; resolve storepaths.ActivePaths",
+					fset.Position(selector.Pos()),
+					selector.Sel.Name,
+				)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk error = %v", err)
+	}
+}

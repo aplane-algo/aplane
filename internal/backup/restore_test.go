@@ -226,7 +226,7 @@ func TestPreviewRestoreManagedArchiveReportsKeyMetadataAndExistingConflict(t *te
 		}
 	})
 
-	if err := os.MkdirAll(paths.KeysDir(identityID), 0o750); err != nil {
+	if err := os.MkdirAll(paths.LegacyKeysDir(identityID), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), []byte("existing"), 0o600); err != nil {
@@ -428,7 +428,7 @@ func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
 	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address)); !os.IsNotExist(err) {
 		t.Fatalf("active key stat error = %v, want not found", err)
 	}
-	for _, activeDir := range []string{paths.KeysDir(identityID), paths.KeyTypeRecordsDir(identityID)} {
+	for _, activeDir := range []string{paths.LegacyKeysDir(identityID), paths.LegacyKeyTypeRecordsDir(identityID)} {
 		if _, err := os.Stat(activeDir); !os.IsNotExist(err) {
 			t.Fatalf("active directory %s stat error = %v, want not found", activeDir, err)
 		}
@@ -713,7 +713,7 @@ func TestRestoreKeyRejectsContradictoryManagedCredentialClass(t *testing.T) {
 	if err := writeStandaloneBackupFile(filepath.Join(keysDir, componentKey+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(paths.KeysDir(identityID), 0o750); err != nil {
+	if err := os.MkdirAll(paths.LegacyKeysDir(identityID), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	legacyPath := apkeys.AccountKeyFilePath(paths, identityID, componentKey)
@@ -739,10 +739,10 @@ func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T
 	mintFirstGenerationForBackupTest(t, paths)
 	identityID := "default"
 	address, keyJSON := testEd25519BackupKeyJSON(t)
-	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
-	duplicatePath := filepath.Join(paths.KeysDir(identityID), "duplicate.key")
+	duplicatePath := filepath.Join(paths.LegacyKeysDir(identityID), "duplicate.key")
 	encryptedExisting, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, apcrypto.AccountKeyContext("duplicate"))
 	if err != nil {
 		t.Fatalf("encryptWithTermKey(existing) error = %v", err)
@@ -951,7 +951,7 @@ func TestRestoreKeyRejectsInvalidKeyTypeBeforeTemplatePathUse(t *testing.T) {
 	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); !os.IsNotExist(err) {
 		t.Fatalf("restored key stat error = %v, want not exist", err)
 	}
-	if entries, err := os.ReadDir(paths.KeyTypeRecordsDir(identityID)); err == nil && len(entries) > 0 {
+	if entries, err := os.ReadDir(paths.LegacyKeyTypeRecordsDir(identityID)); err == nil && len(entries) > 0 {
 		t.Fatalf("key type records = %v, want none", entries)
 	} else if err != nil && !os.IsNotExist(err) {
 		t.Fatalf("ReadDir(keytypes) error = %v", err)

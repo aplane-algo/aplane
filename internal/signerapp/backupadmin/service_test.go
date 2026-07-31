@@ -95,7 +95,7 @@ func TestBackupIdentityCapturesSourceApprovalAndCustomGenesisMappings(t *testing
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(paths.KeysDir(auth.DefaultIdentityID), 0o770); err != nil {
+		if err := os.MkdirAll(paths.LegacyKeysDir(auth.DefaultIdentityID), 0o770); err != nil {
 			return err
 		}
 		return os.WriteFile(
@@ -385,7 +385,7 @@ func TestReviewRecoveredForegroundsAutoApproveAndPinsDestinationState(t *testing
 		t.Fatalf("unchanged review token = %q, want %q", repeated.ReviewToken, first.ReviewToken)
 	}
 
-	if err := os.MkdirAll(paths.KeysDir(auth.DefaultIdentityID), 0o750); err != nil {
+	if err := os.MkdirAll(paths.LegacyKeysDir(auth.DefaultIdentityID), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 	if err := os.WriteFile(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address), []byte("existing encrypted credential"), 0o600); err != nil {

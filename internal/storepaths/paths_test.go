@@ -42,15 +42,15 @@ func TestRotationPathsAreIdentityScoped(t *testing.T) {
 func TestKeyTypePathsAreIdentityScoped(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	wantDir := filepath.Join("/tmp/test-keystore", "identities", "default", "keytypes")
-	if gotDir := paths.KeyTypeRecordsDir("default"); gotDir != wantDir {
-		t.Fatalf("KeyTypeRecordsDir() = %q, want %q", gotDir, wantDir)
+	if gotDir := paths.LegacyKeyTypeRecordsDir("default"); gotDir != wantDir {
+		t.Fatalf("LegacyKeyTypeRecordsDir() = %q, want %q", gotDir, wantDir)
 	}
 
-	if gotFile := paths.KeyTypeRecord("default", "aplane.ed25519.v1"); gotFile != filepath.Join(wantDir, "aplane.ed25519.v1.json") {
-		t.Fatalf("KeyTypeRecord() = %q", gotFile)
+	if gotFile := paths.LegacyKeyTypeRecord("default", "aplane.ed25519.v1"); gotFile != filepath.Join(wantDir, "aplane.ed25519.v1.json") {
+		t.Fatalf("LegacyKeyTypeRecord() = %q", gotFile)
 	}
-	if gotFile := paths.KeyTypeTemplate("default", "test.generic-policy.v1"); gotFile != filepath.Join(wantDir, "test.generic-policy.v1.template") {
-		t.Fatalf("KeyTypeTemplate() = %q", gotFile)
+	if gotFile := paths.LegacyKeyTypeTemplate("default", "test.generic-policy.v1"); gotFile != filepath.Join(wantDir, "test.generic-policy.v1.template") {
+		t.Fatalf("LegacyKeyTypeTemplate() = %q", gotFile)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestKeysDirRejectsTraversal(t *testing.T) {
 			t.Error("KeysDir with traversal identity did not panic")
 		}
 	}()
-	NewPaths("/tmp/test-keystore").KeysDir("../../etc")
+	NewPaths("/tmp/test-keystore").LegacyKeysDir("../../etc")
 }
 
 func TestKeyTypePathsRejectUnsafeComponents(t *testing.T) {
@@ -149,7 +149,7 @@ func TestKeyTypePathsRejectUnsafeComponents(t *testing.T) {
 					t.Errorf("KeyTypeRecord(%q) did not panic", keyType)
 				}
 			}()
-			_ = paths.KeyTypeRecord("default", keyType)
+			_ = paths.LegacyKeyTypeRecord("default", keyType)
 		}()
 	}
 }

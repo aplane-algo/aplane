@@ -43,7 +43,7 @@ func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 		OperationID:     "init-" + generationID,
 		CreatedAt:       time.Unix(1_753_700_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
-			for _, dir := range []string{paths.KeysDir(auth.DefaultIdentityID), paths.KeyTypeRecordsDir(auth.DefaultIdentityID)} {
+			for _, dir := range []string{paths.LegacyKeysDir(auth.DefaultIdentityID), paths.LegacyKeyTypeRecordsDir(auth.DefaultIdentityID)} {
 				entries, err := os.ReadDir(dir)
 				if os.IsNotExist(err) {
 					continue
@@ -70,7 +70,7 @@ func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 	}); err != nil {
 		t.Fatalf("Mint(first generation): %v", err)
 	}
-	for _, legacy := range []string{paths.KeysDir(auth.DefaultIdentityID), paths.KeyTypeRecordsDir(auth.DefaultIdentityID)} {
+	for _, legacy := range []string{paths.LegacyKeysDir(auth.DefaultIdentityID), paths.LegacyKeyTypeRecordsDir(auth.DefaultIdentityID)} {
 		if err := os.RemoveAll(legacy); err != nil {
 			t.Fatalf("remove legacy namespace: %v", err)
 		}

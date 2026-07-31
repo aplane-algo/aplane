@@ -83,10 +83,10 @@ func TestCreateAndLoadRecoveredBatch(t *testing.T) {
 	if entry.RestoreID != batch.RestoreID {
 		t.Fatalf("LoadEntry().RestoreID = %q, want %q", entry.RestoreID, batch.RestoreID)
 	}
-	if _, err := os.Stat(paths.KeysDir("default")); !os.IsNotExist(err) {
+	if _, err := os.Stat(paths.LegacyKeysDir("default")); !os.IsNotExist(err) {
 		t.Fatalf("active keys directory exists after recovered batch creation: %v", err)
 	}
-	if _, err := os.Stat(paths.KeyTypeRecordsDir("default")); !os.IsNotExist(err) {
+	if _, err := os.Stat(paths.LegacyKeyTypeRecordsDir("default")); !os.IsNotExist(err) {
 		t.Fatalf("active key type records directory exists after recovered batch creation: %v", err)
 	}
 }
