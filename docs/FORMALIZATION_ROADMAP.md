@@ -425,6 +425,50 @@ sweep of [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) passed;
 `metrics.json` matches the module table and every model-doc status header.
 Nothing required correction in this pass.
 
+**Drift review (2026-07-31, HEAD `bb103a75`).** Re-checked after 123 commits —
+the generation-based storage engine (`613bdf8c`), the keyring cutover that
+retired the raw master key (`6db7c171`, `8f4b488c`, `de530924`), phase 3
+rotation wiring (`75e1ef57`, `a3e7d977`), and the recovered-backup activation
+lifecycle. All 17 standard and 11 deep TLC runs pass at recorded metrics; the
+suite grew from 14 to 17 standard runs because `generation_commit.tla` and
+`rotation_transition.tla` (plus its negative control) were added inside this
+window to model the dominant new storage surface. Four of the six anchored
+areas — approval, component assembly, plugin signing, and the sign boundary —
+had zero commits, so their transcriptions are unchanged by inspection.
+
+Session ownership moved only around the modeled machinery: the sole `ipc.go`
+diff is a new best-effort `NotifyStatus` push, while the disconnect-defer
+condition, `PromoteToActive`, and `DisplaceSession` had zero diff. Lifecycle's
+`Decommission` and `BeginOperation` are likewise untouched; `runtime.go`'s
+changes are the keyring rename, the generational watcher-directory resolution,
+and the new states below.
+
+The one substantive finding is new surface, not divergence: the lock state
+machine grew from a boolean to three states plus a store-maintenance fence
+(`SignerStateRecovery`, `BeginMaintenance`/`FinishMaintenance` in
+`internal/signerapp/runtime/runtime.go`). No modeled invariant broke.
+`session_ownership.tla`'s SO2 still holds because a recovery-blocked unlock
+returns `AuthOutcomeAuthenticated` and `Lock()` counts recovery as active, so
+the exiting session still runs owner cleanup; signing stays fail-closed because
+every gate tests `IsUnlocked()`, which recovery does not satisfy; and the
+maintenance fence adds no concurrency actor to `lifecycle.tla` because its only
+caller brackets it inside `WithIdentityMutation`. Because that soundness now
+rests on `Lock()` collapsing recovery into the active case, it is recorded as a
+model-extension candidate in
+[FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md) alongside the existing
+lock-generation entry, rather than left implicit.
+
+Corrections made this pass: five stale `file:line` anchors in
+[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) (L9, S2, AP6's two, PS6) were
+repointed after the window's code movement, and two bare-filename anchors (L9,
+S12) were qualified with their package paths — `runtime.go` and `service.go`
+are each ambiguous across five and fifteen files respectively. A 429-anchor
+mechanical sweep otherwise resolved cleanly. `metrics.json` and
+`metrics_deep.json` match the module table and every model-doc status header;
+note that `generation_commit.tla` and `rotation_transition.tla` are the first
+modules documented only in this roadmap and their own spec headers, with no
+separate `FORMAL_TLA_*_MODEL.md` companion.
+
 ### Milestone status
 
 | Milestone | Status | Notes |

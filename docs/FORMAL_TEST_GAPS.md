@@ -63,6 +63,38 @@ decommission's lock-interacting steps are modeled), so no modeled invariant is
 affected; a future lock-state model must include this generation-counter
 transition.
 
+**Model drift: recovery state and the store-maintenance fence.**
+The same lock state machine has since grown from a boolean to three states
+(`SignerStateLocked`, `SignerStateUnlocked`, `SignerStateRecovery`) plus a
+maintenance fence (`activeMaintenanceID` paired with the lock generation) in
+`internal/signerapp/runtime/runtime.go`. Recovery is entered by
+`TryRecoveryUnlock` when generation reconciliation, a pending rotation, or
+generation validation fails during unlock: the keyring opens but signing stays
+blocked, and `PromoteRecoveryToUnlocked` is the only upward exit.
+`BeginMaintenance`/`FinishMaintenance` bracket a store-wide passphrase rotation,
+clearing published runtime state without emitting a user-visible lock decision
+and refusing to republish if a `Lock()` raced the window.
+
+No modeled invariant diverged, for two reasons worth recording because they are
+load-bearing rather than incidental:
+
+- Signing remains fail-closed because every sign-path gate tests `IsUnlocked()`,
+  which is true only in `SignerStateUnlocked`; recovery is not a permissive
+  state.
+- `session_ownership.tla`'s SO2 (never stranded unlocked with nobody
+  responsible) still holds because a recovery-blocked unlock returns
+  `AuthOutcomeAuthenticated`, so the disconnect defer runs owner cleanup, and
+  `Lock()` counts recovery as active (`wasActive`) and therefore performs the
+  full lock transition. Both halves are asserted by
+  `internal/signerapp/runtime/runtime_test.go::TestTryRecoveryBlocksSigningAndLockRunsCleanup`.
+  A future lock-state model must preserve that collapse: if recovery ever
+  stopped counting as active in `Lock()`, SO2's argument would break even
+  though the spec text would still read as satisfied.
+
+The maintenance fence adds no new concurrency actor to `lifecycle.tla`, because
+its only caller brackets it inside `WithIdentityMutation` — the writer critical
+section the lifecycle model already represents.
+
 Otherwise, no actionable test gaps remain. Per-invariant status lives in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The lifecycle L4-L7
 audit is closed by the explicit lease-release and writer-pending tests
