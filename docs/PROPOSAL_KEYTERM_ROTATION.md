@@ -1,7 +1,9 @@
 # Proposal: Key-Term Rotation (Lazy Re-Encryption)
 
-Status: **phases 1 and 2 implemented and merged; phase 3 transition work is in
-progress.** The formal R5 prerequisite is complete, and the first
+Status: **phases 1, 2, and 3 implemented and merged.** Phase 3 landed as eleven
+slices, described below; term GC is deferred out of this implementation and
+retained priors remain readable under pre-change terms by design. The formal R5
+prerequisite is complete, and the first
 implementation slice writes the strict v2 keyring/v5 marker shape while
 initially retaining the one-term runtime gate. A second slice adds
 keyring-confined integrity operations, generation seal v2, and explicit-term
@@ -60,7 +62,8 @@ decides it, and rollback mints a fresh generation rather than repointing.
 Later rounds turned the transition into a specified state machine and then
 found what that machine still admitted. **Phase 1 is design-ready and
 reviewable on its own. Phase 3 is blocked on three items, all recorded
-below:**
+below:** (Review-round record; all three, and the fourth noted after them,
+have since shipped — see the status header.)
 
 - **the cutover snapshot** — without an authenticated record of exactly what
   the rewrap may consume, an attacker holding a retired term can inject

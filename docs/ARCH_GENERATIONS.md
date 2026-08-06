@@ -1,16 +1,19 @@
 # Architecture Decision: Generation-Based Active Storage (v1)
 
-**Status:** Accepted Jul 27 2026 (rollout gate 1). Implementation tracked on `feat/generation-storage`.
-Written Jul 27 2026 against
-`backup-recovery-batches` @ `5c77ab5e`; every path and consumer claim below was
-verified against that tree, not assumed.
+**Status:** Implemented. Generation-based active storage is the supported
+store layout, and Phase 3 key-term rotation is implemented on top of it.
+
+This document describes the current storage contract. It originated as the
+Jul 27 2026 architecture decision for generation storage; references to the
+superseded Tier-1 activation machinery explain the constraints that shaped the
+current design, not unfinished rollout work.
 
 **Goal:** replace the Tier-1 activation journal/snapshot machinery with one
 commit primitive — stage a complete generation, seal the outgoing one, flip a
-pointer — so multi-file active-store transactions stop being guarded
-reconstructions and become atomic by construction. Simplification is the
-point: at gate 6 the rollback snapshot, `restoreActivationDirectory`, the
-ownership sets, and the resume/rollback journal semantics are deleted.
+pointer — so multi-file active-store transactions are atomic by construction
+rather than guarded reconstructions. The former rollback snapshot,
+`restoreActivationDirectory`, ownership sets, and resume/rollback journal
+semantics are retired.
 
 ---
 
@@ -49,8 +52,9 @@ and the `internal/keys` file constructors rooted at them
 | `<root>/backups`, `<root>/library`, `<root>/node.yaml` | not identity-active state |
 
 **Generation ID:** `gen-<unix-seconds>-<8 hex random>` — sortable, no
-collision coordination needed. New `storepaths` validator
-(`^gen-[0-9]+-[0-9a-f]{8}$`), same panic-on-invalid convention as restore IDs.
+collision coordination needed. `storepaths` validates this shape with
+`^gen-[0-9]+-[0-9a-f]{8}$`, using the same panic-on-invalid convention as
+restore IDs.
 `CURRENT` contains exactly the ID and a trailing newline; anything else is
 malformed.
 
@@ -83,31 +87,30 @@ Crash before step 9's rename: old generation is authoritative and the attempt
 is discarded (§7). Crash after: new generation is authoritative. There is no
 in-between by construction of `rename(2)` on a single filesystem.
 
-Generations are minted only for multi-file transactions (v1: restore
-activation; later: anything that needs one). Single-file operations mutate the
+Generations are minted for multi-file transactions, including restore
+activation and rollback reconstruction. Single-file operations mutate the
 current generation in place (§4).
 
 ## 3. Path-resolution lifetime
 
-`internal/storepaths` becomes two-phase:
+`internal/storepaths` is two-phase:
 
 - `Paths` keeps every non-generational method unchanged.
-- New: `Paths.ResolveGeneration(identityID) (GenPaths, error)` reads and
+- `genstore.Resolve` / `ResolveActive` read and
   validates `CURRENT` once and returns a `GenPaths` carrying the resolved
   generation-qualified `KeysDir`/`KeyTypeRecordsDir`/`KeyTypeRecord`/
-  `KeyTypeTemplate`. The legacy methods on `Paths` for those four are removed
-  at gate 5 (compile-time discovery of every unconverted consumer, instead of
-  silently resolving stale paths).
+  `KeyTypeTemplate`. Legacy active-namespace path methods are not used for
+  generation-qualified consumers, preventing stale-path resolution.
 
 **Lifetime rule: resolve once per operation, under the identity mutation
 lock, and pass `GenPaths` down. Never re-resolve mid-operation.** The lock
 tables stay as they are: `Signer.storeMutationLocks[identityID]` guards
-resolution+mutation; `ResolveGeneration` without the lock is permitted only
+resolution+mutation; `genstore.Resolve` without the lock is permitted only
 for read-only display surfaces that tolerate staleness (key list rendering),
 never for anything that writes or that feeds a write.
 
-Verified consumer surface that converts to `GenPaths` (complete list from the
-inventory): `internal/keys` scan/save/witness-sidecars, `internal/keystore`
+Generation-qualified consumers include `internal/keys`
+scan/save/witness-sidecars, `internal/keystore`
 (plus: `FileKeyStore` caches **absolute** `KeyFile` paths in its scan cache —
 the cache must be invalidated on every pointer change; the reload that
 follows each flip already rebuilds it, and the dead `keysDir` field gets
@@ -116,8 +119,7 @@ deleted), `internal/keytypestate`, `internal/templatestore`,
 `internal/backup` (export src dirs, restorer destinations),
 `internal/keymgmt`, `internal/signerapp/{storemut,keyadmin,templateadmin,templates}`,
 `internal/storepass.scanTargets`, `cmd/apstore` offline commands
-(`keys list`, `rebuild`, `changepass`, `sentry export`). Roughly 30 call
-sites; each is mechanical once `GenPaths` exists.
+(`keys list`, `rebuild`, `changepass`, `sentry export`).
 
 ## 4. Current-generation mutability
 
@@ -290,17 +292,13 @@ reference safety has soaked.
 
 - All resolution+mutation under `storeMutationLocks[identityID]` (unchanged
   hierarchy, documented in ARCH_SPEC).
-- `identity.Runtime.EnsureKeyWatcher` currently watches three dirs (identity
-  dir, `keys/`, `keytypes/`) and `internal/signerapp/filewatcher` is
-  **non-recursive** with only pre-listed pending dirs auto-added — new
-  generation directories would be invisible. Change: watch the identity dir
-  for `CURRENT` replacement (rename events are already reload candidates);
-  bind the `keys/`/`keytypes/` watches to the *resolved current generation*;
-  on a pointer change, one coordinated reload under the mutation lock
-  re-resolves and **re-arms the watcher on the new generation's dirs**
-  (fsnotify watches inodes, not names). `.staging-*` and non-current
-  generation events are ignored by path prefix.
-- `FileKeyStore` cache invalidation on flip (§3).
+- `identity.Runtime.EnsureKeyWatcher` watches the identity directory for a
+  `CURRENT` replacement and binds `keys/`/`keytypes/` watches to the resolved
+  current generation. Pointer changes trigger a coordinated reload under the
+  mutation lock and re-arm the watches on the new generation's directories,
+  because fsnotify watches inodes rather than names. `.staging-*` and
+  non-current generation events are ignored by path prefix.
+- `FileKeyStore` invalidates its cache on every pointer flip (§3).
 - The rescue surface stays admin-protocol-owned; offline `apstore` commands
   take the store lock exactly as today.
 
@@ -325,8 +323,11 @@ pinned mutable current-generation envelopes; target outputs are authenticated
 and accepted idempotently after a crash. The completion pass performs
 pre/post-baseline final scans, writes a clean cutover's post-rewrap baseline
 before atomically closing the root, and only then removes the snapshot.
-Rollback consumption is implemented; operator wiring remains Phase 3 work; see
-[PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
+Rollback consumption and operator wiring are implemented: `changepass` appends
+and synchronously completes a durable term rotation under the identity mutation
+lock, and interactive and headless unlock resume a pending transition before
+publishing runtime state. Term GC remains deferred out of this implementation.
+See [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
 
 ## 12. Filesystems, crash ordering, ownership
 
@@ -357,33 +358,25 @@ pointer (G5). The model is the exhaustive companion to the fault-injection
 tests below, which check chosen interruption points; it does not model
 content validity, which is a reload-gate concern.
 
-Fault injection via `fsutil.TestHook` at every §2/§8 boundary; after every
-simulated interruption, startup selects the complete old or complete new
-state — never a mixture, never missing. Additional required tests, per the
-plan plus inventory findings: inode independence across generations;
-no-`os.Link` arch test; single-file mutation then mint; pointer rollback;
-malformed/missing/truncated/traversal `CURRENT`; manifest and seal
-corruption; unsealed-non-current discard including superseded-parent
-collection; watcher re-arm across a flip (extending
-`daemon/key_watcher_test.go`); `FileKeyStore` cache invalidation across a
-flip; migration retry at every interruption; old-binary rejection
-(`TestOpenKeyringStoreRejectsUnsupportedMarkerVersion` already proves the
-mechanism — add the migrated-store end-to-end case); rebuild/changepass/
-`keys list` offline resolution; rotation-quiescence refusal; ownership of
-copied files; Linux+Darwin. The ~25 hardcoded-layout test fixtures found in
-the inventory are updated at gate 5.
+Fault injection through `fsutil.TestHook` covers the commit and seal windows:
+after every simulated interruption, startup selects the complete old or
+complete new state — never a mixture or a missing state. The suite also covers
+inode independence, the no-`os.Link` architectural rule, current-pointer
+validation, manifest and seal corruption, unsealed-attempt reconciliation,
+watcher re-arming, cache invalidation, offline active-namespace resolution,
+ownership preservation, and key-term rotation crash recovery.
 
-## 14. Rollout gates (unchanged from the plan)
+## 14. Implementation status
 
-1. This document accepted.
-2. Resolver (`GenPaths`) + strict validator, behind tests.
-3. New-store creation generational.
-4. Migration passes the crash matrix.
-5. All consumers generation-qualified (legacy `Paths` methods deleted).
-6. Activation moves to the generation commit; Tier-1 journal/snapshot,
-   `restoreActivationDirectory`, ownership sets, and
-   `activationSnapshotDirectories` are retired.
-7. Rotation epochs only after a separately accepted Phase-B design.
+The generation resolver and strict validator, new-store initialization,
+generation-qualified consumers, restore activation, and rollback
+reconstruction are implemented. The former Tier-1 activation journal and
+snapshot machinery are retired. Key-term rotation is the implemented Phase 3
+transition described in §11; it does not require a separate follow-on phase.
+
+This release intentionally provides no in-place migration from prior layouts:
+the release compatibility policy requires backup and restore into a freshly
+initialized store (§8).
 
 ## 15. Explicitly rejected alternatives
 

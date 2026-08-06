@@ -1,8 +1,18 @@
 # Phase 3 Onboarding: Key-Term Rotation
 
-This is the working brief for the engineer picking up phase 3. It says where
-the store is, what phase 3 has to do, and what must be reviewed before any
-implementation code is written.
+**Status: phase 3 is implemented and merged.** All eleven items below shipped;
+each is now anchored to code and tests in
+[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) as K1-K8 and R1-R5. This
+document is kept as the record of what phase 3 had to do and why, so the
+reasoning behind the shipped design stays readable; it is no longer a brief for
+work not yet started. The prospective phrasing below ("must do", "before
+implementation") is preserved deliberately rather than rewritten into the past
+tense. What remains out of scope is unchanged: term GC is deferred, and
+retained priors stay readable under pre-change terms.
+
+Originally the working brief for the engineer picking up phase 3, it says where
+the store was, what phase 3 had to do, and what had to be reviewed before any
+implementation code was written.
 
 It is deliberately not the design record. That is
 [PROPOSAL_KEYTERM_ROTATION.md](PROPOSAL_KEYTERM_ROTATION.md), about 1,170 lines
