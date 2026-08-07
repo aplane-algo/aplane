@@ -58,10 +58,10 @@ func (r *REPLState) runValidate(args []string) error {
 		r.renderSubmissionOutput(item.Output)
 		r.renderWarnings(item.Warnings)
 		if item.Error != "" {
-			r.printf("  ✗ Failed: %s\n", item.Error)
+			r.printf("✗ Failed: %s\n", item.Error)
 		}
 		if item.Error == "" && !r.app().IsSimulateEnabled() {
-			r.printf("  ✓ Validated successfully (txid: %s)\n", item.TxID)
+			r.printf("✓ Validated successfully (txid: %s)\n", item.TxID)
 		}
 		if len(result.Items) > 1 {
 			r.println()
