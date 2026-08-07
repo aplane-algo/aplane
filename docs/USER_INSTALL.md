@@ -1,5 +1,9 @@
 # Installation Guide
 
+> **Compatibility:** this is APlane's first supported release. Stores and
+> backups from earlier internal tags are not supported migration inputs. See
+> [RELEASE_NOTES.md](RELEASE_NOTES.md).
+
 APlane supports three install modes:
 
 | Mode | Command | Use Case |
@@ -1078,12 +1082,11 @@ The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot
    sudo apstore -d /var/lib/apsigner restore apply aplane-backup.tar.gz
    ```
 
-   `restore apply` first creates an inactive recovered batch, prints the
-   destination policy/approval review, and activates only after the required
-   acknowledgements. If you stop before activation, use `restore list`,
-   `restore review <restore-id>`, and `restore activate <restore-id>` later.
-   An interrupted activation blocks signing until `restore activate` resumes
-   it or `restore rollback <restore-id>` restores prior state.
+   `restore apply` authenticates and validates the complete credential set,
+   then commits it in one generation transaction. Credentials immediately use
+   the new machine's current policy and configuration. If the signer enters
+   recovery mode, use `restore reconcile`, `restore rollback`, or a direct
+   repair restore with `--replace-existing` as appropriate.
 
 3. **On the new machine** — if using auto-unlock, create a new machine-bound credential:
    ```bash

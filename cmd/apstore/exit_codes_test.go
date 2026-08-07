@@ -16,10 +16,8 @@ func TestExitCodeForResultCode(t *testing.T) {
 	}{
 		// Conflict-class refusals exit with the conventional conflict code
 		// so scripts can distinguish "retry after resolving" from failure.
-		{protocol.ResultCodeActivationConflict, apstoreExitConflict},
-		{protocol.ResultCodeActivationReviewStale, apstoreExitConflict},
-		{protocol.ResultCodeActivationAckRequired, apstoreExitConflict},
-		{protocol.ResultCodeRecoveredRollbackDiverged, apstoreExitConflict},
+		{protocol.ResultCodeRestoreConflict, apstoreExitConflict},
+		{protocol.ResultCodeRestoreRollbackDiverged, apstoreExitConflict},
 		{protocol.ResultCodeKeyTypeInUse, apstoreExitConflict},
 		{protocol.ResultCodeActivationFailed, apstoreExitConflict},
 		{protocol.ResultCodeDeactivationFailed, apstoreExitConflict},

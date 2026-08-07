@@ -21,8 +21,8 @@ func (m Model) handleTokenProvisioningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.
 				// Recovery is blocking: resolving an enrollment popup must
 				// return to the blocking recovery screen, never to normal
 				// navigation.
-				m.viewState = ViewRecoveredList
-				return m, tea.Batch(m.sendTokenProvisioningResponse(id, approved), m.sendListRecoveredCmd())
+				m.viewState = ViewStoreRecovery
+				return m, tea.Batch(m.sendTokenProvisioningResponse(id, approved), m.waitForMessageCmd())
 			}
 			m.viewState = ViewKeyList
 			return m, m.sendTokenProvisioningResponse(id, approved)

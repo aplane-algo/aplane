@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/aplane-algo/aplane/internal/policy"
 )
 
 func (m Model) renderRestoreList() string {
@@ -74,12 +72,33 @@ func (m Model) backupDirectoryLabel() string {
 func (m Model) renderRestorePassphrase() string {
 	var sb strings.Builder
 
-	sb.WriteString(titleStyle.Render("Unlock Backup Preview"))
+	if m.restore.replaceExisting {
+		sb.WriteString(titleStyle.Render("Confirm Credential Replacement"))
+	} else {
+		sb.WriteString(titleStyle.Render("Unlock Backup Preview"))
+	}
 	sb.WriteString("\n\n")
 	sb.WriteString("Archive:\n")
 	sb.WriteString(restoreArchiveLabel(m.restore.archivePath))
 	sb.WriteString("\n\n")
-	sb.WriteString(subtitleStyle.Render("Enter the backup export passphrase before metadata is shown."))
+	if m.restore.replaceExisting {
+		sb.WriteString(errorStyle.Render("The following destination credentials will be replaced:"))
+		sb.WriteString("\n")
+		for _, conflict := range m.restore.replaceConflicts {
+			sb.WriteString("  ")
+			sb.WriteString(conflict.Selector)
+			if conflict.KeyType != "" {
+				sb.WriteString(" [")
+				sb.WriteString(conflict.KeyType)
+				sb.WriteString("]")
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render("Re-enter the export passphrase and press Enter to authorize replacement."))
+	} else {
+		sb.WriteString(subtitleStyle.Render("Enter the backup export passphrase before metadata is shown."))
+	}
 	sb.WriteString("\n\n")
 
 	masked := strings.Repeat("*", len(m.restore.passphrase))
@@ -175,7 +194,7 @@ func (m Model) renderRestorePreview() string {
 
 	sb.WriteString("\n")
 	sb.WriteString(restoreActionButton(
-		"RECOVER",
+		"RESTORE",
 		m.restore.previewFocus == restoreFocusAction,
 		m.selectedRestoreCount() > 0,
 	))
@@ -205,9 +224,6 @@ func restoreActionButton(label string, focused, ready bool) string {
 
 func (m Model) renderRestoring() string {
 	var sb strings.Builder
-	// Distinct labels: recovering into an inactive batch and activating
-	// recovered credentials are different operations with different
-	// consequences.
 	title := m.restore.progressLabel
 	if title == "" {
 		title = "Working"
@@ -217,169 +233,6 @@ func (m Model) renderRestoring() string {
 	sb.WriteString(subtitleStyle.Render("Please wait..."))
 	sb.WriteString("\n")
 	return m.renderPopup(70, sb.String())
-}
-
-func (m Model) renderRestoreReview() string {
-	review := m.restore.review
-	var sb strings.Builder
-	popupWidth := m.popupWidth(118)
-	sb.WriteString(titleStyle.Render("Recovered Activation Review"))
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("Restore ID: %s\n", review.RestoreID))
-	if review.ArchiveChecksum != "" {
-		sb.WriteString(fmt.Sprintf("Source archive: %s", review.ArchiveChecksum))
-		if review.SourceNodeRole != "" {
-			sb.WriteString(fmt.Sprintf(" (%s)", review.SourceNodeRole))
-		}
-		sb.WriteString("\n")
-	}
-	// Authentication proves who packaged the archive, never when. Showing
-	// the packaging time lets an operator notice an archive older than the
-	// one they meant to activate.
-	if review.ArchiveCreatedAtUnix > 0 {
-		sb.WriteString(fmt.Sprintf("Archive packaged: %s\n", formatRestoreTime(review.ArchiveCreatedAtUnix)))
-	}
-	sb.WriteString(fmt.Sprintf("Destination approval mode: %s\n", review.DestinationApprovalMode))
-	// The operator is committing ACTIVATE for exactly these credentials;
-	// they must be visible on this screen, including via the
-	// passphrase-free reopen path where no preview was shown.
-	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("Credentials to activate (%d)", len(review.Entries))))
-	sb.WriteString("\n")
-	if len(review.Entries) == 0 {
-		sb.WriteString("  none\n")
-	}
-	for _, entry := range review.Entries {
-		sb.WriteString(fmt.Sprintf("  %s (%s, %s)\n", entry.Selector, entry.Category, entry.KeyType))
-	}
-	if review.UnattendedSigningWarning != "" {
-		sb.WriteString(warningStyle.Render(review.UnattendedSigningWarning))
-		sb.WriteString("\n")
-	}
-	sb.WriteString(fmt.Sprintf("Policy comparison: %s\n\n", review.PolicyComparison))
-	sb.WriteString(subtitleStyle.Render("Policy differences (informational)"))
-	sb.WriteString("\n")
-	if review.PolicyComparison == string(policy.RestoreComparisonUnavailable) {
-		// An empty change list here means "could not compare", never "no
-		// differences" — rendering "none" would read as an all-clear the
-		// comparison never established.
-		sb.WriteString("  comparison unavailable: the source policy could not be compared\n")
-	} else if len(review.SecurityChanges) == 0 {
-		sb.WriteString("  none\n")
-	}
-	for _, change := range review.SecurityChanges {
-		scope := change.Selector
-		if scope == "" {
-			scope = "default"
-		}
-		sb.WriteString(fmt.Sprintf("  [%s] %s %s\n", change.Category, scope, change.Path))
-		sb.WriteString(fmt.Sprintf("    source: %s\n", change.Source))
-		sb.WriteString(fmt.Sprintf("    destination: %s\n", change.Destination))
-	}
-	if len(review.ActiveConflicts) > 0 {
-		sb.WriteString("\n")
-		sb.WriteString(warningStyle.Render("Active credential conflicts"))
-		sb.WriteString("\n")
-		for _, conflict := range review.ActiveConflicts {
-			sb.WriteString(fmt.Sprintf("  %s (%s, %s)\n", conflict.Selector, conflict.Category, conflict.KeyType))
-		}
-	}
-
-	appendRecoveredSourceContext(&sb, review, popupWidth)
-	boxes := m.reviewCheckboxes()
-	if len(boxes) > 0 {
-		sb.WriteString("\n")
-		sb.WriteString(subtitleStyle.Render("Required acknowledgements"))
-		sb.WriteString("\n")
-		for i, box := range boxes {
-			var line string
-			switch box {
-			case reviewCheckboxAck:
-				line = checkboxLine(
-					m.restore.unattendedAcknowledged,
-					"I acknowledge this identity auto-approves unmatched signing requests",
-				)
-			case reviewCheckboxReplace:
-				line = checkboxLine(
-					m.restore.replaceExisting,
-					fmt.Sprintf("Replace the %d existing active credential(s) listed above", len(review.ActiveConflicts)),
-				)
-			}
-			if m.restore.reviewFocus == restoreFocusList && i == m.restore.reviewCursor {
-				sb.WriteString(selectedStyle.Render("> " + line))
-			} else {
-				sb.WriteString("  " + line)
-			}
-			sb.WriteString("\n")
-		}
-	}
-	ready := (!recoveredUnattendedSigningAckRequired(review) || m.restore.unattendedAcknowledged) &&
-		(len(review.ActiveConflicts) == 0 || m.restore.replaceExisting)
-	sb.WriteString("\n")
-	sb.WriteString(restoreActionButton(
-		"ACTIVATE",
-		m.restore.reviewFocus == restoreFocusAction,
-		ready,
-	))
-	sb.WriteString("\n")
-	if m.restore.previewError != "" {
-		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(m.restore.previewError))
-		sb.WriteString("\n")
-	}
-	return m.renderPopup(popupWidth, sb.String())
-}
-
-// appendRecoveredSourceContext renders what the archive reported about its
-// source node, under a heading that names the provenance.
-//
-// It deliberately says nothing when the archive reports nothing. That backups
-// are unsigned, and that archive-reported context therefore governs nothing,
-// is true of every restore; constant prose on every review teaches operators
-// to skim the block that also carries the variable findings. USER_STORE_MGMT.md
-// carries the explanation instead.
-func appendRecoveredSourceContext(
-	sb *strings.Builder,
-	review ReviewRecoveredResultMessage,
-	popupWidth int,
-) {
-	if review.SourceUserAutoApprove == nil && len(review.SourceGenesisHashMappings) == 0 {
-		return
-	}
-	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render("Reported by the backup archive"))
-	sb.WriteString("\n")
-	fmt.Fprintf(
-		sb,
-		"  approval default: %s\n",
-		recoveredSourceApprovalLabel(review.SourceUserAutoApprove),
-	)
-	if len(review.SourceGenesisHashMappings) == 0 {
-		sb.WriteString("  custom genesis-hash mappings: none\n")
-	} else {
-		sb.WriteString("  custom genesis-hash mappings:\n")
-		for _, mapping := range review.SourceGenesisHashMappings {
-			fmt.Fprintf(sb, "    %s: %s\n", mapping.Network, mapping.GenesisHash)
-		}
-	}
-}
-
-func recoveredSourceApprovalLabel(value *bool) string {
-	if value == nil {
-		return "not applicable"
-	}
-	if *value {
-		return "auto approve"
-	}
-	return "manual review"
-}
-
-func checkboxLine(checked bool, label string) string {
-	marker := "[ ]"
-	if checked {
-		marker = "[x]"
-	}
-	return marker + " " + label
 }
 
 func (m Model) renderRestoreDisplay() string {
@@ -404,12 +257,6 @@ func (m Model) renderRestoreDisplay() string {
 
 	if result.Error != "" {
 		lines = append(lines, "", errorStyle.Render(result.Error))
-	}
-	if len(result.Warnings) > 0 {
-		lines = append(lines, "", warningStyle.Render("Activation warnings:"))
-		for _, warning := range result.Warnings {
-			lines = append(lines, warningStyle.Render("  "+warning))
-		}
 	}
 	lines = append(lines, "")
 
@@ -539,12 +386,8 @@ func restorePreviewKeyLine(m Model, key RestoreKeyInfo, prefix string, maxWidth 
 
 func restorePreviewSuffix(key RestoreKeyInfo) string {
 	var suffix string
-	if key.HasTemplate {
-		suffix += "  template:" + key.TemplateType
-	}
 	if key.AlreadyExists {
-		// Informational: replacing an active credential is consented to on
-		// the activation review, beside the exact conflicts.
+		// Informational: replacement still requires explicit confirmation.
 		suffix += "  exists"
 	}
 	if key.Error != "" {

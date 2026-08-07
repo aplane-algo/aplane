@@ -91,10 +91,8 @@ func exitCodeForResultCode(code string) int {
 		protocol.ResultCodeActivationFailed,
 		protocol.ResultCodeDeactivationFailed,
 		protocol.ResultCodeRemoveFailed,
-		protocol.ResultCodeActivationConflict,
-		protocol.ResultCodeActivationReviewStale,
-		protocol.ResultCodeActivationAckRequired,
-		protocol.ResultCodeRecoveredRollbackDiverged:
+		protocol.ResultCodeRestoreConflict,
+		protocol.ResultCodeRestoreRollbackDiverged:
 		return apstoreExitConflict
 	case "verification_failed",
 		"invalid_backup",

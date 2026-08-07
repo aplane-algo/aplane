@@ -879,9 +879,6 @@ execution, output decoding, environment filtering, and validation.
     passphrase              # plaintext appass-file helper artifact, mode 0600
     passphrase.cred         # systemd-creds helper artifact, mode 0600
     sentries/<name>.json
-    recovered/<restore-id>/
-      batch.enc
-      entries/<selector-hash>.recovered
     deleted/keys/*.{key,sen}
     deleted/keytypes/<key_type>.template
 ```
@@ -892,15 +889,10 @@ Additional signer-state notes:
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
 - signer-managed backup archives are written under
   `<data_dir>/backups/<identity>/`; the archive contains `README.md` and
-  `apb/*.apb` encrypted backup payloads plus a policy snapshot under
-  `policy/`
+  `apb/*.apb` encrypted canonical credential payloads plus `manifest.sealed`
 - imported backup archives are validated and published under
   `<data_dir>/backups/<identity>/`, making the backup locker the source for
   restorable archives
-- recovered batches are authenticated encryption under the destination master
-  key but are outside active key/key-type scans; activation consumes a batch
-  by minting a new generation and deleting the batch, so no per-batch
-  activation state exists on disk
 - signer `cache/<network>_asa_cache.json` is signer-wide public ASA metadata for policy editing/rendering; it is not identity-scoped and is not authoritative for policy enforcement
 - signer cache files use the same signed JSON/HMAC envelope as client cache files, with `cache/.cache_key` scoped to the signer cache root
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
@@ -1203,8 +1195,6 @@ selector:
 | `account-key` | Algorand address |
 | `sentry-credential` | Witness Key ID |
 | `keytype-template` | key type |
-| `recovered-batch` | restore ID |
-| `recovered-entry` | restore ID and entry selector |
 | `rotation-snapshot` | fixed selector `pending` |
 | `rotation-baseline` | fixed selector `current` |
 
@@ -1235,7 +1225,7 @@ before runtime publication.
 Each entry contains:
 
 - `path`: UTF-8, slash-separated, signer-data-root-relative canonical path;
-- `kind`: one of the explicit credential, template, recovered, integrity
+- `kind`: one of the explicit credential, template, integrity
   document/sidecar, generation member, or rotation-record kinds;
 - positive exact byte `size` and canonical lowercase `sha256`;
 - for a term envelope, positive `term`, `object_class`, and
@@ -1245,7 +1235,7 @@ Each entry contains:
 
 Entries are strictly sorted by raw path bytes and paths are unique. Unknown
 fields are not inferred from extensions outside their owned namespace:
-unclassified files in generation, deleted, or recovered scope fail the scan.
+unclassified files in generation or deleted scope fail the scan.
 Independent state (`keyring.enc`, `.keystore`, backups, audit/config/unlock/
 token/SSH state, plaintext template library, and caches) is excluded.
 
@@ -1255,7 +1245,6 @@ The scanner covers:
   generations require an authenticated seal;
 - active and retained credentials/templates, key-type state, witness public
   metadata, exact manifest bytes, and retained-generation seal records;
-- published recovered batch metadata and entries;
 - identity-local deleted credential and template archives;
 - exact policy/node-role documents and their explicit-term sidecars;
 - optional rotation snapshot and baseline envelopes as classified durable
@@ -1270,8 +1259,8 @@ generation validation still checks its structural shape, but rotation never
 parses, pins, rewrites, or completion-validates its stale content.
 
 Encrypted entries are opened from the exact byte buffer that is hashed under
-the logical context derived from their canonical filename or recovered-batch
-metadata. Retained generation buffers are also compared to their seal entry
+the logical context derived from their canonical filename. Retained generation
+buffers are also compared to their seal entry
 before opening. Once ordinary retiring-term authority closes, anchored
 generation members use the dedicated historical open operation rather than
 regaining ordinary current-state authority. `genstore.ParseManifestBytes`,
@@ -1502,7 +1491,7 @@ specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
   is insufficient, as is an anchor without the retained key.
 - single-file writes into the current generation's namespaces are the
   routine mutation path (key generation, template install); multi-file
-  transactions (restore activation) commit by minting a new generation
+  transactions (credential restore) commit by minting a new generation
   behind a single durable `CURRENT` rename
 - generation reconciliation at unlock discards uncommitted attempts and
   staging residue (they are never resumed), validates the selected
@@ -2012,13 +2001,11 @@ Events:
 - `BACKUP_FAILED`
 - `BACKUP_RESTORE_PREVIEWED`
 - `BACKUP_RESTORE_PREVIEW_FAILED`
-- `BACKUP_RECOVERED`
-- `BACKUP_RECOVERY_FAILED`
-- `BACKUP_ACTIVATION_INTENT`
-- `BACKUP_ACTIVATED`
-- `BACKUP_ACTIVATION_FAILED`
-- `BACKUP_ACTIVATION_ROLLED_BACK`
-- `BACKUP_RECOVERY_PURGED`
+- `CREDENTIAL_RESTORE_INTENT`
+- `CREDENTIAL_RESTORE_SUCCEEDED`
+- `CREDENTIAL_RESTORE_FAILED`
+- `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN`
+- `CREDENTIAL_RESTORE_ROLLBACK`
 - `STORE_INITIALIZED`
 - `STORE_INITIALIZE_FAILED`
 - `PASSPHRASE_CHANGED`
@@ -2053,27 +2040,23 @@ Backup-audit semantics:
 - `BACKUP_FAILED` is emitted when that operation fails; `reason` contains the failure reason
 - `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `reason` contains the resolved archive path and `key_count` contains previewed keys
 - `BACKUP_RESTORE_PREVIEW_FAILED` is emitted when an authenticated preview request fails; `reason` contains the failure reason
-- `BACKUP_RECOVERED` records an atomically published inactive batch, including
-  `restore_id`, `archive_sha256`, and recovered `key_count`;
-  `BACKUP_RECOVERY_FAILED` records a failed recovery
-- `BACKUP_ACTIVATION_INTENT` is durably audited before the activation service
-  can make its first active-store write and records `restore_id` and
-  `replace_existing`. The record is a gating precondition: it is appended and
-  fsynced before activation stages any generation content, and when the
-  durable write fails the activation aborts with `activation_audit_failed`
-  and no active-store mutation exists. All other audit events remain
-  best-effort
-- `BACKUP_ACTIVATED` and `BACKUP_ACTIVATION_FAILED` carry the available
-  archive/source-policy/destination-policy digests, factual policy
-  comparison, replacement option, and recovered entry count
-- `BACKUP_ACTIVATION_ROLLED_BACK` and `BACKUP_RECOVERY_PURGED` record explicit
-  operator resolution; failed attempts use `outcome:"failed"` and `reason`
+- `CREDENTIAL_RESTORE_INTENT` is durably audited before restore can make its
+  first generation-store write. It records the operation ID and
+  `replace_existing`; durable-write failure aborts with no store mutation.
+- `CREDENTIAL_RESTORE_SUCCEEDED` and `CREDENTIAL_RESTORE_FAILED` carry the
+  available archive SHA-256, operation ID, replacement option, and key count.
+- `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` distinguishes a visible `CURRENT`
+  flip whose directory-sync durability could not be confirmed; signing stays
+  recovery-blocked until reconciliation confirms the pointer and reloads the
+  visible generation.
+- `CREDENTIAL_RESTORE_ROLLBACK` records explicit rollback success or failure.
+  Failed attempts use `outcome:"failed"` and `reason`.
 
 Store-management audit semantics:
 
 - `STORE_INITIALIZED` is emitted when authenticated local IPC store initialization succeeds
 - `STORE_INITIALIZE_FAILED` is emitted when authenticated local IPC store initialization fails
-- `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key/template/recovered-file counts are recorded on the event
+- `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key/template counts are recorded on the event
 - `PASSPHRASE_CHANGE_FAILED` is emitted when authenticated local IPC passphrase rotation fails
 
 ## Authentication, SSH, and Token Provisioning
@@ -2655,273 +2638,157 @@ The REPL `js`, `jssave`, and `jslist` commands and the MCP `js`/`jssave`/`jslist
 
 ## Backup and Restore Contract
 
-Backup and restore are implemented in `internal/backup`.
+Backup and restore are implemented in `internal/backup`; live generation
+orchestration is owned by `internal/signerapp/backupadmin`.
+
+The authority boundary is:
+
+> Backup owns credentials. The destination owns policy and configuration.
+
+A backup preserves complete managed credential records, not only raw private
+key bytes. This includes durable LogicSig bytecode, signing-argument contracts,
+bounded authorization, and other versioned signing metadata carried by
+`.key` and `.sen` payloads. Restore never imports operational authority from
+the source.
+
+### Export and archive shape
 
 Export:
 
-1. discover the canonical managed credential: account authority from `.key`
-   and sentry witness authority from `.sen`; external `.wit` artifacts are not
-   managed backup inputs
-2. decrypt the credential using the current term key and the credential's own object context
-3. if a key is template-backed, bundle key JSON and template YAML into a
-   `BackupBundle` using installed identity-local template YAML when available;
-   generated bundles set `backup_bundle: 1` plus `payload_version: 1`
-4. re-encrypt with standalone passphrase using envelope version 2
-5. write the unchanged `<selector>.apb` backup format and return its SHA256
-   checksum
+1. discovers canonical managed credentials from active `.key` and `.sen`
+   files; external `.wit`, contract-admin, and deleted artifacts are excluded
+2. opens each credential with its object-bound destination term envelope
+3. parses and validates the complete credential payload, then canonicalizes it
+4. re-encrypts the canonical payload with standalone envelope version 2 under
+   the export passphrase
+5. writes `apb/<selector>.apb`
 
-`ExportAllKeys()` exports both managed credential classes into an `apb/`
-subdirectory. The source extension is not preserved in the backup filename;
-the validated payload category selects `.key` or `.sen` when the `.apb` is
-restored.
+An all-credentials backup is fail-hard: if any selected active credential
+cannot be read, decrypted, canonicalized, or exported, no archive is
+published. It never silently reports a partial archive as a complete backup.
 
-Managed archive packaging:
+A managed archive contains exactly:
 
-- `apstore backup create` asks the signer daemon to write a managed `.tar.gz` archive
-- managed archives are stored under `backups/<identity>/aplane-backup-YYYYMMDD-HHMMSS.tar.gz`
-- `apstore backup export` resolves a selected managed archive by filename,
-  managed path, or checksum, copies it into a caller-selected destination
-  directory using the managed archive filename, creates the destination directory
-  when needed, and verifies the copy
-- the archive contains `manifest.sealed`, `README.md`, `apb/*.apb`, and the
-  active policy snapshot at `policy/policy.yaml` and `policy/policy.yaml.hmac`
-- `manifest.sealed` is the archive's authenticated description. Its plaintext
-  has schema `aplane.backup.manifest.v2`, `schema_version:1`,
-  `source_node_role:"signer"|"sentry"`, `created_at_unix`, the complete member
-  inventory (`path`, `sha256`, `size` for every other archive member), and the
-  source context inline. It is sealed with the standalone encryption envelope
-  the `.apb` payloads use, under the export passphrase.
-- **Knowledge of the export passphrase is authentication.** A readable archive
-  proves only that it was created, or endorsed, by a party that knew the
-  export passphrase — the trust root the `.apb` payloads already had, extended
-  to the archive's shape. It is not origin authentication, and authenticated
-  is not safe: source context remains review material that never changes
-  destination behavior, and the policy snapshot is never installed.
-- every operation that opens an archive decrypts the manifest first and
-  verifies each member against the inventory. A missing, added, or altered
-  member is rejected, as is an archive with no `manifest.sealed`. Manifest
-  authentication failure is indistinguishable from a wrong passphrase and
-  folds into the same decrypt-failure and rate-limit path as payload
-  tampering.
-- the manifest's source context contains only the signer source's effective
-  `user_auto_approve` value (omitted for sentry sources) and canonical custom
-  genesis-hash-to-network mappings, bounded to 1024 entries. It never contains
-  algod URLs, tokens, endpoints, or other connection configuration. Mappings
-  are canonical base64, use validated non-reserved network tokens, cannot
-  remap built-in networks, and are unique and ordered. Absent values mean the
-  source did not record them; there is no separate trust state.
-- the tarball is packaging only; `.apb` remains the cryptographic backup unit
-- the archived policy sidecar is source-store provenance material only; restore
-  does not install it as the destination sidecar
+- `README.md`
+- one or more `apb/<selector>.apb` files
+- `manifest.sealed`
 
-Live signer-managed backup:
+The sealed manifest plaintext uses schema
+`aplane.credential-backup.manifest.v1`, schema version 1. It records the
+source node role, packaging time, and the complete member inventory
+(`path`, `sha256`, `size`). It does not contain policy, approval defaults,
+genesis-hash mappings, templates, endpoints, tokens, SSH enrollment, or other
+operator configuration. The manifest is encrypted under the export passphrase.
+Knowing that passphrase authenticates the archive as produced or endorsed by a
+passphrase holder; it is not independent origin authentication.
 
-- `apadmin` can trigger a signer-managed backup for the bound, unlocked identity
-- the operator supplies an export passphrase over the authenticated admin session
-- the signer uses the unlocked runtime keyring; it does not re-prompt for the store passphrase
-- output path is signer-managed, not operator-chosen
-- archives are written under `backups/<identity>/aplane-backup-YYYYMMDD-HHMMSS.tar.gz` beneath the signer data root
-- archive layout matches managed backups: `manifest.sealed`, `README.md`,
-  `apb/*.apb`, and `policy/`
-- signer-managed backup covers active key files for the bound identity plus a
-  verified policy snapshot; it does not export deleted archives, other
-  identities, or live runtime state
-- external `.wit`, `.wit.json`,
-  `.apbounded-admin-request`, and `.apbounded-admin-signature` files are never
-  included in signer-managed backups; operators back up contract-admin
-  artifacts independently
-- `apstore backup import` validates an external `.tar.gz`/`.tgz` archive,
-  prompts for the export passphrase, decrypts each `.apb` payload, and publishes
-  it under `backups/<identity>/` only after deep payload validation succeeds
-- when an imported `.apb` contains bundled generic or composed template YAML,
-  import recompiles the bundled template with the key's stored creation
-  parameters and verifies that the result exactly matches the key's stored
-  LogicSig bytecode; mismatches reject the import
-- evidence of a bad archive always rejects the import, whether the template
-  compiles into different bytecode, fails to compile at all, or fails to
-  parse or validate before the compiler is reached. Only a compiler that
-  cannot be reached — a transport failure, a timeout, or no configured
-  client — is treated as absence of evidence, classified by transport shape
-  rather than inferred from any compile-path failure: the
-  keys themselves have already validated, so import reports which payloads
-  could not be provenance-checked and asks the operator whether to proceed.
-  Declining cancels the import. `--accept-unverified-template-provenance`
-  records that decision for unattended runs. What goes unchecked is that each
-  bundled template recompiles into its key's stored bytecode; if a later
-  restore installs such a template, it becomes the definition used to generate
-  new keys of that type
-- restore preview/recover/review/activate perform passphrase-backed inspection
-  and daemon-owned state transitions
-- the state-machine view of key restore, template restore, disabled key types,
-  and fingerprint conflicts is maintained in
-  [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md)
+Every archive reader authenticates the manifest and verifies exact membership
+before trusting payload metadata. Missing, added, duplicated, non-canonical, or
+altered members are rejected. Internal pre-release manifests, bundle wrappers,
+and legacy envelope versions are unsupported; this is the first supported
+backup contract and no migration from earlier internal tags is provided.
 
-Live signer-managed restore:
+### Import and inspection
 
-- `apadmin` exposes this as the interactive restore path for signer-managed
-  backup/imported archives; `apstore restore preview/apply` exposes the same
-  daemon-owned path, where `apply` is a convenience sequence rather than a
-  direct server mutation
-- `apadmin` restore uses restorable archives under `backups/<identity>/`
-- preview and recovery resolve bare names or absolute managed paths from
-  `backups/<identity>/`
-- restore rejects paths outside the identity backup directory, unsupported
-  archive extensions, symlinks, non-regular files, missing archives, and
-  archives with no `apb/*.apb` files
-- preview requires the export passphrase before showing key addresses or key types; wrong-passphrase or pre-decrypt payload errors do not echo filename-derived addresses
-- preview decrypts and inspects backup payload metadata, reports whether each key already exists, and does not write key, template, or key type state
-- preview remains a passphrase and key-inventory check; source-settings trust
-  status and values are shown only by destination-bound recovered-batch review
-- failed preview/recovery decrypt or payload parse attempts are rate limited
-  with per-identity/archive exponential backoff; rate-limited responses use
-  `code:"restore_rate_limited"`
-- recovery decrypts selected `addresses`; if omitted, all payloads are
-  validated, re-encrypted under the destination term key, and published
-  atomically as `recovered/<restore-id>/`; it does not write active key or
-  key-type files and does not reload
-- recovery copies source-settings status, the exact valid-sidecar digest, and
-  any valid projection into destination-encrypted recovered-batch v1 metadata.
-  These are additive optional fields; absent fields on older batches mean
-  `missing`.
-- a published recovered batch is immutable. Code may decrypt and validate
-  `batch.enc` but must not persist a re-marshaled loaded `Batch`, because old
-  readers intentionally ignore additive JSON fields. Passphrase rotation
-  re-encrypts the exact plaintext bytes. Activation and purge may delete a
-  batch but do not rewrite it.
-- review revalidates the batch and current destination state, foregrounds
-  security-bearing policy differences and the effective destination
-  `user_auto_approve` mode, fingerprints active conflicts, and returns an
-  opaque review token together with the archive's packaging time from its
-  sealed manifest. Authentication proves who packaged an archive, never when, so
-  the packaging time is what lets an operator notice an archive older than
-  the one they meant to activate — the substitution the manifest cannot
-  prevent. Source context is reported as typed fields
-  (`source_user_auto_approve`, `source_genesis_hash_mappings`) that are
-  present when the source recorded them and absent otherwise; no status enum
-  or unknown-settings list exists, because the archive's sealed manifest
-  authenticated the values before recovery recorded them.
-- source settings are review context only: they never change policy verdicts,
-  signing behavior, destination network resolution, or any acknowledgement
-  requirement. Authentication proves who packaged the claim, never that the
-  destination may act on it — the archive-reported approval default in
-  particular cannot suppress a destination warning.
-- activation requires the current review token. Factual policy differences are
-  always shown and never require acknowledgement, because archive-reported
-  source policy is unauthenticated and any verdict derived from it could be
-  suppressed by the archive. The one acknowledgement is unattended signing,
-  required whenever the destination identity auto-approves unmatched signing
-  requests. Protocol 3.2 communicates that through
-  `unattended_signing_ack_required`; an absent field from an older server
-  falls back to the destination approval mode. Replacing active credentials is
-  a separate explicit option
-- activation applies the reviewed batch by minting a new generation
-  (`internal/genstore`): the parent generation's content is copied, the
-  batch's entries are applied on top, the staged result is validated under
-  `generations/.staging-<gen-id>`, every file and directory is fsynced
-  bottom-up, the staging directory is renamed into place, the outgoing
-  current generation is sealed, and the commit is a single durable `CURRENT`
-  rename. Either the pointer names the new generation or no committed state
-  exists. Partial activations are inexpressible: no active-store state
-  exists before the pointer flip.
-- uncommitted mint attempts and staging residue are discarded by generation
-  reconciliation at the next unlock; they are never resumed. Reload failure
-  after a committed activation rolls the pointer back to the parent — the
-  exact pre-activation state.
-- a commit whose durability cannot be confirmed (the pointer names the new
-  generation but the confirming directory sync failed) reports
-  `recovered_rollback_failed`, reloads the visible state, and enters
-  recovery mode with signing blocked; generation reconciliation at the next
-  unlock re-confirms the flip's durability.
-- operator rollback of a committed restore activation validates the sealed
-  parent generation recorded in the current generation's manifest, then
-  mints its authenticated content as a fresh generation under the current
-  key term. The new manifest records the outgoing current generation as its
-  parent and the older content authority as
-  `rollback_source_generation_id`; `CURRENT` is never repointed at
-  historical ciphertext. Rollback is accepted only while the current
-  generation was produced by that restore **and still matches its effective
-  inventory authority**: a matching authenticated rotation baseline when
-  present, otherwise the at-mint manifest. Any
-  post-activation mutation of the current generation (a generated key, an
-  installed template) diverges it, and rollback then refuses with
-  `recovered_rollback_diverged` rather than discarding the later changes.
-  A rollback refused before any mutation reports
-  `recovered_rollback_refused` or `recovered_rollback_diverged` (the store
-  is unchanged and no recovery mode is entered); a rollback that fails
-  after mutation began reports `recovered_rollback_failed` and transitions
-  the runtime into recovery mode immediately — signing stops at the
-  failure, not at the next unlock.
-- successful activation removes the inactive batch, reloads the bound identity,
-  and only then makes the credentials available to signing
-- restore does not install archived policy documents or sidecars; restoring
-  policy is an explicit manual recovery operation, and the destination store
-  must sign fresh sidecars before the signer trusts restored policy
-- the old admin `restore_backup` direct-to-active mutation is unsupported in
-  admin protocol v3
+`apstore backup import` validates an external tar archive deeply before
+publishing it under `backups/<identity>/`. Validation includes the archive
+inventory and every credential payload. Import does not compile or install
+templates because templates are not archive members.
 
-Restore:
+`preview_restore` and `apstore restore preview` authenticate the archive
+before revealing addresses or key types. Preview reports credential identity,
+destination presence, and validation errors; it performs no store mutation.
+Wrong-passphrase and unauthenticated failures share the restore rate limiter.
+Authenticated `list_backups` and `preview_restore` requests are accepted while
+the identity is either unlocked or recovery-blocked, allowing an operator to
+select and inspect repair material without enabling signing. Locked identities
+remain rejected.
 
-- `ParseBackup()` detects plain canonical key payload JSON or bundled
-  `BackupBundle`; `backup_bundle` is a sentinel, while `payload_version` is the
-  bundle payload schema version. A missing `payload_version` is interpreted as
-  v1; unknown sentinels or payload versions are rejected.
-- bundled templates are checked against the authoritative definition for their
-  `key_type`; this check protects template installation and provenance, not
-  signing authority — the key file is the signing authority
-- authoritative order is:
-  1. signer-data library template for that `key_type`, if present
-  2. existing identity-local keystore template, whether enabled or disabled
-  3. incoming bundled template, if no authoritative local source exists
-- identical signer-data library definitions are treated as authoritative and may be installed into the identity store rather than
-  trusting the bundled copy
-- conflicting same-`key_type` template definitions are rejected for explicit
-  template restore; recovery validation never overwrites or activates a
-  conflicting local template
-- library-visible compiled providers are activated for the identity when a key of that type is restored; this writes the normal
-  `identities/<identity>/keytypes/<key_type>.json` state record and is idempotent
-- `apstore rebuild <archive-path> [--role signer|sentry]` restores an absent
-  store. The sealed manifest's `source_node_role` supplies the default
-  destination role when `--role` is omitted, so role selection follows the
-  export-passphrase prompt. If `--role` disagrees with the manifest, rebuild
-  warns and uses the explicit destination role. Restored key classes are
-  still validated against the destination role before being written.
-- a LogicSig key restore is rejected when the key payload has bytecode but is not a v1 signing-metadata key; templates are not
-  consulted to reconstruct missing signing metadata
-- a generic LogicSig key restores from its key payload alone; a DSA LogicSig key restores when its stored `base_key_type` is
-  supported by the binary
-- if a bundled template fingerprint can be computed and the key lacks
-  `template_fingerprint`, restore annotates the restored key with that
-  behavior-only, versioned provenance fingerprint before encrypting it into the
-  destination keystore
-- if an installed identity-local template exists but is disabled, explicit template restore can re-enable it; key restore does
-  not require enabling a template for signing
-- the internal active-apply primitive remains transactional at the key level
-  for offline rebuild; live activation commits the whole reviewed batch
-  behind a single generation pointer flip
-- live recovery is all-or-nothing, and live activation either commits the
-  reviewed batch as a new generation or leaves the store on its prior
-  generation
+`apstore verify` is fail-closed: an archive verification error or any invalid
+credential returns the stable local `verification_failed` code and a nonzero
+process exit.
 
-Local rescue surface:
+### Live direct restore
 
-- live-store `apstore` mutations for managed backup, restore, template, key
-  type, and changepass operations are admin-protocol operations owned by the
-  daemon
-- `apstore initialize`, `apstore policy`, `apstore rebuild`, and
-  `apstore generations` are local offline mutations protected by the store
-  lock
-- `apstore verify` is a read-only local archive inspection command
-- `apstore generations list` inspects the generation chain;
-  `apstore generations prune [--all-priors]` deletes sealed prior
-  generations after validating the current one and asking for explicit
-  confirmation — pruning permanently deletes rollback targets. Passphrase
-  rotation does not require pruning. Retained prior generations remain
-  readable under historical key terms, and `changepass` warns about them;
-  `generations prune --all-priors` is the explicit way to abandon those
-  rollback targets
-- `apstore rebuild` refuses to run when the destination identity directory
-  already exists and uses the store lock to avoid concurrent signer access
+Admin protocol v4 exposes a direct credential restore:
 
+- `restore_backup`: archive path, optional selectors, export passphrase, and
+  optional `replace_existing`
+- `restore_backup_result`: operation ID, archive SHA-256, resulting
+  generation, restored/identical/conflicting credentials, key count, stable
+  code, and error
+- `rollback_restore`: rolls back only the latest clean, rollback-eligible
+  credential restore
+- `reconcile_store`: validates/reconciles the visible generation and exits
+  recovery mode only when the store is clean
+
+These operations remain authorized by the stable `identity.restore` action.
+Restore, rollback, and reconciliation are callable while an authenticated
+identity is recovery-blocked so they can repair or resolve store damage.
+
+Restore validates the complete selected set before any write:
+
+- archive/member authentication and format bounds
+- payload/envelope versions and strict canonical decoding
+- filename, selector, category, and key-type agreement
+- public/private-key and address consistency
+- LogicSig bytecode/address consistency and off-curve requirements
+- complete standalone signing metadata for LogicSig credentials
+- bounded-authorization consistency
+- source/destination node-role compatibility
+- required destination runtime/provider support
+- duplicates and contradictory managed credential classes
+
+Destination collision classification compares canonical decrypted plaintext,
+not ciphertext. An identical credential is an idempotent no-op. A different
+credential is a conflict requiring `replace_existing`. An existing
+credential that cannot be decrypted or decoded is also a replaceable conflict,
+which permits an explicitly authorized restore to repair damage in recovery
+mode.
+
+After validation, restore mints exactly one generation. The parent generation
+is copied, selected credentials are applied into staged `keys/`, derived
+witness public metadata is updated, the staged generation is validated and
+synced, the outgoing generation is sealed, and one durable `CURRENT` rename
+commits the operation. Restore never writes templates, key-type activation
+records, policy, config, or network mappings.
+
+The generation manifest operation is exactly `credential-restore`; it records
+the archive SHA-256 and whether explicit rollback is eligible. Recovery-mode
+repairs are not rollback-eligible because their damaged parent must never be
+promoted back into service. A rollback mint uses
+`credential-restore-rollback`, so a second rollback is refused.
+
+Reload failure after a committed restore automatically rolls `CURRENT` back
+to the sealed parent and reloads it. Uncertain commit durability, failed
+rollback after mutation, or failed reconciliation enters recovery mode and
+blocks signing. A crash after a complete `CURRENT` flip loads the committed
+generation on restart; uncommitted staging is discarded.
+
+Explicit rollback is allowed only when the current generation:
+
+- was produced by exactly `credential-restore`
+- is marked rollback-eligible
+- still matches its authenticated effective inventory authority
+
+Divergence refuses rollback rather than discarding later mutations. Rollback
+reconstructs the sealed parent content into a fresh current-term generation; it
+never repoints `CURRENT` at historical ciphertext.
+
+Restored credentials immediately operate under the destination identity's
+current policy, approval default, network mappings, endpoints, and installed
+configuration. No source-policy comparison or unattended-signing
+acknowledgement is part of restore. This matches bulk key import: the
+credential operation does not modify destination policy, and the operator is
+responsible for the destination policy under which restored authority runs.
+
+### Offline rebuild
+
+`apstore rebuild <archive-path> [--role signer|sentry]` remains the rescue
+path for an absent identity store. It applies the same credential validation
+and credential-only semantics into a newly staged first generation. The sealed
+manifest source role supplies the default role; an explicit incompatible role
+or role-conflicting credential is rejected.
 ## Error Model
 
 Internal sentinel errors include, for example, in `internal/keystore`:

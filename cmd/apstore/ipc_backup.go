@@ -4,19 +4,13 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"time"
 
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-
-	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -26,8 +20,7 @@ import (
 
 const apstoreIPCTimeout = 30 * time.Second
 
-const importUsage = "usage: apstore backup import <archive-path> [--accept-unverified-template-provenance]"
-const backupImportValidationTimeout = 2 * time.Minute
+const importUsage = "usage: apstore backup import <archive-path>"
 
 type apstoreAdminClient struct {
 	conn *transport.IPCClient
@@ -47,15 +40,6 @@ var newApstoreAdminClientWithPassphraseForCommand = func(passphrase []byte) (aps
 }
 
 var initializeStoreForCommand = initializeStoreLocal
-
-var newBackupImportTemplateValidationClientForCommand = newBackupImportTemplateValidationClient
-
-func newBackupImportTemplateValidationClient() (*algod.Client, error) {
-	if cfg, err := config.GetTEALCompileAlgod(); err == nil && cfg != nil && cfg.Server != "" {
-		return algod.MakeClient(cfg.Server, cfg.Token)
-	}
-	return algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), algo.ResolveTEALCompileAlgodToken())
-}
 
 func newApstoreAdminClient() (*apstoreAdminClient, error) {
 	conn := transport.NewIPC(config.IPCPath)
@@ -252,17 +236,6 @@ func cmdBackupCreate(args []string) error {
 	if result.Verified {
 		logInfof("verified: yes")
 	}
-	if len(result.SkippedKeys) > 0 {
-		logWarnf("%d key(s) skipped (NOT backed up):", len(result.SkippedKeys))
-		skippedAddresses := make([]string, 0, len(result.SkippedKeys))
-		for address := range result.SkippedKeys {
-			skippedAddresses = append(skippedAddresses, address)
-		}
-		sort.Strings(skippedAddresses)
-		for _, address := range skippedAddresses {
-			logWarnf("  %s: %s", address, result.SkippedKeys[address])
-		}
-	}
 	return nil
 }
 
@@ -298,26 +271,10 @@ func cmdBackupList() error {
 }
 
 func cmdBackupImport(args []string) error {
-	if len(args) == 0 {
+	if len(args) != 1 {
 		return fmt.Errorf("%s", importUsage)
 	}
-	source := ""
-	acceptUnverifiedProvenance := false
-	for _, arg := range args {
-		switch {
-		case arg == "--accept-unverified-template-provenance":
-			acceptUnverifiedProvenance = true
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown backup import option: %s", arg)
-		case source == "":
-			source = arg
-		default:
-			return fmt.Errorf("%s", importUsage)
-		}
-	}
-	if source == "" {
-		return fmt.Errorf("%s", importUsage)
-	}
+	source := args[0]
 	if !backup.IsArchivePath(source) {
 		return fmt.Errorf("backup source must end in .tar.gz or .tgz: %s", source)
 	}
@@ -369,7 +326,7 @@ func cmdBackupImport(args []string) error {
 		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
 	}
 	defer cleanup()
-	if err := validateImportedBackupContents(sourceRoot, acceptUnverifiedProvenance); err != nil {
+	if err := validateImportedBackupContents(sourceRoot); err != nil {
 		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup contents: %v", err)}
 	}
 	if err := os.Rename(tmpPath, dest); err != nil {
@@ -388,7 +345,7 @@ func cmdBackupImport(args []string) error {
 	return nil
 }
 
-func validateImportedBackupContents(sourceRoot string, acceptUnverifiedProvenance bool) error {
+func validateImportedBackupContents(sourceRoot string) error {
 	logInfof("import validation requires the export passphrase")
 	fmt.Print("Enter export passphrase: ")
 	exportPassphrase, err := readPromptedPassword()
@@ -401,18 +358,7 @@ func validateImportedBackupContents(sourceRoot string, acceptUnverifiedProvenanc
 		return fmt.Errorf("export passphrase cannot be empty")
 	}
 
-	algodClient, err := newBackupImportTemplateValidationClientForCommand()
-	if err != nil {
-		return fmt.Errorf("failed to configure TEAL compiler client: %w", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), backupImportValidationTimeout)
-	defer cancel()
-
-	report, err := backup.DeepVerifyBackupWithOptions(sourceRoot, string(exportPassphrase), backup.DeepVerifyOptions{
-		ValidateBundledTemplateBytecode: true,
-		AlgodClient:                     algodClient,
-		Context:                         ctx,
-	})
+	report, err := backup.DeepVerifyBackupBytes(sourceRoot, exportPassphrase)
 	if err != nil {
 		return err
 	}
@@ -425,41 +371,7 @@ func validateImportedBackupContents(sourceRoot string, acceptUnverifiedProvenanc
 		}
 		return fmt.Errorf("%d of %d key file(s) failed validation", report.FailedFiles, report.TotalFiles)
 	}
-	if report.ProvenanceUnavailableFiles > 0 {
-		if err := confirmUnverifiedTemplateProvenance(report, acceptUnverifiedProvenance); err != nil {
-			return err
-		}
-	}
 	logInfof("backup contents verified: %d key file(s)", report.ValidFiles)
-	return nil
-}
-
-// confirmUnverifiedTemplateProvenance handles the one check that depends on an
-// external service. Every key validated; only the bundled templates'
-// correspondence to their keys is unproven because the TEAL compiler could not
-// be reached. A template that compiles into the wrong bytecode never reaches
-// here — that is a hard failure above.
-func confirmUnverifiedTemplateProvenance(report *backup.VerifyReport, preAccepted bool) error {
-	logWarnf(
-		"%d of %d key file(s) bundle a template whose provenance could not be checked: the TEAL compiler could not be reached",
-		report.ProvenanceUnavailableFiles, report.TotalFiles,
-	)
-	for _, result := range report.Results {
-		if result.TemplateProvenanceUnavailable {
-			logWarnf("  %s: %s", result.FileName, result.TemplateProvenanceNote)
-		}
-	}
-	logWarnf("the keys themselves decrypt and validate; their signing authority does not depend on this check")
-	logWarnf("unchecked: that each bundled template recompiles into its key's stored bytecode")
-	logWarnf("if a restore later installs one of these templates, it becomes the definition used to generate new keys of that type")
-
-	if preAccepted {
-		logWarnf("proceeding: --accept-unverified-template-provenance was given")
-		return nil
-	}
-	if !confirmYesNo("Import this backup without verifying bundled template provenance? [y/N]: ") {
-		return fmt.Errorf("import cancelled; re-run when the TEAL compiler is reachable, or pass --accept-unverified-template-provenance")
-	}
 	return nil
 }
 

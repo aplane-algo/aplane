@@ -16,8 +16,8 @@ The six observations are:
 5. the bounded1 fee ceiling can become a liveness fuse; and
 6. bounded1 provides transaction-local, not group-wide, semantic containment.
 
-All six concerns are addressable; observation 3 is corrected by the recovered
-activation workflow described below. The first four can be corrected in the
+All six concerns are addressable; observation 3 is corrected by the direct
+credential-restore boundary described below. The first four can be corrected in the
 runtime, configuration, storage, and administrative surfaces. The final two
 involve immutable LogicSig semantics: stronger guarantees can be provided for
 new accounts through a new contract or profile, but cannot be added
@@ -147,31 +147,14 @@ client.
 
 ### Corrected behavior
 
-Managed backups contain encrypted key payloads and a snapshot of the source
-identity policy. Backup creation verifies the live source policy before
-copying it. Normal restore workflows deliberately do not install the archived
-policy because destination policy is authoritative and should not be replaced
-silently.
+Managed backups contain complete encrypted credential records and no source
+policy, approval settings, templates, or operational configuration. Restore
+preview exposes credential selectors, key types, and destination conflicts.
+Apply authenticates and validates the whole selected set before any write;
+replacement of a different or unreadable destination credential is a separate
+explicit option.
 
-Restore preview exposes key addresses, key types, existing-file conflicts, and
-template requirements. Recovery then validates all selected payloads and
-atomically publishes one destination-encrypted inactive batch outside active
-key and watcher namespaces. It does not reload and cannot make a credential
-signable.
-
-Review revalidates the batch against the current destination. It shows the
-known effective destination `user_auto_approve` state and orders policy
-differences before raw changed paths. The comparison is informational: the
-destination cannot authenticate archived source policy, so the review assigns
-no widening or safety verdict and derives no acknowledgement from it.
-Archive-reported source settings are shown as labeled context, not
-as standalone notifications.
-
-Activation requires a destination-bound review token. One acknowledgement is
-required, and it is derived from verified destination state: an identity that
-auto-approves unmatched signing requests must be acknowledged, whatever the
-archive reports. Active replacement is a separate option.
-The server commits the activation by minting a complete new generation and
+The server commits restore by minting a complete new generation and
 flipping the `CURRENT` pointer in one durable rename; the outgoing generation
 is sealed first and remains the exact rollback target. Reload failure rolls
 the pointer back to it; an interrupted attempt leaves no committed state, and
@@ -180,44 +163,34 @@ reconciliation.
 
 ### Security significance
 
-Cryptographic key restoration and security-posture restoration are not the
-same operation. Restoring a native spending key, or a LogicSig whose intrinsic
-program is less restrictive than the source signer policy, into a more
-permissive destination can widen effective authority.
-
-An operator may reasonably interpret "restore" as recovery of the prior
-security posture even though the implementation restores only credential
-material and supporting key-type state. The source policy does not need to win,
-but silently activating the key under different policy creates room for a
-materially different authorization result.
-
-The archived policy sidecar also has a trust limitation. Its HMAC was produced
-with a key derived from the source identity's term key. The destination cannot
-independently authenticate that HMAC without source-store authority. The
-snapshot can be compared and displayed as source-provenance material, but it
-must not be represented as destination-verified policy merely because it was
-included in the archive.
+Credential restoration and policy migration are deliberately separate.
+Restoring a native spending key, or a LogicSig whose intrinsic program is less
+restrictive than the source signer policy, into a more permissive destination
+can widen effective authority. The operator owns that decision; the archive
+does not carry source policy or claim to reproduce source security posture.
 
 ### Implemented boundary
 
-A safer restore model separates credential recovery from activation:
+A restore authenticates and validates the complete archive before publishing
+one generation:
 
 ```text
-archive -> preview -> recovered batch -> policy comparison -> activation
+archive -> validate credentials -> atomic generation -> reload
 ```
 
-Recovered credentials do not enter the runtime index until activation and
-successful reload. Both interactive clients and `apstore` use the same server
-operations and acknowledgements. Recovery, activation intent/outcome,
-resume/rollback, and purge carry structured audit events with identity,
-principal, session, transport, restore ID, and available policy digests.
+Credentials do not enter the runtime index until the generation commit and
+successful reload. Reload failure rolls the pointer back to the sealed parent;
+uncertain durability enters recovery mode. Both interactive clients and
+`apstore` use the same server operation. Restore intent/outcome and rollback
+carry structured audit events with identity, principal, session, transport,
+operation ID, archive SHA-256, and generation ID.
 
 ### Resolution status
 
-Corrected in admin protocol v3 without changing existing `.apb` payloads or
-managed archive format. The v2 direct-to-active `restore_backup` mutation is no
-longer dispatched. Offline `apstore rebuild` remains an explicitly separate,
-absent-store rescue path.
+Implemented in admin protocol v4. Earlier internal backup formats and recovered
+batch operations are unsupported because this is the first supported release.
+Offline `apstore rebuild` remains an explicitly separate, absent-store rescue
+path.
 
 ## 4. Policy Reload Failure: Fail-Closed And Fail-Stale
 
@@ -405,7 +378,7 @@ prominently.
 ## Overall Assessment
 
 The first two findings concern trust-boundary ownership and should be treated
-as the most immediate security corrections. Restore activation and policy
+as the most immediate security corrections. Credential restore and policy
 reload status are administrative-state problems that can be corrected without
 changing cryptographic formats. The fee-liveness and group-containment issues
 belong together in the design of a successor bounded contract because both

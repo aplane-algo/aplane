@@ -4,1146 +4,127 @@
 package backup
 
 import (
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/backup/recovered"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/fsutil"
-	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
-	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/internal/templatestore"
-	"github.com/aplane-algo/aplane/internal/witness"
-	falconsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024/signerreg"
-
-	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 func TestResolveManagedBackupPathScopesToIdentityBackupDir(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	root := paths.IdentityBackupsDir("default")
-
-	got, err := ResolveManagedBackupPath(paths, "default", "backup.tar.gz")
+	managed := BuildManagedArchivePath(paths, "default", "one")
+	resolved, err := ResolveManagedBackupPath(paths, "default", filepath.Base(managed))
 	if err != nil {
-		t.Fatalf("ResolveManagedBackupPath(relative) error = %v", err)
+		t.Fatal(err)
 	}
-	if want := filepath.Join(root, "backup.tar.gz"); got != want {
-		t.Fatalf("relative path = %q, want %q", got, want)
+	if resolved != managed {
+		t.Fatalf("resolved = %q, want %q", resolved, managed)
 	}
-
-	got, err = ResolveManagedBackupPath(paths, "default", filepath.Join(root, "backup.tgz"))
-	if err != nil {
-		t.Fatalf("ResolveManagedBackupPath(abs) error = %v", err)
-	}
-	if want := filepath.Join(root, "backup.tgz"); got != want {
-		t.Fatalf("absolute path = %q, want %q", got, want)
-	}
-
-	if _, err := ResolveManagedBackupPath(paths, "default", "../backup.tar.gz"); err == nil {
-		t.Fatal("ResolveManagedBackupPath(escape) error = nil, want rejection")
-	}
-	if _, err := ResolveManagedBackupPath(paths, "default", filepath.Join("nested", "backup.tar.gz")); err == nil {
-		t.Fatal("ResolveManagedBackupPath(nested) error = nil, want rejection")
-	}
-	if _, err := ResolveManagedBackupPath(paths, "default", "backup.zip"); err == nil {
-		t.Fatal("ResolveManagedBackupPath(unsupported extension) error = nil, want rejection")
-	}
-}
-
-func TestResolveManagedBackupPathRejectsSymlinkedIntermediate(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	root := paths.IdentityBackupsDir("default")
-	outside := filepath.Join(t.TempDir(), "outside")
-	if err := os.MkdirAll(outside, 0o755); err != nil {
-		t.Fatalf("MkdirAll(outside) error = %v", err)
-	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		t.Fatalf("MkdirAll(root) error = %v", err)
-	}
-	if err := os.Symlink(outside, filepath.Join(root, "linked")); err != nil {
-		t.Fatalf("Symlink() error = %v", err)
-	}
-	if _, err := ResolveManagedBackupPath(paths, "default", filepath.Join("linked", "backup.tar.gz")); err == nil {
-		t.Fatal("ResolveManagedBackupPath(symlinked intermediate) error = nil, want rejection")
-	}
-}
-
-func TestAuthoritativeTemplateForKeyTypeSkipsNonTemplateKeyType(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	if err := os.MkdirAll(paths.TemplateLibraryDir(), 0o755); err != nil {
-		t.Fatalf("MkdirAll(library) error = %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(paths.TemplateLibraryDir(), "notcanonical.yaml"), []byte("template_type: ["), 0o600); err != nil {
-		t.Fatalf("WriteFile(non-template library file) error = %v", err)
-	}
-	restorer := NewRestorer(paths, "default")
-
-	_, _, ok, err := restorer.authoritativeTemplateForKeyType("notcanonical")
-	if err != nil {
-		t.Fatalf("authoritativeTemplateForKeyType() error = %v, want nil for non-template key type", err)
-	}
-	if ok {
-		t.Fatal("authoritativeTemplateForKeyType() ok = true, want non-template key type skipped")
-	}
-}
-
-func TestBuildTemplateRestorePlanRejectsStaleLocalTemplateWhenAuthoritativeMatchesBackup(t *testing.T) {
-	const (
-		identityID = "default"
-		family     = "authoritative-stale"
-		keyType    = "test.authoritative-stale.v1"
-	)
-
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	if err := os.MkdirAll(paths.TemplateLibraryDir(), 0o755); err != nil {
-		t.Fatalf("MkdirAll(library) error = %v", err)
-	}
-	authoritativeTemplate := genericTemplateYAMLForTest(family)
-	if err := os.WriteFile(filepath.Join(paths.TemplateLibraryDir(), keyType+".yaml"), authoritativeTemplate, 0o600); err != nil {
-		t.Fatalf("WriteFile(authoritative template) error = %v", err)
-	}
-	staleTemplate := []byte(`schema_version: 1
-derivation_version: 1
-template_type: generic
-template_mode: generated
-publisher: test
-family: authoritative-stale
-version: 1
-display_name: Stale Template
-description: Stale identity-local template
-teal: |
-  #pragma version 8
-  int 0
-  return
-`)
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, staleTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testExportMasterKey)); err != nil {
-		t.Fatalf("SaveTemplateForPaths(stale) error = %v", err)
-	}
-	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-
-	restorer := NewRestorer(paths, identityID)
-	_, err := restorer.buildTemplateRestorePlan(authoritativeTemplate, keyType, string(templatestore.TemplateTypeGeneric), cryptotest.Keyring(t, testExportMasterKey), false)
-	if err == nil {
-		t.Fatal("buildTemplateRestorePlan() error = nil, want stale local template conflict")
-	}
-	if !strings.Contains(err.Error(), "existing keystore template does not match authoritative local definition") {
-		t.Fatalf("buildTemplateRestorePlan() error = %v, want stale local template conflict", err)
+	if _, err := ResolveManagedBackupPath(paths, "default", "../escape.tar.gz"); err == nil {
+		t.Fatal("ResolveManagedBackupPath accepted traversal")
 	}
 }
 
 func TestListManagedBackupsSortsArchivesAndIgnoresSymlinks(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	dir := paths.IdentityBackupsDir("default")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
+	if err := os.MkdirAll(paths.IdentityBackupsDir("default"), 0o770); err != nil {
+		t.Fatal(err)
 	}
-
-	oldPath := filepath.Join(dir, "old.tar.gz")
-	newPath := filepath.Join(dir, "new.tgz")
-	if err := os.WriteFile(oldPath, []byte("old"), 0o600); err != nil {
-		t.Fatalf("WriteFile(old) error = %v", err)
+	older := BuildManagedArchivePath(paths, "default", "older")
+	newer := BuildManagedArchivePath(paths, "default", "newer")
+	if err := os.WriteFile(older, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(newPath, []byte("new"), 0o600); err != nil {
-		t.Fatalf("WriteFile(new) error = %v", err)
+	if err := os.WriteFile(newer, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("ignore"), 0o600); err != nil {
-		t.Fatalf("WriteFile(notes) error = %v", err)
+	oldTime := time.Unix(100, 0)
+	if err := os.Chtimes(older, oldTime, oldTime); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.Symlink(oldPath, filepath.Join(dir, "linked.tar.gz")); err != nil {
-		t.Fatalf("Symlink() error = %v", err)
+	if err := os.Symlink(newer, filepath.Join(paths.IdentityBackupsDir("default"), "link.tar.gz")); err != nil {
+		t.Fatal(err)
 	}
-
-	oldTime := time.Unix(1700000000, 0)
-	newTime := time.Unix(1710000000, 0)
-	if err := os.Chtimes(oldPath, oldTime, oldTime); err != nil {
-		t.Fatalf("Chtimes(old) error = %v", err)
-	}
-	if err := os.Chtimes(newPath, newTime, newTime); err != nil {
-		t.Fatalf("Chtimes(new) error = %v", err)
-	}
-
-	backups, err := ListManagedBackups(paths, "default")
+	items, err := ListManagedBackups(paths, "default")
 	if err != nil {
-		t.Fatalf("ListManagedBackups() error = %v", err)
+		t.Fatal(err)
 	}
-	if len(backups) != 2 {
-		t.Fatalf("backup count = %d, want 2", len(backups))
-	}
-	if backups[0].FileName != "new.tgz" || backups[1].FileName != "old.tar.gz" {
-		t.Fatalf("backup order = %v, want newest first", []string{backups[0].FileName, backups[1].FileName})
+	if len(items) != 2 || items[0].Path != newer || items[1].Path != older {
+		t.Fatalf("backups = %+v", items)
 	}
 }
 
-func TestStatManagedBackupArchiveRejectsSymlink(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "target.tar.gz")
-	if err := os.WriteFile(target, []byte("archive"), 0o600); err != nil {
-		t.Fatalf("WriteFile(target) error = %v", err)
-	}
-	link := filepath.Join(dir, "linked.tar.gz")
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatalf("Symlink() error = %v", err)
-	}
-
-	if _, err := StatManagedBackupArchive(link); err == nil {
-		t.Fatal("StatManagedBackupArchive(symlink) error = nil, want rejection")
-	}
-	if _, err := StatManagedBackupArchive(target); err != nil {
-		t.Fatalf("StatManagedBackupArchive(target) error = %v", err)
-	}
-}
-
-func TestPreviewRestoreManagedArchiveReportsKeyMetadataAndExistingConflict(t *testing.T) {
-	ed25519signerreg.RegisterSigner()
-
+func TestPreviewRestoreReportsCanonicalCredentialWithoutTemplate(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
-		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-			t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-		}
-	})
-
-	if err := os.MkdirAll(paths.LegacyKeysDir(identityID), 0o750); err != nil {
-		t.Fatalf("MkdirAll(keys) error = %v", err)
-	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), []byte("existing"), 0o600); err != nil {
-		t.Fatalf("WriteFile(existing key) error = %v", err)
-	}
-
-	preview, err := PreviewRestoreWithNodeRole(paths, identityID, filepath.Base(archivePath), []byte("export-passphrase"), noderole.DefaultRole())
-	if err != nil {
-		t.Fatalf("PreviewRestore() error = %v", err)
-	}
-	if preview.ArchivePath != archivePath {
-		t.Fatalf("ArchivePath = %q, want %q", preview.ArchivePath, archivePath)
-	}
-	if len(preview.Errors) != 0 {
-		t.Fatalf("preview errors = %+v, want none", preview.Errors)
-	}
-	if len(preview.Keys) != 1 {
-		t.Fatalf("preview key count = %d, want 1", len(preview.Keys))
-	}
-	key := preview.Keys[0]
-	if key.Address != address || key.KeyType != "ed25519" || !key.AlreadyExists {
-		t.Fatalf("preview key = %+v, want ed25519 existing key %s", key, address)
-	}
-}
-
-func TestPreviewRestoreWithNodeRoleReportsRoleForbiddenKey(t *testing.T) {
-	ed25519signerreg.RegisterSigner()
-
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
-		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-			t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-		}
-	})
-
-	preview, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("export-passphrase"), noderole.RoleSentry)
-	if err != nil {
-		t.Fatalf("PreviewRestoreWithNodeRole() error = %v", err)
-	}
-	if len(preview.Errors) != 1 {
-		t.Fatalf("preview errors = %+v, want one role-forbidden error", preview.Errors)
-	}
-	if !strings.Contains(preview.Errors[0].Error, "role-forbidden") ||
-		!strings.Contains(preview.Errors[0].Error, `node role "sentry"`) {
-		t.Fatalf("preview error = %q, want sentry role-forbidden context", preview.Errors[0].Error)
-	}
-	if len(preview.Keys) != 1 || preview.Keys[0].Error == "" {
-		t.Fatalf("preview keys = %+v, want keyed role-forbidden error", preview.Keys)
-	}
-}
-
-func TestPreviewRestoreWrongPassphraseDoesNotLeakAddress(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
-		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("correct-passphrase")); err != nil {
-			t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-		}
-	})
-
-	// A wrong passphrase now fails at the sealed manifest, before any
-	// member is inspected: nothing about the archive's contents is
-	// reported, so no address can leak.
-	_, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("wrong-passphrase"), noderole.DefaultRole())
-	if err == nil {
-		t.Fatal("PreviewRestore accepted a wrong passphrase")
-	}
-	if strings.Contains(err.Error(), address) {
-		t.Fatalf("preview error %q leaked address %s", err, address)
-	}
-}
-
-func TestPreviewRestoreUnsupportedEnvelopeDoesNotLeakAddress(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, _ := testEd25519BackupKeyJSON(t)
-	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
-		if err := os.WriteFile(filepath.Join(keysDir, address+".apb"), []byte(`{"envelope_version":99,"nonce":"","ciphertext":""}`), 0o600); err != nil {
-			t.Fatalf("WriteFile(unsupported envelope) error = %v", err)
-		}
-	})
-
-	preview, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("export-passphrase"), noderole.DefaultRole())
-	if err != nil {
-		t.Fatalf("PreviewRestore() error = %v", err)
-	}
-	if len(preview.Keys) != 0 {
-		t.Fatalf("preview keys = %+v, want none for unsupported envelope", preview.Keys)
-	}
-	if len(preview.Errors) != 1 {
-		t.Fatalf("preview errors = %+v, want one envelope error", preview.Errors)
-	}
-	if preview.Errors[0].Address != "" {
-		t.Fatalf("preview error leaked address %q for unsupported envelope", preview.Errors[0].Address)
-	}
-	if !strings.Contains(preview.Errors[0].Error, "unsupported envelope_version") {
-		t.Fatalf("preview error = %q, want unsupported envelope context", preview.Errors[0].Error)
-	}
-}
-
-func TestPreviewRestoreRejectsPlaintextBackupPayload(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
-		if err := os.WriteFile(filepath.Join(keysDir, address+".apb"), keyJSON, 0o600); err != nil {
-			t.Fatalf("WriteFile(plaintext backup) error = %v", err)
-		}
-	})
-
-	preview, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("export-passphrase"), noderole.DefaultRole())
-	if err != nil {
-		t.Fatalf("PreviewRestore() error = %v", err)
-	}
-	if len(preview.Errors) != 1 {
-		t.Fatalf("preview.Errors = %d, want 1", len(preview.Errors))
-	}
-	if !strings.Contains(preview.Errors[0].Error, "backup file must be encrypted") {
-		t.Fatalf("preview error = %q, want encrypted rejection", preview.Errors[0].Error)
-	}
-}
-
-func TestPreviewRestoreRejectsEmptyManagedArchive(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {})
-
-	if _, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("export-passphrase"), noderole.DefaultRole()); err == nil {
-		t.Fatal("PreviewRestore(empty archive) error = nil, want no .apb rejection")
-	} else if !strings.Contains(err.Error(), "no .apb files found") {
-		t.Fatalf("PreviewRestore(empty archive) error = %v, want no .apb rejection", err)
-	}
-}
-
-func TestRecoverManagedBackupCreatesInactiveBatch(t *testing.T) {
-	ed25519signerreg.RegisterSigner()
-
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	policyYAML := []byte("reject_foreign_rekey: true\n")
-	autoApprove := true
-	archivePath := writeManagedRecoveryArchiveWithSourceSettings(
-		t, paths, identityID, noderole.RoleSigner, policyYAML,
-		SourceSettingsSnapshot{
-			UserAutoApprove: &autoApprove,
-			GenesisHashMappings: map[string]string{
-				strings.Repeat("42", 32): "voi-mainnet",
-			},
-		},
-		func(keysDir string) {
-			if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-				t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-			}
-		})
-	archiveSHA256, _, err := FileSHA256(archivePath)
-	if err != nil {
-		t.Fatalf("FileSHA256() error = %v", err)
-	}
-
-	batch, err := RecoverManagedBackup(
-		paths,
-		identityID,
-		filepath.Base(archivePath),
-		nil,
-		cryptotest.Keyring(t, testExportMasterKey),
-		[]byte("export-passphrase"),
-		noderole.RoleSigner,
+	archive, address := writeCredentialArchiveForBackupTest(t, paths, noderole.RoleSigner)
+	preview, err := PreviewRestoreWithNodeRole(
+		paths, "default", archive, []byte("export-passphrase"), noderole.RoleSigner,
 	)
 	if err != nil {
-		t.Fatalf("RecoverManagedBackup() error = %v", err)
+		t.Fatal(err)
 	}
-	if batch.ArchiveName != filepath.Base(archivePath) || batch.ArchiveSHA256 != archiveSHA256 {
-		t.Fatalf("batch archive metadata = %q %q, want %q %q", batch.ArchiveName, batch.ArchiveSHA256, filepath.Base(archivePath), archiveSHA256)
-	}
-	if batch.SourceNodeRole != string(noderole.RoleSigner) ||
-		batch.SourcePolicyStatus != recovered.SourcePolicyUnverified ||
-		string(batch.SourcePolicyYAML) != string(policyYAML) {
-		t.Fatalf("batch source metadata = role %q status %q policy %q", batch.SourceNodeRole, batch.SourcePolicyStatus, batch.SourcePolicyYAML)
-	}
-	if batch.SourceUserAutoApprove == nil ||
-		!*batch.SourceUserAutoApprove ||
-		len(batch.SourceGenesisHashMappings) != 1 {
-		t.Fatalf("batch source settings = %+v, want authenticated auto-approve context", batch)
-	}
-	if len(batch.Entries) != 1 || batch.Entries[0].Selector != address || batch.Entries[0].KeyType != "ed25519" {
-		t.Fatalf("batch entries = %+v, want recovered ed25519 %s", batch.Entries, address)
-	}
-
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address)); !os.IsNotExist(err) {
-		t.Fatalf("active key stat error = %v, want not found", err)
-	}
-	for _, activeDir := range []string{paths.LegacyKeysDir(identityID), paths.LegacyKeyTypeRecordsDir(identityID)} {
-		if _, err := os.Stat(activeDir); !os.IsNotExist(err) {
-			t.Fatalf("active directory %s stat error = %v, want not found", activeDir, err)
-		}
-	}
-
-	loaded, err := recovered.LoadBatch(paths, identityID, batch.RestoreID, cryptotest.Keyring(t, testExportMasterKey))
-	if err != nil {
-		t.Fatalf("recovered.LoadBatch() error = %v", err)
-	}
-	entry, err := recovered.LoadEntry(paths, identityID, batch.RestoreID, loaded.Entries[0], cryptotest.Keyring(t, testExportMasterKey))
-	if err != nil {
-		t.Fatalf("recovered.LoadEntry() error = %v", err)
-	}
-	defer entry.ZeroSecrets()
-	if entry.Selector != address || entry.KeyType != "ed25519" {
-		t.Fatalf("loaded recovered entry = %+v, want ed25519 %s", entry, address)
+	if len(preview.Keys) != 1 || preview.Keys[0].Address != address {
+		t.Fatalf("preview = %+v", preview)
 	}
 }
 
-// TestRecoverManagedBackupRejectsTamperedArchive proves recovery fails closed
-// on an archive whose members no longer match the sealed manifest. Source
-// context can no longer be "invalid but ignorable": it is authenticated with
-// everything else, so tampering rejects the whole archive rather than
-// downgrading one field.
-func TestRecoverManagedBackupRejectsTamperedArchive(t *testing.T) {
-	ed25519signerreg.RegisterSigner()
-
+func TestRestoreKeyWritesCredentialOnlyAndRequiresOverwrite(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	archivePath := writeTamperedManagedRecoveryArchive(
-		t,
-		paths,
-		identityID,
-		noderole.RoleSigner,
-		func(keysDir string) {
-			if err := writeStandaloneBackupFile(
-				filepath.Join(keysDir, address+".apb"),
-				keyJSON,
-				[]byte("export-passphrase"),
-			); err != nil {
-				t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-			}
-		},
-	)
-
-	_, err := RecoverManagedBackup(
-		paths,
-		identityID,
-		archivePath,
-		nil,
-		cryptotest.Keyring(t, testExportMasterKey),
-		[]byte("export-passphrase"),
-		noderole.RoleSigner,
-	)
-	if err == nil {
-		t.Fatal("RecoverManagedBackup accepted an archive that does not match its sealed manifest")
-	}
-	if !strings.Contains(err.Error(), "unlisted member") &&
-		!strings.Contains(err.Error(), "does not match the sealed manifest") {
-		t.Fatalf("RecoverManagedBackup() error = %v, want manifest mismatch", err)
-	}
-}
-
-// writeTamperedManagedRecoveryArchive seals a manifest and then adds a member
-// the manifest never covered, modelling post-creation tampering by an attacker
-// who does not know the export passphrase.
-func writeTamperedManagedRecoveryArchive(
-	t *testing.T,
-	paths storepaths.Paths,
-	identityID string,
-	role noderole.Role,
-	populate func(keysDir string),
-) string {
-	t.Helper()
-
 	root := t.TempDir()
 	keysDir := filepath.Join(root, "apb")
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
-	}
-	populate(keysDir)
-	if err := WriteSealedManifest(
-		root,
-		role,
-		time.Unix(1_700_000_000, 0),
-		defaultSourceSettingsForRole(role, SourceSettingsSnapshot{}),
-		[]byte("export-passphrase"),
-	); err != nil {
-		t.Fatalf("WriteSealedManifest() error = %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "smuggled.txt"), []byte("added after sealing"), 0o600); err != nil {
-		t.Fatalf("WriteFile(smuggled) error = %v", err)
-	}
-
-	archivePath := filepath.Join(paths.IdentityBackupsDir(identityID), "tampered-recovery-test.tar.gz")
-	if err := CreateTarGzArchive(root, archivePath); err != nil {
-		t.Fatalf("CreateTarGzArchive() error = %v", err)
-	}
-	return archivePath
-}
-
-func TestRecoverManagedBackupIsAllOrNothing(t *testing.T) {
-	ed25519signerreg.RegisterSigner()
-
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	archivePath := writeManagedRecoveryArchive(t, paths, identityID, noderole.RoleSigner, nil, func(keysDir string) {
-		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-			t.Fatalf("writeStandaloneBackupFile(valid) error = %v", err)
-		}
-		if err := writeStandaloneBackupFile(filepath.Join(keysDir, "zz-invalid.apb"), []byte(`{"not":"a key"}`), []byte("export-passphrase")); err != nil {
-			t.Fatalf("writeStandaloneBackupFile(invalid) error = %v", err)
-		}
-	})
-
-	if _, err := RecoverManagedBackup(
-		paths,
-		identityID,
-		archivePath,
-		nil,
-		cryptotest.Keyring(t, testExportMasterKey),
-		[]byte("export-passphrase"),
-		noderole.RoleSigner,
-	); err == nil {
-		t.Fatal("RecoverManagedBackup() error = nil, want invalid entry rejection")
-	}
-	if entries, err := os.ReadDir(paths.RecoveredRootDir(identityID)); err == nil && len(entries) != 0 {
-		t.Fatalf("recovered root entries = %v, want no published batch", entries)
-	} else if err != nil && !os.IsNotExist(err) {
-		t.Fatalf("ReadDir(recovered root) error = %v", err)
-	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address)); !os.IsNotExist(err) {
-		t.Fatalf("active key stat error = %v, want not found", err)
-	}
-}
-
-func TestRestoreKeyWritesStorePermissions(t *testing.T) {
-	ed25519signerreg.RegisterSigner()
-
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	keysDir := filepath.Join(t.TempDir(), "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
-	}
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-	}
-
-	restorer := NewRestorer(paths, identityID)
-	if _, err := restorer.RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
-		t.Fatalf("RestoreKey() error = %v", err)
-	}
-
-	active, err := genstore.ResolveActive(paths, identityID)
-	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
-	}
-	assertStoreDirMode(t, active.KeysDir())
-	assertFileMode(t, apkeys.AccountKeyFilePath(paths, identityID, address), fsutil.StoreFilePerm)
-}
-
-func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
-	keysDir := filepath.Join(t.TempDir(), "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
-	}
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, componentKey+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-	}
-
-	restorer := NewRestorer(paths, identityID).WithNodeRole(noderole.RoleSigner)
-	_, err := restorer.RestoreKey(keysDir, componentKey, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
-	if err == nil {
-		t.Fatal("RestoreKey() error = nil, want role-forbidden rejection")
-	}
-	if !strings.Contains(err.Error(), "role-forbidden") || !strings.Contains(err.Error(), witness.Falcon1024V1) {
-		t.Fatalf("RestoreKey() error = %v, want sentry-key role-forbidden rejection", err)
-	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, componentKey)); !os.IsNotExist(err) {
-		t.Fatalf("restored sentry key stat error = %v, want not exist", err)
-	}
-}
-
-func TestRestoreKeyWritesWitnessPublicMetadataOnSentryNode(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
-	keysDir := filepath.Join(t.TempDir(), "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
-	}
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, componentKey+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-	}
-	payload, err := apkeys.ParsePayload(keyJSON)
-	if err != nil {
-		t.Fatalf("ParsePayload(sentry key) error = %v", err)
-	}
-	defer payload.ZeroSecrets()
-
-	restorer := NewRestorer(paths, identityID).WithNodeRole(noderole.RoleSentry)
-	keyType, err := restorer.RestoreKey(keysDir, componentKey, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
-	if err != nil {
-		t.Fatalf("RestoreKey() error = %v", err)
-	}
-	if keyType != witness.Falcon1024V1 {
-		t.Fatalf("RestoreKey() key type = %q, want %q", keyType, witness.Falcon1024V1)
-	}
-	if _, err := os.Stat(apkeys.SentryCredentialFilePath(paths, identityID, componentKey)); err != nil {
-		t.Fatalf("restored sentry credential missing: %v", err)
-	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, componentKey)); !os.IsNotExist(err) {
-		t.Fatalf("legacy witness .key stat error = %v, want not exist", err)
-	}
-
-	env, ok, err := apkeys.ReadWitnessPublicMetadata(paths, identityID, componentKey)
-	if err != nil {
-		t.Fatalf("ReadWitnessPublicMetadata() error = %v", err)
-	}
-	if !ok {
-		t.Fatal("ReadWitnessPublicMetadata() ok = false, want restored sidecar")
-	}
-	if env.WitnessKeyID != componentKey {
-		t.Fatalf("ComponentKey = %q, want %q", env.WitnessKeyID, componentKey)
-	}
-	if env.KeyType != witness.Falcon1024V1 {
-		t.Fatalf("KeyType = %q, want %q", env.KeyType, witness.Falcon1024V1)
-	}
-	wantPublicKeyHex := fmt.Sprintf("%x", payload.PublicKey)
-	if env.PublicKeyHex != wantPublicKeyHex {
-		t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, wantPublicKeyHex)
-	}
-	assertFileMode(t, apkeys.WitnessPublicMetadataPath(paths, identityID, componentKey), fsutil.StoreFilePerm)
-}
-
-func TestRestoreKeyRequiresExplicitOverwrite(t *testing.T) {
-	ed25519signerreg.RegisterSigner()
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	keysDir := filepath.Join(t.TempDir(), "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+	address, payload := testEd25519BackupKeyJSON(t)
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), payload, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	restorer := NewRestorer(paths, identityID)
-	if _, err := restorer.RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
-		t.Fatalf("first RestoreKey() error = %v", err)
-	}
-	if _, err := restorer.RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); !errors.Is(err, apkeys.ErrManagedCredentialExists) {
-		t.Fatalf("second RestoreKey() error = %v, want existing credential", err)
-	}
-	if _, err := restorer.WithOverwrite(true).RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
-		t.Fatalf("overwrite RestoreKey() error = %v", err)
-	}
-}
-
-func TestRestoreKeyRejectsContradictoryManagedCredentialClass(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
-	keysDir := filepath.Join(t.TempDir(), "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+	restorer := NewRestorer(paths, "default").WithNodeRole(noderole.RoleSigner)
+	kr := cryptotest.Keyring(t, testExportMasterKey)
+	if _, err := restorer.RestoreKey(keysDir, address, kr, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, componentKey+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+	active, err := genstore.ResolveActive(paths, "default")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(paths.LegacyKeysDir(identityID), 0o750); err != nil {
+	if _, err := os.Stat(filepath.Join(active.KeysDir(), address+keys.AccountKeyExtension)); err != nil {
 		t.Fatal(err)
 	}
-	legacyPath := apkeys.AccountKeyFilePath(paths, identityID, componentKey)
-	if err := os.WriteFile(legacyPath, []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := NewRestorer(paths, identityID).
-		WithNodeRole(noderole.RoleSentry).
-		WithOverwrite(true).
-		RestoreKey(keysDir, componentKey, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
-	if !errors.Is(err, apkeys.ErrManagedCredentialClassConflict) {
-		t.Fatalf("RestoreKey() error = %v, want class conflict", err)
-	}
-	if _, statErr := os.Stat(apkeys.SentryCredentialFilePath(paths, identityID, componentKey)); !os.IsNotExist(statErr) {
-		t.Fatalf("canonical .sen was written despite conflict: %v", statErr)
+	if _, err := restorer.RestoreKey(keysDir, address, kr, []byte("export-passphrase")); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("second RestoreKey() error = %v", err)
 	}
 }
 
-func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T) {
-	ed25519signerreg.RegisterSigner()
-
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
-		t.Fatalf("MkdirAll(keys) error = %v", err)
-	}
-	duplicatePath := filepath.Join(paths.LegacyKeysDir(identityID), "duplicate.key")
-	encryptedExisting, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, apcrypto.AccountKeyContext("duplicate"))
-	if err != nil {
-		t.Fatalf("encryptWithTermKey(existing) error = %v", err)
-	}
-	if err := os.WriteFile(duplicatePath, encryptedExisting, fsutil.StoreFilePerm); err != nil {
-		t.Fatalf("WriteFile(duplicate) error = %v", err)
-	}
-
-	keysDir := filepath.Join(t.TempDir(), "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
-	}
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-	}
-
-	restorer := NewRestorer(paths, identityID)
-	keyType, err := restorer.RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
-	if err != nil {
-		t.Fatalf("RestoreKey() error = %v", err)
-	}
-	if keyType != "ed25519" {
-		t.Fatalf("RestoreKey() key type = %q, want ed25519", keyType)
-	}
-	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address)); statErr != nil {
-		t.Fatalf("canonical key file stat error = %v", statErr)
-	}
-	if _, statErr := os.Stat(duplicatePath); statErr != nil {
-		t.Fatalf("duplicate key file stat error = %v", statErr)
-	}
-}
-
-func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
-	const (
-		identityID = "default"
-		keyType    = "test.legacy-generic.v1"
-	)
-
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	bytecode := saltedLogicSigBytecodeForTest()
-	lsig := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
-	address, err := lsig.Address()
-	if err != nil {
-		t.Fatalf("LogicSig address error = %v", err)
-	}
-
-	keyJSON, err := json.Marshal(map[string]any{
-		"format_version": apkeys.CurrentKeyFormatVersion,
-		"category":       apkeys.CategoryGenericLsig,
-		"key_type":       keyType,
-		"lsig_bytecode":  hex.EncodeToString(bytecode),
-		"salt_counter":   saltCounterForTest,
-		"created_at":     time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
-	})
-	if err != nil {
-		t.Fatalf("json.Marshal(canonical key without signing metadata) error = %v", err)
-	}
-
-	templateYAML := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: test\nfamily: legacy-generic\nversion: 1\ndisplay_name: Legacy\nteal: |\n  int 1\n")
-	bundleJSON, err := json.Marshal(BackupBundle{
-		BackupBundle: 1,
-		Key:          json.RawMessage(keyJSON),
-		TemplateYAML: string(templateYAML),
-		TemplateType: string(templatestore.TemplateTypeGeneric),
-	})
-	if err != nil {
-		t.Fatalf("json.Marshal(BackupBundle) error = %v", err)
-	}
-
-	keysDir := filepath.Join(t.TempDir(), "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
-	}
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address.String()+".apb"), bundleJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-	}
-
-	restorer := NewRestorer(paths, identityID)
-	if _, err := restorer.RestoreKey(keysDir, address.String(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err == nil {
-		t.Fatal("RestoreKey() error = nil, want signing metadata rejection")
-	} else if !strings.Contains(err.Error(), "signing_metadata_version") {
-		t.Fatalf("RestoreKey() error = %v, want signing metadata rejection", err)
-	}
-
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); !os.IsNotExist(err) {
-		t.Fatalf("restored key stat error = %v, want not exist", err)
-	}
-	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
-	if pathErr != nil {
-		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
-	}
-	if _, err := os.Stat(templatePath); !os.IsNotExist(err) {
-		t.Fatalf("restored template stat error = %v, want not exist", err)
-	}
-}
-
-func TestRestoreKeyPreservesBoundedSigningMetadata(t *testing.T) {
-	falconsignerreg.RegisterSigner()
-	const (
-		identityID = "default"
-		keyType    = "test.backup-bounded.v1"
-	)
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	bytecode := saltedLogicSigBytecodeForTest()
-	payload := apkeys.NewDSALSigPayload(
-		keyType, "aplane.falcon1024.v1", []byte{0x01}, []byte{0x02}, nil,
-		bytecode, saltCounterForTest, "", nil, "1:bounded",
-	)
-	defer payload.ZeroSecrets()
-	metadata := &boundedmeta.Metadata{
-		Contract:                boundedmeta.ContractV1,
-		BaseSignatureArgLayout:  boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
-		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{64}}, false),
-		SpendEffects:            []string{"pay"},
-		MaxFee:                  1_000,
-		AdminOperations:         []boundedmeta.AdminOperation{},
-		RuntimeArgs:             []boundedmeta.RuntimeArg{},
-		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
-		PostSigningLogicSigSize: len(bytecode) + 64,
-	}
-	if err := payload.SetBoundedAuthorization(metadata); err != nil {
-		t.Fatalf("SetBoundedAuthorization() error = %v", err)
-	}
-	keyJSON, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload() error = %v", err)
-	}
-	defer apcrypto.ZeroBytes(keyJSON)
-	address, err := payload.Selector()
-	if err != nil {
-		t.Fatalf("Selector() error = %v", err)
-	}
-
-	keysDir := filepath.Join(t.TempDir(), "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
-	}
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-	}
-	restorer := NewRestorer(paths, identityID)
-	if _, err := restorer.RestoreKey(keysDir, address, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
-		t.Fatalf("RestoreKey() error = %v", err)
-	}
-	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(apkeys.AccountKeyFilePath(paths, identityID, address), cryptotest.Keyring(t, testExportMasterKey))
-	if err != nil {
-		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
-	}
-	defer apcrypto.ZeroBytes(restoredJSON)
-	restored, err := apkeys.ParsePayload(restoredJSON)
-	if err != nil {
-		t.Fatalf("ParsePayload(restored) error = %v", err)
-	}
-	defer restored.ZeroSecrets()
-	if restored.SigningMetadataVersion != apkeys.BoundedSigningMetadataVersion || restored.BoundedAuthorization == nil {
-		t.Fatalf("restored bounded metadata = %#v", restored.BoundedAuthorization)
-	}
-	if restored.BoundedAuthorization.PostSigningLogicSigSize != len(bytecode)+64 {
-		t.Fatalf("post-signing size = %d", restored.BoundedAuthorization.PostSigningLogicSigSize)
-	}
-}
-
-func TestRestoreKeyRejectsInvalidKeyTypeBeforeTemplatePathUse(t *testing.T) {
-	const (
-		identityID     = "default"
-		invalidKeyType = "test.bad type.v1"
-	)
-
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	bytecode := saltedLogicSigBytecodeForTest()
-	lsig := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
-	address, err := lsig.Address()
-	if err != nil {
-		t.Fatalf("LogicSig address error = %v", err)
-	}
-
-	payload := apkeys.NewGenericLSigPayload(invalidKeyType, nil, bytecode, saltCounterForTest, "", []apkeys.StoredSigningArg{{
-		Name:     "secret",
-		Type:     "bytes",
-		Required: true,
-	}}, "")
-	keyJSON, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload(generic) error = %v", err)
-	}
-
-	bundleJSON := backupBundleForTest(t, keyJSON, genericTemplateYAMLForTest("bad type"))
-	keysDir := filepath.Join(t.TempDir(), "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
-	}
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address.String()+".apb"), bundleJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-	}
-
-	restorer := NewRestorer(paths, identityID)
-	if _, err := restorer.RestoreKey(keysDir, address.String(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err == nil {
-		t.Fatal("RestoreKey() error = nil, want invalid key_type rejection")
-	} else if !strings.Contains(err.Error(), "invalid key_type") || !strings.Contains(err.Error(), invalidKeyType) {
-		t.Fatalf("RestoreKey() error = %v, want invalid key_type rejection", err)
-	}
-
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); !os.IsNotExist(err) {
-		t.Fatalf("restored key stat error = %v, want not exist", err)
-	}
-	if entries, err := os.ReadDir(paths.LegacyKeyTypeRecordsDir(identityID)); err == nil && len(entries) > 0 {
-		t.Fatalf("key type records = %v, want none", entries)
-	} else if err != nil && !os.IsNotExist(err) {
-		t.Fatalf("ReadDir(keytypes) error = %v", err)
-	}
-}
-
-func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *testing.T) {
-	const (
-		identityID = "default"
-		keyType    = "test.standalone-conflict.v1"
-	)
-
-	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	bytecode := saltedLogicSigBytecodeForTest()
-	lsig := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
-	address, err := lsig.Address()
-	if err != nil {
-		t.Fatalf("LogicSig address error = %v", err)
-	}
-
-	payload := apkeys.NewGenericLSigPayload(keyType, nil, bytecode, saltCounterForTest, "", []apkeys.StoredSigningArg{{
-		Name:     "secret",
-		Type:     "bytes",
-		Required: true,
-	}}, "")
-	keyJSON, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload(generic) error = %v", err)
-	}
-
-	existingTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: test\nfamily: standalone-conflict\nversion: 1\ndisplay_name: Existing\nteal: |\n  int 1\n")
-	incomingTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: test\nfamily: standalone-conflict\nversion: 1\ndisplay_name: Incoming\nteal: |\n  int 0\n")
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testExportMasterKey)); err != nil {
-		t.Fatalf("SaveTemplateForPaths() error = %v", err)
-	}
-	writeTemplateStateForBackupTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-
-	bundleJSON, err := json.Marshal(BackupBundle{
-		BackupBundle: 1,
-		Key:          json.RawMessage(keyJSON),
-		TemplateYAML: string(incomingTemplate),
-		TemplateType: string(templatestore.TemplateTypeGeneric),
-	})
-	if err != nil {
-		t.Fatalf("json.Marshal(BackupBundle) error = %v", err)
-	}
-
-	keysDir := filepath.Join(t.TempDir(), "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
-	}
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address.String()+".apb"), bundleJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-	}
-
-	var logs []string
-	var warnings []string
-	restorer := NewRestorer(paths, identityID).WithLogger(func(format string, args ...any) {
-		logs = append(logs, fmt.Sprintf(format, args...))
-	}).WithWarningHandler(func(keyType, warning string) {
-		warnings = append(warnings, keyType+": "+warning)
-	})
-	if _, err := restorer.RestoreKey(keysDir, address.String(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
-		t.Fatalf("RestoreKey() error = %v", err)
-	}
-
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); err != nil {
-		t.Fatalf("expected restored key file: %v", err)
-	}
-	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(apkeys.AccountKeyFilePath(paths, identityID, address.String()), cryptotest.Keyring(t, testExportMasterKey))
-	if err != nil {
-		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
-	}
-	defer apcrypto.ZeroBytes(restoredJSON)
-	var restoredKey struct {
-		TemplateFingerprint string `json:"template_fingerprint"`
-	}
-	if err := json.Unmarshal(restoredJSON, &restoredKey); err != nil {
-		t.Fatalf("json.Unmarshal(restored key) error = %v", err)
-	}
-	wantFingerprint, err := templateCompatibilityFingerprint(templatestore.TemplateTypeGeneric, incomingTemplate)
-	if err != nil {
-		t.Fatalf("templateCompatibilityFingerprint() error = %v", err)
-	}
-	if restoredKey.TemplateFingerprint != wantFingerprint {
-		t.Fatalf("template_fingerprint = %q, want %q", restoredKey.TemplateFingerprint, wantFingerprint)
-	}
-	if len(logs) == 0 || !strings.Contains(logs[0], "skipped bundled template") {
-		t.Fatalf("restore logs = %v, want skipped bundled template notice", logs)
-	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "backup template conflicts with existing keystore definition") {
-		t.Fatalf("restore warnings = %v, want structured skipped template warning", warnings)
-	}
-
-	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
-	if pathErr != nil {
-		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
-	}
-	gotTemplate, err := templatestore.LoadTemplateFromPath(templatePath, cryptotest.Keyring(t, testExportMasterKey))
-	if err != nil {
-		t.Fatalf("LoadTemplateFromPath() error = %v", err)
-	}
-	if string(gotTemplate) != string(existingTemplate) {
-		t.Fatalf("existing template was overwritten\n got: %s\nwant: %s", gotTemplate, existingTemplate)
-	}
-}
-
-func writeManagedRestoreArchive(t *testing.T, paths storepaths.Paths, identityID string, populate func(keysDir string)) string {
+func writeCredentialArchiveForBackupTest(t *testing.T, paths storepaths.Paths, role noderole.Role) (string, string) {
 	t.Helper()
-
 	root := t.TempDir()
 	keysDir := filepath.Join(root, "apb")
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
+		t.Fatal(err)
 	}
-	populate(keysDir)
-	// Sealed last: it inventories every member written above.
-	autoApprove := false
-	if err := WriteSealedManifest(
-		root,
-		noderole.RoleSigner,
-		time.Unix(1_700_000_000, 0),
-		SourceSettingsSnapshot{UserAutoApprove: &autoApprove},
-		[]byte("export-passphrase"),
-	); err != nil {
-		t.Fatalf("WriteSealedManifest() error = %v", err)
+	address, payload := testEd25519BackupKeyJSON(t)
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), payload, []byte("export-passphrase")); err != nil {
+		t.Fatal(err)
 	}
-
-	archivePath := filepath.Join(paths.IdentityBackupsDir(identityID), "managed-restore-test.tar.gz")
-	if err := CreateTarGzArchive(root, archivePath); err != nil {
-		t.Fatalf("CreateTarGzArchive() error = %v", err)
+	if err := WriteSealedManifest(root, role, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
+		t.Fatal(err)
 	}
-	return archivePath
-}
-
-func writeManagedRecoveryArchive(
-	t *testing.T,
-	paths storepaths.Paths,
-	identityID string,
-	role noderole.Role,
-	policyYAML []byte,
-	populate func(keysDir string),
-) string {
-	t.Helper()
-	return writeManagedRecoveryArchiveWithSourceSettings(
-		t, paths, identityID, role, policyYAML, SourceSettingsSnapshot{}, populate,
-	)
-}
-
-func writeManagedRecoveryArchiveWithSourceSettings(
-	t *testing.T,
-	paths storepaths.Paths,
-	identityID string,
-	role noderole.Role,
-	policyYAML []byte,
-	sourceSettings SourceSettingsSnapshot,
-	populate func(keysDir string),
-) string {
-	t.Helper()
-
-	root := t.TempDir()
-	keysDir := filepath.Join(root, "apb")
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(apb) error = %v", err)
+	archive := BuildManagedArchivePath(paths, "default", "credential-test")
+	if err := CreateTarGzArchive(root, archive); err != nil {
+		t.Fatal(err)
 	}
-	populate(keysDir)
-	if policyYAML != nil {
-		policyDir := filepath.Join(root, "policy")
-		if err := os.MkdirAll(policyDir, 0o750); err != nil {
-			t.Fatalf("MkdirAll(policy) error = %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), policyYAML, 0o600); err != nil {
-			t.Fatalf("WriteFile(policy) error = %v", err)
-		}
-	}
-	// Sealed last: it inventories every member above.
-	if err := WriteSealedManifest(
-		root,
-		role,
-		time.Unix(1_700_000_000, 0),
-		defaultSourceSettingsForRole(role, sourceSettings),
-		[]byte("export-passphrase"),
-	); err != nil {
-		t.Fatalf("WriteSealedManifest() error = %v", err)
-	}
-
-	archivePath := filepath.Join(paths.IdentityBackupsDir(identityID), "managed-recovery-test.tar.gz")
-	if err := CreateTarGzArchive(root, archivePath); err != nil {
-		t.Fatalf("CreateTarGzArchive() error = %v", err)
-	}
-	return archivePath
+	return archive, address
 }
 
 func testSentryComponentBackupKeyJSON(t *testing.T) (string, []byte) {
@@ -1151,48 +132,166 @@ func testSentryComponentBackupKeyJSON(t *testing.T) (string, []byte) {
 	return keystest.SentryComponentFalcon1024KeyJSON(t, 0xcd)
 }
 
-// defaultSourceSettingsForRole mirrors production: a signer archive always
-// records its approval default, a sentry archive never does.
-func defaultSourceSettingsForRole(role noderole.Role, snapshot SourceSettingsSnapshot) SourceSettingsSnapshot {
-	if role == noderole.RoleSigner && snapshot.UserAutoApprove == nil {
-		value := false
-		snapshot.UserAutoApprove = &value
+func TestLoadManagedRestoreSetRejectsRoleMismatch(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	archive, _ := writeCredentialArchiveForBackupTest(t, paths, noderole.RoleSigner)
+	set, err := LoadManagedRestoreSet(paths, "default", archive, nil, []byte("export-passphrase"), noderole.RoleSentry)
+	if set != nil {
+		set.ZeroSecrets()
 	}
-	return snapshot
+	if err == nil || !strings.Contains(err.Error(), "cannot be restored") {
+		t.Fatalf("LoadManagedRestoreSet() error = %v", err)
+	}
 }
 
-// TestRecoverManagedBackupRecordsArchivePackagingTime pins that the archive's
-// own packaging time reaches the batch. Authentication proves who packaged an
-// archive, never when, so review needs this to let an operator notice an
-// archive older than the one they meant to activate.
-func TestRecoverManagedBackupRecordsArchivePackagingTime(t *testing.T) {
-	ed25519signerreg.RegisterSigner()
+func TestCredentialEntryZeroSecrets(t *testing.T) {
+	entry := CredentialEntry{KeyJSON: []byte("secret")}
+	alias := entry.KeyJSON
+	entry.ZeroSecrets()
+	for i, value := range alias {
+		if value != 0 {
+			t.Fatalf("byte %d not zeroed", i)
+		}
+	}
+	if entry.KeyJSON != nil {
+		t.Fatal("KeyJSON retained after ZeroSecrets")
+	}
+}
 
+func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	archivePath := writeManagedRecoveryArchive(t, paths, identityID, noderole.RoleSigner, nil, func(keysDir string) {
-		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-			t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-		}
-	})
-
-	batch, err := RecoverManagedBackup(
-		paths,
-		identityID,
-		filepath.Base(archivePath),
-		nil,
-		cryptotest.Keyring(t, testExportMasterKey),
-		[]byte("export-passphrase"),
-		noderole.RoleSigner,
-	)
+	active, err := genstore.ResolveActive(paths, "default")
 	if err != nil {
-		t.Fatalf("RecoverManagedBackup() error = %v", err)
+		t.Fatal(err)
 	}
-	// The fixture seals its manifest at this timestamp.
-	if batch.SourceArchiveCreatedAtUnix != 1_700_000_000 {
-		t.Fatalf("SourceArchiveCreatedAtUnix = %d, want the archive's sealed packaging time",
-			batch.SourceArchiveCreatedAtUnix)
+	selector, payload := testEd25519BackupKeyJSON(t)
+	entry := CredentialEntry{
+		Selector: selector,
+		Category: keys.CategoryEd25519,
+		KeyType:  "ed25519",
+		KeyJSON:  payload,
+	}
+	defer entry.ZeroSecrets()
+	if err := os.WriteFile(filepath.Join(active.KeysDir(), selector+keys.SentryCredentialExtension), []byte("contradictory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kr := cryptotest.Keyring(t, testExportMasterKey)
+	classification, err := ClassifyRestoreSet(active, &RestoreSet{Entries: []CredentialEntry{entry}}, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(classification.Conflicts) != 1 || len(classification.Pending) != 1 {
+		t.Fatalf("classification = %+v, want one replaceable class conflict", classification)
+	}
+	if err := ApplyCredentialEntry(active, entry, kr, false); err == nil {
+		t.Fatal("ApplyCredentialEntry accepted cross-class replacement without consent")
+	}
+	if err := ApplyCredentialEntry(active, entry, kr, true); err != nil {
+		t.Fatalf("ApplyCredentialEntry(replace) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(active.KeysDir(), selector+keys.SentryCredentialExtension)); !os.IsNotExist(err) {
+		t.Fatalf("contradictory sentry credential remains: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(active.KeysDir(), selector+keys.AccountKeyExtension)); err != nil {
+		t.Fatalf("canonical account credential missing: %v", err)
+	}
+}
+
+func TestClassifyRestoreSetReportsReadableDifferentCredential(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	mintFirstGenerationForBackupTest(t, paths)
+	active, err := genstore.ResolveActive(paths, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector, payload := testEd25519BackupKeyJSON(t)
+	entry := CredentialEntry{
+		Selector: selector,
+		Category: keys.CategoryEd25519,
+		KeyType:  "ed25519",
+		KeyJSON:  payload,
+	}
+	defer entry.ZeroSecrets()
+
+	destinationPayload, err := keys.ParsePayload(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destinationPayload.CreatedAt = destinationPayload.CreatedAt.Add(time.Second)
+	different, err := keys.MarshalPayload(destinationPayload)
+	destinationPayload.ZeroSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := entry
+	destination.KeyJSON = different
+	defer destination.ZeroSecrets()
+	kr := cryptotest.Keyring(t, testExportMasterKey)
+	if err := ApplyCredentialEntry(active, destination, kr, false); err != nil {
+		t.Fatalf("install readable destination credential: %v", err)
+	}
+
+	classification, err := ClassifyRestoreSet(active, &RestoreSet{Entries: []CredentialEntry{entry}}, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(classification.Conflicts) != 1 || len(classification.Pending) != 1 || len(classification.Identical) != 0 {
+		t.Fatalf("classification = %+v, want one readable conflict", classification)
+	}
+	if classification.Conflicts[0].Reason != "existing credential differs from backup" {
+		t.Fatalf("conflict reason = %q", classification.Conflicts[0].Reason)
+	}
+}
+
+func TestLoadManagedRestoreSetRejectsMissingRuntimeProvider(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	root := t.TempDir()
+	apbDir := filepath.Join(root, "apb")
+	if err := os.MkdirAll(apbDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	payload := keystest.DSALSigKeyJSON(
+		t,
+		"example.missing-provider-lsig.v1",
+		"example.missing-provider.v1",
+		[]byte{0x01},
+		[]byte{0x02},
+		saltedLogicSigBytecodeForTest(),
+		saltCounterForTest,
+	)
+	defer func() {
+		for i := range payload {
+			payload[i] = 0
+		}
+	}()
+	parsed, err := keys.ParsePayload(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector, err := parsed.Selector()
+	parsed.ZeroSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeStandaloneBackupFile(filepath.Join(apbDir, selector+".apb"), payload, []byte("export-passphrase")); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
+		t.Fatal(err)
+	}
+	archive := BuildManagedArchivePath(paths, "default", "missing-provider")
+	if err := CreateTarGzArchive(root, archive); err != nil {
+		t.Fatal(err)
+	}
+	set, err := LoadManagedRestoreSet(paths, "default", archive, nil, []byte("export-passphrase"), noderole.RoleSigner)
+	if set != nil {
+		set.ZeroSecrets()
+	}
+	if err == nil || !strings.Contains(err.Error(), "is not available") {
+		t.Fatalf("LoadManagedRestoreSet() error = %v, want missing runtime provider", err)
+	}
+	if !ArchiveAuthenticated(err) {
+		t.Fatal("missing provider error did not preserve successful archive authentication")
 	}
 }

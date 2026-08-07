@@ -1,4 +1,4 @@
-.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup store-lifecycle-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -540,39 +540,44 @@ smoke-test:
 #   1. static       : gofmt, vet, mod tidy, lint, deadcode
 #   2. security     : keyzero, keylog, insecurerand, seedphrase analyzers
 #   3. correctness  : race-enabled unit tests
-#   4. cross-build  : Linux amd64 + arm64
-#   5. smoke        : --version on every built binary
-#   6. signer API   : contract tests
-#   7. end-to-end   : integration tests (requires .env.test fixture)
-#   8. tree clean   : no generated files drifted during the run
+#   4. store        : blank-store lifecycle and deterministic crash recovery
+#   5. cross-build  : Linux amd64 + arm64
+#   6. smoke        : --version on every built binary
+#   7. signer API   : contract tests
+#   8. end-to-end   : integration tests (requires .env.test fixture)
+#   9. tree clean   : no generated files drifted during the run
 integrity-check:
-	@echo "==> [1/8] Static analysis"
+	@echo "==> [1/9] Static analysis"
 	@$(MAKE) fmt-check
 	@$(MAKE) vet
 	@$(MAKE) mod-tidy-check
 	@$(MAKE) lint
 	@$(MAKE) deadcode-check
 	@echo ""
-	@echo "==> [2/8] Security analyzers"
+	@echo "==> [2/9] Security analyzers"
 	@$(MAKE) security-analysis
 	@echo ""
-	@echo "==> [3/8] Race-enabled unit tests"
+	@echo "==> [3/9] Race-enabled unit tests"
 	@$(MAKE) race-test
 	@echo ""
-	@echo "==> [4/8] Cross-compile (linux/amd64, linux/arm64)"
+	@echo "==> [4/9] Store lifecycle and crash recovery"
+	@$(MAKE) store-lifecycle-test
+	@$(MAKE) store-crash-test
+	@echo ""
+	@echo "==> [5/9] Cross-compile (linux/amd64, linux/arm64)"
 	@$(MAKE) bin-amd64
 	@$(MAKE) bin-arm64
 	@echo ""
-	@echo "==> [5/8] Binary smoke test"
+	@echo "==> [6/9] Binary smoke test"
 	@$(MAKE) smoke-test
 	@echo ""
-	@echo "==> [6/8] Signer API contract tests"
+	@echo "==> [7/9] Signer API contract tests"
 	@$(MAKE) contract-test
 	@echo ""
-	@echo "==> [7/8] Integration tests"
+	@echo "==> [8/9] Integration tests"
 	@$(MAKE) integration-test
 	@echo ""
-	@echo "==> [8/8] Working tree clean?"
+	@echo "==> [9/9] Working tree clean?"
 	@if ! git diff --quiet HEAD --; then \
 		echo "✗ Working tree changed during integrity-check:"; \
 		git diff --stat HEAD --; \
@@ -646,6 +651,32 @@ APLANE_SOAK_DURATION ?= 30m
 APLANE_SOAK_MAX_ITERATIONS ?= 0
 APLANE_SOAK_RESTART_EVERY ?= 0
 APLANE_SOAK_FALCON_EVERY ?= 5
+STORE_INTEGRATION_TEST_PKG ?= ./test/storeintegration
+STORE_INTEGRATION_GO_ARGS ?= -count=1 -timeout 8m
+STORE_RELEASE_BIN_DIR ?= $(CURDIR)/bin/amd64
+
+# Network-independent process tests. These create genuine blank signer roots;
+# they do not clone the shared integration fixture or contact algod.
+store-lifecycle-test:
+	@echo "Running blank-store lifecycle tests..."
+	@APLANE_STORE_INTEGRATION=1 go test $(STORE_INTEGRATION_GO_ARGS) $(STORE_INTEGRATION_TEST_PKG) -run '^(TestFreshStoreBackupRestoreAndSign|TestStorePassphraseRotationPreservesSigningAndPriorGeneration)$$'
+
+store-crash-test:
+	@echo "Running deterministic store crash and recovery tests..."
+	@APLANE_STORE_INTEGRATION=1 go test $(STORE_INTEGRATION_GO_ARGS) $(STORE_INTEGRATION_TEST_PKG) -run '^(TestInterruptedRotationResumesOnUnlock|TestInterruptedRotationBeforeRootCommitKeepsOldAuthority|TestRestoreCleanupFailureBlocksSigningUntilRollbackPromotes|TestReconcileCommandPromotesVisibleUncertainRestore|TestInterruptedRestoreAfterCurrentFlipLoadsCommittedGeneration|TestRestoreReloadFailureRollsBackAutomatically|TestRestoreRepairsDamagedCredentialFromRecoveryMode|TestMalformedCurrentCredentialRemainsRecoveryBlocked)$$'
+
+# Exercise the exact production apsigner/apstore/apadmin binaries staged for a
+# release. Build them first with `make bin-amd64`, or point this at downloaded
+# release artifacts with STORE_RELEASE_BIN_DIR=/absolute/path.
+store-release-drill:
+	@for binary in apsigner apstore apadmin; do \
+		if [ ! -x "$(STORE_RELEASE_BIN_DIR)/$$binary" ]; then \
+			echo "missing executable $(STORE_RELEASE_BIN_DIR)/$$binary"; \
+			exit 1; \
+		fi; \
+	done
+	@echo "Running store drill against $(STORE_RELEASE_BIN_DIR)..."
+	@APLANE_TEST_BIN_DIR="$(STORE_RELEASE_BIN_DIR)" APLANE_STORE_INTEGRATION=1 go test $(STORE_INTEGRATION_GO_ARGS) $(STORE_INTEGRATION_TEST_PKG) -run '^TestReleaseArtifactStoreDrill$$'
 
 # Run integration tests (tests in test/integration/)
 # Always regenerates the shared fixture and .env.test first to avoid stale
@@ -940,6 +971,9 @@ help:
 	@echo "  make race-test       - Run tests with race detector (slower, catches data races)"
 	@echo "  make unit-test       - Run unit tests only (excludes integration tests)"
 	@echo "  make contract-test   - Run signer API golden fixture tests"
+	@echo "  make store-lifecycle-test - Run network-independent blank-store lifecycle tests"
+	@echo "  make store-crash-test - Run deterministic store crash/recovery tests"
+	@echo "  make store-release-drill - Exercise staged amd64 release binaries against a blank store"
 	@echo "  APLANE_INTEGRATION_NETWORK=testnet make integration-test - Regenerate fixture and run integration tests"
 	@echo "  APLANE_INTEGRATION_NETWORK=localnet make integration-test - Run integration tests against LocalNet"
 	@echo "  make integration-test-testnet - Regenerate fixture and run integration tests against testnet"

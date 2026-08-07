@@ -200,7 +200,7 @@ func isManagedRestoreCommand(args []string) bool {
 		return false
 	}
 	switch args[1] {
-	case "preview", "apply", "list", "review", "activate", "rollback", "purge":
+	case "preview", "apply", "rollback", "reconcile":
 		return true
 	default:
 		return false

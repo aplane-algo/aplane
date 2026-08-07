@@ -36,12 +36,6 @@ const (
 	// ClassKeyTypeTemplate is an installed key-type template, selected by
 	// key type.
 	ClassKeyTypeTemplate ObjectClass = "keytype-template"
-	// ClassRecoveredBatch is a recovered batch's metadata, selected by
-	// restore ID.
-	ClassRecoveredBatch ObjectClass = "recovered-batch"
-	// ClassRecoveredEntry is one recovered entry, selected by restore ID and
-	// entry selector.
-	ClassRecoveredEntry ObjectClass = "recovered-entry"
 	// ClassRotationSnapshot is the root-pinned cutover inventory for a
 	// pending term transition.
 	ClassRotationSnapshot ObjectClass = "rotation-snapshot"
@@ -74,22 +68,6 @@ func KeyTypeTemplateContext(keyType string) ObjectContext {
 	return ObjectContext{Class: ClassKeyTypeTemplate, Selector: keyType}
 }
 
-// RecoveredBatchContext identifies one recovered batch's metadata.
-func RecoveredBatchContext(restoreID string) ObjectContext {
-	return ObjectContext{Class: ClassRecoveredBatch, Selector: restoreID}
-}
-
-// RecoveredEntryContext identifies one entry within a recovered batch.
-//
-// The two parts share one selector field, which is unambiguous because a
-// restore ID is a fixed-shape 128-bit lowercase hex string and so contains no
-// separator: the first "/" is always the boundary. If restore IDs ever gain a
-// free-form shape, this must become two length-prefixed AAD fields rather
-// than a join.
-func RecoveredEntryContext(restoreID, selector string) ObjectContext {
-	return ObjectContext{Class: ClassRecoveredEntry, Selector: restoreID + "/" + selector}
-}
-
 // RotationSnapshotContext identifies the single pending cutover snapshot.
 func RotationSnapshotContext() ObjectContext {
 	return ObjectContext{Class: ClassRotationSnapshot, Selector: "pending"}
@@ -103,8 +81,7 @@ func RotationBaselineContext() ObjectContext {
 func (c ObjectContext) validate() error {
 	switch c.Class {
 	case ClassAccountKey, ClassSentryCredential, ClassKeyTypeTemplate,
-		ClassRecoveredBatch, ClassRecoveredEntry, ClassRotationSnapshot,
-		ClassRotationBaseline:
+		ClassRotationSnapshot, ClassRotationBaseline:
 	case "":
 		return fmt.Errorf("object context requires a class")
 	default:

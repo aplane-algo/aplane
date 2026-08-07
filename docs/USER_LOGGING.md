@@ -76,20 +76,17 @@ The examples show `"default"` as the identity. See [ARCH_OVERVIEW.md](ARCH_OVERV
 | `BACKUP_FAILED` | A key backup failed through the authenticated admin surface |
 | `BACKUP_RESTORE_PREVIEWED` | A managed backup restore preview succeeded through the authenticated admin surface |
 | `BACKUP_RESTORE_PREVIEW_FAILED` | A managed backup restore preview failed through the authenticated admin surface |
-| `BACKUP_RECOVERED` | An inactive destination-encrypted recovery batch was published |
-| `BACKUP_RECOVERY_FAILED` | Recovery failed before an inactive batch was published |
-| `BACKUP_ACTIVATION_INTENT` | Reviewed activation was requested; written and fsynced before any active-store mutation — activation aborts if this record cannot be made durable |
-| `BACKUP_ACTIVATED` | A recovered batch was activated and reloaded successfully |
-| `BACKUP_ACTIVATION_FAILED` | Activation failed; `reason` describes the failure or incomplete rollback |
-| `BACKUP_ACTIVATION_ROLLED_BACK` | The operator restored exact pre-activation state |
-| `BACKUP_RECOVERY_PURGED` | An inactive batch was purged; failed attempts use `outcome:"failed"` |
+| `CREDENTIAL_RESTORE_INTENT` | A direct restore was requested; written and fsynced before active-store mutation |
+| `CREDENTIAL_RESTORE_SUCCEEDED` | Credential restore committed and reloaded successfully |
+| `CREDENTIAL_RESTORE_FAILED` | Credential restore failed or was automatically rolled back |
+| `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` | A restore's `CURRENT` flip is visible but durability is unconfirmed; signing remains recovery-blocked pending reconciliation |
+| `CREDENTIAL_RESTORE_ROLLBACK` | Explicit restore rollback succeeded or failed |
 | `STORE_INITIALIZED` | Store initialization succeeded through authenticated local IPC |
 | `STORE_INITIALIZE_FAILED` | Store initialization failed through authenticated local IPC |
 | `PASSPHRASE_CHANGED` | Store passphrase rotation succeeded through authenticated local IPC |
 | `PASSPHRASE_CHANGE_FAILED` | Store passphrase rotation failed through authenticated local IPC |
 
-Recovery/activation entries may include `restore_id`, `archive_sha256`,
-`source_policy_sha256`, `destination_policy_sha256`, `policy_comparison`,
+Credential restore entries may include `archive_sha256`, `operation_id`,
 `replace_existing`, and `key_count`, in addition to normal identity/session/
 principal/transport attribution.
 

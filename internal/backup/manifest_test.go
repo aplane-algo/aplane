@@ -29,12 +29,10 @@ func stageArchiveForManifest(t *testing.T, passphrase []byte) string {
 	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("readme"), 0o600); err != nil {
 		t.Fatalf("WriteFile(readme): %v", err)
 	}
-	autoApprove := false
 	if err := WriteSealedManifest(
 		root,
 		noderole.RoleSigner,
 		time.Unix(1_700_000_000, 0),
-		SourceSettingsSnapshot{UserAutoApprove: &autoApprove},
 		passphrase,
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
@@ -122,7 +120,7 @@ func TestSealedManifestRejectsArchiveWithoutManifest(t *testing.T) {
 	}
 }
 
-func TestSealedManifestCarriesSourceContext(t *testing.T) {
+func TestSealedManifestOmitsOperationalSourceContext(t *testing.T) {
 	passphrase := []byte("export-passphrase")
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "apb"), 0o750); err != nil {
@@ -131,15 +129,10 @@ func TestSealedManifestCarriesSourceContext(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "apb", "ADDR.apb"), []byte("payload"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	autoApprove := true
 	if err := WriteSealedManifest(
 		root,
 		noderole.RoleSigner,
 		time.Unix(1_700_000_000, 0),
-		SourceSettingsSnapshot{
-			UserAutoApprove:     &autoApprove,
-			GenesisHashMappings: map[string]string{"REREREREREREREREREREREREREREREREREREREREREQ=": "private-network"},
-		},
 		passphrase,
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
@@ -148,12 +141,14 @@ func TestSealedManifestCarriesSourceContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenSealedManifest() error = %v", err)
 	}
-	projection := manifest.SourceProjection()
-	if projection.UserAutoApprove == nil || !*projection.UserAutoApprove {
-		t.Fatalf("UserAutoApprove = %+v, want true", projection.UserAutoApprove)
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(projection.GenesisHashMappings) != 1 {
-		t.Fatalf("GenesisHashMappings = %+v", projection.GenesisHashMappings)
+	for _, forbidden := range []string{"user_auto_approve", "genesis_hash_mappings", "policy"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("credential manifest contains operational authority %q: %s", forbidden, encoded)
+		}
 	}
 }
 
@@ -177,13 +172,11 @@ func sealCraftedManifest(t *testing.T, root string, manifest Manifest, passphras
 
 func TestSealedManifestRejectsCraftedMemberPaths(t *testing.T) {
 	passphrase := []byte("export-passphrase")
-	autoApprove := false
 	base := Manifest{
-		Schema:          ManifestSchema,
-		SchemaVersion:   ManifestSchemaVersion,
-		SourceNodeRole:  string(noderole.RoleSigner),
-		CreatedAtUnix:   1_700_000_000,
-		UserAutoApprove: &autoApprove,
+		Schema:         ManifestSchema,
+		SchemaVersion:  ManifestSchemaVersion,
+		SourceNodeRole: string(noderole.RoleSigner),
+		CreatedAtUnix:  1_700_000_000,
 	}
 
 	cases := []struct {
@@ -281,12 +274,10 @@ func TestSealedManifestSizeCapMatchesReader(t *testing.T) {
 			t.Fatalf("WriteFile(member %d) error = %v", i, err)
 		}
 	}
-	autoApprove := false
 	err := WriteSealedManifest(
 		root,
 		noderole.RoleSigner,
 		time.Unix(1_700_000_000, 0),
-		SourceSettingsSnapshot{UserAutoApprove: &autoApprove},
 		passphrase,
 	)
 	if err == nil {

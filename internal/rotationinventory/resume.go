@@ -37,7 +37,6 @@ type ResumeReport struct {
 	VerifiedUnchanged        int
 	KeysMigrated             int
 	TemplatesMigrated        int
-	RecoveredFilesMigrated   int
 	PolicySidecarsMigrated   int
 	NodeRoleSidecarsMigrated int
 }
@@ -136,8 +135,6 @@ func countMigrationTarget(report *ResumeReport, kind ArtifactKind) {
 		report.KeysMigrated++
 	case KindKeyTypeTemplate:
 		report.TemplatesMigrated++
-	case KindRecoveredBatch, KindRecoveredEntry:
-		report.RecoveredFilesMigrated++
 	case KindPolicySidecar:
 		report.PolicySidecarsMigrated++
 	case KindNodeRoleSidecar:

@@ -95,10 +95,11 @@ func TestResumeRotationRewrapsOnlyPinnedMutableConsumers(t *testing.T) {
 func TestResumeRotationReconcilesCrashOrphanedDurableTemp(t *testing.T) {
 	fixture, snapshot := startResumeFixture(t)
 	index := slices.IndexFunc(snapshot.Inventory, func(entry Entry) bool {
-		return entry.Kind == KindRecoveredEntry
+		return entry.Kind == KindAccountKey &&
+			!strings.Contains(entry.Path, "/generations/"+inventoryGenA+"/")
 	})
 	if index < 0 {
-		t.Fatal("fixture snapshot has no recovered entry")
+		t.Fatal("fixture snapshot has no mutable account key")
 	}
 	target := filepath.Join(
 		fixture.paths.Root(),

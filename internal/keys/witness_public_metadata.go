@@ -93,16 +93,6 @@ func validateWitnessPublicMetadataFilename(path string) error {
 	return nil
 }
 
-// WriteWitnessPublicMetadataFromKeyJSON writes the public-only sidecar for a
-// restored signer-custodied witness payload. Other payloads are ignored.
-func WriteWitnessPublicMetadataFromKeyJSON(paths storepaths.Paths, identityID, address string, keyJSON []byte) (string, bool, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
-	if err != nil {
-		return "", false, err
-	}
-	return WriteWitnessPublicMetadataFromKeyJSONActive(active, address, keyJSON)
-}
-
 // WriteWitnessPublicMetadataFromKeyJSONActive is
 // WriteWitnessPublicMetadataFromKeyJSON against resolved active-store paths.
 func WriteWitnessPublicMetadataFromKeyJSONActive(active storepaths.ActivePaths, address string, keyJSON []byte) (string, bool, error) {

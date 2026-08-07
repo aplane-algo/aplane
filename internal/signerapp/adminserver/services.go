@@ -43,12 +43,9 @@ type BackupServices interface {
 	ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult
 	DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult
 	PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult
-	RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBackupRequest) adminproto.RecoverBackupResult
-	ListRecovered(ir *identity.Runtime) adminproto.ListRecoveredResult
-	ReviewRecovered(ir *identity.Runtime, restoreID string) adminproto.ReviewRecoveredResult
-	ActivateRecovered(ir *identity.Runtime, req adminproto.ActivateRecoveredRequest) adminproto.ActivateRecoveredResult
-	RollbackRecovered(ir *identity.Runtime, req adminproto.RollbackRecoveredRequest) adminproto.RollbackRecoveredResult
-	PurgeRecovered(ir *identity.Runtime, req adminproto.PurgeRecoveredRequest) adminproto.PurgeRecoveredResult
+	RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult
+	RollbackRestore(ir *identity.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult
+	ReconcileStore(ir *identity.Runtime) adminproto.ReconcileStoreResult
 }
 
 type TemplateServices interface {

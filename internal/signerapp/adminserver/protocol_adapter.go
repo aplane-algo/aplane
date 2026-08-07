@@ -4,8 +4,6 @@
 package adminserver
 
 import (
-	"maps"
-
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -119,7 +117,6 @@ func ProtocolBackupResultMessage(id string, result adminproto.BackupIdentityResu
 		KeyCount:        result.KeyCount,
 		Addresses:       append([]string(nil), result.Addresses...),
 		Verified:        result.Verified,
-		SkippedKeys:     maps.Clone(result.SkippedKeys),
 		Code:            result.Code,
 		Error:           result.Error,
 	}
@@ -172,7 +169,6 @@ func ProtocolChangeStorePassphraseResultMessage(id string, result adminproto.Cha
 		Success:                  result.Success,
 		KeysMigrated:             result.KeysMigrated,
 		TemplatesMigrated:        result.TemplatesMigrated,
-		RecoveredFilesMigrated:   result.RecoveredFilesMigrated,
 		PolicySidecarsMigrated:   result.PolicySidecarsMigrated,
 		NodeRoleSidecarsMigrated: result.NodeRoleSidecarsMigrated,
 		PriorGenerations:         result.PriorGenerations,
@@ -198,169 +194,67 @@ func ProtocolRestorePreviewMessage(id string, result adminproto.RestorePreviewRe
 	}
 }
 
-func ProtocolRecoverBackupResultMessage(id string, result adminproto.RecoverBackupResult) protocol.RecoverBackupResultMessage {
-	return protocol.RecoverBackupResultMessage{
-		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeRecoverBackupResult, ID: id},
-		Success:         result.Success,
-		RestoreID:       result.RestoreID,
-		ArchiveName:     result.ArchiveName,
-		ArchiveChecksum: result.ArchiveChecksum,
-		EntryCount:      result.EntryCount,
-		Code:            result.Code,
-		Error:           result.Error,
+func ProtocolRestoreBackupResultMessage(id string, result adminproto.RestoreBackupResult) protocol.RestoreBackupResultMessage {
+	return protocol.RestoreBackupResultMessage{
+		BaseMessage:   protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackupResult, ID: id},
+		Success:       result.Success,
+		OperationID:   result.OperationID,
+		ArchiveSHA256: result.ArchiveSHA256,
+		GenerationID:  result.GenerationID,
+		Restored:      protocolRestoreCredentials(result.Restored),
+		Identical:     protocolRestoreCredentials(result.Identical),
+		Conflicts:     protocolRestoreConflicts(result.Conflicts),
+		KeyCount:      result.KeyCount,
+		Code:          result.Code,
+		Error:         result.Error,
 	}
 }
 
-func ProtocolRecoveredListMessage(id string, result adminproto.ListRecoveredResult) protocol.RecoveredListMessage {
-	batches := make([]protocol.RecoveredBatchInfo, len(result.Batches))
-	for i, batch := range result.Batches {
-		batches[i] = protocol.RecoveredBatchInfo{
-			RestoreID:          batch.RestoreID,
-			CreatedAt:          batch.CreatedAt,
-			ArchiveName:        batch.ArchiveName,
-			ArchiveChecksum:    batch.ArchiveChecksum,
-			SourceNodeRole:     batch.SourceNodeRole,
-			SourcePolicyStatus: batch.SourcePolicyStatus,
-			SourcePolicySHA256: batch.SourcePolicySHA256,
-			EntryCount:         batch.EntryCount,
-		}
-	}
-	return protocol.RecoveredListMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRecoveredList, ID: id},
-		Batches:     batches,
-		Code:        result.Code,
-		Error:       result.Error,
+func ProtocolRollbackRestoreResultMessage(id string, result adminproto.RollbackRestoreResult) protocol.RollbackRestoreResultMessage {
+	return protocol.RollbackRestoreResultMessage{
+		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeRollbackRestoreResult, ID: id},
+		Success:      result.Success,
+		OperationID:  result.OperationID,
+		GenerationID: result.GenerationID,
+		KeyCount:     result.KeyCount,
+		Code:         result.Code,
+		Error:        result.Error,
 	}
 }
 
-func ProtocolReviewRecoveredResultMessage(id string, result adminproto.ReviewRecoveredResult) protocol.ReviewRecoveredResultMessage {
-	return protocol.ReviewRecoveredResultMessage{
-		BaseMessage:                  protocol.BaseMessage{Type: protocol.MsgTypeReviewRecoveredResult, ID: id},
-		Success:                      result.Success,
-		RestoreID:                    result.RestoreID,
-		ArchiveChecksum:              result.ArchiveChecksum,
-		ArchiveCreatedAtUnix:         result.ArchiveCreatedAtUnix,
-		SourceNodeRole:               result.SourceNodeRole,
-		SourcePolicyStatus:           result.SourcePolicyStatus,
-		SourcePolicySHA256:           result.SourcePolicySHA256,
-		DestinationPolicySHA256:      result.DestinationPolicySHA256,
-		DestinationApprovalMode:      string(result.DestinationApprovalMode),
-		UnattendedSigningWarning:     result.UnattendedSigningWarning,
-		PolicyComparison:             result.PolicyComparison,
-		SecurityChanges:              protocolRecoveryPolicyChanges(result.SecurityChanges),
-		ChangedPaths:                 append([]string(nil), result.ChangedPaths...),
-		SourceUserAutoApprove:        cloneOptionalBool(result.SourceUserAutoApprove),
-		SourceGenesisHashMappings:    protocolRecoveryGenesisHashMappings(result.SourceGenesisHashMappings),
-		Entries:                      protocolRecoveredReviewEntries(result.Entries),
-		ActiveConflicts:              protocolRecoveredActiveConflicts(result.ActiveConflicts),
-		ReviewToken:                  result.ReviewToken,
-		UnattendedSigningAckRequired: protocolUnattendedSigningAckRequired(result),
-		AcknowledgeUnattendedSigning: result.AcknowledgeUnattendedSigning,
-		ReplaceExisting:              result.ReplaceExisting,
-		Code:                         result.Code,
-		Error:                        result.Error,
+func ProtocolReconcileStoreResultMessage(id string, result adminproto.ReconcileStoreResult) protocol.ReconcileStoreResultMessage {
+	return protocol.ReconcileStoreResultMessage{
+		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeReconcileStoreResult, ID: id},
+		Success:      result.Success,
+		GenerationID: result.GenerationID,
+		KeyCount:     result.KeyCount,
+		State:        result.State,
+		Code:         result.Code,
+		Error:        result.Error,
 	}
 }
 
-func protocolUnattendedSigningAckRequired(
-	result adminproto.ReviewRecoveredResult,
-) *bool {
-	if !result.Success {
-		return nil
-	}
-	required := result.UnattendedSigningAckRequired
-	return &required
-}
-
-func protocolRecoveryGenesisHashMappings(
-	mappings []adminproto.RecoveryGenesisHashMapping,
-) []protocol.RecoveryGenesisHashMapping {
-	out := make([]protocol.RecoveryGenesisHashMapping, len(mappings))
-	for i, mapping := range mappings {
-		out[i] = protocol.RecoveryGenesisHashMapping{
-			GenesisHash: mapping.GenesisHash,
-			Network:     mapping.Network,
+func protocolRestoreCredentials(items []adminproto.RestoreCredential) []protocol.RestoreCredential {
+	out := make([]protocol.RestoreCredential, len(items))
+	for i := range items {
+		out[i] = protocol.RestoreCredential{
+			Selector: items[i].Selector,
+			Category: items[i].Category,
+			KeyType:  items[i].KeyType,
 		}
 	}
 	return out
 }
 
-func cloneOptionalBool(value *bool) *bool {
-	if value == nil {
-		return nil
-	}
-	copyValue := *value
-	return &copyValue
-}
-
-func ProtocolActivateRecoveredResultMessage(id string, result adminproto.ActivateRecoveredResult) protocol.ActivateRecoveredResultMessage {
-	return protocol.ActivateRecoveredResultMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeActivateRecoveredResult, ID: id},
-		Success:     result.Success,
-		RestoreID:   result.RestoreID,
-		Activated:   protocolRecoveredReviewEntries(result.Activated),
-		Warnings:    append([]string(nil), result.Warnings...),
-		KeyCount:    result.KeyCount,
-		Code:        result.Code,
-		Error:       result.Error,
-	}
-}
-
-func ProtocolRollbackRecoveredResultMessage(id string, result adminproto.RollbackRecoveredResult) protocol.RollbackRecoveredResultMessage {
-	return protocol.RollbackRecoveredResultMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRollbackRecoveredResult, ID: id},
-		Success:     result.Success,
-		RestoreID:   result.RestoreID,
-		KeyCount:    result.KeyCount,
-		Code:        result.Code,
-		Error:       result.Error,
-	}
-}
-
-func ProtocolPurgeRecoveredResultMessage(id string, result adminproto.PurgeRecoveredResult) protocol.PurgeRecoveredResultMessage {
-	return protocol.PurgeRecoveredResultMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePurgeRecoveredResult, ID: id},
-		Success:     result.Success,
-		RestoreID:   result.RestoreID,
-		Code:        result.Code,
-		Error:       result.Error,
-	}
-}
-
-func protocolRecoveredReviewEntries(items []adminproto.RecoveredReviewEntry) []protocol.RecoveredReviewEntry {
-	out := make([]protocol.RecoveredReviewEntry, len(items))
-	for i, item := range items {
-		out[i] = protocol.RecoveredReviewEntry{
-			Selector: item.Selector,
-			Category: item.Category,
-			KeyType:  item.KeyType,
-		}
-	}
-	return out
-}
-
-func protocolRecoveredActiveConflicts(items []adminproto.RecoveredActiveConflict) []protocol.RecoveredActiveConflict {
-	out := make([]protocol.RecoveredActiveConflict, len(items))
-	for i, item := range items {
-		out[i] = protocol.RecoveredActiveConflict{
-			Selector: item.Selector,
-			Category: item.Category,
-			KeyType:  item.KeyType,
-			SHA256:   item.SHA256,
-		}
-	}
-	return out
-}
-
-func protocolRecoveryPolicyChanges(items []adminproto.RecoveryPolicyChange) []protocol.RecoveryPolicyChange {
-	out := make([]protocol.RecoveryPolicyChange, len(items))
-	for i, item := range items {
-		out[i] = protocol.RecoveryPolicyChange{
-			Category:    item.Category,
-			Selector:    item.Selector,
-			Path:        item.Path,
-			Source:      item.Source,
-			Destination: item.Destination,
+func protocolRestoreConflicts(items []adminproto.RestoreConflict) []protocol.RestoreConflict {
+	out := make([]protocol.RestoreConflict, len(items))
+	for i := range items {
+		out[i] = protocol.RestoreConflict{
+			Selector:       items[i].Selector,
+			Category:       items[i].Category,
+			KeyType:        items[i].KeyType,
+			ExistingSHA256: items[i].ExistingSHA256,
+			Reason:         items[i].Reason,
 		}
 	}
 	return out
@@ -404,8 +298,6 @@ func protocolRestoreKeyInfos(items []adminproto.RestoreKeyInfo) []protocol.Resto
 			Address:       item.Address,
 			KeyType:       item.KeyType,
 			AlreadyExists: item.AlreadyExists,
-			HasTemplate:   item.HasTemplate,
-			TemplateType:  item.TemplateType,
 			Error:         item.Error,
 		}
 	}

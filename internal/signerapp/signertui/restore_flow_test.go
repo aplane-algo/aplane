@@ -10,386 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
-
-func TestRestoreFlowUpdateSmoke(t *testing.T) {
-	backupFileName := "backup.tar.gz"
-	archivePath := filepath.Join(t.TempDir(), "backups", "default", backupFileName)
-	m := Model{
-		viewState: ViewKeyList,
-		keylist: keyListState{keys: []KeyInfo{{
-			Address: "CURRENTADDR",
-			KeyType: "ed25519",
-		}}},
-	}
-
-	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-	if m.viewState != ViewRestoreList {
-		t.Fatalf("after restore key viewState = %v, want ViewRestoreList", m.viewState)
-	}
-	if m.restore.backupsLoaded {
-		t.Fatal("restoreBackupsLoaded = true, want false while list request is in flight")
-	}
-	if cmd == nil {
-		t.Fatal("restore shortcut cmd = nil, want list backups command")
-	}
-
-	m, _ = updateForTest(t, m, BackupsListMsg{
-		Backups: []BackupInfo{{
-			Path:     archivePath,
-			FileName: backupFileName,
-			Size:     4096,
-		}},
-	})
-	if m.viewState != ViewRestoreList {
-		t.Fatalf("after backups list viewState = %v, want ViewRestoreList", m.viewState)
-	}
-	if len(m.restore.backups) != 1 {
-		t.Fatalf("restoreBackups len = %d, want 1", len(m.restore.backups))
-	}
-
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewRestorePassphrase {
-		t.Fatalf("after backup selection viewState = %v, want ViewRestorePassphrase", m.viewState)
-	}
-	if m.restore.archivePath == "" {
-		t.Fatal("restoreArchivePath is empty")
-	}
-
-	m = updateTextForTest(t, m, "export-passphrase")
-	m, cmd = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewRestorePassphrase {
-		t.Fatalf("after preview submit viewState = %v, want ViewRestorePassphrase", m.viewState)
-	}
-	if !m.restore.previewing {
-		t.Fatal("restorePreviewing = false, want true")
-	}
-	if string(m.restore.passphrase) != "export-passphrase" {
-		t.Fatalf("restorePassphrase = %q, want retained passphrase for restore", string(m.restore.passphrase))
-	}
-	if cmd == nil {
-		t.Fatal("preview submit cmd = nil, want preview command")
-	}
-
-	m, _ = updateForTest(t, m, RestorePreviewMsg{
-		ArchivePath: m.restore.archivePath,
-		Keys: []RestoreKeyInfo{
-			{Address: "NEWADDR", KeyType: "ed25519"},
-			{Address: "EXISTINGADDR", KeyType: "ed25519", AlreadyExists: true},
-		},
-	})
-	if m.viewState != ViewRestorePreview {
-		t.Fatalf("after preview response viewState = %v, want ViewRestorePreview", m.viewState)
-	}
-	if !m.restore.selected["NEWADDR"] {
-		t.Fatal("new key was not preselected")
-	}
-	if m.restore.selected["EXISTINGADDR"] {
-		t.Fatal("existing key was preselected without overwrite")
-	}
-
-	passphrase := m.restore.passphrase
-	// Enter on the key list must not commit; only the Recover button does.
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewRestorePreview {
-		t.Fatalf("enter on the key list started a recovery: viewState = %v", m.viewState)
-	}
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
-	m, cmd = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewRestoring {
-		t.Fatalf("after restore submit viewState = %v, want ViewRestoring", m.viewState)
-	}
-	if len(m.restore.passphrase) != 0 {
-		t.Fatalf("restorePassphrase length = %d, want 0", len(m.restore.passphrase))
-	}
-	for i, b := range passphrase {
-		if b != 0 {
-			t.Fatalf("passphrase byte %d = %d, want zero", i, b)
-		}
-	}
-	if cmd == nil {
-		t.Fatal("restore submit cmd = nil, want restore command")
-	}
-
-	restoreID := "0123456789abcdef0123456789abcdef"
-	m, cmd = updateForTest(t, m, RecoverBackupResultMsg{
-		Success:   true,
-		RestoreID: restoreID,
-	})
-	if m.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("after recovery result viewState=%v cmd=%v", m.viewState, cmd)
-	}
-	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
-		Success:                 true,
-		RestoreID:               restoreID,
-		DestinationApprovalMode: "manual_default",
-		PolicyComparison:        "different",
-		ReviewToken:             strings.Repeat("a", 64),
-	}})
-	if m.viewState != ViewRestoreReview {
-		t.Fatalf("after review viewState = %v, want ViewRestoreReview", m.viewState)
-	}
-	m, cmd = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("after activation submit viewState=%v cmd=%v", m.viewState, cmd)
-	}
-	m, _ = updateForTest(t, m, ActivateRecoveredResultMsg{Result: ActivateRecoveredResultMessage{
-		Success: true,
-		Activated: []RecoveredReviewEntry{{
-			Selector: "NEWADDR",
-			KeyType:  "ed25519",
-		}},
-		Warnings: []string{"skipped bundled template for test.v1: conflict"},
-		KeyCount: 1,
-	}})
-	if m.viewState != ViewRestoreDisplay {
-		t.Fatalf("after activation result viewState = %v, want ViewRestoreDisplay", m.viewState)
-	}
-	if !m.restore.result.Success || len(m.restore.result.Activated) != 1 {
-		t.Fatalf("restoreResult = %+v, want successful one-key result", m.restore.result)
-	}
-	if view := m.renderRestoreDisplay(); !strings.Contains(view, "skipped bundled template") {
-		t.Fatalf("restore display omitted activation warning:\n%s", view)
-	}
-
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewKeyList {
-		t.Fatalf("after closing result viewState = %v, want ViewKeyList", m.viewState)
-	}
-}
-
-func TestRestoreReviewForegroundsAutoApproveBeforeAcknowledgement(t *testing.T) {
-	unattendedAckRequired := true
-	m := Model{
-		viewState: ViewRestoring,
-		restore: restoreState{
-			restoreID: "0123456789abcdef0123456789abcdef",
-		},
-	}
-	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
-		Success:                      true,
-		RestoreID:                    m.restore.restoreID,
-		DestinationApprovalMode:      "auto_approve_fallback",
-		UnattendedSigningWarning:     "you are activating into an auto-approving identity",
-		PolicyComparison:             "different",
-		ReviewToken:                  strings.Repeat("b", 64),
-		UnattendedSigningAckRequired: &unattendedAckRequired,
-		SecurityChanges: []RecoveryPolicyChange{{
-			Category:    "hard_rejects",
-			Path:        "reject_rekey",
-			Source:      "true",
-			Destination: "false",
-		}},
-	}})
-	rendered := m.renderRestoreReview()
-	warningIndex := strings.Index(rendered, "auto-approving identity")
-	changeIndex := strings.Index(rendered, "reject_rekey")
-	ackIndex := strings.Index(rendered, "Required acknowledgement")
-	if warningIndex < 0 || changeIndex < 0 || ackIndex < 0 ||
-		warningIndex > ackIndex || changeIndex > ackIndex {
-		t.Fatalf("security review order is wrong:\n%s", rendered)
-	}
-	if strings.Contains(stripANSI(rendered), "downgrade") {
-		t.Fatalf("security review rendered a downgrade verdict:\n%s", rendered)
-	}
-
-	// Activating without the acknowledgement is refused from the button.
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewRestoreReview ||
-		!strings.Contains(m.restore.previewError, "Acknowledge unattended signing") {
-		t.Fatalf("enter without unattended ack state=%v error=%q", m.viewState, m.restore.previewError)
-	}
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
-	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("acknowledged activation state=%v cmd=%v", m.viewState, cmd)
-	}
-}
-
-func TestRestoreReviewSeparatesSourceMetadataFromPolicyDifferences(t *testing.T) {
-	autoApprove := false
-	review := ReviewRecoveredResultMessage{
-		Success:                 true,
-		RestoreID:               "0123456789abcdef0123456789abcdef",
-		DestinationApprovalMode: "manual_default",
-		PolicyComparison:        "identical",
-		SourceUserAutoApprove:   &autoApprove,
-		SourceGenesisHashMappings: []protocol.RecoveryGenesisHashMapping{{
-			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
-			Network:     "private-network",
-		}},
-		ReviewToken: strings.Repeat("c", 64),
-	}
-	m := Model{
-		viewState: ViewRestoreReview,
-		restore: restoreState{
-			restoreID: review.RestoreID,
-			review:    review,
-		},
-	}
-
-	rendered := stripANSI(m.renderRestoreReview())
-	policyHeadingIndex := strings.Index(rendered, "Policy differences (informational)")
-	contextHeadingIndex := strings.Index(rendered, "Reported by the backup archive")
-	if policyHeadingIndex < 0 || contextHeadingIndex < policyHeadingIndex {
-		t.Fatalf("review sections are out of order:\n%s", rendered)
-	}
-	differences := rendered[policyHeadingIndex:contextHeadingIndex]
-	if !strings.Contains(differences, "none") {
-		t.Fatalf("review omitted the empty policy-difference result:\n%s", rendered)
-	}
-	// No trust qualifier survives: the archive is authenticated or rejected.
-	for _, stale := range []string{"unknown source", "Source metadata unavailable", "unverified"} {
-		if strings.Contains(rendered, stale) {
-			t.Fatalf("review rendered trust-state text %q:\n%s", stale, rendered)
-		}
-	}
-	if !strings.Contains(rendered, "approval default: manual review") ||
-		!strings.Contains(rendered, "private-network") {
-		t.Fatalf("review omitted typed source context:\n%s", rendered)
-	}
-	// Invariant prose belongs in the documentation, not on every review.
-	for _, constant := range []string{
-		"Backup archives do not record",
-		"cannot be authenticated",
-		"Unverified",
-	} {
-		if strings.Contains(rendered, constant) {
-			t.Fatalf("review repeated invariant prose %q:\n%s", constant, rendered)
-		}
-	}
-	if strings.Contains(rendered, "Required acknowledgement") {
-		t.Fatalf("manual-default review rendered an acknowledgement:\n%s", rendered)
-	}
-}
-
-func TestRestoreReviewIdenticalPolicyActivatesWithoutAcknowledgement(t *testing.T) {
-	m := Model{
-		viewState: ViewRestoring,
-		restore: restoreState{
-			restoreID: "0123456789abcdef0123456789abcdef",
-		},
-	}
-	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
-		Success:                 true,
-		RestoreID:               m.restore.restoreID,
-		DestinationApprovalMode: "manual_default",
-		PolicyComparison:        "identical",
-		ReviewToken:             strings.Repeat("f", 64),
-	}})
-	rendered := stripANSI(m.renderRestoreReview())
-	if strings.Contains(rendered, "Required acknowledgements") ||
-		strings.Contains(rendered, "I acknowledge the destination policy downgrade") {
-		t.Fatalf("identical policy review rendered an acknowledgement:\n%s", rendered)
-	}
-
-	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("activation without acknowledgement state=%v cmd=%v", m.viewState, cmd)
-	}
-}
-
-func TestRestoreReviewAutoApproveRequiresUnattendedAcknowledgement(t *testing.T) {
-	unattendedAckRequired := true
-	m := Model{
-		viewState: ViewRestoring,
-		restore: restoreState{
-			restoreID: "0123456789abcdef0123456789abcdef",
-		},
-	}
-	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
-		Success:                      true,
-		RestoreID:                    m.restore.restoreID,
-		DestinationApprovalMode:      "auto_approve_fallback",
-		UnattendedSigningWarning:     "you are activating into an auto-approving identity",
-		PolicyComparison:             "identical",
-		ReviewToken:                  strings.Repeat("1", 64),
-		UnattendedSigningAckRequired: &unattendedAckRequired,
-	}})
-	rendered := stripANSI(m.renderRestoreReview())
-	if !strings.Contains(rendered, "I acknowledge this identity auto-approves unmatched signing requests") {
-		t.Fatalf("auto-approve review omitted its acknowledgement:\n%s", rendered)
-	}
-
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
-	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
-	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("unattended-only acknowledgement state=%v cmd=%v", m.viewState, cmd)
-	}
-}
-
-// Committing is a deliberate act on a focused button on both restore screens,
-// so Enter while navigating cannot start a recovery or an activation.
-func TestRestoreScreensCommitOnlyFromTheirButton(t *testing.T) {
-	preview := Model{
-		viewState: ViewRestorePreview,
-		restore: restoreState{
-			archivePath: "aplane-backup.tar.gz",
-			passphrase:  []byte("export"),
-			previewKeys: []RestoreKeyInfo{{Address: "NEWADDR", KeyType: "ed25519"}},
-			selected:    map[string]bool{"NEWADDR": true},
-		},
-	}
-	next, cmd := preview.handleRestorePreviewKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := next.(Model); got.viewState != ViewRestorePreview || cmd != nil {
-		t.Fatalf("enter on the key list started a recovery: viewState=%v cmd=%v", got.viewState, cmd)
-	}
-	if len(preview.restore.passphrase) == 0 {
-		t.Fatal("enter on the key list cleared the export passphrase")
-	}
-
-	review := Model{
-		viewState: ViewRestoreReview,
-		restore: restoreState{
-			restoreID: "0123456789abcdef0123456789abcdef",
-			review: ReviewRecoveredResultMessage{
-				Success:                 true,
-				RestoreID:               "0123456789abcdef0123456789abcdef",
-				DestinationApprovalMode: "manual_default",
-				ReviewToken:             strings.Repeat("a", 64),
-			},
-			reviewFocus: restoreFocusList,
-		},
-	}
-	next, cmd = review.handleRestoreReviewKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := next.(Model); got.viewState != ViewRestoreReview || cmd != nil {
-		t.Fatalf("enter off the button started an activation: viewState=%v cmd=%v", got.viewState, cmd)
-	}
-}
-
-func TestRestoreReviewWithoutAcknowledgementActivatesDirectly(t *testing.T) {
-	unattendedAckRequired := false
-	m := Model{
-		viewState: ViewRestoring,
-		restore: restoreState{
-			restoreID: "0123456789abcdef0123456789abcdef",
-		},
-	}
-	m, _ = updateForTest(t, m, ReviewRecoveredResultMsg{Result: ReviewRecoveredResultMessage{
-		Success:                      true,
-		RestoreID:                    m.restore.restoreID,
-		DestinationApprovalMode:      "auto_approve_fallback",
-		PolicyComparison:             "identical",
-		ReviewToken:                  strings.Repeat("2", 64),
-		UnattendedSigningAckRequired: &unattendedAckRequired,
-	}})
-	rendered := stripANSI(m.renderRestoreReview())
-	if strings.Contains(rendered, "Required acknowledgements") ||
-		strings.Contains(rendered, "I acknowledge") {
-		t.Fatalf("same-auto-approve review rendered an acknowledgement:\n%s", rendered)
-	}
-
-	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewRestoring || cmd == nil {
-		t.Fatalf("same-auto-approve activation state=%v cmd=%v", m.viewState, cmd)
-	}
-}
 
 func TestKeyListRestoreShortcutOpensRestoreList(t *testing.T) {
 	m := Model{
@@ -542,7 +166,7 @@ func TestRestorePreviewFailureClearsPassphrase(t *testing.T) {
 func TestRestorePreviewSelectsExistingKeysFreely(t *testing.T) {
 	// Recovery is inactive and never overwrites anything: conflict rows are
 	// informational, and the replace-existing consent lives on the
-	// activation review beside the exact conflicts it authorizes.
+	// restore confirmation beside the exact conflicts it authorizes.
 	m := Model{
 		viewState: ViewRestorePreview,
 		restore: restoreState{previewKeys: []RestoreKeyInfo{
@@ -763,6 +387,38 @@ func TestRestoreSubmitClearsPassphrase(t *testing.T) {
 	}
 }
 
+func TestRestoreConflictConfirmationKeepsSelectorsVisibleWhileTyping(t *testing.T) {
+	m := Model{
+		viewState: ViewRestoring,
+		restore: restoreState{
+			archivePath: "backup.tar.gz",
+			selected:    map[string]bool{"CONFLICT1": true, "CONFLICT2": true},
+		},
+	}
+	got, _ := updateForTest(t, m, RestoreBackupResultMsg{Result: RestoreBackupResultMessage{
+		Code: protocol.ResultCodeRestoreConflict,
+		Conflicts: []RestoreConflict{
+			{Selector: "CONFLICT1", KeyType: "ed25519"},
+			{Selector: "CONFLICT2", KeyType: "example.lsig.v1"},
+		},
+	}})
+	if !got.restore.replaceExisting || got.viewState != ViewRestorePassphrase {
+		t.Fatalf("conflict result = replace %v view %v", got.restore.replaceExisting, got.viewState)
+	}
+
+	next, _ := got.handleRestorePassphraseKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	got = next.(Model)
+	view := stripANSI(got.renderRestorePassphrase())
+	for _, want := range []string{"Confirm Credential Replacement", "CONFLICT1", "CONFLICT2", "will be replaced"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("replacement confirmation lost %q after typing:\n%s", want, view)
+		}
+	}
+	if footer := got.viewFooterText(); !strings.Contains(footer, "Replace listed credentials") {
+		t.Fatalf("replacement footer = %q", footer)
+	}
+}
+
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func stripANSI(s string) string {
@@ -786,23 +442,4 @@ func updateForTest(t *testing.T, m Model, msg tea.Msg) (Model, tea.Cmd) {
 		t.Fatalf("Update(%T) returned %T, want Model", msg, next)
 	}
 	return got, cmd
-}
-
-func updateTextForTest(t *testing.T, m Model, text string) Model {
-	t.Helper()
-
-	for _, r := range text {
-		var msg tea.KeyMsg
-		if r == ' ' {
-			msg = tea.KeyMsg{Type: tea.KeySpace}
-		} else {
-			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
-		}
-		var cmd tea.Cmd
-		m, cmd = updateForTest(t, m, msg)
-		if cmd != nil {
-			t.Fatalf("text key %q returned unexpected cmd", string(r))
-		}
-	}
-	return m
 }

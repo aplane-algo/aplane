@@ -57,14 +57,6 @@ func ManagedCredentialClassForCategory(category string) (ManagedCredentialClass,
 	}
 }
 
-func ManagedCredentialExtensionForCategory(category string) (string, error) {
-	class, err := ManagedCredentialClassForCategory(category)
-	if err != nil {
-		return "", err
-	}
-	return class.Extension(), nil
-}
-
 func (c ManagedCredentialClass) Extension() string {
 	switch c {
 	case ManagedCredentialAccount:

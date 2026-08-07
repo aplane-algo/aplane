@@ -73,10 +73,9 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Audit log | authoritative audit trail | `audit.log` JSONL | append-only audit logger | `internal/signerapp/audit`, `internal/signerapp/daemon` | Mode `0600`, rotated by size; not authority for signing or recovery. |
 | Signer ASA cache key | cache secret | `cache/.cache_key` | HMAC verifier for signer ASA cache | `internal/cache`, `internal/signerapp/asametadata` | Tampered cache files reject and rebuild from seed where applicable. |
 | Signer ASA cache | cache/display | `cache/<network>_asa_cache.json` | per-operation ASA metadata lookup | `internal/signerapp/asametadata`, `internal/asa` | Signed cache; built-in registry seeds; not authority for policy enforcement. |
-| Managed backup locker | authoritative backup inventory | `backups/<identity>/*.tar.gz` | backup list/restore preview/recovery input | `internal/backup`, `internal/signerapp/backupadmin` | Imported archives are validated before publication; archive payloads are encrypted `.apb`. |
-| Sealed archive manifest | authenticated archive description | `manifest.sealed` inside managed archives | member inventory, source node role, and source context | `internal/backup` | Schema `aplane.backup.manifest.v2` sealed under the export passphrase with the standalone envelope; every open path verifies each member against the inventory; a missing, added, or altered member rejects the archive. |
+| Managed backup locker | authoritative backup inventory | `backups/<identity>/*.tar.gz` | backup list/restore preview/direct restore input | `internal/backup`, `internal/signerapp/backupadmin` | Imported archives are validated before publication; archive payloads are encrypted `.apb`. |
+| Sealed archive manifest | authenticated archive description | `manifest.sealed` inside managed archives | member inventory and source node role | `internal/backup` | Schema `aplane.credential-backup.manifest.v1` sealed under the export passphrase; every open path verifies exact membership. |
 | Deleted archive root | inactive durable storage | `identities/<identity>/deleted/` | outside active key/template scans | `internal/keys`, `internal/templatestore` | Deleted keys/templates are not active authority. |
-| Recovered batch root | inactive encrypted recovery state | `identities/<identity>/recovered/<restore-id>/` | no signing-runtime projection before activation | `internal/backup/recovered`, `internal/signerapp/backupadmin`, `internal/storepass` | Batch and entries are authenticated encryption under the destination term key, bound to the `recovered-batch` and `recovered-entry` object classes so an entry cannot be moved between batches; activation consumes the batch by minting a new generation; passphrase rotation mints a fresh term key and re-encrypts published state; `.recovering-*` directories are unpublished staging state. |
 
 ## Signer Identity Storage
 
@@ -97,7 +96,6 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Policy sidecar | authoritative integrity metadata | `policy.yaml.hmac` JSON | HMAC verification result | `internal/policy`, `cmd/appolicy`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
 | Key type state record | authoritative generation state | `keytypes/<key_type>.json` | enabled/disabled identity key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | encrypted `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Sealed under the identity's current term key and bound to its key type; disabled state skips registration. |
-| Recovered credential batch | inactive recovery authority | encrypted `recovered/<restore-id>/batch.enc` and `entries/*.recovered` | none until a later explicit activation operation | `internal/backup/recovered` | Restore ID is random 128-bit lowercase hex; selector/category/key type derive from canonical payload; entry digest and embedded restore ID bind each entry to its batch; published plaintext is immutable so rotation preserves additive/unknown fields; runtime scans ignore this directory. |
 | Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` | Public metadata only; source is `manual` or `client_discovery`; not endpoint ownership proof. |
 
 ## Key Material And Key Metadata
@@ -272,12 +270,9 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Backup archive | authoritative packaged backup | `backups/<identity>/*.tar.gz` | archive metadata and restore source | `internal/backup` | Tarball is packaging; `.apb` is cryptographic unit. |
-| Backup source context | authenticated packaged metadata | source fields inside `manifest.sealed` | recovered source approval default and custom mappings | `internal/backup`, `internal/backup/sourcecontext` | 1024-mapping bound; canonical custom mappings only; authenticated by the manifest but never destination authority. |
-| `.apb` file | encrypted backup payload | standalone encryption envelope | decrypted key/template bundle | `internal/backup` | Envelope version checked; unsupported versions reject. |
-| Backup bundle | versioned payload | JSON `backup_bundle:1`, `payload_version:1` | key plus optional template provenance | `internal/backup` | Unknown sentinel or payload version rejects. |
-| Restore preview | request-scoped runtime model | archive plus export passphrase | list of keys/errors/templates | `internal/backup`, `internal/signerapp/backupadmin` | No mutation during preview. |
-| Recovered batch | durable inactive model | destination-encrypted batch metadata and entries | list/review projection | `internal/backup/recovered`, `internal/signerapp/backupadmin` | Atomic publish; exact entry digest and restore-ID binding; immutable plaintext preserves additive fields; no active mutation. |
-| Activation review | request-scoped runtime model | recovered batch plus current policy/config/active fingerprints | informational policy comparison, destination-derived acknowledgement, and review token | `internal/signerapp/backupadmin` | Token changes with destination policy, approval mode, archive digest, entries, or active conflicts. |
+| `.apb` file | encrypted backup payload | standalone encryption envelope | complete canonical managed credential | `internal/backup` | Envelope and payload versions checked; internal bundle wrappers and unsupported versions reject. |
+| Restore preview | request-scoped runtime model | archive plus export passphrase | credential identities, destination presence, and errors | `internal/backup`, `internal/signerapp/backupadmin` | No mutation during preview. |
+| Direct restore set | request-scoped secret model | authenticated archive credentials in memory | one staged generation transaction | `internal/backup`, `internal/signerapp/backupadmin` | Complete validation precedes any write; secrets are zeroed after use. |
 
 ## Envelopes And Public Handoff Files
 

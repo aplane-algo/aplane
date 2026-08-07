@@ -415,23 +415,6 @@ func InstallFromLibrary(paths storepaths.Paths, identityID string, ref TemplateR
 	return InstallParsed(paths, identityID, matches[0], kr)
 }
 
-// InstallFromLibraryActive is InstallFromLibrary with the install targeted
-// at resolved active-store paths (e.g. a staged generation); paths is still
-// consulted for the process-scoped template library source.
-func InstallFromLibraryActive(paths storepaths.Paths, active storepaths.ActivePaths, ref TemplateRef, kr *crypto.Keyring) (InstallResult, error) {
-	matches, err := findLibraryMatches(paths, ref)
-	if err != nil {
-		return InstallResult{KeyType: ref.KeyType, TemplateType: ref.TemplateType}, err
-	}
-	if len(matches) == 0 {
-		return InstallResult{KeyType: ref.KeyType, TemplateType: ref.TemplateType}, fmt.Errorf("template %s (%s) not found in library", ref.KeyType, ref.TemplateType)
-	}
-	if len(matches) > 1 {
-		return InstallResult{KeyType: ref.KeyType, TemplateType: ref.TemplateType}, fmt.Errorf("multiple library files declare %s template %s", ref.TemplateType, ref.KeyType)
-	}
-	return InstallParsedActive(active, matches[0], kr)
-}
-
 func ActivateCompiledProvider(paths storepaths.Paths, identityID, keyType string) (InstallResult, error) {
 	result := InstallResult{
 		KeyType: strings.ToLower(strings.TrimSpace(keyType)),

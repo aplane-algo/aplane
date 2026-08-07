@@ -98,64 +98,9 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-func TestCurrentAdminProtocolVersionIncludesRecoverySourceContext(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 3, Minor: 2}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 3.2", got)
-	}
-}
-
-func TestReviewRecoveredSourceSettingsJSONShape(t *testing.T) {
-	autoApprove := false
-	unattendedAckRequired := true
-	message := ReviewRecoveredResultMessage{
-		BaseMessage:                  BaseMessage{Type: MsgTypeReviewRecoveredResult, ID: "review-1"},
-		Success:                      true,
-		SourceUserAutoApprove:        &autoApprove,
-		UnattendedSigningAckRequired: &unattendedAckRequired,
-		SecurityChanges: []RecoveryPolicyChange{{
-			Category:    "hard_rejects",
-			Path:        "reject_rekey",
-			Source:      "true",
-			Destination: "false",
-		}},
-		SourceGenesisHashMappings: []RecoveryGenesisHashMapping{{
-			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
-			Network:     "private-network",
-		}},
-	}
-	encoded, err := json.Marshal(message)
-	if err != nil {
-		t.Fatalf("Marshal(review) error = %v", err)
-	}
-	var shape map[string]any
-	if err := json.Unmarshal(encoded, &shape); err != nil {
-		t.Fatalf("Unmarshal(review shape) error = %v", err)
-	}
-	if shape["source_user_auto_approve"] != false ||
-		shape["unattended_signing_ack_required"] != true {
-		t.Fatalf("review source settings shape = %#v", shape)
-	}
-	// The source-context trust states are gone from the wire: the archive's
-	// sealed manifest authenticates this material before it is recorded.
-	for _, removed := range []string{"source_settings_status", "unknown_source_settings", "source_settings_warning"} {
-		if _, present := shape[removed]; present {
-			t.Fatalf("review still carries removed field %q: %#v", removed, shape)
-		}
-	}
-	mappings, ok := shape["source_genesis_hash_mappings"].([]any)
-	if !ok || len(mappings) != 1 {
-		t.Fatalf("review mappings shape = %#v", shape["source_genesis_hash_mappings"])
-	}
-	changes, ok := shape["security_changes"].([]any)
-	if !ok || len(changes) != 1 {
-		t.Fatalf("review policy-change shape = %#v", shape["security_changes"])
-	}
-	change, ok := changes[0].(map[string]any)
-	if !ok || change["path"] != "reject_rekey" {
-		t.Fatalf("review policy-change shape = %#v", shape["security_changes"])
-	}
-	if _, present := change["downgrade"]; present {
-		t.Fatalf("review policy change carried a downgrade verdict = %#v", change)
+func TestCurrentAdminProtocolVersionIncludesDirectCredentialRestore(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 0}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.0", got)
 	}
 }
 
@@ -384,27 +329,25 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 		{
 			name: "change_store_passphrase_result",
 			msg: ChangeStorePassphraseResultMessage{
-				BaseMessage:            BaseMessage{Type: MsgTypeChangeStorePassResult, ID: "change-1"},
-				Success:                true,
-				KeysMigrated:           2,
-				TemplatesMigrated:      1,
-				RecoveredFilesMigrated: 3,
-				PriorGenerations:       1,
-				HelperWarning:          "helper update failed",
-				RootCommitted:          true,
-				RotationPending:        true,
+				BaseMessage:       BaseMessage{Type: MsgTypeChangeStorePassResult, ID: "change-1"},
+				Success:           true,
+				KeysMigrated:      2,
+				TemplatesMigrated: 1,
+				PriorGenerations:  1,
+				HelperWarning:     "helper update failed",
+				RootCommitted:     true,
+				RotationPending:   true,
 			},
 			wantMap: map[string]any{
-				"type":                     MsgTypeChangeStorePassResult,
-				"id":                       "change-1",
-				"success":                  true,
-				"keys_migrated":            float64(2),
-				"templates_migrated":       float64(1),
-				"recovered_files_migrated": float64(3),
-				"prior_generations":        float64(1),
-				"helper_warning":           "helper update failed",
-				"root_committed":           true,
-				"rotation_pending":         true,
+				"type":               MsgTypeChangeStorePassResult,
+				"id":                 "change-1",
+				"success":            true,
+				"keys_migrated":      float64(2),
+				"templates_migrated": float64(1),
+				"prior_generations":  float64(1),
+				"helper_warning":     "helper update failed",
+				"root_committed":     true,
+				"rotation_pending":   true,
 			},
 		},
 		{
@@ -454,8 +397,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 					Address:       "ADDR1",
 					KeyType:       "ed25519",
 					AlreadyExists: true,
-					HasTemplate:   true,
-					TemplateType:  "generic",
 				}},
 				Errors: []RestoreError{{
 					Address: "ADDR2",
@@ -471,8 +412,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 						"address":        "ADDR1",
 						"key_type":       "ed25519",
 						"already_exists": true,
-						"has_template":   true,
-						"template_type":  "generic",
 					},
 				},
 				"errors": []any{
@@ -1024,7 +963,7 @@ func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 	}{
 		{
 			name:       "auth",
-			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","identity_id":"default","protocol_version":{"major":3,"minor":0}}`),
+			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","identity_id":"default","protocol_version":{"major":4,"minor":0}}`),
 			msg:        &AuthMessage{},
 			fieldNames: []string{"passphrase"},
 			values:     []string{"auth-secret"},

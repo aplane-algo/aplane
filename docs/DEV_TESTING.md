@@ -838,6 +838,10 @@ make unit-test
 # Integration tests only (regenerates fixture and sources .env.test)
 APLANE_INTEGRATION_NETWORK=localnet make integration-test
 
+# Network-independent blank-store lifecycle and crash recovery
+make store-lifecycle-test
+make store-crash-test
+
 # Signer API contract tests
 make contract-test
 
@@ -892,6 +896,24 @@ go tool cover -func=coverage.out
 # Get total coverage percentage
 go test -cover $PKGS | grep coverage
 ```
+
+### Store lifecycle and crash harness
+
+The store process suite is separate from `test/integration` because storage
+correctness must not depend on a funded network fixture. It creates real blank
+signer roots and drives the public daemon/admin surfaces through initialize,
+key creation/import, backup, fresh atomic restore, rotation, restart, and
+cryptographic signing.
+
+`make store-crash-test` builds `apsigner` with the test-only `storetest` tag and
+uses semantic durability checkpoints rather than timing sleeps. Production
+builds use a no-op checkpoint implementation. The exact checkpoint contracts,
+release-binary drill, and covered failure states are documented in
+[`test/storeintegration/README.md`](../test/storeintegration/README.md).
+
+LocalNet remains a thin network acceptance layer: the restored-key and
+post-rotation paths sign, submit, and confirm real transactions under
+`make integration-test-localnet`.
 
 ## Writing Integration Tests
 
@@ -1174,6 +1196,7 @@ go test -v $(go list ./... | grep -v '/test/integration') 2>&1 | tee test.log
 |-----------|----------|-----------|---------------|
 | **Unit** | 10-30s | Every commit | None |
 | **API Contract** | <1s | Every signer API contract change | Go |
+| **Store process** | <1min | Every commit | Go and loopback sockets |
 | **Integration** | profile-dependent | On-demand | `APLANE_INTEGRATION_NETWORK` plus profile-specific funding/service inputs |
 | **REPL** | 5-10min | Before releases | Funded accounts |
 
@@ -1186,6 +1209,9 @@ Day-to-day shortcuts:
 |------|---------|
 | Local pre-commit | `make check` (unit + contract) |
 | Race detector pass | `make race-test` |
+| Blank-store lifecycle | `make store-lifecycle-test` |
+| Store crash/recovery | `make store-crash-test` |
+| Staged release binaries | `make store-release-drill STORE_RELEASE_BIN_DIR=/path/to/bin` |
 | Integration on testnet | `APLANE_INTEGRATION_NETWORK=testnet TEST_FUNDING_MNEMONIC=... make integration-test` |
 | Integration on LocalNet | `APLANE_INTEGRATION_NETWORK=localnet make integration-test` |
 | Focused integration run | add `INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run TestX'` |

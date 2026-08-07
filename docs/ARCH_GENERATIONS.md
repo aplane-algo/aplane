@@ -30,7 +30,7 @@ identities/<identity>/
       seal.json                # final content record, written before flip-away (§5)
       keys/                    # *.key *.sen *.wit.json
       keytypes/                # *.json records, *.template
-  recovered/  deleted/  sentries/  .ssh/  files/
+  deleted/  sentries/  .ssh/  files/
   policy.yaml  policy.yaml.hmac  node.yaml.hmac  config.yaml
   unlock.yaml  aplane.token  passphrase  passphrase.cred
 ```
@@ -45,7 +45,6 @@ and the `internal/keys` file constructors rooted at them
 
 | Paths | Why they stay outside |
 |---|---|
-| `recovered/**` (batches, entries, activation state) | must survive pointer changes; own durability machinery |
 | `deleted/keys/`, `deleted/keytypes/` | tombstone namespace, not active state; a deleted key is *supposed* to reappear on generation rollback — the prior generation's copy is the rollback semantic, the tombstone is just an archive |
 | `keyring.enc` and `.keystore` | the cryptographic root and its format marker are identity-scoped, not generation-scoped |
 | `policy.yaml(+.hmac)`, `node.yaml.hmac`, `config.yaml`, `unlock.yaml`, `aplane.token`, `.ssh/`, `sentries/`, `files/`, `passphrase*` | not part of any activation transaction |
@@ -53,8 +52,8 @@ and the `internal/keys` file constructors rooted at them
 
 **Generation ID:** `gen-<unix-seconds>-<8 hex random>` — sortable, no
 collision coordination needed. `storepaths` validates this shape with
-`^gen-[0-9]+-[0-9a-f]{8}$`, using the same panic-on-invalid convention as
-restore IDs.
+`^gen-[0-9]+-[0-9a-f]{8}$`; invalid generation IDs are rejected before they
+can be used to construct store paths.
 `CURRENT` contains exactly the ID and a trailing newline; anything else is
 malformed.
 
@@ -146,10 +145,9 @@ AST-walk pattern) proving no `os.Link` call exists in the tree.
 ## 5. Manifest and seal
 
 `manifest.json` — immutable at-mint operation record:
-`schema "aplane.generation-manifest.v1"` (following the
-`aplane.backup.manifest.v1` precedent), schema_version, generation ID, parent
+`schema "aplane.generation-manifest.v1"`, schema_version, generation ID, parent
 generation ID, created_at, operation type + stable operation ID, source
-restore ID and review-token digest when applicable, rollback source generation
+archive SHA-256 when applicable, rollback source generation
 when a mint reconstructs older content, at-mint inventory and digests,
 completion state (written before publication). It describes **the
 minting transaction, not the live directory** — single-file mutations after
@@ -244,10 +242,9 @@ identity mutation locks, before any new operation:
 - `CURRENT` names the new generation → committed; keep, validate, finish
   runtime/audit reconciliation via the manifest's operation ID.
 - `CURRENT` names the old generation → the attempt never committed; delete it
-  and require a fresh review/activation. Nothing irreplaceable is lost (the
-  pre-state *is* the current generation; the source recovered batch outlives
-  the attempt), and auto-flipping would commit a destructive activation
-  without operator review.
+  and require a fresh restore request. Nothing irreplaceable is lost because
+  the authenticated source archive remains independent of the attempt;
+  auto-flipping would commit an unrequested mutation.
 - `CURRENT` missing/invalid → recovery mode; delete nothing.
 
 Discard eligibility is structural and reachability-based: not current, not in
@@ -259,17 +256,19 @@ ID. This pre-unlock classification checks seal presence only; it never grants
 rollback authority from an unauthenticated seal. Published-but-uncommitted
 generations are **never resumed**.
 
-## 8. Release compatibility (no migration)
+## 8. Pre-1.0 release compatibility (no migration)
 
-Every release is incompatible with every prior release and documented as
-such. A store is readable only by the release that initialized it:
+Before 1.0, store and backup compatibility may be broken deliberately and is
+documented per release. This first supported release provides no migration
+from earlier internal tags. A store is readable only when its marker matches
+the running release's supported format:
 `.keystore` carries exactly one supported metadata version
 (`checkKeyringMarker` rejects everything else with a restore-from-backup
-remediation), and no layout-migration or downgrade machinery exists. Key
-transfer between releases is by backup archive — standalone
-release-independent encryption — restored into a freshly initialized store.
-The pre-generation flat layout, the Tier-1 activation protocol, and the
-`migrate-layout` transaction were removed with this policy.
+remediation), and no layout-migration or downgrade machinery exists. The
+pre-generation flat layout, the Tier-1 activation protocol, and the
+`migrate-layout` transaction are unsupported. There is no permanent policy
+that every post-1.0 release must be incompatible; the 1.0 compatibility
+commitment will be defined before 1.0.
 ## 9. Rollback and GC
 
 Restore rollback = compare the mutable current generation with its effective
@@ -369,14 +368,14 @@ ownership preservation, and key-term rotation crash recovery.
 ## 14. Implementation status
 
 The generation resolver and strict validator, new-store initialization,
-generation-qualified consumers, restore activation, and rollback
+generation-qualified consumers, credential restore, and rollback
 reconstruction are implemented. The former Tier-1 activation journal and
 snapshot machinery are retired. Key-term rotation is the implemented Phase 3
 transition described in §11; it does not require a separate follow-on phase.
 
 This release intentionally provides no in-place migration from prior layouts:
-the release compatibility policy requires backup and restore into a freshly
-initialized store (§8).
+it is the first supported release, and stores or backups from earlier internal
+tags are not supported inputs (§8).
 
 ## 15. Explicitly rejected alternatives
 

@@ -34,24 +34,19 @@ func (m Model) viewFooterText() string {
 	case ViewBackupDisplay, ViewGenerateDisplay, ViewImportDisplay:
 		return "Enter/Esc: Back"
 	case ViewRestoreList:
-		return "Enter: Preview | v: Recovered batches | r: Refresh | Esc: Back"
+		return "Enter: Preview | r: Refresh | Esc: Back"
 	case ViewRestorePassphrase:
 		if m.restore.previewing {
 			return "Previewing backup archive"
 		}
+		if m.restore.replaceExisting {
+			return "Enter: Replace listed credentials | Esc: Back"
+		}
 		return "Enter: Preview | Esc: Back"
 	case ViewRestorePreview:
-		return "Space: Toggle | a: Select all | Tab: Recover button | Enter: Recover | Esc: Back"
-	case ViewRestoreReview:
-		return "tab: Acknowledgements/Activate | up/down: Select | space: Toggle | enter: Activate | esc: Recovered batches"
-	case ViewRecoveredList:
-		if m.restore.purgeArmedID != "" {
-			return "y: Confirm purge | any other key: Cancel"
-		}
-		if m.signerState == signerRuntimeRecovery {
-			return "Enter: Review | r: Refresh | q: Quit"
-		}
-		return "Enter: Review | p: Purge | r: Refresh | Esc: Back"
+		return "Space: Toggle | a: Select all | Tab: Restore button | Enter: Restore | Esc: Back"
+	case ViewStoreRecovery:
+		return "r: Reconcile | x: Roll back restore | b: Restore archive | l: Lock | q: Quit"
 	case ViewRestoreDisplay:
 		return "up/down: Select | Enter/Esc: Back"
 	case ViewGenerateForm:

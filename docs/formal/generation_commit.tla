@@ -59,7 +59,7 @@ The module intentionally omits:
   - RollbackTo. It is a pointer flip with the same durability structure
     as the forward commit; its distinctive risk is divergence after
     post-activation mutation, which is a content question (guarded by
-    recovered_rollback_diverged) rather than a crash-consistency one.
+    restore_rollback_diverged) rather than a crash-consistency one.
   - Garbage collection of sealed priors, and the retention window. Prune
     is crash-idempotent through tombstone renames and does not interact
     with the commit sequence modeled here.

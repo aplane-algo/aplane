@@ -66,7 +66,6 @@ func TestKeyringOpenRejectsMismatchedContext(t *testing.T) {
 		{"different selector", AccountKeyContext("ADDR-TWO")},
 		{"different class, same selector", SentryCredentialContext("ADDR-ONE")},
 		{"template class", KeyTypeTemplateContext("ADDR-ONE")},
-		{"recovered batch class", RecoveredBatchContext("ADDR-ONE")},
 		{"rotation snapshot class", RotationSnapshotContext()},
 		{"rotation baseline class", RotationBaselineContext()},
 	}

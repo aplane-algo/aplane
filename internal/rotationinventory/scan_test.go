@@ -14,13 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -56,8 +54,6 @@ func TestScanClassifiesEveryK8DurableClass(t *testing.T) {
 		KindAccountKey,
 		KindSentryCredential,
 		KindKeyTypeTemplate,
-		KindRecoveredBatch,
-		KindRecoveredEntry,
 		KindPolicyDocument,
 		KindPolicySidecar,
 		KindNodeRoleDocument,
@@ -117,8 +113,8 @@ func TestScanClassifiesEveryK8DurableClass(t *testing.T) {
 		t.Fatalf("account exact-byte pin = size %d digest %s", account.Size, account.SHA256)
 	}
 
-	// Generation copy, deleted archive moves, and recovered staging publication
-	// preserve logical context because no physical path component enters AAD.
+	// Generation copies and deleted archive moves preserve logical context
+	// because no physical path component enters AAD.
 	for _, path := range []string{
 		"identities/default/generations/" + inventoryGenA + "/keys/ACCOUNT.key",
 		"identities/default/generations/" + inventoryGenB + "/keys/ACCOUNT.key",
@@ -416,25 +412,6 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 		if err := writeEnvelope(artifact.path, []byte(artifact.plaintext), artifact.ctx, kr); err != nil {
 			t.Fatalf("writeEnvelope(%s) error = %v", artifact.path, err)
 		}
-	}
-
-	address, keyJSON := keystest.Ed25519KeyJSON(t)
-	defer crypto.ZeroBytes(keyJSON)
-	archiveSum := sha256.Sum256([]byte("archive"))
-	if _, err := recovered.Create(paths, inventoryIdentity, recovered.CreateRequest{
-		ArchiveName:        "archive.tar.gz",
-		ArchiveSHA256:      hex.EncodeToString(archiveSum[:]),
-		SourceNodeRole:     string(noderole.RoleSigner),
-		SourcePolicyStatus: recovered.SourcePolicyMissing,
-		CreatedAt:          time.Unix(1_785_200_002, 0),
-		Entries: []recovered.Entry{{
-			Selector: address,
-			Category: keys.CategoryEd25519,
-			KeyType:  "ed25519",
-			KeyJSON:  keyJSON,
-		}},
-	}, kr); err != nil {
-		t.Fatalf("recovered.Create() error = %v", err)
 	}
 
 	if err := writeEnvelope(

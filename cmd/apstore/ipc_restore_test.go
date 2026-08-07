@@ -4,21 +4,15 @@
 package main
 
 import (
-	"context"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/backup"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -37,70 +31,6 @@ func TestCmdBackupImportRejectsInvalidSources(t *testing.T) {
 		t.Fatal("cmdBackupImport(missing) error = nil, want missing source rejection")
 	} else if !strings.Contains(err.Error(), "backup source unavailable") {
 		t.Fatalf("cmdBackupImport(missing) error = %v, want missing source context", err)
-	}
-}
-
-func TestFormatRecoveredReviewSectionsRendersAuthenticatedSourceContext(t *testing.T) {
-	autoApprove := false
-	review := protocol.ReviewRecoveredResultMessage{
-		SourceUserAutoApprove: &autoApprove,
-		SourceGenesisHashMappings: []protocol.RecoveryGenesisHashMapping{{
-			GenesisHash: "REREREREREREREREREREREREREREREREREREREREREQ=",
-			Network:     "private-network",
-		}},
-	}
-	rendered := formatRecoveredReviewSections(review)
-
-	if !strings.Contains(rendered, "Policy differences (informational)") ||
-		!strings.Contains(rendered, "  none") {
-		t.Fatalf("review omitted the no-difference result:\n%s", rendered)
-	}
-	// Source context renders under a provenance heading that names its
-	// scope; the sealed manifest authenticated it, so no trust qualifier
-	// appears anywhere.
-	if !strings.Contains(rendered, "Reported by the backup archive") ||
-		!strings.Contains(rendered, "approval default: manual review") ||
-		!strings.Contains(rendered, "private-network") {
-		t.Fatalf("review omitted source context:\n%s", rendered)
-	}
-	for _, stale := range []string{"unverified", "unknown source", "Source metadata unavailable"} {
-		if strings.Contains(rendered, stale) {
-			t.Fatalf("review rendered trust-state text %q:\n%s", stale, rendered)
-		}
-	}
-}
-
-func TestFormatRecoveredReviewSectionsOmitsAbsentSourceContext(t *testing.T) {
-	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{})
-	if strings.Contains(rendered, "Reported by the backup archive") {
-		t.Fatalf("review invented a source-context section:\n%s", rendered)
-	}
-}
-
-func TestFormatRecoveredReviewSectionsRendersChangesWithoutVerdict(t *testing.T) {
-	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{
-		SecurityChanges: []protocol.RecoveryPolicyChange{{
-			Category:    "hard_rejects",
-			Path:        "reject_rekey",
-			Source:      "true",
-			Destination: "false",
-		}},
-	})
-	if !strings.Contains(rendered, "[hard_rejects]") {
-		t.Fatalf("review omitted the policy difference:\n%s", rendered)
-	}
-	if strings.Contains(rendered, "downgrade") {
-		t.Fatalf("review rendered a downgrade verdict:\n%s", rendered)
-	}
-	// Invariant prose belongs in the documentation, not on every review.
-	for _, constant := range []string{
-		"Backup archives do not record",
-		"cannot be authenticated",
-		"Unverified",
-	} {
-		if strings.Contains(rendered, constant) {
-			t.Fatalf("review repeated invariant prose %q:\n%s", constant, rendered)
-		}
 	}
 }
 
@@ -135,45 +65,6 @@ func TestCmdBackupImportRejectsDuplicateBasename(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("second cmdBackupImport() error = %v, want duplicate context", err)
-	}
-}
-
-func TestBackupImportTemplateValidationClientUsesConfiguredTEALCompileToken(t *testing.T) {
-	oldConfig := config
-	defer func() { config = oldConfig }()
-
-	var sawCompile bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v2/teal/compile" {
-			t.Fatalf("unexpected request path %s", r.URL.Path)
-		}
-		sawCompile = true
-		if got := r.Header.Get("X-Algo-API-Token"); got != "localnet-token" {
-			t.Fatalf("X-Algo-API-Token = %q, want localnet-token", got)
-		}
-		_, _ = w.Write([]byte(`{"result":"AQ==","hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}`))
-	}))
-	defer server.Close()
-
-	config = serverconfig.ServerConfig{
-		TEALCompileNetwork: "localnet",
-		Algod: apconfig.AlgodConfig{
-			"localnet": &apconfig.AlgodNetworkConfig{
-				Server: server.URL,
-				Token:  "localnet-token",
-			},
-		},
-	}
-
-	client, err := newBackupImportTemplateValidationClient()
-	if err != nil {
-		t.Fatalf("newBackupImportTemplateValidationClient() error = %v", err)
-	}
-	if _, err := client.TealCompile([]byte("#pragma version 8\nint 1\n")).Do(context.Background()); err != nil {
-		t.Fatalf("TealCompile() error = %v", err)
-	}
-	if !sawCompile {
-		t.Fatal("mock algod did not receive compile request")
 	}
 }
 
@@ -243,56 +134,40 @@ func TestCmdBackupImportUsesManagedBackupDir(t *testing.T) {
 	}
 }
 
-func TestCmdRestoreApplyManagedRecoversReviewsAndActivates(t *testing.T) {
-	restoreID := "0123456789abcdef0123456789abcdef"
+func TestCmdRestoreApplyManagedUsesDirectRestore(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
-		recoverResult: protocol.RecoverBackupResultMessage{
-			Success:    true,
-			RestoreID:  restoreID,
-			EntryCount: 1,
-		},
-		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
-			Success:                 true,
-			RestoreID:               restoreID,
-			DestinationApprovalMode: "manual_default",
-			ReviewToken:             strings.Repeat("a", 64),
-		},
-		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{
+		restoreResult: protocol.RestoreBackupResultMessage{
 			Success:  true,
-			KeyCount: 1,
+			Restored: []protocol.RestoreCredential{{Selector: "ADDR"}},
 		},
 	}
 	withFakeApstoreAdminClient(t, fake)
 
 	if err := withTestStdin("export-passphrase\n", func() error {
-		return cmdRestoreApplyManaged([]string{"restore-source.tar.gz", "--address", "ADDR", "--overwrite"})
+		return cmdRestoreApplyManaged([]string{"restore-source.tar.gz", "--address", "ADDR", "--replace-existing"})
 	}); err != nil {
 		t.Fatalf("cmdRestoreApplyManaged() error = %v", err)
 	}
 
-	wantRequests := []string{
-		protocol.MsgTypeRecoverBackup,
-		protocol.MsgTypeReviewRecovered,
-		protocol.MsgTypeActivateRecovered,
-	}
+	wantRequests := []string{protocol.MsgTypeRestoreBackup}
 	if strings.Join(fake.requests, ",") != strings.Join(wantRequests, ",") {
 		t.Fatalf("requests = %v, want %v", fake.requests, wantRequests)
 	}
-	if fake.recoverRequest.ArchivePath != "restore-source.tar.gz" {
-		t.Fatalf("recover archive = %q, want restore-source.tar.gz", fake.recoverRequest.ArchivePath)
+	if fake.restoreRequest.ArchivePath != "restore-source.tar.gz" {
+		t.Fatalf("restore archive = %q, want restore-source.tar.gz", fake.restoreRequest.ArchivePath)
 	}
-	if len(fake.recoverRequest.Addresses) != 1 || fake.recoverRequest.Addresses[0] != "ADDR" {
-		t.Fatalf("recover addresses = %v, want [ADDR]", fake.recoverRequest.Addresses)
+	if len(fake.restoreRequest.Addresses) != 1 || fake.restoreRequest.Addresses[0] != "ADDR" {
+		t.Fatalf("restore addresses = %v, want [ADDR]", fake.restoreRequest.Addresses)
 	}
-	if !fake.recoveredActivateRequest.ReplaceExisting {
-		t.Fatalf("activate request = %+v, want replace_existing", fake.recoveredActivateRequest)
+	if !fake.restoreRequest.ReplaceExisting {
+		t.Fatalf("restore request = %+v, want replace_existing", fake.restoreRequest)
 	}
 }
 
-func TestCmdRestoreApplyManagedStopsWhenRecoveryFails(t *testing.T) {
+func TestCmdRestoreApplyManagedStopsWhenDirectRestoreFails(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
-		recoverResult: protocol.RecoverBackupResultMessage{
-			Code:  protocol.ResultCodeRecoverBackupFailed,
+		restoreResult: protocol.RestoreBackupResultMessage{
+			Code:  protocol.ResultCodeRestoreFailed,
 			Error: "bad backup",
 		},
 	}
@@ -307,7 +182,7 @@ func TestCmdRestoreApplyManagedStopsWhenRecoveryFails(t *testing.T) {
 	if !strings.Contains(err.Error(), "bad backup") {
 		t.Fatalf("cmdRestoreApplyManaged() error = %v, want bad backup", err)
 	}
-	wantRequests := []string{protocol.MsgTypeRecoverBackup}
+	wantRequests := []string{protocol.MsgTypeRestoreBackup}
 	if strings.Join(fake.requests, ",") != strings.Join(wantRequests, ",") {
 		t.Fatalf("requests = %v, want %v", fake.requests, wantRequests)
 	}
@@ -315,7 +190,7 @@ func TestCmdRestoreApplyManagedStopsWhenRecoveryFails(t *testing.T) {
 
 func TestCmdRestoreApplyManagedStopsWhenBackupArchiveMissing(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
-		recoverResult: protocol.RecoverBackupResultMessage{
+		restoreResult: protocol.RestoreBackupResultMessage{
 			Code:  "backup_not_found",
 			Error: "backup archive not found",
 		},
@@ -331,165 +206,45 @@ func TestCmdRestoreApplyManagedStopsWhenBackupArchiveMissing(t *testing.T) {
 	if !strings.Contains(err.Error(), "backup archive not found") {
 		t.Fatalf("cmdRestoreApplyManaged() error = %v, want missing archive context", err)
 	}
-	wantRequests := []string{protocol.MsgTypeRecoverBackup}
+	wantRequests := []string{protocol.MsgTypeRestoreBackup}
 	if strings.Join(fake.requests, ",") != strings.Join(wantRequests, ",") {
 		t.Fatalf("requests = %v, want %v", fake.requests, wantRequests)
 	}
 }
 
-// --acknowledge-unattended-signing records the acknowledgement without a
-// prompt, so restore stays scriptable against an auto-approving destination.
-func TestCmdRestoreApplyAcceptsUnattendedAcknowledgementFlag(t *testing.T) {
-	restoreID := "0123456789abcdef0123456789abcdef"
-	unattendedAckRequired := true
-	fake := &fakeApstoreAdminRequester{
-		recoverResult: protocol.RecoverBackupResultMessage{
-			Success:   true,
-			RestoreID: restoreID,
-		},
-		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
-			Success:                      true,
-			RestoreID:                    restoreID,
-			DestinationApprovalMode:      "auto_approve_fallback",
-			UnattendedSigningWarning:     "you are activating into an auto-approving identity",
-			ReviewToken:                  strings.Repeat("a", 64),
-			UnattendedSigningAckRequired: &unattendedAckRequired,
-		},
-		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{Success: true},
-	}
-	withFakeApstoreAdminClient(t, fake)
-
-	// Only the export passphrase is supplied: no prompt may be read.
-	if err := withTestStdin("export-passphrase\n", func() error {
-		return cmdRestoreApplyManaged([]string{
-			"restore-source.tar.gz",
-			"--acknowledge-unattended-signing",
-		})
-	}); err != nil {
-		t.Fatalf("cmdRestoreApplyManaged(flag) error = %v", err)
-	}
-	if !fake.recoveredActivateRequest.AcknowledgeUnattendedSigning {
-		t.Fatalf("activation request = %+v, want recorded acknowledgement", fake.recoveredActivateRequest)
-	}
-}
-
-// The flag is explicit intent, not a blanket opt-out: a destination that does
-// not auto-approve still sends no acknowledgement.
-func TestCmdRestoreApplyFlagDoesNotAcknowledgeWhenNotRequired(t *testing.T) {
-	restoreID := "0123456789abcdef0123456789abcdef"
-	unattendedAckRequired := false
-	fake := &fakeApstoreAdminRequester{
-		recoverResult: protocol.RecoverBackupResultMessage{
-			Success:   true,
-			RestoreID: restoreID,
-		},
-		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
-			Success:                      true,
-			RestoreID:                    restoreID,
-			DestinationApprovalMode:      "manual_default",
-			ReviewToken:                  strings.Repeat("a", 64),
-			UnattendedSigningAckRequired: &unattendedAckRequired,
-		},
-		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{Success: true},
-	}
-	withFakeApstoreAdminClient(t, fake)
-
-	if err := withTestStdin("export-passphrase\n", func() error {
-		return cmdRestoreApplyManaged([]string{
-			"restore-source.tar.gz",
-			"--acknowledge-unattended-signing",
-		})
-	}); err != nil {
-		t.Fatalf("cmdRestoreApplyManaged(flag) error = %v", err)
-	}
-	if fake.recoveredActivateRequest.AcknowledgeUnattendedSigning {
-		t.Fatalf("activation request = %+v, want no acknowledgement", fake.recoveredActivateRequest)
-	}
-}
-
-func TestCmdRestoreApplyRequiresSeparateUnattendedSigningAcknowledgement(t *testing.T) {
-	restoreID := "0123456789abcdef0123456789abcdef"
-	unattendedAckRequired := true
-	fake := &fakeApstoreAdminRequester{
-		recoverResult: protocol.RecoverBackupResultMessage{
-			Success:   true,
-			RestoreID: restoreID,
-		},
-		recoveredReviewResult: protocol.ReviewRecoveredResultMessage{
-			Success:                      true,
-			RestoreID:                    restoreID,
-			DestinationApprovalMode:      "auto_approve_fallback",
-			UnattendedSigningWarning:     "you are activating into an auto-approving identity",
-			ReviewToken:                  strings.Repeat("a", 64),
-			UnattendedSigningAckRequired: &unattendedAckRequired,
-		},
-		recoveredActivateResult: protocol.ActivateRecoveredResultMessage{Success: true},
-	}
-	withFakeApstoreAdminClient(t, fake)
-
-	if err := withTestStdin("export-passphrase\ny\n", func() error {
-		return cmdRestoreApplyManaged([]string{"restore-source.tar.gz"})
-	}); err != nil {
-		t.Fatalf("cmdRestoreApplyManaged() error = %v", err)
-	}
-	if !fake.recoveredActivateRequest.AcknowledgeUnattendedSigning {
-		t.Fatalf("activation acknowledgements = %+v", fake.recoveredActivateRequest)
-	}
-}
-
-func TestRecoveredUnattendedSigningAckRequiredTreatsMissingFieldAsLegacy(t *testing.T) {
-	if !recoveredUnattendedSigningAckRequired(protocol.ReviewRecoveredResultMessage{
-		DestinationApprovalMode: "auto_approve_fallback",
-	}) {
-		t.Fatal("missing unattended-signing requirement did not use conservative legacy fallback")
-	}
-	required := false
-	if recoveredUnattendedSigningAckRequired(protocol.ReviewRecoveredResultMessage{
-		DestinationApprovalMode:      "auto_approve_fallback",
-		UnattendedSigningAckRequired: &required,
-	}) {
-		t.Fatal("explicit false unattended-signing requirement was ignored")
-	}
-}
-
-func TestCmdRestoreRollbackAndPurgeUseExplicitOperations(t *testing.T) {
-	restoreID := "0123456789abcdef0123456789abcdef"
+func TestCmdRestoreRollbackUsesDirectOperation(t *testing.T) {
 	rollbackFake := &fakeApstoreAdminRequester{
-		recoveredRollbackResult: protocol.RollbackRecoveredResultMessage{Success: true},
+		rollbackRestoreResult: protocol.RollbackRestoreResultMessage{
+			Success:      true,
+			GenerationID: "gen-1-12345678",
+		},
 	}
 	withFakeApstoreAdminClient(t, rollbackFake)
 	if err := withTestStdin("y\n", func() error {
-		return cmdRestoreRollbackRecovered(restoreID)
+		return cmdRestoreRollback()
 	}); err != nil {
-		t.Fatalf("cmdRestoreRollbackRecovered() error = %v", err)
+		t.Fatalf("cmdRestoreRollback() error = %v", err)
 	}
-	if len(rollbackFake.requests) != 1 || rollbackFake.requests[0] != protocol.MsgTypeRollbackRecovered {
+	if len(rollbackFake.requests) != 1 || rollbackFake.requests[0] != protocol.MsgTypeRollbackRestore {
 		t.Fatalf("rollback requests = %v", rollbackFake.requests)
-	}
-
-	purgeFake := &fakeApstoreAdminRequester{
-		recoveredPurgeResult: protocol.PurgeRecoveredResultMessage{Success: true},
-	}
-	withFakeApstoreAdminClient(t, purgeFake)
-	if err := withTestStdin("y\n", func() error {
-		return cmdRestorePurgeRecovered(restoreID)
-	}); err != nil {
-		t.Fatalf("cmdRestorePurgeRecovered() error = %v", err)
-	}
-	if len(purgeFake.requests) != 1 || purgeFake.requests[0] != protocol.MsgTypePurgeRecovered {
-		t.Fatalf("purge requests = %v", purgeFake.requests)
 	}
 }
 
-func TestFormatRecoveredReviewSectionsMarksUnavailableComparison(t *testing.T) {
-	rendered := formatRecoveredReviewSections(protocol.ReviewRecoveredResultMessage{
-		PolicyComparison: string(policy.RestoreComparisonUnavailable),
-	})
-	if strings.Contains(rendered, "  none") {
-		t.Fatalf("unavailable comparison rendered as a no-difference all-clear:\n%s", rendered)
+func TestCmdRestoreManagedDispatchesReconcile(t *testing.T) {
+	fake := &fakeApstoreAdminRequester{
+		reconcileStoreResult: protocol.ReconcileStoreResultMessage{
+			Success:      true,
+			GenerationID: "gen-1-12345678",
+			State:        "unlocked",
+		},
 	}
-	if !strings.Contains(rendered, "comparison unavailable") {
-		t.Fatalf("unavailable comparison not surfaced:\n%s", rendered)
+	withFakeApstoreAdminClient(t, fake)
+
+	if err := cmdRestoreManaged([]string{"reconcile"}); err != nil {
+		t.Fatalf("cmdRestoreManaged(reconcile) error = %v", err)
+	}
+	if got := strings.Join(fake.requests, ","); got != protocol.MsgTypeReconcileStore {
+		t.Fatalf("requests = %q, want %q", got, protocol.MsgTypeReconcileStore)
 	}
 }
 

@@ -19,12 +19,9 @@ apb/ directory, and manifest.sealed. If you extracted the archive first, the
 same instructions apply to the extracted directory.
 
 manifest.sealed describes the archive: it lists every other member with its
-SHA-256 digest, records the source node role, and carries the source node's
-non-secret approval and custom-network context. It is encrypted with the same
+SHA-256 digest and records the source node role. It is encrypted with the same
 envelope as the .apb payloads, under the same export passphrase, so APlane can
 detect a member that was removed, added, or altered after the backup was made.
-Recovering keys by hand does not require it: each .apb file remains
-self-contained.
 
 ## File Format
 
@@ -32,7 +29,9 @@ Each ` + "`.apb`" + ` file is named after the Algorand address it controls (e.g.
 
 Each file is self-contained: it can be decrypted with only the file and the export passphrase (no additional metadata files are needed).
 
-Template-backed keys may embed their installed template definition within the encrypted payload. On restore, the template is automatically extracted and saved to the keystore when no authoritative destination template already exists.
+Each encrypted payload is the complete canonical managed credential record,
+including durable signing metadata. Backups do not contain policy, approval
+settings, network mappings, templates, endpoints, tokens, or operator config.
 
 ## Encryption Format (envelope_version 2)
 
@@ -58,9 +57,7 @@ The encryption key is derived using Argon2id with the following parameters:
 2. Base64-decode the ` + "`salt`" + `, ` + "`nonce`" + `, and ` + "`ciphertext`" + ` fields
 3. Derive the AES-256 key: ` + "`Argon2id(passphrase, salt, time=2, memory=64MB, threads=4, keyLen=32)`" + `
 4. Decrypt using AES-256-GCM with the derived key and nonce
-5. The decrypted plaintext is either:
-   - a key JSON object containing the key type, public key (hex), and private key (hex), or
-   - a backup bundle containing ` + "`backup_bundle`" + `, ` + "`payload_version`" + `, ` + "`key`" + `, and optional template fields (` + "`template_yaml`" + `, ` + "`template_type`" + `)
+5. The decrypted plaintext is one canonical managed credential JSON object.
 
 ## Restoring Keys
 
@@ -82,10 +79,13 @@ apstore restore apply this-backup.tar.gz --address <ADDRESS>
 
 You will be prompted for the export passphrase used to encrypt the backup.
 The running signer daemon encrypts restored keys into the target keystore. For
+normal restore, credentials immediately operate under the destination's
+current policy and configuration. Use ` + "`--replace-existing`" + ` only when
+you explicitly intend to replace conflicting destination credentials. For
 replacement-keystore rescue when no identity directory exists, use
 ` + "`apstore rebuild /path/to/this/backup.tar.gz`" + `, adding
-` + "`--role sentry`" + ` when rebuilding an sentry node from a backup that
-does not carry source role metadata.
+` + "`--role sentry`" + ` when rebuilding a sentry store; rebuild verifies
+that the requested destination role matches the archive's authenticated source role.
 
 ### Manual Decryption
 

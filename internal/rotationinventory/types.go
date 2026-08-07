@@ -28,8 +28,6 @@ const (
 	KindAccountKey            ArtifactKind = "account-key"
 	KindSentryCredential      ArtifactKind = "sentry-credential"
 	KindKeyTypeTemplate       ArtifactKind = "keytype-template"
-	KindRecoveredBatch        ArtifactKind = "recovered-batch"
-	KindRecoveredEntry        ArtifactKind = "recovered-entry"
 	KindPolicyDocument        ArtifactKind = "policy-document"
 	KindPolicySidecar         ArtifactKind = "policy-integrity-sidecar"
 	KindNodeRoleDocument      ArtifactKind = "node-role-document"
@@ -138,10 +136,6 @@ func kindAuthority(kind ArtifactKind) (crypto.ObjectClass, bool, bool, bool) {
 		return crypto.ClassSentryCredential, true, false, true
 	case KindKeyTypeTemplate:
 		return crypto.ClassKeyTypeTemplate, true, false, true
-	case KindRecoveredBatch:
-		return crypto.ClassRecoveredBatch, true, false, true
-	case KindRecoveredEntry:
-		return crypto.ClassRecoveredEntry, true, false, true
 	case KindRotationSnapshot:
 		return crypto.ClassRotationSnapshot, true, false, true
 	case KindRotationBaseline:

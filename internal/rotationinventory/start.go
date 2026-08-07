@@ -13,11 +13,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/testcheckpoint"
 )
 
 // StartRotation performs the pre-append K8 gate and atomically commits the
 // pending cryptographic root. The caller holds the identity mutation lock and
-// has reconciled generation/recovered staging residue.
+// has reconciled generation staging residue.
 //
 // This function starts the durable window only. Rewrap, completion-baseline
 // publication, close, and snapshot cleanup are separate later phases.
@@ -58,7 +59,9 @@ func StartRotation(
 		return nil, fmt.Errorf("start rotation scan did not retain current manifest")
 	}
 	manifest := report.currentManifest
-	rollbackEligible := manifest.ParentID != "" && manifest.SourceRestoreID != ""
+	rollbackEligible := manifest.ParentID != "" &&
+		manifest.Operation == genstore.OperationCredentialRestore &&
+		manifest.RestoreRollbackEligible
 	if baseline != nil && !rollbackEligible {
 		return nil, fmt.Errorf(
 			"rotation baseline names current generation %s, which is not rollback-eligible",
@@ -94,7 +97,14 @@ func StartRotation(
 			if buildErr != nil {
 				return crypto.RotationSnapshotReference{}, buildErr
 			}
-			return WriteSnapshot(paths, identityID, snapshot, target)
+			ref, writeErr := WriteSnapshot(paths, identityID, snapshot, target)
+			if writeErr != nil {
+				return crypto.RotationSnapshotReference{}, writeErr
+			}
+			if checkpointErr := testcheckpoint.Reach("rotation.snapshot_published"); checkpointErr != nil {
+				return crypto.RotationSnapshotReference{}, checkpointErr
+			}
+			return ref, nil
 		},
 	)
 	if err != nil {

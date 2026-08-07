@@ -36,14 +36,11 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeDeleteBackup:    typed("delete backup", (*Session).HandleDeleteBackup),
 	protocol.MsgTypeChangeStorePass: typed("change store passphrase", (*Session).HandleChangeStorePassphrase),
 	protocol.MsgTypePreviewRestore:  typed("preview restore", (*Session).HandlePreviewRestore),
-	protocol.MsgTypeRecoverBackup:   typed("recover backup", (*Session).HandleRecoverBackup),
-	protocol.MsgTypeListRecovered: typed("list recovered", func(s *Session, m *protocol.ListRecoveredMessage) {
-		s.HandleListRecovered(m.ID)
+	protocol.MsgTypeRestoreBackup:   typed("restore backup", (*Session).HandleRestoreBackup),
+	protocol.MsgTypeRollbackRestore: typed("rollback restore", (*Session).HandleRollbackRestore),
+	protocol.MsgTypeReconcileStore: typed("reconcile store", func(s *Session, m *protocol.ReconcileStoreMessage) {
+		s.HandleReconcileStore(m.ID)
 	}),
-	protocol.MsgTypeReviewRecovered:   typed("review recovered", (*Session).HandleReviewRecovered),
-	protocol.MsgTypeActivateRecovered: typed("activate recovered", (*Session).HandleActivateRecovered),
-	protocol.MsgTypeRollbackRecovered: typed("rollback recovered", (*Session).HandleRollbackRecovered),
-	protocol.MsgTypePurgeRecovered:    typed("purge recovered", (*Session).HandlePurgeRecovered),
 
 	protocol.MsgTypeRevokeToken:        typed("revoke token", (*Session).HandleRevokeToken),
 	protocol.MsgTypeGetAdminSettings:   typed("get admin settings", func(s *Session, m *protocol.GetAdminSettingsMessage) { s.HandleGetAdminSettings(m.ID) }),

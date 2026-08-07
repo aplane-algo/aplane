@@ -101,19 +101,6 @@ func ValidateAnchoredSealed(
 	return nil
 }
 
-// VerifyFileAgainstSeal checks one namespace-relative path ("keys/X.key")
-// against a loaded seal.
-func VerifyFileAgainstSeal(gen storepaths.GenPaths, seal *Seal, relativePath string) error {
-	data, _, err := fsutil.ReadRegularFile(filepath.Join(gen.Dir(), filepath.FromSlash(relativePath)))
-	if err != nil {
-		return err
-	}
-	if err := VerifyBytesAgainstSeal(seal, relativePath, data); err != nil {
-		return fmt.Errorf("%s does not match generation %s's seal: %w", relativePath, gen.GenerationID(), err)
-	}
-	return nil
-}
-
 // VerifyBytesAgainstSeal verifies the exact byte buffer a caller will consume
 // against one seal inventory entry. Historical consumers must use this form
 // rather than validate a path and then read it again.

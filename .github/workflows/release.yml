@@ -147,6 +147,9 @@ jobs:
       - name: Restore executable bit on binaries
         run: chmod +x bin/amd64/* bin/arm64/* bin/darwin-amd64/* bin/darwin-arm64/*
 
+      - name: Drill store lifecycle with staged release binaries
+        run: make store-release-drill STORE_RELEASE_BIN_DIR="$PWD/bin/amd64"
+
       - name: Package release archives
         run: |
           VERSION="${RELEASE_TAG}"

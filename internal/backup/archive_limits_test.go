@@ -77,29 +77,3 @@ func TestExtractRefusesSymlinkArchivePath(t *testing.T) {
 		t.Fatal("extraction followed a symlinked archive path")
 	}
 }
-
-func TestInspectSourcePolicyRejectsOversizedSnapshot(t *testing.T) {
-	sourceRoot := t.TempDir()
-	policyDir := filepath.Join(sourceRoot, "policy")
-	if err := os.MkdirAll(policyDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	blob := make([]byte, maxSourcePolicyBytes+1)
-	if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), blob, 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	// An oversized archive-supplied policy snapshot must be refused before
-	// it is embedded in the encrypted batch manifest that every later
-	// operation decrypts and parses.
-	if _, _, _, err := inspectSourcePolicy(sourceRoot, "signer"); err == nil {
-		t.Fatal("inspectSourcePolicy accepted an oversized policy snapshot")
-	}
-
-	// A normal-sized snapshot still inspects.
-	if err := os.WriteFile(filepath.Join(policyDir, "policy.yaml"), []byte("schema_version: 1\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	if _, _, _, err := inspectSourcePolicy(sourceRoot, "signer"); err != nil {
-		t.Fatalf("inspectSourcePolicy(normal) error = %v", err)
-	}
-}

@@ -39,7 +39,6 @@ const (
 	ViewRestorePassphrase  // Enter export passphrase before previewing restore metadata
 	ViewRestorePreview     // Select keys to restore from a backup archive
 	ViewRestoring          // Loading state while restoring backup keys
-	ViewRestoreReview      // Review destination security state and acknowledge activation
 	ViewRestoreDisplay     // Shows backup restore result
 	ViewDeleteConfirm      // Delete confirmation dialog
 	ViewDeleting           // Loading state while deleting
@@ -53,7 +52,7 @@ const (
 	ViewTemplateInstalling
 	ViewLibraryTemplateDetails // Full-screen view of a library entry's source (YAML or synthesized parameters)
 	ViewError
-	ViewRecoveredList // Recovered batches: review/activate/purge; blocking while in recovery mode
+	ViewStoreRecovery // Blocking recovery controls while the signer is fail-closed
 )
 
 // ConnectionState represents IPC connection status
@@ -174,9 +173,6 @@ type backupState struct {
 	confirmError      string
 	confirmFocus      int // 0 = export passphrase, 1 = confirm passphrase
 	archivePath       string
-	// skippedKeys maps address -> reason for keys the all-keys backup
-	// excluded because their payload failed canonical validation.
-	skippedKeys map[string]string
 }
 
 // restoreState is the backup browse/preview/restore flow.
@@ -195,34 +191,17 @@ type restoreState struct {
 	selectedKey         int
 	previewScrollOffset int
 	previewError        string
-	// previewFocus selects the key list (restoreFocusList) or the Recover
+	// previewFocus selects the key list (restoreFocusList) or the Restore
 	// button (restoreFocusAction) on the preview screen.
-	previewFocus           int
-	restoreID              string
-	review                 ReviewRecoveredResultMessage
-	unattendedAcknowledged bool
-	// replaceExisting is the overwrite consent, collected on the activation
-	// review beside the exact conflicts it authorizes. For a resumed
-	// activation it is fixed to the recorded intent.
-	replaceExisting bool
-	// reviewFocus selects the checkbox list (restoreFocusList) or the
-	// Activate button (restoreFocusAction) on the review screen; reviewCursor
-	// selects among the visible checkboxes while the list is focused.
-	reviewFocus         int
-	reviewCursor        int
+	previewFocus        int
+	replaceExisting     bool
+	replaceConflicts    []RestoreConflict
+	returnToRecovery    bool
 	displaySelectedKey  int
 	displayScrollOffset int
 	result              RestoreDisplayResult
 
-	// Recovered-batch list state. The list doubles as the blocking recovery
-	// screen while the signer is in recovery mode.
-	recovered             []RecoveredBatchInfo
-	recoveredLoaded       bool
-	selectedRecovered     int
-	recoveredScrollOffset int
-	recoveredError        string
-	// purgeArmedID holds the restore ID awaiting purge confirmation ("y").
-	purgeArmedID string
+	recoveryError string
 	// progressLabel names the operation ViewRestoring is waiting on.
 	progressLabel string
 }
@@ -550,9 +529,6 @@ type RevokeTokenResultMsg struct {
 type BackupResultMsg struct {
 	Success     bool
 	ArchivePath string
-	// SkippedKeys maps address -> reason for keys excluded from an all-keys
-	// backup because their payload failed canonical validation.
-	SkippedKeys map[string]string
 	Error       string
 }
 
@@ -570,43 +546,25 @@ type RestorePreviewMsg struct {
 	Error       string
 }
 
-// RestoreDisplayResult is the local post-activation display model.
+// RestoreDisplayResult is the local post-restore display model.
 type RestoreDisplayResult struct {
 	ArchivePath string
 	Success     bool
 	Activated   []RestoreKeyInfo
-	Warnings    []string
 	KeyCount    int
 	Error       string
 }
 
-// RecoverBackupResultMsg is sent when an inactive recovered batch is created.
-type RecoverBackupResultMsg struct {
-	Success   bool
-	RestoreID string
-	Error     string
+type RestoreBackupResultMsg struct {
+	Result RestoreBackupResultMessage
 }
 
-// ReviewRecoveredResultMsg carries the security-first activation review.
-type ReviewRecoveredResultMsg struct {
-	Result ReviewRecoveredResultMessage
+type RollbackRestoreResultMsg struct {
+	Result RollbackRestoreResultMessage
 }
 
-// ActivateRecoveredResultMsg is sent when reviewed activation completes.
-type ActivateRecoveredResultMsg struct {
-	Result ActivateRecoveredResultMessage
-}
-
-// RecoveredListMsg carries the recovered-batch inventory.
-type RecoveredListMsg struct {
-	Batches []RecoveredBatchInfo
-	Code    string
-	Error   string
-}
-
-// PurgeRecoveredResultMsg is sent when an inactive batch purge completes.
-type PurgeRecoveredResultMsg struct {
-	Result PurgeRecoveredResultMessage
+type ReconcileStoreResultMsg struct {
+	Result ReconcileStoreResultMessage
 }
 
 // ImportResultMsg is sent when key import completes

@@ -766,7 +766,7 @@ it can disagree with the keyring.
 | Version | Use | Description |
 |---------|-----|-------------|
 | 2 | Standalone backup/export | Self-contained passphrase-based encryption with an embedded salt; used by `apstore` `.apb` files, not by in-keystore `.key` or `.sen` files |
-| 3 | In-keystore managed objects | Term envelope for account `.key`, sentry witness `.sen`, templates, and recovered batches; records the term that sealed it and binds the term plus the object's class and canonical selector into the AEAD's authenticated data |
+| 3 | In-keystore managed objects | Term envelope for account `.key`, sentry witness `.sen`, and templates; records the term that sealed it and binds the term plus the object's class and canonical selector into the AEAD's authenticated data |
 
 **Memory Protection:**
 

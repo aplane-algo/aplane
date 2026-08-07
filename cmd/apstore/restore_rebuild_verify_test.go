@@ -4,8 +4,7 @@
 package main
 
 import (
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +13,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -175,7 +176,6 @@ func TestSelectRebuildNodeRoleExplicitOverridesManifest(t *testing.T) {
 		root,
 		noderole.RoleSigner,
 		time.Unix(100, 0),
-		backup.SourceSettingsSnapshot{UserAutoApprove: new(bool)},
 		passphrase,
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
@@ -197,7 +197,6 @@ func TestSelectRebuildNodeRoleUsesSealedManifestRole(t *testing.T) {
 		root,
 		noderole.RoleSentry,
 		time.Unix(100, 0),
-		backup.SourceSettingsSnapshot{},
 		passphrase,
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
@@ -306,6 +305,29 @@ func TestCmdVerifyAcceptsTarball(t *testing.T) {
 	}
 }
 
+func TestCmdVerifyFailsWhenAnyCredentialIsInvalid(t *testing.T) {
+	backupRoot := t.TempDir()
+	address, keyJSON := testEd25519KeyJSON(t)
+	if err := writeStandaloneBackup(filepath.Join(backupRoot, "apb"), address, keyJSON, []byte("export-passphrase")); err != nil {
+		t.Fatalf("writeStandaloneBackup() error = %v", err)
+	}
+	sealTestArchive(t, backupRoot, noderole.RoleSigner)
+	if err := os.WriteFile(filepath.Join(backupRoot, "apb", address+".apb"), []byte("damaged"), 0o600); err != nil {
+		t.Fatalf("damage backup credential: %v", err)
+	}
+
+	err := withTestStdin("export-passphrase\n", func() error {
+		return cmdVerify(backupRoot)
+	})
+	if err == nil {
+		t.Fatal("cmdVerify() error = nil, want fatal credential verification failure")
+	}
+	var coded codedError
+	if !errors.As(err, &coded) || coded.code != "verification_failed" {
+		t.Fatalf("cmdVerify() error = %v, want verification_failed code", err)
+	}
+}
+
 func TestRestoreKeyIsIdempotentForSameBackup(t *testing.T) {
 	RegisterProviders()
 
@@ -334,129 +356,7 @@ func TestRestoreKeyIsIdempotentForSameBackup(t *testing.T) {
 	}
 }
 
-func TestRestoreTemplateRejectsConflictingDestinationTemplate(t *testing.T) {
-	dataDirectory = t.TempDir()
-	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
-
-	paths := keystorePaths()
-	identityID := productIdentityID()
-	masterKey := bytes32(0x77)
-	keyType := "custom.allowlist.v1"
-	existingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Existing\ntemplate_type: generic\nteal: |\n  int 1\n")
-	backupTemplate := []byte("schema_version: 1\ntemplate_mode: generated\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Backup\ntemplate_type: generic\nteal: |\n  int 0\n")
-
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SaveTemplateForPaths(existing) error = %v", err)
-	}
-	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-
-	err := restoreTemplate(backupTemplate, keyType, "generic", cryptotest.Keyring(t, masterKey))
-	if err == nil {
-		t.Fatal("restoreTemplate() error = nil, want conflict")
-	}
-	if !strings.Contains(err.Error(), "does not match existing keystore definition") {
-		t.Fatalf("restoreTemplate() error = %v, want keystore conflict", err)
-	}
-
-	templatePath, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
-	if err != nil {
-		t.Fatalf("GetTemplateFilePathForPaths() error = %v", err)
-	}
-	loaded, err := templatestore.LoadTemplateFromPath(templatePath, cryptotest.Keyring(t, masterKey))
-	if err != nil {
-		t.Fatalf("LoadTemplateFromPath() error = %v", err)
-	}
-	if string(loaded) != string(existingTemplate) {
-		t.Fatalf("template contents changed\n got: %s\nwant: %s", loaded, existingTemplate)
-	}
-}
-
-func TestRestoreTemplateSavesLibraryDefinitionWhenNotInstalled(t *testing.T) {
-	dataDirectory = t.TempDir()
-	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
-	masterKey := bytes32(0x79)
-
-	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
-	if err != nil {
-		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
-	}
-
-	if err := restoreTemplate(templateYAML, "aplane.htlc.v1", "generic", cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("restoreTemplate() error = %v", err)
-	}
-
-	if !templatestore.TemplateExistsForPaths(keystorePaths(), productIdentityID(), "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
-		t.Fatal("expected optional template restore to save the library definition")
-	}
-}
-
-func TestRestoreTemplateRejectsBuiltInProviderCollision(t *testing.T) {
-	RegisterProviders()
-
-	dataDirectory = t.TempDir()
-	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
-	masterKey := bytes32(0x88)
-	conflictingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: aplane\nfamily: falcon1024\nversion: 1\ndisplay_name: Backup Override\nteal: |\n  #pragma version 8\n  int 0\n")
-
-	err := restoreTemplate(conflictingTemplate, "aplane.falcon1024.v1", "generic", cryptotest.Keyring(t, masterKey))
-	if err == nil {
-		t.Fatal("restoreTemplate() error = nil, want built-in provider conflict")
-	}
-	if !strings.Contains(err.Error(), "already provided by a built-in non-template provider") {
-		t.Fatalf("restoreTemplate() error = %v, want built-in provider conflict", err)
-	}
-	if templatestore.TemplateExistsForPaths(keystorePaths(), productIdentityID(), "aplane.falcon1024.v1", templatestore.TemplateTypeGeneric) {
-		t.Fatal("expected conflicting built-in provider template restore not to be saved")
-	}
-}
-
-func TestRestoreKeySkipsTemplateConflictForStandaloneKey(t *testing.T) {
-	RegisterProviders()
-
-	dataDirectory = t.TempDir()
-	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
-	backupDir := t.TempDir()
-	paths := keystorePaths()
-	identityID := productIdentityID()
-	masterKey := bytes32(0x89)
-	keyType := "custom.allowlist.v1"
-	existingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Existing Override\nteal: |\n  #pragma version 8\n  int 1\n")
-	backupTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Backup Override\nteal: |\n  #pragma version 8\n  int 0\n")
-
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SaveTemplateForPaths(existing) error = %v", err)
-	}
-	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-
-	address, keyJSON := testAllowlistBackupBundle(t, keyType, backupTemplate)
-	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackup() error = %v", err)
-	}
-
-	restoredKeyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
-	if err != nil {
-		t.Fatalf("restoreKey() error = %v", err)
-	}
-	if restoredKeyType != keyType {
-		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
-	}
-	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)); statErr != nil {
-		t.Fatalf("expected key file written despite template conflict, got stat err=%v", statErr)
-	}
-	templatePath, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
-	if err != nil {
-		t.Fatalf("GetTemplateFilePathForPaths() error = %v", err)
-	}
-	loaded, err := templatestore.LoadTemplateFromPath(templatePath, cryptotest.Keyring(t, masterKey))
-	if err != nil {
-		t.Fatalf("LoadTemplateFromPath() error = %v", err)
-	}
-	if string(loaded) != string(existingTemplate) {
-		t.Fatalf("existing template changed\n got: %s\nwant: %s", loaded, existingTemplate)
-	}
-}
-
-func TestRestoreKeyActivatesLibraryVisibleCompiledProvider(t *testing.T) {
+func TestRestoreKeyDoesNotActivateLibraryVisibleCompiledProvider(t *testing.T) {
 	dataDirectory = t.TempDir()
 	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
 	backupDir := t.TempDir()
@@ -483,40 +383,8 @@ func TestRestoreKeyActivatesLibraryVisibleCompiledProvider(t *testing.T) {
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if !keyTypeEnabled(keystorePaths(), productIdentityID(), keyType) {
-		t.Fatal("expected restore to activate library-visible compiled provider")
-	}
-}
-
-func TestRestoreKeyRollsBackCompiledProviderActivationOnKeyWriteFailure(t *testing.T) {
-	dataDirectory = t.TempDir()
-	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
-	backupDir := t.TempDir()
-	masterKey := bytes32(0xab)
-	keyType := "rollback-library-provider-v1"
-	bytecode := saltedLogicSigBytecodeForTest()
-	address := logicSigAddressForTestForBytes(t, bytecode)
-
-	registerRestoreLibraryProvider(keyType)
-
-	keyJSON := canonicalDSALSigKeyJSONForApstore(t, keyType, keyType, bytecode)
-	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackup() error = %v", err)
-	}
-
-	destPath := apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)
-	if err := os.MkdirAll(destPath, 0o755); err != nil {
-		t.Fatalf("MkdirAll(destPath) error = %v", err)
-	}
-
-	if _, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase")); err == nil {
-		t.Fatal("restoreKey() error = nil, want key write failure")
-	} else if !strings.Contains(err.Error(), "failed to write key file") {
-		t.Fatalf("restoreKey() error = %v, want write failure", err)
-	}
-
 	if keyTypeEnabled(keystorePaths(), productIdentityID(), keyType) {
-		t.Fatal("expected compiled-provider activation to be rolled back after key write failure")
+		t.Fatal("credential restore changed destination key-type state")
 	}
 }
 
@@ -698,42 +566,6 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	}
 }
 
-func TestRestoreKeyRollsBackDisabledTemplateStateOnKeyWriteFailure(t *testing.T) {
-	dataDirectory = t.TempDir()
-	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
-	backupDir := t.TempDir()
-	paths := keystorePaths()
-	identityID := productIdentityID()
-	masterKey := bytes32(0x91)
-	keyType := "test.rollback-disabled-template.v1"
-	templateYAML := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: test\nfamily: rollback-disabled-template\nversion: 1\ndisplay_name: Rollback Disabled Template\nteal: |\n  #pragma version 8\n  int 1\n")
-	address, keyJSON := testAllowlistBackupBundle(t, keyType, templateYAML)
-
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SaveTemplateForPaths() error = %v", err)
-	}
-	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-	if err := keytypestate.SetState(paths, identityID, keyType, keytypestate.StateDisabled); err != nil {
-		t.Fatalf("SetState() error = %v", err)
-	}
-	destPath := apkeys.AccountKeyFilePath(paths, identityID, address)
-	if err := os.MkdirAll(destPath, 0o755); err != nil {
-		t.Fatalf("MkdirAll(destPath) error = %v", err)
-	}
-	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackup() error = %v", err)
-	}
-
-	if _, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase")); err == nil {
-		t.Fatal("restoreKey() error = nil, want key write failure")
-	} else if !strings.Contains(err.Error(), "failed to write key file") {
-		t.Fatalf("restoreKey() error = %v, want write failure", err)
-	}
-	if !keyTypeDisabled(paths, identityID, keyType) {
-		t.Fatal("expected rollback to restore disabled template state")
-	}
-}
-
 func keyTypeEnabled(paths storepaths.Paths, identityID, keyType string) bool {
 	rec, ok, err := keytypestate.Get(paths, identityID, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
@@ -761,38 +593,6 @@ func writeTemplateStateForApstoreTest(t *testing.T, paths storepaths.Paths, iden
 		State:   state,
 	}); err != nil {
 		t.Fatalf("keytypestate.Put() error = %v", err)
-	}
-}
-
-func TestRestoreKeyRollsBackTemplateInstallOnKeyWriteFailure(t *testing.T) {
-	dataDirectory = t.TempDir()
-	genstoretest.MintFirst(t, keystorePaths(), productIdentityID())
-	backupDir := t.TempDir()
-	masterKey := bytes32(0x90)
-	keyType := "test.rollback-template.v1"
-	templateYAML := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: test\nfamily: rollback-template\nversion: 1\ndisplay_name: Rollback Template\nteal: |\n  #pragma version 8\n  int 1\n")
-	address, keyJSON := testAllowlistBackupBundle(t, keyType, templateYAML)
-
-	destPath := apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)
-	if err := os.MkdirAll(destPath, 0o755); err != nil {
-		t.Fatalf("MkdirAll(destPath) error = %v", err)
-	}
-	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackup() error = %v", err)
-	}
-
-	restoredKeyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase"))
-	if err == nil {
-		t.Fatal("restoreKey() error = nil, want key write failure")
-	}
-	if restoredKeyType != "" {
-		t.Fatalf("restoreKey() keyType = %q, want empty on failure", restoredKeyType)
-	}
-	if !strings.Contains(err.Error(), "failed to write key file") {
-		t.Fatalf("restoreKey() error = %v, want write failure", err)
-	}
-	if templatestore.TemplateExistsForPaths(keystorePaths(), productIdentityID(), keyType, templatestore.TemplateTypeGeneric) {
-		t.Fatal("expected template install to be rolled back after key write failure")
 	}
 }
 

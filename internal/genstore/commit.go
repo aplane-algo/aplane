@@ -47,10 +47,10 @@ type MintRequest struct {
 	// identity.
 	Operation   string
 	OperationID string
-	// SourceRestoreID and ReviewTokenSHA256 tie a restore activation to its
-	// reviewed batch (optional).
-	SourceRestoreID   string
-	ReviewTokenSHA256 string
+	// RestoreArchiveSHA256 and RestoreRollbackEligible are direct-restore
+	// provenance. Recovery-mode repairs are never rollback-eligible.
+	RestoreArchiveSHA256    string
+	RestoreRollbackEligible bool
 	// RollbackSourceGenerationID records a sealed generation whose content
 	// is reconstructed into the new generation. It is distinct from Parent,
 	// which must still be the outgoing CURRENT generation.
@@ -209,8 +209,8 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 		CreatedAtUnix:              req.CreatedAt.Unix(),
 		Operation:                  req.Operation,
 		OperationID:                req.OperationID,
-		SourceRestoreID:            req.SourceRestoreID,
-		ReviewTokenSHA256:          req.ReviewTokenSHA256,
+		RestoreArchiveSHA256:       req.RestoreArchiveSHA256,
+		RestoreRollbackEligible:    req.RestoreRollbackEligible,
 		RollbackSourceGenerationID: req.RollbackSourceGenerationID,
 		Inventory:                  inventory,
 		Complete:                   true,

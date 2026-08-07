@@ -242,7 +242,7 @@ grant accidentally contains the same typo.
 | `identity.unlock` | Unlock signer identity | `identity` | No |
 | `identity.lock` | Lock signer identity | `identity` | No |
 | `identity.backup` | Create a signer-managed encrypted backup archive for the bound identity | `identity` | Yes |
-| `identity.restore` | Preview/recover managed archives and list/review/activate/rollback/purge recovered batches for the bound identity | `identity` | Yes; recovery-mode resolution is allowed while signing remains blocked |
+| `identity.restore` | Preview and directly restore managed credential archives, roll back the latest eligible restore, and reconcile recovery state for the bound identity | `identity` | Yes; recovery-mode repair and resolution are allowed while signing remains blocked |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `identity.decommission` | Decommission identity | `identity` | No |
 | `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
@@ -359,8 +359,8 @@ Enforced callsites:
 - `internal/signerapp/adminserver/handlers.go` gates admin `unlock`, key
   list/details/generate/import/export/delete, key type list/activate/deactivate,
   template list/install/remove, policy view/update, settings view/update,
-  signer-managed backup creation, signer-managed backup list/preview/recover,
-  recovered list/review/activate/rollback/purge,
+  signer-managed backup creation/list, credential restore preview/apply,
+  restore rollback/reconciliation,
   passphrase rotation, signing approval response, token provisioning response,
   and token revoke through `s.authorize`.
 

@@ -156,12 +156,9 @@ Client to Server:
 - `list_backups`
 - `delete_backup`
 - `preview_restore`
-- `recover_backup`
-- `list_recovered`
-- `review_recovered`
-- `activate_recovered`
-- `rollback_recovered`
-- `purge_recovered`
+- `restore_backup`
+- `rollback_restore`
+- `reconcile_store`
 
 Server to Client:
 
@@ -169,12 +166,9 @@ Server to Client:
 - `backups_list`
 - `delete_backup_result`
 - `restore_preview`
-- `recover_backup_result`
-- `recovered_list`
-- `review_recovered_result`
-- `activate_recovered_result`
-- `rollback_recovered_result`
-- `purge_recovered_result`
+- `restore_backup_result`
+- `rollback_restore_result`
+- `reconcile_store_result`
 
 ### Admin and Policy Settings
 
@@ -203,7 +197,7 @@ Server to Client:
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
 - `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the identity's keyring root and format marker and may write the configured passphrase helper
-- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `recovered_files_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, optional `prior_generations`, optional `helper_warning`, optional `root_committed`, optional `rotation_pending`, `code`, `error`; local IPC only, rejects identical current/new passphrases, appends and completes a durable key-term rotation for live encrypted artifacts and integrity sidecars, reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning
+- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, optional `prior_generations`, optional `helper_warning`, optional `root_committed`, optional `rotation_pending`, `code`, `error`; local IPC only, rejects identical current/new passphrases, appends and completes a durable key-term rotation for live encrypted artifacts and integrity sidecars, reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning
 - `status`: `state`, `key_count`
 - `error`: optional `code`, `error`
 - `signer_locked`: `reason`
@@ -273,66 +267,46 @@ mode.
 
 ### Backup and Restore
 
-- `backup`: `export_passphrase`, optional `addresses[]` -> `backup_result`: `success`, optional `archive_path`, `archive_checksum`, `archive_size`, `key_count`, `addresses[]`, `verified`, `skipped_keys`, `code`, `error`; an all-keys backup (no `addresses[]`) may succeed partially: key files whose decrypted payload fails canonical validation are excluded from the archive and reported in the optional `skipped_keys` map (address -> reason), and admin clients must surface these prominently. Explicitly selected addresses fail closed instead of being skipped, and a store where every key fails validation errors rather than producing an empty archive.
-- `list_backups` -> `backups_list`: `backups[]`, optional `code`, `error`; each backup has `path`, `file_name`, optional Unix `created_at`, optional `size`, optional `checksum`, optional `verified`
-- `delete_backup`: `archive_path` -> `delete_backup_result`: `success`, optional `code`, `error`
-- `preview_restore`: `archive_path`, `export_passphrase` -> `restore_preview`: optional resolved `archive_path`, `keys[]`, `errors[]`, `code`, `error`; each key has `address`, optional `key_type`, `already_exists`, `has_template`, `template_type`, `error`
-- `recover_backup`: `archive_path`, optional `addresses[]`, `export_passphrase`
-  -> `recover_backup_result`: `success`, optional `restore_id`,
-  `archive_name`, `archive_checksum`, `entry_count`, `code`, `error`; success
-  publishes one destination-encrypted inactive batch and does not reload
-- `list_recovered` -> `recovered_list`: optional `batches[]`, `code`, `error`;
-  each batch carries restore ID, creation time, archive name/checksum, source
-  role and policy status/digest, and entry count
-- `review_recovered`: `restore_id` -> `review_recovered_result`: `success`,
-  restore/batch state, archive and policy digests, optional
-  `archive_created_at` (Unix seconds; the packaging time recorded in the
-  archive's sealed manifest), destination approval mode,
-  optional unattended-signing warning, factual policy comparison, ordered
-  `security_changes[]`, secondary
-  `changed_paths[]`, optional Boolean
-  `source_user_auto_approve`, optional
-  `source_genesis_hash_mappings[]` (`genesis_hash`, `network`),
-  entries, active conflict fingerprints, opaque
-  `review_token`, optional `unattended_signing_ack_required`, recorded
-  acknowledgement flag, replacement state, `code`, `error`.
-  The policy comparison is informational. It carries no downgrade verdict, and
-  no acknowledgement is derived from it: archive-reported source policy cannot
-  be authenticated by the destination store, so any verdict built on it could
-  be suppressed by the archive.
-  `unattended_signing_ack_required` is derived from verified destination state
-  alone. It is true whenever the destination identity auto-approves unmatched
-  signing requests, whatever the archive reports; absence means a pre-3.2
-  server, and updated clients then fall back to the destination approval mode.
-  The typed `source_*` fields report what the archive recorded. They are
-  present when the source recorded them and absent otherwise; there is no
-  status enum and no unknown-settings list, because the archive's sealed
-  manifest authenticated the values before recovery recorded them.
-  Authentication proves who packaged the claim; the fields still carry no
-  signing, policy, or acknowledgement authority.
-  `policy_downgrade_ack_required` and the `downgrade` member of
-  `security_changes[]` were removed with the downgrade classifier. Clients
-  compiled against an earlier contract ignore their absence.
-- `activate_recovered`: `restore_id`, `review_token`, optional
-  `acknowledge_unattended_signing`, optional `replace_existing` ->
-  `activate_recovered_result`: `success`, restore ID, activated entries,
-  optional operator-facing `warnings[]`, resulting `key_count`, `code`,
-  `error`; warnings include non-fatal bundled-template skips decided against
-  current destination state during activation. The server enforces
-  `acknowledge_unattended_signing` against the pinned review. A deprecated
-  `acknowledge_policy_transition` sent by an older protocol-v3 client is
-  accepted and ignored; protocol v4 drops it entirely.
-- `rollback_recovered`: `restore_id` -> `rollback_recovered_result`: `success`,
-  restore ID, resulting `key_count`, `code`, `error`; refusals before any
-  mutation use `recovered_rollback_refused` (nothing to roll back) or
-  `recovered_rollback_diverged` (the current generation was mutated after
-  activation and no longer matches its at-mint inventory); failures after
-  mutation began use `recovered_rollback_failed` and enter recovery mode
-- `purge_recovered`: `restore_id` -> `purge_recovered_result`: `success`,
-  restore ID, `code`, `error`
-- admin protocol v3 does not dispatch the v2 `restore_backup` mutation
-- restore `export_passphrase` fields are JSON strings on the wire but are parsed into mutable byte buffers at the protocol boundary so server handlers can zero them after use; raw JSON transport buffers are best-effort and may retain bytes until their normal lifetime ends
-
+- `backup`: `export_passphrase`, optional `addresses[]` ->
+  `backup_result`: `success`, optional `archive_path`,
+  `archive_checksum`, `archive_size`, `key_count`, `addresses[]`,
+  `verified`, `code`, `error`. Backup is all-or-nothing; a selected
+  credential that fails canonical validation fails the request.
+- `list_backups` -> `backups_list`: `backups[]`, optional `code`,
+  `error`; each item has path, file name, packaging metadata, checksum, and
+  verification state. This read-only operation is available to authenticated
+  sessions in either unlocked or recovery state so the TUI can select repair
+  material while signing remains blocked.
+- `delete_backup`: `archive_path` -> `delete_backup_result`.
+- `preview_restore`: `archive_path`, sensitive `export_passphrase` ->
+  `restore_preview`: resolved archive path, `keys[]`, `errors[]`, optional
+  `code`, `error`. Each key reports address, key type, destination
+  presence, and validation error. Preview never mutates the store and, like
+  `list_backups`, is available in unlocked or recovery state.
+- `restore_backup`: `archive_path`, optional `addresses[]`, sensitive
+  `export_passphrase`, optional `replace_existing` ->
+  `restore_backup_result`: `success`, operation ID, archive SHA-256,
+  generation ID, `restored[]`, `identical[]`, `conflicts[]`, `key_count`,
+  `code`, `error`. The server validates the whole set, then publishes one
+  `credential-restore` generation.
+- `rollback_restore` -> `rollback_restore_result`: `success`, operation
+  ID, generation ID, key count, `code`, `error`. It applies only to the
+  current clean rollback-eligible `credential-restore` generation; a rollback
+  generation is not eligible for another rollback.
+- `reconcile_store` -> `reconcile_store_result`: `success`, current
+  generation ID, signer state, `code`, `error`. It exits recovery mode only
+  after the visible store validates cleanly.
+- restore passphrases are JSON strings on the wire but enter mutable byte
+  buffers at the protocol boundary so handlers can zero them after use.
+- all restore operations retain the stable authorization action
+  `identity.restore`. List, preview, restore, rollback, and reconciliation are
+  available to an authenticated recovery-mode session so repair material can
+  be inspected, damaged credentials replaced, and the clean generation
+  promoted. A locked session remains rejected with `signer_locked`.
+- protocol v4 removes the pre-release
+  `recover_backup/list_recovered/review_recovered/activate_recovered/`
+  `rollback_recovered/purge_recovered` lifecycle and its review token and
+  acknowledgement fields.
 ### Admin and Policy Settings
 
 - `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`

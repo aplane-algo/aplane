@@ -79,7 +79,6 @@ func (m Model) handleBackupDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc", "enter", " ":
 		m.backup.archivePath = ""
-		m.backup.skippedKeys = nil
 		m.viewState = ViewKeyList
 		return m, nil
 	}

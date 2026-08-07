@@ -425,6 +425,27 @@ sweep of [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) passed;
 `metrics.json` matches the module table and every model-doc status header.
 Nothing required correction in this pass.
 
+**Drift review (2026-08-07, credential-restore simplification working tree).**
+Re-checked the generation and rotation models after replacing the internal
+recovered-batch lifecycle with direct credential restore. The generation
+commit protocol and G1-G5 transition structure did not change: restore still
+uses `genstore.Mint`, seals the outgoing parent before `CURRENT`, treats a
+visible unconfirmed flip as durability-unknown, and reconciles before signing.
+The implementation operation names are now `credential-restore` and
+`credential-restore-rollback`; the model's content-level rollback refusal
+comment was updated from `recovered_rollback_diverged` to
+`restore_rollback_diverged`. Manifest provenance changed from restore/review
+identifiers to authenticated archive SHA-256 without changing modeled commit
+state. Traceability anchors now point to `direct_restore.go`,
+`direct_rollback.go`, and the standalone credential portability tests.
+
+All 17 standard and 11 deep TLC runs match the recorded outcomes and metrics;
+the copied-operator sync check passes and neither metrics file required a
+change. Focused Go coverage now drives direct-restore durability-unknown,
+diverged rollback refusal, recovery reconciliation, and automatic reload
+rollback. The removed recovered-store AEAD/rotation artifacts were outside the
+generation model and no longer appear in the K8 inventory.
+
 **Drift review (2026-07-31, HEAD `bb103a75`).** Re-checked after 123 commits —
 the generation-based storage engine (`613bdf8c`), the keyring cutover that
 retired the raw master key (`6db7c171`, `8f4b488c`, `de530924`), phase 3

@@ -346,18 +346,15 @@ bin/apstore backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /path/to/backups
 # Backup specific key
 bin/apstore backup create address ABC123...
 
-# Import and restore keys. `restore apply` is recover -> review -> activate;
-# it prints the security review and asks for the required acknowledgements.
-# Import prompts for the export passphrase and validates encrypted key payloads.
-# Bundled template validation may require the TEAL compile algod endpoint.
+# Import and restore credentials. Import prompts for the export passphrase and
+# validates the archive before publishing it in managed backup storage.
+# Restore validates the selected credentials and commits them atomically under
+# the destination's current policy and configuration.
 bin/apstore backup import /path/to/aplane-backup.tar.gz
 bin/apstore restore preview aplane-backup.tar.gz
 bin/apstore restore apply aplane-backup.tar.gz
-bin/apstore restore list
-bin/apstore restore review <restore-id>
-bin/apstore restore activate <restore-id>
-bin/apstore restore rollback <restore-id>
-bin/apstore restore purge <restore-id>
+bin/apstore restore rollback
+bin/apstore restore reconcile
 
 # Verify backup (accepts an external archive path or backup directory)
 bin/apstore verify /path/to/aplane-backup.tar.gz

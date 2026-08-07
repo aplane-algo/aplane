@@ -123,15 +123,14 @@ standalone `apstore` CLI tool on the signer host:
 
 ```bash
 ./apstore -d /path/to/signer-data backup create all
+./apstore -d /path/to/signer-data backup list
 ./apstore -d /path/to/signer-data backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
 ./apstore -d /path/to/signer-data backup import /mnt/usb/aplane-backup.tar.gz
 ./apstore -d /path/to/signer-data restore preview aplane-backup.tar.gz
 ./apstore -d /path/to/signer-data restore apply aplane-backup.tar.gz
-./apstore -d /path/to/signer-data restore list
-./apstore -d /path/to/signer-data restore review <restore-id>
-./apstore -d /path/to/signer-data restore activate <restore-id>
-./apstore -d /path/to/signer-data restore rollback <restore-id>
-./apstore -d /path/to/signer-data verify /mnt/usb/aplane-backup.tar.gz --deep
+./apstore -d /path/to/signer-data restore rollback
+./apstore -d /path/to/signer-data restore reconcile
+./apstore -d /path/to/signer-data verify /mnt/usb/aplane-backup.tar.gz
 ```
 
 For a live signer-managed backup, unlock the signer, open the admin/settings
@@ -143,18 +142,14 @@ data root.
 For a live signer-managed restore, unlock the signer, open the admin/settings
 panel, choose `Restore backup` or press `o`, select a managed archive, enter
 the archive export passphrase, preview the contained keys, select keys to
-restore, then tab to **RECOVER** and press Enter. Enter while navigating the
-key list does nothing, so a recovery only starts from the button. Next review
-the destination approval mode and the source/destination
-policy differences. Those differences are informational: archived source
-policy cannot be authenticated by the destination, so it produces no verdict
-and requires no acknowledgement. An auto-approving destination requires the
-unattended-signing acknowledgement, derived from verified destination state
-alone. `apadmin` first creates an inactive recovered batch and writes active
-credentials only during reviewed activation.
+restore, then confirm the direct restore. Enable replacement only for listed
+destination conflicts you intend to replace. The complete archive is
+authenticated and validated before one generation commits the credentials;
+there is no recovered-batch or source-policy review step. Restored credentials
+use the destination's current policy and configuration.
 
 `apadmin` does not verify backups or restore arbitrary external paths. Use
-`apstore` for verification, managed recovery lifecycle commands, and the
+`apstore` for verification, direct restore/rollback/reconciliation, and the
 separate absent-store `rebuild` rescue path.
 
 See `apstore --help` for more options.

@@ -4,15 +4,11 @@
 package backupadmin
 
 import (
-	"maps"
-	"sort"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
-	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -27,8 +23,7 @@ type Deps interface {
 }
 
 type Service struct {
-	Deps           Deps
-	activationHook func(activationPoint) error
+	Deps Deps
 }
 
 func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
@@ -41,13 +36,6 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 	var result *backup.ArchiveResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-			sourceSettings := backup.SourceSettingsSnapshot{
-				GenesisHashMappings: s.Deps.GenesisHashMappings(),
-			}
-			if ir.NodeRole() == noderole.RoleSigner {
-				userAutoApprove := ir.Config().UserAutoApprove()
-				sourceSettings.UserAutoApprove = &userAutoApprove
-			}
 			var backupErr error
 			result, backupErr = backup.CreateKeysArchive(backup.CreateKeysArchiveRequest{
 				Paths:            s.Deps.KeyPaths(),
@@ -56,7 +44,6 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 				Addresses:        req.Addresses,
 				Keyring:          masterKey,
 				ExportPassphrase: passphraseBytes,
-				SourceSettings:   sourceSettings,
 			})
 			return backupErr
 		})
@@ -70,9 +57,6 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 	}
 
 	s.Deps.Logf("created managed backup via IPC: %s", result.ArchivePath)
-	for _, address := range sortedKeys(result.Skipped) {
-		s.Deps.Logf("WARNING: backup skipped invalid key %s: %s", address, result.Skipped[address])
-	}
 	return adminproto.BackupIdentityResult{
 		Success:         true,
 		ArchivePath:     result.ArchivePath,
@@ -81,17 +65,7 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 		KeyCount:        result.KeyCount,
 		Addresses:       append([]string(nil), result.Addresses...),
 		Verified:        result.Verified,
-		SkippedKeys:     maps.Clone(result.Skipped),
 	}
-}
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func managedBackupTimestamp(t time.Time) string {
@@ -157,146 +131,24 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 
 	preview, err := backup.PreviewRestoreWithNodeRole(s.Deps.KeyPaths(), ir.ID(), archivePath, passphraseBytes, ir.NodeRole())
 	if err != nil {
-		limiter.RecordFailure(ir.ID(), archivePath)
+		if backup.ArchiveAuthenticated(err) {
+			limiter.RecordSuccess(ir.ID(), archivePath)
+		} else {
+			limiter.RecordFailure(ir.ID(), archivePath)
+		}
 		return adminproto.RestorePreviewResult{
 			Code:  protocol.ResultCodeRestorePreviewFailed,
 			Error: err.Error(),
 		}
 	}
-	if len(preview.Errors) > 0 {
-		limiter.RecordFailure(ir.ID(), archivePath)
-	} else {
-		limiter.RecordSuccess(ir.ID(), archivePath)
-	}
+	// Per-credential validation errors occur after manifest authentication;
+	// they are not failed export-passphrase guesses.
+	limiter.RecordSuccess(ir.ID(), archivePath)
 	return adminproto.RestorePreviewResult{
 		ArchivePath: preview.ArchivePath,
 		Keys:        projectRestoreKeyInfos(preview.Keys),
 		Errors:      projectRestoreErrors(preview.Errors),
 	}
-}
-
-// RecoverBackup publishes selected archive entries as one inactive batch. It
-// deliberately does not reload the identity runtime.
-func (s Service) RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBackupRequest) adminproto.RecoverBackupResult {
-	passphraseBytes := req.ExportPassphrase
-	defer crypto.ZeroBytes(passphraseBytes)
-
-	archivePath, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), req.ArchivePath)
-	if err != nil {
-		return adminproto.RecoverBackupResult{
-			Code:  protocol.ResultCodeRecoverBackupFailed,
-			Error: err.Error(),
-		}
-	}
-	limiter := s.Deps.RestoreLimiter()
-	if retryAfter := limiter.RetryAfter(ir.ID(), archivePath); retryAfter > 0 {
-		return adminproto.RecoverBackupResult{
-			Code:  protocol.ResultCodeRestoreRateLimited,
-			Error: RestoreRateLimitedError(retryAfter),
-		}
-	}
-
-	var batch *recovered.Batch
-	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-			var recoverErr error
-			batch, recoverErr = backup.RecoverManagedBackup(
-				s.Deps.KeyPaths(),
-				ir.ID(),
-				archivePath,
-				req.Addresses,
-				masterKey,
-				passphraseBytes,
-				ir.NodeRole(),
-			)
-			return recoverErr
-		})
-	})
-	if err != nil {
-		limiter.RecordFailure(ir.ID(), archivePath)
-		return adminproto.RecoverBackupResult{
-			Code:  protocol.ResultCodeRecoverBackupFailed,
-			Error: err.Error(),
-		}
-	}
-	crypto.ZeroBytes(batch.SourcePolicyYAML)
-	limiter.RecordSuccess(ir.ID(), archivePath)
-	s.Deps.Logf("recovered managed backup as inactive batch: %s", batch.RestoreID)
-	return adminproto.RecoverBackupResult{
-		Success:         true,
-		RestoreID:       batch.RestoreID,
-		ArchiveName:     batch.ArchiveName,
-		ArchiveChecksum: batch.ArchiveSHA256,
-		EntryCount:      len(batch.Entries),
-	}
-}
-
-// ListRecovered returns inactive recovered-batch inventory without reloading
-// or mutating active runtime state.
-func (s Service) ListRecovered(ir *identity.Runtime) adminproto.ListRecoveredResult {
-	var batches []recovered.BatchInfo
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-			var listErr error
-			batches, listErr = recovered.List(s.Deps.KeyPaths(), ir.ID(), masterKey)
-			return listErr
-		})
-	})
-	if err != nil {
-		return adminproto.ListRecoveredResult{
-			Code:  protocol.ResultCodeListRecoveredFailed,
-			Error: err.Error(),
-		}
-	}
-	out := make([]adminproto.RecoveredBatchInfo, len(batches))
-	for i, batch := range batches {
-		out[i] = adminproto.RecoveredBatchInfo{
-			RestoreID:          batch.RestoreID,
-			CreatedAt:          batch.CreatedAt.Unix(),
-			ArchiveName:        batch.ArchiveName,
-			ArchiveChecksum:    batch.ArchiveSHA256,
-			SourceNodeRole:     batch.SourceNodeRole,
-			SourcePolicyStatus: string(batch.SourcePolicyStatus),
-			SourcePolicySHA256: batch.SourcePolicySHA256,
-			EntryCount:         batch.EntryCount,
-		}
-	}
-	return adminproto.ListRecoveredResult{Batches: out}
-}
-
-// PurgeRecovered deletes one inactive batch and refuses to erase durable
-// reconciliation state for an incomplete activation.
-func (s Service) PurgeRecovered(
-	ir *identity.Runtime,
-	req adminproto.PurgeRecoveredRequest,
-) adminproto.PurgeRecoveredResult {
-	result := adminproto.PurgeRecoveredResult{RestoreID: req.RestoreID}
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-			if err := recovered.ValidateRestoreID(req.RestoreID); err != nil {
-				return err
-			}
-			batch, err := recovered.LoadBatch(
-				s.Deps.KeyPaths(),
-				ir.ID(),
-				req.RestoreID,
-				masterKey,
-			)
-			if err != nil {
-				return err
-			}
-			crypto.ZeroBytes(batch.SourcePolicyYAML)
-			return recovered.RemoveBatch(s.Deps.KeyPaths(), ir.ID(), req.RestoreID)
-		})
-	})
-	if err != nil {
-		result.Code = protocol.ResultCodePurgeRecoveredFailed
-		result.Error = err.Error()
-		return result
-	}
-	result.Success = true
-	s.Deps.Logf("purged inactive recovered backup batch: %s", req.RestoreID)
-	return result
 }
 
 func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreKeyInfo {
@@ -306,8 +158,6 @@ func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreK
 			Address:       item.Address,
 			KeyType:       item.KeyType,
 			AlreadyExists: item.AlreadyExists,
-			HasTemplate:   item.HasTemplate,
-			TemplateType:  item.TemplateType,
 			Error:         item.Error,
 		}
 	}

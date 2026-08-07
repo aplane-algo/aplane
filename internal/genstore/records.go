@@ -32,6 +32,13 @@ const (
 
 	generationSealMACDomain = "aplane.generation-seal-mac.v1"
 	inventoryDigestDomain   = "aplane.generation-inventory-digest.v1"
+
+	// OperationCredentialRestore identifies a generation produced by a
+	// direct credential restore. Only this exact operation may be the source
+	// of an explicit restore rollback; rollback mints deliberately use a
+	// distinct operation name.
+	OperationCredentialRestore         = "credential-restore"
+	OperationCredentialRestoreRollback = "credential-restore-rollback"
 )
 
 // generationNamespaces are the directories a generation carries. Order is
@@ -60,14 +67,16 @@ type Manifest struct {
 	ParentID      string `json:"parent_id,omitempty"`
 	CreatedAtUnix int64  `json:"created_at"`
 	// Operation is the minting operation type (e.g. "layout-migration",
-	// "restore-activation"); OperationID is its stable identifier for
+	// "credential-restore"); OperationID is its stable identifier for
 	// post-crash idempotency and audit correlation.
 	Operation   string `json:"operation"`
 	OperationID string `json:"operation_id"`
-	// SourceRestoreID and ReviewTokenSHA256 tie a restore activation to its
-	// reviewed batch.
-	SourceRestoreID   string `json:"source_restore_id,omitempty"`
-	ReviewTokenSHA256 string `json:"review_token_sha256,omitempty"`
+	// RestoreArchiveSHA256 authenticates the portable archive that supplied
+	// a direct credential restore. RestoreRollbackEligible is false for a
+	// repair begun from recovery mode, whose damaged parent must not later be
+	// promoted back into service by an explicit rollback.
+	RestoreArchiveSHA256    string `json:"restore_archive_sha256,omitempty"`
+	RestoreRollbackEligible bool   `json:"restore_rollback_eligible,omitempty"`
 	// RollbackSourceGenerationID names the sealed generation whose content
 	// was reconstructed into this mint. ParentID remains the outgoing
 	// current generation, preserving commit lineage; the rollback source is
@@ -474,6 +483,15 @@ func validateManifest(manifest *Manifest, generationID string) error {
 	}
 	if manifest.CreatedAtUnix <= 0 || manifest.Operation == "" || manifest.OperationID == "" {
 		return fmt.Errorf("generation manifest metadata is incomplete")
+	}
+	if manifest.RestoreArchiveSHA256 != "" {
+		if err := validateCanonicalSHA256(manifest.RestoreArchiveSHA256); err != nil {
+			return fmt.Errorf("generation manifest restore_archive_sha256: %w", err)
+		}
+	}
+	if manifest.RestoreRollbackEligible &&
+		(manifest.Operation != OperationCredentialRestore || manifest.ParentID == "" || manifest.RestoreArchiveSHA256 == "") {
+		return fmt.Errorf("generation manifest has invalid restore rollback eligibility")
 	}
 	return validateInventory(manifest.Inventory)
 }

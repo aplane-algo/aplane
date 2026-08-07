@@ -48,7 +48,7 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | Keyring-confined integrity operations — policy, node-role, and generation-seal callers receive or verify MACs without receiving derived key bytes | `internal/crypto/policy_integrity.go` |
 | Generation seal v2 — pins the exact manifest bytes, records the signing term, and authenticates every security-bearing seal field with a domain-separated MAC | `internal/genstore/records.go` |
 | Policy and node-role sidecar v2 — records the explicit integrity term and rejects unknown fields, trailing JSON, non-canonical MACs, and unauthorized terms | `internal/policy/integrity.go`, `internal/noderole/integrity.go` |
-| K8 inventory foundation — canonical artifact kinds and root-relative paths across generations, recovered batches, deleted archives, integrity documents, and rotation records; exact term envelopes are opened under their logical context before being inventoried | `internal/rotationinventory` |
+| K8 inventory foundation — canonical artifact kinds and root-relative paths across generations, deleted archives, integrity documents, and rotation records; exact term envelopes are opened under their logical context before being inventoried | `internal/rotationinventory` |
 | Cutover snapshot foundation — strict `aplane.rotation-snapshot.v1` body, recursive-snapshot exclusion, canonical rollback-authority digest, 16 MiB bounded durable storage, and exact encrypted-file root-reference verification | `internal/rotationinventory/snapshot.go`, `internal/crypto/keyring.go` |
 | Historical generation foundation — generation inventory entries authenticate each member's term, exact pre-retirement seal bytes can be root-anchored, and retired-term seals and members have a separate anchor-gated verification/open path | `internal/genstore`, `internal/crypto/keyring.go`, `internal/crypto/policy_integrity.go` |
 | Divergence-baseline foundation — strict `aplane.rotation-baseline.v1` codec, bounded current-term durable storage, manifest/prior-baseline cutover decision, and fail-closed preflight reconciliation | `internal/rotationinventory/baseline.go` |
@@ -363,7 +363,7 @@ every plaintext file to carry an encryption term:
 
 | Classification | Durable classes | Phase-3 rule |
 |---|---|---|
-| Term-encrypted | active `.key` and `.sen` credentials; installed `.template` files; published recovered batch metadata and entries; deleted key, sentry-credential, and template archives; rotation snapshot and baseline | Envelope carries a term and the class-specific logical context. Mutable and inactive store consumers, including `deleted/`, are snapshot-pinned and rewrapped onto the target term. The snapshot itself is a new target-term record pinned by the root and is not recursively inventoried. A valid matching baseline that exists before cutover is pinned as an input; the baseline written during completion is a target-term output and is not recursively inventoried as another input. |
+| Term-encrypted | active `.key` and `.sen` credentials; installed `.template` files; deleted key, sentry-credential, and template archives; rotation snapshot and baseline | Envelope carries a term and the class-specific logical context. Mutable and inactive store consumers, including `deleted/`, are snapshot-pinned and rewrapped onto the target term. The snapshot itself is a new target-term record pinned by the root and is not recursively inventoried. A valid matching baseline that exists before cutover is pinned as an input; the baseline written during completion is a target-term output and is not recursively inventoried as another input. |
 | Plaintext plus term integrity | `policy.yaml` and root `node.yaml`, through their identity-local HMAC sidecars | Sidecar v2 carries an explicit integrity term. Snapshot pins the exact document input; completion requires a target-term sidecar. |
 | Plaintext generation member | key-type state records, witness public metadata, generation manifest, and retained-generation seal | No per-file encryption term is invented. Namespace members are covered by the seal inventory; `manifest.json` is covered by the seal's manifest digest; the retained seal MAC, historical anchor, and exact-byte historical open provide the term authority described above. A seal beside `CURRENT` is precommit crash residue: its structure is tolerated but its content is never parsed or inventoried by rotation. |
 | Independent or excluded | `keyring.enc` and `.keystore`; standalone-passphrase backups; audit/config/unlock/token/SSH state; plaintext template library; caches; unpublished staging residue | Not opened as a term-encrypted store object. The KEK-sealed root and static marker keep their own versioned contract; other existing independent validation applies. Staging residue is reconciled or rejected before cutover, never promoted by rewrap. |
@@ -387,14 +387,14 @@ become unreadable only when a term retires, long after the causal write.
 entry fields (`path`, `kind`, exact byte `size`/`sha256`, and term-envelope
 context or integrity term where applicable). Its settled-store scanner:
 
-- inventories current and retained generation members, recovered batches,
-  deleted credential/template archives, policy and node-role document pairs,
+- inventories current and retained generation members, deleted
+  credential/template archives, policy and node-role document pairs,
   retained-generation seals, and optional rotation records; a seal beside
   `CURRENT` remains structurally checked by generation validation but is
   excluded as non-authoritative precommit residue;
 - rejects unknown in-scope files and unreconciled generation staging residue;
 - opens the exact encrypted buffer it hashes under the context derived from
-  the canonical filename or recovered-batch metadata;
+  the canonical filename;
 - retains the current manifest and current generation inventory derived from
   those same exact buffers; rollback clean/diverged decisions and completion
   baselines consume these retained values and never reread mutable paths;
@@ -433,8 +433,7 @@ Multi-term acceptance does not authorize every resident term: ordinary open
 and integrity verification apply the authority set in item 4.
 
 `TestScanClassifiesEveryK8DurableClass` creates every applicable class,
-including generation copies, deleted moves, and recovered staging
-publication. Dedicated negative controls cover selector/class substitution,
+including generation copies and deleted moves. Dedicated negative controls cover selector/class substitution,
 unauthorized sidecar terms, mutated sealed plaintext members, and unknown
 in-scope files.
 

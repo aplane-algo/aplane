@@ -28,7 +28,7 @@ type Deps interface {
 type AuditLogger interface {
 	LogStoreInitialized(identityID, metadataDir string)
 	LogStoreInitializeFailed(identityID, reason string)
-	LogPassphraseChanged(identityID string, keysMigrated, templatesMigrated, recoveredFilesMigrated int)
+	LogPassphraseChanged(identityID string, keysMigrated, templatesMigrated int)
 	LogPassphraseChangeFailed(identityID, reason string)
 }
 
@@ -186,7 +186,6 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 		return adminproto.ChangeStorePassphraseResult{
 			KeysMigrated:             rotation.KeysMigrated,
 			TemplatesMigrated:        rotation.TemplatesMigrated,
-			RecoveredFilesMigrated:   rotation.RecoveredFilesMigrated,
 			PolicySidecarsMigrated:   rotation.PolicySidecarsMigrated,
 			NodeRoleSidecarsMigrated: rotation.NodeRoleSidecarsMigrated,
 			PriorGenerations:         rotation.PriorGenerations,
@@ -201,13 +200,11 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 		ir.ID(),
 		rotation.KeysMigrated,
 		rotation.TemplatesMigrated,
-		rotation.RecoveredFilesMigrated,
 	)
 	return adminproto.ChangeStorePassphraseResult{
 		Success:                  true,
 		KeysMigrated:             rotation.KeysMigrated,
 		TemplatesMigrated:        rotation.TemplatesMigrated,
-		RecoveredFilesMigrated:   rotation.RecoveredFilesMigrated,
 		PolicySidecarsMigrated:   rotation.PolicySidecarsMigrated,
 		NodeRoleSidecarsMigrated: rotation.NodeRoleSidecarsMigrated,
 		PriorGenerations:         rotation.PriorGenerations,
@@ -239,9 +236,9 @@ func (s Service) logStoreInitializeFailed(identityID, reason string) {
 	}
 }
 
-func (s Service) logPassphraseChanged(identityID string, keysMigrated, templatesMigrated, recoveredFilesMigrated int) {
+func (s Service) logPassphraseChanged(identityID string, keysMigrated, templatesMigrated int) {
 	if s.AuditLog != nil {
-		s.AuditLog.LogPassphraseChanged(identityID, keysMigrated, templatesMigrated, recoveredFilesMigrated)
+		s.AuditLog.LogPassphraseChanged(identityID, keysMigrated, templatesMigrated)
 	}
 }
 

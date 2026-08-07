@@ -185,7 +185,7 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 }
 
 func (s *Session) HandleListBackups(requestID string) {
-	ir := s.requireUnlockedRuntime(requestID)
+	ir := s.requireRecoveryAdminRuntime(requestID)
 	if ir == nil {
 		return
 	}
@@ -242,7 +242,7 @@ func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphras
 }
 
 func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
 	if ir == nil {
 		return
 	}
@@ -276,8 +276,8 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 	_ = s.WriteJSON(ProtocolRestorePreviewMessage(msg.ID, result))
 }
 
-func (s *Session) HandleRecoverBackup(msg *protocol.RecoverBackupMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
+func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
 	if ir == nil {
 		return
 	}
@@ -288,28 +288,71 @@ func (s *Session) HandleRecoverBackup(msg *protocol.RecoverBackupMessage) {
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
+	audit, ok := s.audit.(interface {
+		LogCredentialRestoreIntentDurableContext(SessionContext, string, string, bool) error
+	})
+	if !ok {
+		_ = s.WriteJSON(ProtocolRestoreBackupResultMessage(msg.ID, adminproto.RestoreBackupResult{
+			OperationID: msg.ID,
+			Code:        protocol.ResultCodeRestoreAuditFailed,
+			Error:       "restore aborted: durable restore-intent audit is unavailable",
+		}))
+		msg.ExportPassphrase.Zero()
+		return
+	}
+	if err := audit.LogCredentialRestoreIntentDurableContext(
+		s.SessionContext(), msg.ID, msg.ArchivePath, msg.ReplaceExisting,
+	); err != nil {
+		_ = s.WriteJSON(ProtocolRestoreBackupResultMessage(msg.ID, adminproto.RestoreBackupResult{
+			OperationID: msg.ID,
+			Code:        protocol.ResultCodeRestoreAuditFailed,
+			Error:       fmt.Sprintf("restore aborted: durable restore-intent audit failed: %v", err),
+		}))
+		msg.ExportPassphrase.Zero()
+		return
+	}
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
 	defer msg.ExportPassphrase.Zero()
-	result := s.backupServices.RecoverBackup(ir, adminproto.RecoverBackupRequest{
+	result := s.backupServices.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+		OperationID:      msg.ID,
 		ArchivePath:      msg.ArchivePath,
 		Addresses:        append([]string(nil), msg.Addresses...),
 		ExportPassphrase: exportPassphrase,
+		ReplaceExisting:  msg.ReplaceExisting,
 	})
 	if audit, ok := s.audit.(interface {
-		LogBackupRecoveredContext(SessionContext, adminproto.RecoverBackupResult)
-		LogBackupRecoveryFailedContext(SessionContext, string, string)
+		LogCredentialRestoreContext(SessionContext, adminproto.RestoreBackupResult)
 	}); ok {
-		if result.Success {
-			audit.LogBackupRecoveredContext(s.SessionContext(), result)
-		} else {
-			audit.LogBackupRecoveryFailedContext(s.SessionContext(), result.RestoreID, result.Error)
-		}
+		audit.LogCredentialRestoreContext(s.SessionContext(), result)
 	}
-	_ = s.WriteJSON(ProtocolRecoverBackupResultMessage(msg.ID, result))
+	_ = s.WriteJSON(ProtocolRestoreBackupResultMessage(msg.ID, result))
 }
 
-func (s *Session) HandleListRecovered(requestID string) {
+func (s *Session) HandleRollbackRestore(msg *protocol.RollbackRestoreMessage) {
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	result := s.backupServices.RollbackRestore(ir, adminproto.RollbackRestoreRequest{
+		OperationID: msg.ID,
+	})
+	if audit, ok := s.audit.(interface {
+		LogCredentialRestoreRollbackContext(SessionContext, adminproto.RollbackRestoreResult)
+	}); ok {
+		audit.LogCredentialRestoreRollbackContext(s.SessionContext(), result)
+	}
+	_ = s.WriteJSON(ProtocolRollbackRestoreResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleReconcileStore(requestID string) {
 	ir := s.requireRecoveryAdminRuntime(requestID)
 	if ir == nil {
 		return
@@ -321,119 +364,7 @@ func (s *Session) HandleListRecovered(requestID string) {
 		_ = s.SendError(requestID, "", "backup service unavailable")
 		return
 	}
-	_ = s.WriteJSON(ProtocolRecoveredListMessage(requestID, s.backupServices.ListRecovered(ir)))
-}
-
-func (s *Session) HandleReviewRecovered(msg *protocol.ReviewRecoveredMessage) {
-	ir := s.requireRecoveryAdminRuntime(msg.ID)
-	if ir == nil {
-		return
-	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
-		return
-	}
-	result := s.backupServices.ReviewRecovered(ir, msg.RestoreID)
-	_ = s.WriteJSON(ProtocolReviewRecoveredResultMessage(msg.ID, result))
-}
-
-func (s *Session) HandleActivateRecovered(msg *protocol.ActivateRecoveredMessage) {
-	ir := s.requireRecoveryAdminRuntime(msg.ID)
-	if ir == nil {
-		return
-	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
-		return
-	}
-	switch audit := s.audit.(type) {
-	case interface {
-		LogBackupActivationIntentDurableContext(SessionContext, string, bool) error
-	}:
-		// The durable intent record is a precondition: no activation marker
-		// and no active-store write may exist without it (ARCH_CONTRACTS).
-		if err := audit.LogBackupActivationIntentDurableContext(s.SessionContext(), msg.RestoreID, msg.ReplaceExisting); err != nil {
-			_ = s.WriteJSON(ProtocolActivateRecoveredResultMessage(msg.ID, adminproto.ActivateRecoveredResult{
-				RestoreID: msg.RestoreID,
-				Code:      protocol.ResultCodeActivationAuditFailed,
-				Error:     fmt.Sprintf("activation aborted: durable audit of activation intent failed: %v", err),
-			}))
-			return
-		}
-	case interface {
-		LogBackupActivationIntentContext(SessionContext, string, bool)
-	}:
-		audit.LogBackupActivationIntentContext(s.SessionContext(), msg.RestoreID, msg.ReplaceExisting)
-	}
-	result := s.backupServices.ActivateRecovered(ir, adminproto.ActivateRecoveredRequest{
-		RestoreID:                    msg.RestoreID,
-		ReviewToken:                  msg.ReviewToken,
-		AcknowledgeUnattendedSigning: msg.AcknowledgeUnattendedSigning,
-		ReplaceExisting:              msg.ReplaceExisting,
-	})
-	if audit, ok := s.audit.(interface {
-		LogBackupActivatedContext(SessionContext, adminproto.ActivateRecoveredResult)
-		LogBackupActivationFailedContext(SessionContext, adminproto.ActivateRecoveredResult)
-	}); ok {
-		if result.Success {
-			audit.LogBackupActivatedContext(s.SessionContext(), result)
-		} else {
-			audit.LogBackupActivationFailedContext(s.SessionContext(), result)
-		}
-	}
-	_ = s.WriteJSON(ProtocolActivateRecoveredResultMessage(msg.ID, result))
-}
-
-func (s *Session) HandleRollbackRecovered(msg *protocol.RollbackRecoveredMessage) {
-	ir := s.requireRecoveryAdminRuntime(msg.ID)
-	if ir == nil {
-		return
-	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
-		return
-	}
-	result := s.backupServices.RollbackRecovered(ir, adminproto.RollbackRecoveredRequest{
-		RestoreID: msg.RestoreID,
-	})
-	if audit, ok := s.audit.(interface {
-		LogBackupActivationRolledBackContext(SessionContext, adminproto.RollbackRecoveredResult)
-	}); ok {
-		audit.LogBackupActivationRolledBackContext(s.SessionContext(), result)
-	}
-	_ = s.WriteJSON(ProtocolRollbackRecoveredResultMessage(msg.ID, result))
-}
-
-func (s *Session) HandlePurgeRecovered(msg *protocol.PurgeRecoveredMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
-		return
-	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
-		return
-	}
-	result := s.backupServices.PurgeRecovered(ir, adminproto.PurgeRecoveredRequest{
-		RestoreID: msg.RestoreID,
-	})
-	if audit, ok := s.audit.(interface {
-		LogBackupRecoveryPurgedContext(SessionContext, adminproto.PurgeRecoveredResult)
-	}); ok {
-		audit.LogBackupRecoveryPurgedContext(s.SessionContext(), result)
-	}
-	_ = s.WriteJSON(ProtocolPurgeRecoveredResultMessage(msg.ID, result))
+	_ = s.WriteJSON(ProtocolReconcileStoreResultMessage(requestID, s.backupServices.ReconcileStore(ir)))
 }
 
 func (s *Session) HandleListKeys(requestID string) {

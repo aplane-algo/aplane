@@ -884,47 +884,16 @@ after the next successful reload, unlock, or restart.
 
 ## Backup and Restore
 
-Managed backups include a policy snapshot:
+Credential backups deliberately contain no policy snapshot, approval setting,
+network mapping, or other operational configuration. Restore preserves managed
+credential authority and installs it under the destination identity's current
+policy and configuration. The operator owns that policy decision.
 
-```text
-policy/policy.yaml
-policy/policy.yaml.hmac
-```
-
-The backup path verifies the live policy before copying that snapshot. Recovery
-records the archived YAML and digest as source material but cannot verify the
-source HMAC with the destination term key. Review compares the parseable
-source projection with the current verified destination policy, foregrounding
-hard rejects, ceilings, review requirements, routing restrictions, and the
-known effective destination `user_auto_approve` mode. It reports a factual
-identical/different/unavailable result and assigns no widening or safety
-verdict. The comparison is informational: the destination cannot authenticate
-archived source policy, so a verdict derived from it could be suppressed by
-crafting or degrading the archive. The policy difference
-section contains only actual source/destination policy changes.
-Source-settings metadata is not rendered as a standalone review notification.
-None of this source context is a policy verdict or authorization input.
-
-Recovery does not make keys signable. Activation is pinned to the destination
-policy digest and approval mode by the review token. Policy differences require no
-acknowledgement. It requires an unattended-signing acknowledgement whenever
-the destination identity auto-approves unmatched signing requests, derived
-from verified destination state alone and unaffected by what the archive
-reports. A policy or approval-mode change invalidates the
-token and forces a new review. The token pins the archive digest, which covers
-the source context the archive reported. Source settings remain provenance and
-cannot change destination signing behavior.
-
-No restore path installs policy files automatically: `apadmin` and
-`apstore restore apply` activate only recovered credential/key-type state after
-review.
-
-The archived sidecars are source-store provenance material, not destination
-sidecars. If an operator deliberately restores archived policy YAML, the
-restored YAML must be reviewed, installed explicitly while the destination
-store is not being mutated by the signer, re-signed on the destination store
-with `apstore policy sign`, and then loaded by a signer reload, unlock, or
-restart. Existing destination policy files must not be overwritten implicitly.
+Restore therefore performs no source/destination policy comparison and does
+not use source-policy review tokens or unattended-signing acknowledgements.
+This matches bulk credential import: neither operation changes destination
+policy, and both require the existing admin authorization action
+`identity.restore`. Policy migration, if ever offered, is a separate feature.
 
 ## Audit and Observability
 

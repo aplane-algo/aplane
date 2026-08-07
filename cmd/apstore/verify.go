@@ -55,7 +55,10 @@ func verifyDeep(backupPath string) error {
 	if report.FailedFiles == 0 {
 		logInfof("all keys valid and decryptable")
 	} else {
-		logWarnf("%d file(s) failed validation", report.FailedFiles)
+		return codedError{
+			code:    "verification_failed",
+			message: fmt.Sprintf("%d credential file(s) failed validation", report.FailedFiles),
+		}
 	}
 
 	return nil

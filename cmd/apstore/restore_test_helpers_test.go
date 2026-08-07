@@ -19,7 +19,3 @@ func restoreKey(keysDir, address string, kr *crypto.Keyring, exportPassphrase []
 func restoreKeyMetadata(keyJSON []byte) (keyType string, address string, hasLogicSigBytecode bool, err error) {
 	return backup.RestoreKeyMetadata(keyJSON)
 }
-
-func restoreTemplate(templateYAML []byte, keyType, tmplType string, kr *crypto.Keyring) error {
-	return restoreContextForTest().RestoreTemplate(templateYAML, keyType, tmplType, kr)
-}

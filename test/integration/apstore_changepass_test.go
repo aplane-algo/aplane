@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -36,6 +37,35 @@ func TestApstoreChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
 		t.Fatalf("failed to start signer before changepass: %v", err)
+	}
+	var (
+		localnet        *harness.TestnetConfig
+		rotationAddress string
+	)
+	if harness.IntegrationNetwork() == harness.IntegrationNetworkLocalnet {
+		var networkErr error
+		localnet, networkErr = harness.NewTestnetConfig()
+		if networkErr != nil {
+			_ = signerd.Stop()
+			t.Fatalf("connect to LocalNet for rotation acceptance: %v", networkErr)
+		}
+		beforeToken := readSignerToken(t, signerd)
+		beforeClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), beforeToken)
+		generated, generateErr := beforeClient.AdminGenerate("ed25519", nil)
+		if generateErr != nil {
+			_ = signerd.Stop()
+			t.Fatalf("generate rotation acceptance key: %v", generateErr)
+		}
+		rotationAddress = generated.Address
+		funder, funderErr := harness.NewFundTestAccount(localnet.Client)
+		if funderErr != nil {
+			_ = signerd.Stop()
+			t.Fatalf("create LocalNet rotation acceptance funder: %v", funderErr)
+		}
+		if fundErr := funder.FundMicroAlgosAndWait(rotationAddress, 300_000); fundErr != nil {
+			_ = signerd.Stop()
+			t.Fatalf("fund rotation acceptance key: %v", fundErr)
+		}
 	}
 	output, err := apstore.RunWithInput(currentPassphrase+"\n"+newPassphrase+"\n"+newPassphrase+"\ny\n", "changepass")
 	if err != nil {
@@ -73,6 +103,33 @@ func TestApstoreChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 	}
 	if keys.Locked {
 		t.Fatal("signer started locked; expected passphrase command auto-unlock")
+	}
+	if localnet != nil {
+		sp, err := localnet.GetSuggestedParams()
+		if err != nil {
+			t.Fatalf("get LocalNet params after rotation: %v", err)
+		}
+		response, err := client.RequestGroupSign([]signerapi.SignRequest{{
+			AuthAddress: rotationAddress,
+			TxnBytesHex: mustUnsignedPaymentTxnHex(
+				t,
+				sp,
+				rotationAddress,
+				integrationBurnAddress,
+				0,
+				"post-rotation-store-acceptance",
+			),
+		}})
+		if err != nil {
+			t.Fatalf("sign with rotated store key: %v", err)
+		}
+		txids := submitSignedTxnGroup(t, localnet, response.Signed)
+		if len(txids) != 1 {
+			t.Fatalf("post-rotation submission returned %d txids, want 1", len(txids))
+		}
+		if _, err := localnet.WaitForConfirmation(txids[0], 10); err != nil {
+			t.Fatalf("post-rotation transaction did not confirm: %v", err)
+		}
 	}
 
 	logs, err := signerd.GetLogs()

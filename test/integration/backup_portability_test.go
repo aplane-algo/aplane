@@ -21,7 +21,6 @@ import (
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -42,17 +41,13 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 	}
 
 	cases := []struct {
-		name                   string
-		expectedTemplateType   templatestore.TemplateType
-		expectBundledTemplate  bool
-		prepareSource          func(t *testing.T, sourceDataDir string, apstore *harness.ApStoreHarness) (string, map[string]string)
-		prepareDestination     func(t *testing.T, destDataDir string)
-		buildSignRequest       func(t *testing.T, address string) signerapi.SignRequest
-		assertRestoreArtifacts func(t *testing.T, destPaths utilkeys.Paths, keyType, address string)
+		name               string
+		prepareSource      func(t *testing.T, sourceDataDir string, apstore *harness.ApStoreHarness) (string, map[string]string)
+		prepareDestination func(t *testing.T, destDataDir string)
+		buildSignRequest   func(t *testing.T, address string) signerapi.SignRequest
 	}{
 		{
-			name:                  "ed25519",
-			expectBundledTemplate: false,
+			name: "ed25519",
 			prepareSource: func(_ *testing.T, _ string, _ *harness.ApStoreHarness) (string, map[string]string) {
 				return "ed25519", nil
 			},
@@ -62,13 +57,9 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, integrationBurnAddress, 0, "backup-portability"),
 				}
 			},
-			assertRestoreArtifacts: func(t *testing.T, destPaths utilkeys.Paths, keyType, address string) {
-				t.Helper()
-			},
 		},
 		{
-			name:                  "aplane.falcon1024.v1",
-			expectBundledTemplate: false,
+			name: "aplane.falcon1024.v1",
 			prepareSource: func(_ *testing.T, _ string, _ *harness.ApStoreHarness) (string, map[string]string) {
 				return "aplane.falcon1024.v1", nil
 			},
@@ -78,14 +69,9 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, integrationBurnAddress, 0, "backup-portability"),
 				}
 			},
-			assertRestoreArtifacts: func(t *testing.T, destPaths utilkeys.Paths, keyType, address string) {
-				t.Helper()
-			},
 		},
 		{
-			name:                  "user-loaded HTLC template",
-			expectedTemplateType:  templatestore.TemplateTypeGeneric,
-			expectBundledTemplate: true,
+			name: "user-loaded HTLC template",
 			prepareSource: func(t *testing.T, sourceDataDir string, _ *harness.ApStoreHarness) (string, map[string]string) {
 				installHTLCTemplate(t, sourceDataDir)
 				status, err := testnet.Client.Status().Do(context.Background())
@@ -113,17 +99,9 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 					},
 				}
 			},
-			assertRestoreArtifacts: func(t *testing.T, destPaths utilkeys.Paths, keyType, address string) {
-				t.Helper()
-				if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric) {
-					t.Fatalf("restored template %s (%s) not found in destination keystore", keyType, templatestore.TemplateTypeGeneric)
-				}
-			},
 		},
 		{
-			name:                  "library composed template",
-			expectedTemplateType:  templatestore.TemplateTypeComposed,
-			expectBundledTemplate: true,
+			name: "library composed template",
 			prepareSource: func(t *testing.T, sourceDataDir string, _ *harness.ApStoreHarness) (string, map[string]string) {
 				installFalconAllowlistTemplate(t, sourceDataDir)
 				return "aplane.falcon1024-allowlist.v1", map[string]string{"recipients": integrationBurnAddress}
@@ -137,17 +115,9 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, integrationBurnAddress, 0, "backup-portability"),
 				}
 			},
-			assertRestoreArtifacts: func(t *testing.T, destPaths utilkeys.Paths, keyType, address string) {
-				t.Helper()
-				if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeComposed) {
-					t.Fatalf("restored template %s (%s) not found in destination keystore", keyType, templatestore.TemplateTypeComposed)
-				}
-			},
 		},
 		{
-			name:                  "custom generic template",
-			expectedTemplateType:  templatestore.TemplateTypeGeneric,
-			expectBundledTemplate: true,
+			name: "custom generic template",
 			prepareSource: func(t *testing.T, sourceDataDir string, apstore *harness.ApStoreHarness) (string, map[string]string) {
 				family := fmt.Sprintf("backup-portability-%d", time.Now().UnixNano())
 				keyType := integrationTemplateKeyType(family)
@@ -223,17 +193,9 @@ teal: |
 					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, integrationBurnAddress, 0, "backup-portability"),
 				}
 			},
-			assertRestoreArtifacts: func(t *testing.T, destPaths utilkeys.Paths, keyType, address string) {
-				t.Helper()
-				if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric) {
-					t.Fatalf("restored template %s (%s) not found in destination keystore", keyType, templatestore.TemplateTypeGeneric)
-				}
-			},
 		},
 		{
-			name:                  "custom composed template",
-			expectedTemplateType:  templatestore.TemplateTypeComposed,
-			expectBundledTemplate: true,
+			name: "custom composed template",
 			prepareSource: func(t *testing.T, sourceDataDir string, apstore *harness.ApStoreHarness) (string, map[string]string) {
 				family := fmt.Sprintf("falcon1024-backup-portability-%d", time.Now().UnixNano())
 				keyType := integrationTemplateKeyType(family)
@@ -313,12 +275,6 @@ teal: |
 					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, integrationBurnAddress, 0, "backup-portability"),
 				}
 			},
-			assertRestoreArtifacts: func(t *testing.T, destPaths utilkeys.Paths, keyType, address string) {
-				t.Helper()
-				if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeComposed) {
-					t.Fatalf("restored template %s (%s) not found in destination keystore", keyType, templatestore.TemplateTypeComposed)
-				}
-			},
 		},
 	}
 
@@ -343,27 +299,21 @@ teal: |
 			sourceToken := readSignerToken(t, sourceSigner)
 			sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
 			address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, keyType, generateParams)
+			if keyType == "ed25519" && harness.IntegrationNetwork() == harness.IntegrationNetworkLocalnet {
+				funder, err := harness.NewFundTestAccount(testnet.Client)
+				if err != nil {
+					t.Fatalf("create LocalNet store acceptance funder: %v", err)
+				}
+				if err := funder.FundMicroAlgosAndWait(address, 300_000); err != nil {
+					t.Fatalf("fund restored-key acceptance account: %v", err)
+				}
+			}
 
 			storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 			exportPassphrase := storePassphrase
 			t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
 			archivePath := mustCreateBackupArchive(t, sourceApstore, address, exportPassphrase)
-			templateYAML, templateType := mustReadBackupBundleFromArchive(t, archivePath, address, exportPassphrase)
-			if tc.expectBundledTemplate {
-				if templateType != string(tc.expectedTemplateType) {
-					t.Fatalf("backup template_type = %q, want %q", templateType, tc.expectedTemplateType)
-				}
-				if strings.TrimSpace(templateYAML) == "" {
-					t.Fatal("expected backup bundle to include template_yaml")
-				}
-			} else {
-				if templateType != "" {
-					t.Fatalf("backup template_type = %q, want empty", templateType)
-				}
-				if strings.TrimSpace(templateYAML) != "" {
-					t.Fatalf("expected no bundled template_yaml, got %q", templateYAML)
-				}
-			}
+			mustAssertCredentialOnlyArchiveEntry(t, archivePath, address, exportPassphrase)
 
 			destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 			destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
@@ -380,9 +330,6 @@ teal: |
 			destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
 			if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); err != nil {
 				t.Fatalf("restored key file missing for %s: %v", address, err)
-			}
-			if tc.assertRestoreArtifacts != nil {
-				tc.assertRestoreArtifacts(t, destPaths, keyType, address)
 			}
 
 			if err := sourceSigner.Stop(); err != nil {
@@ -407,8 +354,19 @@ teal: |
 			}
 
 			destClient := signerclient.NewSignerClientWithToken(destSigner.GetURL(), destToken)
-			if !waitForKeyType(t, destClient, keyType, 10*time.Second) {
-				t.Fatalf("destination signer did not expose restored key type %s", keyType)
+			keyInventory, err := destClient.GetKeys()
+			if err != nil {
+				t.Fatalf("list restored destination credentials: %v", err)
+			}
+			listedKeyType := ""
+			for _, key := range keyInventory.Keys {
+				if key.Address == address {
+					listedKeyType = key.KeyType
+					break
+				}
+			}
+			if listedKeyType != keyType {
+				t.Fatalf("restored credential key type = %q, want %q", listedKeyType, keyType)
 			}
 
 			signReq := signerapi.GroupSignRequest{
@@ -428,6 +386,15 @@ teal: |
 			}
 			if len(resp.Signed) < 1 {
 				t.Fatalf("expected at least one signed transaction for %s, got %d", keyType, len(resp.Signed))
+			}
+			if keyType == "ed25519" && harness.IntegrationNetwork() == harness.IntegrationNetworkLocalnet {
+				txids := submitSignedTxnGroup(t, testnet, resp.Signed)
+				if len(txids) != 1 {
+					t.Fatalf("restored-key submission returned %d txids, want 1", len(txids))
+				}
+				if _, err := testnet.WaitForConfirmation(txids[0], 10); err != nil {
+					t.Fatalf("restored-key transaction did not confirm: %v", err)
+				}
 			}
 		})
 	}
@@ -481,420 +448,6 @@ func TestBackupRestoreRunsThroughSignerIPC(t *testing.T) {
 	destToken := readSignerToken(t, destSigner)
 	if !waitForKey(t, destSigner.GetURL(), destToken, address, 10*time.Second) {
 		t.Fatalf("destination signer did not load IPC-restored key %s", address)
-	}
-}
-
-func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing.T) {
-	lockOnDisconnect := false
-	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-	installHTLCTemplate(t, sourceClone.SignerDataDir)
-
-	sourceSigner := harness.NewSignerHarness(t)
-	if err := sourceSigner.Start(); err != nil {
-		t.Fatalf("failed to start source signer: %v", err)
-	}
-	t.Cleanup(func() { _ = sourceSigner.Stop() })
-
-	sourceApSigner := harness.NewApAdminHarness(t, sourceSigner.GetWorkDir())
-	t.Cleanup(sourceApSigner.Cleanup)
-	if err := sourceApSigner.UnlockSigner(); err != nil {
-		t.Fatalf("failed to unlock source signer: %v", err)
-	}
-
-	sourceToken := readSignerToken(t, sourceSigner)
-	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
-	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.htlc.v1", map[string]string{
-		"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		"recipient":      integrationBurnAddress,
-		"refund_address": integrationBurnAddress,
-		"timeout_round":  "999999999",
-	})
-
-	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
-	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
-	archivePath := mustCreateBackupArchive(t, sourceApstore, address, storePassphrase)
-	conflictingTemplatePath, err := filepath.Abs(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
-	if err != nil {
-		t.Fatalf("failed to resolve HTLC template path: %v", err)
-	}
-	conflictingTemplateYAML, err := os.ReadFile(conflictingTemplatePath)
-	if err != nil {
-		t.Fatalf("failed to read HTLC template: %v", err)
-	}
-	conflictingTemplateYAML = bytes.Replace(conflictingTemplateYAML, []byte("    max_items: 16"), []byte("    max_items: 15"), 1)
-	if !bytes.Contains(conflictingTemplateYAML, []byte("    max_items: 15")) {
-		t.Fatal("failed to create conflicting HTLC template fixture")
-	}
-	tamperBackupBundleTemplateInArchive(t, archivePath, address, storePassphrase, func(bundle map[string]any) {
-		bundle["template_yaml"] = string(conflictingTemplateYAML)
-	})
-
-	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	installHTLCTemplate(t, destClone.SignerDataDir)
-	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
-	if destStorePassphrase != storePassphrase {
-		t.Fatalf("test requires identical source/destination store passphrases, got %q vs %q", storePassphrase, destStorePassphrase)
-	}
-	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
-	output, err := runRestoreArchive(t, destApstore, archivePath, storePassphrase, address)
-	if err != nil {
-		t.Fatalf("expected restore to skip conflicting installed library bundled template, got %v\noutput:\n%s", err, output)
-	}
-	if !strings.Contains(output, "skipped bundled template") ||
-		!strings.Contains(output, "backup template conflicts with authoritative local definition") {
-		t.Fatalf("expected skipped bundled template warning, got output:\n%s", output)
-	}
-
-	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); statErr != nil {
-		t.Fatalf("expected restored key file despite template conflict, got stat err=%v", statErr)
-	}
-	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
-		t.Fatal("expected destination template file to remain after template conflict")
-	}
-}
-
-func TestBackupRestoreSkipsConflictingExistingKeystoreTemplate(t *testing.T) {
-	lockOnDisconnect := false
-	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-
-	family := fmt.Sprintf("restore-conflict-%d", time.Now().UnixNano())
-	keyType := integrationTemplateKeyType(family)
-
-	sourceTemplatePath := filepath.Join(t.TempDir(), "source-custom-template.yaml")
-	sourceTemplateYAML := fmt.Sprintf(`schema_version: 1
-derivation_version: 2
-template_type: generic
-template_mode: generated
-publisher: %s
-family: %s
-version: 1
-display_name: "Source Custom Template"
-description: "source custom template for restore conflict integration test"
-
-parameters:
-  - name: recipients
-    type: address[]
-    required: true
-    min_items: 1
-    max_items: 30
-
-teal: |
-  #pragma version 10
-  txn RekeyTo
-  global ZeroAddress
-  ==
-  assert
-  txn Receiver
-  addr %s
-  ==
-  return
-`, integrationTemplatePublisher, family, integrationBurnAddress)
-	if err := os.WriteFile(sourceTemplatePath, []byte(sourceTemplateYAML), 0o600); err != nil {
-		t.Fatalf("failed to write source template: %v", err)
-	}
-
-	sourceStorePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
-	t.Setenv("APSIGNER_PASSPHRASE", sourceStorePassphrase)
-	mustImportTemplateViaApstore(t, sourceClone.SignerDataDir, sourceApstore, sourceTemplatePath, "source custom template")
-
-	sourceSigner := harness.NewSignerHarness(t)
-	if err := sourceSigner.Start(); err != nil {
-		t.Fatalf("failed to start source signer: %v", err)
-	}
-	t.Cleanup(func() { _ = sourceSigner.Stop() })
-
-	sourceApSigner := harness.NewApAdminHarness(t, sourceSigner.GetWorkDir())
-	t.Cleanup(sourceApSigner.Cleanup)
-	if err := sourceApSigner.UnlockSigner(); err != nil {
-		t.Fatalf("failed to unlock source signer: %v", err)
-	}
-
-	sourceToken := readSignerToken(t, sourceSigner)
-	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
-	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, keyType, map[string]string{"recipients": integrationBurnAddress})
-
-	archivePath := mustCreateBackupArchive(t, sourceApstore, address, sourceStorePassphrase)
-
-	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
-	if destStorePassphrase != sourceStorePassphrase {
-		t.Fatalf("test requires identical source/destination store passphrases, got %q vs %q", sourceStorePassphrase, destStorePassphrase)
-	}
-	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
-
-	destTemplatePath := filepath.Join(t.TempDir(), "dest-custom-template.yaml")
-	destTemplateYAML := fmt.Sprintf(`schema_version: 1
-derivation_version: 2
-template_type: generic
-template_mode: generated
-publisher: %s
-family: %s
-version: 1
-display_name: "Destination Custom Template"
-description: "destination custom template for restore conflict integration test"
-
-parameters:
-  - name: recipients
-    type: address[]
-    required: true
-    min_items: 1
-    max_items: 30
-
-teal: |
-  #pragma version 10
-  txn RekeyTo
-  global ZeroAddress
-  ==
-  assert
-  int 0
-  return
-`, integrationTemplatePublisher, family)
-	if err := os.WriteFile(destTemplatePath, []byte(destTemplateYAML), 0o600); err != nil {
-		t.Fatalf("failed to write destination template: %v", err)
-	}
-	mustImportTemplateViaApstore(t, destClone.SignerDataDir, destApstore, destTemplatePath, "destination custom template")
-
-	output, err := runRestoreArchive(t, destApstore, archivePath, destStorePassphrase, address)
-	if err != nil {
-		t.Fatalf("expected restore to skip conflicting existing destination template, got %v\noutput:\n%s", err, output)
-	}
-	if !strings.Contains(output, "skipped bundled template") ||
-		!strings.Contains(output, "backup template conflicts with existing keystore definition") {
-		t.Fatalf("expected skipped bundled template warning, got output:\n%s", output)
-	}
-
-	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); statErr != nil {
-		t.Fatalf("expected restored key file despite destination template conflict, got stat err=%v", statErr)
-	}
-	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric) {
-		t.Fatal("expected destination custom template to remain present after restore")
-	}
-}
-
-func TestBackupRestoreAllowsMatchingExistingKeystoreTemplate(t *testing.T) {
-	lockOnDisconnect := false
-	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-
-	family := fmt.Sprintf("restore-idempotent-%d", time.Now().UnixNano())
-	keyType := integrationTemplateKeyType(family)
-
-	templatePath := filepath.Join(t.TempDir(), "shared-custom-template.yaml")
-	templateYAML := fmt.Sprintf(`schema_version: 1
-derivation_version: 2
-template_type: generic
-template_mode: generated
-publisher: %s
-family: %s
-version: 1
-display_name: "Shared Custom Template"
-description: "shared custom template for restore idempotency integration test"
-
-parameters:
-  - name: recipients
-    type: address[]
-    required: true
-    min_items: 1
-    max_items: 30
-
-teal: |
-  #pragma version 10
-  txn RekeyTo
-  global ZeroAddress
-  ==
-  assert
-  txn Receiver
-  addr %s
-  ==
-  return
-`, integrationTemplatePublisher, family, integrationBurnAddress)
-	if err := os.WriteFile(templatePath, []byte(templateYAML), 0o600); err != nil {
-		t.Fatalf("failed to write shared template: %v", err)
-	}
-
-	sourceStorePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
-	t.Setenv("APSIGNER_PASSPHRASE", sourceStorePassphrase)
-	mustImportTemplateViaApstore(t, sourceClone.SignerDataDir, sourceApstore, templatePath, "source custom template")
-
-	sourceSigner := harness.NewSignerHarness(t)
-	if err := sourceSigner.Start(); err != nil {
-		t.Fatalf("failed to start source signer: %v", err)
-	}
-	t.Cleanup(func() { _ = sourceSigner.Stop() })
-
-	sourceApSigner := harness.NewApAdminHarness(t, sourceSigner.GetWorkDir())
-	t.Cleanup(sourceApSigner.Cleanup)
-	if err := sourceApSigner.UnlockSigner(); err != nil {
-		t.Fatalf("failed to unlock source signer: %v", err)
-	}
-
-	sourceToken := readSignerToken(t, sourceSigner)
-	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
-	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, keyType, map[string]string{"recipients": integrationBurnAddress})
-
-	archivePath := mustCreateBackupArchive(t, sourceApstore, address, sourceStorePassphrase)
-
-	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
-	if destStorePassphrase != sourceStorePassphrase {
-		t.Fatalf("test requires identical source/destination store passphrases, got %q vs %q", sourceStorePassphrase, destStorePassphrase)
-	}
-	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
-	mustImportTemplateViaApstore(t, destClone.SignerDataDir, destApstore, templatePath, "destination custom template")
-
-	mustRestoreArchive(t, destApstore, archivePath, destStorePassphrase, address)
-
-	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); err != nil {
-		t.Fatalf("expected restored key file after idempotent restore: %v", err)
-	}
-	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric) {
-		t.Fatal("expected destination custom template to remain present after idempotent restore")
-	}
-}
-
-func TestBackupRestoreSkipsConflictingExistingComposedKeystoreTemplate(t *testing.T) {
-	lockOnDisconnect := false
-	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-
-	family := fmt.Sprintf("falcon1024-restore-conflict-%d", time.Now().UnixNano())
-	keyType := integrationTemplateKeyType(family)
-
-	sourceTemplatePath := filepath.Join(t.TempDir(), "source-custom-composed-template.yaml")
-	sourceTemplateYAML := fmt.Sprintf(`schema_version: 1
-derivation_version: 2
-template_type: composed
-base_key_type: aplane.falcon1024.v1
-template_mode: generated
-publisher: %s
-family: %s
-version: 1
-display_name: "Source Custom Composed Template"
-description: "source custom composed template for restore conflict integration test"
-
-parameters:
-  - name: recipients
-    type: address[]
-    required: true
-    min_items: 1
-    max_items: 30
-
-teal: |
-  txn RekeyTo
-  global ZeroAddress
-  ==
-  assert
-
-  txn Receiver
-  callsub is_allowlisted
-  assert
-
-  is_allowlisted:
-      {{range @recipients}}
-      dup
-      byte {{.}}
-      ==
-      bnz allowlisted
-      {{end}}
-      pop
-      int 0
-      retsub
-
-  allowlisted:
-      pop
-      int 1
-      retsub
-`, integrationTemplatePublisher, family)
-	if err := os.WriteFile(sourceTemplatePath, []byte(sourceTemplateYAML), 0o600); err != nil {
-		t.Fatalf("failed to write source composed template: %v", err)
-	}
-
-	sourceStorePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
-	t.Setenv("APSIGNER_PASSPHRASE", sourceStorePassphrase)
-	mustImportTemplateViaApstore(t, sourceClone.SignerDataDir, sourceApstore, sourceTemplatePath, "source custom composed template")
-
-	sourceSigner := harness.NewSignerHarness(t)
-	if err := sourceSigner.Start(); err != nil {
-		t.Fatalf("failed to start source signer: %v", err)
-	}
-	t.Cleanup(func() { _ = sourceSigner.Stop() })
-
-	sourceApSigner := harness.NewApAdminHarness(t, sourceSigner.GetWorkDir())
-	t.Cleanup(sourceApSigner.Cleanup)
-	if err := sourceApSigner.UnlockSigner(); err != nil {
-		t.Fatalf("failed to unlock source signer: %v", err)
-	}
-
-	sourceToken := readSignerToken(t, sourceSigner)
-	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
-	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, keyType, map[string]string{"recipients": integrationBurnAddress})
-
-	archivePath := mustCreateBackupArchive(t, sourceApstore, address, sourceStorePassphrase)
-
-	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
-	if destStorePassphrase != sourceStorePassphrase {
-		t.Fatalf("test requires identical source/destination store passphrases, got %q vs %q", sourceStorePassphrase, destStorePassphrase)
-	}
-	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
-
-	destTemplatePath := filepath.Join(t.TempDir(), "dest-custom-composed-template.yaml")
-	destTemplateYAML := fmt.Sprintf(`schema_version: 1
-derivation_version: 2
-template_type: composed
-base_key_type: aplane.falcon1024.v1
-template_mode: generated
-publisher: %s
-family: %s
-version: 1
-display_name: "Destination Custom Composed Template"
-description: "destination custom composed template for restore conflict integration test"
-
-parameters:
-  - name: recipients
-    type: address[]
-    required: true
-    min_items: 1
-    max_items: 30
-
-teal: |
-  txn RekeyTo
-  global ZeroAddress
-  ==
-  assert
-
-  int 0
-  return
-`, integrationTemplatePublisher, family)
-	if err := os.WriteFile(destTemplatePath, []byte(destTemplateYAML), 0o600); err != nil {
-		t.Fatalf("failed to write destination composed template: %v", err)
-	}
-	mustImportTemplateViaApstore(t, destClone.SignerDataDir, destApstore, destTemplatePath, "destination custom composed template")
-
-	output, err := runRestoreArchive(t, destApstore, archivePath, destStorePassphrase, address)
-	if err != nil {
-		t.Fatalf("expected restore to skip conflicting existing destination composed template, got %v\noutput:\n%s", err, output)
-	}
-	if !strings.Contains(output, "skipped bundled template") ||
-		!strings.Contains(output, "backup template conflicts with existing keystore definition") {
-		t.Fatalf("expected skipped bundled template warning, got output:\n%s", output)
-	}
-
-	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); statErr != nil {
-		t.Fatalf("expected restored key file despite destination composed template conflict, got stat err=%v", statErr)
-	}
-	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeComposed) {
-		t.Fatal("expected destination custom composed template to remain present after restore")
 	}
 }
 
@@ -964,63 +517,6 @@ func TestSignerManagedBackupRoundTripViaApstoreRestore(t *testing.T) {
 	}
 }
 
-func TestBackupRestoreLegacyNoTemplateFallsBackToShippedLibrary(t *testing.T) {
-	lockOnDisconnect := false
-	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-	installHTLCTemplate(t, sourceClone.SignerDataDir)
-
-	sourceSigner := harness.NewSignerHarness(t)
-	if err := sourceSigner.Start(); err != nil {
-		t.Fatalf("failed to start source signer: %v", err)
-	}
-	t.Cleanup(func() { _ = sourceSigner.Stop() })
-
-	sourceApadmin := harness.NewApAdminHarness(t, sourceSigner.GetWorkDir())
-	t.Cleanup(sourceApadmin.Cleanup)
-	if err := sourceApadmin.UnlockSigner(); err != nil {
-		t.Fatalf("failed to unlock source signer: %v", err)
-	}
-
-	testnet, err := harness.NewTestnetConfig()
-	if err != nil {
-		t.Fatalf("failed to connect to testnet: %v", err)
-	}
-	status, err := testnet.Client.Status().Do(context.Background())
-	if err != nil {
-		t.Fatalf("failed to get algod status: %v", err)
-	}
-	preimageHash := sha256.Sum256(bytes.Repeat([]byte("p"), 32))
-	sourceToken := readSignerToken(t, sourceSigner)
-	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
-	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.htlc.v1", map[string]string{
-		"hash":           hex.EncodeToString(preimageHash[:]),
-		"recipient":      integrationBurnAddress,
-		"refund_address": integrationBurnAddress,
-		"timeout_round":  fmt.Sprintf("%d", status.LastRound+1_000),
-	})
-
-	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
-	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
-	archivePath := mustCreateBackupArchive(t, sourceApstore, address, storePassphrase)
-	tamperBackupBundleTemplateInArchive(t, archivePath, address, storePassphrase, func(bundle map[string]any) {
-		delete(bundle, "template_yaml")
-		delete(bundle, "template_type")
-	})
-
-	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	installHTLCTemplate(t, destClone.SignerDataDir)
-	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
-	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
-	mustRestoreArchive(t, destApstore, archivePath, storePassphrase, address)
-
-	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
-		t.Fatal("expected fallback restore to materialize aplane.htlc.v1 template")
-	}
-}
-
 func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testing.T) {
 	lockOnDisconnect := false
 	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
@@ -1060,10 +556,7 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
 	archivePath := mustCreateBackupArchive(t, sourceApstore, address, storePassphrase)
-	tamperBackupBundleTemplateInArchive(t, archivePath, address, storePassphrase, func(bundle map[string]any) {
-		delete(bundle, "template_yaml")
-		delete(bundle, "template_type")
-	})
+	mustAssertCredentialOnlyArchiveEntry(t, archivePath, address, storePassphrase)
 
 	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
@@ -1090,73 +583,6 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	}
 	if templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
 		t.Fatal("expected standalone restore not to materialize missing aplane.htlc.v1 template")
-	}
-}
-
-func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
-	lockOnDisconnect := false
-	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-	installHTLCTemplate(t, sourceClone.SignerDataDir)
-
-	sourceSigner := harness.NewSignerHarness(t)
-	if err := sourceSigner.Start(); err != nil {
-		t.Fatalf("failed to start source signer: %v", err)
-	}
-	t.Cleanup(func() { _ = sourceSigner.Stop() })
-
-	sourceApadmin := harness.NewApAdminHarness(t, sourceSigner.GetWorkDir())
-	t.Cleanup(sourceApadmin.Cleanup)
-	if err := sourceApadmin.UnlockSigner(); err != nil {
-		t.Fatalf("failed to unlock source signer: %v", err)
-	}
-
-	sourceToken := readSignerToken(t, sourceSigner)
-	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
-	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.htlc.v1", map[string]string{
-		"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		"recipient":      integrationBurnAddress,
-		"refund_address": integrationBurnAddress,
-		"timeout_round":  "999999999",
-	})
-
-	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
-	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
-	archivePath := mustCreateBackupArchive(t, sourceApstore, address, storePassphrase)
-
-	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	installHTLCTemplate(t, destClone.SignerDataDir)
-	syncTemplateLibraryFile(t, destClone.SignerDataDir, "aplane.htlc.v1.yaml")
-	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
-	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
-
-	destSigner := harness.NewSignerHarness(t)
-	if err := destSigner.Start(); err != nil {
-		t.Fatalf("failed to start destination signer: %v", err)
-	}
-	destApadmin := harness.NewApAdminHarness(t, destSigner.GetWorkDir())
-	if err := destApadmin.UnlockSigner(); err != nil {
-		t.Fatalf("failed to unlock destination signer: %v", err)
-	}
-	disableResult, err := destApadmin.DeactivateKeyType("aplane.htlc.v1")
-	if err != nil {
-		t.Fatalf("failed to deactivate aplane.htlc.v1: %v", err)
-	}
-	if !disableResult.Success {
-		t.Fatalf("failed to deactivate aplane.htlc.v1: %s", disableResult.Error)
-	}
-	t.Cleanup(func() { _ = destSigner.Stop() })
-
-	t.Cleanup(destApadmin.Cleanup)
-	if output, err := runRestoreArchiveWithRunningSigner(t, destApstore, archivePath, storePassphrase, address); err != nil {
-		t.Fatalf("failed to restore key requiring disabled installed template: %v\noutput:\n%s", err, output)
-	}
-
-	destToken := readSignerToken(t, destSigner)
-	destClient := signerclient.NewSignerClientWithToken(destSigner.GetURL(), destToken)
-	if !waitForKeyType(t, destClient, "aplane.htlc.v1", 10*time.Second) {
-		t.Fatal("destination signer did not expose aplane.htlc.v1 after restore-based re-enable")
 	}
 }
 
@@ -1257,66 +683,6 @@ func mustReadPassphrase(t *testing.T, signerDataDir string) string {
 	return strings.TrimSpace(string(data))
 }
 
-func mustReadBackupBundle(t *testing.T, backupPath, exportPassphrase string) (string, string) {
-	t.Helper()
-
-	data, err := os.ReadFile(backupPath)
-	if err != nil {
-		t.Fatalf("failed to read backup file %s: %v", backupPath, err)
-	}
-
-	if apcrypto.IsEncrypted(data) {
-		data, err = apcrypto.DecryptStandalone(data, []byte(exportPassphrase))
-		if err != nil {
-			t.Fatalf("failed to decrypt backup file %s: %v", backupPath, err)
-		}
-	}
-
-	_, templateYAML, templateType, err := backupbundle.ParseBackup(data)
-	if err != nil {
-		t.Fatalf("failed to parse backup bundle %s: %v", backupPath, err)
-	}
-
-	return string(templateYAML), templateType
-}
-
-func tamperBackupBundleTemplate(t *testing.T, backupPath, exportPassphrase string, mutate func(bundle map[string]any)) {
-	t.Helper()
-
-	data, err := os.ReadFile(backupPath)
-	if err != nil {
-		t.Fatalf("failed to read backup file %s: %v", backupPath, err)
-	}
-
-	if apcrypto.IsEncrypted(data) {
-		data, err = apcrypto.DecryptStandalone(data, []byte(exportPassphrase))
-		if err != nil {
-			t.Fatalf("failed to decrypt backup file %s: %v", backupPath, err)
-		}
-	}
-
-	var bundle map[string]any
-	if err := json.Unmarshal(data, &bundle); err != nil {
-		t.Fatalf("failed to unmarshal backup bundle %s: %v", backupPath, err)
-	}
-
-	mutate(bundle)
-
-	updated, err := json.Marshal(bundle)
-	if err != nil {
-		t.Fatalf("failed to marshal updated backup bundle %s: %v", backupPath, err)
-	}
-
-	encrypted, err := apcrypto.EncryptStandalone(updated, []byte(exportPassphrase))
-	if err != nil {
-		t.Fatalf("failed to re-encrypt backup bundle %s: %v", backupPath, err)
-	}
-
-	if err := os.WriteFile(backupPath, encrypted, 0o600); err != nil {
-		t.Fatalf("failed to rewrite tampered backup bundle %s: %v", backupPath, err)
-	}
-}
-
 func mustCreateBackupArchive(t *testing.T, apstore *harness.ApStoreHarness, what, exportPassphrase string) string {
 	t.Helper()
 
@@ -1388,11 +754,30 @@ func runRestoreArchiveWithRunningSigner(t *testing.T, apstore *harness.ApStoreHa
 	for _, address := range addresses {
 		args = append(args, "--address", address)
 	}
-	// The shared test environment auto-approves unmatched signing requests, so
-	// activation always requires the destination acknowledgement. Record it on
-	// the command line rather than answering an interactive prompt.
-	args = append(args, "--acknowledge-unattended-signing")
 	return apstore.RunWithInput(exportPassphrase+"\n", args...)
+}
+
+func mustAssertCredentialOnlyArchiveEntry(t *testing.T, archivePath, address, exportPassphrase string) {
+	t.Helper()
+	extractDir := mustExtractBackupArchive(t, archivePath)
+	sealed, err := os.ReadFile(filepath.Join(extractDir, "apb", address+".apb"))
+	if err != nil {
+		t.Fatalf("read backup entry: %v", err)
+	}
+	plaintext, err := apcrypto.DecryptStandalone(sealed, []byte(exportPassphrase))
+	if err != nil {
+		t.Fatalf("decrypt backup entry: %v", err)
+	}
+	defer apcrypto.ZeroBytes(plaintext)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(plaintext, &fields); err != nil {
+		t.Fatalf("parse credential backup entry: %v", err)
+	}
+	for _, forbidden := range []string{"backup_bundle", "payload_version", "template_yaml", "template_type"} {
+		if _, ok := fields[forbidden]; ok {
+			t.Fatalf("credential backup entry contains operational field %q", forbidden)
+		}
+	}
 }
 
 func mustExtractBackupArchive(t *testing.T, archivePath string) string {
@@ -1403,76 +788,4 @@ func mustExtractBackupArchive(t *testing.T, archivePath string) string {
 		t.Fatalf("failed to extract backup archive %s: %v", archivePath, err)
 	}
 	return extractDir
-}
-
-func mustReadBackupBundleFromArchive(t *testing.T, archivePath, address, exportPassphrase string) (string, string) {
-	t.Helper()
-	extractDir := mustExtractBackupArchive(t, archivePath)
-	return mustReadBackupBundle(t, filepath.Join(extractDir, "apb", address+".apb"), exportPassphrase)
-}
-
-func tamperBackupBundleTemplateInArchive(t *testing.T, archivePath, address, exportPassphrase string, mutate func(bundle map[string]any)) {
-	t.Helper()
-
-	extractDir := mustExtractBackupArchive(t, archivePath)
-	// Read the manifest before mutating, while the archive still matches it.
-	manifest, err := backupbundle.OpenSealedManifest(extractDir, []byte(exportPassphrase))
-	if err != nil {
-		t.Fatalf("failed to open sealed manifest for %s: %v", archivePath, err)
-	}
-
-	backupPath := filepath.Join(extractDir, "apb", address+".apb")
-	tamperBackupBundleTemplate(t, backupPath, exportPassphrase, mutate)
-
-	// These fixtures rewrite a payload to model an archive a different writer
-	// produced, so the manifest must be re-sealed over the new content. An
-	// archive left inconsistent would be rejected as tampered — which is the
-	// manifest working, not the behavior under test here.
-	if err := backupbundle.WriteSealedManifest(
-		extractDir,
-		noderole.Role(manifest.SourceNodeRole),
-		time.Unix(manifest.CreatedAtUnix, 0),
-		manifest.SourceSnapshot(),
-		[]byte(exportPassphrase),
-	); err != nil {
-		t.Fatalf("failed to re-seal manifest for %s: %v", archivePath, err)
-	}
-	if err := os.Remove(archivePath); err != nil && !os.IsNotExist(err) {
-		t.Fatalf("failed to remove original backup archive %s: %v", archivePath, err)
-	}
-	if err := backupbundle.CreateTarGzArchive(extractDir, archivePath); err != nil {
-		t.Fatalf("failed to recreate backup archive %s: %v", archivePath, err)
-	}
-}
-
-func waitForKeyType(t *testing.T, signerClient *signerclient.Client, keyType string, timeout time.Duration) bool {
-	t.Helper()
-
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if waitForKeyTypeInfo(t, signerClient, keyType, time.Second) != nil {
-			return true
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return false
-}
-
-func waitForKeyTypeInfo(t *testing.T, signerClient *signerclient.Client, keyType string, timeout time.Duration) *signerapi.KeyTypeInfo {
-	t.Helper()
-
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		resp, err := signerClient.GetKeyTypes()
-		if err == nil {
-			for i := range resp.KeyTypes {
-				if resp.KeyTypes[i].KeyType == keyType {
-					info := resp.KeyTypes[i]
-					return &info
-				}
-			}
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return nil
 }

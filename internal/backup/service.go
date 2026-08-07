@@ -13,7 +13,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -25,10 +24,6 @@ type ArchiveResult struct {
 	KeyCount        int
 	Addresses       []string
 	Verified        bool
-	// Skipped maps address -> reason for key files excluded from an all-keys
-	// backup because their decrypted payload failed canonical validation.
-	// Always empty for explicitly selected addresses, which fail closed.
-	Skipped map[string]string
 }
 
 // CreateKeysArchiveRequest contains one managed backup creation snapshot.
@@ -41,7 +36,6 @@ type CreateKeysArchiveRequest struct {
 	Addresses        []string
 	Keyring          *crypto.Keyring
 	ExportPassphrase []byte
-	SourceSettings   SourceSettingsSnapshot
 }
 
 // CreateKeysArchive exports selected active keys into one tar.gz/tgz archive.
@@ -66,11 +60,10 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 
 	keysDestDir := filepath.Join(stageDir, "apb")
 	checksums := make(map[string]string)
-	skipped := make(map[string]string)
 	var exported []string
 	if len(req.Addresses) == 0 {
 		var err error
-		checksums, skipped, err = ExportAllKeys(
+		checksums, err = ExportAllKeys(
 			req.Paths,
 			req.IdentityID,
 			activeKeysDir,
@@ -115,9 +108,6 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	if err := WriteReadme(stageDir); err != nil {
 		return nil, err
 	}
-	if err := copyPolicyFilesToArchive(req.Paths, req.IdentityID, stageDir, req.Keyring); err != nil {
-		return nil, err
-	}
 	nodeRole, _, err := noderole.Load(req.Paths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load source node role: %w", err)
@@ -128,7 +118,6 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 		stageDir,
 		nodeRole.Role,
 		time.Now(),
-		req.SourceSettings,
 		req.ExportPassphrase,
 	); err != nil {
 		return nil, err
@@ -139,7 +128,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	if err := os.Chmod(req.ArchivePath, fsutil.StoreFilePerm); err != nil {
 		return nil, fmt.Errorf("failed to set backup archive permissions: %w", err)
 	}
-	verifyReport, err := DeepVerifyBackupBytes(stageDir, req.ExportPassphrase, DeepVerifyOptions{})
+	verifyReport, err := DeepVerifyBackupBytes(stageDir, req.ExportPassphrase)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify backup archive: %w", err)
 	}
@@ -159,49 +148,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 		KeyCount:        len(exported),
 		Addresses:       exported,
 		Verified:        true,
-		Skipped:         skipped,
 	}, nil
-}
-
-func copyPolicyFilesToArchive(paths storepaths.Paths, identityID, stageDir string, kr *crypto.Keyring) error {
-	dstDir := filepath.Join(stageDir, "policy")
-	if err := os.MkdirAll(dstDir, 0o750); err != nil {
-		return fmt.Errorf("failed to create policy backup directory: %w", err)
-	}
-	nodeRole, _, err := noderole.Load(paths)
-	if err != nil {
-		return fmt.Errorf("failed to load source node role: %w", err)
-	}
-	switch nodeRole.Role {
-	case noderole.RoleSentry:
-		if _, err := policy.LoadVerifiedSentryConfigWithKeyring(paths.Root(), identityID, kr); err != nil {
-			return fmt.Errorf("failed to verify policy.yaml before backup: %w", err)
-		}
-	case noderole.RoleSigner:
-		if _, err := policy.LoadVerifiedStoredConfigWithKeyring(paths.Root(), identityID, kr); err != nil {
-			return fmt.Errorf("failed to verify policy.yaml before backup: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported source node role %q", nodeRole.Role)
-	}
-
-	docPath := policy.PolicyPath(paths.Root(), identityID)
-	docBytes, err := os.ReadFile(docPath)
-	if err != nil {
-		return fmt.Errorf("failed to read policy.yaml: %w", err)
-	}
-	sidecarPath := policy.PolicyIntegritySidecarPath(docPath)
-	sidecarBytes, err := os.ReadFile(sidecarPath)
-	if err != nil {
-		return fmt.Errorf("failed to read policy.yaml.hmac: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(dstDir, "policy.yaml"), docBytes, 0o600); err != nil {
-		return fmt.Errorf("failed to stage policy.yaml: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(dstDir, "policy.yaml.hmac"), sidecarBytes, 0o600); err != nil {
-		return fmt.Errorf("failed to stage policy.yaml.hmac: %w", err)
-	}
-	return nil
 }
 
 // FileSHA256 returns the SHA-256 checksum and size of path.

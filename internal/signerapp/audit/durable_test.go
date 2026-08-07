@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
 
-func TestLogBackupActivationIntentDurableWritesEntry(t *testing.T) {
+func TestLogCredentialRestoreIntentDurableWritesEntry(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit.log")
 	a, err := NewAuditLogger(path)
@@ -27,8 +27,8 @@ func TestLogBackupActivationIntentDurableWritesEntry(t *testing.T) {
 		SessionID:        "admin-session",
 		Transport:        "ipc",
 	}
-	if err := a.LogBackupActivationIntentDurableContext(ctx, "0123456789abcdef0123456789abcdef", true); err != nil {
-		t.Fatalf("LogBackupActivationIntentDurableContext: %v", err)
+	if err := a.LogCredentialRestoreIntentDurableContext(ctx, "restore-1", "backup.tar.gz", true); err != nil {
+		t.Fatalf("LogCredentialRestoreIntentDurableContext: %v", err)
 	}
 
 	data, err := os.ReadFile(path)
@@ -39,21 +39,21 @@ func TestLogBackupActivationIntentDurableWritesEntry(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(string(data))), &entry); err != nil {
 		t.Fatalf("unmarshal entry: %v", err)
 	}
-	if entry.Event != AuditBackupActivationIntent {
-		t.Fatalf("event = %q, want %q", entry.Event, AuditBackupActivationIntent)
+	if entry.Event != AuditCredentialRestoreIntent {
+		t.Fatalf("event = %q, want %q", entry.Event, AuditCredentialRestoreIntent)
 	}
 	if entry.Outcome != "requested" {
 		t.Fatalf("outcome = %q, want requested", entry.Outcome)
 	}
-	if entry.RestoreID != "0123456789abcdef0123456789abcdef" {
-		t.Fatalf("restore_id = %q", entry.RestoreID)
+	if entry.OperationID != "restore-1" {
+		t.Fatalf("operation_id = %q", entry.OperationID)
 	}
 	if !entry.ReplaceExisting {
 		t.Fatal("replace_existing not recorded")
 	}
 }
 
-func TestLogBackupActivationIntentDurableFailsOnWriteFailure(t *testing.T) {
+func TestLogCredentialRestoreIntentDurableFailsOnWriteFailure(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit.log")
 	a, err := NewAuditLogger(path)
@@ -66,12 +66,12 @@ func TestLogBackupActivationIntentDurableFailsOnWriteFailure(t *testing.T) {
 	// state a torn rotation can leave behind.
 	_ = a.file.Close()
 
-	if err := a.LogBackupActivationIntentDurableContext(adminserver.SessionContext{}, "0123456789abcdef0123456789abcdef", false); err == nil {
+	if err := a.LogCredentialRestoreIntentDurableContext(adminserver.SessionContext{}, "restore-1", "backup.tar.gz", false); err == nil {
 		t.Fatal("expected error when the audit write fails")
 	}
 }
 
-func TestLogBackupActivationIntentDurableFailsWhenLogUnavailable(t *testing.T) {
+func TestLogCredentialRestoreIntentDurableFailsWhenLogUnavailable(t *testing.T) {
 	dir := t.TempDir()
 	nested := filepath.Join(dir, "gone")
 	if err := os.Mkdir(nested, 0o700); err != nil {
@@ -94,7 +94,7 @@ func TestLogBackupActivationIntentDurableFailsWhenLogUnavailable(t *testing.T) {
 		t.Fatalf("remove log dir: %v", err)
 	}
 
-	if err := a.LogBackupActivationIntentDurableContext(adminserver.SessionContext{}, "0123456789abcdef0123456789abcdef", false); err == nil {
+	if err := a.LogCredentialRestoreIntentDurableContext(adminserver.SessionContext{}, "restore-1", "backup.tar.gz", false); err == nil {
 		t.Fatal("expected error when the audit log is unavailable")
 	}
 }

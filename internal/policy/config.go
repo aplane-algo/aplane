@@ -544,24 +544,6 @@ func SentryPath(dataRoot, identityID string) string {
 	return PolicyPath(dataRoot, identityID)
 }
 
-// LoadStoredConfig reads the per-identity policy file. Missing files return an empty config.
-func LoadStoredConfig(dataRoot, identityID string) (*StoredConfig, error) {
-	path := PolicyPath(dataRoot, identityID)
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return &StoredConfig{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to read policy config: %w", err)
-	}
-
-	cfg, err := ParseStoredConfig(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse policy config: %w", err)
-	}
-	return cfg, nil
-}
-
 // SaveStoredConfig writes a whole identity policy file atomically.
 func SaveStoredConfig(dataRoot, identityID string, cfg *StoredConfig) error {
 	path := PolicyPath(dataRoot, identityID)

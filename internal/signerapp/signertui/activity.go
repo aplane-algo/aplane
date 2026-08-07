@@ -81,7 +81,7 @@ func (m *Model) applySignerUnlockedState(keyCount int) {
 }
 
 // applySignerRecoveryState opens the blocking recovery screen: an incomplete
-// activation blocks signing server-side, so ordinary navigation is disabled
+// store validation blocks signing server-side, so ordinary navigation is disabled
 // until every marker is resolved.
 func (m *Model) applySignerRecoveryState() {
 	m.clearRestorePassphrase()
@@ -91,10 +91,8 @@ func (m *Model) applySignerRecoveryState() {
 	m.signerState = signerRuntimeRecovery
 	m.signerStatusKnown = true
 	m.keyCount = 0
-	m.restore.recoveredLoaded = false
-	m.restore.recoveredError = ""
-	m.restore.purgeArmedID = ""
-	m.viewState = ViewRecoveredList
+	m.restore.recoveryError = ""
+	m.viewState = ViewStoreRecovery
 	m.resetActivityState()
 	m.activity.lastInputAt = time.Now()
 }

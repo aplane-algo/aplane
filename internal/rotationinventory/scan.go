@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/backup/recovered"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -24,9 +23,8 @@ import (
 )
 
 // Scan builds the canonical K8 inventory. The caller holds the store and
-// identity mutation locks. Recovered-batch phase-2 swap residue is reconciled
-// before its canonical files are read; unpublished generation staging residue
-// must already have been reconciled and is rejected.
+// identity mutation locks. Unpublished generation staging residue must already
+// have been reconciled and is rejected.
 func Scan(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (*Report, error) {
 	return scan(paths, identityID, kr, false)
 }
@@ -63,9 +61,6 @@ func scan(
 		return nil, err
 	}
 	if err := scanner.scanIntegrityDocuments(); err != nil {
-		return nil, err
-	}
-	if err := scanner.scanRecovered(); err != nil {
 		return nil, err
 	}
 	if err := scanner.scanDeleted(); err != nil {
@@ -357,28 +352,6 @@ func (s *inventoryScanner) scanIntegrityDocuments() error {
 		policySidecar.IntegrityTerm,
 		crypto.ObjectContext{},
 	)
-}
-
-func (s *inventoryScanner) scanRecovered() error {
-	targets, err := recovered.RotationTargets(s.paths, s.identityID, s.kr)
-	if err != nil {
-		return fmt.Errorf("rotation inventory recovered batches: %w", err)
-	}
-	for _, target := range targets {
-		var kind ArtifactKind
-		switch target.Context.Class {
-		case crypto.ClassRecoveredBatch:
-			kind = KindRecoveredBatch
-		case crypto.ClassRecoveredEntry:
-			kind = KindRecoveredEntry
-		default:
-			return fmt.Errorf("rotation inventory recovered target has unsupported context %s", target.Context)
-		}
-		if err := s.addEnvelope(target.Path, kind, target.Context); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *inventoryScanner) scanDeleted() error {

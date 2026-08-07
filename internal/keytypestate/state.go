@@ -245,17 +245,6 @@ func ListActive(active storepaths.ActivePaths) ([]Record, error) {
 	return records, nil
 }
 
-// ListInvalid returns the key types whose state record file exists but is
-// empty, malformed, or carries unknown enum values. Used by reload paths to
-// populate InvalidKeyTypes buckets. Lock-free.
-func ListInvalid(paths storepaths.Paths, identityID string) ([]string, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
-	if err != nil {
-		return nil, err
-	}
-	return ListInvalidActive(active)
-}
-
 // ListInvalidActive is ListInvalid against resolved active-store paths.
 func ListInvalidActive(active storepaths.ActivePaths) ([]string, error) {
 	dir := active.KeyTypeRecordsDir()

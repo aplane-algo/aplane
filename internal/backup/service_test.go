@@ -72,11 +72,8 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	if _, err := os.Stat(filepath.Join(extractDir, "apb", address+".apb")); err != nil {
 		t.Fatalf("extracted backup payload stat error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(extractDir, "policy", "policy.yaml")); err != nil {
-		t.Fatalf("extracted policy.yaml stat error = %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(extractDir, "policy", "policy.yaml.hmac")); err != nil {
-		t.Fatalf("extracted policy.yaml.hmac stat error = %v", err)
+	if _, err := os.Stat(filepath.Join(extractDir, "policy")); !os.IsNotExist(err) {
+		t.Fatalf("credential archive must omit policy state, stat error = %v", err)
 	}
 	manifest, err := OpenSealedManifest(extractDir, []byte("export-passphrase"))
 	if err != nil {
@@ -85,20 +82,13 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	if manifest.SourceNodeRole != string(noderole.RoleSigner) {
 		t.Fatalf("manifest source node role = %q, want signer", manifest.SourceNodeRole)
 	}
-	projection := manifest.SourceProjection()
-	if projection.UserAutoApprove == nil || *projection.UserAutoApprove {
-		t.Fatalf("source settings = %+v, want manual signer context", projection)
-	}
-	// Every archive member the writer produced is covered by the manifest,
-	// including the policy snapshot and the README.
+	// Every credential archive member is covered by the sealed manifest.
 	covered := make(map[string]bool, len(manifest.Members))
 	for _, member := range manifest.Members {
 		covered[member.Path] = true
 	}
 	for _, required := range []string{
 		"apb/" + address + ".apb",
-		"policy/policy.yaml",
-		"policy/policy.yaml.hmac",
 		"README.md",
 	} {
 		if !covered[required] {
@@ -164,11 +154,7 @@ func testCreateKeysArchiveRequest(
 	role noderole.Role,
 	kr *crypto.Keyring,
 ) CreateKeysArchiveRequest {
-	var userAutoApprove *bool
-	if role == noderole.RoleSigner {
-		value := false
-		userAutoApprove = &value
-	}
+	_ = role
 	return CreateKeysArchiveRequest{
 		Paths:            paths,
 		IdentityID:       identityID,
@@ -176,9 +162,6 @@ func testCreateKeysArchiveRequest(
 		Addresses:        addresses,
 		Keyring:          kr,
 		ExportPassphrase: []byte("export-passphrase"),
-		SourceSettings: SourceSettingsSnapshot{
-			UserAutoApprove: userAutoApprove,
-		},
 	}
 }
 
@@ -212,11 +195,8 @@ func assertFileMode(t *testing.T, path string, want os.FileMode) {
 	}
 }
 
-// TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports pins the skip-and-report
-// contract: an all-keys backup excludes a key whose decrypted payload fails
-// canonical validation, reports it in ArchiveResult.Skipped, and still backs up
-// the healthy keys. Explicit address selection keeps failing closed.
-func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
+// A complete archive never silently omits a damaged managed credential.
+func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 
 	const identityID = "default"
@@ -256,7 +236,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	}
 
 	archivePath := BuildManagedArchivePath(paths, identityID, "20260710-010203")
-	result, err := CreateKeysArchive(testCreateKeysArchiveRequest(
+	_, err = CreateKeysArchive(testCreateKeysArchiveRequest(
 		paths,
 		identityID,
 		archivePath,
@@ -264,29 +244,8 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 		noderole.RoleSigner,
 		cryptotest.Keyring(t, testExportMasterKey),
 	))
-	if err != nil {
-		t.Fatalf("CreateKeysArchive() error = %v", err)
-	}
-	if result.KeyCount != 1 || len(result.Addresses) != 1 || result.Addresses[0] != address {
-		t.Fatalf("exported = %#v (count %d), want only %s", result.Addresses, result.KeyCount, address)
-	}
-	reason, ok := result.Skipped[badAddress]
-	if !ok {
-		t.Fatalf("Skipped = %#v, want entry for %s", result.Skipped, badAddress)
-	}
-	if !strings.Contains(reason, "incompatible key file format") {
-		t.Fatalf("skip reason = %q, want canonical-format rejection", reason)
-	}
-
-	extractDir := t.TempDir()
-	if err := ExtractTarGzArchive(archivePath, extractDir); err != nil {
-		t.Fatalf("ExtractTarGzArchive() error = %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(extractDir, "apb", address+".apb")); err != nil {
-		t.Fatalf("healthy key missing from archive: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(extractDir, "apb", badAddress+".apb")); !os.IsNotExist(err) {
-		t.Fatalf("invalid key must not be in archive, stat err = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "failed to export "+badAddress) {
+		t.Fatalf("CreateKeysArchive() error = %v, want damaged-credential failure", err)
 	}
 
 	// Explicitly selecting the invalid key still fails closed.
@@ -303,9 +262,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	}
 }
 
-// TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable pins that skip-and-report
-// never silently produces an empty backup.
-func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
+func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
@@ -331,13 +288,12 @@ func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
 		noderole.RoleSigner,
 		cryptotest.Keyring(t, testExportMasterKey),
 	))
-	if err == nil || !strings.Contains(err.Error(), "no exportable keys") {
-		t.Fatalf("CreateKeysArchive() error = %v, want no-exportable-keys failure", err)
+	if err == nil || !strings.Contains(err.Error(), "failed to export "+badAddress) {
+		t.Fatalf("CreateKeysArchive() error = %v, want damaged-credential failure", err)
 	}
 }
 
-// TestExportAllKeysStillAbortsOnDecryptFailure pins the skip boundary: only
-// canonical-payload rejections are skipped; infrastructure failures abort.
+// Infrastructure failures also abort the complete archive.
 func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
@@ -352,7 +308,7 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}
 
-	_, _, err = ExportAllKeys(paths, identityID, srcDir, t.TempDir(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
+	_, err = ExportAllKeys(paths, identityID, srcDir, t.TempDir(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "failed to export") {
 		t.Fatalf("ExportAllKeys() error = %v, want decrypt-failure abort", err)
 	}

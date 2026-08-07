@@ -57,12 +57,9 @@ func writeStandaloneBackup(dir, address string, keyJSON, exportPassphrase []byte
 type fakeApstoreAdminRequester struct {
 	requests                 []string
 	previewResult            protocol.RestorePreviewMessage
-	recoverResult            protocol.RecoverBackupResultMessage
-	recoveredListResult      protocol.RecoveredListMessage
-	recoveredReviewResult    protocol.ReviewRecoveredResultMessage
-	recoveredActivateResult  protocol.ActivateRecoveredResultMessage
-	recoveredRollbackResult  protocol.RollbackRecoveredResultMessage
-	recoveredPurgeResult     protocol.PurgeRecoveredResultMessage
+	restoreResult            protocol.RestoreBackupResultMessage
+	rollbackRestoreResult    protocol.RollbackRestoreResultMessage
+	reconcileStoreResult     protocol.ReconcileStoreResultMessage
 	backupResult             protocol.BackupResultMessage
 	listBackupsResult        protocol.BackupsListMessage
 	deleteBackupResult       protocol.DeleteBackupResultMessage
@@ -73,8 +70,7 @@ type fakeApstoreAdminRequester struct {
 	activateResult           protocol.ActivateKeyTypeResultMessage
 	deactivateResult         protocol.DeactivateKeyTypeResultMessage
 	changePassphraseResult   protocol.ChangeStorePassphraseResultMessage
-	recoverRequest           protocol.RecoverBackupMessage
-	recoveredActivateRequest protocol.ActivateRecoveredMessage
+	restoreRequest           protocol.RestoreBackupMessage
 	backupRequest            protocol.BackupMessage
 	deleteBackupRequest      protocol.DeleteBackupMessage
 	showTemplateRequest      protocol.ShowInstalledTemplateMessage
@@ -123,55 +119,30 @@ func (f *fakeApstoreAdminRequester) request(msg any, out any) error {
 		}
 		*result = f.previewResult
 		return nil
-	case protocol.RecoverBackupMessage:
+	case protocol.RestoreBackupMessage:
 		f.requests = append(f.requests, typed.Type)
-		f.recoverRequest = typed
-		result, ok := out.(*protocol.RecoverBackupResultMessage)
+		f.restoreRequest = typed
+		result, ok := out.(*protocol.RestoreBackupResultMessage)
 		if !ok {
-			return errors.New("recover backup output has unexpected type")
+			return errors.New("restore backup output has unexpected type")
 		}
-		*result = f.recoverResult
+		*result = f.restoreResult
 		return nil
-	case protocol.ListRecoveredMessage:
+	case protocol.RollbackRestoreMessage:
 		f.requests = append(f.requests, typed.Type)
-		result, ok := out.(*protocol.RecoveredListMessage)
+		result, ok := out.(*protocol.RollbackRestoreResultMessage)
 		if !ok {
-			return errors.New("list recovered output has unexpected type")
+			return errors.New("rollback restore output has unexpected type")
 		}
-		*result = f.recoveredListResult
+		*result = f.rollbackRestoreResult
 		return nil
-	case protocol.ReviewRecoveredMessage:
+	case protocol.ReconcileStoreMessage:
 		f.requests = append(f.requests, typed.Type)
-		result, ok := out.(*protocol.ReviewRecoveredResultMessage)
+		result, ok := out.(*protocol.ReconcileStoreResultMessage)
 		if !ok {
-			return errors.New("review recovered output has unexpected type")
+			return errors.New("reconcile store output has unexpected type")
 		}
-		*result = f.recoveredReviewResult
-		return nil
-	case protocol.ActivateRecoveredMessage:
-		f.requests = append(f.requests, typed.Type)
-		f.recoveredActivateRequest = typed
-		result, ok := out.(*protocol.ActivateRecoveredResultMessage)
-		if !ok {
-			return errors.New("activate recovered output has unexpected type")
-		}
-		*result = f.recoveredActivateResult
-		return nil
-	case protocol.RollbackRecoveredMessage:
-		f.requests = append(f.requests, typed.Type)
-		result, ok := out.(*protocol.RollbackRecoveredResultMessage)
-		if !ok {
-			return errors.New("rollback recovered output has unexpected type")
-		}
-		*result = f.recoveredRollbackResult
-		return nil
-	case protocol.PurgeRecoveredMessage:
-		f.requests = append(f.requests, typed.Type)
-		result, ok := out.(*protocol.PurgeRecoveredResultMessage)
-		if !ok {
-			return errors.New("purge recovered output has unexpected type")
-		}
-		*result = f.recoveredPurgeResult
+		*result = f.reconcileStoreResult
 		return nil
 	case protocol.ListInstalledTemplatesMessage:
 		f.requests = append(f.requests, typed.Type)
@@ -358,24 +329,6 @@ func writeAdminTestMessage(w io.Writer, msg any) error {
 	return protocol.WriteJSONLine(w, data)
 }
 
-func testAllowlistBackupBundle(t *testing.T, keyType string, templateYAML []byte) (string, []byte) {
-	t.Helper()
-
-	bytecode := saltedLogicSigBytecodeForTest()
-	address := logicSigAddressForTestForBytes(t, bytecode)
-	keyJSON, err := json.Marshal(apbackup.BackupBundle{
-		BackupBundle:   apbackup.BackupBundleSentinel,
-		PayloadVersion: apbackup.CurrentBackupBundlePayloadVersion,
-		Key:            json.RawMessage(canonicalGenericKeyJSONForApstore(t, keyType, bytecode)),
-		TemplateYAML:   string(templateYAML),
-		TemplateType:   "generic",
-	})
-	if err != nil {
-		t.Fatalf("json.Marshal(backup bundle) error = %v", err)
-	}
-	return address, keyJSON
-}
-
 func canonicalGenericKeyJSONForApstore(t *testing.T, keyType string, bytecode []byte) []byte {
 	t.Helper()
 	return keystest.GenericLSigKeyJSON(t, keyType, bytecode, saltCounterForTest, nil, "")
@@ -451,15 +404,10 @@ func (p restoreLibraryProvider) BuildArgs(signature []byte, runtimeArgs map[stri
 // the authenticated shape every real archive carries.
 func sealTestArchive(t *testing.T, root string, role noderole.Role) {
 	t.Helper()
-	snapshot := apbackup.SourceSettingsSnapshot{}
-	if role == noderole.RoleSigner {
-		snapshot.UserAutoApprove = new(bool)
-	}
 	if err := apbackup.WriteSealedManifest(
 		root,
 		role,
 		time.Unix(1_700_000_000, 0),
-		snapshot,
 		[]byte("export-passphrase"),
 	); err != nil {
 		t.Fatalf("WriteSealedManifest() error = %v", err)

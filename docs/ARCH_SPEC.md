@@ -275,7 +275,6 @@ Persistent sensitive state is stored on disk and unlocked into memory only via t
 - plaintext template library parsing and install preparation: `internal/templatelibrary`
 - template reload/registration outcome reporting: `internal/templatepolicy`
 - backup archives/validation: `internal/backup`
-- inactive recovered batches: `internal/backup/recovered`
 - generation mint/seal/`CURRENT` commit/reconcile: `internal/genstore`
 
 ### Storage, Key, And Template Package Clusters
@@ -1816,7 +1815,7 @@ Product-level boundaries:
 | Signing | `internal/signerapp/signing/service.go`, `internal/signerapp/signing/planner.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/execution.go`, `internal/signerapp/signing/approval.go` |
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
-| Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/*.go`, `internal/backup/*.go`, `internal/backup/recovered/*.go` |
+| Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/*.go`, `internal/backup/*.go` |
 | LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `library/templates/aplane.corridor.v1.yaml`, `lsig/sentryaccount/sentryaccount.go`, `internal/boundedadmin/message/message.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
@@ -1835,30 +1834,24 @@ Product-level boundaries:
 ## Backup and Restore Ownership
 
 For backup/restore specifically, `internal/backup` owns export packaging,
-archive inspection, payload validation, the optional independently versioned
-sealed archive manifest (member inventory plus source context), and the active-apply primitive used only by
-reviewed activation and offline rebuild. `internal/backup/sourcecontext` owns
-validation of that non-secret advisory projection. `internal/backup/recovered`
-owns destination-encrypted inactive batches and passphrase-rotation target
-discovery. `internal/genstore` owns the generation commit protocol: mint,
+archive inspection, complete credential validation, the sealed credential-only
+archive manifest, canonical-plaintext collision classification, and the staged
+credential apply primitive. `internal/genstore` owns the generation commit protocol: mint,
 staged validation, sealing of the outgoing generation, the durable `CURRENT`
 flip, reconciliation of uncommitted attempts, rollback to the sealed parent,
 and garbage collection of sealed priors. `internal/signerapp/backupadmin`
-owns the live recover/review/activate/rollback/purge orchestration. Recovery
-does not write managed `.key`/`.sen` files or reload the runtime; activation is
-the only live operation that does so, after a destination-bound policy review
-and explicit acknowledgements, and it commits by minting a new generation
-behind a single durable `CURRENT` flip. Uncommitted attempts and staging
+owns live direct restore, explicit restore rollback, and recovery-mode
+reconciliation. A restore validates every selected credential before writing,
+then commits them by minting one generation behind a single durable `CURRENT`
+flip. Uncommitted attempts and staging
 residue are discarded by generation reconciliation at unlock, never resumed.
 A commit with unconfirmed durability, or a rollback that fails after mutation
 began, transitions the runtime into recovery mode immediately and blocks
 signing until the store reconciles cleanly.
-Managed archives carry a verified-at-source policy snapshot under `policy/`,
-but no restore path installs that snapshot as active policy. Current writers
-also capture the source approval default (signer role only) and custom
-genesis-hash mappings without connection credentials. Those settings remain
-unverified advisory review context; destination policy, approval mode, and
-network configuration remain authoritative.
+Managed archives contain complete credential authority plus archive integrity
+metadata and source node role. They exclude policy, approval defaults,
+genesis-hash mappings, templates, endpoints, and operator settings. Destination
+policy and configuration are always authoritative.
 
 Both `apadmin` and local-IPC `apstore` use the same daemon-owned lifecycle.
 `cmd/apstore` retains local `initialize`, backup-import admission, `verify`,

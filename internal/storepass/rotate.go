@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/testcheckpoint"
 )
 
 type Logger func(format string, args ...any)
@@ -26,7 +27,6 @@ type RotateOptions struct {
 type RotateResult struct {
 	KeysMigrated             int
 	TemplatesMigrated        int
-	RecoveredFilesMigrated   int
 	PolicySidecarsMigrated   int
 	NodeRoleSidecarsMigrated int
 	PriorGenerations         int
@@ -114,6 +114,13 @@ func Rotate(
 	if !rootCommitted {
 		return result, fmt.Errorf("rotation returned without committing a pending root")
 	}
+	if err := testcheckpoint.Reach("rotation.pending_root_published"); err != nil {
+		updatePassphraseHelper(&result, opts)
+		return result, fmt.Errorf(
+			"new passphrase committed but rotation remains resumable: %w",
+			err,
+		)
+	}
 	updatePassphraseHelper(&result, opts)
 
 	logf(
@@ -166,7 +173,6 @@ func applyCompletionReport(result *RotateResult, completion *rotationinventory.C
 	resume := completion.Resume
 	result.KeysMigrated = resume.KeysMigrated
 	result.TemplatesMigrated = resume.TemplatesMigrated
-	result.RecoveredFilesMigrated = resume.RecoveredFilesMigrated
 	result.PolicySidecarsMigrated = resume.PolicySidecarsMigrated
 	result.NodeRoleSidecarsMigrated = resume.NodeRoleSidecarsMigrated
 	if completion.RootClosed {

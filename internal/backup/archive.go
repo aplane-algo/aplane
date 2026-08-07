@@ -106,8 +106,8 @@ func CreateTarGzArchive(srcDir, destPath string) (err error) {
 	return nil
 }
 
-// Decompression limits for backup archives. A backup holds encrypted key
-// payloads, a manifest, and policy snapshots — all small; anything
+// Decompression limits for backup archives. A backup holds encrypted
+// credential payloads, a sealed manifest, and a README — all small; anything
 // approaching these bounds is not a backup.
 const (
 	maxArchiveEntries        = 4096

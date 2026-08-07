@@ -16,8 +16,8 @@ const (
 )
 
 const (
-	AdminProtocolVersionMajor = 3
-	AdminProtocolVersionMinor = 2
+	AdminProtocolVersionMajor = 4
+	AdminProtocolVersionMinor = 0
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
@@ -39,39 +39,33 @@ const (
 	MsgTypeAuthResult   = "auth_result"
 
 	// Signer state message types
-	MsgTypeUnlock                  = "unlock"
-	MsgTypeUnlockResult            = "unlock_result"
-	MsgTypeLockIdentity            = "lock_identity"
-	MsgTypeLockIdentityResult      = "lock_identity_result"
-	MsgTypeInitializeStore         = "initialize_store"
-	MsgTypeInitializeStoreResult   = "initialize_store_result"
-	MsgTypeChangeStorePass         = "change_store_passphrase"
-	MsgTypeChangeStorePassResult   = "change_store_passphrase_result"
-	MsgTypeBackup                  = "backup"
-	MsgTypeBackupResult            = "backup_result"
-	MsgTypeListBackups             = "list_backups"
-	MsgTypeBackupsList             = "backups_list"
-	MsgTypeDeleteBackup            = "delete_backup"
-	MsgTypeDeleteBackupResult      = "delete_backup_result"
-	MsgTypePreviewRestore          = "preview_restore"
-	MsgTypeRestorePreview          = "restore_preview"
-	MsgTypeRecoverBackup           = "recover_backup"
-	MsgTypeRecoverBackupResult     = "recover_backup_result"
-	MsgTypeListRecovered           = "list_recovered"
-	MsgTypeRecoveredList           = "recovered_list"
-	MsgTypeReviewRecovered         = "review_recovered"
-	MsgTypeReviewRecoveredResult   = "review_recovered_result"
-	MsgTypeActivateRecovered       = "activate_recovered"
-	MsgTypeActivateRecoveredResult = "activate_recovered_result"
-	MsgTypeRollbackRecovered       = "rollback_recovered"
-	MsgTypeRollbackRecoveredResult = "rollback_recovered_result"
-	MsgTypePurgeRecovered          = "purge_recovered"
-	MsgTypePurgeRecoveredResult    = "purge_recovered_result"
-	MsgTypeSignRequest             = "sign_request"
-	MsgTypeSignRequestCanceled     = "sign_request_canceled"
-	MsgTypeSignResponse            = "sign_response"
-	MsgTypeStatus                  = "status"
-	MsgTypeError                   = "error"
+	MsgTypeUnlock                = "unlock"
+	MsgTypeUnlockResult          = "unlock_result"
+	MsgTypeLockIdentity          = "lock_identity"
+	MsgTypeLockIdentityResult    = "lock_identity_result"
+	MsgTypeInitializeStore       = "initialize_store"
+	MsgTypeInitializeStoreResult = "initialize_store_result"
+	MsgTypeChangeStorePass       = "change_store_passphrase"
+	MsgTypeChangeStorePassResult = "change_store_passphrase_result"
+	MsgTypeBackup                = "backup"
+	MsgTypeBackupResult          = "backup_result"
+	MsgTypeListBackups           = "list_backups"
+	MsgTypeBackupsList           = "backups_list"
+	MsgTypeDeleteBackup          = "delete_backup"
+	MsgTypeDeleteBackupResult    = "delete_backup_result"
+	MsgTypePreviewRestore        = "preview_restore"
+	MsgTypeRestorePreview        = "restore_preview"
+	MsgTypeRestoreBackup         = "restore_backup"
+	MsgTypeRestoreBackupResult   = "restore_backup_result"
+	MsgTypeRollbackRestore       = "rollback_restore"
+	MsgTypeRollbackRestoreResult = "rollback_restore_result"
+	MsgTypeReconcileStore        = "reconcile_store"
+	MsgTypeReconcileStoreResult  = "reconcile_store_result"
+	MsgTypeSignRequest           = "sign_request"
+	MsgTypeSignRequestCanceled   = "sign_request_canceled"
+	MsgTypeSignResponse          = "sign_response"
+	MsgTypeStatus                = "status"
+	MsgTypeError                 = "error"
 
 	// Token provisioning message types (SSH-based token request approval)
 	MsgTypeTokenProvisioningRequest  = "token_provisioning_request"
@@ -237,7 +231,6 @@ type ChangeStorePassphraseResultMessage struct {
 	Success                  bool   `json:"success"`
 	KeysMigrated             int    `json:"keys_migrated,omitempty"`
 	TemplatesMigrated        int    `json:"templates_migrated,omitempty"`
-	RecoveredFilesMigrated   int    `json:"recovered_files_migrated,omitempty"`
 	PolicySidecarsMigrated   int    `json:"policy_sidecars_migrated,omitempty"`
 	NodeRoleSidecarsMigrated int    `json:"node_role_sidecars_migrated,omitempty"`
 	PriorGenerations         int    `json:"prior_generations,omitempty"`
@@ -267,11 +260,8 @@ type BackupResultMessage struct {
 	KeyCount        int      `json:"key_count,omitempty"`
 	Addresses       []string `json:"addresses,omitempty"`
 	Verified        bool     `json:"verified,omitempty"`
-	// SkippedKeys maps address -> reason for keys excluded from an all-keys
-	// backup because their payload failed canonical validation.
-	SkippedKeys map[string]string `json:"skipped_keys,omitempty"`
-	Code        string            `json:"code,omitempty"`
-	Error       string            `json:"error,omitempty"`
+	Code            string   `json:"code,omitempty"`
+	Error           string   `json:"error,omitempty"`
 }
 
 // ListBackupsMessage requests managed backup archives for the bound identity.
@@ -317,8 +307,6 @@ type RestoreKeyInfo struct {
 	Address       string `json:"address"`
 	KeyType       string `json:"key_type,omitempty"`
 	AlreadyExists bool   `json:"already_exists,omitempty"`
-	HasTemplate   bool   `json:"has_template,omitempty"`
-	TemplateType  string `json:"template_type,omitempty"`
 	Error         string `json:"error,omitempty"`
 }
 
@@ -336,152 +324,70 @@ type RestorePreviewMessage struct {
 	Error       string           `json:"error,omitempty"`
 }
 
-// RecoverBackupMessage decrypts selected portable entries into one inactive
-// destination-encrypted batch.
-type RecoverBackupMessage struct {
+type RestoreCredential struct {
+	Selector string `json:"selector"`
+	Category string `json:"category"`
+	KeyType  string `json:"key_type"`
+}
+
+type RestoreConflict struct {
+	Selector       string `json:"selector"`
+	Category       string `json:"category"`
+	KeyType        string `json:"key_type"`
+	ExistingSHA256 string `json:"existing_sha256,omitempty"`
+	Reason         string `json:"reason"`
+}
+
+// RestoreBackupMessage validates and commits credentials directly into one
+// generation. Destination policy and configuration are never archive input.
+type RestoreBackupMessage struct {
 	BaseMessage
 	ArchivePath      string         `json:"archive_path"`
 	Addresses        []string       `json:"addresses,omitempty"`
 	ExportPassphrase SensitiveBytes `json:"export_passphrase"`
+	ReplaceExisting  bool           `json:"replace_existing,omitempty"`
 }
 
-type RecoverBackupResultMessage struct {
+type RestoreBackupResultMessage struct {
 	BaseMessage
-	Success         bool   `json:"success"`
-	RestoreID       string `json:"restore_id,omitempty"`
-	ArchiveName     string `json:"archive_name,omitempty"`
-	ArchiveChecksum string `json:"archive_checksum,omitempty"`
-	EntryCount      int    `json:"entry_count,omitempty"`
-	Code            string `json:"code,omitempty"`
-	Error           string `json:"error,omitempty"`
+	Success       bool                `json:"success"`
+	OperationID   string              `json:"operation_id,omitempty"`
+	ArchiveSHA256 string              `json:"archive_sha256,omitempty"`
+	GenerationID  string              `json:"generation_id,omitempty"`
+	Restored      []RestoreCredential `json:"restored,omitempty"`
+	Identical     []RestoreCredential `json:"identical,omitempty"`
+	Conflicts     []RestoreConflict   `json:"conflicts,omitempty"`
+	KeyCount      int                 `json:"key_count,omitempty"`
+	Code          string              `json:"code,omitempty"`
+	Error         string              `json:"error,omitempty"`
 }
 
-type ListRecoveredMessage struct {
+type RollbackRestoreMessage struct {
 	BaseMessage
 }
 
-type RecoveredBatchInfo struct {
-	RestoreID          string `json:"restore_id"`
-	CreatedAt          int64  `json:"created_at"`
-	ArchiveName        string `json:"archive_name"`
-	ArchiveChecksum    string `json:"archive_checksum"`
-	SourceNodeRole     string `json:"source_node_role"`
-	SourcePolicyStatus string `json:"source_policy_status"`
-	SourcePolicySHA256 string `json:"source_policy_sha256,omitempty"`
-	EntryCount         int    `json:"entry_count"`
-}
-
-type RecoveredListMessage struct {
+type RollbackRestoreResultMessage struct {
 	BaseMessage
-	Batches []RecoveredBatchInfo `json:"batches,omitempty"`
-	Code    string               `json:"code,omitempty"`
-	Error   string               `json:"error,omitempty"`
+	Success      bool   `json:"success"`
+	OperationID  string `json:"operation_id,omitempty"`
+	GenerationID string `json:"generation_id,omitempty"`
+	KeyCount     int    `json:"key_count,omitempty"`
+	Code         string `json:"code,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
-type ReviewRecoveredMessage struct {
+type ReconcileStoreMessage struct {
 	BaseMessage
-	RestoreID string `json:"restore_id"`
 }
 
-type RecoveredReviewEntry struct {
-	Selector string `json:"selector"`
-	Category string `json:"category"`
-	KeyType  string `json:"key_type"`
-}
-
-type RecoveredActiveConflict struct {
-	Selector string `json:"selector"`
-	Category string `json:"category"`
-	KeyType  string `json:"key_type"`
-	SHA256   string `json:"sha256"`
-}
-
-type RecoveryPolicyChange struct {
-	Category    string `json:"category"`
-	Selector    string `json:"selector,omitempty"`
-	Path        string `json:"path"`
-	Source      string `json:"source"`
-	Destination string `json:"destination"`
-}
-
-// RecoveryGenesisHashMapping is one unverified, archive-reported custom
-// genesis-hash binding.
-type RecoveryGenesisHashMapping struct {
-	GenesisHash string `json:"genesis_hash"`
-	Network     string `json:"network"`
-}
-
-type ReviewRecoveredResultMessage struct {
+type ReconcileStoreResultMessage struct {
 	BaseMessage
-	Success                      bool                         `json:"success"`
-	RestoreID                    string                       `json:"restore_id,omitempty"`
-	ArchiveChecksum              string                       `json:"archive_checksum,omitempty"`
-	ArchiveCreatedAtUnix         int64                        `json:"archive_created_at,omitempty"`
-	SourceNodeRole               string                       `json:"source_node_role,omitempty"`
-	SourcePolicyStatus           string                       `json:"source_policy_status,omitempty"`
-	SourcePolicySHA256           string                       `json:"source_policy_sha256,omitempty"`
-	DestinationPolicySHA256      string                       `json:"destination_policy_sha256,omitempty"`
-	DestinationApprovalMode      string                       `json:"destination_approval_mode,omitempty"`
-	UnattendedSigningWarning     string                       `json:"unattended_signing_warning,omitempty"`
-	PolicyComparison             string                       `json:"policy_comparison,omitempty"`
-	SecurityChanges              []RecoveryPolicyChange       `json:"security_changes,omitempty"`
-	ChangedPaths                 []string                     `json:"changed_paths,omitempty"`
-	SourceUserAutoApprove        *bool                        `json:"source_user_auto_approve,omitempty"`
-	SourceGenesisHashMappings    []RecoveryGenesisHashMapping `json:"source_genesis_hash_mappings,omitempty"`
-	Entries                      []RecoveredReviewEntry       `json:"entries,omitempty"`
-	ActiveConflicts              []RecoveredActiveConflict    `json:"active_conflicts,omitempty"`
-	ReviewToken                  string                       `json:"review_token,omitempty"`
-	UnattendedSigningAckRequired *bool                        `json:"unattended_signing_ack_required,omitempty"`
-	AcknowledgeUnattendedSigning bool                         `json:"acknowledge_unattended_signing,omitempty"`
-	ReplaceExisting              bool                         `json:"replace_existing,omitempty"`
-	Code                         string                       `json:"code,omitempty"`
-	Error                        string                       `json:"error,omitempty"`
-}
-
-type ActivateRecoveredMessage struct {
-	BaseMessage
-	RestoreID                    string `json:"restore_id"`
-	ReviewToken                  string `json:"review_token"`
-	AcknowledgeUnattendedSigning bool   `json:"acknowledge_unattended_signing,omitempty"`
-	ReplaceExisting              bool   `json:"replace_existing,omitempty"`
-}
-
-type ActivateRecoveredResultMessage struct {
-	BaseMessage
-	Success   bool                   `json:"success"`
-	RestoreID string                 `json:"restore_id,omitempty"`
-	Activated []RecoveredReviewEntry `json:"activated,omitempty"`
-	Warnings  []string               `json:"warnings,omitempty"`
-	KeyCount  int                    `json:"key_count,omitempty"`
-	Code      string                 `json:"code,omitempty"`
-	Error     string                 `json:"error,omitempty"`
-}
-
-type RollbackRecoveredMessage struct {
-	BaseMessage
-	RestoreID string `json:"restore_id"`
-}
-
-type RollbackRecoveredResultMessage struct {
-	BaseMessage
-	Success   bool   `json:"success"`
-	RestoreID string `json:"restore_id,omitempty"`
-	KeyCount  int    `json:"key_count,omitempty"`
-	Code      string `json:"code,omitempty"`
-	Error     string `json:"error,omitempty"`
-}
-
-type PurgeRecoveredMessage struct {
-	BaseMessage
-	RestoreID string `json:"restore_id"`
-}
-
-type PurgeRecoveredResultMessage struct {
-	BaseMessage
-	Success   bool   `json:"success"`
-	RestoreID string `json:"restore_id,omitempty"`
-	Code      string `json:"code,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Success      bool   `json:"success"`
+	GenerationID string `json:"generation_id,omitempty"`
+	KeyCount     int    `json:"key_count,omitempty"`
+	State        string `json:"state,omitempty"`
+	Code         string `json:"code,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 // PolicyViolation represents a dangerous transaction field detected by the policy engine

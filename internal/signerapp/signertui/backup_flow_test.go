@@ -5,7 +5,6 @@ package tui
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -81,49 +80,11 @@ func TestBackupResultSuccessShowsArchivePath(t *testing.T) {
 	}
 }
 
-// TestBackupResultSurfacesSkippedKeys pins that skipped-key warnings from an
-// all-keys backup reach the operator: they must land in model state and render
-// prominently on the result screen, never a clean "Backup Created".
-func TestBackupResultSurfacesSkippedKeys(t *testing.T) {
-	m := Model{viewState: ViewBackingUp}
-	const skippedAddress = "SKIPPEDKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-
-	next, _ := m.Update(BackupResultMsg{
-		Success:     true,
-		ArchivePath: filepath.Join(t.TempDir(), "backup.tar.gz"),
-		SkippedKeys: map[string]string{skippedAddress: "incompatible key file format"},
-	})
-	got := next.(Model)
-	if got.viewState != ViewBackupDisplay {
-		t.Fatalf("viewState = %v, want ViewBackupDisplay", got.viewState)
-	}
-	if len(got.backup.skippedKeys) != 1 {
-		t.Fatalf("skippedKeys = %#v, want one entry", got.backup.skippedKeys)
-	}
-
-	view := got.renderBackupDisplay()
-	if !strings.Contains(view, "Backup Created With Warnings") {
-		t.Fatalf("view missing warning title:\n%s", view)
-	}
-	if !strings.Contains(view, "NOT backed up") || !strings.Contains(view, skippedAddress) {
-		t.Fatalf("view missing skipped-key warning:\n%s", view)
-	}
-	if !strings.Contains(view, "incompatible key file format") {
-		t.Fatalf("view missing skip reason:\n%s", view)
-	}
-
-	clean := Model{viewState: ViewBackupDisplay, backup: backupState{archivePath: "/tmp/a.tgz"}}
-	if view := clean.renderBackupDisplay(); strings.Contains(view, "Warnings") {
-		t.Fatalf("clean backup view should not mention warnings:\n%s", view)
-	}
-}
-
 func TestBackupDisplayCloseReturnsToKeyList(t *testing.T) {
 	m := Model{
 		viewState: ViewBackupDisplay,
 		backup: backupState{
 			archivePath: filepath.Join(t.TempDir(), "backups", "default", "aplane-backup.tar.gz"),
-			skippedKeys: map[string]string{"ADDR": "reason"},
 		},
 	}
 
@@ -134,9 +95,6 @@ func TestBackupDisplayCloseReturnsToKeyList(t *testing.T) {
 	}
 	if got.backup.archivePath != "" {
 		t.Fatalf("backupArchivePath = %q, want empty", got.backup.archivePath)
-	}
-	if got.backup.skippedKeys != nil {
-		t.Fatalf("skippedKeys = %#v, want cleared", got.backup.skippedKeys)
 	}
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)

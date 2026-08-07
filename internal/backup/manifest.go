@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/backup/sourcecontext"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -28,14 +27,10 @@ const (
 	// ManifestSchema identifies the sealed manifest inside its envelope.
 	// The schema lives in the sealed plaintext, so it also separates this
 	// record from any other standalone-encrypted payload.
-	ManifestSchema        = "aplane.backup.manifest.v2"
+	ManifestSchema        = "aplane.credential-backup.manifest.v1"
 	ManifestSchemaVersion = 1
 
 	maxSealedManifestBytes = 1 << 20
-
-	// maxSourcePolicyBytes bounds the archive policy snapshot that recovery
-	// embeds verbatim into the encrypted batch metadata.
-	maxSourcePolicyBytes = 256 * 1024
 )
 
 // ManifestMember is one archive member's authenticated identity.
@@ -49,10 +44,6 @@ type ManifestMember struct {
 // Decrypting it proves the archive was created, or endorsed, by a party that
 // knew the export passphrase (docs/PROPOSAL_ARCHIVE_MANIFEST.md); the member
 // inventory then makes every other archive member tamper-evident.
-//
-// Source context is carried inline: it is review material describing the
-// source store and never changes destination behavior. Authentication makes
-// it trustworthy as a report, not as an instruction.
 type Manifest struct {
 	Schema         string `json:"schema"`
 	SchemaVersion  int    `json:"schema_version"`
@@ -61,37 +52,6 @@ type Manifest struct {
 
 	// Members covers every archive member except the manifest itself.
 	Members []ManifestMember `json:"members"`
-
-	// UserAutoApprove is recorded for signer sources only.
-	UserAutoApprove *bool `json:"user_auto_approve,omitempty"`
-	// GenesisHashMappings carries custom network mappings only.
-	GenesisHashMappings []sourcecontext.GenesisHashMapping `json:"genesis_hash_mappings,omitempty"`
-}
-
-// SourceProjection returns the manifest's source context.
-func (m Manifest) SourceProjection() sourcecontext.Projection {
-	return sourcecontext.CloneProjection(sourcecontext.Projection{
-		UserAutoApprove:     m.UserAutoApprove,
-		GenesisHashMappings: m.GenesisHashMappings,
-	})
-}
-
-// SourceSnapshot returns the manifest's source context in the shape
-// WriteSealedManifest consumes, so an archive can be re-sealed after its
-// members are legitimately rewritten.
-func (m Manifest) SourceSnapshot() SourceSettingsSnapshot {
-	snapshot := SourceSettingsSnapshot{}
-	if m.UserAutoApprove != nil {
-		value := *m.UserAutoApprove
-		snapshot.UserAutoApprove = &value
-	}
-	if len(m.GenesisHashMappings) > 0 {
-		snapshot.GenesisHashMappings = make(map[string]string, len(m.GenesisHashMappings))
-		for _, mapping := range m.GenesisHashMappings {
-			snapshot.GenesisHashMappings[mapping.GenesisHash] = mapping.Network
-		}
-	}
-	return snapshot
 }
 
 // WriteSealedManifest inventories every file already staged under destDir,
@@ -102,7 +62,6 @@ func WriteSealedManifest(
 	destDir string,
 	role noderole.Role,
 	createdAt time.Time,
-	snapshot SourceSettingsSnapshot,
 	exportPassphrase []byte,
 ) error {
 	if _, err := noderole.ParseRole(string(role)); err != nil {
@@ -114,26 +73,16 @@ func WriteSealedManifest(
 	if createdAt.IsZero() {
 		createdAt = time.Now()
 	}
-	projection, err := sourcecontext.NormalizeProjection(
-		role,
-		snapshot.UserAutoApprove,
-		snapshot.GenesisHashMappings,
-	)
-	if err != nil {
-		return fmt.Errorf("validate backup source settings: %w", err)
-	}
 	members, err := inventoryArchiveMembers(destDir)
 	if err != nil {
 		return err
 	}
 	manifest := Manifest{
-		Schema:              ManifestSchema,
-		SchemaVersion:       ManifestSchemaVersion,
-		SourceNodeRole:      string(role),
-		CreatedAtUnix:       createdAt.UTC().Unix(),
-		Members:             members,
-		UserAutoApprove:     projection.UserAutoApprove,
-		GenesisHashMappings: projection.GenesisHashMappings,
+		Schema:         ManifestSchema,
+		SchemaVersion:  ManifestSchemaVersion,
+		SourceNodeRole: string(role),
+		CreatedAtUnix:  createdAt.UTC().Unix(),
+		Members:        members,
 	}
 	plaintext, err := json.Marshal(manifest)
 	if err != nil {
@@ -199,17 +148,24 @@ func OpenSealedManifest(sourceRoot string, exportPassphrase []byte) (Manifest, e
 	if manifest.SchemaVersion != ManifestSchemaVersion {
 		return Manifest{}, fmt.Errorf("unsupported backup manifest schema_version: %d", manifest.SchemaVersion)
 	}
-	role, err := noderole.ParseRole(manifest.SourceNodeRole)
-	if err != nil {
+	if _, err := noderole.ParseRole(manifest.SourceNodeRole); err != nil {
 		return Manifest{}, fmt.Errorf("invalid backup manifest source_node_role: %w", err)
-	}
-	if err := sourcecontext.ValidateProjection(role, manifest.SourceProjection()); err != nil {
-		return Manifest{}, fmt.Errorf("invalid backup manifest source settings: %w", err)
 	}
 	if err := verifyArchiveMembers(sourceRoot, manifest.Members); err != nil {
 		return Manifest{}, err
 	}
 	return manifest, nil
+}
+
+func requireJSONEOF(decoder *json.Decoder) error {
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("unexpected trailing JSON value")
+		}
+		return err
+	}
+	return nil
 }
 
 // inventoryArchiveMembers hashes every regular file under root except the
@@ -271,6 +227,9 @@ func verifyArchiveMembers(root string, members []ManifestMember) error {
 		if _, duplicate := listed[member.Path]; duplicate {
 			return fmt.Errorf("backup manifest lists member %q twice", member.Path)
 		}
+		if !isCredentialBackupMember(member.Path) {
+			return fmt.Errorf("backup manifest lists unsupported member %q", member.Path)
+		}
 		listed[member.Path] = member
 	}
 
@@ -298,6 +257,15 @@ func verifyArchiveMembers(root string, members []ManifestMember) error {
 			strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+func isCredentialBackupMember(path string) bool {
+	if path == "README.md" {
+		return true
+	}
+	dir, name := filepath.Split(path)
+	return dir == "apb/" && strings.HasSuffix(name, ".apb") &&
+		name != ".apb" && name == filepath.Base(name)
 }
 
 func readSealedManifestFile(path string) ([]byte, error) {

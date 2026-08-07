@@ -84,6 +84,25 @@ jobs:
       - name: Run API contract tests
         run: make contract-test
 
+  store:
+    name: Store Lifecycle and Recovery
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Run blank-store lifecycle tests
+        run: make store-lifecycle-test
+
+      - name: Run deterministic store crash tests
+        run: make store-crash-test
+
   formal:
     name: Formal Models
     needs: lint

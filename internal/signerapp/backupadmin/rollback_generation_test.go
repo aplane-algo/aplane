@@ -62,7 +62,7 @@ func TestRollbackMintReconstructsAnchoredSourceUnderCurrentTerm(t *testing.T) {
 	second, err := genstore.Mint(paths, identity, genstore.MintRequest{
 		GenerationID: genB,
 		Parent:       first.GenerationID(),
-		Operation:    "restore-activation",
+		Operation:    genstore.OperationCredentialRestore,
 		OperationID:  "activate-b",
 		CreatedAt:    time.Unix(1_785_300_001, 0),
 		Integrity:    kr,
@@ -125,7 +125,7 @@ func TestRollbackMintReconstructsAnchoredSourceUnderCurrentTerm(t *testing.T) {
 	third, err := genstore.Mint(paths, identity, genstore.MintRequest{
 		GenerationID:               genC,
 		Parent:                     second.GenerationID(),
-		Operation:                  "restore-rollback",
+		Operation:                  genstore.OperationCredentialRestoreRollback,
 		OperationID:                "rollback-c",
 		RollbackSourceGenerationID: first.GenerationID(),
 		CreatedAt:                  time.Unix(1_785_300_002, 0),

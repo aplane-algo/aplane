@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/testcheckpoint"
 )
 
 // CompletionReport describes durable progress through the completion
@@ -151,6 +152,9 @@ func CompleteRotation(
 		return report, err
 	}
 	report.RootClosed = true
+	if err := testcheckpoint.Reach("rotation.root_settled"); err != nil {
+		return report, err
+	}
 
 	if err := fsutil.RemoveDurable(
 		paths.RotationSnapshotPath(identityID),

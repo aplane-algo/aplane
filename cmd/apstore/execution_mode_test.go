@@ -64,6 +64,20 @@ func TestAcquireOfflineMutationLockForArgsSkipsManagedBackupLock(t *testing.T) {
 	}
 	release()
 }
+
+func TestManagedRestoreCommandSetMatchesProtocolV4(t *testing.T) {
+	for _, command := range []string{"preview", "apply", "rollback", "reconcile"} {
+		if !isManagedRestoreCommand([]string{"restore", command}) {
+			t.Fatalf("restore %s was not recognized as a managed command", command)
+		}
+	}
+	for _, removed := range []string{"list", "review", "activate", "purge"} {
+		if isManagedRestoreCommand([]string{"restore", removed}) {
+			t.Fatalf("removed restore command %s remains reachable", removed)
+		}
+	}
+}
+
 func TestAcquireOfflineMutationLockForArgsSkipsIPCTemplateCommands(t *testing.T) {
 	dataDir := t.TempDir()
 

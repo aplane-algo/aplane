@@ -80,9 +80,6 @@ func cmdChangepass() error {
 	if result.TemplatesMigrated > 0 {
 		logInfof("  - %d template file(s) migrated", result.TemplatesMigrated)
 	}
-	if result.RecoveredFilesMigrated > 0 {
-		logInfof("  - %d recovered batch file(s) migrated", result.RecoveredFilesMigrated)
-	}
 	if result.PolicySidecarsMigrated > 0 {
 		logInfof("  - %d policy sidecar(s) re-signed", result.PolicySidecarsMigrated)
 	}

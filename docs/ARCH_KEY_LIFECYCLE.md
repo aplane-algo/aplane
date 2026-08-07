@@ -216,8 +216,7 @@ key is rejected during reload rather than published as a signable key.
 |---|---|---|---|
 | Absent | No active key file under `keys/`. | No. | May be restored from a backup payload. |
 | Archived/deleted | Key file moved to `deleted/keys/`. | No; outside active scans. | Restore can write a new active canonical key file if selected. |
-| Recovered/inactive | Destination-encrypted `.recovered` entry exists under one `recovered/<restore-id>/` batch. | No; outside active scans and watcher candidates. | Review and batch activation are required before any managed credential becomes active. |
-| Store recovery-blocked | `CURRENT` or the selected generation failed reconciliation or validation at unlock, or a commit's durability could not be confirmed. | No; the identity is held in recovery mode with signing blocked. | Recovered batches stay inactive; the operator resolves the store from recovery mode before activation proceeds. |
+| Store recovery-blocked | `CURRENT` or the selected generation failed reconciliation or validation at unlock, or a commit's durability could not be confirmed. | No; the identity is held in recovery mode with signing blocked. | The operator can reconcile, roll back an eligible restore, or directly restore a validated credential archive to repair damage. |
 | Present but signer locked | Encrypted `.key` or `.sen` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted managed credentials; restore requires authenticated/unlocked flow. |
 | Present, decrypts, canonical filename matches derived selector and category | Account `.key` matches its Algorand address, or witness `.sen` matches its Witness Key ID. | Candidate for its category-specific signing path after validation. | Backup and restore use canonical filenames. |
 | Misnamed or wrong-class managed credential | Basename selector mismatches the payload, witness payload uses `.key`, or account payload uses `.sen`. | No; scanner rejects/skips it. | Restore derives the canonical filename from validated payload category. |
@@ -244,10 +243,9 @@ key is rejected during reload rather than published as a signable key.
 | Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write the category-selected canonical managed credential. | Credential becomes active after reload/scan. |
 | Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.sen` to `deleted/keys/`. | Credential leaves active scans. |
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
-| Restore preview | Managed archive and passphrase are valid. | Decrypt/inspect payloads without mutation and compare payload key classes to destination node role. | Reports addresses, key types, conflicts, errors, role mismatches, and template requirements. |
-| Restore recover | Selected payloads pass validation and destination node role allows every key class. | Atomically publish one destination-encrypted recovered batch outside active scans. | Whole batch remains inactive; no reload. |
-| Restore review | Recovered batch and current destination state validate. | Compare source material with current verified policy, report effective destination approval mode and active conflicts, and issue a review token. | No durable active-state mutation. |
-| Restore activate | Review token is current, acknowledgements are present, and replacement conflicts are explicitly accepted. | Mint a new generation containing the whole batch, commit it with a single durable `CURRENT` flip, reload, then remove the inactive batch. | All credentials become active together; an uncommitted attempt leaves the prior generation active, and reload failure rolls the pointer back to it. |
+| Restore preview | Managed archive and passphrase are valid. | Authenticate and inspect complete credential payloads without mutation. | Reports addresses, key types, destination presence, errors, and role mismatches. |
+| Restore apply | Every selected credential validates and replacement conflicts are explicitly accepted. | Mint one generation containing credential changes only, commit it with a single durable `CURRENT` flip, then reload. | All selected credentials become active together; an uncommitted attempt leaves the parent active, and reload failure automatically rolls back to it. |
+| Restore rollback | Current generation is exactly a clean, rollback-eligible `credential-restore`. | Reconstruct the sealed parent into a fresh current-term rollback generation. | Restores the pre-restore credential state without repointing at historical ciphertext; rollback generations are not rollback-eligible. |
 | Unlock/reload | The keyring is open. | Verify node role integrity, register enabled templates, scan key files, validate node inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 
@@ -268,21 +266,13 @@ present and otherwise defaults to `signer`.
 |---|---|---|---|
 | Destination node role forbids key class | Fails or is rejected before publishing active inventory. | No template/provider state should be installed for the forbidden class. | No on this node. |
 | Key type unsupported by binary | Fails if the key needs that provider or base provider. | Cannot install a runtime provider not supported by the binary. | No. |
-| Key type missing locally | Succeeds when the key payload has complete current-format signing metadata, any needed base provider is supported, and node role allows it. | Bundled template may be installed only when no authoritative local source exists; library-visible compiled provider activation is created as needed. | Yes only if restore installs/enables a template or activates a compiled provider. |
-| Key type imported/installed but disabled | Key restore does not require enabling the template to sign. | Explicit template restore or matching bundled template restore may re-enable it; key restore alone does not need to. | No unless explicitly enabled/re-enabled. |
-| Key type enabled and fingerprint consistent | Normal path. | Restore uses the local authoritative definition; identical bundled definitions are provenance only. | Yes. |
-| Key type enabled but fingerprint inconsistent | Key restore may still succeed from stored signing metadata; reload may ignore the bad activation/template. | Conflicting bundled template is skipped for key restore and surfaced as a warning; explicit template restore rejects conflicts. | No until repaired. |
-| Local template conflicts with bundled template | Key restore writes the key from stored metadata and skips the bundled template with a warning. | Local definition is not overwritten. | Existing local generation state remains as it was. |
-| Backup lacks bundled template | Current-format key restore can still succeed from stored key metadata. | No template installed from the backup. | No change unless compiled provider activation is needed and supported. |
-| Key already exists | Skipped unless overwrite is explicitly requested. | Restore side effects are avoided or rolled back per key. | Existing destination state remains authoritative. |
-
-Restore precedence for same-`key_type` template definitions is:
-
-1. signer-data library template,
-2. existing identity-local installed template, whether enabled or disabled,
-3. bundled template from the backup, only when no local source exists.
-
-The restore path never silently changes what a local `key_type` means.
+| Key type missing locally | Succeeds when the credential has complete current-format signing metadata, any needed base provider is supported, and node role allows it. | Restore does not install templates or create key-type state. | No. |
+| Key type imported/installed but disabled | Credential restore does not require enabling the template to sign. | Destination template state remains disabled. | No. |
+| Key type enabled and fingerprint consistent | Normal path. | Destination template/provider state remains unchanged. | No. |
+| Key type enabled but fingerprint inconsistent | Credential may still restore and sign from stored metadata. | Restore does not reconcile or overwrite destination template state. | No. |
+| Backup has no template | Current-format key restore succeeds from stored key metadata when any required base provider is compiled in. | No template is part of a credential backup. | Destination state is unchanged. |
+| Key already exists and is canonically identical | Idempotent no-op. | No template/provider effect. | Existing destination state remains authoritative. |
+| Key already exists but differs or is unreadable | Conflict unless `replace_existing` is explicit. | No template/provider effect. | Replacement occurs only inside the atomic restore generation. |
 
 ## Runtime Reload Behavior
 
@@ -329,9 +319,9 @@ is not published as valid runtime inventory.
 | Backup create | Records source node role metadata in the managed archive manifest. | Reads selected active key files into encrypted backup payloads. | Source store unchanged. |
 | Backup import | None in active identity. | None in active identity. | Validates archive before publishing to managed backup locker. |
 | Restore preview | None. | None. | Decrypts and reports only, including node-role mismatch diagnostics. |
-| Restore recover | None in active identity. | Writes only destination-encrypted recovered entries. | Atomic batch, no reload, never signable. |
-| Restore review | None. | None. | Security-first policy comparison, destination auto-approve warning, conflicts, and review token. |
-| Restore activate | May install/enable required template or activate compiled provider when node role allows it. | Commits the reviewed batch as a new generation behind the `CURRENT` flip. | Reload publishes all entries; a commit with unconfirmed durability enters recovery mode until reconciliation. |
+| Restore apply | None. | Validates every selected complete credential, classifies canonical-plaintext identity/conflict, then commits all pending entries as one generation behind the `CURRENT` flip. | Destination policy/configuration remain authoritative; reload publishes all entries, and uncertain durability enters recovery mode. |
+| Restore rollback | None. | Reconstructs the sealed parent of the latest clean rollback-eligible credential restore into a fresh generation. | A rollback generation is not itself eligible for another rollback. |
+| Restore reconcile | None. | Validates the visible generation after interrupted or uncertain completion. | Exits recovery mode only after clean validation and reload. |
 | Rebuild absent store | Writes root `node.yaml` from explicit `--role`, manifest source role metadata, or `signer` fallback. | Restores selected keys into a new identity store. | Manifest role is diagnostic/default only; destination key-class gates remain authoritative. |
 | Store passphrase change | Mints a fresh term key, re-encrypts installed templates and keys under it, rewrites role HMAC sidecars, and replaces `keyring.enc`. | Re-encrypts keys. | Authority and state are unchanged. |
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
@@ -361,9 +351,10 @@ is not published as valid runtime inventory.
     be treated as independent signing authority.
 13. Guarded account keys use the guarded orchestration flow; normal `/sign`
     rejects them.
-14. Live backup restore is batch recovery followed by reviewed activation; it
-    must not silently redefine an existing local `key_type`, replace an active
-    credential, or enter the signing index before activation completes.
+14. Live backup restore validates the full selected credential set before one
+    generation commit. It must not change policy, templates, or key-type state,
+    replace a conflicting credential without explicit authorization, or enter
+    the signing index before commit and reload complete.
 15. Template/provider fingerprint conflicts are generation/provenance
     problems, not automatic invalidation of otherwise valid key files.
     Comparisons are version-aware: the fingerprint is behavior-only and

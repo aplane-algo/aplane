@@ -15,9 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 func TestIPCBackupCreatesManagedArchive(t *testing.T) {
@@ -87,336 +84,53 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 	}
 }
 
-func TestIPCManagedBackupPreviewAndRestore(t *testing.T) {
+func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-
 	ir := server.registry.Get(auth.DefaultIdentityID)
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
-
 	svc := signerAdminServices{signer: server}
-	gen := svc.GenerateKey(context.Background(), ir, adminproto.GenerateKeyRequest{KeyType: "ed25519"})
-	if !gen.Success {
-		t.Fatalf("GenerateKey() failed: %s", gen.Error)
+	generated := svc.GenerateKey(context.Background(), ir, adminproto.GenerateKeyRequest{KeyType: "ed25519"})
+	if !generated.Success {
+		t.Fatalf("GenerateKey() = %+v", generated)
 	}
-
 	ipcServer := &IPCServer{signer: server}
 	backupRecorder := &ipcJSONRecorderConn{}
-	backupSession := newBoundTestSession(ipcServer, backupRecorder, ir)
-	dispatchIPCMessage(t, backupSession, protocol.BackupMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeBackup,
-			ID:   "backup-restore-test",
-		},
+	dispatchIPCMessage(t, newBoundTestSession(ipcServer, backupRecorder, ir), protocol.BackupMessage{
+		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeBackup, ID: "backup-direct"},
 		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
 	})
-	backupMsgs := backupRecorder.messages(t)
-	if len(backupMsgs) != 1 {
-		t.Fatalf("backup message count = %d, want 1", len(backupMsgs))
-	}
-	archivePath, _ := backupMsgs[0]["archive_path"].(string)
+	backupMessages := backupRecorder.messages(t)
+	archivePath, _ := backupMessages[0]["archive_path"].(string)
 	if archivePath == "" {
-		t.Fatal("archive_path missing from backup response")
+		t.Fatalf("backup response = %#v", backupMessages)
 	}
-
-	listRecorder := &ipcJSONRecorderConn{}
-	listSession := newBoundTestSession(ipcServer, listRecorder, ir)
-	dispatchIPCMessage(t, listSession, protocol.ListBackupsMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeListBackups,
-			ID:   "list-backups-test",
-		},
-	})
-	listMsgs := listRecorder.messages(t)
-	if len(listMsgs) != 1 {
-		t.Fatalf("list message count = %d, want 1", len(listMsgs))
+	if result := svc.DeleteKey(ir, adminproto.DeleteKeyRequest{Address: generated.Address}); !result.Success {
+		t.Fatalf("DeleteKey() = %+v", result)
 	}
-	if !reflectJSONSubset(listMsgs[0], map[string]any{
-		"kind": string(protocol.MessageKindResponse),
-		"type": protocol.MsgTypeBackupsList,
-		"id":   "list-backups-test",
-	}) {
-		t.Fatalf("list backups response mismatch: %#v", listMsgs[0])
-	}
-	backups, _ := listMsgs[0]["backups"].([]any)
-	if len(backups) != 1 {
-		t.Fatalf("managed backup count = %d, want 1", len(backups))
-	}
-	backupInfo, ok := backups[0].(map[string]any)
-	if !ok {
-		t.Fatalf("backup entry has unexpected type: %#v", backups[0])
-	}
-	if backupInfo["path"] != archivePath {
-		t.Fatalf("listed backup path = %#v, want %s", backupInfo["path"], archivePath)
-	}
-
-	previewRecorder := &ipcJSONRecorderConn{}
-	previewSession := newBoundTestSession(ipcServer, previewRecorder, ir)
-	dispatchIPCMessage(t, previewSession, protocol.PreviewRestoreMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypePreviewRestore,
-			ID:   "preview-restore-test",
-		},
+	restoreRecorder := &ipcJSONRecorderConn{}
+	dispatchIPCMessage(t, newBoundTestSession(ipcServer, restoreRecorder, ir), protocol.RestoreBackupMessage{
+		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: "restore-direct"},
 		ArchivePath:      filepath.Base(archivePath),
+		Addresses:        []string{generated.Address},
 		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
 	})
-	previewMsgs := previewRecorder.messages(t)
-	if len(previewMsgs) != 1 {
-		t.Fatalf("preview message count = %d, want 1", len(previewMsgs))
-	}
-	if !reflectJSONSubset(previewMsgs[0], map[string]any{
-		"kind": string(protocol.MessageKindResponse),
-		"type": protocol.MsgTypeRestorePreview,
-		"id":   "preview-restore-test",
-	}) {
-		t.Fatalf("preview restore response mismatch: %#v", previewMsgs[0])
-	}
-	previewKeys, _ := previewMsgs[0]["keys"].([]any)
-	if len(previewKeys) != 1 {
-		t.Fatalf("preview key count = %d, want 1", len(previewKeys))
-	}
-	previewKey, ok := previewKeys[0].(map[string]any)
-	if !ok {
-		t.Fatalf("preview key has unexpected type: %#v", previewKeys[0])
-	}
-	if previewKey["address"] != gen.Address || previewKey["already_exists"] != true {
-		t.Fatalf("preview key = %#v, want generated address marked existing", previewKey)
-	}
-
-	del := svc.DeleteKey(ir, adminproto.DeleteKeyRequest{Address: gen.Address})
-	if !del.Success {
-		t.Fatalf("DeleteKey() failed: %s", del.Error)
-	}
-	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); !os.IsNotExist(err) {
-		t.Fatalf("deleted key stat err = %v, want not exist", err)
-	}
-
-	server.ipcServer = ipcServer
-	activeRecorder := addActiveIdentitySession(t, ipcServer, auth.DefaultIdentityID)
-
-	recoverRecorder := &ipcJSONRecorderConn{}
-	recoverSession := newBoundTestSession(ipcServer, recoverRecorder, ir)
-	dispatchIPCMessage(t, recoverSession, protocol.RecoverBackupMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeRecoverBackup,
-			ID:   "recover-backup-test",
-		},
-		ArchivePath:      filepath.Base(archivePath),
-		Addresses:        []string{gen.Address},
-		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
-	})
-	recoverMsgs := recoverRecorder.messages(t)
-	if len(recoverMsgs) != 1 {
-		t.Fatalf("recover message count = %d, want 1", len(recoverMsgs))
-	}
-	if !reflectJSONSubset(recoverMsgs[0], map[string]any{
+	restoreMessages := restoreRecorder.messages(t)
+	if len(restoreMessages) != 1 || !reflectJSONSubset(restoreMessages[0], map[string]any{
 		"kind":    string(protocol.MessageKindResponse),
-		"type":    protocol.MsgTypeRecoverBackupResult,
-		"id":      "recover-backup-test",
+		"type":    protocol.MsgTypeRestoreBackupResult,
+		"id":      "restore-direct",
 		"success": true,
 	}) {
-		t.Fatalf("recover backup response mismatch: %#v", recoverMsgs[0])
+		t.Fatalf("restore response = %#v", restoreMessages)
 	}
-	restoreID, _ := recoverMsgs[0]["restore_id"].(string)
-	if restoreID == "" {
-		t.Fatalf("recover response missing restore_id: %#v", recoverMsgs[0])
-	}
-	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); !os.IsNotExist(err) {
-		t.Fatalf("recovered key became active before review/activation: %v", err)
-	}
-	if ir.KeyCount() != 0 {
-		t.Fatalf("active runtime key count after recovery = %d, want 0", ir.KeyCount())
-	}
-	if activeMsgs := activeRecorder.messages(t); len(activeMsgs) != 0 {
-		t.Fatalf("active notification count after recovery = %d, want 0", len(activeMsgs))
-	}
-
-	restartedServer := &Signer{
-		registry: identity.NewRegistry(),
-		config:   server.config,
-		keyPaths: server.keyPaths,
-		dataDir:  server.dataDir,
-	}
-	if _, err := tokenfile.LoadAPlaneToken(server.dataDir, auth.DefaultIdentityID); err != nil {
-		t.Fatalf("LoadAPlaneToken(restart) error = %v", err)
-	}
-	restartedRuntime, err := signerstartup.BuildIdentityRuntime(
-		restartedServer.registry,
-		testIdentityBuildOptions(restartedServer),
-		restartedServer.identityBuildHooks(),
-		auth.DefaultIdentityID,
-	)
-	if err != nil {
-		t.Fatalf("BuildIdentityRuntime(restart) error = %v", err)
-	}
-	success, keyCount, errMsg, code := (signerAdminServices{signer: restartedServer}).
-		UnlockIdentity(restartedRuntime, append([]byte(nil), testPassphrase...))
-	if !success || keyCount != 0 || errMsg != "" || code != "" {
-		t.Fatalf(
-			"UnlockIdentity(restart) = success %v keys %d error %q code %q, want inert recovered batch",
-			success,
-			keyCount,
-			errMsg,
-			code,
-		)
-	}
-	defer restartedRuntime.Lock()
-	if restartedRuntime.KeyCount() != 0 {
-		t.Fatalf("restarted runtime key count = %d, want 0", restartedRuntime.KeyCount())
-	}
-	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); !os.IsNotExist(err) {
-		t.Fatalf("recovered key became active after signer restart: %v", err)
-	}
-
-	reviewRecorder := &ipcJSONRecorderConn{}
-	reviewSession := newBoundTestSession(ipcServer, reviewRecorder, ir)
-	dispatchIPCMessage(t, reviewSession, protocol.ReviewRecoveredMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeReviewRecovered,
-			ID:   "review-recovered-test",
-		},
-		RestoreID: restoreID,
-	})
-	reviewMsgs := reviewRecorder.messages(t)
-	if len(reviewMsgs) != 1 {
-		t.Fatalf("review message count = %d, want 1", len(reviewMsgs))
-	}
-	reviewToken, _ := reviewMsgs[0]["review_token"].(string)
-	if reviewToken == "" {
-		t.Fatalf("review response missing token: %#v", reviewMsgs[0])
-	}
-
-	activateRecorder := &ipcJSONRecorderConn{}
-	activateSession := newBoundTestSession(ipcServer, activateRecorder, ir)
-	dispatchIPCMessage(t, activateSession, protocol.ActivateRecoveredMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeActivateRecovered,
-			ID:   "activate-recovered-test",
-		},
-		RestoreID:   restoreID,
-		ReviewToken: reviewToken,
-	})
-	activateMsgs := activateRecorder.messages(t)
-	if len(activateMsgs) != 1 || !reflectJSONSubset(activateMsgs[0], map[string]any{
-		"kind":    string(protocol.MessageKindResponse),
-		"type":    protocol.MsgTypeActivateRecoveredResult,
-		"id":      "activate-recovered-test",
-		"success": true,
-	}) {
-		t.Fatalf("activate response mismatch: %#v", activateMsgs)
-	}
-	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); err != nil {
-		t.Fatalf("activated key stat error = %v", err)
+	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, generated.Address)); err != nil {
+		t.Fatalf("restored key stat error = %v", err)
 	}
 	if ir.KeyCount() != 1 {
-		t.Fatalf("active runtime key count after activation = %d, want 1", ir.KeyCount())
-	}
-
-	activeMsgs := activeRecorder.messages(t)
-	if len(activeMsgs) != 1 {
-		t.Fatalf("active notification count = %d, want activation notification", len(activeMsgs))
-	}
-	if !reflectJSONSubset(activeMsgs[0], map[string]any{
-		"kind": string(protocol.MessageKindNotification),
-		"type": protocol.MsgTypeKeysChanged,
-	}) {
-		t.Fatalf("activation notification mismatch: %#v", activeMsgs[0])
-	}
-}
-
-func TestIPCRecoveredActivationRejectsExistingKeyWithoutReplacement(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-
-	ir := server.registry.Get(auth.DefaultIdentityID)
-	if ir == nil {
-		t.Fatal("expected default identity runtime")
-	}
-
-	svc := signerAdminServices{signer: server}
-	gen := svc.GenerateKey(context.Background(), ir, adminproto.GenerateKeyRequest{KeyType: "ed25519"})
-	if !gen.Success {
-		t.Fatalf("GenerateKey() failed: %s", gen.Error)
-	}
-
-	ipcServer := &IPCServer{signer: server}
-	server.ipcServer = ipcServer
-	activeRecorder := addActiveIdentitySession(t, ipcServer, auth.DefaultIdentityID)
-
-	backupRecorder := &ipcJSONRecorderConn{}
-	backupSession := newBoundTestSession(ipcServer, backupRecorder, ir)
-	dispatchIPCMessage(t, backupSession, protocol.BackupMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeBackup,
-			ID:   "backup-existing-test",
-		},
-		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
-	})
-	backupMsgs := backupRecorder.messages(t)
-	if len(backupMsgs) != 1 {
-		t.Fatalf("backup message count = %d, want 1", len(backupMsgs))
-	}
-	archivePath, _ := backupMsgs[0]["archive_path"].(string)
-	if archivePath == "" {
-		t.Fatal("archive_path missing from backup response")
-	}
-
-	recoverRecorder := &ipcJSONRecorderConn{}
-	recoverSession := newBoundTestSession(ipcServer, recoverRecorder, ir)
-	dispatchIPCMessage(t, recoverSession, protocol.RecoverBackupMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeRecoverBackup,
-			ID:   "recover-existing-test",
-		},
-		ArchivePath:      filepath.Base(archivePath),
-		Addresses:        []string{gen.Address},
-		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
-	})
-	recoverMsgs := recoverRecorder.messages(t)
-	if len(recoverMsgs) != 1 {
-		t.Fatalf("recover message count = %d, want 1", len(recoverMsgs))
-	}
-	restoreID, _ := recoverMsgs[0]["restore_id"].(string)
-	if restoreID == "" {
-		t.Fatalf("recover response missing restore ID: %#v", recoverMsgs[0])
-	}
-
-	reviewRecorder := &ipcJSONRecorderConn{}
-	reviewSession := newBoundTestSession(ipcServer, reviewRecorder, ir)
-	dispatchIPCMessage(t, reviewSession, protocol.ReviewRecoveredMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeReviewRecovered,
-			ID:   "review-existing-test",
-		},
-		RestoreID: restoreID,
-	})
-	reviewMsgs := reviewRecorder.messages(t)
-	reviewToken, _ := reviewMsgs[0]["review_token"].(string)
-	conflicts, _ := reviewMsgs[0]["active_conflicts"].([]any)
-	if reviewToken == "" || len(conflicts) != 1 {
-		t.Fatalf("review existing response = %#v, want token and conflict", reviewMsgs[0])
-	}
-
-	activateRecorder := &ipcJSONRecorderConn{}
-	activateSession := newBoundTestSession(ipcServer, activateRecorder, ir)
-	dispatchIPCMessage(t, activateSession, protocol.ActivateRecoveredMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeActivateRecovered,
-			ID:   "activate-existing-test",
-		},
-		RestoreID:   restoreID,
-		ReviewToken: reviewToken,
-	})
-	activateMsgs := activateRecorder.messages(t)
-	if len(activateMsgs) != 1 ||
-		activateMsgs[0]["code"] != protocol.ResultCodeActivationConflict ||
-		activateMsgs[0]["success"] != false {
-		t.Fatalf("activate existing response = %#v, want conflict", activateMsgs)
-	}
-	if activeMsgs := activeRecorder.messages(t); len(activeMsgs) != 0 {
-		t.Fatalf("active notification count = %d, want 0 for rejected activation: %#v", len(activeMsgs), activeMsgs)
+		t.Fatalf("runtime key count = %d, want 1", ir.KeyCount())
 	}
 }
 

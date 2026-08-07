@@ -160,10 +160,9 @@ DTOs and contract fixtures.
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
 | Plugin | Client data dir | `plugins.available/<name>`, `plugins.yaml`, checksums | plugin manager process state | plugin JSON-RPC result | `internal/plugin`, `internal/apshellcli` |
 | JavaScript script | Client data dir | `scripts/*.js` | Goja execution context | shell/MCP `js`, `jssave`, `jslist` | `internal/scripting`, `internal/jsapi` |
-| Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files, the sealed `manifest.sealed`, and policy snapshots | restore preview/recovery input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
-| Backup manifest | Backup archive | `manifest.sealed` schema `aplane.backup.manifest.v2`, sealed under the export passphrase | member inventory plus source node role default for rebuild | none | `internal/backup` |
-| Backup source context | Backup archive | source fields inside `manifest.sealed` (schema `aplane.backup.manifest.v2`) | authenticated source approval/custom-network review context | recovered batch and `review_recovered_result` | `internal/backup`, `internal/backup/sourcecontext` |
-| Recovered batch | Signer identity | destination-encrypted `recovered/<restore-id>/batch.enc` and `entries/*.recovered` | none before explicit activation | recovered lifecycle admin messages | `internal/backup/recovered`, `internal/signerapp/backupadmin` |
+| Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing canonical credential `.apb` files and `manifest.sealed` | restore preview/direct restore input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
+| Backup manifest | Backup archive | `manifest.sealed` schema `aplane.credential-backup.manifest.v1`, sealed under the export passphrase | exact member inventory plus source node role default for rebuild | none | `internal/backup` |
+| Credential backup manifest | Backup archive | `manifest.sealed` (schema `aplane.credential-backup.manifest.v1`) | exact member inventory and source node role | preview/direct restore | `internal/backup` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
 
 ## Relationship Map
@@ -267,32 +266,14 @@ identities/<identity>/
   sentries/*.json
   keytypes/<key_type>.json
   keytypes/<key_type>.template
-  recovered/<restore-id>/
-    batch.enc
-    entries/<selector-hash>.recovered
   deleted/
   passphrase | passphrase.cred   # optional helper artifacts
 ```
 
-Recovered batches are inactive, identity-scoped recovery state. Their metadata
-and entries are authenticated encryption under the destination identity term
-key, bound to the `recovered-batch` and `recovered-entry` object classes, but
-they are not managed `.key` or `.sen` files and have no signing-runtime
-projection. The batch commits to each exact entry plaintext, and each entry
-also carries its restore ID. Batch v1 may add optional source-context fields;
-absence means `missing` to current readers. Published batch plaintext is
-immutable: loaded batches must never be re-marshaled for persistence, and
-passphrase rotation preserves exact plaintext bytes, including unknown
-additive fields. Before rotation, the recovered
-store removes exact `.new`/`.old` siblings after the canonical file validates,
-or restores a missing/invalid canonical file only from an exact sibling that
-validates under the current term key. Unknown state fails closed. Directories
-prefixed `.recovering-` are unpublished staging state and must be ignored by
-inventory operations. Activation consumes a batch by minting a new generation
-behind a single durable `CURRENT` flip and deletes the batch after reload
-validates the activated state; no per-batch activation state exists on disk,
-and an uncommitted activation attempt leaves only staging residue that
-generation reconciliation discards at the next unlock.
+Credential restore state is request-scoped and never published beside the
+generation store. After the complete archive has been authenticated and every
+credential validated, restore applies the in-memory set to one staged
+generation and commits it with the normal durable `CURRENT` flip.
 
 `identity.Runtime` is the runtime projection. It owns:
 
@@ -878,27 +859,26 @@ can only return a signature that assembly or the on-chain LogicSig rejects.
 ### Backup And Restore Lifecycle
 
 Managed backup archives live under `backups/<identity>/`. Each archive contains
-encrypted `.apb` payloads, a policy snapshot, and `manifest.sealed` — the
-archive's authenticated description, carrying the member inventory, the source
-node role, and non-secret approval/custom-network context. Opening an archive
+encrypted canonical credential `.apb` payloads and `manifest.sealed` — the
+archive's authenticated description, carrying the member inventory and source
+node role. Opening an archive
 verifies every member against that inventory. The manifest role is a rebuild
 default; explicit `apstore rebuild --role` is the replacement store authority
 when supplied.
 `.apb` is the cryptographic backup unit; the tarball is packaging.
 
-Live restore is batch-oriented:
+Live restore is generation-transaction oriented:
 
 - preview decrypts and reports without mutation,
-- recovery atomically publishes selected entries outside active scans,
-- review binds the batch to current destination policy, approval mode,
-  source-settings status/digest, and active conflicts,
-- activation requires explicit acknowledgements and commits the batch as a
-  new generation behind a single durable `CURRENT` flip, then reloads,
+- direct restore validates the complete selected set and classifies
+  canonical-plaintext destination conflicts before any write,
+- one generation mint commits credential changes behind a single durable
+  `CURRENT` flip, then reloads,
 - an uncommitted attempt leaves the prior generation active; a commit with
   unconfirmed durability blocks signing in recovery mode until
   reconciliation,
-- policy files are never installed automatically and must be reviewed and
-  replaced explicitly.
+- policy, templates, network mappings, approval defaults, and other
+  configuration are absent from the backup and remain destination-owned.
 
 `apstore rebuild` is the separate absent-store rescue path and may write active
 credentials directly because no live signer identity is being mutated.

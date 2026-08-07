@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,83 +14,35 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
-const (
-	BackupBundleSentinel              = 1
-	CurrentBackupBundlePayloadVersion = 1
-)
-
-// BackupBundle wraps a key and its associated template into a single JSON payload.
-// When backup_bundle is present, the decrypted content is a bundle; when absent,
-// the content is a plain canonical key payload.
-type BackupBundle struct {
-	BackupBundle   int             `json:"backup_bundle"`
-	PayloadVersion int             `json:"payload_version,omitempty"`
-	Key            json.RawMessage `json:"key"`
-	TemplateYAML   string          `json:"template_yaml"`
-	TemplateType   string          `json:"template_type"`
-}
-
-// ParseBackup inspects decrypted backup JSON and extracts the key payload and
-// optional template. If the data is a BackupBundle, it returns the embedded key
-// JSON and template YAML separately. If it's a plain canonical key payload, it
-// returns the data as-is with no template.
-func ParseBackup(decryptedJSON []byte) (keyJSON []byte, templateYAML []byte, templateType string, err error) {
-	// Quick check: does the JSON contain backup_bundle?
+// ParseBackup returns the complete canonical managed credential payload.
+// Backup bundles were an internal pre-release format and are deliberately not
+// accepted by the first supported credential-backup contract.
+func ParseBackup(decryptedJSON []byte) ([]byte, error) {
 	var probe struct {
 		BackupBundle int `json:"backup_bundle"`
 	}
 	if err := json.Unmarshal(decryptedJSON, &probe); err != nil {
-		return nil, nil, "", fmt.Errorf("failed to parse backup data: %w", err)
+		return nil, fmt.Errorf("failed to parse backup data: %w", err)
 	}
 
-	if probe.BackupBundle == 0 {
-		// Plain canonical key payload — return as-is
-		return decryptedJSON, nil, "", nil
+	if probe.BackupBundle != 0 {
+		return nil, fmt.Errorf(
+			"unsupported internal backup bundle format; create a new credential backup with this release",
+		)
 	}
-	if probe.BackupBundle != BackupBundleSentinel {
-		return nil, nil, "", fmt.Errorf("unsupported backup_bundle sentinel: %d", probe.BackupBundle)
+	parsed, err := keys.ParsePayload(decryptedJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse backup credential: %w", err)
 	}
-
-	// It's a bundle — extract fields
-	var bundle BackupBundle
-	if err := json.Unmarshal(decryptedJSON, &bundle); err != nil {
-		return nil, nil, "", fmt.Errorf("failed to parse backup bundle: %w", err)
-	}
-
-	if len(bundle.Key) == 0 {
-		return nil, nil, "", fmt.Errorf("backup bundle has empty key field")
-	}
-	var versionProbe struct {
-		PayloadVersion *int `json:"payload_version"`
-	}
-	if err := json.Unmarshal(decryptedJSON, &versionProbe); err != nil {
-		return nil, nil, "", fmt.Errorf("failed to parse backup bundle payload version: %w", err)
-	}
-	payloadVersion := CurrentBackupBundlePayloadVersion
-	if versionProbe.PayloadVersion != nil {
-		payloadVersion = *versionProbe.PayloadVersion
-	}
-	if payloadVersion != CurrentBackupBundlePayloadVersion {
-		return nil, nil, "", fmt.Errorf("unsupported backup bundle payload_version: %d", payloadVersion)
-	}
-
-	var tmplYAML []byte
-	if bundle.TemplateYAML != "" {
-		tmplYAML = []byte(bundle.TemplateYAML)
-	}
-
-	return []byte(bundle.Key), tmplYAML, bundle.TemplateType, nil
+	parsed.ZeroSecrets()
+	return decryptedJSON, nil
 }
 
 // ExportKey exports a single key file from the keystore to a standalone backup.
 // It decrypts the key with the store's keyring, then re-encrypts it with the
 // export passphrase using standalone encryption (envelope_version 2).
-// If the key is template-backed, the template YAML is bundled into the same
-// encrypted payload (no separate .template file) when an installed
-// identity-local template is available.
 // Returns the SHA256 checksum of the written key file and its size.
 func ExportKey(paths storepaths.Paths, identityID, srcDir, destDir, address string, kr *crypto.Keyring, exportPassphrase []byte) (string, int64, error) {
 	source, err := resolveManagedCredentialFile(srcDir, address)
@@ -126,8 +77,9 @@ func exportManagedCredential(paths storepaths.Paths, identityID, destDir string,
 		return "", 0, err
 	}
 
-	// Determine what to encrypt: plain key or bundle with template
-	payload, err := buildExportPayload(paths, identityID, plaintext, kr)
+	// The portable authority is the complete managed credential payload. The
+	// destination owns templates and key-generation configuration.
+	payload, err := buildExportPayload(plaintext)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to build export payload for %s: %w", source.Selector, err)
 	}
@@ -188,74 +140,18 @@ func validateExportSource(source keys.ManagedCredentialFile, plaintext []byte) e
 	return nil
 }
 
-// buildExportPayload returns the plaintext to encrypt for export.
-// If the key is template-backed, it builds a BackupBundle JSON containing both
-// the key and the template YAML. Otherwise it returns the key JSON as-is.
-func buildExportPayload(paths storepaths.Paths, identityID string, keyJSON []byte, kr *crypto.Keyring) ([]byte, error) {
-	// Parse key to get key type
+// buildExportPayload returns a canonical credential-only plaintext for export.
+func buildExportPayload(keyJSON []byte) ([]byte, error) {
 	payload, err := keys.ParsePayload(keyJSON)
 	if err != nil {
 		return nil, err
 	}
 	defer payload.ZeroSecrets()
-
-	templateType, templatePlain, err := loadTemplateForExport(paths, identityID, payload.KeyType, kr)
+	canonical, err := keys.MarshalPayload(payload)
 	if err != nil {
 		return nil, err
 	}
-	if len(templatePlain) == 0 {
-		// No template — return key JSON as-is
-		return append([]byte(nil), keyJSON...), nil
-	}
-
-	// Build bundle
-	bundle := BackupBundle{
-		BackupBundle:   BackupBundleSentinel,
-		PayloadVersion: CurrentBackupBundlePayloadVersion,
-		Key:            json.RawMessage(keyJSON),
-		TemplateYAML:   string(templatePlain),
-		TemplateType:   string(templateType),
-	}
-
-	bundleJSON, err := json.Marshal(bundle)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal backup bundle: %w", err)
-	}
-
-	return bundleJSON, nil
-}
-
-// loadTemplateForExport returns the template YAML to bundle with a key export.
-// Installed identity-local templates are exported when available.
-func loadTemplateForExport(paths storepaths.Paths, identityID, keyType string, kr *crypto.Keyring) (templatestore.TemplateType, []byte, error) {
-	templateType, templatePath := findKeystoreTemplate(paths, identityID, keyType)
-	if templatePath != "" {
-		templatePlain, err := templatestore.LoadTemplateFromPath(templatePath, kr)
-		if err != nil {
-			return "", nil, fmt.Errorf("failed to read template: %w", err)
-		}
-		return templateType, templatePlain, nil
-	}
-
-	return "", nil, nil
-}
-
-// findKeystoreTemplate returns the template type and path if a keystore template
-// exists for the given key type. Returns empty if the key type is built-in or
-// has no associated template.
-func findKeystoreTemplate(paths storepaths.Paths, identityID, keyType string) (templatestore.TemplateType, string) {
-	for _, tt := range templatestore.ActiveTemplateTypes() {
-		if templatestore.TemplateExistsForPaths(paths, identityID, keyType, tt) {
-			path, err := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, tt)
-			if err != nil {
-				// TemplateExists just resolved the same layout; treat a
-				// racing resolution failure as template-absent.
-				return "", ""
-			}
-			return tt, path
-		}
-	}
-	return "", ""
+	return canonical, nil
 }
 
 // ExportAllKeys exports all managed credential files from the keystore to a standalone backup directory.
@@ -263,23 +159,21 @@ func findKeystoreTemplate(paths storepaths.Paths, identityID, keyType string) (t
 // passphrase using standalone encryption (envelope_version 2).
 // No .keystore file is written — each backup file is self-contained.
 //
-// A key file that decrypts but fails canonical payload validation is skipped
-// and reported in the returned skipped map (address -> reason) so a single
-// damaged key cannot block backing up the remaining healthy keys. All other
-// failures (read, decrypt, template, IO) still abort the export.
-func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, kr *crypto.Keyring, exportPassphrase []byte) (checksums, skipped map[string]string, err error) {
+// The backup is complete or fails: silently omitting damaged authority would
+// make the sealed archive inventory look complete when it is not.
+func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, kr *crypto.Keyring, exportPassphrase []byte) (map[string]string, error) {
 	managedFiles, err := keys.ScanManagedCredentialFiles(srcDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	if len(managedFiles) == 0 {
-		return nil, nil, fmt.Errorf("no managed credential files found in %s", srcDir)
+		return nil, fmt.Errorf("no managed credential files found in %s", srcDir)
 	}
 	seenSelectors := make(map[string]string, len(managedFiles))
 	for _, file := range managedFiles {
 		if previous, ok := seenSelectors[file.Selector]; ok {
-			return nil, nil, fmt.Errorf("ambiguous managed credential %s: %s and %s", file.Selector, previous, file.Name)
+			return nil, fmt.Errorf("ambiguous managed credential %s: %s and %s", file.Selector, previous, file.Name)
 		}
 		seenSelectors[file.Selector] = file.Name
 	}
@@ -287,38 +181,21 @@ func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, k
 	// Create apb subdirectory in backup
 	keysDestDir := filepath.Join(destDir, "apb")
 	if err := os.MkdirAll(keysDestDir, 0750); err != nil {
-		return nil, nil, fmt.Errorf("failed to create backup keys directory: %w", err)
+		return nil, fmt.Errorf("failed to create backup keys directory: %w", err)
 	}
 
-	// Export each key to keys/ subdirectory
-	checksums = make(map[string]string)
-	skipped = make(map[string]string)
+	// Export each credential. A complete backup is fail-closed: silently
+	// omitting one damaged authority would make the archive's sealed inventory
+	// look complete even though the source store was not fully represented.
+	checksums := make(map[string]string)
 	for _, managedFile := range managedFiles {
 		selector := managedFile.Selector
 		checksum, _, err := exportManagedCredential(paths, identityID, keysDestDir, managedFile, kr, exportPassphrase)
 		if err != nil {
-			if isCanonicalPayloadRejection(err) {
-				skipped[selector] = err.Error()
-				continue
-			}
-			return nil, nil, fmt.Errorf("failed to export %s: %w", selector, err)
+			return nil, fmt.Errorf("failed to export %s: %w", selector, err)
 		}
 		checksums[selector] = checksum
 	}
 
-	if len(checksums) == 0 {
-		return nil, nil, fmt.Errorf("no exportable keys: all %d key file(s) failed canonical payload validation", len(skipped))
-	}
-
-	return checksums, skipped, nil
-}
-
-// isCanonicalPayloadRejection reports whether an export failure means the
-// decrypted key payload was rejected by the canonical codec, as opposed to an
-// infrastructure failure (read, decrypt, template, IO) that must abort.
-func isCanonicalPayloadRejection(err error) bool {
-	return errors.Is(err, keys.ErrIncompatibleKeyFormat) ||
-		errors.Is(err, keys.ErrMissingLogicSigSaltCounter) ||
-		errors.Is(err, keys.ErrManagedCredentialClassMismatch) ||
-		errors.Is(err, keys.ErrManagedCredentialSelectorMismatch)
+	return checksums, nil
 }

@@ -3,8 +3,8 @@
 Status: **phases 1, 2, and 3 implemented and merged.** Phase 3 landed as eleven
 slices, described below; term GC is deferred out of this implementation and
 retained priors remain readable under pre-change terms by design. The formal R5
-prerequisite is complete, and the first
-implementation slice writes the strict v2 keyring/v5 marker shape while
+prerequisite is complete, and the first implementation slice writes the strict
+v2 keyring/v5 marker shape while
 initially retaining the one-term runtime gate. A second slice adds
 keyring-confined integrity operations, generation seal v2, and explicit-term
 policy/node-role sidecar v2. A third slice adds the canonical K8 artifact
@@ -38,6 +38,12 @@ priors, and automatically completes pending rotation during interactive and
 headless unlock before runtime publication. This document is the design record
 behind it. Amended across six rounds of review by two independent reviewers,
 both of whom now call the design settled.
+
+> The recovered-batch references below describe a retired pre-release restore
+> design. Admin protocol v4 restores validated credentials directly through a
+> generation transaction, so recovered batches are no longer store artifacts
+> or rotation-inventory members. The current contract is in
+> [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 Refreshed against the tree after the generation-storage branch merged: the
 design core is unchanged, but the version gate no longer needs a migration

@@ -627,7 +627,9 @@ func startCompletionFixture(
 		if err != nil {
 			t.Fatalf("ReadManifest() error = %v", err)
 		}
-		manifest.SourceRestoreID = "0123456789abcdef0123456789abcdef"
+		manifest.Operation = genstore.OperationCredentialRestore
+		manifest.RestoreArchiveSHA256 = strings.Repeat("a", 64)
+		manifest.RestoreRollbackEligible = true
 		encoded, err := json.MarshalIndent(manifest, "", "  ")
 		if err != nil {
 			t.Fatalf("MarshalIndent(manifest) error = %v", err)

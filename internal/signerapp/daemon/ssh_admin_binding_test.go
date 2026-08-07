@@ -27,7 +27,7 @@ func TestSSHPreboundAdminSessionDefaultsToSSHIdentityInDaemon(t *testing.T) {
 	defer cleanup()
 
 	alice := registerAdditionalAdminTestIdentity(t, server, "alice")
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":3,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n"
 	conn := newIPCMockConn(authLine, "ssh:remote")
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ssh-passphrase")
@@ -76,7 +76,7 @@ func TestSSHPreboundAdminSessionRejectsPayloadIdentitySwitchInDaemon(t *testing.
 
 	alice := registerAdditionalAdminTestIdentity(t, server, "alice")
 	bob := registerAdditionalAdminTestIdentity(t, server, "bob")
-	authLine := `{"kind":"request","type":"auth","identity_id":"bob","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":3,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","identity_id":"bob","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n"
 	conn := newIPCMockConn(authLine, "ssh:remote")
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ssh-passphrase")

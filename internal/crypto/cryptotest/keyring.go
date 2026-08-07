@@ -51,14 +51,3 @@ func KeyringWithTerms(t *testing.T, currentTerm int64, terms map[int64][]byte) *
 	t.Cleanup(kr.Zero)
 	return kr
 }
-
-// NewKeyring returns a fresh single-term keyring, zeroed when the test ends.
-func NewKeyring(t *testing.T) *crypto.Keyring {
-	t.Helper()
-	kr, err := crypto.NewKeyring()
-	if err != nil {
-		t.Fatalf("NewKeyring(): %v", err)
-	}
-	t.Cleanup(kr.Zero)
-	return kr
-}

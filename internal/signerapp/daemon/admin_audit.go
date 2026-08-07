@@ -15,7 +15,7 @@ import (
 // probe. Every probed method must therefore be forwarded here: a missing
 // forwarder does not fail a build or a test with a fake audit sink — it
 // silently drops the event family in the production daemon (and, for the
-// durable activation-intent gate, silently disarms a contract-required
+// durable restore-intent gate, silently disarms a contract-required
 // precondition). TestAdminSessionAuditSatisfiesHandlerProbes pins the full
 // probe set against this type.
 
@@ -26,16 +26,36 @@ func (s signerAdminServices) auditLogger() *AuditLogger {
 	return s.signer.auditLog
 }
 
-// LogBackupActivationIntentDurableContext is the activation gate:
-// BACKUP_ACTIVATION_INTENT must be durable before the first active-store
-// write (ARCH_CONTRACTS), so an unavailable audit log fails closed instead
-// of proceeding unrecorded.
-func (s signerAdminServices) LogBackupActivationIntentDurableContext(ctx adminserver.SessionContext, restoreID string, replaceExisting bool) error {
+func (s signerAdminServices) LogCredentialRestoreIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID, archivePath string,
+	replaceExisting bool,
+) error {
 	audit := s.auditLogger()
 	if audit == nil {
-		return fmt.Errorf("audit log unavailable; refusing activation without a durable intent record")
+		return fmt.Errorf("audit log unavailable; refusing restore without a durable intent record")
 	}
-	return audit.LogBackupActivationIntentDurableContext(ctx, restoreID, replaceExisting)
+	return audit.LogCredentialRestoreIntentDurableContext(
+		ctx, operationID, archivePath, replaceExisting,
+	)
+}
+
+func (s signerAdminServices) LogCredentialRestoreContext(
+	ctx adminserver.SessionContext,
+	result adminproto.RestoreBackupResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogCredentialRestoreContext(ctx, result)
+	}
+}
+
+func (s signerAdminServices) LogCredentialRestoreRollbackContext(
+	ctx adminserver.SessionContext,
+	result adminproto.RollbackRestoreResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogCredentialRestoreRollbackContext(ctx, result)
+	}
 }
 
 func (s signerAdminServices) LogIdentityLockedContext(ctx adminserver.SessionContext, reason string) {
@@ -65,47 +85,5 @@ func (s signerAdminServices) LogBackupRestorePreviewedContext(ctx adminserver.Se
 func (s signerAdminServices) LogBackupRestorePreviewFailedContext(ctx adminserver.SessionContext, reason string) {
 	if audit := s.auditLogger(); audit != nil {
 		audit.LogBackupRestorePreviewFailedContext(ctx, reason)
-	}
-}
-
-func (s signerAdminServices) LogBackupRecoveredContext(ctx adminserver.SessionContext, result adminproto.RecoverBackupResult) {
-	if audit := s.auditLogger(); audit != nil {
-		audit.LogBackupRecoveredContext(ctx, result)
-	}
-}
-
-func (s signerAdminServices) LogBackupRecoveryFailedContext(ctx adminserver.SessionContext, restoreID, reason string) {
-	if audit := s.auditLogger(); audit != nil {
-		audit.LogBackupRecoveryFailedContext(ctx, restoreID, reason)
-	}
-}
-
-func (s signerAdminServices) LogBackupActivationIntentContext(ctx adminserver.SessionContext, restoreID string, replaceExisting bool) {
-	if audit := s.auditLogger(); audit != nil {
-		audit.LogBackupActivationIntentContext(ctx, restoreID, replaceExisting)
-	}
-}
-
-func (s signerAdminServices) LogBackupActivatedContext(ctx adminserver.SessionContext, result adminproto.ActivateRecoveredResult) {
-	if audit := s.auditLogger(); audit != nil {
-		audit.LogBackupActivatedContext(ctx, result)
-	}
-}
-
-func (s signerAdminServices) LogBackupActivationFailedContext(ctx adminserver.SessionContext, result adminproto.ActivateRecoveredResult) {
-	if audit := s.auditLogger(); audit != nil {
-		audit.LogBackupActivationFailedContext(ctx, result)
-	}
-}
-
-func (s signerAdminServices) LogBackupActivationRolledBackContext(ctx adminserver.SessionContext, result adminproto.RollbackRecoveredResult) {
-	if audit := s.auditLogger(); audit != nil {
-		audit.LogBackupActivationRolledBackContext(ctx, result)
-	}
-}
-
-func (s signerAdminServices) LogBackupRecoveryPurgedContext(ctx adminserver.SessionContext, result adminproto.PurgeRecoveredResult) {
-	if audit := s.auditLogger(); audit != nil {
-		audit.LogBackupRecoveryPurgedContext(ctx, result)
 	}
 }

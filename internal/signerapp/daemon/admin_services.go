@@ -182,27 +182,33 @@ func (s signerAdminServices) completePendingRotation(
 // (docs/ARCH_GENERATIONS.md §7) under the identity mutation lock, and
 // validates the selected generation fail-closed.
 func (s signerAdminServices) reconcileGenerations(ir *identity.Runtime) error {
-	reconcile := func() error {
-		report, err := genstore.Reconcile(ir.KeyPaths(), ir.ID(), nil)
-		if err != nil {
-			return err
-		}
-		for _, discarded := range report.DiscardedAttempts {
-			logInfof("discarded uncommitted generation %s (never resumed; review and activate again)", discarded)
-		}
-		for _, staging := range report.DiscardedStaging {
-			logInfof("discarded generation staging residue %s", staging)
-		}
-		gen, err := genstore.Resolve(ir.KeyPaths(), ir.ID())
-		if err != nil {
-			return err
-		}
-		return genstore.ValidateCurrent(gen)
-	}
 	if s.signer == nil {
-		return reconcile()
+		return s.reconcileGenerationsLocked(ir)
 	}
-	return s.signer.withIdentityMutation(ir.ID(), reconcile)
+	return s.signer.withIdentityMutation(ir.ID(), func() error {
+		return s.reconcileGenerationsLocked(ir)
+	})
+}
+
+// reconcileGenerationsLocked performs reconciliation without acquiring the
+// identity mutation lock. Callers either use reconcileGenerations or hold the
+// lock across a larger validate/reload/state-transition sequence.
+func (s signerAdminServices) reconcileGenerationsLocked(ir *identity.Runtime) error {
+	report, err := genstore.Reconcile(ir.KeyPaths(), ir.ID(), nil)
+	if err != nil {
+		return err
+	}
+	for _, discarded := range report.DiscardedAttempts {
+		logInfof("discarded uncommitted generation %s (never committed; restore again if needed)", discarded)
+	}
+	for _, staging := range report.DiscardedStaging {
+		logInfof("discarded generation staging residue %s", staging)
+	}
+	gen, err := genstore.Resolve(ir.KeyPaths(), ir.ID())
+	if err != nil {
+		return err
+	}
+	return genstore.ValidateCurrent(gen)
 }
 
 func unlockFailureCode(errMsg string) string {
@@ -297,40 +303,79 @@ func (s signerAdminServices) PreviewRestore(ir *identity.Runtime, req adminproto
 	return s.backupApp().PreviewRestore(ir, req)
 }
 
-func (s signerAdminServices) RecoverBackup(ir *identity.Runtime, req adminproto.RecoverBackupRequest) adminproto.RecoverBackupResult {
-	return s.backupApp().RecoverBackup(ir, req)
-}
-
-func (s signerAdminServices) ListRecovered(ir *identity.Runtime) adminproto.ListRecoveredResult {
-	return s.backupApp().ListRecovered(ir)
-}
-
-func (s signerAdminServices) ReviewRecovered(ir *identity.Runtime, restoreID string) adminproto.ReviewRecoveredResult {
-	return s.backupApp().ReviewRecovered(ir, restoreID)
-}
-
-func (s signerAdminServices) ActivateRecovered(ir *identity.Runtime, req adminproto.ActivateRecoveredRequest) adminproto.ActivateRecoveredResult {
+func (s signerAdminServices) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
 	wasRecovery := ir.IsRecovery()
-	result := s.backupApp().ActivateRecovered(ir, req)
+	result := s.backupApp().RestoreBackup(ir, req)
 	if result.Success && wasRecovery {
-		s.exitRecoveryIfReconciled(ir)
+		if report, ok := s.exitRecoveryIfReconciled(ir); ok && report != nil {
+			result.KeyCount = report.KeyCount
+		}
 	}
-	// Re-arm regardless of the result: a committed flip can coexist with a
-	// failed follow-up (batch cleanup, unverified durability), and success
-	// is therefore not a proxy for "the pointer did not move". Re-arming is
-	// idempotent and a no-op on legacy stores.
 	s.rearmWatcherAfterGenerationFlip(ir)
 	return result
 }
 
-func (s signerAdminServices) RollbackRecovered(ir *identity.Runtime, req adminproto.RollbackRecoveredRequest) adminproto.RollbackRecoveredResult {
+func (s signerAdminServices) RollbackRestore(ir *identity.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
 	wasRecovery := ir.IsRecovery()
-	result := s.backupApp().RollbackRecovered(ir, req)
+	result := s.backupApp().RollbackRestore(ir, req)
 	if result.Success && wasRecovery {
 		s.exitRecoveryIfReconciled(ir)
 	}
 	s.rearmWatcherAfterGenerationFlip(ir)
 	return result
+}
+
+func (s signerAdminServices) ReconcileStore(ir *identity.Runtime) adminproto.ReconcileStoreResult {
+	result := adminproto.ReconcileStoreResult{}
+	// Re-arm on every exit. A recovery session may have inherited a watcher
+	// bound before an uncertain CURRENT flip, including when this attempt
+	// fails before promotion.
+	defer s.rearmWatcherAfterGenerationFlip(ir)
+	report, err := s.reconcileReloadAndPromote(ir)
+	if err != nil {
+		ir.SetRecovery()
+		result.Code = protocol.ResultCodeRecoveryBlocked
+		result.Error = err.Error()
+		result.State = ir.GetState().String()
+		return result
+	}
+	if current, err := genstore.ReadCurrent(ir.KeyPaths(), ir.ID()); err == nil {
+		result.GenerationID = current
+	}
+	if report != nil {
+		result.KeyCount = report.KeyCount
+	}
+	result.State = ir.GetState().String()
+	result.Success = true
+	return result
+}
+
+// reconcileReloadAndPromote keeps strict validation, key publication, and the
+// recovery-to-unlocked transition under one identity mutation lock. This
+// prevents a concurrent admin mutation from landing between validation and
+// the runtime snapshot that authorizes signing.
+func (s signerAdminServices) reconcileReloadAndPromote(ir *identity.Runtime) (*signertemplates.ReloadReport, error) {
+	var report *signertemplates.ReloadReport
+	work := func() error {
+		if err := s.reconcileGenerationsLocked(ir); err != nil {
+			return err
+		}
+		var err error
+		report, err = ir.Reload()
+		if err != nil {
+			return fmt.Errorf("current generation failed credential reload: %w", err)
+		}
+		if ir.IsRecovery() && !ir.PromoteRecoveryToUnlocked() {
+			return fmt.Errorf("identity state changed while store reconciliation completed")
+		}
+		return nil
+	}
+	if s.signer == nil {
+		err := work()
+		return report, err
+	}
+	err := s.signer.withIdentityMutation(ir.ID(), work)
+	return report, err
 }
 
 // rearmWatcherAfterGenerationFlip rebinds the key watcher to the new current
@@ -342,25 +387,16 @@ func (s signerAdminServices) rearmWatcherAfterGenerationFlip(ir *identity.Runtim
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 }
 
-// exitRecoveryIfReconciled promotes recovery to unlocked only after a rescan
-// of every recovered batch confirms no incomplete activation marker remains.
-// Resolving one batch must never re-enable signing while another batch is
-// still unreconciled: the rescan, not the operation that just succeeded, is
-// authoritative. Reports whether the identity was unlocked. [P1]
-func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) bool {
+// exitRecoveryIfReconciled promotes recovery only after the generation store
+// reconciles and validates cleanly.
+func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) (*signertemplates.ReloadReport, bool) {
 	// The rescan re-runs generational reconciliation and fail-closed
 	// validation of the selected generation; recovery only lifts when the
 	// committed state proves clean.
-	if err := s.reconcileGenerations(ir); err != nil {
+	report, err := s.reconcileReloadAndPromote(ir)
+	if err != nil {
 		logInfof("staying in recovery mode: %s failed reconciliation rescan: %v", ir.ID(), err)
-		return false
-	}
-	if !ir.PromoteRecoveryToUnlocked() {
-		// A concurrent lock won the race during the rescan; its callback
-		// already destroyed the key session, and reporting unlocked over
-		// it would bypass the lock-generation fence.
-		logInfof("staying out of unlocked state: %s was locked during the recovery-exit rescan", ir.ID())
-		return false
+		return nil, false
 	}
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	if s.signer != nil {
@@ -368,11 +404,7 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) bool
 			hub.NotifyStatus(ir.ID(), ir.GetState().String(), ir.KeyCount())
 		}
 	}
-	return true
-}
-
-func (s signerAdminServices) PurgeRecovered(ir *identity.Runtime, req adminproto.PurgeRecoveredRequest) adminproto.PurgeRecoveredResult {
-	return s.backupApp().PurgeRecovered(ir, req)
+	return report, true
 }
 
 func (s signerAdminServices) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibraryTemplatesResult {

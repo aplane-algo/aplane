@@ -37,7 +37,7 @@ Key management is handled by **apadmin** and **apstore**, not directly by apsign
 │                                                             │
 │  apstore           ─────────►  Signer Server                │
 │    • Create/import/list/export/delete managed backups       │
-│    • Preview/recover/review/activate managed restores       │
+│    • Preview/apply/rollback/reconcile managed restores      │
 │    • Change passphrase                                      │
 │    • Manage templates and key-type enablement               │
 │                                                             │
@@ -135,25 +135,10 @@ Use `backup import` when you want to admit an external archive into the managed
 backup locker so it is visible to backup listing and restore flows. The command
 prompts for the export passphrase, decrypts and validates the encrypted key
 payloads, and publishes the archive under `<signer-data>/backups/<identity>/`
-only after validation succeeds. If a key payload includes bundled template YAML,
-import recompiles that template with the key's stored creation parameters and
-confirms that it reproduces the key's stored LogicSig bytecode, preserving the
-key's stored off-curve salt counter.
-
-That check needs the configured TEAL compile algod endpoint. Anything the
-archive itself gets wrong always rejects the import: a template that compiles
-into different bytecode, one the compiler refuses to compile, and one that
-fails to parse or validate. If the compiler simply cannot be reached — a
-network failure, a timeout, or no configured endpoint — import does not
-fail: the keys have already
-decrypted and validated on their own, and their signing authority does not
-depend on this check, so import lists the affected payloads and asks whether
-to proceed without it. Decline and nothing is imported; accept and the archive
-is admitted with one thing unproven — that each bundled template recompiles
-into its key's stored bytecode. If a later restore installs such a template,
-it becomes the definition used to generate new keys of that type, so prefer
-re-running the import when the compiler is reachable. For unattended runs,
-`--accept-unverified-template-provenance` records the same decision up front.
+only after the sealed inventory and every complete credential record validate.
+This check is local and does not need a TEAL compilation endpoint: LogicSig
+bytecode, argument contracts, and other durable signing metadata are carried
+by the credential itself, while templates are outside the backup contract.
 
 Use `backup export` when you want to move a managed archive to removable media
 or another vault. The first argument can be the managed archive filename or its
@@ -169,19 +154,19 @@ before the command reports success.
 ./apstore verify /mnt/usb/aplane-backup.tar.gz
 ```
 
+Verification is fail-closed: an archive-level failure or any credential that
+cannot be decrypted and validated returns the `verification_failed` result and
+a nonzero process exit. Invalid credentials are never reported as warnings on
+an otherwise successful verification.
+
 ### Backup Output
 
 `apstore backup create` writes a single `.tar.gz` archive. The archive includes:
 - All `.apb` files (encrypted with the export passphrase) in the `apb/` subdirectory
 - `README.md` with decryption instructions
 - `manifest.sealed`, the archive's authenticated description: an inventory of
-  every other member with its digest, the source node role, and the signer
-  source's approval default (not applicable to sentry sources) with custom
-  genesis-hash mappings. It is encrypted under the export passphrase.
-- Any bundled template definition for a template-backed key, embedded inside that key's encrypted payload
-- Verified active policy snapshots at `policy/policy.yaml` and
-  `policy/policy.yaml.hmac` for provenance. Restore workflows do not install
-  archive policy files automatically.
+  every other member with its digest, the source node role, and archive
+  creation time. It is encrypted under the export passphrase.
 
 `apstore` reports the archive checksum and size after creation.
 
@@ -189,6 +174,7 @@ It does **not** include:
 - the store's `keyring.enc` root and `.keystore` marker
 - the live signer token
 - any unlocked runtime state
+- policy, approval defaults, network/genesis mappings, templates, or key-type state
 - algod URLs, algod tokens, endpoints, or other network credentials
 
 **Important:** Backup files use standalone `envelope_version 2` encryption. Each `.apb` file embeds its own salt, so only the file and the export passphrase are needed to decrypt it.
@@ -300,8 +286,8 @@ signer data directory owner/group after successful mutations, while
 
 A passphrase change appends a fresh numbered key term and atomically commits
 the new root under the new passphrase. It then re-encrypts live keys,
-templates, and published recovered-batch files and re-signs policy and
-node-role integrity sidecars from an authenticated cutover snapshot. Retained
+templates, deleted managed objects, and rotation records and re-signs policy
+and node-role integrity sidecars from an authenticated cutover snapshot. Retained
 generations stay byte-for-byte unchanged and readable through their historical
 term anchors.
 
@@ -350,47 +336,24 @@ originated from Lute or Pera:
 
 ### Scenario 2: Restore from a Managed Backup with apadmin
 
-Use `apadmin` when `apsigner` is running, the signer is unlocked, and the
-backup archive was created by the signer-managed backup flow for the same
-identity:
+Use `apadmin` when `apsigner` is running and unlocked:
 
-```bash
-./apadmin
-```
+1. From the key list, press `r` to open managed backups.
+2. Select an archive under `<signer-data>/backups/<identity>/`.
+3. Enter the export passphrase.
+4. Review the credential addresses, key types, and destination conflicts.
+5. Select credentials and confirm restore. Enable replacement only when you
+   intend to replace the listed destination credentials.
 
-In the TUI:
-1. Unlock the signer
-2. From the key list, press `r` to open the managed backup list
-3. Select one of the managed archives in `<signer-data>/backups/<identity>/`
-4. Enter the backup export passphrase
-5. Review the previewed addresses, key types, existing-key conflicts, and template indicators
-6. Select the keys to restore, then `tab` to the **RECOVER** button and press
-   Enter. Recovery starts only from the button; Enter while navigating the key
-   list does nothing.
-7. Review the destination approval mode and the source/destination policy
-   differences. The differences are informational; raw changed paths are
-   secondary detail.
-8. If the destination identity auto-approves unmatched signing requests,
-   acknowledge unattended signing. Nothing the archive reports removes that
-   acknowledgement.
-9. Enable replacement only if you explicitly want to replace existing active
-   credentials, then `tab` to **ACTIVATE** and press Enter. Activation also
-   starts only from its button.
-
-`apadmin` restore is intentionally scoped to the active identity's managed
-backup locker. It does not restore arbitrary external paths or extracted backup
-directories. Selected entries are first recovered into an encrypted, inactive
-batch under `identities/<identity>/recovered/`. They do not enter the active
-key list or become signable until reviewed activation succeeds.
-
-The export passphrase is required before `apadmin` shows key addresses or key
-types from an archive. Wrong-passphrase and malformed-backup attempts are
-rate-limited by `apsigner`.
+The export passphrase is required before addresses or key types are shown.
+Wrong-passphrase and malformed-archive attempts are rate-limited. A successful
+restore immediately commits one generation and reloads the signer; there is no
+inactive recovered-batch or policy-comparison step.
 
 ### Scenario 3: Restore from File Backup with apstore
 
-Use `apstore` to import an encrypted key backup into the managed backup locker,
-then preview and apply it:
+Import an external archive into the managed locker, optionally inspect it, then
+restore it:
 
 ```bash
 ./apstore backup import /mnt/usb/aplane-backup.tar.gz
@@ -400,91 +363,64 @@ then preview and apply it:
 ./apstore backup delete aplane-backup.tar.gz
 ```
 
-The restore process:
-1. `backup import` prompts for the **backup passphrase**, validates the archive contents, and copies it into the signer-managed backup locker.
-2. `restore preview` prompts for the **backup passphrase** and shows addresses, key types, conflicts, and template requirements.
-3. `restore apply` prompts for the **backup passphrase**, validates all selected
-   entries, and creates one inactive destination-encrypted batch.
-4. It prints the current destination approval mode, policy digests, policy
-   differences, and active conflicts. Archive-reported source settings are
-   shown as labeled unverified context, not as a standalone notification.
-5. It asks for acknowledgement only when the destination identity
-   auto-approves unmatched signing requests. Policy differences are shown for
-   review and never require acknowledgement.
-6. Only after confirmation does activation publish rollback state, apply the
-   whole batch, and reload the identity runtime.
+`backup import` and restore both ask for the backup export passphrase.
+`restore apply` authenticates the complete archive, validates every selected
+credential, and atomically commits one new generation. Use `--address ADDRESS`
+one or more times to select a subset. Use `--replace-existing` only when you
+explicitly intend to replace a different or unreadable destination credential.
 
-Source-settings status remains available in the admin protocol for
-compatibility and diagnostics, but current clients do not render it as a
-standalone review notification.
+The core ownership rule is:
 
-Use `--address ADDRESS` one or more times with `restore apply` to restore a
-subset. Use `--overwrite` only when you explicitly intend to replace an
-existing active credential.
+> Backup restores credential authority. The destination's current policy and
+> configuration govern that authority.
 
-Use `--acknowledge-unattended-signing` to record that acknowledgement on the
-command line instead of answering the prompt, which keeps restore scriptable
-against an identity that auto-approves unmatched signing requests. The flag is
-explicit operator intent, not a bypass: the server still requires the
-acknowledgement and still refuses activation without it. Omitting the flag on
-such a destination in a non-interactive context fails closed.
+A backup does not carry policy, approval defaults, network mappings, templates,
+endpoints, tokens, or operator settings. Restore therefore has no source-policy
+review or unattended-signing acknowledgement. Review the destination policy
+before restoring if you do not want the credentials to become usable under its
+current rules.
 
-`restore apply` is a client convenience sequence; the server has no
-direct-to-active restore operation. To manage batches separately:
+A canonical-plaintext-identical destination credential is an idempotent no-op.
+A different credential is a conflict. An unreadable destination credential is
+also a replaceable conflict, allowing a recovery-mode restore to repair store
+damage with `--replace-existing`.
+
+The daemon automatically rolls back to the sealed parent if the newly restored
+generation cannot reload. If commit durability or rollback becomes uncertain,
+the identity enters recovery mode and signing remains blocked. Recovery tools:
 
 ```bash
-./apstore restore list
-./apstore restore review <restore-id>
-./apstore restore activate <restore-id> [--replace-existing] [--acknowledge-unattended-signing]
-./apstore restore rollback <restore-id>
-./apstore restore purge <restore-id>
+./apstore restore reconcile
+./apstore restore rollback
+./apstore restore apply <backup-id|name> --replace-existing
 ```
 
-If a crash interrupts activation, the identity enters recovery mode and
-signing stays blocked. The next unlock reconciles automatically: a single
-interrupted activation is rolled back to the exact pre-activation state (the
-recovered batch stays available for a fresh review), and an activation that
-had already completed has its cleanup finished. The identity unlocks normally
-only when no incomplete activation remains; if several are found, their order
-cannot be reconstructed safely, so the identity stays in recovery mode and
-each one must be resolved explicitly. You can also resolve manually at any
-time: re-run `restore activate` to perform the exact recorded rollback-first
-resume, or use `restore rollback` to restore the pre-activation state. An
-incomplete activation cannot be purged, and no new activation is accepted
-while any incomplete activation exists.
-
-In `apadmin`, recovered batches are managed from the archive list (`r`, then
-`v`): reopening a batch for review requires no export passphrase, incomplete
-activations offer resume (Enter, using the exact recorded intent) and
-rollback (`x`), and inactive batches can be purged (`p`, confirmed with `y`).
-While the signer is in recovery mode the same screen is blocking — signing
-and ordinary administration stay disabled until every incomplete activation
-is resolved. Replacing existing active credentials is consented to on the
-activation review, beside the listed conflicts; the archive preview marks
-conflicting keys informationally and never collects that consent.
+`restore reconcile` validates and promotes the visible clean generation.
+`restore rollback` is available only while the current generation is the
+latest clean rollback-eligible credential restore. Any later mutation causes a
+safe refusal, and a rollback generation cannot itself be rolled back. A restore
+performed from recovery mode is not rollback-eligible because its damaged
+parent must not be promoted back into service.
 
 **Note:** `apstore restore` operates on archives in the managed backup locker;
-it does not restore directly from extracted directories. Backups do not include
-the store's `keyring.enc` root. The backup passphrase is the export passphrase you
-entered when the backup was created, and it may differ from your current store
-passphrase.
-
+it does not restore directly from extracted directories. The export passphrase
+may differ from the destination store passphrase.
 ### Generation-Based Storage and Migration
 
 New and rebuilt stores keep their active credentials in generation-based
 storage: `identities/<identity>/CURRENT` names the active generation under
-`generations/`, and every restore activation commits as a complete new
-generation with one durable pointer flip. Activation on these stores cannot
-be left half-applied — a failure before the flip leaves the batch inactive
-and nothing published, and `restore rollback <restore-id>` restores the
-pre-activation content by minting a fresh generation.
+`generations/`, and every credential restore commits as a complete new
+generation with one durable pointer flip. Restore cannot be left half-applied:
+a failure before the flip publishes nothing, and `restore rollback`
+reconstructs the sealed parent by minting a fresh generation.
 Encrypted members stay on the current key term; the command does not make an
 older generation current again.
 
-Every release is incompatible with every prior release: this release reads
-only stores it initialized. There is no layout migration — to move keys
-between releases, export backup archives (standalone, release-independent
-encryption) and restore them into a freshly initialized store.
+This is the first supported release and it does not migrate stores or backups
+from earlier internal tags. Pre-1.0 releases may make incompatible changes,
+but incompatibility is not a permanent every-release policy; each pre-1.0
+release will state its compatibility and migration requirements explicitly.
+See [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 Manage generations offline (daemon stopped):
 
@@ -498,7 +434,7 @@ Passphrase rotation does not require generation pruning. Retained generations
 remain rollback targets and stay readable under their historical key terms.
 **Pruning permanently deletes the generation rollback history**: after
 `prune --all-priors`, rolling back the most recent operation (including a
-restore activation) is no longer possible.
+credential restore) is no longer possible.
 
 Both prune modes ask for explicit confirmation before deleting anything,
 stating what is being given up. `prune --all-priors` additionally abandons
@@ -508,120 +444,33 @@ signer's unlock gate applies) before deleting. Both prune modes also refuse
 to run if the current generation fails structural validation or, when the
 parent is being retained, if that rollback target's seal does not verify.
 
-### Policy Snapshots in Backups
+### Credential-Only Backup Boundary
 
-Backups include `policy/policy.yaml` and `policy/policy.yaml.hmac` so an
-operator can inspect the node-role policy that was active when the backup was
-created. Normal restore flows recover and activate credentials only.
-`apadmin` and `apstore restore apply` do not install or replace active identity
-policy documents.
+Managed backups contain complete encrypted credential records and archive
+integrity metadata. They deliberately exclude:
 
-The archived policy sidecars are source-store provenance material. They are not
-destination restore artifacts and should not be copied into the active identity
-directory. The destination cannot verify the archived HMAC without the source
-term key. Backup creation verified the live source policy before copying it;
-activation review treats the archived policy as source material and the
-destination policy as authoritative.
+- `policy.yaml` and policy integrity sidecars
+- `user_auto_approve` and other identity settings
+- network/genesis mappings and endpoints
+- installed or library templates and key-type enable/disable state
+- API tokens, SSH enrollment, and passphrase helpers
 
-Backup writers record the source node's approval default and custom
-genesis-hash mappings inside the sealed manifest; it contains no network
-credentials.
+This is not a partial machine migration. If you need to reproduce a signer's
+configuration, manage that configuration separately and review it as an
+operator-controlled deployment change.
 
-**What authentication proves.** Every archive carries a manifest sealed under
-the export passphrase, covering every member and its digest. Opening an
-archive verifies that inventory, so a member removed, added, or altered after
-creation is rejected. What this proves is provenance and integrity: the
-archive is what a holder of the export passphrase packaged. It is not a
-statement that the contents are safe to adopt. Anyone with the export
-passphrase — including whoever is restoring — could have packaged it, so the
-review still presents source values as claims: they appear under a **Reported
-by the backup archive** heading, and policy differences under **Policy
-differences (informational)**.
+Every LogicSig credential must carry supported standalone signing metadata.
+Restore validates the stored bytecode, address, argument contract, bounded
+authorization, and base-provider support from the credential itself. It does
+not install a template, enable a disabled template, or create a key-type state
+record. Templates remain destination-owned tools for creating future
+credentials; they are not needed to reconstruct the signing authority already
+stored in a valid credential.
 
-Review also shows when the archive was packaged. Authentication says who
-packaged an archive, never when, so an archive swapped for an older one
-sealed under the same passphrase would otherwise look identical. Check that
-the packaging time is the archive you meant to activate.
-
-Nothing the archive reports changes any prompt. A destination that auto-approves
-unmatched signing requests warns and requires acknowledgement whether the
-archive claims manual review, claims auto-approve, or reports nothing at all.
-The destination approval mode and the destination's verified policy are always
-authoritative.
-
-An archive whose manifest cannot be decrypted or whose members do not match it
-is rejected outright, with the same wrong-passphrase-or-tampering message a
-corrupted payload produces. There is no partially-trusted state to review.
-
-If policy restoration is warranted, restore it deliberately:
-
-```bash
-# Stop apsigner first, or perform this before starting it.
-mkdir -p /tmp/aplane-policy-restore
-tar -xzf /mnt/usb/aplane-backup.tar.gz -C /tmp/aplane-policy-restore policy/policy.yaml
-
-diff -u "$APSIGNER_DATA/identities/default/policy.yaml" \
-  /tmp/aplane-policy-restore/policy/policy.yaml
-
-cp "$APSIGNER_DATA/identities/default/policy.yaml" \
-  "$APSIGNER_DATA/identities/default/policy.yaml.bak"
-
-install -m 0600 /tmp/aplane-policy-restore/policy/policy.yaml \
-  "$APSIGNER_DATA/identities/default/policy.yaml"
-
-apstore -d "$APSIGNER_DATA" policy check
-apstore -d "$APSIGNER_DATA" policy sign
-apstore -d "$APSIGNER_DATA" policy verify
-```
-
-For interactive offline edits, use `appolicy -d "$APSIGNER_DATA"` after
-stopping `apsigner`; it auto-selects the policy domain from the node role,
-validates the draft, and saves `policy.yaml` with a fresh sidecar. For
-scriptable byte-preserving edits or
-imports, use `appolicy --yaml` to emit the verified current document and
-`appolicy --save` to read replacement YAML from stdin, validate it, and save it
-with a fresh sidecar.
-
-After signing, reload, unlock, or restart the signer before relying on the new
-policy. The running signer keeps the previous in-memory policy until the next
-successful policy-verified reload.
-
-### Restore Rules for Template-Backed Keys
-
-When a backup contains a bundled template definition, `apstore restore` checks
-your local installation before trusting the bundled copy. This stops a backup
-from silently changing what a `key_type` means.
-
-For each `key_type` in the backup, restore looks for an existing definition in
-this order:
-
-1. The bundled signer-data library template, if one exists.
-2. An identity-local template you already installed, even when it is in the
-   disabled state.
-3. The bundled template from the backup, used only when no local definition
-   is present.
-
-If the bundled template matches what is already installed (or matches a bundled
-library template), restore continues normally and uses your local copy. If the
-bundled template conflicts with what is already installed, restore skips the
-bundled template and prints a warning, but the key itself can restore
-from its stored signing metadata.
-
-A few other things to know:
-
-- If a v1 LogicSig backup does not include a template at all, restore
-  uses the key's stored bytecode, `salt_counter`, and signing metadata. DSA
-  LogicSig keys also need support for their stored `base_key_type`.
-- If the matching identity-local template is installed but disabled, restoring
-  the template explicitly (or via a matching bundled template) re-enables it.
-  Restoring the key alone does not require the template to be enabled to sign.
-- If a restored key uses a library-visible compiled provider, restore creates
-  the identity state record for that key type as needed.
-- Recovery is all-or-nothing for the selected batch. Activation also treats
-  the batch as one unit: a failure restores exact pre-activation key and
-  key-type state before returning, or leaves a durable recovery marker that
-  blocks signing until operator resolution.
-
+Archive authentication proves exact membership under the export passphrase. It
+does not authorize any destination policy choice. The operator is responsible
+for the destination policy and configuration under which restored credentials
+will run.
 ### Rebuild an Absent Keystore
 
 `apstore rebuild` is the rescue path for a replacement keystore. It is a local
@@ -636,19 +485,17 @@ not already exist.
 
 If an existing keystore or identity directory is present, move it aside
 explicitly before rebuilding. `rebuild` creates a fresh `keyring.enc` root,
-restores keys from the backup archive, and writes a new store encrypted under
-the new store passphrase you enter. Rebuild uses `manifest.json`
-`source_node_role` metadata as the default destination role when present.
-Archives without role metadata default to signer. Pass `--role signer` or
+restores credentials from the backup archive, and writes a new store encrypted under
+the new store passphrase you enter. Rebuild uses `manifest.sealed`
+`source_node_role` metadata as the default destination role. Pass `--role signer` or
 `--role sentry` to set the replacement store role explicitly; if that differs
 from the manifest, rebuild warns and uses the explicit role. Restored key
 classes are still validated against the destination role.
 
 ### Verifying Restoration
 
-After successful `apstore restore apply` activation, the daemon reloads the
-identity runtime. Verify the address matches your backup in the apadmin TUI key
-list. A batch visible under `apstore restore list` remains inactive. After
+After successful `apstore restore apply`, the daemon reloads the identity
+runtime. Verify the address matches your backup in the apadmin TUI key list. After
 `apstore rebuild`, start `apsigner`, unlock the identity, and verify the
 restored addresses in apadmin.
 
@@ -775,12 +622,9 @@ From the key details view:
 
 # Restore keys
 ./apstore restore preview <backup-id|name>
-./apstore restore apply <backup-id|name> [--address ADDRESS ...] [--overwrite] [--acknowledge-unattended-signing]
-./apstore restore list
-./apstore restore review <restore-id>
-./apstore restore activate <restore-id> [--replace-existing]
-./apstore restore rollback <restore-id>
-./apstore restore purge <restore-id>
+./apstore restore apply <backup-id|name> [--address ADDRESS ...] [--replace-existing]
+./apstore restore rollback
+./apstore restore reconcile
 
 # Rescue rebuild when no identity keystore exists
 ./apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...]
