@@ -169,7 +169,7 @@ Documentation notes:
 | Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/rotationinventory`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
-| Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/registry`, `test/soak`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
+| Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/storeintegration`, `test/registry`, `test/soak`, `internal/testcheckpoint`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
 This table is an orientation map rather than an ownership API. Small support
 packages are listed under the closest layer that depends on them.
@@ -354,6 +354,9 @@ The repo includes:
   `test/fixtures/`
 - integration, registry, and soak coverage under `test/integration/`,
   `test/registry/`, and `test/soak/`
+- network-independent blank-store lifecycle and deterministic crash coverage
+  under `test/storeintegration/`, with build-tagged semantic fault injection
+  owned by `internal/testcheckpoint/`
 
 The Go, TypeScript, and Python SDKs live in the separate MIT-licensed
 `aplane-algo/aplanesdk` repository. This repo owns the signer HTTP API DTOs in
@@ -397,6 +400,7 @@ Repository release/distribution workflow includes:
 
 Release/distribution source-of-truth files are `Makefile` (`release-local` and
 bundled plugin targets), `.github/workflows/release.yml`,
+`docs/RELEASE_NOTES.md`,
 `scripts/package-bootstrap-release.sh`,
 `scripts/build-algokit-localnet-plugin-target.sh`,
 `scripts/stage-bundled-plugins.sh`,
@@ -428,7 +432,10 @@ Trust boundaries:
 - apshell↔plugins
 - encrypted disk↔unlocked memory
 
-Private key material never leaves the signer device.
+Plaintext signer-managed credential authority is never returned across the
+HTTP or admin transports. Store-owning local processes may decrypt credentials
+transiently for signing, backup creation, verification, restore, or rebuild;
+exported backup archives carry only passphrase-encrypted credential records.
 
 ### Identity Model
 
@@ -626,7 +633,11 @@ Important secret-handling contracts:
 
 - passphrases unwrap the store's keyring and should be zeroed promptly,
 - the file keystore caches the keyring only while unlocked,
-- individual keys are decrypted on demand, not fully preloaded,
+- normal signing decrypts individual keys on demand rather than retaining a
+  fully decrypted key inventory,
+- backup validation, direct restore, and offline rebuild may transiently
+  decrypt the complete selected credential set so it can be validated before
+  mutation; those plaintext buffers are explicitly zeroed after use,
 - key/session destruction zeros or invalidates in-memory sensitive state,
 - memory locking and core-dump disabling are best-effort unless configured as required.
 
@@ -1225,9 +1236,12 @@ base32_no_padding(SHA512_256(
 
 The Witness Key ID intentionally has the visual shape of an Algorand transaction
 ID, but it is not a valid Algorand address because addresses are 58 characters.
-Signer-custodied sentry witnesses use the canonical
-`identities/<identity>/keys/<WitnessKeyID>.sen` managed credential; account
-authority continues to use `<AlgorandAddress>.key`. External contract-admin
+Signer-custodied sentry witnesses use
+`<active-generation>/keys/<WitnessKeyID>.sen`; account authority uses the same
+active namespace with `<AlgorandAddress>.key`. Physically, the active namespace
+is `identities/<identity>/generations/<gen-id>/keys/`, selected by `CURRENT`.
+The direct `identities/<identity>/keys/` path is pre-generation legacy state,
+not an active credential source. External contract-admin
 witnesses remain standalone `.wit` artifacts and are never scanned by the signer.
 The full sentry public key remains the verifier key embedded in guarded
 account LogicSig bytecode. The same witness key form can serve a bounded
@@ -1598,8 +1612,14 @@ The repo uses:
   `managed_credential_files_test.go` pins managed credential extension
   ownership; `witness_boundary_test.go` pins witness custody and signing
   boundaries; and `generation_storage_test.go` pins the no-hardlink rule and
-  store-owning package inventory from ARCH_GENERATIONS,
-- dedicated test harness packages,
+  store-owning package inventory from ARCH_GENERATIONS;
+  `kdf_confinement_test.go` pins key-derivation, raw-term-key, test-fixture,
+  and historical-term boundaries,
+- the opt-in `test/storeintegration` process harness, invoked through
+  `make store-lifecycle-test` and `make store-crash-test`, creates genuine
+  blank signer roots without algod or the shared integration fixture;
+  `internal/testcheckpoint` provides `storetest`-only semantic checkpoints and
+  compiles to no-op behavior in production builds,
 - analysis tools for security properties,
 - signer API and SDK contract tests backed by JSON fixtures in `test/contracts/signerapi/`.
   These fixtures pin SDK-exposed HTTP DTOs. SDK package tests are owned by the external
@@ -1629,10 +1649,17 @@ The repo uses:
   `TLA2TOOLS_JAR` or one of the Makefile's default jar search paths.
 
 `make integrity-check` is the broad verification target. It chains formatting,
-vet, module-tidy, lint/dead-code/security checks, race tests, cross-builds,
-smoke tests, contract tests, integration tests, and a clean-tree check.
+vet, module-tidy, lint/dead-code/security checks, race tests, blank-store
+lifecycle and deterministic crash tests, cross-builds, smoke tests, contract
+tests, integration tests, and a clean-tree check.
 Formal model checking remains a separate `make formal-test`/CI job and is not
 part of `integrity-check`.
+
+`make store-release-drill` runs the same release-critical initialize,
+generate, sign, backup, fresh restore, rotation, restart, and re-sign workflow
+against explicitly staged production `apsigner`, `apstore`, and `apadmin`
+binaries. The release workflow runs it against the staged amd64 artifacts;
+unlike the crash harness, it does not use `storetest` checkpoints.
 
 Docker-backed install and topology smoke targets are separate release workflow
 guards:
@@ -1743,7 +1770,10 @@ Architecturally:
 
 ## Architectural Invariants
 
-1. Signer-managed private keys never leave `apsigner`.
+1. Plaintext signer-managed credential authority is never returned through
+   HTTP or admin transports. Store-owning local processes may decrypt it
+   transiently; exported backups contain only passphrase-encrypted credential
+   records.
 2. Unlock state = keyring availability + active session state.
 3. Engine code is independent of UI parsing/formatting. Pinned transitively by `test/arch/client_layering_test.go`: nothing in the module-internal dependency closure of `internal/engine` (and subpackages) may import UI parsing/formatting packages (`cmdspec`, `shellrepl`, `apshellcli`, `apshellapp`, `keytypefmt`, `theme`, `addressdisplay`), with no exceptions. Shared semantic grammars live in engine-layer leaves (e.g. byte-value parsing in `internal/appinput`, key-type canonicalization in `internal/keytypecatalog`) and UI packages depend downward on them.
 4. Provider registration is explicit at startup via `RegisterProviders()` / `lsig.RegisterClient()` / `lsig/signerreg.RegisterSigner()`.
@@ -1816,6 +1846,7 @@ Product-level boundaries:
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/*.go`, `internal/backup/*.go` |
+| Store Integration Harness | `test/storeintegration/*.go`, `internal/testcheckpoint/*.go`, `Makefile` (`store-lifecycle-test`, `store-crash-test`, `store-release-drill`) |
 | LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `library/templates/aplane.corridor.v1.yaml`, `lsig/sentryaccount/sentryaccount.go`, `internal/boundedadmin/message/message.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
@@ -1829,7 +1860,7 @@ Product-level boundaries:
 | Rotation Inventory | `internal/rotationinventory/*.go`, `internal/crypto/term_envelope.go`, `internal/genstore/records.go`, `internal/genstore/validate.go`, `docs/PHASE3_ONBOARDING.md` |
 | Client Data | `internal/clientdata/lock.go`, `internal/clientstate/state.go`, `internal/refname/refname.go` |
 | Identity | `internal/signerapp/identity/runtime.go`, `internal/signerapp/identity/config.go` |
-| Release/Distribution | `Makefile`, `.github/workflows/release.yml`, `scripts/package-bootstrap-release.sh`, `scripts/build-algokit-localnet-plugin-target.sh`, `scripts/stage-bundled-plugins.sh`, `scripts/docker-systemd-smoke.sh`, `scripts/docker-local-four-node-smoke.sh`, `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`, `uninstall.sh`, `installer/`, `library/templates/` |
+| Release/Distribution | `Makefile`, `.github/workflows/release.yml`, `docs/RELEASE_NOTES.md`, `scripts/package-bootstrap-release.sh`, `scripts/build-algokit-localnet-plugin-target.sh`, `scripts/stage-bundled-plugins.sh`, `scripts/docker-systemd-smoke.sh`, `scripts/docker-local-four-node-smoke.sh`, `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`, `uninstall.sh`, `installer/`, `library/templates/` |
 
 ## Backup and Restore Ownership
 
@@ -1856,7 +1887,10 @@ policy and configuration are always authoritative.
 Both `apadmin` and local-IPC `apstore` use the same daemon-owned lifecycle.
 `cmd/apstore` retains local `initialize`, backup-import admission, `verify`,
 policy integrity check/sign/verify, and `rebuild` replacement-keystore rescue.
-Offline rebuild is deliberately distinct: it requires an absent store and may
-write active credentials directly. The wire and on-disk compatibility rules remain in
+Offline rebuild is deliberately distinct: it requires an absent identity,
+creates a new keyring and node-role integrity state, and commits the restored
+credentials as the first generation through `genstore.Mint`; it bypasses the
+live daemon, admin authorization, and durable audit path. The wire and on-disk
+compatibility rules remain in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md); the key/keytype lifecycle state model
 is in [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
