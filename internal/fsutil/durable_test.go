@@ -72,6 +72,98 @@ func TestWriteFileDurableReplacesAndPreservesMode(t *testing.T) {
 	}
 }
 
+func TestWriteFileDurableClampsPermissiveMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "existing.bin")
+	if err := os.WriteFile(path, []byte("old"), 0o666); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+
+	if err := WriteFileDurable(path, []byte("new")); err != nil {
+		t.Fatalf("WriteFileDurable: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != StoreFilePerm {
+		t.Fatalf("mode = %04o, want %04o", got, StoreFilePerm)
+	}
+}
+
+func TestWriteFileDurablePrivateProfileCreatesOwnerOnlyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "private.bin")
+
+	if err := WriteFileDurableWithProfile(path, []byte("secret"), PrivateStoreFileProfile); err != nil {
+		t.Fatalf("WriteFileDurableWithProfile: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("mode = %04o, want 0600", got)
+	}
+}
+
+func TestWriteFileDurableRejectsSymlinkTarget(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(dir, "outside")
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(outside, []byte("unchanged"), 0o600); err != nil {
+		t.Fatalf("WriteFile(outside): %v", err)
+	}
+	if err := os.Symlink(outside, target); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	if err := WriteFileDurable(target, []byte("attacker")); err == nil {
+		t.Fatal("WriteFileDurable accepted symlink target")
+	}
+	data, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatalf("ReadFile(outside): %v", err)
+	}
+	if string(data) != "unchanged" {
+		t.Fatalf("outside contents = %q, want unchanged", data)
+	}
+}
+
+func TestWriteFileDurableRejectsNonRegularTarget(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if err := WriteFileDurable(target, []byte("data")); err == nil {
+		t.Fatal("WriteFileDurable accepted directory target")
+	}
+}
+
+func TestWriteFileDurableRejectsSymlinkParent(t *testing.T) {
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "real")
+	linkDir := filepath.Join(dir, "link")
+	if err := os.Mkdir(realDir, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	if err := WriteFileDurable(filepath.Join(linkDir, "target"), []byte("data")); err == nil {
+		t.Fatal("WriteFileDurable accepted symlink parent")
+	}
+}
+
+func TestWriteFileDurableRejectsUnknownProfile(t *testing.T) {
+	dir := t.TempDir()
+	err := WriteFileDurableWithProfile(filepath.Join(dir, "target"), []byte("data"), DurableFileProfile(255))
+	if err == nil {
+		t.Fatal("WriteFileDurableWithProfile accepted unknown profile")
+	}
+}
+
 func TestWriteFileDurableOperationOrdering(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ordered.bin")

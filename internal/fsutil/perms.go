@@ -2,14 +2,10 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package fsutil provides filesystem helpers for the aplane store.
-// Store files use group-accessible permissions (0660 files, 0770 dirs)
-// so that any member of the aplane group can manage the store while
-// apsigner can read/write through group ownership.
 package fsutil
 
 import (
 	"os"
-	"path/filepath"
 )
 
 // StoreDirPerm is the permission mode for store directories.
@@ -43,80 +39,10 @@ func MkdirAll(path string) error {
 	return nil
 }
 
-// WriteFile writes data to a file with store permissions (g+rw).
-// It replaces the target atomically so crashes leave either the old file or
-// the new file, never a truncated partially-written target.
+// WriteFile writes data using the explicitly legacy shared-store profile.
+// New signer-private code should use WriteFileDurableWithProfile with
+// PrivateStoreFileProfile instead. This compatibility entry point remains
+// while legacy stores are migrated to service-user-only ownership.
 func WriteFile(path string, data []byte) error {
-	info, statErr := os.Stat(path)
-	switch {
-	case statErr == nil:
-		if uid, _, ok := FileOwnership(info); ok && uid != os.Getuid() {
-			// Shared-group update of someone else's file: preserve ownership by
-			// writing in place, matching the pre-atomic behavior.
-			return writeFileInPlace(path, data)
-		}
-	case os.IsNotExist(statErr):
-		// New file: use atomic replace path below.
-	default:
-		return statErr
-	}
-
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		_ = tmp.Close()
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if _, err := tmp.Write(data); err != nil {
-		return err
-	}
-
-	targetMode := StoreFilePerm
-	var targetGID int
-	hasOwnership := false
-
-	switch {
-	case statErr == nil:
-		targetMode = info.Mode().Perm()
-		if _, gid, ok := FileOwnership(info); ok {
-			targetGID = gid
-			hasOwnership = targetGID != os.Getgid()
-		}
-	case os.IsNotExist(statErr):
-		// New file: keep default mode and current ownership.
-	default:
-		return statErr
-	}
-
-	if err := tmp.Chmod(targetMode); err != nil {
-		return err
-	}
-	if hasOwnership {
-		if err := tmp.Chown(-1, targetGID); err != nil {
-			return err
-		}
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return nil
-}
-
-func writeFileInPlace(path string, data []byte) error {
-	if err := os.WriteFile(path, data, StoreFilePerm); err != nil {
-		return err
-	}
-	return os.Chmod(path, StoreFilePerm)
+	return WriteFileDurableWithProfile(path, data, LegacyStoreFileProfile)
 }

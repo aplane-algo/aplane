@@ -5,12 +5,13 @@ package identity
 
 import (
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"gopkg.in/yaml.v3"
 )
 
@@ -173,13 +174,8 @@ func SaveStoredSetting(dataRoot, identityID, key string, value interface{}) erro
 		return fmt.Errorf("failed to marshal identity config: %w", err)
 	}
 
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(path, out, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write identity config: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("failed to rename identity config: %w", err)
 	}
 	return nil
 }

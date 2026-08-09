@@ -16,7 +16,17 @@ func ValidateBindPath(socketPath string) error {
 	if err := validateSocketPath(socketPath); err != nil {
 		return err
 	}
-	return rejectIfInsecureDirectory(socketPath)
+	return rejectIfInsecureDirectory(socketPath, false)
+}
+
+// ValidatePrivateRuntimeBindPath applies the target multi-UID production
+// contract: the socket parent is a real directory owned by the daemon user and
+// is not writable by group or other users.
+func ValidatePrivateRuntimeBindPath(socketPath string) error {
+	if err := validateSocketPath(socketPath); err != nil {
+		return err
+	}
+	return rejectIfInsecureDirectory(socketPath, true)
 }
 
 // validateSocketPath checks for symlink attacks and ownership issues.
@@ -37,6 +47,9 @@ func validateSocketPath(socketPath string) error {
 	if info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("SECURITY: socket path is a symlink (possible attack): %s", socketPath)
 	}
+	if info.Mode()&os.ModeSocket == 0 {
+		return fmt.Errorf("SECURITY: existing socket path is not a socket: %s", socketPath)
+	}
 
 	// Verify ownership - socket must be owned by current user
 	stat, ok := info.Sys().(*syscall.Stat_t)
@@ -55,8 +68,9 @@ func validateSocketPath(socketPath string) error {
 	return nil
 }
 
-// rejectIfInsecureDirectory rejects socket paths in world-writable directories.
-func rejectIfInsecureDirectory(socketPath string) error {
+// rejectIfInsecureDirectory rejects unsafe socket parents. strict additionally
+// requires daemon ownership and rejects group write access.
+func rejectIfInsecureDirectory(socketPath string, strict bool) error {
 	dir := filepath.Dir(socketPath)
 
 	// Check for common world-writable directories
@@ -65,14 +79,29 @@ func rejectIfInsecureDirectory(socketPath string) error {
 	}
 
 	// Check actual directory permissions
-	info, err := os.Stat(dir)
+	info, err := os.Lstat(dir)
 	if err != nil {
-		return nil // Can't check, skip hard failure
+		return fmt.Errorf("failed to inspect IPC socket directory %s: %w", dir, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("refusing IPC socket parent that is not a real directory: %s", dir)
 	}
 
 	// Check if directory is world-writable (others have write permission)
 	if info.Mode().Perm()&0002 != 0 {
 		return fmt.Errorf("refusing IPC socket in world-writable directory: %s", dir)
+	}
+	if strict {
+		if info.Mode().Perm()&0o020 != 0 {
+			return fmt.Errorf("refusing IPC socket in group-writable directory: %s", dir)
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return fmt.Errorf("cannot determine IPC socket directory owner: %s", dir)
+		}
+		if stat.Uid != uint32(os.Getuid()) {
+			return fmt.Errorf("refusing IPC socket directory owned by uid %d, expected %d: %s", stat.Uid, os.Getuid(), dir)
+		}
 	}
 	return nil
 }

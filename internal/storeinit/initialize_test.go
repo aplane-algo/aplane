@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -215,4 +216,52 @@ func TestHasPartialState(t *testing.T) {
 	if HasPartialState(paths, identityID) {
 		t.Fatal("presence of .keystore should not be considered partial initialization")
 	}
+}
+
+func TestChownIdentitiesTreeRejectsSymlinkWithoutTouchingTarget(t *testing.T) {
+	dataDir := t.TempDir()
+	paths := storepaths.NewPaths(dataDir)
+	identitiesDir := filepath.Join(dataDir, "identities")
+	identityDir := paths.IdentityDir("default")
+	if err := os.MkdirAll(identityDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(identityDir): %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, []byte("unchanged"), 0o600); err != nil {
+		t.Fatalf("WriteFile(outside): %v", err)
+	}
+	before, err := os.Stat(outside)
+	if err != nil {
+		t.Fatalf("Stat(outside): %v", err)
+	}
+	link := filepath.Join(identityDir, "planted")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	err = chownIdentitiesTreeToDataDirOwner(dataDir, paths)
+	if err == nil || !strings.Contains(err.Error(), "refusing symlink") {
+		t.Fatalf("chownIdentitiesTreeToDataDirOwner() error = %v, want symlink rejection", err)
+	}
+	after, err := os.Stat(outside)
+	if err != nil {
+		t.Fatalf("Stat(outside) after rejection: %v", err)
+	}
+	beforeUID, beforeGID := fileOwnershipForTest(t, before)
+	afterUID, afterGID := fileOwnershipForTest(t, after)
+	if beforeUID != afterUID || beforeGID != afterGID {
+		t.Fatalf("outside ownership changed from %d:%d to %d:%d", beforeUID, beforeGID, afterUID, afterGID)
+	}
+	if _, err := os.Stat(identitiesDir); err != nil {
+		t.Fatalf("identities directory disappeared: %v", err)
+	}
+}
+
+func fileOwnershipForTest(t *testing.T, info os.FileInfo) (uint32, uint32) {
+	t.Helper()
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Skip("ownership metadata unavailable")
+	}
+	return stat.Uid, stat.Gid
 }

@@ -280,3 +280,30 @@ func TestNormalizeManagedStoreOwnershipPreservesSystemdCredOwner(t *testing.T) {
 		t.Fatalf("Stat(cred) error = %v", err)
 	}
 }
+
+func TestNormalizeManagedStoreOwnershipRejectsSymlink(t *testing.T) {
+	dataDir := t.TempDir()
+	identityDir := filepath.Join(dataDir, "identities", productIdentityID())
+	if err := os.MkdirAll(identityDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(identityDir) error = %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, []byte("unchanged"), 0o600); err != nil {
+		t.Fatalf("WriteFile(outside) error = %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(identityDir, "planted")); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+
+	err := normalizeManagedStoreOwnership(dataDir)
+	if err == nil || !strings.Contains(err.Error(), "refusing symlink") {
+		t.Fatalf("normalizeManagedStoreOwnership() error = %v, want symlink rejection", err)
+	}
+	data, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatalf("ReadFile(outside) error = %v", err)
+	}
+	if string(data) != "unchanged" {
+		t.Fatalf("outside contents = %q, want unchanged", data)
+	}
+}

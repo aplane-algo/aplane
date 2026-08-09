@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
 type storedConfigParser func([]byte) (*StoredConfig, error)
@@ -117,23 +118,16 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *cry
 		return fmt.Errorf("failed to create %s directory: %w", configLabel, err)
 	}
 
-	policyTmp := path + ".tmp"
 	sidecarPath := PolicyIntegritySidecarPath(path)
-	sidecarTmp := sidecarPath + ".tmp"
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(policyTmp)
-			_ = os.Remove(sidecarTmp)
-		}
-	}()
-
-	if err := writeSyncedPolicyFile(policyTmp, policyBytes, 0o600); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(path, policyBytes, fsutil.LegacyStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write %s: %w", configLabel, err)
 	}
-	info, err := os.Stat(policyTmp)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return fmt.Errorf("failed to stat %s: %w", configLabel, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file: %s", configLabel, path)
 	}
 	sidecar, err := SignPolicyIntegrity(policyBytes, kr, signedAt, info.ModTime().UnixNano())
 	if err != nil {
@@ -143,20 +137,9 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *cry
 	if err != nil {
 		return err
 	}
-	if err := writeSyncedPolicyFile(sidecarTmp, sidecarBytes, 0o600); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(sidecarPath, sidecarBytes, fsutil.LegacyStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write %s: %w", sidecarLabel, err)
 	}
-
-	if err := os.Rename(policyTmp, path); err != nil {
-		return fmt.Errorf("failed to rename %s: %w", configLabel, err)
-	}
-	if err := os.Rename(sidecarTmp, sidecarPath); err != nil {
-		return fmt.Errorf("failed to rename %s: %w", sidecarLabel, err)
-	}
-	if err := syncPolicyDir(dir); err != nil {
-		return fmt.Errorf("failed to sync %s directory: %w", configLabel, err)
-	}
-	cleanup = false
 	return nil
 }
 
@@ -221,23 +204,9 @@ func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt tim
 		return err
 	}
 	sidecarPath := PolicyIntegritySidecarPath(path)
-	sidecarTmp := sidecarPath + ".tmp"
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(sidecarTmp)
-		}
-	}()
-	if err := writeSyncedPolicyFile(sidecarTmp, sidecarBytes, 0o600); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(sidecarPath, sidecarBytes, fsutil.LegacyStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write %s: %w", sidecarLabel, err)
 	}
-	if err := os.Rename(sidecarTmp, sidecarPath); err != nil {
-		return fmt.Errorf("failed to rename %s: %w", sidecarLabel, err)
-	}
-	if err := syncPolicyDir(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("failed to sync %s directory: %w", configLabel, err)
-	}
-	cleanup = false
 	return nil
 }
 
@@ -251,37 +220,4 @@ func SignPolicyFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.
 // policy.yaml with the identity keyring.
 func SignSentryFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.Keyring, signedAt time.Time) error {
 	return SignSentryFileIntegrity(dataRoot, identityID, kr, signedAt)
-}
-
-func writeSyncedPolicyFile(path string, data []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, perm)
-	if err != nil {
-		return err
-	}
-	closeFile := true
-	defer func() {
-		if closeFile {
-			_ = f.Close()
-		}
-	}()
-	if _, err := f.Write(data); err != nil {
-		return err
-	}
-	if err := f.Chmod(perm); err != nil {
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		return err
-	}
-	closeFile = false
-	return f.Close()
-}
-
-func syncPolicyDir(dir string) error {
-	f, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	return f.Sync()
 }

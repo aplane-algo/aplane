@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestWriteFileInPlaceReplacesContentsAndPreservesMode(t *testing.T) {
+func TestWriteFileReplacesContentsAndKeepsRestrictiveMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "shared.txt")
 
@@ -17,8 +17,8 @@ func TestWriteFileInPlaceReplacesContentsAndPreservesMode(t *testing.T) {
 		t.Fatalf("seed file: %v", err)
 	}
 
-	if err := writeFileInPlace(path, []byte("new")); err != nil {
-		t.Fatalf("writeFileInPlace: %v", err)
+	if err := WriteFile(path, []byte("new")); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 
 	data, err := os.ReadFile(path)
@@ -33,8 +33,8 @@ func TestWriteFileInPlaceReplacesContentsAndPreservesMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	if got := info.Mode().Perm(); got != StoreFilePerm {
-		t.Fatalf("mode = %04o, want %04o", got, StoreFilePerm)
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("mode = %04o, want 0600", got)
 	}
 }
 

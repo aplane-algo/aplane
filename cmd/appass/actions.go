@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
 
@@ -53,51 +54,30 @@ func executeSetPassfile(dataDir, identityID string, passphrase []byte, svc *serv
 		return "", fmt.Errorf("creating identity directory: %w", err)
 	}
 	passphrasePath := filepath.Join(identityDir, "passphrase")
-	tmpPassphrase, err := os.CreateTemp(identityDir, "passphrase.tmp-*")
-	if err != nil {
-		return "", fmt.Errorf("creating passphrase temp file: %w", err)
-	}
-	tmpPath := tmpPassphrase.Name()
-	cleanupTemp := true
-	defer func() {
-		_ = tmpPassphrase.Close()
-		if cleanupTemp {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if _, err := tmpPassphrase.Write(passphrase); err != nil {
-		return "", fmt.Errorf("writing passphrase temp file: %w", err)
-	}
-	if err := tmpPassphrase.Chmod(0o600); err != nil {
-		return "", fmt.Errorf("chmod passphrase temp file: %w", err)
-	}
-	if err := tmpPassphrase.Close(); err != nil {
-		return "", fmt.Errorf("closing passphrase temp file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, passphrasePath); err != nil {
-		return "", fmt.Errorf("writing passphrase file: %w", err)
-	}
-	cleanupTemp = false
-
-	// Chown to service user (only needed in systemd mode where we run as root).
+	var serviceUID, serviceGID int
 	if !isLocal {
-		if err := chownToUser(passphrasePath, svc.User, svc.Group); err != nil {
-			return "", fmt.Errorf("chown passphrase file: %w", err)
+		serviceUID, serviceGID, err = lookupUserGroupIDs(svc.User, svc.Group)
+		if err != nil {
+			return "", err
 		}
+		if err := fsutil.WriteServiceOwnedFileDurable(passphrasePath, passphrase, serviceUID, serviceGID); err != nil {
+			return "", fmt.Errorf("writing service-owned passphrase file: %w", err)
+		}
+	} else if err := fsutil.WriteFileDurableWithProfile(passphrasePath, passphrase, fsutil.PrivateStoreFileProfile); err != nil {
+		return "", fmt.Errorf("writing passphrase file: %w", err)
 	}
 
 	// Write identity-scoped unlock config
 	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{passFileBin, passphrasePath},
 	}
-	if err := unlockconfig.SaveUnlockConfig(dataDir, identityID, unlockCfg); err != nil {
-		return "", fmt.Errorf("saving unlock config: %w", err)
-	}
 	if !isLocal {
-		if err := setProdUnlockConfigPermissions(dataDir, identityID, svc); err != nil {
-			return "", err
-		}
+		err = unlockconfig.SaveUnlockConfigForService(dataDir, identityID, unlockCfg, serviceUID, serviceGID)
+	} else {
+		err = unlockconfig.SaveUnlockConfig(dataDir, identityID, unlockCfg)
+	}
+	if err != nil {
+		return "", fmt.Errorf("saving unlock config: %w", err)
 	}
 
 	var warning string
@@ -164,17 +144,13 @@ func executeSetSystemcreds(dataDir, identityID string, passphrase []byte, svc *s
 		return "", fmt.Errorf("round-trip verification failed: encrypted passphrase does not match")
 	}
 
-	// Credential file must be root-owned
-	if err := os.Chown(tmpCredPath, 0, 0); err != nil {
-		return "", fmt.Errorf("chown credential file: %w", err)
+	credentialBytes, _, err := fsutil.ReadRegularFileLimited(tmpCredPath, 1024*1024)
+	if err != nil {
+		return "", fmt.Errorf("read generated credential file: %w", err)
 	}
-	if err := os.Chmod(tmpCredPath, 0600); err != nil {
-		return "", fmt.Errorf("chmod credential file: %w", err)
-	}
-	if err := os.Rename(tmpCredPath, credFile); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(credFile, credentialBytes, fsutil.RootCredentialFileProfile); err != nil {
 		return "", fmt.Errorf("install credential file: %w", err)
 	}
-	cleanupTemp = false
 
 	if err := ensureLoadCredentialInService(credFile); err != nil {
 		return "", err
@@ -184,11 +160,12 @@ func executeSetSystemcreds(dataDir, identityID string, passphrase []byte, svc *s
 	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{passCredsBin, credFile},
 	}
-	if err := unlockconfig.SaveUnlockConfig(dataDir, identityID, unlockCfg); err != nil {
-		return "", fmt.Errorf("saving unlock config: %w", err)
-	}
-	if err := setProdUnlockConfigPermissions(dataDir, identityID, svc); err != nil {
+	serviceUID, serviceGID, err := lookupUserGroupIDs(svc.User, svc.Group)
+	if err != nil {
 		return "", err
+	}
+	if err := unlockconfig.SaveUnlockConfigForService(dataDir, identityID, unlockCfg, serviceUID, serviceGID); err != nil {
+		return "", fmt.Errorf("saving unlock config: %w", err)
 	}
 
 	var warning string
@@ -286,41 +263,25 @@ func isProdMode() bool {
 	return false
 }
 
-// chownToUser changes file ownership to the given user and group names.
-func chownToUser(path, username, groupname string) error {
+func lookupUserGroupIDs(username, groupname string) (int, int, error) {
 	u, err := user.Lookup(username)
 	if err != nil {
-		return fmt.Errorf("looking up user %q: %w", username, err)
+		return 0, 0, fmt.Errorf("looking up user %q: %w", username, err)
 	}
 	uid, err := strconv.Atoi(u.Uid)
 	if err != nil {
-		return fmt.Errorf("parsing uid: %w", err)
+		return 0, 0, fmt.Errorf("parsing uid: %w", err)
 	}
 
 	g, err := user.LookupGroup(groupname)
 	if err != nil {
-		return fmt.Errorf("looking up group %q: %w", groupname, err)
+		return 0, 0, fmt.Errorf("looking up group %q: %w", groupname, err)
 	}
 	gid, err := strconv.Atoi(g.Gid)
 	if err != nil {
-		return fmt.Errorf("parsing gid: %w", err)
+		return 0, 0, fmt.Errorf("parsing gid: %w", err)
 	}
-
-	return os.Chown(path, uid, gid)
-}
-
-func setProdUnlockConfigPermissions(dataDir, identityID string, svc *serviceInfo) error {
-	if svc == nil {
-		return fmt.Errorf("service info unavailable")
-	}
-	path := unlockconfig.UnlockConfigPath(dataDir, identityID)
-	if err := chownToUser(path, svc.User, svc.Group); err != nil {
-		return fmt.Errorf("chown unlock config: %w", err)
-	}
-	if err := os.Chmod(path, 0o640); err != nil {
-		return fmt.Errorf("chmod unlock config: %w", err)
-	}
-	return nil
+	return uid, gid, nil
 }
 
 // removeLoadCredentialFromService removes any LoadCredentialEncrypted line

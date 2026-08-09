@@ -46,9 +46,12 @@ func normalizeProductionStoreAfterRootMutation(command string) error {
 }
 
 func normalizeManagedStoreOwnership(dataDir string) error {
-	info, err := os.Stat(dataDir)
+	info, err := os.Lstat(dataDir)
 	if err != nil {
 		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("managed data directory is not a real directory: %s", dataDir)
 	}
 	uid, gid, err := fileOwnerGroup(info)
 	if err != nil {
@@ -59,20 +62,37 @@ func normalizeManagedStoreOwnership(dataDir string) error {
 	}
 
 	identitiesDir := filepath.Join(dataDir, "identities")
-	if _, err := os.Stat(identitiesDir); err != nil {
+	identitiesInfo, err := os.Lstat(identitiesDir)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
+	if identitiesInfo.Mode()&os.ModeSymlink != 0 || !identitiesInfo.IsDir() {
+		return fmt.Errorf("managed identities path is not a real directory: %s", identitiesDir)
+	}
 	return filepath.WalkDir(identitiesDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing symlink in managed identities tree: %s", path)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return fmt.Errorf("inspect managed store entry %s: %w", path, err)
+		}
+		if !info.IsDir() && !info.Mode().IsRegular() {
+			return fmt.Errorf("refusing unexpected file type in managed identities tree: %s", path)
+		}
 		if !d.IsDir() && filepath.Base(path) == "passphrase.cred" {
 			return nil
 		}
-		return os.Lchown(path, uid, gid)
+		if err := os.Lchown(path, uid, gid); err != nil {
+			return fmt.Errorf("set ownership on managed store entry %s: %w", path, err)
+		}
+		return nil
 	})
 }
 

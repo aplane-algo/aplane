@@ -54,6 +54,49 @@ func TestValidateBindPathRejectsWorldWritableDirectory(t *testing.T) {
 	}
 }
 
+func TestValidatePrivateRuntimeBindPathRejectsGroupWritableDirectory(t *testing.T) {
+	dir := privateTempDir(t)
+	if err := os.Chmod(dir, 0o770); err != nil {
+		t.Fatalf("chmod temp dir: %v", err)
+	}
+
+	err := ValidatePrivateRuntimeBindPath(filepath.Join(dir, "apsigner.sock"))
+	if err == nil || !strings.Contains(err.Error(), "group-writable") {
+		t.Fatalf("ValidatePrivateRuntimeBindPath() error = %v, want group-writable rejection", err)
+	}
+}
+
+func TestValidatePrivateRuntimeBindPathAcceptsGroupTraversableDirectory(t *testing.T) {
+	dir := privateTempDir(t)
+	if err := os.Chmod(dir, 0o750); err != nil {
+		t.Fatalf("chmod temp dir: %v", err)
+	}
+
+	if err := ValidatePrivateRuntimeBindPath(filepath.Join(dir, "apsigner.sock")); err != nil {
+		t.Fatalf("ValidatePrivateRuntimeBindPath() error = %v, want nil", err)
+	}
+}
+
+func TestValidateBindPathRejectsMissingParent(t *testing.T) {
+	dir := privateTempDir(t)
+	err := ValidateBindPath(filepath.Join(dir, "missing", "apsigner.sock"))
+	if err == nil || !strings.Contains(err.Error(), "failed to inspect") {
+		t.Fatalf("ValidateBindPath() error = %v, want missing-parent rejection", err)
+	}
+}
+
+func TestValidateBindPathRejectsExistingRegularFile(t *testing.T) {
+	dir := privateTempDir(t)
+	path := filepath.Join(dir, "apsigner.sock")
+	if err := os.WriteFile(path, []byte("not a socket"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	err := ValidateBindPath(path)
+	if err == nil || !strings.Contains(err.Error(), "not a socket") {
+		t.Fatalf("ValidateBindPath() error = %v, want non-socket rejection", err)
+	}
+}
+
 func privateTempDir(t *testing.T) string {
 	t.Helper()
 

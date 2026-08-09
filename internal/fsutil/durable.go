@@ -10,6 +10,46 @@ import (
 	"strings"
 )
 
+// DurableFileProfile is a closed set of ownership and permission policies for
+// durable publication. Callers choose an artifact purpose instead of passing
+// arbitrary mode and ownership combinations.
+type DurableFileProfile uint8
+
+const (
+	// LegacyStoreFileProfile retains the transitional group-readable and
+	// group-writable store ceiling. It must not be used for new store designs.
+	LegacyStoreFileProfile DurableFileProfile = iota
+	// PrivateStoreFileProfile creates service-user-only store files.
+	PrivateStoreFileProfile
+	// RootCredentialFileProfile creates the narrow root-owned systemd
+	// credential exception used by appass.
+	RootCredentialFileProfile
+)
+
+type durableFilePolicy struct {
+	mode        os.FileMode
+	preserveGID bool
+	owner       *durableOwner
+}
+
+type durableOwner struct {
+	uid int
+	gid int
+}
+
+func policyForDurableFileProfile(profile DurableFileProfile) (durableFilePolicy, error) {
+	switch profile {
+	case LegacyStoreFileProfile:
+		return durableFilePolicy{mode: StoreFilePerm, preserveGID: true}, nil
+	case PrivateStoreFileProfile:
+		return durableFilePolicy{mode: 0o600}, nil
+	case RootCredentialFileProfile:
+		return durableFilePolicy{mode: 0o600, owner: &durableOwner{uid: 0, gid: 0}}, nil
+	default:
+		return durableFilePolicy{}, fmt.Errorf("unknown durable file profile %d", profile)
+	}
+}
+
 // HookOp identifies a durability-relevant operation intercepted by TestHook.
 type HookOp string
 
@@ -48,12 +88,57 @@ func runHook(op HookOp, path string) error {
 // guarantees, and a silent unsynced fallback is not acceptable on paths that
 // require durability).
 func WriteFileDurable(path string, data []byte) error {
-	info, statErr := os.Stat(path)
+	return WriteFileDurableWithProfile(path, data, LegacyStoreFileProfile)
+}
+
+// WriteFileDurableWithProfile atomically and durably publishes data according
+// to a validated artifact profile. Existing permissions are retained only
+// when they are more restrictive than the profile ceiling. Symlinks and
+// non-regular destinations are rejected before any publication occurs.
+func WriteFileDurableWithProfile(path string, data []byte, profile DurableFileProfile) error {
+	policy, err := policyForDurableFileProfile(profile)
+	if err != nil {
+		return err
+	}
+	return writeFileDurableWithPolicy(path, data, policy)
+}
+
+// WriteServiceOwnedFileDurable publishes a private file owned by a resolved
+// service account. The mode is fixed at 0600; callers cannot widen it.
+func WriteServiceOwnedFileDurable(path string, data []byte, uid, gid int) error {
+	if uid < 0 || gid < 0 {
+		return fmt.Errorf("invalid service ownership %d:%d", uid, gid)
+	}
+	return writeFileDurableWithPolicy(path, data, durableFilePolicy{
+		mode:  0o600,
+		owner: &durableOwner{uid: uid, gid: gid},
+	})
+}
+
+func writeFileDurableWithPolicy(path string, data []byte, policy durableFilePolicy) error {
+
+	info, statErr := os.Lstat(path)
 	if statErr != nil && !os.IsNotExist(statErr) {
 		return statErr
 	}
+	if statErr == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to replace symlink: %s", path)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("refusing to replace non-regular file: %s", path)
+		}
+	}
 
 	dir := filepath.Dir(path)
+	dirInfo, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("inspect durable-write parent %s: %w", dir, err)
+	}
+	if dirInfo.Mode()&os.ModeSymlink != 0 || !dirInfo.IsDir() {
+		return fmt.Errorf("durable-write parent is not a real directory: %s", dir)
+	}
+
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
@@ -71,24 +156,33 @@ func WriteFileDurable(path string, data []byte) error {
 		return err
 	}
 
-	targetMode := StoreFilePerm
+	targetMode := policy.mode
 	targetGID := 0
-	hasOwnership := false
+	preserveGID := false
 	if statErr == nil {
-		targetMode = info.Mode().Perm()
-		if _, gid, ok := FileOwnership(info); ok {
+		// Never carry permissions wider than the selected profile. More
+		// restrictive existing permissions remain restrictive.
+		targetMode = info.Mode().Perm() & policy.mode
+		if policy.preserveGID {
+			_, gid, ok := FileOwnership(info)
 			targetGID = gid
-			hasOwnership = targetGID != os.Getgid()
+			preserveGID = ok && targetGID != os.Getgid()
 		}
 	}
 
-	if err := tmp.Chmod(targetMode); err != nil {
-		return err
-	}
-	if hasOwnership {
+	// Ownership is set on the unpublished descriptor. Chown precedes chmod
+	// because chown may clear permission bits on some platforms.
+	if policy.owner != nil {
+		if err := tmp.Chown(policy.owner.uid, policy.owner.gid); err != nil {
+			return fmt.Errorf("set durable temp ownership to %d:%d: %w", policy.owner.uid, policy.owner.gid, err)
+		}
+	} else if preserveGID {
 		if err := tmp.Chown(-1, targetGID); err != nil {
 			return err
 		}
+	}
+	if err := tmp.Chmod(targetMode); err != nil {
+		return err
 	}
 
 	if err := runHook(OpFileSync, path); err != nil {

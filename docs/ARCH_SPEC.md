@@ -10,6 +10,8 @@
 > For guarded signing and sentry node architecture, see [ARCH_SENTRY.md](ARCH_SENTRY.md).
 > For bounded authorization contracts and external contract-admin custody, see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 > For the canonical Corridor v1 bounded-sentry profile, see [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md).
+> For signer-store process ownership, filesystem permissions, and the
+> single-writer migration, see [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md).
 
 ## Table of Contents
 
@@ -83,6 +85,10 @@ Read [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md) as the system-wide data map:
 Read [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md) before changing key file
 schemas, key type state, template install/enable/disable/remove behavior,
 LogicSig signing metadata, or backup/restore rules for keys and key types.
+
+Read [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md) before changing signer
+data permissions, IPC placement, direct local-client store access, durable
+writes, or offline maintenance execution modes.
 
 Read [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) before changing
 authorization-sensitive behavior:
