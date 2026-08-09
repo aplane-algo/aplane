@@ -135,7 +135,9 @@ The daemon verifies the archive before reporting success.
 Use `backup import` when you want to admit an external archive into the managed
 backup locker so it is visible to backup listing and restore flows. The command
 prompts for the export passphrase, decrypts and validates the encrypted key
-payloads, then streams bounded chunks over authenticated IPC. The daemon
+payloads, then streams bounded chunks over authenticated IPC. Imports are
+limited to 1 GiB and starting a new import replaces an incomplete prior
+transfer for the same identity. The daemon
 verifies size, checksum, and archive structure and publishes the archive under
 `<signer-data>/backups/<identity>/` only after the sealed inventory and every
 complete credential record validate.

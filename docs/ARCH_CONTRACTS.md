@@ -2702,16 +2702,19 @@ backup contract and no migration from earlier internal tags is provided.
 `apstore backup import` validates an external tar archive deeply before
 publishing it under `backups/<identity>/`. Validation includes the archive
 inventory and every credential payload. Import does not compile or install
-templates because templates are not archive members.
+templates because templates are not archive members. The IPC transfer declares
+its source size before allocation, is capped at 1 GiB, and permits only one
+incomplete upload per identity. A new import supersedes incomplete residue;
+daemon startup removes residue left by a prior process.
 
 `preview_restore` and `apstore restore preview` authenticate the archive
 before revealing addresses or key types. Preview reports credential identity,
 destination presence, and validation errors; it performs no store mutation.
 Wrong-passphrase and unauthenticated failures share the restore rate limiter.
-Authenticated `list_backups` and `preview_restore` requests are accepted while
-the identity is either unlocked or recovery-blocked, allowing an operator to
-select and inspect repair material without enabling signing. Locked identities
-remain rejected.
+Authenticated `list_backups`, `read_backup_chunk`, and `preview_restore`
+requests are accepted while the identity is either unlocked or
+recovery-blocked, allowing an operator to select, export, and inspect repair
+material without enabling signing. Locked identities remain rejected.
 
 `apstore verify` is fail-closed: an archive verification error or any invalid
 credential returns the stable local `verification_failed` code and a nonzero

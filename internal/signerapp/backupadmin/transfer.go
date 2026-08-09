@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 const backupUploadPrefix = ".import-"
@@ -23,10 +24,18 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 	if err != nil {
 		return beginImportError(err)
 	}
+	if req.ExpectedSize <= 0 || req.ExpectedSize > adminproto.MaxBackupImportBytes {
+		return beginImportError(fmt.Errorf("backup import size must be between 1 and %d bytes", adminproto.MaxBackupImportBytes))
+	}
 	var uploadID string
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		dir := s.Deps.KeyPaths().IdentityBackupsDir(ir.ID())
 		if err := fsutil.MkdirAll(dir); err != nil {
+			return err
+		}
+		// Product mode supports one active import per identity. Starting a new
+		// transfer supersedes incomplete client-disconnect residue.
+		if _, err := CleanupIncompleteBackupImports(s.Deps.KeyPaths(), ir.ID()); err != nil {
 			return err
 		}
 		if _, err := os.Lstat(filepath.Join(dir, fileName)); err == nil {
@@ -90,6 +99,9 @@ func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendB
 		if after.Size() != req.Offset {
 			return fmt.Errorf("backup upload offset is %d, expected %d", req.Offset, after.Size())
 		}
+		if after.Size() > adminproto.MaxBackupImportBytes-int64(len(req.Data)) {
+			return fmt.Errorf("backup import exceeds maximum size %d", adminproto.MaxBackupImportBytes)
+		}
 		written, err := file.Write(req.Data)
 		if err != nil {
 			return err
@@ -111,7 +123,7 @@ func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendB
 
 func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
 	fileName, err := validBackupFileName(req.FileName)
-	if err != nil || req.ExpectedSize < 0 || len(req.ExpectedSHA256) != 64 {
+	if err != nil || req.ExpectedSize <= 0 || req.ExpectedSize > adminproto.MaxBackupImportBytes || len(req.ExpectedSHA256) != 64 {
 		if err == nil {
 			err = fmt.Errorf("invalid backup size or checksum")
 		}
@@ -184,40 +196,65 @@ func (s Service) ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackup
 	if err != nil {
 		return readChunkError(err)
 	}
-	var result adminproto.ReadBackupChunkResult
-	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		path, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), fileName)
-		if err != nil {
-			return err
-		}
-		before, err := backup.StatManagedBackupArchive(path)
-		if err != nil {
-			return err
-		}
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = file.Close() }()
-		after, err := file.Stat()
-		if err != nil || !os.SameFile(before, after) {
-			return fmt.Errorf("backup archive changed while opening")
-		}
-		if req.Offset > after.Size() {
-			return fmt.Errorf("backup offset exceeds archive size")
-		}
-		data := make([]byte, adminproto.BackupTransferChunkBytes)
-		n, readErr := file.ReadAt(data, req.Offset)
-		if readErr != nil && readErr != io.EOF {
-			return readErr
-		}
-		result = adminproto.ReadBackupChunkResult{Success: true, FileName: fileName, Offset: req.Offset, Data: data[:n], EOF: req.Offset+int64(n) == after.Size()}
-		return nil
-	})
+	path, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), fileName)
 	if err != nil {
 		return readChunkError(err)
 	}
-	return result
+	before, err := backup.StatManagedBackupArchive(path)
+	if err != nil {
+		return readChunkError(err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return readChunkError(err)
+	}
+	defer func() { _ = file.Close() }()
+	after, err := file.Stat()
+	if err != nil || !os.SameFile(before, after) {
+		return readChunkError(fmt.Errorf("backup archive changed while opening"))
+	}
+	if req.Offset > after.Size() {
+		return readChunkError(fmt.Errorf("backup offset exceeds archive size"))
+	}
+	data := make([]byte, adminproto.BackupTransferChunkBytes)
+	n, readErr := file.ReadAt(data, req.Offset)
+	if readErr != nil && readErr != io.EOF {
+		return readChunkError(readErr)
+	}
+	return adminproto.ReadBackupChunkResult{Success: true, FileName: fileName, Offset: req.Offset, Data: data[:n], EOF: req.Offset+int64(n) == after.Size()}
+}
+
+// CleanupIncompleteBackupImports durably removes unpublished upload residue.
+// Callers serialize it with other identity mutations once the daemon is live.
+func CleanupIncompleteBackupImports(paths storepaths.Paths, identityID string) (int, error) {
+	dir := paths.IdentityBackupsDir(identityID)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, backupUploadPrefix) || !strings.HasSuffix(name, ".part") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		info, err := os.Lstat(path)
+		if err != nil {
+			return removed, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return removed, fmt.Errorf("incomplete backup upload is not a regular file: %s", path)
+		}
+		if err := fsutil.RemoveDurable(path); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
 }
 
 func validBackupFileName(name string) (string, error) {

@@ -292,15 +292,20 @@ mode.
   sessions in either unlocked or recovery state so the TUI can select repair
   material while signing remains blocked.
 - `delete_backup`: `archive_path` -> `delete_backup_result`.
-- backup import is a bounded transfer: `begin_backup_import` allocates a
-  daemon-owned temporary archive and returns an opaque `upload_id`;
+- backup import is a bounded transfer: `begin_backup_import` carries
+  `file_name` and `expected_size`, rejects sizes above 1 GiB, removes any
+  incomplete prior upload for the identity, allocates one daemon-owned
+  temporary archive, and returns an opaque `upload_id`;
   `append_backup_import` accepts at most 256 KiB at the exact next `offset`;
+  cumulative uploaded bytes are capped at 1 GiB;
   `commit_backup_import` verifies the declared size and SHA-256, validates the
   archive structure, and atomically publishes it; `abort_backup_import`
-  durably removes an incomplete upload.
+  durably removes an incomplete upload. Daemon startup also removes incomplete
+  uploads left by a prior process.
 - `read_backup_chunk`: `file_name`, `offset` -> `backup_chunk`: `file_name`,
   `offset`, at most 256 KiB of `data`, and `eof`. This lets an operator export
   a managed archive without filesystem access to the private signer store.
+  It requires the identity to be unlocked or recovery-blocked.
 - `preview_restore`: `archive_path`, sensitive `export_passphrase` ->
   `restore_preview`: resolved archive path, `keys[]`, `errors[]`, optional
   `code`, `error`. Each key reports address, key type, destination

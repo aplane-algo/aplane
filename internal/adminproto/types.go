@@ -101,10 +101,17 @@ type DeleteBackupResult struct {
 	Error   string
 }
 
-const BackupTransferChunkBytes = 256 * 1024
+const (
+	BackupTransferChunkBytes = 256 * 1024
+	// MaxBackupImportBytes bounds daemon-owned incomplete backup uploads.
+	// Signer backups contain credential records rather than arbitrary user data;
+	// one GiB leaves ample operational headroom while bounding disk exhaustion.
+	MaxBackupImportBytes int64 = 1 << 30
+)
 
 type BeginBackupImportRequest struct {
-	FileName string
+	FileName     string
+	ExpectedSize int64
 }
 
 type BeginBackupImportResult struct {

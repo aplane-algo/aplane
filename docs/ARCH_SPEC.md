@@ -1901,7 +1901,10 @@ Both `apadmin` and local-IPC `apstore` use the same daemon-owned lifecycle.
 `cmd/apstore` retains local `initialize`, external-backup validation, `verify`,
 policy integrity check/sign/verify, private-store permission migration, and
 `rebuild` replacement-keystore rescue. Managed backup import publication and
-export bytes are streamed through authenticated admin IPC.
+export bytes are streamed through authenticated admin IPC. Imports are capped
+at 1 GiB, only one incomplete import exists per identity, and startup removes
+unpublished transfer residue. Archive chunk reads require unlocked or recovery
+state but do not take the identity mutation lock.
 Offline rebuild is deliberately distinct: it requires an absent identity,
 creates a new keyring and node-role integrity state, and commits the restored
 credentials as the first generation through `genstore.Mint`; it bypasses the

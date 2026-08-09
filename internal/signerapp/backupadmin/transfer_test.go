@@ -43,7 +43,7 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "imported.tar.gz"})
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "imported.tar.gz", ExpectedSize: size})
 	if !begin.Success || begin.UploadID == "" {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
@@ -90,7 +90,7 @@ func TestBackupTransferRejectsWrongOffsetAndChecksum(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
 	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "bad.tar.gz"})
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "bad.tar.gz", ExpectedSize: 1})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
@@ -102,5 +102,43 @@ func TestBackupTransferRejectsWrongOffsetAndChecksum(t *testing.T) {
 	}
 	if result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{UploadID: begin.UploadID, FileName: "bad.tar.gz", ExpectedSize: 1, ExpectedSHA256: string(bytes.Repeat([]byte("0"), 64))}); result.Success {
 		t.Fatalf("CommitBackupImport(wrong checksum) = %#v", result)
+	}
+}
+
+func TestBackupTransferCapsIncompleteUploadSize(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "large.tar.gz", ExpectedSize: adminproto.MaxBackupImportBytes})
+	if !begin.Success {
+		t.Fatalf("BeginBackupImport() = %#v", begin)
+	}
+	path := filepath.Join(paths.IdentityBackupsDir(ir.ID()), begin.UploadID)
+	if err := os.Truncate(path, adminproto.MaxBackupImportBytes); err != nil {
+		t.Fatal(err)
+	}
+	result := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{
+		UploadID: begin.UploadID, Offset: adminproto.MaxBackupImportBytes, Data: []byte("x"),
+	})
+	if result.Success {
+		t.Fatalf("AppendBackupImport(over limit) = %#v", result)
+	}
+}
+
+func TestBeginBackupImportRemovesAbandonedUpload(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	first := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "first.tar.gz", ExpectedSize: 1})
+	if !first.Success {
+		t.Fatalf("first BeginBackupImport() = %#v", first)
+	}
+	firstPath := filepath.Join(paths.IdentityBackupsDir(ir.ID()), first.UploadID)
+	second := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "second.tar.gz", ExpectedSize: 1})
+	if !second.Success {
+		t.Fatalf("second BeginBackupImport() = %#v", second)
+	}
+	if _, err := os.Lstat(firstPath); !os.IsNotExist(err) {
+		t.Fatalf("abandoned upload still exists: %v", err)
 	}
 }

@@ -103,13 +103,16 @@ func TestRecoveryStatePermitsRestoreReadApplyRollbackAndReconcile(t *testing.T) 
 	session.Bind(auth.NewDefaultIdentity("test"), ir)
 	session.HandleListBackups("list")
 	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{
-		BaseMessage: protocol.BaseMessage{ID: "import-begin"}, FileName: "repair.tar.gz",
+		BaseMessage: protocol.BaseMessage{ID: "import-begin"}, FileName: "repair.tar.gz", ExpectedSize: 7,
 	})
 	session.HandleAppendBackupImport(&protocol.AppendBackupImportMessage{
 		BaseMessage: protocol.BaseMessage{ID: "import-append"}, UploadID: ".import-repair.part", Data: []byte("archive"),
 	})
 	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{
 		BaseMessage: protocol.BaseMessage{ID: "import-commit"}, UploadID: ".import-repair.part", FileName: "repair.tar.gz",
+	})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read"}, FileName: "repair.tar.gz",
 	})
 	session.HandlePreviewRestore(&protocol.PreviewRestoreMessage{
 		BaseMessage: protocol.BaseMessage{ID: "preview"}, ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
@@ -119,10 +122,10 @@ func TestRecoveryStatePermitsRestoreReadApplyRollbackAndReconcile(t *testing.T) 
 	})
 	session.HandleRollbackRestore(&protocol.RollbackRestoreMessage{BaseMessage: protocol.BaseMessage{ID: "rollback"}})
 	session.HandleReconcileStore("reconcile")
-	if svc.listBackupsCalls != 1 || svc.beginBackupImportCalls != 1 || svc.appendBackupImportCalls != 1 || svc.commitBackupImportCalls != 1 || svc.previewRestoreCalls != 1 || svc.restoreBackupCalls != 1 || svc.rollbackRestoreCalls != 1 || svc.reconcileStoreCalls != 1 {
-		t.Fatalf("recovery calls = list %d import %d/%d/%d preview %d restore %d rollback %d reconcile %d",
+	if svc.listBackupsCalls != 1 || svc.beginBackupImportCalls != 1 || svc.appendBackupImportCalls != 1 || svc.commitBackupImportCalls != 1 || svc.readBackupChunkCalls != 1 || svc.previewRestoreCalls != 1 || svc.restoreBackupCalls != 1 || svc.rollbackRestoreCalls != 1 || svc.reconcileStoreCalls != 1 {
+		t.Fatalf("recovery calls = list %d import %d/%d/%d read %d preview %d restore %d rollback %d reconcile %d",
 			svc.listBackupsCalls, svc.beginBackupImportCalls, svc.appendBackupImportCalls, svc.commitBackupImportCalls,
-			svc.previewRestoreCalls, svc.restoreBackupCalls, svc.rollbackRestoreCalls, svc.reconcileStoreCalls)
+			svc.readBackupChunkCalls, svc.previewRestoreCalls, svc.restoreBackupCalls, svc.rollbackRestoreCalls, svc.reconcileStoreCalls)
 	}
 }
 
@@ -134,18 +137,21 @@ func TestLockedStateRejectsRecoveryCapableRestoreReads(t *testing.T) {
 	session.Bind(auth.NewDefaultIdentity("test"), ir)
 	session.HandleListBackups("list-locked")
 	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{
-		BaseMessage: protocol.BaseMessage{ID: "import-locked"}, FileName: "repair.tar.gz",
+		BaseMessage: protocol.BaseMessage{ID: "import-locked"}, FileName: "repair.tar.gz", ExpectedSize: 7,
+	})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read-locked"}, FileName: "repair.tar.gz",
 	})
 	session.HandlePreviewRestore(&protocol.PreviewRestoreMessage{
 		BaseMessage:      protocol.BaseMessage{ID: "preview-locked"},
 		ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
 	})
-	if svc.listBackupsCalls != 0 || svc.beginBackupImportCalls != 0 || svc.previewRestoreCalls != 0 {
-		t.Fatalf("locked service calls = list %d import %d preview %d", svc.listBackupsCalls, svc.beginBackupImportCalls, svc.previewRestoreCalls)
+	if svc.listBackupsCalls != 0 || svc.beginBackupImportCalls != 0 || svc.readBackupChunkCalls != 0 || svc.previewRestoreCalls != 0 {
+		t.Fatalf("locked service calls = list %d import %d read %d preview %d", svc.listBackupsCalls, svc.beginBackupImportCalls, svc.readBackupChunkCalls, svc.previewRestoreCalls)
 	}
 	msgs := decodeAdminProtoWrites(t, conn)
-	if len(msgs) != 3 {
-		t.Fatalf("locked response count = %d, want 3", len(msgs))
+	if len(msgs) != 4 {
+		t.Fatalf("locked response count = %d, want 4", len(msgs))
 	}
 	for _, msg := range msgs {
 		if msg.Type != protocol.MsgTypeError || msg.Code != protocol.ErrCodeSignerLocked {

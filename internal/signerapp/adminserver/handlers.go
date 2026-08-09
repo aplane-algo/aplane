@@ -332,7 +332,9 @@ func (s *Session) HandleBeginBackupImport(msg *protocol.BeginBackupImportMessage
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.backupServices.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: msg.FileName})
+	result := s.backupServices.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{
+		FileName: msg.FileName, ExpectedSize: msg.ExpectedSize,
+	})
 	_ = s.WriteJSON(ProtocolBeginBackupImportResultMessage(msg.ID, result))
 }
 
@@ -383,7 +385,7 @@ func (s *Session) HandleAbortBackupImport(msg *protocol.AbortBackupImportMessage
 }
 
 func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
-	ir := s.requireBoundRuntime(msg.ID)
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
 	if ir == nil {
 		return
 	}

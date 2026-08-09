@@ -73,6 +73,7 @@ type stubServices struct {
 	beginBackupImportCalls  int
 	appendBackupImportCalls int
 	commitBackupImportCalls int
+	readBackupChunkCalls    int
 
 	changePassphraseCalls  int
 	previewRestoreCalls    int
@@ -261,7 +262,9 @@ func (s *stubServices) CommitBackupImport(*identity.Runtime, adminproto.CommitBa
 func (*stubServices) AbortBackupImport(*identity.Runtime, adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
 	return adminproto.AbortBackupImportResult{}
 }
-func (*stubServices) ReadBackupChunk(*identity.Runtime, adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
+
+func (s *stubServices) ReadBackupChunk(*identity.Runtime, adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
+	s.readBackupChunkCalls++
 	return adminproto.ReadBackupChunkResult{}
 }
 func (s *stubServices) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
