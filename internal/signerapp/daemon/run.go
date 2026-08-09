@@ -49,6 +49,10 @@ func Run(dataDir string) int {
 		logErrorf("%v", err)
 		return 1
 	}
+	if err := signerstartup.ValidateProductionStorePermissions(resolvedDataDir); err != nil {
+		logErrorf("startup validation failed: %v", err)
+		return 1
+	}
 
 	startupOpts, err := signerstartup.LoadOptions(dataDir, auth.CurrentProductIdentityID())
 	if err != nil {

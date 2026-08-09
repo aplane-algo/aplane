@@ -35,6 +35,10 @@ type Options struct {
 	ExpectedGID int
 	Profile     Profile
 	SocketPath  string
+	// AncestorBoundary, when non-empty, is an already-validated parent at
+	// which ancestor inspection stops. Production callers leave it empty;
+	// tests and embedding applications may supply a separately trusted root.
+	AncestorBoundary string
 }
 
 // Finding is one independently actionable filesystem-policy violation.
@@ -52,6 +56,15 @@ type profilePolicy struct {
 	dirMode        os.FileMode
 	fileMode       os.FileMode
 	allowDirSetgid bool
+}
+
+type artifactExpectation struct {
+	uid            int
+	gid            int
+	mode           os.FileMode
+	allowDirSetgid bool
+	wantDir        bool
+	wantRegular    bool
 }
 
 func policyForProfile(profile Profile) (profilePolicy, error) {
@@ -85,7 +98,7 @@ func Audit(opts Options) ([]Finding, error) {
 	}
 
 	var findings []Finding
-	ancestorFindings, err := auditAncestors(root)
+	ancestorFindings, err := auditAncestors(root, opts.AncestorBoundary)
 	if err != nil {
 		return nil, err
 	}
@@ -111,22 +124,22 @@ func Audit(opts Options) ([]Finding, error) {
 		if !ok {
 			return fmt.Errorf("ownership metadata unavailable for %s", path)
 		}
-		wantUID, wantGID := opts.ExpectedUID, opts.ExpectedGID
-		if isRootCredential(root, path) {
-			wantUID, wantGID = 0, 0
-		}
-		if uid != wantUID || gid != wantGID {
+		expect := expectedArtifact(root, path, info, opts, policy)
+		if uid != expect.uid || gid != expect.gid {
 			findings = append(findings, Finding{
 				Path: path, Code: "owner",
-				Detail: fmt.Sprintf("owner is %d:%d, expected %d:%d", uid, gid, wantUID, wantGID),
+				Detail: fmt.Sprintf("owner is %d:%d, expected %d:%d", uid, gid, expect.uid, expect.gid),
 			})
+		}
+		if (expect.wantDir && !info.IsDir()) || (expect.wantRegular && !info.Mode().IsRegular()) {
+			findings = append(findings, Finding{Path: path, Code: "type", Detail: "artifact has an unexpected filesystem type"})
 		}
 
 		switch {
 		case info.IsDir():
-			auditMode(path, info.Mode(), policy.dirMode, policy.allowDirSetgid, &findings)
+			auditMode(path, info.Mode(), expect.mode, expect.allowDirSetgid, &findings)
 		case info.Mode().IsRegular():
-			auditMode(path, info.Mode(), policy.fileMode, false, &findings)
+			auditMode(path, info.Mode(), expect.mode, false, &findings)
 			if links, ok := regularFileLinkCount(info); ok && links != 1 {
 				findings = append(findings, Finding{
 					Path: path, Code: "hardlink",
@@ -153,10 +166,61 @@ func Audit(opts Options) ([]Finding, error) {
 	return findings, nil
 }
 
-func auditAncestors(root string) ([]Finding, error) {
+func expectedArtifact(root, path string, info os.FileInfo, opts Options, policy profilePolicy) artifactExpectation {
+	expect := artifactExpectation{uid: opts.ExpectedUID, gid: opts.ExpectedGID}
+	if info.IsDir() {
+		expect.mode = policy.dirMode
+		expect.allowDirSetgid = policy.allowDirSetgid
+	} else {
+		expect.mode = policy.fileMode
+	}
+	if isRootCredential(root, path) {
+		expect.uid, expect.gid = 0, 0
+		expect.mode = 0o600
+		expect.wantRegular = true
+		return expect
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return expect
+	}
+	switch filepath.ToSlash(rel) {
+	case "install":
+		expect.uid, expect.gid = 0, opts.ExpectedGID
+		expect.mode = 0o750
+		expect.allowDirSetgid = opts.Profile == LegacySharedProfile
+		expect.wantDir = true
+	case "install/uninstall.sh":
+		expect.uid, expect.gid = 0, opts.ExpectedGID
+		expect.mode = 0o750
+		expect.wantRegular = true
+	case "install/release.json", "install/operator-root":
+		expect.uid, expect.gid = 0, opts.ExpectedGID
+		expect.mode = 0o640
+		expect.wantRegular = true
+	}
+	return expect
+}
+
+func auditAncestors(root, boundary string) ([]Finding, error) {
+	var boundaryAbs string
+	if boundary != "" {
+		var err error
+		boundaryAbs, err = filepath.Abs(filepath.Clean(boundary))
+		if err != nil {
+			return nil, fmt.Errorf("resolve ancestor boundary: %w", err)
+		}
+		rel, err := filepath.Rel(boundaryAbs, root)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("ancestor boundary %s does not contain store root %s", boundaryAbs, root)
+		}
+	}
 	var paths []string
 	for current := root; ; current = filepath.Dir(current) {
 		paths = append(paths, current)
+		if boundaryAbs != "" && current == boundaryAbs {
+			break
+		}
 		next := filepath.Dir(current)
 		if next == current {
 			break
@@ -175,7 +239,7 @@ func auditAncestors(root string) ([]Finding, error) {
 		}
 		// The root itself is checked against its selected profile during the
 		// tree walk. Ancestors must not be mutable by group or other users.
-		if path != root && info.Mode().Perm()&0o022 != 0 {
+		if path != root && path != boundaryAbs && info.Mode().Perm()&0o022 != 0 {
 			findings = append(findings, Finding{Path: path, Code: "ancestor-write", Detail: "store ancestor is group/other writable"})
 		}
 	}

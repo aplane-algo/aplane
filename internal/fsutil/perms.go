@@ -8,41 +8,31 @@ import (
 	"os"
 )
 
-// StoreDirPerm is the permission mode for store directories.
-const StoreDirPerm = os.ModeSetgid | 0770
+// StoreDirPerm is the service-user-only permission mode for signer-store
+// directories.
+const StoreDirPerm os.FileMode = 0o700
 
-// StoreFilePerm is the permission mode for store files.
-const StoreFilePerm os.FileMode = 0660
+// StoreFilePerm is the service-user-only permission mode for signer-store files.
+const StoreFilePerm os.FileMode = 0o600
 
-// MkdirAll creates a directory and all parents with store permissions (g+rwx, setgid).
-// Unlike os.MkdirAll, this explicitly sets permissions after creation to
-// bypass umask restrictions. If the directory already exists, permissions
-// are left unchanged (the caller may not own it).
+// MkdirAll creates a private signer-store directory tree and clamps the final
+// directory to StoreDirPerm. A symlink or non-directory at the final path is
+// rejected.
 func MkdirAll(path string) error {
-	// Check if directory already exists — skip chmod if so, since we may
-	// not own it (e.g., apstore restore run by a group member).
-	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		return nil
-	}
-
-	if err := os.MkdirAll(path, 0770); err != nil {
+	if err := os.MkdirAll(path, StoreDirPerm); err != nil {
 		return err
 	}
-	// Set setgid + 0770. Setgid requires ownership or root; if we lack
-	// permission, fall back to 0770 without setgid.
-	if err := os.Chmod(path, StoreDirPerm); err != nil {
-		if os.IsPermission(err) {
-			return os.Chmod(path, 0770)
-		}
+	info, err := os.Lstat(path)
+	if err != nil {
 		return err
 	}
-	return nil
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return &os.PathError{Op: "mkdir", Path: path, Err: os.ErrInvalid}
+	}
+	return os.Chmod(path, StoreDirPerm)
 }
 
-// WriteFile writes data using the explicitly legacy shared-store profile.
-// New signer-private code should use WriteFileDurableWithProfile with
-// PrivateStoreFileProfile instead. This compatibility entry point remains
-// while legacy stores are migrated to service-user-only ownership.
+// WriteFile atomically and durably publishes a private signer-store file.
 func WriteFile(path string, data []byte) error {
-	return WriteFileDurableWithProfile(path, data, LegacyStoreFileProfile)
+	return WriteFileDurableWithProfile(path, data, PrivateStoreFileProfile)
 }

@@ -558,7 +558,7 @@ func SaveStoredConfig(dataRoot, identityID string, cfg *StoredConfig) error {
 		return fmt.Errorf("failed to marshal policy config: %w", err)
 	}
 
-	if err := fsutil.WriteFileDurableWithProfile(path, out, fsutil.LegacyStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(path, out, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write policy config: %w", err)
 	}
 	return nil

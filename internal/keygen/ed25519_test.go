@@ -436,9 +436,9 @@ func TestKeyFilePermissions(t *testing.T) {
 		t.Fatalf("Failed to stat key file: %v", err)
 	}
 
-	// Should be 0660 (readable/writable by owner and group)
+	// Signer credentials are private to the service user.
 	mode := info.Mode().Perm()
-	expectedMode := os.FileMode(0660)
+	expectedMode := os.FileMode(0600)
 	if mode != expectedMode {
 		t.Errorf("Key file permissions = %o, want %o", mode, expectedMode)
 	}

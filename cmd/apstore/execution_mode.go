@@ -12,9 +12,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/aplane-algo/aplane/internal/fsutil"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/storelock"
+	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
 var currentEUID = os.Geteuid
@@ -57,57 +57,18 @@ func normalizeManagedStoreOwnership(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	if err := normalizeStoreLockOwnership(dataDir, uid, gid); err != nil {
-		return err
+	opts := storeperm.Options{
+		Root: dataDir, ExpectedUID: uid, ExpectedGID: gid,
 	}
-
-	identitiesDir := filepath.Join(dataDir, "identities")
-	identitiesInfo, err := os.Lstat(identitiesDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
+	prodManaged, prodErr := signerstartup.IsProductionManagedDataDir(dataDir)
+	if prodErr != nil {
+		return prodErr
 	}
-	if identitiesInfo.Mode()&os.ModeSymlink != 0 || !identitiesInfo.IsDir() {
-		return fmt.Errorf("managed identities path is not a real directory: %s", identitiesDir)
+	if !prodManaged {
+		opts.AncestorBoundary = filepath.Dir(dataDir)
 	}
-	return filepath.WalkDir(identitiesDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refusing symlink in managed identities tree: %s", path)
-		}
-		info, err := d.Info()
-		if err != nil {
-			return fmt.Errorf("inspect managed store entry %s: %w", path, err)
-		}
-		if !info.IsDir() && !info.Mode().IsRegular() {
-			return fmt.Errorf("refusing unexpected file type in managed identities tree: %s", path)
-		}
-		if !d.IsDir() && filepath.Base(path) == "passphrase.cred" {
-			return nil
-		}
-		if err := os.Lchown(path, uid, gid); err != nil {
-			return fmt.Errorf("set ownership on managed store entry %s: %w", path, err)
-		}
-		return nil
-	})
-}
-
-func normalizeStoreLockOwnership(dataDir string, uid, gid int) error {
-	lockPath := filepath.Join(dataDir, ".apstore.lock")
-	if _, err := os.Lstat(lockPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if err := os.Lchown(lockPath, uid, gid); err != nil {
-		return err
-	}
-	return os.Chmod(lockPath, fsutil.StoreFilePerm)
+	_, err = storeperm.MigratePrivate(opts)
+	return err
 }
 
 func enforceApstoreExecutionMode(dataDir string, args []string) error {
@@ -219,7 +180,7 @@ func shellQuoteArg(s string) string {
 
 func isOfflineMutatingCommand(command string) bool {
 	switch command {
-	case "initialize", "policy", "rebuild", "generations":
+	case "initialize", "policy", "rebuild", "generations", "permissions":
 		return true
 	default:
 		return false
@@ -257,6 +218,9 @@ func acquireOfflineMutationLockForArgs(args []string, dataDir string) (func(), e
 	if len(args) == 0 {
 		return func() {}, nil
 	}
+	if isStorePermissionCommand(args) && len(args) == 2 && args[1] == "audit" {
+		return func() {}, nil
+	}
 	if args[0] == "policy" {
 		if len(args) > 1 && args[1] == "sign" {
 			return acquireOfflineMutationLock("policy", dataDir)
@@ -267,6 +231,10 @@ func acquireOfflineMutationLockForArgs(args []string, dataDir string) (func(), e
 		return func() {}, nil
 	}
 	return acquireOfflineMutationLock(args[0], dataDir)
+}
+
+func isStorePermissionCommand(args []string) bool {
+	return len(args) > 0 && args[0] == "permissions"
 }
 
 func acquireOfflineMutationLock(command, dataDir string) (func(), error) {

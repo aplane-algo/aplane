@@ -5,12 +5,13 @@ package startup
 
 import (
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
 const (
@@ -28,6 +29,8 @@ type RuntimeState struct {
 type ValidationInfo struct {
 	KeystoreExists bool
 }
+
+var auditPrivateStore = storeperm.Audit
 
 // BlockManualProdStart rejects manual startup for a systemd-managed data
 // directory unless the process is running under systemd.
@@ -60,6 +63,32 @@ func IsProductionManagedDataDir(dataDir string) (bool, error) {
 // systemd or an equivalent service manager PID 1 context.
 func RunningUnderSystemd() bool {
 	return signerbootstrap.RunningUnderSystemd()
+}
+
+// ValidateProductionStorePermissions fails before configuration or lock files
+// are opened when a systemd-managed store is not private to the daemon's uid.
+func ValidateProductionStorePermissions(dataDir string) error {
+	prodManaged, err := IsProductionManagedDataDir(dataDir)
+	if err != nil {
+		return err
+	}
+	if !prodManaged {
+		return nil
+	}
+	findings, err := auditPrivateStore(storeperm.Options{
+		Root: dataDir, ExpectedUID: os.Geteuid(), ExpectedGID: os.Getegid(),
+		Profile: storeperm.PrivateServiceProfile,
+	})
+	if err != nil {
+		return fmt.Errorf("inspect private signer store: %w", err)
+	}
+	if len(findings) != 0 {
+		return fmt.Errorf(
+			"unsafe signer-store permissions (%d finding(s)); first: %s; stop apsigner and run 'sudo apstore -d %s permissions migrate'",
+			len(findings), findings[0].Error(), dataDir,
+		)
+	}
+	return nil
 }
 
 // Validate performs comprehensive signer startup validation.

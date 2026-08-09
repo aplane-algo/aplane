@@ -4,13 +4,14 @@
 package startup
 
 import (
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
 func TestValidateRequiresSSHDefaults(t *testing.T) {
@@ -68,6 +69,38 @@ func TestBlockManualProdStart(t *testing.T) {
 			t.Fatalf("BlockManualProdStart() error = %v, want nil", err)
 		}
 	})
+}
+
+func TestValidateProductionStorePermissionsUsesDaemonOwnership(t *testing.T) {
+	dataDir := t.TempDir()
+	writeProdMarker(t, dataDir)
+	original := auditPrivateStore
+	t.Cleanup(func() { auditPrivateStore = original })
+	var got storeperm.Options
+	auditPrivateStore = func(opts storeperm.Options) ([]storeperm.Finding, error) {
+		got = opts
+		return nil, nil
+	}
+	if err := ValidateProductionStorePermissions(dataDir); err != nil {
+		t.Fatalf("ValidateProductionStorePermissions() error = %v", err)
+	}
+	if got.Root != dataDir || got.ExpectedUID != os.Geteuid() || got.ExpectedGID != os.Getegid() || got.Profile != storeperm.PrivateServiceProfile {
+		t.Fatalf("audit options = %+v", got)
+	}
+}
+
+func TestValidateProductionStorePermissionsReturnsMigrationHint(t *testing.T) {
+	dataDir := t.TempDir()
+	writeProdMarker(t, dataDir)
+	original := auditPrivateStore
+	t.Cleanup(func() { auditPrivateStore = original })
+	auditPrivateStore = func(storeperm.Options) ([]storeperm.Finding, error) {
+		return []storeperm.Finding{{Path: dataDir, Code: "mode", Detail: "mode is 0770"}}, nil
+	}
+	err := ValidateProductionStorePermissions(dataDir)
+	if err == nil || !strings.Contains(err.Error(), "permissions migrate") {
+		t.Fatalf("ValidateProductionStorePermissions() error = %v, want migration hint", err)
+	}
 }
 
 func writeProdMarker(t *testing.T, dataDir string) {

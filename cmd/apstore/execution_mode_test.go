@@ -271,6 +271,9 @@ func TestSudoUserIDs(t *testing.T) {
 }
 
 func TestNormalizeManagedStoreOwnershipPreservesSystemdCredOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root-owned systemd credential fixture")
+	}
 	dataDir := t.TempDir()
 	identityDir := filepath.Join(dataDir, "identities", productIdentityID())
 	if err := os.MkdirAll(identityDir, 0o700); err != nil {
@@ -284,6 +287,9 @@ func TestNormalizeManagedStoreOwnershipPreservesSystemdCredOwner(t *testing.T) {
 	if err := os.WriteFile(credPath, []byte("cred"), 0o600); err != nil {
 		t.Fatalf("WriteFile(cred) error = %v", err)
 	}
+	if err := os.Chown(credPath, 0, 0); err != nil {
+		t.Fatalf("Chown(cred) error = %v", err)
+	}
 
 	if err := normalizeManagedStoreOwnership(dataDir); err != nil {
 		t.Fatalf("normalizeManagedStoreOwnership() error = %v", err)
@@ -293,8 +299,8 @@ func TestNormalizeManagedStoreOwnershipPreservesSystemdCredOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat(lock) error = %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0o660 {
-		t.Fatalf("lock mode = %04o, want 0660", got)
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("lock mode = %04o, want 0600", got)
 	}
 	if _, err := os.Stat(credPath); err != nil {
 		t.Fatalf("Stat(cred) error = %v", err)
@@ -316,7 +322,7 @@ func TestNormalizeManagedStoreOwnershipRejectsSymlink(t *testing.T) {
 	}
 
 	err := normalizeManagedStoreOwnership(dataDir)
-	if err == nil || !strings.Contains(err.Error(), "refusing symlink") {
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("normalizeManagedStoreOwnership() error = %v, want symlink rejection", err)
 	}
 	data, err := os.ReadFile(outside)

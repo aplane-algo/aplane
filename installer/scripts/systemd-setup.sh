@@ -129,6 +129,16 @@ else
 fi
 echo ""
 
+# The runtime socket is the group's only filesystem-facing capability. Close
+# traversal of the persistent store before inspecting any credential paths.
+if [ -L "$DATA_DIR" ]; then
+    echo "Error: signer data directory must not be a symlink: $DATA_DIR" >&2
+    exit 1
+fi
+mkdir -p "$DATA_DIR"
+chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR"
+chmod 700 "$DATA_DIR"
+
 # Install service with placeholder substitution
 if [ "$MEMORY_LOCK" = "1" ]; then
     MEMORY_LOCK_SERVICE_LINES=$'CapabilityBoundingSet=CAP_IPC_LOCK\nAmbientCapabilities=CAP_IPC_LOCK\nLimitMEMLOCK=infinity'
@@ -177,8 +187,15 @@ fi
 PROD_MARKER_PATH="$DATA_DIR/.prod"
 printf 'systemd-managed\n' > "$PROD_MARKER_PATH"
 chown "$SVC_USER:$SVC_GROUP" "$PROD_MARKER_PATH"
-chmod 640 "$PROD_MARKER_PATH"
+chmod 600 "$PROD_MARKER_PATH"
 echo "Marked $DATA_DIR as a systemd-managed data directory"
+
+if [ ! -x "$BINDIR/apstore" ]; then
+    echo "Error: apstore binary not found at $BINDIR/apstore; cannot migrate signer-store permissions" >&2
+    exit 1
+fi
+"$BINDIR/apstore" -d "$DATA_DIR" permissions migrate
+"$BINDIR/apstore" -d "$DATA_DIR" permissions audit
 
 # Install sudoers rules
 sed -e "s|@@USER@@|${SVC_USER}|g" \

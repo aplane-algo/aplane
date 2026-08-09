@@ -119,7 +119,7 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *cry
 	}
 
 	sidecarPath := PolicyIntegritySidecarPath(path)
-	if err := fsutil.WriteFileDurableWithProfile(path, policyBytes, fsutil.LegacyStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(path, policyBytes, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write %s: %w", configLabel, err)
 	}
 	info, err := os.Lstat(path)
@@ -137,7 +137,7 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *cry
 	if err != nil {
 		return err
 	}
-	if err := fsutil.WriteFileDurableWithProfile(sidecarPath, sidecarBytes, fsutil.LegacyStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(sidecarPath, sidecarBytes, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write %s: %w", sidecarLabel, err)
 	}
 	return nil
@@ -204,7 +204,7 @@ func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt tim
 		return err
 	}
 	sidecarPath := PolicyIntegritySidecarPath(path)
-	if err := fsutil.WriteFileDurableWithProfile(sidecarPath, sidecarBytes, fsutil.LegacyStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(sidecarPath, sidecarBytes, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write %s: %w", sidecarLabel, err)
 	}
 	return nil

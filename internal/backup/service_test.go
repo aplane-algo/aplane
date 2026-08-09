@@ -22,7 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *testing.T) {
+func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 	oldUmask := syscall.Umask(0o077)
 	defer syscall.Umask(oldUmask)
@@ -175,11 +175,11 @@ func assertStoreDirMode(t *testing.T, path string) {
 	if !info.IsDir() {
 		t.Fatalf("%s is not a directory", path)
 	}
-	if got := info.Mode() & os.ModePerm; got != 0770 {
-		t.Fatalf("mode(%s) = %o, want 0770", path, got)
+	if got := info.Mode() & os.ModePerm; got != 0700 {
+		t.Fatalf("mode(%s) = %o, want 0700", path, got)
 	}
-	if info.Mode()&os.ModeSetgid == 0 {
-		t.Fatalf("mode(%s) missing setgid bit: %v", path, info.Mode())
+	if info.Mode()&os.ModeSetgid != 0 {
+		t.Fatalf("mode(%s) unexpectedly has setgid bit: %v", path, info.Mode())
 	}
 }
 

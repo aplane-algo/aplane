@@ -1076,6 +1076,7 @@ teal_compile_network: testnet
 # Security settings
 require_memory_protection: $require_memory_protection
 EOF
+    chmod 600 "$target"
 }
 
 write_apshell_local_config() {
@@ -1264,19 +1265,19 @@ install_template_library() {
 
     if [ -n "$owner" ] && [ -n "$group" ]; then
         chown "$owner:$group" "$library_root"
-        chmod 750 "$library_root"
+        chmod 700 "$library_root"
         chown -R "$owner:$group" "$dest"
-        chmod 750 "$dest"
+        chmod 700 "$dest"
         for file in "$dest"/*; do
             [ -f "$file" ] || continue
-            chmod 640 "$file"
+            chmod 600 "$file"
         done
     else
-        chmod 755 "$library_root"
-        chmod 755 "$dest"
+        chmod 700 "$library_root"
+        chmod 700 "$dest"
         for file in "$dest"/*; do
             [ -f "$file" ] || continue
-            chmod 644 "$file"
+            chmod 600 "$file"
         done
     fi
 
@@ -1613,7 +1614,7 @@ ensure_prod_data_dir_permissions() {
     local data_dir="$1"
     mkdir -p "$data_dir"
     chown "$SVC_USER:$SVC_GROUP" "$data_dir"
-    chmod 2770 "$data_dir"
+    chmod 700 "$data_dir"
 }
 
 ensure_prod_backup_permissions() {
@@ -1630,8 +1631,8 @@ ensure_prod_backup_permissions() {
     fi
 
     mkdir -p "$backup_dir"
-    find "$backup_dir" -type d -exec chown "$SVC_USER:$SVC_GROUP" {} + -exec chmod 2770 {} +
-    find "$backup_dir" -type f -exec chown "$SVC_USER:$SVC_GROUP" {} + -exec chmod 660 {} +
+    chown "$SVC_USER:$SVC_GROUP" "$backup_dir"
+    chmod 700 "$backup_dir"
 }
 
 repair_prod_store_lock_permissions() {
@@ -1639,7 +1640,7 @@ repair_prod_store_lock_permissions() {
     local lock_path="$data_dir/.apstore.lock"
     if [ -e "$lock_path" ]; then
         chown "$SVC_USER:$SVC_GROUP" "$lock_path"
-        chmod 660 "$lock_path"
+        chmod 600 "$lock_path"
     fi
 }
 
@@ -2134,6 +2135,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
 
     # Create directories
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
+    chmod 700 "$INSTALL_ROOT"
     rm -f "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/apbounded-admin"
 
     # Copy binaries (apshell/aplocalnet → apclient/bin, everything else → apsigner/bin)
@@ -2479,7 +2481,7 @@ repair_prod_store_lock_permissions "$DATA_DIR"
 PROD_MARKER_PATH="$DATA_DIR/.prod"
 printf 'systemd-managed\n' > "$PROD_MARKER_PATH"
 chown "$SVC_USER:$SVC_GROUP" "$PROD_MARKER_PATH"
-chmod 640 "$PROD_MARKER_PATH"
+chmod 600 "$PROD_MARKER_PATH"
 
 # Step 2: Copy uninstall helper into the systemd-managed data directory
 echo ""
@@ -2534,7 +2536,7 @@ write_prod_signer_config() {
     local target="$1"
     write_signer_config "$target" 11270 1127 "$([ "$MEMORY_LOCK_ENABLED" = "1" ] && echo true || echo false)"
     chown "$SVC_USER:$SVC_GROUP" "$target"
-    chmod 640 "$target"
+    chmod 600 "$target"
 }
 
 if [ -f "$CONFIG_PATH" ]; then
@@ -2546,7 +2548,7 @@ if [ -f "$CONFIG_PATH" ]; then
         echo "Updating $CONFIG_PATH to require memory protection."
         set_require_memory_protection_true "$CONFIG_PATH"
         chown "$SVC_USER:$SVC_GROUP" "$CONFIG_PATH"
-        chmod 640 "$CONFIG_PATH"
+        chmod 600 "$CONFIG_PATH"
     fi
 else
     echo "Writing $CONFIG_PATH..."
@@ -2565,6 +2567,11 @@ else
     repair_prod_store_lock_permissions "$DATA_DIR"
 fi
 ensure_policy_integrity_sidecar "$DATA_DIR" "$BINDIR/apstore"
+
+echo ""
+echo "Migrating signer store to service-user-only permissions..."
+"$BINDIR/apstore" -d "$DATA_DIR" permissions migrate
+"$BINDIR/apstore" -d "$DATA_DIR" permissions audit
 
 # Step 7: Configure apshell for the installing user
 if [ -n "$SUDO_USER" ]; then
@@ -2680,7 +2687,7 @@ if [ "$LOCALNET_SETUP_APPLIED" = "1" ]; then
     fi
     if [ -f "$DATA_DIR/config.yaml" ]; then
         chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR/config.yaml"
-        chmod 640 "$DATA_DIR/config.yaml"
+        chmod 600 "$DATA_DIR/config.yaml"
     fi
 fi
 

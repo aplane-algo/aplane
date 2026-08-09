@@ -78,6 +78,10 @@ func main() {
 		os.Exit(apstoreExitUsage)
 	}
 	dataDirectory = resolvedDataDir
+	if isStorePermissionCommand(args) {
+		dispatchApstoreCommand(args)
+		return
+	}
 
 	// Check data directory is accessible
 	if err := unix.Access(dataDirectory, unix.R_OK|unix.X_OK); err != nil {

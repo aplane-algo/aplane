@@ -23,7 +23,12 @@ func dispatchApstoreCommand(args []string) {
 
 	switch command {
 	case "initialize":
-		if err := cmdInitialize(args[1:]); err != nil {
+		if err := runStoreMutatingCommand(command, func() error { return cmdInitialize(args[1:]) }); err != nil {
+			exitWithError(err)
+		}
+
+	case "permissions":
+		if err := cmdPermissions(args[1:]); err != nil {
 			exitWithError(err)
 		}
 

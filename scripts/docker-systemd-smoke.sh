@@ -233,9 +233,13 @@ verify_install_layout() {
     docker_exec_bash "test -x /var/lib/apsigner/install/uninstall.sh"
     docker_exec_bash "grep -qx '$OPERATOR_ROOT' /var/lib/apsigner/install/operator-root"
     docker_exec_bash "test -f /var/lib/apsigner/identities/default/.keystore"
-    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner)\" = 'aplane:aplane 2770' ]"
-    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/backups)\" = 'aplane:aplane 2770' ]"
-    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/config.yaml)\" = 'aplane:aplane 640' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner)\" = 'aplane:aplane 700' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/backups)\" = 'aplane:aplane 700' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/config.yaml)\" = 'aplane:aplane 600' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /run/apsigner)\" = 'aplane:aplane 750' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /run/apsigner/aplane.sock)\" = 'aplane:aplane 660' ]"
+    docker_exec_as_tester "! test -x /var/lib/apsigner && ! test -r /var/lib/apsigner/config.yaml"
+    docker_exec_as_tester "test -S /run/apsigner/aplane.sock"
     docker_exec_bash "grep -qx 'require_memory_protection: true' /var/lib/apsigner/config.yaml"
     docker_exec_bash "grep -qx 'AmbientCapabilities=CAP_IPC_LOCK' /etc/systemd/system/apsigner.service"
     docker_exec_bash "grep -qx 'LimitMEMLOCK=infinity' /etc/systemd/system/apsigner.service"
@@ -358,7 +362,7 @@ populate_known_hosts() {
 }
 
 start_apapprover() {
-    # apapprover runs as tester over IPC at /var/lib/apsigner/aplane.sock.
+    # apapprover runs as tester over IPC at /run/apsigner/aplane.sock.
     # tester is in the aplane group (added by install.sh), and `docker exec
     # --user tester` creates a fresh session whose supplementary groups are
     # resolved at exec-time — so aplane membership is live even though the

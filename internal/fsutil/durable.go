@@ -40,7 +40,7 @@ type durableOwner struct {
 func policyForDurableFileProfile(profile DurableFileProfile) (durableFilePolicy, error) {
 	switch profile {
 	case LegacyStoreFileProfile:
-		return durableFilePolicy{mode: StoreFilePerm, preserveGID: true}, nil
+		return durableFilePolicy{mode: 0o660, preserveGID: true}, nil
 	case PrivateStoreFileProfile:
 		return durableFilePolicy{mode: 0o600}, nil
 	case RootCredentialFileProfile:
@@ -81,14 +81,9 @@ func runHook(op HookOp, path string) error {
 // fsync of the parent directory. On return the new content survives a crash
 // or power loss.
 //
-// Unlike WriteFile it never falls back to an unsynced in-place write. When
-// the destination exists, its mode and group ownership are preserved through
-// the replacement; a destination owned by another uid becomes owned by the
-// writing process (group access is what the store's permission model
-// guarantees, and a silent unsynced fallback is not acceptable on paths that
-// require durability).
+// Unlike WriteFile it never falls back to an unsynced in-place write.
 func WriteFileDurable(path string, data []byte) error {
-	return WriteFileDurableWithProfile(path, data, LegacyStoreFileProfile)
+	return WriteFileDurableWithProfile(path, data, PrivateStoreFileProfile)
 }
 
 // WriteFileDurableWithProfile atomically and durably publishes data according

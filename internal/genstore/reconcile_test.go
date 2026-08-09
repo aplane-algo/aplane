@@ -772,8 +772,8 @@ func TestMintPreservesStoreModesUnderUmask(t *testing.T) {
 
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
-	// Normalize the source file mode; the child copy must preserve it
-	// exactly despite the restrictive umask.
+	// Widen the legacy source file mode; the child copy must clamp it back to
+	// the private ceiling despite the restrictive umask.
 	firstKey := filepath.Join(paths.GenerationPaths(testIdentity, testGenA).KeysDir(), "A.key")
 	if err := os.Chmod(firstKey, 0o660); err != nil {
 		t.Fatalf("chmod source key: %v", err)
@@ -795,16 +795,16 @@ func TestMintPreservesStoreModesUnderUmask(t *testing.T) {
 		if err != nil {
 			t.Fatalf("stat %s: %v", dir, err)
 		}
-		if perm := info.Mode().Perm(); perm != 0o770 {
-			t.Fatalf("namespace dir %s mode = %o, want 770 despite umask", dir, perm)
+		if perm := info.Mode().Perm(); perm != 0o700 {
+			t.Fatalf("namespace dir %s mode = %o, want 700 despite umask", dir, perm)
 		}
 	}
 	info, err := os.Stat(filepath.Join(child.KeysDir(), "A.key"))
 	if err != nil {
 		t.Fatalf("stat copied key: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o660 {
-		t.Fatalf("copied key mode = %o, want source mode 660 despite umask", perm)
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("copied key mode = %o, want private mode 600 despite umask", perm)
 	}
 }
 

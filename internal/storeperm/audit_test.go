@@ -99,6 +99,92 @@ func TestAuditLegacyProfileAcceptsSetgidSharedLayout(t *testing.T) {
 	}
 }
 
+func TestMigratePrivateClampsModesAndPreservesCredentialOwner(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix ownership contract")
+	}
+	root := workspaceTempDir(t)
+	if err := os.Chmod(root, 0o770|os.ModeSetgid); err != nil {
+		t.Fatal(err)
+	}
+	identityDir := filepath.Join(root, "identities", "default")
+	if err := os.MkdirAll(identityDir, 0o770); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{filepath.Join(root, "identities"), identityDir} {
+		if err := os.Chmod(dir, 0o770|os.ModeSetgid); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(identityDir, "policy.yaml"), []byte("policy"), 0o660); err != nil {
+		t.Fatal(err)
+	}
+	expectedEntries := 4
+	if os.Geteuid() == 0 {
+		cred := filepath.Join(identityDir, "passphrase.cred")
+		if err := os.WriteFile(cred, []byte("encrypted"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chown(cred, 0, 0); err != nil {
+			t.Fatal(err)
+		}
+		expectedEntries++
+	}
+
+	opts := ownerOptions(t, root, LegacySharedProfile)
+	opts.AncestorBoundary = filepath.Dir(root)
+	result, err := MigratePrivate(opts)
+	if err != nil {
+		t.Fatalf("MigratePrivate() error = %v", err)
+	}
+	if result.Inspected != expectedEntries || result.Changed == 0 {
+		t.Fatalf("MigratePrivate() result = %+v", result)
+	}
+	opts.Profile = PrivateServiceProfile
+	findings, err := Audit(opts)
+	if err != nil || len(findings) != 0 {
+		t.Fatalf("private Audit() findings = %+v, err = %v", findings, err)
+	}
+	second, err := MigratePrivate(opts)
+	if err != nil {
+		t.Fatalf("second MigratePrivate() error = %v", err)
+	}
+	if second.Changed != 0 {
+		t.Fatalf("second MigratePrivate() changed = %d, want 0", second.Changed)
+	}
+}
+
+func TestMigratePrivateRejectsStructuralObjectsBeforeChangingRoot(t *testing.T) {
+	root := workspaceTempDir(t)
+	if err := os.Chmod(root, 0o770|os.ModeSetgid); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(workspaceTempDir(t), "outside")
+	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "planted")); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := ownerOptions(t, root, LegacySharedProfile)
+	opts.AncestorBoundary = filepath.Dir(root)
+	if _, err := MigratePrivate(opts); err == nil {
+		t.Fatal("MigratePrivate() error = nil, want structural rejection")
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o770 || info.Mode()&os.ModeSetgid == 0 {
+		t.Fatalf("root mode changed before preflight completed: %v", info.Mode())
+	}
+	data, err := os.ReadFile(outside)
+	if err != nil || string(data) != "outside" {
+		t.Fatalf("outside file changed: %q, %v", data, err)
+	}
+}
+
 func privateStoreFixture(t *testing.T) string {
 	t.Helper()
 	root := workspaceTempDir(t)

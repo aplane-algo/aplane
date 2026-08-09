@@ -223,11 +223,11 @@ func assertTemplateDirMode(t *testing.T, path string) {
 	if !info.IsDir() {
 		t.Fatalf("%s is not a directory", path)
 	}
-	if got := info.Mode() & os.ModePerm; got != 0o770 {
-		t.Fatalf("mode(%s) = %o, want 0770", path, got)
+	if got := info.Mode() & os.ModePerm; got != 0o700 {
+		t.Fatalf("mode(%s) = %o, want 0700", path, got)
 	}
-	if info.Mode()&os.ModeSetgid == 0 {
-		t.Fatalf("mode(%s) missing setgid bit: %v", path, info.Mode())
+	if info.Mode()&os.ModeSetgid != 0 {
+		t.Fatalf("mode(%s) unexpectedly has setgid bit: %v", path, info.Mode())
 	}
 }
 

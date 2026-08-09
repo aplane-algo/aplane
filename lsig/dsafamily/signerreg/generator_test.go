@@ -509,8 +509,8 @@ func TestGenerateRandom(t *testing.T) {
 	}
 
 	mode := info.Mode().Perm()
-	if mode != 0660 {
-		t.Errorf("Private key file should have 0660 permissions, got %o", mode)
+	if mode != 0600 {
+		t.Errorf("Private key file should have 0600 permissions, got %o", mode)
 	}
 }
 
