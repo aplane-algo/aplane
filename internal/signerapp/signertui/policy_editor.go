@@ -5,13 +5,11 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,117 +25,6 @@ type policyEditorLoadedMsg struct {
 }
 
 type policyEditorClosedMsg struct{}
-
-type adminPolicyClientAdapter struct {
-	client  *IPCClient
-	timeout time.Duration
-}
-
-func (c adminPolicyClientAdapter) GetPolicySnapshot(ctx context.Context, target policyeditor.Target) (policyeditor.AdminPolicySnapshot, error) {
-	if err := ctx.Err(); err != nil {
-		return policyeditor.AdminPolicySnapshot{}, err
-	}
-	var out protocol.PolicySnapshotMessage
-	err := c.request(protocol.GetPolicySnapshotMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeGetPolicySnapshot,
-			ID:   fmt.Sprintf("policy-snapshot-%d", time.Now().UnixNano()),
-		},
-		Target: string(target),
-	}, &out)
-	if err != nil {
-		return policyeditor.AdminPolicySnapshot{}, err
-	}
-	return adminPolicySnapshotFromProtocol(out, target), nil
-}
-
-func (c adminPolicyClientAdapter) ValidatePolicy(ctx context.Context, target policyeditor.Target, policyYAML string) (policyeditor.AdminPolicyValidation, error) {
-	if err := ctx.Err(); err != nil {
-		return policyeditor.AdminPolicyValidation{}, err
-	}
-	var out protocol.ValidatePolicyResultMessage
-	err := c.request(protocol.ValidatePolicyMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeValidatePolicy,
-			ID:   fmt.Sprintf("policy-validate-%d", time.Now().UnixNano()),
-		},
-		Target:     string(target),
-		PolicyYAML: policyYAML,
-	}, &out)
-	if err != nil {
-		return policyeditor.AdminPolicyValidation{}, err
-	}
-	resultTarget := policyeditor.Target(out.Target)
-	if resultTarget == "" {
-		resultTarget = target
-	}
-	return policyeditor.AdminPolicyValidation{
-		Success:    out.Success,
-		Target:     resultTarget,
-		IdentityID: out.IdentityID,
-		Code:       out.Code,
-		Error:      out.Error,
-	}, nil
-}
-
-func (c adminPolicyClientAdapter) ReplacePolicy(ctx context.Context, target policyeditor.Target, policyYAML, expectedCurrentSHA256 string) (policyeditor.AdminPolicySnapshot, error) {
-	if err := ctx.Err(); err != nil {
-		return policyeditor.AdminPolicySnapshot{}, err
-	}
-	var out protocol.ReplacePolicyResultMessage
-	err := c.request(protocol.ReplacePolicyMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeReplacePolicy,
-			ID:   fmt.Sprintf("policy-replace-%d", time.Now().UnixNano()),
-		},
-		Target:                string(target),
-		PolicyYAML:            policyYAML,
-		ExpectedCurrentSHA256: expectedCurrentSHA256,
-	}, &out)
-	if err != nil {
-		return policyeditor.AdminPolicySnapshot{}, err
-	}
-	return adminPolicySnapshotFromProtocol(policySnapshotMessageFromReplace(out), target), nil
-}
-
-func (c adminPolicyClientAdapter) request(msg interface{}, out interface{}) error {
-	if c.client == nil {
-		return fmt.Errorf("admin client is not connected")
-	}
-	timeout := c.timeout
-	if timeout <= 0 {
-		timeout = policyEditorRequestTimeout
-	}
-	raw, err := c.client.SendAndReceive(msg, timeout)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(raw, out); err != nil {
-		return err
-	}
-	return nil
-}
-
-func adminPolicySnapshotFromProtocol(msg protocol.PolicySnapshotMessage, requested policyeditor.Target) policyeditor.AdminPolicySnapshot {
-	target := policyeditor.Target(msg.Target)
-	if target == "" {
-		target = requested
-	}
-	return policyeditor.AdminPolicySnapshot{
-		Success:      msg.Success,
-		Target:       target,
-		IdentityID:   msg.IdentityID,
-		PolicyYAML:   msg.PolicyYAML,
-		PolicySHA256: msg.PolicySHA256,
-		Canonical:    msg.Canonical,
-		Code:         msg.Code,
-		Error:        msg.Error,
-	}
-}
-
-func policySnapshotMessageFromReplace(msg protocol.ReplacePolicyResultMessage) protocol.PolicySnapshotMessage {
-	return protocol.PolicySnapshotMessage(msg)
-}
 
 func (m Model) openPolicyViewer() (tea.Model, tea.Cmd) {
 	return m.openPolicyEditor()
@@ -161,7 +48,7 @@ func (m Model) loadPolicyEditorCmd(target policyeditor.Target) tea.Cmd {
 			return policyEditorLoadedMsg{target: target, err: fmt.Errorf("admin client is not connected")}
 		}
 		store := &policyeditor.AdminStore{
-			Client: adminPolicyClientAdapter{client: client, timeout: policyEditorRequestTimeout},
+			Client: policyeditor.NewProtocolClient(client, policyEditorRequestTimeout),
 			Target: target,
 		}
 		stored, err := store.Load(context.Background())

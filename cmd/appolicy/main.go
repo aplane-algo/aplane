@@ -6,20 +6,26 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aplane-algo/aplane/internal/adminipc"
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytui"
+	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/internal/version"
 	"golang.org/x/term"
 )
@@ -34,6 +40,7 @@ type options struct {
 	save       bool
 	toSentry   bool
 	online     bool
+	ipcPath    string
 	version    bool
 }
 
@@ -53,7 +60,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	fs.BoolVar(&opts.sha256, "sha256", false, "verify the selected policy document or a policy file and print its SHA-256 digest")
 	fs.BoolVar(&opts.save, "save", false, "read selected policy YAML from stdin, validate, save, and sign it")
 	fs.BoolVar(&opts.toSentry, "to-sentry", false, "convert signer policy YAML to direct sentry policy YAML and print it to stdout")
-	fs.BoolVar(&opts.online, "online", false, "disabled placeholder for future apsigner-connected policy editing")
+	fs.BoolVar(&opts.online, "online", false, "edit policy through authenticated apsigner IPC")
+	fs.StringVar(&opts.ipcPath, "ipc-path", "", "admin IPC socket path (or APSIGNER_IPC_PATH)")
 	fs.BoolVar(&opts.version, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -61,10 +69,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	if opts.version {
 		writef(stdout, "appolicy %s\n", version.String())
 		return 0
-	}
-	if opts.online {
-		writeLine(stderr, "appolicy online mode is not implemented yet")
-		return 2
 	}
 	requestedTarget, err := policyeditor.ParseTarget(opts.target)
 	if err != nil {
@@ -87,6 +91,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	if opts.save && policyFile != "" {
 		writeLine(stderr, "appolicy: --save reads YAML from stdin and does not accept a file argument")
 		return 2
+	}
+	if opts.online {
+		return runOnlinePolicy(ctx, opts, requestedTarget, policyFile, stdin, stdout, stderr)
 	}
 
 	dataDir := ""
@@ -205,6 +212,157 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return 1
 	}
 	return 0
+}
+
+const onlinePolicyTimeout = 10 * time.Second
+
+func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyeditor.Target, policyFile string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if opts.identityID != "" && opts.identityID != policyeditor.DefaultIdentityID {
+		writeLine(stderr, "appolicy: local online mode is bound to the product identity")
+		return 2
+	}
+	dataDir := serverconfig.GetSignerDataDir(opts.dataDir)
+	ipcPath, err := adminipc.ResolveClientPath(dataDir, opts.ipcPath)
+	if err != nil {
+		writef(stderr, "appolicy: %v\n", err)
+		return 1
+	}
+	conn := transport.NewIPC(ipcPath)
+	if err := conn.Dial(); err != nil {
+		writef(stderr, "appolicy: %v\n", err)
+		return 1
+	}
+	defer conn.Close()
+
+	passphrase, err := readPassphrase(stdin, stderr, !opts.save)
+	if err != nil {
+		writef(stderr, "appolicy: %v\n", err)
+		return 1
+	}
+	if err := conn.Authenticate(string(passphrase), onlinePolicyTimeout); err != nil {
+		crypto.ZeroBytes(passphrase)
+		writef(stderr, "appolicy: authentication failed: %v\n", err)
+		return 1
+	}
+	crypto.ZeroBytes(passphrase)
+
+	target := requestedTarget
+	if opts.toSentry {
+		target = policyeditor.TargetSigner
+	} else if target == "" || target == policyeditor.TargetAuto {
+		target, err = onlinePolicyTarget(conn)
+		if err != nil {
+			writef(stderr, "appolicy: %v\n", err)
+			return 1
+		}
+	}
+	client := policyeditor.NewProtocolClient(conn, onlinePolicyTimeout)
+	store := &policyeditor.AdminStore{Client: client, Target: target}
+
+	if policyFile != "" {
+		data, err := os.ReadFile(policyFile)
+		if err != nil {
+			writef(stderr, "appolicy: failed to read policy YAML file: %v\n", err)
+			return 1
+		}
+		parseTarget := target
+		if opts.toSentry {
+			parseTarget = policyeditor.TargetSigner
+		}
+		stored, err := parseTarget.Parse(data)
+		if err != nil {
+			writef(stderr, "appolicy: failed to parse %s: %v\n", parseTarget.DocumentName(), err)
+			return 1
+		}
+		validateStore := &policyeditor.AdminStore{Client: client, Target: parseTarget}
+		if err := validateStore.Validate(ctx, stored); err != nil {
+			writef(stderr, "appolicy: %v\n", err)
+			return 1
+		}
+		if opts.toSentry {
+			converted, err := policy.ConvertSigningPolicyToSentryYAML(data)
+			if err != nil {
+				writef(stderr, "appolicy: failed to convert policy: %v\n", err)
+				return 1
+			}
+			_, _ = stdout.Write(converted)
+			return 0
+		}
+		if opts.yaml {
+			_, _ = stdout.Write(data)
+			return 0
+		}
+		if opts.sha256 {
+			writef(stdout, "%s\n", policy.PolicySHA256(data))
+			return 0
+		}
+		writef(stdout, "%s OK: %s\n", target.StatusNoun(), policyFile)
+		return 0
+	}
+
+	stored, err := store.Load(ctx)
+	if err != nil {
+		writef(stderr, "appolicy: %v\n", err)
+		return 1
+	}
+	if opts.save {
+		data, err := io.ReadAll(stdin)
+		if err != nil || strings.TrimSpace(string(data)) == "" {
+			writeLine(stderr, "appolicy: policy YAML on stdin is empty")
+			return 1
+		}
+		if err := store.SaveYAML(ctx, data); err != nil {
+			writef(stderr, "appolicy: %v\n", err)
+			return 1
+		}
+		writef(stdout, "%s saved online\n", target.StatusNoun())
+		return 0
+	}
+	if opts.yaml {
+		_, _ = io.WriteString(stdout, store.PolicyYAML())
+		return 0
+	}
+	if opts.sha256 {
+		writef(stdout, "%s\n", store.LastSHA256())
+		return 0
+	}
+	if opts.toSentry {
+		out, err := policy.ConvertSigningPolicyToSentryYAML([]byte(store.PolicyYAML()))
+		if err != nil {
+			writef(stderr, "appolicy: failed to convert policy: %v\n", err)
+			return 1
+		}
+		_, _ = stdout.Write(out)
+		return 0
+	}
+	writef(stdout, "%s OK online\n", target.StatusNoun())
+	if opts.check {
+		return 0
+	}
+	program := tea.NewProgram(policytui.NewWithTarget(store, stored, "", policyeditor.DefaultIdentityID, target), tea.WithAltScreen())
+	if _, err := program.Run(); err != nil {
+		writef(stderr, "appolicy: TUI failed: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func onlinePolicyTarget(conn *transport.IPCClient) (policyeditor.Target, error) {
+	id := fmt.Sprintf("appolicy-settings-%d", time.Now().UnixNano())
+	raw, err := conn.SendAndReceive(protocol.GetAdminSettingsMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetAdminSettings, ID: id},
+	}, onlinePolicyTimeout)
+	if err != nil {
+		return "", err
+	}
+	var settings protocol.AdminSettingsMessage
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		return "", err
+	}
+	if strings.EqualFold(strings.TrimSpace(settings.NodeRole), "sentry") {
+		return policyeditor.TargetSentry, nil
+	}
+	return policyeditor.TargetSigner, nil
 }
 
 func runPolicyFile(ctx context.Context, path string, opts options, store *policyeditor.OfflineStore, dataDir, identityID string, target policyeditor.Target, stdout, stderr io.Writer) int {
