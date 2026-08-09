@@ -42,6 +42,16 @@ func TestValidateBindPathRejectsTmpDirectory(t *testing.T) {
 	}
 }
 
+func TestValidateBindPathAllowsPrivateDirectoryBelowTmp(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "run")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateBindPath(filepath.Join(dir, "apsigner.sock")); err != nil {
+		t.Fatalf("ValidateBindPath() error = %v, want private temp descendant accepted", err)
+	}
+}
+
 func TestValidateBindPathRejectsWorldWritableDirectory(t *testing.T) {
 	dir := privateTempDir(t)
 	if err := os.Chmod(dir, 0o777); err != nil {

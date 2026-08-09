@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 )
 
@@ -73,8 +72,10 @@ func validateSocketPath(socketPath string) error {
 func rejectIfInsecureDirectory(socketPath string, strict bool) error {
 	dir := filepath.Dir(socketPath)
 
-	// Check for common world-writable directories
-	if strings.HasPrefix(dir, "/tmp") || strings.HasPrefix(dir, "/var/tmp") {
+	// Never bind directly in a shared temporary directory. A private real
+	// descendant remains eligible and is checked by mode/ownership below.
+	cleanDir := filepath.Clean(dir)
+	if cleanDir == "/tmp" || cleanDir == "/var/tmp" {
 		return fmt.Errorf("refusing IPC socket in world-writable directory: %s (use $XDG_RUNTIME_DIR or a private runtime directory)", socketPath)
 	}
 
