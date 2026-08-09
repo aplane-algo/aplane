@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
@@ -82,6 +83,8 @@ func Run(dataDir string) int {
 	logInfof("--------------------------------------------")
 
 	config := startupOpts.Config
+	systemdManaged := os.Getenv(bootstrap.SystemdManagedInstanceEnv) == "1"
+	config.IPCPath = adminipc.ResolveDaemonPath(resolvedDataDir, config.IPCPath, systemdManaged)
 	passphraseTimeout := startupOpts.PassphraseTimeout
 	identityID := startupOpts.IdentityID
 	if _, err := serverconfig.ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {
@@ -276,7 +279,8 @@ func Run(dataDir string) int {
 	}
 
 	lockOnDisconnect := config.ShouldLockOnDisconnect()
-	if err := startIPCServer(server, config.IPCPath); err != nil {
+	privateRuntime := systemdManaged && filepath.Clean(config.IPCPath) == filepath.Clean(adminipc.SystemSocketPath)
+	if err := startIPCServer(server, config.IPCPath, privateRuntime); err != nil {
 		logErrorf("failed to start IPC server: %v", err)
 		return 1
 	}

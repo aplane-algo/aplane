@@ -20,6 +20,8 @@ User=@@USER@@
 Group=@@GROUP@@
 Environment=APSIGNER_DATA=@@DATA_DIR@@
 Environment=APLANE_SYSTEMD_MANAGED=1
+RuntimeDirectory=apsigner
+RuntimeDirectoryMode=0750
 Restart=always
 RestartSec=5s
 NoNewPrivileges=true

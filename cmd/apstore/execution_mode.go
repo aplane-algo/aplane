@@ -111,6 +111,9 @@ func normalizeStoreLockOwnership(dataDir string, uid, gid int) error {
 }
 
 func enforceApstoreExecutionMode(dataDir string, args []string) error {
+	if isDaemonBackedCommand(args) {
+		return nil
+	}
 	prodManaged, err := signerstartup.IsProductionManagedDataDir(dataDir)
 	if err != nil {
 		return err
@@ -132,6 +135,22 @@ func enforceApstoreExecutionMode(dataDir string, args []string) error {
 		return requireLocalDataDirOwnedByCurrentUser(dataDir, args)
 	default:
 		return nil
+	}
+}
+
+func isDaemonBackedCommand(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "backup":
+		return isManagedBackupCommand(args)
+	case "restore":
+		return isManagedRestoreCommand(args)
+	case "changepass", "template", "keytype":
+		return true
+	default:
+		return false
 	}
 }
 

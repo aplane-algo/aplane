@@ -9,22 +9,21 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// saveTEALToFile saves TEAL source to a file in the data directory
+// saveTEALToFile saves public TEAL source below operator-owned client state,
+// never below the private signer identity directory.
 func saveTEALToFile(dataDir, address, teal string) (string, error) {
-	// Create files directory under the user directory
-	filesDir := filepath.Join(dataDir, "identities", auth.CurrentProductIdentityID(), "files")
-	if err := os.MkdirAll(filesDir, 0750); err != nil {
+	filesDir := filepath.Join(dataDir, "files")
+	if err := os.MkdirAll(filesDir, 0o700); err != nil {
 		return "", fmt.Errorf("failed to create files directory: %w", err)
 	}
 
-	// Write TEAL to file
 	filePath := filepath.Join(filesDir, address+".teal")
-	if err := os.WriteFile(filePath, []byte(teal), 0640); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(filePath, []byte(teal), fsutil.PrivateStoreFileProfile); err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -180,7 +179,7 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				m.details.saveStatus = fmt.Sprintf("Save failed: %v", err)
 			} else {
-				m.details.saveStatus = fmt.Sprintf("Saved to files/%s.teal", m.details.address)
+				m.details.saveStatus = fmt.Sprintf("Saved to client files/%s.teal", m.details.address)
 			}
 		}
 		return m, nil

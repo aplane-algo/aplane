@@ -19,6 +19,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/addressdisplay"
+	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/apshellcli"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
@@ -56,6 +57,7 @@ func main() {
 	networkShort := flag.String("n", "", "Network context token for the shell pane")
 	remoteMode := flag.Bool("remote", false, "Connect to apsigner over SSH admin subsystem instead of local IPC")
 	noStartDaemon := flag.Bool("no-start-daemon", false, "Do not start apsigner when no local IPC socket exists")
+	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()
 	remoteModeSet := flagWasSet("remote")
 	dataDirSet := flagWasSet("d")
@@ -125,12 +127,27 @@ func main() {
 		logErrorf("use -d <path>, set APSIGNER_DATA, or configure signer_data in apconsole.yaml")
 		os.Exit(1)
 	}
-	if err := unix.Access(resolvedDataDir, unix.R_OK|unix.X_OK); err != nil {
-		logErrorf("cannot access data directory: %s", resolvedDataDir)
-		if os.IsPermission(err) {
-			logWarnf("you may need to log out and back in for group membership to take effect")
+	if accessErr := unix.Access(resolvedDataDir, unix.R_OK|unix.X_OK); accessErr != nil {
+		if !os.IsPermission(accessErr) {
+			logErrorf("cannot access data directory: %s", resolvedDataDir)
+			os.Exit(1)
 		}
-		os.Exit(1)
+		ipcPath, err := adminipc.ResolveClientPath(resolvedDataDir, *ipcPathFlag)
+		if err != nil {
+			logErrorf("%v", err)
+			os.Exit(1)
+		}
+		theme.Init("")
+		shellSession, shellStartup := loadShellConsole(startupCfg.ClientData, network)
+		shellStartup = append(consoleStartupNoticeLines(startupCfg.Notices), shellStartup...)
+		daemon := newDaemonModel(daemonInfo{
+			Status:  daemonStatusDisabled,
+			DataDir: resolvedDataDir,
+			IPCPath: ipcPath,
+			Detail:  "systemd attach mode; daemon lifecycle is not managed by apconsole",
+		}, nil)
+		startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, "", shellSession, shellStartup, true, nil, daemon)
+		return
 	}
 
 	startup, err := bootstrap.Load(startupCfg.SignerData)
@@ -139,12 +156,17 @@ func main() {
 		logErrorf("use -d <path>, set APSIGNER_DATA, or configure signer_data in apconsole.yaml")
 		os.Exit(1)
 	}
+	ipcPath, err := adminipc.ResolveClientPath(startup.DataDir, *ipcPathFlag)
+	if err != nil {
+		logErrorf("%v", err)
+		os.Exit(1)
+	}
 	theme.Init(startup.Config.Theme)
 	configureAlgodOnDSAs(startup.Config)
 	nodeRole, roleWarning := consoleNodeRole(startup.Paths)
-	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, startup.Config.IPCPath, !*noStartDaemon)
+	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, ipcPath, !*noStartDaemon)
 	if daemonStartup.Status == daemonStatusStarting {
-		waitForDaemonReady(startup.Config.IPCPath, daemonProcess, daemonReadyTimeout)
+		waitForDaemonReady(ipcPath, daemonProcess, daemonReadyTimeout)
 	}
 	if roleWarning != "" {
 		logWarnf("%s", roleWarning)
@@ -168,7 +190,7 @@ func main() {
 		daemon.lines = append(daemon.lines, sentryShellDisabledLines(startupCfg.Notices)...)
 	}
 
-	startConsole(tui.LocalIPCConnector{Path: startup.Config.IPCPath}, startup.DataDir, string(nodeRole), shellSession, shellStartup, shellEnabled, daemonProcess, daemon)
+	startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, string(nodeRole), shellSession, shellStartup, shellEnabled, daemonProcess, daemon)
 }
 
 func consoleStartupNoticeLines(notices []string) []string {

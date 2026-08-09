@@ -121,7 +121,7 @@ func TestResolveIPCPathReturnsParseError(t *testing.T) {
 	if err == nil {
 		t.Fatal("ResolveIPCPath returned nil error, want non-nil")
 	}
-	if !strings.Contains(err.Error(), "parse signer config") {
+	if !strings.Contains(err.Error(), "failed to parse config file") {
 		t.Fatalf("error = %v, want parse context", err)
 	}
 }

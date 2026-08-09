@@ -41,8 +41,15 @@ var newApstoreAdminClientWithPassphraseForCommand = func(passphrase []byte) (aps
 
 var initializeStoreForCommand = initializeStoreLocal
 
+func apstoreIPCPath() string {
+	if adminSocketPath != "" {
+		return adminSocketPath
+	}
+	return config.IPCPath
+}
+
 func newApstoreAdminClient() (*apstoreAdminClient, error) {
-	conn := transport.NewIPC(config.IPCPath)
+	conn := transport.NewIPC(apstoreIPCPath())
 	if err := conn.Dial(); err != nil {
 		return nil, codedError{code: apstoreCodeIPCUnavailable, message: err.Error()}
 	}
@@ -55,7 +62,7 @@ func newApstoreAdminClient() (*apstoreAdminClient, error) {
 }
 
 func newApstoreAdminClientWithPassphrase(passphrase []byte) (*apstoreAdminClient, error) {
-	conn := transport.NewIPC(config.IPCPath)
+	conn := transport.NewIPC(apstoreIPCPath())
 	if err := conn.Dial(); err != nil {
 		return nil, codedError{code: apstoreCodeIPCUnavailable, message: err.Error()}
 	}

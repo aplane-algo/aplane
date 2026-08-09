@@ -8,10 +8,20 @@ User=aplane
 Group=aplane
 Environment=APSIGNER_DATA=/var/lib/apsigner
 Environment=APLANE_SYSTEMD_MANAGED=1
+RuntimeDirectory=apsigner
+RuntimeDirectoryMode=0750
 Restart=always
 RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictNamespaces=true
+UMask=0077
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

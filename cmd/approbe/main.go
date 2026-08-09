@@ -51,6 +51,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 	var dataDir string
+	var ipcPath string
 	var quiet bool
 	var timeout time.Duration
 
@@ -58,6 +59,7 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	fs.StringVar(&dataDir, "d", "", "signer data directory")
 	fs.StringVar(&dataDir, "data-dir", "", "signer data directory")
+	fs.StringVar(&ipcPath, "ipc-path", "", "admin IPC socket path")
 	fs.BoolVar(&quiet, "quiet", false, "suppress status output")
 	fs.DurationVar(&timeout, "timeout", signerprobe.DefaultTimeout, "IPC connection timeout")
 	fs.Usage = func() {
@@ -73,12 +75,8 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 	}
 
 	dataDir = serverconfig.GetSignerDataDir(dataDir)
-	if dataDir == "" {
-		writeln(stderr, "Error: signer data directory is required (-d or APSIGNER_DATA).")
-		return exitUnknown
-	}
 
-	result, err := checkSigner(dataDir, signerprobe.Options{Timeout: timeout})
+	result, err := checkSigner(dataDir, signerprobe.Options{Timeout: timeout, IPCPath: ipcPath})
 	if err != nil {
 		if result.IPCPath != "" {
 			writef(stderr, "unknown %s: %v\n", result.IPCPath, err)
@@ -99,7 +97,7 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 
 func printUsage(w io.Writer) {
 	writeln(w, `Usage:
-  approbe signer-running -d <signer-data-dir> [--quiet] [--timeout 300ms]
+  approbe signer-running [-d <signer-data-dir>] [--ipc-path <socket>] [--quiet] [--timeout 300ms]
   approbe --version
 
 Exit codes for signer-running:

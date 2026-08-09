@@ -83,22 +83,24 @@ func TestRunSignerRunningExitCodes(t *testing.T) {
 	}
 }
 
-func TestRunRequiresDataDir(t *testing.T) {
+func TestRunWithoutDataDirUsesPublicResolver(t *testing.T) {
 	t.Setenv("APSIGNER_DATA", "")
 
 	origCheck := checkSigner
 	defer func() { checkSigner = origCheck }()
-	checkSigner = func(string, signerprobe.Options) (signerprobe.Result, error) {
-		t.Fatal("checkSigner should not be called")
-		return signerprobe.Result{}, nil
+	checkSigner = func(dataDir string, opts signerprobe.Options) (signerprobe.Result, error) {
+		if dataDir != "" {
+			t.Fatalf("dataDir = %q, want empty", dataDir)
+		}
+		return signerprobe.Result{State: signerprobe.StateStopped, IPCPath: "/run/apsigner/aplane.sock"}, nil
 	}
 
 	var stdout, stderr bytes.Buffer
 	gotExit := run([]string{"signer-running"}, &stdout, &stderr)
-	if gotExit != exitUnknown {
-		t.Fatalf("exit = %d, want %d", gotExit, exitUnknown)
+	if gotExit != exitStopped {
+		t.Fatalf("exit = %d, want %d", gotExit, exitStopped)
 	}
-	if !strings.Contains(stderr.String(), "signer data directory is required") {
-		t.Fatalf("stderr = %q, want missing data-dir error", stderr.String())
+	if !strings.Contains(stdout.String(), "stopped /run/apsigner/aplane.sock") {
+		t.Fatalf("stdout = %q, want public runtime socket", stdout.String())
 	}
 }

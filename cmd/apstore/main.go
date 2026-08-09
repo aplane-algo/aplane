@@ -6,11 +6,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 
+	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/auth"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/version"
 
@@ -22,6 +23,10 @@ var config serverconfig.ServerConfig
 
 // dataDirectory holds the resolved data directory path
 var dataDirectory string
+
+// adminSocketPath is resolved independently of private signer configuration
+// for daemon-backed commands.
+var adminSocketPath string
 
 func keystorePaths() storepaths.Paths {
 	return storepaths.NewPaths(dataDirectory)
@@ -43,7 +48,28 @@ func main() {
 	flag.Usage = apstoreUsage
 
 	dataDir := flag.String("d", "", "Data directory (required, or set APSIGNER_DATA)")
+	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()
+	args := flag.Args()
+	if len(args) < 1 {
+		flag.Usage()
+		os.Exit(apstoreExitUsage)
+	}
+
+	if isDaemonBackedCommand(args) {
+		dataDirectory = serverconfig.GetSignerDataDir(*dataDir)
+		var err error
+		adminSocketPath, err = adminipc.ResolveClientPath(dataDirectory, *ipcPathFlag)
+		if err != nil {
+			logErrorf("%v", err)
+			os.Exit(apstoreExitUsage)
+		}
+		config = serverconfig.DefaultServerConfig()
+		config.IPCPath = adminSocketPath
+		RegisterProviders()
+		dispatchApstoreCommand(args)
+		return
+	}
 
 	resolvedDataDir, err := bootstrap.ResolveDataDir(*dataDir)
 	if err != nil {
@@ -69,15 +95,10 @@ func main() {
 		os.Exit(apstoreExitUsage)
 	}
 	config = startup.Config
+	adminSocketPath = config.IPCPath
 
 	// Register all providers (must be called before using any registries)
 	RegisterProviders()
-
-	args := flag.Args()
-	if len(args) < 1 {
-		flag.Usage()
-		os.Exit(apstoreExitUsage)
-	}
 
 	dispatchApstoreCommand(args)
 }

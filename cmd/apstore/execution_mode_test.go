@@ -190,7 +190,7 @@ func TestEnforceApstoreExecutionModeRejectsForeignOwnedLocalDataDir(t *testing.T
 	}
 	currentEUID = func() int { return uid + 1 }
 
-	err = enforceApstoreExecutionMode(dataDir, []string{"changepass"})
+	err = enforceApstoreExecutionMode(dataDir, []string{"initialize"})
 	if err == nil {
 		t.Fatal("enforceApstoreExecutionMode() error = nil, want foreign-owner refusal")
 	}
@@ -198,10 +198,24 @@ func TestEnforceApstoreExecutionModeRejectsForeignOwnedLocalDataDir(t *testing.T
 		"local signer data directory",
 		"owned by uid",
 		"restore the systemd-managed .prod marker",
-		"sudo apstore -d " + dataDir + " changepass",
+		"sudo apstore -d " + dataDir + " initialize",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want substring %q", err.Error(), want)
+		}
+	}
+}
+
+func TestEnforceApstoreExecutionModeAllowsDaemonBackedCommandWithoutStoreAccess(t *testing.T) {
+	for _, args := range [][]string{
+		{"changepass"},
+		{"template", "list"},
+		{"keytype", "list"},
+		{"backup", "list"},
+		{"restore", "preview", "archive.tar.gz"},
+	} {
+		if err := enforceApstoreExecutionMode("/deliberately/inaccessible", args); err != nil {
+			t.Fatalf("enforceApstoreExecutionMode(%v) error = %v", args, err)
 		}
 	}
 }

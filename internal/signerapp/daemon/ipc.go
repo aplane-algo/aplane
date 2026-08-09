@@ -20,10 +20,17 @@ import (
 
 // IPCServer handles Unix socket connections for local IPC.
 type IPCServer struct {
-	listener net.Listener
-	signer   *Signer
-	path     string
-	manager  *adminserver.SessionManager
+	listener     net.Listener
+	signer       *Signer
+	path         string
+	strictParent bool
+	manager      *adminserver.SessionManager
+}
+
+func newPrivateRuntimeIPCServer(path string, signer *Signer) *IPCServer {
+	server := NewIPCServer(path, signer)
+	server.strictParent = true
+	return server
 }
 
 // NewIPCServer creates a new IPC server.
@@ -37,8 +44,14 @@ func NewIPCServer(path string, signer *Signer) *IPCServer {
 
 // Start begins listening on the Unix socket.
 func (s *IPCServer) Start() error {
-	if err := ipcbind.ValidateBindPath(s.path); err != nil {
-		return err
+	var validateErr error
+	if s.strictParent {
+		validateErr = ipcbind.ValidatePrivateRuntimeBindPath(s.path)
+	} else {
+		validateErr = ipcbind.ValidateBindPath(s.path)
+	}
+	if validateErr != nil {
+		return validateErr
 	}
 
 	// Remove existing socket file if present
