@@ -149,8 +149,8 @@ All under `cmd/`:
 | `apadmin` | TUI admin client over IPC or SSH admin transport |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
-| `apstore` | Local keystore management client: local `initialize`, policy integrity check/verify/sign, public endpoint export, public sentry reference import/export/list, local `verify`, local `rebuild` rescue flows, and offline `generations list`/`prune` maintenance; daemon-owned backup, restore, template, key type, and changepass operations use the admin protocol |
-| `appolicy` | Offline policy checker/editor TUI that auto-targets the `policy.yaml` domain from the node role, plus scriptable save/check/export and signing-to-sentry-policy conversion while holding the store mutation lock |
+| `apstore` | Store-management client: local `initialize`, policy integrity check/verify/sign, public endpoint export, `verify`, `rebuild`, and offline generation pruning; daemon-owned sentry references, generation inventory, backup, restore, template, key type, and changepass operations use authenticated admin IPC |
+| `appolicy` | Policy checker/editor TUI with offline rescue mode and `--online` authenticated admin-IPC mode; both support scriptable save/check/export and signer-to-sentry-policy conversion |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, client (`apshell`) default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
 | `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |
@@ -555,9 +555,10 @@ filename is direct sentry component policy. The default approval fallback is
 `User Auto-Approve`. Policy is verified with a key derived from the identity
 term key and loaded into the bound identity runtime on unlock/reload before
 the key scan. Guided policy editing is implemented once in
-`internal/signerapp/policytui` and used through two stores: `appolicy` edits the selected
-domain offline while holding the store mutation lock, and `apadmin` edits the
-active document online through the admin protocol while `apsigner` is running.
+`internal/signerapp/policytui` and used through two stores: `appolicy` can edit
+the selected domain offline while holding the store mutation lock or online
+through authenticated admin IPC, and `apadmin` edits the active document
+online through the same protocol while `apsigner` is running.
 Both surfaces select the policy domain from the node role; store-backed
 role-incompatible targets fail closed. Direct edits to `policy.yaml` are checked
 and signed with `apstore policy`. Admin IPC policy messages are
@@ -607,7 +608,7 @@ Operationally:
 - client-local state lives under the client data directory, including plugins (`plugins.available/`, `plugins.yaml`), scripts (`scripts/`), token (`aplane.token`), caches (`cache/`), swap state (`swap/<network>/`), and the cooperative `.apclient.lock`,
 - signer-local state lives under the signer data directory, with the plaintext key type library at `library/templates/`, signer-wide ASA metadata at `cache/<network>_asa_cache.json`, managed backup archives at `backups/<identity>/`, and all sensitive runtime assets rooted under `identities/<identity>/`,
 - active credentials and key-type state live under `identities/<identity>/generations/<gen-id>/`, selected by the `CURRENT` pointer file; see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) and the on-disk layout in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md),
-- admin IPC binds the resolved `ipc_path` (default `<data_dir>/aplane.sock`),
+- systemd-managed admin IPC defaults to `/run/apsigner/aplane.sock`; explicit custom paths and same-UID local installs remain supported,
 - the effective layout is identity-scoped even though the default deployment uses only `"default"`.
 
 ## Security Model

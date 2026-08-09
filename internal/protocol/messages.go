@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 4
-	AdminProtocolVersionMinor = 0
+	AdminProtocolVersionMinor = 1
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
@@ -126,6 +126,20 @@ const (
 	MsgTypeReplacePolicyResult      = "replace_policy_result"       // Server → client: replacement result and active snapshot
 	MsgTypeValidatePolicy           = "validate_policy"             // Client → server: validate policy YAML without writing
 	MsgTypeValidatePolicyResult     = "validate_policy_result"      // Server → client: validation result
+
+	// Signer-owned sentry reference and generation inventory messages.
+	MsgTypeListSentryReferences        = "list_sentry_references"
+	MsgTypeSentryReferencesList        = "sentry_references_list"
+	MsgTypeGetSentryReference          = "get_sentry_reference"
+	MsgTypeSentryReference             = "sentry_reference"
+	MsgTypeImportSentryReference       = "import_sentry_reference"
+	MsgTypeImportSentryReferenceResult = "import_sentry_reference_result"
+	MsgTypeRemoveSentryReference       = "remove_sentry_reference"
+	MsgTypeRemoveSentryReferenceResult = "remove_sentry_reference_result"
+	MsgTypeExportSentryPublic          = "export_sentry_public"
+	MsgTypeExportSentryPublicResult    = "export_sentry_public_result"
+	MsgTypeListGenerations             = "list_generations"
+	MsgTypeGenerationsList             = "generations_list"
 
 	// Client displacement message types (for single-client IPC enforcement)
 	MsgTypeClientExists    = "client_exists"    // Server → new client: another client is connected
@@ -923,6 +937,93 @@ type ValidatePolicyResultMessage struct {
 	IdentityID string `json:"identity_id,omitempty"`
 	Code       string `json:"code,omitempty"`
 	Error      string `json:"error,omitempty"`
+}
+
+type SentryReferenceInfo struct {
+	Schema            string `json:"schema"`
+	Name              string `json:"name"`
+	ComponentKey      string `json:"component_key"`
+	KeyType           string `json:"key_type"`
+	PublicKeyEncoding string `json:"public_key_encoding"`
+	PublicKeyHex      string `json:"public_key_hex"`
+	PublicKeySize     int    `json:"public_key_size"`
+	PublicKeySHA256   string `json:"public_key_sha256"`
+	Source            string `json:"source,omitempty"`
+	EndpointAlias     string `json:"endpoint_alias,omitempty"`
+	LastSeenAt        string `json:"last_seen_at,omitempty"`
+	SyncedAt          string `json:"synced_at,omitempty"`
+	ImportedAt        string `json:"imported_at,omitempty"`
+}
+
+type ListSentryReferencesMessage struct{ BaseMessage }
+
+type SentryReferencesListMessage struct {
+	BaseMessage
+	References []SentryReferenceInfo `json:"references"`
+	Code       string                `json:"code,omitempty"`
+	Error      string                `json:"error,omitempty"`
+}
+
+type GetSentryReferenceMessage struct {
+	BaseMessage
+	Name string `json:"name"`
+}
+
+type SentryReferenceMessage struct {
+	BaseMessage
+	Success   bool                `json:"success"`
+	Reference SentryReferenceInfo `json:"reference,omitempty"`
+	Code      string              `json:"code,omitempty"`
+	Error     string              `json:"error,omitempty"`
+}
+
+type ImportSentryReferenceMessage struct {
+	BaseMessage
+	Name         string `json:"name"`
+	EnvelopeJSON string `json:"envelope_json"`
+}
+
+type ImportSentryReferenceResultMessage = SentryReferenceMessage
+
+type RemoveSentryReferenceMessage struct {
+	BaseMessage
+	Name string `json:"name"`
+}
+
+type RemoveSentryReferenceResultMessage struct {
+	BaseMessage
+	Success bool   `json:"success"`
+	Name    string `json:"name,omitempty"`
+	Removed bool   `json:"removed,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+type ExportSentryPublicMessage struct {
+	BaseMessage
+	WitnessKeyID string `json:"witness_key_id"`
+}
+
+type ExportSentryPublicResultMessage struct {
+	BaseMessage
+	Success      bool   `json:"success"`
+	WitnessKeyID string `json:"witness_key_id,omitempty"`
+	EnvelopeJSON string `json:"envelope_json,omitempty"`
+	Code         string `json:"code,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+type ListGenerationsMessage struct{ BaseMessage }
+
+type GenerationsListMessage struct {
+	BaseMessage
+	Current                string   `json:"current,omitempty"`
+	SealedPriors           []string `json:"sealed_priors"`
+	PendingAttempts        []string `json:"pending_attempts"`
+	PendingStaging         []string `json:"pending_staging"`
+	RetainedUnsealedParent string   `json:"retained_unsealed_parent,omitempty"`
+	Code                   string   `json:"code,omitempty"`
+	Error                  string   `json:"error,omitempty"`
 }
 
 // ClientExistsMessage is sent by the server to a new client when another apadmin is already connected.

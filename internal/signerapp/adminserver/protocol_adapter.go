@@ -378,6 +378,58 @@ func ProtocolValidatePolicyResultMessage(id string, result adminproto.ValidatePo
 	}
 }
 
+func ProtocolSentryReferencesListMessage(id string, result adminproto.ListSentryReferencesResult) protocol.SentryReferencesListMessage {
+	refs := make([]protocol.SentryReferenceInfo, len(result.References))
+	for i := range result.References {
+		refs[i] = protocolSentryReference(result.References[i])
+	}
+	return protocol.SentryReferencesListMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSentryReferencesList, ID: id},
+		References:  refs, Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolSentryReferenceMessage(id, messageType string, result adminproto.GetSentryReferenceResult) protocol.SentryReferenceMessage {
+	return protocol.SentryReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: messageType, ID: id}, Success: result.Success,
+		Reference: protocolSentryReference(result.Reference), Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolRemoveSentryReferenceResultMessage(id string, result adminproto.RemoveSentryReferenceResult) protocol.RemoveSentryReferenceResultMessage {
+	return protocol.RemoveSentryReferenceResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveSentryReferenceResult, ID: id},
+		Success:     result.Success, Name: result.Name, Removed: result.Removed, Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolExportSentryPublicResultMessage(id string, result adminproto.ExportSentryPublicResult) protocol.ExportSentryPublicResultMessage {
+	return protocol.ExportSentryPublicResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeExportSentryPublicResult, ID: id},
+		Success:     result.Success, WitnessKeyID: result.WitnessKeyID, EnvelopeJSON: result.EnvelopeJSON,
+		Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolGenerationsListMessage(id string, result adminproto.GenerationInventory) protocol.GenerationsListMessage {
+	return protocol.GenerationsListMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGenerationsList, ID: id},
+		Current:     result.Current, SealedPriors: result.SealedPriors,
+		PendingAttempts: result.PendingAttempts, PendingStaging: result.PendingStaging,
+		RetainedUnsealedParent: result.RetainedUnsealedParent, Code: result.Code, Error: result.Error,
+	}
+}
+
+func protocolSentryReference(item adminproto.SentryReferenceInfo) protocol.SentryReferenceInfo {
+	return protocol.SentryReferenceInfo{
+		Schema: item.Schema, Name: item.Name, ComponentKey: item.ComponentKey, KeyType: item.KeyType,
+		PublicKeyEncoding: item.PublicKeyEncoding, PublicKeyHex: item.PublicKeyHex,
+		PublicKeySize: item.PublicKeySize, PublicKeySHA256: item.PublicKeySHA256,
+		Source: item.Source, EndpointAlias: item.EndpointAlias, LastSeenAt: item.LastSeenAt,
+		SyncedAt: item.SyncedAt, ImportedAt: item.ImportedAt,
+	}
+}
+
 func ProtocolGenerateResultMessage(id string, result adminproto.GenerateKeyResult) protocol.GenerateResultMessage {
 	// Mnemonic and WordCount remain in the wire schema for client
 	// compatibility but are never populated: recovery material does not cross

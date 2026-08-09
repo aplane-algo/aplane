@@ -213,10 +213,16 @@ func TestEnforceApstoreExecutionModeAllowsDaemonBackedCommandWithoutStoreAccess(
 		{"keytype", "list"},
 		{"backup", "list"},
 		{"restore", "preview", "archive.tar.gz"},
+		{"sentry", "list"},
+		{"sentry", "import", "public.json", "lab"},
+		{"generations", "list"},
 	} {
 		if err := enforceApstoreExecutionMode("/deliberately/inaccessible", args); err != nil {
 			t.Fatalf("enforceApstoreExecutionMode(%v) error = %v", args, err)
 		}
+	}
+	if isDaemonBackedCommand([]string{"generations", "prune"}) {
+		t.Fatal("generations prune must remain offline")
 	}
 }
 

@@ -149,6 +149,10 @@ func isDaemonBackedCommand(args []string) bool {
 		return isManagedRestoreCommand(args)
 	case "changepass", "template", "keytype":
 		return true
+	case "sentry":
+		return true
+	case "generations":
+		return len(args) == 2 && args[1] == "list"
 	default:
 		return false
 	}

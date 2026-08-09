@@ -28,10 +28,16 @@ func dispatchApstoreCommand(args []string) {
 		}
 
 	case "generations":
-		if err := runStoreMutatingCommand(command, func() error {
-			return cmdGenerations(args[1:])
-		}); err != nil {
-			exitWithError(err)
+		if len(args) == 2 && args[1] == "list" {
+			if err := cmdGenerations(args[1:]); err != nil {
+				exitWithError(err)
+			}
+		} else {
+			if err := runStoreMutatingCommand(command, func() error {
+				return cmdGenerations(args[1:])
+			}); err != nil {
+				exitWithError(err)
+			}
 		}
 
 	case "backup":

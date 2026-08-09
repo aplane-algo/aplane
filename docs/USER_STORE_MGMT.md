@@ -100,12 +100,13 @@ Mnemonic export is disabled. Use encrypted backup archives for recovery.
 ## Managed Backup with apstore
 
 For backing up encrypted key files directly, use the `apstore` CLI tool on the
-signer host. Managed backup, restore, template, key type, and passphrase
-operations use the local admin protocol to the running signer daemon; they are
+signer host. Managed backup, restore, template, key type, passphrase, sentry
+reference, and generation-inventory operations use the local admin protocol
+to the running signer daemon; they are
 not SSH admin operations and they do not mutate the keystore behind the
 daemon's back. Local offline `apstore` operations, such as initialize, policy
-sidecar checks/signing, verify, and rebuild, take the store lock before
-touching files.
+sidecar checks/signing, verify, rebuild, and generation pruning take the store
+lock before touching files.
 
 ### Create Backups
 
@@ -274,15 +275,11 @@ updates that helper immediately after the new cryptographic root is committed.
 A helper-update failure is a warning: the new passphrase remains authoritative,
 and you can unlock manually with it while repairing the helper.
 
-Systemd installs mark the signer data directory with `.prod`. In that
-mode, run `sudo apstore -d /var/lib/apsigner changepass`; non-root attempts are
-rejected before passphrase prompts. Local installs reject root instead.
+Systemd installs mark the signer data directory with `.prod`. `changepass` is
+daemon-backed and does not require root merely to traverse the signer store.
 `appass-systemd-creds` also requires root to update its encrypted credential,
-so `changepass` exits before prompting if that helper is configured and the
-command is not running as root.
-When run against systemd data, `apstore` returns managed store files to the
-signer data directory owner/group after successful mutations, while
-`appass-systemd-creds` files remain root-owned.
+so repair or replacement of that root-owned helper remains an explicit
+privileged operation. `appass-systemd-creds` files remain root-owned.
 
 A passphrase change appends a fresh numbered key term and atomically commits
 the new root under the new passphrase. It then re-encrypts live keys,
@@ -422,7 +419,8 @@ but incompatibility is not a permanent every-release policy; each pre-1.0
 release will state its compatibility and migration requirements explicitly.
 See [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
-Manage generations offline (daemon stopped):
+Inspect generations through the running daemon; stop the daemon only for
+destructive pruning:
 
 ```
 ./apstore generations list                # current + sealed priors (read-only)

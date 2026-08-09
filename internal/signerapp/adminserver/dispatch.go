@@ -50,6 +50,17 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeReplacePolicy:     typed("replace policy", (*Session).HandleReplacePolicy),
 	protocol.MsgTypeValidatePolicy:    typed("validate policy", (*Session).HandleValidatePolicy),
 
+	protocol.MsgTypeListSentryReferences: typed("list sentry references", func(s *Session, m *protocol.ListSentryReferencesMessage) {
+		s.HandleListSentryReferences(m.ID)
+	}),
+	protocol.MsgTypeGetSentryReference:    typed("get sentry reference", (*Session).HandleGetSentryReference),
+	protocol.MsgTypeImportSentryReference: typed("import sentry reference", (*Session).HandleImportSentryReference),
+	protocol.MsgTypeRemoveSentryReference: typed("remove sentry reference", (*Session).HandleRemoveSentryReference),
+	protocol.MsgTypeExportSentryPublic:    typed("export sentry public metadata", (*Session).HandleExportSentryPublic),
+	protocol.MsgTypeListGenerations: typed("list generations", func(s *Session, m *protocol.ListGenerationsMessage) {
+		s.HandleListGenerations(m.ID)
+	}),
+
 	protocol.MsgTypeListKeys:      typed("list keys", func(s *Session, m *protocol.ListKeysMessage) { s.HandleListKeys(m.ID) }),
 	protocol.MsgTypeGetKeyDetails: typed("get key details", (*Session).HandleGetKeyDetails),
 	protocol.MsgTypeGenerateKey:   typed("generate key", (*Session).HandleGenerateKey),

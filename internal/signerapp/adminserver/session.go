@@ -36,14 +36,15 @@ const (
 
 // Session owns one admin client protocol lifecycle.
 type Session struct {
-	conn             adminproto.AdminConn
-	identityServices IdentityServices
-	settingsServices SettingsServices
-	keyServices      KeyServices
-	backupServices   BackupServices
-	templateServices TemplateServices
-	authorizer       auth.Authorizer
-	audit            AuthorizationAudit
+	conn               adminproto.AdminConn
+	identityServices   IdentityServices
+	settingsServices   SettingsServices
+	keyServices        KeyServices
+	backupServices     BackupServices
+	templateServices   TemplateServices
+	inspectionServices StoreInspectionServices
+	authorizer         auth.Authorizer
+	audit              AuthorizationAudit
 
 	mu       sync.Mutex
 	state    SessionState
@@ -63,19 +64,20 @@ func NewSession(conn adminproto.AdminConn, deps SessionDeps) *Session {
 	method := "ipc-passphrase"
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Session{
-		conn:             conn,
-		identityServices: deps.Identity,
-		settingsServices: deps.Settings,
-		keyServices:      deps.Keys,
-		backupServices:   deps.Backups,
-		templateServices: deps.Templates,
-		authorizer:       deps.Authorizer,
-		audit:            deps.Audit,
-		state:            StateConnected,
-		method:           method,
-		context:          newSessionContext(method, conn),
-		ctx:              ctx,
-		cancel:           cancel,
+		conn:               conn,
+		identityServices:   deps.Identity,
+		settingsServices:   deps.Settings,
+		keyServices:        deps.Keys,
+		backupServices:     deps.Backups,
+		templateServices:   deps.Templates,
+		inspectionServices: deps.Inspection,
+		authorizer:         deps.Authorizer,
+		audit:              deps.Audit,
+		state:              StateConnected,
+		method:             method,
+		context:            newSessionContext(method, conn),
+		ctx:                ctx,
+		cancel:             cancel,
 	}
 }
 

@@ -86,6 +86,114 @@ func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
 	_ = s.WriteJSON(ProtocolValidatePolicyResultMessage(msg.ID, result))
 }
 
+func (s *Session) HandleListSentryReferences(requestID string) {
+	ir := s.requireBoundRuntime(requestID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(requestID, auth.ActionSentriesView, auth.Resource{Type: "sentry_references", IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(requestID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	_ = s.WriteJSON(ProtocolSentryReferencesListMessage(requestID, s.inspectionServices.ListSentryReferences(ir)))
+}
+
+func (s *Session) HandleGetSentryReference(msg *protocol.GetSentryReferenceMessage) {
+	ir := s.requireBoundRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_reference", ID: msg.Name, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	result := s.inspectionServices.GetSentryReference(ir, adminproto.GetSentryReferenceRequest{Name: msg.Name})
+	_ = s.WriteJSON(ProtocolSentryReferenceMessage(msg.ID, protocol.MsgTypeSentryReference, result))
+}
+
+func (s *Session) HandleImportSentryReference(msg *protocol.ImportSentryReferenceMessage) {
+	ir := s.requireBoundRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	result := s.inspectionServices.ImportSentryReference(ir, adminproto.ImportSentryReferenceRequest{Name: msg.Name, EnvelopeJSON: msg.EnvelopeJSON})
+	if audit, ok := s.audit.(interface {
+		LogSentryReferenceChangedContext(SessionContext, string, string, bool)
+	}); ok {
+		audit.LogSentryReferenceChangedContext(s.SessionContext(), "import", msg.Name, result.Success)
+	}
+	_ = s.WriteJSON(ProtocolSentryReferenceMessage(
+		msg.ID,
+		protocol.MsgTypeImportSentryReferenceResult,
+		adminproto.GetSentryReferenceResult(result),
+	))
+}
+
+func (s *Session) HandleRemoveSentryReference(msg *protocol.RemoveSentryReferenceMessage) {
+	ir := s.requireBoundRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	result := s.inspectionServices.RemoveSentryReference(ir, adminproto.RemoveSentryReferenceRequest{Name: msg.Name})
+	if audit, ok := s.audit.(interface {
+		LogSentryReferenceChangedContext(SessionContext, string, string, bool)
+	}); ok {
+		audit.LogSentryReferenceChangedContext(s.SessionContext(), "remove", msg.Name, result.Success)
+	}
+	_ = s.WriteJSON(ProtocolRemoveSentryReferenceResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleExportSentryPublic(msg *protocol.ExportSentryPublicMessage) {
+	ir := s.requireBoundRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_public", ID: msg.WitnessKeyID, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	result := s.inspectionServices.ExportSentryPublic(ir, adminproto.ExportSentryPublicRequest{WitnessKeyID: msg.WitnessKeyID})
+	_ = s.WriteJSON(ProtocolExportSentryPublicResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleListGenerations(requestID string) {
+	ir := s.requireBoundRuntime(requestID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(requestID, auth.ActionGenerationsView, auth.Resource{Type: "generations", IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(requestID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	_ = s.WriteJSON(ProtocolGenerationsListMessage(requestID, s.inspectionServices.ListGenerations(ir)))
+}
+
 func (s *Session) HandleRevokeToken(msg *protocol.RevokeTokenMessage) {
 	s.handleRevokeToken(msg)
 }

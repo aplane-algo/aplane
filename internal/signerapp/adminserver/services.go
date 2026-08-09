@@ -61,6 +61,15 @@ type TemplateServices interface {
 	ListKeyTypes(ir *identity.Runtime) adminproto.ListKeyTypesResult
 }
 
+type StoreInspectionServices interface {
+	ListSentryReferences(ir *identity.Runtime) adminproto.ListSentryReferencesResult
+	GetSentryReference(ir *identity.Runtime, req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult
+	ImportSentryReference(ir *identity.Runtime, req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult
+	RemoveSentryReference(ir *identity.Runtime, req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult
+	ExportSentryPublic(ir *identity.Runtime, req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult
+	ListGenerations(ir *identity.Runtime) adminproto.GenerationInventory
+}
+
 type AuthorizationAudit interface {
 	LogAuthorizationDenied(ctx SessionContext, action auth.Action, resource auth.Resource, reason string)
 }
@@ -71,6 +80,7 @@ type SessionDeps struct {
 	Keys       KeyServices
 	Backups    BackupServices
 	Templates  TemplateServices
+	Inspection StoreInspectionServices
 	Authorizer auth.Authorizer
 	Audit      AuthorizationAudit
 }

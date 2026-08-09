@@ -5,17 +5,21 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestCmdSentryImportListShowRemove(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
+		withLocalSentryAdminClient(t)
 		exportPath := filepath.Join(t.TempDir(), "sentry-public.json")
 		exportJSON := testSentryExportJSON(t)
 		var env sentryrefs.ExportEnvelope
@@ -71,6 +75,7 @@ func TestCmdSentryImportListShowRemove(t *testing.T) {
 
 func TestCmdSentryListHidesEndpointSyncedRecordName(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
+		withLocalSentryAdminClient(t)
 		pub := make([]byte, testSentryPublicKeySize(t))
 		for i := range pub {
 			pub[i] = 0xab
@@ -107,6 +112,81 @@ func TestCmdSentryListHidesEndpointSyncedRecordName(t *testing.T) {
 			t.Fatalf("list output = %q, want Witness Key ID, key type, and endpoint alias", listOut)
 		}
 	})
+}
+
+func withLocalSentryAdminClient(t *testing.T) {
+	t.Helper()
+	fake := &fakeApstoreAdminRequester{}
+	fake.requestFunc = func(msg any, out any) error {
+		switch request := msg.(type) {
+		case protocol.ImportSentryReferenceMessage:
+			record, err := sentryrefs.Import(keystorePaths(), productIdentityID(), request.Name, []byte(request.EnvelopeJSON))
+			if err != nil {
+				return err
+			}
+			result := out.(*protocol.ImportSentryReferenceResultMessage)
+			result.Success = true
+			result.Reference = protocolSentryReferenceForTest(*record)
+		case protocol.ListSentryReferencesMessage:
+			records, err := sentryrefs.List(keystorePaths(), productIdentityID())
+			if err != nil {
+				return err
+			}
+			result := out.(*protocol.SentryReferencesListMessage)
+			for _, record := range records {
+				result.References = append(result.References, protocolSentryReferenceForTest(record))
+			}
+		case protocol.GetSentryReferenceMessage:
+			record, found, err := sentryrefs.Get(keystorePaths(), productIdentityID(), request.Name)
+			if err != nil {
+				return err
+			}
+			result := out.(*protocol.SentryReferenceMessage)
+			result.Success = found
+			if found {
+				result.Reference = protocolSentryReferenceForTest(record)
+			} else {
+				result.Error = "sentry reference not found"
+			}
+		case protocol.RemoveSentryReferenceMessage:
+			removed, err := sentryrefs.Delete(keystorePaths(), productIdentityID(), request.Name)
+			if err != nil {
+				return err
+			}
+			result := out.(*protocol.RemoveSentryReferenceResultMessage)
+			result.Success, result.Removed, result.Name = true, removed, request.Name
+		case protocol.ExportSentryPublicMessage:
+			envelope, found, err := apkeys.ReadWitnessPublicMetadata(keystorePaths(), productIdentityID(), request.WitnessKeyID)
+			if err != nil {
+				return err
+			}
+			result := out.(*protocol.ExportSentryPublicResultMessage)
+			if !found {
+				result.Error = "sentry public metadata not found"
+				return nil
+			}
+			data, err := json.MarshalIndent(envelope, "", "  ")
+			if err != nil {
+				return err
+			}
+			result.Success = true
+			result.EnvelopeJSON = string(append(data, '\n'))
+		default:
+			return fmt.Errorf("unexpected sentry request %T", msg)
+		}
+		return nil
+	}
+	withFakeApstoreAdminClient(t, fake)
+}
+
+func protocolSentryReferenceForTest(record sentryrefs.Record) protocol.SentryReferenceInfo {
+	return protocol.SentryReferenceInfo{
+		Schema: record.Schema, Name: record.Name, ComponentKey: record.ComponentKey, KeyType: record.KeyType,
+		PublicKeyEncoding: record.PublicKeyEncoding, PublicKeyHex: record.PublicKeyHex,
+		PublicKeySize: record.PublicKeySize, PublicKeySHA256: record.PublicKeySHA256,
+		Source: record.Source, EndpointAlias: record.EndpointAlias, LastSeenAt: record.LastSeenAt,
+		SyncedAt: record.SyncedAt, ImportedAt: record.ImportedAt,
+	}
 }
 
 func testSentryExportJSON(t *testing.T) []byte {

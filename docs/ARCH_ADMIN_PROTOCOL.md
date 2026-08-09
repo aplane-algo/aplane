@@ -42,7 +42,7 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
-- the current admin protocol version is 3.2; `auth_required` carries it as
+- the current admin protocol version is 4.1; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -54,6 +54,7 @@ Transport notes:
   formatted server rejections,
 - displacement negotiation is handled only by the `apadmin` TUI path and is identity-scoped internally,
 - generic clients observe some auth/displacement failures as formatted protocol errors rather than stable typed transport errors.
+- admin frames are bounded to 4 MiB before JSON decoding on both transports.
 
 ## Message Catalog
 
@@ -350,6 +351,20 @@ YAML-only runtime settings:
 Policy has no scalar admin setting surface. Read, validation, and mutation use
 `get_policy_snapshot`, `validate_policy`, and `replace_policy` with the complete
 canonical YAML document.
+
+### Sentry References And Generation Inventory
+
+- `list_sentry_references` -> `sentry_references_list`: `references[]`, optional `code`, `error`; returns identity-owned public sentry-reference records
+- `get_sentry_reference`: `name` -> `sentry_reference`: `success`, optional `reference`, `code`, `error`
+- `import_sentry_reference`: `name`, `envelope_json` -> `import_sentry_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the identity mutation lock
+- `remove_sentry_reference`: `name` -> `remove_sentry_reference_result`: `success`, `name`, `removed`, `code`, `error`
+- `export_sentry_public`: `witness_key_id` -> `export_sentry_public_result`: `success`, `witness_key_id`, `envelope_json`, `code`, `error`; only public witness metadata crosses the protocol
+- `list_generations` -> `generations_list`: current generation, sealed priors, pending attempts/staging, retained unsealed parent, `code`, `error`; this is read-only inspection and never reconciles or prunes
+
+Sentry-reference reads/exports require `sentries.view`; imports/removals require
+`sentries.manage` and emit mutation audit events. Generation inventory requires
+`generations.view`. `apstore generations prune` deliberately remains an
+offline recovery/maintenance operation.
 
 Key-type override semantics:
 

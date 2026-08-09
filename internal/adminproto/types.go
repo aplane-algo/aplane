@@ -228,6 +228,87 @@ type ReconcileStoreResult struct {
 	Error        string
 }
 
+// SentryReferenceInfo is the admin-domain projection of a stored public
+// sentry reference. It never contains private witness material.
+type SentryReferenceInfo struct {
+	Schema            string
+	Name              string
+	ComponentKey      string
+	KeyType           string
+	PublicKeyEncoding string
+	PublicKeyHex      string
+	PublicKeySize     int
+	PublicKeySHA256   string
+	Source            string
+	EndpointAlias     string
+	LastSeenAt        string
+	SyncedAt          string
+	ImportedAt        string
+}
+
+type ListSentryReferencesResult struct {
+	References []SentryReferenceInfo
+	Code       string
+	Error      string
+}
+
+type GetSentryReferenceRequest struct {
+	Name string
+}
+
+type GetSentryReferenceResult struct {
+	Success   bool
+	Reference SentryReferenceInfo
+	Code      string
+	Error     string
+}
+
+type ImportSentryReferenceRequest struct {
+	Name         string
+	EnvelopeJSON string
+}
+
+type ImportSentryReferenceResult struct {
+	Success   bool
+	Reference SentryReferenceInfo
+	Code      string
+	Error     string
+}
+
+type RemoveSentryReferenceRequest struct {
+	Name string
+}
+
+type RemoveSentryReferenceResult struct {
+	Success bool
+	Name    string
+	Removed bool
+	Code    string
+	Error   string
+}
+
+type ExportSentryPublicRequest struct {
+	WitnessKeyID string
+}
+
+type ExportSentryPublicResult struct {
+	Success      bool
+	WitnessKeyID string
+	EnvelopeJSON string
+	Code         string
+	Error        string
+}
+
+type GenerationInventory struct {
+	Current                string
+	SealedPriors           []string
+	PendingAttempts        []string
+	PendingStaging         []string
+	RetainedUnsealedParent string
+	Code                   string
+	Error                  string
+}
+
 // UpdateAdminSettingRequest is the admin-domain request to change one setting.
 type UpdateAdminSettingRequest struct {
 	Key   string

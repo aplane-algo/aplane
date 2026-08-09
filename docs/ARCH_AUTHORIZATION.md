@@ -255,6 +255,9 @@ grant accidentally contains the same typo.
 | `keys.export` | Export a key mnemonic (disabled) | `key` | Yes |
 | `keys.delete` | Delete a key | `key` | Yes |
 | `sentries.sync` | Sync public sentry reference metadata into the signer generation catalog | `sentries` | No |
+| `sentries.view` | List/show public sentry references and export public witness metadata | `sentry_references`, `sentry_reference`, `sentry_public` | No |
+| `sentries.manage` | Import or remove signer-owned public sentry references | `sentry_reference` | No |
+| `generations.view` | Inspect current and retained generation inventory | `generations` | No |
 | `keytypes.view` | List available key types | `keytypes` | No |
 | `keytypes.activate` | Activate a key type | `keytype` | Yes |
 | `keytypes.deactivate` | Deactivate a key type | `keytype` | Yes |
@@ -311,6 +314,9 @@ grants:
       - keys.export
       - keys.delete
       - sentries.sync
+      - sentries.view
+      - sentries.manage
+      - generations.view
       - keytypes.view
       - keytypes.activate
       - keytypes.deactivate

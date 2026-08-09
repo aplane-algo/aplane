@@ -52,6 +52,7 @@ const (
 	AuditStoreInitializeFailed      AuditEventType = "STORE_INITIALIZE_FAILED"
 	AuditPassphraseChanged          AuditEventType = "PASSPHRASE_CHANGED"
 	AuditPassphraseChangeFailed     AuditEventType = "PASSPHRASE_CHANGE_FAILED"
+	AuditSentryReferenceChanged     AuditEventType = "SENTRY_REFERENCE_CHANGED"
 )
 
 // AuditEntry represents a single audit log entry
@@ -714,5 +715,18 @@ func (a *AuditLogger) LogPassphraseChangeFailed(identityID, reason string) {
 	entry.Event = AuditPassphraseChangeFailed
 	entry.Outcome = "failed"
 	entry.Reason = reason
+	a.Log(entry)
+}
+
+// LogSentryReferenceChangedContext records authenticated online sentry
+// reference mutations without placing public-key material in the audit log.
+func (a *AuditLogger) LogSentryReferenceChangedContext(ctx adminserver.SessionContext, action, name string, success bool) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditSentryReferenceChanged
+	entry.Outcome = action
+	if !success {
+		entry.Outcome = "failed"
+	}
+	entry.Reason = fmt.Sprintf("action=%s name=%s", action, name)
 	a.Log(entry)
 }

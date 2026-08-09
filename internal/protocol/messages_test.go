@@ -84,6 +84,18 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeReplacePolicyResult,
 		MsgTypeValidatePolicy,
 		MsgTypeValidatePolicyResult,
+		MsgTypeListSentryReferences,
+		MsgTypeSentryReferencesList,
+		MsgTypeGetSentryReference,
+		MsgTypeSentryReference,
+		MsgTypeImportSentryReference,
+		MsgTypeImportSentryReferenceResult,
+		MsgTypeRemoveSentryReference,
+		MsgTypeRemoveSentryReferenceResult,
+		MsgTypeExportSentryPublic,
+		MsgTypeExportSentryPublicResult,
+		MsgTypeListGenerations,
+		MsgTypeGenerationsList,
 		MsgTypeClientExists,
 		MsgTypeDisplaceConfirm,
 		MsgTypeDisplaced,
@@ -98,9 +110,9 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-func TestCurrentAdminProtocolVersionIncludesDirectCredentialRestore(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 0}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.0", got)
+func TestCurrentAdminProtocolVersionIncludesStoreInspection(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 1}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.1", got)
 	}
 }
 

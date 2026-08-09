@@ -55,6 +55,7 @@ func writeStandaloneBackup(dir, address string, keyJSON, exportPassphrase []byte
 }
 
 type fakeApstoreAdminRequester struct {
+	requestFunc              func(any, any) error
 	requests                 []string
 	previewResult            protocol.RestorePreviewMessage
 	restoreResult            protocol.RestoreBackupResultMessage
@@ -84,6 +85,9 @@ type fakeApstoreAdminRequester struct {
 }
 
 func (f *fakeApstoreAdminRequester) request(msg any, out any) error {
+	if f.requestFunc != nil {
+		return f.requestFunc(msg, out)
+	}
 	switch typed := msg.(type) {
 	case protocol.BackupMessage:
 		f.requests = append(f.requests, typed.Type)

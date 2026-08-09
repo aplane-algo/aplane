@@ -39,6 +39,9 @@ const (
 	ActionKeysExport           Action = "keys.export"
 	ActionKeysDelete           Action = "keys.delete"
 	ActionSentriesSync         Action = "sentries.sync"
+	ActionSentriesView         Action = "sentries.view"
+	ActionSentriesManage       Action = "sentries.manage"
+	ActionGenerationsView      Action = "generations.view"
 	ActionKeyTypesView         Action = "keytypes.view"
 	ActionKeyTypesActivate     Action = "keytypes.activate"
 	ActionKeyTypesDeactivate   Action = "keytypes.deactivate"
@@ -76,6 +79,9 @@ var knownActions = map[Action]struct{}{
 	ActionKeysExport:           {},
 	ActionKeysDelete:           {},
 	ActionSentriesSync:         {},
+	ActionSentriesView:         {},
+	ActionSentriesManage:       {},
+	ActionGenerationsView:      {},
 	ActionKeyTypesView:         {},
 	ActionKeyTypesActivate:     {},
 	ActionKeyTypesDeactivate:   {},

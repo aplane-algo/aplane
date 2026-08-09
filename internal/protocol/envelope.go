@@ -46,6 +46,12 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeGetPolicySnapshot,
 		MsgTypeReplacePolicy,
 		MsgTypeValidatePolicy,
+		MsgTypeListSentryReferences,
+		MsgTypeGetSentryReference,
+		MsgTypeImportSentryReference,
+		MsgTypeRemoveSentryReference,
+		MsgTypeExportSentryPublic,
+		MsgTypeListGenerations,
 		MsgTypeDisplaceConfirm:
 		return MessageKindRequest, true
 	case MsgTypeAuthResult,
@@ -82,7 +88,13 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeUpdateAdminSettingResult,
 		MsgTypePolicySnapshot,
 		MsgTypeReplacePolicyResult,
-		MsgTypeValidatePolicyResult:
+		MsgTypeValidatePolicyResult,
+		MsgTypeSentryReferencesList,
+		MsgTypeSentryReference,
+		MsgTypeImportSentryReferenceResult,
+		MsgTypeRemoveSentryReferenceResult,
+		MsgTypeExportSentryPublicResult,
+		MsgTypeGenerationsList:
 		return MessageKindResponse, true
 	case MsgTypeAuthRequired,
 		MsgTypeStatus,
