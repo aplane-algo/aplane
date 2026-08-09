@@ -541,7 +541,7 @@ passphrase_command_argv:
     - $pass_file
 YAML"
     docker_exec chown aplane:aplane "$unlock_file"
-    docker_exec chmod 640 "$unlock_file"
+    docker_exec chmod 600 "$unlock_file"
 
     docker_exec systemctl start apsigner
 
@@ -605,7 +605,7 @@ passphrase_command_argv:
     - $cred_file
 YAML"
     docker_exec chown aplane:aplane "$unlock_file"
-    docker_exec chmod 640 "$unlock_file"
+    docker_exec chmod 600 "$unlock_file"
 
     docker_exec_bash "sed -i '/^\\[Service\\]\$/a LoadCredentialEncrypted=aplane-passphrase:$cred_file' /etc/systemd/system/apsigner.service"
     docker_exec systemctl daemon-reload
