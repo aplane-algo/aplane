@@ -68,6 +68,13 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	if err := fsutil.MkdirAllPrivate(metadataDir); err != nil {
 		return result, fmt.Errorf("failed to create user directory: %w", err)
 	}
+	// Prove that ownership normalization is possible before publishing the
+	// keystore control file. Root-run initialization may target a service-owned
+	// data directory; detecting chown failures after CreateKeyringStore would
+	// leave an initialized identity behind while reporting failure.
+	if err := chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths); err != nil {
+		return result, fmt.Errorf("failed to prepare initialized identity ownership: %w", err)
+	}
 
 	createdNodeRole := false
 	success := false
@@ -196,6 +203,13 @@ func chownIdentitiesTreeToDataDirOwner(dataDir string, paths storepaths.Paths) e
 		}
 		if !info.IsDir() && !info.Mode().IsRegular() {
 			return fmt.Errorf("refusing unexpected file type in initialized identities tree: %s", path)
+		}
+		entryStat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return fmt.Errorf("cannot determine ownership of initialized store entry %s", path)
+		}
+		if int(entryStat.Uid) == uid && int(entryStat.Gid) == gid {
+			return nil
 		}
 		if err := os.Lchown(path, uid, gid); err != nil {
 			return fmt.Errorf("set ownership on initialized store entry %s: %w", path, err)

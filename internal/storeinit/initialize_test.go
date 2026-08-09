@@ -257,6 +257,32 @@ func TestChownIdentitiesTreeRejectsSymlinkWithoutTouchingTarget(t *testing.T) {
 	}
 }
 
+func TestInitializeChecksOwnershipTreeBeforeCreatingKeyring(t *testing.T) {
+	dataDir := t.TempDir()
+	paths := storepaths.NewPaths(dataDir)
+	otherIdentity := paths.IdentityDir("other")
+	if err := os.MkdirAll(otherIdentity, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, []byte("unchanged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(otherIdentity, "planted")); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Initialize([]byte("init-passphrase"), Options{
+		DataDir: dataDir, Paths: paths, IdentityID: "default",
+	})
+	if err == nil || !strings.Contains(err.Error(), "prepare initialized identity ownership") {
+		t.Fatalf("Initialize() error = %v, want ownership preflight failure", err)
+	}
+	if crypto.KeyringExistsIn(paths.KeystoreMetadataDir("default")) {
+		t.Fatal("ownership preflight failure left a created keyring")
+	}
+}
+
 func fileOwnershipForTest(t *testing.T, info os.FileInfo) (uint32, uint32) {
 	t.Helper()
 	stat, ok := info.Sys().(*syscall.Stat_t)
