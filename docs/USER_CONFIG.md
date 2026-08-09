@@ -436,7 +436,11 @@ The admin protocol supports two transports:
 - remote SSH subsystem `aplane-admin` for `apadmin --remote`
 
 Local IPC remains the default admin transport:
-- socket created at `ipc_path` with 0660 permissions (owner and group)
+- systemd installs use `/run/apsigner/aplane.sock`: runtime directory `0750`,
+  socket `0660`, and no operator-group access to persistent signer state
+- same-UID local mode defaults to `$APSIGNER_DATA/aplane.sock`
+- `APSIGNER_IPC_PATH` or an explicit `-ipc-path` client option can override
+  discovery for custom deployments
 - cannot be snooped with tcpdump (no network stack)
 - local apadmin and apapprover connect via this socket
 
@@ -455,7 +459,8 @@ Example:
 apadmin --remote --client-data ~/aplane/apclient
 ```
 
-**Default IPC path**: `$APSIGNER_DATA/aplane.sock`
+**Default IPC path**: `/run/apsigner/aplane.sock` for systemd;
+`$APSIGNER_DATA/aplane.sock` for same-UID local mode.
 ### Data Directory Setup
 
 ```bash

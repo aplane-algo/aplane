@@ -135,8 +135,10 @@ The daemon verifies the archive before reporting success.
 Use `backup import` when you want to admit an external archive into the managed
 backup locker so it is visible to backup listing and restore flows. The command
 prompts for the export passphrase, decrypts and validates the encrypted key
-payloads, and publishes the archive under `<signer-data>/backups/<identity>/`
-only after the sealed inventory and every complete credential record validate.
+payloads, then streams bounded chunks over authenticated IPC. The daemon
+verifies size, checksum, and archive structure and publishes the archive under
+`<signer-data>/backups/<identity>/` only after the sealed inventory and every
+complete credential record validate.
 This check is local and does not need a TEAL compilation endpoint: LogicSig
 bytecode, argument contracts, and other durable signing metadata are carried
 by the credential itself, while templates are outside the backup contract.
@@ -146,7 +148,8 @@ or another vault. The first argument can be the managed archive filename or its
 checksum from `backup list`. The second argument is a destination directory,
 which is created if it does not exist. The exported file keeps the managed
 archive filename. The exported copy must match the managed archive checksum
-before the command reports success.
+before the command reports success. Import and export never require the
+operator to traverse the private signer store.
 
 ### Verify Backup
 
@@ -253,11 +256,33 @@ This environment variable works with most `apstore` commands that prompt for a p
 
 **Headless operation:** After initializing the keystore, use `appass` to configure identity-scoped startup passphrase handling such as `appass-file` or `appass-systemd-creds`. Advanced deployments may configure `passphrase_command_argv` directly, but `appass` is the normal tool for changing this mode. See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for examples.
 
-**Root mode:** Local data directories must be managed without `sudo`.
-Systemd data directories contain a `.prod` marker and must be managed
-with `sudo apstore -d /var/lib/apsigner ...` and
-`sudo appass -d /var/lib/apsigner`. The tools refuse the wrong mode before
-prompting or touching the store.
+**Execution mode:** Local data directories must be managed without `sudo`.
+For systemd stores, daemon-backed backup, restore, passphrase, template, key
+type, sentry-reference, and generation-list operations run as the operator over
+authenticated IPC. Offline bootstrap/rescue operations and `appass` require a
+stopped service and `sudo`. The tools refuse the wrong mode before prompting or
+touching the store.
+
+### Auditing and migrating systemd store permissions
+
+Production signer state is private to the service user: directories are
+`0700`, ordinary files are `0600`, and the operator group connects only to
+`/run/apsigner/aplane.sock`. The supported installer migrates eligible stopped
+stores automatically. For an explicit repair or diagnostic run:
+
+```bash
+sudo systemctl stop apsigner
+sudo apstore -d /var/lib/apsigner permissions migrate
+sudo apstore -d /var/lib/apsigner permissions audit
+sudo systemctl start apsigner
+```
+
+`permissions audit` is read-only. `permissions migrate` acquires the exclusive
+store lock and validates the whole legacy inventory before changing anything.
+It refuses unsafe ancestors, symlinks, hardlinks, sockets, devices, and other
+unexpected objects rather than repairing through them. `apsigner` performs the
+same private-profile audit before reading production configuration and refuses
+startup with a migration hint if the store is unsafe.
 
 ### Changing the Passphrase
 
@@ -599,7 +624,7 @@ From the key details view:
 |-----|--------|
 | `d` | Delete the selected key |
 | `t` | Open full TEAL display (LogicSig keys) |
-| `s` | Save TEAL to `identities/default/files/<address>.teal` when TEAL is available |
+| `s` | Save TEAL to the operator client data `files/` directory when TEAL is available |
 | `↑/↓` (or `k/j`) | Scroll key details |
 | `esc`, `enter`, `q` | Return to key list |
 
@@ -632,6 +657,10 @@ From the key details view:
 
 # Change keystore passphrase
 ./apstore changepass
+
+# Audit or migrate private store permissions (offline; systemd uses sudo)
+./apstore permissions audit
+./apstore permissions migrate
 
 # Policy integrity
 ./apstore policy check

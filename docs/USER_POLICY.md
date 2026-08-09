@@ -48,19 +48,21 @@ signer-domain `policy.yaml`, and sentry nodes edit sentry-domain
 whole-document replacements, writes the fresh sidecar, and activates the
 resulting runtime policy immediately.
 
-Use `appolicy` for offline or scriptable policy work. With `--target auto` (the
-default), `appolicy` reads `$APSIGNER_DATA/node.yaml`: signer nodes edit
-signer-domain `policy.yaml`, and sentry nodes edit sentry-domain
-`policy.yaml`.
+Use `appolicy --online` for a standalone guided or scriptable production
+client. It connects through authenticated admin IPC, selects the daemon's node
+role, and never needs filesystem access to the private signer store.
 
 ```bash
-appolicy -d "$APSIGNER_DATA"
-appolicy -d "$APSIGNER_DATA" -check
-appolicy -d "$APSIGNER_DATA" --sha256
-appolicy -d "$APSIGNER_DATA" --target signer
-appolicy -d "$APSIGNER_DATA" --target sentry
+appolicy --online
+appolicy --online -check
+appolicy --online --yaml > selected-policy.yaml
+appolicy --online --save < selected-policy.yaml
 appolicy draft-policy.yaml
 ```
+
+Bare `appolicy` remains the stopped-service rescue editor. With `--target
+auto` it reads `$APSIGNER_DATA/node.yaml`. On a systemd store, run this mode as
+root only while `apsigner` is stopped.
 
 Inside the TUI, `a` applies the current draft to production by writing
 the selected policy document plus a fresh sidecar. `w` writes the current
@@ -74,7 +76,7 @@ file, it validates that file without unlocking the store. If that file-backed
 draft is later applied to production with `a`, `appolicy` asks for the store
 passphrase at apply time.
 
-For byte-preserving scripted edits:
+For byte-preserving offline rescue edits:
 
 ```bash
 appolicy -d "$APSIGNER_DATA" --yaml > selected-policy.yaml
@@ -101,6 +103,10 @@ apstore -d "$APSIGNER_DATA" policy check
 apstore -d "$APSIGNER_DATA" policy sign
 apstore -d "$APSIGNER_DATA" policy verify
 ```
+
+These direct commands are offline maintenance operations; stop `apsigner` and
+use `sudo` for a systemd store. Normal production edits should use `apadmin` or
+`appolicy --online`.
 
 Direct YAML edits take effect only after the next successful signer reload,
 unlock, or restart. These are offline store mutations, so the normal workflow
@@ -371,8 +377,8 @@ to audit.
 
 Before relying on a policy:
 
-1. Run `appolicy -d "$APSIGNER_DATA" -check` or
-   `apstore -d "$APSIGNER_DATA" policy check`.
+1. Run `appolicy --online -check` (or an offline rescue check while the daemon
+   is stopped).
 2. Confirm the route miss behavior is intentional, especially
    `on_no_route: reject`, `close_on_no_route: reject`, and
    `clawback_on_no_route: reject`.

@@ -42,6 +42,9 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
+- systemd local IPC is discovered at `/run/apsigner/aplane.sock` without
+  reading private signer configuration; same-UID local mode may use
+  `<data_dir>/aplane.sock`,
 - the current admin protocol version is 4.2; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches

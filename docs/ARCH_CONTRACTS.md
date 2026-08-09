@@ -801,10 +801,11 @@ each selected target it then:
   `apenv.sh` is found, emit a warning telling the operator to export the value
   before starting `apconsole`
 
-All file writes use a temporary file followed by atomic rename. Existing target
-mode and ownership are preserved where possible; newly created files use the
-mode supplied by the mutator (`0640` for signer config, `0644` for client
-config/plugin/env files).
+All file writes use a temporary file, file sync, atomic rename, and directory
+sync. Existing ownership is preserved where possible; existing modes are
+clamped to the mutator's ceiling. Newly created files use `0600` for signer
+config and `0644` for client config/plugin/env files. Symlink and non-regular
+targets are rejected.
 
 ### Passphrase Helper Contract
 
@@ -885,14 +886,22 @@ execution, output decoding, environment filtering, and validation.
 
 Additional signer-state notes:
 
-- admin IPC listens on resolved `ipc_path`; default is `<data_dir>/aplane.sock`, but an absolute `ipc_path` may place the socket outside the signer data dir
+- production signer directories are service-owned mode `0700` and ordinary
+  signer files are service-owned mode `0600`; the recognized root-owned
+  exceptions are `identities/<identity>/passphrase.cred` (`root:root`, `0600`)
+  and installer metadata under `install/`
+- systemd admin IPC defaults to `/run/apsigner/aplane.sock`; the runtime
+  directory is service-owned `0750` and the socket is `0660`. Same-UID local
+  mode defaults to `<data_dir>/aplane.sock`. `APSIGNER_IPC_PATH` or an explicit
+  `ipc_path` overrides discovery where supported.
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
 - signer-managed backup archives are written under
   `<data_dir>/backups/<identity>/`; the archive contains `README.md` and
   `apb/*.apb` encrypted canonical credential payloads plus `manifest.sealed`
-- imported backup archives are validated and published under
-  `<data_dir>/backups/<identity>/`, making the backup locker the source for
-  restorable archives
+- imported backup archives are validated by the operator client, streamed to
+  the daemon in bounded admin-protocol chunks, and atomically published under
+  `<data_dir>/backups/<identity>/`; exports stream bounded chunks in the other
+  direction, so operators never need filesystem access to the private locker
 - signer `cache/<network>_asa_cache.json` is signer-wide public ASA metadata for policy editing/rendering; it is not identity-scoped and is not authoritative for policy enforcement
 - signer cache files use the same signed JSON/HMAC envelope as client cache files, with `cache/.cache_key` scoped to the signer cache root
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation

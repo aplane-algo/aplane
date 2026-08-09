@@ -801,12 +801,14 @@ role-incompatible targets fail closed. `apadmin` uses the same node-role target
 selection online. There is no scalar policy-settings IPC. The shared
 full-document editor renders and saves transfer policy through canonical YAML.
 
-`appolicy` is the local offline policy editor. In production mode it defaults
-to `--target auto`, reads root `node.yaml`, and edits `policy.yaml` using the
-signer or sentry policy domain selected by the node role. It verifies the
-HMAC sidecar with the store passphrase, validates changes through the same
-runtime compiler as `apsigner`, and applies the draft to production by saving
-the document plus a fresh sidecar while holding the store mutation lock.
+`appolicy --online` is the normal production editor. It obtains the active
+node-role policy snapshot through authenticated admin IPC, validates the exact
+YAML through the daemon, and replaces it through the daemon-owned mutation
+path. Bare/offline `appolicy` is a stopped-service rescue tool: it reads root
+`node.yaml`, verifies the HMAC sidecar with the store passphrase, validates
+changes through the same runtime compiler as `apsigner`, and applies the draft
+by saving the document plus a fresh sidecar while holding the store mutation
+lock. On a systemd store, offline use requires root.
 When opened with a standalone YAML file, it validates the file without
 unlocking the production store; applying that file-backed draft to production
 is the operation that asks for the passphrase. The TUI exposes common policy

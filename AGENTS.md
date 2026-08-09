@@ -14,6 +14,7 @@ Before making architectural, protocol, storage, or refactor-sensitive changes, r
 - `docs/ARCH_SENTRY.md`: guarded signing and sentry node architecture, sentry keys, endpoint routing, and assembly invariants
 - `docs/ARCH_BOUNDED_DSA.md`: bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
 - `docs/ARCH_CORRIDOR.md`: Corridor v1 composition, custody roles, bounded-sentry choreography, close behavior, and compiler budgets
+- `docs/ARCH_STORE_OWNERSHIP.md`: private signer-store ownership, runtime IPC boundary, offline maintenance, and permission migration
 
 Before generating or modifying key types or LogicSig templates, also read:
 
@@ -37,8 +38,9 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `cmd/apapprover/`: Approval-only admin client over IPC
 - `cmd/apstore/`: Local initialize/policy/verify/rebuild operations and
   admin-protocol clients for daemon-owned backup, restore, changepass,
-  template, and key type operations
-- `cmd/appolicy/`: Offline policy checker/editor TUI for the node-role policy document (`policy.yaml`, parsed as signer policy on signer nodes and sentry policy on sentry nodes)
+  template, key type, sentry-reference, generation-list, and backup-transfer
+  operations; also owns offline permission audit/migration
+- `cmd/appolicy/`: Policy checker/editor TUI with authenticated `--online` mode and explicit offline rescue mode for the node-role policy document (`policy.yaml`, parsed as signer policy on signer nodes and sentry policy on sentry nodes)
 - `cmd/appass/`: Passphrase auto-unlock setup TUI
 - `cmd/appass-file/`: Dev-only plaintext passphrase helper (insecure)
 - `cmd/appass-systemd-creds/`: Production passphrase helper using systemd-creds (TPM2/host key)

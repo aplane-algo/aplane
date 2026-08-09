@@ -202,6 +202,12 @@ admin auth message
   -> admin operation
 ```
 
+Membership in the operating-system `aplane` group grants only the ability to
+traverse `/run/apsigner` and connect to `aplane.sock`. It grants no access to
+the private signer store and is distinct from the authorization-model group
+`system:product-admins`. The admin passphrase, principal mapping, identity
+binding, and action grant are still required after socket connection.
+
 Auth-time unlock is authorization-gated before the runtime is unlocked.
 Explicit admin lock requests use `identity.lock` for the bound identity.
 Admin disconnect cleanup applies the bound identity's `lock_on_disconnect`

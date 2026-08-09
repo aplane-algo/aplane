@@ -1,6 +1,6 @@
 # Signer Store Ownership Architecture
 
-**Status:** migration in progress on `codex/collapse-group-trust-tier`.
+**Status:** implemented.
 
 This document is the source of truth for which process may access or mutate
 `APSIGNER_DATA`. It complements the on-disk format contract in
@@ -14,7 +14,7 @@ the local administrative IPC socket. It does not grant signer-store authority,
 an authenticated admin session, an application grant, or direct access to
 encrypted custody material.
 
-The target systemd deployment has two distinct filesystem roots:
+The systemd deployment has two distinct filesystem roots:
 
 - `/var/lib/apsigner` is service-user-owned private state (`0700` directories,
   `0600` files). `apsigner` is its sole normal-runtime writer.
@@ -62,7 +62,8 @@ they do not call the storage packages directly.
 
 Offline mutations require a stopped daemon, exclusive store lock, no-follow
 inventory validation, and the installation-mode owner check. They preserve the
-narrow root-owned `identities/<identity>/passphrase.cred` exception.
+narrow root-owned `identities/<identity>/passphrase.cred` exception and the
+installer-owned `install/` metadata artifacts.
 
 ### External-file-only operations
 
@@ -70,19 +71,15 @@ Backup inspection and validation of explicitly supplied external artifacts do
 not require signer-store access. Output selected by an operator is created as
 operator-owned state outside `APSIGNER_DATA`.
 
-### Transitional direct clients to eliminate
+### Operator clients
 
-These are known migration dependencies, not approved target-state access:
-
-| Client | Current direct dependency | Replacement |
-|---|---|---|
-| `apadmin` | signer `config.yaml`, root node role, signer cache files, identity-local TEAL output | public socket resolver, authenticated settings/server-side resolution, operator output directory |
-| `apapprover` | signer config for IPC discovery | public socket resolver |
-| daemon-backed `apstore` | signer config before command routing; sentry references and generation list are direct | public socket resolver and typed admin operations |
-| `appolicy` | offline-only store and node-role reads | implemented online policy adapter; keep explicit recovery mode |
-| `approbe` | signer config parsing for socket discovery | public socket resolver |
-| systemd-attach `apconsole` | signer config and node-role reads | public socket resolver and authenticated settings |
-| same-UID child `apconsole` | signer config and node role | retained as an explicit same-UID exception |
+The multi-UID clients `apadmin`, `apapprover`, `approbe`, systemd-attach
+`apconsole`, daemon-backed `apstore`, and online `appolicy` resolve the public
+runtime socket without reading signer configuration. Policy editing,
+sentry-reference administration, generation listing, and managed backup
+transfer use typed admin operations. Operator-selected exports are written to
+operator-owned locations. Same-UID child `apconsole` retains direct config and
+node-role access as an explicit local-mode exception.
 
 ## Filesystem primitives
 
@@ -91,15 +88,24 @@ closed artifact profile rather than arbitrary mode/UID/GID combinations. A
 durable replacement uses a random exclusive temporary regular file, applies
 ownership and its permission ceiling to the unpublished file descriptor,
 syncs it, renames it in the destination directory, and syncs that directory.
-Symlink and non-regular destinations are rejected. The transitional legacy
-profile is named explicitly and is removed after supported stores migrate.
+Symlink and non-regular destinations are rejected. The legacy profile remains
+internal to pre-migration validation; normal writers use private profiles.
 
-`internal/storeperm` owns read-only audit and, eventually, migration/startup
-validation. It inventories without following symlinks and reports unsafe
-ancestors, ownership, modes, hardlinks, and unexpected file types. A clean
-audit is authority to proceed; an incomplete audit is not.
+`internal/storeperm` owns read-only audit, stopped-service migration, and the
+startup permission contract. It inventories without following symlinks and
+reports unsafe ancestors, ownership, modes, hardlinks, and unexpected file
+types. Migration validates the complete legacy inventory before mutation,
+removes group access at the root first, repairs recognized objects through
+opened descriptors, syncs directories, and independently audits the private
+result. A clean audit is authority to proceed; an incomplete audit is not.
 
-## Rollout invariants
+`apstore permissions audit` is read-only. `apstore permissions migrate`
+requires the normal offline execution mode and exclusive store lock. A
+systemd-managed daemon checks the private profile before loading configuration
+or opening the store lock and refuses startup with a migration command when it
+finds unsafe state.
+
+## Implemented rollout
 
 The migration order is fixed:
 
@@ -109,7 +115,12 @@ The migration order is fixed:
 4. move the socket to the protected runtime directory;
 5. audit and migrate a stopped legacy store;
 6. enable strict startup enforcement and private creation defaults;
-7. delete the legacy group-shared paths.
+7. remove legacy group-shared behavior from normal writers, retaining only the
+   read-only legacy profile needed to validate supported upgrades.
 
-At no point may the store become `0700` before every normal multi-UID client
-can find and use the runtime socket without traversing the store.
+The systemd installer performs this ordering while the service is stopped and
+runs both migration and post-migration audit before starting the daemon.
+Fresh systemd stores are created private. Supported upgrades clamp existing
+stores before restart. The systemd smoke test proves that an operator-group
+user cannot traverse `/var/lib/apsigner` while the same user can reach
+`/run/apsigner/aplane.sock`.

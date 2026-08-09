@@ -338,9 +338,10 @@ See [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
 - Durability primitives: `fsutil.WriteFileDurable`/`SyncDir`/`RemoveDurable`
   exclusively for commit-path writes; `fsutil.TestHook` is the crash-matrix
   injection seam.
-- Ownership: copies preserve mode and group per `WriteFileDurable` semantics;
-  `normalizeManagedStoreOwnership`'s `WalkDir` + `Lchown` covers
-  `generations/**` automatically (verified symlink-safe).
+- Ownership: generation directories are service-private `0700`; copied files
+  clamp legacy source modes to the `0600` ceiling. Offline root mutations run
+  the descriptor-based private-store reconciler, which covers
+  `generations/**` and rejects symlinks and hardlinks before repair.
 - The `.key`/`.sen` literal ownership arch test constrains new code to route
   filenames through `internal/keys` (verified constraint, kept).
 
