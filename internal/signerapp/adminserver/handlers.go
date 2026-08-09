@@ -324,6 +324,76 @@ func (s *Session) HandleDeleteBackup(msg *protocol.DeleteBackupMessage) {
 	_ = s.WriteJSON(ProtocolDeleteBackupResultMessage(msg.ID, result))
 }
 
+func (s *Session) HandleBeginBackupImport(msg *protocol.BeginBackupImportMessage) {
+	ir := s.requireUnlockedRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+		return
+	}
+	result := s.backupServices.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: msg.FileName})
+	_ = s.WriteJSON(ProtocolBeginBackupImportResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleAppendBackupImport(msg *protocol.AppendBackupImportMessage) {
+	ir := s.requireUnlockedRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup_upload", ID: msg.UploadID, IdentityID: ir.ID()}) {
+		return
+	}
+	result := s.backupServices.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: msg.UploadID, Offset: msg.Offset, Data: msg.Data})
+	_ = s.WriteJSON(ProtocolAppendBackupImportResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessage) {
+	ir := s.requireUnlockedRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+		return
+	}
+	result := s.backupServices.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+		UploadID: msg.UploadID, FileName: msg.FileName,
+		ExpectedSize: msg.ExpectedSize, ExpectedSHA256: msg.ExpectedSHA256,
+	})
+	if result.Success {
+		if audit, ok := s.audit.(interface {
+			LogBackupImportedContext(SessionContext, string, int64)
+		}); ok {
+			audit.LogBackupImportedContext(s.SessionContext(), result.Backup.FileName, result.Backup.Size)
+		}
+	}
+	_ = s.WriteJSON(ProtocolCommitBackupImportResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleAbortBackupImport(msg *protocol.AbortBackupImportMessage) {
+	ir := s.requireBoundRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup_upload", ID: msg.UploadID, IdentityID: ir.ID()}) {
+		return
+	}
+	result := s.backupServices.AbortBackupImport(ir, adminproto.AbortBackupImportRequest{UploadID: msg.UploadID})
+	_ = s.WriteJSON(ProtocolAbortBackupImportResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
+	ir := s.requireBoundRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+		return
+	}
+	result := s.backupServices.ReadBackupChunk(ir, adminproto.ReadBackupChunkRequest{FileName: msg.FileName, Offset: msg.Offset})
+	_ = s.WriteJSON(ProtocolBackupChunkMessage(msg.ID, result))
+}
+
 func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphraseMessage) {
 	defer msg.CurrentPassphrase.Zero()
 	defer msg.NewPassphrase.Zero()

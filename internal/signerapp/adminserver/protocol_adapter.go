@@ -146,6 +146,26 @@ func ProtocolDeleteBackupResultMessage(id string, result adminproto.DeleteBackup
 	}
 }
 
+func ProtocolBeginBackupImportResultMessage(id string, result adminproto.BeginBackupImportResult) protocol.BeginBackupImportResultMessage {
+	return protocol.BeginBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeBeginBackupImportResult, ID: id}, Success: result.Success, UploadID: result.UploadID, Code: result.Code, Error: result.Error}
+}
+
+func ProtocolAppendBackupImportResultMessage(id string, result adminproto.AppendBackupImportResult) protocol.AppendBackupImportResultMessage {
+	return protocol.AppendBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAppendBackupImportResult, ID: id}, Success: result.Success, NextOffset: result.NextOffset, Code: result.Code, Error: result.Error}
+}
+
+func ProtocolCommitBackupImportResultMessage(id string, result adminproto.CommitBackupImportResult) protocol.CommitBackupImportResultMessage {
+	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocol.BackupInfo{Path: result.Backup.Path, FileName: result.Backup.FileName, CreatedAt: result.Backup.CreatedAt, Size: result.Backup.Size, Checksum: result.Backup.Checksum, Verified: result.Backup.Verified}, Code: result.Code, Error: result.Error}
+}
+
+func ProtocolAbortBackupImportResultMessage(id string, result adminproto.AbortBackupImportResult) protocol.AbortBackupImportResultMessage {
+	return protocol.AbortBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAbortBackupImportResult, ID: id}, Success: result.Success, Code: result.Code, Error: result.Error}
+}
+
+func ProtocolBackupChunkMessage(id string, result adminproto.ReadBackupChunkResult) protocol.BackupChunkMessage {
+	return protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeBackupChunk, ID: id}, Success: result.Success, FileName: result.FileName, Offset: result.Offset, Data: result.Data, EOF: result.EOF, Code: result.Code, Error: result.Error}
+}
+
 func ProtocolInitializeStoreResultMessage(id string, result adminproto.InitializeStoreResult) protocol.InitializeStoreResultMessage {
 	return protocol.InitializeStoreResultMessage{
 		BaseMessage: protocol.BaseMessage{

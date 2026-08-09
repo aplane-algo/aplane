@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"time"
 
 	apbackup "github.com/aplane-algo/aplane/internal/backup"
@@ -71,6 +73,7 @@ type fakeApstoreAdminRequester struct {
 	activateResult           protocol.ActivateKeyTypeResultMessage
 	deactivateResult         protocol.DeactivateKeyTypeResultMessage
 	changePassphraseResult   protocol.ChangeStorePassphraseResultMessage
+	backupExportData         []byte
 	restoreRequest           protocol.RestoreBackupMessage
 	backupRequest            protocol.BackupMessage
 	deleteBackupRequest      protocol.DeleteBackupMessage
@@ -114,6 +117,21 @@ func (f *fakeApstoreAdminRequester) request(msg any, out any) error {
 			return errors.New("delete backup output has unexpected type")
 		}
 		*result = f.deleteBackupResult
+		return nil
+	case protocol.ReadBackupChunkMessage:
+		f.requests = append(f.requests, typed.Type)
+		result, ok := out.(*protocol.BackupChunkMessage)
+		if !ok {
+			return errors.New("backup chunk output has unexpected type")
+		}
+		if typed.Offset < 0 || typed.Offset > int64(len(f.backupExportData)) {
+			return errors.New("invalid backup chunk offset")
+		}
+		end := typed.Offset + adminproto.BackupTransferChunkBytes
+		if end > int64(len(f.backupExportData)) {
+			end = int64(len(f.backupExportData))
+		}
+		*result = protocol.BackupChunkMessage{Success: true, FileName: typed.FileName, Offset: typed.Offset, Data: append([]byte(nil), f.backupExportData[typed.Offset:end]...), EOF: end == int64(len(f.backupExportData))}
 		return nil
 	case protocol.PreviewRestoreMessage:
 		f.requests = append(f.requests, typed.Type)

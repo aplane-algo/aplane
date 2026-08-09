@@ -241,6 +241,21 @@ func (s *stubServices) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteB
 	s.lastDeleteBackup = req
 	return s.deleteBackupResult
 }
+func (*stubServices) BeginBackupImport(*identity.Runtime, adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
+	return adminproto.BeginBackupImportResult{}
+}
+func (*stubServices) AppendBackupImport(*identity.Runtime, adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
+	return adminproto.AppendBackupImportResult{}
+}
+func (*stubServices) CommitBackupImport(*identity.Runtime, adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+	return adminproto.CommitBackupImportResult{}
+}
+func (*stubServices) AbortBackupImport(*identity.Runtime, adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
+	return adminproto.AbortBackupImportResult{}
+}
+func (*stubServices) ReadBackupChunk(*identity.Runtime, adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
+	return adminproto.ReadBackupChunkResult{}
+}
 func (s *stubServices) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
 	s.previewRestoreCalls++
 	s.lastPreviewRestore = adminproto.PreviewRestoreRequest{

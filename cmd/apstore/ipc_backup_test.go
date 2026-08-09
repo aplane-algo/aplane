@@ -101,6 +101,7 @@ func TestCmdBackupExportCopiesChecksumMatchIntoDestinationDirectory(t *testing.T
 		t.Fatalf("FileSHA256() error = %v", err)
 	}
 	fake := &fakeApstoreAdminRequester{
+		backupExportData: []byte("archive"),
 		listBackupsResult: protocol.BackupsListMessage{
 			Backups: []protocol.BackupInfo{{
 				FileName: "aplane-backup-20260423-010203.tar.gz",
@@ -117,8 +118,8 @@ func TestCmdBackupExportCopiesChecksumMatchIntoDestinationDirectory(t *testing.T
 	if err := cmdBackupExport(checksum, destinationDir); err != nil {
 		t.Fatalf("cmdBackupExport(checksum) error = %v", err)
 	}
-	if strings.Join(fake.requests, ",") != protocol.MsgTypeListBackups {
-		t.Fatalf("requests = %v, want list_backups", fake.requests)
+	if strings.Join(fake.requests, ",") != protocol.MsgTypeListBackups+","+protocol.MsgTypeReadBackupChunk {
+		t.Fatalf("requests = %v, want list_backups then read_backup_chunk", fake.requests)
 	}
 	exportedPath := filepath.Join(destinationDir, "aplane-backup-20260423-010203.tar.gz")
 	exported, err := os.ReadFile(exportedPath)

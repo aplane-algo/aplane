@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -296,39 +297,11 @@ func cmdBackupImport(args []string) error {
 		return fmt.Errorf("backup source must be a regular file: %s", source)
 	}
 
-	backupDir := keystorePaths().IdentityBackupsDir(productIdentityID())
-	for _, dir := range []string{keystorePaths().BackupsRootDir(), backupDir} {
-		if err := fsutil.MkdirAll(dir); err != nil {
-			return fmt.Errorf("failed to create backup directory: %w", err)
-		}
-	}
-
 	name := filepath.Base(source)
-	dest := filepath.Join(backupDir, name)
-	if _, err := os.Lstat(dest); err == nil {
-		return fmt.Errorf("managed backup already exists: %s", name)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("failed to inspect backup import destination: %w", err)
-	}
-
-	tmp, err := os.CreateTemp(backupDir, ".import-*.tar.gz")
-	if err != nil {
-		return fmt.Errorf("failed to create backup import file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	_ = tmp.Close()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	if err := copyFile(source, tmpPath); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpPath, fsutil.StoreFilePerm); err != nil {
-		return fmt.Errorf("failed to set backup archive permissions: %w", err)
-	}
-	if _, err := backup.StatManagedBackupArchive(tmpPath); err != nil {
+	if _, err := backup.StatManagedBackupArchive(source); err != nil {
 		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
 	}
-	sourceRoot, cleanup, err := backup.PrepareRestoreSource(tmpPath)
+	sourceRoot, cleanup, err := backup.PrepareRestoreSource(source)
 	if err != nil {
 		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
 	}
@@ -336,16 +309,76 @@ func cmdBackupImport(args []string) error {
 	if err := validateImportedBackupContents(sourceRoot); err != nil {
 		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup contents: %v", err)}
 	}
-	if err := os.Rename(tmpPath, dest); err != nil {
-		return fmt.Errorf("failed to publish imported backup archive: %w", err)
-	}
-	if err := normalizeImportedBackupOwnership(backupDir, dest); err != nil {
-		return fmt.Errorf("failed to normalize imported backup ownership: %w", err)
-	}
-	checksum, size, err := backup.FileSHA256(dest)
+	checksum, size, err := backup.FileSHA256(source)
 	if err != nil {
-		return fmt.Errorf("failed to checksum imported backup archive: %w", err)
+		return fmt.Errorf("failed to checksum backup source: %w", err)
 	}
+	client, err := newApstoreAdminClientForCommand()
+	if err != nil {
+		return err
+	}
+	defer client.close()
+	var begin protocol.BeginBackupImportResultMessage
+	if err := client.request(protocol.BeginBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeBeginBackupImport, ID: newApstoreRequestID("backup-import-begin")},
+		FileName:    name,
+	}, &begin); err != nil {
+		return err
+	}
+	if !begin.Success {
+		return resultError("backup import failed", begin.Code, begin.Error)
+	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		var ignored protocol.AbortBackupImportResultMessage
+		_ = client.request(protocol.AbortBackupImportMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAbortBackupImport, ID: newApstoreRequestID("backup-import-abort")},
+			UploadID:    begin.UploadID,
+		}, &ignored)
+	}()
+	file, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	buffer := make([]byte, adminproto.BackupTransferChunkBytes)
+	var offset int64
+	for {
+		n, readErr := file.Read(buffer)
+		if n > 0 {
+			var appended protocol.AppendBackupImportResultMessage
+			if err := client.request(protocol.AppendBackupImportMessage{
+				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAppendBackupImport, ID: newApstoreRequestID("backup-import-append")},
+				UploadID:    begin.UploadID, Offset: offset, Data: append([]byte(nil), buffer[:n]...),
+			}, &appended); err != nil {
+				return err
+			}
+			if !appended.Success {
+				return resultError("backup import failed", appended.Code, appended.Error)
+			}
+			offset = appended.NextOffset
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+	var commit protocol.CommitBackupImportResultMessage
+	if err := client.request(protocol.CommitBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImport, ID: newApstoreRequestID("backup-import-commit")},
+		UploadID:    begin.UploadID, FileName: name, ExpectedSize: size, ExpectedSHA256: checksum,
+	}, &commit); err != nil {
+		return err
+	}
+	if !commit.Success {
+		return resultError("backup import failed", commit.Code, commit.Error)
+	}
+	committed = true
 	logInfof("backup imported: %s", name)
 	logInfof("size: %s", backup.FormatFileSize(size))
 	logInfof("checksum: %s", checksum)
@@ -382,26 +415,6 @@ func validateImportedBackupContents(sourceRoot string) error {
 	return nil
 }
 
-func normalizeImportedBackupOwnership(backupDir, archivePath string) error {
-	if currentEUID() != 0 {
-		return nil
-	}
-	info, err := os.Stat(dataDirectory)
-	if err != nil {
-		return err
-	}
-	uid, gid, err := fileOwnerGroup(info)
-	if err != nil {
-		return err
-	}
-	for _, path := range []string{keystorePaths().BackupsRootDir(), backupDir, archivePath} {
-		if err := os.Lchown(path, uid, gid); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func cmdBackupExport(name, destinationDir string) error {
 	if backup.IsArchivePath(destinationDir) {
 		return fmt.Errorf("backup export destination must be a directory, not an archive path: %s", destinationDir)
@@ -418,7 +431,12 @@ func cmdBackupExport(name, destinationDir string) error {
 		destinationDirExists = true
 	}
 
-	info, err := findManagedBackup(name)
+	client, err := newApstoreAdminClientForCommand()
+	if err != nil {
+		return err
+	}
+	defer client.close()
+	info, err := findManagedBackupWithClient(client, name)
 	if err != nil {
 		return err
 	}
@@ -434,10 +452,58 @@ func cmdBackupExport(name, destinationDir string) error {
 	}
 
 	destination := filepath.Join(destinationDir, fileName)
-	if err := copyFile(info.Path, destination); err != nil {
+	if _, err := os.Lstat(destination); err == nil {
+		return fmt.Errorf("backup export destination already exists: %s", destination)
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-	checksum, size, err := backup.FileSHA256(destination)
+	tmp, err := os.CreateTemp(destinationDir, ".aplane-backup-export-*.part")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		return err
+	}
+	var offset int64
+	for {
+		var chunk protocol.BackupChunkMessage
+		if err := client.request(protocol.ReadBackupChunkMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeReadBackupChunk, ID: newApstoreRequestID("backup-export-chunk")},
+			FileName:    info.FileName, Offset: offset,
+		}, &chunk); err != nil {
+			return err
+		}
+		if !chunk.Success {
+			return resultError("backup export failed", chunk.Code, chunk.Error)
+		}
+		if chunk.Offset != offset {
+			return fmt.Errorf("backup export returned offset %d, expected %d", chunk.Offset, offset)
+		}
+		if len(chunk.Data) > 0 {
+			if _, err := tmp.Write(chunk.Data); err != nil {
+				return err
+			}
+			offset += int64(len(chunk.Data))
+		}
+		if chunk.EOF {
+			break
+		}
+		if len(chunk.Data) == 0 {
+			return fmt.Errorf("backup export returned empty non-final chunk")
+		}
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	checksum, size, err := backup.FileSHA256(tmpPath)
 	if err != nil {
 		return fmt.Errorf("failed to verify exported backup: %w", err)
 	}
@@ -446,6 +512,12 @@ func cmdBackupExport(name, destinationDir string) error {
 	}
 	if info.Checksum != "" && checksum != info.Checksum {
 		return codedError{code: "verification_failed", message: fmt.Sprintf("exported backup checksum mismatch: got %s, want %s", checksum, info.Checksum)}
+	}
+	if err := os.Rename(tmpPath, destination); err != nil {
+		return err
+	}
+	if err := fsutil.SyncDir(destinationDir); err != nil {
+		return err
 	}
 	logInfof("backup exported: %s", destination)
 	logInfof("checksum: %s", checksum)
@@ -480,15 +552,6 @@ func cmdBackupDelete(name string) error {
 	}
 	logInfof("managed backup deleted: %s", info.FileName)
 	return nil
-}
-
-func findManagedBackup(name string) (protocol.BackupInfo, error) {
-	client, err := newApstoreAdminClientForCommand()
-	if err != nil {
-		return protocol.BackupInfo{}, err
-	}
-	defer client.close()
-	return findManagedBackupWithClient(client, name)
 }
 
 func findManagedBackupWithClient(client apstoreAdminRequester, name string) (protocol.BackupInfo, error) {
@@ -555,24 +618,4 @@ func resultError(prefix, code, message string) error {
 		message = "operation failed"
 	}
 	return codedError{prefix: prefix, code: code, message: message}
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("failed to open managed backup: %w", err)
-	}
-	defer func() { _ = in.Close() }()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		return fmt.Errorf("failed to create destination backup: %w", err)
-	}
-	defer func() { _ = out.Close() }()
-	if _, err := io.Copy(out, in); err != nil {
-		return fmt.Errorf("failed to copy backup: %w", err)
-	}
-	if err := out.Sync(); err != nil {
-		return fmt.Errorf("failed to sync destination backup: %w", err)
-	}
-	return nil
 }

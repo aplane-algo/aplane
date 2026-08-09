@@ -304,6 +304,26 @@ func (s signerAdminServices) DeleteBackup(ir *identity.Runtime, req adminproto.D
 	return s.backupApp().DeleteBackup(ir, req)
 }
 
+func (s signerAdminServices) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
+	return s.backupApp().BeginBackupImport(ir, req)
+}
+
+func (s signerAdminServices) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
+	return s.backupApp().AppendBackupImport(ir, req)
+}
+
+func (s signerAdminServices) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+	return s.backupApp().CommitBackupImport(ir, req)
+}
+
+func (s signerAdminServices) AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
+	return s.backupApp().AbortBackupImport(ir, req)
+}
+
+func (s signerAdminServices) ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
+	return s.backupApp().ReadBackupChunk(ir, req)
+}
+
 func (s signerAdminServices) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
 	return s.backupApp().PreviewRestore(ir, req)
 }

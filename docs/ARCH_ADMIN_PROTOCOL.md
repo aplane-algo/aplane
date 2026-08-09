@@ -42,7 +42,7 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
-- the current admin protocol version is 4.1; `auth_required` carries it as
+- the current admin protocol version is 4.2; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -156,6 +156,11 @@ Client to Server:
 - `backup`
 - `list_backups`
 - `delete_backup`
+- `begin_backup_import`
+- `append_backup_import`
+- `commit_backup_import`
+- `abort_backup_import`
+- `read_backup_chunk`
 - `preview_restore`
 - `restore_backup`
 - `rollback_restore`
@@ -166,6 +171,11 @@ Server to Client:
 - `backup_result`
 - `backups_list`
 - `delete_backup_result`
+- `begin_backup_import_result`
+- `append_backup_import_result`
+- `commit_backup_import_result`
+- `abort_backup_import_result`
+- `backup_chunk`
 - `restore_preview`
 - `restore_backup_result`
 - `rollback_restore_result`
@@ -279,6 +289,15 @@ mode.
   sessions in either unlocked or recovery state so the TUI can select repair
   material while signing remains blocked.
 - `delete_backup`: `archive_path` -> `delete_backup_result`.
+- backup import is a bounded transfer: `begin_backup_import` allocates a
+  daemon-owned temporary archive and returns an opaque `upload_id`;
+  `append_backup_import` accepts at most 256 KiB at the exact next `offset`;
+  `commit_backup_import` verifies the declared size and SHA-256, validates the
+  archive structure, and atomically publishes it; `abort_backup_import`
+  durably removes an incomplete upload.
+- `read_backup_chunk`: `file_name`, `offset` -> `backup_chunk`: `file_name`,
+  `offset`, at most 256 KiB of `data`, and `eof`. This lets an operator export
+  a managed archive without filesystem access to the private signer store.
 - `preview_restore`: `archive_path`, sensitive `export_passphrase` ->
   `restore_preview`: resolved archive path, `keys[]`, `errors[]`, optional
   `code`, `error`. Each key reports address, key type, destination

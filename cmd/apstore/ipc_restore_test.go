@@ -4,22 +4,29 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
+	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 func TestCmdBackupImportRejectsInvalidSources(t *testing.T) {
 	oldDataDirectory := dataDirectory
 	dataDirectory = t.TempDir()
 	defer func() { dataDirectory = oldDataDirectory }()
+	withLocalBackupTransferClient(t)
 
 	if err := cmdBackupImport([]string{filepath.Join(t.TempDir(), "backup.zip")}); err == nil {
 		t.Fatal("cmdBackupImport(non-archive) error = nil, want extension rejection")
@@ -40,6 +47,7 @@ func TestCmdBackupImportRejectsDuplicateBasename(t *testing.T) {
 	oldDataDirectory := dataDirectory
 	dataDirectory = t.TempDir()
 	defer func() { dataDirectory = oldDataDirectory }()
+	withLocalBackupTransferClient(t)
 
 	backupRoot := t.TempDir()
 	address, keyJSON := testEd25519KeyJSON(t)
@@ -66,6 +74,41 @@ func TestCmdBackupImportRejectsDuplicateBasename(t *testing.T) {
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("second cmdBackupImport() error = %v, want duplicate context", err)
 	}
+}
+
+type localBackupTransferDeps struct{ paths storepaths.Paths }
+
+func (d localBackupTransferDeps) KeyPaths() storepaths.Paths                         { return d.paths }
+func (localBackupTransferDeps) GenesisHashMappings() map[string]string               { return nil }
+func (localBackupTransferDeps) RestoreLimiter() backupadmin.RestoreLimiter           { return nil }
+func (localBackupTransferDeps) WithIdentityMutation(_ string, fn func() error) error { return fn() }
+func (localBackupTransferDeps) Logf(string, ...interface{})                          {}
+
+func withLocalBackupTransferClient(t *testing.T) {
+	t.Helper()
+	service := backupadmin.Service{Deps: localBackupTransferDeps{paths: keystorePaths()}}
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	fake := &fakeApstoreAdminRequester{}
+	fake.requestFunc = func(msg any, out any) error {
+		switch request := msg.(type) {
+		case protocol.BeginBackupImportMessage:
+			result := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: request.FileName})
+			*out.(*protocol.BeginBackupImportResultMessage) = protocol.BeginBackupImportResultMessage{Success: result.Success, UploadID: result.UploadID, Code: result.Code, Error: result.Error}
+		case protocol.AppendBackupImportMessage:
+			result := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: request.UploadID, Offset: request.Offset, Data: request.Data})
+			*out.(*protocol.AppendBackupImportResultMessage) = protocol.AppendBackupImportResultMessage{Success: result.Success, NextOffset: result.NextOffset, Code: result.Code, Error: result.Error}
+		case protocol.CommitBackupImportMessage:
+			result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{UploadID: request.UploadID, FileName: request.FileName, ExpectedSize: request.ExpectedSize, ExpectedSHA256: request.ExpectedSHA256})
+			*out.(*protocol.CommitBackupImportResultMessage) = protocol.CommitBackupImportResultMessage{Success: result.Success, Code: result.Code, Error: result.Error}
+		case protocol.AbortBackupImportMessage:
+			result := service.AbortBackupImport(ir, adminproto.AbortBackupImportRequest{UploadID: request.UploadID})
+			*out.(*protocol.AbortBackupImportResultMessage) = protocol.AbortBackupImportResultMessage{Success: result.Success, Code: result.Code, Error: result.Error}
+		default:
+			return fmt.Errorf("unexpected backup transfer request %T", msg)
+		}
+		return nil
+	}
+	withFakeApstoreAdminClient(t, fake)
 }
 
 func TestRestoreKeyRejectsWrongExportPassphrase(t *testing.T) {
@@ -101,6 +144,7 @@ func TestCmdBackupImportUsesManagedBackupDir(t *testing.T) {
 	oldDataDirectory := dataDirectory
 	dataDirectory = t.TempDir()
 	defer func() { dataDirectory = oldDataDirectory }()
+	withLocalBackupTransferClient(t)
 
 	backupRoot := t.TempDir()
 	address, keyJSON := testEd25519KeyJSON(t)

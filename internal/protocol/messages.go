@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 4
-	AdminProtocolVersionMinor = 1
+	AdminProtocolVersionMinor = 2
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
@@ -39,33 +39,43 @@ const (
 	MsgTypeAuthResult   = "auth_result"
 
 	// Signer state message types
-	MsgTypeUnlock                = "unlock"
-	MsgTypeUnlockResult          = "unlock_result"
-	MsgTypeLockIdentity          = "lock_identity"
-	MsgTypeLockIdentityResult    = "lock_identity_result"
-	MsgTypeInitializeStore       = "initialize_store"
-	MsgTypeInitializeStoreResult = "initialize_store_result"
-	MsgTypeChangeStorePass       = "change_store_passphrase"
-	MsgTypeChangeStorePassResult = "change_store_passphrase_result"
-	MsgTypeBackup                = "backup"
-	MsgTypeBackupResult          = "backup_result"
-	MsgTypeListBackups           = "list_backups"
-	MsgTypeBackupsList           = "backups_list"
-	MsgTypeDeleteBackup          = "delete_backup"
-	MsgTypeDeleteBackupResult    = "delete_backup_result"
-	MsgTypePreviewRestore        = "preview_restore"
-	MsgTypeRestorePreview        = "restore_preview"
-	MsgTypeRestoreBackup         = "restore_backup"
-	MsgTypeRestoreBackupResult   = "restore_backup_result"
-	MsgTypeRollbackRestore       = "rollback_restore"
-	MsgTypeRollbackRestoreResult = "rollback_restore_result"
-	MsgTypeReconcileStore        = "reconcile_store"
-	MsgTypeReconcileStoreResult  = "reconcile_store_result"
-	MsgTypeSignRequest           = "sign_request"
-	MsgTypeSignRequestCanceled   = "sign_request_canceled"
-	MsgTypeSignResponse          = "sign_response"
-	MsgTypeStatus                = "status"
-	MsgTypeError                 = "error"
+	MsgTypeUnlock                   = "unlock"
+	MsgTypeUnlockResult             = "unlock_result"
+	MsgTypeLockIdentity             = "lock_identity"
+	MsgTypeLockIdentityResult       = "lock_identity_result"
+	MsgTypeInitializeStore          = "initialize_store"
+	MsgTypeInitializeStoreResult    = "initialize_store_result"
+	MsgTypeChangeStorePass          = "change_store_passphrase"
+	MsgTypeChangeStorePassResult    = "change_store_passphrase_result"
+	MsgTypeBackup                   = "backup"
+	MsgTypeBackupResult             = "backup_result"
+	MsgTypeListBackups              = "list_backups"
+	MsgTypeBackupsList              = "backups_list"
+	MsgTypeDeleteBackup             = "delete_backup"
+	MsgTypeDeleteBackupResult       = "delete_backup_result"
+	MsgTypeBeginBackupImport        = "begin_backup_import"
+	MsgTypeBeginBackupImportResult  = "begin_backup_import_result"
+	MsgTypeAppendBackupImport       = "append_backup_import"
+	MsgTypeAppendBackupImportResult = "append_backup_import_result"
+	MsgTypeCommitBackupImport       = "commit_backup_import"
+	MsgTypeCommitBackupImportResult = "commit_backup_import_result"
+	MsgTypeAbortBackupImport        = "abort_backup_import"
+	MsgTypeAbortBackupImportResult  = "abort_backup_import_result"
+	MsgTypeReadBackupChunk          = "read_backup_chunk"
+	MsgTypeBackupChunk              = "backup_chunk"
+	MsgTypePreviewRestore           = "preview_restore"
+	MsgTypeRestorePreview           = "restore_preview"
+	MsgTypeRestoreBackup            = "restore_backup"
+	MsgTypeRestoreBackupResult      = "restore_backup_result"
+	MsgTypeRollbackRestore          = "rollback_restore"
+	MsgTypeRollbackRestoreResult    = "rollback_restore_result"
+	MsgTypeReconcileStore           = "reconcile_store"
+	MsgTypeReconcileStoreResult     = "reconcile_store_result"
+	MsgTypeSignRequest              = "sign_request"
+	MsgTypeSignRequestCanceled      = "sign_request_canceled"
+	MsgTypeSignResponse             = "sign_response"
+	MsgTypeStatus                   = "status"
+	MsgTypeError                    = "error"
 
 	// Token provisioning message types (SSH-based token request approval)
 	MsgTypeTokenProvisioningRequest  = "token_provisioning_request"
@@ -309,6 +319,79 @@ type DeleteBackupResultMessage struct {
 	Success bool   `json:"success"`
 	Code    string `json:"code,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+type BeginBackupImportMessage struct {
+	BaseMessage
+	FileName string `json:"file_name"`
+}
+
+type BeginBackupImportResultMessage struct {
+	BaseMessage
+	Success  bool   `json:"success"`
+	UploadID string `json:"upload_id,omitempty"`
+	Code     string `json:"code,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+type AppendBackupImportMessage struct {
+	BaseMessage
+	UploadID string `json:"upload_id"`
+	Offset   int64  `json:"offset"`
+	Data     []byte `json:"data"`
+}
+
+type AppendBackupImportResultMessage struct {
+	BaseMessage
+	Success    bool   `json:"success"`
+	NextOffset int64  `json:"next_offset,omitempty"`
+	Code       string `json:"code,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+type CommitBackupImportMessage struct {
+	BaseMessage
+	UploadID       string `json:"upload_id"`
+	FileName       string `json:"file_name"`
+	ExpectedSize   int64  `json:"expected_size"`
+	ExpectedSHA256 string `json:"expected_sha256"`
+}
+
+type CommitBackupImportResultMessage struct {
+	BaseMessage
+	Success bool       `json:"success"`
+	Backup  BackupInfo `json:"backup,omitempty"`
+	Code    string     `json:"code,omitempty"`
+	Error   string     `json:"error,omitempty"`
+}
+
+type AbortBackupImportMessage struct {
+	BaseMessage
+	UploadID string `json:"upload_id"`
+}
+
+type AbortBackupImportResultMessage struct {
+	BaseMessage
+	Success bool   `json:"success"`
+	Code    string `json:"code,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+type ReadBackupChunkMessage struct {
+	BaseMessage
+	FileName string `json:"file_name"`
+	Offset   int64  `json:"offset"`
+}
+
+type BackupChunkMessage struct {
+	BaseMessage
+	Success  bool   `json:"success"`
+	FileName string `json:"file_name,omitempty"`
+	Offset   int64  `json:"offset,omitempty"`
+	Data     []byte `json:"data,omitempty"`
+	EOF      bool   `json:"eof,omitempty"`
+	Code     string `json:"code,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 type PreviewRestoreMessage struct {

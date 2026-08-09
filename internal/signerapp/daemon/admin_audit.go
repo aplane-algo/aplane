@@ -70,6 +70,12 @@ func (s signerAdminServices) LogBackupCreatedContext(ctx adminserver.SessionCont
 	}
 }
 
+func (s signerAdminServices) LogBackupImportedContext(ctx adminserver.SessionContext, fileName string, size int64) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogBackupImportedContext(ctx, fileName, size)
+	}
+}
+
 func (s signerAdminServices) LogBackupFailedContext(ctx adminserver.SessionContext, reason string) {
 	if audit := s.auditLogger(); audit != nil {
 		audit.LogBackupFailedContext(ctx, reason)

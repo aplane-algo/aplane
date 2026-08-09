@@ -101,6 +101,71 @@ type DeleteBackupResult struct {
 	Error   string
 }
 
+const BackupTransferChunkBytes = 256 * 1024
+
+type BeginBackupImportRequest struct {
+	FileName string
+}
+
+type BeginBackupImportResult struct {
+	Success  bool
+	UploadID string
+	Code     string
+	Error    string
+}
+
+type AppendBackupImportRequest struct {
+	UploadID string
+	Offset   int64
+	Data     []byte
+}
+
+type AppendBackupImportResult struct {
+	Success    bool
+	NextOffset int64
+	Code       string
+	Error      string
+}
+
+type CommitBackupImportRequest struct {
+	UploadID       string
+	FileName       string
+	ExpectedSize   int64
+	ExpectedSHA256 string
+}
+
+type CommitBackupImportResult struct {
+	Success bool
+	Backup  BackupInfo
+	Code    string
+	Error   string
+}
+
+type AbortBackupImportRequest struct {
+	UploadID string
+}
+
+type AbortBackupImportResult struct {
+	Success bool
+	Code    string
+	Error   string
+}
+
+type ReadBackupChunkRequest struct {
+	FileName string
+	Offset   int64
+}
+
+type ReadBackupChunkResult struct {
+	Success  bool
+	FileName string
+	Offset   int64
+	Data     []byte
+	EOF      bool
+	Code     string
+	Error    string
+}
+
 type InitializeStoreRequest struct {
 	Passphrase []byte
 }

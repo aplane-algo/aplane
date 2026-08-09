@@ -43,6 +43,7 @@ const (
 	AuditPassphraseChanged          = signeraudit.AuditPassphraseChanged
 	AuditPassphraseChangeFailed     = signeraudit.AuditPassphraseChangeFailed
 	AuditSentryReferenceChanged     = signeraudit.AuditSentryReferenceChanged
+	AuditBackupImported             = signeraudit.AuditBackupImported
 )
 
 func NewAuditLogger(path string) (*AuditLogger, error) {

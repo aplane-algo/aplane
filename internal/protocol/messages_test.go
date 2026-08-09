@@ -29,6 +29,16 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeBackupsList,
 		MsgTypeDeleteBackup,
 		MsgTypeDeleteBackupResult,
+		MsgTypeBeginBackupImport,
+		MsgTypeBeginBackupImportResult,
+		MsgTypeAppendBackupImport,
+		MsgTypeAppendBackupImportResult,
+		MsgTypeCommitBackupImport,
+		MsgTypeCommitBackupImportResult,
+		MsgTypeAbortBackupImport,
+		MsgTypeAbortBackupImportResult,
+		MsgTypeReadBackupChunk,
+		MsgTypeBackupChunk,
 		MsgTypePreviewRestore,
 		MsgTypeRestorePreview,
 		MsgTypeSignRequest,
@@ -110,9 +120,9 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-func TestCurrentAdminProtocolVersionIncludesStoreInspection(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 1}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.1", got)
+func TestCurrentAdminProtocolVersionIncludesBackupTransfer(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 2}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.2", got)
 	}
 }
 
