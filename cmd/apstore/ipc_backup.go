@@ -320,9 +320,8 @@ func cmdBackupImport(args []string) error {
 	defer client.close()
 	var begin protocol.BeginBackupImportResultMessage
 	if err := client.request(protocol.BeginBackupImportMessage{
-		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeBeginBackupImport, ID: newApstoreRequestID("backup-import-begin")},
-		FileName:     name,
-		ExpectedSize: size,
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeBeginBackupImport, ID: newApstoreRequestID("backup-import-begin")},
+		FileName:    name,
 	}, &begin); err != nil {
 		return err
 	}

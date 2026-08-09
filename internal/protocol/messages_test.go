@@ -387,6 +387,18 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			name: "begin_backup_import",
+			msg: BeginBackupImportMessage{
+				BaseMessage: BaseMessage{Type: MsgTypeBeginBackupImport, ID: "backup-import-1"},
+				FileName:    "backup.tar.gz",
+			},
+			wantMap: map[string]any{
+				"type":      MsgTypeBeginBackupImport,
+				"id":        "backup-import-1",
+				"file_name": "backup.tar.gz",
+			},
+		},
+		{
 			name: "backups_list",
 			msg: BackupsListMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeBackupsList, ID: "backups-1"},

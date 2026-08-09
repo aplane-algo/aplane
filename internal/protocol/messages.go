@@ -323,8 +323,7 @@ type DeleteBackupResultMessage struct {
 
 type BeginBackupImportMessage struct {
 	BaseMessage
-	FileName     string `json:"file_name"`
-	ExpectedSize int64  `json:"expected_size"`
+	FileName string `json:"file_name"`
 }
 
 type BeginBackupImportResultMessage struct {

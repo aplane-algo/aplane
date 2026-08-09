@@ -333,7 +333,7 @@ func (s *Session) HandleBeginBackupImport(msg *protocol.BeginBackupImportMessage
 		return
 	}
 	result := s.backupServices.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{
-		FileName: msg.FileName, ExpectedSize: msg.ExpectedSize,
+		FileName: msg.FileName,
 	})
 	_ = s.WriteJSON(ProtocolBeginBackupImportResultMessage(msg.ID, result))
 }

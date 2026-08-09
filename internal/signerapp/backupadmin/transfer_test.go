@@ -43,7 +43,7 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "imported.tar.gz", ExpectedSize: size})
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "imported.tar.gz"})
 	if !begin.Success || begin.UploadID == "" {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
@@ -90,7 +90,7 @@ func TestBackupTransferRejectsWrongOffsetAndChecksum(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
 	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "bad.tar.gz", ExpectedSize: 1})
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "bad.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
@@ -109,7 +109,7 @@ func TestBackupTransferCapsIncompleteUploadSize(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
 	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "large.tar.gz", ExpectedSize: adminproto.MaxBackupImportBytes})
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "large.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
@@ -129,12 +129,12 @@ func TestBeginBackupImportRemovesAbandonedUpload(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
 	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
-	first := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "first.tar.gz", ExpectedSize: 1})
+	first := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "first.tar.gz"})
 	if !first.Success {
 		t.Fatalf("first BeginBackupImport() = %#v", first)
 	}
 	firstPath := filepath.Join(paths.IdentityBackupsDir(ir.ID()), first.UploadID)
-	second := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "second.tar.gz", ExpectedSize: 1})
+	second := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "second.tar.gz"})
 	if !second.Success {
 		t.Fatalf("second BeginBackupImport() = %#v", second)
 	}

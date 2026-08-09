@@ -92,7 +92,7 @@ func withLocalBackupTransferClient(t *testing.T) {
 	fake.requestFunc = func(msg any, out any) error {
 		switch request := msg.(type) {
 		case protocol.BeginBackupImportMessage:
-			result := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: request.FileName, ExpectedSize: request.ExpectedSize})
+			result := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: request.FileName})
 			*out.(*protocol.BeginBackupImportResultMessage) = protocol.BeginBackupImportResultMessage{Success: result.Success, UploadID: result.UploadID, Code: result.Code, Error: result.Error}
 		case protocol.AppendBackupImportMessage:
 			result := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: request.UploadID, Offset: request.Offset, Data: request.Data})

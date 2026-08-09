@@ -1542,7 +1542,10 @@ Sidecar JSON fields:
 - `hmac`: hex HMAC-SHA256 over the exact policy document bytes
 - `policy_sha256`: optional diagnostic SHA-256 of the policy document
 - `signed_at_unix`: optional diagnostic signing timestamp
-- `policy_mtime_ns`: optional diagnostic policy-file mtime
+- `policy_mtime_ns`: optional diagnostic policy-file mtime. Sidecar-only
+  re-signing records the existing policy file's mtime; atomic policy-plus-
+  sidecar replacement omits it because no published policy-file mtime exists
+  while the replacement pair is being staged.
 
 Only `version`, `algorithm`, `key_id`, `integrity_term`, and `hmac` are
 security fields. Sidecar JSON is strict: unknown fields, trailing documents,

@@ -24,9 +24,6 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 	if err != nil {
 		return beginImportError(err)
 	}
-	if req.ExpectedSize <= 0 || req.ExpectedSize > adminproto.MaxBackupImportBytes {
-		return beginImportError(fmt.Errorf("backup import size must be between 1 and %d bytes", adminproto.MaxBackupImportBytes))
-	}
 	var uploadID string
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		dir := s.Deps.KeyPaths().IdentityBackupsDir(ir.ID())

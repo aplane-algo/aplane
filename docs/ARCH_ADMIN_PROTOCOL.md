@@ -293,9 +293,8 @@ mode.
   material while signing remains blocked.
 - `delete_backup`: `archive_path` -> `delete_backup_result`.
 - backup import is a bounded transfer: `begin_backup_import` carries
-  `file_name` and `expected_size`, rejects sizes above 1 GiB, removes any
-  incomplete prior upload for the identity, allocates one daemon-owned
-  temporary archive, and returns an opaque `upload_id`;
+  `file_name`, removes any incomplete prior upload for the identity, allocates
+  one daemon-owned temporary archive, and returns an opaque `upload_id`;
   `append_backup_import` accepts at most 256 KiB at the exact next `offset`;
   cumulative uploaded bytes are capped at 1 GiB;
   `commit_backup_import` verifies the declared size and SHA-256, validates the

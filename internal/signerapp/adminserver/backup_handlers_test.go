@@ -103,7 +103,7 @@ func TestRecoveryStatePermitsRestoreReadApplyRollbackAndReconcile(t *testing.T) 
 	session.Bind(auth.NewDefaultIdentity("test"), ir)
 	session.HandleListBackups("list")
 	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{
-		BaseMessage: protocol.BaseMessage{ID: "import-begin"}, FileName: "repair.tar.gz", ExpectedSize: 7,
+		BaseMessage: protocol.BaseMessage{ID: "import-begin"}, FileName: "repair.tar.gz",
 	})
 	session.HandleAppendBackupImport(&protocol.AppendBackupImportMessage{
 		BaseMessage: protocol.BaseMessage{ID: "import-append"}, UploadID: ".import-repair.part", Data: []byte("archive"),
@@ -137,7 +137,7 @@ func TestLockedStateRejectsRecoveryCapableRestoreReads(t *testing.T) {
 	session.Bind(auth.NewDefaultIdentity("test"), ir)
 	session.HandleListBackups("list-locked")
 	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{
-		BaseMessage: protocol.BaseMessage{ID: "import-locked"}, FileName: "repair.tar.gz", ExpectedSize: 7,
+		BaseMessage: protocol.BaseMessage{ID: "import-locked"}, FileName: "repair.tar.gz",
 	})
 	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
 		BaseMessage: protocol.BaseMessage{ID: "read-locked"}, FileName: "repair.tar.gz",

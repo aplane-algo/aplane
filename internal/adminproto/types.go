@@ -110,8 +110,7 @@ const (
 )
 
 type BeginBackupImportRequest struct {
-	FileName     string
-	ExpectedSize int64
+	FileName string
 }
 
 type BeginBackupImportResult struct {
