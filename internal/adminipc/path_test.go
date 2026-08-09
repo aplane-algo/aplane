@@ -59,6 +59,39 @@ func TestResolveClientPathReadsLegacyConfig(t *testing.T) {
 	}
 }
 
+func TestResolveClientPathPrefersSelectedLocalDataDirectory(t *testing.T) {
+	t.Setenv(SocketPathEnv, "")
+	dataDir := t.TempDir()
+	want := filepath.Join(dataDir, "aplane.sock")
+
+	got, err := ResolveClientPath(dataDir, "")
+	if err != nil {
+		t.Fatalf("ResolveClientPath() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("ResolveClientPath() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveClientPathMapsReadableManagedDefaultToSystemRuntime(t *testing.T) {
+	t.Setenv(SocketPathEnv, "")
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, ".prod"), []byte("systemd-managed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ResolveClientPath(dataDir, "")
+	if err != nil {
+		t.Fatalf("ResolveClientPath() error = %v", err)
+	}
+	if got != SystemSocketPath {
+		t.Fatalf("ResolveClientPath() = %q, want %q", got, SystemSocketPath)
+	}
+}
+
 func TestResolveClientPathWithoutDataUsesSystemPath(t *testing.T) {
 	t.Setenv(SocketPathEnv, "")
 	got, err := ResolveClientPath("", "")

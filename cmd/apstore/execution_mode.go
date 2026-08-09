@@ -230,6 +230,9 @@ func acquireOfflineMutationLockForArgs(args []string, dataDir string) (func(), e
 	if args[0] == "template" || args[0] == "keytype" {
 		return func() {}, nil
 	}
+	if args[0] == "generations" && len(args) == 2 && args[1] == "list" {
+		return func() {}, nil
+	}
 	return acquireOfflineMutationLock(args[0], dataDir)
 }
 

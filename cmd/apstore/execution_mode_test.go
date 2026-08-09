@@ -65,6 +65,22 @@ func TestAcquireOfflineMutationLockForArgsSkipsManagedBackupLock(t *testing.T) {
 	release()
 }
 
+func TestAcquireOfflineMutationLockForArgsSkipsGenerationListLock(t *testing.T) {
+	dataDir := t.TempDir()
+
+	guard, err := storelock.AcquireShared(dataDir)
+	if err != nil {
+		t.Fatalf("AcquireShared() error = %v", err)
+	}
+	defer func() { _ = guard.Close() }()
+
+	release, err := acquireOfflineMutationLockForArgs([]string{"generations", "list"}, dataDir)
+	if err != nil {
+		t.Fatalf("acquireOfflineMutationLockForArgs(generations list) error = %v", err)
+	}
+	release()
+}
+
 func TestManagedRestoreCommandSetMatchesProtocolV4(t *testing.T) {
 	for _, command := range []string{"preview", "apply", "rollback", "reconcile"} {
 		if !isManagedRestoreCommand([]string{"restore", command}) {

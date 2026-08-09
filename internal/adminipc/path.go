@@ -7,10 +7,12 @@
 package adminipc
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 )
 
@@ -47,6 +49,15 @@ func ResolveClientPath(dataDir, explicit string) (string, error) {
 	if fromEnv := os.Getenv(SocketPathEnv); fromEnv != "" {
 		return filepath.Clean(fromEnv), nil
 	}
+	if dataDir != "" {
+		path, resolved, err := resolveDataDirectoryPath(dataDir)
+		if err != nil {
+			return "", err
+		}
+		if resolved {
+			return path, nil
+		}
+	}
 	if info, err := os.Lstat(SystemRuntimeDir); err == nil {
 		if err := validateRuntimeDirectory(SystemRuntimeDir, info); err != nil {
 			return "", err
@@ -55,29 +66,39 @@ func ResolveClientPath(dataDir, explicit string) (string, error) {
 	} else if !os.IsNotExist(err) && !os.IsPermission(err) {
 		return "", fmt.Errorf("inspect system admin runtime path: %w", err)
 	}
-	if dataDir == "" {
-		return SystemSocketPath, nil
+	return SystemSocketPath, nil
+}
+
+// resolveDataDirectoryPath resolves a readable explicitly selected or
+// environment-selected signer root before the singleton system runtime path.
+// A private managed root deliberately falls through to config-free discovery.
+func resolveDataDirectoryPath(dataDir string) (string, bool, error) {
+	managed, err := signerbootstrap.IsProductionManagedDataDir(dataDir)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return "", false, nil
+		}
+		return "", false, err
 	}
 	configPath := filepath.Join(dataDir, "config.yaml")
 	if _, err := os.Lstat(configPath); err != nil {
 		if os.IsPermission(err) {
-			return SystemSocketPath, nil
+			return "", false, nil
 		}
 		if os.IsNotExist(err) {
-			return filepath.Join(dataDir, "aplane.sock"), nil
-		} else {
-			return "", fmt.Errorf("inspect signer config for IPC discovery: %w", err)
+			if managed {
+				return SystemSocketPath, true, nil
+			}
+			return filepath.Join(dataDir, "aplane.sock"), true, nil
 		}
+		return "", false, fmt.Errorf("inspect signer config for IPC discovery: %w", err)
 	}
 
 	cfg, err := serverconfig.LoadServerConfig(dataDir)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	if cfg.IPCPath != "" {
-		return filepath.Clean(cfg.IPCPath), nil
-	}
-	return filepath.Join(dataDir, "aplane.sock"), nil
+	return filepath.Clean(ResolveDaemonPath(dataDir, cfg.IPCPath, managed)), true, nil
 }
 
 func validateRuntimeDirectory(path string, info os.FileInfo) error {
