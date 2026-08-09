@@ -77,9 +77,10 @@ func LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID string, kr *crypto
 // SaveStoredConfigWithIntegrity writes policy.yaml and policy.yaml.hmac. The
 // sidecar authenticates the exact policy bytes written to policy.yaml.
 //
-// This is a two-path write. Crash recovery is fail-closed: callers may observe
-// either a valid old pair, a valid new pair, or a mismatch that must be repaired
-// explicitly.
+// This is a two-path write. Both files are prepared before either is published,
+// so signing, marshaling, and staging failures preserve the old pair. Crash
+// recovery remains fail-closed: callers may observe a valid old pair, a valid
+// new pair, or a mismatch after interruption between the two renames.
 func SaveStoredConfigWithIntegrity(dataRoot, identityID string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
 	policyBytes, err := MarshalStoredConfig(cfg)
 	if err != nil {
@@ -119,17 +120,7 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *cry
 	}
 
 	sidecarPath := PolicyIntegritySidecarPath(path)
-	if err := fsutil.WriteFileDurableWithProfile(path, policyBytes, fsutil.PrivateStoreFileProfile); err != nil {
-		return fmt.Errorf("failed to write %s: %w", configLabel, err)
-	}
-	info, err := os.Lstat(path)
-	if err != nil {
-		return fmt.Errorf("failed to stat %s: %w", configLabel, err)
-	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a regular file: %s", configLabel, path)
-	}
-	sidecar, err := SignPolicyIntegrity(policyBytes, kr, signedAt, info.ModTime().UnixNano())
+	sidecar, err := SignPolicyIntegrity(policyBytes, kr, signedAt, 0)
 	if err != nil {
 		return err
 	}
@@ -137,8 +128,11 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *cry
 	if err != nil {
 		return err
 	}
-	if err := fsutil.WriteFileDurableWithProfile(sidecarPath, sidecarBytes, fsutil.PrivateStoreFileProfile); err != nil {
-		return fmt.Errorf("failed to write %s: %w", sidecarLabel, err)
+	if err := fsutil.WriteFileSetDurable(
+		fsutil.DurableFileWrite{Path: path, Data: policyBytes, Profile: fsutil.PrivateStoreFileProfile},
+		fsutil.DurableFileWrite{Path: sidecarPath, Data: sidecarBytes, Profile: fsutil.PrivateStoreFileProfile},
+	); err != nil {
+		return fmt.Errorf("failed to write %s and %s: %w", configLabel, sidecarLabel, err)
 	}
 	return nil
 }

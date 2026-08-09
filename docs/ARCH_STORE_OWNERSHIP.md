@@ -88,6 +88,10 @@ closed artifact profile rather than arbitrary mode/UID/GID combinations. A
 durable replacement uses a random exclusive temporary regular file, applies
 ownership and its permission ceiling to the unpublished file descriptor,
 syncs it, renames it in the destination directory, and syncs that directory.
+File-set publication stages and syncs every member before the first rename, so
+preparation failure exposes none of the new members. Because multiple paths
+cannot be renamed atomically, interruption between publication renames remains
+a documented fail-closed mixed-generation state.
 Symlink and non-regular destinations are rejected. The legacy profile remains
 internal to pre-migration validation; normal writers use private profiles.
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -35,6 +36,27 @@ type durableFilePolicy struct {
 type durableOwner struct {
 	uid int
 	gid int
+}
+
+// DurableFileWrite is one member of a staged durable file-set publication.
+// Profile selects a closed ownership and permission policy.
+type DurableFileWrite struct {
+	Path    string
+	Data    []byte
+	Profile DurableFileProfile
+}
+
+type durableWritePlan struct {
+	path   string
+	data   []byte
+	policy durableFilePolicy
+}
+
+type stagedDurableFile struct {
+	targetPath string
+	tempPath   string
+	dir        string
+	published  bool
 }
 
 func policyForDurableFileProfile(profile DurableFileProfile) (durableFilePolicy, error) {
@@ -91,11 +113,33 @@ func WriteFileDurable(path string, data []byte) error {
 // when they are more restrictive than the profile ceiling. Symlinks and
 // non-regular destinations are rejected before any publication occurs.
 func WriteFileDurableWithProfile(path string, data []byte, profile DurableFileProfile) error {
-	policy, err := policyForDurableFileProfile(profile)
-	if err != nil {
-		return err
+	return WriteFileSetDurable(DurableFileWrite{Path: path, Data: data, Profile: profile})
+}
+
+// WriteFileSetDurable stages and fsyncs every member before publishing the
+// first target. Publication is ordered as supplied and each touched directory
+// is fsynced afterward. As with every multi-path update, a crash between
+// renames can expose a fail-closed mixed generation; preparation failures
+// expose none of the new files.
+func WriteFileSetDurable(writes ...DurableFileWrite) error {
+	plans := make([]durableWritePlan, 0, len(writes))
+	seen := make(map[string]struct{}, len(writes))
+	for _, write := range writes {
+		policy, err := policyForDurableFileProfile(write.Profile)
+		if err != nil {
+			return err
+		}
+		path := filepath.Clean(write.Path)
+		if path == "." || path == "" {
+			return fmt.Errorf("durable file path is required")
+		}
+		if _, exists := seen[path]; exists {
+			return fmt.Errorf("duplicate durable file target: %s", path)
+		}
+		seen[path] = struct{}{}
+		plans = append(plans, durableWritePlan{path: path, data: write.Data, policy: policy})
 	}
-	return writeFileDurableWithPolicy(path, data, policy)
+	return writeFileSetDurableWithPolicies(plans)
 }
 
 // WriteServiceOwnedFileDurable publishes a private file owned by a resolved
@@ -104,39 +148,38 @@ func WriteServiceOwnedFileDurable(path string, data []byte, uid, gid int) error 
 	if uid < 0 || gid < 0 {
 		return fmt.Errorf("invalid service ownership %d:%d", uid, gid)
 	}
-	return writeFileDurableWithPolicy(path, data, durableFilePolicy{
+	return writeFileSetDurableWithPolicies([]durableWritePlan{{path: path, data: data, policy: durableFilePolicy{
 		mode:  0o600,
 		owner: &durableOwner{uid: uid, gid: gid},
-	})
+	}}})
 }
 
-func writeFileDurableWithPolicy(path string, data []byte, policy durableFilePolicy) error {
-
+func stageDurableFile(path string, data []byte, policy durableFilePolicy) (*stagedDurableFile, error) {
 	info, statErr := os.Lstat(path)
 	if statErr != nil && !os.IsNotExist(statErr) {
-		return statErr
+		return nil, statErr
 	}
 	if statErr == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refusing to replace symlink: %s", path)
+			return nil, fmt.Errorf("refusing to replace symlink: %s", path)
 		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("refusing to replace non-regular file: %s", path)
+			return nil, fmt.Errorf("refusing to replace non-regular file: %s", path)
 		}
 	}
 
 	dir := filepath.Dir(path)
 	dirInfo, err := os.Lstat(dir)
 	if err != nil {
-		return fmt.Errorf("inspect durable-write parent %s: %w", dir, err)
+		return nil, fmt.Errorf("inspect durable-write parent %s: %w", dir, err)
 	}
 	if dirInfo.Mode()&os.ModeSymlink != 0 || !dirInfo.IsDir() {
-		return fmt.Errorf("durable-write parent is not a real directory: %s", dir)
+		return nil, fmt.Errorf("durable-write parent is not a real directory: %s", dir)
 	}
 
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tmpPath := tmp.Name()
 	cleanup := true
@@ -148,7 +191,7 @@ func writeFileDurableWithPolicy(path string, data []byte, policy durableFilePoli
 	}()
 
 	if _, err := tmp.Write(data); err != nil {
-		return err
+		return nil, err
 	}
 
 	targetMode := policy.mode
@@ -169,34 +212,68 @@ func writeFileDurableWithPolicy(path string, data []byte, policy durableFilePoli
 	// because chown may clear permission bits on some platforms.
 	if policy.owner != nil {
 		if err := tmp.Chown(policy.owner.uid, policy.owner.gid); err != nil {
-			return fmt.Errorf("set durable temp ownership to %d:%d: %w", policy.owner.uid, policy.owner.gid, err)
+			return nil, fmt.Errorf("set durable temp ownership to %d:%d: %w", policy.owner.uid, policy.owner.gid, err)
 		}
 	} else if preserveGID {
 		if err := tmp.Chown(-1, targetGID); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if err := tmp.Chmod(targetMode); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := runHook(OpFileSync, path); err != nil {
-		return err
+		return nil, err
 	}
 	if err := tmp.Sync(); err != nil {
-		return err
+		return nil, err
 	}
 	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := runHook(OpRename, path); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
+		return nil, err
 	}
 	cleanup = false
-	return SyncDir(dir)
+	return &stagedDurableFile{targetPath: path, tempPath: tmpPath, dir: dir}, nil
+}
+
+func writeFileSetDurableWithPolicies(plans []durableWritePlan) error {
+	staged := make([]*stagedDurableFile, 0, len(plans))
+	defer func() {
+		for _, file := range staged {
+			if !file.published {
+				_ = os.Remove(file.tempPath)
+			}
+		}
+	}()
+	for _, plan := range plans {
+		file, err := stageDurableFile(plan.path, plan.data, plan.policy)
+		if err != nil {
+			return err
+		}
+		staged = append(staged, file)
+	}
+	dirs := make(map[string]struct{}, len(staged))
+	for _, file := range staged {
+		if err := runHook(OpRename, file.targetPath); err != nil {
+			return err
+		}
+		if err := os.Rename(file.tempPath, file.targetPath); err != nil {
+			return err
+		}
+		file.published = true
+		dirs[file.dir] = struct{}{}
+	}
+	orderedDirs := make([]string, 0, len(dirs))
+	for dir := range dirs {
+		orderedDirs = append(orderedDirs, dir)
+	}
+	sort.Strings(orderedDirs)
+	for _, dir := range orderedDirs {
+		if err := SyncDir(dir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SyncDir fsyncs the directory at path, making previously renamed, created,

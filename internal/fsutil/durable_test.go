@@ -249,6 +249,42 @@ func TestWriteFileDurableDirSyncFailureIsReported(t *testing.T) {
 	}
 }
 
+func TestWriteFileSetDurableStagesAllMembersBeforePublishing(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.bin")
+	second := filepath.Join(dir, "second.bin")
+	for _, path := range []string{first, second} {
+		if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	injected := errors.New("injected second file sync")
+	TestHook = func(op HookOp, path string) error {
+		if op == OpFileSync && path == second {
+			return injected
+		}
+		return nil
+	}
+	defer func() { TestHook = nil }()
+
+	err := WriteFileSetDurable(
+		DurableFileWrite{Path: first, Data: []byte("new-first"), Profile: PrivateStoreFileProfile},
+		DurableFileWrite{Path: second, Data: []byte("new-second"), Profile: PrivateStoreFileProfile},
+	)
+	if !errors.Is(err, injected) {
+		t.Fatalf("WriteFileSetDurable() error = %v, want %v", err, injected)
+	}
+	for _, path := range []string{first, second} {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if string(data) != "old" {
+			t.Fatalf("%s contents = %q, want old", path, data)
+		}
+	}
+}
+
 func TestRemoveDurableWriteTempsRemovesOnlyReservedRegularFiles(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.bin")

@@ -661,6 +661,11 @@ sidecar fails closed instead of falling back to defaults. Authenticated admin
 IPC policy operations are target-aware by policy domain, and role-incompatible
 targets fail closed. Direct YAML edits are checked, signed, and verified
 through `appolicy` or `apstore policy`.
+Policy and sidecar bytes are both staged and synced before either path is
+published. HMAC, encoding, or staging failure therefore preserves the prior
+pair. Interruption between the two publication renames can still leave a
+mixed pair, which verification rejects fail-closed and requires explicit
+repair.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
 sentry overrides are keyed by Witness Key ID. These overrides apply to
