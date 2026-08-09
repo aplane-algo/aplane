@@ -322,10 +322,11 @@ mode.
 - restore passphrases are JSON strings on the wire but enter mutable byte
   buffers at the protocol boundary so handlers can zero them after use.
 - all restore operations retain the stable authorization action
-  `identity.restore`. List, preview, restore, rollback, and reconciliation are
-  available to an authenticated recovery-mode session so repair material can
-  be inspected, damaged credentials replaced, and the clean generation
-  promoted. A locked session remains rejected with `signer_locked`.
+  `identity.restore`. Import admission, list, preview, restore, rollback, and
+  reconciliation are available to an authenticated recovery-mode session so
+  repair material can be admitted and inspected, damaged credentials replaced,
+  and the clean generation promoted. A locked session remains rejected with
+  `signer_locked`.
 - protocol v4 removes the pre-release
   `recover_backup/list_recovered/review_recovered/activate_recovered/`
   `rollback_recovered/purge_recovered` lifecycle and its review token and

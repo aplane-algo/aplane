@@ -69,6 +69,11 @@ type stubServices struct {
 	backupCalls            int
 	listBackupsCalls       int
 	deleteBackupCalls      int
+
+	beginBackupImportCalls  int
+	appendBackupImportCalls int
+	commitBackupImportCalls int
+
 	changePassphraseCalls  int
 	previewRestoreCalls    int
 	restoreBackupCalls     int
@@ -241,13 +246,16 @@ func (s *stubServices) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteB
 	s.lastDeleteBackup = req
 	return s.deleteBackupResult
 }
-func (*stubServices) BeginBackupImport(*identity.Runtime, adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
+func (s *stubServices) BeginBackupImport(*identity.Runtime, adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
+	s.beginBackupImportCalls++
 	return adminproto.BeginBackupImportResult{}
 }
-func (*stubServices) AppendBackupImport(*identity.Runtime, adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
+func (s *stubServices) AppendBackupImport(*identity.Runtime, adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
+	s.appendBackupImportCalls++
 	return adminproto.AppendBackupImportResult{}
 }
-func (*stubServices) CommitBackupImport(*identity.Runtime, adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+func (s *stubServices) CommitBackupImport(*identity.Runtime, adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+	s.commitBackupImportCalls++
 	return adminproto.CommitBackupImportResult{}
 }
 func (*stubServices) AbortBackupImport(*identity.Runtime, adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
