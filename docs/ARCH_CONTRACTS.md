@@ -2172,6 +2172,12 @@ key enrollment, token provisioning, operator checks, provisioning identity
 checks, session notifications, and admin channel callbacks must be configured
 before `Start`; setters fail fast after the server has started.
 
+Token provisioning reads the target identity's existing token. It never
+creates or rotates a token at request time: store initialization owns token
+creation, and the authenticated revocation flow owns rotation. If the token
+file is absent or unreadable, provisioning fails after key enrollment instead
+of returning a credential that differs from the running authenticator.
+
 ## Approval and Policy Contracts
 
 For the current policy tier model, storage ownership, and rule inventory, see
