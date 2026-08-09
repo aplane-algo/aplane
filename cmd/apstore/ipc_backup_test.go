@@ -108,7 +108,6 @@ func TestCmdBackupExportCopiesChecksumMatchIntoDestinationDirectory(t *testing.T
 				Path:     managedPath,
 				Size:     size,
 				Checksum: checksum,
-				Verified: true,
 			}},
 		},
 	}

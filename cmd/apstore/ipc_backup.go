@@ -269,11 +269,7 @@ func cmdBackupList() error {
 		return nil
 	}
 	for _, item := range result.Backups {
-		status := "unverified"
-		if item.Verified {
-			status = "verified"
-		}
-		fmt.Printf("%s  %s  %s  %s\n", item.FileName, backup.FormatFileSize(item.Size), status, item.Checksum)
+		fmt.Printf("%s  %s  %s\n", item.FileName, backup.FormatFileSize(item.Size), item.Checksum)
 	}
 	return nil
 }

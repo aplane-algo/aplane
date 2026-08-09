@@ -173,8 +173,8 @@ func TestCmdBackupImportUsesManagedBackupDir(t *testing.T) {
 	if len(items) != 1 || items[0].FileName != filepath.Base(archivePath) {
 		t.Fatalf("managed backups = %+v, want %s", items, filepath.Base(archivePath))
 	}
-	if len(items) != 1 || !items[0].Verified {
-		t.Fatalf("managed backup import = %+v, want verified listed item", items)
+	if len(items) != 1 || items[0].Checksum == "" {
+		t.Fatalf("managed backup import = %+v, want checksummed listed item", items)
 	}
 }
 

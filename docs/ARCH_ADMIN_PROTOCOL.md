@@ -288,9 +288,10 @@ mode.
   credential that fails canonical validation fails the request.
 - `list_backups` -> `backups_list`: `backups[]`, optional `code`,
   `error`; each item has path, file name, packaging metadata, checksum, and
-  verification state. This read-only operation is available to authenticated
-  sessions in either unlocked or recovery state so the TUI can select repair
-  material while signing remains blocked.
+  size. A successful checksum read is not a claim that encrypted archive
+  contents were authenticated. This read-only operation is available to
+  authenticated sessions in either unlocked or recovery state so the TUI can
+  select repair material while signing remains blocked.
 - `delete_backup`: `archive_path` -> `delete_backup_result`.
 - backup import is a bounded transfer: `begin_backup_import` carries
   `file_name`, removes any incomplete prior upload for the identity, allocates
@@ -300,7 +301,9 @@ mode.
   `commit_backup_import` verifies the declared size and SHA-256, validates the
   archive structure, and atomically publishes it; `abort_backup_import`
   durably removes an incomplete upload. Daemon startup also removes incomplete
-  uploads left by a prior process.
+  uploads left by a prior process. Abort remains available to an authenticated,
+  authorized bound session while the identity is locked because it can only
+  remove unpublished transfer residue.
 - `read_backup_chunk`: `file_name`, `offset` -> `backup_chunk`: `file_name`,
   `offset`, at most 256 KiB of `data`, and `eof`. This lets an operator export
   a managed archive without filesystem access to the private signer store.

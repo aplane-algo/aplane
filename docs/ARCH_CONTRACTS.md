@@ -2711,9 +2711,9 @@ backup contract and no migration from earlier internal tags is provided.
 publishing it under `backups/<identity>/`. Validation includes the archive
 inventory and every credential payload. Import does not compile or install
 templates because templates are not archive members. The IPC transfer declares
-its source size before allocation, is capped at 1 GiB, and permits only one
-incomplete upload per identity. A new import supersedes incomplete residue;
-daemon startup removes residue left by a prior process.
+its exact source size and SHA-256 at commit, is capped at 1 GiB while appending,
+and permits only one incomplete upload per identity. A new import supersedes
+incomplete residue; daemon startup removes residue left by a prior process.
 
 `preview_restore` and `apstore restore preview` authenticate the archive
 before revealing addresses or key types. Preview reports credential identity,

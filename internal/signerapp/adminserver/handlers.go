@@ -332,6 +332,10 @@ func (s *Session) HandleBeginBackupImport(msg *protocol.BeginBackupImportMessage
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
 		return
 	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
 	result := s.backupServices.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{
 		FileName: msg.FileName,
 	})
@@ -346,6 +350,10 @@ func (s *Session) HandleAppendBackupImport(msg *protocol.AppendBackupImportMessa
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID, IdentityID: ir.ID()}) {
 		return
 	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
 	result := s.backupServices.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: msg.UploadID, Offset: msg.Offset, Data: msg.Data})
 	_ = s.WriteJSON(ProtocolAppendBackupImportResultMessage(msg.ID, result))
 }
@@ -356,6 +364,10 @@ func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessa
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
 	result := s.backupServices.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
@@ -380,6 +392,10 @@ func (s *Session) HandleAbortBackupImport(msg *protocol.AbortBackupImportMessage
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID, IdentityID: ir.ID()}) {
 		return
 	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
 	result := s.backupServices.AbortBackupImport(ir, adminproto.AbortBackupImportRequest{UploadID: msg.UploadID})
 	_ = s.WriteJSON(ProtocolAbortBackupImportResultMessage(msg.ID, result))
 }
@@ -390,6 +406,10 @@ func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
 	result := s.backupServices.ReadBackupChunk(ir, adminproto.ReadBackupChunkRequest{FileName: msg.FileName, Offset: msg.Offset})

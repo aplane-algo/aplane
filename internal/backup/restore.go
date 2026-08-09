@@ -27,7 +27,6 @@ type ManagedBackupInfo struct {
 	CreatedAt time.Time
 	Size      int64
 	Checksum  string
-	Verified  bool
 }
 
 type RestorePreview struct {
@@ -179,7 +178,7 @@ func ListManagedBackups(paths storepaths.Paths, identityID string) ([]ManagedBac
 		}
 		backups = append(backups, ManagedBackupInfo{
 			Path: path, FileName: entry.Name(), CreatedAt: info.ModTime().UTC(),
-			Size: size, Checksum: checksum, Verified: true,
+			Size: size, Checksum: checksum,
 		})
 	}
 	sort.Slice(backups, func(i, j int) bool { return backups[i].CreatedAt.After(backups[j].CreatedAt) })

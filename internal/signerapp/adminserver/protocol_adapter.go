@@ -155,7 +155,7 @@ func ProtocolAppendBackupImportResultMessage(id string, result adminproto.Append
 }
 
 func ProtocolCommitBackupImportResultMessage(id string, result adminproto.CommitBackupImportResult) protocol.CommitBackupImportResultMessage {
-	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocol.BackupInfo{Path: result.Backup.Path, FileName: result.Backup.FileName, CreatedAt: result.Backup.CreatedAt, Size: result.Backup.Size, Checksum: result.Backup.Checksum, Verified: result.Backup.Verified}, Code: result.Code, Error: result.Error}
+	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocol.BackupInfo{Path: result.Backup.Path, FileName: result.Backup.FileName, CreatedAt: result.Backup.CreatedAt, Size: result.Backup.Size, Checksum: result.Backup.Checksum}, Code: result.Code, Error: result.Error}
 }
 
 func ProtocolAbortBackupImportResultMessage(id string, result adminproto.AbortBackupImportResult) protocol.AbortBackupImportResultMessage {
@@ -302,7 +302,6 @@ func protocolBackupInfos(items []adminproto.BackupInfo) []protocol.BackupInfo {
 			CreatedAt: item.CreatedAt,
 			Size:      item.Size,
 			Checksum:  item.Checksum,
-			Verified:  item.Verified,
 		}
 	}
 	return out

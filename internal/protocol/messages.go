@@ -299,7 +299,6 @@ type BackupInfo struct {
 	CreatedAt int64  `json:"created_at,omitempty"`
 	Size      int64  `json:"size,omitempty"`
 	Checksum  string `json:"checksum,omitempty"`
-	Verified  bool   `json:"verified,omitempty"`
 }
 
 type BackupsListMessage struct {

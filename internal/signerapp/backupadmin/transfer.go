@@ -162,7 +162,7 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		if err != nil {
 			return err
 		}
-		info = adminproto.BackupInfo{Path: destination, FileName: fileName, CreatedAt: st.ModTime().UTC().Unix(), Size: size, Checksum: checksum, Verified: true}
+		info = adminproto.BackupInfo{Path: destination, FileName: fileName, CreatedAt: st.ModTime().UTC().Unix(), Size: size, Checksum: checksum}
 		return nil
 	})
 	if err != nil {

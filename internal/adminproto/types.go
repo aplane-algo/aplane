@@ -82,7 +82,6 @@ type BackupInfo struct {
 	CreatedAt int64
 	Size      int64
 	Checksum  string
-	Verified  bool
 }
 
 type ListBackupsResult struct {
