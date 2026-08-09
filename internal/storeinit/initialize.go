@@ -65,7 +65,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	}
 
 	logf(opts.Logf, "keystore directory: %s", metadataDir)
-	if err := fsutil.MkdirAll(metadataDir); err != nil {
+	if err := fsutil.MkdirAllPrivate(metadataDir); err != nil {
 		return result, fmt.Errorf("failed to create user directory: %w", err)
 	}
 

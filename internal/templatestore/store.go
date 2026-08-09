@@ -167,7 +167,7 @@ func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType 
 	}
 
 	// Ensure directory exists
-	if err := fsutil.MkdirAll(active.KeyTypeRecordsDir()); err != nil {
+	if err := fsutil.MkdirAllPrivate(active.KeyTypeRecordsDir()); err != nil {
 		return "", fmt.Errorf("failed to create templates directory: %w", err)
 	}
 

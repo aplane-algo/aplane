@@ -51,7 +51,7 @@ func (s *Service) RevokeToken() (string, error) {
 	}
 
 	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(s.keyPaths.Root(), s.identityID)
-	if err := fsutil.MkdirAll(filepath.Dir(tokenPath)); err != nil {
+	if err := fsutil.MkdirAllPrivate(filepath.Dir(tokenPath)); err != nil {
 		return "", fmt.Errorf("failed to create token directory: %w", err)
 	}
 	if err := tokenfile.WriteToken(tokenPath, newToken); err != nil {

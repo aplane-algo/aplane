@@ -85,7 +85,11 @@ node-role access as an explicit local-mode exception.
 
 `internal/fsutil` owns low-level durable publication. Store callers select a
 closed artifact profile rather than arbitrary mode/UID/GID combinations. A
-durable replacement uses a random exclusive temporary regular file, applies
+store directory uses `MkdirAllPrivate`, which rejects a final symlink and
+clamps the caller-owned directory to `0700`. The separate generic `MkdirAll`
+creates owner-private client state but does not rechmod an existing directory
+that the client may not own. A durable replacement uses a random exclusive
+temporary regular file, applies
 ownership and its permission ceiling to the unpublished file descriptor,
 syncs it, renames it in the destination directory, and syncs that directory.
 File-set publication stages and syncs every member before the first rename, so

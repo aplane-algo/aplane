@@ -51,7 +51,7 @@ func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, kr *cryp
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt key: %w", err)
 	}
-	if err := fsutil.MkdirAll(active.KeysDir()); err != nil {
+	if err := fsutil.MkdirAllPrivate(active.KeysDir()); err != nil {
 		return nil, fmt.Errorf("failed to create keys directory: %w", err)
 	}
 

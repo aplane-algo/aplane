@@ -30,7 +30,7 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 	var uploadID string
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		dir := s.Deps.KeyPaths().IdentityBackupsDir(ir.ID())
-		if err := fsutil.MkdirAll(dir); err != nil {
+		if err := fsutil.MkdirAllPrivate(dir); err != nil {
 			return err
 		}
 		// Product mode supports one active import per identity. Starting a new

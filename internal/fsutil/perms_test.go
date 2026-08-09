@@ -62,3 +62,37 @@ func TestWriteFileReplacesNewFileAtomically(t *testing.T) {
 		t.Fatalf("unexpected temp files left behind: %v", matches)
 	}
 }
+
+func TestMkdirAllDoesNotRechmodExistingDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "existing")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := MkdirAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o750 {
+		t.Fatalf("MkdirAll() mode = %04o, want existing 0750", got)
+	}
+}
+
+func TestMkdirAllPrivateClampsExistingDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "existing")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := MkdirAllPrivate(dir); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != StoreDirPerm {
+		t.Fatalf("MkdirAllPrivate() mode = %04o, want %04o", got, StoreDirPerm)
+	}
+}

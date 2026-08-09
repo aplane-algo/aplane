@@ -320,7 +320,7 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc 
 	keysDir := active.KeysDir()
 
 	// Ensure keys directory exists
-	if err := fsutil.MkdirAll(keysDir); err != nil {
+	if err := fsutil.MkdirAllPrivate(keysDir); err != nil {
 		return nil, fmt.Errorf("failed to create keys directory: %w", err)
 	}
 

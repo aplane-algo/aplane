@@ -15,9 +15,9 @@ const StoreDirPerm os.FileMode = 0o700
 // StoreFilePerm is the service-user-only permission mode for signer-store files.
 const StoreFilePerm os.FileMode = 0o600
 
-// MkdirAll creates a private signer-store directory tree and clamps the final
-// directory to StoreDirPerm. A symlink or non-directory at the final path is
-// rejected.
+// MkdirAll creates an owner-private directory tree without changing an
+// existing directory's permissions. It is suitable for caller-owned client
+// state where the process may not own a pre-existing shared root.
 func MkdirAll(path string) error {
 	if err := os.MkdirAll(path, StoreDirPerm); err != nil {
 		return err
@@ -28,6 +28,15 @@ func MkdirAll(path string) error {
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return &os.PathError{Op: "mkdir", Path: path, Err: os.ErrInvalid}
+	}
+	return nil
+}
+
+// MkdirAllPrivate creates a signer-store directory tree and clamps the final
+// directory to StoreDirPerm. The caller must own the store directory.
+func MkdirAllPrivate(path string) error {
+	if err := MkdirAll(path); err != nil {
+		return err
 	}
 	return os.Chmod(path, StoreDirPerm)
 }

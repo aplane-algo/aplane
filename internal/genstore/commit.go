@@ -145,7 +145,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	}
 
 	generationsDir := paths.GenerationsDir(identityID)
-	if err := fsutil.MkdirAll(generationsDir); err != nil {
+	if err := fsutil.MkdirAllPrivate(generationsDir); err != nil {
 		return storepaths.GenPaths{}, err
 	}
 	finalDir := paths.GenerationDir(identityID, req.GenerationID)

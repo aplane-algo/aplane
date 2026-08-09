@@ -223,7 +223,7 @@ func Put(paths storepaths.Paths, identityID string, rec Record) error {
 		return err
 	}
 	path := paths.SentryRefPath(identityID, normalized.Name)
-	if err := fsutil.MkdirAll(filepath.Dir(path)); err != nil {
+	if err := fsutil.MkdirAllPrivate(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("failed to create sentry reference directory: %w", err)
 	}
 	data, err := json.MarshalIndent(normalized, "", "  ")

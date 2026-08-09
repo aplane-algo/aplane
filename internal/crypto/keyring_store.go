@@ -100,7 +100,7 @@ func CreateKeyringStore(keystoreDir string, passphrase []byte) (*Keyring, error)
 	if KeyringExistsIn(keystoreDir) {
 		return nil, fmt.Errorf("keyring already exists in %s", keystoreDir)
 	}
-	if err := fsutil.MkdirAll(keystoreDir); err != nil {
+	if err := fsutil.MkdirAllPrivate(keystoreDir); err != nil {
 		return nil, fmt.Errorf("failed to create keystore directory: %w", err)
 	}
 
