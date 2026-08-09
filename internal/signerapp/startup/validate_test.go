@@ -76,16 +76,17 @@ func TestValidateProductionStorePermissionsUsesDaemonOwnership(t *testing.T) {
 	writeProdMarker(t, dataDir)
 	original := auditPrivateStore
 	t.Cleanup(func() { auditPrivateStore = original })
-	var got storeperm.Options
-	auditPrivateStore = func(opts storeperm.Options) ([]storeperm.Finding, error) {
+	var got storeperm.AuditOptions
+	auditPrivateStore = func(opts storeperm.AuditOptions) ([]storeperm.Finding, error) {
 		got = opts
 		return nil, nil
 	}
 	if err := ValidateProductionStorePermissions(dataDir); err != nil {
 		t.Fatalf("ValidateProductionStorePermissions() error = %v", err)
 	}
-	if got.Root != dataDir || got.ExpectedUID != os.Geteuid() || got.ExpectedGID != os.Getegid() || got.Profile != storeperm.PrivateServiceProfile {
-		t.Fatalf("audit options = %+v", got)
+	want := storeperm.ProductionAuditOptions(dataDir, os.Geteuid(), os.Getegid())
+	if got != want {
+		t.Fatal("production validation did not use the strict production audit policy")
 	}
 }
 
@@ -94,7 +95,7 @@ func TestValidateProductionStorePermissionsReturnsMigrationHint(t *testing.T) {
 	writeProdMarker(t, dataDir)
 	original := auditPrivateStore
 	t.Cleanup(func() { auditPrivateStore = original })
-	auditPrivateStore = func(storeperm.Options) ([]storeperm.Finding, error) {
+	auditPrivateStore = func(storeperm.AuditOptions) ([]storeperm.Finding, error) {
 		return []storeperm.Finding{{Path: dataDir, Code: "mode", Detail: "mode is 0770"}}, nil
 	}
 	err := ValidateProductionStorePermissions(dataDir)

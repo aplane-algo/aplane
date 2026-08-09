@@ -28,9 +28,10 @@ type migrationEntry struct {
 // removes group access at the root first, and then repairs every recognized
 // object through an opened descriptor. Structural findings are fatal; owner
 // and mode findings are precisely what this operation repairs.
-func MigratePrivate(opts Options) (MigrationResult, error) {
-	opts.Profile = LegacySharedProfile
-	findings, err := Audit(opts)
+func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
+	opts := migration.policy
+	opts.profile = legacySharedProfile
+	findings, err := audit(opts)
 	if err != nil {
 		return MigrationResult{}, err
 	}
@@ -43,11 +44,11 @@ func MigratePrivate(opts Options) (MigrationResult, error) {
 		}
 	}
 
-	root, err := filepath.Abs(filepath.Clean(opts.Root))
+	root, err := filepath.Abs(filepath.Clean(opts.root))
 	if err != nil {
 		return MigrationResult{}, fmt.Errorf("resolve store root: %w", err)
 	}
-	legacySocket, err := recognizedLegacySocket(root, opts.SocketPath)
+	legacySocket, err := recognizedLegacySocket(root, opts.socketPath)
 	if err != nil {
 		return MigrationResult{}, err
 	}
@@ -69,7 +70,7 @@ func MigratePrivate(opts Options) (MigrationResult, error) {
 	})
 
 	result := MigrationResult{Inspected: len(entries)}
-	privatePolicy, err := policyForProfile(PrivateServiceProfile)
+	privatePolicy, err := policyForProfile(privateServiceProfile)
 	if err != nil {
 		return result, err
 	}
@@ -100,9 +101,9 @@ func MigratePrivate(opts Options) (MigrationResult, error) {
 	}
 
 	privateOpts := opts
-	privateOpts.Profile = PrivateServiceProfile
-	privateOpts.SocketPath = ""
-	post, err := Audit(privateOpts)
+	privateOpts.profile = privateServiceProfile
+	privateOpts.socketPath = ""
+	post, err := audit(privateOpts)
 	if err != nil {
 		return result, err
 	}

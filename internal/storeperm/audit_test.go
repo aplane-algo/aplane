@@ -15,12 +15,59 @@ import (
 
 func TestAuditAcceptsPrivateStore(t *testing.T) {
 	root := privateStoreFixture(t)
-	findings, err := Audit(ownerOptions(t, root, PrivateServiceProfile))
+	findings, err := Audit(ownerOptions(t, root, privateServiceProfile))
 	if err != nil {
 		t.Fatalf("Audit() error = %v", err)
 	}
 	if storeFindings := withoutAncestorFindings(findings); len(storeFindings) != 0 {
 		t.Fatalf("Audit() store findings = %+v, want none", storeFindings)
+	}
+}
+
+func TestSameUIDAuditAcceptsExactLiveSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix socket contract")
+	}
+	root := privateStoreFixture(t)
+	socketPath := filepath.Join(root, "aplane.sock")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+	if err := os.Chmod(socketPath, 0o660); err != nil {
+		t.Fatal(err)
+	}
+	uid, gid := ownerIDs(t, root)
+
+	findings, err := Audit(SameUIDAuditOptions(root, uid, gid, socketPath))
+	if err != nil {
+		t.Fatalf("Audit() error = %v", err)
+	}
+	if storeFindings := withoutAncestorFindings(findings); len(storeFindings) != 0 {
+		t.Fatalf("same-UID Audit() store findings = %+v, want none", storeFindings)
+	}
+}
+
+func TestProductionAuditRejectsInStoreSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix socket contract")
+	}
+	root := privateStoreFixture(t)
+	socketPath := filepath.Join(root, "aplane.sock")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+	uid, gid := ownerIDs(t, root)
+
+	findings, err := Audit(ProductionAuditOptions(root, uid, gid))
+	if err != nil {
+		t.Fatalf("Audit() error = %v", err)
+	}
+	if !hasFindingCode(findings, "type") {
+		t.Fatalf("production Audit() findings = %+v, want socket type rejection", findings)
 	}
 }
 
@@ -45,8 +92,8 @@ func TestAuditReportsUnsafeModeOwnerSymlinkAndHardlink(t *testing.T) {
 		t.Fatalf("Symlink: %v", err)
 	}
 
-	opts := ownerOptions(t, root, PrivateServiceProfile)
-	opts.ExpectedUID++
+	opts := ownerOptions(t, root, privateServiceProfile)
+	opts.policy.expectedUID++
 	findings, err := Audit(opts)
 	if err != nil {
 		t.Fatalf("Audit() error = %v", err)
@@ -74,7 +121,7 @@ func TestAuditAcceptsNarrowRootCredentialException(t *testing.T) {
 	if err := os.Chown(cred, 0, 0); err != nil {
 		t.Fatalf("Chown(cred): %v", err)
 	}
-	findings, err := Audit(ownerOptions(t, root, PrivateServiceProfile))
+	findings, err := Audit(ownerOptions(t, root, privateServiceProfile))
 	if err != nil {
 		t.Fatalf("Audit() error = %v", err)
 	}
@@ -91,7 +138,7 @@ func TestAuditLegacyProfileAcceptsSetgidSharedLayout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("x"), 0o660); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	findings, err := Audit(ownerOptions(t, root, LegacySharedProfile))
+	findings, err := Audit(ownerOptions(t, root, legacySharedProfile))
 	if err != nil {
 		t.Fatalf("Audit() error = %v", err)
 	}
@@ -132,8 +179,7 @@ func TestMigratePrivateClampsModesAndPreservesCredentialOwner(t *testing.T) {
 		expectedEntries++
 	}
 
-	opts := ownerOptions(t, root, LegacySharedProfile)
-	opts.AncestorBoundary = filepath.Dir(root)
+	opts := ownerMigrationOptions(t, root, "")
 	result, err := MigratePrivate(opts)
 	if err != nil {
 		t.Fatalf("MigratePrivate() error = %v", err)
@@ -141,8 +187,9 @@ func TestMigratePrivateClampsModesAndPreservesCredentialOwner(t *testing.T) {
 	if result.Inspected != expectedEntries || result.Changed == 0 {
 		t.Fatalf("MigratePrivate() result = %+v", result)
 	}
-	opts.Profile = PrivateServiceProfile
-	findings, err := Audit(opts)
+	privateOpts := ownerOptions(t, root, privateServiceProfile)
+	privateOpts.policy.ancestorBoundary = filepath.Dir(root)
+	findings, err := Audit(privateOpts)
 	if err != nil || len(findings) != 0 {
 		t.Fatalf("private Audit() findings = %+v, err = %v", findings, err)
 	}
@@ -168,8 +215,7 @@ func TestMigratePrivateRejectsStructuralObjectsBeforeChangingRoot(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	opts := ownerOptions(t, root, LegacySharedProfile)
-	opts.AncestorBoundary = filepath.Dir(root)
+	opts := ownerMigrationOptions(t, root, "")
 	if _, err := MigratePrivate(opts); err == nil {
 		t.Fatal("MigratePrivate() error = nil, want structural rejection")
 	}
@@ -204,9 +250,7 @@ func TestMigratePrivateRemovesRecognizedLegacySocket(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	opts := ownerOptions(t, root, LegacySharedProfile)
-	opts.AncestorBoundary = filepath.Dir(root)
-	opts.SocketPath = socketPath
+	opts := ownerMigrationOptions(t, root, socketPath)
 	result, err := MigratePrivate(opts)
 	if err != nil {
 		t.Fatalf("MigratePrivate() error = %v", err)
@@ -237,8 +281,7 @@ func TestMigratePrivateRejectsUnrecognizedSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	opts := ownerOptions(t, root, LegacySharedProfile)
-	opts.AncestorBoundary = filepath.Dir(root)
+	opts := ownerMigrationOptions(t, root, "")
 	if _, err := MigratePrivate(opts); err == nil {
 		t.Fatal("MigratePrivate() error = nil, want unrecognized socket rejection")
 	}
@@ -284,7 +327,21 @@ func workspaceTempDir(t *testing.T) string {
 	return root
 }
 
-func ownerOptions(t *testing.T, root string, profile Profile) Options {
+func ownerOptions(t *testing.T, root string, profile profile) AuditOptions {
+	t.Helper()
+	uid, gid := ownerIDs(t, root)
+	return AuditOptions{policy: options{
+		root: root, expectedUID: uid, expectedGID: gid, profile: profile,
+	}}
+}
+
+func ownerMigrationOptions(t *testing.T, root, socketPath string) MigrationOptions {
+	t.Helper()
+	uid, gid := ownerIDs(t, root)
+	return TrustedBoundaryMigrationOptions(root, uid, gid, socketPath, filepath.Dir(root))
+}
+
+func ownerIDs(t *testing.T, root string) (int, int) {
 	t.Helper()
 	info, err := os.Stat(root)
 	if err != nil {
@@ -294,7 +351,7 @@ func ownerOptions(t *testing.T, root string, profile Profile) Options {
 	if !ok {
 		t.Skip("ownership metadata unavailable")
 	}
-	return Options{Root: root, ExpectedUID: uid, ExpectedGID: gid, Profile: profile}
+	return uid, gid
 }
 
 func hasFindingCode(findings []Finding, code string) bool {

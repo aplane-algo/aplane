@@ -75,10 +75,7 @@ func ValidateProductionStorePermissions(dataDir string) error {
 	if !prodManaged {
 		return nil
 	}
-	findings, err := auditPrivateStore(storeperm.Options{
-		Root: dataDir, ExpectedUID: os.Geteuid(), ExpectedGID: os.Getegid(),
-		Profile: storeperm.PrivateServiceProfile,
-	})
+	findings, err := auditPrivateStore(storeperm.ProductionAuditOptions(dataDir, os.Geteuid(), os.Getegid()))
 	if err != nil {
 		return fmt.Errorf("inspect private signer store: %w", err)
 	}

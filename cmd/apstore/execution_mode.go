@@ -57,16 +57,18 @@ func normalizeManagedStoreOwnership(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	opts := storeperm.Options{
-		Root: dataDir, ExpectedUID: uid, ExpectedGID: gid,
-		SocketPath: filepath.Join(dataDir, "aplane.sock"),
-	}
+	socketPath := filepath.Join(dataDir, "aplane.sock")
 	prodManaged, prodErr := signerstartup.IsProductionManagedDataDir(dataDir)
 	if prodErr != nil {
 		return prodErr
 	}
+	var opts storeperm.MigrationOptions
 	if !prodManaged {
-		opts.AncestorBoundary = filepath.Dir(dataDir)
+		opts = storeperm.TrustedBoundaryMigrationOptions(
+			dataDir, uid, gid, socketPath, filepath.Dir(dataDir),
+		)
+	} else {
+		opts = storeperm.LegacyMigrationOptions(dataDir, uid, gid, socketPath)
 	}
 	_, err = storeperm.MigratePrivate(opts)
 	return err

@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
@@ -16,7 +17,7 @@ func cmdPermissions(args []string) error {
 	if len(args) != 1 || (args[0] != "audit" && args[0] != "migrate") {
 		return fmt.Errorf("usage: apstore permissions <audit|migrate>")
 	}
-	opts, err := storePermissionOptions(dataDirectory)
+	uid, gid, err := storePermissionOwner(dataDirectory)
 	if err != nil {
 		return err
 	}
@@ -25,7 +26,7 @@ func cmdPermissions(args []string) error {
 		if err != nil {
 			return err
 		}
-		opts.SocketPath = socketPath
+		opts := storeperm.LegacyMigrationOptions(dataDirectory, uid, gid, socketPath)
 		result, err := storeperm.MigratePrivate(opts)
 		if err != nil {
 			return err
@@ -33,7 +34,20 @@ func cmdPermissions(args []string) error {
 		logInfof("private store migration complete: inspected %d object(s), changed %d", result.Inspected, result.Changed)
 		return nil
 	}
-	opts.Profile = storeperm.PrivateServiceProfile
+	managed, err := signerstartup.IsProductionManagedDataDir(dataDirectory)
+	if err != nil {
+		return err
+	}
+	var opts storeperm.AuditOptions
+	if managed {
+		opts = storeperm.ProductionAuditOptions(dataDirectory, uid, gid)
+	} else {
+		socketPath, err := configuredLiveAuditSocketPath(dataDirectory)
+		if err != nil {
+			return err
+		}
+		opts = storeperm.SameUIDAuditOptions(dataDirectory, uid, gid, socketPath)
+	}
 	findings, err := storeperm.Audit(opts)
 	if err != nil {
 		return err
@@ -48,6 +62,21 @@ func cmdPermissions(args []string) error {
 	return nil
 }
 
+func configuredLiveAuditSocketPath(root string) (string, error) {
+	cfg, err := serverconfig.LoadServerConfig(root)
+	if err != nil {
+		return "", fmt.Errorf("load signer config for permission audit: %w", err)
+	}
+	path, managed, err := adminipc.ResolveDaemonPathForDataDir(root, cfg.IPCPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve signer socket for permission audit: %w", err)
+	}
+	if managed {
+		return "", fmt.Errorf("same-UID permission audit unexpectedly resolved a managed store")
+	}
+	return path, nil
+}
+
 func configuredMigrationSocketPath(root string) (string, error) {
 	cfg, err := serverconfig.LoadServerConfig(root)
 	if err != nil {
@@ -60,17 +89,17 @@ func configuredMigrationSocketPath(root string) (string, error) {
 	return path, nil
 }
 
-func storePermissionOptions(root string) (storeperm.Options, error) {
+func storePermissionOwner(root string) (int, int, error) {
 	info, err := os.Lstat(root)
 	if err != nil {
-		return storeperm.Options{}, err
+		return 0, 0, err
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return storeperm.Options{}, fmt.Errorf("signer data directory is not a real directory: %s", root)
+		return 0, 0, fmt.Errorf("signer data directory is not a real directory: %s", root)
 	}
 	uid, gid, err := fileOwnerGroup(info)
 	if err != nil {
-		return storeperm.Options{}, err
+		return 0, 0, err
 	}
-	return storeperm.Options{Root: root, ExpectedUID: uid, ExpectedGID: gid}, nil
+	return uid, gid, nil
 }

@@ -14,31 +14,78 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
-// Profile selects one complete signer-store permission contract.
-type Profile uint8
+// profile selects one complete signer-store permission contract.
+type profile uint8
 
 const (
-	// LegacySharedProfile audits the transitional 2770/0660 group-shared
+	// legacySharedProfile audits the transitional 2770/0660 group-shared
 	// layout. It exists only to validate inputs before migration.
-	LegacySharedProfile Profile = iota
-	// PrivateServiceProfile audits the service-user-only 0700/0600 layout.
-	PrivateServiceProfile
+	legacySharedProfile profile = iota
+	// privateServiceProfile audits the service-user-only 0700/0600 layout.
+	privateServiceProfile
 )
 
-// Options describes the expected store owner and narrowly recognized
-// exceptions. ExpectedUID and ExpectedGID apply to the root and all ordinary
-// descendants. SocketPath may name the legacy in-store IPC socket. Empty means
-// sockets are never accepted in the store inventory.
-type Options struct {
-	Root        string
-	ExpectedUID int
-	ExpectedGID int
-	Profile     Profile
-	SocketPath  string
-	// AncestorBoundary, when non-empty, is an already-validated parent at
-	// which ancestor inspection stops. Production callers leave it empty;
-	// tests and embedding applications may supply a separately trusted root.
-	AncestorBoundary string
+// AuditOptions is an opaque, complete read-only store policy. Callers obtain
+// one from an operation-specific constructor so socket and ancestor
+// exceptions cannot be assembled piecemeal.
+type AuditOptions struct{ policy options }
+
+// MigrationOptions is an opaque stopped-store migration policy. It is a
+// distinct type because a removable legacy socket is not an audit exception.
+type MigrationOptions struct{ policy options }
+
+type options struct {
+	root             string
+	expectedUID      int
+	expectedGID      int
+	profile          profile
+	socketPath       string
+	ancestorBoundary string
+}
+
+// ProductionAuditOptions rejects every in-store socket and inspects ancestors
+// through the filesystem root.
+func ProductionAuditOptions(root string, expectedUID, expectedGID int) AuditOptions {
+	return AuditOptions{policy: options{
+		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
+		profile: privateServiceProfile,
+	}}
+}
+
+// SameUIDAuditOptions recognizes one exact live socket while retaining the
+// full ancestor walk. The socket may be inspected but is never removed.
+func SameUIDAuditOptions(root string, expectedUID, expectedGID int, socketPath string) AuditOptions {
+	return AuditOptions{policy: options{
+		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
+		profile: privateServiceProfile, socketPath: socketPath,
+	}}
+}
+
+// TrustedBoundaryAuditOptions is the explicit embedder/test policy for a root
+// below a separately validated ancestor. Normal product callers do not use it.
+func TrustedBoundaryAuditOptions(root string, expectedUID, expectedGID int, socketPath, boundary string) AuditOptions {
+	return AuditOptions{policy: options{
+		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
+		profile: privateServiceProfile, socketPath: socketPath, ancestorBoundary: boundary,
+	}}
+}
+
+// LegacyMigrationOptions recognizes one exact stale in-store socket that a
+// stopped migration may remove after complete inventory validation.
+func LegacyMigrationOptions(root string, expectedUID, expectedGID int, socketPath string) MigrationOptions {
+	return MigrationOptions{policy: options{
+		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
+		profile: legacySharedProfile, socketPath: socketPath,
+	}}
+}
+
+// TrustedBoundaryMigrationOptions is the explicit embedder/test migration
+// policy below a separately validated ancestor. Product migrations use
+// LegacyMigrationOptions and inspect ancestors through the filesystem root.
+func TrustedBoundaryMigrationOptions(root string, expectedUID, expectedGID int, socketPath, boundary string) MigrationOptions {
+	opts := LegacyMigrationOptions(root, expectedUID, expectedGID, socketPath)
+	opts.policy.ancestorBoundary = boundary
+	return opts
 }
 
 // Finding is one independently actionable filesystem-policy violation.
@@ -67,11 +114,11 @@ type artifactExpectation struct {
 	wantRegular    bool
 }
 
-func policyForProfile(profile Profile) (profilePolicy, error) {
+func policyForProfile(profile profile) (profilePolicy, error) {
 	switch profile {
-	case LegacySharedProfile:
+	case legacySharedProfile:
 		return profilePolicy{dirMode: 0o770, fileMode: 0o660, allowDirSetgid: true}, nil
-	case PrivateServiceProfile:
+	case privateServiceProfile:
 		return profilePolicy{dirMode: 0o700, fileMode: 0o600}, nil
 	default:
 		return profilePolicy{}, fmt.Errorf("unknown store permission profile %d", profile)
@@ -81,24 +128,28 @@ func policyForProfile(profile Profile) (profilePolicy, error) {
 // Audit performs a read-only, no-symlink-traversal inspection. Findings are
 // returned in path/code order. A non-nil error means the inventory could not
 // be completed and its result must not authorize migration or startup.
-func Audit(opts Options) ([]Finding, error) {
-	policy, err := policyForProfile(opts.Profile)
+func Audit(opts AuditOptions) ([]Finding, error) {
+	return audit(opts.policy)
+}
+
+func audit(opts options) ([]Finding, error) {
+	policy, err := policyForProfile(opts.profile)
 	if err != nil {
 		return nil, err
 	}
-	if opts.Root == "" {
+	if opts.root == "" {
 		return nil, fmt.Errorf("store root is required")
 	}
-	root, err := filepath.Abs(filepath.Clean(opts.Root))
+	root, err := filepath.Abs(filepath.Clean(opts.root))
 	if err != nil {
 		return nil, fmt.Errorf("resolve store root: %w", err)
 	}
-	if opts.ExpectedUID < 0 || opts.ExpectedGID < 0 {
-		return nil, fmt.Errorf("invalid expected store ownership %d:%d", opts.ExpectedUID, opts.ExpectedGID)
+	if opts.expectedUID < 0 || opts.expectedGID < 0 {
+		return nil, fmt.Errorf("invalid expected store ownership %d:%d", opts.expectedUID, opts.expectedGID)
 	}
 
 	var findings []Finding
-	ancestorFindings, err := auditAncestors(root, opts.AncestorBoundary)
+	ancestorFindings, err := auditAncestors(root, opts.ancestorBoundary)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +197,7 @@ func Audit(opts Options) ([]Finding, error) {
 					Detail: fmt.Sprintf("regular file has %d links, expected 1", links),
 				})
 			}
-		case info.Mode()&os.ModeSocket != 0 && sameCleanPath(path, opts.SocketPath):
+		case info.Mode()&os.ModeSocket != 0 && sameCleanPath(path, opts.socketPath):
 			auditMode(path, info.Mode(), 0o660, false, &findings)
 		default:
 			findings = append(findings, Finding{Path: path, Code: "type", Detail: "unexpected filesystem object type"})
@@ -166,8 +217,8 @@ func Audit(opts Options) ([]Finding, error) {
 	return findings, nil
 }
 
-func expectedArtifact(root, path string, info os.FileInfo, opts Options, policy profilePolicy) artifactExpectation {
-	expect := artifactExpectation{uid: opts.ExpectedUID, gid: opts.ExpectedGID}
+func expectedArtifact(root, path string, info os.FileInfo, opts options, policy profilePolicy) artifactExpectation {
+	expect := artifactExpectation{uid: opts.expectedUID, gid: opts.expectedGID}
 	if info.IsDir() {
 		expect.mode = policy.dirMode
 		expect.allowDirSetgid = policy.allowDirSetgid
@@ -186,16 +237,16 @@ func expectedArtifact(root, path string, info os.FileInfo, opts Options, policy 
 	}
 	switch filepath.ToSlash(rel) {
 	case "install":
-		expect.uid, expect.gid = 0, opts.ExpectedGID
+		expect.uid, expect.gid = 0, opts.expectedGID
 		expect.mode = 0o750
-		expect.allowDirSetgid = opts.Profile == LegacySharedProfile
+		expect.allowDirSetgid = opts.profile == legacySharedProfile
 		expect.wantDir = true
 	case "install/uninstall.sh":
-		expect.uid, expect.gid = 0, opts.ExpectedGID
+		expect.uid, expect.gid = 0, opts.expectedGID
 		expect.mode = 0o750
 		expect.wantRegular = true
 	case "install/release.json", "install/operator-root":
-		expect.uid, expect.gid = 0, opts.ExpectedGID
+		expect.uid, expect.gid = 0, opts.expectedGID
 		expect.mode = 0o640
 		expect.wantRegular = true
 	}

@@ -107,7 +107,11 @@ internal to pre-migration validation; normal writers use private profiles.
 `internal/storeperm` owns read-only audit, stopped-service migration, and the
 startup permission contract. It inventories without following symlinks and
 reports unsafe ancestors, ownership, modes, hardlinks, and unexpected file
-types. Migration validates the complete legacy inventory before mutation,
+types. Its public policies are opaque operation-specific values: production
+audit rejects every in-store socket, same-UID audit recognizes one exact live
+socket without relaxing ancestor checks, trusted-boundary policies require an
+explicit embedder/test constructor, and migration alone receives a removable
+legacy socket. Migration validates the complete legacy inventory before mutation,
 removes the recognized stale legacy `<data-root>/aplane.sock`, removes group
 access at the root first, repairs recognized objects through opened
 descriptors, syncs directories, and independently audits the private result. A

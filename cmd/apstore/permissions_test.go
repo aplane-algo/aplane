@@ -9,6 +9,22 @@ import (
 	"testing"
 )
 
+func TestConfiguredLiveAuditSocketPathUsesSameUIDConfig(t *testing.T) {
+	root := t.TempDir()
+	socketPath := filepath.Join(root, "custom.sock")
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("ipc_path: "+socketPath+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := configuredLiveAuditSocketPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != socketPath {
+		t.Fatalf("configuredLiveAuditSocketPath() = %q, want %q", got, socketPath)
+	}
+}
+
 func TestConfiguredMigrationSocketPathUsesCustomInStoreConfig(t *testing.T) {
 	root := t.TempDir()
 	custom := filepath.Join(root, "run", "custom.sock")
