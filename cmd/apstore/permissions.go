@@ -6,8 +6,9 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
+	"github.com/aplane-algo/aplane/internal/adminipc"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
@@ -20,7 +21,11 @@ func cmdPermissions(args []string) error {
 		return err
 	}
 	if args[0] == "migrate" {
-		opts.SocketPath = filepath.Join(dataDirectory, "aplane.sock")
+		socketPath, err := configuredMigrationSocketPath(dataDirectory)
+		if err != nil {
+			return err
+		}
+		opts.SocketPath = socketPath
 		result, err := storeperm.MigratePrivate(opts)
 		if err != nil {
 			return err
@@ -41,6 +46,18 @@ func cmdPermissions(args []string) error {
 	}
 	logInfof("private store permission audit passed")
 	return nil
+}
+
+func configuredMigrationSocketPath(root string) (string, error) {
+	cfg, err := serverconfig.LoadServerConfig(root)
+	if err != nil {
+		return "", fmt.Errorf("load signer config for permission migration: %w", err)
+	}
+	path, err := adminipc.ResolveLegacyStoreSocketPath(root, cfg.IPCPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve legacy signer socket for permission migration: %w", err)
+	}
+	return path, nil
 }
 
 func storePermissionOptions(root string) (storeperm.Options, error) {

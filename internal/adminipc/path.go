@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -33,6 +34,10 @@ func ResolveDaemonPath(dataDir, configured string, systemdManaged bool) string {
 	if configured == "" {
 		configured = legacyDefault
 	}
+	if !filepath.IsAbs(configured) {
+		configured = filepath.Join(dataDir, configured)
+	}
+	configured = filepath.Clean(configured)
 	if systemdManaged && filepath.Clean(configured) == filepath.Clean(legacyDefault) {
 		return SystemSocketPath
 	}
@@ -47,7 +52,60 @@ func ResolveDaemonPathForDataDir(dataDir, configured string) (string, bool, erro
 	if err != nil {
 		return "", false, err
 	}
-	return ResolveDaemonPath(dataDir, configured, managed), managed, nil
+	resolved := ResolveDaemonPath(dataDir, configured, managed)
+	if err := validateManagedDaemonPath(dataDir, resolved, managed); err != nil {
+		return "", managed, err
+	}
+	return resolved, managed, nil
+}
+
+// ResolveLegacyStoreSocketPath returns the one exact in-store socket that a
+// stopped migration may remove. A configured in-store path supports upgrades
+// from releases that allowed it; an external custom path leaves only the
+// historical default eligible for cleanup.
+func ResolveLegacyStoreSocketPath(dataDir, configured string) (string, error) {
+	configured = ResolveDaemonPath(dataDir, configured, false)
+	inside, err := pathWithin(dataDir, configured)
+	if err != nil {
+		return "", err
+	}
+	if inside {
+		return configured, nil
+	}
+	return filepath.Clean(filepath.Join(dataDir, "aplane.sock")), nil
+}
+
+func validateManagedDaemonPath(dataDir, resolved string, managed bool) error {
+	if !managed {
+		return nil
+	}
+	inside, err := pathWithin(dataDir, resolved)
+	if err != nil {
+		return err
+	}
+	if inside {
+		return fmt.Errorf(
+			"systemd-managed admin IPC path must be outside signer data directory: %s; use %s or another service-owned protected runtime directory",
+			resolved, SystemSocketPath,
+		)
+	}
+	return nil
+}
+
+func pathWithin(root, candidate string) (bool, error) {
+	rootAbs, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return false, fmt.Errorf("resolve signer data directory: %w", err)
+	}
+	candidateAbs, err := filepath.Abs(filepath.Clean(candidate))
+	if err != nil {
+		return false, fmt.Errorf("resolve admin IPC path: %w", err)
+	}
+	rel, err := filepath.Rel(rootAbs, candidateAbs)
+	if err != nil {
+		return false, fmt.Errorf("compare admin IPC path with signer data directory: %w", err)
+	}
+	return rel != ".." && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, ".."+string(filepath.Separator)), nil
 }
 
 // ResolveClientPath locates the local admin socket without requiring private
@@ -109,7 +167,11 @@ func resolveDataDirectoryPath(dataDir string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	return filepath.Clean(ResolveDaemonPath(dataDir, cfg.IPCPath, managed)), true, nil
+	resolved := ResolveDaemonPath(dataDir, cfg.IPCPath, managed)
+	if err := validateManagedDaemonPath(dataDir, resolved, managed); err != nil {
+		return "", false, err
+	}
+	return resolved, true, nil
 }
 
 func validateRuntimeDirectory(path string, info os.FileInfo) error {

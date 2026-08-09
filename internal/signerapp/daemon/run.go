@@ -298,7 +298,9 @@ func Run(dataDir string) int {
 	}
 
 	lockOnDisconnect := config.ShouldLockOnDisconnect()
-	privateRuntime := systemdManaged && filepath.Clean(config.IPCPath) == filepath.Clean(adminipc.SystemSocketPath)
+	// Every managed socket, including an explicit custom path, must live in a
+	// service-owned runtime directory that group members cannot mutate.
+	privateRuntime := systemdManaged
 	if err := startIPCServer(server, config.IPCPath, privateRuntime); err != nil {
 		logErrorf("failed to start IPC server: %v", err)
 		return 1
