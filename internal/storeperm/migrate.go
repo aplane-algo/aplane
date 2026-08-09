@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 )
@@ -46,7 +47,11 @@ func MigratePrivate(opts Options) (MigrationResult, error) {
 	if err != nil {
 		return MigrationResult{}, fmt.Errorf("resolve store root: %w", err)
 	}
-	entries, err := migrationInventory(root)
+	legacySocket, err := recognizedLegacySocket(root, opts.SocketPath)
+	if err != nil {
+		return MigrationResult{}, err
+	}
+	entries, err := migrationInventory(root, legacySocket)
 	if err != nil {
 		return MigrationResult{}, err
 	}
@@ -69,6 +74,13 @@ func MigratePrivate(opts Options) (MigrationResult, error) {
 		return result, err
 	}
 	for _, entry := range entries {
+		if entry.info.Mode()&os.ModeSocket != 0 {
+			if err := removeInventoriedLegacySocket(entry, legacySocket); err != nil {
+				return result, err
+			}
+			result.Changed++
+			continue
+		}
 		expect := expectedArtifact(root, entry.path, entry.info, opts, privatePolicy)
 		uid, gid, ok := fsutil.FileOwnership(entry.info)
 		if !ok {
@@ -100,7 +112,39 @@ func MigratePrivate(opts Options) (MigrationResult, error) {
 	return result, nil
 }
 
-func migrationInventory(root string) ([]migrationEntry, error) {
+func recognizedLegacySocket(root, socketPath string) (string, error) {
+	if socketPath == "" {
+		return "", nil
+	}
+	socket, err := filepath.Abs(filepath.Clean(socketPath))
+	if err != nil {
+		return "", fmt.Errorf("resolve legacy signer socket: %w", err)
+	}
+	rel, err := filepath.Rel(root, socket)
+	if err != nil || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("legacy signer socket is outside store root: %s", socket)
+	}
+	return socket, nil
+}
+
+func removeInventoriedLegacySocket(entry migrationEntry, socketPath string) error {
+	if socketPath == "" || !sameCleanPath(entry.path, socketPath) {
+		return fmt.Errorf("refusing unexpected socket during signer-store migration: %s", entry.path)
+	}
+	info, err := os.Lstat(entry.path)
+	if err != nil {
+		return fmt.Errorf("inspect legacy signer socket: %w", err)
+	}
+	if info.Mode()&os.ModeSocket == 0 || !os.SameFile(entry.info, info) {
+		return fmt.Errorf("legacy signer socket changed during migration: %s", entry.path)
+	}
+	if err := os.Remove(entry.path); err != nil {
+		return fmt.Errorf("remove stale legacy signer socket: %w", err)
+	}
+	return nil
+}
+
+func migrationInventory(root, legacySocket string) ([]migrationEntry, error) {
 	var entries []migrationEntry
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -113,7 +157,8 @@ func migrationInventory(root string) ([]migrationEntry, error) {
 		if info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("refusing symlink during signer-store migration: %s", path)
 		}
-		if !info.IsDir() && !info.Mode().IsRegular() {
+		recognizedSocket := info.Mode()&os.ModeSocket != 0 && sameCleanPath(path, legacySocket)
+		if !info.IsDir() && !info.Mode().IsRegular() && !recognizedSocket {
 			return fmt.Errorf("refusing unexpected object during signer-store migration: %s", path)
 		}
 		if info.Mode().IsRegular() {

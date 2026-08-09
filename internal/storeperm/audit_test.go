@@ -4,6 +4,7 @@
 package storeperm
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -182,6 +183,71 @@ func TestMigratePrivateRejectsStructuralObjectsBeforeChangingRoot(t *testing.T) 
 	data, err := os.ReadFile(outside)
 	if err != nil || string(data) != "outside" {
 		t.Fatalf("outside file changed: %q, %v", data, err)
+	}
+}
+
+func TestMigratePrivateRemovesRecognizedLegacySocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix socket contract")
+	}
+	root := workspaceTempDir(t)
+	if err := os.Chmod(root, 0o770|os.ModeSetgid); err != nil {
+		t.Fatal(err)
+	}
+	socketPath := filepath.Join(root, "aplane.sock")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener.SetUnlinkOnClose(false)
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := ownerOptions(t, root, LegacySharedProfile)
+	opts.AncestorBoundary = filepath.Dir(root)
+	opts.SocketPath = socketPath
+	result, err := MigratePrivate(opts)
+	if err != nil {
+		t.Fatalf("MigratePrivate() error = %v", err)
+	}
+	if result.Changed == 0 {
+		t.Fatalf("MigratePrivate() result = %+v, want socket removal", result)
+	}
+	if _, err := os.Lstat(socketPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy socket remains after migration: %v", err)
+	}
+}
+
+func TestMigratePrivateRejectsUnrecognizedSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix socket contract")
+	}
+	root := workspaceTempDir(t)
+	if err := os.Chmod(root, 0o770|os.ModeSetgid); err != nil {
+		t.Fatal(err)
+	}
+	socketPath := filepath.Join(root, "unexpected.sock")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener.SetUnlinkOnClose(false)
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := ownerOptions(t, root, LegacySharedProfile)
+	opts.AncestorBoundary = filepath.Dir(root)
+	if _, err := MigratePrivate(opts); err == nil {
+		t.Fatal("MigratePrivate() error = nil, want unrecognized socket rejection")
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o770 || info.Mode()&os.ModeSetgid == 0 {
+		t.Fatalf("root mode changed before socket rejection: %v", info.Mode())
 	}
 }
 

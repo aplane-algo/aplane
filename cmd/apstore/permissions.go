@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/storeperm"
 )
@@ -19,6 +20,7 @@ func cmdPermissions(args []string) error {
 		return err
 	}
 	if args[0] == "migrate" {
+		opts.SocketPath = filepath.Join(dataDirectory, "aplane.sock")
 		result, err := storeperm.MigratePrivate(opts)
 		if err != nil {
 			return err

@@ -114,6 +114,15 @@ fi
 SERVICE_DEST="/etc/systemd/system/apsigner.service"
 SUDOERS_DEST="/etc/sudoers.d/99-apsigner-systemctl"
 
+if ! command -v systemctl >/dev/null 2>&1; then
+    echo "Error: systemctl is required for systemd setup." >&2
+    exit 1
+fi
+if systemctl is-active --quiet apsigner.service; then
+    echo "Error: stop apsigner.service before running systemd setup or signer-store migration." >&2
+    exit 1
+fi
+
 echo "=== apsigner systemd setup ==="
 echo ""
 echo "  Service:   $SERVICE_DEST"

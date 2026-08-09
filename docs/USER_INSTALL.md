@@ -1007,6 +1007,10 @@ The `installer/` directory contains service files and installer helper scripts f
 
 ### Manual Installation (Without the Setup Script)
 
+The pre-built unit enables `CAP_IPC_LOCK` and an unlimited memory-lock limit,
+matching `require_memory_protection: true`. Stop any existing
+`apsigner.service` before replacing its unit or migrating its store.
+
 If you prefer not to use `systemd-setup.sh`, you can install the pre-built service file directly:
 
 ```bash

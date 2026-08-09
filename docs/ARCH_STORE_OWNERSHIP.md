@@ -95,9 +95,10 @@ internal to pre-migration validation; normal writers use private profiles.
 startup permission contract. It inventories without following symlinks and
 reports unsafe ancestors, ownership, modes, hardlinks, and unexpected file
 types. Migration validates the complete legacy inventory before mutation,
-removes group access at the root first, repairs recognized objects through
-opened descriptors, syncs directories, and independently audits the private
-result. A clean audit is authority to proceed; an incomplete audit is not.
+removes the recognized stale legacy `<data-root>/aplane.sock`, removes group
+access at the root first, repairs recognized objects through opened
+descriptors, syncs directories, and independently audits the private result. A
+clean audit is authority to proceed; an incomplete audit is not.
 
 `apstore permissions audit` is read-only. `apstore permissions migrate`
 requires the normal offline execution mode and exclusive store lock. A
@@ -120,6 +121,8 @@ The migration order is fixed:
 
 The systemd installer performs this ordering while the service is stopped and
 runs both migration and post-migration audit before starting the daemon.
+The standalone `installer/scripts/systemd-setup.sh` enforces the same stopped
+service precondition before changing the unit or store.
 Fresh systemd stores are created private. Supported upgrades clamp existing
 stores before restart. The systemd smoke test proves that an operator-group
 user cannot traverse `/var/lib/apsigner` while the same user can reach
