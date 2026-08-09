@@ -146,7 +146,10 @@ func main() {
 			IPCPath: ipcPath,
 			Detail:  "systemd attach mode; daemon lifecycle is not managed by apconsole",
 		}, nil)
-		startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, "", shellSession, shellStartup, true, nil, daemon)
+		// The private managed store prevents this operator process from reading
+		// node.yaml directly. Keep the shell fail-closed until authenticated
+		// admin settings identify the node as a signer.
+		startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, "", shellSession, shellStartup, false, nil, daemon)
 		return
 	}
 

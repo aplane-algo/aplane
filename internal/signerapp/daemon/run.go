@@ -88,8 +88,12 @@ func Run(dataDir string) int {
 	logInfof("--------------------------------------------")
 
 	config := startupOpts.Config
-	systemdManaged := os.Getenv(bootstrap.SystemdManagedInstanceEnv) == "1"
-	config.IPCPath = adminipc.ResolveDaemonPath(resolvedDataDir, config.IPCPath, systemdManaged)
+	resolvedIPCPath, systemdManaged, err := adminipc.ResolveDaemonPathForDataDir(resolvedDataDir, config.IPCPath)
+	if err != nil {
+		logErrorf("failed to resolve admin IPC path: %v", err)
+		return 1
+	}
+	config.IPCPath = resolvedIPCPath
 	passphraseTimeout := startupOpts.PassphraseTimeout
 	identityID := startupOpts.IdentityID
 	if _, err := serverconfig.ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {

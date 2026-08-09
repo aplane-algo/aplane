@@ -31,6 +31,30 @@ func TestResolveDaemonPath(t *testing.T) {
 	}
 }
 
+func TestResolveDaemonPathForDataDirUsesManagedMarker(t *testing.T) {
+	dataDir := t.TempDir()
+	legacy := filepath.Join(dataDir, "aplane.sock")
+
+	path, managed, err := ResolveDaemonPathForDataDir(dataDir, legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if managed || path != legacy {
+		t.Fatalf("unmanaged path = %q, managed=%t; want %q, false", path, managed, legacy)
+	}
+
+	if err := os.WriteFile(filepath.Join(dataDir, ".prod"), []byte("systemd-managed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path, managed, err = ResolveDaemonPathForDataDir(dataDir, legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !managed || path != SystemSocketPath {
+		t.Fatalf("managed path = %q, managed=%t; want %q, true", path, managed, SystemSocketPath)
+	}
+}
+
 func TestResolveClientPathExplicitAndEnvironment(t *testing.T) {
 	t.Setenv(SocketPathEnv, "/env/socket")
 	got, err := ResolveClientPath("", "/flag/socket")

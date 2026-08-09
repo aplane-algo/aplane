@@ -42,6 +42,9 @@ type model struct {
 	help          bool
 	quitConfirm   bool
 	shellDisabled bool
+	// shellRolePending keeps systemd-attach mode fail-closed until the
+	// authenticated admin settings response identifies the node role.
+	shellRolePending bool
 
 	shell  shellModel
 	signer tea.Model
@@ -72,11 +75,12 @@ func newModel(connector tui.AdminConnector, dataDir string, shell shellExecutor,
 func newModelWithShell(connector tui.AdminConnector, dataDir string, shell shellExecutor, shellStartup []string, daemon daemonModel, shellEnabled bool, initialNodeRole string) model {
 	signer := tui.NewModel(connector, dataDir).WithInitialNodeRole(initialNodeRole)
 	return model{
-		focus:         paneSigner,
-		shellDisabled: !shellEnabled,
-		shell:         newShellModel(shell, shellStartup),
-		signer:        signer,
-		daemon:        daemon,
+		focus:            paneSigner,
+		shellDisabled:    !shellEnabled,
+		shellRolePending: !shellEnabled && strings.TrimSpace(initialNodeRole) == "" && shell != nil,
+		shell:            newShellModel(shell, shellStartup),
+		signer:           signer,
+		daemon:           daemon,
 	}
 }
 
@@ -235,6 +239,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		daemon, cmd := m.daemon.Update(msg)
 		m.daemon = daemon
 		return m, cmd
+	case tui.AdminSettingsMsg:
+		updated, signerCmd := m.forwardToSigner(msg)
+		m = updated.(model)
+		if !m.shellRolePending {
+			return m, signerCmd
+		}
+		switch strings.ToLower(strings.TrimSpace(msg.Settings.NodeRole)) {
+		case "signer":
+			m.shellRolePending = false
+			m.shellDisabled = false
+			resized, resizeCmd := m.resyncSignerSize()
+			m = resized.(model)
+			return m, tea.Batch(signerCmd, m.shell.Init(), resizeCmd)
+		case "sentry":
+			m.shellRolePending = false
+			m.daemon.lines = append(m.daemon.lines, "[config] shell pane disabled on sentry nodes")
+			return m, signerCmd
+		default:
+			// Unknown and missing roles remain fail-closed. A later settings
+			// refresh can still resolve the role.
+			return m, signerCmd
+		}
 	}
 
 	if m.focus == paneSigner || shouldForwardToSigner(msg) {

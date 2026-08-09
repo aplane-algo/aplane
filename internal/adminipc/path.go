@@ -39,6 +39,17 @@ func ResolveDaemonPath(dataDir, configured string, systemdManaged bool) string {
 	return configured
 }
 
+// ResolveDaemonPathForDataDir derives managed placement from the durable
+// store marker, which is also the source used by clients. Process-environment
+// signals authorize a managed launch but do not define the store's identity.
+func ResolveDaemonPathForDataDir(dataDir, configured string) (string, bool, error) {
+	managed, err := signerbootstrap.IsProductionManagedDataDir(dataDir)
+	if err != nil {
+		return "", false, err
+	}
+	return ResolveDaemonPath(dataDir, configured, managed), managed, nil
+}
+
 // ResolveClientPath locates the local admin socket without requiring private
 // signer-store access. Resolution is explicit flag, environment override,
 // established system runtime directory, then readable legacy config/default.
