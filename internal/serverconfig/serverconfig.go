@@ -392,7 +392,7 @@ func SaveSetting(dataDir, key string, value interface{}) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := apconfig.WriteConfigAtomic(path, out, 0o640); err != nil {
+	if err := apconfig.WriteConfigAtomic(path, out); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 

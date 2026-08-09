@@ -14,8 +14,9 @@ import (
 )
 
 // legacyModeAllowlist is the complete production-code inventory of remaining
-// 0770/0660 literals. They are transport/client or migration compatibility,
-// never signer-store creation defaults.
+// 0770/0660/0640 literals. They are transport/client, migration compatibility,
+// or the explicit installer-metadata exception, never signer-store creation
+// defaults.
 var legacyModeAllowlist = map[string]struct{}{
 	"internal/clientdata/lock.go":      {},
 	"internal/clientstate/watcher.go":  {},
@@ -52,7 +53,7 @@ func TestLegacySharedModesStayOutOfSignerStoreWriters(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			literal, ok := node.(*ast.BasicLit)
-			if !ok || literal.Kind != token.INT || (literal.Value != "0770" && literal.Value != "0o770" && literal.Value != "0660" && literal.Value != "0o660") {
+			if !ok || literal.Kind != token.INT || (literal.Value != "0770" && literal.Value != "0o770" && literal.Value != "0660" && literal.Value != "0o660" && literal.Value != "0640" && literal.Value != "0o640") {
 				return true
 			}
 			if _, allowed := legacyModeAllowlist[rel]; !allowed {

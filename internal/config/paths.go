@@ -4,7 +4,6 @@
 package config
 
 import (
-	"os"
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -19,60 +18,9 @@ func ResolvePath(path, baseDir string) string {
 	return filepath.Join(baseDir, path)
 }
 
-// WriteConfigAtomic writes a config file via a temp file and rename so
-// readers never observe a partial write.
-func WriteConfigAtomic(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "config.yaml.tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		_ = tmp.Close()
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if _, err := tmp.Write(data); err != nil {
-		return err
-	}
-
-	targetMode := mode
-	var targetUID, targetGID int
-	hasOwnership := false
-
-	info, statErr := os.Stat(path)
-	switch {
-	case statErr == nil:
-		targetMode = info.Mode().Perm()
-		if uid, gid, ok := fsutil.FileOwnership(info); ok {
-			targetUID = uid
-			targetGID = gid
-			hasOwnership = true
-		}
-	case os.IsNotExist(statErr):
-		// New file: keep default mode and current ownership.
-	default:
-		return statErr
-	}
-
-	if err := tmp.Chmod(targetMode); err != nil {
-		return err
-	}
-	if hasOwnership && (os.Getuid() != targetUID || os.Getgid() != targetGID) {
-		if err := tmp.Chown(targetUID, targetGID); err != nil {
-			return err
-		}
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return nil
+// WriteConfigAtomic durably replaces a private same-UID config file. It uses
+// the shared private-store publication primitive so symlinks, permissive modes,
+// and unsynced rename paths cannot become config-specific exceptions.
+func WriteConfigAtomic(path string, data []byte) error {
+	return fsutil.WriteFileDurableWithProfile(path, data, fsutil.PrivateStoreFileProfile)
 }
