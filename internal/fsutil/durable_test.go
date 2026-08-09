@@ -164,6 +164,14 @@ func TestWriteFileDurableRejectsUnknownProfile(t *testing.T) {
 	}
 }
 
+func TestWriteFileSetDurableRejectsOmittedProfile(t *testing.T) {
+	dir := t.TempDir()
+	err := WriteFileSetDurable(DurableFileWrite{Path: filepath.Join(dir, "target"), Data: []byte("data")})
+	if err == nil {
+		t.Fatal("WriteFileSetDurable accepted an omitted profile")
+	}
+}
+
 func TestWriteFileDurableOperationOrdering(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ordered.bin")

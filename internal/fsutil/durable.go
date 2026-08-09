@@ -17,9 +17,9 @@ import (
 type DurableFileProfile uint8
 
 const (
-	// LegacyStoreFileProfile retains the transitional group-readable and
-	// group-writable store ceiling. It must not be used for new store designs.
-	LegacyStoreFileProfile DurableFileProfile = iota
+	// The zero value is deliberately invalid so a DurableFileWrite literal
+	// cannot silently select a policy when Profile is omitted.
+	_ DurableFileProfile = iota
 	// PrivateStoreFileProfile creates service-user-only store files.
 	PrivateStoreFileProfile
 	// RootCredentialFileProfile creates the narrow root-owned systemd
@@ -28,9 +28,8 @@ const (
 )
 
 type durableFilePolicy struct {
-	mode        os.FileMode
-	preserveGID bool
-	owner       *durableOwner
+	mode  os.FileMode
+	owner *durableOwner
 }
 
 type durableOwner struct {
@@ -61,8 +60,6 @@ type stagedDurableFile struct {
 
 func policyForDurableFileProfile(profile DurableFileProfile) (durableFilePolicy, error) {
 	switch profile {
-	case LegacyStoreFileProfile:
-		return durableFilePolicy{mode: 0o660, preserveGID: true}, nil
 	case PrivateStoreFileProfile:
 		return durableFilePolicy{mode: 0o600}, nil
 	case RootCredentialFileProfile:
@@ -195,17 +192,10 @@ func stageDurableFile(path string, data []byte, policy durableFilePolicy) (*stag
 	}
 
 	targetMode := policy.mode
-	targetGID := 0
-	preserveGID := false
 	if statErr == nil {
 		// Never carry permissions wider than the selected profile. More
 		// restrictive existing permissions remain restrictive.
 		targetMode = info.Mode().Perm() & policy.mode
-		if policy.preserveGID {
-			_, gid, ok := FileOwnership(info)
-			targetGID = gid
-			preserveGID = ok && targetGID != os.Getgid()
-		}
 	}
 
 	// Ownership is set on the unpublished descriptor. Chown precedes chmod
@@ -213,10 +203,6 @@ func stageDurableFile(path string, data []byte, policy durableFilePolicy) (*stag
 	if policy.owner != nil {
 		if err := tmp.Chown(policy.owner.uid, policy.owner.gid); err != nil {
 			return nil, fmt.Errorf("set durable temp ownership to %d:%d: %w", policy.owner.uid, policy.owner.gid, err)
-		}
-	} else if preserveGID {
-		if err := tmp.Chown(-1, targetGID); err != nil {
-			return nil, err
 		}
 	}
 	if err := tmp.Chmod(targetMode); err != nil {

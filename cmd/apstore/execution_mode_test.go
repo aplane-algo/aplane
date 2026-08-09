@@ -5,6 +5,7 @@ package main
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -347,5 +348,22 @@ func TestNormalizeManagedStoreOwnershipRejectsSymlink(t *testing.T) {
 	}
 	if string(data) != "unchanged" {
 		t.Fatalf("outside contents = %q, want unchanged", data)
+	}
+}
+
+func TestNormalizeManagedStoreOwnershipRemovesLegacySocket(t *testing.T) {
+	dataDir := t.TempDir()
+	socketPath := filepath.Join(dataDir, "aplane.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("Listen(unix) error = %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	if err := normalizeManagedStoreOwnership(dataDir); err != nil {
+		t.Fatalf("normalizeManagedStoreOwnership() error = %v", err)
+	}
+	if _, err := os.Lstat(socketPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy socket survived normalization: %v", err)
 	}
 }

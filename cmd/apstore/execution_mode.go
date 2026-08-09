@@ -59,6 +59,7 @@ func normalizeManagedStoreOwnership(dataDir string) error {
 	}
 	opts := storeperm.Options{
 		Root: dataDir, ExpectedUID: uid, ExpectedGID: gid,
+		SocketPath: filepath.Join(dataDir, "aplane.sock"),
 	}
 	prodManaged, prodErr := signerstartup.IsProductionManagedDataDir(dataDir)
 	if prodErr != nil {
