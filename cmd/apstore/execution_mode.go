@@ -70,6 +70,9 @@ func normalizeManagedStoreOwnership(dataDir string) error {
 }
 
 func enforceApstoreExecutionMode(dataDir string, args []string) error {
+	if isStorePermissionPreflight(args) {
+		return nil
+	}
 	if isDaemonBackedCommand(args) {
 		return nil
 	}
@@ -216,7 +219,7 @@ func acquireOfflineMutationLockForArgs(args []string, dataDir string) (func(), e
 	if len(args) == 0 {
 		return func() {}, nil
 	}
-	if isStorePermissionCommand(args) && len(args) == 2 && args[1] == "audit" {
+	if isStorePermissionCommand(args) && len(args) == 2 && (args[1] == "audit" || args[1] == "preflight") {
 		return func() {}, nil
 	}
 	if args[0] == "policy" {
@@ -236,6 +239,10 @@ func acquireOfflineMutationLockForArgs(args []string, dataDir string) (func(), e
 
 func isStorePermissionCommand(args []string) bool {
 	return len(args) > 0 && args[0] == "permissions"
+}
+
+func isStorePermissionPreflight(args []string) bool {
+	return len(args) == 2 && args[0] == "permissions" && args[1] == "preflight"
 }
 
 func acquireOfflineMutationLock(command, dataDir string) (func(), error) {

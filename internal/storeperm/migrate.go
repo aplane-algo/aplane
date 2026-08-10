@@ -170,6 +170,16 @@ func removeInventoriedLegacySocket(entry migrationEntry, socketPath string) erro
 }
 
 func migrationInventory(root, legacySocket string) ([]migrationEntry, error) {
+	return structuralInventory(root, "migration", func(path string, info os.FileInfo) bool {
+		return info.Mode()&os.ModeSocket != 0 && sameCleanPath(path, legacySocket)
+	})
+}
+
+func structuralInventory(
+	root string,
+	operation string,
+	allowSocket func(path string, info os.FileInfo) bool,
+) ([]migrationEntry, error) {
 	var entries []migrationEntry
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -180,22 +190,22 @@ func migrationInventory(root, legacySocket string) ([]migrationEntry, error) {
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refusing symlink during signer-store migration: %s", path)
+			return fmt.Errorf("refusing symlink during signer-store %s: %s", operation, path)
 		}
-		recognizedSocket := info.Mode()&os.ModeSocket != 0 && sameCleanPath(path, legacySocket)
+		recognizedSocket := info.Mode()&os.ModeSocket != 0 && allowSocket != nil && allowSocket(path, info)
 		if !info.IsDir() && !info.Mode().IsRegular() && !recognizedSocket {
-			return fmt.Errorf("refusing unexpected object during signer-store migration: %s", path)
+			return fmt.Errorf("refusing unexpected object during signer-store %s: %s", operation, path)
 		}
 		if info.Mode().IsRegular() {
 			if links, ok := regularFileLinkCount(info); ok && links != 1 {
-				return fmt.Errorf("refusing hardlinked file during signer-store migration: %s", path)
+				return fmt.Errorf("refusing hardlinked file during signer-store %s: %s", operation, path)
 			}
 		}
 		entries = append(entries, migrationEntry{path: path, info: info})
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("inventory signer store for migration: %w", err)
+		return nil, fmt.Errorf("inventory signer store for %s: %w", operation, err)
 	}
 	return entries, nil
 }

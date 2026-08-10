@@ -150,7 +150,16 @@ clean audit is authority to proceed; an incomplete audit is not.
 Stopped migration and post-root-mutation normalization resolve the same exact
 configured legacy in-store socket; neither hardcodes the historical default.
 
-`apstore permissions audit` is read-only. Same-UID audit recognizes the local
+The installer bootstrap uses the narrower read-only
+`apstore permissions preflight` before `.prod`, service-principal metadata, or
+the store lock exists. The caller must first close the real data-directory root
+to group and other access. Preflight then rejects symlinks, hardlinked regular
+files, and unexpected object types without opening file contents or changing
+the tree. Unix sockets are left inert for the subsequent configured-socket
+migration policy to classify. The command deliberately does not infer an owner
+from untrusted store metadata and does not create `.apstore.lock`.
+
+`apstore permissions preflight` and `permissions audit` are read-only. Same-UID audit recognizes the local
 installer's non-writable executable `bin/` subtree without treating those
 files as signer data. `apstore permissions migrate` is restricted to
 systemd-managed stores, requires the normal offline execution mode and

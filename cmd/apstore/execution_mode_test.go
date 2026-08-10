@@ -108,6 +108,26 @@ func TestAcquireOfflineMutationLockForArgsSkipsGenerationListLock(t *testing.T) 
 	release()
 }
 
+func TestPermissionsPreflightBypassesModeGuardAndStoreLock(t *testing.T) {
+	dataDir := t.TempDir()
+	oldCurrentEUID := currentEUID
+	currentEUID = func() int { return 0 }
+	t.Cleanup(func() { currentEUID = oldCurrentEUID })
+
+	args := []string{"permissions", "preflight"}
+	if err := enforceApstoreExecutionMode(dataDir, args); err != nil {
+		t.Fatalf("enforceApstoreExecutionMode(preflight) error = %v", err)
+	}
+	release, err := acquireOfflineMutationLockForArgs(args, dataDir)
+	if err != nil {
+		t.Fatalf("acquireOfflineMutationLockForArgs(preflight) error = %v", err)
+	}
+	release()
+	if _, err := os.Lstat(filepath.Join(dataDir, ".apstore.lock")); !os.IsNotExist(err) {
+		t.Fatalf("preflight lock path exists: %v", err)
+	}
+}
+
 func TestManagedRestoreCommandSetMatchesProtocolV4(t *testing.T) {
 	for _, command := range []string{"preview", "apply", "rollback", "reconcile"} {
 		if !isManagedRestoreCommand([]string{"restore", command}) {

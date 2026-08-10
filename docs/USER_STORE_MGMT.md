@@ -291,6 +291,10 @@ audit`. `apsigner` performs the same private-profile audit before reading
 production configuration. It recommends migration for repairable in-store
 ownership or mode findings and manual repair for unsafe ancestors.
 
+`permissions preflight` is an installer bootstrap check, not the normal repair
+command. It requires an already closed data-directory root and performs only a
+structural inventory before managed-store metadata or a store lock exists.
+
 ### Changing the Passphrase
 
 To change your keystore passphrase:

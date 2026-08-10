@@ -14,8 +14,16 @@ import (
 )
 
 func cmdPermissions(args []string) error {
-	if len(args) != 1 || (args[0] != "audit" && args[0] != "migrate") {
-		return fmt.Errorf("usage: apstore permissions <audit|migrate>")
+	if len(args) != 1 || (args[0] != "preflight" && args[0] != "audit" && args[0] != "migrate") {
+		return fmt.Errorf("usage: apstore permissions <preflight|audit|migrate>")
+	}
+	if args[0] == "preflight" {
+		result, err := storeperm.PreflightLegacy(dataDirectory)
+		if err != nil {
+			return err
+		}
+		logInfof("legacy store structural preflight passed: inspected %d object(s)", result.Inspected)
+		return nil
 	}
 	managed, err := signerstartup.IsProductionManagedDataDir(dataDirectory)
 	if err != nil {
