@@ -493,6 +493,7 @@ expect {
   timeout { exit 17 }
   eof {}
 }
+
 set result [wait]
 set rc [lindex \$result 3]
 if {\$completed != 1} {
@@ -500,6 +501,17 @@ if {\$completed != 1} {
 }
 exit \$rc
 EXPECT"
+}
+
+verify_managed_store_owner_repair() {
+    docker_exec systemctl stop apsigner
+    docker_exec chown -R root:root /var/lib/apsigner
+    docker_exec_bash "apstore -d /var/lib/apsigner permissions migrate"
+    docker_exec_bash "apstore -d /var/lib/apsigner permissions audit"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner)\" = 'aplane:aplane 700' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/config.yaml)\" = 'aplane:aplane 600' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/install/service-principal.json)\" = 'root:aplane 640' ]"
+    docker_exec systemctl start apsigner
 }
 
 shutdown_client_services() {
@@ -719,6 +731,9 @@ main() {
 
     log "Verifying systemd state survived stopped in-place upgrade"
     verify_systemd_in_place_state_fingerprint
+
+    log "Verifying managed-store ownership repair does not trust a root-owned store"
+    verify_managed_store_owner_repair
 
     log "Configuring appass-file auto-unlock"
     setup_appass_file_unlock
