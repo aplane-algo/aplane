@@ -248,6 +248,39 @@ func TestMigratePrivateClampsModesAndPreservesCredentialOwner(t *testing.T) {
 	}
 }
 
+func TestMigratePrivateExplainsUnsafeAncestorIsNotRepairable(t *testing.T) {
+	boundary := workspaceTempDir(t)
+	unsafeAncestor := filepath.Join(boundary, "shared")
+	root := filepath.Join(unsafeAncestor, "store")
+	if err := os.MkdirAll(root, 0o770); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(unsafeAncestor, 0o770); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o770); err != nil {
+		t.Fatal(err)
+	}
+	uid, gid := ownerIDs(t, root)
+	opts := MigrationOptions{policy: options{
+		root: root, expectedUID: uid, expectedGID: gid,
+		profile: legacySharedProfile, ancestorBoundary: boundary,
+	}}
+
+	_, err := MigratePrivate(opts)
+	if err == nil || !strings.Contains(err.Error(), unsafeAncestor) ||
+		!strings.Contains(err.Error(), "repaired outside permissions migration") {
+		t.Fatalf("MigratePrivate() error = %v, want manual ancestor repair guidance", err)
+	}
+	info, statErr := os.Stat(root)
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if got := info.Mode().Perm(); got != 0o770 {
+		t.Fatalf("root mode after rejected migration = %04o, want 0770", got)
+	}
+}
+
 func TestMigratePrivateRejectsStructuralObjectsBeforeChangingRoot(t *testing.T) {
 	root := workspaceTempDir(t)
 	if err := os.Chmod(root, 0o770|os.ModeSetgid); err != nil {

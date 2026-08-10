@@ -282,9 +282,12 @@ sudo systemctl start apsigner
 `permissions audit` is read-only. `permissions migrate` acquires the exclusive
 store lock and validates the whole legacy inventory before changing anything.
 It refuses unsafe ancestors, symlinks, hardlinks, sockets, devices, and other
-unexpected objects rather than repairing through them. `apsigner` performs the
-same private-profile audit before reading production configuration and refuses
-startup with a migration hint if the store is unsafe.
+unexpected objects rather than repairing through them. An unsafe ancestor is
+outside the store and must be repaired manually: make every reported ancestor
+a real directory that is not group/other writable, then rerun `permissions
+audit`. `apsigner` performs the same private-profile audit before reading
+production configuration. It recommends migration for repairable in-store
+ownership or mode findings and manual repair for unsafe ancestors.
 
 ### Changing the Passphrase
 

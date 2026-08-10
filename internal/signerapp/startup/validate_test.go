@@ -142,6 +142,33 @@ func TestValidateProductionStorePermissionsReturnsMigrationHint(t *testing.T) {
 	}
 }
 
+func TestValidateProductionStorePermissionsReturnsManualAncestorRepairHint(t *testing.T) {
+	dataDir := t.TempDir()
+	writeProdMarker(t, dataDir)
+	originalAudit := auditPrivateStore
+	originalOwner := managedServiceOwner
+	t.Cleanup(func() {
+		auditPrivateStore = originalAudit
+		managedServiceOwner = originalOwner
+	})
+	managedServiceOwner = func(string) (int, int, error) {
+		return os.Geteuid(), os.Getegid(), nil
+	}
+	unsafeAncestor := filepath.Dir(dataDir)
+	auditPrivateStore = func(storeperm.AuditOptions) ([]storeperm.Finding, error) {
+		return []storeperm.Finding{{
+			Path: unsafeAncestor, Code: "ancestor-write", Detail: "store ancestor is group/other writable",
+		}}, nil
+	}
+
+	err := ValidateProductionStorePermissions(dataDir)
+	if err == nil || !strings.Contains(err.Error(), unsafeAncestor) ||
+		!strings.Contains(err.Error(), "permissions migrate cannot repair") ||
+		!strings.Contains(err.Error(), "permissions audit") {
+		t.Fatalf("ValidateProductionStorePermissions() error = %v, want manual ancestor repair guidance", err)
+	}
+}
+
 func writeProdMarker(t *testing.T, dataDir string) {
 	t.Helper()
 	path := filepath.Join(dataDir, prodMarkerFile)
