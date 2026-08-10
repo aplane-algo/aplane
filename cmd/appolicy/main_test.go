@@ -125,7 +125,7 @@ func (f *fakeOnlinePolicyClient) ReplacePolicy(context.Context, policyeditor.Tar
 	return policyeditor.AdminPolicySnapshot{}, errors.New("unexpected replacement")
 }
 
-func TestOpenOnlinePolicyFileEditorLoadsActiveSnapshotBeforeTUI(t *testing.T) {
+func TestEditOnlinePolicyFileReportsValidationBeforeTUI(t *testing.T) {
 	client := &fakeOnlinePolicyClient{}
 	store := &policyeditor.AdminStore{Client: client, Target: policyeditor.TargetSigner}
 	draft, err := policy.ParseStoredConfig([]byte("reject_foreign_rekey: true\n"))
@@ -135,8 +135,12 @@ func TestOpenOnlinePolicyFileEditorLoadsActiveSnapshotBeforeTUI(t *testing.T) {
 	originalLauncher := launchPolicyEditor
 	t.Cleanup(func() { launchPolicyEditor = originalLauncher })
 	launched := false
+	var stdout bytes.Buffer
 	launchPolicyEditor = func(gotStore policyeditor.Store, gotDraft *policy.StoredConfig, _, _ string, target policyeditor.Target) error {
 		launched = true
+		if got := stdout.String(); got != "policy OK: draft.yaml\n" {
+			t.Fatalf("stdout when TUI launched = %q, want validation status", got)
+		}
 		if gotStore != store || gotDraft != draft || target != policyeditor.TargetSigner {
 			t.Fatalf("launcher args store=%T draft=%p target=%q", gotStore, gotDraft, target)
 		}
@@ -146,8 +150,8 @@ func TestOpenOnlinePolicyFileEditorLoadsActiveSnapshotBeforeTUI(t *testing.T) {
 		return nil
 	}
 
-	if err := openOnlinePolicyFileEditor(context.Background(), store, draft, policyeditor.TargetSigner); err != nil {
-		t.Fatalf("openOnlinePolicyFileEditor() error = %v", err)
+	if err := editOnlinePolicyFile(context.Background(), store, draft, policyeditor.TargetSigner, "draft.yaml", &stdout); err != nil {
+		t.Fatalf("editOnlinePolicyFile() error = %v", err)
 	}
 	if client.snapshotCalls != 1 || !launched {
 		t.Fatalf("snapshot calls/launched = %d/%t, want 1/true", client.snapshotCalls, launched)

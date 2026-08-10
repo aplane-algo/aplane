@@ -138,7 +138,7 @@ func audit(opts options) ([]Finding, error) {
 	}
 	findings = append(findings, ancestorFindings...)
 
-	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(root, func(path string, _ os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -148,9 +148,6 @@ func audit(opts options) ([]Finding, error) {
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			findings = append(findings, Finding{Path: path, Code: "symlink", Detail: "symlink is not allowed in signer store"})
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 

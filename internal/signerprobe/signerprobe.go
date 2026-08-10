@@ -70,5 +70,7 @@ func Check(dataDir string, opts Options) (Result, error) {
 }
 
 func ResolveIPCPath(dataDir string) (string, error) {
-	return adminipc.ResolveClientPath(adminipc.ClientPathRequest{DataDir: dataDir})
+	return adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: dataDir, DataDirExplicit: true,
+	})
 }

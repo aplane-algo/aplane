@@ -68,13 +68,7 @@ func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 	// explicit: once the root is 0700, a former group member cannot race the
 	// descendant repairs.
 	sort.SliceStable(entries, func(i, j int) bool {
-		if entries[i].path == root {
-			return true
-		}
-		if entries[j].path == root {
-			return false
-		}
-		return entries[i].path < entries[j].path
+		return migrationEntryLess(root, entries[i], entries[j])
 	})
 
 	result := MigrationResult{Inspected: len(entries)}
@@ -119,6 +113,15 @@ func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 		return result, fmt.Errorf("private signer-store verification failed after migration: %w", post[0])
 	}
 	return result, nil
+}
+
+func migrationEntryLess(root string, left, right migrationEntry) bool {
+	leftIsRoot := left.path == root
+	rightIsRoot := right.path == root
+	if leftIsRoot != rightIsRoot {
+		return leftIsRoot
+	}
+	return left.path < right.path
 }
 
 func rejectStoreLocalBinaries(root string) error {

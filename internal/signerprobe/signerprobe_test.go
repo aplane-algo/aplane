@@ -126,6 +126,20 @@ func TestResolveIPCPathReturnsParseError(t *testing.T) {
 	}
 }
 
+func TestResolveIPCPathTreatsArgumentAsExplicitSelection(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("APSIGNER_IPC_PATH", filepath.Join(t.TempDir(), "other.sock"))
+
+	got, err := ResolveIPCPath(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dataDir, "aplane.sock")
+	if got != want {
+		t.Fatalf("ResolveIPCPath() = %q, want %q", got, want)
+	}
+}
+
 type stubConn struct{}
 
 func (s *stubConn) Read([]byte) (int, error)         { return 0, nil }

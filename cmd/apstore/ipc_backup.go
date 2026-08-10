@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -510,7 +511,7 @@ func cmdBackupExport(name, destinationDir string) error {
 	if info.Checksum != "" && checksum != info.Checksum {
 		return codedError{code: "verification_failed", message: fmt.Sprintf("exported backup checksum mismatch: got %s, want %s", checksum, info.Checksum)}
 	}
-	if err := os.Rename(tmpPath, destination); err != nil {
+	if err := publishBackupExportNoReplace(tmpPath, destination); err != nil {
 		return err
 	}
 	if err := fsutil.SyncDir(destinationDir); err != nil {
@@ -518,6 +519,16 @@ func cmdBackupExport(name, destinationDir string) error {
 	}
 	logInfof("backup exported: %s", destination)
 	logInfof("checksum: %s", checksum)
+	return nil
+}
+
+func publishBackupExportNoReplace(tmpPath, destination string) error {
+	if err := renameBackupExportNoReplace(tmpPath, destination); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("backup export destination already exists: %s", destination)
+		}
+		return fmt.Errorf("publish backup export: %w", err)
+	}
 	return nil
 }
 

@@ -157,6 +157,21 @@ func TestMigratePrivateRejectsStoreLocalBinariesWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestMigrationEntryLessIsStrictForRoot(t *testing.T) {
+	root := "/store"
+	rootEntry := migrationEntry{path: root}
+	childEntry := migrationEntry{path: filepath.Join(root, "identities")}
+	if migrationEntryLess(root, rootEntry, rootEntry) {
+		t.Fatal("migrationEntryLess(root, root) = true, want strict ordering")
+	}
+	if !migrationEntryLess(root, rootEntry, childEntry) {
+		t.Fatal("migrationEntryLess(root, child) = false, want root first")
+	}
+	if migrationEntryLess(root, childEntry, rootEntry) {
+		t.Fatal("migrationEntryLess(child, root) = true, want root first")
+	}
+}
+
 func TestProductionAuditRejectsInStoreSocket(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix socket contract")

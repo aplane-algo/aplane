@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,6 +128,55 @@ func TestCmdBackupExportCopiesChecksumMatchIntoDestinationDirectory(t *testing.T
 	}
 	if string(exported) != "archive" {
 		t.Fatalf("exported archive = %q, want archive", string(exported))
+	}
+}
+
+func TestCmdBackupExportDoesNotReplaceDestinationCreatedDuringTransfer(t *testing.T) {
+	archive := []byte("archive")
+	managedPath := filepath.Join(t.TempDir(), "aplane-backup-20260423-010203.tar.gz")
+	if err := os.WriteFile(managedPath, archive, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	checksum, size, err := backup.FileSHA256(managedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destinationDir := t.TempDir()
+	destination := filepath.Join(destinationDir, filepath.Base(managedPath))
+	fake := &fakeApstoreAdminRequester{}
+	fake.requestFunc = func(msg any, out any) error {
+		switch typed := msg.(type) {
+		case protocol.ListBackupsMessage:
+			fake.requests = append(fake.requests, typed.Type)
+			*out.(*protocol.BackupsListMessage) = protocol.BackupsListMessage{Backups: []protocol.BackupInfo{{
+				FileName: filepath.Base(managedPath), Path: managedPath, Size: size, Checksum: checksum,
+			}}}
+			return nil
+		case protocol.ReadBackupChunkMessage:
+			fake.requests = append(fake.requests, typed.Type)
+			if err := os.WriteFile(destination, []byte("concurrent output"), 0o600); err != nil {
+				return err
+			}
+			*out.(*protocol.BackupChunkMessage) = protocol.BackupChunkMessage{
+				Success: true, FileName: typed.FileName, Offset: typed.Offset, Data: archive, EOF: true,
+			}
+			return nil
+		default:
+			return errors.New("unexpected request")
+		}
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	err = cmdBackupExport(checksum, destinationDir)
+	if err == nil || !strings.Contains(err.Error(), "destination already exists") {
+		t.Fatalf("cmdBackupExport() error = %v, want no-replace failure", err)
+	}
+	got, readErr := os.ReadFile(destination)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != "concurrent output" {
+		t.Fatalf("destination = %q, want concurrent output preserved", got)
 	}
 }
 

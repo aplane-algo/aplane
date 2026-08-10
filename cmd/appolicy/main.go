@@ -301,11 +301,10 @@ func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyed
 			writef(stdout, "%s OK: %s\n", target.StatusNoun(), policyFile)
 			return 0
 		}
-		if err := openOnlinePolicyFileEditor(ctx, store, stored, target); err != nil {
+		if err := editOnlinePolicyFile(ctx, store, stored, target, policyFile, stdout); err != nil {
 			writef(stderr, "appolicy: %v\n", err)
 			return 1
 		}
-		writef(stdout, "%s OK: %s\n", target.StatusNoun(), policyFile)
 		return 0
 	}
 
@@ -487,10 +486,11 @@ func readPolicyYAMLFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-func openOnlinePolicyFileEditor(ctx context.Context, store *policyeditor.AdminStore, stored *policy.StoredConfig, target policyeditor.Target) error {
+func editOnlinePolicyFile(ctx context.Context, store *policyeditor.AdminStore, stored *policy.StoredConfig, target policyeditor.Target, policyFile string, stdout io.Writer) error {
 	if _, err := store.Load(ctx); err != nil {
 		return fmt.Errorf("failed to load active %s before editing draft: %w", target.StatusNoun(), err)
 	}
+	writef(stdout, "%s OK: %s\n", target.StatusNoun(), policyFile)
 	if err := launchPolicyEditor(store, stored, "", policyeditor.DefaultIdentityID, target); err != nil {
 		return fmt.Errorf("TUI failed: %w", err)
 	}

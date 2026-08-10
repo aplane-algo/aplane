@@ -150,8 +150,10 @@ or another vault. The first argument can be the managed archive filename or its
 checksum from `backup list`. The second argument is a destination directory,
 which is created if it does not exist. The exported file keeps the managed
 archive filename. The exported copy must match the managed archive checksum
-before the command reports success. Import and export never require the
-operator to traverse the private signer store.
+before the command reports success. Export refuses to replace a destination
+that already exists, including one created while the archive is being
+downloaded. Import and export never require the operator to traverse the
+private signer store.
 
 ### Verify Backup
 
