@@ -97,6 +97,10 @@ if [ ! -f "$BINDIR/apsigner" ]; then
     echo "Build it first with: make apsigner" >&2
     exit 1
 fi
+if [ ! -x "$BINDIR/apstore" ]; then
+    echo "Error: apstore binary not found at $BINDIR/apstore; cannot preflight signer-store permissions" >&2
+    exit 1
+fi
 
 TEMPLATE="$INSTALLER_DIR/apsigner.service.template"
 SUDOERS_TEMPLATE="$INSTALLER_DIR/sudoers.template"
@@ -118,19 +122,26 @@ if ! command -v systemctl >/dev/null 2>&1; then
     echo "Error: systemctl is required for systemd setup." >&2
     exit 1
 fi
-if systemctl is-active --quiet apsigner.service; then
-    echo "Error: stop apsigner.service before running systemd setup or signer-store migration." >&2
-    exit 1
-fi
+service_state="$(systemctl is-active apsigner.service 2>/dev/null || true)"
+case "$service_state" in
+    active|activating|reloading|deactivating)
+        echo "Error: apsigner.service is currently $service_state; stop it before running systemd setup or signer-store migration." >&2
+        exit 1
+        ;;
+esac
 
-# A production data root contains signer state only. Reject local-install
-# layouts before writing .prod or changing any existing store permissions;
-# migration would otherwise strip execute bits and Linux file capabilities.
+# Closing the real data-directory root is the only store mutation permitted
+# before the read-only structural preflight. Once closed, a former group member
+# cannot race the inventory or plant a pathname for a later root operation.
 if [ -L "$DATA_DIR" ]; then
     echo "Error: signer data directory must not be a symlink: $DATA_DIR" >&2
     exit 1
 fi
 mkdir -p "$DATA_DIR"
+if [ -L "$DATA_DIR" ] || [ ! -d "$DATA_DIR" ]; then
+    echo "Error: signer data directory changed during setup: $DATA_DIR" >&2
+    exit 1
+fi
 DATA_DIR="$(cd "$DATA_DIR" && pwd -P)"
 case "$BINDIR" in
     "$DATA_DIR"|"$DATA_DIR"/*)
@@ -140,11 +151,6 @@ case "$BINDIR" in
         exit 1
         ;;
 esac
-if [ -e "$DATA_DIR/bin" ]; then
-    echo "Error: signer data directory contains a local-install bin/ subtree: $DATA_DIR/bin" >&2
-    echo "Install service binaries outside the data directory and remove the old bin/ subtree before conversion." >&2
-    exit 1
-fi
 
 echo "=== apsigner systemd setup ==="
 echo ""
@@ -165,6 +171,38 @@ echo ""
 # traversal of the persistent store before inspecting any credential paths.
 chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR"
 chmod 700 "$DATA_DIR"
+"$BINDIR/apstore" -d "$DATA_DIR" permissions preflight
+
+# A production data root contains signer state only. Reject local-install
+# layouts before migration would strip execute bits and Linux file capabilities.
+if [ -e "$DATA_DIR/bin" ]; then
+    echo "Error: signer data directory contains a local-install bin/ subtree: $DATA_DIR/bin" >&2
+    echo "Install service binaries outside the data directory and remove the old bin/ subtree before conversion." >&2
+    exit 1
+fi
+
+publish_managed_metadata() {
+    local destination="$1"
+    local owner="$2"
+    local group="$3"
+    local mode="$4"
+    local line="$5"
+    local parent
+    local base
+    local staged
+
+    parent="$(dirname "$destination")"
+    base="$(basename "$destination")"
+    if [ -L "$destination" ] || { [ -e "$destination" ] && [ ! -f "$destination" ]; }; then
+        echo "Error: managed metadata target is not a regular file: $destination" >&2
+        return 1
+    fi
+    staged="$(mktemp "$parent/.${base}.aplane.XXXXXX")"
+    printf '%s\n' "$line" > "$staged"
+    chown "$owner:$group" "$staged"
+    chmod "$mode" "$staged"
+    mv -fT -- "$staged" "$destination"
+}
 
 # Record the expected service uid/gid in root-controlled metadata before any
 # permission migration. The repair command must not infer its target owner
@@ -180,9 +218,18 @@ chmod 750 "$INSTALL_METADATA_DIR"
 SERVICE_UID="$(id -u "$SVC_USER")"
 SERVICE_GID="$(getent group "$SVC_GROUP" | cut -d: -f3)"
 SERVICE_PRINCIPAL_PATH="$INSTALL_METADATA_DIR/service-principal.json"
-(umask 077; printf '{"schema_version":1,"uid":%s,"gid":%s}\n' "$SERVICE_UID" "$SERVICE_GID" > "$SERVICE_PRINCIPAL_PATH")
-chown root:"$SVC_GROUP" "$SERVICE_PRINCIPAL_PATH"
-chmod 640 "$SERVICE_PRINCIPAL_PATH"
+publish_managed_metadata \
+    "$SERVICE_PRINCIPAL_PATH" root "$SVC_GROUP" 640 \
+    "{\"schema_version\":1,\"uid\":$SERVICE_UID,\"gid\":$SERVICE_GID}"
+
+PROD_MARKER_PATH="$DATA_DIR/.prod"
+publish_managed_metadata "$PROD_MARKER_PATH" "$SVC_USER" "$SVC_GROUP" 600 "systemd-managed"
+echo "Marked $DATA_DIR as a systemd-managed data directory"
+
+# The Go migrator is now the sole descendant ownership/mode repair mechanism.
+# It validates the complete inventory before opening any entry for mutation.
+"$BINDIR/apstore" -d "$DATA_DIR" permissions migrate
+"$BINDIR/apstore" -d "$DATA_DIR" permissions audit
 
 # Install service with placeholder substitution
 if [ "$MEMORY_LOCK" = "1" ]; then
@@ -210,6 +257,10 @@ echo "Installed $SERVICE_DEST"
 SYSTEMD_CREDENTIAL_NAME="aplane-passphrase"
 existing_cred_files=()
 for f in "$DATA_DIR"/identities/*/passphrase.cred; do
+    if [ -L "$f" ]; then
+        echo "Error: refusing symlinked systemd credential: $f" >&2
+        exit 1
+    fi
     [ -f "$f" ] && existing_cred_files+=("$f")
 done
 if [ "${#existing_cred_files[@]}" -gt 0 ]; then
@@ -228,19 +279,6 @@ if [ "${#existing_cred_files[@]}" -gt 0 ]; then
     chmod 644 "$SERVICE_DEST"
     echo "Re-bound systemd-creds passphrase from $cred_file"
 fi
-
-PROD_MARKER_PATH="$DATA_DIR/.prod"
-printf 'systemd-managed\n' > "$PROD_MARKER_PATH"
-chown "$SVC_USER:$SVC_GROUP" "$PROD_MARKER_PATH"
-chmod 600 "$PROD_MARKER_PATH"
-echo "Marked $DATA_DIR as a systemd-managed data directory"
-
-if [ ! -x "$BINDIR/apstore" ]; then
-    echo "Error: apstore binary not found at $BINDIR/apstore; cannot migrate signer-store permissions" >&2
-    exit 1
-fi
-"$BINDIR/apstore" -d "$DATA_DIR" permissions migrate
-"$BINDIR/apstore" -d "$DATA_DIR" permissions audit
 
 # Install sudoers rules
 sed -e "s|@@USER@@|${SVC_USER}|g" \

@@ -1612,7 +1612,20 @@ run_as_service_user() {
 
 ensure_prod_data_dir_permissions() {
     local data_dir="$1"
+
+    if [ -L "$data_dir" ]; then
+        echo "Error: signer data directory must not be a symlink: $data_dir" >&2
+        return 1
+    fi
+    if [ -e "$data_dir" ] && [ ! -d "$data_dir" ]; then
+        echo "Error: signer data path exists but is not a directory: $data_dir" >&2
+        return 1
+    fi
     mkdir -p "$data_dir"
+    if [ -L "$data_dir" ] || [ ! -d "$data_dir" ]; then
+        echo "Error: signer data directory changed during setup: $data_dir" >&2
+        return 1
+    fi
     chown "$SVC_USER:$SVC_GROUP" "$data_dir"
     chmod 700 "$data_dir"
 }
@@ -1633,15 +1646,6 @@ ensure_prod_backup_permissions() {
     mkdir -p "$backup_dir"
     chown "$SVC_USER:$SVC_GROUP" "$backup_dir"
     chmod 700 "$backup_dir"
-}
-
-repair_prod_store_lock_permissions() {
-    local data_dir="$1"
-    local lock_path="$data_dir/.apstore.lock"
-    if [ -e "$lock_path" ]; then
-        chown "$SVC_USER:$SVC_GROUP" "$lock_path"
-        chmod 600 "$lock_path"
-    fi
 }
 
 ensure_policy_integrity_sidecar() {
@@ -1730,7 +1734,7 @@ install_prod_uninstaller() {
     mkdir -p "$install_dir"
     cp "$src" "$dest"
     chown root:"$SVC_GROUP" "$install_dir" "$dest"
-    chmod 2750 "$install_dir"
+    chmod 750 "$install_dir"
     chmod 750 "$dest"
     echo "Installed systemd uninstaller to $dest"
 }
@@ -2471,30 +2475,17 @@ fi
 if [ ! -d "$DATA_DIR" ]; then
     echo "Recreating missing data directory $DATA_DIR..."
 fi
+ensure_prod_data_dir_permissions "$DATA_DIR"
+if [ ! -x "$BIN_SRC/apstore" ]; then
+    echo "Error: apstore binary not found at $BIN_SRC/apstore; cannot preflight signer store" >&2
+    exit 1
+fi
+"$BIN_SRC/apstore" -d "$DATA_DIR" permissions preflight
 if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
     require_supported_upgrade "$DATA_DIR/install/release.json" "systemd install" "$DATA_DIR"
 fi
-ensure_prod_data_dir_permissions "$DATA_DIR"
-ensure_prod_backup_permissions "$DATA_DIR"
-repair_prod_store_lock_permissions "$DATA_DIR"
 
-PROD_MARKER_PATH="$DATA_DIR/.prod"
-printf 'systemd-managed\n' > "$PROD_MARKER_PATH"
-chown "$SVC_USER:$SVC_GROUP" "$PROD_MARKER_PATH"
-chmod 600 "$PROD_MARKER_PATH"
-
-# Step 2: Copy uninstall helper into the systemd-managed data directory
-echo ""
-echo "Installing systemd management scripts..."
-install_prod_uninstaller "$DATA_DIR"
-install_release_metadata "$DATA_DIR/install" root "$SVC_GROUP" 2750 640
-if [ -n "$OPERATOR_ROOT" ]; then
-    mkdir -p -- "$OPERATOR_ROOT"
-    OPERATOR_ROOT="$(cd "$OPERATOR_ROOT" && pwd)"
-    write_prod_operator_root_metadata "$DATA_DIR" "$OPERATOR_ROOT"
-fi
-
-# Step 3: Copy binaries
+# Step 2: Copy binaries outside the signer store
 echo "Installing binaries to $BINDIR..."
 for bin in "$BIN_SRC"/*; do
     [ -f "$bin" ] || continue
@@ -2514,12 +2505,7 @@ for bin in "$BIN_SRC"/*; do
     echo "  $name"
 done
 
-# Step 3b: Copy optional template library
-echo ""
-echo "Installing template library..."
-install_template_library "$DATA_DIR" "$SVC_USER" "$SVC_GROUP"
-
-# Step 4: Run systemd setup
+# Step 3: Bootstrap managed metadata, migrate the store, and install systemd files
 echo ""
 echo "Running systemd setup..."
 SYSTEMD_SETUP_ARGS=("$SVC_USER" "$SVC_GROUP" "$BINDIR" --data-dir "$DATA_DIR")
@@ -2527,6 +2513,22 @@ if [ "$MEMORY_LOCK_ENABLED" = "1" ]; then
     SYSTEMD_SETUP_ARGS+=(--memory-lock)
 fi
 "$SCRIPT_DIR/installer/scripts/systemd-setup.sh" "${SYSTEMD_SETUP_ARGS[@]}"
+
+# Step 4: Install store-relative management content only after migration has
+# rejected every pre-planted symlink, hardlink, and unexpected object.
+ensure_prod_backup_permissions "$DATA_DIR"
+echo ""
+echo "Installing systemd management scripts..."
+install_prod_uninstaller "$DATA_DIR"
+install_release_metadata "$DATA_DIR/install" root "$SVC_GROUP" 750 640
+if [ -n "$OPERATOR_ROOT" ]; then
+    mkdir -p -- "$OPERATOR_ROOT"
+    OPERATOR_ROOT="$(cd "$OPERATOR_ROOT" && pwd)"
+    write_prod_operator_root_metadata "$DATA_DIR" "$OPERATOR_ROOT"
+fi
+echo ""
+echo "Installing template library..."
+install_template_library "$DATA_DIR" "$SVC_USER" "$SVC_GROUP"
 
 # Step 5: Generate canonical signer config for this installation
 CONFIG_PATH="$DATA_DIR/config.yaml"
@@ -2561,10 +2563,8 @@ echo "=== Keystore initialization ==="
 echo ""
 if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
     echo "Keystore already initialized; skipping."
-    repair_prod_store_lock_permissions "$DATA_DIR"
 else
     "$BINDIR/apstore" -d "$DATA_DIR" initialize --role "$NODE_ROLE" </dev/tty
-    repair_prod_store_lock_permissions "$DATA_DIR"
 fi
 ensure_policy_integrity_sidecar "$DATA_DIR" "$BINDIR/apstore"
 

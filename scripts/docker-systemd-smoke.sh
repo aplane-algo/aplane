@@ -524,6 +524,33 @@ shutdown_client_services() {
     sleep 1
 }
 
+verify_installer_rejects_preplanted_store_symlink() {
+    local test_root="/var/lib/aplane-preflight-test"
+    local sentinel="/tmp/aplane-preflight-sentinel"
+
+    docker_exec systemctl stop apsigner
+    docker_exec_bash "printf 'sentinel-content\n' > '$sentinel' && chmod 640 '$sentinel'"
+    docker_exec_bash "mkdir '$test_root' && chown aplane:aplane '$test_root' && chmod 2770 '$test_root'"
+    docker_exec_as_tester "ln -s '$sentinel' '$test_root/library'"
+    docker_exec_bash "sha256sum /etc/systemd/system/apsigner.service > /tmp/aplane-preflight-unit.before"
+    docker_exec_bash "set +e
+/tmp/aplane/installer/scripts/systemd-setup.sh aplane aplane /usr/local/bin --data-dir '$test_root' --memory-lock > /tmp/aplane-preflight.log 2>&1
+rc=\$?
+set -e
+cat /tmp/aplane-preflight.log
+if [ \"\$rc\" -eq 0 ]; then
+    echo 'systemd setup unexpectedly accepted a pre-planted store symlink' >&2
+    exit 1
+fi
+grep -q 'refusing symlink during signer-store preflight' /tmp/aplane-preflight.log
+grep -qx 'sentinel-content' '$sentinel'
+[ \"\$(stat -c '%U:%G %a' '$sentinel')\" = 'root:root 640' ]
+sha256sum -c /tmp/aplane-preflight-unit.before"
+    docker_exec unlink "$test_root/library"
+    docker_exec rmdir "$test_root"
+    docker_exec rm "$sentinel"
+}
+
 verify_uninstall() {
     docker_exec_bash "test ! -e /usr/local/bin/apsigner"
     docker_exec_bash "test ! -e /usr/local/bin/approbe"
@@ -723,6 +750,9 @@ main() {
 
     log "Shutting down client-side services"
     shutdown_client_services
+
+    log "Verifying installer rejects a group-planted store symlink before mutation"
+    verify_installer_rejects_preplanted_store_symlink
 
     log "Checking stopped systemd in-place upgrade"
     run_stopped_systemd_reinstaller

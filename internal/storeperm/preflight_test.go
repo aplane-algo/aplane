@@ -88,7 +88,16 @@ func TestPreflightLegacyAllowsSocketForLaterMigrationClassification(t *testing.T
 }
 
 func TestPreflightLegacyRejectsSymlinkWithoutTouchingReferent(t *testing.T) {
-	for _, relative := range []string{".prod", filepath.Join("install", "service-principal.json")} {
+	for _, relative := range []string{
+		".prod",
+		".apstore.lock",
+		"install",
+		filepath.Join("install", "service-principal.json"),
+		filepath.Join("install", "uninstall.sh"),
+		filepath.Join("install", "release.json"),
+		"library",
+		filepath.Join("identities", "default", "passphrase.cred"),
+	} {
 		t.Run(filepath.ToSlash(relative), func(t *testing.T) {
 			root := workspaceTempDir(t)
 			if err := os.Chmod(root, 0o700); err != nil {

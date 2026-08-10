@@ -165,8 +165,9 @@ files as signer data. `apstore permissions migrate` is restricted to
 systemd-managed stores, requires the normal offline execution mode and
 exclusive store lock, and rejects any store-local `bin/` subtree rather than
 stripping binary execute bits or file capabilities. The standalone systemd
-setup performs the same check before writing `.prod`, changing ownership, or
-changing modes; its service `bindir` must be outside the data root. A
+setup closes only the real store root before preflight, then rejects a local
+`bin/` before writing `.prod` or changing any descendant ownership or mode; its
+service `bindir` must be outside the data root. A
 root-controlled `install/service-principal.json` records the numeric service
 uid/gid and is refreshed by systemd setup before migration. Audit, migration,
 and post-mutation normalization use this record instead of trusting the store
@@ -176,6 +177,12 @@ uid/gid match the recorded principal, and checks the private profile against
 that principal before loading configuration or opening the store lock. A
 principal mismatch directs the operator to rerun systemd setup; unsafe store
 state directs the operator to the permission migration command.
+
+Installer-owned management scripts, release metadata, operator metadata, and
+the template library are installed only after migration succeeds. In
+particular, recursive template ownership repair never runs against a legacy
+tree. The shell installer does not repair `.apstore.lock`; the descriptor-based
+Go migrator owns that operation.
 
 ## Implemented rollout
 

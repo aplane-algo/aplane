@@ -565,8 +565,10 @@ installer checks `install/release.json` before upgrading an initialized signer
 store. Passing this check permits installation; it does not transform data
 whose shape is outside the current compatibility contract.
 
-Eligible upgrades run `apstore permissions migrate` and then
-`apstore permissions audit` before restart. Migration validates the complete
+Eligible upgrades close the data-directory root, run the read-only
+`apstore permissions preflight`, then run `permissions migrate` and
+`permissions audit` before installing store-relative management content or
+restarting. Migration validates the complete
 legacy inventory before changing it, refuses symlinks, hardlinks, unexpected
 object types, or unsafe ancestors, and clamps recognized signer state to the
 private ownership contract.

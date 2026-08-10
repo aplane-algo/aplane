@@ -90,6 +90,59 @@ func TestSystemdUnitsKeepProtectedRuntimeBoundary(t *testing.T) {
 	}
 }
 
+func TestInstallerPreflightsBeforeStoreChildMutation(t *testing.T) {
+	root := repositoryRoot(t)
+	mainInstaller := readTextFile(t, filepath.Join(root, "install.sh"))
+	assertTextOrder(t, "install.sh", mainInstaller,
+		`ensure_prod_data_dir_permissions "$DATA_DIR"`,
+		`"$BIN_SRC/apstore" -d "$DATA_DIR" permissions preflight`,
+		`"$SCRIPT_DIR/installer/scripts/systemd-setup.sh" "${SYSTEMD_SETUP_ARGS[@]}"`,
+		`ensure_prod_backup_permissions "$DATA_DIR"`,
+		`install_prod_uninstaller "$DATA_DIR"`,
+		`install_template_library "$DATA_DIR" "$SVC_USER" "$SVC_GROUP"`,
+	)
+	for _, forbidden := range []string{
+		"repair_prod_store_lock_permissions",
+		`chmod 2750 "$install_dir"`,
+	} {
+		if strings.Contains(mainInstaller, forbidden) {
+			t.Errorf("install.sh retains forbidden pre-migration operation %q", forbidden)
+		}
+	}
+
+	setup := readTextFile(t, filepath.Join(root, "installer", "scripts", "systemd-setup.sh"))
+	assertTextOrder(t, "installer/scripts/systemd-setup.sh", setup,
+		`chmod 700 "$DATA_DIR"`,
+		`"$BINDIR/apstore" -d "$DATA_DIR" permissions preflight`,
+		`publish_managed_metadata \`,
+		`publish_managed_metadata "$PROD_MARKER_PATH"`,
+		`"$BINDIR/apstore" -d "$DATA_DIR" permissions migrate`,
+		`' > "$SERVICE_DEST"`,
+		`for f in "$DATA_DIR"/identities/*/passphrase.cred`,
+	)
+}
+
+func readTextFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func assertTextOrder(t *testing.T, label, text string, ordered ...string) {
+	t.Helper()
+	offset := 0
+	for _, marker := range ordered {
+		relative := strings.Index(text[offset:], marker)
+		if relative < 0 {
+			t.Fatalf("%s does not contain %q after byte %d", label, marker, offset)
+		}
+		offset += relative + len(marker)
+	}
+}
+
 func repositoryRoot(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", ".."))
