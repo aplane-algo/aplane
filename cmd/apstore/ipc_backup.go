@@ -19,7 +19,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/transport"
 )
 
-const apstoreIPCTimeout = 30 * time.Second
+const (
+	apstoreIPCTimeout             = 30 * time.Second
+	apstoreBackupCommitIPCTimeout = 30 * time.Minute
+)
 
 const importUsage = "usage: apstore backup import <archive-path>"
 
@@ -29,6 +32,7 @@ type apstoreAdminClient struct {
 
 type apstoreAdminRequester interface {
 	request(msg any, out any) error
+	requestWithTimeout(msg any, out any, timeout time.Duration) error
 	close()
 }
 
@@ -134,7 +138,11 @@ func (c *apstoreAdminClient) authenticateAndUnlockString(passphrase string) erro
 }
 
 func (c *apstoreAdminClient) request(msg any, out any) error {
-	response, err := c.conn.SendAndReceive(msg, apstoreIPCTimeout)
+	return c.requestWithTimeout(msg, out, apstoreIPCTimeout)
+}
+
+func (c *apstoreAdminClient) requestWithTimeout(msg any, out any, timeout time.Duration) error {
+	response, err := c.conn.SendAndReceive(msg, timeout)
 	if err != nil {
 		return err
 	}
@@ -362,11 +370,14 @@ func cmdBackupImport(args []string) error {
 		}
 	}
 	var commit protocol.CommitBackupImportResultMessage
-	if err := client.request(protocol.CommitBackupImportMessage{
+	// Commit performs bounded archive extraction and passphrase-based deep
+	// verification in the daemon. It is deliberately synchronous, but it must
+	// not inherit the short timeout used by ordinary admin requests.
+	if err := client.requestWithTimeout(protocol.CommitBackupImportMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImport, ID: newApstoreRequestID("backup-import-commit")},
 		UploadID:    begin.UploadID, FileName: name, ExpectedSize: size, ExpectedSHA256: checksum,
 		ExportPassphrase: protocol.SensitiveBytes(exportPassphrase),
-	}, &commit); err != nil {
+	}, &commit, apstoreBackupCommitIPCTimeout); err != nil {
 		return err
 	}
 	if !commit.Success {

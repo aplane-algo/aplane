@@ -303,8 +303,10 @@ mode.
   `commit_backup_import` carries the sensitive `export_passphrase`, verifies
   the declared size and SHA-256, authenticates the sealed manifest, deeply
   validates every credential payload, and only then atomically publishes the
-  archive. The daemon zeros the passphrase after the request and never persists
-  it; `abort_backup_import`
+  archive. Commit is a synchronous, potentially long-running request; first-party
+  clients use a dedicated bounded timeout rather than the ordinary 30-second
+  admin-request timeout. The daemon zeros the passphrase after the request and
+  never persists it; `abort_backup_import`
   durably removes an incomplete upload. Daemon startup also removes incomplete
   uploads left by a prior process. Abort remains available to an authenticated,
   authorized bound session while the identity is locked because it can only

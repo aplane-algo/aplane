@@ -2723,7 +2723,10 @@ deeply before publishing it under `backups/<identity>/`. The commit request
 carries the sensitive export passphrase; the daemon authenticates the archive
 inventory and validates every credential payload, then zeros the passphrase
 without persisting it. Client-side archive inspection is not an authorization
-or integrity boundary. Import does not compile or install templates because
+or integrity boundary. Commit is synchronous and can perform one memory-hard
+credential verification per archive member, so first-party clients allow up to
+30 minutes for that bounded request instead of applying the ordinary 30-second
+admin timeout. Import does not compile or install templates because
 templates are not archive members. The IPC transfer declares its exact source
 size and SHA-256 at commit, is capped at 1 GiB while appending, and permits only
 one incomplete upload per identity. A new import supersedes incomplete residue;

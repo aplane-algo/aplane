@@ -15,10 +15,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	apbackup "github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -84,10 +83,16 @@ type fakeApstoreAdminRequester struct {
 	deactivateRequest        protocol.DeactivateKeyTypeMessage
 	changePassphraseRequest  protocol.ChangeStorePassphraseMessage
 	adminPassphrase          string
+	lastRequestTimeout       time.Duration
 	closed                   bool
 }
 
 func (f *fakeApstoreAdminRequester) request(msg any, out any) error {
+	return f.requestWithTimeout(msg, out, apstoreIPCTimeout)
+}
+
+func (f *fakeApstoreAdminRequester) requestWithTimeout(msg any, out any, timeout time.Duration) error {
+	f.lastRequestTimeout = timeout
 	if f.requestFunc != nil {
 		return f.requestFunc(msg, out)
 	}

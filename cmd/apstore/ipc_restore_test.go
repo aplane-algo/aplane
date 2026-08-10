@@ -84,7 +84,7 @@ func (localBackupTransferDeps) RestoreLimiter() backupadmin.RestoreLimiter      
 func (localBackupTransferDeps) WithIdentityMutation(_ string, fn func() error) error { return fn() }
 func (localBackupTransferDeps) Logf(string, ...interface{})                          {}
 
-func withLocalBackupTransferClient(t *testing.T) {
+func withLocalBackupTransferClient(t *testing.T) *fakeApstoreAdminRequester {
 	t.Helper()
 	service := backupadmin.Service{Deps: localBackupTransferDeps{paths: keystorePaths()}}
 	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
@@ -109,6 +109,7 @@ func withLocalBackupTransferClient(t *testing.T) {
 		return nil
 	}
 	withFakeApstoreAdminClient(t, fake)
+	return fake
 }
 
 func TestRestoreKeyRejectsWrongExportPassphrase(t *testing.T) {
@@ -144,7 +145,7 @@ func TestCmdBackupImportUsesManagedBackupDir(t *testing.T) {
 	oldDataDirectory := dataDirectory
 	dataDirectory = t.TempDir()
 	defer func() { dataDirectory = oldDataDirectory }()
-	withLocalBackupTransferClient(t)
+	fake := withLocalBackupTransferClient(t)
 
 	backupRoot := t.TempDir()
 	address, keyJSON := testEd25519KeyJSON(t)
@@ -161,6 +162,9 @@ func TestCmdBackupImportUsesManagedBackupDir(t *testing.T) {
 		return cmdBackupImport([]string{archivePath})
 	}); err != nil {
 		t.Fatalf("cmdBackupImport() error = %v", err)
+	}
+	if fake.lastRequestTimeout != apstoreBackupCommitIPCTimeout {
+		t.Fatalf("backup commit timeout = %s, want %s", fake.lastRequestTimeout, apstoreBackupCommitIPCTimeout)
 	}
 	importedPath := filepath.Join(keystorePaths().IdentityBackupsDir(productIdentityID()), filepath.Base(archivePath))
 	if _, err := os.Stat(importedPath); err != nil {
