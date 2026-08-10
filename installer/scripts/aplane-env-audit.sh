@@ -261,10 +261,10 @@ print_binary() {
   bin="$(find_binary "$name" "$data_bin")"
   if [ -n "$bin" ]; then
     local version=""
-    if "$bin" --version >/tmp/aplane-audit-version.$$ 2>/dev/null; then
-      version="$(head -n 1 /tmp/aplane-audit-version.$$)"
+    local version_output=""
+    if version_output="$("$bin" --version 2>/dev/null)"; then
+      version="${version_output%%$'\n'*}"
     fi
-    rm -f /tmp/aplane-audit-version.$$
     if [ -n "$version" ]; then
       pass "$name" "$bin ($version)"
     else
@@ -337,8 +337,12 @@ SIGNER_STORE_TRAVERSABLE=0
 if [ ! -L "$SIGNER_DATA" ] && [ -x "$SIGNER_DATA" ]; then
   SIGNER_STORE_TRAVERSABLE=1
 fi
+SIGNER_PROD_MANAGED=0
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ] && [ -f "$SIGNER_DATA/.prod" ]; then
+  SIGNER_PROD_MANAGED=1
+fi
 SIGNER_EXPECTED_OWNER="$SIGNER_SERVICE_OWNER"
-if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ] && [ ! -f "$SIGNER_DATA/.prod" ]; then
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ] && [ "$SIGNER_PROD_MANAGED" -eq 0 ]; then
   SIGNER_EXPECTED_OWNER="$(id -un):$(id -gn)"
 fi
 
@@ -348,7 +352,13 @@ signer_ipc_path=""
 if [ -S /run/apsigner/aplane.sock ]; then
   signer_ipc_path="/run/apsigner/aplane.sock"
 elif [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
-  signer_ipc_path="$(read_top_level_value "$SIGNER_CONFIG" "ipc_path")"
+  configured_ipc_path="$(read_top_level_value "$SIGNER_CONFIG" "ipc_path")"
+  resolved_ipc_path="$(resolve_path "$configured_ipc_path" "$SIGNER_DATA")"
+  if [ "$SIGNER_PROD_MANAGED" -eq 1 ] && { [ -z "$configured_ipc_path" ] || [ "$resolved_ipc_path" = "$SIGNER_DATA/aplane.sock" ]; }; then
+    signer_ipc_path="/run/apsigner/aplane.sock"
+  else
+    signer_ipc_path="$resolved_ipc_path"
+  fi
 else
   signer_ipc_path="/run/apsigner/aplane.sock"
 fi
@@ -367,7 +377,13 @@ client_ssh_port="$(read_section_value "$CLIENT_CONFIG" "ssh" "port")"
 client_identity_file="$(read_section_value "$CLIENT_CONFIG" "ssh" "identity_file")"
 client_known_hosts_path="$(read_section_value "$CLIENT_CONFIG" "ssh" "known_hosts_path")"
 
-[ -n "$signer_ipc_path" ] || signer_ipc_path="$SIGNER_DATA/aplane.sock"
+if [ -z "$signer_ipc_path" ]; then
+  if [ "$SIGNER_PROD_MANAGED" -eq 1 ] || [ "$SIGNER_STORE_TRAVERSABLE" -eq 0 ]; then
+    signer_ipc_path="/run/apsigner/aplane.sock"
+  else
+    signer_ipc_path="$SIGNER_DATA/aplane.sock"
+  fi
+fi
 [ -n "$signer_host_key_path" ] || signer_host_key_path=".ssh/ssh_host_key"
 [ -n "$signer_authorized_keys_path" ] || signer_authorized_keys_path=".ssh/authorized_keys"
 [ -n "$client_identity_file" ] || client_identity_file=".ssh/id_ed25519"

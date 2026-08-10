@@ -89,8 +89,9 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Resolve bindir to absolute path
-BINDIR="$(cd "$BINDIR" && pwd)"
+# Resolve bindir physically so a symlinked component cannot disguise a binary
+# directory nested beneath the private signer store.
+BINDIR="$(cd "$BINDIR" && pwd -P)"
 
 if [ ! -f "$BINDIR/apsigner" ]; then
     echo "Error: apsigner binary not found at $BINDIR/apsigner" >&2
