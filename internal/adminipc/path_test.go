@@ -33,6 +33,21 @@ func TestResolveDaemonPath(t *testing.T) {
 	}
 }
 
+func TestResolveDaemonPathWithRelativeDataDirectory(t *testing.T) {
+	dataDir := filepath.Join("relative", "signer")
+	legacy := filepath.Join(dataDir, "aplane.sock")
+
+	if got := ResolveDaemonPath(dataDir, "", false); got != legacy {
+		t.Fatalf("ResolveDaemonPath(relative, unmanaged) = %q, want %q", got, legacy)
+	}
+	if got := ResolveDaemonPath(dataDir, "", true); got != SystemSocketPath {
+		t.Fatalf("ResolveDaemonPath(relative, managed) = %q, want %q", got, SystemSocketPath)
+	}
+	if got := ResolveDaemonPath(dataDir, filepath.Join("run", "custom.sock"), false); got != filepath.Join(dataDir, "run", "custom.sock") {
+		t.Fatalf("ResolveDaemonPath(relative custom) = %q", got)
+	}
+}
+
 func TestResolveDaemonPathForDataDirRejectsManagedInStoreCustomPath(t *testing.T) {
 	dataDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dataDir, ".prod"), []byte("systemd-managed\n"), 0o600); err != nil {

@@ -37,8 +37,7 @@ func ResolveDaemonPath(dataDir, configured string, systemdManaged bool) string {
 	legacyDefault := filepath.Join(dataDir, "aplane.sock")
 	if configured == "" {
 		configured = legacyDefault
-	}
-	if !filepath.IsAbs(configured) {
+	} else if !filepath.IsAbs(configured) {
 		configured = filepath.Join(dataDir, configured)
 	}
 	configured = filepath.Clean(configured)
