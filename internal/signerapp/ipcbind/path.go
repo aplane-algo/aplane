@@ -15,7 +15,7 @@ func ValidateBindPath(socketPath string) error {
 	if err := validateSocketPath(socketPath); err != nil {
 		return err
 	}
-	return rejectIfInsecureDirectory(socketPath, false)
+	return validateSocketDirectoryChain(socketPath)
 }
 
 // ValidatePrivateRuntimeBindPath applies the target multi-UID production
@@ -25,7 +25,7 @@ func ValidatePrivateRuntimeBindPath(socketPath string) error {
 	if err := validateSocketPath(socketPath); err != nil {
 		return err
 	}
-	return rejectIfInsecureDirectory(socketPath, true)
+	return validateSocketDirectoryChain(socketPath)
 }
 
 // validateSocketPath checks for symlink attacks and ownership issues.
@@ -67,42 +67,83 @@ func validateSocketPath(socketPath string) error {
 	return nil
 }
 
-// rejectIfInsecureDirectory rejects unsafe socket parents. strict additionally
-// requires daemon ownership and rejects group write access.
-func rejectIfInsecureDirectory(socketPath string, strict bool) error {
-	dir := filepath.Dir(socketPath)
-
-	// Never bind directly in a shared temporary directory. A private real
-	// descendant remains eligible and is checked by mode/ownership below.
-	cleanDir := filepath.Clean(dir)
-	if cleanDir == "/tmp" || cleanDir == "/var/tmp" {
-		return fmt.Errorf("refusing IPC socket in world-writable directory: %s (use $XDG_RUNTIME_DIR or a private runtime directory)", socketPath)
-	}
-
-	// Check actual directory permissions
-	info, err := os.Lstat(dir)
+// validateSocketDirectoryChain ensures an untrusted local user cannot replace
+// the socket after its leaf has been inspected. The immediate parent must be
+// daemon-owned. Every ancestor must be owned by either the daemon or the owner
+// of the filesystem root and must not be group/other writable. The canonical
+// shared temporary roots are the sole exception when they are owned by the
+// filesystem-root owner and carry the sticky bit.
+func validateSocketDirectoryChain(socketPath string) error {
+	absSocket, err := filepath.Abs(filepath.Clean(socketPath))
 	if err != nil {
-		return fmt.Errorf("failed to inspect IPC socket directory %s: %w", dir, err)
+		return fmt.Errorf("resolve IPC socket path: %w", err)
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return fmt.Errorf("refusing IPC socket parent that is not a real directory: %s", dir)
+	parent := filepath.Dir(absSocket)
+	if parent == "/tmp" || parent == "/var/tmp" {
+		return fmt.Errorf("refusing IPC socket directly in shared temporary directory: %s (use $XDG_RUNTIME_DIR or a private runtime directory)", socketPath)
 	}
 
-	// Check if directory is world-writable (others have write permission)
-	if info.Mode().Perm()&0002 != 0 {
-		return fmt.Errorf("refusing IPC socket in world-writable directory: %s", dir)
+	currentUID := os.Getuid()
+	if currentUID < 0 {
+		return fmt.Errorf("invalid UID: %d", currentUID)
 	}
-	if strict {
-		if info.Mode().Perm()&0o020 != 0 {
-			return fmt.Errorf("refusing IPC socket in group-writable directory: %s", dir)
+	rootInfo, err := os.Lstat(string(filepath.Separator))
+	if err != nil {
+		return fmt.Errorf("inspect filesystem root for IPC socket: %w", err)
+	}
+	rootUID, err := realDirectoryOwner(string(filepath.Separator), rootInfo)
+	if err != nil {
+		return err
+	}
+
+	for path := parent; ; path = filepath.Dir(path) {
+		info, err := os.Lstat(path)
+		if err != nil {
+			return fmt.Errorf("failed to inspect IPC socket directory %s: %w", path, err)
 		}
-		stat, ok := info.Sys().(*syscall.Stat_t)
-		if !ok {
-			return fmt.Errorf("cannot determine IPC socket directory owner: %s", dir)
+		owner, err := realDirectoryOwner(path, info)
+		if err != nil {
+			return err
 		}
-		if stat.Uid != uint32(os.Getuid()) {
-			return fmt.Errorf("refusing IPC socket directory owned by uid %d, expected %d: %s", stat.Uid, os.Getuid(), dir)
+
+		if path == parent {
+			if owner != currentUID {
+				return fmt.Errorf("refusing IPC socket directory owned by uid %d, expected %d: %s", owner, currentUID, path)
+			}
+			if info.Mode().Perm()&0o022 != 0 {
+				return fmt.Errorf("refusing IPC socket in group/other-writable directory: %s", path)
+			}
+		} else if isTrustedStickyTempRoot(path, info, owner, rootUID) {
+			// Root-owned sticky temporary directories protect entries owned by
+			// other users from rename/unlink by unrelated users.
+		} else {
+			if owner != currentUID && owner != rootUID {
+				return fmt.Errorf("refusing IPC socket beneath directory owned by unrelated uid %d: %s", owner, path)
+			}
+			if info.Mode().Perm()&0o022 != 0 {
+				return fmt.Errorf("refusing IPC socket beneath group/other-writable directory: %s", path)
+			}
+		}
+
+		if path == string(filepath.Separator) {
+			break
 		}
 	}
 	return nil
+}
+
+func realDirectoryOwner(path string, info os.FileInfo) (int, error) {
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return 0, fmt.Errorf("refusing IPC socket path component that is not a real directory: %s", path)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, fmt.Errorf("cannot determine IPC socket directory owner: %s", path)
+	}
+	return int(stat.Uid), nil
+}
+
+func isTrustedStickyTempRoot(path string, info os.FileInfo, owner, rootUID int) bool {
+	return (path == "/tmp" || path == "/var/tmp") &&
+		owner == rootUID && info.Mode()&os.ModeSticky != 0
 }

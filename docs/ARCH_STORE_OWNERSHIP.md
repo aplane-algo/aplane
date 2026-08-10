@@ -33,6 +33,14 @@ non-writable by group and other users. Valid legacy configurations that placed
 a custom socket inside the store can be migrated while stopped; the daemon
 then refuses that configuration until the socket is moved.
 
+All IPC bind paths use the same directory-chain trust rule. The immediate
+socket parent must be owned by the daemon UID and must not be writable by group
+or other users. Every ancestor must be a real directory owned by either the
+daemon UID or the filesystem-root owner and must not be group/other writable.
+Root-owner sticky `/tmp` and `/var/tmp` are the only shared-directory
+exceptions, allowing same-UID private test/development roots beneath them
+without allowing an unrelated-owner or writable intermediate directory.
+
 ## Access inventory
 
 The following classification is compatibility-bearing. A new direct
@@ -109,9 +117,8 @@ startup permission contract. It inventories without following symlinks and
 reports unsafe ancestors, ownership, modes, hardlinks, and unexpected file
 types. Its public policies are opaque operation-specific values: production
 audit rejects every in-store socket, same-UID audit recognizes one exact live
-socket without relaxing ancestor checks, trusted-boundary policies require an
-explicit embedder/test constructor, and migration alone receives a removable
-legacy socket. Migration validates the complete legacy inventory before mutation,
+socket without relaxing ancestor checks, and migration alone receives a
+removable legacy socket. Migration validates the complete legacy inventory before mutation,
 removes the recognized stale legacy `<data-root>/aplane.sock`, removes group
 access at the root first, repairs recognized objects through opened
 descriptors, syncs directories, and independently audits the private result. A

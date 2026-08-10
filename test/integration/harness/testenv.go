@@ -206,30 +206,15 @@ func clearClonedSignerKeys(dataDir string) error {
 func mustMakeShortTempDir(t *testing.T, prefix string) string {
 	t.Helper()
 
-	base := secureIntegrationTempBase(t)
-	root, err := os.MkdirTemp(base, prefix)
+	root, err := os.MkdirTemp("", prefix)
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatalf("failed to secure integration temp dir: %v", err)
+	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	return root
-}
-
-func secureIntegrationTempBase(t *testing.T) string {
-	t.Helper()
-
-	projectRoot, err := findProjectRoot()
-	if err != nil {
-		t.Fatalf("failed to find project root: %v", err)
-	}
-	base := filepath.Join(projectRoot, "temp", "integration")
-	if err := os.MkdirAll(base, 0o700); err != nil {
-		t.Fatalf("failed to create integration temp base: %v", err)
-	}
-	if err := os.Chmod(base, 0o700); err != nil {
-		t.Fatalf("failed to secure integration temp base: %v", err)
-	}
-	return base
 }
 
 func syncClonedSSHAuthorization(signerDataDir, clientDataDir string) error {

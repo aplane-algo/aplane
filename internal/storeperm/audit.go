@@ -61,15 +61,6 @@ func SameUIDAuditOptions(root string, expectedUID, expectedGID int, socketPath s
 	}}
 }
 
-// TrustedBoundaryAuditOptions is the explicit embedder/test policy for a root
-// below a separately validated ancestor. Normal product callers do not use it.
-func TrustedBoundaryAuditOptions(root string, expectedUID, expectedGID int, socketPath, boundary string) AuditOptions {
-	return AuditOptions{policy: options{
-		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
-		profile: privateServiceProfile, socketPath: socketPath, ancestorBoundary: boundary,
-	}}
-}
-
 // LegacyMigrationOptions recognizes one exact stale in-store socket that a
 // stopped migration may remove after complete inventory validation.
 func LegacyMigrationOptions(root string, expectedUID, expectedGID int, socketPath string) MigrationOptions {
