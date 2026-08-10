@@ -231,7 +231,11 @@ identity in addition to `sentries.manage`. Re-importing the identical authority
 is idempotent. If the identical authority was created by endpoint discovery,
 explicit import promotes it to a manual record so later discovery sync cannot
 remove it. Rebinding an existing name to another Witness Key ID is rejected;
-replacement requires an explicit audited remove followed by import.
+replacement requires an explicit audited remove followed by import. Names
+beginning with `endpoint-` are reserved for discovery. A manual import cannot
+create a new record in that namespace, but importing the identical authority
+over an existing discovered record remains the explicit pinning operation
+described above.
 
 Public reference records are stored under:
 

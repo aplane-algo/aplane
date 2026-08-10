@@ -89,6 +89,18 @@ func TestImportIsIdempotentAndRejectsNameReplacement(t *testing.T) {
 	}
 }
 
+func TestImportReservesEndpointDiscoveryNamespace(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	export := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
+	_, err := Import(paths, "default", "endpoint-manual-planted", export)
+	if err == nil || !strings.Contains(err.Error(), "reserved for endpoint discovery") {
+		t.Fatalf("Import(endpoint-* name) error = %v, want reserved namespace rejection", err)
+	}
+	if _, found, getErr := Get(paths, "default", "endpoint-manual-planted"); getErr != nil || found {
+		t.Fatalf("reserved manual reference was stored: found=%v err=%v", found, getErr)
+	}
+}
+
 func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	if err := os.MkdirAll(paths.SentryRefsDir("default"), 0o700); err != nil {

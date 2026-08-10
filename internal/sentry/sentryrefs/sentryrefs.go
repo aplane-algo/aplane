@@ -133,6 +133,12 @@ func Import(paths storepaths.Paths, identityID, name string, data []byte) (*Reco
 			record.Name, existing.ComponentKey, record.ComponentKey,
 		)
 	}
+	if strings.HasPrefix(record.Name, "endpoint-") {
+		return nil, fmt.Errorf(
+			"sentry reference name %q is reserved for endpoint discovery; choose a manual name or sync the endpoint first and import the identical authority to pin it",
+			record.Name,
+		)
+	}
 	if record.ImportedAt == "" {
 		record.ImportedAt = time.Now().UTC().Format(time.RFC3339)
 	}

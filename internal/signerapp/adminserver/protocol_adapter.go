@@ -4,6 +4,8 @@
 package adminserver
 
 import (
+	"path/filepath"
+
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -111,7 +113,7 @@ func ProtocolBackupResultMessage(id string, result adminproto.BackupIdentityResu
 			ID:   id,
 		},
 		Success:         result.Success,
-		ArchivePath:     result.ArchivePath,
+		ArchivePath:     publicArchiveName(result.ArchivePath, ""),
 		ArchiveChecksum: result.ArchiveChecksum,
 		ArchiveSize:     result.ArchiveSize,
 		KeyCount:        result.KeyCount,
@@ -155,7 +157,8 @@ func ProtocolAppendBackupImportResultMessage(id string, result adminproto.Append
 }
 
 func ProtocolCommitBackupImportResultMessage(id string, result adminproto.CommitBackupImportResult) protocol.CommitBackupImportResultMessage {
-	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocol.BackupInfo{Path: result.Backup.Path, FileName: result.Backup.FileName, CreatedAt: result.Backup.CreatedAt, Size: result.Backup.Size, Checksum: result.Backup.Checksum}, Code: result.Code, Error: result.Error}
+	name := publicArchiveName(result.Backup.Path, result.Backup.FileName)
+	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocol.BackupInfo{Path: name, FileName: name, CreatedAt: result.Backup.CreatedAt, Size: result.Backup.Size, Checksum: result.Backup.Checksum}, Code: result.Code, Error: result.Error}
 }
 
 func ProtocolAbortBackupImportResultMessage(id string, result adminproto.AbortBackupImportResult) protocol.AbortBackupImportResultMessage {
@@ -296,15 +299,26 @@ func protocolBackupInfos(items []adminproto.BackupInfo) []protocol.BackupInfo {
 	}
 	out := make([]protocol.BackupInfo, len(items))
 	for i, item := range items {
+		name := publicArchiveName(item.Path, item.FileName)
 		out[i] = protocol.BackupInfo{
-			Path:      item.Path,
-			FileName:  item.FileName,
+			Path:      name,
+			FileName:  name,
 			CreatedAt: item.CreatedAt,
 			Size:      item.Size,
 			Checksum:  item.Checksum,
 		}
 	}
 	return out
+}
+
+func publicArchiveName(path, fileName string) string {
+	if fileName != "" {
+		return filepath.Base(fileName)
+	}
+	if path == "" {
+		return ""
+	}
+	return filepath.Base(path)
 }
 
 func protocolRestoreKeyInfos(items []adminproto.RestoreKeyInfo) []protocol.RestoreKeyInfo {

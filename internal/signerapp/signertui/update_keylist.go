@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/fsutil"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,6 +19,11 @@ import (
 // saveTEALToFile saves public TEAL source below operator-owned client state,
 // never below the private signer identity directory.
 func saveTEALToFile(dataDir, address, teal string) (string, error) {
+	decoded, err := types.DecodeAddress(strings.ToUpper(strings.TrimSpace(address)))
+	if err != nil {
+		return "", fmt.Errorf("invalid account address for TEAL filename: %w", err)
+	}
+	address = decoded.String()
 	filesDir := filepath.Join(dataDir, "files")
 	if err := os.MkdirAll(filesDir, 0o700); err != nil {
 		return "", fmt.Errorf("failed to create files directory: %w", err)
@@ -177,11 +184,11 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.details.teal != "" && m.dataDir == "" {
 			m.details.saveStatus = "Save unavailable: pass --client-data or set APCLIENT_DATA"
 		} else if m.details.teal != "" {
-			_, err := saveTEALToFile(m.dataDir, m.details.address, m.details.teal)
+			savedPath, err := saveTEALToFile(m.dataDir, m.details.address, m.details.teal)
 			if err != nil {
 				m.details.saveStatus = fmt.Sprintf("Save failed: %v", err)
 			} else {
-				m.details.saveStatus = fmt.Sprintf("Saved to client files/%s.teal", m.details.address)
+				m.details.saveStatus = fmt.Sprintf("Saved to client files/%s", filepath.Base(savedPath))
 			}
 		}
 		return m, nil

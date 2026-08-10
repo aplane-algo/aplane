@@ -247,8 +247,8 @@ grant accidentally contains the same typo.
 | `identity.view` | View identity state | `identity` | No |
 | `identity.unlock` | Unlock signer identity | `identity` | No |
 | `identity.lock` | Lock signer identity | `identity` | No |
-| `identity.backup` | Create a signer-managed encrypted backup archive for the bound identity | `identity` | Yes |
-| `identity.restore` | Import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile recovery state for the bound identity | `identity` | Yes; recovery-mode repair and resolution are allowed while signing remains blocked |
+| `identity.backup` | Create, export/read back, and delete signer-managed encrypted backup archives for the bound identity | `identity` | Yes for create/delete; export/read is available in unlocked or recovery state |
+| `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile recovery state for the bound identity | `identity` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `identity.decommission` | Decommission identity | `identity` | No |
 | `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
@@ -262,7 +262,7 @@ grant accidentally contains the same typo.
 | `keys.delete` | Delete a key | `key` | Yes |
 | `sentries.sync` | Sync public sentry reference metadata into the signer generation catalog | `sentries` | No |
 | `sentries.view` | List/show public sentry references and export public witness metadata | `sentry_references`, `sentry_reference`, `sentry_public` | No |
-| `sentries.manage` | Import or remove signer-owned public sentry references | `sentry_reference` | No |
+| `sentries.manage` | Import or remove signer-owned public sentry references | `sentry_reference` | Yes |
 | `generations.view` | Inspect current and retained generation inventory | `generations` | No |
 | `keytypes.view` | List available key types | `keytypes` | No |
 | `keytypes.activate` | Activate a key type | `keytype` | Yes |

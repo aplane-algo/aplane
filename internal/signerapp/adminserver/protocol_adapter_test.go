@@ -48,3 +48,28 @@ func TestProtocolChangeStorePassphraseResultPreservesFailureRecoveryState(t *tes
 		t.Fatalf("failure recovery state was not preserved: %#v", msg)
 	}
 }
+
+func TestBackupProtocolMessagesDoNotExposeStorePaths(t *testing.T) {
+	created := ProtocolBackupResultMessage("backup-1", adminproto.BackupIdentityResult{
+		Success: true, ArchivePath: "/var/lib/apsigner/identities/default/backups/created.tar.gz",
+	})
+	if created.ArchivePath != "created.tar.gz" {
+		t.Fatalf("backup archive_path = %q, want basename", created.ArchivePath)
+	}
+
+	listed := ProtocolBackupsListMessage("list-1", adminproto.ListBackupsResult{Backups: []adminproto.BackupInfo{{
+		Path: "/var/lib/apsigner/identities/default/backups/listed.tar.gz", FileName: "listed.tar.gz",
+	}}})
+	if len(listed.Backups) != 1 || listed.Backups[0].Path != "listed.tar.gz" || listed.Backups[0].FileName != "listed.tar.gz" {
+		t.Fatalf("listed backup leaked path: %#v", listed.Backups)
+	}
+
+	committed := ProtocolCommitBackupImportResultMessage("commit-1", adminproto.CommitBackupImportResult{
+		Success: true, Backup: adminproto.BackupInfo{
+			Path: "/var/lib/apsigner/identities/default/backups/imported.tar.gz", FileName: "imported.tar.gz",
+		},
+	})
+	if committed.Backup.Path != "imported.tar.gz" || committed.Backup.FileName != "imported.tar.gz" {
+		t.Fatalf("committed backup leaked path: %#v", committed.Backup)
+	}
+}

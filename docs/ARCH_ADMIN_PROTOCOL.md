@@ -293,8 +293,10 @@ mode.
   `verified`, `code`, `error`. Backup is all-or-nothing; a selected
   credential that fails canonical validation fails the request.
 - `list_backups` -> `backups_list`: `backups[]`, optional `code`,
-  `error`; each item has path, file name, packaging metadata, checksum, and
-  size. A successful checksum read is not a claim that encrypted archive
+  `error`; each item has a basename-only compatibility `path`, file name,
+  packaging metadata, checksum, and size. Successful backup-create and import
+  responses likewise expose only archive basenames, never the signer store
+  root. A successful checksum read is not a claim that encrypted archive
   contents were authenticated. This read-only operation is available to
   authenticated sessions in either unlocked or recovery state so the TUI can
   select repair material while signing remains blocked.
