@@ -174,7 +174,9 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "s":
 		// Save TEAL to file (only if TEAL is available)
-		if m.details.teal != "" && m.dataDir != "" {
+		if m.details.teal != "" && m.dataDir == "" {
+			m.details.saveStatus = "Save unavailable: pass --client-data or set APCLIENT_DATA"
+		} else if m.details.teal != "" {
 			_, err := saveTEALToFile(m.dataDir, m.details.address, m.details.teal)
 			if err != nil {
 				m.details.saveStatus = fmt.Sprintf("Save failed: %v", err)
