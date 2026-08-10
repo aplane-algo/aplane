@@ -99,6 +99,13 @@ transfer use typed admin operations. Operator-selected exports are written to
 operator-owned locations. Same-UID child `apconsole` retains direct config and
 node-role access as an explicit local-mode exception.
 
+Config-free fallback from an unreadable data root to the singleton
+`/run/apsigner/aplane.sock` is restricted to the conventional
+`/var/lib/apsigner` store. A custom private managed store must supply an
+explicit `APSIGNER_IPC_PATH` or `--ipc-path`; permission failure on any other
+selected data root is an error and never retargets the client to the singleton
+system signer.
+
 ## Filesystem primitives
 
 `internal/fsutil` owns low-level durable publication. Store callers select a

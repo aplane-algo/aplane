@@ -198,6 +198,51 @@ func TestResolveClientPathRejectsMissingSelectedDataDirectory(t *testing.T) {
 	}
 }
 
+func TestResolveClientPathRejectsPermissionDeniedCustomDataDirectory(t *testing.T) {
+	t.Setenv(SocketPathEnv, "")
+	parent := t.TempDir()
+	dataDir := filepath.Join(parent, "custom-signer")
+	if err := os.Mkdir(dataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
+
+	_, err := ResolveClientPath(dataDir, "")
+	if err == nil || !strings.Contains(err.Error(), "refusing to fall back") {
+		t.Fatalf("ResolveClientPath() error = %v, want cross-store fallback rejection", err)
+	}
+}
+
+func TestResolveClientPathAllowsExplicitSocketForPrivateCustomDataDirectory(t *testing.T) {
+	parent := t.TempDir()
+	dataDir := filepath.Join(parent, "custom-signer")
+	if err := os.Mkdir(dataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
+
+	const socket = "/secure/custom/aplane.sock"
+	got, err := ResolveClientPath(dataDir, socket)
+	if err != nil || got != socket {
+		t.Fatalf("ResolveClientPath(explicit) = %q, %v; want %q", got, err, socket)
+	}
+}
+
+func TestPrivateDataDirectoryFallbackAllowsOnlyConventionalSystemStore(t *testing.T) {
+	if _, resolved, err := privateDataDirectoryFallback(SystemDataDir, os.ErrPermission); err != nil || resolved {
+		t.Fatalf("privateDataDirectoryFallback(system) = resolved %t, error %v", resolved, err)
+	}
+	if _, _, err := privateDataDirectoryFallback("/srv/other-signer", os.ErrPermission); err == nil {
+		t.Fatal("privateDataDirectoryFallback(custom) accepted singleton runtime fallback")
+	}
+}
+
 func TestValidateRuntimeDirectoryRejectsGroupWrite(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o770); err != nil {

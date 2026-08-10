@@ -18,6 +18,10 @@ import (
 )
 
 const (
+	// SystemDataDir is the conventional private store paired with the
+	// singleton system runtime socket. Custom managed stores must provide an
+	// explicit IPC path when their private root cannot be inspected.
+	SystemDataDir = "/var/lib/apsigner"
 	// SystemRuntimeDir is created by systemd's RuntimeDirectory=apsigner.
 	SystemRuntimeDir = "/run/apsigner"
 	// SystemSocketPath is the stable multi-UID local admin endpoint.
@@ -140,11 +144,13 @@ func ResolveClientPath(dataDir, explicit string) (string, error) {
 
 // resolveDataDirectoryPath resolves a readable explicitly selected or
 // environment-selected signer root before the singleton system runtime path.
-// A private managed root deliberately falls through to config-free discovery.
+// Only the conventional private system store may fall through to config-free
+// discovery. A custom selected root must never silently retarget its client to
+// the singleton system signer.
 func resolveDataDirectoryPath(dataDir string) (string, bool, error) {
 	if _, err := os.Lstat(dataDir); err != nil {
 		if os.IsPermission(err) {
-			return "", false, nil
+			return privateDataDirectoryFallback(dataDir, err)
 		}
 		if os.IsNotExist(err) {
 			return "", false, fmt.Errorf(
@@ -157,14 +163,14 @@ func resolveDataDirectoryPath(dataDir string) (string, bool, error) {
 	managed, err := signerbootstrap.IsProductionManagedDataDir(dataDir)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
-			return "", false, nil
+			return privateDataDirectoryFallback(dataDir, err)
 		}
 		return "", false, err
 	}
 	configPath := filepath.Join(dataDir, "config.yaml")
 	if _, err := os.Lstat(configPath); err != nil {
 		if os.IsPermission(err) {
-			return "", false, nil
+			return privateDataDirectoryFallback(dataDir, err)
 		}
 		if os.IsNotExist(err) {
 			if managed {
@@ -184,6 +190,17 @@ func resolveDataDirectoryPath(dataDir string) (string, bool, error) {
 		return "", false, err
 	}
 	return resolved, true, nil
+}
+
+func privateDataDirectoryFallback(dataDir string, cause error) (string, bool, error) {
+	abs, err := filepath.Abs(filepath.Clean(dataDir))
+	if err == nil && abs == SystemDataDir {
+		return "", false, nil
+	}
+	return "", false, fmt.Errorf(
+		"cannot inspect selected signer data directory %s: %w; refusing to fall back to %s for a different store (set %s only when that socket is the intended signer)",
+		dataDir, cause, SystemSocketPath, SocketPathEnv,
+	)
 }
 
 func validateRuntimeDirectory(path string, info os.FileInfo) error {
