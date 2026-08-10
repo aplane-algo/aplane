@@ -44,7 +44,7 @@ func (*inspectionStub) ListGenerations(*identity.Runtime) adminproto.GenerationI
 	return adminproto.GenerationInventory{}
 }
 
-func TestHandleSentryReferenceMutationsRemainAvailableWhileLocked(t *testing.T) {
+func TestHandleSentryReferenceMutationsRejectLockedIdentity(t *testing.T) {
 	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
 	if ir.IsUnlocked() {
 		t.Fatal("new identity runtime unexpectedly unlocked")
@@ -63,8 +63,12 @@ func TestHandleSentryReferenceMutationsRemainAvailableWhileLocked(t *testing.T) 
 		Name:        "lab",
 	})
 
-	if inspection.importCalls != 1 || inspection.removeCalls != 1 {
-		t.Fatalf("mutation calls = import:%d remove:%d, want one each", inspection.importCalls, inspection.removeCalls)
+	if inspection.importCalls != 0 || inspection.removeCalls != 0 {
+		t.Fatalf("mutation calls = import:%d remove:%d, want none", inspection.importCalls, inspection.removeCalls)
+	}
+	msgs := decodeAdminProtoWrites(t, conn)
+	if len(msgs) != 2 || msgs[0].Code != protocol.ErrCodeSignerLocked || msgs[1].Code != protocol.ErrCodeSignerLocked {
+		t.Fatalf("responses = %#v, want two signer_locked errors", msgs)
 	}
 }
 
@@ -97,6 +101,7 @@ func TestHandleListSentryReferencesAuthorizesBeforeReading(t *testing.T) {
 
 func TestHandleImportSentryReferenceDenialStopsMutation(t *testing.T) {
 	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
 	inspection := &inspectionStub{}
 	authorizer := &recordingAuthorizer{err: auth.ErrForbidden}
 	conn := &queueConn{}

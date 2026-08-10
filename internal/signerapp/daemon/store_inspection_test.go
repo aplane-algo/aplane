@@ -52,7 +52,7 @@ func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 		t.Fatalf("GetSentryReference() = %#v", got)
 	}
 	removed := svc.RemoveSentryReference(ir, adminproto.RemoveSentryReferenceRequest{Name: "lab"})
-	if !removed.Success || !removed.Removed {
+	if !removed.Success || !removed.Removed || removed.ComponentKey != witnessKeyID {
 		t.Fatalf("RemoveSentryReference() = %#v", removed)
 	}
 }

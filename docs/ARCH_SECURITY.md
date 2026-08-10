@@ -579,6 +579,7 @@ type AuditEntry struct {
     RemoteAddr         string
     Reason             string
     PolicyRuleID       string
+    WitnessKeyID       string
     KeyCount           int
 }
 ```

@@ -60,6 +60,35 @@ func TestImportGetListDelete(t *testing.T) {
 	}
 }
 
+func TestImportIsIdempotentAndRejectsNameReplacement(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	firstExport := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
+	first, err := Import(paths, "default", "prod-sentry", firstExport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idempotent, err := Import(paths, "default", "prod-sentry", firstExport)
+	if err != nil {
+		t.Fatalf("identical Import() error = %v", err)
+	}
+	if idempotent.ComponentKey != first.ComponentKey || idempotent.ImportedAt != first.ImportedAt {
+		t.Fatalf("identical Import() rewrote record: first=%#v second=%#v", first, idempotent)
+	}
+
+	secondExport := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xcd))
+	_, err = Import(paths, "default", "prod-sentry", secondExport)
+	if err == nil || !strings.Contains(err.Error(), "remove it explicitly") {
+		t.Fatalf("replacement Import() error = %v, want explicit removal requirement", err)
+	}
+	stored, found, getErr := Get(paths, "default", "prod-sentry")
+	if getErr != nil || !found {
+		t.Fatalf("Get() after rejected replacement = (%#v, %v, %v)", stored, found, getErr)
+	}
+	if stored.ComponentKey != first.ComponentKey {
+		t.Fatalf("stored Witness Key ID = %q, want original %q", stored.ComponentKey, first.ComponentKey)
+	}
+}
+
 func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	if err := os.MkdirAll(paths.SentryRefsDir("default"), 0o700); err != nil {

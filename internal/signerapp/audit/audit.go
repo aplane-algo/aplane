@@ -76,6 +76,7 @@ type AuditEntry struct {
 	RemoteAddr         string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
 	Reason             string         `json:"reason,omitempty"`              // Rejection/failure reason
 	PolicyRuleID       string         `json:"policy_rule_id,omitempty"`      // Policy rule that forced manual review
+	WitnessKeyID       string         `json:"witness_key_id,omitempty"`      // Public witness authority affected by a sentry-reference mutation
 	KeyCount           int            `json:"key_count,omitempty"`           // For key reload events
 	ArchiveSHA256      string         `json:"archive_sha256,omitempty"`
 	ReplaceExisting    bool           `json:"replace_existing,omitempty"`
@@ -728,8 +729,9 @@ func (a *AuditLogger) LogPassphraseChangeFailed(identityID, reason string) {
 }
 
 // LogSentryReferenceChangedContext records authenticated online sentry
-// reference mutations without placing public-key material in the audit log.
-func (a *AuditLogger) LogSentryReferenceChangedContext(ctx adminserver.SessionContext, action, name string, success bool) {
+// reference mutations by stable Witness Key ID without placing public-key
+// material in the audit log.
+func (a *AuditLogger) LogSentryReferenceChangedContext(ctx adminserver.SessionContext, action, name, componentKey string, success bool) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditSentryReferenceChanged
 	entry.Outcome = action
@@ -737,5 +739,6 @@ func (a *AuditLogger) LogSentryReferenceChangedContext(ctx adminserver.SessionCo
 		entry.Outcome = "failed"
 	}
 	entry.Reason = fmt.Sprintf("action=%s name=%s", action, name)
+	entry.WitnessKeyID = componentKey
 	a.Log(entry)
 }

@@ -94,8 +94,8 @@ func (s signerAdminServices) LogBackupRestorePreviewFailedContext(ctx adminserve
 	}
 }
 
-func (s signerAdminServices) LogSentryReferenceChangedContext(ctx adminserver.SessionContext, action, name string, success bool) {
+func (s signerAdminServices) LogSentryReferenceChangedContext(ctx adminserver.SessionContext, action, name, componentKey string, success bool) {
 	if audit := s.auditLogger(); audit != nil {
-		audit.LogSentryReferenceChangedContext(ctx, action, name, success)
+		audit.LogSentryReferenceChangedContext(ctx, action, name, componentKey, success)
 	}
 }

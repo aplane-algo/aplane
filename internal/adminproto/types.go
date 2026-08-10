@@ -351,11 +351,12 @@ type RemoveSentryReferenceRequest struct {
 }
 
 type RemoveSentryReferenceResult struct {
-	Success bool
-	Name    string
-	Removed bool
-	Code    string
-	Error   string
+	Success      bool
+	Name         string
+	ComponentKey string
+	Removed      bool
+	Code         string
+	Error        string
 }
 
 type ExportSentryPublicRequest struct {

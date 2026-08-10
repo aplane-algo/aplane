@@ -535,15 +535,24 @@ func (s signerAdminServices) ImportSentryReference(ir *identity.Runtime, req adm
 
 func (s signerAdminServices) RemoveSentryReference(ir *identity.Runtime, req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
 	var removed bool
+	var componentKey string
 	err := s.withIdentityStoreMutation(ir.ID(), func() error {
-		var err error
+		existing, found, err := sentryrefs.Get(ir.KeyPaths(), ir.ID(), req.Name)
+		if err != nil {
+			return err
+		}
+		if found {
+			componentKey = existing.ComponentKey
+		}
 		removed, err = sentryrefs.Delete(ir.KeyPaths(), ir.ID(), req.Name)
 		return err
 	})
 	if err != nil {
 		return adminproto.RemoveSentryReferenceResult{Name: req.Name, Code: "remove_failed", Error: err.Error()}
 	}
-	return adminproto.RemoveSentryReferenceResult{Success: true, Name: req.Name, Removed: removed}
+	return adminproto.RemoveSentryReferenceResult{
+		Success: true, Name: req.Name, ComponentKey: componentKey, Removed: removed,
+	}
 }
 
 func (s signerAdminServices) ExportSentryPublic(ir *identity.Runtime, req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {

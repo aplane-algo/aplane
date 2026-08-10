@@ -405,12 +405,16 @@ canonical YAML document.
 - `list_generations` -> `generations_list`: current generation, sealed priors, pending attempts/staging, retained unsealed parent, `code`, `error`; this is read-only inspection and never reconciles or prunes. If an identity mutation is active, it returns retryable `identity_busy` rather than waiting for the ordinary IPC timeout.
 
 Sentry-reference reads/exports require `sentries.view`; imports/removals require
-`sentries.manage` and emit mutation audit events. Because references contain
-public catalog metadata only, these operations require a bound identity but
-remain available while it is locked; the identity mutation lock still
-serializes publication. Generation inventory requires `generations.view`.
-`apstore generations prune` deliberately remains an offline
-recovery/maintenance operation.
+`sentries.manage`, an unlocked identity, and emit mutation audit events. A
+reference alias selects the witness public key embedded during guarded-key
+generation, so public visibility does not make catalog mutation
+security-neutral. Import is idempotent for an identical reference and rejects
+a name already bound to a different Witness Key ID; replacement requires an
+explicit remove followed by import. Import and removal audit events include
+the affected Witness Key ID, and the identity mutation lock serializes
+publication. Generation inventory requires `generations.view`. `apstore
+generations prune` deliberately remains an offline recovery/maintenance
+operation.
 
 Key-type override semantics:
 
