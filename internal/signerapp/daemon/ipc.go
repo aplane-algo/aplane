@@ -5,7 +5,6 @@ package daemon
 
 import (
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"os"
 	"strings"
@@ -14,23 +13,17 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/ipcbind"
 )
 
 // IPCServer handles Unix socket connections for local IPC.
 type IPCServer struct {
-	listener     net.Listener
-	signer       *Signer
-	path         string
-	strictParent bool
-	manager      *adminserver.SessionManager
-}
-
-func newPrivateRuntimeIPCServer(path string, signer *Signer) *IPCServer {
-	server := NewIPCServer(path, signer)
-	server.strictParent = true
-	return server
+	listener net.Listener
+	signer   *Signer
+	path     string
+	manager  *adminserver.SessionManager
 }
 
 // NewIPCServer creates a new IPC server.
@@ -44,15 +37,11 @@ func NewIPCServer(path string, signer *Signer) *IPCServer {
 
 // Start begins listening on the Unix socket.
 func (s *IPCServer) Start() error {
-	var validateErr error
-	if s.strictParent {
-		validateErr = ipcbind.ValidatePrivateRuntimeBindPath(s.path)
-	} else {
-		validateErr = ipcbind.ValidateBindPath(s.path)
+	resolvedPath, err := ipcbind.ResolveBindPath(s.path)
+	if err != nil {
+		return err
 	}
-	if validateErr != nil {
-		return validateErr
-	}
+	s.path = resolvedPath
 
 	// Remove existing socket file if present
 	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {

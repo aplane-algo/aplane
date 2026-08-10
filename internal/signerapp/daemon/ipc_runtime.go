@@ -3,16 +3,12 @@
 
 package daemon
 
-func startIPCServer(server *Signer, socketPath string, privateRuntime bool) error {
-	if privateRuntime {
-		server.ipcServer = newPrivateRuntimeIPCServer(socketPath, server)
-	} else {
-		server.ipcServer = NewIPCServer(socketPath, server)
-	}
+func startIPCServer(server *Signer, socketPath string) error {
+	server.ipcServer = NewIPCServer(socketPath, server)
 	server.hub = server.ipcServer
 	if err := server.ipcServer.Start(); err != nil {
 		return err
 	}
-	logInfof("admin interface ready on IPC socket %s", socketPath)
+	logInfof("admin interface ready on IPC socket %s", server.ipcServer.path)
 	return nil
 }

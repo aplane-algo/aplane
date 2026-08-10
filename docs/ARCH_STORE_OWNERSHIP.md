@@ -33,13 +33,18 @@ non-writable by group and other users. Valid legacy configurations that placed
 a custom socket inside the store can be migrated while stopped; the daemon
 then refuses that configuration until the socket is moved.
 
-All IPC bind paths use the same directory-chain trust rule. The immediate
-socket parent must be owned by the daemon UID and must not be writable by group
-or other users. Every ancestor must be a real directory owned by either the
-daemon UID or the filesystem-root owner and must not be group/other writable.
-Root-owner sticky `/tmp` and `/var/tmp` are the only shared-directory
-exceptions, allowing same-UID private test/development roots beneath them
-without allowing an unrelated-owner or writable intermediate directory.
+All IPC bind paths use the same directory-chain trust rule. Directory aliases
+are resolved before validation and the daemon binds the canonical result. The
+canonical immediate socket parent must be owned by the daemon UID and must not
+be writable by group or other users. Every canonical ancestor must be a real
+directory owned by either the daemon UID or the filesystem-root owner and must
+not be group/other writable. A lexical symlink is accepted only when owned by
+the daemon or filesystem-root owner and its containing chain independently
+meets the same write and ownership rules. Root-owner sticky `/tmp` and
+`/var/tmp`, including their canonical platform targets, are the only shared
+directory exceptions. This supports macOS temporary paths and compatibility
+aliases such as `/var/run` without binding through an unchecked alias or
+allowing an unrelated-owner or writable intermediate directory.
 
 ## Access inventory
 

@@ -68,15 +68,15 @@ func TestValidateBindPathRejectsWorldWritableDirectory(t *testing.T) {
 	}
 }
 
-func TestValidatePrivateRuntimeBindPathRejectsGroupWritableDirectory(t *testing.T) {
+func TestValidateBindPathRejectsGroupWritableDirectory(t *testing.T) {
 	dir := privateTempDir(t)
 	if err := os.Chmod(dir, 0o770); err != nil {
 		t.Fatalf("chmod temp dir: %v", err)
 	}
 
-	err := ValidatePrivateRuntimeBindPath(filepath.Join(dir, "apsigner.sock"))
+	err := ValidateBindPath(filepath.Join(dir, "apsigner.sock"))
 	if err == nil || !strings.Contains(err.Error(), "group/other-writable") {
-		t.Fatalf("ValidatePrivateRuntimeBindPath() error = %v, want group-writable rejection", err)
+		t.Fatalf("ValidateBindPath() error = %v, want group-writable rejection", err)
 	}
 }
 
@@ -97,8 +97,11 @@ func TestValidateBindPathRejectsWritableIntermediateAncestor(t *testing.T) {
 	}
 }
 
-func TestValidateBindPathRejectsSymlinkedIntermediateAncestor(t *testing.T) {
+func TestResolveBindPathCanonicalizesTrustedSymlinkedAncestor(t *testing.T) {
 	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	realRoot := filepath.Join(root, "real")
 	parent := filepath.Join(realRoot, "private")
 	if err := os.MkdirAll(parent, 0o700); err != nil {
@@ -109,9 +112,37 @@ func TestValidateBindPathRejectsSymlinkedIntermediateAncestor(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	got, err := ResolveBindPath(filepath.Join(link, "private", "apsigner.sock"))
+	if err != nil {
+		t.Fatalf("ResolveBindPath() error = %v, want trusted symlink accepted", err)
+	}
+	want := filepath.Join(parent, "apsigner.sock")
+	if got != want {
+		t.Fatalf("ResolveBindPath() = %q, want canonical path %q", got, want)
+	}
+}
+
+func TestValidateBindPathRejectsUnrelatedOwnerSymlink(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires lchown to create an unrelated-owner symlink")
+	}
+	root := t.TempDir()
+	realRoot := filepath.Join(root, "real")
+	parent := filepath.Join(realRoot, "private")
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "linked")
+	if err := os.Symlink(realRoot, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Lchown(link, 1, 1); err != nil {
+		t.Fatal(err)
+	}
+
 	err := ValidateBindPath(filepath.Join(link, "private", "apsigner.sock"))
-	if err == nil || !strings.Contains(err.Error(), "not a real directory") {
-		t.Fatalf("ValidateBindPath() error = %v, want symlinked-ancestor rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "symlink owned by unrelated uid") {
+		t.Fatalf("ValidateBindPath() error = %v, want unrelated-owner symlink rejection", err)
 	}
 }
 
@@ -135,21 +166,21 @@ func TestValidateBindPathRejectsUnrelatedOwnerAncestor(t *testing.T) {
 	}
 }
 
-func TestValidatePrivateRuntimeBindPathAcceptsGroupTraversableDirectory(t *testing.T) {
+func TestValidateBindPathAcceptsGroupTraversableDirectory(t *testing.T) {
 	dir := privateTempDir(t)
 	if err := os.Chmod(dir, 0o750); err != nil {
 		t.Fatalf("chmod temp dir: %v", err)
 	}
 
-	if err := ValidatePrivateRuntimeBindPath(filepath.Join(dir, "apsigner.sock")); err != nil {
-		t.Fatalf("ValidatePrivateRuntimeBindPath() error = %v, want nil", err)
+	if err := ValidateBindPath(filepath.Join(dir, "apsigner.sock")); err != nil {
+		t.Fatalf("ValidateBindPath() error = %v, want nil", err)
 	}
 }
 
 func TestValidateBindPathRejectsMissingParent(t *testing.T) {
 	dir := privateTempDir(t)
 	err := ValidateBindPath(filepath.Join(dir, "missing", "apsigner.sock"))
-	if err == nil || !strings.Contains(err.Error(), "failed to inspect") {
+	if err == nil || !strings.Contains(err.Error(), "resolve IPC socket directory") {
 		t.Fatalf("ValidateBindPath() error = %v, want missing-parent rejection", err)
 	}
 }

@@ -88,7 +88,7 @@ func Run(dataDir string) int {
 	logInfof("--------------------------------------------")
 
 	config := startupOpts.Config
-	resolvedIPCPath, systemdManaged, err := adminipc.ResolveDaemonPathForDataDir(resolvedDataDir, config.IPCPath)
+	resolvedIPCPath, _, err := adminipc.ResolveDaemonPathForDataDir(resolvedDataDir, config.IPCPath)
 	if err != nil {
 		logErrorf("failed to resolve admin IPC path: %v", err)
 		return 1
@@ -298,10 +298,7 @@ func Run(dataDir string) int {
 	}
 
 	lockOnDisconnect := config.ShouldLockOnDisconnect()
-	// Every managed socket, including an explicit custom path, must live in a
-	// service-owned runtime directory that group members cannot mutate.
-	privateRuntime := systemdManaged
-	if err := startIPCServer(server, config.IPCPath, privateRuntime); err != nil {
+	if err := startIPCServer(server, config.IPCPath); err != nil {
 		logErrorf("failed to start IPC server: %v", err)
 		return 1
 	}

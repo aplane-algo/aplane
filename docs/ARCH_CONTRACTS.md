@@ -899,8 +899,11 @@ Additional signer-state notes:
   directory is service-owned `0750` and the socket is `0660`. Same-UID local
   mode defaults to `<data_dir>/aplane.sock`. An explicit systemd `ipc_path`
   must be outside the signer store in a service-user-owned directory that is
-  not writable by group or other users. `APSIGNER_IPC_PATH` or an explicit
-  `ipc_path` overrides client discovery where supported.
+  not writable by group or other users. Trusted root/current-owned directory
+  aliases are resolved and both the alias and canonical directory chains are
+  validated before the daemon binds the canonical socket path.
+  `APSIGNER_IPC_PATH` or an explicit `ipc_path` overrides client discovery
+  where supported.
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
 - signer-managed backup archives are written under
   `<data_dir>/backups/<identity>/`; the archive contains `README.md` and
