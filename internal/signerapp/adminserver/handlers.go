@@ -118,6 +118,8 @@ func (s *Session) HandleGetSentryReference(msg *protocol.GetSentryReferenceMessa
 }
 
 func (s *Session) HandleImportSentryReference(msg *protocol.ImportSentryReferenceMessage) {
+	// Sentry references contain public metadata only. The sentries.manage grant,
+	// not private-key availability, authorizes catalog mutation while locked.
 	ir := s.requireBoundRuntime(msg.ID)
 	if ir == nil {
 		return
@@ -143,6 +145,8 @@ func (s *Session) HandleImportSentryReference(msg *protocol.ImportSentryReferenc
 }
 
 func (s *Session) HandleRemoveSentryReference(msg *protocol.RemoveSentryReferenceMessage) {
+	// Keep removal available while locked for the same public-catalog reason as
+	// import; the identity mutation lock still serializes the durable write.
 	ir := s.requireBoundRuntime(msg.ID)
 	if ir == nil {
 		return

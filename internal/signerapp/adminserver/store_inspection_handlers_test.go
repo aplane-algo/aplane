@@ -17,6 +17,7 @@ import (
 type inspectionStub struct {
 	listCalls   int
 	importCalls int
+	removeCalls int
 	listResult  adminproto.ListSentryReferencesResult
 }
 
@@ -31,14 +32,40 @@ func (s *inspectionStub) ImportSentryReference(*identity.Runtime, adminproto.Imp
 	s.importCalls++
 	return adminproto.ImportSentryReferenceResult{Success: true}
 }
-func (*inspectionStub) RemoveSentryReference(*identity.Runtime, adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
-	return adminproto.RemoveSentryReferenceResult{}
+func (s *inspectionStub) RemoveSentryReference(*identity.Runtime, adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
+	s.removeCalls++
+	return adminproto.RemoveSentryReferenceResult{Success: true}
 }
+
 func (*inspectionStub) ExportSentryPublic(*identity.Runtime, adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
 	return adminproto.ExportSentryPublicResult{}
 }
 func (*inspectionStub) ListGenerations(*identity.Runtime) adminproto.GenerationInventory {
 	return adminproto.GenerationInventory{}
+}
+
+func TestHandleSentryReferenceMutationsRemainAvailableWhileLocked(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	if ir.IsUnlocked() {
+		t.Fatal("new identity runtime unexpectedly unlocked")
+	}
+	inspection := &inspectionStub{}
+	conn := &queueConn{}
+	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: &recordingAuthorizer{}})
+	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
+
+	session.HandleImportSentryReference(&protocol.ImportSentryReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeImportSentryReference, ID: "import-sentry"},
+		Name:        "lab", EnvelopeJSON: `{}`,
+	})
+	session.HandleRemoveSentryReference(&protocol.RemoveSentryReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveSentryReference, ID: "remove-sentry"},
+		Name:        "lab",
+	})
+
+	if inspection.importCalls != 1 || inspection.removeCalls != 1 {
+		t.Fatalf("mutation calls = import:%d remove:%d, want one each", inspection.importCalls, inspection.removeCalls)
+	}
 }
 
 func TestHandleListSentryReferencesAuthorizesBeforeReading(t *testing.T) {
