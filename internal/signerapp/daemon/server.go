@@ -4,11 +4,11 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
@@ -117,6 +117,15 @@ func (fs *Signer) withProcessConfigMutation(fn func() error) error {
 func (fs *Signer) withIdentityMutation(identityID string, fn func() error) error {
 	lock := fs.storeMutationLock(identityID)
 	lock.Lock()
+	defer lock.Unlock()
+	return fn()
+}
+
+func (fs *Signer) tryWithIdentityInspection(identityID string, fn func() error) error {
+	lock := fs.storeMutationLock(identityID)
+	if !lock.TryLock() {
+		return errIdentityStoreBusy
+	}
 	defer lock.Unlock()
 	return fn()
 }

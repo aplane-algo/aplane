@@ -38,6 +38,8 @@ type signerAdminServices struct {
 	signer *Signer
 }
 
+var errIdentityStoreBusy = errors.New("identity store mutation is in progress")
+
 type signerAdminAppDeps struct {
 	signer *Signer
 }
@@ -484,13 +486,14 @@ func (s signerAdminServices) ListKeyTypes(ir *identity.Runtime) adminproto.ListK
 
 func (s signerAdminServices) ListSentryReferences(ir *identity.Runtime) adminproto.ListSentryReferencesResult {
 	var records []sentryrefs.Record
-	err := s.withIdentityStoreAccess(ir.ID(), func() error {
+	err := s.withIdentityStoreInspection(ir.ID(), func() error {
 		var err error
 		records, err = sentryrefs.List(ir.KeyPaths(), ir.ID())
 		return err
 	})
 	if err != nil {
-		return adminproto.ListSentryReferencesResult{Code: "list_failed", Error: err.Error()}
+		code, message := identityStoreInspectionError(err, "list_failed")
+		return adminproto.ListSentryReferencesResult{Code: code, Error: message}
 	}
 	result := adminproto.ListSentryReferencesResult{References: make([]adminproto.SentryReferenceInfo, len(records))}
 	for i := range records {
@@ -502,13 +505,14 @@ func (s signerAdminServices) ListSentryReferences(ir *identity.Runtime) adminpro
 func (s signerAdminServices) GetSentryReference(ir *identity.Runtime, req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
 	var record sentryrefs.Record
 	var found bool
-	err := s.withIdentityStoreAccess(ir.ID(), func() error {
+	err := s.withIdentityStoreInspection(ir.ID(), func() error {
 		var err error
 		record, found, err = sentryrefs.Get(ir.KeyPaths(), ir.ID(), req.Name)
 		return err
 	})
 	if err != nil {
-		return adminproto.GetSentryReferenceResult{Code: "read_failed", Error: err.Error()}
+		code, message := identityStoreInspectionError(err, "read_failed")
+		return adminproto.GetSentryReferenceResult{Code: code, Error: message}
 	}
 	if !found {
 		return adminproto.GetSentryReferenceResult{Code: "not_found", Error: fmt.Sprintf("sentry reference %q not found", req.Name)}
@@ -518,7 +522,7 @@ func (s signerAdminServices) GetSentryReference(ir *identity.Runtime, req adminp
 
 func (s signerAdminServices) ImportSentryReference(ir *identity.Runtime, req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
 	var record *sentryrefs.Record
-	err := s.withIdentityStoreAccess(ir.ID(), func() error {
+	err := s.withIdentityStoreMutation(ir.ID(), func() error {
 		var err error
 		record, err = sentryrefs.Import(ir.KeyPaths(), ir.ID(), req.Name, []byte(req.EnvelopeJSON))
 		return err
@@ -531,7 +535,7 @@ func (s signerAdminServices) ImportSentryReference(ir *identity.Runtime, req adm
 
 func (s signerAdminServices) RemoveSentryReference(ir *identity.Runtime, req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
 	var removed bool
-	err := s.withIdentityStoreAccess(ir.ID(), func() error {
+	err := s.withIdentityStoreMutation(ir.ID(), func() error {
 		var err error
 		removed, err = sentryrefs.Delete(ir.KeyPaths(), ir.ID(), req.Name)
 		return err
@@ -549,13 +553,14 @@ func (s signerAdminServices) ExportSentryPublic(ir *identity.Runtime, req adminp
 	}
 	var envelope witness.PublicReference
 	var found bool
-	err = s.withIdentityStoreAccess(ir.ID(), func() error {
+	err = s.withIdentityStoreInspection(ir.ID(), func() error {
 		var err error
 		envelope, found, err = apkeys.ReadWitnessPublicMetadata(ir.KeyPaths(), ir.ID(), componentKey)
 		return err
 	})
 	if err != nil {
-		return adminproto.ExportSentryPublicResult{Code: "export_failed", Error: err.Error()}
+		code, message := identityStoreInspectionError(err, "export_failed")
+		return adminproto.ExportSentryPublicResult{Code: code, Error: message}
 	}
 	if !found {
 		return adminproto.ExportSentryPublicResult{Code: "not_found", Error: fmt.Sprintf("sentry public metadata for %s not found", componentKey)}
@@ -570,7 +575,7 @@ func (s signerAdminServices) ExportSentryPublic(ir *identity.Runtime, req adminp
 
 func (s signerAdminServices) ListGenerations(ir *identity.Runtime) adminproto.GenerationInventory {
 	var report genstore.ReconcileReport
-	err := s.withIdentityStoreAccess(ir.ID(), func() error {
+	err := s.withIdentityStoreInspection(ir.ID(), func() error {
 		generational, err := genstore.IsGenerational(ir.KeyPaths(), ir.ID())
 		if err != nil {
 			return err
@@ -582,7 +587,8 @@ func (s signerAdminServices) ListGenerations(ir *identity.Runtime) adminproto.Ge
 		return err
 	})
 	if err != nil {
-		return adminproto.GenerationInventory{Code: "inspect_failed", Error: err.Error()}
+		code, message := identityStoreInspectionError(err, "inspect_failed")
+		return adminproto.GenerationInventory{Code: code, Error: message}
 	}
 	return adminproto.GenerationInventory{
 		Current: report.Current, SealedPriors: report.SealedPriors,
@@ -591,11 +597,25 @@ func (s signerAdminServices) ListGenerations(ir *identity.Runtime) adminproto.Ge
 	}
 }
 
-func (s signerAdminServices) withIdentityStoreAccess(identityID string, fn func() error) error {
+func (s signerAdminServices) withIdentityStoreMutation(identityID string, fn func() error) error {
 	if s.signer == nil {
 		return fn()
 	}
 	return s.signer.withIdentityMutation(identityID, fn)
+}
+
+func (s signerAdminServices) withIdentityStoreInspection(identityID string, fn func() error) error {
+	if s.signer == nil {
+		return fn()
+	}
+	return s.signer.tryWithIdentityInspection(identityID, fn)
+}
+
+func identityStoreInspectionError(err error, fallbackCode string) (string, string) {
+	if errors.Is(err, errIdentityStoreBusy) {
+		return protocol.ResultCodeIdentityBusy, err.Error()
+	}
+	return fallbackCode, err.Error()
 }
 
 func adminSentryReference(record sentryrefs.Record) adminproto.SentryReferenceInfo {

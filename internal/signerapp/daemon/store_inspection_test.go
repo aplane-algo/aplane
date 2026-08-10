@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -64,6 +65,35 @@ func TestSignerAdminServicesListsGenerationInventoryReadOnly(t *testing.T) {
 	result := server.adminServices().ListGenerations(ir)
 	if result.Error != "" || result.Current == "" {
 		t.Fatalf("ListGenerations() = %#v", result)
+	}
+}
+
+func TestSignerAdminServicesInspectionReturnsBusyDuringMutation(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.registry.Get(auth.DefaultIdentityID)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- server.withIdentityMutation(ir.ID(), func() error {
+			close(started)
+			<-release
+			return nil
+		})
+	}()
+	<-started
+	defer func() {
+		close(release)
+		if err := <-done; err != nil {
+			t.Errorf("withIdentityMutation() error = %v", err)
+		}
+	}()
+
+	result := server.adminServices().ListGenerations(ir)
+	if result.Code != protocol.ResultCodeIdentityBusy || !strings.Contains(result.Error, "mutation is in progress") {
+		t.Fatalf("ListGenerations() = %#v, want immediate identity_busy result", result)
 	}
 }
 

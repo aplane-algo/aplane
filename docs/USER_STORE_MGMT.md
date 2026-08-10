@@ -450,7 +450,7 @@ Inspect generations through the running daemon; stop the daemon only for
 destructive pruning:
 
 ```
-./apstore generations list                # current + sealed priors (read-only)
+./apstore generations list                # current + sealed priors (read-only; retry if identity_busy)
 ./apstore generations prune               # keep current + its parent
 ./apstore generations prune --all-priors  # keep only current
 ```

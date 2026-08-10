@@ -391,12 +391,12 @@ canonical YAML document.
 
 ### Sentry References And Generation Inventory
 
-- `list_sentry_references` -> `sentry_references_list`: `references[]`, optional `code`, `error`; returns identity-owned public sentry-reference records
+- `list_sentry_references` -> `sentry_references_list`: `references[]`, optional `code`, `error`; returns identity-owned public sentry-reference records. Read-only store inspection does not wait behind an identity mutation; it returns retryable `identity_busy` instead.
 - `get_sentry_reference`: `name` -> `sentry_reference`: `success`, optional `reference`, `code`, `error`
 - `import_sentry_reference`: `name`, `envelope_json` -> `import_sentry_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the identity mutation lock
 - `remove_sentry_reference`: `name` -> `remove_sentry_reference_result`: `success`, `name`, `removed`, `code`, `error`
 - `export_sentry_public`: `witness_key_id` -> `export_sentry_public_result`: `success`, `witness_key_id`, `envelope_json`, `code`, `error`; only public witness metadata crosses the protocol
-- `list_generations` -> `generations_list`: current generation, sealed priors, pending attempts/staging, retained unsealed parent, `code`, `error`; this is read-only inspection and never reconciles or prunes
+- `list_generations` -> `generations_list`: current generation, sealed priors, pending attempts/staging, retained unsealed parent, `code`, `error`; this is read-only inspection and never reconciles or prunes. If an identity mutation is active, it returns retryable `identity_busy` rather than waiting for the ordinary IPC timeout.
 
 Sentry-reference reads/exports require `sentries.view`; imports/removals require
 `sentries.manage` and emit mutation audit events. Generation inventory requires
