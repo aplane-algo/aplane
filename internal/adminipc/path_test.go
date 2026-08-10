@@ -251,6 +251,10 @@ func TestResolveClientPathRejectsPermissionDeniedCustomDataDirectory(t *testing.
 	if err == nil || !strings.Contains(err.Error(), "refusing to fall back") {
 		t.Fatalf("ResolveClientPath() error = %v, want cross-store fallback rejection", err)
 	}
+	if !strings.Contains(err.Error(), "with explicit -d, pass --ipc-path") ||
+		!strings.Contains(err.Error(), "pair APSIGNER_IPC_PATH with APSIGNER_DATA") {
+		t.Fatalf("ResolveClientPath() error = %v, want actionable explicit and environment guidance", err)
+	}
 }
 
 func TestResolveClientPathAllowsExplicitSocketForPrivateCustomDataDirectory(t *testing.T) {

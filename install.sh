@@ -2653,6 +2653,7 @@ unset -f _aplane_prepend_path
 export APLANE_INSTALL_ROOT="$OPERATOR_ROOT"
 export APLANE_BINDIR="$BINDIR"
 export APSIGNER_DATA="$DATA_DIR"
+export APSIGNER_IPC_PATH="/run/apsigner/aplane.sock"
 export APCLIENT_DATA="$APCLIENT_DIR"
 ENVEOF
     bash -n "$ENV_SH"

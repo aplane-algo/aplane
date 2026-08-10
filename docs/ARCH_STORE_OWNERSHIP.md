@@ -108,7 +108,10 @@ system signer.
 Explicit client selection follows the same rule: `--ipc-path` wins first, then
 an explicit `-d`, then `APSIGNER_IPC_PATH` paired with an environment/profile
 data root. This prevents a stale inherited socket override from redirecting an
-operation aimed at a CLI-selected store.
+operation aimed at a CLI-selected store. The systemd installer therefore
+pairs its generated `APSIGNER_DATA` with
+`APSIGNER_IPC_PATH=/run/apsigner/aplane.sock`; a command that supplies `-d`
+must also supply `--ipc-path` when that private root cannot be inspected.
 
 ## Filesystem primitives
 

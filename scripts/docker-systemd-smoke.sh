@@ -255,6 +255,7 @@ verify_install_layout() {
         [ \"\$APLANE_INSTALL_ROOT\" = '$OPERATOR_ROOT' ] && \
         [ \"\$APLANE_BINDIR\" = '/usr/local/bin' ] && \
         [ \"\$APSIGNER_DATA\" = '/var/lib/apsigner' ] && \
+        [ \"\$APSIGNER_IPC_PATH\" = '/run/apsigner/aplane.sock' ] && \
         [ \"\$APCLIENT_DATA\" = '$OPERATOR_ROOT/apclient' ] && \
         command -v apsigner >/dev/null && \
         command -v apshell >/dev/null"

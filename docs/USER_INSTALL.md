@@ -32,7 +32,9 @@ supplies the default `--systemd --bindir` value when `--bindir` is omitted.
 Command-line arguments take precedence over environment variables, and
 environment variables take precedence over prompts/defaults.
 Installer-generated `apenv.sh` files export `APLANE_INSTALL_ROOT`; systemd
-operator `apenv.sh` also exports `APLANE_BINDIR`.
+operator `apenv.sh` also exports `APLANE_BINDIR` and pairs `APSIGNER_DATA`
+with `APSIGNER_IPC_PATH=/run/apsigner/aplane.sock` so clients can reach a
+custom private managed store without reading it.
 The bootstrap wrapper also accepts `APLANE_VERSION`,
 `APLANE_ENABLE_SERVICE`, `APLANE_START_SERVICE`, and
 `APLANE_REQUIRE_MINISIGN`; matching `APSIGNER_*` names are compatibility
@@ -526,7 +528,7 @@ Key systemd paths:
 | `/etc/sudoers.d/99-apsigner-systemctl` | sudoers rule allowing the service user to manage the service |
 | `<operator-root>/` | Operator workspace for the user who ran `sudo install.sh --systemd`; defaults to `~<installing-user>/aplane/` |
 | `<operator-root>/apclient/` | apshell client config, scripts, plugin activation config, and bundled plugin catalog |
-| `<operator-root>/apenv.sh` | Environment file for `APLANE_INSTALL_ROOT`, `APLANE_BINDIR`, `APSIGNER_DATA`, `APCLIENT_DATA`, and `PATH` |
+| `<operator-root>/apenv.sh` | Environment file for `APLANE_INSTALL_ROOT`, `APLANE_BINDIR`, `APSIGNER_DATA`, `APSIGNER_IPC_PATH`, `APCLIENT_DATA`, and `PATH` |
 | `<operator-root>/apconsole.yaml` | apconsole profile pointing at `./apclient` and `/var/lib/apsigner` |
 
 The service starts locked unless you later configure a passphrase helper.

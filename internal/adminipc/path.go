@@ -222,7 +222,7 @@ func privateDataDirectoryFallback(dataDir string, cause error) (string, bool, er
 		return "", false, nil
 	}
 	return "", false, fmt.Errorf(
-		"cannot inspect selected signer data directory %s: %w; refusing to fall back to %s for a different store (set %s only when that socket is the intended signer)",
+		"cannot inspect selected signer data directory %s: %w; refusing to fall back to %s for a different store (with explicit -d, pass --ipc-path; otherwise pair %s with APSIGNER_DATA only when that socket is the intended signer)",
 		dataDir, cause, SystemSocketPath, SocketPathEnv,
 	)
 }
