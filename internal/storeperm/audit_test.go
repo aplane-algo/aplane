@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -66,6 +67,31 @@ func TestSameUIDAuditAcceptsLocalInstalledBinaries(t *testing.T) {
 	}
 	if storeFindings := withoutAncestorFindings(findings); len(storeFindings) != 0 {
 		t.Fatalf("same-UID Audit() store findings = %+v, want none", storeFindings)
+	}
+}
+
+func TestMigratePrivateRejectsStoreLocalBinariesWithoutMutation(t *testing.T) {
+	root := privateStoreFixture(t)
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	binaryPath := filepath.Join(binDir, "apsigner")
+	if err := os.WriteFile(binaryPath, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	uid, gid := ownerIDs(t, root)
+
+	_, err := MigratePrivate(LegacyMigrationOptions(root, uid, gid, ""))
+	if err == nil || !strings.Contains(err.Error(), "store-local bin directory") {
+		t.Fatalf("MigratePrivate() error = %v, want local binary rejection", err)
+	}
+	info, statErr := os.Stat(binaryPath)
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("binary mode after rejected migration = %04o, want 0755", got)
 	}
 }
 

@@ -736,6 +736,12 @@ sudo ./installer/scripts/systemd-setup.sh <username> <group> [bindir] [--data-di
 | `--data-dir` | Data directory for apsigner | `/var/lib/apsigner` |
 | `--memory-lock` | Grant `CAP_IPC_LOCK` and `LimitMEMLOCK=infinity` in the systemd unit | disabled |
 
+The systemd `bindir` must be outside `--data-dir`. The setup script rejects a
+data root containing a local-install `bin/` subtree before writing the managed
+marker or changing store permissions. To convert a same-UID local install,
+first install the service binaries in an external system path and remove the
+old store-local `bin/` subtree while the local signer is stopped.
+
 **Example — locked-start (default):**
 
 ```bash

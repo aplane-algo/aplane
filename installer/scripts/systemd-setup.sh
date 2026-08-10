@@ -123,6 +123,29 @@ if systemctl is-active --quiet apsigner.service; then
     exit 1
 fi
 
+# A production data root contains signer state only. Reject local-install
+# layouts before writing .prod or changing any existing store permissions;
+# migration would otherwise strip execute bits and Linux file capabilities.
+if [ -L "$DATA_DIR" ]; then
+    echo "Error: signer data directory must not be a symlink: $DATA_DIR" >&2
+    exit 1
+fi
+mkdir -p "$DATA_DIR"
+DATA_DIR="$(cd "$DATA_DIR" && pwd -P)"
+case "$BINDIR" in
+    "$DATA_DIR"|"$DATA_DIR"/*)
+        echo "Error: systemd service binaries must be outside the signer data directory." >&2
+        echo "  Binary directory: $BINDIR" >&2
+        echo "  Data directory:   $DATA_DIR" >&2
+        exit 1
+        ;;
+esac
+if [ -e "$DATA_DIR/bin" ]; then
+    echo "Error: signer data directory contains a local-install bin/ subtree: $DATA_DIR/bin" >&2
+    echo "Install service binaries outside the data directory and remove the old bin/ subtree before conversion." >&2
+    exit 1
+fi
+
 echo "=== apsigner systemd setup ==="
 echo ""
 echo "  Service:   $SERVICE_DEST"
@@ -140,11 +163,6 @@ echo ""
 
 # The runtime socket is the group's only filesystem-facing capability. Close
 # traversal of the persistent store before inspecting any credential paths.
-if [ -L "$DATA_DIR" ]; then
-    echo "Error: signer data directory must not be a symlink: $DATA_DIR" >&2
-    exit 1
-fi
-mkdir -p "$DATA_DIR"
 chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR"
 chmod 700 "$DATA_DIR"
 

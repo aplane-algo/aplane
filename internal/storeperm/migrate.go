@@ -31,6 +31,9 @@ type migrationEntry struct {
 func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 	opts := migration.policy
 	opts.profile = legacySharedProfile
+	if err := rejectStoreLocalBinaries(opts.root); err != nil {
+		return MigrationResult{}, err
+	}
 	findings, err := audit(opts)
 	if err != nil {
 		return MigrationResult{}, err
@@ -111,6 +114,19 @@ func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 		return result, fmt.Errorf("private signer-store verification failed after migration: %w", post[0])
 	}
 	return result, nil
+}
+
+func rejectStoreLocalBinaries(root string) error {
+	binPath := filepath.Join(root, "bin")
+	if _, err := os.Lstat(binPath); err == nil {
+		return fmt.Errorf(
+			"refusing signer-store migration with store-local bin directory %s; install service binaries outside the data directory and remove the local-install bin directory before conversion",
+			binPath,
+		)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect store-local bin path %s: %w", binPath, err)
+	}
+	return nil
 }
 
 func recognizedLegacySocket(root, socketPath string) (string, error) {

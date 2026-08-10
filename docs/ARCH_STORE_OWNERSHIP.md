@@ -140,8 +140,11 @@ clean audit is authority to proceed; an incomplete audit is not.
 installer's non-writable executable `bin/` subtree without treating those
 files as signer data. `apstore permissions migrate` is restricted to
 systemd-managed stores, requires the normal offline execution mode and
-exclusive store lock, and rejects local installs rather than stripping their
-binary execute bits or file capabilities. A systemd-managed daemon checks the
+exclusive store lock, and rejects any store-local `bin/` subtree rather than
+stripping binary execute bits or file capabilities. The standalone systemd
+setup performs the same check before writing `.prod`, changing ownership, or
+changing modes; its service `bindir` must be outside the data root. A
+systemd-managed daemon checks the
 private profile before loading configuration or opening the store lock and
 refuses startup with a migration command when it finds unsafe state.
 
