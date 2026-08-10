@@ -156,7 +156,7 @@ func TestBackupTransferAuditsImportFailureAndExportStart(t *testing.T) {
 	ir.SetUnlocked()
 	svc := &stubServices{
 		commitBackupImportResult: adminproto.CommitBackupImportResult{Code: "backup_import_commit_failed", Error: "invalid archive"},
-		readBackupChunkResult:    adminproto.ReadBackupChunkResult{Success: true, FileName: "export.tar.gz", Data: []byte("chunk")},
+		readBackupChunkResult:    adminproto.ReadBackupChunkResult{Success: true, FileName: "export.tar.gz", Offset: 1, Data: []byte("chunk")},
 	}
 	audit := &recordingBackupTransferAudit{}
 	deps := svc.backupDeps()
@@ -169,7 +169,10 @@ func TestBackupTransferAuditsImportFailureAndExportStart(t *testing.T) {
 		ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
 	})
 	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
-		BaseMessage: protocol.BaseMessage{ID: "read"}, FileName: "export.tar.gz", Offset: 0,
+		BaseMessage: protocol.BaseMessage{ID: "read"}, FileName: "export.tar.gz", Offset: 1,
+	})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read-continuation"}, FileName: "export.tar.gz", Offset: 2,
 	})
 
 	if audit.failedCalls != 1 || !strings.Contains(audit.lastFailure, "backup import failed") {
@@ -177,6 +180,31 @@ func TestBackupTransferAuditsImportFailureAndExportStart(t *testing.T) {
 	}
 	if audit.exportStartedCalls != 1 || audit.lastExport != "export.tar.gz" {
 		t.Fatalf("export audit = %d %q", audit.exportStartedCalls, audit.lastExport)
+	}
+}
+
+func TestBackupExportAuditStartsAgainAfterEOF(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	svc := &stubServices{
+		readBackupChunkResult: adminproto.ReadBackupChunkResult{Success: true, FileName: "export.tar.gz", Offset: 7, EOF: true},
+	}
+	audit := &recordingBackupTransferAudit{}
+	deps := svc.backupDeps()
+	deps.Audit = audit
+	session := NewSession(&queueConn{}, deps)
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read-to-eof"}, FileName: "export.tar.gz", Offset: 7,
+	})
+	svc.readBackupChunkResult.EOF = false
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read-again"}, FileName: "export.tar.gz", Offset: 7,
+	})
+
+	if audit.exportStartedCalls != 2 {
+		t.Fatalf("export audit calls = %d, want 2 transfers", audit.exportStartedCalls)
 	}
 }
 

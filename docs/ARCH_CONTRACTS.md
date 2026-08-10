@@ -2084,8 +2084,9 @@ Backup-audit semantics:
   writes a managed archive; `reason` contains the archive path
 - `BACKUP_IMPORTED` is emitted after an uploaded archive passes deep
   verification and is published into the managed backup set
-- `BACKUP_EXPORT_STARTED` is emitted when the first chunk of a managed archive
-  is returned to an authenticated admin client
+- `BACKUP_EXPORT_STARTED` is emitted on the first successful chunk read for a
+  managed archive transfer, including when a client starts at a non-zero
+  offset; reaching EOF closes the inferred transfer for subsequent auditing
 - `BACKUP_FAILED` is emitted when backup creation, import commit, or export
   streaming fails; `reason` contains the failure reason
 - `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `reason` contains the resolved archive path and `key_count` contains previewed keys

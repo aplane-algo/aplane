@@ -46,18 +46,46 @@ type Session struct {
 	authorizer         auth.Authorizer
 	audit              AuthorizationAudit
 
-	mu       sync.Mutex
-	state    SessionState
-	identity *auth.Identity
-	bound    *identity.Runtime
-	method   string
-	context  SessionContext
-	ctx      context.Context
-	cancel   context.CancelFunc
+	mu                  sync.Mutex
+	state               SessionState
+	identity            *auth.Identity
+	bound               *identity.Runtime
+	method              string
+	context             SessionContext
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	activeBackupExports map[backupExportAuditKey]struct{}
 
 	// preboundIdentityID is set by transports that authenticate an identity
 	// before the admin protocol auth message, such as SSH.
 	preboundIdentityID string
+}
+
+type backupExportAuditKey struct {
+	identityID string
+	fileName   string
+}
+
+// markBackupExportChunk returns true when this successful read starts an
+// unaudited archive transfer. Offset zero explicitly starts a new transfer;
+// a client that starts elsewhere is still audited on its first successful
+// read. EOF closes the inferred transfer so a later read is audited again.
+func (s *Session) markBackupExportChunk(identityID, fileName string, offset int64, eof bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := backupExportAuditKey{identityID: identityID, fileName: fileName}
+	_, active := s.activeBackupExports[key]
+	started := offset == 0 || !active
+	if eof {
+		delete(s.activeBackupExports, key)
+		return started
+	}
+	if s.activeBackupExports == nil {
+		s.activeBackupExports = make(map[backupExportAuditKey]struct{})
+	}
+	s.activeBackupExports[key] = struct{}{}
+	return started
 }
 
 func NewSession(conn adminproto.AdminConn, deps SessionDeps) *Session {

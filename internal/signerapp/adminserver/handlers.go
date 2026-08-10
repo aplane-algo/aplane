@@ -427,8 +427,10 @@ func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
 		LogBackupExportStartedContext(SessionContext, string)
 		LogBackupFailedContext(SessionContext, string)
 	}); ok {
-		if result.Success && msg.Offset == 0 {
-			audit.LogBackupExportStartedContext(s.SessionContext(), result.FileName)
+		if result.Success {
+			if s.markBackupExportChunk(ir.ID(), result.FileName, result.Offset, result.EOF) {
+				audit.LogBackupExportStartedContext(s.SessionContext(), result.FileName)
+			}
 		} else if !result.Success && result.Error != "" {
 			audit.LogBackupFailedContext(s.SessionContext(), "backup export failed: "+result.Error)
 		}
