@@ -58,8 +58,15 @@ appolicy --online
 appolicy --online -check
 appolicy --online --yaml > selected-policy.yaml
 appolicy --online --save < selected-policy.yaml
+appolicy --online draft-policy.yaml
 appolicy draft-policy.yaml
 ```
+
+With no batch-output flag, the online positional form validates the draft
+through the daemon, loads the current policy snapshot for optimistic
+concurrency, and opens that draft in the online editor. Add `--check`,
+`--yaml`, `--sha256`, or `--to-sentry` for a validation/output-only file
+operation.
 
 Bare `appolicy` remains the stopped-service rescue editor. With `--target
 auto` it reads `$APSIGNER_DATA/node.yaml`. On a systemd store, run this mode as
@@ -95,7 +102,10 @@ or an interactive terminal.
 
 With a positional YAML file, `appolicy --check draft.yaml`,
 `appolicy --yaml draft.yaml`, and `appolicy --sha256 draft.yaml` validate the
-file itself and do not verify or update the production sidecar.
+file itself and do not verify or update the production sidecar. The same
+batch flags with `--online` validate through the running daemon and then exit;
+bare `appolicy --online draft.yaml` opens the validated draft for online
+editing.
 
 For deliberate direct YAML edits:
 

@@ -91,6 +91,69 @@ func TestReadOnlinePolicyYAMLReportsReadFailure(t *testing.T) {
 	}
 }
 
+func TestReadPolicyYAMLFileRejectsWhitespace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty-policy.yaml")
+	if err := os.WriteFile(path, []byte(" \n\t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readPolicyYAMLFile(path)
+	if err == nil || !strings.Contains(err.Error(), "policy YAML file is empty") {
+		t.Fatalf("readPolicyYAMLFile() error = %v, want empty-file rejection", err)
+	}
+}
+
+type fakeOnlinePolicyClient struct {
+	snapshotCalls int
+}
+
+func (f *fakeOnlinePolicyClient) GetPolicySnapshot(context.Context, policyeditor.Target) (policyeditor.AdminPolicySnapshot, error) {
+	f.snapshotCalls++
+	return policyeditor.AdminPolicySnapshot{
+		Success:      true,
+		Target:       policyeditor.TargetSigner,
+		IdentityID:   policyeditor.DefaultIdentityID,
+		PolicyYAML:   "reject_foreign_rekey: false\n",
+		PolicySHA256: "active-sha",
+	}, nil
+}
+
+func (f *fakeOnlinePolicyClient) ValidatePolicy(context.Context, policyeditor.Target, string) (policyeditor.AdminPolicyValidation, error) {
+	return policyeditor.AdminPolicyValidation{Success: true, Target: policyeditor.TargetSigner}, nil
+}
+
+func (f *fakeOnlinePolicyClient) ReplacePolicy(context.Context, policyeditor.Target, string, string) (policyeditor.AdminPolicySnapshot, error) {
+	return policyeditor.AdminPolicySnapshot{}, errors.New("unexpected replacement")
+}
+
+func TestOpenOnlinePolicyFileEditorLoadsActiveSnapshotBeforeTUI(t *testing.T) {
+	client := &fakeOnlinePolicyClient{}
+	store := &policyeditor.AdminStore{Client: client, Target: policyeditor.TargetSigner}
+	draft, err := policy.ParseStoredConfig([]byte("reject_foreign_rekey: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalLauncher := launchPolicyEditor
+	t.Cleanup(func() { launchPolicyEditor = originalLauncher })
+	launched := false
+	launchPolicyEditor = func(gotStore policyeditor.Store, gotDraft *policy.StoredConfig, _, _ string, target policyeditor.Target) error {
+		launched = true
+		if gotStore != store || gotDraft != draft || target != policyeditor.TargetSigner {
+			t.Fatalf("launcher args store=%T draft=%p target=%q", gotStore, gotDraft, target)
+		}
+		if store.LastSHA256() != "active-sha" {
+			t.Fatalf("LastSHA256() = %q, want active snapshot seeded before TUI", store.LastSHA256())
+		}
+		return nil
+	}
+
+	if err := openOnlinePolicyFileEditor(context.Background(), store, draft, policyeditor.TargetSigner); err != nil {
+		t.Fatalf("openOnlinePolicyFileEditor() error = %v", err)
+	}
+	if client.snapshotCalls != 1 || !launched {
+		t.Fatalf("snapshot calls/launched = %d/%t, want 1/true", client.snapshotCalls, launched)
+	}
+}
+
 func TestRunYAMLPrintsVerifiedPolicyOnly(t *testing.T) {
 	dataDir, passphrase := initializedAppolicyStore(t)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)

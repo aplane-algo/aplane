@@ -261,9 +261,9 @@ func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyed
 	store := &policyeditor.AdminStore{Client: client, Target: target}
 
 	if policyFile != "" {
-		data, err := os.ReadFile(policyFile)
+		data, err := readPolicyYAMLFile(policyFile)
 		if err != nil {
-			writef(stderr, "appolicy: failed to read policy YAML file: %v\n", err)
+			writef(stderr, "appolicy: %v\n", err)
 			return 1
 		}
 		parseTarget := target
@@ -296,6 +296,14 @@ func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyed
 		if opts.sha256 {
 			writef(stdout, "%s\n", policy.PolicySHA256(data))
 			return 0
+		}
+		if opts.check {
+			writef(stdout, "%s OK: %s\n", target.StatusNoun(), policyFile)
+			return 0
+		}
+		if err := openOnlinePolicyFileEditor(ctx, store, stored, target); err != nil {
+			writef(stderr, "appolicy: %v\n", err)
+			return 1
 		}
 		writef(stdout, "%s OK: %s\n", target.StatusNoun(), policyFile)
 		return 0
@@ -340,8 +348,7 @@ func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyed
 	if opts.check {
 		return 0
 	}
-	program := tea.NewProgram(policytui.NewWithTarget(store, stored, "", policyeditor.DefaultIdentityID, target), tea.WithAltScreen())
-	if _, err := program.Run(); err != nil {
+	if err := launchPolicyEditor(store, stored, "", policyeditor.DefaultIdentityID, target); err != nil {
 		writef(stderr, "appolicy: TUI failed: %v\n", err)
 		return 1
 	}
@@ -409,13 +416,9 @@ func onlinePolicyTarget(conn *transport.IPCClient) (policyeditor.Target, error) 
 }
 
 func runPolicyFile(ctx context.Context, path string, opts options, store *policyeditor.OfflineStore, dataDir, identityID string, target policyeditor.Target, stdout, stderr io.Writer) int {
-	data, err := os.ReadFile(path)
+	data, err := readPolicyYAMLFile(path)
 	if err != nil {
-		writef(stderr, "appolicy: failed to read policy YAML file: %v\n", err)
-		return 1
-	}
-	if strings.TrimSpace(string(data)) == "" {
-		writeLine(stderr, "appolicy: policy YAML file is empty")
+		writef(stderr, "appolicy: %v\n", err)
 		return 1
 	}
 	parseTarget := target
@@ -466,15 +469,41 @@ func runPolicyFile(ctx context.Context, path string, opts options, store *policy
 		store.SetPassphrase(passphrase)
 		crypto.ZeroBytes(passphrase)
 	}
-	program := tea.NewProgram(
-		policytui.NewWithTarget(store, stored, dataDir, identityID, target),
-		tea.WithAltScreen(),
-	)
-	if _, err := program.Run(); err != nil {
+	if err := launchPolicyEditor(store, stored, dataDir, identityID, target); err != nil {
 		writef(stderr, "appolicy: TUI failed: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+func readPolicyYAMLFile(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read policy YAML file: %w", err)
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return nil, fmt.Errorf("policy YAML file is empty")
+	}
+	return data, nil
+}
+
+func openOnlinePolicyFileEditor(ctx context.Context, store *policyeditor.AdminStore, stored *policy.StoredConfig, target policyeditor.Target) error {
+	if _, err := store.Load(ctx); err != nil {
+		return fmt.Errorf("failed to load active %s before editing draft: %w", target.StatusNoun(), err)
+	}
+	if err := launchPolicyEditor(store, stored, "", policyeditor.DefaultIdentityID, target); err != nil {
+		return fmt.Errorf("TUI failed: %w", err)
+	}
+	return nil
+}
+
+var launchPolicyEditor = func(store policyeditor.Store, stored *policy.StoredConfig, dataDir, identityID string, target policyeditor.Target) error {
+	program := tea.NewProgram(
+		policytui.NewWithTarget(store, stored, dataDir, identityID, target),
+		tea.WithAltScreen(),
+	)
+	_, err := program.Run()
+	return err
 }
 
 func modeCount(values ...bool) int {

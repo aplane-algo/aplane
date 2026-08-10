@@ -1591,6 +1591,10 @@ Policy load behavior:
   selects the domain; store-backed role-incompatible targets fail closed
 - `apstore policy check|verify|sign` checks, verifies, or signs the active
   node-role policy
+- `appolicy --online <draft.yaml>` rejects an empty draft, validates it through
+  the daemon, loads the active snapshot as its optimistic-concurrency base,
+  and opens the draft in the online editor; batch output/check flags validate
+  the positional draft and exit without opening the editor
 
 ### Managed Credential Files (`.key` and `.sen`)
 
