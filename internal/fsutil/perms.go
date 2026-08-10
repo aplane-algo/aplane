@@ -33,12 +33,22 @@ func MkdirAll(path string) error {
 }
 
 // MkdirAllPrivate creates a signer-store directory tree and clamps the final
-// directory to StoreDirPerm. The caller must own the store directory.
+// directory to the StoreDirPerm ceiling. Existing owner permissions are never
+// added; newly created final directories receive StoreDirPerm. The caller must
+// own the store directory.
 func MkdirAllPrivate(path string) error {
+	info, err := os.Lstat(path)
+	existed := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	if err := MkdirAll(path); err != nil {
 		return err
 	}
-	return os.Chmod(path, StoreDirPerm)
+	if !existed {
+		return os.Chmod(path, StoreDirPerm)
+	}
+	return os.Chmod(path, info.Mode().Perm()&StoreDirPerm)
 }
 
 // WriteFile atomically and durably publishes a private signer-store file.

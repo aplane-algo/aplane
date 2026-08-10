@@ -96,3 +96,34 @@ func TestMkdirAllPrivateClampsExistingDirectory(t *testing.T) {
 		t.Fatalf("MkdirAllPrivate() mode = %04o, want %04o", got, StoreDirPerm)
 	}
 }
+
+func TestMkdirAllPrivatePreservesStricterOwnerPermissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "existing")
+	if err := os.Mkdir(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	if err := MkdirAllPrivate(dir); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o500 {
+		t.Fatalf("MkdirAllPrivate() mode = %04o, want existing 0500", got)
+	}
+}
+
+func TestMkdirAllPrivateCreatesFinalDirectoryWithPrivateMode(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "new", "nested")
+	if err := MkdirAllPrivate(dir); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != StoreDirPerm {
+		t.Fatalf("MkdirAllPrivate() mode = %04o, want %04o", got, StoreDirPerm)
+	}
+}
