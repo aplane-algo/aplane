@@ -49,6 +49,26 @@ func TestSameUIDAuditAcceptsExactLiveSocket(t *testing.T) {
 	}
 }
 
+func TestSameUIDAuditAcceptsLocalInstalledBinaries(t *testing.T) {
+	root := privateStoreFixture(t)
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "apsigner"), []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	uid, gid := ownerIDs(t, root)
+
+	findings, err := Audit(SameUIDAuditOptions(root, uid, gid, ""))
+	if err != nil {
+		t.Fatalf("Audit() error = %v", err)
+	}
+	if storeFindings := withoutAncestorFindings(findings); len(storeFindings) != 0 {
+		t.Fatalf("same-UID Audit() store findings = %+v, want none", storeFindings)
+	}
+}
+
 func TestProductionAuditRejectsInStoreSocket(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix socket contract")
@@ -338,7 +358,11 @@ func ownerOptions(t *testing.T, root string, profile profile) AuditOptions {
 func ownerMigrationOptions(t *testing.T, root, socketPath string) MigrationOptions {
 	t.Helper()
 	uid, gid := ownerIDs(t, root)
-	return TrustedBoundaryMigrationOptions(root, uid, gid, socketPath, filepath.Dir(root))
+	return MigrationOptions{policy: options{
+		root: root, expectedUID: uid, expectedGID: gid,
+		profile: legacySharedProfile, socketPath: socketPath,
+		ancestorBoundary: filepath.Dir(root),
+	}}
 }
 
 func ownerIDs(t *testing.T, root string) (int, int) {

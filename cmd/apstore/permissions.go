@@ -17,6 +17,13 @@ func cmdPermissions(args []string) error {
 	if len(args) != 1 || (args[0] != "audit" && args[0] != "migrate") {
 		return fmt.Errorf("usage: apstore permissions <audit|migrate>")
 	}
+	managed, err := signerstartup.IsProductionManagedDataDir(dataDirectory)
+	if err != nil {
+		return err
+	}
+	if args[0] == "migrate" && !managed {
+		return fmt.Errorf("permissions migrate is only supported for systemd-managed signer stores")
+	}
 	uid, gid, err := storePermissionOwner(dataDirectory)
 	if err != nil {
 		return err
@@ -33,10 +40,6 @@ func cmdPermissions(args []string) error {
 		}
 		logInfof("private store migration complete: inspected %d object(s), changed %d", result.Inspected, result.Changed)
 		return nil
-	}
-	managed, err := signerstartup.IsProductionManagedDataDir(dataDirectory)
-	if err != nil {
-		return err
 	}
 	var opts storeperm.AuditOptions
 	if managed {

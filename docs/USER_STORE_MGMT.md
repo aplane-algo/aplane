@@ -660,9 +660,10 @@ From the key details view:
 # Change keystore passphrase
 ./apstore changepass
 
-# Audit or migrate private store permissions (offline; systemd uses sudo)
+# Audit private permissions for a local same-UID store
 ./apstore permissions audit
-./apstore permissions migrate
+
+# Production permission migration is systemd-only; see the systemd section above.
 
 # Policy integrity
 ./apstore policy check

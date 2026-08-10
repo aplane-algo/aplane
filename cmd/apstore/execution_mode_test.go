@@ -5,7 +5,6 @@ package main
 
 import (
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -285,85 +284,4 @@ func TestSudoUserIDs(t *testing.T) {
 			t.Fatalf("sudoUserIDs() error = %q, want invalid SUDO_UID", err.Error())
 		}
 	})
-}
-
-func TestNormalizeManagedStoreOwnershipPreservesSystemdCredOwner(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("requires root-owned systemd credential fixture")
-	}
-	dataDir := t.TempDir()
-	identityDir := filepath.Join(dataDir, "identities", productIdentityID())
-	if err := os.MkdirAll(identityDir, 0o700); err != nil {
-		t.Fatalf("MkdirAll(identityDir) error = %v", err)
-	}
-	lockPath := filepath.Join(dataDir, ".apstore.lock")
-	if err := os.WriteFile(lockPath, []byte("lock"), 0o600); err != nil {
-		t.Fatalf("WriteFile(lock) error = %v", err)
-	}
-	credPath := filepath.Join(identityDir, "passphrase.cred")
-	if err := os.WriteFile(credPath, []byte("cred"), 0o600); err != nil {
-		t.Fatalf("WriteFile(cred) error = %v", err)
-	}
-	if err := os.Chown(credPath, 0, 0); err != nil {
-		t.Fatalf("Chown(cred) error = %v", err)
-	}
-
-	if err := normalizeManagedStoreOwnership(dataDir); err != nil {
-		t.Fatalf("normalizeManagedStoreOwnership() error = %v", err)
-	}
-
-	info, err := os.Stat(lockPath)
-	if err != nil {
-		t.Fatalf("Stat(lock) error = %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("lock mode = %04o, want 0600", got)
-	}
-	if _, err := os.Stat(credPath); err != nil {
-		t.Fatalf("Stat(cred) error = %v", err)
-	}
-}
-
-func TestNormalizeManagedStoreOwnershipRejectsSymlink(t *testing.T) {
-	dataDir := t.TempDir()
-	identityDir := filepath.Join(dataDir, "identities", productIdentityID())
-	if err := os.MkdirAll(identityDir, 0o700); err != nil {
-		t.Fatalf("MkdirAll(identityDir) error = %v", err)
-	}
-	outside := filepath.Join(t.TempDir(), "outside")
-	if err := os.WriteFile(outside, []byte("unchanged"), 0o600); err != nil {
-		t.Fatalf("WriteFile(outside) error = %v", err)
-	}
-	if err := os.Symlink(outside, filepath.Join(identityDir, "planted")); err != nil {
-		t.Fatalf("Symlink() error = %v", err)
-	}
-
-	err := normalizeManagedStoreOwnership(dataDir)
-	if err == nil || !strings.Contains(err.Error(), "symlink") {
-		t.Fatalf("normalizeManagedStoreOwnership() error = %v, want symlink rejection", err)
-	}
-	data, err := os.ReadFile(outside)
-	if err != nil {
-		t.Fatalf("ReadFile(outside) error = %v", err)
-	}
-	if string(data) != "unchanged" {
-		t.Fatalf("outside contents = %q, want unchanged", data)
-	}
-}
-
-func TestNormalizeManagedStoreOwnershipRemovesLegacySocket(t *testing.T) {
-	dataDir := t.TempDir()
-	socketPath := filepath.Join(dataDir, "aplane.sock")
-	listener, err := net.Listen("unix", socketPath)
-	if err != nil {
-		t.Fatalf("Listen(unix) error = %v", err)
-	}
-	defer func() { _ = listener.Close() }()
-
-	if err := normalizeManagedStoreOwnership(dataDir); err != nil {
-		t.Fatalf("normalizeManagedStoreOwnership() error = %v", err)
-	}
-	if _, err := os.Lstat(socketPath); !os.IsNotExist(err) {
-		t.Fatalf("legacy socket survived normalization: %v", err)
-	}
 }

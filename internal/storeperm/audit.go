@@ -41,6 +41,7 @@ type options struct {
 	profile          profile
 	socketPath       string
 	ancestorBoundary string
+	localBin         bool
 }
 
 // ProductionAuditOptions rejects every in-store socket and inspects ancestors
@@ -57,7 +58,7 @@ func ProductionAuditOptions(root string, expectedUID, expectedGID int) AuditOpti
 func SameUIDAuditOptions(root string, expectedUID, expectedGID int, socketPath string) AuditOptions {
 	return AuditOptions{policy: options{
 		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
-		profile: privateServiceProfile, socketPath: socketPath,
+		profile: privateServiceProfile, socketPath: socketPath, localBin: true,
 	}}
 }
 
@@ -68,15 +69,6 @@ func LegacyMigrationOptions(root string, expectedUID, expectedGID int, socketPat
 		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
 		profile: legacySharedProfile, socketPath: socketPath,
 	}}
-}
-
-// TrustedBoundaryMigrationOptions is the explicit embedder/test migration
-// policy below a separately validated ancestor. Product migrations use
-// LegacyMigrationOptions and inspect ancestors through the filesystem root.
-func TrustedBoundaryMigrationOptions(root string, expectedUID, expectedGID int, socketPath, boundary string) MigrationOptions {
-	opts := LegacyMigrationOptions(root, expectedUID, expectedGID, socketPath)
-	opts.policy.ancestorBoundary = boundary
-	return opts
 }
 
 // Finding is one independently actionable filesystem-policy violation.
@@ -226,7 +218,20 @@ func expectedArtifact(root, path string, info os.FileInfo, opts options, policy 
 	if err != nil {
 		return expect
 	}
-	switch filepath.ToSlash(rel) {
+	rel = filepath.ToSlash(rel)
+	if opts.localBin {
+		switch {
+		case rel == "bin":
+			expect.mode = 0o755
+			expect.wantDir = true
+			return expect
+		case strings.HasPrefix(rel, "bin/") && !strings.Contains(strings.TrimPrefix(rel, "bin/"), "/"):
+			expect.mode = 0o755
+			expect.wantRegular = true
+			return expect
+		}
+	}
+	switch rel {
 	case "install":
 		expect.uid, expect.gid = 0, opts.expectedGID
 		expect.mode = 0o750

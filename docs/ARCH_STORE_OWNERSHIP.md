@@ -124,11 +124,14 @@ access at the root first, repairs recognized objects through opened
 descriptors, syncs directories, and independently audits the private result. A
 clean audit is authority to proceed; an incomplete audit is not.
 
-`apstore permissions audit` is read-only. `apstore permissions migrate`
-requires the normal offline execution mode and exclusive store lock. A
-systemd-managed daemon checks the private profile before loading configuration
-or opening the store lock and refuses startup with a migration command when it
-finds unsafe state.
+`apstore permissions audit` is read-only. Same-UID audit recognizes the local
+installer's non-writable executable `bin/` subtree without treating those
+files as signer data. `apstore permissions migrate` is restricted to
+systemd-managed stores, requires the normal offline execution mode and
+exclusive store lock, and rejects local installs rather than stripping their
+binary execute bits or file capabilities. A systemd-managed daemon checks the
+private profile before loading configuration or opening the store lock and
+refuses startup with a migration command when it finds unsafe state.
 
 ## Implemented rollout
 

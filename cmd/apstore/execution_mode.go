@@ -58,18 +58,7 @@ func normalizeManagedStoreOwnership(dataDir string) error {
 		return err
 	}
 	socketPath := filepath.Join(dataDir, "aplane.sock")
-	prodManaged, prodErr := signerstartup.IsProductionManagedDataDir(dataDir)
-	if prodErr != nil {
-		return prodErr
-	}
-	var opts storeperm.MigrationOptions
-	if !prodManaged {
-		opts = storeperm.TrustedBoundaryMigrationOptions(
-			dataDir, uid, gid, socketPath, filepath.Dir(dataDir),
-		)
-	} else {
-		opts = storeperm.LegacyMigrationOptions(dataDir, uid, gid, socketPath)
-	}
+	opts := storeperm.LegacyMigrationOptions(dataDir, uid, gid, socketPath)
 	_, err = storeperm.MigratePrivate(opts)
 	return err
 }

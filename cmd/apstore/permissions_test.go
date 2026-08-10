@@ -6,8 +6,36 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestCmdPermissionsMigrateRejectsLocalInstallWithoutMutation(t *testing.T) {
+	oldDataDirectory := dataDirectory
+	dataDirectory = t.TempDir()
+	t.Cleanup(func() { dataDirectory = oldDataDirectory })
+
+	binDir := filepath.Join(dataDirectory, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	binaryPath := filepath.Join(binDir, "apsigner")
+	if err := os.WriteFile(binaryPath, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := cmdPermissions([]string{"migrate"})
+	if err == nil || !strings.Contains(err.Error(), "only supported for systemd-managed") {
+		t.Fatalf("cmdPermissions(migrate) error = %v, want local-store rejection", err)
+	}
+	info, statErr := os.Stat(binaryPath)
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("binary mode = %04o after rejected migration, want 0755", got)
+	}
+}
 
 func TestConfiguredLiveAuditSocketPathUsesSameUIDConfig(t *testing.T) {
 	root := t.TempDir()
