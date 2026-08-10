@@ -166,6 +166,24 @@ echo ""
 chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR"
 chmod 700 "$DATA_DIR"
 
+# Record the expected service uid/gid in root-controlled metadata before any
+# permission migration. The repair command must not infer its target owner
+# from a store root whose ownership may itself be damaged.
+INSTALL_METADATA_DIR="$DATA_DIR/install"
+if [ -L "$INSTALL_METADATA_DIR" ] || { [ -e "$INSTALL_METADATA_DIR" ] && [ ! -d "$INSTALL_METADATA_DIR" ]; }; then
+    echo "Error: signer install metadata path is not a real directory: $INSTALL_METADATA_DIR" >&2
+    exit 1
+fi
+mkdir -p "$INSTALL_METADATA_DIR"
+chown root:"$SVC_GROUP" "$INSTALL_METADATA_DIR"
+chmod 750 "$INSTALL_METADATA_DIR"
+SERVICE_UID="$(id -u "$SVC_USER")"
+SERVICE_GID="$(getent group "$SVC_GROUP" | cut -d: -f3)"
+SERVICE_PRINCIPAL_PATH="$INSTALL_METADATA_DIR/service-principal.json"
+(umask 077; printf '{"schema_version":1,"uid":%s,"gid":%s}\n' "$SERVICE_UID" "$SERVICE_GID" > "$SERVICE_PRINCIPAL_PATH")
+chown root:"$SVC_GROUP" "$SERVICE_PRINCIPAL_PATH"
+chmod 640 "$SERVICE_PRINCIPAL_PATH"
+
 # Install service with placeholder substitution
 if [ "$MEMORY_LOCK" = "1" ]; then
     MEMORY_LOCK_SERVICE_LINES=$'CapabilityBoundingSet=CAP_IPC_LOCK\nAmbientCapabilities=CAP_IPC_LOCK\nLimitMEMLOCK=infinity'

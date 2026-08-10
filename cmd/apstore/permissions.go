@@ -24,7 +24,7 @@ func cmdPermissions(args []string) error {
 	if args[0] == "migrate" && !managed {
 		return fmt.Errorf("permissions migrate is only supported for systemd-managed signer stores")
 	}
-	uid, gid, err := storePermissionOwner(dataDirectory)
+	uid, gid, err := storePermissionOwner(dataDirectory, managed)
 	if err != nil {
 		return err
 	}
@@ -92,7 +92,19 @@ func configuredMigrationSocketPath(root string) (string, error) {
 	return path, nil
 }
 
-func storePermissionOwner(root string) (int, int, error) {
+var managedStoreOwner = storeperm.ManagedServiceOwner
+
+func storePermissionOwner(root string, managed bool) (int, int, error) {
+	if managed {
+		uid, gid, err := managedStoreOwner(root)
+		if err != nil {
+			return 0, 0, fmt.Errorf(
+				"resolve managed signer service principal: %w; rerun the systemd installer or systemd-setup before permissions audit/migrate",
+				err,
+			)
+		}
+		return uid, gid, nil
+	}
 	info, err := os.Lstat(root)
 	if err != nil {
 		return 0, 0, err

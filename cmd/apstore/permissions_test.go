@@ -87,3 +87,22 @@ func TestConfiguredMigrationSocketPathKeepsLegacyDefaultForExternalConfig(t *tes
 		t.Fatalf("configuredMigrationSocketPath() = %q, want %q", got, want)
 	}
 }
+
+func TestStorePermissionOwnerUsesManagedServicePrincipal(t *testing.T) {
+	oldManagedStoreOwner := managedStoreOwner
+	managedStoreOwner = func(root string) (int, int, error) {
+		if root != "/managed/store" {
+			t.Fatalf("managed owner root = %q", root)
+		}
+		return 123, 456, nil
+	}
+	t.Cleanup(func() { managedStoreOwner = oldManagedStoreOwner })
+
+	uid, gid, err := storePermissionOwner("/managed/store", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uid != 123 || gid != 456 {
+		t.Fatalf("storePermissionOwner(managed) = %d:%d, want 123:456", uid, gid)
+	}
+}

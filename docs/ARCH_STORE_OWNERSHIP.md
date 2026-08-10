@@ -144,6 +144,10 @@ exclusive store lock, and rejects any store-local `bin/` subtree rather than
 stripping binary execute bits or file capabilities. The standalone systemd
 setup performs the same check before writing `.prod`, changing ownership, or
 changing modes; its service `bindir` must be outside the data root. A
+root-controlled `install/service-principal.json` records the numeric service
+uid/gid and is refreshed by systemd setup before migration. Audit, migration,
+and post-mutation normalization use this record instead of trusting the store
+root's possibly damaged owner; a missing or unsafe record fails closed. A
 systemd-managed daemon checks the
 private profile before loading configuration or opening the store lock and
 refuses startup with a migration command when it finds unsafe state.

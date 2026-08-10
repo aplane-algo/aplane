@@ -894,7 +894,11 @@ Additional signer-state notes:
 - production signer directories are service-owned mode `0700` and ordinary
   signer files are service-owned mode `0600`; the recognized root-owned
   exceptions are `identities/<identity>/passphrase.cred` (`root:root`, `0600`)
-  and installer metadata under `install/`
+  and installer metadata under `install/`. Systemd setup writes
+  `install/service-principal.json` as root-owned `0640` metadata containing
+  schema version 1 and the numeric service `uid`/`gid`; stopped-store repair
+  uses that root-controlled record and never infers its target from the store
+  root being repaired
 - systemd admin IPC defaults to `/run/apsigner/aplane.sock`; the runtime
   directory is service-owned `0750` and the socket is `0660`. Same-UID local
   mode defaults to `<data_dir>/aplane.sock`. An explicit systemd `ipc_path`

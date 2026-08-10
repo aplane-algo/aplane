@@ -241,7 +241,7 @@ func expectedArtifact(root, path string, info os.FileInfo, opts options, policy 
 		expect.uid, expect.gid = 0, opts.expectedGID
 		expect.mode = 0o750
 		expect.wantRegular = true
-	case "install/release.json", "install/operator-root":
+	case "install/release.json", "install/operator-root", ServicePrincipalRelativePath:
 		expect.uid, expect.gid = 0, opts.expectedGID
 		expect.mode = 0o640
 		expect.wantRegular = true

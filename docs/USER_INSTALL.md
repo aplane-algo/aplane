@@ -521,6 +521,7 @@ Key systemd paths:
 | `/var/lib/apsigner/identities/default/` | Default identity keystore, keys, policy, and unlock settings |
 | `/run/apsigner/aplane.sock` | Group-connectable admin IPC socket (`0660`) in a non-group-writable runtime directory (`0750`) |
 | `/var/lib/apsigner/install/uninstall.sh` | Bundled systemd uninstaller |
+| `/var/lib/apsigner/install/service-principal.json` | Root-controlled service uid/gid used by signer-store permission repair |
 | `/etc/systemd/system/apsigner.service` | systemd service unit |
 | `/etc/sudoers.d/99-apsigner-systemctl` | sudoers rule allowing the service user to manage the service |
 | `<operator-root>/` | Operator workspace for the user who ran `sudo install.sh --systemd`; defaults to `~<installing-user>/aplane/` |

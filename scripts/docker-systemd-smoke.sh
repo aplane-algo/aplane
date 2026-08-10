@@ -232,6 +232,11 @@ verify_install_layout() {
     docker_exec_bash "test -x /usr/local/bin/approbe"
     docker_exec_bash "test -x /var/lib/apsigner/install/uninstall.sh"
     docker_exec_bash "grep -qx '$OPERATOR_ROOT' /var/lib/apsigner/install/operator-root"
+    local service_uid service_gid
+    service_uid="$(docker_exec_bash "id -u aplane")"
+    service_gid="$(docker_exec_bash "getent group aplane | cut -d: -f3")"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/install/service-principal.json)\" = 'root:aplane 640' ]"
+    docker_exec_bash "grep -qx '{\"schema_version\":1,\"uid\":$service_uid,\"gid\":$service_gid}' /var/lib/apsigner/install/service-principal.json"
     docker_exec_bash "test -f /var/lib/apsigner/identities/default/.keystore"
     docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner)\" = 'aplane:aplane 700' ]"
     docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/backups)\" = 'aplane:aplane 700' ]"

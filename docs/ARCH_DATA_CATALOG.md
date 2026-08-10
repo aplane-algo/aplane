@@ -289,6 +289,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Release metadata | public provenance | release archive `release.json`, copied to `<install-root>/install/release.json` or systemd `<APSIGNER_DATA>/install/release.json` when present | version, commit, and build timestamp for diagnostics and future upgrade checks | `.github/workflows/release.yml`, `Makefile release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` | Schema `schema_version:1`; public metadata only, not signing, policy, endpoint trust, or upgrade authority by itself. |
+| Signer service principal metadata | root-controlled install state | systemd `<APSIGNER_DATA>/install/service-principal.json` | numeric service uid/gid used by permission audit, migration, and post-root-mutation normalization | `installer/scripts/systemd-setup.sh`, `internal/storeperm` | Schema `schema_version:1`; refreshed before migration and required fail-closed so a damaged store root cannot nominate its own repair owner. |
 
 ## Audit And Observability
 

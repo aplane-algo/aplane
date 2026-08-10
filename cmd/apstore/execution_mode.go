@@ -53,7 +53,7 @@ func normalizeManagedStoreOwnership(dataDir string) error {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf("managed data directory is not a real directory: %s", dataDir)
 	}
-	uid, gid, err := fileOwnerGroup(info)
+	uid, gid, err := storePermissionOwner(dataDir, true)
 	if err != nil {
 		return err
 	}
