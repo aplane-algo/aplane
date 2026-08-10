@@ -114,7 +114,19 @@ func Import(paths storepaths.Paths, identityID, name string, data []byte) (*Reco
 	}
 	if found {
 		if sameReferenceAuthority(existing, *record) {
-			return &existing, nil
+			if existing.Source == SourceManual {
+				return &existing, nil
+			}
+			// An explicit import pins a previously discovered authority. Publish
+			// the manual record so a later discovery sync cannot reap it merely
+			// because its endpoint is no longer present.
+			if record.ImportedAt == "" {
+				record.ImportedAt = time.Now().UTC().Format(time.RFC3339)
+			}
+			if err := Put(paths, identityID, *record); err != nil {
+				return nil, err
+			}
+			return record, nil
 		}
 		return nil, fmt.Errorf(
 			"sentry reference %q already exists with Witness Key ID %s; remove it explicitly before importing Witness Key ID %s",

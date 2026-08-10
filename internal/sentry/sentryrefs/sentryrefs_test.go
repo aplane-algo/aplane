@@ -219,6 +219,50 @@ func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
 	}
 }
 
+func TestImportPromotesDiscoveredReferenceToManual(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
+	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := SyncedReferenceName("sentry-local", componentKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
+		EndpointAlias: "sentry-local",
+		ComponentKey:  componentKey,
+		KeyType:       witness.Falcon1024V1,
+		PublicKeyHex:  hex.EncodeToString(pub),
+	}}); err != nil {
+		t.Fatalf("SyncDiscovered() error = %v", err)
+	}
+
+	record, err := Import(paths, "default", name, testExportJSON(t, witness.Falcon1024V1, pub))
+	if err != nil {
+		t.Fatalf("Import() error = %v", err)
+	}
+	if record.Source != SourceManual || record.ImportedAt == "" {
+		t.Fatalf("promoted record source/imported_at = %q/%q, want manual timestamp", record.Source, record.ImportedAt)
+	}
+	if record.EndpointAlias != "" || record.SyncedAt != "" || record.LastSeenAt != "" {
+		t.Fatalf("promoted record retained discovery provenance: %#v", record)
+	}
+
+	result, err := SyncDiscovered(paths, "default", nil)
+	if err != nil {
+		t.Fatalf("SyncDiscovered(empty) error = %v", err)
+	}
+	if result.Removed != 0 {
+		t.Fatalf("SyncDiscovered(empty) removed = %d, want pinned manual reference retained", result.Removed)
+	}
+	stored, found, err := Get(paths, "default", name)
+	if err != nil || !found || stored.Source != SourceManual {
+		t.Fatalf("Get(promoted) = (%#v, %v, %v), want retained manual reference", stored, found, err)
+	}
+}
+
 func TestSyncDiscoveredRejectsMismatchedComponentSelector(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)

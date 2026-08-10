@@ -228,8 +228,10 @@ Reference aliases are security-bearing generation inputs: resolving
 `sentry=<name>` selects the witness public key embedded into a newly generated
 guarded account. Manual import and removal therefore require an unlocked
 identity in addition to `sentries.manage`. Re-importing the identical authority
-is idempotent, while rebinding an existing name to another Witness Key ID is
-rejected; replacement requires an explicit audited remove followed by import.
+is idempotent. If the identical authority was created by endpoint discovery,
+explicit import promotes it to a manual record so later discovery sync cannot
+remove it. Rebinding an existing name to another Witness Key ID is rejected;
+replacement requires an explicit audited remove followed by import.
 
 Public reference records are stored under:
 

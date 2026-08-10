@@ -1889,6 +1889,9 @@ Endpoint discovery may also populate this catalog through
 `endpoint-<alias>-<component_key>`, `endpoint_alias`, `last_seen_at`, and
 `synced_at`. They are public candidates derived from the client's
 `endpoints.yaml`; they are not a sentry ownership proof.
+Explicitly importing the identical authority under the same generated name
+promotes the record to `source: "manual"`, clears discovery provenance, and
+prevents a later discovery sync from removing it.
 Human list output treats the Witness Key ID as the primary identifier
 and shows generated endpoint-synced names only in detailed JSON views.
 
