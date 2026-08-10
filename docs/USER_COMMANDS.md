@@ -695,10 +695,11 @@ endpoints delete <alias>
 `endpoints.yaml`. Use `role: signer` for the one primary client signer endpoint
 and `role: sentry` for sentry endpoints. Import does not copy tokens or SSH
 host trust. On the signer side, `apstore endpoint export` can derive the URL
-from `--host`, use explicit `--url`, or use signer `config.yaml`
-`endpoint.advertise_url`; without one of those inputs, export fails instead of
-guessing a client-reachable address. Re-importing with the same alias replaces
-that alias's endpoint data.
+from `--host`, use explicit `--url`, or use the running daemon's configured
+`endpoint.advertise_url`; it reads endpoint defaults through authenticated
+admin IPC rather than traversing the private signer store. Without one of
+those inputs, export fails instead of guessing a client-reachable address.
+Re-importing with the same alias replaces that alias's endpoint data.
 
 `endpoints create` manually writes a `role: sentry` endpoint profile without an
 exported endpoint envelope. `--endpoint` is the client-reachable endpoint URL,

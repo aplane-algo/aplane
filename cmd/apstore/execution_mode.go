@@ -73,6 +73,9 @@ func enforceApstoreExecutionMode(dataDir string, args []string) error {
 	if isStorePermissionPreflight(args) {
 		return nil
 	}
+	if isExternalFileOnlyCommand(args) {
+		return nil
+	}
 	if isDaemonBackedCommand(args) {
 		return nil
 	}
@@ -100,6 +103,10 @@ func enforceApstoreExecutionMode(dataDir string, args []string) error {
 	}
 }
 
+func isExternalFileOnlyCommand(args []string) bool {
+	return len(args) > 0 && args[0] == "verify"
+}
+
 func isDaemonBackedCommand(args []string) bool {
 	if len(args) == 0 {
 		return false
@@ -113,6 +120,8 @@ func isDaemonBackedCommand(args []string) bool {
 		return true
 	case "sentry":
 		return true
+	case "endpoint":
+		return len(args) >= 2 && args[1] == "export"
 	case "generations":
 		return len(args) == 2 && args[1] == "list"
 	default:

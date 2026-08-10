@@ -55,6 +55,12 @@ func main() {
 		flag.Usage()
 		os.Exit(apstoreExitUsage)
 	}
+	if isExternalFileOnlyCommand(args) {
+		config = serverconfig.DefaultServerConfig()
+		RegisterProviders()
+		dispatchApstoreCommand(args)
+		return
+	}
 
 	if isDaemonBackedCommand(args) {
 		dataDirectory = serverconfig.GetSignerDataDir(*dataDir)
@@ -89,7 +95,8 @@ func main() {
 	if err := unix.Access(dataDirectory, unix.R_OK|unix.X_OK); err != nil {
 		logErrorf("cannot access data directory: %s", dataDirectory)
 		if os.IsPermission(err) {
-			logWarnf("you may need to log out and back in for group membership to take effect")
+			logWarnf("signer stores are private; operating-system group membership grants IPC socket access, not store traversal")
+			logWarnf("use a daemon-backed command, or follow the documented stopped-service rescue procedure as the store owner/root")
 		}
 		os.Exit(apstoreExitUsage)
 	}

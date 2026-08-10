@@ -194,14 +194,14 @@ func TestEnforceApstoreExecutionModeRejectsRootForLocalDataDir(t *testing.T) {
 	dataDir := t.TempDir()
 	currentEUID = func() int { return 0 }
 
-	err := enforceApstoreExecutionMode(dataDir, []string{"verify", "backup.tar.gz"})
+	err := enforceApstoreExecutionMode(dataDir, []string{"initialize"})
 	if err == nil {
 		t.Fatal("enforceApstoreExecutionMode() error = nil, want local root refusal")
 	}
 	for _, want := range []string{
 		"local signer data directory",
 		"must not be managed as root",
-		"apstore -d " + dataDir + " verify backup.tar.gz",
+		"apstore -d " + dataDir + " initialize",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want substring %q", err.Error(), want)
@@ -221,14 +221,14 @@ func TestEnforceApstoreExecutionModeRejectsNonRootForProductionDataDir(t *testin
 	}
 	currentEUID = func() int { return 1000 }
 
-	err := enforceApstoreExecutionMode(dataDir, []string{"verify", "backup.tar.gz"})
+	err := enforceApstoreExecutionMode(dataDir, []string{"initialize"})
 	if err == nil {
 		t.Fatal("enforceApstoreExecutionMode() error = nil, want production non-root refusal")
 	}
 	for _, want := range []string{
 		"systemd-managed data directory",
 		"requires root",
-		"sudo apstore -d " + dataDir + " verify backup.tar.gz",
+		"sudo apstore -d " + dataDir + " initialize",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want substring %q", err.Error(), want)
@@ -279,6 +279,7 @@ func TestEnforceApstoreExecutionModeAllowsDaemonBackedCommandWithoutStoreAccess(
 		{"sentry", "list"},
 		{"sentry", "import", "public.json", "lab"},
 		{"generations", "list"},
+		{"endpoint", "export"},
 	} {
 		if err := enforceApstoreExecutionMode("/deliberately/inaccessible", args); err != nil {
 			t.Fatalf("enforceApstoreExecutionMode(%v) error = %v", args, err)
@@ -286,6 +287,16 @@ func TestEnforceApstoreExecutionModeAllowsDaemonBackedCommandWithoutStoreAccess(
 	}
 	if isDaemonBackedCommand([]string{"generations", "prune"}) {
 		t.Fatal("generations prune must remain offline")
+	}
+}
+
+func TestEnforceApstoreExecutionModeAllowsExternalVerifyWithoutStore(t *testing.T) {
+	args := []string{"verify", "/mnt/usb/backup.tar.gz"}
+	if !isExternalFileOnlyCommand(args) {
+		t.Fatal("verify external archive was not classified as external-file-only")
+	}
+	if err := enforceApstoreExecutionMode("", args); err != nil {
+		t.Fatalf("enforceApstoreExecutionMode(verify) error = %v", err)
 	}
 }
 

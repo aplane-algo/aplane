@@ -201,6 +201,10 @@ rewrite client config or synthesize endpoint records from `config.yaml`.
 For endpoint aliases, the preferred handoff is for the signer operator to
 export a public endpoint envelope and for the client to import it:
 
+`apstore endpoint export` connects to the running daemon through authenticated
+admin IPC. It reads the configured endpoint defaults without requiring direct
+access to the private signer store and writes `--out` as the invoking operator.
+
 ```bash
 # signer side
 apstore -d "$APSIGNER_DATA" endpoint export \

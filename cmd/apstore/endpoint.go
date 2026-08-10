@@ -15,9 +15,19 @@ import (
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
+	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 const endpointExportUsage = "usage: apstore endpoint export [--host <host> | --url <url>] [--signer-port <port>] [--local-port <port>] [--out endpoint.json]"
+
+type endpointExportSettings struct {
+	AdvertiseURL string
+	SSHPort      int
+	SignerPort   int
+}
+
+var endpointExportSettingsForCommand = loadEndpointExportSettings
 
 func cmdEndpoint(args []string) error {
 	if len(args) == 0 {
@@ -45,14 +55,18 @@ func cmdEndpointExport(args []string) error {
 	if fs.NArg() != 0 {
 		return errors.New(endpointExportUsage)
 	}
+	settings, err := endpointExportSettingsForCommand()
+	if err != nil {
+		return err
+	}
 
-	urlValue, err := endpointExportURL(*host, *endpointURL, config.Endpoint.AdvertiseURL)
+	urlValue, err := endpointExportURL(*host, *endpointURL, settings.AdvertiseURL, endpointExportSSHPort(settings))
 	if err != nil {
 		return err
 	}
 	signerPortValue := *signerPort
 	if signerPortValue == 0 && endpointExportUsesSSH(urlValue) {
-		signerPortValue = endpointExportSignerPort()
+		signerPortValue = endpointExportSignerPort(settings)
 	}
 
 	env := endpointrefs.Envelope{
@@ -73,14 +87,33 @@ func cmdEndpointExport(args []string) error {
 		_, err := os.Stdout.Write(data)
 		return err
 	}
-	if err := os.WriteFile(*outPath, data, 0o600); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(*outPath, data, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write endpoint envelope: %w", err)
 	}
 	logInfof("endpoint envelope written: %s", *outPath)
 	return nil
 }
 
-func endpointExportURL(host, explicitURL, advertisedURL string) (string, error) {
+func loadEndpointExportSettings() (endpointExportSettings, error) {
+	client, err := newApstoreAdminClientForCommand()
+	if err != nil {
+		return endpointExportSettings{}, err
+	}
+	defer client.close()
+	var settings protocol.AdminSettingsMessage
+	if err := client.request(protocol.GetAdminSettingsMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetAdminSettings, ID: newApstoreRequestID("endpoint-export-settings")},
+	}, &settings); err != nil {
+		return endpointExportSettings{}, fmt.Errorf("load endpoint export settings: %w", err)
+	}
+	return endpointExportSettings{
+		AdvertiseURL: settings.EndpointAdvertiseURL,
+		SSHPort:      settings.SSHPort,
+		SignerPort:   settings.SignerPort,
+	}, nil
+}
+
+func endpointExportURL(host, explicitURL, advertisedURL string, sshPort int) (string, error) {
 	explicitURL = strings.TrimSpace(explicitURL)
 	if explicitURL != "" {
 		return explicitURL, nil
@@ -96,7 +129,7 @@ func endpointExportURL(host, explicitURL, advertisedURL string) (string, error) 
 		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
 			host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
 		}
-		return "ssh://" + net.JoinHostPort(host, strconv.Itoa(endpointExportSSHPort())), nil
+		return "ssh://" + net.JoinHostPort(host, strconv.Itoa(sshPort)), nil
 	}
 	advertisedURL = strings.TrimSpace(advertisedURL)
 	if advertisedURL != "" {
@@ -109,16 +142,16 @@ func endpointExportUsesSSH(rawURL string) bool {
 	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(rawURL)), "ssh://")
 }
 
-func endpointExportSSHPort() int {
-	if config.Endpoint.SSH.Port != 0 {
-		return config.Endpoint.SSH.Port
+func endpointExportSSHPort(settings endpointExportSettings) int {
+	if settings.SSHPort != 0 {
+		return settings.SSHPort
 	}
 	return apconfig.DefaultSSHPort
 }
 
-func endpointExportSignerPort() int {
-	if config.Endpoint.SignerPort != 0 {
-		return config.Endpoint.SignerPort
+func endpointExportSignerPort(settings endpointExportSettings) int {
+	if settings.SignerPort != 0 {
+		return settings.SignerPort
 	}
 	return apconfig.DefaultRESTPort
 }
