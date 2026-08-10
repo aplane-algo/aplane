@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/backup"
@@ -177,6 +178,55 @@ func TestCmdBackupExportDoesNotReplaceDestinationCreatedDuringTransfer(t *testin
 	}
 	if string(got) != "concurrent output" {
 		t.Fatalf("destination = %q, want concurrent output preserved", got)
+	}
+}
+
+func TestPublishBackupExportFallsBackToAtomicHardLink(t *testing.T) {
+	dir := t.TempDir()
+	tmpPath := filepath.Join(dir, ".backup.part")
+	destination := filepath.Join(dir, "backup.tar.gz")
+	if err := os.WriteFile(tmpPath, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishBackupExportNoReplaceWith(tmpPath, destination, func(string, string) error {
+		return syscall.EINVAL
+	}); err != nil {
+		t.Fatalf("publishBackupExportNoReplaceWith() error = %v", err)
+	}
+	if _, err := os.Lstat(tmpPath); !os.IsNotExist(err) {
+		t.Fatalf("staging path remains after link publication: %v", err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "archive" {
+		t.Fatalf("published backup = %q, want archive", got)
+	}
+}
+
+func TestPublishBackupExportHardLinkFallbackDoesNotReplace(t *testing.T) {
+	dir := t.TempDir()
+	tmpPath := filepath.Join(dir, ".backup.part")
+	destination := filepath.Join(dir, "backup.tar.gz")
+	if err := os.WriteFile(tmpPath, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, []byte("existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := publishBackupExportNoReplaceWith(tmpPath, destination, func(string, string) error {
+		return syscall.EINVAL
+	})
+	if err == nil || !strings.Contains(err.Error(), "destination already exists") {
+		t.Fatalf("publishBackupExportNoReplaceWith() error = %v, want destination-exists failure", err)
+	}
+	got, readErr := os.ReadFile(destination)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != "existing" {
+		t.Fatalf("destination = %q, want existing content preserved", got)
 	}
 }
 

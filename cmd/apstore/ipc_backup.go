@@ -523,11 +523,36 @@ func cmdBackupExport(name, destinationDir string) error {
 }
 
 func publishBackupExportNoReplace(tmpPath, destination string) error {
-	if err := renameBackupExportNoReplace(tmpPath, destination); err != nil {
-		if errors.Is(err, os.ErrExist) {
+	return publishBackupExportNoReplaceWith(tmpPath, destination, renameBackupExportNoReplace)
+}
+
+func publishBackupExportNoReplaceWith(tmpPath, destination string, renameNoReplace func(string, string) error) error {
+	err := renameNoReplace(tmpPath, destination)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, os.ErrExist) {
+		return fmt.Errorf("backup export destination already exists: %s", destination)
+	}
+	if !backupExportNoReplaceUnsupported(err) {
+		return fmt.Errorf("publish backup export: %w", err)
+	}
+
+	// The staging file is created in the destination directory, so a hard link
+	// provides an atomic no-replace fallback without a cross-filesystem case.
+	// Do not fall back to Lstat followed by Rename: that would reintroduce the
+	// overwrite race this publication boundary exists to prevent.
+	if linkErr := os.Link(tmpPath, destination); linkErr != nil {
+		if errors.Is(linkErr, os.ErrExist) {
 			return fmt.Errorf("backup export destination already exists: %s", destination)
 		}
-		return fmt.Errorf("publish backup export: %w", err)
+		return fmt.Errorf(
+			"publish backup export: destination filesystem supports neither no-replace rename nor hard-link publication: %w",
+			linkErr,
+		)
+	}
+	if removeErr := os.Remove(tmpPath); removeErr != nil {
+		return fmt.Errorf("backup export published but failed to remove staging file %s: %w", tmpPath, removeErr)
 	}
 	return nil
 }
