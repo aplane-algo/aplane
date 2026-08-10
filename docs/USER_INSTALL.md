@@ -921,30 +921,16 @@ See [USER_STORE_MGMT.md](USER_STORE_MGMT.md) for full backup/restore documentati
 
 ## Multiple Instances
 
-To run multiple apsigner instances on the same machine, create a separate service unit for each data directory. Copy the installed service file and adjust the `Environment=APSIGNER_DATA=` line:
-
-```bash
-# Create a second data directory
-sudo mkdir -p /var/lib/apsigner-staging
-sudo chown aplane:aplane /var/lib/apsigner-staging
-
-# Initialize it
-sudo /usr/local/bin/apstore -d /var/lib/apsigner-staging initialize
-
-# Configure it (copy and edit config.yaml)
-sudo -u aplane cp /var/lib/apsigner/config.yaml /var/lib/apsigner-staging/config.yaml
-
-# Create a second service unit
-sudo cp /etc/systemd/system/apsigner.service /etc/systemd/system/apsigner-staging.service
-sudo sed -i 's|/var/lib/apsigner|/var/lib/apsigner-staging|g' /etc/systemd/system/apsigner-staging.service
-sudo systemctl daemon-reload
-
-# Enable and start
-sudo systemctl enable apsigner-staging
-sudo systemctl start apsigner-staging
-```
-
-Each instance runs independently with its own keystore, configuration, and IPC socket.
+The supported installer owns one systemd-managed instance and the singleton
+`/run/apsigner/aplane.sock`. Multiple instances are an advanced manual
+deployment: each service needs a distinct private data directory, a distinct
+`RuntimeDirectory`, and an absolute external `ipc_path` within that runtime
+directory. Its store also needs its own root-controlled
+`install/service-principal.json`, `.prod` marker, permission migration, and
+audit before startup. Do not create a second instance by only copying the
+default unit: two units that share `/run/apsigner/aplane.sock` can displace or
+misdirect their admin clients. Select a non-default instance explicitly with
+`--ipc-path`.
 
 ---
 
@@ -982,6 +968,11 @@ $APSIGNER_DATA/identities/default/
 client-side token files are written when a client is enrolled via
 `request-token`. `passphrase.cred` exists only when `appass` configures
 auto-unlock with `systemd-creds`.
+
+At the production store root, `install/service-principal.json` is the
+root-controlled numeric UID/GID authority used by permission audit, migration,
+startup validation, and offline repair tools. Other `install/` entries include
+root-controlled release metadata and operator recovery artifacts.
 
 The client data directory grows over time as well:
 
