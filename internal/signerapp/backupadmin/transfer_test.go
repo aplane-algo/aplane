@@ -261,3 +261,50 @@ func TestBeginBackupImportRemovesAbandonedUpload(t *testing.T) {
 		t.Fatalf("abandoned upload still exists: %v", err)
 	}
 }
+
+func TestCleanupIncompleteBackupImportsRemovesValidationResidue(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	dir := paths.IdentityBackupsDir(auth.DefaultIdentityID)
+	residue := filepath.Join(dir, backupValidationPrefix+"crash")
+	if err := os.MkdirAll(residue, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(residue, "payload"), []byte("encrypted"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := CleanupIncompleteBackupImports(paths, auth.DefaultIdentityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if _, err := os.Lstat(residue); !os.IsNotExist(err) {
+		t.Fatalf("validation residue still exists: %v", err)
+	}
+}
+
+func TestCleanupIncompleteBackupImportsRejectsValidationSymlink(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	dir := paths.IdentityBackupsDir(auth.DefaultIdentityID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	marker := filepath.Join(target, "keep")
+	if err := os.WriteFile(marker, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	residue := filepath.Join(dir, backupValidationPrefix+"link")
+	if err := os.Symlink(target, residue); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	if _, err := CleanupIncompleteBackupImports(paths, auth.DefaultIdentityID); err == nil {
+		t.Fatal("CleanupIncompleteBackupImports() accepted validation symlink")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("validation symlink target was changed: %v", err)
+	}
+}

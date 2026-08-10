@@ -18,7 +18,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-const backupUploadPrefix = ".import-"
+const (
+	backupUploadPrefix     = ".import-"
+	backupValidationPrefix = ".import-validation-"
+)
 
 func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
 	fileName, err := validBackupFileName(req.FileName)
@@ -142,11 +145,15 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		if size != req.ExpectedSize || checksum != strings.ToLower(req.ExpectedSHA256) {
 			return fmt.Errorf("uploaded backup size or checksum mismatch")
 		}
-		sourceRoot, err := os.MkdirTemp("", "apsigner-backup-import-*")
+		sourceRoot, err := os.MkdirTemp(dir, backupValidationPrefix+"*")
 		if err != nil {
 			return fmt.Errorf("create backup validation directory: %w", err)
 		}
-		defer func() { _ = os.RemoveAll(sourceRoot) }()
+		defer func() {
+			if sourceRoot != "" {
+				_ = os.RemoveAll(sourceRoot)
+			}
+		}()
 		if err := backup.ExtractTarGzArchive(uploadPath, sourceRoot); err != nil {
 			return fmt.Errorf("invalid backup archive: %w", err)
 		}
@@ -157,6 +164,10 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		if report.FailedFiles > 0 {
 			return fmt.Errorf("invalid backup contents: %d of %d credential files failed validation", report.FailedFiles, report.TotalFiles)
 		}
+		if err := removeBackupValidationDirectory(sourceRoot); err != nil {
+			return fmt.Errorf("remove backup validation directory: %w", err)
+		}
+		sourceRoot = ""
 		destination := filepath.Join(dir, fileName)
 		if _, err := os.Lstat(destination); err == nil {
 			return fmt.Errorf("managed backup already exists: %s", fileName)
@@ -246,7 +257,9 @@ func CleanupIncompleteBackupImports(paths storepaths.Paths, identityID string) (
 	removed := 0
 	for _, entry := range entries {
 		name := entry.Name()
-		if !strings.HasPrefix(name, backupUploadPrefix) || !strings.HasSuffix(name, ".part") {
+		incompleteUpload := strings.HasPrefix(name, backupUploadPrefix) && strings.HasSuffix(name, ".part")
+		validationDirectory := strings.HasPrefix(name, backupValidationPrefix)
+		if !incompleteUpload && !validationDirectory {
 			continue
 		}
 		path := filepath.Join(dir, name)
@@ -254,15 +267,30 @@ func CleanupIncompleteBackupImports(paths storepaths.Paths, identityID string) (
 		if err != nil {
 			return removed, err
 		}
-		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		if incompleteUpload && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
 			return removed, fmt.Errorf("incomplete backup upload is not a regular file: %s", path)
 		}
-		if err := fsutil.RemoveDurable(path); err != nil {
+		if validationDirectory && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
+			return removed, fmt.Errorf("backup validation residue is not a real directory: %s", path)
+		}
+		if incompleteUpload {
+			if err := fsutil.RemoveDurable(path); err != nil {
+				return removed, err
+			}
+		} else if err := removeBackupValidationDirectory(path); err != nil {
 			return removed, err
 		}
 		removed++
 	}
 	return removed, nil
+}
+
+func removeBackupValidationDirectory(path string) error {
+	parent := filepath.Dir(path)
+	if err := os.RemoveAll(path); err != nil {
+		return err
+	}
+	return fsutil.SyncDir(parent)
 }
 
 func validBackupFileName(name string) (string, error) {
