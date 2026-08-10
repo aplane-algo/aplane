@@ -13,6 +13,33 @@ import (
 	"github.com/aplane-algo/aplane/internal/storelock"
 )
 
+func TestNormalizeManagedStoreOwnershipUsesConfiguredLegacySocket(t *testing.T) {
+	dataDir := t.TempDir()
+	customSocket := filepath.Join(dataDir, "custom.sock")
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("ipc_path: "+customSocket+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	oldManagedStoreOwner := managedStoreOwner
+	managedStoreOwner = func(string) (int, int, error) { return 123, 456, nil }
+	t.Cleanup(func() { managedStoreOwner = oldManagedStoreOwner })
+	oldMigrateManagedStore := migrateManagedStore
+	var gotRoot, gotSocket string
+	var gotUID, gotGID int
+	migrateManagedStore = func(root string, uid, gid int, socketPath string) error {
+		gotRoot, gotUID, gotGID, gotSocket = root, uid, gid, socketPath
+		return nil
+	}
+	t.Cleanup(func() { migrateManagedStore = oldMigrateManagedStore })
+
+	if err := normalizeManagedStoreOwnership(dataDir); err != nil {
+		t.Fatalf("normalizeManagedStoreOwnership() error = %v", err)
+	}
+	if gotRoot != dataDir || gotUID != 123 || gotGID != 456 || gotSocket != customSocket {
+		t.Fatalf("migration inputs = %q %d:%d %q, want %q 123:456 %q", gotRoot, gotUID, gotGID, gotSocket, dataDir, customSocket)
+	}
+}
+
 func TestAcquireOfflineMutationLockAllowsExclusiveMutation(t *testing.T) {
 	for _, command := range []string{"governance", "initialize", "rebuild"} {
 		release, err := acquireOfflineMutationLock(command, t.TempDir())

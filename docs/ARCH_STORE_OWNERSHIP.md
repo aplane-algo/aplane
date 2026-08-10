@@ -135,6 +135,8 @@ removes the recognized stale legacy `<data-root>/aplane.sock`, removes group
 access at the root first, repairs recognized objects through opened
 descriptors, syncs directories, and independently audits the private result. A
 clean audit is authority to proceed; an incomplete audit is not.
+Stopped migration and post-root-mutation normalization resolve the same exact
+configured legacy in-store socket; neither hardcodes the historical default.
 
 `apstore permissions audit` is read-only. Same-UID audit recognizes the local
 installer's non-writable executable `bin/` subtree without treating those

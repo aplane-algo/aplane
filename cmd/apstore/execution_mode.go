@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -18,6 +17,12 @@ import (
 )
 
 var currentEUID = os.Geteuid
+
+var migrateManagedStore = func(dataDir string, uid, gid int, socketPath string) error {
+	opts := storeperm.LegacyMigrationOptions(dataDir, uid, gid, socketPath)
+	_, err := storeperm.MigratePrivate(opts)
+	return err
+}
 
 func runStoreMutatingCommand(command string, fn func() error) error {
 	runErr := fn()
@@ -57,10 +62,11 @@ func normalizeManagedStoreOwnership(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	socketPath := filepath.Join(dataDir, "aplane.sock")
-	opts := storeperm.LegacyMigrationOptions(dataDir, uid, gid, socketPath)
-	_, err = storeperm.MigratePrivate(opts)
-	return err
+	socketPath, err := configuredMigrationSocketPath(dataDir)
+	if err != nil {
+		return err
+	}
+	return migrateManagedStore(dataDir, uid, gid, socketPath)
 }
 
 func enforceApstoreExecutionMode(dataDir string, args []string) error {
