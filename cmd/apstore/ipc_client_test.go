@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -14,6 +15,37 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
+
+func TestAdminPassphrasePromptDoesNotWriteStdout(t *testing.T) {
+	originalOutput := adminPassphrasePromptOutput
+	originalRead := readAdminPassphrase
+	t.Cleanup(func() {
+		adminPassphrasePromptOutput = originalOutput
+		readAdminPassphrase = originalRead
+	})
+	var prompt bytes.Buffer
+	adminPassphrasePromptOutput = &prompt
+	readAdminPassphrase = func() ([]byte, error) { return []byte("secret"), nil }
+
+	var passphrase []byte
+	stdout, err := withCapturedStdout(func() error {
+		var readErr error
+		passphrase, readErr = promptForAdminPassphrase()
+		return readErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want machine-readable stream untouched", stdout)
+	}
+	if got := prompt.String(); got != "Enter admin passphrase: \n" {
+		t.Fatalf("prompt output = %q", got)
+	}
+	if string(passphrase) != "secret" {
+		t.Fatalf("passphrase = %q", passphrase)
+	}
+}
 
 func TestCmdTemplatesReportsIPCUnavailableWithoutDaemon(t *testing.T) {
 	oldConfig := config

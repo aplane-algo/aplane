@@ -30,6 +30,9 @@ type apstoreAdminClient struct {
 	conn *transport.IPCClient
 }
 
+var adminPassphrasePromptOutput io.Writer = os.Stderr
+var readAdminPassphrase = readPassword
+
 type apstoreAdminRequester interface {
 	request(msg any, out any) error
 	requestWithTimeout(msg any, out any, timeout time.Duration) error
@@ -89,17 +92,22 @@ func (c *apstoreAdminClient) authenticateAndUnlock() error {
 	passphrase := os.Getenv("TEST_PASSPHRASE")
 	var passphraseBytes []byte
 	if passphrase == "" {
-		fmt.Print("Enter admin passphrase: ")
 		var err error
-		passphraseBytes, err = readPassword()
+		passphraseBytes, err = promptForAdminPassphrase()
 		if err != nil {
 			return fmt.Errorf("failed to read admin passphrase: %w", err)
 		}
-		fmt.Println()
 		defer crypto.ZeroBytes(passphraseBytes)
 		passphrase = string(passphraseBytes)
 	}
 	return c.authenticateAndUnlockString(passphrase)
+}
+
+func promptForAdminPassphrase() ([]byte, error) {
+	_, _ = fmt.Fprint(adminPassphrasePromptOutput, "Enter admin passphrase: ")
+	passphrase, err := readAdminPassphrase()
+	_, _ = fmt.Fprintln(adminPassphrasePromptOutput)
+	return passphrase, err
 }
 
 func (c *apstoreAdminClient) authenticateAndUnlockWithPassphrase(passphrase []byte) error {
