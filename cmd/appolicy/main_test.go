@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/storeinit"
+	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig"
 )
@@ -454,6 +455,7 @@ func TestNormalizeOfflinePolicyStoreUsesManagedPrincipal(t *testing.T) {
 	oldLoad := loadPolicyConfig
 	oldResolve := resolvePolicySocket
 	oldMigrate := migrateOfflinePolicyStore
+	oldAcquire := acquirePolicyStoreLock
 	t.Cleanup(func() {
 		appolicyEUID = oldEUID
 		isManagedPolicyStore = oldManaged
@@ -461,6 +463,7 @@ func TestNormalizeOfflinePolicyStoreUsesManagedPrincipal(t *testing.T) {
 		loadPolicyConfig = oldLoad
 		resolvePolicySocket = oldResolve
 		migrateOfflinePolicyStore = oldMigrate
+		acquirePolicyStoreLock = oldAcquire
 	})
 
 	appolicyEUID = func() int { return 0 }
@@ -475,6 +478,14 @@ func TestNormalizeOfflinePolicyStoreUsesManagedPrincipal(t *testing.T) {
 		}
 		return "/srv/apsigner/run/custom.sock", nil
 	}
+	lockCalls := 0
+	acquirePolicyStoreLock = func(root string) (*storelock.Guard, error) {
+		lockCalls++
+		if root != "/srv/apsigner" {
+			t.Fatalf("acquirePolicyStoreLock(%q)", root)
+		}
+		return &storelock.Guard{}, nil
+	}
 	migrateOfflinePolicyStore = func(root string, uid, gid int, socketPath string) error {
 		if root != "/srv/apsigner" || uid != 123 || gid != 456 || socketPath != "/srv/apsigner/run/custom.sock" {
 			t.Fatalf("migration args = %q %d:%d %q", root, uid, gid, socketPath)
@@ -484,6 +495,41 @@ func TestNormalizeOfflinePolicyStoreUsesManagedPrincipal(t *testing.T) {
 
 	if err := normalizeOfflinePolicyStore("/srv/apsigner"); err != nil {
 		t.Fatalf("normalizeOfflinePolicyStore() error = %v", err)
+	}
+	if lockCalls != 1 {
+		t.Fatalf("exclusive lock calls = %d, want 1", lockCalls)
+	}
+}
+
+func TestNormalizeOfflinePolicyStoreRefusesConcurrentDaemon(t *testing.T) {
+	root := t.TempDir()
+	shared, err := storelock.AcquireShared(root)
+	if err != nil {
+		t.Fatalf("AcquireShared() error = %v", err)
+	}
+	defer func() { _ = shared.Close() }()
+
+	oldEUID := appolicyEUID
+	oldManaged := isManagedPolicyStore
+	oldMigrate := migrateOfflinePolicyStore
+	t.Cleanup(func() {
+		appolicyEUID = oldEUID
+		isManagedPolicyStore = oldManaged
+		migrateOfflinePolicyStore = oldMigrate
+	})
+	appolicyEUID = func() int { return 0 }
+	isManagedPolicyStore = func(string) (bool, error) { return true, nil }
+	migrateOfflinePolicyStore = func(string, int, int, string) error {
+		t.Fatal("migration ran while the daemon held the store lock")
+		return nil
+	}
+
+	err = normalizeOfflinePolicyStore(root)
+	if !errors.Is(err, storelock.ErrBusy) {
+		t.Fatalf("normalizeOfflinePolicyStore() error = %v, want storelock.ErrBusy", err)
+	}
+	if !strings.Contains(err.Error(), "stop apsigner") {
+		t.Fatalf("normalizeOfflinePolicyStore() error = %q, want operator guidance", err)
 	}
 }
 

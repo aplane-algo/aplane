@@ -88,6 +88,10 @@ inventory validation, and the installation-mode owner check. They preserve the
 narrow root-owned `identities/<identity>/passphrase.cred` exception and the
 installer-owned `install/` metadata artifacts.
 
+Root-run offline `appolicy` saves acquire the exclusive lock while publishing
+the policy and again while normalizing the managed store, so ownership repair
+cannot race a daemon that starts between those two fail-closed phases.
+
 ### External-file-only operations
 
 Backup inspection and validation of explicitly supplied external artifacts do

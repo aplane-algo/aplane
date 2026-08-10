@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytui"
+	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storeperm"
 	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/internal/version"
@@ -494,11 +495,12 @@ var migrateOfflinePolicyStore = func(dataDir string, uid, gid int, socketPath st
 }
 
 var (
-	appolicyEUID         = os.Geteuid
-	isManagedPolicyStore = signerbootstrap.IsProductionManagedDataDir
-	managedPolicyOwner   = storeperm.ManagedServiceOwner
-	loadPolicyConfig     = serverconfig.LoadServerConfig
-	resolvePolicySocket  = adminipc.ResolveLegacyStoreSocketPath
+	appolicyEUID           = os.Geteuid
+	isManagedPolicyStore   = signerbootstrap.IsProductionManagedDataDir
+	managedPolicyOwner     = storeperm.ManagedServiceOwner
+	loadPolicyConfig       = serverconfig.LoadServerConfig
+	resolvePolicySocket    = adminipc.ResolveLegacyStoreSocketPath
+	acquirePolicyStoreLock = storelock.AcquireExclusive
 )
 
 // normalizeOfflinePolicyStore restores service ownership after a root-run
@@ -512,6 +514,11 @@ func normalizeOfflinePolicyStore(dataDir string) error {
 	if err != nil || !managed {
 		return err
 	}
+	guard, err := acquirePolicyStoreLock(dataDir)
+	if err != nil {
+		return fmt.Errorf("acquire exclusive signer-store lock before ownership normalization (stop apsigner and other store-mutating tools): %w", err)
+	}
+	defer func() { _ = guard.Close() }()
 	uid, gid, err := managedPolicyOwner(dataDir)
 	if err != nil {
 		return fmt.Errorf("resolve managed signer service principal: %w", err)
