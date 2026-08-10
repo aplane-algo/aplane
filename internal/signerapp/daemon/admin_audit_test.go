@@ -19,6 +19,7 @@ func TestAdminSessionAuditSatisfiesHandlerProbes(t *testing.T) {
 		LogIdentityLockedContext(adminserver.SessionContext, string)
 		LogBackupCreatedContext(adminserver.SessionContext, string)
 		LogBackupFailedContext(adminserver.SessionContext, string)
+		LogBackupExportStartedContext(adminserver.SessionContext, string)
 		LogBackupRestorePreviewedContext(adminserver.SessionContext, string, int)
 		LogBackupRestorePreviewFailedContext(adminserver.SessionContext, string)
 	}); !ok {

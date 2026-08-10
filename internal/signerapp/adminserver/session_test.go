@@ -70,11 +70,13 @@ type stubServices struct {
 	listBackupsCalls       int
 	deleteBackupCalls      int
 
-	beginBackupImportCalls  int
-	appendBackupImportCalls int
-	commitBackupImportCalls int
-	readBackupChunkCalls    int
-	lastCommitBackupImport  adminproto.CommitBackupImportRequest
+	beginBackupImportCalls   int
+	appendBackupImportCalls  int
+	commitBackupImportCalls  int
+	readBackupChunkCalls     int
+	lastCommitBackupImport   adminproto.CommitBackupImportRequest
+	commitBackupImportResult adminproto.CommitBackupImportResult
+	readBackupChunkResult    adminproto.ReadBackupChunkResult
 
 	changePassphraseCalls  int
 	previewRestoreCalls    int
@@ -260,7 +262,7 @@ func (s *stubServices) CommitBackupImport(_ *identity.Runtime, req adminproto.Co
 	s.commitBackupImportCalls++
 	s.lastCommitBackupImport = req
 	s.lastCommitBackupImport.ExportPassphrase = append([]byte(nil), req.ExportPassphrase...)
-	return adminproto.CommitBackupImportResult{}
+	return s.commitBackupImportResult
 }
 func (*stubServices) AbortBackupImport(*identity.Runtime, adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
 	return adminproto.AbortBackupImportResult{}
@@ -268,7 +270,7 @@ func (*stubServices) AbortBackupImport(*identity.Runtime, adminproto.AbortBackup
 
 func (s *stubServices) ReadBackupChunk(*identity.Runtime, adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
 	s.readBackupChunkCalls++
-	return adminproto.ReadBackupChunkResult{}
+	return s.readBackupChunkResult
 }
 func (s *stubServices) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
 	s.previewRestoreCalls++

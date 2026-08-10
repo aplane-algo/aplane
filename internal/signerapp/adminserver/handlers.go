@@ -378,11 +378,14 @@ func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessa
 		ExpectedSize: msg.ExpectedSize, ExpectedSHA256: msg.ExpectedSHA256,
 		ExportPassphrase: msg.ExportPassphrase.Clone(),
 	})
-	if result.Success {
-		if audit, ok := s.audit.(interface {
-			LogBackupImportedContext(SessionContext, string, int64)
-		}); ok {
+	if audit, ok := s.audit.(interface {
+		LogBackupImportedContext(SessionContext, string, int64)
+		LogBackupFailedContext(SessionContext, string)
+	}); ok {
+		if result.Success {
 			audit.LogBackupImportedContext(s.SessionContext(), result.Backup.FileName, result.Backup.Size)
+		} else if result.Error != "" {
+			audit.LogBackupFailedContext(s.SessionContext(), "backup import failed: "+result.Error)
 		}
 	}
 	_ = s.WriteJSON(ProtocolCommitBackupImportResultMessage(msg.ID, result))
@@ -420,6 +423,16 @@ func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
 		return
 	}
 	result := s.backupServices.ReadBackupChunk(ir, adminproto.ReadBackupChunkRequest{FileName: msg.FileName, Offset: msg.Offset})
+	if audit, ok := s.audit.(interface {
+		LogBackupExportStartedContext(SessionContext, string)
+		LogBackupFailedContext(SessionContext, string)
+	}); ok {
+		if result.Success && msg.Offset == 0 {
+			audit.LogBackupExportStartedContext(s.SessionContext(), result.FileName)
+		} else if !result.Success && result.Error != "" {
+			audit.LogBackupFailedContext(s.SessionContext(), "backup export failed: "+result.Error)
+		}
+	}
 	_ = s.WriteJSON(ProtocolBackupChunkMessage(msg.ID, result))
 }
 

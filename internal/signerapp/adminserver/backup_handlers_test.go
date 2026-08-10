@@ -6,6 +6,7 @@ package adminserver
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -150,6 +151,35 @@ func TestCommitBackupImportClonesAndZerosWirePassphrase(t *testing.T) {
 	}
 }
 
+func TestBackupTransferAuditsImportFailureAndExportStart(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	svc := &stubServices{
+		commitBackupImportResult: adminproto.CommitBackupImportResult{Code: "backup_import_commit_failed", Error: "invalid archive"},
+		readBackupChunkResult:    adminproto.ReadBackupChunkResult{Success: true, FileName: "export.tar.gz", Data: []byte("chunk")},
+	}
+	audit := &recordingBackupTransferAudit{}
+	deps := svc.backupDeps()
+	deps.Audit = audit
+	session := NewSession(&queueConn{}, deps)
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "commit"}, FileName: "import.tar.gz",
+		ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
+	})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read"}, FileName: "export.tar.gz", Offset: 0,
+	})
+
+	if audit.failedCalls != 1 || !strings.Contains(audit.lastFailure, "backup import failed") {
+		t.Fatalf("failure audit = %d %q", audit.failedCalls, audit.lastFailure)
+	}
+	if audit.exportStartedCalls != 1 || audit.lastExport != "export.tar.gz" {
+		t.Fatalf("export audit = %d %q", audit.exportStartedCalls, audit.lastExport)
+	}
+}
+
 func TestLockedStateRejectsRecoveryCapableRestoreReads(t *testing.T) {
 	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
 	svc := &stubServices{}
@@ -225,6 +255,26 @@ type recordingCredentialRestoreAudit struct {
 	recordingAuthorizationAudit
 	intentCalls int
 	intentErr   error
+}
+
+type recordingBackupTransferAudit struct {
+	recordingAuthorizationAudit
+	failedCalls        int
+	exportStartedCalls int
+	lastFailure        string
+	lastExport         string
+}
+
+func (*recordingBackupTransferAudit) LogBackupImportedContext(SessionContext, string, int64) {}
+
+func (a *recordingBackupTransferAudit) LogBackupFailedContext(_ SessionContext, reason string) {
+	a.failedCalls++
+	a.lastFailure = reason
+}
+
+func (a *recordingBackupTransferAudit) LogBackupExportStartedContext(_ SessionContext, fileName string) {
+	a.exportStartedCalls++
+	a.lastExport = fileName
 }
 
 func (a *recordingCredentialRestoreAudit) LogCredentialRestoreIntentDurableContext(SessionContext, string, string, bool) error {

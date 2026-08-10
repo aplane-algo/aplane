@@ -26,7 +26,7 @@ const (
 func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
 	fileName, err := validBackupFileName(req.FileName)
 	if err != nil {
-		return beginImportError(err)
+		return beginImportError(err, s.Deps.KeyPaths().Root())
 	}
 	var uploadID string
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
@@ -66,14 +66,14 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 		return nil
 	})
 	if err != nil {
-		return beginImportError(err)
+		return beginImportError(err, s.Deps.KeyPaths().Root())
 	}
 	return adminproto.BeginBackupImportResult{Success: true, UploadID: uploadID}
 }
 
 func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
 	if req.Offset < 0 || len(req.Data) == 0 || len(req.Data) > adminproto.BackupTransferChunkBytes {
-		return appendImportError(fmt.Errorf("invalid backup import chunk"))
+		return appendImportError(fmt.Errorf("invalid backup import chunk"), s.Deps.KeyPaths().Root())
 	}
 	var next int64
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
@@ -117,7 +117,7 @@ func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendB
 		return nil
 	})
 	if err != nil {
-		return appendImportError(err)
+		return appendImportError(err, s.Deps.KeyPaths().Root())
 	}
 	return adminproto.AppendBackupImportResult{Success: true, NextOffset: next}
 }
@@ -129,7 +129,7 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		if err == nil {
 			err = fmt.Errorf("invalid backup size, checksum, or export passphrase")
 		}
-		return commitImportError(err)
+		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
 	var info adminproto.BackupInfo
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
@@ -188,7 +188,7 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		return nil
 	})
 	if err != nil {
-		return commitImportError(err)
+		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
 	return adminproto.CommitBackupImportResult{Success: true, Backup: info}
 }
@@ -202,43 +202,43 @@ func (s Service) AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBac
 		return fsutil.RemoveDurable(path)
 	})
 	if err != nil {
-		return adminproto.AbortBackupImportResult{Code: "backup_import_abort_failed", Error: err.Error()}
+		return adminproto.AbortBackupImportResult{Code: "backup_import_abort_failed", Error: backupTransferErrorText(err, s.Deps.KeyPaths().Root())}
 	}
 	return adminproto.AbortBackupImportResult{Success: true}
 }
 
 func (s Service) ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
 	if req.Offset < 0 {
-		return readChunkError(fmt.Errorf("invalid backup offset"))
+		return readChunkError(fmt.Errorf("invalid backup offset"), s.Deps.KeyPaths().Root())
 	}
 	fileName, err := validBackupFileName(req.FileName)
 	if err != nil {
-		return readChunkError(err)
+		return readChunkError(err, s.Deps.KeyPaths().Root())
 	}
 	path, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), fileName)
 	if err != nil {
-		return readChunkError(err)
+		return readChunkError(err, s.Deps.KeyPaths().Root())
 	}
 	before, err := backup.StatManagedBackupArchive(path)
 	if err != nil {
-		return readChunkError(err)
+		return readChunkError(err, s.Deps.KeyPaths().Root())
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return readChunkError(err)
+		return readChunkError(err, s.Deps.KeyPaths().Root())
 	}
 	defer func() { _ = file.Close() }()
 	after, err := file.Stat()
 	if err != nil || !os.SameFile(before, after) {
-		return readChunkError(fmt.Errorf("backup archive changed while opening"))
+		return readChunkError(fmt.Errorf("backup archive changed while opening"), s.Deps.KeyPaths().Root())
 	}
 	if req.Offset > after.Size() {
-		return readChunkError(fmt.Errorf("backup offset exceeds archive size"))
+		return readChunkError(fmt.Errorf("backup offset exceeds archive size"), s.Deps.KeyPaths().Root())
 	}
 	data := make([]byte, adminproto.BackupTransferChunkBytes)
 	n, readErr := file.ReadAt(data, req.Offset)
 	if readErr != nil && readErr != io.EOF {
-		return readChunkError(readErr)
+		return readChunkError(readErr, s.Deps.KeyPaths().Root())
 	}
 	return adminproto.ReadBackupChunkResult{Success: true, FileName: fileName, Offset: req.Offset, Data: data[:n], EOF: req.Offset+int64(n) == after.Size()}
 }
@@ -309,15 +309,24 @@ func backupUploadPath(dir, uploadID string) (string, error) {
 	return filepath.Join(dir, uploadID), nil
 }
 
-func beginImportError(err error) adminproto.BeginBackupImportResult {
-	return adminproto.BeginBackupImportResult{Code: "backup_import_begin_failed", Error: err.Error()}
+func beginImportError(err error, storeRoot string) adminproto.BeginBackupImportResult {
+	return adminproto.BeginBackupImportResult{Code: "backup_import_begin_failed", Error: backupTransferErrorText(err, storeRoot)}
 }
-func appendImportError(err error) adminproto.AppendBackupImportResult {
-	return adminproto.AppendBackupImportResult{Code: "backup_import_append_failed", Error: err.Error()}
+func appendImportError(err error, storeRoot string) adminproto.AppendBackupImportResult {
+	return adminproto.AppendBackupImportResult{Code: "backup_import_append_failed", Error: backupTransferErrorText(err, storeRoot)}
 }
-func commitImportError(err error) adminproto.CommitBackupImportResult {
-	return adminproto.CommitBackupImportResult{Code: "backup_import_commit_failed", Error: err.Error()}
+func commitImportError(err error, storeRoot string) adminproto.CommitBackupImportResult {
+	return adminproto.CommitBackupImportResult{Code: "backup_import_commit_failed", Error: backupTransferErrorText(err, storeRoot)}
 }
-func readChunkError(err error) adminproto.ReadBackupChunkResult {
-	return adminproto.ReadBackupChunkResult{Code: "backup_export_read_failed", Error: err.Error()}
+func readChunkError(err error, storeRoot string) adminproto.ReadBackupChunkResult {
+	return adminproto.ReadBackupChunkResult{Code: "backup_export_read_failed", Error: backupTransferErrorText(err, storeRoot)}
+}
+
+func backupTransferErrorText(err error, storeRoot string) string {
+	message := err.Error()
+	root := filepath.Clean(storeRoot)
+	if root != "." && root != string(filepath.Separator) {
+		message = strings.ReplaceAll(message, root, "<signer-store>")
+	}
+	return message
 }

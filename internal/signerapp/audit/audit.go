@@ -54,6 +54,7 @@ const (
 	AuditPassphraseChangeFailed     AuditEventType = "PASSPHRASE_CHANGE_FAILED"
 	AuditSentryReferenceChanged     AuditEventType = "SENTRY_REFERENCE_CHANGED"
 	AuditBackupImported             AuditEventType = "BACKUP_IMPORTED"
+	AuditBackupExportStarted        AuditEventType = "BACKUP_EXPORT_STARTED"
 )
 
 // AuditEntry represents a single audit log entry
@@ -612,6 +613,14 @@ func (a *AuditLogger) LogBackupImportedContext(ctx adminserver.SessionContext, f
 	entry.Event = AuditBackupImported
 	entry.Outcome = "imported"
 	entry.Reason = fmt.Sprintf("file=%s size=%d", fileName, size)
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogBackupExportStartedContext(ctx adminserver.SessionContext, fileName string) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditBackupExportStarted
+	entry.Outcome = "started"
+	entry.Reason = fmt.Sprintf("file=%s", fileName)
 	a.Log(entry)
 }
 

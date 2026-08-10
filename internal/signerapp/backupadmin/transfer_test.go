@@ -6,8 +6,10 @@ package backupadmin
 import (
 	"bytes"
 	"crypto/rand"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -306,5 +308,17 @@ func TestCleanupIncompleteBackupImportsRejectsValidationSymlink(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("validation symlink target was changed: %v", err)
+	}
+}
+
+func TestBackupTransferErrorTextRedactsStoreRoot(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "var", "lib", "apsigner")
+	err := fmt.Errorf("open %s: permission denied", filepath.Join(root, "backups", "default", "archive.tar.gz"))
+	got := backupTransferErrorText(err, root)
+	if strings.Contains(got, root) {
+		t.Fatalf("backupTransferErrorText() leaked store root: %q", got)
+	}
+	if !strings.Contains(got, "<signer-store>/backups/default/archive.tar.gz") {
+		t.Fatalf("backupTransferErrorText() = %q, want redacted relative context", got)
 	}
 }
