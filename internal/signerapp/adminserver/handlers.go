@@ -281,13 +281,16 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 		ExportPassphrase: exportPassphrase,
 		Addresses:        append([]string(nil), msg.Addresses...),
 	})
-	if audit, ok := s.audit.(interface {
-		LogBackupCreatedContext(SessionContext, string)
-		LogBackupFailedContext(SessionContext, string)
-	}); ok {
-		if result.Success {
+	if result.Success {
+		if audit, ok := s.audit.(interface {
+			LogBackupCreatedContext(SessionContext, string)
+		}); ok {
 			audit.LogBackupCreatedContext(s.SessionContext(), result.ArchivePath)
-		} else if result.Error != "" {
+		}
+	} else if result.Error != "" {
+		if audit, ok := s.audit.(interface {
+			LogBackupFailedContext(SessionContext, string)
+		}); ok {
 			audit.LogBackupFailedContext(s.SessionContext(), result.Error)
 		}
 	}
@@ -378,13 +381,16 @@ func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessa
 		ExpectedSize: msg.ExpectedSize, ExpectedSHA256: msg.ExpectedSHA256,
 		ExportPassphrase: msg.ExportPassphrase.Clone(),
 	})
-	if audit, ok := s.audit.(interface {
-		LogBackupImportedContext(SessionContext, string, int64)
-		LogBackupFailedContext(SessionContext, string)
-	}); ok {
-		if result.Success {
+	if result.Success {
+		if audit, ok := s.audit.(interface {
+			LogBackupImportedContext(SessionContext, string, int64)
+		}); ok {
 			audit.LogBackupImportedContext(s.SessionContext(), result.Backup.FileName, result.Backup.Size)
-		} else if result.Error != "" {
+		}
+	} else if result.Error != "" {
+		if audit, ok := s.audit.(interface {
+			LogBackupFailedContext(SessionContext, string)
+		}); ok {
 			audit.LogBackupFailedContext(s.SessionContext(), "backup import failed: "+result.Error)
 		}
 	}
@@ -423,15 +429,18 @@ func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
 		return
 	}
 	result := s.backupServices.ReadBackupChunk(ir, adminproto.ReadBackupChunkRequest{FileName: msg.FileName, Offset: msg.Offset})
-	if audit, ok := s.audit.(interface {
-		LogBackupExportStartedContext(SessionContext, string)
-		LogBackupFailedContext(SessionContext, string)
-	}); ok {
-		if result.Success {
+	if result.Success {
+		if audit, ok := s.audit.(interface {
+			LogBackupExportStartedContext(SessionContext, string)
+		}); ok {
 			if s.markBackupExportChunk(ir.ID(), result.FileName, result.Offset, result.EOF) {
 				audit.LogBackupExportStartedContext(s.SessionContext(), result.FileName)
 			}
-		} else if !result.Success && result.Error != "" {
+		}
+	} else if result.Error != "" {
+		if audit, ok := s.audit.(interface {
+			LogBackupFailedContext(SessionContext, string)
+		}); ok {
 			audit.LogBackupFailedContext(s.SessionContext(), "backup export failed: "+result.Error)
 		}
 	}
@@ -482,16 +491,23 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 		ArchivePath:      msg.ArchivePath,
 		ExportPassphrase: exportPassphrase,
 	})
-	if audit, ok := s.audit.(interface {
-		LogBackupRestorePreviewedContext(SessionContext, string, int)
-		LogBackupRestorePreviewFailedContext(SessionContext, string)
-	}); ok {
-		switch {
-		case result.Error != "":
+	switch {
+	case result.Error != "":
+		if audit, ok := s.audit.(interface {
+			LogBackupRestorePreviewFailedContext(SessionContext, string)
+		}); ok {
 			audit.LogBackupRestorePreviewFailedContext(s.SessionContext(), result.Error)
-		case len(result.Errors) > 0:
+		}
+	case len(result.Errors) > 0:
+		if audit, ok := s.audit.(interface {
+			LogBackupRestorePreviewFailedContext(SessionContext, string)
+		}); ok {
 			audit.LogBackupRestorePreviewFailedContext(s.SessionContext(), "restore preview returned key errors")
-		default:
+		}
+	default:
+		if audit, ok := s.audit.(interface {
+			LogBackupRestorePreviewedContext(SessionContext, string, int)
+		}); ok {
 			audit.LogBackupRestorePreviewedContext(s.SessionContext(), result.ArchivePath, len(result.Keys))
 		}
 	}
