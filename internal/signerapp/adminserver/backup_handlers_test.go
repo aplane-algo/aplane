@@ -129,6 +129,27 @@ func TestRecoveryStatePermitsRestoreReadApplyRollbackAndReconcile(t *testing.T) 
 	}
 }
 
+func TestCommitBackupImportClonesAndZerosWirePassphrase(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	svc := &stubServices{}
+	session := NewSession(&queueConn{}, svc.backupDeps())
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+	msg := &protocol.CommitBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "import-commit"},
+		UploadID:    ".import-repair.part", FileName: "repair.tar.gz",
+		ExpectedSize: 1, ExpectedSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
+	}
+	session.HandleCommitBackupImport(msg)
+	if got := string(svc.lastCommitBackupImport.ExportPassphrase); got != "export-passphrase" {
+		t.Fatalf("service export passphrase = %q", got)
+	}
+	if got := string(msg.ExportPassphrase); got == "export-passphrase" {
+		t.Fatal("wire export passphrase was not zeroed")
+	}
+}
+
 func TestLockedStateRejectsRecoveryCapableRestoreReads(t *testing.T) {
 	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
 	svc := &stubServices{}

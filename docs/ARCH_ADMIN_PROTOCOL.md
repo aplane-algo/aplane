@@ -45,7 +45,7 @@ Transport notes:
 - systemd local IPC is discovered at `/run/apsigner/aplane.sock` without
   reading private signer configuration; same-UID local mode may use
   `<data_dir>/aplane.sock`,
-- the current admin protocol version is 4.2; `auth_required` carries it as
+- the current admin protocol version is 4.3; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -298,8 +298,11 @@ mode.
   one daemon-owned temporary archive, and returns an opaque `upload_id`;
   `append_backup_import` accepts at most 256 KiB at the exact next `offset`;
   cumulative uploaded bytes are capped at 1 GiB;
-  `commit_backup_import` verifies the declared size and SHA-256, validates the
-  archive structure, and atomically publishes it; `abort_backup_import`
+  `commit_backup_import` carries the sensitive `export_passphrase`, verifies
+  the declared size and SHA-256, authenticates the sealed manifest, deeply
+  validates every credential payload, and only then atomically publishes the
+  archive. The daemon zeros the passphrase after the request and never persists
+  it; `abort_backup_import`
   durably removes an incomplete upload. Daemon startup also removes incomplete
   uploads left by a prior process. Abort remains available to an authenticated,
   authorized bound session while the identity is locked because it can only

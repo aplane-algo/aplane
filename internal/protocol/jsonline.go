@@ -24,6 +24,10 @@ func WriteJSONLine(w io.Writer, data []byte) error {
 	return err
 }
 
+// ReadJSONLine reads one bounded admin frame. Any error invalidates framing:
+// callers must close the connection and must not reuse r. In particular, the
+// function deliberately does not drain an oversized unterminated frame, which
+// could otherwise let a malicious peer block the reader indefinitely.
 func ReadJSONLine(r *bufio.Reader) ([]byte, error) {
 	line := make([]byte, 0, 4096)
 	for {

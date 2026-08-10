@@ -2718,13 +2718,16 @@ backup contract and no migration from earlier internal tags is provided.
 
 ### Import and inspection
 
-`apstore backup import` validates an external tar archive deeply before
-publishing it under `backups/<identity>/`. Validation includes the archive
-inventory and every credential payload. Import does not compile or install
-templates because templates are not archive members. The IPC transfer declares
-its exact source size and SHA-256 at commit, is capped at 1 GiB while appending,
-and permits only one incomplete upload per identity. A new import supersedes
-incomplete residue; daemon startup removes residue left by a prior process.
+`apstore backup import` asks the daemon to validate an external tar archive
+deeply before publishing it under `backups/<identity>/`. The commit request
+carries the sensitive export passphrase; the daemon authenticates the archive
+inventory and validates every credential payload, then zeros the passphrase
+without persisting it. Client-side archive inspection is not an authorization
+or integrity boundary. Import does not compile or install templates because
+templates are not archive members. The IPC transfer declares its exact source
+size and SHA-256 at commit, is capped at 1 GiB while appending, and permits only
+one incomplete upload per identity. A new import supersedes incomplete residue;
+daemon startup removes residue left by a prior process.
 
 `preview_restore` and `apstore restore preview` authenticate the archive
 before revealing addresses or key types. Preview reports credential identity,

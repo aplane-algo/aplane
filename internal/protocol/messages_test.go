@@ -121,8 +121,8 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 }
 
 func TestCurrentAdminProtocolVersionIncludesBackupTransfer(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 2}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.2", got)
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 3}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.3", got)
 	}
 }
 
@@ -396,6 +396,26 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"type":      MsgTypeBeginBackupImport,
 				"id":        "backup-import-1",
 				"file_name": "backup.tar.gz",
+			},
+		},
+		{
+			name: "commit_backup_import",
+			msg: CommitBackupImportMessage{
+				BaseMessage:      BaseMessage{Type: MsgTypeCommitBackupImport, ID: "backup-import-commit-1"},
+				UploadID:         ".import-123.part",
+				FileName:         "backup.tar.gz",
+				ExpectedSize:     4096,
+				ExpectedSHA256:   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				ExportPassphrase: NewSensitiveBytes("export-passphrase"),
+			},
+			wantMap: map[string]any{
+				"type":              MsgTypeCommitBackupImport,
+				"id":                "backup-import-commit-1",
+				"upload_id":         ".import-123.part",
+				"file_name":         "backup.tar.gz",
+				"expected_size":     float64(4096),
+				"expected_sha256":   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				"export_passphrase": "export-passphrase",
 			},
 		},
 		{

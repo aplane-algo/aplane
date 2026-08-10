@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -119,10 +120,11 @@ func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendB
 }
 
 func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+	defer crypto.ZeroBytes(req.ExportPassphrase)
 	fileName, err := validBackupFileName(req.FileName)
-	if err != nil || req.ExpectedSize <= 0 || req.ExpectedSize > adminproto.MaxBackupImportBytes || len(req.ExpectedSHA256) != 64 {
+	if err != nil || req.ExpectedSize <= 0 || req.ExpectedSize > adminproto.MaxBackupImportBytes || len(req.ExpectedSHA256) != 64 || len(req.ExportPassphrase) == 0 {
 		if err == nil {
-			err = fmt.Errorf("invalid backup size or checksum")
+			err = fmt.Errorf("invalid backup size, checksum, or export passphrase")
 		}
 		return commitImportError(err)
 	}
@@ -140,12 +142,21 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		if size != req.ExpectedSize || checksum != strings.ToLower(req.ExpectedSHA256) {
 			return fmt.Errorf("uploaded backup size or checksum mismatch")
 		}
-		sourceRoot, cleanup, err := backup.PrepareRestoreSource(uploadPath)
+		sourceRoot, err := os.MkdirTemp("", "apsigner-backup-import-*")
 		if err != nil {
+			return fmt.Errorf("create backup validation directory: %w", err)
+		}
+		defer func() { _ = os.RemoveAll(sourceRoot) }()
+		if err := backup.ExtractTarGzArchive(uploadPath, sourceRoot); err != nil {
 			return fmt.Errorf("invalid backup archive: %w", err)
 		}
-		_ = sourceRoot
-		cleanup()
+		report, err := backup.DeepVerifyBackupBytes(sourceRoot, req.ExportPassphrase)
+		if err != nil {
+			return fmt.Errorf("invalid backup contents: %w", err)
+		}
+		if report.FailedFiles > 0 {
+			return fmt.Errorf("invalid backup contents: %d of %d credential files failed validation", report.FailedFiles, report.TotalFiles)
+		}
 		destination := filepath.Join(dir, fileName)
 		if _, err := os.Lstat(destination); err == nil {
 			return fmt.Errorf("managed backup already exists: %s", fileName)

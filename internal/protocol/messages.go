@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 4
-	AdminProtocolVersionMinor = 2
+	AdminProtocolVersionMinor = 3
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
@@ -350,10 +350,11 @@ type AppendBackupImportResultMessage struct {
 
 type CommitBackupImportMessage struct {
 	BaseMessage
-	UploadID       string `json:"upload_id"`
-	FileName       string `json:"file_name"`
-	ExpectedSize   int64  `json:"expected_size"`
-	ExpectedSHA256 string `json:"expected_sha256"`
+	UploadID         string         `json:"upload_id"`
+	FileName         string         `json:"file_name"`
+	ExpectedSize     int64          `json:"expected_size"`
+	ExpectedSHA256   string         `json:"expected_sha256"`
+	ExportPassphrase SensitiveBytes `json:"export_passphrase"`
 }
 
 type CommitBackupImportResultMessage struct {

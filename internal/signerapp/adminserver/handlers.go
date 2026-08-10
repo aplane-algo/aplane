@@ -359,6 +359,7 @@ func (s *Session) HandleAppendBackupImport(msg *protocol.AppendBackupImportMessa
 }
 
 func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessage) {
+	defer msg.ExportPassphrase.Zero()
 	ir := s.requireRecoveryAdminRuntime(msg.ID)
 	if ir == nil {
 		return
@@ -373,6 +374,7 @@ func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessa
 	result := s.backupServices.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
 		UploadID: msg.UploadID, FileName: msg.FileName,
 		ExpectedSize: msg.ExpectedSize, ExpectedSHA256: msg.ExpectedSHA256,
+		ExportPassphrase: msg.ExportPassphrase.Clone(),
 	})
 	if result.Success {
 		if audit, ok := s.audit.(interface {
@@ -385,6 +387,9 @@ func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessa
 }
 
 func (s *Session) HandleAbortBackupImport(msg *protocol.AbortBackupImportMessage) {
+	// Abort removes only an unpublished, path-confined .part upload. Keep this
+	// authorized cleanup available while the bound identity is locked so a
+	// failed import does not require unlocking merely to discard residue.
 	ir := s.requireBoundRuntime(msg.ID)
 	if ir == nil {
 		return

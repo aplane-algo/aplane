@@ -297,14 +297,11 @@ func cmdBackupImport(args []string) error {
 	if _, err := backup.StatManagedBackupArchive(source); err != nil {
 		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
 	}
-	sourceRoot, cleanup, err := backup.PrepareRestoreSource(source)
+	exportPassphrase, err := readBackupImportPassphrase()
 	if err != nil {
-		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
+		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to read backup export passphrase: %v", err)}
 	}
-	defer cleanup()
-	if err := validateImportedBackupContents(sourceRoot); err != nil {
-		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup contents: %v", err)}
-	}
+	defer crypto.ZeroBytes(exportPassphrase)
 	checksum, size, err := backup.FileSHA256(source)
 	if err != nil {
 		return fmt.Errorf("failed to checksum backup source: %w", err)
@@ -368,6 +365,7 @@ func cmdBackupImport(args []string) error {
 	if err := client.request(protocol.CommitBackupImportMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImport, ID: newApstoreRequestID("backup-import-commit")},
 		UploadID:    begin.UploadID, FileName: name, ExpectedSize: size, ExpectedSHA256: checksum,
+		ExportPassphrase: protocol.SensitiveBytes(exportPassphrase),
 	}, &commit); err != nil {
 		return err
 	}
@@ -381,34 +379,18 @@ func cmdBackupImport(args []string) error {
 	return nil
 }
 
-func validateImportedBackupContents(sourceRoot string) error {
-	logInfof("import validation requires the export passphrase")
+func readBackupImportPassphrase() ([]byte, error) {
+	logInfof("daemon validation requires the export passphrase")
 	fmt.Print("Enter export passphrase: ")
 	exportPassphrase, err := readPromptedPassword()
 	if err != nil {
-		return fmt.Errorf("failed to read export passphrase: %w", err)
+		return nil, fmt.Errorf("failed to read export passphrase: %w", err)
 	}
 	fmt.Println()
-	defer crypto.ZeroBytes(exportPassphrase)
 	if len(exportPassphrase) == 0 {
-		return fmt.Errorf("export passphrase cannot be empty")
+		return nil, fmt.Errorf("export passphrase cannot be empty")
 	}
-
-	report, err := backup.DeepVerifyBackupBytes(sourceRoot, exportPassphrase)
-	if err != nil {
-		return err
-	}
-	if report.FailedFiles > 0 {
-		for _, result := range report.Results {
-			if !result.Valid {
-				return fmt.Errorf("%d of %d key file(s) failed validation: %s: %s",
-					report.FailedFiles, report.TotalFiles, result.FileName, result.Error)
-			}
-		}
-		return fmt.Errorf("%d of %d key file(s) failed validation", report.FailedFiles, report.TotalFiles)
-	}
-	logInfof("backup contents verified: %d key file(s)", report.ValidFiles)
-	return nil
+	return exportPassphrase, nil
 }
 
 func cmdBackupExport(name, destinationDir string) error {

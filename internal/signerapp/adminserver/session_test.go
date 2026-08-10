@@ -74,6 +74,7 @@ type stubServices struct {
 	appendBackupImportCalls int
 	commitBackupImportCalls int
 	readBackupChunkCalls    int
+	lastCommitBackupImport  adminproto.CommitBackupImportRequest
 
 	changePassphraseCalls  int
 	previewRestoreCalls    int
@@ -255,8 +256,10 @@ func (s *stubServices) AppendBackupImport(*identity.Runtime, adminproto.AppendBa
 	s.appendBackupImportCalls++
 	return adminproto.AppendBackupImportResult{}
 }
-func (s *stubServices) CommitBackupImport(*identity.Runtime, adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+func (s *stubServices) CommitBackupImport(_ *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
 	s.commitBackupImportCalls++
+	s.lastCommitBackupImport = req
+	s.lastCommitBackupImport.ExportPassphrase = append([]byte(nil), req.ExportPassphrase...)
 	return adminproto.CommitBackupImportResult{}
 }
 func (*stubServices) AbortBackupImport(*identity.Runtime, adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {

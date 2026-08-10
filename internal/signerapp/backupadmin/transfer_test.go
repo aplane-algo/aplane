@@ -9,10 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -22,18 +26,7 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
 	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
 
-	sourceDir := t.TempDir()
-	payload := make([]byte, 600*1024)
-	if _, err := rand.Read(payload); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(sourceDir, "payload.bin"), payload, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	archivePath := filepath.Join(t.TempDir(), "source.tar.gz")
-	if err := backup.CreateTarGzArchive(sourceDir, archivePath); err != nil {
-		t.Fatal(err)
-	}
+	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
 		t.Fatal(err)
@@ -63,6 +56,7 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 	}
 	commit := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
 		UploadID: begin.UploadID, FileName: "imported.tar.gz", ExpectedSize: size, ExpectedSHA256: checksum,
+		ExportPassphrase: []byte("export-passphrase"),
 	})
 	if !commit.Success || commit.Backup.Size != size {
 		t.Fatalf("CommitBackupImport() = %#v", commit)
@@ -100,8 +94,133 @@ func TestBackupTransferRejectsWrongOffsetAndChecksum(t *testing.T) {
 	if result := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: begin.UploadID, Data: []byte("x")}); !result.Success {
 		t.Fatalf("AppendBackupImport() = %#v", result)
 	}
-	if result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{UploadID: begin.UploadID, FileName: "bad.tar.gz", ExpectedSize: 1, ExpectedSHA256: string(bytes.Repeat([]byte("0"), 64))}); result.Success {
+	passphrase := []byte("export-passphrase")
+	if result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{UploadID: begin.UploadID, FileName: "bad.tar.gz", ExpectedSize: 1, ExpectedSHA256: string(bytes.Repeat([]byte("0"), 64)), ExportPassphrase: passphrase}); result.Success {
 		t.Fatalf("CommitBackupImport(wrong checksum) = %#v", result)
+	}
+	if !bytes.Equal(passphrase, make([]byte, len(passphrase))) {
+		t.Fatal("CommitBackupImport() did not zero the export passphrase")
+	}
+}
+
+func TestBackupTransferRejectsWrongPassphraseBeforePublication(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	archivePath := writeLargeValidImportArchive(t)
+	archiveBytes, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checksum, size, err := backup.FileSHA256(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "wrong-passphrase.tar.gz"})
+	if !begin.Success {
+		t.Fatalf("BeginBackupImport() = %#v", begin)
+	}
+	appendBackupImportBytes(t, service, ir, begin.UploadID, archiveBytes)
+	result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+		UploadID: begin.UploadID, FileName: "wrong-passphrase.tar.gz", ExpectedSize: size, ExpectedSHA256: checksum,
+		ExportPassphrase: []byte("wrong-passphrase"),
+	})
+	if result.Success {
+		t.Fatalf("CommitBackupImport(wrong passphrase) = %#v", result)
+	}
+	if _, err := os.Lstat(filepath.Join(paths.IdentityBackupsDir(ir.ID()), "wrong-passphrase.tar.gz")); !os.IsNotExist(err) {
+		t.Fatalf("unauthenticated archive was published: %v", err)
+	}
+}
+
+func TestBackupTransferRejectsExtractableInvalidContentsBeforePublication(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "payload.bin"), []byte("not a credential backup"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "invalid.tar.gz")
+	if err := backup.CreateTarGzArchive(root, archivePath); err != nil {
+		t.Fatal(err)
+	}
+	archiveBytes, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checksum, size, err := backup.FileSHA256(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "invalid.tar.gz"})
+	if !begin.Success {
+		t.Fatalf("BeginBackupImport() = %#v", begin)
+	}
+	if appended := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: begin.UploadID, Data: archiveBytes}); !appended.Success {
+		t.Fatalf("AppendBackupImport() = %#v", appended)
+	}
+	result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+		UploadID: begin.UploadID, FileName: "invalid.tar.gz", ExpectedSize: size, ExpectedSHA256: checksum,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if result.Success {
+		t.Fatalf("CommitBackupImport(invalid contents) = %#v", result)
+	}
+	if _, err := os.Lstat(filepath.Join(paths.IdentityBackupsDir(ir.ID()), "invalid.tar.gz")); !os.IsNotExist(err) {
+		t.Fatalf("invalid archive was published: %v", err)
+	}
+}
+
+func writeLargeValidImportArchive(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	apbDir := filepath.Join(root, "apb")
+	if err := os.MkdirAll(apbDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	selector, payload := keystest.Ed25519KeyJSON(t)
+	defer crypto.ZeroBytes(payload)
+	encrypted, err := crypto.EncryptStandalone(payload, []byte("export-passphrase"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apbDir, selector+".apb"), encrypted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	padding := make([]byte, 600*1024)
+	if _, err := rand.Read(padding); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "README.md"), padding, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := backup.WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "source.tar.gz")
+	if err := backup.CreateTarGzArchive(root, archivePath); err != nil {
+		t.Fatal(err)
+	}
+	return archivePath
+}
+
+func appendBackupImportBytes(t *testing.T, service Service, ir *identity.Runtime, uploadID string, data []byte) {
+	t.Helper()
+	var offset int64
+	for offset < int64(len(data)) {
+		end := offset + adminproto.BackupTransferChunkBytes
+		if end > int64(len(data)) {
+			end = int64(len(data))
+		}
+		result := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{
+			UploadID: uploadID, Offset: offset, Data: data[offset:end],
+		})
+		if !result.Success || result.NextOffset != end {
+			t.Fatalf("AppendBackupImport() = %#v", result)
+		}
+		offset = end
 	}
 }
 

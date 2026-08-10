@@ -133,10 +133,11 @@ type AppendBackupImportResult struct {
 }
 
 type CommitBackupImportRequest struct {
-	UploadID       string
-	FileName       string
-	ExpectedSize   int64
-	ExpectedSHA256 string
+	UploadID         string
+	FileName         string
+	ExpectedSize     int64
+	ExpectedSHA256   string
+	ExportPassphrase []byte
 }
 
 type CommitBackupImportResult struct {
