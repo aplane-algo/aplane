@@ -6,11 +6,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"io"
 	"os"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminipc"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerprobe"
 	"github.com/aplane-algo/aplane/internal/version"
 )
@@ -22,6 +23,7 @@ const (
 )
 
 var checkSigner = signerprobe.Check
+var resolveSignerIPCPath = adminipc.ResolveClientPath
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -42,11 +44,52 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitRunning
 	case "signer-running":
 		return runSignerRunning(args[1:], stdout, stderr)
+	case "signer-ipc-path":
+		return runSignerIPCPath(args[1:], stdout, stderr)
 	default:
 		writef(stderr, "Error: unknown command: %s\n\n", args[0])
 		printUsage(stderr)
 		return exitUnknown
 	}
+}
+
+func runSignerIPCPath(args []string, stdout, stderr io.Writer) int {
+	var dataDir string
+	fs := flag.NewFlagSet("signer-ipc-path", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&dataDir, "d", "", "signer data directory")
+	fs.StringVar(&dataDir, "data-dir", "", "signer data directory")
+	fs.Usage = func() {
+		writeln(stderr, "Usage: approbe signer-ipc-path -d <signer-data-dir>")
+	}
+	if err := fs.Parse(args); err != nil {
+		return exitUnknown
+	}
+	if fs.NArg() != 0 {
+		writef(stderr, "Error: unexpected argument: %s\n\n", fs.Arg(0))
+		fs.Usage()
+		return exitUnknown
+	}
+	dataDirExplicit := false
+	fs.Visit(func(selected *flag.Flag) {
+		if selected.Name == "d" || selected.Name == "data-dir" {
+			dataDirExplicit = true
+		}
+	})
+	if !dataDirExplicit || dataDir == "" {
+		writeln(stderr, "Error: signer-ipc-path requires -d <signer-data-dir>")
+		return exitUnknown
+	}
+	dataDir = serverconfig.GetSignerDataDir(dataDir)
+	path, err := resolveSignerIPCPath(adminipc.ClientPathRequest{
+		DataDir: dataDir, DataDirExplicit: true,
+	})
+	if err != nil {
+		writef(stderr, "Error: resolve signer IPC path: %v\n", err)
+		return exitUnknown
+	}
+	writeln(stdout, path)
+	return exitRunning
 }
 
 func runSignerRunning(args []string, stdout, stderr io.Writer) int {
@@ -106,6 +149,7 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 func printUsage(w io.Writer) {
 	writeln(w, `Usage:
   approbe signer-running [-d <signer-data-dir>] [--ipc-path <socket>] [--quiet] [--timeout 300ms]
+  approbe signer-ipc-path -d <signer-data-dir>
   approbe --version
 
 Exit codes for signer-running:

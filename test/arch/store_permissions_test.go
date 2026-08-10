@@ -153,8 +153,7 @@ func TestGeneratedEnvironmentPreservesConfiguredIPCPath(t *testing.T) {
 	root := repositoryRoot(t)
 	installer := readTextFile(t, filepath.Join(root, "install.sh"))
 	for _, required := range []string{
-		`SIGNER_IPC_PATH="$(read_top_level_string "$DATA_DIR/config.yaml" "ipc_path")"`,
-		`[ -n "$SIGNER_IPC_PATH" ] || SIGNER_IPC_PATH="/run/apsigner/aplane.sock"`,
+		`SIGNER_IPC_PATH="$("$BINDIR/approbe" signer-ipc-path -d "$DATA_DIR")"`,
 		`export APSIGNER_IPC_PATH=$SIGNER_IPC_PATH_SHELL`,
 	} {
 		if !strings.Contains(installer, required) {
@@ -163,6 +162,9 @@ func TestGeneratedEnvironmentPreservesConfiguredIPCPath(t *testing.T) {
 	}
 	if strings.Contains(installer, `export APSIGNER_IPC_PATH="/run/apsigner/aplane.sock"`) {
 		t.Error("install.sh still hardcodes the system IPC path in generated apenv.sh")
+	}
+	if strings.Contains(installer, "read_top_level_string") {
+		t.Error("install.sh still parses ipc_path independently of the Go resolver")
 	}
 }
 

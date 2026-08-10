@@ -913,7 +913,9 @@ Additional signer-state notes:
   `APSIGNER_IPC_PATH`; the environment socket override still takes precedence
   when the data root came from `APSIGNER_DATA`, which supports unreadable
   custom managed stores. Otherwise normal data-root and runtime discovery
-  apply.
+  apply. The systemd installer derives the paired `apenv.sh` value through
+  `approbe signer-ipc-path`, which uses this same resolver rather than parsing
+  `ipc_path` independently in shell.
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
 - signer-managed backup archives are written under
   `<data_dir>/backups/<identity>/`; the archive contains `README.md` and

@@ -33,8 +33,10 @@ Command-line arguments take precedence over environment variables, and
 environment variables take precedence over prompts/defaults.
 Installer-generated `apenv.sh` files export `APLANE_INSTALL_ROOT`; systemd
 operator `apenv.sh` also exports `APLANE_BINDIR` and pairs `APSIGNER_DATA`
-with `APSIGNER_IPC_PATH=/run/apsigner/aplane.sock` so clients can reach a
-custom private managed store without reading it.
+with the daemon IPC path resolved by `approbe`: omitted and legacy in-store
+defaults relocate to `/run/apsigner/aplane.sock`, while a valid custom external
+path is preserved. This lets clients reach a private managed store without
+reading it.
 The bootstrap wrapper also accepts `APLANE_VERSION`,
 `APLANE_ENABLE_SERVICE`, `APLANE_START_SERVICE`, and
 `APLANE_REQUIRE_MINISIGN`; matching `APSIGNER_*` names are compatibility
@@ -682,7 +684,7 @@ This produces statically linked binaries in `bin/`:
 | `appolicy` | Offline policy checker/editor TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for apshell default network, signer config, plugin activation, and KMD override persistence |
 | `appass-file` | Development-only plaintext passphrase helper |
-| `approbe` | Installer/helper liveness probe for signer IPC reachability |
+| `approbe` | Installer/helper liveness probe and canonical signer IPC-path resolver |
 | `apshell` | Transaction shell (client) |
 
 `applugin-checksum` is built by `make all` through the bundled-plugin build

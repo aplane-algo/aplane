@@ -157,7 +157,7 @@ All under `cmd/`:
 | `configdoc` | Config documentation generator |
 | `appass-file` | Dev passphrase helper |
 | `appass-systemd-creds` | Production passphrase helper |
-| `approbe` | Installer/helper liveness probe for signer IPC reachability |
+| `approbe` | Installer/helper liveness probe and canonical signer IPC-path resolver |
 | `applugin-checksum` | Plugin integrity helper |
 
 Documentation notes:
