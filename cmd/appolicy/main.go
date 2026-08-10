@@ -239,12 +239,11 @@ func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyed
 		writef(stderr, "appolicy: %v\n", err)
 		return 1
 	}
-	if err := conn.Authenticate(string(passphrase), onlinePolicyTimeout); err != nil {
-		crypto.ZeroBytes(passphrase)
-		writef(stderr, "appolicy: authentication failed: %v\n", err)
+	defer crypto.ZeroBytes(passphrase)
+	if err := authenticateAndUnlockOnlinePolicy(conn, passphrase); err != nil {
+		writef(stderr, "appolicy: %v\n", err)
 		return 1
 	}
-	crypto.ZeroBytes(passphrase)
 
 	target := requestedTarget
 	if opts.toSentry {
@@ -306,9 +305,9 @@ func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyed
 		return 1
 	}
 	if opts.save {
-		data, err := io.ReadAll(stdin)
-		if err != nil || strings.TrimSpace(string(data)) == "" {
-			writeLine(stderr, "appolicy: policy YAML on stdin is empty")
+		data, err := readOnlinePolicyYAML(stdin)
+		if err != nil {
+			writef(stderr, "appolicy: %v\n", err)
 			return 1
 		}
 		if err := store.SaveYAML(ctx, data); err != nil {
@@ -345,6 +344,48 @@ func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyed
 		return 1
 	}
 	return 0
+}
+
+type onlinePolicyAuthenticator interface {
+	Authenticate(string, time.Duration) error
+	WaitForStatus(time.Duration) (*protocol.StatusMessage, error)
+	Unlock(string, time.Duration) (*protocol.UnlockResultMessage, error)
+}
+
+func authenticateAndUnlockOnlinePolicy(conn onlinePolicyAuthenticator, passphrase []byte) error {
+	passphraseText := string(passphrase)
+	if err := conn.Authenticate(passphraseText, onlinePolicyTimeout); err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+	status, err := conn.WaitForStatus(onlinePolicyTimeout)
+	if err != nil {
+		return fmt.Errorf("read signer status: %w", err)
+	}
+	if status.State != "locked" {
+		return nil
+	}
+	result, err := conn.Unlock(passphraseText, onlinePolicyTimeout)
+	if err != nil {
+		return fmt.Errorf("unlock signer: %w", err)
+	}
+	if !result.Success {
+		if result.Error != "" {
+			return fmt.Errorf("unlock signer: %s", result.Error)
+		}
+		return fmt.Errorf("unlock signer failed")
+	}
+	return nil
+}
+
+func readOnlinePolicyYAML(stdin io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(stdin)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read policy YAML from stdin: %w", err)
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return nil, fmt.Errorf("policy YAML on stdin is empty")
+	}
+	return data, nil
 }
 
 func onlinePolicyTarget(conn *transport.IPCClient) (policyeditor.Target, error) {

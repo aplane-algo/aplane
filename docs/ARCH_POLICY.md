@@ -802,9 +802,10 @@ selection online. There is no scalar policy-settings IPC. The shared
 full-document editor renders and saves transfer policy through canonical YAML.
 
 `appolicy --online` is the normal production editor. It obtains the active
-node-role policy snapshot through authenticated admin IPC, validates the exact
-YAML through the daemon, and replaces it through the daemon-owned mutation
-path. Bare/offline `appolicy` is a stopped-service rescue tool: it reads root
+node-role policy snapshot through authenticated admin IPC, unlocks a locked
+identity with the authenticated passphrase before requesting that snapshot,
+validates the exact YAML through the daemon, and replaces it through the
+daemon-owned mutation path. Bare/offline `appolicy` is a stopped-service rescue tool: it reads root
 `node.yaml`, verifies the HMAC sidecar with the store passphrase, validates
 changes through the same runtime compiler as `apsigner`, and applies the draft
 by saving the document plus a fresh sidecar while holding the store mutation

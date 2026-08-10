@@ -50,7 +50,8 @@ resulting runtime policy immediately.
 
 Use `appolicy --online` for a standalone guided or scriptable production
 client. It connects through authenticated admin IPC, selects the daemon's node
-role, and never needs filesystem access to the private signer store.
+role, unlocks the identity when the daemon is in its normal locked-start state,
+and never needs filesystem access to the private signer store.
 
 ```bash
 appolicy --online

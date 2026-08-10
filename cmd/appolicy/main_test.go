@@ -6,18 +6,90 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig"
 )
+
+type fakeOnlinePolicyAuthenticator struct {
+	status      string
+	authErr     error
+	statusErr   error
+	unlock      protocol.UnlockResultMessage
+	unlockErr   error
+	authCalls   int
+	statusCalls int
+	unlockCalls int
+	passphrase  string
+}
+
+func (f *fakeOnlinePolicyAuthenticator) Authenticate(passphrase string, _ time.Duration) error {
+	f.authCalls++
+	f.passphrase = passphrase
+	return f.authErr
+}
+
+func (f *fakeOnlinePolicyAuthenticator) WaitForStatus(time.Duration) (*protocol.StatusMessage, error) {
+	f.statusCalls++
+	return &protocol.StatusMessage{State: f.status}, f.statusErr
+}
+
+func (f *fakeOnlinePolicyAuthenticator) Unlock(passphrase string, _ time.Duration) (*protocol.UnlockResultMessage, error) {
+	f.unlockCalls++
+	f.passphrase = passphrase
+	return &f.unlock, f.unlockErr
+}
+
+func TestAuthenticateAndUnlockOnlinePolicyUnlocksLockedSigner(t *testing.T) {
+	conn := &fakeOnlinePolicyAuthenticator{status: "locked", unlock: protocol.UnlockResultMessage{Success: true}}
+	if err := authenticateAndUnlockOnlinePolicy(conn, []byte("secret")); err != nil {
+		t.Fatal(err)
+	}
+	if conn.authCalls != 1 || conn.statusCalls != 1 || conn.unlockCalls != 1 || conn.passphrase != "secret" {
+		t.Fatalf("calls auth/status/unlock = %d/%d/%d, passphrase %q", conn.authCalls, conn.statusCalls, conn.unlockCalls, conn.passphrase)
+	}
+}
+
+func TestAuthenticateAndUnlockOnlinePolicyDoesNotUnlockRecoverySigner(t *testing.T) {
+	conn := &fakeOnlinePolicyAuthenticator{status: "recovery"}
+	if err := authenticateAndUnlockOnlinePolicy(conn, []byte("secret")); err != nil {
+		t.Fatal(err)
+	}
+	if conn.unlockCalls != 0 {
+		t.Fatalf("Unlock() calls = %d, want 0", conn.unlockCalls)
+	}
+}
+
+func TestAuthenticateAndUnlockOnlinePolicyReportsUnlockFailure(t *testing.T) {
+	conn := &fakeOnlinePolicyAuthenticator{status: "locked", unlock: protocol.UnlockResultMessage{Error: "policy integrity failed"}}
+	err := authenticateAndUnlockOnlinePolicy(conn, []byte("secret"))
+	if err == nil || !strings.Contains(err.Error(), "policy integrity failed") {
+		t.Fatalf("authenticateAndUnlockOnlinePolicy() error = %v", err)
+	}
+}
+
+type failingPolicyReader struct{ err error }
+
+func (r failingPolicyReader) Read([]byte) (int, error) { return 0, r.err }
+
+func TestReadOnlinePolicyYAMLReportsReadFailure(t *testing.T) {
+	want := errors.New("input device failed")
+	_, err := readOnlinePolicyYAML(failingPolicyReader{err: want})
+	if !errors.Is(err, want) {
+		t.Fatalf("readOnlinePolicyYAML() error = %v, want wrapped input failure", err)
+	}
+}
 
 func TestRunYAMLPrintsVerifiedPolicyOnly(t *testing.T) {
 	dataDir, passphrase := initializedAppolicyStore(t)
