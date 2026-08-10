@@ -6,6 +6,7 @@ package adminipc
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -184,6 +185,16 @@ func TestResolveClientPathWithoutDataUsesSystemPath(t *testing.T) {
 	}
 	if got != SystemSocketPath {
 		t.Fatalf("ResolveClientPath() = %q, want %q", got, SystemSocketPath)
+	}
+}
+
+func TestResolveClientPathRejectsMissingSelectedDataDirectory(t *testing.T) {
+	t.Setenv(SocketPathEnv, "")
+	missing := filepath.Join(t.TempDir(), "removed-local-store")
+
+	_, err := ResolveClientPath(missing, "")
+	if err == nil || !strings.Contains(err.Error(), "selected signer data directory does not exist") {
+		t.Fatalf("ResolveClientPath() error = %v, want missing selected-directory diagnostic", err)
 	}
 }
 

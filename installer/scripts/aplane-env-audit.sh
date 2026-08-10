@@ -280,6 +280,8 @@ if [ -S /run/apsigner/aplane.sock ]; then
   signer_ipc_path="/run/apsigner/aplane.sock"
 elif [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
   signer_ipc_path="$(read_top_level_value "$SIGNER_CONFIG" "ipc_path")"
+else
+  signer_ipc_path="/run/apsigner/aplane.sock"
 fi
 signer_host_key_path=""
 signer_authorized_keys_path=""

@@ -163,6 +163,23 @@ func TestPendingShellRoleFailsClosedAndEnablesOnlyForSigner(t *testing.T) {
 	}
 }
 
+func TestUnavailableShellDoesNotBecomeRolePendingThroughTypedNil(t *testing.T) {
+	m := newModelWithShell(
+		testConnector{}, t.TempDir(), shellExecutorForSession(nil),
+		[]string{"Shell disabled: missing client config"}, newDaemonModel(daemonInfo{}, nil), false, "",
+	)
+	m.signer = stubTeaModel{}
+	if m.shellRolePending || m.shellEnabled() {
+		t.Fatal("unavailable shell started pending or enabled")
+	}
+
+	updated, _ := m.Update(tui.AdminSettingsMsg{Settings: tui.AdminSettings{NodeRole: "signer"}})
+	m = updated.(model)
+	if m.shellRolePending || m.shellEnabled() {
+		t.Fatal("signer role enabled an unavailable shell")
+	}
+}
+
 func TestRenderPaneWithMetaKeepsHeaderWithinPanelWidth(t *testing.T) {
 	got := renderPaneWithMeta(
 		"Sentry Admin",

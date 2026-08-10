@@ -142,6 +142,18 @@ func ResolveClientPath(dataDir, explicit string) (string, error) {
 // environment-selected signer root before the singleton system runtime path.
 // A private managed root deliberately falls through to config-free discovery.
 func resolveDataDirectoryPath(dataDir string) (string, bool, error) {
+	if _, err := os.Lstat(dataDir); err != nil {
+		if os.IsPermission(err) {
+			return "", false, nil
+		}
+		if os.IsNotExist(err) {
+			return "", false, fmt.Errorf(
+				"selected signer data directory does not exist: %s (unset APSIGNER_DATA or select an existing directory)",
+				dataDir,
+			)
+		}
+		return "", false, fmt.Errorf("inspect selected signer data directory: %w", err)
+	}
 	managed, err := signerbootstrap.IsProductionManagedDataDir(dataDir)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {

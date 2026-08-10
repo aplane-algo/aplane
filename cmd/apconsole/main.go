@@ -256,7 +256,10 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 	// the terminal, write the stack trace to a log file (alt-screen mode would
 	// otherwise erase it on exit), and then re-panic so the trace also reaches
 	// stderr if anything is reading it.
-	model := newModelWithShell(connector, dataDir, shellSession, shellStartup, daemon, shellEnabled, initialNodeRole)
+	model := newModelWithShell(
+		connector, dataDir, shellExecutorForSession(shellSession), shellStartup,
+		daemon, shellEnabled, initialNodeRole,
+	)
 	if width, height, ok := terminalSize(realStdout); ok {
 		model.width = width
 		model.height = height
@@ -315,6 +318,13 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		logErrorf("error running console: %v", err)
 		os.Exit(1)
 	}
+}
+
+func shellExecutorForSession(session *apshellcli.Session) shellExecutor {
+	if session == nil {
+		return nil
+	}
+	return session
 }
 
 func terminalSize(f *os.File) (width, height int, ok bool) {
