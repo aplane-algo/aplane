@@ -64,7 +64,7 @@ func (s *Service) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 	if s.Planner == nil {
 		return nil, internal("planner not configured")
 	}
-	return s.Planner.PlanGroup(identityID, req)
+	return s.planGroupWhileSignable(identityID, req)
 }
 
 func (s *Service) SignGroupWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession) (*SignGroupResult, *ServiceError) {
@@ -75,7 +75,7 @@ func (s *Service) SignGroupWithContext(ctx context.Context, identityID string, r
 		return nil, internal("signing service not fully configured")
 	}
 
-	plan, err := s.Planner.PlanGroup(identityID, req)
+	plan, err := s.planGroupWhileSignable(identityID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (s *Service) PrepareBoundedAdminWithContext(ctx context.Context, identityID
 		return nil, internal("signing service not fully configured")
 	}
 	req := request.GroupSignRequest()
-	plan, err := s.Planner.PlanGroup(identityID, req)
+	plan, err := s.planGroupWhileSignable(identityID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +121,18 @@ func (s *Service) PrepareBoundedAdminWithContext(ctx context.Context, identityID
 	consoleOf(s.Console).Printf("[GROUP] Prepared bounded-admin spending partial; external contract-admin signature required\n")
 	s.logBoundedAdminPartialApproved(identityID, req, plan.AllTxns[targetIndex], targetIndex, policyRuleID)
 	return result, nil
+}
+
+// planGroupWhileSignable gives a lock transition priority over a planner
+// error. A request can pass its outer unlocked precondition immediately before
+// lock-on-disconnect clears the published key index; in that race, a missing-
+// key planning error is only a symptom of the authoritative locked state.
+func (s *Service) planGroupWhileSignable(identityID string, req signerapi.GroupSignRequest) (*PlanResult, *ServiceError) {
+	plan, err := s.Planner.PlanGroup(identityID, req)
+	if err != nil && s.IsUnlocked != nil && !s.IsUnlocked() {
+		return nil, lockedError()
+	}
+	return plan, err
 }
 
 func (s *Service) SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*ComponentSignResult, *ServiceError) {

@@ -545,6 +545,30 @@ func TestSignGroupLogsPolicyRejectionToAudit(t *testing.T) {
 	}
 }
 
+func TestPlanGroupWhileSignablePrefersConcurrentLock(t *testing.T) {
+	service := &Service{
+		Planner:    &Planner{},
+		IsUnlocked: func() bool { return false },
+	}
+
+	_, err := service.planGroupWhileSignable("default", signerapi.GroupSignRequest{})
+	if err == nil || err.Kind != ErrorLocked || err.Message != "signer is locked" {
+		t.Fatalf("planGroupWhileSignable() error = %#v, want locked error", err)
+	}
+}
+
+func TestPlanGroupWhileSignablePreservesPlannerErrorWhileUnlocked(t *testing.T) {
+	service := &Service{
+		Planner:    &Planner{},
+		IsUnlocked: func() bool { return true },
+	}
+
+	_, err := service.planGroupWhileSignable("default", signerapi.GroupSignRequest{})
+	if err == nil || err.Kind != ErrorBadRequest {
+		t.Fatalf("planGroupWhileSignable() error = %#v, want planner bad request", err)
+	}
+}
+
 func TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation(t *testing.T) {
 	approvalCalled := false
 	service := &Service{

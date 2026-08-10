@@ -85,7 +85,7 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	if session == nil {
 		return nil, internal("key session is nil")
 	}
-	plan, err := s.Planner.PlanGroup(identityID, req.GroupSignRequest())
+	plan, err := s.planGroupWhileSignable(identityID, req.GroupSignRequest())
 	if err != nil {
 		return nil, err
 	}
