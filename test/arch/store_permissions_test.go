@@ -122,6 +122,21 @@ func TestInstallerPreflightsBeforeStoreChildMutation(t *testing.T) {
 	)
 }
 
+func TestInstallerShellAvoidsLegacySharedStoreModes(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, rel := range []string{
+		"install.sh",
+		"installer/scripts/systemd-setup.sh",
+	} {
+		text := readTextFile(t, filepath.Join(root, filepath.FromSlash(rel)))
+		for _, forbidden := range []string{"0770", "2770", "0660", "2750"} {
+			if strings.Contains(text, forbidden) {
+				t.Errorf("%s contains legacy shared signer-store mode %s", rel, forbidden)
+			}
+		}
+	}
+}
+
 func readTextFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)

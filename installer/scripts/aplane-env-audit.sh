@@ -152,6 +152,61 @@ file_mode() {
   fi
 }
 
+file_owner() {
+  local path="$1"
+  if stat -c '%U:%G' "$path" >/dev/null 2>&1; then
+    stat -c '%U:%G' "$path"
+  else
+    stat -f '%Su:%Sg' "$path"
+  fi
+}
+
+check_real_dir_mode_owner() {
+  local label="$1"
+  local path="$2"
+  local expected_mode="$3"
+  local expected_owner="$4"
+  if [ -L "$path" ]; then
+    warn "$label" "$path is a symlink, expected a real directory"
+    return
+  fi
+  if [ ! -d "$path" ]; then
+    warn "$label" "missing or not a directory: $path"
+    return
+  fi
+  local mode owner
+  mode="$(file_mode "$path" 2>/dev/null || true)"
+  owner="$(file_owner "$path" 2>/dev/null || true)"
+  if [ "$mode" = "$expected_mode" ] && [ "$owner" = "$expected_owner" ]; then
+    pass "$label" "$path owner $owner mode $mode"
+  else
+    warn "$label" "$path owner ${owner:-unknown} mode ${mode:-unknown}, expected $expected_owner $expected_mode"
+  fi
+}
+
+check_socket_mode_owner() {
+  local label="$1"
+  local path="$2"
+  local expected_mode="$3"
+  local expected_owner="$4"
+  if [ -L "$path" ]; then
+    warn "$label" "$path is a symlink, expected a Unix socket"
+    return
+  fi
+  if [ ! -S "$path" ]; then
+    warn "$label" "missing or not a socket: $path"
+    return
+  fi
+  local mode owner
+  mode="$(file_mode "$path" 2>/dev/null || true)"
+  owner="$(file_owner "$path" 2>/dev/null || true)"
+  if [ "$mode" = "$expected_mode" ] && [ "$owner" = "$expected_owner" ]; then
+    pass "$label" "$path owner $owner mode $mode"
+  else
+    warn "$label" "$path owner ${owner:-unknown} mode ${mode:-unknown}, expected $expected_owner $expected_mode"
+  fi
+}
+
 check_file_exists() {
   local label="$1"
   local path="$2"
@@ -268,9 +323,23 @@ CLIENT_DATA="$(resolve_data_dir "$CLIENT_DATA_OVERRIDE" "${APCLIENT_DATA:-}" "$H
 SIGNER_CONFIG="$SIGNER_DATA/config.yaml"
 CLIENT_CONFIG="$CLIENT_DATA/config.yaml"
 
+SIGNER_SERVICE_USER="aplane"
+SIGNER_SERVICE_GROUP="aplane"
+if command -v systemctl >/dev/null 2>&1; then
+  configured_user="$(systemctl show apsigner.service -p User --value 2>/dev/null || true)"
+  configured_group="$(systemctl show apsigner.service -p Group --value 2>/dev/null || true)"
+  [ -n "$configured_user" ] && SIGNER_SERVICE_USER="$configured_user"
+  [ -n "$configured_group" ] && SIGNER_SERVICE_GROUP="$configured_group"
+fi
+SIGNER_SERVICE_OWNER="$SIGNER_SERVICE_USER:$SIGNER_SERVICE_GROUP"
+
 SIGNER_STORE_TRAVERSABLE=0
-if [ -x "$SIGNER_DATA" ]; then
+if [ ! -L "$SIGNER_DATA" ] && [ -x "$SIGNER_DATA" ]; then
   SIGNER_STORE_TRAVERSABLE=1
+fi
+SIGNER_EXPECTED_OWNER="$SIGNER_SERVICE_OWNER"
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ] && [ ! -f "$SIGNER_DATA/.prod" ]; then
+  SIGNER_EXPECTED_OWNER="$(id -un):$(id -gn)"
 fi
 
 signer_port=""
@@ -318,6 +387,9 @@ info "APSIGNER_DATA" "$SIGNER_DATA"
 info "APCLIENT_DATA" "$CLIENT_DATA"
 check_dir_exists "signer dir" "$SIGNER_DATA"
 check_dir_exists "client dir" "$CLIENT_DATA"
+if [ -e "$SIGNER_DATA" ] || [ -L "$SIGNER_DATA" ]; then
+  check_real_dir_mode_owner "signer store boundary" "$SIGNER_DATA" "700" "$SIGNER_EXPECTED_OWNER"
+fi
 
 section "Binaries"
 print_binary "apsigner" "$SIGNER_DATA/bin"
@@ -377,10 +449,11 @@ fi
 
 section "IPC"
 info "socket path" "$signer_ipc_path"
-if [ -S "$signer_ipc_path" ]; then
-  pass "IPC socket" "$signer_ipc_path"
-  mode="$(file_mode "$signer_ipc_path" 2>/dev/null || true)"
-  [ -n "$mode" ] && info "socket mode" "$mode"
+if [ "$signer_ipc_path" = "/run/apsigner/aplane.sock" ]; then
+  check_real_dir_mode_owner "IPC runtime dir" "/run/apsigner" "750" "$SIGNER_SERVICE_OWNER"
+  check_socket_mode_owner "IPC socket" "$signer_ipc_path" "660" "$SIGNER_SERVICE_OWNER"
+elif [ -S "$signer_ipc_path" ]; then
+  check_socket_mode_owner "IPC socket" "$signer_ipc_path" "660" "$SIGNER_EXPECTED_OWNER"
 else
   warn "IPC socket" "missing or not a socket: $signer_ipc_path"
 fi
