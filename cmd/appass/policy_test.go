@@ -4,9 +4,25 @@
 package main
 
 import (
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestManagedModePolicyPathsAreIdentityScoped(t *testing.T) {
+	dataDir := filepath.Join("store", "root")
+	identityDir := filepath.Join(dataDir, "identities", "secondary")
+	want := []string{
+		filepath.Join(dataDir, "config.yaml"),
+		filepath.Join(identityDir, "unlock.yaml"),
+		filepath.Join(identityDir, "passphrase"),
+		filepath.Join(identityDir, "passphrase.cred"),
+	}
+	if got := managedModePolicyPaths(dataDir, "secondary"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("managedModePolicyPaths() = %#v, want %#v", got, want)
+	}
+}
 
 func TestValidateManagedFileOwner_LocalMode(t *testing.T) {
 	t.Parallel()

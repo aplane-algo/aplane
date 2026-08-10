@@ -769,6 +769,22 @@ read_top_level_int() {
     ' "$path"
 }
 
+read_top_level_string() {
+    local path="$1"
+    local key="$2"
+    [ -f "$path" ] || return 0
+    awk -v key="$key" '
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*:" {
+            value = substr($0, index($0, ":") + 1)
+            sub(/[[:space:]]*#.*/, "", value)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+            gsub(/^"|"$/, "", value)
+            print value
+            exit
+        }
+    ' "$path"
+}
+
 read_ssh_port() {
     local path="$1"
     [ -f "$path" ] || return 0
@@ -2619,6 +2635,9 @@ fi
 if [ -n "$SUDO_USER" ]; then
     APCLIENT_DIR="${APCLIENT_DIR:-$OPERATOR_ROOT/apclient}"
     ENV_SH="$OPERATOR_ROOT/apenv.sh"
+    SIGNER_IPC_PATH="$(read_top_level_string "$DATA_DIR/config.yaml" "ipc_path")"
+    [ -n "$SIGNER_IPC_PATH" ] || SIGNER_IPC_PATH="/run/apsigner/aplane.sock"
+    SIGNER_IPC_PATH_SHELL="$(shell_quote "$SIGNER_IPC_PATH")"
     echo ""
     echo "Writing $ENV_SH..."
     cat > "$ENV_SH" <<ENVEOF
@@ -2653,7 +2672,7 @@ unset -f _aplane_prepend_path
 export APLANE_INSTALL_ROOT="$OPERATOR_ROOT"
 export APLANE_BINDIR="$BINDIR"
 export APSIGNER_DATA="$DATA_DIR"
-export APSIGNER_IPC_PATH="/run/apsigner/aplane.sock"
+export APSIGNER_IPC_PATH=$SIGNER_IPC_PATH_SHELL
 export APCLIENT_DATA="$APCLIENT_DIR"
 ENVEOF
     bash -n "$ENV_SH"

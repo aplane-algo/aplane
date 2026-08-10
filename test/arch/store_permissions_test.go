@@ -137,6 +137,23 @@ func TestInstallerShellAvoidsLegacySharedStoreModes(t *testing.T) {
 	}
 }
 
+func TestGeneratedEnvironmentPreservesConfiguredIPCPath(t *testing.T) {
+	root := repositoryRoot(t)
+	installer := readTextFile(t, filepath.Join(root, "install.sh"))
+	for _, required := range []string{
+		`SIGNER_IPC_PATH="$(read_top_level_string "$DATA_DIR/config.yaml" "ipc_path")"`,
+		`[ -n "$SIGNER_IPC_PATH" ] || SIGNER_IPC_PATH="/run/apsigner/aplane.sock"`,
+		`export APSIGNER_IPC_PATH=$SIGNER_IPC_PATH_SHELL`,
+	} {
+		if !strings.Contains(installer, required) {
+			t.Errorf("install.sh is missing generated IPC-path contract %q", required)
+		}
+	}
+	if strings.Contains(installer, `export APSIGNER_IPC_PATH="/run/apsigner/aplane.sock"`) {
+		t.Error("install.sh still hardcodes the system IPC path in generated apenv.sh")
+	}
+}
+
 func readTextFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)

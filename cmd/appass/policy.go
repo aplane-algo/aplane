@@ -13,17 +13,18 @@ import (
 	"syscall"
 )
 
-// managedModePolicyFiles are the appass-managed files whose ownership must
-// match the selected trust model for the data directory.
-var managedModePolicyFiles = []string{
-	"config.yaml",
-	"passphrase",
-	"passphrase.cred",
+func managedModePolicyPaths(dataDir, identityID string) []string {
+	identityDir := filepath.Join(dataDir, "identities", identityID)
+	return []string{
+		filepath.Join(dataDir, "config.yaml"),
+		filepath.Join(identityDir, "unlock.yaml"),
+		filepath.Join(identityDir, "passphrase"),
+		filepath.Join(identityDir, "passphrase.cred"),
+	}
 }
 
-func enforceModeOwnershipPolicy(dataDir string, isLocal bool, svc *serviceInfo) error {
-	for _, name := range managedModePolicyFiles {
-		path := filepath.Join(dataDir, name)
+func enforceModeOwnershipPolicy(dataDir, identityID string, isLocal bool, svc *serviceInfo) error {
+	for _, path := range managedModePolicyPaths(dataDir, identityID) {
 		owner, err := lookupFileOwner(path)
 		if err != nil {
 			if os.IsNotExist(err) {
