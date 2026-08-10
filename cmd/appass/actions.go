@@ -56,10 +56,7 @@ func executeSetPassfile(dataDir, identityID string, passphrase []byte, svc *serv
 	passphrasePath := filepath.Join(identityDir, "passphrase")
 	var serviceUID, serviceGID int
 	if !isLocal {
-		serviceUID, serviceGID, err = lookupUserGroupIDs(svc.User, svc.Group)
-		if err != nil {
-			return "", err
-		}
+		serviceUID, serviceGID = svc.StoreUID, svc.StoreGID
 		if err := fsutil.WriteServiceOwnedFileDurable(passphrasePath, passphrase, serviceUID, serviceGID); err != nil {
 			return "", fmt.Errorf("writing service-owned passphrase file: %w", err)
 		}
@@ -160,10 +157,7 @@ func executeSetSystemcreds(dataDir, identityID string, passphrase []byte, svc *s
 	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{passCredsBin, credFile},
 	}
-	serviceUID, serviceGID, err := lookupUserGroupIDs(svc.User, svc.Group)
-	if err != nil {
-		return "", err
-	}
+	serviceUID, serviceGID := svc.StoreUID, svc.StoreGID
 	if err := unlockconfig.SaveUnlockConfigForService(dataDir, identityID, unlockCfg, serviceUID, serviceGID); err != nil {
 		return "", fmt.Errorf("saving unlock config: %w", err)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -443,6 +444,46 @@ func TestRunRejectsCombinedCLIModes(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "choose only one") {
 		t.Fatalf("stderr = %q, want mode conflict", stderr.String())
+	}
+}
+
+func TestNormalizeOfflinePolicyStoreUsesManagedPrincipal(t *testing.T) {
+	oldEUID := appolicyEUID
+	oldManaged := isManagedPolicyStore
+	oldOwner := managedPolicyOwner
+	oldLoad := loadPolicyConfig
+	oldResolve := resolvePolicySocket
+	oldMigrate := migrateOfflinePolicyStore
+	t.Cleanup(func() {
+		appolicyEUID = oldEUID
+		isManagedPolicyStore = oldManaged
+		managedPolicyOwner = oldOwner
+		loadPolicyConfig = oldLoad
+		resolvePolicySocket = oldResolve
+		migrateOfflinePolicyStore = oldMigrate
+	})
+
+	appolicyEUID = func() int { return 0 }
+	isManagedPolicyStore = func(string) (bool, error) { return true, nil }
+	managedPolicyOwner = func(string) (int, int, error) { return 123, 456, nil }
+	loadPolicyConfig = func(string) (serverconfig.ServerConfig, error) {
+		return serverconfig.ServerConfig{IPCPath: "run/custom.sock"}, nil
+	}
+	resolvePolicySocket = func(root, configured string) (string, error) {
+		if root != "/srv/apsigner" || configured != "run/custom.sock" {
+			t.Fatalf("resolvePolicySocket(%q, %q)", root, configured)
+		}
+		return "/srv/apsigner/run/custom.sock", nil
+	}
+	migrateOfflinePolicyStore = func(root string, uid, gid int, socketPath string) error {
+		if root != "/srv/apsigner" || uid != 123 || gid != 456 || socketPath != "/srv/apsigner/run/custom.sock" {
+			t.Fatalf("migration args = %q %d:%d %q", root, uid, gid, socketPath)
+		}
+		return nil
+	}
+
+	if err := normalizeOfflinePolicyStore("/srv/apsigner"); err != nil {
+		t.Fatalf("normalizeOfflinePolicyStore() error = %v", err)
 	}
 }
 

@@ -1588,7 +1588,9 @@ Policy load behavior:
   `appolicy --save` reads replacement YAML bytes from stdin, validates them in
   the selected policy domain, and writes those exact bytes plus a fresh sidecar
   under the store mutation lock; `--target signer|sentry` explicitly
-  selects the domain; store-backed role-incompatible targets fail closed
+  selects the domain; store-backed role-incompatible targets fail closed. A
+  root-run offline edit of a production store restores the owner recorded in
+  root-controlled `install/service-principal.json` before returning
 - `apstore policy check|verify|sign` checks, verifies, or signs the active
   node-role policy
 - `appolicy --online <draft.yaml>` rejects an empty draft, validates it through

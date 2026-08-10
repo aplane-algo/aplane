@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytui"
+	"github.com/aplane-algo/aplane/internal/storeperm"
 	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/internal/version"
 	"golang.org/x/term"
@@ -152,6 +153,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			writef(stderr, "appolicy: %v\n", err)
 			return 1
 		}
+		if err := normalizeOfflinePolicyStore(dataDir); err != nil {
+			writef(stderr, "appolicy: policy saved, but managed store ownership normalization failed: %v\n", err)
+			return 1
+		}
 		writef(stdout, "%s saved: %s\n", target.StatusNoun(), target.Path(dataDir, identityID))
 		return 0
 	}
@@ -209,6 +214,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	)
 	if _, err := program.Run(); err != nil {
 		writef(stderr, "appolicy: TUI failed: %v\n", err)
+		return 1
+	}
+	if err := normalizeOfflinePolicyStore(dataDir); err != nil {
+		writef(stderr, "appolicy: managed store ownership normalization failed: %v\n", err)
 		return 1
 	}
 	return 0
@@ -472,7 +481,50 @@ func runPolicyFile(ctx context.Context, path string, opts options, store *policy
 		writef(stderr, "appolicy: TUI failed: %v\n", err)
 		return 1
 	}
+	if err := normalizeOfflinePolicyStore(dataDir); err != nil {
+		writef(stderr, "appolicy: managed store ownership normalization failed: %v\n", err)
+		return 1
+	}
 	return 0
+}
+
+var migrateOfflinePolicyStore = func(dataDir string, uid, gid int, socketPath string) error {
+	_, err := storeperm.MigratePrivate(storeperm.LegacyMigrationOptions(dataDir, uid, gid, socketPath))
+	return err
+}
+
+var (
+	appolicyEUID         = os.Geteuid
+	isManagedPolicyStore = signerbootstrap.IsProductionManagedDataDir
+	managedPolicyOwner   = storeperm.ManagedServiceOwner
+	loadPolicyConfig     = serverconfig.LoadServerConfig
+	resolvePolicySocket  = adminipc.ResolveLegacyStoreSocketPath
+)
+
+// normalizeOfflinePolicyStore restores service ownership after a root-run
+// offline rescue edit. Local same-UID stores already write with the correct
+// owner and must never be migrated by a root invocation.
+func normalizeOfflinePolicyStore(dataDir string) error {
+	if appolicyEUID() != 0 || dataDir == "" {
+		return nil
+	}
+	managed, err := isManagedPolicyStore(dataDir)
+	if err != nil || !managed {
+		return err
+	}
+	uid, gid, err := managedPolicyOwner(dataDir)
+	if err != nil {
+		return fmt.Errorf("resolve managed signer service principal: %w", err)
+	}
+	cfg, err := loadPolicyConfig(dataDir)
+	if err != nil {
+		return fmt.Errorf("load signer config: %w", err)
+	}
+	socketPath, err := resolvePolicySocket(dataDir, cfg.IPCPath)
+	if err != nil {
+		return fmt.Errorf("resolve legacy signer socket: %w", err)
+	}
+	return migrateOfflinePolicyStore(dataDir, uid, gid, socketPath)
 }
 
 func readPolicyYAMLFile(path string) ([]byte, error) {

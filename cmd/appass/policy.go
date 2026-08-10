@@ -32,7 +32,7 @@ func enforceModeOwnershipPolicy(dataDir, identityID string, isLocal bool, svc *s
 			}
 			return err
 		}
-		if err := validateManagedFileOwner(path, owner, isLocal, svc); err != nil {
+		if err := validateManagedFileOwner(dataDir, path, owner, isLocal, svc); err != nil {
 			return err
 		}
 	}
@@ -40,12 +40,11 @@ func enforceModeOwnershipPolicy(dataDir, identityID string, isLocal bool, svc *s
 	return nil
 }
 
-func validateManagedFileOwner(path, owner string, isLocal bool, svc *serviceInfo) error {
+func validateManagedFileOwner(dataDir, path, owner string, isLocal bool, svc *serviceInfo) error {
 	if isLocal {
 		expected := currentUsername()
 		if owner != expected {
 			if owner == "aplane" {
-				dataDir := filepath.Dir(path)
 				return fmt.Errorf("%s is owned by %s; this looks like a systemd-managed signer data directory.\n\nSystemd installs should run appass as root:\n  1. sudo systemctl stop apsigner\n  2. sudo appass -d %s\n  3. sudo systemctl start apsigner", path, owner, dataDir)
 			}
 			return fmt.Errorf("%s is owned by %s; local and systemd-managed data directories must not be mixed (expected local owner %s)", path, owner, expected)

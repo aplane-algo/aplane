@@ -9,7 +9,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
 
@@ -79,36 +78,37 @@ type ActionDoneMsg struct {
 }
 
 // NewModel creates a new appass TUI model.
-func NewModel(dataDir, identityID string) Model {
+func NewModel(dataDir, identityID string, svc *serviceInfo, isLocal bool) Model {
 	return Model{
 		viewState:        ViewHome,
 		dataDir:          dataDir,
 		identityID:       identityID,
 		passphraseMasked: true,
 		isRoot:           os.Getuid() == 0,
+		isLocal:          isLocal,
+		svcInfo:          svc,
 	}
 }
 
 // Init returns the initial command to load status.
 func (m Model) Init() tea.Cmd {
-	return loadStatusCmd(m.dataDir, m.identityID)
+	return loadStatusCmd(m.dataDir, m.identityID, m.svcInfo, m.isLocal)
 }
 
 // loadStatusCmd loads the current identity-scoped auto-unlock configuration.
-func loadStatusCmd(dataDir, identityID string) tea.Cmd {
+func loadStatusCmd(dataDir, identityID string, svc *serviceInfo, isLocal bool) tea.Cmd {
 	return func() tea.Msg {
-		prodManaged, err := bootstrap.IsProductionManagedDataDir(dataDir)
-		if err != nil {
-			prodManaged = false
+		// Refresh mutable unit details (notably LoadCredentialEncrypted) after
+		// each action, while retaining the already-validated startup snapshot if
+		// the unit cannot be re-read. Never accept a refreshed unit until it is
+		// reconciled with the root-controlled store principal.
+		if !isLocal {
+			if refreshed, resolvedLocal := resolveServiceInfo(); !resolvedLocal {
+				if err := bindManagedServicePrincipal(dataDir, refreshed); err == nil {
+					svc = refreshed
+				}
+			}
 		}
-		var svc *serviceInfo
-		isLocal := !prodManaged
-		if prodManaged {
-			svc, isLocal = resolveServiceInfo()
-		} else {
-			svc = localServiceInfo()
-		}
-
 		method := "none"
 
 		unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir, identityID)
