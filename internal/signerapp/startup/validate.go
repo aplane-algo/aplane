@@ -31,6 +31,7 @@ type ValidationInfo struct {
 }
 
 var auditPrivateStore = storeperm.Audit
+var managedServiceOwner = storeperm.ManagedServiceOwner
 
 // BlockManualProdStart rejects manual startup for a systemd-managed data
 // directory unless the process is running under systemd.
@@ -75,7 +76,21 @@ func ValidateProductionStorePermissions(dataDir string) error {
 	if !prodManaged {
 		return nil
 	}
-	findings, err := auditPrivateStore(storeperm.ProductionAuditOptions(dataDir, os.Geteuid(), os.Getegid()))
+	expectedUID, expectedGID, err := managedServiceOwner(dataDir)
+	if err != nil {
+		return fmt.Errorf(
+			"resolve managed signer service principal: %w; rerun the systemd installer or systemd-setup",
+			err,
+		)
+	}
+	runtimeUID, runtimeGID := os.Geteuid(), os.Getegid()
+	if runtimeUID != expectedUID || runtimeGID != expectedGID {
+		return fmt.Errorf(
+			"managed signer service principal mismatch: daemon runs as %d:%d but installer metadata requires %d:%d; stop apsigner and rerun the systemd installer or systemd-setup",
+			runtimeUID, runtimeGID, expectedUID, expectedGID,
+		)
+	}
+	findings, err := auditPrivateStore(storeperm.ProductionAuditOptions(dataDir, expectedUID, expectedGID))
 	if err != nil {
 		return fmt.Errorf("inspect private signer store: %w", err)
 	}

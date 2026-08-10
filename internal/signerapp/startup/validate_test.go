@@ -71,11 +71,18 @@ func TestBlockManualProdStart(t *testing.T) {
 	})
 }
 
-func TestValidateProductionStorePermissionsUsesDaemonOwnership(t *testing.T) {
+func TestValidateProductionStorePermissionsUsesManagedServicePrincipal(t *testing.T) {
 	dataDir := t.TempDir()
 	writeProdMarker(t, dataDir)
-	original := auditPrivateStore
-	t.Cleanup(func() { auditPrivateStore = original })
+	originalAudit := auditPrivateStore
+	originalOwner := managedServiceOwner
+	t.Cleanup(func() {
+		auditPrivateStore = originalAudit
+		managedServiceOwner = originalOwner
+	})
+	managedServiceOwner = func(string) (int, int, error) {
+		return os.Geteuid(), os.Getegid(), nil
+	}
 	var got storeperm.AuditOptions
 	auditPrivateStore = func(opts storeperm.AuditOptions) ([]storeperm.Finding, error) {
 		got = opts
@@ -90,11 +97,42 @@ func TestValidateProductionStorePermissionsUsesDaemonOwnership(t *testing.T) {
 	}
 }
 
+func TestValidateProductionStorePermissionsRejectsServicePrincipalMismatch(t *testing.T) {
+	dataDir := t.TempDir()
+	writeProdMarker(t, dataDir)
+	originalAudit := auditPrivateStore
+	originalOwner := managedServiceOwner
+	t.Cleanup(func() {
+		auditPrivateStore = originalAudit
+		managedServiceOwner = originalOwner
+	})
+	managedServiceOwner = func(string) (int, int, error) {
+		return os.Geteuid() + 1, os.Getegid(), nil
+	}
+	auditPrivateStore = func(storeperm.AuditOptions) ([]storeperm.Finding, error) {
+		t.Fatal("store audit ran despite service principal mismatch")
+		return nil, nil
+	}
+
+	err := ValidateProductionStorePermissions(dataDir)
+	if err == nil || !strings.Contains(err.Error(), "service principal mismatch") ||
+		!strings.Contains(err.Error(), "systemd-setup") {
+		t.Fatalf("ValidateProductionStorePermissions() error = %v, want setup-specific principal mismatch", err)
+	}
+}
+
 func TestValidateProductionStorePermissionsReturnsMigrationHint(t *testing.T) {
 	dataDir := t.TempDir()
 	writeProdMarker(t, dataDir)
-	original := auditPrivateStore
-	t.Cleanup(func() { auditPrivateStore = original })
+	originalAudit := auditPrivateStore
+	originalOwner := managedServiceOwner
+	t.Cleanup(func() {
+		auditPrivateStore = originalAudit
+		managedServiceOwner = originalOwner
+	})
+	managedServiceOwner = func(string) (int, int, error) {
+		return os.Geteuid(), os.Getegid(), nil
+	}
 	auditPrivateStore = func(storeperm.AuditOptions) ([]storeperm.Finding, error) {
 		return []storeperm.Finding{{Path: dataDir, Code: "mode", Detail: "mode is 0770"}}, nil
 	}

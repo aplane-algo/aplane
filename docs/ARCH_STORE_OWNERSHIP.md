@@ -154,9 +154,11 @@ root-controlled `install/service-principal.json` records the numeric service
 uid/gid and is refreshed by systemd setup before migration. Audit, migration,
 and post-mutation normalization use this record instead of trusting the store
 root's possibly damaged owner; a missing or unsafe record fails closed. A
-systemd-managed daemon checks the
-private profile before loading configuration or opening the store lock and
-refuses startup with a migration command when it finds unsafe state.
+systemd-managed daemon reads the same record, verifies that its effective
+uid/gid match the recorded principal, and checks the private profile against
+that principal before loading configuration or opening the store lock. A
+principal mismatch directs the operator to rerun systemd setup; unsafe store
+state directs the operator to the permission migration command.
 
 ## Implemented rollout
 
