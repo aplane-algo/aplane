@@ -70,6 +70,68 @@ func TestSameUIDAuditAcceptsLocalInstalledBinaries(t *testing.T) {
 	}
 }
 
+func TestSameUIDAuditAcceptsTrustedStickyTempAncestor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix temporary-directory contract")
+	}
+	tempRoot := "/tmp"
+	info, err := os.Lstat(tempRoot)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSticky == 0 {
+		t.Skip("/tmp is not a real sticky temporary directory")
+	}
+	filesystemRootInfo, err := os.Lstat(string(filepath.Separator))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tempUID, _, tempOwnerOK := fsutil.FileOwnership(info)
+	rootUID, _, rootOwnerOK := fsutil.FileOwnership(filesystemRootInfo)
+	if !tempOwnerOK || !rootOwnerOK || tempUID != rootUID {
+		t.Skip("/tmp is not owned by the filesystem-root owner")
+	}
+
+	root, err := os.MkdirTemp(tempRoot, "aplane-storeperm-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	populatePrivateStoreFixture(t, root)
+	uid, gid := ownerIDs(t, root)
+
+	findings, err := Audit(SameUIDAuditOptions(root, uid, gid, ""))
+	if err != nil {
+		t.Fatalf("Audit() error = %v", err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("Audit() findings = %+v, want trusted sticky /tmp accepted", findings)
+	}
+}
+
+func TestAuditAncestorsRejectsUnrelatedOwner(t *testing.T) {
+	root := workspaceTempDir(t)
+	parent := filepath.Dir(root)
+	parentInfo, err := os.Lstat(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filesystemRootInfo, err := os.Lstat(string(filepath.Separator))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentUID, _, parentOwnerOK := fsutil.FileOwnership(parentInfo)
+	rootUID, _, rootOwnerOK := fsutil.FileOwnership(filesystemRootInfo)
+	if !parentOwnerOK || !rootOwnerOK || parentUID == rootUID {
+		t.Skip("test requires a non-root-owned workspace parent")
+	}
+
+	findings, err := auditAncestors(root, "", parentUID+1)
+	if err != nil {
+		t.Fatalf("auditAncestors() error = %v", err)
+	}
+	if !hasFindingCode(findings, "ancestor-owner") {
+		t.Fatalf("auditAncestors() findings = %+v, want unrelated-owner rejection", findings)
+	}
+}
+
 func TestMigratePrivateRejectsStoreLocalBinariesWithoutMutation(t *testing.T) {
 	root := privateStoreFixture(t)
 	binDir := filepath.Join(root, "bin")
@@ -376,6 +438,12 @@ func TestMigratePrivateRejectsUnrecognizedSocket(t *testing.T) {
 func privateStoreFixture(t *testing.T) string {
 	t.Helper()
 	root := workspaceTempDir(t)
+	populatePrivateStoreFixture(t, root)
+	return root
+}
+
+func populatePrivateStoreFixture(t *testing.T, root string) {
+	t.Helper()
 	if err := os.Chmod(root, 0o700); err != nil {
 		t.Fatalf("Chmod(root): %v", err)
 	}
@@ -389,7 +457,6 @@ func privateStoreFixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(identityDir, "policy.yaml"), []byte("policy"), 0o600); err != nil {
 		t.Fatalf("WriteFile(policy): %v", err)
 	}
-	return root
 }
 
 func workspaceTempDir(t *testing.T) string {

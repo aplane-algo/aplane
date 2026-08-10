@@ -132,7 +132,7 @@ func audit(opts options) ([]Finding, error) {
 	}
 
 	var findings []Finding
-	ancestorFindings, err := auditAncestors(root, opts.ancestorBoundary)
+	ancestorFindings, err := auditAncestors(root, opts.ancestorBoundary, opts.expectedUID)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +249,7 @@ func expectedArtifact(root, path string, info os.FileInfo, opts options, policy 
 	return expect
 }
 
-func auditAncestors(root, boundary string) ([]Finding, error) {
+func auditAncestors(root, boundary string, expectedUID int) ([]Finding, error) {
 	var boundaryAbs string
 	if boundary != "" {
 		var err error
@@ -274,6 +274,16 @@ func auditAncestors(root, boundary string) ([]Finding, error) {
 		}
 	}
 	var findings []Finding
+	filesystemRoot := string(filepath.Separator)
+	rootInfo, err := os.Lstat(filesystemRoot)
+	if err != nil {
+		return nil, fmt.Errorf("inspect filesystem root: %w", err)
+	}
+	rootUID, _, ok := fsutil.FileOwnership(rootInfo)
+	if !ok {
+		return nil, fmt.Errorf("cannot determine filesystem root ownership")
+	}
+	tempRoots := trustedStickyTempRoots()
 	for i := len(paths) - 1; i >= 0; i-- {
 		path := paths[i]
 		info, err := os.Lstat(path)
@@ -285,12 +295,49 @@ func auditAncestors(root, boundary string) ([]Finding, error) {
 			continue
 		}
 		// The root itself is checked against its selected profile during the
-		// tree walk. Ancestors must not be mutable by group or other users.
-		if path != root && path != boundaryAbs && info.Mode().Perm()&0o022 != 0 {
+		// tree walk, and an explicit boundary is trusted by the embedding
+		// caller. Other ancestors must be controlled by the store owner or the
+		// filesystem-root owner. Root-owned sticky temporary roots are the one
+		// shared-directory exception: the sticky bit protects an owned child
+		// store from rename or removal by unrelated users.
+		if path == root || path == boundaryAbs {
+			continue
+		}
+		ownerUID, _, ok := fsutil.FileOwnership(info)
+		if !ok {
+			return nil, fmt.Errorf("cannot determine store ancestor ownership: %s", path)
+		}
+		if isTrustedStickyTempRoot(path, info, ownerUID, rootUID, tempRoots) {
+			continue
+		}
+		if ownerUID != expectedUID && ownerUID != rootUID {
+			findings = append(findings, Finding{Path: path, Code: "ancestor-owner", Detail: fmt.Sprintf("store ancestor is owned by unrelated uid %d", ownerUID)})
+		}
+		if info.Mode().Perm()&0o022 != 0 {
 			findings = append(findings, Finding{Path: path, Code: "ancestor-write", Detail: "store ancestor is group/other writable"})
 		}
 	}
 	return findings, nil
+}
+
+func trustedStickyTempRoots() map[string]struct{} {
+	roots := make(map[string]struct{}, 2)
+	for _, path := range []string{"/tmp", "/var/tmp"} {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			continue
+		}
+		resolved, err = filepath.Abs(filepath.Clean(resolved))
+		if err == nil {
+			roots[resolved] = struct{}{}
+		}
+	}
+	return roots
+}
+
+func isTrustedStickyTempRoot(path string, info os.FileInfo, ownerUID, rootUID int, tempRoots map[string]struct{}) bool {
+	_, trustedPath := tempRoots[path]
+	return trustedPath && ownerUID == rootUID && info.Mode()&os.ModeSticky != 0
 }
 
 func auditMode(path string, actual, ceiling os.FileMode, allowSetgid bool, findings *[]Finding) {

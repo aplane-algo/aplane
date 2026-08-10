@@ -42,7 +42,7 @@ func MigratePrivate(migration MigrationOptions) (MigrationResult, error) {
 		switch finding.Code {
 		case "owner", "mode", "special-mode":
 			// Repairable below.
-		case "ancestor-write", "ancestor-type":
+		case "ancestor-write", "ancestor-owner", "ancestor-type":
 			return MigrationResult{}, fmt.Errorf(
 				"unsafe signer-store ancestor must be repaired outside permissions migration, then rechecked with permissions audit: %w",
 				finding,

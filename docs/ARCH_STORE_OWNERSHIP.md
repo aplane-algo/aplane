@@ -27,6 +27,11 @@ Root-run bootstrap and rescue remain supported while the daemon is stopped.
 They are explicit maintenance writers protected by the store lock, not an
 ordinary group-mediated administration path. Same-UID local development is a
 separate deployment model and may keep its socket below its private data root.
+Store ancestors must be owned by the store user or the filesystem-root owner
+and must not be group/other writable. Canonical root-owned sticky `/tmp` and
+`/var/tmp` are the only shared-ancestor exceptions, allowing a same-UID store
+beneath an owned private child without permitting a general writable-ancestor
+exception.
 An explicit custom socket for a systemd-managed signer must remain outside the
 store and its parent runtime directory must be service-user-owned and
 non-writable by group and other users. Valid legacy configurations that placed
