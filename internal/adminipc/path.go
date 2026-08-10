@@ -111,18 +111,39 @@ func pathWithin(root, candidate string) (bool, error) {
 	return rel != ".." && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, ".."+string(filepath.Separator)), nil
 }
 
+// ClientPathRequest preserves whether the data directory came from an
+// explicit CLI selection. A nonempty DataDir alone is insufficient because it
+// may have come from APSIGNER_DATA and legitimately pair with
+// APSIGNER_IPC_PATH in a custom private deployment.
+type ClientPathRequest struct {
+	DataDir         string
+	IPCPath         string
+	DataDirExplicit bool
+}
+
 // ResolveClientPath locates the local admin socket without requiring private
-// signer-store access. Resolution is explicit flag, environment override,
-// established system runtime directory, then readable legacy config/default.
-func ResolveClientPath(dataDir, explicit string) (string, error) {
-	if explicit != "" {
-		return filepath.Clean(explicit), nil
+// signer-store access. Resolution is explicit IPC flag, explicit data-dir
+// selection, environment IPC override, environment/profile data dir, then the
+// established system runtime path.
+func ResolveClientPath(request ClientPathRequest) (string, error) {
+	if request.IPCPath != "" {
+		return filepath.Clean(request.IPCPath), nil
+	}
+	if request.DataDirExplicit && request.DataDir != "" {
+		path, resolved, err := resolveDataDirectoryPath(request.DataDir)
+		if err != nil {
+			return "", err
+		}
+		if resolved {
+			return path, nil
+		}
+		return resolveSystemRuntimePath()
 	}
 	if fromEnv := os.Getenv(SocketPathEnv); fromEnv != "" {
 		return filepath.Clean(fromEnv), nil
 	}
-	if dataDir != "" {
-		path, resolved, err := resolveDataDirectoryPath(dataDir)
+	if request.DataDir != "" {
+		path, resolved, err := resolveDataDirectoryPath(request.DataDir)
 		if err != nil {
 			return "", err
 		}
@@ -130,6 +151,10 @@ func ResolveClientPath(dataDir, explicit string) (string, error) {
 			return path, nil
 		}
 	}
+	return resolveSystemRuntimePath()
+}
+
+func resolveSystemRuntimePath() (string, error) {
 	if info, err := os.Lstat(SystemRuntimeDir); err == nil {
 		if err := validateRuntimeDirectory(SystemRuntimeDir, info); err != nil {
 			return "", err

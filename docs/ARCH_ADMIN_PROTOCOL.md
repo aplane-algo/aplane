@@ -42,6 +42,10 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
+- local client discovery precedence is explicit `--ipc-path`, explicit `-d`
+  discovery, `APSIGNER_IPC_PATH`, environment/profile-selected data-directory
+  discovery, then the system runtime path; an inherited socket override cannot
+  retarget a command whose store was explicitly selected with `-d`,
 - systemd local IPC is discovered at `/run/apsigner/aplane.sock` without
   reading the conventional private `/var/lib/apsigner` configuration;
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private

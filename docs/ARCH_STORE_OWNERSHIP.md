@@ -105,6 +105,10 @@ Config-free fallback from an unreadable data root to the singleton
 explicit `APSIGNER_IPC_PATH` or `--ipc-path`; permission failure on any other
 selected data root is an error and never retargets the client to the singleton
 system signer.
+Explicit client selection follows the same rule: `--ipc-path` wins first, then
+an explicit `-d`, then `APSIGNER_IPC_PATH` paired with an environment/profile
+data root. This prevents a stale inherited socket override from redirecting an
+operation aimed at a CLI-selected store.
 
 ## Filesystem primitives
 

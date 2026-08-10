@@ -73,10 +73,18 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return exitUnknown
 	}
+	dataDirExplicit := false
+	fs.Visit(func(selected *flag.Flag) {
+		if selected.Name == "d" || selected.Name == "data-dir" {
+			dataDirExplicit = true
+		}
+	})
 
 	dataDir = serverconfig.GetSignerDataDir(dataDir)
 
-	result, err := checkSigner(dataDir, signerprobe.Options{Timeout: timeout, IPCPath: ipcPath})
+	result, err := checkSigner(dataDir, signerprobe.Options{
+		Timeout: timeout, IPCPath: ipcPath, DataDirExplicit: dataDirExplicit,
+	})
 	if err != nil {
 		if result.IPCPath != "" {
 			writef(stderr, "unknown %s: %v\n", result.IPCPath, err)

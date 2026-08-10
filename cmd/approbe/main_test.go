@@ -58,6 +58,9 @@ func TestRunSignerRunningExitCodes(t *testing.T) {
 				if dataDir != "/tmp/data" {
 					t.Fatalf("dataDir = %q, want /tmp/data", dataDir)
 				}
+				if !opts.DataDirExplicit {
+					t.Fatal("DataDirExplicit = false, want true for -d")
+				}
 				return tt.result, tt.err
 			}
 

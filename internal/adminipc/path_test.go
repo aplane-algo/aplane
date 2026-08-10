@@ -133,11 +133,11 @@ func TestResolveDaemonPathForDataDirUsesManagedMarker(t *testing.T) {
 
 func TestResolveClientPathExplicitAndEnvironment(t *testing.T) {
 	t.Setenv(SocketPathEnv, "/env/socket")
-	got, err := ResolveClientPath("", "/flag/socket")
+	got, err := ResolveClientPath(ClientPathRequest{IPCPath: "/flag/socket"})
 	if err != nil || got != "/flag/socket" {
 		t.Fatalf("ResolveClientPath(explicit) = %q, %v", got, err)
 	}
-	got, err = ResolveClientPath("", "")
+	got, err = ResolveClientPath(ClientPathRequest{})
 	if err != nil || got != "/env/socket" {
 		t.Fatalf("ResolveClientPath(env) = %q, %v", got, err)
 	}
@@ -150,7 +150,7 @@ func TestResolveClientPathReadsLegacyConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("ipc_path: "+custom+"\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(config): %v", err)
 	}
-	got, err := ResolveClientPath(dataDir, "")
+	got, err := ResolveClientPath(ClientPathRequest{DataDir: dataDir})
 	if err != nil {
 		t.Fatalf("ResolveClientPath() error = %v", err)
 	}
@@ -164,12 +164,34 @@ func TestResolveClientPathPrefersSelectedLocalDataDirectory(t *testing.T) {
 	dataDir := t.TempDir()
 	want := filepath.Join(dataDir, "aplane.sock")
 
-	got, err := ResolveClientPath(dataDir, "")
+	got, err := ResolveClientPath(ClientPathRequest{DataDir: dataDir})
 	if err != nil {
 		t.Fatalf("ResolveClientPath() error = %v", err)
 	}
 	if got != want {
 		t.Fatalf("ResolveClientPath() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveClientPathExplicitDataDirectoryOutranksEnvironmentSocket(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv(SocketPathEnv, "/run/other-signer.sock")
+	want := filepath.Join(dataDir, "aplane.sock")
+
+	got, err := ResolveClientPath(ClientPathRequest{DataDir: dataDir, DataDirExplicit: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("explicit data-dir resolution = %q, want %q", got, want)
+	}
+
+	got, err = ResolveClientPath(ClientPathRequest{DataDir: dataDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "/run/other-signer.sock" {
+		t.Fatalf("environment-selected resolution = %q, want environment IPC override", got)
 	}
 }
 
@@ -183,7 +205,7 @@ func TestResolveClientPathMapsReadableManagedDefaultToSystemRuntime(t *testing.T
 		t.Fatal(err)
 	}
 
-	got, err := ResolveClientPath(dataDir, "")
+	got, err := ResolveClientPath(ClientPathRequest{DataDir: dataDir})
 	if err != nil {
 		t.Fatalf("ResolveClientPath() error = %v", err)
 	}
@@ -194,7 +216,7 @@ func TestResolveClientPathMapsReadableManagedDefaultToSystemRuntime(t *testing.T
 
 func TestResolveClientPathWithoutDataUsesSystemPath(t *testing.T) {
 	t.Setenv(SocketPathEnv, "")
-	got, err := ResolveClientPath("", "")
+	got, err := ResolveClientPath(ClientPathRequest{})
 	if err != nil {
 		t.Fatalf("ResolveClientPath() error = %v", err)
 	}
@@ -207,7 +229,7 @@ func TestResolveClientPathRejectsMissingSelectedDataDirectory(t *testing.T) {
 	t.Setenv(SocketPathEnv, "")
 	missing := filepath.Join(t.TempDir(), "removed-local-store")
 
-	_, err := ResolveClientPath(missing, "")
+	_, err := ResolveClientPath(ClientPathRequest{DataDir: missing})
 	if err == nil || !strings.Contains(err.Error(), "selected signer data directory does not exist") {
 		t.Fatalf("ResolveClientPath() error = %v, want missing selected-directory diagnostic", err)
 	}
@@ -225,7 +247,7 @@ func TestResolveClientPathRejectsPermissionDeniedCustomDataDirectory(t *testing.
 	}
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
 
-	_, err := ResolveClientPath(dataDir, "")
+	_, err := ResolveClientPath(ClientPathRequest{DataDir: dataDir})
 	if err == nil || !strings.Contains(err.Error(), "refusing to fall back") {
 		t.Fatalf("ResolveClientPath() error = %v, want cross-store fallback rejection", err)
 	}
@@ -243,7 +265,7 @@ func TestResolveClientPathAllowsExplicitSocketForPrivateCustomDataDirectory(t *t
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
 
 	const socket = "/secure/custom/aplane.sock"
-	got, err := ResolveClientPath(dataDir, socket)
+	got, err := ResolveClientPath(ClientPathRequest{DataDir: dataDir, IPCPath: socket})
 	if err != nil || got != socket {
 		t.Fatalf("ResolveClientPath(explicit) = %q, %v; want %q", got, err, socket)
 	}

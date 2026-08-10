@@ -59,7 +59,9 @@ func main() {
 	if isDaemonBackedCommand(args) {
 		dataDirectory = serverconfig.GetSignerDataDir(*dataDir)
 		var err error
-		adminSocketPath, err = adminipc.ResolveClientPath(dataDirectory, *ipcPathFlag)
+		adminSocketPath, err = adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+			DataDir: dataDirectory, IPCPath: *ipcPathFlag, DataDirExplicit: *dataDir != "",
+		})
 		if err != nil {
 			logErrorf("%v", err)
 			os.Exit(apstoreExitUsage)

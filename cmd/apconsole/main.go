@@ -132,7 +132,9 @@ func main() {
 			logErrorf("cannot access data directory: %s", resolvedDataDir)
 			os.Exit(1)
 		}
-		ipcPath, err := adminipc.ResolveClientPath(resolvedDataDir, *ipcPathFlag)
+		ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+			DataDir: resolvedDataDir, IPCPath: *ipcPathFlag, DataDirExplicit: dataDirSet,
+		})
 		if err != nil {
 			logErrorf("%v", err)
 			os.Exit(1)
@@ -159,7 +161,9 @@ func main() {
 		logErrorf("use -d <path>, set APSIGNER_DATA, or configure signer_data in apconsole.yaml")
 		os.Exit(1)
 	}
-	ipcPath, err := adminipc.ResolveClientPath(startup.DataDir, *ipcPathFlag)
+	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: startup.DataDir, IPCPath: *ipcPathFlag, DataDirExplicit: dataDirSet,
+	})
 	if err != nil {
 		logErrorf("%v", err)
 		os.Exit(1)

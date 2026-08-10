@@ -33,13 +33,16 @@ func (r Result) Running() bool {
 }
 
 type Options struct {
-	Timeout time.Duration
-	Dial    func(socketPath string, timeout time.Duration) (net.Conn, error)
-	IPCPath string
+	Timeout         time.Duration
+	Dial            func(socketPath string, timeout time.Duration) (net.Conn, error)
+	IPCPath         string
+	DataDirExplicit bool
 }
 
 func Check(dataDir string, opts Options) (Result, error) {
-	ipcPath, err := adminipc.ResolveClientPath(dataDir, opts.IPCPath)
+	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: dataDir, IPCPath: opts.IPCPath, DataDirExplicit: opts.DataDirExplicit,
+	})
 	if err != nil {
 		return Result{}, err
 	}
@@ -67,5 +70,5 @@ func Check(dataDir string, opts Options) (Result, error) {
 }
 
 func ResolveIPCPath(dataDir string) (string, error) {
-	return adminipc.ResolveClientPath(dataDir, "")
+	return adminipc.ResolveClientPath(adminipc.ClientPathRequest{DataDir: dataDir})
 }

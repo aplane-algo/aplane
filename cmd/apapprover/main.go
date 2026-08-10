@@ -52,7 +52,9 @@ func main() {
 	flag.Parse()
 
 	resolvedDataDir := serverconfig.GetSignerDataDir(*dataDir)
-	ipcPath, err := adminipc.ResolveClientPath(resolvedDataDir, *ipcPathFlag)
+	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: resolvedDataDir, IPCPath: *ipcPathFlag, DataDirExplicit: *dataDir != "",
+	})
 	if err != nil {
 		logErrorf("%v", err)
 		os.Exit(1)

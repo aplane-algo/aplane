@@ -906,8 +906,12 @@ Additional signer-state notes:
   not writable by group or other users. Trusted root/current-owned directory
   aliases are resolved and both the alias and canonical directory chains are
   validated before the daemon binds the canonical socket path.
-  `APSIGNER_IPC_PATH` or an explicit `ipc_path` overrides client discovery
-  where supported.
+  An explicit client `--ipc-path` has highest precedence. An explicit client
+  `-d` is resolved next and cannot be retargeted by inherited
+  `APSIGNER_IPC_PATH`; the environment socket override still takes precedence
+  when the data root came from `APSIGNER_DATA`, which supports unreadable
+  custom managed stores. Otherwise normal data-root and runtime discovery
+  apply.
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
 - signer-managed backup archives are written under
   `<data_dir>/backups/<identity>/`; the archive contains `README.md` and

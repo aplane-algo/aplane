@@ -441,6 +441,9 @@ Local IPC remains the default admin transport:
 - same-UID local mode defaults to `$APSIGNER_DATA/aplane.sock`
 - `APSIGNER_IPC_PATH` or an explicit `-ipc-path` client option can override
   discovery for custom deployments
+- an explicit `-d` takes precedence over inherited `APSIGNER_IPC_PATH`; use
+  `-ipc-path` as well when intentionally overriding the socket for that
+  explicitly selected store
 - cannot be snooped with tcpdump (no network stack)
 - local apadmin and apapprover connect via this socket
 

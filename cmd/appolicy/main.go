@@ -222,7 +222,9 @@ func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyed
 		return 2
 	}
 	dataDir := serverconfig.GetSignerDataDir(opts.dataDir)
-	ipcPath, err := adminipc.ResolveClientPath(dataDir, opts.ipcPath)
+	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: dataDir, IPCPath: opts.ipcPath, DataDirExplicit: opts.dataDir != "",
+	})
 	if err != nil {
 		writef(stderr, "appolicy: %v\n", err)
 		return 1
