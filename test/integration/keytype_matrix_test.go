@@ -13,22 +13,19 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
-	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
-	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-const (
-	matrixGroupSize      = 16
-	matrixAccountFunding = 500_000
-)
+const matrixAccountFunding = 500_000
 
 func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	lockOnDisconnect := false
@@ -57,6 +54,16 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	}
 	token := readSignerToken(t, signerd)
 	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	fundingAddress, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC"))
+	if err != nil {
+		t.Fatalf("failed to import native Falcon funding key for matrix fee sponsorship: %v", err)
+	}
+	if fundingAddress != funder.GetAddress() {
+		t.Fatalf("imported funding address %s does not match derived address %s", fundingAddress, funder.GetAddress())
+	}
+	if !waitForKey(t, signerd.GetURL(), token, fundingAddress, 10*time.Second) {
+		t.Fatalf("signer did not reload imported funding key %s", fundingAddress)
+	}
 
 	status, err := testnet.Client.Status().Do(context.Background())
 	if err != nil {
@@ -131,7 +138,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get suggested params: %v", err)
 			}
-			req := pregroupedMatrixSignRequest(t, sp, funder, []matrixSignTxn{
+			req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{
 				account.negativeSignTxn(t, sp, funder.GetAddress()),
 			})
 			status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
@@ -145,6 +152,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			if signResp.Error != "" {
 				t.Fatalf("unexpected sign error: %s", signResp.Error)
 			}
+			assertMatrixPlannerDidNotPad(t, signResp, len(req.Requests))
 			submitSignedTxnGroupExpectFailure(t, testnet, signResp.Signed)
 		})
 	}
@@ -164,7 +172,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			for _, account := range batch {
 				signTxns = append(signTxns, account.positiveSignTxn(t, sp, funder.GetAddress()))
 			}
-			req := pregroupedMatrixSignRequest(t, sp, funder, signTxns)
+			req := plannedMatrixSignRequest(t, signerClient, sp, fundingAddress, signTxns)
 			status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
 			if status != http.StatusOK {
 				t.Fatalf("expected positive batch sign to succeed, got %d: %s", status, string(body))
@@ -176,6 +184,8 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			if signResp.Error != "" {
 				t.Fatalf("unexpected positive batch sign error: %s", signResp.Error)
 			}
+			assertMatrixPlannerDidNotPad(t, signResp, len(req.Requests))
+			assertMatrixAccountsDrainExactly(t, signResp.Signed, len(signTxns))
 			txids := submitSignedTxnGroup(t, testnet, signResp.Signed)
 			if len(txids) == 0 {
 				t.Fatal("positive batch produced no transaction IDs")
@@ -240,66 +250,13 @@ func (a includedKeyTypeAccount) negativeSignTxn(t *testing.T, sp types.Suggested
 	}
 }
 
-func pregroupedMatrixSignRequest(t *testing.T, sp types.SuggestedParams, funder *harness.FundTestAccount, signTxns []matrixSignTxn) signerapi.GroupSignRequest {
+func matrixSignRequest(t *testing.T, sp types.SuggestedParams, fundingAddress string, signTxns []matrixSignTxn) signerapi.GroupSignRequest {
 	t.Helper()
 	if len(signTxns) == 0 {
 		t.Fatal("matrix sign request requires at least one transaction to sign")
 	}
-	dummyCount := matrixGroupSize - len(signTxns) - 1
-	if dummyCount < 0 {
-		t.Fatalf("matrix group too large: %d sign txns exceed group size %d", len(signTxns), matrixGroupSize)
-	}
 
-	minFee := sp.MinFee
-	if minFee == 0 {
-		minFee = 1_000
-	}
-	sponsorTxn := mustPaymentTxnForMatrix(t, sp, funder.GetAddress(), funder.GetAddress(), "keytype-matrix-sponsor", "", uint64(signTxns[0].txn.FirstValid))
-	sponsorTxn.Fee = types.MicroAlgos(uint64(dummyCount+1) * minFee)
-	preparedSponsor, err := funder.PrepareTransaction(sponsorTxn, minFee)
-	if err != nil {
-		t.Fatalf("failed to prepare native Falcon matrix fee sponsor: %v", err)
-	}
-	sponsorTxn = preparedSponsor
-
-	dummySP := sp
-	dummySP.FirstRoundValid = signTxns[0].txn.FirstValid
-	dummySP.LastRoundValid = signTxns[0].txn.LastValid
-	dummySP.FlatFee = true
-	dummies, err := signing.CreateDummyTransactions(dummyCount, dummySP)
-	if err != nil {
-		t.Fatalf("failed to create matrix dummy transactions: %v", err)
-	}
-
-	allTxns := make([]types.Transaction, 0, len(signTxns)+1+len(dummies))
-	for _, signTxn := range signTxns {
-		allTxns = append(allTxns, signTxn.txn)
-	}
-	allTxns = append(allTxns, sponsorTxn)
-	allTxns = append(allTxns, dummies...)
-
-	groupID, err := algocrypto.ComputeGroupID(allTxns)
-	if err != nil {
-		t.Fatalf("failed to compute matrix group ID: %v", err)
-	}
-	for i := range signTxns {
-		signTxns[i].txn.Group = groupID
-	}
-	sponsorTxn.Group = groupID
-	for i := range dummies {
-		dummies[i].Group = groupID
-	}
-
-	_, sponsorBytes, err := funder.SignTransaction(sponsorTxn)
-	if err != nil {
-		t.Fatalf("failed to sign matrix fee sponsor: %v", err)
-	}
-	signedDummies, err := signing.SignDummyTransactions(dummies)
-	if err != nil {
-		t.Fatalf("failed to sign matrix dummy transactions: %v", err)
-	}
-
-	req := signerapi.GroupSignRequest{Requests: make([]signerapi.SignRequest, 0, len(signTxns)+1+len(signedDummies))}
+	req := signerapi.GroupSignRequest{Requests: make([]signerapi.SignRequest, 0, len(signTxns)+1)}
 	for _, signTxn := range signTxns {
 		req.Requests = append(req.Requests, signerapi.SignRequest{
 			AuthAddress: signTxn.authAddress,
@@ -307,11 +264,79 @@ func pregroupedMatrixSignRequest(t *testing.T, sp types.SuggestedParams, funder 
 			LsigArgs:    signTxn.lsigArgs,
 		})
 	}
-	req.Requests = append(req.Requests, signerapi.SignRequest{SignedTxnHex: hex.EncodeToString(sponsorBytes)})
-	for _, signedDummy := range signedDummies {
-		req.Requests = append(req.Requests, signerapi.SignRequest{SignedTxnHex: hex.EncodeToString(signedDummy)})
-	}
+	sponsorTxn := mustPaymentTxnForMatrix(t, sp, fundingAddress, fundingAddress, "keytype-matrix-sponsor", "", uint64(signTxns[0].txn.FirstValid))
+	req.Requests = append(req.Requests, signerapi.SignRequest{
+		AuthAddress: fundingAddress,
+		TxnBytesHex: txnHexForMatrix(sponsorTxn),
+	})
 	return req
+}
+
+func plannedMatrixSignRequest(
+	t *testing.T,
+	client *signerclient.Client,
+	sp types.SuggestedParams,
+	fundingAddress string,
+	signTxns []matrixSignTxn,
+) signerapi.GroupSignRequest {
+	t.Helper()
+	// Ask the same production planner used by /sign for the exact per-slot
+	// fees before setting drain amounts. The final request remains ungrouped so
+	// /sign must independently reproduce the minimal v42 group and fee plan.
+	draft := matrixSignRequest(t, sp, fundingAddress, signTxns)
+	plan, err := client.RequestGroupPlan(draft.Requests)
+	if err != nil {
+		t.Fatalf("failed to plan v42 matrix group: %v", err)
+	}
+	if plan.Mutations == nil {
+		t.Fatal("v42 matrix plan omitted mutation details")
+	}
+	if plan.Mutations.DummiesAdded != 0 {
+		t.Fatalf("v42 matrix plan added %d unexpected dummy transaction(s)", plan.Mutations.DummiesAdded)
+	}
+	if got := len(plan.Transactions); got != len(draft.Requests) {
+		t.Fatalf("v42 matrix plan returned %d transactions for %d requested", got, len(draft.Requests))
+	}
+
+	for i := range signTxns {
+		plannedTxn, err := txnutil.DecodePrefixedHex(plan.Transactions[i])
+		if err != nil {
+			t.Fatalf("failed to decode planned matrix transaction %d: %v", i+1, err)
+		}
+		plannedFee := uint64(plannedTxn.Fee)
+		if plannedFee >= matrixAccountFunding {
+			t.Fatalf("planned matrix fee %d exhausts account funding %d", plannedFee, matrixAccountFunding)
+		}
+		signTxns[i].txn.Amount = types.MicroAlgos(matrixAccountFunding - plannedFee)
+	}
+	return matrixSignRequest(t, sp, fundingAddress, signTxns)
+}
+
+func assertMatrixPlannerDidNotPad(t *testing.T, response signerapi.GroupSignResponse, requested int) {
+	t.Helper()
+	if response.Mutations == nil {
+		t.Fatal("matrix sign response omitted planner mutation details")
+	}
+	if response.Mutations.DummiesAdded != 0 {
+		t.Fatalf("v42 matrix planner added %d unexpected dummy transaction(s)", response.Mutations.DummiesAdded)
+	}
+	if got := len(response.Signed); got != requested {
+		t.Fatalf("v42 matrix planner returned %d transactions for %d requested", got, requested)
+	}
+	if response.Mutations.FinalCount != requested {
+		t.Fatalf("v42 matrix mutation report final_count=%d, want %d", response.Mutations.FinalCount, requested)
+	}
+}
+
+func assertMatrixAccountsDrainExactly(t *testing.T, signed []string, accountCount int) {
+	t.Helper()
+	for i := 0; i < accountCount; i++ {
+		stxn := decodeSignedTxnHex(t, signed[i])
+		spent := uint64(stxn.Txn.Amount) + uint64(stxn.Txn.Fee)
+		if spent != matrixAccountFunding {
+			t.Fatalf("matrix transaction %d spends %d microAlgos, want funded balance %d", i+1, spent, matrixAccountFunding)
+		}
+	}
 }
 
 func mustPaymentTxnForMatrix(
