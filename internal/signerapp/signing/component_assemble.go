@@ -270,9 +270,9 @@ func rejectLocalGuardedPassthrough(ctx context.Context, stxn types.SignedTxn, ta
 	return nil
 }
 
-// signedTxnHasSignature reports whether a SignedTxn carries any signature: a
-// bare ed25519 signature, a LogicSig, or a multisig. An unsigned
-// SignedTxn{Txn:...} has all three blank.
+// signedTxnHasSignature reports whether a SignedTxn carries any authorization
+// proof, including native PQ authorization at the top level or inside a
+// delegated LogicSig.
 func signedTxnHasSignature(stxn types.SignedTxn) bool {
 	if stxn.Sig != (types.Signature{}) {
 		return true
@@ -281,6 +281,9 @@ func signedTxnHasSignature(stxn types.SignedTxn) bool {
 		return true
 	}
 	if !stxn.Msig.Blank() {
+		return true
+	}
+	if !stxn.PQsig.Blank() || !stxn.Lsig.PQsig.Blank() {
 		return true
 	}
 	return false

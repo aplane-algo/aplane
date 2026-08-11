@@ -19,6 +19,7 @@ package signing
 import (
 	"fmt"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
@@ -84,6 +85,15 @@ type Provider interface {
 
 	// ZeroKey securely zeros the private key material
 	ZeroKey(key *KeyMaterial)
+}
+
+// TransactionAuthorizer is an optional provider capability for native
+// authorization schemes whose wire proof is not the fixed-size Ed25519 Sig
+// field. Implementations return a complete structured authorization envelope;
+// the signing executor independently validates it before encoding it for the
+// client.
+type TransactionAuthorizer interface {
+	AuthorizeTransaction(key *KeyMaterial, txn types.Transaction, authorizer types.Address) (types.SignedTxn, error)
 }
 
 // ValidateKeyMaterial checks if KeyMaterial has the expected type
