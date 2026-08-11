@@ -448,7 +448,7 @@ func TestRunRejectsCombinedCLIModes(t *testing.T) {
 	}
 }
 
-func TestNormalizeOfflinePolicyStoreUsesManagedPrincipal(t *testing.T) {
+func TestOfflinePolicyMutationUsesManagedPrincipal(t *testing.T) {
 	oldEUID := appolicyEUID
 	oldManaged := isManagedPolicyStore
 	oldOwner := managedPolicyOwner
@@ -493,15 +493,20 @@ func TestNormalizeOfflinePolicyStoreUsesManagedPrincipal(t *testing.T) {
 		return nil
 	}
 
-	if err := normalizeOfflinePolicyStore("/srv/apsigner"); err != nil {
-		t.Fatalf("normalizeOfflinePolicyStore() error = %v", err)
+	guard, err := acquireOfflinePolicyMutation("/srv/apsigner")
+	if err != nil {
+		t.Fatalf("acquireOfflinePolicyMutation() error = %v", err)
+	}
+	defer guard.Close()
+	if err := guard.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
 	}
 	if lockCalls != 1 {
 		t.Fatalf("exclusive lock calls = %d, want 1", lockCalls)
 	}
 }
 
-func TestNormalizeOfflinePolicyStoreRefusesConcurrentDaemon(t *testing.T) {
+func TestOfflinePolicyMutationRefusesConcurrentDaemonBeforeNormalization(t *testing.T) {
 	root := t.TempDir()
 	shared, err := storelock.AcquireShared(root)
 	if err != nil {
@@ -524,12 +529,103 @@ func TestNormalizeOfflinePolicyStoreRefusesConcurrentDaemon(t *testing.T) {
 		return nil
 	}
 
-	err = normalizeOfflinePolicyStore(root)
+	_, err = acquireOfflinePolicyMutation(root)
 	if !errors.Is(err, storelock.ErrBusy) {
-		t.Fatalf("normalizeOfflinePolicyStore() error = %v, want storelock.ErrBusy", err)
+		t.Fatalf("acquireOfflinePolicyMutation() error = %v, want storelock.ErrBusy", err)
 	}
 	if !strings.Contains(err.Error(), "stop apsigner") {
-		t.Fatalf("normalizeOfflinePolicyStore() error = %q, want operator guidance", err)
+		t.Fatalf("acquireOfflinePolicyMutation() error = %q, want operator guidance", err)
+	}
+}
+
+func TestRunSaveRefusesBusyManagedStoreBeforeWrite(t *testing.T) {
+	root, passphrase := initializedAppolicyStore(t)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+	policyPath := policy.PolicyPath(root, policyeditor.DefaultIdentityID)
+	before, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldEUID := appolicyEUID
+	oldManaged := isManagedPolicyStore
+	oldAcquire := acquirePolicyStoreLock
+	t.Cleanup(func() {
+		appolicyEUID = oldEUID
+		isManagedPolicyStore = oldManaged
+		acquirePolicyStoreLock = oldAcquire
+	})
+	appolicyEUID = func() int { return 0 }
+	isManagedPolicyStore = func(string) (bool, error) { return true, nil }
+	acquirePolicyStoreLock = func(string) (*storelock.Guard, error) { return nil, storelock.ErrBusy }
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"-d", root, "--save"},
+		strings.NewReader("reject_foreign_rekey: false\n"), &stdout, &stderr)
+	if code == 0 || !strings.Contains(stderr.String(), "before editing") {
+		t.Fatalf("run(--save busy) code=%d stderr=%q", code, stderr.String())
+	}
+	after, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatal("policy changed before the exclusive store lock was acquired")
+	}
+}
+
+func TestRunCheckDoesNotAcquireManagedMutationLock(t *testing.T) {
+	root, passphrase := initializedAppolicyStore(t)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+
+	oldEUID := appolicyEUID
+	oldManaged := isManagedPolicyStore
+	oldAcquire := acquirePolicyStoreLock
+	t.Cleanup(func() {
+		appolicyEUID = oldEUID
+		isManagedPolicyStore = oldManaged
+		acquirePolicyStoreLock = oldAcquire
+	})
+	appolicyEUID = func() int { return 0 }
+	isManagedPolicyStore = func(string) (bool, error) { return true, nil }
+	acquirePolicyStoreLock = func(string) (*storelock.Guard, error) {
+		t.Fatal("read-only policy check acquired the mutation lock")
+		return nil, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"-d", root, "--check"},
+		strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("run(--check) code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestDecodeOnlinePolicyTargetRejectsErrorFrame(t *testing.T) {
+	raw, err := protocol.MarshalAdminMessage(protocol.ErrorMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeError, ID: "settings"},
+		Code:        protocol.ErrCodeAuthorizationDenied,
+		Error:       "authorization denied",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = decodeOnlinePolicyTarget(raw)
+	if err == nil || !strings.Contains(err.Error(), "authorization denied") {
+		t.Fatalf("decodeOnlinePolicyTarget(error) = %v, want server error", err)
+	}
+}
+
+func TestDecodeOnlinePolicyTargetUsesReportedRole(t *testing.T) {
+	raw, err := protocol.MarshalAdminMessage(protocol.AdminSettingsMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAdminSettings, ID: "settings"},
+		NodeRole:    "sentry",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decodeOnlinePolicyTarget(raw)
+	if err != nil || got != policyeditor.TargetSentry {
+		t.Fatalf("decodeOnlinePolicyTarget(sentry) = %q, %v", got, err)
 	}
 }
 

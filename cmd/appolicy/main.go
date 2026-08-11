@@ -150,16 +150,31 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runPolicyFile(ctx, policyFile, opts, store, dataDir, identityID, target, stdout, stderr)
 	}
 	if opts.save {
+		guard, err := acquireOfflinePolicyMutation(dataDir)
+		if err != nil {
+			writef(stderr, "appolicy: refusing offline policy save: %v\n", err)
+			return 1
+		}
+		defer guard.Close()
 		if err := store.SaveYAML(ctx, saveInput); err != nil {
 			writef(stderr, "appolicy: %v\n", err)
 			return 1
 		}
-		if err := normalizeOfflinePolicyStore(dataDir); err != nil {
+		if err := guard.Normalize(); err != nil {
 			writef(stderr, "appolicy: policy saved, but managed store ownership normalization failed: %v\n", err)
 			return 1
 		}
 		writef(stdout, "%s saved: %s\n", target.StatusNoun(), target.Path(dataDir, identityID))
 		return 0
+	}
+	var interactiveGuard *offlinePolicyMutation
+	if !opts.check && !opts.yaml && !opts.sha256 && !opts.toSentry {
+		interactiveGuard, err = acquireOfflinePolicyMutation(dataDir)
+		if err != nil {
+			writef(stderr, "appolicy: refusing offline policy editor: %v\n", err)
+			return 1
+		}
+		defer interactiveGuard.Close()
 	}
 
 	stored, err := store.Load(ctx)
@@ -217,7 +232,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		writef(stderr, "appolicy: TUI failed: %v\n", err)
 		return 1
 	}
-	if err := normalizeOfflinePolicyStore(dataDir); err != nil {
+	if err := interactiveGuard.Normalize(); err != nil {
 		writef(stderr, "appolicy: managed store ownership normalization failed: %v\n", err)
 		return 1
 	}
@@ -414,6 +429,28 @@ func onlinePolicyTarget(conn *transport.IPCClient) (policyeditor.Target, error) 
 	if err != nil {
 		return "", err
 	}
+	return decodeOnlinePolicyTarget(raw)
+}
+
+func decodeOnlinePolicyTarget(raw []byte) (policyeditor.Target, error) {
+	base, err := protocol.ParseAdminBaseMessage(raw)
+	if err != nil {
+		return "", err
+	}
+	if base.Type == protocol.MsgTypeError {
+		var msg protocol.ErrorMessage
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			return "", fmt.Errorf("decode admin error response: %w", err)
+		}
+		message := strings.TrimSpace(msg.Error)
+		if message == "" {
+			message = "admin settings request failed"
+		}
+		return "", protocol.WithCode(msg.Code, fmt.Errorf("load admin settings: %s", message))
+	}
+	if base.Type != protocol.MsgTypeAdminSettings {
+		return "", fmt.Errorf("load admin settings: unexpected response type %q", base.Type)
+	}
 	var settings protocol.AdminSettingsMessage
 	if err := json.Unmarshal(raw, &settings); err != nil {
 		return "", err
@@ -425,6 +462,16 @@ func onlinePolicyTarget(conn *transport.IPCClient) (policyeditor.Target, error) 
 }
 
 func runPolicyFile(ctx context.Context, path string, opts options, store *policyeditor.OfflineStore, dataDir, identityID string, target policyeditor.Target, stdout, stderr io.Writer) int {
+	var interactiveGuard *offlinePolicyMutation
+	if !opts.check && !opts.yaml && !opts.sha256 && !opts.toSentry {
+		var err error
+		interactiveGuard, err = acquireOfflinePolicyMutation(dataDir)
+		if err != nil {
+			writef(stderr, "appolicy: refusing offline policy editor: %v\n", err)
+			return 1
+		}
+		defer interactiveGuard.Close()
+	}
 	data, err := readPolicyYAMLFile(path)
 	if err != nil {
 		writef(stderr, "appolicy: %v\n", err)
@@ -482,7 +529,7 @@ func runPolicyFile(ctx context.Context, path string, opts options, store *policy
 		writef(stderr, "appolicy: TUI failed: %v\n", err)
 		return 1
 	}
-	if err := normalizeOfflinePolicyStore(dataDir); err != nil {
+	if err := interactiveGuard.Normalize(); err != nil {
 		writef(stderr, "appolicy: managed store ownership normalization failed: %v\n", err)
 		return 1
 	}
@@ -503,35 +550,64 @@ var (
 	acquirePolicyStoreLock = storelock.AcquireExclusive
 )
 
-// normalizeOfflinePolicyStore restores service ownership after a root-run
-// offline rescue edit. Local same-UID stores already write with the correct
-// owner and must never be migrated by a root invocation.
-func normalizeOfflinePolicyStore(dataDir string) error {
+type offlinePolicyMutation struct {
+	dataDir    string
+	uid        int
+	gid        int
+	socketPath string
+	lock       *storelock.Guard
+	managed    bool
+}
+
+// acquireOfflinePolicyMutation obtains the managed-store exclusion before any
+// offline policy writer can publish bytes. Local same-UID stores already write
+// with the correct owner and do not need migration.
+func acquireOfflinePolicyMutation(dataDir string) (*offlinePolicyMutation, error) {
+	guard := &offlinePolicyMutation{dataDir: dataDir}
 	if appolicyEUID() != 0 || dataDir == "" {
-		return nil
+		return guard, nil
 	}
 	managed, err := isManagedPolicyStore(dataDir)
 	if err != nil || !managed {
-		return err
+		return guard, err
 	}
-	guard, err := acquirePolicyStoreLock(dataDir)
+	lock, err := acquirePolicyStoreLock(dataDir)
 	if err != nil {
-		return fmt.Errorf("acquire exclusive signer-store lock before ownership normalization (stop apsigner and other store-mutating tools): %w", err)
+		return nil, fmt.Errorf("acquire exclusive signer-store lock before editing (stop apsigner and other store-mutating tools): %w", err)
 	}
-	defer func() { _ = guard.Close() }()
+	guard.lock = lock
+	guard.managed = true
 	uid, gid, err := managedPolicyOwner(dataDir)
 	if err != nil {
-		return fmt.Errorf("resolve managed signer service principal: %w", err)
+		guard.Close()
+		return nil, fmt.Errorf("resolve managed signer service principal: %w", err)
 	}
 	cfg, err := loadPolicyConfig(dataDir)
 	if err != nil {
-		return fmt.Errorf("load signer config: %w", err)
+		guard.Close()
+		return nil, fmt.Errorf("load signer config: %w", err)
 	}
 	socketPath, err := resolvePolicySocket(dataDir, cfg.IPCPath)
 	if err != nil {
-		return fmt.Errorf("resolve legacy signer socket: %w", err)
+		guard.Close()
+		return nil, fmt.Errorf("resolve legacy signer socket: %w", err)
 	}
-	return migrateOfflinePolicyStore(dataDir, uid, gid, socketPath)
+	guard.uid, guard.gid, guard.socketPath = uid, gid, socketPath
+	return guard, nil
+}
+
+func (g *offlinePolicyMutation) Normalize() error {
+	if g == nil || !g.managed {
+		return nil
+	}
+	return migrateOfflinePolicyStore(g.dataDir, g.uid, g.gid, g.socketPath)
+}
+
+func (g *offlinePolicyMutation) Close() {
+	if g != nil && g.lock != nil {
+		_ = g.lock.Close()
+		g.lock = nil
+	}
 }
 
 func readPolicyYAMLFile(path string) ([]byte, error) {
