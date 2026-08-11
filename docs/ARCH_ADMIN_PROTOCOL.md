@@ -51,7 +51,7 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 4.3; `auth_required` carries it as
+- the current admin protocol version is 4.5; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -321,7 +321,10 @@ handlers require only an authenticated bound runtime.
   memory-hard credential verification run outside that lock; the lock is
   reacquired only to publish the validated claim. Validation extraction uses a
   reserved owner-private directory on the signer store filesystem rather than
-  process-global temporary storage.
+  process-global temporary storage. The final rename is the commit point. A
+  directory-sync failure after that point returns `success:true` with a
+  `warning`, because reporting failure would invite a retry after the archive
+  is already visible under its final name.
   Commit is a synchronous, potentially long-running request; first-party
   clients use a dedicated bounded timeout rather than the ordinary 30-second
   admin-request timeout. The daemon zeros the passphrase after the request and

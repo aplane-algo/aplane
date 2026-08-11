@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 4
-	AdminProtocolVersionMinor = 4
+	AdminProtocolVersionMinor = 5
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
@@ -362,6 +362,7 @@ type CommitBackupImportResultMessage struct {
 	BaseMessage
 	Success bool       `json:"success"`
 	Backup  BackupInfo `json:"backup,omitempty"`
+	Warning string     `json:"warning,omitempty"`
 	Code    string     `json:"code,omitempty"`
 	Error   string     `json:"error,omitempty"`
 }

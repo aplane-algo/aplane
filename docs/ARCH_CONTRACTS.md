@@ -2791,7 +2791,11 @@ upload residue without deleting an archive already undergoing validation;
 daemon startup removes both kinds of residue left by a prior process. Deep
 validation extracts into an owner-private reserved directory on the signer
 store filesystem rather than the process-global temporary filesystem; normal
-completion and daemon startup remove that validation residue.
+completion and daemon startup remove that validation residue. The final rename
+is the publication commit point. If the following directory sync fails, the
+daemon returns committed success with an operator-visible durability warning;
+it must not report an ordinary retryable failure after the destination name is
+already live.
 
 `preview_restore` and `apstore restore preview` authenticate the archive
 before revealing addresses or key types. Preview reports credential identity,

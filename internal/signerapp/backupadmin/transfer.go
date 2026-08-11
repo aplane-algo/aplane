@@ -24,7 +24,10 @@ const (
 	backupValidationPrefix = ".import-validation-"
 )
 
-var deepVerifyImportedBackup = backup.DeepVerifyBackupBytes
+var (
+	deepVerifyImportedBackup  = backup.DeepVerifyBackupBytes
+	syncBackupImportDirectory = fsutil.SyncDir
+)
 
 func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
 	fileName, err := validBackupFileName(req.FileName)
@@ -182,6 +185,7 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 	sourceRoot = ""
 
 	var info adminproto.BackupInfo
+	var warning string
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		destination := filepath.Join(dir, fileName)
 		if _, err := os.Lstat(destination); err == nil {
@@ -196,24 +200,25 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		if claimInfo.Mode()&os.ModeSymlink != 0 || !claimInfo.Mode().IsRegular() || claimInfo.Size() != size {
 			return fmt.Errorf("claimed backup upload changed during validation")
 		}
+		info = adminproto.BackupInfo{
+			Path: destination, FileName: fileName, CreatedAt: claimInfo.ModTime().UTC().Unix(), Size: size, Checksum: checksum,
+		}
 		if err := os.Rename(claimPath, destination); err != nil {
 			return err
 		}
 		claimPublished = true
-		if err := fsutil.SyncDir(dir); err != nil {
-			return err
+		if err := syncBackupImportDirectory(dir); err != nil {
+			warning = backupTransferErrorText(
+				fmt.Errorf("backup archive was published but directory durability could not be confirmed: %w", err),
+				s.Deps.KeyPaths().Root(),
+			)
 		}
-		st, err := os.Stat(destination)
-		if err != nil {
-			return err
-		}
-		info = adminproto.BackupInfo{Path: destination, FileName: fileName, CreatedAt: st.ModTime().UTC().Unix(), Size: size, Checksum: checksum}
 		return nil
 	})
 	if err != nil {
 		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
-	return adminproto.CommitBackupImportResult{Success: true, Backup: info}
+	return adminproto.CommitBackupImportResult{Success: true, Backup: info, Warning: warning}
 }
 
 func (s Service) claimBackupImport(identityID, dir, uploadID, fileName string, expectedSize int64) (string, error) {

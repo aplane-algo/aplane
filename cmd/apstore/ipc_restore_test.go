@@ -99,7 +99,7 @@ func withLocalBackupTransferClient(t *testing.T) *fakeApstoreAdminRequester {
 			*out.(*protocol.AppendBackupImportResultMessage) = protocol.AppendBackupImportResultMessage{Success: result.Success, NextOffset: result.NextOffset, Code: result.Code, Error: result.Error}
 		case protocol.CommitBackupImportMessage:
 			result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{UploadID: request.UploadID, FileName: request.FileName, ExpectedSize: request.ExpectedSize, ExpectedSHA256: request.ExpectedSHA256, ExportPassphrase: request.ExportPassphrase.Clone()})
-			*out.(*protocol.CommitBackupImportResultMessage) = protocol.CommitBackupImportResultMessage{Success: result.Success, Code: result.Code, Error: result.Error}
+			*out.(*protocol.CommitBackupImportResultMessage) = protocol.CommitBackupImportResultMessage{Success: result.Success, Warning: result.Warning, Code: result.Code, Error: result.Error}
 		case protocol.AbortBackupImportMessage:
 			result := service.AbortBackupImport(ir, adminproto.AbortBackupImportRequest{UploadID: request.UploadID})
 			*out.(*protocol.AbortBackupImportResultMessage) = protocol.AbortBackupImportResultMessage{Success: result.Success, Code: result.Code, Error: result.Error}

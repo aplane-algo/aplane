@@ -428,6 +428,9 @@ func cmdBackupImport(args []string) error {
 		return resultError("backup import failed", commit.Code, commit.Error)
 	}
 	committed = true
+	if commit.Warning != "" {
+		logWarnf("backup import warning: %s", commit.Warning)
+	}
 	logInfof("backup imported: %s", name)
 	logInfof("size: %s", backup.FormatFileSize(size))
 	logInfof("checksum: %s", checksum)

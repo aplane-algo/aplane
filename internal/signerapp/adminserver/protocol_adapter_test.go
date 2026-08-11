@@ -65,11 +65,14 @@ func TestBackupProtocolMessagesDoNotExposeStorePaths(t *testing.T) {
 	}
 
 	committed := ProtocolCommitBackupImportResultMessage("commit-1", adminproto.CommitBackupImportResult{
-		Success: true, Backup: adminproto.BackupInfo{
+		Success: true, Warning: "directory durability warning", Backup: adminproto.BackupInfo{
 			Path: "/var/lib/apsigner/identities/default/backups/imported.tar.gz", FileName: "imported.tar.gz",
 		},
 	})
 	if committed.Backup.Path != "imported.tar.gz" || committed.Backup.FileName != "imported.tar.gz" {
 		t.Fatalf("committed backup leaked path: %#v", committed.Backup)
+	}
+	if committed.Warning != "directory durability warning" {
+		t.Fatalf("committed backup warning = %q", committed.Warning)
 	}
 }

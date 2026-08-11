@@ -143,6 +143,7 @@ type CommitBackupImportRequest struct {
 type CommitBackupImportResult struct {
 	Success bool
 	Backup  BackupInfo
+	Warning string
 	Code    string
 	Error   string
 }

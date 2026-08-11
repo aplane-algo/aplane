@@ -49,9 +49,12 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 		t.Fatalf("message count = %d, want 2", len(msgs))
 	}
 	if !reflectJSONSubset(msgs[0], map[string]any{
-		"kind":             string(protocol.MessageKindNotification),
-		"type":             protocol.MsgTypeAuthRequired,
-		"protocol_version": map[string]any{"major": float64(4), "minor": float64(4)},
+		"kind": string(protocol.MessageKindNotification),
+		"type": protocol.MsgTypeAuthRequired,
+		"protocol_version": map[string]any{
+			"major": float64(protocol.AdminProtocolVersionMajor),
+			"minor": float64(protocol.AdminProtocolVersionMinor),
+		},
 	}) {
 		t.Fatalf("auth_required shape mismatch: %#v", msgs[0])
 	}
@@ -96,10 +99,13 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	}
 
 	if !reflectJSONSubset(msgs[0], map[string]any{
-		"kind":             string(protocol.MessageKindNotification),
-		"type":             protocol.MsgTypeAuthRequired,
-		"id":               "",
-		"protocol_version": map[string]any{"major": float64(4), "minor": float64(4)},
+		"kind": string(protocol.MessageKindNotification),
+		"type": protocol.MsgTypeAuthRequired,
+		"id":   "",
+		"protocol_version": map[string]any{
+			"major": float64(protocol.AdminProtocolVersionMajor),
+			"minor": float64(protocol.AdminProtocolVersionMinor),
+		},
 	}) {
 		t.Fatalf("auth_required shape mismatch: %#v", msgs[0])
 	}

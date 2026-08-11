@@ -6,6 +6,7 @@ package backupadmin
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -80,6 +81,44 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 	}
 	if !bytes.Equal(exported, archiveBytes) {
 		t.Fatal("exported archive differs from imported bytes")
+	}
+}
+
+func TestBackupImportReportsCommittedWarningAfterDirectorySyncFailure(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	archivePath := writeLargeValidImportArchive(t)
+	archiveBytes, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checksum, size, err := backup.FileSHA256(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "sync-warning.tar.gz"})
+	if !begin.Success {
+		t.Fatalf("BeginBackupImport() = %#v", begin)
+	}
+	appendBackupImportBytes(t, service, ir, begin.UploadID, archiveBytes)
+
+	originalSync := syncBackupImportDirectory
+	syncBackupImportDirectory = func(string) error { return errors.New("injected directory sync failure") }
+	t.Cleanup(func() { syncBackupImportDirectory = originalSync })
+
+	result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+		UploadID: begin.UploadID, FileName: "sync-warning.tar.gz", ExpectedSize: size, ExpectedSHA256: checksum,
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !result.Success {
+		t.Fatalf("CommitBackupImport() = %#v, want committed success", result)
+	}
+	if !strings.Contains(result.Warning, "directory durability could not be confirmed") {
+		t.Fatalf("CommitBackupImport() warning = %q, want durability warning", result.Warning)
+	}
+	if _, err := os.Lstat(filepath.Join(paths.IdentityBackupsDir(ir.ID()), "sync-warning.tar.gz")); err != nil {
+		t.Fatalf("published backup missing after warning: %v", err)
 	}
 }
 

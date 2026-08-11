@@ -121,9 +121,9 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-func TestCurrentAdminProtocolVersionIncludesAuthenticateOnly(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 4}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.4", got)
+func TestCurrentAdminProtocolVersionIncludesBackupCommitWarnings(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 5}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.5", got)
 	}
 }
 
