@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/asa"
@@ -771,8 +772,14 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			}
 		}
 
-		dummyReserve := a.eng.DummyFeeReserve(fromAddress, signing.DefaultMinFee)
-		sendAmount, feeReserve, ok := sweepSendAmount(balance, leavingAmount.Raw, assetMeta.AssetID, req.Fee, req.UseFlatFee, dummyReserve)
+		logicSigReserve, err := a.eng.LogicSigFeeReserve(ctx, fromAddress)
+		if err != nil {
+			item.Error = fmt.Sprintf("failed to plan LogicSig fee reserve: %v", err)
+			result.FailureCount++
+			result.Items = append(result.Items, item)
+			continue
+		}
+		sendAmount, feeReserve, ok := sweepSendAmount(balance, leavingAmount.Raw, assetMeta.AssetID, req.Fee, req.UseFlatFee, logicSigReserve)
 		if !ok {
 			item.SkippedReason = fmt.Sprintf("balance %d <= leaving amount %d", balance, leavingAmount.Raw)
 			if assetMeta.AssetID == 0 && balance > leavingAmount.Raw {
@@ -850,11 +857,11 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 
 // sweepSendAmount computes how much to send so the account is left with exactly
 // `leaving`. For ALGO sweeps the fee reserve is the base transaction fee plus
-// dummyFeeReserve — the dummy-transaction fees the signer pools onto a LogicSig
-// sender — so sweeping from a Falcon/large-LogicSig account no longer overspends
-// and fails. ASA sweeps pay their fee from the ALGO balance, not the swept
-// asset, so dummyFeeReserve does not apply there.
-func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, dummyFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
+// logicSigFeeReserve — dummy base fees plus any priced-program contribution the
+// signer pools onto a LogicSig sender — so sweeping from a LogicSig account does
+// not overspend. ASA sweeps pay their fee from the ALGO balance, not the swept
+// asset, so logicSigFeeReserve does not apply there.
+func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, logicSigFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
 	if balance <= leaving {
 		return 0, 0, false
 	}
@@ -868,7 +875,10 @@ func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, dum
 	if useFlatFee {
 		baseFee = fee
 	}
-	feeReserve = baseFee + dummyFeeReserve
+	if logicSigFeeReserve > math.MaxUint64-baseFee {
+		return 0, math.MaxUint64, false
+	}
+	feeReserve = baseFee + logicSigFeeReserve
 	if available <= feeReserve {
 		return 0, feeReserve, false
 	}

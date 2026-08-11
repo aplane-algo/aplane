@@ -4,6 +4,11 @@
 package engine
 
 import (
+	"context"
+	"fmt"
+	"math"
+	"math/bits"
+
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -75,21 +80,81 @@ func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.
 	return e.SignerCache.LogicSigResourceProfile(address)
 }
 
-// DummyFeeReserve returns the additional microAlgo fee a single standalone
-// transaction from sender will accrue from server-side dummy transactions
-// added for LogicSig budget. It is 0 for ed25519 and for LogicSigs small
-// enough to need no dummies. "Spend everything" flows (sweep) must reserve
-// this on top of the base transaction fee, because the signer pools the dummy
-// fees onto the LogicSig transaction and the account pays them.
-func (e *Core) DummyFeeReserve(sender string, minFee uint64) uint64 {
+// LogicSigFeeReserve returns the additional microAlgo fee a standalone
+// transaction from sender needs beyond its ordinary base fee. It includes both
+// resource-dummy base fees and the v42 priced-program contribution. Sweep flows
+// reserve it before choosing a spend-everything amount.
+func (e *Core) LogicSigFeeReserve(ctx context.Context, sender string) (uint64, error) {
 	effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
-	lsigSize := e.signerCacheLsigSize(effectiveSigner)
-	if lsigSize <= signing.TxLsigBudget {
-		return 0
+	profile, ok := e.signerCacheLogicSigResourceProfile(effectiveSigner)
+	if !ok {
+		return 0, nil
 	}
-	extra := lsigSize - signing.TxLsigBudget
-	dummies := (extra + signing.TxLsigBudget - 1) / signing.TxLsigBudget
-	return uint64(dummies) * minFee
+	usage, err := profile.UsageForPath(lsigresource.PathSpend)
+	if err != nil {
+		usage, err = profile.UsageForPath(lsigresource.PathDefault)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("resolve LogicSig spend resources: %w", err)
+	}
+	if e.AlgodClient == nil {
+		return 0, ErrNoAlgodClient
+	}
+	params, err := e.AlgodClient.SuggestedParams().Do(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("load consensus parameters for LogicSig fee reserve: %w", err)
+	}
+	consensus, err := lsigresource.ResolveConsensus(params.ConsensusVersion)
+	if err != nil {
+		return 0, fmt.Errorf("resolve LogicSig fee reserve: %w", err)
+	}
+	plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
+		TransactionCount: 1,
+		LogicSigs:        []lsigresource.Usage{usage},
+		Dummy: lsigresource.Usage{
+			ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
+			MaxOpcodeCost: 1,
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("plan LogicSig fee reserve: %w", err)
+	}
+	minFee := params.MinFee
+	if minFee == 0 {
+		minFee = signing.DefaultMinFee
+	}
+	dummyFees, overflow := multiplyReserve(plan.DummyCount, minFee)
+	if overflow {
+		return 0, fmt.Errorf("LogicSig dummy fee reserve overflowed")
+	}
+	programFee, overflow := scaleFeeFactor(minFee, plan.ProgramFeeFactorUsage)
+	if overflow || programFee > math.MaxUint64-dummyFees {
+		return 0, fmt.Errorf("LogicSig program fee reserve overflowed")
+	}
+	return dummyFees + programFee, nil
+}
+
+func multiplyReserve(a, b uint64) (uint64, bool) {
+	if a != 0 && b > math.MaxUint64/a {
+		return 0, true
+	}
+	return a * b, false
+}
+
+func scaleFeeFactor(base, usage uint64) (uint64, bool) {
+	const factorScale = uint64(1_000_000)
+	hi, lo := bits.Mul64(base, usage)
+	if hi >= factorScale {
+		return 0, true
+	}
+	quotient, remainder := bits.Div64(hi, lo, factorScale)
+	if remainder != 0 {
+		if quotient == math.MaxUint64 {
+			return 0, true
+		}
+		quotient++
+	}
+	return quotient, false
 }
 
 func (e *Core) signerCacheSentryPublicKey(address string) (string, bool) {
