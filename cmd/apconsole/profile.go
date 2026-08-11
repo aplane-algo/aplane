@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/adminipc"
 	"gopkg.in/yaml.v3"
 )
 
@@ -55,8 +56,9 @@ type consoleStartupFlags struct {
 }
 
 type consoleValueSource struct {
-	label    string
-	explicit bool
+	label                   string
+	explicit                bool
+	overridesIPCEnvironment bool
 }
 
 func resolveConsoleStartup(flags consoleStartupFlags) (consoleStartupConfig, error) {
@@ -123,8 +125,9 @@ func resolveConsoleStartup(flags consoleStartupFlags) (consoleStartupConfig, err
 	}
 	if flags.SignerDataSet {
 		if err := applyConsolePath(&cfg.SignerData, &cfg.signerDataSource, flags.SignerData, consoleValueSource{
-			label:    "flag -d",
-			explicit: true,
+			label:                   "flag -d",
+			explicit:                true,
+			overridesIPCEnvironment: true,
 		}, "signer_data", &cfg.Notices); err != nil {
 			return consoleStartupConfig{}, err
 		}
@@ -170,8 +173,9 @@ func loadDiscoveredConsoleProfile(flags consoleStartupFlags) (*consoleProfile, s
 			return nil, "", consoleValueSource{}, err
 		}
 		return profile, flags.ConfigPath, consoleValueSource{
-			label:    fmt.Sprintf("profile %s selected by -config", flags.ConfigPath),
-			explicit: true,
+			label:                   fmt.Sprintf("profile %s selected by -config", flags.ConfigPath),
+			explicit:                true,
+			overridesIPCEnvironment: true,
 		}, nil
 	}
 	if flags.ConsoleConfigEnv != "" {
@@ -180,8 +184,9 @@ func loadDiscoveredConsoleProfile(flags consoleStartupFlags) (*consoleProfile, s
 			return nil, "", consoleValueSource{}, err
 		}
 		return profile, flags.ConsoleConfigEnv, consoleValueSource{
-			label:    fmt.Sprintf("profile %s selected by APCONSOLE_CONFIG", flags.ConsoleConfigEnv),
-			explicit: true,
+			label:                   fmt.Sprintf("profile %s selected by APCONSOLE_CONFIG", flags.ConsoleConfigEnv),
+			explicit:                true,
+			overridesIPCEnvironment: true,
 		}, nil
 	}
 
@@ -200,6 +205,12 @@ func loadDiscoveredConsoleProfile(flags consoleStartupFlags) (*consoleProfile, s
 		}
 	}
 	return nil, "", consoleValueSource{}, nil
+}
+
+func resolveConsoleIPCPath(dataDir, ipcPath string, source consoleValueSource) (string, error) {
+	return adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: dataDir, IPCPath: ipcPath, DataDirExplicit: source.overridesIPCEnvironment,
+	})
 }
 
 func loadConsoleProfile(path string) (*consoleProfile, error) {
