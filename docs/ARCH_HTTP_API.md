@@ -463,7 +463,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/keytypes` response:
 
-- `key_types[]` with `key_type`, `family`, `display_name`, `description`, `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `sentry_component_key_type`, optional definition-level `bounded_authorization`, `creation_params[]`, `runtime_args[]`
+- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), compatibility field `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `sentry_component_key_type`, optional definition-level `bounded_authorization`, `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
 - each `runtime_args` entry includes `name`, `label`, `description`, `type`, `required`, and optional `byte_length`

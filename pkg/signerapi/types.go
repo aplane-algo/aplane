@@ -446,6 +446,7 @@ type KeyTypeInfo struct {
 	Family                 string                    `json:"family"`
 	DisplayName            string                    `json:"display_name"`
 	Description            string                    `json:"description"`
+	AuthorizationKind      string                    `json:"authorization_kind,omitempty"`
 	RequiresLogicSig       bool                      `json:"requires_logicsig"`
 	MnemonicWordCount      int                       `json:"mnemonic_word_count"`
 	MnemonicImport         bool                      `json:"mnemonic_import"`

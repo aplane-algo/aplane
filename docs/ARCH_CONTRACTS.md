@@ -2473,6 +2473,13 @@ Identity filtering:
 - a globally registered generic/composed template that is not installed or enabled for an identity is not generatable by that identity,
 - existing keys remain isolated by identity keystore ownership; provider lookup only supplies compatible signing/derivation code for keys already owned by that identity.
 
+Key-type inventory carries an additive `authorization_kind` field whose closed
+values are `ed25519`, `native_pq`, and `logic_sig`. This field is authoritative
+for new clients that need to distinguish the consensus authorization envelope.
+The older `requires_logicsig` boolean remains present for compatibility and is
+true only for `logic_sig` entries. Clients must not infer that every false value
+means Ed25519; native Falcon-1024 also has `requires_logicsig:false`.
+
 `internal/signerapp/templates` reports this through a `ReloadReport` with:
 
 - `KeyCount`

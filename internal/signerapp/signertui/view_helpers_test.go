@@ -161,6 +161,32 @@ func TestGenerateFormDoesNotShowParameterCountSummary(t *testing.T) {
 	}
 }
 
+func TestNativeFalconGenerationAndImportShowRecoveryNotice(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType:           "falcon1024",
+		DisplayName:       "falcon1024",
+		AuthorizationKind: "native_pq",
+		MnemonicWordCount: 25,
+		MnemonicImport:    true,
+	}})
+
+	m := Model{
+		width:  110,
+		height: 30,
+		forms:  formsState{importMnemonicInput: newImportMnemonicInput()},
+	}
+	generate := stripANSI(m.renderGenerateForm())
+	importForm := stripANSI(m.renderImportForm())
+	for name, rendered := range map[string]string{"generate": generate, "import": importForm} {
+		for _, want := range []string{"consensus v42", "25-word", "24-word aplane.falcon1024.v1"} {
+			if !strings.Contains(rendered, want) {
+				t.Fatalf("%s form missing %q:\n%s", name, want, rendered)
+			}
+		}
+	}
+}
+
 func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 	defer setServerKeyTypes(nil)
 

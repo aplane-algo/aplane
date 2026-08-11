@@ -5,6 +5,7 @@ package main
 
 import (
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
+	nativefalconsignerreg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -16,4 +17,7 @@ func RegisterProviders() {
 
 	// Ed25519 native signatures
 	ed25519signerreg.RegisterSigner()
+
+	// Protocol-native Falcon-1024 account authorization
+	nativefalconsignerreg.RegisterSigner()
 }

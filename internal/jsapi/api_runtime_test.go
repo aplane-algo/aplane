@@ -568,6 +568,7 @@ func TestKeyTypesMapsFullMetadata(t *testing.T) {
 					Family:            "logic",
 					DisplayName:       "Generic LSig",
 					Description:       "scripted signer",
+					AuthorizationKind: "logic_sig",
 					RequiresLogicSig:  true,
 					MnemonicWordCount: 25,
 					MnemonicImport:    true,
@@ -621,7 +622,7 @@ func TestKeyTypesMapsFullMetadata(t *testing.T) {
 	default:
 		t.Fatalf("keyTypes() = %#v, want slice", result)
 	}
-	if entry["keyType"] != "generic-lsig" || entry["family"] != "logic" || entry["requiresLogicSig"] != true || entry["mnemonicImport"] != true {
+	if entry["keyType"] != "generic-lsig" || entry["family"] != "logic" || entry["authorizationKind"] != "logic_sig" || entry["requiresLogicSig"] != true || entry["mnemonicImport"] != true {
 		t.Fatalf("keyTypes()[0] = %#v, want top-level metadata", entry)
 	}
 

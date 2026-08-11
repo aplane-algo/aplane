@@ -682,6 +682,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 					Family:            "timed-allowlist",
 					DisplayName:       "Timed Allowlist",
 					Description:       "Lock until a round",
+					AuthorizationKind: "logic_sig",
 					RequiresLogicSig:  true,
 					MnemonicWordCount: 0,
 					CreationParams: []TemplateParamInfo{{
@@ -703,6 +704,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 						"family":              "timed-allowlist",
 						"display_name":        "Timed Allowlist",
 						"description":         "Lock until a round",
+						"authorization_kind":  "logic_sig",
 						"requires_logicsig":   true,
 						"mnemonic_word_count": float64(0),
 						"mnemonic_import":     false,

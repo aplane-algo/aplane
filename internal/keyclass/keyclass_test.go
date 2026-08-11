@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -37,6 +38,12 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleSentry, "ed25519") {
 		t.Fatal("sentry node allowed Ed25519 account key")
+	}
+	if NodeRoleAllowsKeyType(noderole.RoleSentry, nativefalcon.KeyType) {
+		t.Fatal("sentry node allowed native Falcon spending key")
+	}
+	if !NodeRoleAllowsKeyType(noderole.RoleSigner, nativefalcon.KeyType) {
+		t.Fatal("signer node rejected native Falcon spending key")
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.GuardedFalcon1024Sentry1024V1) {
 		t.Fatal("sentry node allowed guarded account key")

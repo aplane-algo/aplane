@@ -223,6 +223,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		meta, err := algorithm.GetMetadata(keyType)
 		if err == nil {
 			info.Family = meta.RoutingFamily()
+			info.AuthorizationKind = string(meta.AuthorizationKind())
 			info.RequiresLogicSig = meta.RequiresLogicSig()
 			info.MnemonicWordCount = meta.MnemonicWordCount()
 			info.MnemonicImport = keymgmt.SupportsMnemonicImport(keyType)
@@ -276,8 +277,13 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 				})
 			}
 		} else {
-			info.DisplayName = strings.ToUpper(keyType[:1]) + keyType[1:]
-			info.Description = "Native Algorand signing keys"
+			if info.AuthorizationKind == string(algorithm.AuthorizationNativePQ) {
+				info.DisplayName = keyType
+				info.Description = "Native Algorand Falcon-1024 signing key"
+			} else {
+				info.DisplayName = strings.ToUpper(keyType[:1]) + keyType[1:]
+				info.Description = "Native Algorand signing key"
+			}
 		}
 
 		keyTypes = append(keyTypes, info)
@@ -294,13 +300,14 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			continue
 		}
 		info := signerapi.KeyTypeInfo{
-			KeyType:          tmpl.KeyType(),
-			Family:           tmpl.RoutingFamily(),
-			DisplayName:      tmpl.DisplayName(),
-			Description:      tmpl.Description(),
-			RequiresLogicSig: true,
-			CreationParams:   []signerapi.CreationParamInfo{},
-			RuntimeArgs:      []signerapi.RuntimeArgInfo{},
+			KeyType:           tmpl.KeyType(),
+			Family:            tmpl.RoutingFamily(),
+			DisplayName:       tmpl.DisplayName(),
+			Description:       tmpl.Description(),
+			AuthorizationKind: string(algorithm.AuthorizationLogicSig),
+			RequiresLogicSig:  true,
+			CreationParams:    []signerapi.CreationParamInfo{},
+			RuntimeArgs:       []signerapi.RuntimeArgInfo{},
 		}
 
 		for _, p := range tmpl.CreationParams() {

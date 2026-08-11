@@ -5,6 +5,7 @@ package main
 
 import (
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
+	nativefalconsignerreg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -13,4 +14,5 @@ import (
 func RegisterProviders() {
 	lsigsignerreg.RegisterSigner()    // All Falcon + LogicSig templates
 	ed25519signerreg.RegisterSigner() // All Ed25519 components
+	nativefalconsignerreg.RegisterSigner()
 }

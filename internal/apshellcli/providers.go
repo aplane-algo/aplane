@@ -5,6 +5,7 @@ package apshellcli
 
 import (
 	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/lsig"
 )
 
@@ -13,4 +14,5 @@ import (
 func RegisterProviders() {
 	lsig.RegisterClient()
 	ed25519.RegisterClient()
+	nativefalcon.RegisterClient()
 }

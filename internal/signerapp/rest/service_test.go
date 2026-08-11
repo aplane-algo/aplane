@@ -37,6 +37,8 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	nativefalconsignerreg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/txeffects"
@@ -80,6 +82,7 @@ func writeTemplateStateForRestTest(t *testing.T, paths storepaths.Paths, identit
 func init() {
 	lsigsignerreg.RegisterSigner()
 	ed25519signerreg.RegisterSigner()
+	nativefalconsignerreg.RegisterSigner()
 }
 
 type stubSigningService struct {
@@ -686,10 +689,22 @@ func TestServiceKeyTypesIncludesNativeAndFalconSentry(t *testing.T) {
 	}
 
 	foundEd25519 := false
+	foundNativeFalcon := false
 	foundFalconComponent := false
 	for _, keyType := range keyTypes {
 		if keyType.KeyType == "ed25519" {
 			foundEd25519 = true
+			if keyType.AuthorizationKind != "ed25519" {
+				t.Fatalf("Ed25519 authorization kind = %q", keyType.AuthorizationKind)
+			}
+		}
+		if keyType.KeyType == nativefalcon.KeyType {
+			foundNativeFalcon = true
+			if keyType.DisplayName != nativefalcon.KeyType ||
+				keyType.AuthorizationKind != "native_pq" || keyType.RequiresLogicSig ||
+				keyType.MnemonicWordCount != nativefalcon.MnemonicWordCount {
+				t.Fatalf("native Falcon key type info = %#v", keyType)
+			}
 		}
 		if keyType.KeyType == witness.Falcon1024V1 {
 			foundFalconComponent = true
@@ -700,6 +715,9 @@ func TestServiceKeyTypesIncludesNativeAndFalconSentry(t *testing.T) {
 	}
 	if !foundEd25519 {
 		t.Fatal("KeyTypes() did not include ed25519")
+	}
+	if !foundNativeFalcon {
+		t.Fatalf("KeyTypes() did not include %s", nativefalcon.KeyType)
 	}
 	if !foundFalconComponent {
 		t.Fatalf("KeyTypes() did not include %s", witness.Falcon1024V1)
