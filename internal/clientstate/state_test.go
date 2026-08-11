@@ -237,7 +237,9 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 		Address:                "ADDR1",
 		KeyType:                "aplane.falcon1024-sentry1024.v1",
 		SentryComponentKeyType: "aplane.witness-falcon1024.v1",
-		LsigSize:               1500,
+		LogicSigResources: &signerapi.LogicSigResourceProfile{
+			Spend: &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
+		},
 		Parameters: map[string]string{
 			"sentry_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
 		},
@@ -254,8 +256,8 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	if got, ok := original.SentryComponentKeyTypeForAddress("ADDR1"); !ok || got != "aplane.witness-falcon1024.v1" {
 		t.Fatalf("sentry component key type = %q/%v, want cached value", got, ok)
 	}
-	if got := original.GetLsigSize("ADDR1"); got != 1500 {
-		t.Fatalf("lsig size = %d, want 1500", got)
+	if profile, ok := original.LogicSigResourceProfile("ADDR1"); !ok || profile.Spend == nil || profile.Spend.ArgumentBytes != 1_423 {
+		t.Fatalf("LogicSig resources = %+v/%v, want cached spend profile", profile, ok)
 	}
 
 	state.PopulateSignerCache(nil)

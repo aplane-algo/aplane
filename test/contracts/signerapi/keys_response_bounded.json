@@ -6,7 +6,6 @@
       "public_key_hex": "00112233445566778899aabbccddeeff",
       "key_type": "aplane.falcon1024-allowlist-alock.v1",
       "signing_flow": "bounded1",
-      "lsig_size": 6592,
       "logic_sig_resources": {
         "spend": {"program_bytes": 5169, "argument_bytes": 1423, "max_opcode_cost": 20000},
         "spending_rekey": {"program_bytes": 5169, "argument_bytes": 1423, "max_opcode_cost": 20000},
@@ -45,7 +44,6 @@
       "key_type": "aplane.corridor.v1",
       "signing_flow": "bounded-sentry1",
       "sentry_component_key_type": "aplane.witness-falcon1024.v1",
-      "lsig_size": 8384,
       "logic_sig_resources": {
         "spend": {"program_bytes": 5308, "argument_bytes": 3358, "max_opcode_cost": 20000},
         "spending_rekey": {"program_bytes": 5308, "argument_bytes": 1423, "max_opcode_cost": 20000},

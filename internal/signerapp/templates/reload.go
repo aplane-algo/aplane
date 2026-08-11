@@ -20,7 +20,6 @@ type KeyStore interface {
 	Scan(passphrase []byte) error
 	GetCache() map[string]string
 	GetKeyTypes() map[string]string
-	GetLsigSizes() map[string]int
 }
 
 type Session interface {
@@ -38,8 +37,8 @@ type KeysChangedNotification struct {
 
 type NotifyKeysChangedFunc func(notification KeysChangedNotification)
 type BeforeKeyScanFunc func(kr *crypto.Keyring) error
-type BeforePublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int) error
-type PublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int)
+type BeforePublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string) error
+type PublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string)
 type WarnFunc func(msg string)
 type InfoFunc func(msg string)
 
@@ -165,7 +164,7 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 		clearInitializedMasterKey()
 		if errors.Is(err, keys.ErrAddressCollision) {
 			s.clearKeyCache()
-			s.PublishSnapshot(map[string]string{}, map[string]string{}, map[string]int{})
+			s.PublishSnapshot(map[string]string{}, map[string]string{})
 			if s.NotifyKeysChanged != nil {
 				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
 			}
@@ -187,7 +186,7 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 		if len(warnings) > 0 || len(templateDefects) > 0 {
 			clearInitializedMasterKey()
 			s.clearKeyCache()
-			s.PublishSnapshot(map[string]string{}, map[string]string{}, map[string]int{})
+			s.PublishSnapshot(map[string]string{}, map[string]string{})
 			if s.NotifyKeysChanged != nil {
 				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
 			}
@@ -204,19 +203,18 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 
 	newKeysMap := s.KeyStore.GetCache()
 	newKeyTypes := s.KeyStore.GetKeyTypes()
-	newLsigSizes := s.KeyStore.GetLsigSizes()
 	if s.BeforePublish != nil {
-		if err := s.BeforePublish(newKeysMap, newKeyTypes, newLsigSizes); err != nil {
+		if err := s.BeforePublish(newKeysMap, newKeyTypes); err != nil {
 			clearInitializedMasterKey()
 			s.clearKeyCache()
-			s.PublishSnapshot(map[string]string{}, map[string]string{}, map[string]int{})
+			s.PublishSnapshot(map[string]string{}, map[string]string{})
 			if s.NotifyKeysChanged != nil {
 				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
 			}
 			return nil, fmt.Errorf("key snapshot rejected: %w", err)
 		}
 	}
-	s.PublishSnapshot(newKeysMap, newKeyTypes, newLsigSizes)
+	s.PublishSnapshot(newKeysMap, newKeyTypes)
 
 	s.Session.InitializeSession()
 

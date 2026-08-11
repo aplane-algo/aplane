@@ -320,7 +320,7 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 		c.SetSentryComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 		c.SetSentryPublicKeyForAddress(account, sentryHex)
 		c.SetBoundedMaxFeeForAddress(account, 10_000)
-		c.SetLsigSize(account, 4000)
+		setTestLogicSigSize(c, account, 4000)
 	})
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
 	s.algod = algodClient

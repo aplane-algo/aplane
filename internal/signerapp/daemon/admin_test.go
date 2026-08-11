@@ -1116,6 +1116,6 @@ func reloadKeysForTest(server *Signer) error {
 		return fmt.Errorf("scan failed: %w", err)
 	}
 
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes(), ks.GetLsigSizes())
+	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
 	return nil
 }

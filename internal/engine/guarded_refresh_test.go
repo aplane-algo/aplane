@@ -17,6 +17,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -60,7 +61,7 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 				KeyType:                keytypes.GuardedFalcon1024Sentry1024V1,
 				SigningFlow:            signerapi.SigningFlowSentry1,
 				SentryComponentKeyType: witness.Falcon1024V1,
-				LsigSize:               1500,
+				LogicSigResources:      testPublicLogicSigProfile(1_500),
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,
 				},
@@ -94,8 +95,8 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	if got, ok := eng.signerCacheSentryComponentKeyType(guarded); !ok || got != witness.Falcon1024V1 {
 		t.Fatalf("sentry component key type for guarded authorizer = %q/%v, want %s/true", got, ok, witness.Falcon1024V1)
 	}
-	if got := eng.signerCacheLsigSize(guarded); got != 1500 {
-		t.Fatalf("lsig size for guarded authorizer = %d, want 1500", got)
+	if profile, ok := eng.signerCacheLogicSigResourceProfile(guarded); !ok || profile.ProgramBytes != 1_500 {
+		t.Fatalf("LogicSig resources for guarded authorizer = %+v/%v, want structured profile", profile, ok)
 	}
 	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
 		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
@@ -108,7 +109,7 @@ func TestRefreshSubmitSigningStateRefreshesGuardedKeyMissingFlowMetadata(t *test
 
 	staleSignerCache := cache.NewSignerCache()
 	staleSignerCache.AddAddress(sender, keytypes.GuardedFalcon1024Sentry1024V1)
-	staleSignerCache.SetLsigSize(sender, 1500)
+	staleSignerCache.SetLogicSigResourceProfile(sender, lsigresource.Profile{ProgramBytes: 1_500, Default: &lsigresource.PathProfile{MaxOpcodeCost: 1}})
 
 	refreshes := 0
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, staleSignerCache, func(req *http.Request) (*http.Response, error) {
@@ -123,7 +124,7 @@ func TestRefreshSubmitSigningStateRefreshesGuardedKeyMissingFlowMetadata(t *test
 				KeyType:                keytypes.GuardedFalcon1024Sentry1024V1,
 				SigningFlow:            signerapi.SigningFlowSentry1,
 				SentryComponentKeyType: witness.Falcon1024V1,
-				LsigSize:               1500,
+				LogicSigResources:      testPublicLogicSigProfile(1_500),
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,
 				},
@@ -156,6 +157,12 @@ func TestRefreshSubmitSigningStateRefreshesGuardedKeyMissingFlowMetadata(t *test
 	}
 }
 
+func testPublicLogicSigProfile(programBytes uint64) *signerapi.LogicSigResourceProfile {
+	return &signerapi.LogicSigResourceProfile{
+		Default: &signerapi.LogicSigResourceUsage{ProgramBytes: programBytes, MaxOpcodeCost: 1},
+	}
+}
+
 func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) {
 	sender := testAddress(1).String()
 	guarded := testAddress(3).String()
@@ -176,7 +183,7 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 				KeyType:                keytypes.GuardedFalcon1024Sentry1024V1,
 				SigningFlow:            signerapi.SigningFlowSentry1,
 				SentryComponentKeyType: witness.Falcon1024V1,
-				LsigSize:               1500,
+				LogicSigResources:      testPublicLogicSigProfile(1_500),
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,
 				},

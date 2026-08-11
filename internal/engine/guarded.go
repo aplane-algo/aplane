@@ -51,10 +51,6 @@ func (v guardedSignerCacheView) BoundedMaxFee(address string) (uint64, bool) {
 	return v.core.signerCacheBoundedMaxFee(address)
 }
 
-func (v guardedSignerCacheView) LsigSize(address string) int {
-	return v.core.signerCacheLsigSize(address)
-}
-
 func (v guardedSignerCacheView) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
 	return v.core.signerCacheLogicSigResourceProfile(address)
 }

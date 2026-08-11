@@ -39,9 +39,6 @@ type SignerCacheView interface {
 	// BoundedMaxFee returns the advertised on-chain fee ceiling for a bounded
 	// account.
 	BoundedMaxFee(address string) (uint64, bool)
-	// LsigSize returns the post-signing LogicSig program+args budget for an
-	// address, or 0 if unknown.
-	LsigSize(address string) int
 	// LogicSigResourceProfile returns the split resource contract derived from
 	// the final compiled program and reviewed authorization paths.
 	LogicSigResourceProfile(address string) (lsigresource.Profile, bool)

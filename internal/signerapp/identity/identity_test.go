@@ -213,7 +213,6 @@ func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
 	ir.PublishSnapshot(
 		map[string]string{"ADDR1": "keys/ADDR1.key"},
 		map[string]string{"ADDR1": "ed25519"},
-		map[string]int{},
 	)
 	if got := ir.KeysetRevision(); got != 1 {
 		t.Fatalf("KeysetRevision() after first publish = %d, want 1", got)
@@ -222,7 +221,6 @@ func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
 	ir.PublishSnapshot(
 		map[string]string{"ADDR1": "keys/ADDR1.key"},
 		map[string]string{"ADDR1": "ed25519"},
-		map[string]int{},
 	)
 	if got := ir.KeysetRevision(); got != 2 {
 		t.Fatalf("KeysetRevision() after second publish = %d, want 2", got)
@@ -243,7 +241,6 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	ir.PublishSnapshot(
 		map[string]string{"ADDR1": "keys/ADDR1.key"},
 		map[string]string{"ADDR1": "ed25519"},
-		map[string]int{"ADDR1": 123},
 	)
 	ir.keysLock.Lock()
 	ir.keyMetadata["ADDR1"] = KeyPublicMetadata{
@@ -267,16 +264,12 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	if got := snapshot.KeyTypes["ADDR1"]; got != "ed25519" {
 		t.Fatalf("snapshot key type = %q, want ed25519", got)
 	}
-	if got := snapshot.LSigSizes["ADDR1"]; got != 123 {
-		t.Fatalf("snapshot lsig size = %d, want 123", got)
-	}
 	if got := snapshot.KeyMetadata["ADDR1"].Parameters["purpose"]; got != "rekey" {
 		t.Fatalf("snapshot key metadata purpose = %q, want rekey", got)
 	}
 
 	snapshot.KeyFiles["ADDR1"] = "mutated.key"
 	snapshot.KeyTypes["ADDR1"] = "mutated"
-	snapshot.LSigSizes["ADDR1"] = 999
 	metadata := snapshot.KeyMetadata["ADDR1"]
 	metadata.Category = "mutated"
 	metadata.Parameters["purpose"] = "mutated"
@@ -294,7 +287,6 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	ir.PublishSnapshot(
 		map[string]string{"ADDR2": "keys/ADDR2.key"},
 		map[string]string{"ADDR2": "aplane.falcon1024.v1"},
-		map[string]int{"ADDR2": 456},
 	)
 
 	if got := snapshot.KeyFiles["ADDR1"]; got != "mutated.key" {
@@ -375,8 +367,8 @@ func TestDecommission(t *testing.T) {
 	}
 
 	// KeySnapshot returns nil maps
-	keys, keyTypes, lsigSizes := ir.KeySnapshot()
-	if keys != nil || keyTypes != nil || lsigSizes != nil {
+	keys, keyTypes := ir.KeySnapshot()
+	if keys != nil || keyTypes != nil {
 		t.Fatal("KeySnapshot should return nil maps for decommissioned identity")
 	}
 

@@ -53,17 +53,16 @@ func (r LogicSigResourceUsage) validate() error {
 // Foreign mode is accepted on both /plan and /sign. It includes the
 // transaction in group building (dummies, fees, group ID) but does not sign
 // it. The optional lsig_resources hint declares the selected LogicSig path for
-// the foreign party's key type. The legacy lsig_size field is transitional.
+// the foreign party's key type.
 // The optional pq_scheme hint declares the native-PQ
 // authorization shape of an unsigned foreign slot; it is mutually exclusive
-// with lsig_size.
+// with lsig_resources.
 type SignRequest struct {
 	// Sign mode fields (server signs this transaction)
 	AuthAddress   string                 `json:"auth_address,omitempty"`   // Auth address (which key to use for signing)
 	TxnSender     string                 `json:"txn_sender,omitempty"`     // Advisory display hint; server derives authority from txn bytes
 	TxnBytesHex   string                 `json:"txn_bytes_hex,omitempty"`  // Full transaction bytes (TX + msgpack) - server derives what to sign from this
 	LsigArgs      map[string]string      `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs (name -> hex value)
-	LsigSize      int                    `json:"lsig_size,omitempty"`      // LSig size hint for foreign transactions (no key on this signer)
 	LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Selected-path resource hint for a foreign LogicSig
 	PQScheme      string                 `json:"pq_scheme,omitempty"`      // Native-PQ scheme hint for foreign transactions (currently "f1")
 	AppCallInfo   *AppCallInfo           `json:"app_call_info,omitempty"`  // Optional app-call metadata for approval rendering
@@ -165,14 +164,8 @@ func (r SignRequest) Validate() error {
 	if r.PQScheme != "" && mode != RequestModeForeign {
 		return fmt.Errorf("pq_scheme is allowed only for foreign transactions")
 	}
-	if r.PQScheme != "" && r.LsigSize != 0 {
-		return fmt.Errorf("foreign transaction cannot specify both pq_scheme and lsig_size")
-	}
 	if r.LsigResources != nil && mode != RequestModeForeign {
 		return fmt.Errorf("lsig_resources is allowed only for foreign transactions")
-	}
-	if r.LsigResources != nil && r.LsigSize != 0 {
-		return fmt.Errorf("foreign transaction cannot specify both lsig_resources and lsig_size")
 	}
 	if r.LsigResources != nil && r.PQScheme != "" {
 		return fmt.Errorf("foreign transaction cannot specify both pq_scheme and lsig_resources")
@@ -569,7 +562,6 @@ type KeyInfo struct {
 	SigningFlow              string                    `json:"signing_flow,omitempty"`              // signing choreography label (for example "sentry1" or "bounded-sentry1"); empty = plain /sign
 	SentryComponentKeyType   string                    `json:"sentry_component_key_type,omitempty"` // sentry component key type for sentry-backed signing flows
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
-	LsigSize                 int                       `json:"lsig_size,omitempty"` // Spend-path LogicSig size for group budget calculation (bytecode + crypto sig args); excludes the bounded contract-admin signature, which only the /sign/bounded-admin choreography attaches and the signer budgets itself
 	LogicSigResources        *LogicSigResourceProfile  `json:"logic_sig_resources,omitempty"`
 	IsGenericLsig            bool                      `json:"is_generic_lsig,omitempty"`
 	IsWitnessKey             bool                      `json:"is_witness_key,omitempty"`

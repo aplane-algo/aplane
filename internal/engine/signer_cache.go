@@ -68,12 +68,6 @@ func (e *Core) signerCacheKeyType(address string) string {
 	return e.SignerCache.GetKeyType(address)
 }
 
-func (e *Core) signerCacheLsigSize(address string) int {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.GetLsigSize(address)
-}
-
 func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()

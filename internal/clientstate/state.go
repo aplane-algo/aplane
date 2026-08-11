@@ -159,7 +159,6 @@ func (s *State) ApplyCacheChanges(changes CacheChanges) {
 func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 	s.SignerCache.Keys = make(map[string]string, len(keys))
 	s.SignerCache.GenericLsigs = make(map[string]bool)
-	s.SignerCache.LsigSizes = make(map[string]int)
 	s.SignerCache.LogicSigResources = make(map[string]lsigresource.Profile)
 	s.SignerCache.SigningArgs = make(map[string][]cache.SigningArgInfo)
 	s.SignerCache.SigningFlows = make(map[string]string)
@@ -171,9 +170,6 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 	for _, keyInfo := range keys {
 		s.SignerCache.Keys[keyInfo.Address] = keyInfo.KeyType
 
-		if keyInfo.LsigSize > 0 {
-			s.SignerCache.SetLsigSize(keyInfo.Address, keyInfo.LsigSize)
-		}
 		if keyInfo.LogicSigResources != nil {
 			if profile, ok := internalLogicSigResourceProfile(keyInfo.LogicSigResources); ok {
 				s.SignerCache.SetLogicSigResourceProfile(keyInfo.Address, profile)

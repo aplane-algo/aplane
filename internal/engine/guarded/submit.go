@@ -510,7 +510,7 @@ func validateBoundedTargetFees(planned []types.Transaction, targets []guardedTar
 // requestNonGuardedSignatures signs the non-guarded original positions of a
 // mixed guarded group over the frozen canonical bytes, so every signature in
 // the group commits to the same final transaction IDs. Guarded targets and
-// dummies are sent as foreign — guarded with an lsig_size hint for the guarded
+// dummies are sent as foreign — guarded with an LogicSig resource hint for the guarded
 // authorizer so the signer's budget accounting stays exact and honest — and
 // only the non-guarded originals are signed; the guarded positions are
 // assembled later via /sign/assemble. Returns signed-transaction hex keyed by
@@ -518,7 +518,7 @@ func validateBoundedTargetFees(planned []types.Transaction, targets []guardedTar
 // it makes no signer call.
 // buildGroupSignRequests builds the per-position /sign request array for the
 // frozen guarded group: dummies as foreign placeholders, guarded targets as
-// foreign entries with lsig_size hints, and non-guarded originals in sign
+// foreign entries with LogicSig resource hints, and non-guarded originals in sign
 // mode. It returns the requests plus the non-guarded sign-mode indices.
 func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]guardedTarget, opts clientsign.SubmitOptions) ([]signerapi.SignRequest, []int, error) {
 	signRequests := make([]signerapi.SignRequest, len(plannedTxns))
@@ -536,7 +536,7 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 				},
 			}
 		case guardedTargets[i].Account != "":
-			// Guarded target: foreign with an lsig_size hint. Kept in the group
+			// Guarded target: foreign with an LogicSig resource hint. Kept in the group
 			// for context and budget accounting but not signed here.
 			target := guardedTargets[i]
 			if target.Sender != sender {
@@ -576,9 +576,7 @@ func applyForeignLogicSigHint(request *signerapi.SignRequest, cache SignerCacheV
 	}
 	if profile, ok := cache.LogicSigResourceProfile(address); ok {
 		request.LsigResources = conservativeLogicSigResourceUsage(profile)
-		return
 	}
-	request.LsigSize = cache.LsigSize(address)
 }
 
 func conservativeLogicSigResourceUsage(profile lsigresource.Profile) *signerapi.LogicSigResourceUsage {
@@ -733,108 +731,6 @@ func shortSentryPublicKeyHex(publicKeyHex string) string {
 		return trimmed
 	}
 	return trimmed[:12] + "..." + trimmed[len(trimmed)-12:]
-}
-
-func (s *Signer) planGuardedGroup(txns []types.Transaction, targets []guardedTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
-	originalCount := len(txns)
-	planned := append([]types.Transaction(nil), txns...)
-	guardedTargets := make(map[int]guardedTarget, len(targets))
-	for _, target := range targets {
-		guardedTargets[target.Index] = target
-	}
-	// Size LogicSig budget across every LogicSig position, not just guarded
-	// ones: a mixed group can include non-guarded LogicSig senders (e.g. a
-	// plain falcon1024 account) that also consume program-size budget. The
-	// same indices later absorb the dummy fees in ApplyDummyFees.
-	//
-	// Non-guarded positions are budgeted against the effective signer (the auth
-	// address for rekeyed accounts), because that is the LogicSig that goes
-	// on-chain and the address the signer sizes budget against — keeping the
-	// client and server dummy counts in agreement. Guarded positions are
-	// budgeted against the guarded effective signer, because that is the
-	// LogicSig that goes on-chain as sender or AuthAddr.
-	lsigIndices := make([]int, 0, len(planned))
-	totalLsigBytes := 0
-	for i, txn := range planned {
-		sender := txn.Sender.String()
-		budgetAddr := s.authCache.ResolveEffectiveSigner(sender)
-		target, guarded := guardedTargets[i]
-		if guarded {
-			if target.Sender != sender {
-				return nil, nil, fmt.Errorf("guarded target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
-			}
-			budgetAddr = target.Account
-		}
-		size := s.cache.LsigSize(budgetAddr)
-		if guarded && size <= 0 {
-			return nil, nil, missingGuardedLsigSizeMessage(target)
-		}
-		if size > 0 {
-			totalLsigBytes += size
-			lsigIndices = append(lsigIndices, i)
-		}
-	}
-
-	currentBudget := len(planned) * signing.TxLsigBudget
-	dummiesNeeded := 0
-	if totalLsigBytes > currentBudget {
-		extraBudgetNeeded := totalLsigBytes - currentBudget
-		dummiesNeeded = (extraBudgetNeeded + signing.TxLsigBudget - 1) / signing.TxLsigBudget
-	}
-	if len(planned)+dummiesNeeded > 16 {
-		return nil, nil, fmt.Errorf("guarded group would be %d transactions (max 16) after adding %d LogicSig-budget dummies", len(planned)+dummiesNeeded, dummiesNeeded)
-	}
-
-	var empty types.Digest
-	isPreGrouped := planned[0].Group != empty
-	for i := range planned {
-		if isPreGrouped && planned[i].Group != planned[0].Group {
-			return nil, nil, fmt.Errorf("transaction %d has different group ID - request must contain single group", i+1)
-		}
-		if !isPreGrouped && planned[i].Group != empty {
-			return nil, nil, fmt.Errorf("transaction %d has group ID but transaction 1 does not - inconsistent grouping", i+1)
-		}
-	}
-	if isPreGrouped && dummiesNeeded > 0 {
-		return nil, nil, fmt.Errorf("pre-grouped guarded transactions require %d additional dummies for LogicSig budget but group is immutable", dummiesNeeded)
-	}
-
-	var dummyTxns []types.Transaction
-	if dummiesNeeded > 0 {
-		sp := suggestedParamsFromTxn(planned[0])
-		var err error
-		dummyTxns, err = signing.CreateDummyTransactions(dummiesNeeded, sp)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create guarded dummy transactions: %w", err)
-		}
-		if _, err := signing.ApplyDummyFees(planned, lsigIndices, dummiesNeeded, signing.DefaultMinFee); err != nil {
-			return nil, nil, fmt.Errorf("failed to adjust guarded transaction fees: %w", err)
-		}
-		if w != nil {
-			_, _ = fmt.Fprintf(w, "[GUARDED] Added %d dummy transaction(s) for LogicSig budget\n", dummiesNeeded)
-		}
-	}
-
-	planned = append(planned, dummyTxns...)
-	if len(planned) > 1 && (!isPreGrouped || dummiesNeeded > 0) {
-		for i := range planned {
-			planned[i].Group = types.Digest{}
-		}
-		if _, err := signing.AssignGroupID(planned); err != nil {
-			return nil, nil, err
-		}
-	}
-	if originalCount < len(planned) {
-		dummyTxns = append([]types.Transaction(nil), planned[originalCount:]...)
-	}
-	return planned, dummyTxns, nil
-}
-
-func missingGuardedLsigSizeMessage(target guardedTarget) error {
-	if target.Sender == target.Account {
-		return fmt.Errorf("guarded account %s is missing LogicSig size metadata; run keys refresh", target.Account)
-	}
-	return fmt.Errorf("guarded authorizer %s for sender %s is missing LogicSig size metadata; run keys refresh", target.Account, target.Sender)
 }
 
 func suggestedParamsFromTxn(txn types.Transaction) types.SuggestedParams {

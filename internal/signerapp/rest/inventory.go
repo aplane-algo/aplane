@@ -37,7 +37,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 
 	// KeySnapshot skips the per-key metadata deep-clone; the metadata this
 	// listing needs comes from GetSigningSummary below.
-	keysCopy, keyTypesCopy, lsigSizesCopy := ir.KeySnapshot()
+	keysCopy, keyTypesCopy := ir.KeySnapshot()
 	publicKeyHexMap := ks.GetPublicKeyHexMap()
 	signingSummary := ks.GetSigningSummary()
 
@@ -53,7 +53,6 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			Address:       address,
 			PublicKeyHex:  publicKeyHexMap[address],
 			KeyType:       keyType,
-			LsigSize:      lsigSizesCopy[address],
 			IsGenericLsig: isGeneric,
 		}
 		keyInfo.LogicSigResources = publicLogicSigResourceProfile(summary.LogicSigResources)

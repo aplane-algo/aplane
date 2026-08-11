@@ -80,7 +80,7 @@ teal: |
 	if err := ks.Scan(nil); err != nil {
 		t.Fatalf("keyStore.Scan(nil) error = %v", err)
 	}
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes(), ks.GetLsigSizes())
+	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
 
 	preReloadInfo, ok := findKeyInfoResponse(server.restService().BuildKeyInfoList(ir), address)
 	if !ok {

@@ -485,20 +485,6 @@ func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 	return result
 }
 
-// GetLsigSizes returns a copy of the address -> lsigSize cache.
-// LsigSize is the total LogicSig size in bytes (bytecode + signature).
-// Returns 0 for Ed25519 keys (no LogicSig).
-func (f *FileKeyStore) GetLsigSizes() map[string]int {
-	f.cacheLock.RLock()
-	defer f.cacheLock.RUnlock()
-
-	result := make(map[string]int, len(f.cache))
-	for k, v := range f.cache {
-		result[k] = v.LsigSize
-	}
-	return result
-}
-
 // GetPublicKeyHexMap returns a copy of the address -> publicKeyHex cache.
 // Used for the /keys endpoint. Returns empty string for generic LSig keys.
 func (f *FileKeyStore) GetPublicKeyHexMap() map[string]string {

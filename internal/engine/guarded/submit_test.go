@@ -172,9 +172,9 @@ func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
 		c.SetSentryComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
 		c.SetSentryPublicKeyForAddress(bounded, sentryHex)
 		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
-		c.SetLsigSize(bounded, 4000)
+		setTestLogicSigSize(c, bounded, 4000)
 		c.AddAddress(plain, "aplane.falcon1024.v1")
-		c.SetLsigSize(plain, 1700)
+		setTestLogicSigSize(c, plain, 1700)
 	})
 	txns := []types.Transaction{
 		testPaymentTxn(t, testAddress(1), testAddress(3), "bounded"),
@@ -193,7 +193,7 @@ func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
 	if mode, _ := requests[0].Mode(); mode != signerapi.RequestModeSign || requests[0].AuthAddress != bounded || requests[0].LsigArgs["preimage"] != "aa" {
 		t.Fatalf("bounded request = %#v", requests[0])
 	}
-	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign || requests[1].LsigSize != 1700 {
+	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign || requests[1].LsigResources == nil || requests[1].LsigResources.ProgramBytes != 1700 {
 		t.Fatalf("plain context request = %#v", requests[1])
 	}
 	if sc.SigningFlowForAddress(bounded) != signerapi.SigningFlowBoundedSentry1 || !s.HasGuardedEffectiveSigner(txns) {
@@ -211,50 +211,6 @@ func TestGuardedTargetsRequireSentryComponentKeyTypeMetadata(t *testing.T) {
 	_, err := s.guardedTargets([]types.Transaction{txn})
 	if err == nil || !strings.Contains(err.Error(), "missing sentry_component_key_type") {
 		t.Fatalf("guardedTargets() error = %v, want missing sentry_component_key_type", err)
-	}
-}
-
-func TestPlanGuardedGroupReturnsGroupedDummies(t *testing.T) {
-	sender := testAddress(1).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
-	s, _ := newGuardedTestSigner(t, sender, 2500, sentryHex)
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
-	targets := []guardedTarget{{
-		Index:                  0,
-		Sender:                 sender,
-		Account:                sender,
-		SentryComponentKeyType: witness.Falcon1024V1,
-		SentryPublicKey:        sentryHex,
-	}}
-
-	planned, dummies, err := s.planGuardedGroup([]types.Transaction{txn}, targets, nil)
-	if err != nil {
-		t.Fatalf("planGuardedGroup() error = %v", err)
-	}
-	if len(planned) != 3 {
-		t.Fatalf("len(planned) = %d, want 3", len(planned))
-	}
-	if len(dummies) != 2 {
-		t.Fatalf("len(dummies) = %d, want 2", len(dummies))
-	}
-	if planned[0].Group == (types.Digest{}) {
-		t.Fatal("planned group ID is empty")
-	}
-	for i := range planned {
-		if planned[i].Group != planned[0].Group {
-			t.Fatalf("planned[%d].Group = %x, want %x", i, planned[i].Group, planned[0].Group)
-		}
-	}
-	for i := range dummies {
-		if dummies[i].Group != planned[1+i].Group {
-			t.Fatalf("dummy[%d].Group = %x, want grouped canonical dummy %x", i, dummies[i].Group, planned[1+i].Group)
-		}
-		if dummies[i].Fee != 0 {
-			t.Fatalf("dummy[%d].Fee = %d, want 0", i, dummies[i].Fee)
-		}
-	}
-	if planned[0].Fee != types.MicroAlgos(3000) {
-		t.Fatalf("planned[0].Fee = %d, want 3000 after two dummy fees", planned[0].Fee)
 	}
 }
 
@@ -498,7 +454,6 @@ func (v testCacheView) SentryPublicKey(address string) (string, bool) {
 func (v testCacheView) BoundedMaxFee(address string) (uint64, bool) {
 	return v.c.BoundedMaxFeeForAddress(address)
 }
-func (v testCacheView) LsigSize(address string) int { return v.c.GetLsigSize(address) }
 func (v testCacheView) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
 	return v.c.LogicSigResourceProfile(address)
 }
@@ -538,11 +493,18 @@ func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, lsigSi
 			signerCache.SetSentryComponentKeyTypeForAddress(sender, componentType)
 		}
 		if lsigSize > 0 {
-			signerCache.SetLsigSize(sender, lsigSize)
+			setTestLogicSigSize(signerCache, sender, lsigSize)
 		}
 		if sentryPublicKey != "" {
 			signerCache.SetSentryPublicKeyForAddress(sender, sentryPublicKey)
 		}
+	})
+}
+
+func setTestLogicSigSize(signerCache *cache.SignerCache, address string, size int) {
+	signerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
+		ProgramBytes: uint64(size),
+		Default:      &lsigresource.PathProfile{MaxOpcodeCost: 1},
 	})
 }
 

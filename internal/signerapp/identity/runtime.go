@@ -54,7 +54,7 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 // Per-lock scope:
 //
 //	passphraseLock  guards keySession, reloadFn, and keyring-unlock paths.
-//	keysLock        guards the keys/keyTypes/keyLsigSizes maps. keysetRev is
+//	keysLock        guards the keys/keyTypes/keyMetadata maps. keysetRev is
 //	                bumped while keysLock is held (and atomically readable).
 //	watcherMu       guards watcherCancel, dirty, and the reloadLock callback
 //	                pointer. It is never nested with passphraseLock or keysLock;
@@ -94,12 +94,11 @@ type Runtime struct {
 	keySession     *keystore.KeySession
 	passphraseLock sync.RWMutex
 
-	keys         map[string]string // address -> keyfile path
-	keyTypes     map[string]string // address -> key type
-	keyLsigSizes map[string]int    // address -> lsig size
-	keyMetadata  map[string]KeyPublicMetadata
-	keysetRev    atomic.Uint64 // Process-local revision of the published key snapshot.
-	keysLock     sync.RWMutex
+	keys        map[string]string // address -> keyfile path
+	keyTypes    map[string]string // address -> key type
+	keyMetadata map[string]KeyPublicMetadata
+	keysetRev   atomic.Uint64 // Process-local revision of the published key snapshot.
+	keysLock    sync.RWMutex
 
 	watcherCancel   context.CancelFunc
 	watcherMu       sync.Mutex
@@ -151,7 +150,6 @@ type KeyIndexSnapshot struct {
 	Revision    uint64
 	KeyFiles    map[string]string
 	KeyTypes    map[string]string
-	LSigSizes   map[string]int
 	KeyMetadata map[string]KeyPublicMetadata
 }
 
@@ -209,7 +207,6 @@ func New(cfg Config) *Runtime {
 		nodeRole:            nodeRole,
 		keys:                make(map[string]string),
 		keyTypes:            make(map[string]string),
-		keyLsigSizes:        make(map[string]int),
 		keyMetadata:         make(map[string]KeyPublicMetadata),
 		onLocked:            cfg.OnLocked,
 		persistDecommission: cfg.PersistDecommission,
@@ -789,7 +786,6 @@ func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
 		Revision:    ir.keysetRev.Load(),
 		KeyFiles:    make(map[string]string, len(ir.keys)),
 		KeyTypes:    make(map[string]string, len(ir.keyTypes)),
-		LSigSizes:   make(map[string]int, len(ir.keyLsigSizes)),
 		KeyMetadata: make(map[string]KeyPublicMetadata, len(ir.keyMetadata)),
 	}
 	for k, v := range ir.keys {
@@ -797,9 +793,6 @@ func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
 	}
 	for k, v := range ir.keyTypes {
 		snapshot.KeyTypes[k] = v
-	}
-	for k, v := range ir.keyLsigSizes {
-		snapshot.LSigSizes[k] = v
 	}
 	for k, v := range ir.keyMetadata {
 		v.Parameters = maps.Clone(v.Parameters)
@@ -817,29 +810,25 @@ func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
 // need per-key metadata use KeyIndexSnapshot, which additionally deep-clones
 // it. Safe for concurrent use. Returns nil maps if the identity is
 // decommissioned.
-func (ir *Runtime) KeySnapshot() (keys, keyTypes map[string]string, lsigSizes map[string]int) {
+func (ir *Runtime) KeySnapshot() (keys, keyTypes map[string]string) {
 	if ir.decommissioned.Load() {
-		return nil, nil, nil
+		return nil, nil
 	}
 	ir.keysLock.RLock()
 	defer ir.keysLock.RUnlock()
 	keys = maps.Clone(ir.keys)
 	keyTypes = maps.Clone(ir.keyTypes)
-	lsigSizes = maps.Clone(ir.keyLsigSizes)
 	if keys == nil {
 		keys = map[string]string{}
 	}
 	if keyTypes == nil {
 		keyTypes = map[string]string{}
 	}
-	if lsigSizes == nil {
-		lsigSizes = map[string]int{}
-	}
-	return keys, keyTypes, lsigSizes
+	return keys, keyTypes
 }
 
 // PublishSnapshot replaces the key maps with new data from a reload.
-func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string, lsigSizes map[string]int) {
+func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string) {
 	if ir.decommissioned.Load() {
 		return
 	}
@@ -861,7 +850,6 @@ func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string, lsigSizes m
 	ir.keysLock.Lock()
 	ir.keys = keys
 	ir.keyTypes = keyTypes
-	ir.keyLsigSizes = lsigSizes
 	ir.keyMetadata = metadata
 	ir.keysetRev.Add(1)
 	ir.keysLock.Unlock()
@@ -1100,7 +1088,6 @@ func (ir *Runtime) performLockCleanup() {
 	ir.keysLock.Lock()
 	ir.keys = make(map[string]string)
 	ir.keyTypes = make(map[string]string)
-	ir.keyLsigSizes = make(map[string]int)
 	ir.keyMetadata = make(map[string]KeyPublicMetadata)
 	ir.keysetRev.Add(1)
 	ir.keysLock.Unlock()

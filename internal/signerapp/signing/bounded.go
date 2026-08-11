@@ -115,19 +115,6 @@ func boundedSlotRule(slot boundedmeta.ArgumentSlot, path boundedPath) string {
 	}
 }
 
-func boundedMetadataPath(path boundedPath) string {
-	switch path {
-	case boundedPathPureSpend:
-		return boundedmeta.PathSpend
-	case boundedPathSpendingKeyRekey:
-		return boundedmeta.PathSpendingRekey
-	case boundedPathAdminKeyRekey:
-		return boundedmeta.PathAdminRekey
-	default:
-		return ""
-	}
-}
-
 func classifyBoundedPath(txn types.Transaction, metadata *boundedmeta.Metadata) (boundedPath, *ServiceError) {
 	if metadata == nil {
 		return "", internal("bounded authorization metadata is missing")

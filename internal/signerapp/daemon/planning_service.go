@@ -66,7 +66,6 @@ func (d signerPlannerDeps) Snapshot(identityID string) signersigning.PlannerIden
 		Revision:    snapshot.Revision,
 		KeyFiles:    snapshot.KeyFiles,
 		KeyTypes:    snapshot.KeyTypes,
-		LSigSizes:   snapshot.LSigSizes,
 		KeyMetadata: keyMetadata,
 	}
 }

@@ -160,7 +160,7 @@ func reloadKeysForTest(ir *identity.Runtime, _ storepaths.Paths) error {
 	if err := ks.Scan(nil); err != nil {
 		return err
 	}
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes(), ks.GetLsigSizes())
+	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
 	return nil
 }
 

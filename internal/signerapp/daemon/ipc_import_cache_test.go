@@ -64,7 +64,7 @@ func TestIPCImportKeyBecomesVisibleAfterReload(t *testing.T) {
 		t.Fatalf("imported address %s has empty key path in cache", result.Address)
 	}
 
-	_, keyTypes, _ := ir.KeySnapshot()
+	_, keyTypes := ir.KeySnapshot()
 	keyType := keyTypes[result.Address]
 	if keyType != "ed25519" {
 		t.Fatalf("key type = %q, want %q", keyType, "ed25519")

@@ -18,7 +18,6 @@ func NewSignerCache() SignerCache {
 		SchemaVersion:           cachePayloadSchemaVersion,
 		Keys:                    make(map[string]string),
 		GenericLsigs:            make(map[string]bool),
-		LsigSizes:               make(map[string]int),
 		LogicSigResources:       make(map[string]lsigresource.Profile),
 		SigningArgs:             make(map[string][]SigningArgInfo),
 		SigningFlows:            make(map[string]string),
@@ -71,7 +70,6 @@ func (cache *SignerCache) AddAddress(address string, keyType string) {
 func (cache *SignerCache) RemoveAddress(address string) {
 	delete(cache.Keys, address)
 	delete(cache.GenericLsigs, address)
-	delete(cache.LsigSizes, address)
 	delete(cache.LogicSigResources, address)
 	delete(cache.SigningArgs, address)
 	delete(cache.SigningFlows, address)
@@ -103,23 +101,6 @@ func (cache *SignerCache) SetGenericLsig(address string, isGeneric bool) {
 	} else {
 		delete(cache.GenericLsigs, address)
 	}
-}
-
-// GetLsigSize returns the total LogicSig size for an address (0 if not LSig)
-// This includes bytecode + crypto signature size for DSA-based LSigs.
-func (cache *SignerCache) GetLsigSize(address string) int {
-	if cache.LsigSizes == nil {
-		return 0
-	}
-	return cache.LsigSizes[address]
-}
-
-// SetLsigSize sets the total LogicSig size for an address
-func (cache *SignerCache) SetLsigSize(address string, size int) {
-	if cache.LsigSizes == nil {
-		cache.LsigSizes = make(map[string]int)
-	}
-	cache.LsigSizes[address] = size
 }
 
 // LogicSigResourceProfile returns a defensive copy of the address's complete

@@ -574,7 +574,7 @@ type ListKeysMessage struct {
 
 // AdminKeyInfo is the thin per-key entry in the admin transport wire protocol.
 // It is intentionally NOT pkg/signerapi.KeyInfo (the richer HTTP inventory shape
-// carrying signing_flow, lsig_size, signing_args, and flags): the admin TUI only
+// carrying signing_flow, logic_sig_resources, signing_args, and flags): the admin TUI only
 // needs address, key type, name, and template provenance. Do not add HTTP-only
 // fields here; extend the HTTP KeyInfo instead. See docs/ARCH_ADMIN_PROTOCOL.md.
 type AdminKeyInfo struct {

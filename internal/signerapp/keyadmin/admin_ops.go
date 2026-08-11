@@ -27,7 +27,7 @@ func (s Service) ListKeys(ir *identity.Runtime) ([]ListKeyInfo, *Error) {
 		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
 	}
 
-	keysSnapshot, _, _ := ir.KeySnapshot()
+	keysSnapshot, _ := ir.KeySnapshot()
 	keysList := make([]ListKeyInfo, 0, len(keysSnapshot))
 
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {

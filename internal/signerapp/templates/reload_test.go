@@ -24,7 +24,6 @@ import (
 type fakeKeyStore struct {
 	cache        map[string]string
 	keyTypes     map[string]string
-	lsigSizes    map[string]int
 	keyring      *crypto.Keyring
 	scanWarnings []keys.KeyScanWarning
 	scanCalled   bool
@@ -66,7 +65,6 @@ func (f *fakeKeyStore) ClearKeys()                     { f.clearCount++ }
 func (f *fakeKeyStore) ClearCache()                    { f.clearCache++ }
 func (f *fakeKeyStore) GetCache() map[string]string    { return f.cache }
 func (f *fakeKeyStore) GetKeyTypes() map[string]string { return f.keyTypes }
-func (f *fakeKeyStore) GetLsigSizes() map[string]int   { return f.lsigSizes }
 func (f *fakeKeyStore) GetScanWarnings() []keys.KeyScanWarning {
 	return append([]keys.KeyScanWarning(nil), f.scanWarnings...)
 }
@@ -98,9 +96,8 @@ func (f *fakeAuditLog) LogKeyRejected(identityID, keyFile, reason string) {
 
 func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 	store := &fakeKeyStore{
-		cache:     map[string]string{"ADDR": "mock"},
-		keyTypes:  map[string]string{"ADDR": "mock-type"},
-		lsigSizes: map[string]int{"ADDR": 42},
+		cache:    map[string]string{"ADDR": "mock"},
+		keyTypes: map[string]string{"ADDR": "mock-type"},
 	}
 	session := &fakeSession{}
 
@@ -108,7 +105,6 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 	var warns []string
 	var publishedKeys map[string]string
 	var publishedKeyTypes map[string]string
-	var publishedLsigSizes map[string]int
 	paths := utilkeys.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths, "default")
 	saveTemplateRecord(t, paths, "new-generic", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
@@ -146,10 +142,9 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 				},
 			},
 		},
-		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int) {
+		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string) {
 			publishedKeys = keys
 			publishedKeyTypes = keyTypes
-			publishedLsigSizes = lsigSizes
 		},
 		Info: func(msg string) { infos = append(infos, msg) },
 		Warn: func(msg string) { warns = append(warns, msg) },
@@ -157,7 +152,6 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 
 	_ = publishedKeys
 	_ = publishedKeyTypes
-	_ = publishedLsigSizes
 	_ = infos
 	_ = warns
 	report, err := service.Reload("default", nil)
@@ -174,9 +168,8 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 	var events []string
 	store := &fakeKeyStore{
-		cache:     map[string]string{},
-		keyTypes:  map[string]string{},
-		lsigSizes: map[string]int{},
+		cache:    map[string]string{},
+		keyTypes: map[string]string{},
 		onScan: func() {
 			events = append(events, "scan")
 		},
@@ -210,7 +203,7 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 			}
 			return nil
 		},
-		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {
+		PublishSnapshot: func(map[string]string, map[string]string) {
 			events = append(events, "publish")
 		},
 	}
@@ -231,9 +224,8 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
 	wantErr := errors.New("policy integrity failed")
 	store := &fakeKeyStore{
-		cache:     map[string]string{},
-		keyTypes:  map[string]string{},
-		lsigSizes: map[string]int{},
+		cache:    map[string]string{},
+		keyTypes: map[string]string{},
 	}
 	session := &fakeSession{}
 	paths := utilkeys.NewPaths(t.TempDir())
@@ -261,7 +253,7 @@ func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
 		BeforeKeyScan: func(*crypto.Keyring) error {
 			return wantErr
 		},
-		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {
+		PublishSnapshot: func(map[string]string, map[string]string) {
 			published = true
 		},
 	}
@@ -304,10 +296,9 @@ func TestReloadPendingRotationEntersRecoveryBeforeRuntimePublication(t *testing.
 	}
 
 	store := &fakeKeyStore{
-		cache:     map[string]string{},
-		keyTypes:  map[string]string{},
-		lsigSizes: map[string]int{},
-		keyring:   kr,
+		cache:    map[string]string{},
+		keyTypes: map[string]string{},
+		keyring:  kr,
 	}
 	session := &fakeSession{}
 	var hookCalled bool
@@ -334,7 +325,7 @@ func TestReloadPendingRotationEntersRecoveryBeforeRuntimePublication(t *testing.
 			hookCalled = true
 			return nil
 		},
-		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {
+		PublishSnapshot: func(map[string]string, map[string]string) {
 			published = true
 		},
 	}
@@ -369,7 +360,7 @@ func TestReloadLockedErrorPreservesStoreLockedSentinel(t *testing.T) {
 		TemplateManager: &Manager{
 			Paths: mintedPathsForReloadTest(t),
 		},
-		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {},
+		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
 	_, err := service.Reload("default", nil)
@@ -389,7 +380,7 @@ func TestReloadMapsKeyStorePendingGuardToGenerationRecovery(t *testing.T) {
 		TemplateManager: &Manager{
 			Paths: mintedPathsForReloadTest(t),
 		},
-		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {},
+		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
 	report, err := service.Reload("default", nil)
@@ -404,9 +395,8 @@ func TestReloadMapsKeyStorePendingGuardToGenerationRecovery(t *testing.T) {
 func TestReloadClearsInitializedMasterKeyOnBeforeKeyScanError(t *testing.T) {
 	wantErr := errors.New("policy integrity failed")
 	store := &fakeKeyStore{
-		cache:     map[string]string{},
-		keyTypes:  map[string]string{},
-		lsigSizes: map[string]int{},
+		cache:    map[string]string{},
+		keyTypes: map[string]string{},
 	}
 	service := &ReloadService{
 		KeyStore:        store,
@@ -415,7 +405,7 @@ func TestReloadClearsInitializedMasterKeyOnBeforeKeyScanError(t *testing.T) {
 		BeforeKeyScan: func(*crypto.Keyring) error {
 			return wantErr
 		},
-		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {},
+		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
 	_, err := service.Reload("default", []byte("passphrase"))
@@ -430,16 +420,15 @@ func TestReloadClearsInitializedMasterKeyOnBeforeKeyScanError(t *testing.T) {
 func TestReloadClearsInitializedMasterKeyOnScanError(t *testing.T) {
 	wantErr := errors.New("scan failed")
 	store := &fakeKeyStore{
-		cache:     map[string]string{},
-		keyTypes:  map[string]string{},
-		lsigSizes: map[string]int{},
-		scanErr:   wantErr,
+		cache:    map[string]string{},
+		keyTypes: map[string]string{},
+		scanErr:  wantErr,
 	}
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         &fakeSession{},
 		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
-		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {},
+		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
 	_, err := service.Reload("default", []byte("passphrase"))
@@ -454,16 +443,15 @@ func TestReloadClearsInitializedMasterKeyOnScanError(t *testing.T) {
 func TestReloadDoesNotClearExistingUnlockOnScanError(t *testing.T) {
 	wantErr := errors.New("scan failed")
 	store := &fakeKeyStore{
-		cache:     map[string]string{},
-		keyTypes:  map[string]string{},
-		lsigSizes: map[string]int{},
-		scanErr:   wantErr,
+		cache:    map[string]string{},
+		keyTypes: map[string]string{},
+		scanErr:  wantErr,
 	}
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         &fakeSession{},
 		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
-		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {},
+		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
 	_, err := service.Reload("default", nil)
@@ -478,26 +466,23 @@ func TestReloadDoesNotClearExistingUnlockOnScanError(t *testing.T) {
 func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing.T) {
 	wantErr := errors.New("node role rejects key")
 	store := &fakeKeyStore{
-		cache:     map[string]string{"ADDR": "/keys/ADDR.key"},
-		keyTypes:  map[string]string{"ADDR": "ed25519"},
-		lsigSizes: map[string]int{"ADDR": 0},
+		cache:    map[string]string{"ADDR": "/keys/ADDR.key"},
+		keyTypes: map[string]string{"ADDR": "ed25519"},
 	}
 	session := &fakeSession{}
 	publishedKeys := map[string]string{"OLD": "/keys/OLD.key"}
 	publishedKeyTypes := map[string]string{"OLD": "ed25519"}
-	publishedLsigSizes := map[string]int{"OLD": 0}
 	var notifications []KeysChangedNotification
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         session,
 		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
-		BeforePublish: func(map[string]string, map[string]string, map[string]int) error {
+		BeforePublish: func(map[string]string, map[string]string) error {
 			return wantErr
 		},
-		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int) {
+		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string) {
 			publishedKeys = keys
 			publishedKeyTypes = keyTypes
-			publishedLsigSizes = lsigSizes
 		},
 		NotifyKeysChanged: func(notification KeysChangedNotification) {
 			notifications = append(notifications, notification)
@@ -508,8 +493,8 @@ func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Reload() error = %v, want %v", err, wantErr)
 	}
-	if len(publishedKeys) != 0 || len(publishedKeyTypes) != 0 || len(publishedLsigSizes) != 0 {
-		t.Fatalf("published snapshot = (%#v, %#v, %#v), want empty maps after rejection", publishedKeys, publishedKeyTypes, publishedLsigSizes)
+	if len(publishedKeys) != 0 || len(publishedKeyTypes) != 0 {
+		t.Fatalf("published snapshot = (%#v, %#v), want empty maps after rejection", publishedKeys, publishedKeyTypes)
 	}
 	if store.clearCache != 1 {
 		t.Fatalf("ClearCache() calls = %d, want 1", store.clearCache)
@@ -524,28 +509,25 @@ func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing
 
 func TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish(t *testing.T) {
 	store := &fakeKeyStore{
-		cache:     map[string]string{"ADDR": "/keys/ADDR.key"},
-		keyTypes:  map[string]string{"ADDR": witness.Falcon1024V1},
-		lsigSizes: map[string]int{"ADDR": 0},
+		cache:    map[string]string{"ADDR": "/keys/ADDR.key"},
+		keyTypes: map[string]string{"ADDR": witness.Falcon1024V1},
 	}
 	session := &fakeSession{}
 	publishedKeys := map[string]string{"OLD": "/keys/OLD.key"}
 	publishedKeyTypes := map[string]string{"OLD": "ed25519"}
-	publishedLsigSizes := map[string]int{"OLD": 0}
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         session,
 		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
-		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
+		BeforePublish: func(_ map[string]string, keyTypes map[string]string) error {
 			if keyTypes["ADDR"] == witness.Falcon1024V1 {
 				return errors.New(`node role "signer" rejects key inventory: ADDR:aplane.witness-falcon1024.v1`)
 			}
 			return nil
 		},
-		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int) {
+		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string) {
 			publishedKeys = keys
 			publishedKeyTypes = keyTypes
-			publishedLsigSizes = lsigSizes
 		},
 	}
 
@@ -556,8 +538,8 @@ func TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish(t *tes
 	if !strings.Contains(err.Error(), `node role "signer"`) {
 		t.Fatalf("Reload() error = %q, want signer node role rejection", err)
 	}
-	if len(publishedKeys) != 0 || len(publishedKeyTypes) != 0 || len(publishedLsigSizes) != 0 {
-		t.Fatalf("published snapshot = (%#v, %#v, %#v), want empty maps after node role rejection", publishedKeys, publishedKeyTypes, publishedLsigSizes)
+	if len(publishedKeys) != 0 || len(publishedKeyTypes) != 0 {
+		t.Fatalf("published snapshot = (%#v, %#v), want empty maps after node role rejection", publishedKeys, publishedKeyTypes)
 	}
 	if store.clearCache != 1 {
 		t.Fatalf("ClearCache() calls = %d, want 1", store.clearCache)
@@ -574,24 +556,21 @@ func TestReloadAddressCollisionInvalidatesPublishedSnapshot(t *testing.T) {
 		},
 	}
 	store := &fakeKeyStore{
-		cache:     map[string]string{"ADDR": "/keys/ADDR.key"},
-		keyTypes:  map[string]string{"ADDR": "ed25519"},
-		lsigSizes: map[string]int{"ADDR": 0},
-		scanErr:   collisionErr,
+		cache:    map[string]string{"ADDR": "/keys/ADDR.key"},
+		keyTypes: map[string]string{"ADDR": "ed25519"},
+		scanErr:  collisionErr,
 	}
 	session := &fakeSession{}
 	publishedKeys := map[string]string{"ADDR": "/keys/ADDR.key"}
 	publishedKeyTypes := map[string]string{"ADDR": "ed25519"}
-	publishedLsigSizes := map[string]int{"ADDR": 0}
 	var notifications []KeysChangedNotification
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         session,
 		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
-		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int) {
+		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string) {
 			publishedKeys = keys
 			publishedKeyTypes = keyTypes
-			publishedLsigSizes = lsigSizes
 		},
 		NotifyKeysChanged: func(notification KeysChangedNotification) {
 			notifications = append(notifications, notification)
@@ -602,8 +581,8 @@ func TestReloadAddressCollisionInvalidatesPublishedSnapshot(t *testing.T) {
 	if !errors.Is(err, keys.ErrAddressCollision) {
 		t.Fatalf("Reload() error = %v, want ErrAddressCollision", err)
 	}
-	if len(publishedKeys) != 0 || len(publishedKeyTypes) != 0 || len(publishedLsigSizes) != 0 {
-		t.Fatalf("published snapshot = (%#v, %#v, %#v), want empty maps after collision", publishedKeys, publishedKeyTypes, publishedLsigSizes)
+	if len(publishedKeys) != 0 || len(publishedKeyTypes) != 0 {
+		t.Fatalf("published snapshot = (%#v, %#v), want empty maps after collision", publishedKeys, publishedKeyTypes)
 	}
 	if store.clearCache != 1 {
 		t.Fatalf("ClearCache() calls = %d, want 1", store.clearCache)
@@ -618,9 +597,8 @@ func TestReloadAddressCollisionInvalidatesPublishedSnapshot(t *testing.T) {
 
 func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 	store := &fakeKeyStore{
-		cache:     map[string]string{},
-		keyTypes:  map[string]string{},
-		lsigSizes: map[string]int{},
+		cache:    map[string]string{},
+		keyTypes: map[string]string{},
 		scanWarnings: []keys.KeyScanWarning{
 			{Code: keys.KeyScanWarningLogicSigSaltInvalid, KeyFile: "/tmp/BAD.key", Err: keys.ErrMissingLogicSigSaltCounter},
 			{Code: keys.KeyScanWarningLogicSigAddressInvalid, KeyFile: "/tmp/ONCURVE.key", Err: keys.ErrLogicSigAddressOnCurve},
@@ -637,7 +615,7 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 		KeyStore:        store,
 		Session:         session,
 		TemplateManager: &Manager{Paths: paths, Registrars: []TemplateRegistrar{testNoopRegistrar()}},
-		PublishSnapshot: func(map[string]string, map[string]string, map[string]int) {},
+		PublishSnapshot: func(map[string]string, map[string]string) {},
 		AuditLog:        audit,
 	}
 

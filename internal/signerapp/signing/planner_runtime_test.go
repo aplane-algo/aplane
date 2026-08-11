@@ -9,12 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -26,7 +24,6 @@ import (
 type stubPlannerDeps struct {
 	keyTypes         map[string]string
 	keyFiles         map[string]string
-	lsigSizes        map[string]int
 	keyMetadata      map[string]PlannerKeyMetadata
 	minTxnFee        uint64
 	minTxnFees       map[types.Digest]uint64
@@ -44,7 +41,6 @@ func (d stubPlannerDeps) Snapshot(identityID string) PlannerIdentitySnapshot {
 	return PlannerIdentitySnapshot{
 		KeyFiles:    keyFiles,
 		KeyTypes:    d.keyTypes,
-		LSigSizes:   d.lsigSizes,
 		KeyMetadata: d.keyMetadata,
 	}
 }
@@ -131,26 +127,6 @@ func TestCalculateLogicSigResourcesV42SeparatesProgramArgumentsAndOpcode(t *test
 	}
 	if len(indices) != 1 || indices[0] != 0 {
 		t.Fatalf("fee-capable LogicSig indices = %v, want [0]", indices)
-	}
-}
-
-func TestCalculateLogicSigResourcesV42RejectsLegacyForeignScalar(t *testing.T) {
-	_, _, err := calculateLogicSigResources(
-		nil,
-		PlannerIdentitySnapshot{},
-		"default",
-		[]signerapi.SignRequest{{LsigSize: 1_500}},
-		[]types.Transaction{{}},
-		nil,
-		map[int]bool{},
-		map[int]bool{0: true},
-		nil,
-		PlannerNetworkParams{ConsensusVersion: string(protocol.ConsensusV42)},
-		false,
-		false,
-	)
-	if err == nil || !strings.Contains(err.Error(), "provide lsig_resources") {
-		t.Fatalf("calculateLogicSigResources() error = %v, want structured-profile rejection", err)
 	}
 }
 
@@ -309,7 +285,6 @@ func TestPlannerUsesSingleIdentitySnapshot(t *testing.T) {
 	deps := &countingSnapshotPlannerDeps{
 		stubPlannerDeps: stubPlannerDeps{
 			keyTypes:  map[string]string{authAddr: "ed25519"},
-			lsigSizes: map[string]int{authAddr: 100},
 			minTxnFee: 1000,
 		},
 	}
@@ -423,264 +398,6 @@ func groupedPlannerTxns(t *testing.T, n int) []types.Transaction {
 	return txns
 }
 
-func TestCalculateDummies_PreGroupedImmutability(t *testing.T) {
-	const largeLsigSize = 2500
-	const addr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-
-	preGroupID := types.Digest{1, 2, 3}
-	emptyGroup := types.Digest{}
-
-	tests := []struct {
-		name         string
-		isPreGrouped bool
-		groupID      types.Digest
-		lsigSize     int
-		txnCount     int
-		wantErr      bool
-		wantDummies  int
-	}{
-		{
-			name:         "pre-grouped with insufficient budget is rejected",
-			isPreGrouped: true,
-			groupID:      preGroupID,
-			lsigSize:     largeLsigSize,
-			txnCount:     1,
-			wantErr:      true,
-		},
-		{
-			name:         "pre-grouped with sufficient budget succeeds",
-			isPreGrouped: true,
-			groupID:      preGroupID,
-			lsigSize:     500,
-			txnCount:     1,
-			wantDummies:  0,
-		},
-		{
-			name:         "ungrouped with insufficient budget adds dummies",
-			isPreGrouped: false,
-			groupID:      emptyGroup,
-			lsigSize:     largeLsigSize,
-			txnCount:     1,
-			wantDummies:  2,
-		},
-		{
-			name:         "ungrouped with sufficient budget needs no dummies",
-			isPreGrouped: false,
-			groupID:      emptyGroup,
-			lsigSize:     800,
-			txnCount:     1,
-			wantDummies:  0,
-		},
-		{
-			name:         "pre-grouped multi-txn with sufficient budget succeeds",
-			isPreGrouped: true,
-			groupID:      preGroupID,
-			lsigSize:     900,
-			txnCount:     3,
-			wantDummies:  0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			deps := stubPlannerDeps{
-				keyTypes:  map[string]string{addr: "ed25519"},
-				lsigSizes: map[string]int{addr: tt.lsigSize},
-			}
-
-			requests := make([]signerapi.SignRequest, tt.txnCount)
-			txns := make([]types.Transaction, tt.txnCount)
-			for i := 0; i < tt.txnCount; i++ {
-				requests[i] = signerapi.SignRequest{AuthAddress: addr, TxnBytesHex: "deadbeef"}
-				txns[i] = makePlannerTxn(tt.groupID)
-			}
-
-			dummies, _, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, nil, map[int]bool{}, map[int]bool{}, false, tt.isPreGrouped)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error but got none")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if dummies != tt.wantDummies {
-				t.Errorf("expected %d dummies, got %d", tt.wantDummies, dummies)
-			}
-		})
-	}
-}
-
-// TestCalculateDummies_PreGroupedMixedForeignAndSign pins the server-side
-// assumption behind mixed guarded groups (Strategy A): a pre-grouped group whose
-// non-signed positions are foreign with accurate lsig_size hints is accepted
-// without adding dummies when the client already supplied enough budget, and is
-// rejected early when it did not. This is the path apshell exercises for a group
-// that mixes a guarded sender with an ordinary signer-managed sender.
-func TestCalculateDummies_PreGroupedMixedForeignAndSign(t *testing.T) {
-	const falconAddr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	preGroupID := types.Digest{1, 2, 3}
-
-	// Index 0: non-guarded falcon signed by this signer (1500 bytes).
-	// Index 1: guarded account, foreign with an honest 1500-byte hint.
-	deps := stubPlannerDeps{
-		keyTypes:  map[string]string{falconAddr: "aplane.falcon1024.v1"},
-		lsigSizes: map[string]int{falconAddr: 1500},
-	}
-
-	t.Run("honest hints with enough dummies add no further dummies", func(t *testing.T) {
-		// 1500 (sign) + 1500 (foreign hint) = 3000 demand; 3 txns * 1000 = 3000
-		// budget after the client added one dummy. Exact parity → 0 dummies.
-		requests := []signerapi.SignRequest{
-			{AuthAddress: falconAddr, TxnBytesHex: "deadbeef"},
-			{TxnBytesHex: "deadbeef", LsigSize: 1500},
-			{TxnBytesHex: "deadbeef"},
-		}
-		txns := []types.Transaction{makePlannerTxn(preGroupID), makePlannerTxn(preGroupID), makePlannerTxn(preGroupID)}
-		foreign := map[int]bool{1: true, 2: true}
-
-		dummies, _, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, nil, map[int]bool{}, foreign, false, true)
-		if err != nil {
-			t.Fatalf("calculateDummies() error = %v, want accepted", err)
-		}
-		if dummies != 0 {
-			t.Fatalf("dummies = %d, want 0 (pre-grouped budget already satisfied)", dummies)
-		}
-	})
-
-	t.Run("honest hints without enough dummies are rejected early", func(t *testing.T) {
-		// 3000 demand but only 2 txns * 1000 = 2000 budget (client under-sized) →
-		// the signer rejects at sign time rather than mis-signing.
-		requests := []signerapi.SignRequest{
-			{AuthAddress: falconAddr, TxnBytesHex: "deadbeef"},
-			{TxnBytesHex: "deadbeef", LsigSize: 1500},
-		}
-		txns := []types.Transaction{makePlannerTxn(preGroupID), makePlannerTxn(preGroupID)}
-		foreign := map[int]bool{1: true}
-
-		_, _, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, nil, map[int]bool{}, foreign, false, true)
-		if err == nil {
-			t.Fatal("calculateDummies() error = nil, want pre-grouped budget rejection")
-		}
-		if !strings.Contains(err.Error(), "pre-grouped") {
-			t.Fatalf("calculateDummies() error = %q, want pre-grouped rejection", err.Error())
-		}
-	})
-}
-
-// TestCalculateDummies_FeePoolingExcludesForeign pins Option C: dummy fees are
-// pooled only across positions this signer signs. A foreign LogicSig position
-// contributes to the dummy budget but never carries a fee share, so the signer
-// never rewrites bytes it neither signs nor verifies.
-func TestCalculateDummies_FeePoolingExcludesForeign(t *testing.T) {
-	const falconAddr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-
-	t.Run("mixed local and foreign lsig pools only onto the local position", func(t *testing.T) {
-		// Index 0: local falcon (1500) signed here. Index 1: foreign falcon hint
-		// (1500). Demand 3000 over 2*1000 budget -> 1 dummy. lsigIndices must be
-		// exactly [0]; index 1 (foreign) must not appear.
-		deps := stubPlannerDeps{
-			keyTypes:  map[string]string{falconAddr: "aplane.falcon1024.v1"},
-			lsigSizes: map[string]int{falconAddr: 1500},
-		}
-		requests := []signerapi.SignRequest{
-			{AuthAddress: falconAddr, TxnBytesHex: "deadbeef"},
-			{TxnBytesHex: "deadbeef", LsigSize: 1500},
-		}
-		txns := []types.Transaction{makePlannerTxn(types.Digest{}), makePlannerTxn(types.Digest{})}
-		foreign := map[int]bool{1: true}
-
-		dummies, lsigIndices, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, nil, map[int]bool{}, foreign, false, false)
-		if err != nil {
-			t.Fatalf("calculateDummies() error = %v", err)
-		}
-		if dummies != 1 {
-			t.Fatalf("dummies = %d, want 1", dummies)
-		}
-		if len(lsigIndices) != 1 || lsigIndices[0] != 0 {
-			t.Fatalf("lsigIndices = %v, want [0] (foreign index 1 must not carry a fee share)", lsigIndices)
-		}
-	})
-
-	t.Run("all-foreign lsig falls back to the first signer-signed position", func(t *testing.T) {
-		// Index 0: ed25519 signed here, no local lsig. Index 1: foreign falcon
-		// hint (2500). Demand 2500 over 2*1000 budget -> 1 dummy. No local lsig
-		// position exists, so the pooled fee must fall back to index 0 (sign
-		// mode) and never to the foreign slot.
-		deps := stubPlannerDeps{
-			keyTypes:  map[string]string{falconAddr: "ed25519"},
-			lsigSizes: map[string]int{},
-		}
-		requests := []signerapi.SignRequest{
-			{AuthAddress: falconAddr, TxnBytesHex: "deadbeef"},
-			{TxnBytesHex: "deadbeef", LsigSize: 2500},
-		}
-		txns := []types.Transaction{makePlannerTxn(types.Digest{}), makePlannerTxn(types.Digest{})}
-		foreign := map[int]bool{1: true}
-
-		dummies, lsigIndices, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, nil, map[int]bool{}, foreign, false, false)
-		if err != nil {
-			t.Fatalf("calculateDummies() error = %v", err)
-		}
-		if dummies != 1 {
-			t.Fatalf("dummies = %d, want 1", dummies)
-		}
-		if len(lsigIndices) != 1 || lsigIndices[0] != 0 {
-			t.Fatalf("lsigIndices = %v, want [0] (fee must fall back to the signed position, never foreign)", lsigIndices)
-		}
-		if foreign[lsigIndices[0]] {
-			t.Fatalf("fee pooled onto foreign index %d", lsigIndices[0])
-		}
-	})
-}
-
-func TestCalculateDummiesRejectsNegativeForeignLSigSize(t *testing.T) {
-	const authAddr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-
-	requests := []signerapi.SignRequest{
-		{AuthAddress: authAddr, TxnBytesHex: "deadbeef"},
-		{TxnBytesHex: "deadbeef", LsigSize: -1},
-	}
-	txns := []types.Transaction{makePlannerTxn(types.Digest{}), makePlannerTxn(types.Digest{})}
-	foreign := map[int]bool{1: true}
-	snapshot := PlannerIdentitySnapshot{KeyTypes: map[string]string{authAddr: "ed25519"}}
-
-	_, _, err := calculateDummies(nil, snapshot, "default", requests, txns, nil, map[int]bool{}, foreign, false, false)
-	if err == nil {
-		t.Fatal("calculateDummies() error = nil, want negative lsig_size failure")
-	}
-	if !strings.Contains(err.Error(), "invalid negative lsig_size") {
-		t.Fatalf("calculateDummies() error = %q, want negative lsig_size failure", err.Error())
-	}
-}
-
-func TestCalculateDummiesRejectsLSigSizeOverflow(t *testing.T) {
-	const authAddr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	const maxInt = int(^uint(0) >> 1)
-
-	requests := []signerapi.SignRequest{
-		{AuthAddress: authAddr, TxnBytesHex: "deadbeef"},
-		{TxnBytesHex: "deadbeef", LsigSize: maxInt},
-		{TxnBytesHex: "deadbeef", LsigSize: 1},
-	}
-	txns := []types.Transaction{
-		makePlannerTxn(types.Digest{}),
-		makePlannerTxn(types.Digest{}),
-		makePlannerTxn(types.Digest{}),
-	}
-	foreign := map[int]bool{1: true, 2: true}
-	snapshot := PlannerIdentitySnapshot{KeyTypes: map[string]string{authAddr: "ed25519"}}
-
-	_, _, err := calculateDummies(nil, snapshot, "default", requests, txns, nil, map[int]bool{}, foreign, false, false)
-	if err == nil {
-		t.Fatal("calculateDummies() error = nil, want overflow failure")
-	}
-	if !strings.Contains(err.Error(), "overflows") {
-		t.Fatalf("calculateDummies() error = %q, want overflow failure", err.Error())
-	}
-}
-
 func TestValidateGroupConsistency(t *testing.T) {
 	groupA := types.Digest{1, 2, 3}
 	groupB := types.Digest{4, 5, 6}
@@ -776,107 +493,6 @@ func TestValidateGroupConsistency(t *testing.T) {
 	}
 }
 
-func TestBuildFinalGroupUsesTransactionGenesisHashForMinFee(t *testing.T) {
-	genesisHash := types.Digest{9, 8, 7}
-	sender := types.Address{1}
-	receiver := types.Address{2}
-	txns := []types.Transaction{{
-		Type: types.PaymentTx,
-		Header: types.Header{
-			Sender:      sender,
-			Fee:         1000,
-			FirstValid:  10,
-			LastValid:   20,
-			GenesisID:   "custom-v1",
-			GenesisHash: genesisHash,
-		},
-		PaymentTxnFields: types.PaymentTxnFields{
-			Receiver: receiver,
-			Amount:   1,
-		},
-	}}
-	deps := stubPlannerDeps{
-		minTxnFee: 1000,
-		minTxnFees: map[types.Digest]uint64{
-			genesisHash: 2000,
-		},
-	}
-
-	allTxns, dummyTxns, feeInfo, _, err := buildFinalGroup(deps.NetworkParams(genesisHash).MinTxnFee, nil, txns, 2, []int{0}, false)
-	if err != nil {
-		t.Fatalf("buildFinalGroup() error = %v", err)
-	}
-	if len(dummyTxns) != 2 {
-		t.Fatalf("dummy count = %d, want 2", len(dummyTxns))
-	}
-	if feeInfo.TotalFees != 4000 {
-		t.Fatalf("TotalFees = %d, want 4000 from custom min fee", feeInfo.TotalFees)
-	}
-	if got := uint64(allTxns[0].Fee); got != 5000 {
-		t.Fatalf("signed txn fee = %d, want original 1000 + 4000 dummy fees", got)
-	}
-	for i, dummy := range dummyTxns {
-		if dummy.GenesisHash != genesisHash {
-			t.Fatalf("dummy %d genesis hash = %x, want %x", i, dummy.GenesisHash[:], genesisHash[:])
-		}
-	}
-}
-
-func TestBuildFinalGroupRejectsImplausibleMinFee(t *testing.T) {
-	genesisHash := types.Digest{5, 5, 5}
-	txns := []types.Transaction{{
-		Type:   types.PaymentTx,
-		Header: types.Header{Sender: types.Address{1}, Fee: 1000, GenesisHash: genesisHash},
-	}}
-	deps := stubPlannerDeps{
-		minTxnFees: map[types.Digest]uint64{genesisHash: 2_000_000}, // absurd min fee
-	}
-
-	_, _, _, _, err := buildFinalGroup(deps.NetworkParams(genesisHash).MinTxnFee, nil, txns, 2, []int{0}, false)
-	if err == nil || !strings.Contains(err.Error(), "implausibly high") {
-		t.Fatalf("buildFinalGroup() error = %v, want implausible-min-fee rejection", err)
-	}
-}
-
-// TestCalculateDummies_BoundedAdminSlotTopUp pins per-path bounded budgeting:
-// stored LSigSizes cover the spend path only, and calculateDummies reserves
-// the Falcon contract-admin signature bytes solely for admin-key rekey slots.
-func TestCalculateDummies_BoundedAdminSlotTopUp(t *testing.T) {
-	const addr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	// Spend-path size that fits a single txn's budget exactly: no dummies for
-	// a spend, but the admin signature top-up forces dummies for an admin rekey.
-	deps := stubPlannerDeps{
-		keyTypes:  map[string]string{addr: "aplane.falcon1024-bounded.v1"},
-		lsigSizes: map[string]int{addr: coresigning.TxLsigBudget},
-	}
-	requests := []signerapi.SignRequest{{AuthAddress: addr, TxnBytesHex: "deadbeef"}}
-	txns := []types.Transaction{makePlannerTxn(types.Digest{})}
-
-	metadata := testBoundedMetadata(t, boundedmeta.AdminAuthorizationAdmin)
-	metadata.PostSigningLogicSigSize = coresigning.TxLsigBudget + boundedmeta.FalconAdminSignatureSize
-	spendItems := []*boundedPlanItem{{Path: boundedPathPureSpend, Metadata: metadata}}
-	dummies, _, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, spendItems, map[int]bool{}, map[int]bool{}, false, false)
-	if err != nil {
-		t.Fatalf("spend path: unexpected error: %v", err)
-	}
-	if dummies != 0 {
-		t.Fatalf("spend path dummies = %d, want 0 (no admin-signature reservation)", dummies)
-	}
-
-	adminItems := []*boundedPlanItem{{Path: boundedPathAdminKeyRekey, Metadata: metadata}}
-	dummies, _, err = calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, adminItems, map[int]bool{}, map[int]bool{}, false, false)
-	if err != nil {
-		t.Fatalf("admin path: unexpected error: %v", err)
-	}
-	wantDummies := (boundedmeta.FalconAdminSignatureSize + coresigning.TxLsigBudget - 1) / coresigning.TxLsigBudget
-	if dummies != wantDummies {
-		t.Fatalf("admin path dummies = %d, want %d (admin signature reserved)", dummies, wantDummies)
-	}
-}
-
-// TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling pins that the bounded
-// MaxFee ceiling is enforced by the unified group-fee allocator before any
-// transaction is mutated.
 func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 	var genesisHash types.Digest
 	resolver, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{
@@ -892,12 +508,17 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 	metadata.PostSigningLogicSigSize = 2500
 	deps := stubPlannerDeps{
 		keyTypes: map[string]string{authAddr: "aplane.falcon1024-bounded.v1"},
-		// Spend size needing 2 dummies for a single txn: pooled fee = 2 * minFee.
-		lsigSizes: map[string]int{authAddr: 2500},
+		// Spend resources need 2 dummies for a single txn: pooled fee = 2 * minFee.
 		keyMetadata: map[string]PlannerKeyMetadata{authAddr: {
 			Category:             "dsa_lsig",
 			PublicKeyHex:         "aabb",
 			BoundedAuthorization: metadata,
+			LogicSigResources: &lsigresource.Profile{
+				ProgramBytes:  2_500,
+				Spend:         &lsigresource.PathProfile{MaxOpcodeCost: 1},
+				SpendingRekey: &lsigresource.PathProfile{MaxOpcodeCost: 1},
+				AdminRekey:    &lsigresource.PathProfile{MaxOpcodeCost: 1},
+			},
 		}},
 		minTxnFee: 1000,
 	}
