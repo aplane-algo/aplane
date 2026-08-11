@@ -46,7 +46,7 @@ type ServerConfig struct {
 	Endpoint              ServerEndpointConfig `yaml:"endpoint" description:"Signer endpoint exposure settings" default:"default endpoint settings"`
 	PassphraseTimeout     string               `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
 	ApprovalWait          string               `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"60s"`
-	IPCPath               string               `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"$APSIGNER_DATA/aplane.sock"`
+	IPCPath               string               `yaml:"ipc_path" description:"Unix socket path for admin IPC; systemd custom paths must be outside signer data in a service-owned protected runtime directory" default:"systemd: /run/apsigner/aplane.sock; same-UID: $APSIGNER_DATA/aplane.sock"`
 	LockOnDisconnect      *bool                `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
 	PassphraseCommandArgv []string             `yaml:"passphrase_command_argv" description:"Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1])" default:"[]"`
 	PassphraseCommandEnv  map[string]string    `yaml:"passphrase_command_env" description:"Environment variables to pass to the passphrase command; the process env is not inherited except for the systemd CREDENTIALS_DIRECTORY passthrough" default:"{}"`
@@ -231,7 +231,27 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 		return defaults, nil
 	}
 
-	// Parse YAML
+	return parseServerConfig(dataDir, path, data, defaults)
+}
+
+// LoadServerConfigStrict loads an existing config and propagates every read
+// failure. Discovery and security-sensitive callers use it after establishing
+// that config.yaml exists so an unreadable custom path cannot silently become
+// a default socket or configuration.
+func LoadServerConfigStrict(dataDir string) (ServerConfig, error) {
+	defaults := DefaultServerConfig()
+	if dataDir == "" {
+		return defaults, nil
+	}
+	path := filepath.Join(dataDir, "config.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ServerConfig{}, fmt.Errorf("failed to read config file %s: %w", path, err)
+	}
+	return parseServerConfig(dataDir, path, data, defaults)
+}
+
+func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig) (ServerConfig, error) {
 	config := defaults
 	if err := apconfig.UnmarshalKnownConfigFields(data, &config); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
@@ -240,6 +260,7 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	if err := apconfig.ValidateConfigSchemaVersion("server config", config.SchemaVersion); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
+	var err error
 	if config.Algod, err = mergeServerNetworkAlgodConfig(nil, config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid network in networks config: %w", err)
 	}
@@ -392,7 +413,7 @@ func SaveSetting(dataDir, key string, value interface{}) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := apconfig.WriteConfigAtomic(path, out, 0o640); err != nil {
+	if err := apconfig.WriteConfigAtomic(path, out); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 

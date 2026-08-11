@@ -93,7 +93,7 @@ func SaveIdentitySidecar(paths storepaths.Paths, identityID string, roleBytes []
 		return err
 	}
 	path := paths.NodeRoleIntegritySidecar(identityID)
-	if err := fsutil.MkdirAll(filepath.Dir(path)); err != nil {
+	if err := fsutil.MkdirAllPrivate(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("failed to create node role sidecar directory: %w", err)
 	}
 	if err := fsutil.WriteFile(path, sidecarBytes); err != nil {

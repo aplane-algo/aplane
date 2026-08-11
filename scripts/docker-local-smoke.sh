@@ -334,7 +334,8 @@ populate_known_hosts() {
         pub=$(ssh-keygen -y -f "$root/apsigner/.ssh/ssh_host_key")
         mkdir -p "$root/apclient/.ssh"
         chmod 700 "$root/apclient/.ssh"
-        printf "[localhost]:%s %s\n" "$ssh_port" "$pub" > "$root/apclient/.ssh/known_hosts"
+        { printf "[localhost]:%s %s\n" "$ssh_port" "$pub"; \
+          printf "[127.0.0.1]:%s %s\n" "$ssh_port" "$pub"; } > "$root/apclient/.ssh/known_hosts"
         chmod 600 "$root/apclient/.ssh/known_hosts"
     '
 }

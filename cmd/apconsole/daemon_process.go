@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/adminipc"
 )
 
 type daemonStatus string
@@ -100,17 +102,36 @@ func defaultDaemonDeps() daemonDeps {
 	}
 }
 
-func prepareDaemonProcess(dataDir, ipcPath string, start bool) (*daemonProcess, daemonInfo) {
-	return prepareDaemonProcessWithDeps(dataDir, ipcPath, start, defaultDaemonDeps())
+func prepareDaemonProcess(dataDir, ipcPath, daemonIPCPath string, start bool) (*daemonProcess, daemonInfo) {
+	return prepareDaemonProcessWithDeps(dataDir, ipcPath, daemonIPCPath, start, defaultDaemonDeps())
 }
 
-func prepareDaemonProcessWithDeps(dataDir, ipcPath string, start bool, deps daemonDeps) (*daemonProcess, daemonInfo) {
+func resolveDaemonIPCPathForLifecycle(dataDir, configuredPath string, start bool) (string, error) {
+	if !start {
+		return "", nil
+	}
+	path, _, err := adminipc.ResolveDaemonPathForDataDir(dataDir, configuredPath)
+	return path, err
+}
+
+func prepareDaemonProcessWithDeps(dataDir, ipcPath, daemonIPCPath string, start bool, deps daemonDeps) (*daemonProcess, daemonInfo) {
 	if !start {
 		return nil, daemonInfo{
 			Status:  daemonStatusDisabled,
 			DataDir: dataDir,
 			IPCPath: ipcPath,
 			Detail:  "daemon management disabled; admin pane will attach over configured IPC/SSH",
+		}
+	}
+	if filepath.Clean(ipcPath) != filepath.Clean(daemonIPCPath) {
+		return nil, daemonInfo{
+			Status:  daemonStatusFailed,
+			DataDir: dataDir,
+			IPCPath: ipcPath,
+			Detail: fmt.Sprintf(
+				"daemon not started: client IPC path %s differs from the selected store's daemon path %s; use --no-start-daemon to attach through an intentional override",
+				ipcPath, daemonIPCPath,
+			),
 		}
 	}
 	if ipcPath != "" {

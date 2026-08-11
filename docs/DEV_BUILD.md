@@ -486,7 +486,7 @@ workflows and do not need this capability.
 - **apadmin** provides TUI admin, approval, key, and KeyType Library workflows
 - **apconsole** composes shell, signer-admin, and daemon panes on the secure signer machine
 - **apapprover** handles approval-only workflows over local IPC
-- **apstore** performs local initialize, policy integrity, endpoint export, public sentry reference, backup import admission, verification, and rebuild rescue flows; signer-owned backup, restore, passphrase, key type, and template mutations use the local admin protocol
+- **apstore** performs local initialize, policy integrity, external backup verification, and rebuild rescue flows; endpoint export and signer-owned sentry-reference, backup, restore, passphrase, key type, and template operations use the local admin protocol
 - **appolicy** verifies and edits the node-role policy document offline, can
   convert deterministic signing policy into sentry-domain `policy.yaml`, and can
   save/sign either policy document while holding the store mutation lock

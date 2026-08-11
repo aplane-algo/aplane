@@ -6,9 +6,13 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/signerprobe"
 )
 
@@ -58,6 +62,9 @@ func TestRunSignerRunningExitCodes(t *testing.T) {
 				if dataDir != "/tmp/data" {
 					t.Fatalf("dataDir = %q, want /tmp/data", dataDir)
 				}
+				if !opts.DataDirExplicit {
+					t.Fatal("DataDirExplicit = false, want true for -d")
+				}
 				return tt.result, tt.err
 			}
 
@@ -83,22 +90,150 @@ func TestRunSignerRunningExitCodes(t *testing.T) {
 	}
 }
 
-func TestRunRequiresDataDir(t *testing.T) {
+func TestRunWithoutDataDirUsesPublicResolver(t *testing.T) {
 	t.Setenv("APSIGNER_DATA", "")
 
 	origCheck := checkSigner
 	defer func() { checkSigner = origCheck }()
-	checkSigner = func(string, signerprobe.Options) (signerprobe.Result, error) {
-		t.Fatal("checkSigner should not be called")
-		return signerprobe.Result{}, nil
+	checkSigner = func(dataDir string, opts signerprobe.Options) (signerprobe.Result, error) {
+		if dataDir != "" {
+			t.Fatalf("dataDir = %q, want empty", dataDir)
+		}
+		return signerprobe.Result{State: signerprobe.StateStopped, IPCPath: "/run/apsigner/aplane.sock"}, nil
 	}
 
 	var stdout, stderr bytes.Buffer
 	gotExit := run([]string{"signer-running"}, &stdout, &stderr)
-	if gotExit != exitUnknown {
-		t.Fatalf("exit = %d, want %d", gotExit, exitUnknown)
+	if gotExit != exitStopped {
+		t.Fatalf("exit = %d, want %d", gotExit, exitStopped)
 	}
-	if !strings.Contains(stderr.String(), "signer data directory is required") {
-		t.Fatalf("stderr = %q, want missing data-dir error", stderr.String())
+	if !strings.Contains(stdout.String(), "stopped /run/apsigner/aplane.sock") {
+		t.Fatalf("stdout = %q, want public runtime socket", stdout.String())
+	}
+}
+
+func TestRunSignerIPCPathRequiresExplicitDataDir(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"signer-ipc-path"}, &stdout, &stderr); code != exitUnknown {
+		t.Fatalf("exit = %d, want %d", code, exitUnknown)
+	}
+	if !strings.Contains(stderr.String(), "requires -d") {
+		t.Fatalf("stderr = %q, want explicit data-dir requirement", stderr.String())
+	}
+}
+
+func TestSubcommandHelpExitsSuccessfully(t *testing.T) {
+	for _, command := range []string{"signer-ipc-path", "signer-running"} {
+		t.Run(command, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if code := run([]string{command, "-h"}, &stdout, &stderr); code != exitRunning {
+				t.Fatalf("exit = %d, want %d; stderr=%q", code, exitRunning, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "Usage:") {
+				t.Fatalf("stderr = %q, want usage", stderr.String())
+			}
+		})
+	}
+}
+
+func TestTopLevelHelpAdvertisesSignerIPCEnvironmentOption(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"help"}, &stdout, &stderr); code != exitRunning {
+		t.Fatalf("exit = %d, want %d; stderr=%q", code, exitRunning, stderr.String())
+	}
+	const usage = "approbe signer-ipc-path -d <signer-data-dir> [--honor-ipc-env]"
+	if !strings.Contains(stdout.String(), usage) {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), usage)
+	}
+}
+
+func TestRunSignerIPCPathMirrorsManagedDaemonResolution(t *testing.T) {
+	externalRoot := t.TempDir()
+	tests := []struct {
+		name       string
+		configured func(string) string
+		want       func(string) string
+	}{
+		{
+			name:       "omitted",
+			configured: func(string) string { return "" },
+			want:       func(string) string { return adminipc.SystemSocketPath },
+		},
+		{
+			name: "absolute legacy default",
+			configured: func(root string) string {
+				return root + string(filepath.Separator) + "." + string(filepath.Separator) + "aplane.sock"
+			},
+			want: func(string) string { return adminipc.SystemSocketPath },
+		},
+		{
+			name:       "relative legacy default",
+			configured: func(string) string { return "aplane.sock" },
+			want:       func(string) string { return adminipc.SystemSocketPath },
+		},
+		{
+			name: "custom external path containing hash",
+			configured: func(string) string {
+				return filepath.Join(externalRoot, "runtime#blue", "aplane.sock")
+			},
+			want: func(string) string {
+				return filepath.Join(externalRoot, "runtime#blue", "aplane.sock")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, ".prod"), []byte("managed\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			configured := tt.configured(root)
+			config := "schema_version: 1\n"
+			if configured != "" {
+				config += fmt.Sprintf("ipc_path: %q\n", configured)
+			}
+			if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte(config), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			var stdout, stderr bytes.Buffer
+			if code := run([]string{"signer-ipc-path", "-d", root}, &stdout, &stderr); code != exitRunning {
+				t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+			}
+			if got, want := strings.TrimSpace(stdout.String()), tt.want(root); got != want {
+				t.Fatalf("resolved path = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestRunSignerIPCPathIgnoresInheritedIPCPathByDefault(t *testing.T) {
+	root := t.TempDir()
+	want := filepath.Join(root, "configured.sock")
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte(fmt.Sprintf("ipc_path: %q\n", want)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(adminipc.SocketPathEnv, "/run/unrelated.sock")
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"signer-ipc-path", "-d", root}, &stdout, &stderr); code != exitRunning {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != want {
+		t.Fatalf("resolved path = %q, want configured path %q", got, want)
+	}
+}
+
+func TestRunSignerIPCPathCanHonorEnvironmentPairing(t *testing.T) {
+	const want = "/secure/custom/aplane.sock"
+	t.Setenv(adminipc.SocketPathEnv, want)
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"signer-ipc-path", "--honor-ipc-env", "-d", "/unreadable/custom-store"}, &stdout, &stderr); code != exitRunning {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != want {
+		t.Fatalf("resolved path = %q, want environment path %q", got, want)
 	}
 }

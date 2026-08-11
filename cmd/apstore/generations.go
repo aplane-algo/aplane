@@ -9,13 +9,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // cmdGenerations manages generation-based active storage
-// (docs/ARCH_GENERATIONS.md). Offline only: the daemon must be stopped (the
-// store lock enforces it).
+// (docs/ARCH_GENERATIONS.md). Inventory is read through authenticated admin
+// IPC; destructive pruning remains offline and requires the daemon to stop.
 //
 //	apstore generations list                 inventory with roles
 //	apstore generations prune               keep current + newest sealed prior
@@ -25,29 +26,33 @@ func cmdGenerations(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: apstore generations <list|prune [--all-priors]>")
 	}
-	paths := keystorePaths()
-	identityID := productIdentityID()
-
-	generational, err := genstore.IsGenerational(paths, identityID)
-	if err != nil {
-		return err
-	}
-	if !generational {
-		return fmt.Errorf("store does not use generation-based storage; this release only supports stores it initialized (restore from a backup archive into a fresh store)")
-	}
-
 	switch args[0] {
 	case "list":
 		if len(args) != 1 {
 			return fmt.Errorf("usage: apstore generations list")
 		}
-		// Read-only: list classifies without deleting. Discard of staging
-		// residue and uncommitted attempts happens at unlock or prune.
-		report, err := genstore.Inspect(paths, identityID, nil)
+		client, err := newApstoreReadOnlyAdminClientForCommand()
 		if err != nil {
 			return err
 		}
-		reportPendingDiscards(report)
+		defer client.close()
+		report, err := requestInspectionWithRetry(client, func() any {
+			return protocol.ListGenerationsMessage{
+				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListGenerations, ID: newApstoreRequestID("generations-list")},
+			}
+		}, func(result *protocol.GenerationsListMessage) string { return result.Code })
+		if err != nil {
+			return err
+		}
+		if report.Error != "" {
+			return codedError{code: report.Code, message: report.Error}
+		}
+		for _, attempt := range report.PendingAttempts {
+			logInfof("uncommitted generation %s (discarded at next unlock or prune)", attempt)
+		}
+		for _, staging := range report.PendingStaging {
+			logInfof("staging residue %s (discarded at next unlock or prune)", staging)
+		}
 		if report.RetainedUnsealedParent != "" {
 			logWarnf("rollback parent %s is missing its seal; pruning is blocked until it is restored or removed", report.RetainedUnsealedParent)
 		}
@@ -61,6 +66,15 @@ func cmdGenerations(args []string) error {
 		return nil
 
 	case "prune":
+		paths := keystorePaths()
+		identityID := productIdentityID()
+		generational, err := genstore.IsGenerational(paths, identityID)
+		if err != nil {
+			return err
+		}
+		if !generational {
+			return fmt.Errorf("store does not use generation-based storage; this release only supports stores it initialized (restore from a backup archive into a fresh store)")
+		}
 		retainRollbackParent := true
 		switch {
 		case len(args) == 1:
@@ -149,13 +163,4 @@ func verifyCurrentGenerationContentWithKeyring(paths storepaths.Paths, identityI
 	}
 	logInfof("current generation content validated")
 	return nil
-}
-
-func reportPendingDiscards(report genstore.ReconcileReport) {
-	for _, attempt := range report.DiscardedAttempts {
-		logInfof("uncommitted generation %s (discarded at next unlock or prune)", attempt)
-	}
-	for _, staging := range report.DiscardedStaging {
-		logInfof("staging residue %s (discarded at next unlock or prune)", staging)
-	}
 }

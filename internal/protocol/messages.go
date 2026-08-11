@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 4
-	AdminProtocolVersionMinor = 0
+	AdminProtocolVersionMinor = 5
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
@@ -36,36 +36,47 @@ const (
 	// Authentication message types (sent before any other messages)
 	MsgTypeAuthRequired = "auth_required"
 	MsgTypeAuth         = "auth"
+	MsgTypeAuthOnly     = "auth_only"
 	MsgTypeAuthResult   = "auth_result"
 
 	// Signer state message types
-	MsgTypeUnlock                = "unlock"
-	MsgTypeUnlockResult          = "unlock_result"
-	MsgTypeLockIdentity          = "lock_identity"
-	MsgTypeLockIdentityResult    = "lock_identity_result"
-	MsgTypeInitializeStore       = "initialize_store"
-	MsgTypeInitializeStoreResult = "initialize_store_result"
-	MsgTypeChangeStorePass       = "change_store_passphrase"
-	MsgTypeChangeStorePassResult = "change_store_passphrase_result"
-	MsgTypeBackup                = "backup"
-	MsgTypeBackupResult          = "backup_result"
-	MsgTypeListBackups           = "list_backups"
-	MsgTypeBackupsList           = "backups_list"
-	MsgTypeDeleteBackup          = "delete_backup"
-	MsgTypeDeleteBackupResult    = "delete_backup_result"
-	MsgTypePreviewRestore        = "preview_restore"
-	MsgTypeRestorePreview        = "restore_preview"
-	MsgTypeRestoreBackup         = "restore_backup"
-	MsgTypeRestoreBackupResult   = "restore_backup_result"
-	MsgTypeRollbackRestore       = "rollback_restore"
-	MsgTypeRollbackRestoreResult = "rollback_restore_result"
-	MsgTypeReconcileStore        = "reconcile_store"
-	MsgTypeReconcileStoreResult  = "reconcile_store_result"
-	MsgTypeSignRequest           = "sign_request"
-	MsgTypeSignRequestCanceled   = "sign_request_canceled"
-	MsgTypeSignResponse          = "sign_response"
-	MsgTypeStatus                = "status"
-	MsgTypeError                 = "error"
+	MsgTypeUnlock                   = "unlock"
+	MsgTypeUnlockResult             = "unlock_result"
+	MsgTypeLockIdentity             = "lock_identity"
+	MsgTypeLockIdentityResult       = "lock_identity_result"
+	MsgTypeInitializeStore          = "initialize_store"
+	MsgTypeInitializeStoreResult    = "initialize_store_result"
+	MsgTypeChangeStorePass          = "change_store_passphrase"
+	MsgTypeChangeStorePassResult    = "change_store_passphrase_result"
+	MsgTypeBackup                   = "backup"
+	MsgTypeBackupResult             = "backup_result"
+	MsgTypeListBackups              = "list_backups"
+	MsgTypeBackupsList              = "backups_list"
+	MsgTypeDeleteBackup             = "delete_backup"
+	MsgTypeDeleteBackupResult       = "delete_backup_result"
+	MsgTypeBeginBackupImport        = "begin_backup_import"
+	MsgTypeBeginBackupImportResult  = "begin_backup_import_result"
+	MsgTypeAppendBackupImport       = "append_backup_import"
+	MsgTypeAppendBackupImportResult = "append_backup_import_result"
+	MsgTypeCommitBackupImport       = "commit_backup_import"
+	MsgTypeCommitBackupImportResult = "commit_backup_import_result"
+	MsgTypeAbortBackupImport        = "abort_backup_import"
+	MsgTypeAbortBackupImportResult  = "abort_backup_import_result"
+	MsgTypeReadBackupChunk          = "read_backup_chunk"
+	MsgTypeBackupChunk              = "backup_chunk"
+	MsgTypePreviewRestore           = "preview_restore"
+	MsgTypeRestorePreview           = "restore_preview"
+	MsgTypeRestoreBackup            = "restore_backup"
+	MsgTypeRestoreBackupResult      = "restore_backup_result"
+	MsgTypeRollbackRestore          = "rollback_restore"
+	MsgTypeRollbackRestoreResult    = "rollback_restore_result"
+	MsgTypeReconcileStore           = "reconcile_store"
+	MsgTypeReconcileStoreResult     = "reconcile_store_result"
+	MsgTypeSignRequest              = "sign_request"
+	MsgTypeSignRequestCanceled      = "sign_request_canceled"
+	MsgTypeSignResponse             = "sign_response"
+	MsgTypeStatus                   = "status"
+	MsgTypeError                    = "error"
 
 	// Token provisioning message types (SSH-based token request approval)
 	MsgTypeTokenProvisioningRequest  = "token_provisioning_request"
@@ -126,6 +137,20 @@ const (
 	MsgTypeReplacePolicyResult      = "replace_policy_result"       // Server → client: replacement result and active snapshot
 	MsgTypeValidatePolicy           = "validate_policy"             // Client → server: validate policy YAML without writing
 	MsgTypeValidatePolicyResult     = "validate_policy_result"      // Server → client: validation result
+
+	// Signer-owned sentry reference and generation inventory messages.
+	MsgTypeListSentryReferences        = "list_sentry_references"
+	MsgTypeSentryReferencesList        = "sentry_references_list"
+	MsgTypeGetSentryReference          = "get_sentry_reference"
+	MsgTypeSentryReference             = "sentry_reference"
+	MsgTypeImportSentryReference       = "import_sentry_reference"
+	MsgTypeImportSentryReferenceResult = "import_sentry_reference_result"
+	MsgTypeRemoveSentryReference       = "remove_sentry_reference"
+	MsgTypeRemoveSentryReferenceResult = "remove_sentry_reference_result"
+	MsgTypeExportSentryPublic          = "export_sentry_public"
+	MsgTypeExportSentryPublicResult    = "export_sentry_public_result"
+	MsgTypeListGenerations             = "list_generations"
+	MsgTypeGenerationsList             = "generations_list"
 
 	// Client displacement message types (for single-client IPC enforcement)
 	MsgTypeClientExists    = "client_exists"    // Server → new client: another client is connected
@@ -275,7 +300,6 @@ type BackupInfo struct {
 	CreatedAt int64  `json:"created_at,omitempty"`
 	Size      int64  `json:"size,omitempty"`
 	Checksum  string `json:"checksum,omitempty"`
-	Verified  bool   `json:"verified,omitempty"`
 }
 
 type BackupsListMessage struct {
@@ -295,6 +319,81 @@ type DeleteBackupResultMessage struct {
 	Success bool   `json:"success"`
 	Code    string `json:"code,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+type BeginBackupImportMessage struct {
+	BaseMessage
+	FileName string `json:"file_name"`
+}
+
+type BeginBackupImportResultMessage struct {
+	BaseMessage
+	Success  bool   `json:"success"`
+	UploadID string `json:"upload_id,omitempty"`
+	Code     string `json:"code,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+type AppendBackupImportMessage struct {
+	BaseMessage
+	UploadID string `json:"upload_id"`
+	Offset   int64  `json:"offset"`
+	Data     []byte `json:"data"`
+}
+
+type AppendBackupImportResultMessage struct {
+	BaseMessage
+	Success    bool   `json:"success"`
+	NextOffset int64  `json:"next_offset,omitempty"`
+	Code       string `json:"code,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+type CommitBackupImportMessage struct {
+	BaseMessage
+	UploadID         string         `json:"upload_id"`
+	FileName         string         `json:"file_name"`
+	ExpectedSize     int64          `json:"expected_size"`
+	ExpectedSHA256   string         `json:"expected_sha256"`
+	ExportPassphrase SensitiveBytes `json:"export_passphrase"`
+}
+
+type CommitBackupImportResultMessage struct {
+	BaseMessage
+	Success bool       `json:"success"`
+	Backup  BackupInfo `json:"backup,omitempty"`
+	Warning string     `json:"warning,omitempty"`
+	Code    string     `json:"code,omitempty"`
+	Error   string     `json:"error,omitempty"`
+}
+
+type AbortBackupImportMessage struct {
+	BaseMessage
+	UploadID string `json:"upload_id"`
+}
+
+type AbortBackupImportResultMessage struct {
+	BaseMessage
+	Success bool   `json:"success"`
+	Code    string `json:"code,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+type ReadBackupChunkMessage struct {
+	BaseMessage
+	FileName string `json:"file_name"`
+	Offset   int64  `json:"offset"`
+}
+
+type BackupChunkMessage struct {
+	BaseMessage
+	Success  bool   `json:"success"`
+	FileName string `json:"file_name,omitempty"`
+	Offset   int64  `json:"offset,omitempty"`
+	Data     []byte `json:"data,omitempty"`
+	EOF      bool   `json:"eof,omitempty"`
+	Code     string `json:"code,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 type PreviewRestoreMessage struct {
@@ -923,6 +1022,93 @@ type ValidatePolicyResultMessage struct {
 	IdentityID string `json:"identity_id,omitempty"`
 	Code       string `json:"code,omitempty"`
 	Error      string `json:"error,omitempty"`
+}
+
+type SentryReferenceInfo struct {
+	Schema            string `json:"schema"`
+	Name              string `json:"name"`
+	ComponentKey      string `json:"component_key"`
+	KeyType           string `json:"key_type"`
+	PublicKeyEncoding string `json:"public_key_encoding"`
+	PublicKeyHex      string `json:"public_key_hex"`
+	PublicKeySize     int    `json:"public_key_size"`
+	PublicKeySHA256   string `json:"public_key_sha256"`
+	Source            string `json:"source,omitempty"`
+	EndpointAlias     string `json:"endpoint_alias,omitempty"`
+	LastSeenAt        string `json:"last_seen_at,omitempty"`
+	SyncedAt          string `json:"synced_at,omitempty"`
+	ImportedAt        string `json:"imported_at,omitempty"`
+}
+
+type ListSentryReferencesMessage struct{ BaseMessage }
+
+type SentryReferencesListMessage struct {
+	BaseMessage
+	References []SentryReferenceInfo `json:"references"`
+	Code       string                `json:"code,omitempty"`
+	Error      string                `json:"error,omitempty"`
+}
+
+type GetSentryReferenceMessage struct {
+	BaseMessage
+	Name string `json:"name"`
+}
+
+type SentryReferenceMessage struct {
+	BaseMessage
+	Success   bool                `json:"success"`
+	Reference SentryReferenceInfo `json:"reference,omitempty"`
+	Code      string              `json:"code,omitempty"`
+	Error     string              `json:"error,omitempty"`
+}
+
+type ImportSentryReferenceMessage struct {
+	BaseMessage
+	Name         string `json:"name"`
+	EnvelopeJSON string `json:"envelope_json"`
+}
+
+type ImportSentryReferenceResultMessage = SentryReferenceMessage
+
+type RemoveSentryReferenceMessage struct {
+	BaseMessage
+	Name string `json:"name"`
+}
+
+type RemoveSentryReferenceResultMessage struct {
+	BaseMessage
+	Success bool   `json:"success"`
+	Name    string `json:"name,omitempty"`
+	Removed bool   `json:"removed,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+type ExportSentryPublicMessage struct {
+	BaseMessage
+	WitnessKeyID string `json:"witness_key_id"`
+}
+
+type ExportSentryPublicResultMessage struct {
+	BaseMessage
+	Success      bool   `json:"success"`
+	WitnessKeyID string `json:"witness_key_id,omitempty"`
+	EnvelopeJSON string `json:"envelope_json,omitempty"`
+	Code         string `json:"code,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+type ListGenerationsMessage struct{ BaseMessage }
+
+type GenerationsListMessage struct {
+	BaseMessage
+	Current                string   `json:"current,omitempty"`
+	SealedPriors           []string `json:"sealed_priors"`
+	PendingAttempts        []string `json:"pending_attempts"`
+	PendingStaging         []string `json:"pending_staging"`
+	RetainedUnsealedParent string   `json:"retained_unsealed_parent,omitempty"`
+	Code                   string   `json:"code,omitempty"`
+	Error                  string   `json:"error,omitempty"`
 }
 
 // ClientExistsMessage is sent by the server to a new client when another apadmin is already connected.

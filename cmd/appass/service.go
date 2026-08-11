@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
 const defaultServiceFile = "/etc/systemd/system/apsigner.service"
@@ -43,7 +45,40 @@ type serviceInfo struct {
 	BinDir      string
 	User        string
 	Group       string
+	StoreUID    int
+	StoreGID    int
 	HasLoadCred bool
+}
+
+// bindManagedServicePrincipal makes the root-controlled service-principal
+// record authoritative for signer-store ownership. The unit still identifies
+// the process account, so reject drift rather than allowing the two sources to
+// disagree about which uid/gid owns durable state.
+func bindManagedServicePrincipal(dataDir string, svc *serviceInfo) error {
+	if svc == nil {
+		return fmt.Errorf("apsigner service information is unavailable")
+	}
+	storeUID, storeGID, err := storeperm.ManagedServiceOwner(dataDir)
+	if err != nil {
+		return fmt.Errorf("load managed service principal: %w", err)
+	}
+	unitUID, unitGID, err := lookupUserGroupIDs(svc.User, svc.Group)
+	if err != nil {
+		return err
+	}
+	return bindManagedServicePrincipalIDs(svc, storeUID, storeGID, unitUID, unitGID)
+}
+
+func bindManagedServicePrincipalIDs(svc *serviceInfo, storeUID, storeGID, unitUID, unitGID int) error {
+	if unitUID != storeUID || unitGID != storeGID {
+		return fmt.Errorf(
+			"apsigner service principal mismatch: systemd unit resolves to %d:%d, but install/service-principal.json records %d:%d; rerun installer/scripts/systemd-setup.sh before using appass",
+			unitUID, unitGID, storeUID, storeGID,
+		)
+	}
+	svc.StoreUID = storeUID
+	svc.StoreGID = storeGID
+	return nil
 }
 
 // parseServiceFile extracts configuration from the installed systemd service file.
@@ -113,9 +148,11 @@ func resolveServiceInfo() (*serviceInfo, bool) {
 func localServiceInfo() *serviceInfo {
 	execPath, _ := os.Executable()
 	return &serviceInfo{
-		BinDir: filepath.Dir(execPath),
-		User:   currentUsername(),
-		Group:  currentGroupname(),
+		BinDir:   filepath.Dir(execPath),
+		User:     currentUsername(),
+		Group:    currentGroupname(),
+		StoreUID: os.Geteuid(),
+		StoreGID: os.Getegid(),
 	}
 }
 

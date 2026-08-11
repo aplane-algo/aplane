@@ -132,7 +132,7 @@ func PutActive(active storepaths.ActivePaths, rec Record) error {
 		normalized.ActivatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	path := active.KeyTypeRecord(normalized.KeyType)
-	if err := fsutil.MkdirAll(filepath.Dir(path)); err != nil {
+	if err := fsutil.MkdirAllPrivate(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("failed to create key type state directory: %w", err)
 	}
 	data, err := json.MarshalIndent(normalized, "", "  ")

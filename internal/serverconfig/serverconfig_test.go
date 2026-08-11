@@ -44,6 +44,13 @@ passphrase_timeout: "15m"
 	if cfg.PassphraseTimeout != "15m" {
 		t.Fatalf("passphrase_timeout = %q, want %q", cfg.PassphraseTimeout, "15m")
 	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(config): %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("config mode = %04o, want 0600", got)
+	}
 }
 
 func TestLoadServerConfigDefaultsUserAutoApprove(t *testing.T) {

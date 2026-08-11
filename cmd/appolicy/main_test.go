@@ -6,18 +6,159 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/storeinit"
+	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig"
 )
+
+type fakeOnlinePolicyAuthenticator struct {
+	status      string
+	authErr     error
+	statusErr   error
+	unlock      protocol.UnlockResultMessage
+	unlockErr   error
+	authCalls   int
+	statusCalls int
+	unlockCalls int
+	passphrase  string
+}
+
+func (f *fakeOnlinePolicyAuthenticator) Authenticate(passphrase string, _ time.Duration) error {
+	f.authCalls++
+	f.passphrase = passphrase
+	return f.authErr
+}
+
+func (f *fakeOnlinePolicyAuthenticator) WaitForStatus(time.Duration) (*protocol.StatusMessage, error) {
+	f.statusCalls++
+	return &protocol.StatusMessage{State: f.status}, f.statusErr
+}
+
+func (f *fakeOnlinePolicyAuthenticator) Unlock(passphrase string, _ time.Duration) (*protocol.UnlockResultMessage, error) {
+	f.unlockCalls++
+	f.passphrase = passphrase
+	return &f.unlock, f.unlockErr
+}
+
+func TestAuthenticateAndUnlockOnlinePolicyUnlocksLockedSigner(t *testing.T) {
+	conn := &fakeOnlinePolicyAuthenticator{status: "locked", unlock: protocol.UnlockResultMessage{Success: true}}
+	if err := authenticateAndUnlockOnlinePolicy(conn, []byte("secret")); err != nil {
+		t.Fatal(err)
+	}
+	if conn.authCalls != 1 || conn.statusCalls != 1 || conn.unlockCalls != 1 || conn.passphrase != "secret" {
+		t.Fatalf("calls auth/status/unlock = %d/%d/%d, passphrase %q", conn.authCalls, conn.statusCalls, conn.unlockCalls, conn.passphrase)
+	}
+}
+
+func TestAuthenticateAndUnlockOnlinePolicyDoesNotUnlockRecoverySigner(t *testing.T) {
+	conn := &fakeOnlinePolicyAuthenticator{status: "recovery"}
+	if err := authenticateAndUnlockOnlinePolicy(conn, []byte("secret")); err != nil {
+		t.Fatal(err)
+	}
+	if conn.unlockCalls != 0 {
+		t.Fatalf("Unlock() calls = %d, want 0", conn.unlockCalls)
+	}
+}
+
+func TestAuthenticateAndUnlockOnlinePolicyReportsUnlockFailure(t *testing.T) {
+	conn := &fakeOnlinePolicyAuthenticator{status: "locked", unlock: protocol.UnlockResultMessage{Error: "policy integrity failed"}}
+	err := authenticateAndUnlockOnlinePolicy(conn, []byte("secret"))
+	if err == nil || !strings.Contains(err.Error(), "policy integrity failed") {
+		t.Fatalf("authenticateAndUnlockOnlinePolicy() error = %v", err)
+	}
+}
+
+type failingPolicyReader struct{ err error }
+
+func (r failingPolicyReader) Read([]byte) (int, error) { return 0, r.err }
+
+func TestReadOnlinePolicyYAMLReportsReadFailure(t *testing.T) {
+	want := errors.New("input device failed")
+	_, err := readOnlinePolicyYAML(failingPolicyReader{err: want})
+	if !errors.Is(err, want) {
+		t.Fatalf("readOnlinePolicyYAML() error = %v, want wrapped input failure", err)
+	}
+}
+
+func TestReadPolicyYAMLFileRejectsWhitespace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty-policy.yaml")
+	if err := os.WriteFile(path, []byte(" \n\t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readPolicyYAMLFile(path)
+	if err == nil || !strings.Contains(err.Error(), "policy YAML file is empty") {
+		t.Fatalf("readPolicyYAMLFile() error = %v, want empty-file rejection", err)
+	}
+}
+
+type fakeOnlinePolicyClient struct {
+	snapshotCalls int
+}
+
+func (f *fakeOnlinePolicyClient) GetPolicySnapshot(context.Context, policyeditor.Target) (policyeditor.AdminPolicySnapshot, error) {
+	f.snapshotCalls++
+	return policyeditor.AdminPolicySnapshot{
+		Success:      true,
+		Target:       policyeditor.TargetSigner,
+		IdentityID:   policyeditor.DefaultIdentityID,
+		PolicyYAML:   "reject_foreign_rekey: false\n",
+		PolicySHA256: "active-sha",
+	}, nil
+}
+
+func (f *fakeOnlinePolicyClient) ValidatePolicy(context.Context, policyeditor.Target, string) (policyeditor.AdminPolicyValidation, error) {
+	return policyeditor.AdminPolicyValidation{Success: true, Target: policyeditor.TargetSigner}, nil
+}
+
+func (f *fakeOnlinePolicyClient) ReplacePolicy(context.Context, policyeditor.Target, string, string) (policyeditor.AdminPolicySnapshot, error) {
+	return policyeditor.AdminPolicySnapshot{}, errors.New("unexpected replacement")
+}
+
+func TestEditOnlinePolicyFileReportsValidationBeforeTUI(t *testing.T) {
+	client := &fakeOnlinePolicyClient{}
+	store := &policyeditor.AdminStore{Client: client, Target: policyeditor.TargetSigner}
+	draft, err := policy.ParseStoredConfig([]byte("reject_foreign_rekey: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalLauncher := launchPolicyEditor
+	t.Cleanup(func() { launchPolicyEditor = originalLauncher })
+	launched := false
+	var stdout bytes.Buffer
+	launchPolicyEditor = func(gotStore policyeditor.Store, gotDraft *policy.StoredConfig, _, _ string, target policyeditor.Target) error {
+		launched = true
+		if got := stdout.String(); got != "policy OK: draft.yaml\n" {
+			t.Fatalf("stdout when TUI launched = %q, want validation status", got)
+		}
+		if gotStore != store || gotDraft != draft || target != policyeditor.TargetSigner {
+			t.Fatalf("launcher args store=%T draft=%p target=%q", gotStore, gotDraft, target)
+		}
+		if store.LastSHA256() != "active-sha" {
+			t.Fatalf("LastSHA256() = %q, want active snapshot seeded before TUI", store.LastSHA256())
+		}
+		return nil
+	}
+
+	if err := editOnlinePolicyFile(context.Background(), store, draft, policyeditor.TargetSigner, "draft.yaml", &stdout); err != nil {
+		t.Fatalf("editOnlinePolicyFile() error = %v", err)
+	}
+	if client.snapshotCalls != 1 || !launched {
+		t.Fatalf("snapshot calls/launched = %d/%t, want 1/true", client.snapshotCalls, launched)
+	}
+}
 
 func TestRunYAMLPrintsVerifiedPolicyOnly(t *testing.T) {
 	dataDir, passphrase := initializedAppolicyStore(t)
@@ -304,6 +445,233 @@ func TestRunRejectsCombinedCLIModes(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "choose only one") {
 		t.Fatalf("stderr = %q, want mode conflict", stderr.String())
+	}
+}
+
+func TestOfflinePolicyMutationUsesManagedPrincipal(t *testing.T) {
+	oldEUID := appolicyEUID
+	oldManaged := isManagedPolicyStore
+	oldOwner := managedPolicyOwner
+	oldLoad := loadPolicyConfig
+	oldResolve := resolvePolicySocket
+	oldMigrate := migrateOfflinePolicyStore
+	oldAcquire := acquirePolicyStoreLock
+	t.Cleanup(func() {
+		appolicyEUID = oldEUID
+		isManagedPolicyStore = oldManaged
+		managedPolicyOwner = oldOwner
+		loadPolicyConfig = oldLoad
+		resolvePolicySocket = oldResolve
+		migrateOfflinePolicyStore = oldMigrate
+		acquirePolicyStoreLock = oldAcquire
+	})
+
+	appolicyEUID = func() int { return 0 }
+	isManagedPolicyStore = func(string) (bool, error) { return true, nil }
+	managedPolicyOwner = func(string) (int, int, error) { return 123, 456, nil }
+	loadPolicyConfig = func(string) (serverconfig.ServerConfig, error) {
+		return serverconfig.ServerConfig{IPCPath: "run/custom.sock"}, nil
+	}
+	resolvePolicySocket = func(root, configured string) (string, error) {
+		if root != "/srv/apsigner" || configured != "run/custom.sock" {
+			t.Fatalf("resolvePolicySocket(%q, %q)", root, configured)
+		}
+		return "/srv/apsigner/run/custom.sock", nil
+	}
+	lockCalls := 0
+	acquirePolicyStoreLock = func(root string) (*storelock.Guard, error) {
+		lockCalls++
+		if root != "/srv/apsigner" {
+			t.Fatalf("acquirePolicyStoreLock(%q)", root)
+		}
+		return &storelock.Guard{}, nil
+	}
+	migrateOfflinePolicyStore = func(root string, uid, gid int, socketPath string) error {
+		if root != "/srv/apsigner" || uid != 123 || gid != 456 || socketPath != "/srv/apsigner/run/custom.sock" {
+			t.Fatalf("migration args = %q %d:%d %q", root, uid, gid, socketPath)
+		}
+		return nil
+	}
+
+	guard, err := acquireOfflinePolicyMutation("/srv/apsigner")
+	if err != nil {
+		t.Fatalf("acquireOfflinePolicyMutation() error = %v", err)
+	}
+	defer guard.Close()
+	if err := guard.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
+	if lockCalls != 1 {
+		t.Fatalf("exclusive lock calls = %d, want 1", lockCalls)
+	}
+}
+
+func TestOfflinePolicyMutationRefusesConcurrentDaemonBeforeNormalization(t *testing.T) {
+	root := t.TempDir()
+	shared, err := storelock.AcquireShared(root)
+	if err != nil {
+		t.Fatalf("AcquireShared() error = %v", err)
+	}
+	defer func() { _ = shared.Close() }()
+
+	oldEUID := appolicyEUID
+	oldManaged := isManagedPolicyStore
+	oldMigrate := migrateOfflinePolicyStore
+	t.Cleanup(func() {
+		appolicyEUID = oldEUID
+		isManagedPolicyStore = oldManaged
+		migrateOfflinePolicyStore = oldMigrate
+	})
+	appolicyEUID = func() int { return 0 }
+	isManagedPolicyStore = func(string) (bool, error) { return true, nil }
+	migrateOfflinePolicyStore = func(string, int, int, string) error {
+		t.Fatal("migration ran while the daemon held the store lock")
+		return nil
+	}
+
+	_, err = acquireOfflinePolicyMutation(root)
+	if !errors.Is(err, storelock.ErrBusy) {
+		t.Fatalf("acquireOfflinePolicyMutation() error = %v, want storelock.ErrBusy", err)
+	}
+	if !strings.Contains(err.Error(), "stop apsigner") {
+		t.Fatalf("acquireOfflinePolicyMutation() error = %q, want operator guidance", err)
+	}
+}
+
+func TestRunSaveRefusesBusyManagedStoreBeforeWrite(t *testing.T) {
+	root, passphrase := initializedAppolicyStore(t)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+	policyPath := policy.PolicyPath(root, policyeditor.DefaultIdentityID)
+	before, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldEUID := appolicyEUID
+	oldManaged := isManagedPolicyStore
+	oldAcquire := acquirePolicyStoreLock
+	t.Cleanup(func() {
+		appolicyEUID = oldEUID
+		isManagedPolicyStore = oldManaged
+		acquirePolicyStoreLock = oldAcquire
+	})
+	appolicyEUID = func() int { return 0 }
+	isManagedPolicyStore = func(string) (bool, error) { return true, nil }
+	acquirePolicyStoreLock = func(string) (*storelock.Guard, error) { return nil, storelock.ErrBusy }
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"-d", root, "--save"},
+		strings.NewReader("reject_foreign_rekey: false\n"), &stdout, &stderr)
+	if code == 0 || !strings.Contains(stderr.String(), "before editing") {
+		t.Fatalf("run(--save busy) code=%d stderr=%q", code, stderr.String())
+	}
+	after, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatal("policy changed before the exclusive store lock was acquired")
+	}
+}
+
+func TestRunSaveManagedStoreReusesOneRealExclusiveLock(t *testing.T) {
+	root, passphrase := initializedAppolicyStore(t)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+
+	oldEUID := appolicyEUID
+	oldManaged := isManagedPolicyStore
+	oldOwner := managedPolicyOwner
+	oldMigrate := migrateOfflinePolicyStore
+	t.Cleanup(func() {
+		appolicyEUID = oldEUID
+		isManagedPolicyStore = oldManaged
+		managedPolicyOwner = oldOwner
+		migrateOfflinePolicyStore = oldMigrate
+	})
+	appolicyEUID = func() int { return 0 }
+	isManagedPolicyStore = func(string) (bool, error) { return true, nil }
+	managedPolicyOwner = func(string) (int, int, error) { return os.Geteuid(), os.Getegid(), nil }
+	normalized := false
+	migrateOfflinePolicyStore = func(dataDir string, _, _ int, _ string) error {
+		competing, err := storelock.AcquireExclusive(dataDir)
+		if competing != nil {
+			_ = competing.Close()
+		}
+		if !errors.Is(err, storelock.ErrBusy) {
+			t.Fatalf("normalization competing lock error = %v, want outer lock still held", err)
+		}
+		normalized = true
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"-d", root, "--save"},
+		strings.NewReader("reject_foreign_rekey: false\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run(--save managed) code=%d stderr=%q", code, stderr.String())
+	}
+	if !normalized {
+		t.Fatal("managed store normalization did not run")
+	}
+	guard, err := storelock.AcquireExclusive(root)
+	if err != nil {
+		t.Fatalf("outer lock remains held after run: %v", err)
+	}
+	_ = guard.Close()
+}
+
+func TestRunCheckDoesNotAcquireManagedMutationLock(t *testing.T) {
+	root, passphrase := initializedAppolicyStore(t)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+
+	oldEUID := appolicyEUID
+	oldManaged := isManagedPolicyStore
+	oldAcquire := acquirePolicyStoreLock
+	t.Cleanup(func() {
+		appolicyEUID = oldEUID
+		isManagedPolicyStore = oldManaged
+		acquirePolicyStoreLock = oldAcquire
+	})
+	appolicyEUID = func() int { return 0 }
+	isManagedPolicyStore = func(string) (bool, error) { return true, nil }
+	acquirePolicyStoreLock = func(string) (*storelock.Guard, error) {
+		t.Fatal("read-only policy check acquired the mutation lock")
+		return nil, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"-d", root, "--check"},
+		strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("run(--check) code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestDecodeOnlinePolicyTargetRejectsErrorFrame(t *testing.T) {
+	raw, err := protocol.MarshalAdminMessage(protocol.ErrorMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeError, ID: "settings"},
+		Code:        protocol.ErrCodeAuthorizationDenied,
+		Error:       "authorization denied",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = decodeOnlinePolicyTarget(raw)
+	if err == nil || !strings.Contains(err.Error(), "authorization denied") {
+		t.Fatalf("decodeOnlinePolicyTarget(error) = %v, want server error", err)
+	}
+}
+
+func TestDecodeOnlinePolicyTargetUsesReportedRole(t *testing.T) {
+	raw, err := protocol.MarshalAdminMessage(protocol.AdminSettingsMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAdminSettings, ID: "settings"},
+		NodeRole:    "sentry",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decodeOnlinePolicyTarget(raw)
+	if err != nil || got != policyeditor.TargetSentry {
+		t.Fatalf("decodeOnlinePolicyTarget(sentry) = %q, %v", got, err)
 	}
 }
 

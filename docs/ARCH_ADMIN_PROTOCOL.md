@@ -42,7 +42,16 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
-- the current admin protocol version is 3.2; `auth_required` carries it as
+- local client discovery precedence is explicit `--ipc-path`, explicit `-d`
+  discovery, `APSIGNER_IPC_PATH`, environment/profile-selected data-directory
+  discovery, then the system runtime path; an inherited socket override cannot
+  retarget a command whose store was explicitly selected with `-d`,
+- systemd local IPC is discovered at `/run/apsigner/aplane.sock` without
+  reading the conventional private `/var/lib/apsigner` configuration;
+  same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
+  managed stores require an explicit IPC path so an unreadable selected root
+  cannot silently retarget a client to the singleton system signer,
+- the current admin protocol version is 4.5; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -54,6 +63,7 @@ Transport notes:
   formatted server rejections,
 - displacement negotiation is handled only by the `apadmin` TUI path and is identity-scoped internally,
 - generic clients observe some auth/displacement failures as formatted protocol errors rather than stable typed transport errors.
+- admin frames are bounded to 4 MiB before JSON decoding on both transports.
 
 ## Message Catalog
 
@@ -63,7 +73,10 @@ Source: `internal/protocol/messages.go`. Unsupported client messages yield a gen
 
 Client to Server:
 
-- `auth` (pre-auth handshake response to `auth_required`; required before authenticated dispatch)
+- `auth` (pre-auth handshake response to `auth_required`; verifies, binds, and unlocks before authenticated dispatch)
+- `auth_only` (pre-auth handshake response intended for bound-runtime reads;
+  verifies and binds without changing locked state, but does not create a
+  server-enforced read-only session)
 - `unlock`
 - `lock_identity`
 - `initialize_store`
@@ -155,6 +168,11 @@ Client to Server:
 - `backup`
 - `list_backups`
 - `delete_backup`
+- `begin_backup_import`
+- `append_backup_import`
+- `commit_backup_import`
+- `abort_backup_import`
+- `read_backup_chunk`
 - `preview_restore`
 - `restore_backup`
 - `rollback_restore`
@@ -165,6 +183,11 @@ Server to Client:
 - `backup_result`
 - `backups_list`
 - `delete_backup_result`
+- `begin_backup_import_result`
+- `append_backup_import_result`
+- `commit_backup_import_result`
+- `abort_backup_import_result`
+- `backup_chunk`
 - `restore_preview`
 - `restore_backup_result`
 - `rollback_restore_result`
@@ -192,7 +215,7 @@ Server to Client:
 
 ### Session and Identity
 
-- `auth`: `passphrase`, optional `identity_id`, required `protocol_version`
+- `auth` / `auth_only`: `passphrase`, optional `identity_id`, required `protocol_version`
 - `auth_result`: `success`, optional `code`, optional `error`
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
@@ -219,6 +242,15 @@ the result reports `success:true` with a zero key count and
 `code:"recovery_blocked"`. The identity is unlocked for administration only;
 signing stays blocked until the operator resolves the store from recovery
 mode.
+
+The pre-auth `auth_only` request performs the same passphrase verification and
+identity binding but never authorizes or invokes `identity.unlock`. It is a
+distinct message type so an older server rejects it before processing instead
+of ignoring a new flag and unlocking. First-party clients use it only for
+operations whose handlers require an authenticated bound runtime. It does not
+constrain the authenticated session to a separate read-only capability:
+subsequent messages still pass through their ordinary grant checks and
+locked/unlocked/recovery-state interlocks.
 
 ### Key Management
 
@@ -273,11 +305,43 @@ mode.
   `verified`, `code`, `error`. Backup is all-or-nothing; a selected
   credential that fails canonical validation fails the request.
 - `list_backups` -> `backups_list`: `backups[]`, optional `code`,
-  `error`; each item has path, file name, packaging metadata, checksum, and
-  verification state. This read-only operation is available to authenticated
-  sessions in either unlocked or recovery state so the TUI can select repair
-  material while signing remains blocked.
+  `error`; each item has a basename-only compatibility `path`, file name,
+  packaging metadata, checksum, and size. Successful backup-create and import
+  responses likewise expose only archive basenames, never the signer store
+  root. A successful checksum read is not a claim that encrypted archive
+  contents were authenticated. This read-only operation is available to
+  authenticated sessions in either unlocked or recovery state so the TUI can
+  select repair material while signing remains blocked.
 - `delete_backup`: `archive_path` -> `delete_backup_result`.
+- backup import is a bounded transfer: `begin_backup_import` carries
+  `file_name`, removes any incomplete prior upload for the identity, allocates
+  one daemon-owned temporary archive, and returns an opaque `upload_id`;
+  `append_backup_import` accepts at most 256 KiB at the exact next `offset`;
+  cumulative uploaded bytes are capped at 1 GiB;
+  `commit_backup_import` carries the sensitive `export_passphrase`, verifies
+  the declared size and SHA-256, authenticates the sealed manifest, deeply
+  validates every credential payload, and only then atomically publishes the
+  archive. Commit first renames the writable upload into a reserved immutable
+  claim while holding the identity mutation lock. Hashing, extraction, and
+  memory-hard credential verification run outside that lock; the lock is
+  reacquired only to publish the validated claim. Validation extraction uses a
+  reserved owner-private directory on the signer store filesystem rather than
+  process-global temporary storage. The final rename is the commit point. A
+  directory-sync failure after that point returns `success:true` with a
+  `warning`, because reporting failure would invite a retry after the archive
+  is already visible under its final name.
+  Commit is a synchronous, potentially long-running request; first-party
+  clients use a dedicated bounded timeout rather than the ordinary 30-second
+  admin-request timeout. The daemon zeros the passphrase after the request and
+  never persists it; `abort_backup_import`
+  durably removes an incomplete upload. Daemon startup also removes incomplete
+  uploads left by a prior process. Abort remains available to an authenticated,
+  authorized bound session while the identity is locked because it can only
+  remove unpublished transfer residue.
+- `read_backup_chunk`: `file_name`, `offset` -> `backup_chunk`: `file_name`,
+  `offset`, at most 256 KiB of `data`, and `eof`. This lets an operator export
+  a managed archive without filesystem access to the private signer store.
+  It requires the identity to be unlocked or recovery-blocked.
 - `preview_restore`: `archive_path`, sensitive `export_passphrase` ->
   `restore_preview`: resolved archive path, `keys[]`, `errors[]`, optional
   `code`, `error`. Each key reports address, key type, destination
@@ -299,10 +363,11 @@ mode.
 - restore passphrases are JSON strings on the wire but enter mutable byte
   buffers at the protocol boundary so handlers can zero them after use.
 - all restore operations retain the stable authorization action
-  `identity.restore`. List, preview, restore, rollback, and reconciliation are
-  available to an authenticated recovery-mode session so repair material can
-  be inspected, damaged credentials replaced, and the clean generation
-  promoted. A locked session remains rejected with `signer_locked`.
+  `identity.restore`. Import admission, list, preview, restore, rollback, and
+  reconciliation are available to an authenticated recovery-mode session so
+  repair material can be admitted and inspected, damaged credentials replaced,
+  and the clean generation promoted. A locked session remains rejected with
+  `signer_locked`.
 - protocol v4 removes the pre-release
   `recover_backup/list_recovered/review_recovered/activate_recovered/`
   `rollback_recovered/purge_recovered` lifecycle and its review token and
@@ -350,6 +415,27 @@ YAML-only runtime settings:
 Policy has no scalar admin setting surface. Read, validation, and mutation use
 `get_policy_snapshot`, `validate_policy`, and `replace_policy` with the complete
 canonical YAML document.
+
+### Sentry References And Generation Inventory
+
+- `list_sentry_references` -> `sentry_references_list`: `references[]`, optional `code`, `error`; returns identity-owned public sentry-reference records. Read-only store inspection does not wait behind an identity mutation; it returns retryable `identity_busy` instead.
+- `get_sentry_reference`: `name` -> `sentry_reference`: `success`, optional `reference`, `code`, `error`
+- `import_sentry_reference`: `name`, `envelope_json` -> `import_sentry_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the identity mutation lock
+- `remove_sentry_reference`: `name` -> `remove_sentry_reference_result`: `success`, `name`, `removed`, `code`, `error`
+- `export_sentry_public`: `witness_key_id` -> `export_sentry_public_result`: `success`, `witness_key_id`, `envelope_json`, `code`, `error`; only public witness metadata crosses the protocol
+- `list_generations` -> `generations_list`: current generation, sealed priors, pending attempts/staging, retained unsealed parent, `code`, `error`; this is read-only inspection and never reconciles or prunes. If an identity mutation is active, it returns retryable `identity_busy` rather than waiting for the ordinary IPC timeout.
+
+Sentry-reference reads/exports require `sentries.view`; imports/removals require
+`sentries.manage`, an unlocked identity, and emit mutation audit events. A
+reference alias selects the witness public key embedded during guarded-key
+generation, so public visibility does not make catalog mutation
+security-neutral. Import is idempotent for an identical reference and rejects
+a name already bound to a different Witness Key ID; replacement requires an
+explicit remove followed by import. Import and removal audit events include
+the affected Witness Key ID, and the identity mutation lock serializes
+publication. Generation inventory requires `generations.view`. `apstore
+generations prune` deliberately remains an offline recovery/maintenance
+operation.
 
 Key-type override semantics:
 

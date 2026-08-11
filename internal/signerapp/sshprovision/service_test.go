@@ -6,6 +6,7 @@ package sshprovision
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -90,16 +91,23 @@ func TestServiceApproveContextUsesContextRequester(t *testing.T) {
 	}
 }
 
-func TestServiceIssueLoadsOrGeneratesToken(t *testing.T) {
+func TestServiceIssueLoadsExistingToken(t *testing.T) {
 	root := t.TempDir()
+	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(root, "alice")
+	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := tokenfile.WriteToken(tokenPath, "existing-token"); err != nil {
+		t.Fatal(err)
+	}
 	svc := Service{TokenRoot: root}
 
 	token1, err := svc.Issue("alice")
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
-	if token1 == "" {
-		t.Fatal("Issue() returned empty token")
+	if token1 != "existing-token" {
+		t.Fatalf("Issue() token = %q, want existing-token", token1)
 	}
 
 	token2, err := svc.Issue("alice")
@@ -110,12 +118,24 @@ func TestServiceIssueLoadsOrGeneratesToken(t *testing.T) {
 		t.Fatalf("Issue() second token = %q, want %q", token2, token1)
 	}
 
-	stored, err := tokenfile.ReadToken(filepath.Join(root, "identities", "alice", tokenfile.APlaneTokenFile))
+	stored, err := tokenfile.ReadToken(tokenPath)
 	if err != nil {
 		t.Fatalf("ReadToken() error = %v", err)
 	}
 	if stored != token1 {
 		t.Fatalf("stored token = %q, want %q", stored, token1)
+	}
+}
+
+func TestServiceIssueDoesNotGenerateMissingToken(t *testing.T) {
+	root := t.TempDir()
+	svc := Service{TokenRoot: root}
+
+	if _, err := svc.Issue("alice"); err == nil {
+		t.Fatal("Issue() error = nil, want missing-token error")
+	}
+	if _, err := os.Stat(tokenfile.GetAPlaneTokenPathForRoot(root, "alice")); !os.IsNotExist(err) {
+		t.Fatalf("Issue() generated a token, stat error = %v", err)
 	}
 }
 

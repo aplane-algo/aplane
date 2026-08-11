@@ -4,15 +4,19 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 func TestCmdEndpointExportStdout(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
+		withEndpointExportSettings(t, endpointExportSettings{})
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoint([]string{
 				"export",
@@ -46,8 +50,7 @@ func TestCmdEndpointExportStdout(t *testing.T) {
 
 func TestCmdEndpointExportHostDerivesSSHURLFromConfig(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		config.Endpoint.SSH.Port = 2223
-		config.Endpoint.SignerPort = 12345
+		withEndpointExportSettings(t, endpointExportSettings{SSHPort: 2223, SignerPort: 12345})
 
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoint([]string{
@@ -73,9 +76,9 @@ func TestCmdEndpointExportHostDerivesSSHURLFromConfig(t *testing.T) {
 
 func TestCmdEndpointExportURLOverridesHost(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		config.Endpoint.SSH.Port = 2223
-		config.Endpoint.SignerPort = 12345
-		config.Endpoint.AdvertiseURL = "ssh://configured.example:2223"
+		withEndpointExportSettings(t, endpointExportSettings{
+			SSHPort: 2223, SignerPort: 12345, AdvertiseURL: "ssh://configured.example:2223",
+		})
 
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoint([]string{
@@ -102,9 +105,9 @@ func TestCmdEndpointExportURLOverridesHost(t *testing.T) {
 
 func TestCmdEndpointExportUsesConfiguredAdvertiseURL(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		config.Endpoint.SSH.Port = 2223
-		config.Endpoint.SignerPort = 12345
-		config.Endpoint.AdvertiseURL = "ssh://configured.example:2223"
+		withEndpointExportSettings(t, endpointExportSettings{
+			SSHPort: 2223, SignerPort: 12345, AdvertiseURL: "ssh://configured.example:2223",
+		})
 
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoint([]string{
@@ -129,7 +132,7 @@ func TestCmdEndpointExportUsesConfiguredAdvertiseURL(t *testing.T) {
 
 func TestCmdEndpointExportRequiresHostURLOrConfiguredAdvertiseURL(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		config.Endpoint.AdvertiseURL = ""
+		withEndpointExportSettings(t, endpointExportSettings{})
 
 		err := cmdEndpoint([]string{
 			"export",
@@ -145,8 +148,7 @@ func TestCmdEndpointExportRequiresHostURLOrConfiguredAdvertiseURL(t *testing.T) 
 
 func TestCmdEndpointExportHostUsesDefaultPortsWhenConfigUnset(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		config.Endpoint.SSH.Port = 0
-		config.Endpoint.SignerPort = 0
+		withEndpointExportSettings(t, endpointExportSettings{})
 
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoint([]string{
@@ -172,6 +174,7 @@ func TestCmdEndpointExportHostUsesDefaultPortsWhenConfigUnset(t *testing.T) {
 
 func TestCmdEndpointExportRejectsSelfURL(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
+		withEndpointExportSettings(t, endpointExportSettings{})
 		err := cmdEndpoint([]string{
 			"export",
 			"--url", "self",
@@ -183,4 +186,64 @@ func TestCmdEndpointExportRejectsSelfURL(t *testing.T) {
 			t.Fatalf("cmdEndpoint(export self) error = %v, want not allowed", err)
 		}
 	})
+}
+
+func TestCmdEndpointExportRefusesSymlinkOutput(t *testing.T) {
+	withPolicyCommandStore(t, func(_ string, _ []byte) {
+		withEndpointExportSettings(t, endpointExportSettings{})
+		dir := t.TempDir()
+		sentinel := filepath.Join(dir, "sentinel")
+		if err := os.WriteFile(sentinel, []byte("unchanged"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		output := filepath.Join(dir, "endpoint.json")
+		if err := os.Symlink(sentinel, output); err != nil {
+			t.Fatal(err)
+		}
+		err := cmdEndpoint([]string{"export", "--url", "ssh://127.0.0.1:2223", "--out", output})
+		if err == nil || !strings.Contains(err.Error(), "refusing to replace symlink") {
+			t.Fatalf("cmdEndpoint(export symlink) error = %v, want symlink rejection", err)
+		}
+		got, readErr := os.ReadFile(sentinel)
+		if readErr != nil || string(got) != "unchanged" {
+			t.Fatalf("sentinel = %q, err = %v", got, readErr)
+		}
+	})
+}
+
+func TestLoadEndpointExportSettingsUsesAdminIPC(t *testing.T) {
+	fake := &fakeApstoreAdminRequester{requestFunc: func(msg any, out any) error {
+		request, ok := msg.(protocol.GetAdminSettingsMessage)
+		if !ok || request.Type != protocol.MsgTypeGetAdminSettings {
+			t.Fatalf("settings request = %#v", msg)
+		}
+		response, ok := out.(*protocol.AdminSettingsMessage)
+		if !ok {
+			t.Fatalf("settings output = %T", out)
+		}
+		*response = protocol.AdminSettingsMessage{
+			SSHPort: 2223, SignerPort: 12345, EndpointAdvertiseURL: "ssh://configured.example:2223",
+		}
+		return nil
+	}}
+	withFakeApstoreAdminClient(t, fake)
+	settings, err := loadEndpointExportSettings()
+	if err != nil {
+		t.Fatalf("loadEndpointExportSettings() error = %v", err)
+	}
+	if settings.SSHPort != 2223 || settings.SignerPort != 12345 || settings.AdvertiseURL != "ssh://configured.example:2223" {
+		t.Fatalf("settings = %#v", settings)
+	}
+	if !fake.closed {
+		t.Fatal("admin IPC client was not closed")
+	}
+}
+
+func withEndpointExportSettings(t *testing.T, settings endpointExportSettings) {
+	t.Helper()
+	previous := endpointExportSettingsForCommand
+	endpointExportSettingsForCommand = func() (endpointExportSettings, error) {
+		return settings, nil
+	}
+	t.Cleanup(func() { endpointExportSettingsForCommand = previous })
 }

@@ -16,8 +16,9 @@ import (
 	"syscall"
 	"time"
 
-	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
+	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/transport"
 
 	"golang.org/x/term"
@@ -47,15 +48,17 @@ const approvalPrompt = "Approve current request? [y/n or n <reason>]: "
 func main() {
 	// Define flags
 	dataDir := flag.String("d", "", "Data directory (required, or set APSIGNER_DATA)")
+	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()
 
-	startup, err := bootstrap.Load(*dataDir)
+	resolvedDataDir := serverconfig.GetSignerDataDir(*dataDir)
+	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: resolvedDataDir, IPCPath: *ipcPathFlag, DataDirExplicit: *dataDir != "",
+	})
 	if err != nil {
 		logErrorf("%v", err)
-		logErrorf("use -d <path> or set APSIGNER_DATA environment variable")
 		os.Exit(1)
 	}
-	config := startup.Config
 
 	logInfof("APApprover - Interactive Signing Approval CLI")
 	logInfof("================================================")
@@ -73,7 +76,7 @@ func main() {
 	// Connect via IPC
 	logInfof("connecting to signer via IPC")
 
-	ipcClient := transport.NewIPC(config.IPCPath)
+	ipcClient := transport.NewIPC(ipcPath)
 	if err := ipcClient.Dial(); err != nil {
 		if errors.Is(err, transport.ErrAlreadyConnected) {
 			logErrorf("another apadmin/apapprover is already connected")
@@ -83,7 +86,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer ipcClient.Close()
-	logInfof("connected via IPC (%s)", config.IPCPath)
+	logInfof("connected via IPC (%s)", ipcPath)
 
 	// Authenticate (also unlocks signer if locked)
 	if err := ipcClient.Authenticate(passphrase, 10*time.Second); err != nil {

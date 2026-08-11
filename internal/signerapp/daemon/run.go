@@ -6,18 +6,20 @@ package daemon
 import (
 	"context"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signerstartuptemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -46,6 +48,10 @@ func Run(dataDir string) int {
 	}
 	if err := signerstartup.BlockManualProdStart(resolvedDataDir); err != nil {
 		logErrorf("%v", err)
+		return 1
+	}
+	if err := signerstartup.ValidateProductionStorePermissions(resolvedDataDir); err != nil {
+		logErrorf("startup validation failed: %v", err)
 		return 1
 	}
 
@@ -82,6 +88,12 @@ func Run(dataDir string) int {
 	logInfof("--------------------------------------------")
 
 	config := startupOpts.Config
+	resolvedIPCPath, _, err := adminipc.ResolveDaemonPathForDataDir(resolvedDataDir, config.IPCPath)
+	if err != nil {
+		logErrorf("failed to resolve admin IPC path: %v", err)
+		return 1
+	}
+	config.IPCPath = resolvedIPCPath
 	passphraseTimeout := startupOpts.PassphraseTimeout
 	identityID := startupOpts.IdentityID
 	if _, err := serverconfig.ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {
@@ -202,6 +214,16 @@ func Run(dataDir string) int {
 		return 1
 	}
 	logInfof("identity runtimes initialized: %d", server.registry.Count())
+	for _, id := range server.registry.IDs() {
+		removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths, id)
+		if cleanupErr != nil {
+			logErrorf("failed to clean incomplete backup imports for identity %s: %v", id, cleanupErr)
+			return 1
+		}
+		if removed != 0 {
+			logInfof("removed %d incomplete backup import(s) for identity %s", removed, id)
+		}
+	}
 	logInfof("API token loaded from %s", tokenfile.GetAPlaneTokenPathForRoot(startupOpts.Paths.Root(), identityID))
 
 	// Configure algod client on all DSA providers that need it (for TEAL compilation)

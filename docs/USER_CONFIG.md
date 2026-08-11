@@ -201,6 +201,10 @@ rewrite client config or synthesize endpoint records from `config.yaml`.
 For endpoint aliases, the preferred handoff is for the signer operator to
 export a public endpoint envelope and for the client to import it:
 
+`apstore endpoint export` connects to the running daemon through authenticated
+admin IPC. It reads the configured endpoint defaults without requiring direct
+access to the private signer store and writes `--out` as the invoking operator.
+
 ```bash
 # signer side
 apstore -d "$APSIGNER_DATA" endpoint export \
@@ -436,7 +440,17 @@ The admin protocol supports two transports:
 - remote SSH subsystem `aplane-admin` for `apadmin --remote`
 
 Local IPC remains the default admin transport:
-- socket created at `ipc_path` with 0660 permissions (owner and group)
+- systemd installs use `/run/apsigner/aplane.sock`: runtime directory `0750`,
+  socket `0660`, and no operator-group access to persistent signer state
+- same-UID local mode defaults to `$APSIGNER_DATA/aplane.sock`
+- `APSIGNER_IPC_PATH` or an explicit `-ipc-path` client option can override
+  discovery for custom deployments
+- an explicit `-d` takes precedence over inherited `APSIGNER_IPC_PATH`; use
+  `-ipc-path` as well when intentionally overriding the socket for that
+  explicitly selected store
+- `apconsole` only manages daemon startup when the client path matches the
+  selected store's configured daemon path. Use `--no-start-daemon` for an
+  intentional attach-only IPC override.
 - cannot be snooped with tcpdump (no network stack)
 - local apadmin and apapprover connect via this socket
 
@@ -455,7 +469,8 @@ Example:
 apadmin --remote --client-data ~/aplane/apclient
 ```
 
-**Default IPC path**: `$APSIGNER_DATA/aplane.sock`
+**Default IPC path**: `/run/apsigner/aplane.sock` for systemd;
+`$APSIGNER_DATA/aplane.sock` for same-UID local mode.
 ### Data Directory Setup
 
 ```bash

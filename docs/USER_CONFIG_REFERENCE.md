@@ -56,7 +56,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `endpoint.ssh.authorized_keys_path` | string | `.ssh/authorized_keys` | Process-global authorized client public keys file |
 | `passphrase_timeout` | string | `15m` | Admin idle disconnect timeout (0=never) |
 | `approval_wait` | string | `60s` | Maximum time to wait for operator approval of a signing request |
-| `ipc_path` | string | `$APSIGNER_DATA/aplane.sock` | Unix socket path for admin IPC |
+| `ipc_path` | string | `systemd: /run/apsigner/aplane.sock; same-UID: $APSIGNER_DATA/aplane.sock` | Unix socket path for admin IPC; systemd uses the protected runtime path unless this is a custom path |
 | `lock_on_disconnect` | *bool | `true` | Lock signer when admin disconnects |
 | `passphrase_command_argv` | []string | `[]` | Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1]) |
 | `passphrase_command_env` | map | (none) | Environment variables to pass to the passphrase command; the process env is not inherited except for the systemd CREDENTIALS_DIRECTORY passthrough |

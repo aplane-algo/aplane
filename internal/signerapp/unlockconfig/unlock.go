@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,6 +46,18 @@ func LoadUnlockConfig(dataRoot, identityID string) (*UnlockConfig, error) {
 
 // SaveUnlockConfig writes the per-identity unlock config atomically.
 func SaveUnlockConfig(dataRoot, identityID string, cfg *UnlockConfig) error {
+	return saveUnlockConfig(dataRoot, identityID, cfg, nil)
+}
+
+// SaveUnlockConfigForService writes a private unlock configuration owned by
+// the resolved signer service account. It is used by root-run appass without
+// any post-publication pathname chown or chmod.
+func SaveUnlockConfigForService(dataRoot, identityID string, cfg *UnlockConfig, uid, gid int) error {
+	owner := [2]int{uid, gid}
+	return saveUnlockConfig(dataRoot, identityID, cfg, &owner)
+}
+
+func saveUnlockConfig(dataRoot, identityID string, cfg *UnlockConfig, owner *[2]int) error {
 	path := UnlockConfigPath(dataRoot, identityID)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -56,13 +69,14 @@ func SaveUnlockConfig(dataRoot, identityID string, cfg *UnlockConfig) error {
 		return fmt.Errorf("failed to marshal unlock config: %w", err)
 	}
 
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return fmt.Errorf("failed to write unlock config: %w", err)
+	var writeErr error
+	if owner == nil {
+		writeErr = fsutil.WriteFileDurableWithProfile(path, data, fsutil.PrivateStoreFileProfile)
+	} else {
+		writeErr = fsutil.WriteServiceOwnedFileDurable(path, data, owner[0], owner[1])
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("failed to rename unlock config: %w", err)
+	if writeErr != nil {
+		return fmt.Errorf("failed to write unlock config: %w", writeErr)
 	}
 	return nil
 }

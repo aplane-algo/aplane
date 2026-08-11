@@ -19,6 +19,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"gopkg.in/yaml.v3"
 )
@@ -234,7 +235,7 @@ func EnsureSignerLocalnetConfig(dataDir string, info LocalNetInfo, algodToken st
 	if !changed {
 		return false, path, nil
 	}
-	if err := writeYAMLDocumentAtomic(path, doc, 0o640); err != nil {
+	if err := writeYAMLDocumentAtomic(path, doc, 0o600); err != nil {
 		return false, path, fmt.Errorf("write signer config %s: %w", path, err)
 	}
 	return true, path, nil
@@ -655,8 +656,11 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	targetMode := mode
 	var targetUID, targetGID int
 	hasOwnership := false
-	if info, err := os.Stat(path); err == nil {
-		targetMode = info.Mode().Perm()
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("refusing to replace non-regular file: %s", path)
+		}
+		targetMode = info.Mode().Perm() & mode
 		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 			targetUID = int(stat.Uid)
 			targetGID = int(stat.Gid)
@@ -672,13 +676,14 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := tmp.Chmod(targetMode); err != nil {
 		return err
 	}
-	// Only root can chown to another user; a non-root process rewriting a
-	// group-writable file owned by someone else should not abort the write
-	// over an EPERM it can never avoid.
+	// Only root can preserve ownership across a uid boundary.
 	if hasOwnership && os.Getuid() == 0 && (os.Getuid() != targetUID || os.Getgid() != targetGID) {
 		if err := tmp.Chown(targetUID, targetGID); err != nil {
 			return err
 		}
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
 	}
 	if err := tmp.Close(); err != nil {
 		return err
@@ -687,5 +692,5 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	cleanup = false
-	return nil
+	return fsutil.SyncDir(dir)
 }

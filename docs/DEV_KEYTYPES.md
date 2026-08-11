@@ -144,11 +144,9 @@ Fingerprint authoring rules:
   renamed identifier needs a retained registry alias or those keys cannot sign.
   The `base_primitive` projection stabilizes the fingerprint, not signing.
 
-Backups may bundle template YAML with a key. `apstore backup import` treats that
-bundle as a provenance claim: when bundled generic or composed YAML is present,
-the importer recompiles/derives it with the key's stored creation parameters and
-requires the result to reproduce the key's stored LogicSig bytecode before the
-archive is admitted.
+Credential backups do not bundle template YAML. Restored keys retain durable
+signing metadata, and the destination must provide any required signer-side
+provider or identity-local template through its normal installation flow.
 
 Shipped YAML template sources live under the top-level `library/templates/`
 directory and are installed into an identity before use. Source-tree YAML files

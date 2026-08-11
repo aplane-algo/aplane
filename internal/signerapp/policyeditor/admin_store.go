@@ -51,6 +51,7 @@ type AdminStore struct {
 
 	identityID string
 	lastSHA    string
+	policyYAML string
 }
 
 func (s *AdminStore) Load(ctx context.Context) (*policy.StoredConfig, error) {
@@ -77,6 +78,7 @@ func (s *AdminStore) Load(ctx context.Context) (*policy.StoredConfig, error) {
 	}
 	s.identityID = snapshot.IdentityID
 	s.lastSHA = strings.TrimSpace(snapshot.PolicySHA256)
+	s.policyYAML = snapshot.PolicyYAML
 	return stored, nil
 }
 
@@ -127,6 +129,44 @@ func (s *AdminStore) Save(ctx context.Context, stored *policy.StoredConfig) erro
 	}
 	s.identityID = snapshot.IdentityID
 	s.lastSHA = strings.TrimSpace(snapshot.PolicySHA256)
+	s.policyYAML = snapshot.PolicyYAML
+	return nil
+}
+
+// SaveYAML validates and replaces exact caller-supplied YAML bytes while
+// retaining optimistic concurrency from the last successful Load. This is the
+// batch/pipe counterpart to the structured editor's canonical Save method.
+func (s *AdminStore) SaveYAML(ctx context.Context, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	target, err := s.resolvedTarget()
+	if err != nil {
+		return err
+	}
+	if _, err := target.Parse(data); err != nil {
+		return fmt.Errorf("failed to parse %s: %w", target.DocumentName(), err)
+	}
+	if s.Client == nil {
+		return fmt.Errorf("admin policy client is required")
+	}
+	validation, err := s.Client.ValidatePolicy(ctx, target, string(data))
+	if err != nil {
+		return err
+	}
+	if !validation.Success {
+		return adminPolicyError("validate", target, validation.Code, validation.Error)
+	}
+	snapshot, err := s.Client.ReplacePolicy(ctx, target, string(data), s.lastSHA)
+	if err != nil {
+		return err
+	}
+	if err := requireSnapshotSuccess(snapshot, target, "save"); err != nil {
+		return err
+	}
+	s.identityID = snapshot.IdentityID
+	s.lastSHA = strings.TrimSpace(snapshot.PolicySHA256)
+	s.policyYAML = snapshot.PolicyYAML
 	return nil
 }
 
@@ -151,6 +191,15 @@ func (s *AdminStore) LastSHA256() string {
 		return ""
 	}
 	return s.lastSHA
+}
+
+// PolicyYAML returns the exact document bytes from the last successful Load or
+// Save, as represented on the admin protocol.
+func (s *AdminStore) PolicyYAML() string {
+	if s == nil {
+		return ""
+	}
+	return s.policyYAML
 }
 
 func (s *AdminStore) marshal(stored *policy.StoredConfig) (Target, []byte, error) {

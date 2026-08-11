@@ -2,121 +2,56 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package fsutil provides filesystem helpers for the aplane store.
-// Store files use group-accessible permissions (0660 files, 0770 dirs)
-// so that any member of the aplane group can manage the store while
-// apsigner can read/write through group ownership.
 package fsutil
 
 import (
 	"os"
-	"path/filepath"
 )
 
-// StoreDirPerm is the permission mode for store directories.
-const StoreDirPerm = os.ModeSetgid | 0770
+// StoreDirPerm is the service-user-only permission mode for signer-store
+// directories.
+const StoreDirPerm os.FileMode = 0o700
 
-// StoreFilePerm is the permission mode for store files.
-const StoreFilePerm os.FileMode = 0660
+// StoreFilePerm is the service-user-only permission mode for signer-store files.
+const StoreFilePerm os.FileMode = 0o600
 
-// MkdirAll creates a directory and all parents with store permissions (g+rwx, setgid).
-// Unlike os.MkdirAll, this explicitly sets permissions after creation to
-// bypass umask restrictions. If the directory already exists, permissions
-// are left unchanged (the caller may not own it).
+// MkdirAll creates an owner-private directory tree without changing an
+// existing directory's permissions. It is suitable for caller-owned client
+// state where the process may not own a pre-existing shared root.
 func MkdirAll(path string) error {
-	// Check if directory already exists — skip chmod if so, since we may
-	// not own it (e.g., apstore restore run by a group member).
-	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		return nil
-	}
-
-	if err := os.MkdirAll(path, 0770); err != nil {
+	if err := os.MkdirAll(path, StoreDirPerm); err != nil {
 		return err
 	}
-	// Set setgid + 0770. Setgid requires ownership or root; if we lack
-	// permission, fall back to 0770 without setgid.
-	if err := os.Chmod(path, StoreDirPerm); err != nil {
-		if os.IsPermission(err) {
-			return os.Chmod(path, 0770)
-		}
-		return err
-	}
-	return nil
-}
-
-// WriteFile writes data to a file with store permissions (g+rw).
-// It replaces the target atomically so crashes leave either the old file or
-// the new file, never a truncated partially-written target.
-func WriteFile(path string, data []byte) error {
-	info, statErr := os.Stat(path)
-	switch {
-	case statErr == nil:
-		if uid, _, ok := FileOwnership(info); ok && uid != os.Getuid() {
-			// Shared-group update of someone else's file: preserve ownership by
-			// writing in place, matching the pre-atomic behavior.
-			return writeFileInPlace(path, data)
-		}
-	case os.IsNotExist(statErr):
-		// New file: use atomic replace path below.
-	default:
-		return statErr
-	}
-
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	info, err := os.Lstat(path)
 	if err != nil {
 		return err
 	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		_ = tmp.Close()
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if _, err := tmp.Write(data); err != nil {
-		return err
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return &os.PathError{Op: "mkdir", Path: path, Err: os.ErrInvalid}
 	}
-
-	targetMode := StoreFilePerm
-	var targetGID int
-	hasOwnership := false
-
-	switch {
-	case statErr == nil:
-		targetMode = info.Mode().Perm()
-		if _, gid, ok := FileOwnership(info); ok {
-			targetGID = gid
-			hasOwnership = targetGID != os.Getgid()
-		}
-	case os.IsNotExist(statErr):
-		// New file: keep default mode and current ownership.
-	default:
-		return statErr
-	}
-
-	if err := tmp.Chmod(targetMode); err != nil {
-		return err
-	}
-	if hasOwnership {
-		if err := tmp.Chown(-1, targetGID); err != nil {
-			return err
-		}
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
 	return nil
 }
 
-func writeFileInPlace(path string, data []byte) error {
-	if err := os.WriteFile(path, data, StoreFilePerm); err != nil {
+// MkdirAllPrivate creates a signer-store directory tree and clamps the final
+// directory to the StoreDirPerm ceiling. Existing owner permissions are never
+// added; newly created final directories receive StoreDirPerm. The caller must
+// own the store directory.
+func MkdirAllPrivate(path string) error {
+	info, err := os.Lstat(path)
+	existed := err == nil
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return os.Chmod(path, StoreFilePerm)
+	if err := MkdirAll(path); err != nil {
+		return err
+	}
+	if !existed {
+		return os.Chmod(path, StoreDirPerm)
+	}
+	return os.Chmod(path, info.Mode().Perm()&StoreDirPerm)
+}
+
+// WriteFile atomically and durably publishes a private signer-store file.
+func WriteFile(path string, data []byte) error {
+	return WriteFileDurableWithProfile(path, data, PrivateStoreFileProfile)
 }

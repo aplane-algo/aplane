@@ -42,6 +42,11 @@ type BackupServices interface {
 	BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult
 	ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult
 	DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult
+	BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult
+	AppendBackupImport(ir *identity.Runtime, req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult
+	CommitBackupImport(ir *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult
+	AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult
+	ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult
 	PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult
 	RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult
 	RollbackRestore(ir *identity.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult
@@ -61,6 +66,15 @@ type TemplateServices interface {
 	ListKeyTypes(ir *identity.Runtime) adminproto.ListKeyTypesResult
 }
 
+type StoreInspectionServices interface {
+	ListSentryReferences(ir *identity.Runtime) adminproto.ListSentryReferencesResult
+	GetSentryReference(ir *identity.Runtime, req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult
+	ImportSentryReference(ir *identity.Runtime, req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult
+	RemoveSentryReference(ir *identity.Runtime, req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult
+	ExportSentryPublic(ir *identity.Runtime, req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult
+	ListGenerations(ir *identity.Runtime) adminproto.GenerationInventory
+}
+
 type AuthorizationAudit interface {
 	LogAuthorizationDenied(ctx SessionContext, action auth.Action, resource auth.Resource, reason string)
 }
@@ -71,6 +85,7 @@ type SessionDeps struct {
 	Keys       KeyServices
 	Backups    BackupServices
 	Templates  TemplateServices
+	Inspection StoreInspectionServices
 	Authorizer auth.Authorizer
 	Audit      AuthorizationAudit
 }

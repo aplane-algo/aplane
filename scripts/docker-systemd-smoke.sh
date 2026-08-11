@@ -232,10 +232,24 @@ verify_install_layout() {
     docker_exec_bash "test -x /usr/local/bin/approbe"
     docker_exec_bash "test -x /var/lib/apsigner/install/uninstall.sh"
     docker_exec_bash "grep -qx '$OPERATOR_ROOT' /var/lib/apsigner/install/operator-root"
+    local service_uid service_gid
+    service_uid="$(docker_exec_bash "id -u aplane")"
+    service_gid="$(docker_exec_bash "getent group aplane | cut -d: -f3")"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/install/service-principal.json)\" = 'root:aplane 640' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/install)\" = 'root:aplane 750' ]"
+    docker_exec_bash "grep -qx '{\"schema_version\":1,\"uid\":$service_uid,\"gid\":$service_gid}' /var/lib/apsigner/install/service-principal.json"
     docker_exec_bash "test -f /var/lib/apsigner/identities/default/.keystore"
-    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner)\" = 'aplane:aplane 2770' ]"
-    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/backups)\" = 'aplane:aplane 2770' ]"
-    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/config.yaml)\" = 'aplane:aplane 640' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner)\" = 'aplane:aplane 700' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/backups)\" = 'aplane:aplane 700' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/config.yaml)\" = 'aplane:aplane 600' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /run/apsigner)\" = 'aplane:aplane 750' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /run/apsigner/aplane.sock)\" = 'aplane:aplane 660' ]"
+    docker_exec_as_tester "! test -x /var/lib/apsigner && ! test -r /var/lib/apsigner/config.yaml"
+    docker_exec_as_tester "test -S /run/apsigner/aplane.sock"
+    docker_exec_as_tester "! rm /run/apsigner/aplane.sock 2>/dev/null"
+    docker_exec_as_tester "! mv /run/apsigner/aplane.sock /tmp/operator-moved-aplane.sock 2>/dev/null"
+    docker_exec_as_tester "! ln -s /tmp/operator-planted-aplane.sock /run/apsigner/operator-planted.sock 2>/dev/null"
+    docker_exec_bash "test -S /run/apsigner/aplane.sock && test ! -e /run/apsigner/operator-planted.sock"
     docker_exec_bash "grep -qx 'require_memory_protection: true' /var/lib/apsigner/config.yaml"
     docker_exec_bash "grep -qx 'AmbientCapabilities=CAP_IPC_LOCK' /etc/systemd/system/apsigner.service"
     docker_exec_bash "grep -qx 'LimitMEMLOCK=infinity' /etc/systemd/system/apsigner.service"
@@ -246,6 +260,7 @@ verify_install_layout() {
         [ \"\$APLANE_INSTALL_ROOT\" = '$OPERATOR_ROOT' ] && \
         [ \"\$APLANE_BINDIR\" = '/usr/local/bin' ] && \
         [ \"\$APSIGNER_DATA\" = '/var/lib/apsigner' ] && \
+        [ \"\$APSIGNER_IPC_PATH\" = '/run/apsigner/aplane.sock' ] && \
         [ \"\$APCLIENT_DATA\" = '$OPERATOR_ROOT/apclient' ] && \
         command -v apsigner >/dev/null && \
         command -v apshell >/dev/null"
@@ -358,7 +373,7 @@ populate_known_hosts() {
 }
 
 start_apapprover() {
-    # apapprover runs as tester over IPC at /var/lib/apsigner/aplane.sock.
+    # apapprover runs as tester over IPC at /run/apsigner/aplane.sock.
     # tester is in the aplane group (added by install.sh), and `docker exec
     # --user tester` creates a fresh session whose supplementary groups are
     # resolved at exec-time — so aplane membership is live even though the
@@ -484,6 +499,7 @@ expect {
   timeout { exit 17 }
   eof {}
 }
+
 set result [wait]
 set rc [lindex \$result 3]
 if {\$completed != 1} {
@@ -493,6 +509,17 @@ exit \$rc
 EXPECT"
 }
 
+verify_managed_store_owner_repair() {
+    docker_exec systemctl stop apsigner
+    docker_exec chown -R root:root /var/lib/apsigner
+    docker_exec_bash "apstore -d /var/lib/apsigner permissions migrate"
+    docker_exec_bash "apstore -d /var/lib/apsigner permissions audit"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner)\" = 'aplane:aplane 700' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/config.yaml)\" = 'aplane:aplane 600' ]"
+    docker_exec_bash "[ \"\$(stat -c '%U:%G %a' /var/lib/apsigner/install/service-principal.json)\" = 'root:aplane 640' ]"
+    docker_exec systemctl start apsigner
+}
+
 shutdown_client_services() {
     # apsigner is systemd-managed and uninstall will stop it; only kill the
     # apapprover expect wrapper we started. Match by binary name, not -f,
@@ -500,6 +527,33 @@ shutdown_client_services() {
     docker_exec_as_tester "pkill expect || true"
     docker_exec_as_tester "pkill apapprover || true"
     sleep 1
+}
+
+verify_installer_rejects_preplanted_store_symlink() {
+    local test_root="/var/lib/aplane-preflight-test"
+    local sentinel="/tmp/aplane-preflight-sentinel"
+
+    docker_exec systemctl stop apsigner
+    docker_exec_bash "printf 'sentinel-content\n' > '$sentinel' && chmod 640 '$sentinel'"
+    docker_exec_bash "mkdir '$test_root' && chown aplane:aplane '$test_root' && chmod 2770 '$test_root'"
+    docker_exec_as_tester "ln -s '$sentinel' '$test_root/library'"
+    docker_exec_bash "sha256sum /etc/systemd/system/apsigner.service > /tmp/aplane-preflight-unit.before"
+    docker_exec_bash "set +e
+/tmp/aplane/installer/scripts/systemd-setup.sh aplane aplane /usr/local/bin --data-dir '$test_root' --memory-lock > /tmp/aplane-preflight.log 2>&1
+rc=\$?
+set -e
+cat /tmp/aplane-preflight.log
+if [ \"\$rc\" -eq 0 ]; then
+    echo 'systemd setup unexpectedly accepted a pre-planted store symlink' >&2
+    exit 1
+fi
+grep -q 'refusing symlink during signer-store preflight' /tmp/aplane-preflight.log
+grep -qx 'sentinel-content' '$sentinel'
+[ \"\$(stat -c '%U:%G %a' '$sentinel')\" = 'root:root 640' ]
+sha256sum -c /tmp/aplane-preflight-unit.before"
+    docker_exec unlink "$test_root/library"
+    docker_exec rmdir "$test_root"
+    docker_exec rm "$sentinel"
 }
 
 verify_uninstall() {
@@ -537,7 +591,7 @@ passphrase_command_argv:
     - $pass_file
 YAML"
     docker_exec chown aplane:aplane "$unlock_file"
-    docker_exec chmod 640 "$unlock_file"
+    docker_exec chmod 600 "$unlock_file"
 
     docker_exec systemctl start apsigner
 
@@ -601,7 +655,7 @@ passphrase_command_argv:
     - $cred_file
 YAML"
     docker_exec chown aplane:aplane "$unlock_file"
-    docker_exec chmod 640 "$unlock_file"
+    docker_exec chmod 600 "$unlock_file"
 
     docker_exec_bash "sed -i '/^\\[Service\\]\$/a LoadCredentialEncrypted=aplane-passphrase:$cred_file' /etc/systemd/system/apsigner.service"
     docker_exec systemctl daemon-reload
@@ -702,6 +756,9 @@ main() {
     log "Shutting down client-side services"
     shutdown_client_services
 
+    log "Verifying installer rejects a group-planted store symlink before mutation"
+    verify_installer_rejects_preplanted_store_symlink
+
     log "Checking stopped systemd in-place upgrade"
     run_stopped_systemd_reinstaller
 
@@ -710,6 +767,9 @@ main() {
 
     log "Verifying systemd state survived stopped in-place upgrade"
     verify_systemd_in_place_state_fingerprint
+
+    log "Verifying managed-store ownership repair does not trust a root-owned store"
+    verify_managed_store_owner_repair
 
     log "Configuring appass-file auto-unlock"
     setup_appass_file_unlock

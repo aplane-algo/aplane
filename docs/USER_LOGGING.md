@@ -73,6 +73,8 @@ The examples show `"default"` as the identity. See [ARCH_OVERVIEW.md](ARCH_OVERV
 | `KEY_IMPORTED` | A key was imported through the authenticated admin surface |
 | `KEY_REJECTED` | A key file was skipped during signer scan because it violated a load-time key-file invariant |
 | `BACKUP_CREATED` | A key backup was created through the authenticated admin surface |
+| `BACKUP_IMPORTED` | A deeply verified uploaded backup was published into managed storage |
+| `BACKUP_EXPORT_STARTED` | An authenticated client began reading a managed backup archive; a non-zero initial offset is still audited |
 | `BACKUP_FAILED` | A key backup failed through the authenticated admin surface |
 | `BACKUP_RESTORE_PREVIEWED` | A managed backup restore preview succeeded through the authenticated admin surface |
 | `BACKUP_RESTORE_PREVIEW_FAILED` | A managed backup restore preview failed through the authenticated admin surface |

@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"os"
 
-	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
+
+const maxSentryPublicEnvelopeBytes = 64 * 1024
 
 func cmdSentry(args []string) error {
 	if len(args) == 0 {
@@ -54,18 +57,24 @@ func cmdSentryExport(args []string) error {
 		return fmt.Errorf("invalid Witness Key ID: %w", err)
 	}
 
-	envelope, ok, err := apkeys.ReadWitnessPublicMetadata(keystorePaths(), productIdentityID(), componentKey)
+	client, err := newApstoreReadOnlyAdminClientForCommand()
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return fmt.Errorf("sentry public metadata for %s not found; regenerate the sentry key or run a metadata backfill before exporting", componentKey)
-	}
-	data, err := json.MarshalIndent(envelope, "", "  ")
+	defer client.close()
+	result, err := requestInspectionWithRetry(client, func() any {
+		return protocol.ExportSentryPublicMessage{
+			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeExportSentryPublic, ID: newApstoreRequestID("sentry-export")},
+			WitnessKeyID: componentKey,
+		}
+	}, func(result *protocol.ExportSentryPublicResultMessage) string { return result.Code })
 	if err != nil {
-		return fmt.Errorf("failed to encode public key envelope: %w", err)
+		return err
 	}
-	data = append(data, '\n')
+	if !result.Success {
+		return codedError{code: result.Code, message: result.Error}
+	}
+	data := []byte(result.EnvelopeJSON)
 
 	if len(args) == 1 {
 		_, err := os.Stdout.Write(data)
@@ -75,7 +84,7 @@ func cmdSentryExport(args []string) error {
 	if outputPath == "" {
 		return fmt.Errorf("output path is required")
 	}
-	if err := os.WriteFile(outputPath, data, 0o600); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(outputPath, data, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write public key envelope: %w", err)
 	}
 	logInfof("sentry public key envelope written: %s", outputPath)
@@ -83,35 +92,58 @@ func cmdSentryExport(args []string) error {
 }
 
 func cmdSentryImport(path, name string) error {
-	data, err := os.ReadFile(path)
+	data, _, err := fsutil.ReadRegularFileLimited(path, maxSentryPublicEnvelopeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to read sentry public key export: %w", err)
 	}
-	rec, err := sentryrefs.Import(keystorePaths(), productIdentityID(), name, data)
+	client, err := newApstoreAdminClientForCommand()
 	if err != nil {
 		return err
 	}
-	logInfof("sentry reference %s imported for %s", rec.Name, rec.KeyType)
+	defer client.close()
+	var result protocol.ImportSentryReferenceResultMessage
+	if err := client.request(protocol.ImportSentryReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeImportSentryReference, ID: newApstoreRequestID("sentry-import")},
+		Name:        name, EnvelopeJSON: string(data),
+	}, &result); err != nil {
+		return err
+	}
+	if !result.Success {
+		return codedError{code: result.Code, message: result.Error}
+	}
+	logInfof("sentry reference %s imported for %s", result.Reference.Name, result.Reference.KeyType)
 	return nil
 }
 
 func cmdSentryList() error {
-	records, err := sentryrefs.List(keystorePaths(), productIdentityID())
+	client, err := newApstoreReadOnlyAdminClientForCommand()
 	if err != nil {
 		return err
 	}
-	if len(records) == 0 {
+	defer client.close()
+	result, err := requestInspectionWithRetry(client, func() any {
+		return protocol.ListSentryReferencesMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListSentryReferences, ID: newApstoreRequestID("sentry-list")},
+		}
+	}, func(result *protocol.SentryReferencesListMessage) string { return result.Code })
+	if err != nil {
+		return err
+	}
+	if result.Error != "" {
+		return codedError{code: result.Code, message: result.Error}
+	}
+	if len(result.References) == 0 {
 		logInfof("no sentry references found")
 		return nil
 	}
-	logInfof("found %d sentry reference(s)", len(records))
-	for _, rec := range records {
+	logInfof("found %d sentry reference(s)", len(result.References))
+	for _, rec := range result.References {
 		fmt.Printf("  %s  (%s, %s)\n", rec.ComponentKey, rec.KeyType, sentryReferenceListLabel(rec))
 	}
 	return nil
 }
 
-func sentryReferenceListLabel(rec sentryrefs.Record) string {
+func sentryReferenceListLabel(rec protocol.SentryReferenceInfo) string {
 	if rec.Source == sentryrefs.SourceClientDiscovery {
 		if rec.EndpointAlias != "" {
 			return "endpoint: " + rec.EndpointAlias
@@ -128,14 +160,24 @@ func sentryReferenceListLabel(rec sentryrefs.Record) string {
 }
 
 func cmdSentryShow(name string) error {
-	rec, ok, err := sentryrefs.Get(keystorePaths(), productIdentityID(), name)
+	client, err := newApstoreReadOnlyAdminClientForCommand()
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return fmt.Errorf("sentry reference %q not found", name)
+	defer client.close()
+	result, err := requestInspectionWithRetry(client, func() any {
+		return protocol.GetSentryReferenceMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetSentryReference, ID: newApstoreRequestID("sentry-show")},
+			Name:        name,
+		}
+	}, func(result *protocol.SentryReferenceMessage) string { return result.Code })
+	if err != nil {
+		return err
 	}
-	data, err := json.MarshalIndent(rec, "", "  ")
+	if !result.Success {
+		return codedError{code: result.Code, message: result.Error}
+	}
+	data, err := json.MarshalIndent(result.Reference, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to encode sentry reference: %w", err)
 	}
@@ -145,11 +187,22 @@ func cmdSentryShow(name string) error {
 }
 
 func cmdSentryRemove(name string) error {
-	removed, err := sentryrefs.Delete(keystorePaths(), productIdentityID(), name)
+	client, err := newApstoreAdminClientForCommand()
 	if err != nil {
 		return err
 	}
-	if removed {
+	defer client.close()
+	var result protocol.RemoveSentryReferenceResultMessage
+	if err := client.request(protocol.RemoveSentryReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveSentryReference, ID: newApstoreRequestID("sentry-remove")},
+		Name:        name,
+	}, &result); err != nil {
+		return err
+	}
+	if !result.Success {
+		return codedError{code: result.Code, message: result.Error}
+	}
+	if result.Removed {
 		logInfof("sentry reference %s removed", name)
 	} else {
 		logInfof("sentry reference %s was already absent", name)

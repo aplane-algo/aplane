@@ -5,12 +5,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -18,7 +20,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/transport"
 )
 
-const apstoreIPCTimeout = 30 * time.Second
+const (
+	apstoreIPCTimeout             = 30 * time.Second
+	apstoreBackupCommitIPCTimeout = 30 * time.Minute
+)
 
 const importUsage = "usage: apstore backup import <archive-path>"
 
@@ -26,13 +31,22 @@ type apstoreAdminClient struct {
 	conn *transport.IPCClient
 }
 
+var adminPassphrasePromptOutput io.Writer = os.Stderr
+var backupPassphrasePromptOutput io.Writer = os.Stderr
+var readAdminPassphrase = readPassword
+
 type apstoreAdminRequester interface {
 	request(msg any, out any) error
+	requestWithTimeout(msg any, out any, timeout time.Duration) error
 	close()
 }
 
 var newApstoreAdminClientForCommand = func() (apstoreAdminRequester, error) {
 	return newApstoreAdminClient()
+}
+
+var newApstoreReadOnlyAdminClientForCommand = func() (apstoreAdminRequester, error) {
+	return newApstoreReadOnlyAdminClient()
 }
 
 var newApstoreAdminClientWithPassphraseForCommand = func(passphrase []byte) (apstoreAdminRequester, error) {
@@ -41,8 +55,15 @@ var newApstoreAdminClientWithPassphraseForCommand = func(passphrase []byte) (aps
 
 var initializeStoreForCommand = initializeStoreLocal
 
+func apstoreIPCPath() string {
+	if adminSocketPath != "" {
+		return adminSocketPath
+	}
+	return config.IPCPath
+}
+
 func newApstoreAdminClient() (*apstoreAdminClient, error) {
-	conn := transport.NewIPC(config.IPCPath)
+	conn := transport.NewIPC(apstoreIPCPath())
 	if err := conn.Dial(); err != nil {
 		return nil, codedError{code: apstoreCodeIPCUnavailable, message: err.Error()}
 	}
@@ -54,8 +75,21 @@ func newApstoreAdminClient() (*apstoreAdminClient, error) {
 	return client, nil
 }
 
+func newApstoreReadOnlyAdminClient() (*apstoreAdminClient, error) {
+	conn := transport.NewIPC(apstoreIPCPath())
+	if err := conn.Dial(); err != nil {
+		return nil, codedError{code: apstoreCodeIPCUnavailable, message: err.Error()}
+	}
+	client := &apstoreAdminClient{conn: conn}
+	if err := client.authenticateOnly(); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return client, nil
+}
+
 func newApstoreAdminClientWithPassphrase(passphrase []byte) (*apstoreAdminClient, error) {
-	conn := transport.NewIPC(config.IPCPath)
+	conn := transport.NewIPC(apstoreIPCPath())
 	if err := conn.Dial(); err != nil {
 		return nil, codedError{code: apstoreCodeIPCUnavailable, message: err.Error()}
 	}
@@ -74,20 +108,42 @@ func (c *apstoreAdminClient) close() {
 }
 
 func (c *apstoreAdminClient) authenticateAndUnlock() error {
+	passphrase, clear, err := readApstoreAdminPassphrase()
+	if err != nil {
+		return err
+	}
+	defer clear()
+	return c.authenticateAndUnlockString(passphrase)
+}
+
+func (c *apstoreAdminClient) authenticateOnly() error {
+	passphrase, clear, err := readApstoreAdminPassphrase()
+	if err != nil {
+		return err
+	}
+	defer clear()
+	return c.conn.AuthenticateOnly(passphrase, apstoreIPCTimeout)
+}
+
+func readApstoreAdminPassphrase() (string, func(), error) {
 	passphrase := os.Getenv("TEST_PASSPHRASE")
 	var passphraseBytes []byte
 	if passphrase == "" {
-		fmt.Print("Enter admin passphrase: ")
 		var err error
-		passphraseBytes, err = readPassword()
+		passphraseBytes, err = promptForAdminPassphrase()
 		if err != nil {
-			return fmt.Errorf("failed to read admin passphrase: %w", err)
+			return "", func() {}, fmt.Errorf("failed to read admin passphrase: %w", err)
 		}
-		fmt.Println()
-		defer crypto.ZeroBytes(passphraseBytes)
 		passphrase = string(passphraseBytes)
 	}
-	return c.authenticateAndUnlockString(passphrase)
+	return passphrase, func() { crypto.ZeroBytes(passphraseBytes) }, nil
+}
+
+func promptForAdminPassphrase() ([]byte, error) {
+	_, _ = fmt.Fprint(adminPassphrasePromptOutput, "Enter admin passphrase: ")
+	passphrase, err := readAdminPassphrase()
+	_, _ = fmt.Fprintln(adminPassphrasePromptOutput)
+	return passphrase, err
 }
 
 func (c *apstoreAdminClient) authenticateAndUnlockWithPassphrase(passphrase []byte) error {
@@ -126,7 +182,11 @@ func (c *apstoreAdminClient) authenticateAndUnlockString(passphrase string) erro
 }
 
 func (c *apstoreAdminClient) request(msg any, out any) error {
-	response, err := c.conn.SendAndReceive(msg, apstoreIPCTimeout)
+	return c.requestWithTimeout(msg, out, apstoreIPCTimeout)
+}
+
+func (c *apstoreAdminClient) requestWithTimeout(msg any, out any, timeout time.Duration) error {
+	response, err := c.conn.SendAndReceive(msg, timeout)
 	if err != nil {
 		return err
 	}
@@ -261,11 +321,7 @@ func cmdBackupList() error {
 		return nil
 	}
 	for _, item := range result.Backups {
-		status := "unverified"
-		if item.Verified {
-			status = "verified"
-		}
-		fmt.Printf("%s  %s  %s  %s\n", item.FileName, backup.FormatFileSize(item.Size), status, item.Checksum)
+		fmt.Printf("%s  %s  %s\n", item.FileName, backup.FormatFileSize(item.Size), item.Checksum)
 	}
 	return nil
 }
@@ -289,55 +345,91 @@ func cmdBackupImport(args []string) error {
 		return fmt.Errorf("backup source must be a regular file: %s", source)
 	}
 
-	backupDir := keystorePaths().IdentityBackupsDir(productIdentityID())
-	for _, dir := range []string{keystorePaths().BackupsRootDir(), backupDir} {
-		if err := fsutil.MkdirAll(dir); err != nil {
-			return fmt.Errorf("failed to create backup directory: %w", err)
-		}
-	}
-
 	name := filepath.Base(source)
-	dest := filepath.Join(backupDir, name)
-	if _, err := os.Lstat(dest); err == nil {
-		return fmt.Errorf("managed backup already exists: %s", name)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("failed to inspect backup import destination: %w", err)
+	if _, err := backup.StatManagedBackupArchive(source); err != nil {
+		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
 	}
-
-	tmp, err := os.CreateTemp(backupDir, ".import-*.tar.gz")
+	exportPassphrase, err := readBackupImportPassphrase()
 	if err != nil {
-		return fmt.Errorf("failed to create backup import file: %w", err)
+		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to read backup export passphrase: %v", err)}
 	}
-	tmpPath := tmp.Name()
-	_ = tmp.Close()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	if err := copyFile(source, tmpPath); err != nil {
+	defer crypto.ZeroBytes(exportPassphrase)
+	checksum, size, err := backup.FileSHA256(source)
+	if err != nil {
+		return fmt.Errorf("failed to checksum backup source: %w", err)
+	}
+	client, err := newApstoreAdminClientForCommand()
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(tmpPath, fsutil.StoreFilePerm); err != nil {
-		return fmt.Errorf("failed to set backup archive permissions: %w", err)
+	defer client.close()
+	var begin protocol.BeginBackupImportResultMessage
+	if err := client.request(protocol.BeginBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeBeginBackupImport, ID: newApstoreRequestID("backup-import-begin")},
+		FileName:    name,
+	}, &begin); err != nil {
+		return err
 	}
-	if _, err := backup.StatManagedBackupArchive(tmpPath); err != nil {
-		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
+	if !begin.Success {
+		return resultError("backup import failed", begin.Code, begin.Error)
 	}
-	sourceRoot, cleanup, err := backup.PrepareRestoreSource(tmpPath)
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		var ignored protocol.AbortBackupImportResultMessage
+		_ = client.request(protocol.AbortBackupImportMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAbortBackupImport, ID: newApstoreRequestID("backup-import-abort")},
+			UploadID:    begin.UploadID,
+		}, &ignored)
+	}()
+	file, err := os.Open(source)
 	if err != nil {
-		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
+		return err
 	}
-	defer cleanup()
-	if err := validateImportedBackupContents(sourceRoot); err != nil {
-		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup contents: %v", err)}
+	defer func() { _ = file.Close() }()
+	buffer := make([]byte, adminproto.BackupTransferChunkBytes)
+	var offset int64
+	for {
+		n, readErr := file.Read(buffer)
+		if n > 0 {
+			var appended protocol.AppendBackupImportResultMessage
+			if err := client.request(protocol.AppendBackupImportMessage{
+				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAppendBackupImport, ID: newApstoreRequestID("backup-import-append")},
+				UploadID:    begin.UploadID, Offset: offset, Data: append([]byte(nil), buffer[:n]...),
+			}, &appended); err != nil {
+				return err
+			}
+			if !appended.Success {
+				return resultError("backup import failed", appended.Code, appended.Error)
+			}
+			offset = appended.NextOffset
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
 	}
-	if err := os.Rename(tmpPath, dest); err != nil {
-		return fmt.Errorf("failed to publish imported backup archive: %w", err)
+	var commit protocol.CommitBackupImportResultMessage
+	// Commit performs bounded archive extraction and passphrase-based deep
+	// verification in the daemon. It is deliberately synchronous, but it must
+	// not inherit the short timeout used by ordinary admin requests.
+	if err := client.requestWithTimeout(protocol.CommitBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImport, ID: newApstoreRequestID("backup-import-commit")},
+		UploadID:    begin.UploadID, FileName: name, ExpectedSize: size, ExpectedSHA256: checksum,
+		ExportPassphrase: protocol.SensitiveBytes(exportPassphrase),
+	}, &commit, apstoreBackupCommitIPCTimeout); err != nil {
+		return err
 	}
-	if err := normalizeImportedBackupOwnership(backupDir, dest); err != nil {
-		return fmt.Errorf("failed to normalize imported backup ownership: %w", err)
+	if !commit.Success {
+		return resultError("backup import failed", commit.Code, commit.Error)
 	}
-	checksum, size, err := backup.FileSHA256(dest)
-	if err != nil {
-		return fmt.Errorf("failed to checksum imported backup archive: %w", err)
+	committed = true
+	if commit.Warning != "" {
+		logWarnf("backup import warning: %s", commit.Warning)
 	}
 	logInfof("backup imported: %s", name)
 	logInfof("size: %s", backup.FormatFileSize(size))
@@ -345,54 +437,18 @@ func cmdBackupImport(args []string) error {
 	return nil
 }
 
-func validateImportedBackupContents(sourceRoot string) error {
-	logInfof("import validation requires the export passphrase")
-	fmt.Print("Enter export passphrase: ")
+func readBackupImportPassphrase() ([]byte, error) {
+	logInfof("daemon validation requires the export passphrase")
+	_, _ = fmt.Fprint(backupPassphrasePromptOutput, "Enter export passphrase: ")
 	exportPassphrase, err := readPromptedPassword()
 	if err != nil {
-		return fmt.Errorf("failed to read export passphrase: %w", err)
+		return nil, fmt.Errorf("failed to read export passphrase: %w", err)
 	}
-	fmt.Println()
-	defer crypto.ZeroBytes(exportPassphrase)
+	_, _ = fmt.Fprintln(backupPassphrasePromptOutput)
 	if len(exportPassphrase) == 0 {
-		return fmt.Errorf("export passphrase cannot be empty")
+		return nil, fmt.Errorf("export passphrase cannot be empty")
 	}
-
-	report, err := backup.DeepVerifyBackupBytes(sourceRoot, exportPassphrase)
-	if err != nil {
-		return err
-	}
-	if report.FailedFiles > 0 {
-		for _, result := range report.Results {
-			if !result.Valid {
-				return fmt.Errorf("%d of %d key file(s) failed validation: %s: %s",
-					report.FailedFiles, report.TotalFiles, result.FileName, result.Error)
-			}
-		}
-		return fmt.Errorf("%d of %d key file(s) failed validation", report.FailedFiles, report.TotalFiles)
-	}
-	logInfof("backup contents verified: %d key file(s)", report.ValidFiles)
-	return nil
-}
-
-func normalizeImportedBackupOwnership(backupDir, archivePath string) error {
-	if currentEUID() != 0 {
-		return nil
-	}
-	info, err := os.Stat(dataDirectory)
-	if err != nil {
-		return err
-	}
-	uid, gid, err := fileOwnerGroup(info)
-	if err != nil {
-		return err
-	}
-	for _, path := range []string{keystorePaths().BackupsRootDir(), backupDir, archivePath} {
-		if err := os.Lchown(path, uid, gid); err != nil {
-			return err
-		}
-	}
-	return nil
+	return exportPassphrase, nil
 }
 
 func cmdBackupExport(name, destinationDir string) error {
@@ -411,7 +467,12 @@ func cmdBackupExport(name, destinationDir string) error {
 		destinationDirExists = true
 	}
 
-	info, err := findManagedBackup(name)
+	client, err := newApstoreAdminClientForCommand()
+	if err != nil {
+		return err
+	}
+	defer client.close()
+	info, err := findManagedBackupWithClient(client, name)
 	if err != nil {
 		return err
 	}
@@ -427,10 +488,58 @@ func cmdBackupExport(name, destinationDir string) error {
 	}
 
 	destination := filepath.Join(destinationDir, fileName)
-	if err := copyFile(info.Path, destination); err != nil {
+	if _, err := os.Lstat(destination); err == nil {
+		return fmt.Errorf("backup export destination already exists: %s", destination)
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-	checksum, size, err := backup.FileSHA256(destination)
+	tmp, err := os.CreateTemp(destinationDir, ".aplane-backup-export-*.part")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		return err
+	}
+	var offset int64
+	for {
+		var chunk protocol.BackupChunkMessage
+		if err := client.request(protocol.ReadBackupChunkMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeReadBackupChunk, ID: newApstoreRequestID("backup-export-chunk")},
+			FileName:    info.FileName, Offset: offset,
+		}, &chunk); err != nil {
+			return err
+		}
+		if !chunk.Success {
+			return resultError("backup export failed", chunk.Code, chunk.Error)
+		}
+		if chunk.Offset != offset {
+			return fmt.Errorf("backup export returned offset %d, expected %d", chunk.Offset, offset)
+		}
+		if len(chunk.Data) > 0 {
+			if _, err := tmp.Write(chunk.Data); err != nil {
+				return err
+			}
+			offset += int64(len(chunk.Data))
+		}
+		if chunk.EOF {
+			break
+		}
+		if len(chunk.Data) == 0 {
+			return fmt.Errorf("backup export returned empty non-final chunk")
+		}
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	checksum, size, err := backup.FileSHA256(tmpPath)
 	if err != nil {
 		return fmt.Errorf("failed to verify exported backup: %w", err)
 	}
@@ -440,9 +549,75 @@ func cmdBackupExport(name, destinationDir string) error {
 	if info.Checksum != "" && checksum != info.Checksum {
 		return codedError{code: "verification_failed", message: fmt.Sprintf("exported backup checksum mismatch: got %s, want %s", checksum, info.Checksum)}
 	}
+	publication, err := publishBackupExportNoReplace(tmpPath, destination)
+	if err != nil {
+		return err
+	}
+	if err := syncBackupExportDirectory(destinationDir); err != nil {
+		publication.Warnings = append(publication.Warnings, fmt.Sprintf("destination directory durability could not be confirmed: %v", err))
+	}
+	for _, warning := range publication.Warnings {
+		logWarnf("backup export warning: %s", warning)
+	}
 	logInfof("backup exported: %s", destination)
 	logInfof("checksum: %s", checksum)
 	return nil
+}
+
+type backupExportPublication struct {
+	Warnings []string
+}
+
+var syncBackupExportDirectory = fsutil.SyncDir
+
+func publishBackupExportNoReplace(tmpPath, destination string) (backupExportPublication, error) {
+	return publishBackupExportNoReplaceWith(
+		tmpPath,
+		destination,
+		renameBackupExportNoReplace,
+		os.Link,
+		os.Remove,
+	)
+}
+
+func publishBackupExportNoReplaceWith(
+	tmpPath, destination string,
+	renameNoReplace func(string, string) error,
+	link func(string, string) error,
+	remove func(string) error,
+) (backupExportPublication, error) {
+	err := renameNoReplace(tmpPath, destination)
+	if err == nil {
+		return backupExportPublication{}, nil
+	}
+	if errors.Is(err, os.ErrExist) {
+		return backupExportPublication{}, fmt.Errorf("backup export destination already exists: %s", destination)
+	}
+	if !backupExportNoReplaceUnsupported(err) {
+		return backupExportPublication{}, fmt.Errorf("publish backup export: %w", err)
+	}
+
+	// The staging file is created in the destination directory, so a hard link
+	// provides an atomic no-replace fallback without a cross-filesystem case.
+	// Do not fall back to Lstat followed by Rename: that would reintroduce the
+	// overwrite race this publication boundary exists to prevent.
+	if linkErr := link(tmpPath, destination); linkErr != nil {
+		if errors.Is(linkErr, os.ErrExist) {
+			return backupExportPublication{}, fmt.Errorf("backup export destination already exists: %s", destination)
+		}
+		return backupExportPublication{}, fmt.Errorf(
+			"publish backup export: destination filesystem supports neither no-replace rename nor hard-link publication: %w",
+			linkErr,
+		)
+	}
+	publication := backupExportPublication{}
+	if removeErr := remove(tmpPath); removeErr != nil {
+		publication.Warnings = append(
+			publication.Warnings,
+			fmt.Sprintf("export is committed, but staging file %s could not be removed: %v", tmpPath, removeErr),
+		)
+	}
+	return publication, nil
 }
 
 func cmdBackupDelete(name string) error {
@@ -473,15 +648,6 @@ func cmdBackupDelete(name string) error {
 	}
 	logInfof("managed backup deleted: %s", info.FileName)
 	return nil
-}
-
-func findManagedBackup(name string) (protocol.BackupInfo, error) {
-	client, err := newApstoreAdminClientForCommand()
-	if err != nil {
-		return protocol.BackupInfo{}, err
-	}
-	defer client.close()
-	return findManagedBackupWithClient(client, name)
 }
 
 func findManagedBackupWithClient(client apstoreAdminRequester, name string) (protocol.BackupInfo, error) {
@@ -515,23 +681,23 @@ func findManagedBackupWithClient(client apstoreAdminRequester, name string) (pro
 }
 
 func promptConfirmedPassphrase(prompt, confirmPrompt string) ([]byte, error) {
-	fmt.Print(prompt)
+	_, _ = fmt.Fprint(backupPassphrasePromptOutput, prompt)
 	passphrase, err := readPassword()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read passphrase: %w", err)
 	}
-	fmt.Println()
+	_, _ = fmt.Fprintln(backupPassphrasePromptOutput)
 	if len(passphrase) == 0 {
 		return nil, fmt.Errorf("passphrase cannot be empty")
 	}
-	fmt.Print(confirmPrompt)
+	_, _ = fmt.Fprint(backupPassphrasePromptOutput, confirmPrompt)
 	confirm, err := readPassword()
 	if err != nil {
 		crypto.ZeroBytes(passphrase)
 		return nil, fmt.Errorf("failed to read confirmation: %w", err)
 	}
 	defer crypto.ZeroBytes(confirm)
-	fmt.Println()
+	_, _ = fmt.Fprintln(backupPassphrasePromptOutput)
 	if string(passphrase) != string(confirm) {
 		crypto.ZeroBytes(passphrase)
 		return nil, fmt.Errorf("passphrases do not match")
@@ -548,24 +714,4 @@ func resultError(prefix, code, message string) error {
 		message = "operation failed"
 	}
 	return codedError{prefix: prefix, code: code, message: message}
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("failed to open managed backup: %w", err)
-	}
-	defer func() { _ = in.Close() }()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		return fmt.Errorf("failed to create destination backup: %w", err)
-	}
-	defer func() { _ = out.Close() }()
-	if _, err := io.Copy(out, in); err != nil {
-		return fmt.Errorf("failed to copy backup: %w", err)
-	}
-	if err := out.Sync(); err != nil {
-		return fmt.Errorf("failed to sync destination backup: %w", err)
-	}
-	return nil
 }

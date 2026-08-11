@@ -10,6 +10,8 @@
 > For guarded signing and sentry node architecture, see [ARCH_SENTRY.md](ARCH_SENTRY.md).
 > For bounded authorization contracts and external contract-admin custody, see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 > For the canonical Corridor v1 bounded-sentry profile, see [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md).
+> For signer-store process ownership, filesystem permissions, and the
+> single-writer migration, see [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md).
 
 ## Table of Contents
 
@@ -84,6 +86,10 @@ Read [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md) before changing key file
 schemas, key type state, template install/enable/disable/remove behavior,
 LogicSig signing metadata, or backup/restore rules for keys and key types.
 
+Read [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md) before changing signer
+data permissions, IPC placement, direct local-client store access, durable
+writes, or offline maintenance execution modes.
+
 Read [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) before changing
 authorization-sensitive behavior:
 
@@ -143,15 +149,15 @@ All under `cmd/`:
 | `apadmin` | TUI admin client over IPC or SSH admin transport |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
-| `apstore` | Local keystore management client: local `initialize`, policy integrity check/verify/sign, public endpoint export, public sentry reference import/export/list, local `verify`, local `rebuild` rescue flows, and offline `generations list`/`prune` maintenance; daemon-owned backup, restore, template, key type, and changepass operations use the admin protocol |
-| `appolicy` | Offline policy checker/editor TUI that auto-targets the `policy.yaml` domain from the node role, plus scriptable save/check/export and signing-to-sentry-policy conversion while holding the store mutation lock |
+| `apstore` | Store-management client: local `initialize`, policy integrity check/verify/sign, external-file-only `verify`, `rebuild`, offline generation pruning, and private-store permission audit/migration; endpoint export, daemon-owned sentry references, generation inventory, backup, restore, template, key type, and changepass operations use authenticated admin IPC |
+| `appolicy` | Policy checker/editor TUI with offline rescue mode and `--online` authenticated admin-IPC mode; both support scriptable save/check/export and signer-to-sentry-policy conversion |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, client (`apshell`) default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
 | `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |
 | `configdoc` | Config documentation generator |
 | `appass-file` | Dev passphrase helper |
 | `appass-systemd-creds` | Production passphrase helper |
-| `approbe` | Installer/helper liveness probe for signer IPC reachability |
+| `approbe` | Installer/helper liveness probe and canonical signer IPC-path resolver |
 | `applugin-checksum` | Plugin integrity helper |
 
 Documentation notes:
@@ -431,6 +437,7 @@ Trust boundaries:
 - admin protocol over IPC or SSH admin subsystem ↔ apsigner
 - apshell↔plugins
 - encrypted disk↔unlocked memory
+- operator Unix group↔private signer store (runtime socket connectivity only)
 
 Plaintext signer-managed credential authority is never returned across the
 HTTP or admin transports. Store-owning local processes may decrypt credentials
@@ -549,9 +556,10 @@ filename is direct sentry component policy. The default approval fallback is
 `User Auto-Approve`. Policy is verified with a key derived from the identity
 term key and loaded into the bound identity runtime on unlock/reload before
 the key scan. Guided policy editing is implemented once in
-`internal/signerapp/policytui` and used through two stores: `appolicy` edits the selected
-domain offline while holding the store mutation lock, and `apadmin` edits the
-active document online through the admin protocol while `apsigner` is running.
+`internal/signerapp/policytui` and used through two stores: `appolicy` can edit
+the selected domain offline while holding the store mutation lock or online
+through authenticated admin IPC, and `apadmin` edits the active document
+online through the same protocol while `apsigner` is running.
 Both surfaces select the policy domain from the node role; store-backed
 role-incompatible targets fail closed. Direct edits to `policy.yaml` are checked
 and signed with `apstore policy`. Admin IPC policy messages are
@@ -600,8 +608,12 @@ Operationally:
 
 - client-local state lives under the client data directory, including plugins (`plugins.available/`, `plugins.yaml`), scripts (`scripts/`), token (`aplane.token`), caches (`cache/`), swap state (`swap/<network>/`), and the cooperative `.apclient.lock`,
 - signer-local state lives under the signer data directory, with the plaintext key type library at `library/templates/`, signer-wide ASA metadata at `cache/<network>_asa_cache.json`, managed backup archives at `backups/<identity>/`, and all sensitive runtime assets rooted under `identities/<identity>/`,
+- systemd signer state is service-user-only (`0700` directories and `0600`
+  ordinary files); the operator Unix group has no traversal rights and reaches
+  signer operations only through authenticated transports. See
+  [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md),
 - active credentials and key-type state live under `identities/<identity>/generations/<gen-id>/`, selected by the `CURRENT` pointer file; see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) and the on-disk layout in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md),
-- admin IPC binds the resolved `ipc_path` (default `<data_dir>/aplane.sock`),
+- systemd-managed admin IPC defaults to `/run/apsigner/aplane.sock`; explicit custom paths and same-UID local installs remain supported,
 - the effective layout is identity-scoped even though the default deployment uses only `"default"`.
 
 ## Security Model
@@ -1846,6 +1858,7 @@ Product-level boundaries:
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/*.go`, `internal/backup/*.go` |
+| Store Ownership / Permissions | `internal/storeperm/*.go`, `internal/fsutil/perms.go`, `internal/fsutil/durable.go`, `internal/adminipc/path.go`, `cmd/apstore/permissions.go`, `docs/ARCH_STORE_OWNERSHIP.md` |
 | Store Integration Harness | `test/storeintegration/*.go`, `internal/testcheckpoint/*.go`, `Makefile` (`store-lifecycle-test`, `store-crash-test`, `store-release-drill`) |
 | LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `library/templates/aplane.corridor.v1.yaml`, `lsig/sentryaccount/sentryaccount.go`, `internal/boundedadmin/message/message.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
@@ -1885,8 +1898,13 @@ genesis-hash mappings, templates, endpoints, and operator settings. Destination
 policy and configuration are always authoritative.
 
 Both `apadmin` and local-IPC `apstore` use the same daemon-owned lifecycle.
-`cmd/apstore` retains local `initialize`, backup-import admission, `verify`,
-policy integrity check/sign/verify, and `rebuild` replacement-keystore rescue.
+`cmd/apstore` retains local `initialize`, external-backup validation, `verify`,
+policy integrity check/sign/verify, private-store permission migration, and
+`rebuild` replacement-keystore rescue. Managed backup import publication and
+export bytes are streamed through authenticated admin IPC. Imports are capped
+at 1 GiB, only one incomplete import exists per identity, and startup removes
+unpublished transfer residue. Archive chunk reads require unlocked or recovery
+state but do not take the identity mutation lock.
 Offline rebuild is deliberately distinct: it requires an absent identity,
 creates a new keyring and node-role integrity state, and commits the restored
 credentials as the first generation through `genstore.Mint`; it bypasses the

@@ -40,6 +40,7 @@ func TestSignerRunningFalseWhenSocketMissing(t *testing.T) {
 func TestSignerRunningTrueWhenSocketAcceptsConnections(t *testing.T) {
 	dataDir := t.TempDir()
 	socketPath := filepath.Join(dataDir, "aplane.sock")
+	t.Setenv("APSIGNER_IPC_PATH", filepath.Join(t.TempDir(), "unrelated.sock"))
 
 	dialSignerIPCMu.Lock()
 	origDial := dialSignerIPC

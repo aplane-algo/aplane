@@ -13,17 +13,18 @@ import (
 	"syscall"
 )
 
-// managedModePolicyFiles are the appass-managed files whose ownership must
-// match the selected trust model for the data directory.
-var managedModePolicyFiles = []string{
-	"config.yaml",
-	"passphrase",
-	"passphrase.cred",
+func managedModePolicyPaths(dataDir, identityID string) []string {
+	identityDir := filepath.Join(dataDir, "identities", identityID)
+	return []string{
+		filepath.Join(dataDir, "config.yaml"),
+		filepath.Join(identityDir, "unlock.yaml"),
+		filepath.Join(identityDir, "passphrase"),
+		filepath.Join(identityDir, "passphrase.cred"),
+	}
 }
 
-func enforceModeOwnershipPolicy(dataDir string, isLocal bool, svc *serviceInfo) error {
-	for _, name := range managedModePolicyFiles {
-		path := filepath.Join(dataDir, name)
+func enforceModeOwnershipPolicy(dataDir, identityID string, isLocal bool, svc *serviceInfo) error {
+	for _, path := range managedModePolicyPaths(dataDir, identityID) {
 		owner, err := lookupFileOwner(path)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -31,7 +32,7 @@ func enforceModeOwnershipPolicy(dataDir string, isLocal bool, svc *serviceInfo) 
 			}
 			return err
 		}
-		if err := validateManagedFileOwner(path, owner, isLocal, svc); err != nil {
+		if err := validateManagedFileOwner(dataDir, path, owner, isLocal, svc); err != nil {
 			return err
 		}
 	}
@@ -39,12 +40,11 @@ func enforceModeOwnershipPolicy(dataDir string, isLocal bool, svc *serviceInfo) 
 	return nil
 }
 
-func validateManagedFileOwner(path, owner string, isLocal bool, svc *serviceInfo) error {
+func validateManagedFileOwner(dataDir, path, owner string, isLocal bool, svc *serviceInfo) error {
 	if isLocal {
 		expected := currentUsername()
 		if owner != expected {
 			if owner == "aplane" {
-				dataDir := filepath.Dir(path)
 				return fmt.Errorf("%s is owned by %s; this looks like a systemd-managed signer data directory.\n\nSystemd installs should run appass as root:\n  1. sudo systemctl stop apsigner\n  2. sudo appass -d %s\n  3. sudo systemctl start apsigner", path, owner, dataDir)
 			}
 			return fmt.Errorf("%s is owned by %s; local and systemd-managed data directories must not be mixed (expected local owner %s)", path, owner, expected)

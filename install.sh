@@ -1076,6 +1076,7 @@ teal_compile_network: testnet
 # Security settings
 require_memory_protection: $require_memory_protection
 EOF
+    chmod 600 "$target"
 }
 
 write_apshell_local_config() {
@@ -1264,19 +1265,19 @@ install_template_library() {
 
     if [ -n "$owner" ] && [ -n "$group" ]; then
         chown "$owner:$group" "$library_root"
-        chmod 750 "$library_root"
+        chmod 700 "$library_root"
         chown -R "$owner:$group" "$dest"
-        chmod 750 "$dest"
+        chmod 700 "$dest"
         for file in "$dest"/*; do
             [ -f "$file" ] || continue
-            chmod 640 "$file"
+            chmod 600 "$file"
         done
     else
-        chmod 755 "$library_root"
-        chmod 755 "$dest"
+        chmod 700 "$library_root"
+        chmod 700 "$dest"
         for file in "$dest"/*; do
             [ -f "$file" ] || continue
-            chmod 644 "$file"
+            chmod 600 "$file"
         done
     fi
 
@@ -1611,9 +1612,13 @@ run_as_service_user() {
 
 ensure_prod_data_dir_permissions() {
     local data_dir="$1"
-    mkdir -p "$data_dir"
-    chown "$SVC_USER:$SVC_GROUP" "$data_dir"
-    chmod 2770 "$data_dir"
+    local service_uid
+    local service_gid
+
+    service_uid="$(id -u "$SVC_USER")"
+    service_gid="$(getent group "$SVC_GROUP" | cut -d: -f3)"
+    "$BIN_SRC/apstore" -d "$data_dir" permissions prepare-managed-root \
+        --uid "$service_uid" --gid "$service_gid"
 }
 
 ensure_prod_backup_permissions() {
@@ -1630,17 +1635,8 @@ ensure_prod_backup_permissions() {
     fi
 
     mkdir -p "$backup_dir"
-    find "$backup_dir" -type d -exec chown "$SVC_USER:$SVC_GROUP" {} + -exec chmod 2770 {} +
-    find "$backup_dir" -type f -exec chown "$SVC_USER:$SVC_GROUP" {} + -exec chmod 660 {} +
-}
-
-repair_prod_store_lock_permissions() {
-    local data_dir="$1"
-    local lock_path="$data_dir/.apstore.lock"
-    if [ -e "$lock_path" ]; then
-        chown "$SVC_USER:$SVC_GROUP" "$lock_path"
-        chmod 660 "$lock_path"
-    fi
+    chown "$SVC_USER:$SVC_GROUP" "$backup_dir"
+    chmod 700 "$backup_dir"
 }
 
 ensure_policy_integrity_sidecar() {
@@ -1729,7 +1725,7 @@ install_prod_uninstaller() {
     mkdir -p "$install_dir"
     cp "$src" "$dest"
     chown root:"$SVC_GROUP" "$install_dir" "$dest"
-    chmod 2750 "$install_dir"
+    chmod 750 "$install_dir"
     chmod 750 "$dest"
     echo "Installed systemd uninstaller to $dest"
 }
@@ -2134,6 +2130,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
 
     # Create directories
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
+    chmod 700 "$INSTALL_ROOT"
     rm -f "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/apbounded-admin"
 
     # Copy binaries (apshell/aplocalnet → apclient/bin, everything else → apsigner/bin)
@@ -2466,33 +2463,20 @@ if [ -z "$DATA_DIR" ]; then
     echo "Error: could not determine home directory for $SVC_USER" >&2
     exit 1
 fi
+if [ ! -x "$BIN_SRC/apstore" ]; then
+    echo "Error: apstore binary not found at $BIN_SRC/apstore; cannot preflight signer store" >&2
+    exit 1
+fi
 if [ ! -d "$DATA_DIR" ]; then
     echo "Recreating missing data directory $DATA_DIR..."
 fi
+ensure_prod_data_dir_permissions "$DATA_DIR"
+"$BIN_SRC/apstore" -d "$DATA_DIR" permissions preflight
 if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
     require_supported_upgrade "$DATA_DIR/install/release.json" "systemd install" "$DATA_DIR"
 fi
-ensure_prod_data_dir_permissions "$DATA_DIR"
-ensure_prod_backup_permissions "$DATA_DIR"
-repair_prod_store_lock_permissions "$DATA_DIR"
 
-PROD_MARKER_PATH="$DATA_DIR/.prod"
-printf 'systemd-managed\n' > "$PROD_MARKER_PATH"
-chown "$SVC_USER:$SVC_GROUP" "$PROD_MARKER_PATH"
-chmod 640 "$PROD_MARKER_PATH"
-
-# Step 2: Copy uninstall helper into the systemd-managed data directory
-echo ""
-echo "Installing systemd management scripts..."
-install_prod_uninstaller "$DATA_DIR"
-install_release_metadata "$DATA_DIR/install" root "$SVC_GROUP" 2750 640
-if [ -n "$OPERATOR_ROOT" ]; then
-    mkdir -p -- "$OPERATOR_ROOT"
-    OPERATOR_ROOT="$(cd "$OPERATOR_ROOT" && pwd)"
-    write_prod_operator_root_metadata "$DATA_DIR" "$OPERATOR_ROOT"
-fi
-
-# Step 3: Copy binaries
+# Step 2: Copy binaries outside the signer store
 echo "Installing binaries to $BINDIR..."
 for bin in "$BIN_SRC"/*; do
     [ -f "$bin" ] || continue
@@ -2512,12 +2496,7 @@ for bin in "$BIN_SRC"/*; do
     echo "  $name"
 done
 
-# Step 3b: Copy optional template library
-echo ""
-echo "Installing template library..."
-install_template_library "$DATA_DIR" "$SVC_USER" "$SVC_GROUP"
-
-# Step 4: Run systemd setup
+# Step 3: Bootstrap managed metadata, migrate the store, and install systemd files
 echo ""
 echo "Running systemd setup..."
 SYSTEMD_SETUP_ARGS=("$SVC_USER" "$SVC_GROUP" "$BINDIR" --data-dir "$DATA_DIR")
@@ -2525,6 +2504,22 @@ if [ "$MEMORY_LOCK_ENABLED" = "1" ]; then
     SYSTEMD_SETUP_ARGS+=(--memory-lock)
 fi
 "$SCRIPT_DIR/installer/scripts/systemd-setup.sh" "${SYSTEMD_SETUP_ARGS[@]}"
+
+# Step 4: Install store-relative management content only after migration has
+# rejected every pre-planted symlink, hardlink, and unexpected object.
+ensure_prod_backup_permissions "$DATA_DIR"
+echo ""
+echo "Installing systemd management scripts..."
+install_prod_uninstaller "$DATA_DIR"
+install_release_metadata "$DATA_DIR/install" root "$SVC_GROUP" 750 640
+if [ -n "$OPERATOR_ROOT" ]; then
+    mkdir -p -- "$OPERATOR_ROOT"
+    OPERATOR_ROOT="$(cd "$OPERATOR_ROOT" && pwd)"
+    write_prod_operator_root_metadata "$DATA_DIR" "$OPERATOR_ROOT"
+fi
+echo ""
+echo "Installing template library..."
+install_template_library "$DATA_DIR" "$SVC_USER" "$SVC_GROUP"
 
 # Step 5: Generate canonical signer config for this installation
 CONFIG_PATH="$DATA_DIR/config.yaml"
@@ -2534,7 +2529,7 @@ write_prod_signer_config() {
     local target="$1"
     write_signer_config "$target" 11270 1127 "$([ "$MEMORY_LOCK_ENABLED" = "1" ] && echo true || echo false)"
     chown "$SVC_USER:$SVC_GROUP" "$target"
-    chmod 640 "$target"
+    chmod 600 "$target"
 }
 
 if [ -f "$CONFIG_PATH" ]; then
@@ -2546,7 +2541,7 @@ if [ -f "$CONFIG_PATH" ]; then
         echo "Updating $CONFIG_PATH to require memory protection."
         set_require_memory_protection_true "$CONFIG_PATH"
         chown "$SVC_USER:$SVC_GROUP" "$CONFIG_PATH"
-        chmod 640 "$CONFIG_PATH"
+        chmod 600 "$CONFIG_PATH"
     fi
 else
     echo "Writing $CONFIG_PATH..."
@@ -2559,12 +2554,15 @@ echo "=== Keystore initialization ==="
 echo ""
 if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
     echo "Keystore already initialized; skipping."
-    repair_prod_store_lock_permissions "$DATA_DIR"
 else
     "$BINDIR/apstore" -d "$DATA_DIR" initialize --role "$NODE_ROLE" </dev/tty
-    repair_prod_store_lock_permissions "$DATA_DIR"
 fi
 ensure_policy_integrity_sidecar "$DATA_DIR" "$BINDIR/apstore"
+
+echo ""
+echo "Migrating signer store to service-user-only permissions..."
+"$BINDIR/apstore" -d "$DATA_DIR" permissions migrate
+"$BINDIR/apstore" -d "$DATA_DIR" permissions audit
 
 # Step 7: Configure apshell for the installing user
 if [ -n "$SUDO_USER" ]; then
@@ -2612,6 +2610,12 @@ fi
 if [ -n "$SUDO_USER" ]; then
     APCLIENT_DIR="${APCLIENT_DIR:-$OPERATOR_ROOT/apclient}"
     ENV_SH="$OPERATOR_ROOT/apenv.sh"
+    SIGNER_IPC_PATH="$("$BINDIR/approbe" signer-ipc-path -d "$DATA_DIR")"
+    BINDIR_SHELL="$(shell_quote "$BINDIR")"
+    OPERATOR_ROOT_SHELL="$(shell_quote "$OPERATOR_ROOT")"
+    DATA_DIR_SHELL="$(shell_quote "$DATA_DIR")"
+    SIGNER_IPC_PATH_SHELL="$(shell_quote "$SIGNER_IPC_PATH")"
+    APCLIENT_DIR_SHELL="$(shell_quote "$APCLIENT_DIR")"
     echo ""
     echo "Writing $ENV_SH..."
     cat > "$ENV_SH" <<ENVEOF
@@ -2640,13 +2644,14 @@ _aplane_prepend_path() {
     PATH="\$add"
   fi
 }
-_aplane_prepend_path "$BINDIR"
+_aplane_prepend_path $BINDIR_SHELL
 export PATH
 unset -f _aplane_prepend_path
-export APLANE_INSTALL_ROOT="$OPERATOR_ROOT"
-export APLANE_BINDIR="$BINDIR"
-export APSIGNER_DATA="$DATA_DIR"
-export APCLIENT_DATA="$APCLIENT_DIR"
+export APLANE_INSTALL_ROOT=$OPERATOR_ROOT_SHELL
+export APLANE_BINDIR=$BINDIR_SHELL
+export APSIGNER_DATA=$DATA_DIR_SHELL
+export APSIGNER_IPC_PATH=$SIGNER_IPC_PATH_SHELL
+export APCLIENT_DATA=$APCLIENT_DIR_SHELL
 ENVEOF
     bash -n "$ENV_SH"
     chown "$SUDO_USER" "$ENV_SH"
@@ -2680,7 +2685,7 @@ if [ "$LOCALNET_SETUP_APPLIED" = "1" ]; then
     fi
     if [ -f "$DATA_DIR/config.yaml" ]; then
         chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR/config.yaml"
-        chmod 640 "$DATA_DIR/config.yaml"
+        chmod 600 "$DATA_DIR/config.yaml"
     fi
 fi
 
@@ -2719,7 +2724,8 @@ echo "  apadmin"
 echo ""
 echo "Start a new shell, or run:"
 echo "  source $(shell_quote "${ENV_SH:-~/aplane/apenv.sh}")"
-echo "If apadmin cannot access $DATA_DIR, refresh your login session for $SVC_GROUP group access."
+RESOLVED_SIGNER_IPC_PATH="$("$BINDIR/approbe" signer-ipc-path -d "$DATA_DIR")"
+echo "If apadmin cannot connect to $RESOLVED_SIGNER_IPC_PATH, refresh your login session for $SVC_GROUP group access."
 echo ""
 echo "The systemd uninstaller is available at:"
 echo "  $DATA_DIR/install/uninstall.sh"

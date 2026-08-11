@@ -10,6 +10,8 @@
 //
 // INSECURE / DEV ONLY: The passphrase is stored in plaintext.
 // In production, use a secrets manager (macOS Keychain, TPM, Vault, etc.)
+// The write verb assumes appass supplied an already-private, service-owned
+// path; it is not a general-purpose safe publisher for operator-chosen paths.
 //
 // Usage in config.yaml:
 //

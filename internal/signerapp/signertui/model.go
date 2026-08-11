@@ -324,7 +324,7 @@ type Model struct {
 	connector       AdminConnector
 	adminClient     *IPCClient
 	transportLabel  string
-	dataDir         string // APSIGNER_DATA directory
+	dataDir         string // operator-owned APCLIENT_DATA directory; never APSIGNER_DATA in multi-UID mode
 
 	// Signer state
 	signerState       signerRuntimeState

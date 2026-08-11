@@ -224,6 +224,19 @@ There are two ways to populate a signer-side sentry reference catalog:
   authenticated `/keys` inventories from configured sentry endpoints and syncs
   public candidates into the connected signer identity.
 
+Reference aliases are security-bearing generation inputs: resolving
+`sentry=<name>` selects the witness public key embedded into a newly generated
+guarded account. Manual import and removal therefore require an unlocked
+identity in addition to `sentries.manage`. Re-importing the identical authority
+is idempotent. If the identical authority was created by endpoint discovery,
+explicit import promotes it to a manual record so later discovery sync cannot
+remove it. Rebinding an existing name to another Witness Key ID is rejected;
+replacement requires an explicit audited remove followed by import. Names
+beginning with `endpoint-` are reserved for discovery. A manual import cannot
+create a new record in that namespace, but importing the identical authority
+over an existing discovered record remains the explicit pinning operation
+described above.
+
 Public reference records are stored under:
 
 ```text

@@ -152,6 +152,61 @@ file_mode() {
   fi
 }
 
+file_owner() {
+  local path="$1"
+  if stat -c '%U:%G' "$path" >/dev/null 2>&1; then
+    stat -c '%U:%G' "$path"
+  else
+    stat -f '%Su:%Sg' "$path"
+  fi
+}
+
+check_real_dir_mode_owner() {
+  local label="$1"
+  local path="$2"
+  local expected_mode="$3"
+  local expected_owner="$4"
+  if [ -L "$path" ]; then
+    warn "$label" "$path is a symlink, expected a real directory"
+    return
+  fi
+  if [ ! -d "$path" ]; then
+    warn "$label" "missing or not a directory: $path"
+    return
+  fi
+  local mode owner
+  mode="$(file_mode "$path" 2>/dev/null || true)"
+  owner="$(file_owner "$path" 2>/dev/null || true)"
+  if [ "$mode" = "$expected_mode" ] && [ "$owner" = "$expected_owner" ]; then
+    pass "$label" "$path owner $owner mode $mode"
+  else
+    warn "$label" "$path owner ${owner:-unknown} mode ${mode:-unknown}, expected $expected_owner $expected_mode"
+  fi
+}
+
+check_socket_mode_owner() {
+  local label="$1"
+  local path="$2"
+  local expected_mode="$3"
+  local expected_owner="$4"
+  if [ -L "$path" ]; then
+    warn "$label" "$path is a symlink, expected a Unix socket"
+    return
+  fi
+  if [ ! -S "$path" ]; then
+    warn "$label" "missing or not a socket: $path"
+    return
+  fi
+  local mode owner
+  mode="$(file_mode "$path" 2>/dev/null || true)"
+  owner="$(file_owner "$path" 2>/dev/null || true)"
+  if [ "$mode" = "$expected_mode" ] && [ "$owner" = "$expected_owner" ]; then
+    pass "$label" "$path owner $owner mode $mode"
+  else
+    warn "$label" "$path owner ${owner:-unknown} mode ${mode:-unknown}, expected $expected_owner $expected_mode"
+  fi
+}
+
 check_file_exists() {
   local label="$1"
   local path="$2"
@@ -206,10 +261,10 @@ print_binary() {
   bin="$(find_binary "$name" "$data_bin")"
   if [ -n "$bin" ]; then
     local version=""
-    if "$bin" --version >/tmp/aplane-audit-version.$$ 2>/dev/null; then
-      version="$(head -n 1 /tmp/aplane-audit-version.$$)"
+    local version_output=""
+    if version_output="$("$bin" --version 2>/dev/null)"; then
+      version="${version_output%%$'\n'*}"
     fi
-    rm -f /tmp/aplane-audit-version.$$
     if [ -n "$version" ]; then
       pass "$name" "$bin ($version)"
     else
@@ -268,11 +323,54 @@ CLIENT_DATA="$(resolve_data_dir "$CLIENT_DATA_OVERRIDE" "${APCLIENT_DATA:-}" "$H
 SIGNER_CONFIG="$SIGNER_DATA/config.yaml"
 CLIENT_CONFIG="$CLIENT_DATA/config.yaml"
 
-signer_port="$(read_top_level_value "$SIGNER_CONFIG" "signer_port")"
-signer_ssh_port="$(read_section_value "$SIGNER_CONFIG" "ssh" "port")"
-signer_ipc_path="$(read_top_level_value "$SIGNER_CONFIG" "ipc_path")"
-signer_host_key_path="$(read_section_value "$SIGNER_CONFIG" "ssh" "host_key_path")"
-signer_authorized_keys_path="$(read_section_value "$SIGNER_CONFIG" "ssh" "authorized_keys_path")"
+SIGNER_SERVICE_USER="aplane"
+SIGNER_SERVICE_GROUP="aplane"
+if command -v systemctl >/dev/null 2>&1; then
+  configured_user="$(systemctl show apsigner.service -p User --value 2>/dev/null || true)"
+  configured_group="$(systemctl show apsigner.service -p Group --value 2>/dev/null || true)"
+  [ -n "$configured_user" ] && SIGNER_SERVICE_USER="$configured_user"
+  [ -n "$configured_group" ] && SIGNER_SERVICE_GROUP="$configured_group"
+fi
+SIGNER_SERVICE_OWNER="$SIGNER_SERVICE_USER:$SIGNER_SERVICE_GROUP"
+
+SIGNER_STORE_TRAVERSABLE=0
+if [ ! -L "$SIGNER_DATA" ] && [ -x "$SIGNER_DATA" ]; then
+  SIGNER_STORE_TRAVERSABLE=1
+fi
+SIGNER_PROD_MANAGED=0
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ] && [ -f "$SIGNER_DATA/.prod" ]; then
+  SIGNER_PROD_MANAGED=1
+fi
+SIGNER_EXPECTED_OWNER="$SIGNER_SERVICE_OWNER"
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ] && [ "$SIGNER_PROD_MANAGED" -eq 0 ]; then
+  SIGNER_EXPECTED_OWNER="$(id -un):$(id -gn)"
+fi
+
+signer_port=""
+signer_ssh_port=""
+signer_ipc_path=""
+signer_ipc_resolution_warning=""
+approbe_bin="$(find_binary "approbe" "$SIGNER_DATA/bin")"
+if [ -z "$approbe_bin" ]; then
+  signer_ipc_resolution_warning="approbe not found in $SIGNER_DATA/bin or PATH"
+else
+  approbe_ipc_args=(signer-ipc-path -d "$SIGNER_DATA")
+  if [ -z "$SIGNER_DATA_OVERRIDE" ]; then
+    approbe_ipc_args+=(--honor-ipc-env)
+  fi
+  if ! signer_ipc_path="$("$approbe_bin" "${approbe_ipc_args[@]}" 2>&1)"; then
+    signer_ipc_resolution_warning="$signer_ipc_path"
+    signer_ipc_path=""
+  fi
+fi
+signer_host_key_path=""
+signer_authorized_keys_path=""
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
+  signer_port="$(read_top_level_value "$SIGNER_CONFIG" "signer_port")"
+  signer_ssh_port="$(read_section_value "$SIGNER_CONFIG" "ssh" "port")"
+  signer_host_key_path="$(read_section_value "$SIGNER_CONFIG" "ssh" "host_key_path")"
+  signer_authorized_keys_path="$(read_section_value "$SIGNER_CONFIG" "ssh" "authorized_keys_path")"
+fi
 
 client_signer_port="$(read_top_level_value "$CLIENT_CONFIG" "signer_port")"
 client_ssh_host="$(read_section_value "$CLIENT_CONFIG" "ssh" "host")"
@@ -280,7 +378,6 @@ client_ssh_port="$(read_section_value "$CLIENT_CONFIG" "ssh" "port")"
 client_identity_file="$(read_section_value "$CLIENT_CONFIG" "ssh" "identity_file")"
 client_known_hosts_path="$(read_section_value "$CLIENT_CONFIG" "ssh" "known_hosts_path")"
 
-[ -n "$signer_ipc_path" ] || signer_ipc_path="$SIGNER_DATA/aplane.sock"
 [ -n "$signer_host_key_path" ] || signer_host_key_path=".ssh/ssh_host_key"
 [ -n "$signer_authorized_keys_path" ] || signer_authorized_keys_path=".ssh/authorized_keys"
 [ -n "$client_identity_file" ] || client_identity_file=".ssh/id_ed25519"
@@ -300,6 +397,9 @@ info "APSIGNER_DATA" "$SIGNER_DATA"
 info "APCLIENT_DATA" "$CLIENT_DATA"
 check_dir_exists "signer dir" "$SIGNER_DATA"
 check_dir_exists "client dir" "$CLIENT_DATA"
+if [ -e "$SIGNER_DATA" ] || [ -L "$SIGNER_DATA" ]; then
+  check_real_dir_mode_owner "signer store boundary" "$SIGNER_DATA" "700" "$SIGNER_EXPECTED_OWNER"
+fi
 
 section "Binaries"
 print_binary "apsigner" "$SIGNER_DATA/bin"
@@ -310,7 +410,11 @@ print_binary "approbe" "$SIGNER_DATA/bin"
 print_binary "apshell" "$CLIENT_DATA/bin"
 
 section "Configuration"
-check_file_exists "signer config" "$SIGNER_CONFIG"
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
+  check_file_exists "signer config" "$SIGNER_CONFIG"
+else
+  pass "signer store private" "$SIGNER_DATA is not traversable by this operator"
+fi
 check_file_exists "client config" "$CLIENT_CONFIG"
 info "signer_port" "${signer_port:-not configured}"
 info "signer ssh.port" "${signer_ssh_port:-not configured}"
@@ -346,22 +450,32 @@ if [ -n "$processes" ]; then
 else
   warn "apsigner process" "not found"
 fi
-check_listener "signer REST" "$signer_port"
-check_listener "signer SSH" "$signer_ssh_port"
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
+  check_listener "signer REST" "$signer_port"
+  check_listener "signer SSH" "$signer_ssh_port"
+else
+  info "signer listeners" "private config not inspected; use the service account or root for port checks"
+fi
 
 section "IPC"
-info "socket path" "$signer_ipc_path"
-if [ -S "$signer_ipc_path" ]; then
-  pass "IPC socket" "$signer_ipc_path"
-  mode="$(file_mode "$signer_ipc_path" 2>/dev/null || true)"
-  [ -n "$mode" ] && info "socket mode" "$mode"
+if [ -n "$signer_ipc_resolution_warning" ]; then
+  warn "IPC resolver" "$signer_ipc_resolution_warning"
+else
+  info "socket path" "$signer_ipc_path"
+fi
+if [ -z "$signer_ipc_path" ]; then
+  warn "IPC socket" "path was not resolved"
+elif [ "$signer_ipc_path" = "/run/apsigner/aplane.sock" ]; then
+  check_real_dir_mode_owner "IPC runtime dir" "/run/apsigner" "750" "$SIGNER_SERVICE_OWNER"
+  check_socket_mode_owner "IPC socket" "$signer_ipc_path" "660" "$SIGNER_SERVICE_OWNER"
+elif [ -S "$signer_ipc_path" ]; then
+  check_socket_mode_owner "IPC socket" "$signer_ipc_path" "660" "$SIGNER_EXPECTED_OWNER"
 else
   warn "IPC socket" "missing or not a socket: $signer_ipc_path"
 fi
 
 section "Tokens And SSH Keys"
 check_mode_exact "client token" "$CLIENT_DATA/aplane.token" "600"
-check_mode_exact "signer token" "$SIGNER_DATA/identities/default/aplane.token" "600"
 check_mode_exact "client SSH key" "$client_identity_file" "600"
 if [ -f "$client_identity_file.pub" ]; then
   pass "client SSH pubkey" "$client_identity_file.pub"
@@ -369,25 +483,36 @@ else
   info "client SSH pubkey" "missing: $client_identity_file.pub (not required for normal client use)"
 fi
 check_file_exists "known_hosts" "$client_known_hosts_path"
-check_mode_exact "signer host key" "$signer_host_key_path" "600"
-check_file_exists "authorized_keys" "$signer_authorized_keys_path"
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
+  check_mode_exact "signer token" "$SIGNER_DATA/identities/default/aplane.token" "600"
+  check_mode_exact "signer host key" "$signer_host_key_path" "600"
+  check_file_exists "authorized_keys" "$signer_authorized_keys_path"
+else
+  info "signer credentials" "private store contents not inspected"
+fi
 
 section "Keystore"
-check_file_exists "keystore" "$SIGNER_DATA/identities/default/.keystore"
-if [ -d "$SIGNER_DATA/identities/default/keys" ]; then
-  account_count="$(find "$SIGNER_DATA/identities/default/keys" -type f -name '*.key' 2>/dev/null | wc -l | tr -d ' ')"
-  sentry_count="$(find "$SIGNER_DATA/identities/default/keys" -type f -name '*.sen' 2>/dev/null | wc -l | tr -d ' ')"
-  managed_count="$((account_count + sentry_count))"
-  pass "key directory" "$SIGNER_DATA/identities/default/keys ($managed_count managed credentials: $account_count account .key, $sentry_count sentry .sen)"
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
+  check_file_exists "keystore" "$SIGNER_DATA/identities/default/.keystore"
+  if [ -d "$SIGNER_DATA/identities/default/keys" ]; then
+    account_count="$(find "$SIGNER_DATA/identities/default/keys" -type f -name '*.key' 2>/dev/null | wc -l | tr -d ' ')"
+    sentry_count="$(find "$SIGNER_DATA/identities/default/keys" -type f -name '*.sen' 2>/dev/null | wc -l | tr -d ' ')"
+    managed_count="$((account_count + sentry_count))"
+    pass "key directory" "$SIGNER_DATA/identities/default/keys ($managed_count managed credentials: $account_count account .key, $sentry_count sentry .sen)"
+  else
+    warn "key directory" "missing: $SIGNER_DATA/identities/default/keys"
+  fi
 else
-  warn "key directory" "missing: $SIGNER_DATA/identities/default/keys"
+  info "keystore" "private store contents not inspected"
 fi
 
-if [ -f "$SIGNER_CONFIG" ] && [ ! -f "$SIGNER_DATA/identities/default/.keystore" ]; then
-  warn "partial install" "signer config exists but default keystore is missing"
-fi
-if [ -f "$SIGNER_CONFIG" ] && [ ! -f "$CLIENT_CONFIG" ]; then
-  warn "partial install" "signer config exists but client config is missing"
+if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
+  if [ -f "$SIGNER_CONFIG" ] && [ ! -f "$SIGNER_DATA/identities/default/.keystore" ]; then
+    warn "partial install" "signer config exists but default keystore is missing"
+  fi
+  if [ -f "$SIGNER_CONFIG" ] && [ ! -f "$CLIENT_CONFIG" ]; then
+    warn "partial install" "signer config exists but client config is missing"
+  fi
 fi
 
 section "Summary"

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -557,13 +558,8 @@ func SaveStoredConfig(dataRoot, identityID string, cfg *StoredConfig) error {
 		return fmt.Errorf("failed to marshal policy config: %w", err)
 	}
 
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(path, out, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write policy config: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("failed to rename policy config: %w", err)
 	}
 	return nil
 }

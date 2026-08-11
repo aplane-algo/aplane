@@ -90,7 +90,7 @@ func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointReg
 	if path == "" {
 		return fmt.Errorf("data directory is required")
 	}
-	return WriteConfigAtomic(path, data, 0o600)
+	return WriteConfigAtomic(path, data)
 }
 
 // StoredClientEndpointUpsertPlan describes the endpoint registry change that

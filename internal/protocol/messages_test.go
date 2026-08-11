@@ -14,6 +14,7 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	types := []string{
 		MsgTypeAuthRequired,
 		MsgTypeAuth,
+		MsgTypeAuthOnly,
 		MsgTypeAuthResult,
 		MsgTypeUnlock,
 		MsgTypeUnlockResult,
@@ -29,6 +30,16 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeBackupsList,
 		MsgTypeDeleteBackup,
 		MsgTypeDeleteBackupResult,
+		MsgTypeBeginBackupImport,
+		MsgTypeBeginBackupImportResult,
+		MsgTypeAppendBackupImport,
+		MsgTypeAppendBackupImportResult,
+		MsgTypeCommitBackupImport,
+		MsgTypeCommitBackupImportResult,
+		MsgTypeAbortBackupImport,
+		MsgTypeAbortBackupImportResult,
+		MsgTypeReadBackupChunk,
+		MsgTypeBackupChunk,
 		MsgTypePreviewRestore,
 		MsgTypeRestorePreview,
 		MsgTypeSignRequest,
@@ -84,6 +95,18 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeReplacePolicyResult,
 		MsgTypeValidatePolicy,
 		MsgTypeValidatePolicyResult,
+		MsgTypeListSentryReferences,
+		MsgTypeSentryReferencesList,
+		MsgTypeGetSentryReference,
+		MsgTypeSentryReference,
+		MsgTypeImportSentryReference,
+		MsgTypeImportSentryReferenceResult,
+		MsgTypeRemoveSentryReference,
+		MsgTypeRemoveSentryReferenceResult,
+		MsgTypeExportSentryPublic,
+		MsgTypeExportSentryPublicResult,
+		MsgTypeListGenerations,
+		MsgTypeGenerationsList,
 		MsgTypeClientExists,
 		MsgTypeDisplaceConfirm,
 		MsgTypeDisplaced,
@@ -98,9 +121,9 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-func TestCurrentAdminProtocolVersionIncludesDirectCredentialRestore(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 0}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.0", got)
+func TestCurrentAdminProtocolVersionIncludesBackupCommitWarnings(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 5}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.5", got)
 	}
 }
 
@@ -362,6 +385,38 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"id":                "backup-1",
 				"export_passphrase": "export-passphrase",
 				"addresses":         []any{"ADDR1"},
+			},
+		},
+		{
+			name: "begin_backup_import",
+			msg: BeginBackupImportMessage{
+				BaseMessage: BaseMessage{Type: MsgTypeBeginBackupImport, ID: "backup-import-1"},
+				FileName:    "backup.tar.gz",
+			},
+			wantMap: map[string]any{
+				"type":      MsgTypeBeginBackupImport,
+				"id":        "backup-import-1",
+				"file_name": "backup.tar.gz",
+			},
+		},
+		{
+			name: "commit_backup_import",
+			msg: CommitBackupImportMessage{
+				BaseMessage:      BaseMessage{Type: MsgTypeCommitBackupImport, ID: "backup-import-commit-1"},
+				UploadID:         ".import-123.part",
+				FileName:         "backup.tar.gz",
+				ExpectedSize:     4096,
+				ExpectedSHA256:   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				ExportPassphrase: NewSensitiveBytes("export-passphrase"),
+			},
+			wantMap: map[string]any{
+				"type":              MsgTypeCommitBackupImport,
+				"id":                "backup-import-commit-1",
+				"upload_id":         ".import-123.part",
+				"file_name":         "backup.tar.gz",
+				"expected_size":     float64(4096),
+				"expected_sha256":   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				"export_passphrase": "export-passphrase",
 			},
 		},
 		{

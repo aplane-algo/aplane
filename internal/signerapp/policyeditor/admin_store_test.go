@@ -80,6 +80,9 @@ func TestAdminStoreLoadParsesSnapshotAndRecordsSHA(t *testing.T) {
 	if store.IdentityID() != "default" || store.LastSHA256() != "abc123" {
 		t.Fatalf("store metadata identity=%q sha=%q, want default/abc123", store.IdentityID(), store.LastSHA256())
 	}
+	if store.PolicyYAML() != client.snapshot.PolicyYAML {
+		t.Fatalf("PolicyYAML() = %q, want %q", store.PolicyYAML(), client.snapshot.PolicyYAML)
+	}
 }
 
 func TestAdminStoreValidateUsesTargetMarshalAndClientValidation(t *testing.T) {
@@ -134,6 +137,9 @@ func TestAdminStoreSaveSendsExpectedSHAAndUpdatesFromReplaceSnapshot(t *testing.
 	}
 	if store.LastSHA256() != "def456" {
 		t.Fatalf("LastSHA256() = %q, want def456", store.LastSHA256())
+	}
+	if store.PolicyYAML() != client.replace.PolicyYAML {
+		t.Fatalf("PolicyYAML() = %q, want replacement YAML", store.PolicyYAML())
 	}
 }
 

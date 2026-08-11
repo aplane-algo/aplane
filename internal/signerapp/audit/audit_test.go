@@ -73,6 +73,30 @@ func TestCredentialRestoreDurabilityUnknownHasDistinctEvent(t *testing.T) {
 	}
 }
 
+func TestSentryReferenceAuditIncludesWitnessKeyID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.LogSentryReferenceChangedContext(adminserver.SessionContext{}, "remove", "prod-sentry", "WITNESSKEYID", true)
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entry AuditEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		t.Fatal(err)
+	}
+	if entry.Event != AuditSentryReferenceChanged || entry.WitnessKeyID != "WITNESSKEYID" ||
+		entry.Outcome != "remove" {
+		t.Fatalf("audit entry = %+v", entry)
+	}
+}
+
 func TestLogRecoversAfterLostHandle(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit.log")

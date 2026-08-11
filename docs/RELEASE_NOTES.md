@@ -7,6 +7,11 @@ earlier internal tags, including their stores, backup archives, or admin
 protocols. Initialize a fresh store and create new credential backups with this
 release.
 
+`apstore endpoint export` now reads endpoint defaults through authenticated
+admin IPC. The signer daemon must be running, and unattended scripts must
+provide the same admin authentication used by other daemon-backed `apstore`
+operations.
+
 Pre-1.0 releases may intentionally make incompatible storage, archive, config,
 or protocol changes when needed to establish a sound supported contract. This
 is a pre-1.0 policy, not a permanent promise that every APlane release will be

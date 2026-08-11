@@ -878,10 +878,10 @@ Before funding or using a bundled LogicSig:
 9. Do not assume a bundled template is safe for your exact use case without
    checking its full transaction policy.
 
-Backup import verifies that bundled template YAML reproduces the bundled key's
-stored LogicSig bytecode when compiled with the key's stored creation
-parameters. That is a provenance check, not a semantic security review; review
-the template policy before funding or depending on the LogicSig.
+Credential backups do not carry template YAML. A restored key retains its
+durable LogicSig signing metadata, but any generation source or signer-side
+provider it requires must be installed independently. Review the template
+policy before funding or depending on the LogicSig.
 
 ## Appendix: Strict-Fee Generic LogicSigs
 

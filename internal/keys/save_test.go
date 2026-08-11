@@ -152,11 +152,11 @@ func TestSavePayloadDirectoryCreation(t *testing.T) {
 	if !info.IsDir() {
 		t.Fatal("expected keys directory")
 	}
-	if got := info.Mode() & os.ModePerm; got != 0o770 {
-		t.Fatalf("keys directory mode = %o, want 0770", got)
+	if got := info.Mode() & os.ModePerm; got != 0o700 {
+		t.Fatalf("keys directory mode = %o, want 0700", got)
 	}
-	if info.Mode()&os.ModeSetgid == 0 {
-		t.Fatalf("keys directory missing setgid bit: %v", info.Mode())
+	if info.Mode()&os.ModeSetgid != 0 {
+		t.Fatalf("keys directory unexpectedly has setgid bit: %v", info.Mode())
 	}
 }
 

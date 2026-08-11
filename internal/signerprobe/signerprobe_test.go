@@ -121,8 +121,22 @@ func TestResolveIPCPathReturnsParseError(t *testing.T) {
 	if err == nil {
 		t.Fatal("ResolveIPCPath returned nil error, want non-nil")
 	}
-	if !strings.Contains(err.Error(), "parse signer config") {
+	if !strings.Contains(err.Error(), "failed to parse config file") {
 		t.Fatalf("error = %v, want parse context", err)
+	}
+}
+
+func TestResolveIPCPathTreatsArgumentAsExplicitSelection(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("APSIGNER_IPC_PATH", filepath.Join(t.TempDir(), "other.sock"))
+
+	got, err := ResolveIPCPath(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dataDir, "aplane.sock")
+	if got != want {
+		t.Fatalf("ResolveIPCPath() = %q, want %q", got, want)
 	}
 }
 

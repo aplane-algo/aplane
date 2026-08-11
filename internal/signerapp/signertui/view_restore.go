@@ -59,14 +59,9 @@ func (m Model) renderRestoreList() string {
 }
 
 func (m Model) backupDirectoryLabel() string {
-	if strings.TrimSpace(m.dataDir) == "" {
-		return ""
-	}
-	dir := filepath.Join(m.dataDir, "backups")
-	if !strings.HasSuffix(dir, string(filepath.Separator)) {
-		dir += string(filepath.Separator)
-	}
-	return dir
+	// Managed backup paths are daemon-owned implementation details. The
+	// authenticated list response supplies archive names and metadata.
+	return ""
 }
 
 func (m Model) renderRestorePassphrase() string {

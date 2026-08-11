@@ -4,6 +4,8 @@
 package adminserver
 
 import (
+	"path/filepath"
+
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -111,7 +113,7 @@ func ProtocolBackupResultMessage(id string, result adminproto.BackupIdentityResu
 			ID:   id,
 		},
 		Success:         result.Success,
-		ArchivePath:     result.ArchivePath,
+		ArchivePath:     publicArchiveName(result.ArchivePath, ""),
 		ArchiveChecksum: result.ArchiveChecksum,
 		ArchiveSize:     result.ArchiveSize,
 		KeyCount:        result.KeyCount,
@@ -144,6 +146,27 @@ func ProtocolDeleteBackupResultMessage(id string, result adminproto.DeleteBackup
 		Code:    result.Code,
 		Error:   result.Error,
 	}
+}
+
+func ProtocolBeginBackupImportResultMessage(id string, result adminproto.BeginBackupImportResult) protocol.BeginBackupImportResultMessage {
+	return protocol.BeginBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeBeginBackupImportResult, ID: id}, Success: result.Success, UploadID: result.UploadID, Code: result.Code, Error: result.Error}
+}
+
+func ProtocolAppendBackupImportResultMessage(id string, result adminproto.AppendBackupImportResult) protocol.AppendBackupImportResultMessage {
+	return protocol.AppendBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAppendBackupImportResult, ID: id}, Success: result.Success, NextOffset: result.NextOffset, Code: result.Code, Error: result.Error}
+}
+
+func ProtocolCommitBackupImportResultMessage(id string, result adminproto.CommitBackupImportResult) protocol.CommitBackupImportResultMessage {
+	name := publicArchiveName(result.Backup.Path, result.Backup.FileName)
+	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocol.BackupInfo{Path: name, FileName: name, CreatedAt: result.Backup.CreatedAt, Size: result.Backup.Size, Checksum: result.Backup.Checksum}, Warning: result.Warning, Code: result.Code, Error: result.Error}
+}
+
+func ProtocolAbortBackupImportResultMessage(id string, result adminproto.AbortBackupImportResult) protocol.AbortBackupImportResultMessage {
+	return protocol.AbortBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAbortBackupImportResult, ID: id}, Success: result.Success, Code: result.Code, Error: result.Error}
+}
+
+func ProtocolBackupChunkMessage(id string, result adminproto.ReadBackupChunkResult) protocol.BackupChunkMessage {
+	return protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeBackupChunk, ID: id}, Success: result.Success, FileName: result.FileName, Offset: result.Offset, Data: result.Data, EOF: result.EOF, Code: result.Code, Error: result.Error}
 }
 
 func ProtocolInitializeStoreResultMessage(id string, result adminproto.InitializeStoreResult) protocol.InitializeStoreResultMessage {
@@ -276,16 +299,26 @@ func protocolBackupInfos(items []adminproto.BackupInfo) []protocol.BackupInfo {
 	}
 	out := make([]protocol.BackupInfo, len(items))
 	for i, item := range items {
+		name := publicArchiveName(item.Path, item.FileName)
 		out[i] = protocol.BackupInfo{
-			Path:      item.Path,
-			FileName:  item.FileName,
+			Path:      name,
+			FileName:  name,
 			CreatedAt: item.CreatedAt,
 			Size:      item.Size,
 			Checksum:  item.Checksum,
-			Verified:  item.Verified,
 		}
 	}
 	return out
+}
+
+func publicArchiveName(path, fileName string) string {
+	if fileName != "" {
+		return filepath.Base(fileName)
+	}
+	if path == "" {
+		return ""
+	}
+	return filepath.Base(path)
 }
 
 func protocolRestoreKeyInfos(items []adminproto.RestoreKeyInfo) []protocol.RestoreKeyInfo {
@@ -375,6 +408,58 @@ func ProtocolValidatePolicyResultMessage(id string, result adminproto.ValidatePo
 		IdentityID:  result.IdentityID,
 		Code:        result.Code,
 		Error:       result.Error,
+	}
+}
+
+func ProtocolSentryReferencesListMessage(id string, result adminproto.ListSentryReferencesResult) protocol.SentryReferencesListMessage {
+	refs := make([]protocol.SentryReferenceInfo, len(result.References))
+	for i := range result.References {
+		refs[i] = protocolSentryReference(result.References[i])
+	}
+	return protocol.SentryReferencesListMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSentryReferencesList, ID: id},
+		References:  refs, Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolSentryReferenceMessage(id, messageType string, result adminproto.GetSentryReferenceResult) protocol.SentryReferenceMessage {
+	return protocol.SentryReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: messageType, ID: id}, Success: result.Success,
+		Reference: protocolSentryReference(result.Reference), Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolRemoveSentryReferenceResultMessage(id string, result adminproto.RemoveSentryReferenceResult) protocol.RemoveSentryReferenceResultMessage {
+	return protocol.RemoveSentryReferenceResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveSentryReferenceResult, ID: id},
+		Success:     result.Success, Name: result.Name, Removed: result.Removed, Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolExportSentryPublicResultMessage(id string, result adminproto.ExportSentryPublicResult) protocol.ExportSentryPublicResultMessage {
+	return protocol.ExportSentryPublicResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeExportSentryPublicResult, ID: id},
+		Success:     result.Success, WitnessKeyID: result.WitnessKeyID, EnvelopeJSON: result.EnvelopeJSON,
+		Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolGenerationsListMessage(id string, result adminproto.GenerationInventory) protocol.GenerationsListMessage {
+	return protocol.GenerationsListMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGenerationsList, ID: id},
+		Current:     result.Current, SealedPriors: result.SealedPriors,
+		PendingAttempts: result.PendingAttempts, PendingStaging: result.PendingStaging,
+		RetainedUnsealedParent: result.RetainedUnsealedParent, Code: result.Code, Error: result.Error,
+	}
+}
+
+func protocolSentryReference(item adminproto.SentryReferenceInfo) protocol.SentryReferenceInfo {
+	return protocol.SentryReferenceInfo{
+		Schema: item.Schema, Name: item.Name, ComponentKey: item.ComponentKey, KeyType: item.KeyType,
+		PublicKeyEncoding: item.PublicKeyEncoding, PublicKeyHex: item.PublicKeyHex,
+		PublicKeySize: item.PublicKeySize, PublicKeySHA256: item.PublicKeySHA256,
+		Source: item.Source, EndpointAlias: item.EndpointAlias, LastSeenAt: item.LastSeenAt,
+		SyncedAt: item.SyncedAt, ImportedAt: item.ImportedAt,
 	}
 }
 

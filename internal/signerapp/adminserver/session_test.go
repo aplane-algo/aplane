@@ -69,6 +69,15 @@ type stubServices struct {
 	backupCalls            int
 	listBackupsCalls       int
 	deleteBackupCalls      int
+
+	beginBackupImportCalls   int
+	appendBackupImportCalls  int
+	commitBackupImportCalls  int
+	readBackupChunkCalls     int
+	lastCommitBackupImport   adminproto.CommitBackupImportRequest
+	commitBackupImportResult adminproto.CommitBackupImportResult
+	readBackupChunkResult    adminproto.ReadBackupChunkResult
+
 	changePassphraseCalls  int
 	previewRestoreCalls    int
 	restoreBackupCalls     int
@@ -240,6 +249,28 @@ func (s *stubServices) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteB
 	s.deleteBackupCalls++
 	s.lastDeleteBackup = req
 	return s.deleteBackupResult
+}
+func (s *stubServices) BeginBackupImport(*identity.Runtime, adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
+	s.beginBackupImportCalls++
+	return adminproto.BeginBackupImportResult{}
+}
+func (s *stubServices) AppendBackupImport(*identity.Runtime, adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
+	s.appendBackupImportCalls++
+	return adminproto.AppendBackupImportResult{}
+}
+func (s *stubServices) CommitBackupImport(_ *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+	s.commitBackupImportCalls++
+	s.lastCommitBackupImport = req
+	s.lastCommitBackupImport.ExportPassphrase = append([]byte(nil), req.ExportPassphrase...)
+	return s.commitBackupImportResult
+}
+func (*stubServices) AbortBackupImport(*identity.Runtime, adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
+	return adminproto.AbortBackupImportResult{}
+}
+
+func (s *stubServices) ReadBackupChunk(*identity.Runtime, adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
+	s.readBackupChunkCalls++
+	return s.readBackupChunkResult
 }
 func (s *stubServices) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
 	s.previewRestoreCalls++
@@ -434,6 +465,38 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	}
 	if !result.Success {
 		t.Fatal("auth result success = false, want true")
+	}
+}
+
+func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
+	ir := identity.New(identity.Config{
+		ID:            auth.DefaultIdentityID,
+		Authenticator: auth.NewTokenAuthenticator("test-token"),
+	})
+	authMsg, err := protocol.MarshalAdminMessage(protocol.AuthMessage{
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuthOnly},
+		Passphrase:      protocol.NewSensitiveBytes("secret"),
+		ProtocolVersion: currentAdminProtocolVersion(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &stubServices{runtime: ir, unlockOK: true, newIdentity: auth.NewDefaultIdentity("ipc-passphrase")}
+	conn := &queueConn{reads: [][]byte{authMsg}}
+	session := NewSession(conn, SessionDeps{Identity: svc})
+	session.SetTransportInfo(TransportIPC, "unix:/tmp/aplane.sock")
+
+	if !session.Authenticate() {
+		t.Fatal("Authenticate() = false, want authenticate-only success")
+	}
+	if svc.unlockCalls != 0 {
+		t.Fatalf("UnlockIdentity calls = %d, want 0", svc.unlockCalls)
+	}
+	if ir.IsUnlocked() {
+		t.Fatal("authenticate-only session unlocked the runtime")
+	}
+	if session.BoundRuntime() != ir {
+		t.Fatal("authenticate-only session was not bound")
 	}
 }
 

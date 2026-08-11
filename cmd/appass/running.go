@@ -39,7 +39,8 @@ func signerRunning(dataDir string) (bool, string, error) {
 	dialSignerIPCMu.Unlock()
 
 	result, err := signerprobe.Check(dataDir, signerprobe.Options{
-		Timeout: signerCheckTimeout,
+		Timeout:         signerCheckTimeout,
+		DataDirExplicit: true,
 		Dial: func(socketPath string, _ time.Duration) (net.Conn, error) {
 			return dial(socketPath)
 		},

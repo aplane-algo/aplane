@@ -36,6 +36,14 @@ func waitForStatus(conn adminProtocolConn, timeout time.Duration) (*protocol.Sta
 }
 
 func authenticate(conn adminProtocolConn, passphrase string, timeout time.Duration) error {
+	return authenticateWithMode(conn, passphrase, timeout, false)
+}
+
+func authenticateOnly(conn adminProtocolConn, passphrase string, timeout time.Duration) error {
+	return authenticateWithMode(conn, passphrase, timeout, true)
+}
+
+func authenticateWithMode(conn adminProtocolConn, passphrase string, timeout time.Duration, only bool) error {
 	conn.SetReadDeadline(timeout)
 	defer conn.ClearReadDeadline()
 
@@ -77,8 +85,12 @@ func authenticate(conn adminProtocolConn, passphrase string, timeout time.Durati
 		break
 	}
 
+	authType := protocol.MsgTypeAuth
+	if only {
+		authType = protocol.MsgTypeAuthOnly
+	}
 	authMsg := protocol.AuthMessage{
-		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuth},
+		BaseMessage:     protocol.BaseMessage{Type: authType},
 		Passphrase:      protocol.NewSensitiveBytes(passphrase),
 		ProtocolVersion: ptrProtocolVersion(protocol.CurrentAdminProtocolVersion()),
 	}

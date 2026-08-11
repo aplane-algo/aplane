@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	apbackup "github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -55,6 +56,7 @@ func writeStandaloneBackup(dir, address string, keyJSON, exportPassphrase []byte
 }
 
 type fakeApstoreAdminRequester struct {
+	requestFunc              func(any, any) error
 	requests                 []string
 	previewResult            protocol.RestorePreviewMessage
 	restoreResult            protocol.RestoreBackupResultMessage
@@ -70,6 +72,7 @@ type fakeApstoreAdminRequester struct {
 	activateResult           protocol.ActivateKeyTypeResultMessage
 	deactivateResult         protocol.DeactivateKeyTypeResultMessage
 	changePassphraseResult   protocol.ChangeStorePassphraseResultMessage
+	backupExportData         []byte
 	restoreRequest           protocol.RestoreBackupMessage
 	backupRequest            protocol.BackupMessage
 	deleteBackupRequest      protocol.DeleteBackupMessage
@@ -80,10 +83,19 @@ type fakeApstoreAdminRequester struct {
 	deactivateRequest        protocol.DeactivateKeyTypeMessage
 	changePassphraseRequest  protocol.ChangeStorePassphraseMessage
 	adminPassphrase          string
+	lastRequestTimeout       time.Duration
 	closed                   bool
 }
 
 func (f *fakeApstoreAdminRequester) request(msg any, out any) error {
+	return f.requestWithTimeout(msg, out, apstoreIPCTimeout)
+}
+
+func (f *fakeApstoreAdminRequester) requestWithTimeout(msg any, out any, timeout time.Duration) error {
+	f.lastRequestTimeout = timeout
+	if f.requestFunc != nil {
+		return f.requestFunc(msg, out)
+	}
 	switch typed := msg.(type) {
 	case protocol.BackupMessage:
 		f.requests = append(f.requests, typed.Type)
@@ -110,6 +122,21 @@ func (f *fakeApstoreAdminRequester) request(msg any, out any) error {
 			return errors.New("delete backup output has unexpected type")
 		}
 		*result = f.deleteBackupResult
+		return nil
+	case protocol.ReadBackupChunkMessage:
+		f.requests = append(f.requests, typed.Type)
+		result, ok := out.(*protocol.BackupChunkMessage)
+		if !ok {
+			return errors.New("backup chunk output has unexpected type")
+		}
+		if typed.Offset < 0 || typed.Offset > int64(len(f.backupExportData)) {
+			return errors.New("invalid backup chunk offset")
+		}
+		end := typed.Offset + adminproto.BackupTransferChunkBytes
+		if end > int64(len(f.backupExportData)) {
+			end = int64(len(f.backupExportData))
+		}
+		*result = protocol.BackupChunkMessage{Success: true, FileName: typed.FileName, Offset: typed.Offset, Data: append([]byte(nil), f.backupExportData[typed.Offset:end]...), EOF: end == int64(len(f.backupExportData))}
 		return nil
 	case protocol.PreviewRestoreMessage:
 		f.requests = append(f.requests, typed.Type)
@@ -220,8 +247,12 @@ func (f *fakeApstoreAdminRequester) close() {
 func withFakeApstoreAdminClient(t *testing.T, fake apstoreAdminRequester) {
 	t.Helper()
 	oldNewApstoreAdminClientForCommand := newApstoreAdminClientForCommand
+	oldNewApstoreReadOnlyAdminClientForCommand := newApstoreReadOnlyAdminClientForCommand
 	oldNewApstoreAdminClientWithPassphraseForCommand := newApstoreAdminClientWithPassphraseForCommand
 	newApstoreAdminClientForCommand = func() (apstoreAdminRequester, error) {
+		return fake, nil
+	}
+	newApstoreReadOnlyAdminClientForCommand = func() (apstoreAdminRequester, error) {
 		return fake, nil
 	}
 	newApstoreAdminClientWithPassphraseForCommand = func(passphrase []byte) (apstoreAdminRequester, error) {
@@ -232,6 +263,7 @@ func withFakeApstoreAdminClient(t *testing.T, fake apstoreAdminRequester) {
 	}
 	t.Cleanup(func() {
 		newApstoreAdminClientForCommand = oldNewApstoreAdminClientForCommand
+		newApstoreReadOnlyAdminClientForCommand = oldNewApstoreReadOnlyAdminClientForCommand
 		newApstoreAdminClientWithPassphraseForCommand = oldNewApstoreAdminClientWithPassphraseForCommand
 	})
 }

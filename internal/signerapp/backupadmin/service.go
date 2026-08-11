@@ -88,7 +88,6 @@ func (s Service) ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult 
 			CreatedAt: item.CreatedAt.Unix(),
 			Size:      item.Size,
 			Checksum:  item.Checksum,
-			Verified:  item.Verified,
 		}
 	}
 	return adminproto.ListBackupsResult{Backups: out}

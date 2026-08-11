@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
 func TestSaveAndLoadVerifiedStoredConfig(t *testing.T) {
@@ -58,6 +59,50 @@ func TestSaveAndLoadVerifiedStoredConfigWithKeyring(t *testing.T) {
 	}
 	if got.RejectForeignRekey == nil || *got.RejectForeignRekey != wantReject {
 		t.Fatalf("RejectForeignRekey = %#v, want %v", got.RejectForeignRekey, wantReject)
+	}
+}
+
+func TestSavePolicyPreparationFailureLeavesExistingPairUntouched(t *testing.T) {
+	root := t.TempDir()
+	key := policyIntegrityTestKey(t)
+	oldConfig := &StoredConfig{}
+	if err := SaveStoredConfigWithIntegrity(root, "alice", oldConfig, key, time.Unix(1700000000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	policyPath := PolicyPath(root, "alice")
+	sidecarPath := PolicyIntegritySidecarPath(policyPath)
+	oldPolicy, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSidecar, err := os.ReadFile(sidecarPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("injected sidecar sync")
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpFileSync && path == sidecarPath {
+			return injected
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	reject := false
+	err = SaveStoredConfigWithIntegrity(root, "alice", &StoredConfig{
+		StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &reject},
+	}, key, time.Unix(1800000000, 0))
+	if !errors.Is(err, injected) {
+		t.Fatalf("SaveStoredConfigWithIntegrity() error = %v, want %v", err, injected)
+	}
+	for path, want := range map[string][]byte{policyPath: oldPolicy, sidecarPath: oldSidecar} {
+		got, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("%s changed after preparation failure", path)
+		}
 	}
 }
 
@@ -189,7 +234,7 @@ func TestLoadVerifiedStoredConfigRejectsMalformedSignedPolicy(t *testing.T) {
 	if err := os.WriteFile(path, policyBytes, 0o600); err != nil {
 		t.Fatalf("WriteFile(policy) error = %v", err)
 	}
-	sidecar, err := SignPolicyIntegrity(policyBytes, key, time.Time{}, 0)
+	sidecar, err := SignPolicyIntegrity(policyBytes, key, time.Time{})
 	if err != nil {
 		t.Fatalf("SignPolicyIntegrity() error = %v", err)
 	}

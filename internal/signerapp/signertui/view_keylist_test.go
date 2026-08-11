@@ -383,6 +383,23 @@ func TestHandleKeyDetailsKeysDoesNotExportFromDetailsScreen(t *testing.T) {
 	}
 }
 
+func TestHandleKeyDetailsSaveExplainsMissingClientData(t *testing.T) {
+	m := Model{
+		viewState: ViewKeyDetails,
+		details:   keyDetailsState{address: "ADDR", keyType: "generic", teal: "int 1"},
+	}
+
+	nextModel, cmd := m.handleKeyDetailsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+	next := nextModel.(Model)
+	if !strings.Contains(next.details.saveStatus, "--client-data") ||
+		!strings.Contains(next.details.saveStatus, "APCLIENT_DATA") {
+		t.Fatalf("saveStatus = %q, want client data configuration guidance", next.details.saveStatus)
+	}
+}
+
 func TestHandleKeyDetailsKeysDeletesFromDetailsScreen(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyDetails,

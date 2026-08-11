@@ -202,6 +202,12 @@ admin auth message
   -> admin operation
 ```
 
+Membership in the operating-system `aplane` group grants only the ability to
+traverse `/run/apsigner` and connect to `aplane.sock`. It grants no access to
+the private signer store and is distinct from the authorization-model group
+`system:product-admins`. The admin passphrase, principal mapping, identity
+binding, and action grant are still required after socket connection.
+
 Auth-time unlock is authorization-gated before the runtime is unlocked.
 Explicit admin lock requests use `identity.lock` for the bound identity.
 Admin disconnect cleanup applies the bound identity's `lock_on_disconnect`
@@ -241,8 +247,8 @@ grant accidentally contains the same typo.
 | `identity.view` | View identity state | `identity` | No |
 | `identity.unlock` | Unlock signer identity | `identity` | No |
 | `identity.lock` | Lock signer identity | `identity` | No |
-| `identity.backup` | Create a signer-managed encrypted backup archive for the bound identity | `identity` | Yes |
-| `identity.restore` | Preview and directly restore managed credential archives, roll back the latest eligible restore, and reconcile recovery state for the bound identity | `identity` | Yes; recovery-mode repair and resolution are allowed while signing remains blocked |
+| `identity.backup` | Create, export/read back, and delete signer-managed encrypted backup archives for the bound identity | `identity` | Yes for create/delete; export/read is available in unlocked or recovery state |
+| `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile recovery state for the bound identity | `identity` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `identity.decommission` | Decommission identity | `identity` | No |
 | `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
@@ -255,6 +261,9 @@ grant accidentally contains the same typo.
 | `keys.export` | Export a key mnemonic (disabled) | `key` | Yes |
 | `keys.delete` | Delete a key | `key` | Yes |
 | `sentries.sync` | Sync public sentry reference metadata into the signer generation catalog | `sentries` | No |
+| `sentries.view` | List/show public sentry references and export public witness metadata | `sentry_references`, `sentry_reference`, `sentry_public` | No |
+| `sentries.manage` | Import or remove signer-owned public sentry references | `sentry_reference` | Yes |
+| `generations.view` | Inspect current and retained generation inventory | `generations` | No |
 | `keytypes.view` | List available key types | `keytypes` | No |
 | `keytypes.activate` | Activate a key type | `keytype` | Yes |
 | `keytypes.deactivate` | Deactivate a key type | `keytype` | Yes |
@@ -311,6 +320,9 @@ grants:
       - keys.export
       - keys.delete
       - sentries.sync
+      - sentries.view
+      - sentries.manage
+      - generations.view
       - keytypes.view
       - keytypes.activate
       - keytypes.deactivate

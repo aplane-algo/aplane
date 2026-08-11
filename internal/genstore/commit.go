@@ -145,7 +145,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	}
 
 	generationsDir := paths.GenerationsDir(identityID)
-	if err := fsutil.MkdirAll(generationsDir); err != nil {
+	if err := fsutil.MkdirAllPrivate(generationsDir); err != nil {
 		return storepaths.GenPaths{}, err
 	}
 	finalDir := paths.GenerationDir(identityID, req.GenerationID)
@@ -156,7 +156,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	}
 
 	stagingDir := filepath.Join(generationsDir, storepaths.GenerationStagingPrefix+req.GenerationID)
-	if err := os.Mkdir(stagingDir, 0o770); err != nil {
+	if err := os.Mkdir(stagingDir, fsutil.StoreDirPerm); err != nil {
 		return storepaths.GenPaths{}, fmt.Errorf("create generation staging: %w", err)
 	}
 	cleanup := true
@@ -329,12 +329,13 @@ func copyNamespaces(from, to storepaths.GenPaths) error {
 				return fmt.Errorf("copy %s/%s: %w", namespace, entry.Name(), err)
 			}
 			dst := filepath.Join(dstDir, entry.Name())
-			if err := os.WriteFile(dst, data, mode.Perm()); err != nil {
+			targetMode := mode.Perm() & fsutil.StoreFilePerm
+			if err := os.WriteFile(dst, data, targetMode); err != nil {
 				return err
 			}
-			// Creation modes are umask-masked; the copy must preserve the
-			// source mode exactly (ARCH_GENERATIONS §12).
-			if err := os.Chmod(dst, mode.Perm()); err != nil {
+			// Creation modes are umask-masked; restore the clamped private
+			// mode without carrying legacy group access forward.
+			if err := os.Chmod(dst, targetMode); err != nil {
 				return err
 			}
 		}
@@ -344,10 +345,10 @@ func copyNamespaces(from, to storepaths.GenPaths) error {
 
 // makeNamespaceDir creates a generation namespace directory with the store
 // directory mode. os.Mkdir permissions are umask-masked, so an explicit
-// chmod restores the group-shared store model regardless of the invoking
+// chmod restores the private store mode regardless of the invoking
 // process's umask.
 func makeNamespaceDir(dir string) error {
-	if err := os.Mkdir(dir, 0o770); err != nil {
+	if err := os.Mkdir(dir, fsutil.StoreDirPerm); err != nil {
 		return err
 	}
 	return os.Chmod(dir, fsutil.StoreDirPerm)

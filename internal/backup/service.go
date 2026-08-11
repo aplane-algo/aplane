@@ -170,16 +170,10 @@ func prepareManagedArchiveDestination(paths storepaths.Paths, identityID, archiv
 }
 
 func ensureStoreDir(path string) error {
-	if err := os.MkdirAll(path, 0770); err != nil {
+	if err := os.MkdirAll(path, fsutil.StoreDirPerm); err != nil {
 		return fmt.Errorf("failed to create backup directory %s: %w", path, err)
 	}
 	if err := os.Chmod(path, fsutil.StoreDirPerm); err != nil {
-		if os.IsPermission(err) {
-			if fallbackErr := os.Chmod(path, 0770); fallbackErr != nil {
-				return fmt.Errorf("failed to set backup directory permissions for %s: %w", path, fallbackErr)
-			}
-			return nil
-		}
 		return fmt.Errorf("failed to set backup directory permissions for %s: %w", path, err)
 	}
 	return nil

@@ -82,7 +82,6 @@ type BackupInfo struct {
 	CreatedAt int64
 	Size      int64
 	Checksum  string
-	Verified  bool
 }
 
 type ListBackupsResult struct {
@@ -99,6 +98,79 @@ type DeleteBackupResult struct {
 	Success bool
 	Code    string
 	Error   string
+}
+
+const (
+	BackupTransferChunkBytes = 256 * 1024
+	// MaxBackupImportBytes bounds daemon-owned incomplete backup uploads.
+	// Signer backups contain credential records rather than arbitrary user data;
+	// one GiB leaves ample operational headroom while bounding disk exhaustion.
+	MaxBackupImportBytes int64 = 1 << 30
+)
+
+type BeginBackupImportRequest struct {
+	FileName string
+}
+
+type BeginBackupImportResult struct {
+	Success  bool
+	UploadID string
+	Code     string
+	Error    string
+}
+
+type AppendBackupImportRequest struct {
+	UploadID string
+	Offset   int64
+	Data     []byte
+}
+
+type AppendBackupImportResult struct {
+	Success    bool
+	NextOffset int64
+	Code       string
+	Error      string
+}
+
+type CommitBackupImportRequest struct {
+	UploadID         string
+	FileName         string
+	ExpectedSize     int64
+	ExpectedSHA256   string
+	ExportPassphrase []byte
+}
+
+type CommitBackupImportResult struct {
+	Success bool
+	Backup  BackupInfo
+	Warning string
+	Code    string
+	Error   string
+}
+
+type AbortBackupImportRequest struct {
+	UploadID string
+}
+
+type AbortBackupImportResult struct {
+	Success bool
+	Code    string
+	Error   string
+}
+
+type ReadBackupChunkRequest struct {
+	FileName string
+	Offset   int64
+}
+
+type ReadBackupChunkResult struct {
+	Success  bool
+	FileName string
+	Offset   int64
+	Data     []byte
+	EOF      bool
+	Code     string
+	Error    string
 }
 
 type InitializeStoreRequest struct {
@@ -226,6 +298,88 @@ type ReconcileStoreResult struct {
 	State        string
 	Code         string
 	Error        string
+}
+
+// SentryReferenceInfo is the admin-domain projection of a stored public
+// sentry reference. It never contains private witness material.
+type SentryReferenceInfo struct {
+	Schema            string
+	Name              string
+	ComponentKey      string
+	KeyType           string
+	PublicKeyEncoding string
+	PublicKeyHex      string
+	PublicKeySize     int
+	PublicKeySHA256   string
+	Source            string
+	EndpointAlias     string
+	LastSeenAt        string
+	SyncedAt          string
+	ImportedAt        string
+}
+
+type ListSentryReferencesResult struct {
+	References []SentryReferenceInfo
+	Code       string
+	Error      string
+}
+
+type GetSentryReferenceRequest struct {
+	Name string
+}
+
+type GetSentryReferenceResult struct {
+	Success   bool
+	Reference SentryReferenceInfo
+	Code      string
+	Error     string
+}
+
+type ImportSentryReferenceRequest struct {
+	Name         string
+	EnvelopeJSON string
+}
+
+type ImportSentryReferenceResult struct {
+	Success   bool
+	Reference SentryReferenceInfo
+	Code      string
+	Error     string
+}
+
+type RemoveSentryReferenceRequest struct {
+	Name string
+}
+
+type RemoveSentryReferenceResult struct {
+	Success      bool
+	Name         string
+	ComponentKey string
+	Removed      bool
+	Code         string
+	Error        string
+}
+
+type ExportSentryPublicRequest struct {
+	WitnessKeyID string
+}
+
+type ExportSentryPublicResult struct {
+	Success      bool
+	WitnessKeyID string
+	EnvelopeJSON string
+	Code         string
+	Error        string
+}
+
+type GenerationInventory struct {
+	Current                string
+	SealedPriors           []string
+	PendingAttempts        []string
+	PendingStaging         []string
+	RetainedUnsealedParent string
+	Code                   string
+	Error                  string
 }
 
 // UpdateAdminSettingRequest is the admin-domain request to change one setting.

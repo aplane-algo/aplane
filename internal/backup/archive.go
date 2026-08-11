@@ -114,10 +114,12 @@ const (
 	maxArchiveExtractedBytes = 1 << 30 // 1 GiB across all entries
 )
 
-// ExtractTarGzArchive extracts a tar.gz archive into destDir. The archive is
-// opened with the same no-follow regular-file enforcement as the recover
-// path, and extraction is bounded (entry count and total decompressed size)
-// so a crafted archive cannot exhaust the disk.
+// ExtractTarGzArchive extracts a tar.gz archive into destDir. Extracted
+// directories and files are owner-private regardless of archive mode bits so
+// validation residue is safe inside a private signer store. The archive is
+// opened with the same no-follow regular-file enforcement as the recover path,
+// and extraction is bounded (entry count and total decompressed size) so a
+// crafted archive cannot exhaust the disk.
 func ExtractTarGzArchive(archivePath, destDir string) error {
 	file, err := openManagedBackupArchive(archivePath)
 	if err != nil {
@@ -154,14 +156,14 @@ func ExtractTarGzArchive(archivePath, destDir string) error {
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(targetPath, 0o755); err != nil {
+			if err := os.MkdirAll(targetPath, 0o700); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", targetPath, err)
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0o700); err != nil {
 				return fmt.Errorf("failed to create parent directory for %s: %w", targetPath, err)
 			}
-			out, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fs.FileMode(header.Mode)&0o777)
+			out, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 			if err != nil {
 				return fmt.Errorf("failed to create file %s: %w", targetPath, err)
 			}

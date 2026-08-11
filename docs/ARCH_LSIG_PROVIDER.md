@@ -69,29 +69,14 @@ The `bounded1` extension and its schema-v2 contract are frozen in
 composed DSA templates and schema v2 for bounded templates; each version rejects
 the other's shape.
 
-**Restore precedence invariant:** when a backup carries bundled template YAML,
-restore resolves template installation/provenance against local destination-state
-precedence rather than the source system's original provenance:
-
-- if the signer-data library has a YAML definition for that `key_type`, that
-  definition is authoritative
-- otherwise, if an identity-scoped keystore `.template` exists for the
-  `key_type`, that definition is used
-- otherwise, the bundled template may be installed when no authoritative local
-  source exists
-
-This means restore does not care whether the backup source originally obtained a
-key type from an identity-local template or signer-data library template. The
-destination system uses whatever local definition is available under the
-precedence rules above.
+**Restore invariant:** credential backups do not carry template YAML. Restored
+keys retain their durable signing metadata, while any required provider or
+identity-local template must already be available on the destination under the
+normal registry and template precedence rules.
 The key file remains the signing authority: generic v1 signing-metadata keys can
 sign from stored bytecode/runtime args, and DSA v1 signing-metadata keys require
 the stored `base_key_type` signer-side provider rather than the composed
 template provider for their `key_type`.
-
-At `apstore backup import` time, bundled generic/composed template YAML is also
-recompiled with the key's stored creation parameters and must reproduce the
-key's stored LogicSig bytecode before the archive is admitted.
 
 Filtered views into the registry are provided by `internal/genericlsig` (Template
 interface) and `internal/logicsigdsa` (LogicSigDSA interface). Shared off-curve

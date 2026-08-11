@@ -329,7 +329,7 @@ func isKeyTypeInList(keyType string, validTypes []string) bool {
 
 // DeleteKey moves a key file to the identity-local deleted/keys directory.
 func DeleteKey(address, keyFile, deletedKeysDir string) (*DeleteResult, error) {
-	if err := fsutil.MkdirAll(deletedKeysDir); err != nil {
+	if err := fsutil.MkdirAllPrivate(deletedKeysDir); err != nil {
 		return nil, fmt.Errorf("failed to create deleted keys directory: %w", err)
 	}
 

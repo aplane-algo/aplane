@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
 type storedConfigParser func([]byte) (*StoredConfig, error)
@@ -76,9 +77,10 @@ func LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID string, kr *crypto
 // SaveStoredConfigWithIntegrity writes policy.yaml and policy.yaml.hmac. The
 // sidecar authenticates the exact policy bytes written to policy.yaml.
 //
-// This is a two-path write. Crash recovery is fail-closed: callers may observe
-// either a valid old pair, a valid new pair, or a mismatch that must be repaired
-// explicitly.
+// This is a two-path write. Both files are prepared before either is published,
+// so signing, marshaling, and staging failures preserve the old pair. Crash
+// recovery remains fail-closed: callers may observe a valid old pair, a valid
+// new pair, or a mismatch after interruption between the two renames.
 func SaveStoredConfigWithIntegrity(dataRoot, identityID string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
 	policyBytes, err := MarshalStoredConfig(cfg)
 	if err != nil {
@@ -117,25 +119,8 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *cry
 		return fmt.Errorf("failed to create %s directory: %w", configLabel, err)
 	}
 
-	policyTmp := path + ".tmp"
 	sidecarPath := PolicyIntegritySidecarPath(path)
-	sidecarTmp := sidecarPath + ".tmp"
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(policyTmp)
-			_ = os.Remove(sidecarTmp)
-		}
-	}()
-
-	if err := writeSyncedPolicyFile(policyTmp, policyBytes, 0o600); err != nil {
-		return fmt.Errorf("failed to write %s: %w", configLabel, err)
-	}
-	info, err := os.Stat(policyTmp)
-	if err != nil {
-		return fmt.Errorf("failed to stat %s: %w", configLabel, err)
-	}
-	sidecar, err := SignPolicyIntegrity(policyBytes, kr, signedAt, info.ModTime().UnixNano())
+	sidecar, err := SignPolicyIntegrity(policyBytes, kr, signedAt)
 	if err != nil {
 		return err
 	}
@@ -143,20 +128,12 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *cry
 	if err != nil {
 		return err
 	}
-	if err := writeSyncedPolicyFile(sidecarTmp, sidecarBytes, 0o600); err != nil {
-		return fmt.Errorf("failed to write %s: %w", sidecarLabel, err)
+	if err := fsutil.WriteFileSetDurable(
+		fsutil.DurableFileWrite{Path: path, Data: policyBytes, Profile: fsutil.PrivateStoreFileProfile},
+		fsutil.DurableFileWrite{Path: sidecarPath, Data: sidecarBytes, Profile: fsutil.PrivateStoreFileProfile},
+	); err != nil {
+		return fmt.Errorf("failed to write %s and %s: %w", configLabel, sidecarLabel, err)
 	}
-
-	if err := os.Rename(policyTmp, path); err != nil {
-		return fmt.Errorf("failed to rename %s: %w", configLabel, err)
-	}
-	if err := os.Rename(sidecarTmp, sidecarPath); err != nil {
-		return fmt.Errorf("failed to rename %s: %w", sidecarLabel, err)
-	}
-	if err := syncPolicyDir(dir); err != nil {
-		return fmt.Errorf("failed to sync %s directory: %w", configLabel, err)
-	}
-	cleanup = false
 	return nil
 }
 
@@ -208,11 +185,7 @@ func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt tim
 	if _, err := parser(data); err != nil {
 		return fmt.Errorf("failed to parse %s: %w", configLabel, err)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("failed to stat %s: %w", configLabel, err)
-	}
-	sidecar, err := SignPolicyIntegrity(data, kr, signedAt, info.ModTime().UnixNano())
+	sidecar, err := SignPolicyIntegrity(data, kr, signedAt)
 	if err != nil {
 		return err
 	}
@@ -221,23 +194,9 @@ func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt tim
 		return err
 	}
 	sidecarPath := PolicyIntegritySidecarPath(path)
-	sidecarTmp := sidecarPath + ".tmp"
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(sidecarTmp)
-		}
-	}()
-	if err := writeSyncedPolicyFile(sidecarTmp, sidecarBytes, 0o600); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(sidecarPath, sidecarBytes, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write %s: %w", sidecarLabel, err)
 	}
-	if err := os.Rename(sidecarTmp, sidecarPath); err != nil {
-		return fmt.Errorf("failed to rename %s: %w", sidecarLabel, err)
-	}
-	if err := syncPolicyDir(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("failed to sync %s directory: %w", configLabel, err)
-	}
-	cleanup = false
 	return nil
 }
 
@@ -251,37 +210,4 @@ func SignPolicyFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.
 // policy.yaml with the identity keyring.
 func SignSentryFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.Keyring, signedAt time.Time) error {
 	return SignSentryFileIntegrity(dataRoot, identityID, kr, signedAt)
-}
-
-func writeSyncedPolicyFile(path string, data []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, perm)
-	if err != nil {
-		return err
-	}
-	closeFile := true
-	defer func() {
-		if closeFile {
-			_ = f.Close()
-		}
-	}()
-	if _, err := f.Write(data); err != nil {
-		return err
-	}
-	if err := f.Chmod(perm); err != nil {
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		return err
-	}
-	closeFile = false
-	return f.Close()
-}
-
-func syncPolicyDir(dir string) error {
-	f, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	return f.Sync()
 }

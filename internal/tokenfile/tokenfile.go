@@ -161,7 +161,7 @@ func LoadAPlaneToken(root, identityID string) (string, error) {
 		return "", err
 	}
 
-	if err := fsutil.MkdirAll(filepath.Dir(path)); err != nil {
+	if err := fsutil.MkdirAllPrivate(filepath.Dir(path)); err != nil {
 		return "", fmt.Errorf("failed to create token directory: %w", err)
 	}
 	created, err := writeTokenIfAbsent(path, token)

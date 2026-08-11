@@ -198,7 +198,7 @@ func (m Model) handleResultKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.viewState = ViewHome
 	m.resultMessage = ""
 	m.resultError = ""
-	return m, loadStatusCmd(m.dataDir, m.identityID)
+	return m, loadStatusCmd(m.dataDir, m.identityID, m.svcInfo, m.isLocal)
 }
 
 // dispatchAction runs the current action directly in-process.

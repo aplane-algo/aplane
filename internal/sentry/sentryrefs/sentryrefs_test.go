@@ -60,6 +60,47 @@ func TestImportGetListDelete(t *testing.T) {
 	}
 }
 
+func TestImportIsIdempotentAndRejectsNameReplacement(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	firstExport := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
+	first, err := Import(paths, "default", "prod-sentry", firstExport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idempotent, err := Import(paths, "default", "prod-sentry", firstExport)
+	if err != nil {
+		t.Fatalf("identical Import() error = %v", err)
+	}
+	if idempotent.ComponentKey != first.ComponentKey || idempotent.ImportedAt != first.ImportedAt {
+		t.Fatalf("identical Import() rewrote record: first=%#v second=%#v", first, idempotent)
+	}
+
+	secondExport := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xcd))
+	_, err = Import(paths, "default", "prod-sentry", secondExport)
+	if err == nil || !strings.Contains(err.Error(), "remove it explicitly") {
+		t.Fatalf("replacement Import() error = %v, want explicit removal requirement", err)
+	}
+	stored, found, getErr := Get(paths, "default", "prod-sentry")
+	if getErr != nil || !found {
+		t.Fatalf("Get() after rejected replacement = (%#v, %v, %v)", stored, found, getErr)
+	}
+	if stored.ComponentKey != first.ComponentKey {
+		t.Fatalf("stored Witness Key ID = %q, want original %q", stored.ComponentKey, first.ComponentKey)
+	}
+}
+
+func TestImportReservesEndpointDiscoveryNamespace(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	export := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
+	_, err := Import(paths, "default", "endpoint-manual-planted", export)
+	if err == nil || !strings.Contains(err.Error(), "reserved for endpoint discovery") {
+		t.Fatalf("Import(endpoint-* name) error = %v, want reserved namespace rejection", err)
+	}
+	if _, found, getErr := Get(paths, "default", "endpoint-manual-planted"); getErr != nil || found {
+		t.Fatalf("reserved manual reference was stored: found=%v err=%v", found, getErr)
+	}
+}
+
 func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	if err := os.MkdirAll(paths.SentryRefsDir("default"), 0o700); err != nil {
@@ -187,6 +228,50 @@ func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
 	}
 	if rec.SyncedAt == "" || rec.LastSeenAt == "" {
 		t.Fatalf("SyncedAt/LastSeenAt = %q/%q, want populated", rec.SyncedAt, rec.LastSeenAt)
+	}
+}
+
+func TestImportPromotesDiscoveredReferenceToManual(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
+	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := SyncedReferenceName("sentry-local", componentKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
+		EndpointAlias: "sentry-local",
+		ComponentKey:  componentKey,
+		KeyType:       witness.Falcon1024V1,
+		PublicKeyHex:  hex.EncodeToString(pub),
+	}}); err != nil {
+		t.Fatalf("SyncDiscovered() error = %v", err)
+	}
+
+	record, err := Import(paths, "default", name, testExportJSON(t, witness.Falcon1024V1, pub))
+	if err != nil {
+		t.Fatalf("Import() error = %v", err)
+	}
+	if record.Source != SourceManual || record.ImportedAt == "" {
+		t.Fatalf("promoted record source/imported_at = %q/%q, want manual timestamp", record.Source, record.ImportedAt)
+	}
+	if record.EndpointAlias != "" || record.SyncedAt != "" || record.LastSeenAt != "" {
+		t.Fatalf("promoted record retained discovery provenance: %#v", record)
+	}
+
+	result, err := SyncDiscovered(paths, "default", nil)
+	if err != nil {
+		t.Fatalf("SyncDiscovered(empty) error = %v", err)
+	}
+	if result.Removed != 0 {
+		t.Fatalf("SyncDiscovered(empty) removed = %d, want pinned manual reference retained", result.Removed)
+	}
+	stored, found, err := Get(paths, "default", name)
+	if err != nil || !found || stored.Source != SourceManual {
+		t.Fatalf("Get(promoted) = (%#v, %v, %v), want retained manual reference", stored, found, err)
 	}
 }
 

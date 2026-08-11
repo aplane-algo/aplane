@@ -6,23 +6,23 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"io"
 	"os"
 	"strings"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/manifest"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
-	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
-	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
 
@@ -59,8 +59,9 @@ func main() {
 	}
 
 	// Define flags
-	dataDir := flag.String("d", "", "Data directory (required, or set APSIGNER_DATA)")
+	dataDir := flag.String("d", "", "Signer data directory for same-UID mode (or set APSIGNER_DATA)")
 	clientDataDir := flag.String("client-data", "", "Client data directory for remote SSH mode (or set APCLIENT_DATA)")
+	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	initTestFlag()
 	remoteMode = flag.Bool("remote", false, "Connect to apsigner over SSH instead of local IPC")
 	flag.Parse()
@@ -70,29 +71,24 @@ func main() {
 		return
 	}
 
-	resolvedDataDir, err := bootstrap.ResolveDataDir(*dataDir)
+	resolvedDataDir := serverconfig.GetSignerDataDir(*dataDir)
+	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: resolvedDataDir, IPCPath: *ipcPathFlag, DataDirExplicit: *dataDir != "",
+	})
 	if err != nil {
 		logErrorf("%v", err)
-		logErrorf("use -d <path> or set APSIGNER_DATA environment variable")
 		os.Exit(1)
 	}
 
-	// Check data directory is accessible
-	if err := unix.Access(resolvedDataDir, unix.R_OK|unix.X_OK); err != nil {
-		logErrorf("cannot access data directory: %s", resolvedDataDir)
-		if os.IsPermission(err) {
-			logWarnf("you may need to log out and back in for group membership to take effect")
+	config := serverconfig.DefaultServerConfig()
+	if resolvedDataDir != "" && unix.Access(resolvedDataDir, unix.R_OK|unix.X_OK) == nil {
+		startup, err := bootstrap.LoadResolved(resolvedDataDir)
+		if err != nil {
+			logErrorf("%v", err)
+			os.Exit(1)
 		}
-		os.Exit(1)
+		config = startup.Config
 	}
-
-	startup, err := bootstrap.LoadResolved(resolvedDataDir)
-	if err != nil {
-		logErrorf("%v", err)
-		logErrorf("use -d <path> or set APSIGNER_DATA environment variable")
-		os.Exit(1)
-	}
-	config := startup.Config
 	// Initialize color theme based on config
 	theme.Init(config.Theme)
 
@@ -136,7 +132,7 @@ func main() {
 		return
 	}
 
-	startTUI(tui.LocalIPCConnector{Path: config.IPCPath}, resolvedDataDir)
+	startTUI(tui.LocalIPCConnector{Path: ipcPath}, apconfig.GetClientDataDir(*clientDataDir))
 }
 
 func validateFlagSpelling(args []string) error {
@@ -162,7 +158,7 @@ func validateFlagSpelling(args []string) error {
 }
 
 // startTUI launches the Bubble Tea TUI application
-func startTUI(connector tui.AdminConnector, dataDir string) {
+func startTUI(connector tui.AdminConnector, clientDataDir string) {
 	logInfof("starting apadmin TUI")
 
 	// SSH admin connections can emit status lines from background goroutines.
@@ -172,24 +168,13 @@ func startTUI(connector tui.AdminConnector, dataDir string) {
 	defer sshtunnel.SetStatusWriter(nil)
 
 	// Create and run the TUI
-	model := tui.NewModel(connector, dataDir).WithInitialNodeRole(initialNodeRole(dataDir)).WithStandalone()
+	model := tui.NewModel(connector, clientDataDir).WithStandalone()
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
 		logErrorf("error running TUI: %v", err)
 		os.Exit(1)
 	}
-}
-
-func initialNodeRole(dataDir string) string {
-	if dataDir == "" {
-		return ""
-	}
-	doc, _, err := noderole.Load(storepaths.NewPaths(dataDir))
-	if err != nil {
-		return ""
-	}
-	return string(doc.Role)
 }
 
 func runRemoteMode(clientDataDirFlag string) {

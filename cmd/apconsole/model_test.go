@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -130,6 +132,51 @@ func TestShellDisabledSplitLayoutUsesFullWidthSignerAboveDaemon(t *testing.T) {
 	}
 	if signerPos > daemonPos {
 		t.Fatalf("signer pane rendered after daemon pane: signer=%d daemon=%d", signerPos, daemonPos)
+	}
+}
+
+func TestPendingShellRoleFailsClosedAndEnablesOnlyForSigner(t *testing.T) {
+	newPending := func() model {
+		m := newModelWithShell(testConnector{}, t.TempDir(), &fakeShellExecutor{}, nil, newDaemonModel(daemonInfo{}, nil), false, "")
+		m.signer = stubTeaModel{}
+		return m
+	}
+
+	sentry := newPending()
+	if !sentry.shellRolePending || sentry.shellEnabled() {
+		t.Fatal("pending sentry role did not start with shell disabled")
+	}
+	updated, _ := sentry.Update(tui.AdminSettingsMsg{Settings: tui.AdminSettings{NodeRole: "sentry"}})
+	sentry = updated.(model)
+	if sentry.shellRolePending || sentry.shellEnabled() {
+		t.Fatal("sentry settings enabled the shell")
+	}
+
+	signer := newPending()
+	updated, cmd := signer.Update(tui.AdminSettingsMsg{Settings: tui.AdminSettings{NodeRole: "signer"}})
+	signer = updated.(model)
+	if signer.shellRolePending || !signer.shellEnabled() {
+		t.Fatal("signer settings did not enable the pending shell")
+	}
+	if cmd == nil {
+		t.Fatal("signer settings did not initialize the newly enabled shell")
+	}
+}
+
+func TestUnavailableShellDoesNotBecomeRolePendingThroughTypedNil(t *testing.T) {
+	m := newModelWithShell(
+		testConnector{}, t.TempDir(), shellExecutorForSession(nil),
+		[]string{"Shell disabled: missing client config"}, newDaemonModel(daemonInfo{}, nil), false, "",
+	)
+	m.signer = stubTeaModel{}
+	if m.shellRolePending || m.shellEnabled() {
+		t.Fatal("unavailable shell started pending or enabled")
+	}
+
+	updated, _ := m.Update(tui.AdminSettingsMsg{Settings: tui.AdminSettings{NodeRole: "signer"}})
+	m = updated.(model)
+	if m.shellRolePending || m.shellEnabled() {
+		t.Fatal("signer role enabled an unavailable shell")
 	}
 }
 

@@ -6,11 +6,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 
+	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/auth"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/version"
 
@@ -22,6 +23,10 @@ var config serverconfig.ServerConfig
 
 // dataDirectory holds the resolved data directory path
 var dataDirectory string
+
+// adminSocketPath is resolved independently of private signer configuration
+// for daemon-backed commands.
+var adminSocketPath string
 
 func keystorePaths() storepaths.Paths {
 	return storepaths.NewPaths(dataDirectory)
@@ -43,7 +48,36 @@ func main() {
 	flag.Usage = apstoreUsage
 
 	dataDir := flag.String("d", "", "Data directory (required, or set APSIGNER_DATA)")
+	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()
+	args := flag.Args()
+	if len(args) < 1 {
+		flag.Usage()
+		os.Exit(apstoreExitUsage)
+	}
+	if isExternalFileOnlyCommand(args) {
+		config = serverconfig.DefaultServerConfig()
+		RegisterProviders()
+		dispatchApstoreCommand(args)
+		return
+	}
+
+	if isDaemonBackedCommand(args) {
+		dataDirectory = serverconfig.GetSignerDataDir(*dataDir)
+		var err error
+		adminSocketPath, err = adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+			DataDir: dataDirectory, IPCPath: *ipcPathFlag, DataDirExplicit: *dataDir != "",
+		})
+		if err != nil {
+			logErrorf("%v", err)
+			os.Exit(apstoreExitUsage)
+		}
+		config = serverconfig.DefaultServerConfig()
+		config.IPCPath = adminSocketPath
+		RegisterProviders()
+		dispatchApstoreCommand(args)
+		return
+	}
 
 	resolvedDataDir, err := bootstrap.ResolveDataDir(*dataDir)
 	if err != nil {
@@ -52,12 +86,17 @@ func main() {
 		os.Exit(apstoreExitUsage)
 	}
 	dataDirectory = resolvedDataDir
+	if isStorePermissionCommand(args) {
+		dispatchApstoreCommand(args)
+		return
+	}
 
 	// Check data directory is accessible
 	if err := unix.Access(dataDirectory, unix.R_OK|unix.X_OK); err != nil {
 		logErrorf("cannot access data directory: %s", dataDirectory)
 		if os.IsPermission(err) {
-			logWarnf("you may need to log out and back in for group membership to take effect")
+			logWarnf("signer stores are private; operating-system group membership grants IPC socket access, not store traversal")
+			logWarnf("use a daemon-backed command, or follow the documented stopped-service rescue procedure as the store owner/root")
 		}
 		os.Exit(apstoreExitUsage)
 	}
@@ -69,15 +108,10 @@ func main() {
 		os.Exit(apstoreExitUsage)
 	}
 	config = startup.Config
+	adminSocketPath = config.IPCPath
 
 	// Register all providers (must be called before using any registries)
 	RegisterProviders()
-
-	args := flag.Args()
-	if len(args) < 1 {
-		flag.Usage()
-		os.Exit(apstoreExitUsage)
-	}
 
 	dispatchApstoreCommand(args)
 }

@@ -71,7 +71,7 @@ This separation is deliberate:
 | Deleted template archive | `identities/<identity>/deleted/keytypes/` | Removed template files; outside active scans. |
 | Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer identities install the bundled Falcon allowlist v1 source during initialization; other entries require identity-local import/enablement. |
 | Compiled provider | Go provider registry and key type catalog | Binary capability; identity visibility may be default-enabled or opt-in. |
-| Backup payload | `.apb` inside managed backup archive | Encrypted backup unit containing a key and optional bundled template provenance. |
+| Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; template YAML is not included. |
 
 Witness public sidecars are derived public metadata, not independent signing
 authority. They exist so `apstore sentry export` can work without
@@ -251,9 +251,9 @@ key is rejected during reload rather than published as a signable key.
 
 ## Backup And Restore Matrix
 
-This matrix describes restoring a key whose backup refers to a template-backed
-or library-visible key type. Native default-enabled keys follow the direct key
-restore path.
+This matrix describes restoring a template-backed or library-visible key.
+Credential backups do not carry template YAML; native default-enabled keys
+follow the direct key restore path.
 
 Backup manifests carry the source node role going forward. Restore validates
 payload key classes against the destination node's role; it does not change the

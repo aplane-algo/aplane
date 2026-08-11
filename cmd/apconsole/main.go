@@ -56,6 +56,7 @@ func main() {
 	networkShort := flag.String("n", "", "Network context token for the shell pane")
 	remoteMode := flag.Bool("remote", false, "Connect to apsigner over SSH admin subsystem instead of local IPC")
 	noStartDaemon := flag.Bool("no-start-daemon", false, "Do not start apsigner when no local IPC socket exists")
+	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()
 	remoteModeSet := flagWasSet("remote")
 	dataDirSet := flagWasSet("d")
@@ -125,12 +126,30 @@ func main() {
 		logErrorf("use -d <path>, set APSIGNER_DATA, or configure signer_data in apconsole.yaml")
 		os.Exit(1)
 	}
-	if err := unix.Access(resolvedDataDir, unix.R_OK|unix.X_OK); err != nil {
-		logErrorf("cannot access data directory: %s", resolvedDataDir)
-		if os.IsPermission(err) {
-			logWarnf("you may need to log out and back in for group membership to take effect")
+	if accessErr := unix.Access(resolvedDataDir, unix.R_OK|unix.X_OK); accessErr != nil {
+		if !os.IsPermission(accessErr) {
+			logErrorf("cannot access data directory: %s", resolvedDataDir)
+			os.Exit(1)
 		}
-		os.Exit(1)
+		ipcPath, err := resolveConsoleIPCPath(resolvedDataDir, *ipcPathFlag, startupCfg.signerDataSource)
+		if err != nil {
+			logErrorf("%v", err)
+			os.Exit(1)
+		}
+		theme.Init("")
+		shellSession, shellStartup := loadShellConsole(startupCfg.ClientData, network)
+		shellStartup = append(consoleStartupNoticeLines(startupCfg.Notices), shellStartup...)
+		daemon := newDaemonModel(daemonInfo{
+			Status:  daemonStatusDisabled,
+			DataDir: resolvedDataDir,
+			IPCPath: ipcPath,
+			Detail:  "systemd attach mode; daemon lifecycle is not managed by apconsole",
+		}, nil)
+		// The private managed store prevents this operator process from reading
+		// node.yaml directly. Keep the shell fail-closed until authenticated
+		// admin settings identify the node as a signer.
+		startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, "", shellSession, shellStartup, false, nil, daemon)
+		return
 	}
 
 	startup, err := bootstrap.Load(startupCfg.SignerData)
@@ -139,12 +158,22 @@ func main() {
 		logErrorf("use -d <path>, set APSIGNER_DATA, or configure signer_data in apconsole.yaml")
 		os.Exit(1)
 	}
+	ipcPath, err := resolveConsoleIPCPath(startup.DataDir, *ipcPathFlag, startupCfg.signerDataSource)
+	if err != nil {
+		logErrorf("%v", err)
+		os.Exit(1)
+	}
+	daemonIPCPath, err := resolveDaemonIPCPathForLifecycle(startup.DataDir, startup.Config.IPCPath, !*noStartDaemon)
+	if err != nil {
+		logErrorf("cannot resolve daemon IPC path: %v", err)
+		os.Exit(1)
+	}
 	theme.Init(startup.Config.Theme)
 	configureAlgodOnDSAs(startup.Config)
 	nodeRole, roleWarning := consoleNodeRole(startup.Paths)
-	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, startup.Config.IPCPath, !*noStartDaemon)
+	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, ipcPath, daemonIPCPath, !*noStartDaemon)
 	if daemonStartup.Status == daemonStatusStarting {
-		waitForDaemonReady(startup.Config.IPCPath, daemonProcess, daemonReadyTimeout)
+		waitForDaemonReady(ipcPath, daemonProcess, daemonReadyTimeout)
 	}
 	if roleWarning != "" {
 		logWarnf("%s", roleWarning)
@@ -168,7 +197,7 @@ func main() {
 		daemon.lines = append(daemon.lines, sentryShellDisabledLines(startupCfg.Notices)...)
 	}
 
-	startConsole(tui.LocalIPCConnector{Path: startup.Config.IPCPath}, startup.DataDir, string(nodeRole), shellSession, shellStartup, shellEnabled, daemonProcess, daemon)
+	startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, string(nodeRole), shellSession, shellStartup, shellEnabled, daemonProcess, daemon)
 }
 
 func consoleStartupNoticeLines(notices []string) []string {
@@ -231,7 +260,10 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 	// the terminal, write the stack trace to a log file (alt-screen mode would
 	// otherwise erase it on exit), and then re-panic so the trace also reaches
 	// stderr if anything is reading it.
-	model := newModelWithShell(connector, dataDir, shellSession, shellStartup, daemon, shellEnabled, initialNodeRole)
+	model := newModelWithShell(
+		connector, dataDir, shellExecutorForSession(shellSession), shellStartup,
+		daemon, shellEnabled, initialNodeRole,
+	)
 	if width, height, ok := terminalSize(realStdout); ok {
 		model.width = width
 		model.height = height
@@ -290,6 +322,13 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		logErrorf("error running console: %v", err)
 		os.Exit(1)
 	}
+}
+
+func shellExecutorForSession(session *apshellcli.Session) shellExecutor {
+	if session == nil {
+		return nil
+	}
+	return session
 }
 
 func terminalSize(f *os.File) (width, height int, ok bool) {

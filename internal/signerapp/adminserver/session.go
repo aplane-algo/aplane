@@ -36,46 +36,76 @@ const (
 
 // Session owns one admin client protocol lifecycle.
 type Session struct {
-	conn             adminproto.AdminConn
-	identityServices IdentityServices
-	settingsServices SettingsServices
-	keyServices      KeyServices
-	backupServices   BackupServices
-	templateServices TemplateServices
-	authorizer       auth.Authorizer
-	audit            AuthorizationAudit
+	conn               adminproto.AdminConn
+	identityServices   IdentityServices
+	settingsServices   SettingsServices
+	keyServices        KeyServices
+	backupServices     BackupServices
+	templateServices   TemplateServices
+	inspectionServices StoreInspectionServices
+	authorizer         auth.Authorizer
+	audit              AuthorizationAudit
 
-	mu       sync.Mutex
-	state    SessionState
-	identity *auth.Identity
-	bound    *identity.Runtime
-	method   string
-	context  SessionContext
-	ctx      context.Context
-	cancel   context.CancelFunc
+	mu                  sync.Mutex
+	state               SessionState
+	identity            *auth.Identity
+	bound               *identity.Runtime
+	method              string
+	context             SessionContext
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	activeBackupExports map[backupExportAuditKey]struct{}
 
 	// preboundIdentityID is set by transports that authenticate an identity
 	// before the admin protocol auth message, such as SSH.
 	preboundIdentityID string
 }
 
+type backupExportAuditKey struct {
+	identityID string
+	fileName   string
+}
+
+// markBackupExportChunk returns true when this successful read starts an
+// unaudited archive transfer. Offset zero explicitly starts a new transfer;
+// a client that starts elsewhere is still audited on its first successful
+// read. EOF closes the inferred transfer so a later read is audited again.
+func (s *Session) markBackupExportChunk(identityID, fileName string, offset int64, eof bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := backupExportAuditKey{identityID: identityID, fileName: fileName}
+	_, active := s.activeBackupExports[key]
+	started := offset == 0 || !active
+	if eof {
+		delete(s.activeBackupExports, key)
+		return started
+	}
+	if s.activeBackupExports == nil {
+		s.activeBackupExports = make(map[backupExportAuditKey]struct{})
+	}
+	s.activeBackupExports[key] = struct{}{}
+	return started
+}
+
 func NewSession(conn adminproto.AdminConn, deps SessionDeps) *Session {
 	method := "ipc-passphrase"
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Session{
-		conn:             conn,
-		identityServices: deps.Identity,
-		settingsServices: deps.Settings,
-		keyServices:      deps.Keys,
-		backupServices:   deps.Backups,
-		templateServices: deps.Templates,
-		authorizer:       deps.Authorizer,
-		audit:            deps.Audit,
-		state:            StateConnected,
-		method:           method,
-		context:          newSessionContext(method, conn),
-		ctx:              ctx,
-		cancel:           cancel,
+		conn:               conn,
+		identityServices:   deps.Identity,
+		settingsServices:   deps.Settings,
+		keyServices:        deps.Keys,
+		backupServices:     deps.Backups,
+		templateServices:   deps.Templates,
+		inspectionServices: deps.Inspection,
+		authorizer:         deps.Authorizer,
+		audit:              deps.Audit,
+		state:              StateConnected,
+		method:             method,
+		context:            newSessionContext(method, conn),
+		ctx:                ctx,
+		cancel:             cancel,
 	}
 }
 
@@ -163,7 +193,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		if base.Type == protocol.MsgTypeInitializeStore {
 			return s.handlePreAuthInitialize(base.ID, raw)
 		}
-		if base.Type != protocol.MsgTypeAuth {
+		if base.Type != protocol.MsgTypeAuth && base.Type != protocol.MsgTypeAuthOnly {
 			s.sendAuthResult(false, protocol.ErrCodeExpectedAuthMessage, "expected auth message")
 			return AuthOutcomeFailed
 		}
@@ -203,19 +233,22 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 
 		sessionIdentity := s.identityServices.NewSessionIdentity(s.method)
 		principal := principalFromIdentity(sessionIdentity)
-		unlockResource := auth.Resource{
-			Type:       "identity",
-			ID:         ir.ID(),
-			IdentityID: ir.ID(),
-		}
-		if err := s.authorizeIdentity(sessionIdentity, auth.ActionIdentityUnlock, unlockResource); err != nil {
-			zeroBytes(passphraseBytes)
-			s.logAuthorizationDenied(sessionIdentity, auth.ActionIdentityUnlock, unlockResource, err.Error())
-			s.sendAuthResult(false, protocol.ErrCodeAuthorizationDenied, "authorization denied")
-			return AuthOutcomeFailed
+		authenticateOnly := base.Type == protocol.MsgTypeAuthOnly
+		if !authenticateOnly {
+			unlockResource := auth.Resource{
+				Type:       "identity",
+				ID:         ir.ID(),
+				IdentityID: ir.ID(),
+			}
+			if err := s.authorizeIdentity(sessionIdentity, auth.ActionIdentityUnlock, unlockResource); err != nil {
+				zeroBytes(passphraseBytes)
+				s.logAuthorizationDenied(sessionIdentity, auth.ActionIdentityUnlock, unlockResource, err.Error())
+				s.sendAuthResult(false, protocol.ErrCodeAuthorizationDenied, "authorization denied")
+				return AuthOutcomeFailed
+			}
 		}
 
-		if !ir.IsUnlocked() {
+		if !authenticateOnly && !ir.IsUnlocked() {
 			success, _, errMsg, code := s.identityServices.UnlockIdentity(ir, passphraseBytes)
 			zeroBytes(passphraseBytes)
 			if !success {

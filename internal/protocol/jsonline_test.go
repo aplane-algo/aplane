@@ -48,3 +48,11 @@ func TestWriteJSONLineDoesNotMutateCallerBuffer(t *testing.T) {
 		t.Fatalf("backing guard byte = %q, want X", backing[len(raw)])
 	}
 }
+
+func TestReadJSONLineRejectsOversizedFrame(t *testing.T) {
+	frame := bytes.Repeat([]byte{'x'}, MaxAdminMessageBytes+1)
+	frame = append(frame, '\n')
+	if _, err := ReadJSONLine(bufio.NewReader(bytes.NewReader(frame))); err == nil {
+		t.Fatal("ReadJSONLine() error = nil, want size rejection")
+	}
+}

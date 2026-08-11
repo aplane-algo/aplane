@@ -4,16 +4,18 @@
 package daemon
 
 import (
+	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/ipcbind"
 )
@@ -26,6 +28,8 @@ type IPCServer struct {
 	manager  *adminserver.SessionManager
 }
 
+const existingIPCProbeTimeout = 300 * time.Millisecond
+
 // NewIPCServer creates a new IPC server.
 func NewIPCServer(path string, signer *Signer) *IPCServer {
 	return &IPCServer{
@@ -37,13 +41,18 @@ func NewIPCServer(path string, signer *Signer) *IPCServer {
 
 // Start begins listening on the Unix socket.
 func (s *IPCServer) Start() error {
-	if err := ipcbind.ValidateBindPath(s.path); err != nil {
+	resolvedPath, err := ipcbind.ResolveBindPath(s.path)
+	if err != nil {
 		return err
 	}
+	s.path = resolvedPath
 
-	// Remove existing socket file if present
-	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove existing socket: %w", err)
+	// ResolveBindPath has already proven that the canonical parent and any
+	// configured alias chain are current-UID/root controlled and not writable
+	// by group or other users. removeStaleIPCSocket relies on that invariant for
+	// the final pathname operation after its stable-inode recheck.
+	if err := removeStaleIPCSocket(s.path); err != nil {
+		return err
 	}
 
 	listener, err := net.Listen("unix", s.path)
@@ -59,6 +68,46 @@ func (s *IPCServer) Start() error {
 
 	s.listener = listener
 	go s.acceptLoop()
+	return nil
+}
+
+// removeStaleIPCSocket refuses to unlink a reachable listener. A closed Unix
+// listener leaves a socket inode that returns ECONNREFUSED; only that stable,
+// rechecked inode is eligible for removal.
+func removeStaleIPCSocket(path string) error {
+	before, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect existing IPC socket: %w", err)
+	}
+
+	conn, dialErr := net.DialTimeout("unix", path, existingIPCProbeTimeout)
+	if dialErr == nil {
+		_ = conn.Close()
+		return fmt.Errorf("refusing to replace live IPC socket: %s", path)
+	}
+	if errors.Is(dialErr, syscall.ENOENT) {
+		return nil
+	}
+	if !errors.Is(dialErr, syscall.ECONNREFUSED) {
+		return fmt.Errorf("cannot prove existing IPC socket is stale: %w", dialErr)
+	}
+
+	after, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reinspect stale IPC socket: %w", err)
+	}
+	if !os.SameFile(before, after) {
+		return fmt.Errorf("refusing to remove IPC socket that changed during stale check: %s", path)
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove stale IPC socket: %w", err)
+	}
 	return nil
 }
 

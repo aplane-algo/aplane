@@ -70,6 +70,18 @@ func (s signerAdminServices) LogBackupCreatedContext(ctx adminserver.SessionCont
 	}
 }
 
+func (s signerAdminServices) LogBackupImportedContext(ctx adminserver.SessionContext, fileName string, size int64) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogBackupImportedContext(ctx, fileName, size)
+	}
+}
+
+func (s signerAdminServices) LogBackupExportStartedContext(ctx adminserver.SessionContext, fileName string) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogBackupExportStartedContext(ctx, fileName)
+	}
+}
+
 func (s signerAdminServices) LogBackupFailedContext(ctx adminserver.SessionContext, reason string) {
 	if audit := s.auditLogger(); audit != nil {
 		audit.LogBackupFailedContext(ctx, reason)
@@ -85,5 +97,11 @@ func (s signerAdminServices) LogBackupRestorePreviewedContext(ctx adminserver.Se
 func (s signerAdminServices) LogBackupRestorePreviewFailedContext(ctx adminserver.SessionContext, reason string) {
 	if audit := s.auditLogger(); audit != nil {
 		audit.LogBackupRestorePreviewFailedContext(ctx, reason)
+	}
+}
+
+func (s signerAdminServices) LogSentryReferenceChangedContext(ctx adminserver.SessionContext, action, name, componentKey string, success bool) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogSentryReferenceChangedContext(ctx, action, name, componentKey, success)
 	}
 }

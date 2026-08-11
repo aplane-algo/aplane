@@ -9,6 +9,6 @@ func startIPCServer(server *Signer, socketPath string) error {
 	if err := server.ipcServer.Start(); err != nil {
 		return err
 	}
-	logInfof("admin interface ready on IPC socket %s", socketPath)
+	logInfof("admin interface ready on IPC socket %s", server.ipcServer.path)
 	return nil
 }

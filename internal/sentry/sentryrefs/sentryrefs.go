@@ -108,6 +108,37 @@ func Import(paths storepaths.Paths, identityID, name string, data []byte) (*Reco
 	if err != nil {
 		return nil, err
 	}
+	existing, found, err := Get(paths, identityID, record.Name)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		if sameReferenceAuthority(existing, *record) {
+			if existing.Source == SourceManual {
+				return &existing, nil
+			}
+			// An explicit import pins a previously discovered authority. Publish
+			// the manual record so a later discovery sync cannot reap it merely
+			// because its endpoint is no longer present.
+			if record.ImportedAt == "" {
+				record.ImportedAt = time.Now().UTC().Format(time.RFC3339)
+			}
+			if err := Put(paths, identityID, *record); err != nil {
+				return nil, err
+			}
+			return record, nil
+		}
+		return nil, fmt.Errorf(
+			"sentry reference %q already exists with Witness Key ID %s; remove it explicitly before importing Witness Key ID %s",
+			record.Name, existing.ComponentKey, record.ComponentKey,
+		)
+	}
+	if strings.HasPrefix(record.Name, "endpoint-") {
+		return nil, fmt.Errorf(
+			"sentry reference name %q is reserved for endpoint discovery; choose a manual name or sync the endpoint first and import the identical authority to pin it",
+			record.Name,
+		)
+	}
 	if record.ImportedAt == "" {
 		record.ImportedAt = time.Now().UTC().Format(time.RFC3339)
 	}
@@ -115,6 +146,15 @@ func Import(paths storepaths.Paths, identityID, name string, data []byte) (*Reco
 		return nil, err
 	}
 	return record, nil
+}
+
+func sameReferenceAuthority(a, b Record) bool {
+	return a.ComponentKey == b.ComponentKey &&
+		a.KeyType == b.KeyType &&
+		a.PublicKeyEncoding == b.PublicKeyEncoding &&
+		a.PublicKeyHex == b.PublicKeyHex &&
+		a.PublicKeySize == b.PublicKeySize &&
+		a.PublicKeySHA256 == b.PublicKeySHA256
 }
 
 func SyncDiscovered(paths storepaths.Paths, identityID string, discovered []DiscoveredRecord) (*SyncResult, error) {
@@ -223,7 +263,7 @@ func Put(paths storepaths.Paths, identityID string, rec Record) error {
 		return err
 	}
 	path := paths.SentryRefPath(identityID, normalized.Name)
-	if err := fsutil.MkdirAll(filepath.Dir(path)); err != nil {
+	if err := fsutil.MkdirAllPrivate(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("failed to create sentry reference directory: %w", err)
 	}
 	data, err := json.MarshalIndent(normalized, "", "  ")

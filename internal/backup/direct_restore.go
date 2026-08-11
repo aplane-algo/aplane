@@ -504,7 +504,7 @@ func ApplyCredentialEntry(
 	if err != nil {
 		return fmt.Errorf("encrypt restored credential: %w", err)
 	}
-	if err := fsutil.MkdirAll(active.KeysDir()); err != nil {
+	if err := fsutil.MkdirAllPrivate(active.KeysDir()); err != nil {
 		return err
 	}
 	if err := fsutil.WriteFileDurable(destPath, encrypted); err != nil {

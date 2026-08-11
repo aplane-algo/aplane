@@ -5,12 +5,13 @@ package startup
 
 import (
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
 const (
@@ -28,6 +29,9 @@ type RuntimeState struct {
 type ValidationInfo struct {
 	KeystoreExists bool
 }
+
+var auditPrivateStore = storeperm.Audit
+var managedServiceOwner = storeperm.ManagedServiceOwner
 
 // BlockManualProdStart rejects manual startup for a systemd-managed data
 // directory unless the process is running under systemd.
@@ -60,6 +64,51 @@ func IsProductionManagedDataDir(dataDir string) (bool, error) {
 // systemd or an equivalent service manager PID 1 context.
 func RunningUnderSystemd() bool {
 	return signerbootstrap.RunningUnderSystemd()
+}
+
+// ValidateProductionStorePermissions fails before configuration or lock files
+// are opened when a systemd-managed store is not private to the daemon's uid.
+func ValidateProductionStorePermissions(dataDir string) error {
+	prodManaged, err := IsProductionManagedDataDir(dataDir)
+	if err != nil {
+		return err
+	}
+	if !prodManaged {
+		return nil
+	}
+	expectedUID, expectedGID, err := managedServiceOwner(dataDir)
+	if err != nil {
+		return fmt.Errorf(
+			"resolve managed signer service principal: %w; rerun the systemd installer or systemd-setup",
+			err,
+		)
+	}
+	runtimeUID, runtimeGID := os.Geteuid(), os.Getegid()
+	if runtimeUID != expectedUID || runtimeGID != expectedGID {
+		return fmt.Errorf(
+			"managed signer service principal mismatch: daemon runs as %d:%d but installer metadata requires %d:%d; stop apsigner and rerun the systemd installer or systemd-setup",
+			runtimeUID, runtimeGID, expectedUID, expectedGID,
+		)
+	}
+	findings, err := auditPrivateStore(storeperm.ProductionAuditOptions(dataDir, expectedUID, expectedGID))
+	if err != nil {
+		return fmt.Errorf("inspect private signer store: %w", err)
+	}
+	if len(findings) != 0 {
+		for _, finding := range findings {
+			if finding.Code == "ancestor-write" || finding.Code == "ancestor-owner" || finding.Code == "ancestor-type" {
+				return fmt.Errorf(
+					"unsafe signer-store ancestor: %s; permissions migrate cannot repair paths outside %s; stop apsigner, repair the reported ancestor, then run 'sudo apstore -d %s permissions audit'",
+					finding.Error(), dataDir, dataDir,
+				)
+			}
+		}
+		return fmt.Errorf(
+			"unsafe signer-store permissions (%d finding(s)); first: %s; stop apsigner and run 'sudo apstore -d %s permissions migrate'",
+			len(findings), findings[0].Error(), dataDir,
+		)
+	}
+	return nil
 }
 
 // Validate performs comprehensive signer startup validation.

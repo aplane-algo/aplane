@@ -43,10 +43,26 @@ type OfflineStore struct {
 	Passphrase         []byte
 	PassphraseProvider PassphraseProvider
 	Now                func() time.Time
+	mutationLock       *storelock.Guard
 
 	// Config overrides the runtime signer config used for validation. When nil,
 	// the config is loaded from DataDir.
 	Config *serverconfig.ServerConfig
+}
+
+// UseExclusiveMutationLock supplies an already-held lock for Save and
+// SaveYAML. The guard must cover this store's data directory. This permits a
+// root rescue workflow to hold one lock across policy publication and
+// ownership normalization without recursively acquiring flock.
+func (s *OfflineStore) UseExclusiveMutationLock(guard *storelock.Guard) error {
+	if s == nil {
+		return fmt.Errorf("offline store is required")
+	}
+	if guard == nil || !guard.HoldsExclusiveFor(s.DataDir) {
+		return fmt.Errorf("exclusive mutation lock does not cover policy data directory %s", s.DataDir)
+	}
+	s.mutationLock = guard
+	return nil
 }
 
 // Load verifies the selected policy document integrity sidecar, parses the
@@ -113,11 +129,11 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 	if err := s.validateOptions(); err != nil {
 		return err
 	}
-	guard, err := storelock.AcquireExclusive(s.DataDir)
+	release, err := s.acquireMutationLock()
 	if err != nil {
 		return fmt.Errorf("failed to acquire offline store lock: %w (stop apsigner and other store-mutating tools before editing policy offline)", err)
 	}
-	defer func() { _ = guard.Close() }()
+	defer release()
 
 	kr, clear, err := s.unlock(ctx)
 	if err != nil {
@@ -179,11 +195,11 @@ func (s OfflineStore) SaveYAML(ctx context.Context, data []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse %s: %w", s.target().DocumentName(), err)
 	}
-	guard, err := storelock.AcquireExclusive(s.DataDir)
+	release, err := s.acquireMutationLock()
 	if err != nil {
 		return fmt.Errorf("failed to acquire offline store lock: %w (stop apsigner and other store-mutating tools before editing policy offline)", err)
 	}
-	defer func() { _ = guard.Close() }()
+	defer release()
 
 	kr, clear, err := s.unlock(ctx)
 	if err != nil {
@@ -215,6 +231,20 @@ func (s OfflineStore) SaveYAML(ctx context.Context, data []byte) error {
 func (s OfflineStore) SaveSentryYAML(ctx context.Context, data []byte) error {
 	s.Target = TargetSentry
 	return s.SaveYAML(ctx, data)
+}
+
+func (s OfflineStore) acquireMutationLock() (func(), error) {
+	if s.mutationLock != nil {
+		if !s.mutationLock.HoldsExclusiveFor(s.DataDir) {
+			return nil, fmt.Errorf("supplied exclusive mutation lock is no longer active for %s", s.DataDir)
+		}
+		return func() {}, nil
+	}
+	guard, err := storelock.AcquireExclusive(s.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = guard.Close() }, nil
 }
 
 // HasPassphrase reports whether this store already has a passphrase cached

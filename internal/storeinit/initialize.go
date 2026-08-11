@@ -65,8 +65,15 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	}
 
 	logf(opts.Logf, "keystore directory: %s", metadataDir)
-	if err := fsutil.MkdirAll(metadataDir); err != nil {
+	if err := fsutil.MkdirAllPrivate(metadataDir); err != nil {
 		return result, fmt.Errorf("failed to create user directory: %w", err)
+	}
+	// Prove that ownership normalization is possible before publishing the
+	// keystore control file. Root-run initialization may target a service-owned
+	// data directory; detecting chown failures after CreateKeyringStore would
+	// leave an initialized identity behind while reporting failure.
+	if err := chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths); err != nil {
+		return result, fmt.Errorf("failed to prepare initialized identity ownership: %w", err)
 	}
 
 	createdNodeRole := false
@@ -125,7 +132,9 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to generate API token: %w", err)
 	}
 
-	chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths, opts.Logf)
+	if err := chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths); err != nil {
+		return result, fmt.Errorf("failed to normalize initialized identity ownership: %w", err)
+	}
 	success = true
 	return result, nil
 }
@@ -166,26 +175,47 @@ func requireLocalOwnerOrRoot(dataDir string) error {
 	return nil
 }
 
-func chownIdentitiesTreeToDataDirOwner(dataDir string, paths storepaths.Paths, log func(format string, args ...any)) {
-	info, err := os.Stat(dataDir)
+func chownIdentitiesTreeToDataDirOwner(dataDir string, paths storepaths.Paths) error {
+	info, err := os.Lstat(dataDir)
 	if err != nil {
-		return
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("data directory is not a real directory: %s", dataDir)
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return
+		return fmt.Errorf("cannot determine ownership of data directory %s", dataDir)
 	}
 	uid := int(stat.Uid)
 	gid := int(stat.Gid)
 	usersDir := filepath.Join(paths.Root(), "identities")
-	if err := filepath.Walk(usersDir, func(path string, _ os.FileInfo, err error) error {
+	return filepath.WalkDir(usersDir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		return os.Chown(path, uid, gid)
-	}); err != nil {
-		logf(log, "warning: best-effort chown of identities tree failed: %v", err)
-	}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing symlink in initialized identities tree: %s", path)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("inspect initialized store entry %s: %w", path, err)
+		}
+		if !info.IsDir() && !info.Mode().IsRegular() {
+			return fmt.Errorf("refusing unexpected file type in initialized identities tree: %s", path)
+		}
+		entryStat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return fmt.Errorf("cannot determine ownership of initialized store entry %s", path)
+		}
+		if int(entryStat.Uid) == uid && int(entryStat.Gid) == gid {
+			return nil
+		}
+		if err := os.Lchown(path, uid, gid); err != nil {
+			return fmt.Errorf("set ownership on initialized store entry %s: %w", path, err)
+		}
+		return nil
+	})
 }
 
 func logf(log func(format string, args ...any), format string, args ...any) {

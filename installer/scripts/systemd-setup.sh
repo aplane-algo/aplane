@@ -89,12 +89,17 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Resolve bindir to absolute path
-BINDIR="$(cd "$BINDIR" && pwd)"
+# Resolve bindir physically so a symlinked component cannot disguise a binary
+# directory nested beneath the private signer store.
+BINDIR="$(cd "$BINDIR" && pwd -P)"
 
 if [ ! -f "$BINDIR/apsigner" ]; then
     echo "Error: apsigner binary not found at $BINDIR/apsigner" >&2
     echo "Build it first with: make apsigner" >&2
+    exit 1
+fi
+if [ ! -x "$BINDIR/apstore" ]; then
+    echo "Error: apstore binary not found at $BINDIR/apstore; cannot preflight signer-store permissions" >&2
     exit 1
 fi
 
@@ -114,6 +119,36 @@ fi
 SERVICE_DEST="/etc/systemd/system/apsigner.service"
 SUDOERS_DEST="/etc/sudoers.d/99-apsigner-systemctl"
 
+if ! command -v systemctl >/dev/null 2>&1; then
+    echo "Error: systemctl is required for systemd setup." >&2
+    exit 1
+fi
+service_state="$(systemctl is-active apsigner.service 2>/dev/null || true)"
+case "$service_state" in
+    active|activating|reloading|deactivating)
+        echo "Error: apsigner.service is currently $service_state; stop it before running systemd setup or signer-store migration." >&2
+        exit 1
+        ;;
+esac
+
+SERVICE_UID="$(id -u "$SVC_USER")"
+SERVICE_GID="$(getent group "$SVC_GROUP" | cut -d: -f3)"
+
+# Create and close the data-directory root through descriptor-based Go code.
+# It rejects writable, unrelated-owner, and symlinked ancestors before any
+# privileged mutation beneath them.
+"$BINDIR/apstore" -d "$DATA_DIR" permissions prepare-managed-root \
+    --uid "$SERVICE_UID" --gid "$SERVICE_GID"
+DATA_DIR="$(cd "$DATA_DIR" && pwd -P)"
+case "$BINDIR" in
+    "$DATA_DIR"|"$DATA_DIR"/*)
+        echo "Error: systemd service binaries must be outside the signer data directory." >&2
+        echo "  Binary directory: $BINDIR" >&2
+        echo "  Data directory:   $DATA_DIR" >&2
+        exit 1
+        ;;
+esac
+
 echo "=== apsigner systemd setup ==="
 echo ""
 echo "  Service:   $SERVICE_DEST"
@@ -128,6 +163,24 @@ else
     echo "  Memory:    CAP_IPC_LOCK disabled"
 fi
 echo ""
+
+# The runtime socket is the group's only filesystem-facing capability. The
+# persistent root is already closed before inspecting any credential paths.
+"$BINDIR/apstore" -d "$DATA_DIR" permissions preflight
+
+# A production data root contains signer state only. Reject local-install
+# layouts before migration would strip execute bits and Linux file capabilities.
+if [ -e "$DATA_DIR/bin" ]; then
+    echo "Error: signer data directory contains a local-install bin/ subtree: $DATA_DIR/bin" >&2
+    echo "Install service binaries outside the data directory and remove the old bin/ subtree before conversion." >&2
+    exit 1
+fi
+
+# One Go-owned operation acquires the exclusive store lock before publishing
+# managed metadata. It migrates and audits the tree, then publishes the
+# root-controlled service principal and the .prod marker last.
+"$BINDIR/apstore" -d "$DATA_DIR" permissions convert-managed \
+    --uid "$SERVICE_UID" --gid "$SERVICE_GID"
 
 # Install service with placeholder substitution
 if [ "$MEMORY_LOCK" = "1" ]; then
@@ -155,6 +208,10 @@ echo "Installed $SERVICE_DEST"
 SYSTEMD_CREDENTIAL_NAME="aplane-passphrase"
 existing_cred_files=()
 for f in "$DATA_DIR"/identities/*/passphrase.cred; do
+    if [ -L "$f" ]; then
+        echo "Error: refusing symlinked systemd credential: $f" >&2
+        exit 1
+    fi
     [ -f "$f" ] && existing_cred_files+=("$f")
 done
 if [ "${#existing_cred_files[@]}" -gt 0 ]; then
@@ -173,12 +230,6 @@ if [ "${#existing_cred_files[@]}" -gt 0 ]; then
     chmod 644 "$SERVICE_DEST"
     echo "Re-bound systemd-creds passphrase from $cred_file"
 fi
-
-PROD_MARKER_PATH="$DATA_DIR/.prod"
-printf 'systemd-managed\n' > "$PROD_MARKER_PATH"
-chown "$SVC_USER:$SVC_GROUP" "$PROD_MARKER_PATH"
-chmod 640 "$PROD_MARKER_PATH"
-echo "Marked $DATA_DIR as a systemd-managed data directory"
 
 # Install sudoers rules
 sed -e "s|@@USER@@|${SVC_USER}|g" \

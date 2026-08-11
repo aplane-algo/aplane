@@ -651,10 +651,10 @@ func archiveInstalled(paths storepaths.Paths, identityID, keyType string, templa
 	}
 	deletedKeysDir := paths.DeletedKeysDir(identityID)
 	deletedTemplatePath := paths.DeletedKeyTypeTemplate(identityID, keyType)
-	if err := fsutil.MkdirAll(deletedKeysDir); err != nil {
+	if err := fsutil.MkdirAllPrivate(deletedKeysDir); err != nil {
 		return "", fmt.Errorf("failed to create deleted keys directory: %w", err)
 	}
-	if err := fsutil.MkdirAll(filepath.Dir(deletedTemplatePath)); err != nil {
+	if err := fsutil.MkdirAllPrivate(filepath.Dir(deletedTemplatePath)); err != nil {
 		return "", fmt.Errorf("failed to create deleted templates directory: %w", err)
 	}
 	if err := os.Rename(sourcePath, deletedTemplatePath); err != nil {
@@ -889,5 +889,5 @@ func oppositeTemplateType(templateType templatestore.TemplateType) templatestore
 }
 
 func EnsureLibraryDir(paths storepaths.Paths) error {
-	return fsutil.MkdirAll(paths.TemplateLibraryDir())
+	return fsutil.MkdirAllPrivate(paths.TemplateLibraryDir())
 }

@@ -42,6 +42,9 @@ const (
 	AuditStoreInitializeFailed      = signeraudit.AuditStoreInitializeFailed
 	AuditPassphraseChanged          = signeraudit.AuditPassphraseChanged
 	AuditPassphraseChangeFailed     = signeraudit.AuditPassphraseChangeFailed
+	AuditSentryReferenceChanged     = signeraudit.AuditSentryReferenceChanged
+	AuditBackupImported             = signeraudit.AuditBackupImported
+	AuditBackupExportStarted        = signeraudit.AuditBackupExportStarted
 )
 
 func NewAuditLogger(path string) (*AuditLogger, error) {

@@ -52,6 +52,9 @@ const (
 	AuditStoreInitializeFailed      AuditEventType = "STORE_INITIALIZE_FAILED"
 	AuditPassphraseChanged          AuditEventType = "PASSPHRASE_CHANGED"
 	AuditPassphraseChangeFailed     AuditEventType = "PASSPHRASE_CHANGE_FAILED"
+	AuditSentryReferenceChanged     AuditEventType = "SENTRY_REFERENCE_CHANGED"
+	AuditBackupImported             AuditEventType = "BACKUP_IMPORTED"
+	AuditBackupExportStarted        AuditEventType = "BACKUP_EXPORT_STARTED"
 )
 
 // AuditEntry represents a single audit log entry
@@ -74,6 +77,7 @@ type AuditEntry struct {
 	RemoteAddr         string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
 	Reason             string         `json:"reason,omitempty"`              // Rejection/failure reason
 	PolicyRuleID       string         `json:"policy_rule_id,omitempty"`      // Policy rule that forced manual review
+	WitnessKeyID       string         `json:"witness_key_id,omitempty"`      // Public witness authority affected by a sentry-reference mutation
 	KeyCount           int            `json:"key_count,omitempty"`           // For key reload events
 	ArchiveSHA256      string         `json:"archive_sha256,omitempty"`
 	ReplaceExisting    bool           `json:"replace_existing,omitempty"`
@@ -604,6 +608,22 @@ func (a *AuditLogger) LogBackupCreatedContext(ctx adminserver.SessionContext, ar
 	a.Log(entry)
 }
 
+func (a *AuditLogger) LogBackupImportedContext(ctx adminserver.SessionContext, fileName string, size int64) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditBackupImported
+	entry.Outcome = "imported"
+	entry.Reason = fmt.Sprintf("file=%s size=%d", fileName, size)
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogBackupExportStartedContext(ctx adminserver.SessionContext, fileName string) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditBackupExportStarted
+	entry.Outcome = "started"
+	entry.Reason = fmt.Sprintf("file=%s", fileName)
+	a.Log(entry)
+}
+
 func (a *AuditLogger) LogBackupFailedContext(ctx adminserver.SessionContext, reason string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupFailed
@@ -714,5 +734,20 @@ func (a *AuditLogger) LogPassphraseChangeFailed(identityID, reason string) {
 	entry.Event = AuditPassphraseChangeFailed
 	entry.Outcome = "failed"
 	entry.Reason = reason
+	a.Log(entry)
+}
+
+// LogSentryReferenceChangedContext records authenticated online sentry
+// reference mutations by stable Witness Key ID without placing public-key
+// material in the audit log.
+func (a *AuditLogger) LogSentryReferenceChangedContext(ctx adminserver.SessionContext, action, name, componentKey string, success bool) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditSentryReferenceChanged
+	entry.Outcome = action
+	if !success {
+		entry.Outcome = "failed"
+	}
+	entry.Reason = fmt.Sprintf("action=%s name=%s", action, name)
+	entry.WitnessKeyID = componentKey
 	a.Log(entry)
 }

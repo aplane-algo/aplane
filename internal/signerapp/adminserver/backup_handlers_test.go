@@ -6,6 +6,7 @@ package adminserver
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -102,6 +103,18 @@ func TestRecoveryStatePermitsRestoreReadApplyRollbackAndReconcile(t *testing.T) 
 	session := NewSession(&queueConn{}, deps)
 	session.Bind(auth.NewDefaultIdentity("test"), ir)
 	session.HandleListBackups("list")
+	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "import-begin"}, FileName: "repair.tar.gz",
+	})
+	session.HandleAppendBackupImport(&protocol.AppendBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "import-append"}, UploadID: ".import-repair.part", Data: []byte("archive"),
+	})
+	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "import-commit"}, UploadID: ".import-repair.part", FileName: "repair.tar.gz",
+	})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read"}, FileName: "repair.tar.gz",
+	})
 	session.HandlePreviewRestore(&protocol.PreviewRestoreMessage{
 		BaseMessage: protocol.BaseMessage{ID: "preview"}, ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
 	})
@@ -110,9 +123,145 @@ func TestRecoveryStatePermitsRestoreReadApplyRollbackAndReconcile(t *testing.T) 
 	})
 	session.HandleRollbackRestore(&protocol.RollbackRestoreMessage{BaseMessage: protocol.BaseMessage{ID: "rollback"}})
 	session.HandleReconcileStore("reconcile")
-	if svc.listBackupsCalls != 1 || svc.previewRestoreCalls != 1 || svc.restoreBackupCalls != 1 || svc.rollbackRestoreCalls != 1 || svc.reconcileStoreCalls != 1 {
-		t.Fatalf("recovery calls = list %d preview %d restore %d rollback %d reconcile %d",
-			svc.listBackupsCalls, svc.previewRestoreCalls, svc.restoreBackupCalls, svc.rollbackRestoreCalls, svc.reconcileStoreCalls)
+	if svc.listBackupsCalls != 1 || svc.beginBackupImportCalls != 1 || svc.appendBackupImportCalls != 1 || svc.commitBackupImportCalls != 1 || svc.readBackupChunkCalls != 1 || svc.previewRestoreCalls != 1 || svc.restoreBackupCalls != 1 || svc.rollbackRestoreCalls != 1 || svc.reconcileStoreCalls != 1 {
+		t.Fatalf("recovery calls = list %d import %d/%d/%d read %d preview %d restore %d rollback %d reconcile %d",
+			svc.listBackupsCalls, svc.beginBackupImportCalls, svc.appendBackupImportCalls, svc.commitBackupImportCalls,
+			svc.readBackupChunkCalls, svc.previewRestoreCalls, svc.restoreBackupCalls, svc.rollbackRestoreCalls, svc.reconcileStoreCalls)
+	}
+}
+
+func TestCommitBackupImportClonesAndZerosWirePassphrase(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	svc := &stubServices{}
+	session := NewSession(&queueConn{}, svc.backupDeps())
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+	msg := &protocol.CommitBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "import-commit"},
+		UploadID:    ".import-repair.part", FileName: "repair.tar.gz",
+		ExpectedSize: 1, ExpectedSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		ExportPassphrase: protocol.NewSensitiveBytes("export-passphrase"),
+	}
+	session.HandleCommitBackupImport(msg)
+	if got := string(svc.lastCommitBackupImport.ExportPassphrase); got != "export-passphrase" {
+		t.Fatalf("service export passphrase = %q", got)
+	}
+	if got := string(msg.ExportPassphrase); got == "export-passphrase" {
+		t.Fatal("wire export passphrase was not zeroed")
+	}
+}
+
+func TestBackupTransferAuditsImportFailureAndExportStart(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	svc := &stubServices{
+		commitBackupImportResult: adminproto.CommitBackupImportResult{Code: "backup_import_commit_failed", Error: "invalid archive"},
+		readBackupChunkResult:    adminproto.ReadBackupChunkResult{Success: true, FileName: "export.tar.gz", Offset: 1, Data: []byte("chunk")},
+	}
+	audit := &recordingBackupTransferAudit{}
+	deps := svc.backupDeps()
+	deps.Audit = audit
+	session := NewSession(&queueConn{}, deps)
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "commit"}, FileName: "import.tar.gz",
+		ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
+	})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read"}, FileName: "export.tar.gz", Offset: 1,
+	})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read-continuation"}, FileName: "export.tar.gz", Offset: 2,
+	})
+
+	if audit.failedCalls != 1 || !strings.Contains(audit.lastFailure, "backup import failed") {
+		t.Fatalf("failure audit = %d %q", audit.failedCalls, audit.lastFailure)
+	}
+	if audit.exportStartedCalls != 1 || audit.lastExport != "export.tar.gz" {
+		t.Fatalf("export audit = %d %q", audit.exportStartedCalls, audit.lastExport)
+	}
+}
+
+func TestBackupExportAuditStartsAgainAfterEOF(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	svc := &stubServices{
+		readBackupChunkResult: adminproto.ReadBackupChunkResult{Success: true, FileName: "export.tar.gz", Offset: 7, EOF: true},
+	}
+	audit := &recordingBackupTransferAudit{}
+	deps := svc.backupDeps()
+	deps.Audit = audit
+	session := NewSession(&queueConn{}, deps)
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read-to-eof"}, FileName: "export.tar.gz", Offset: 7,
+	})
+	svc.readBackupChunkResult.EOF = false
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read-again"}, FileName: "export.tar.gz", Offset: 7,
+	})
+
+	if audit.exportStartedCalls != 2 {
+		t.Fatalf("export audit calls = %d, want 2 transfers", audit.exportStartedCalls)
+	}
+}
+
+func TestBackupTransferSuccessAuditsDoNotRequireFailureCapability(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	svc := &stubServices{
+		commitBackupImportResult: adminproto.CommitBackupImportResult{
+			Success: true,
+			Backup:  adminproto.BackupInfo{FileName: "import.tar.gz", Size: 42},
+		},
+		readBackupChunkResult: adminproto.ReadBackupChunkResult{
+			Success: true, FileName: "export.tar.gz", Data: []byte("chunk"),
+		},
+	}
+	audit := &backupSuccessOnlyAudit{}
+	deps := svc.backupDeps()
+	deps.Audit = audit
+	session := NewSession(&queueConn{}, deps)
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "commit"}, FileName: "import.tar.gz",
+		ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
+	})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read"}, FileName: "export.tar.gz",
+	})
+
+	if audit.importedCalls != 1 || audit.exportStartedCalls != 1 {
+		t.Fatalf("success audit calls = import %d export %d, want 1/1", audit.importedCalls, audit.exportStartedCalls)
+	}
+}
+
+func TestBackupTransferFailureAuditDoesNotRequireSuccessCapabilities(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	svc := &stubServices{
+		commitBackupImportResult: adminproto.CommitBackupImportResult{Error: "invalid archive"},
+		readBackupChunkResult:    adminproto.ReadBackupChunkResult{Error: "read failed"},
+	}
+	audit := &backupFailureOnlyAudit{}
+	deps := svc.backupDeps()
+	deps.Audit = audit
+	session := NewSession(&queueConn{}, deps)
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "commit"}, FileName: "import.tar.gz",
+		ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
+	})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read"}, FileName: "export.tar.gz",
+	})
+
+	if audit.failedCalls != 2 {
+		t.Fatalf("failure audit calls = %d, want 2", audit.failedCalls)
 	}
 }
 
@@ -123,16 +272,22 @@ func TestLockedStateRejectsRecoveryCapableRestoreReads(t *testing.T) {
 	session := NewSession(conn, svc.backupDeps())
 	session.Bind(auth.NewDefaultIdentity("test"), ir)
 	session.HandleListBackups("list-locked")
+	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "import-locked"}, FileName: "repair.tar.gz",
+	})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{
+		BaseMessage: protocol.BaseMessage{ID: "read-locked"}, FileName: "repair.tar.gz",
+	})
 	session.HandlePreviewRestore(&protocol.PreviewRestoreMessage{
 		BaseMessage:      protocol.BaseMessage{ID: "preview-locked"},
 		ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
 	})
-	if svc.listBackupsCalls != 0 || svc.previewRestoreCalls != 0 {
-		t.Fatalf("locked service calls = list %d preview %d", svc.listBackupsCalls, svc.previewRestoreCalls)
+	if svc.listBackupsCalls != 0 || svc.beginBackupImportCalls != 0 || svc.readBackupChunkCalls != 0 || svc.previewRestoreCalls != 0 {
+		t.Fatalf("locked service calls = list %d import %d read %d preview %d", svc.listBackupsCalls, svc.beginBackupImportCalls, svc.readBackupChunkCalls, svc.previewRestoreCalls)
 	}
 	msgs := decodeAdminProtoWrites(t, conn)
-	if len(msgs) != 2 {
-		t.Fatalf("locked response count = %d, want 2", len(msgs))
+	if len(msgs) != 4 {
+		t.Fatalf("locked response count = %d, want 4", len(msgs))
 	}
 	for _, msg := range msgs {
 		if msg.Type != protocol.MsgTypeError || msg.Code != protocol.ErrCodeSignerLocked {
@@ -141,10 +296,93 @@ func TestLockedStateRejectsRecoveryCapableRestoreReads(t *testing.T) {
 	}
 }
 
+func TestBackupTransferHandlersRejectUnavailableService(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	conn := &queueConn{}
+	session := NewSession(conn, SessionDeps{})
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{BaseMessage: protocol.BaseMessage{ID: "begin"}, FileName: "backup.tar.gz"})
+	session.HandleAppendBackupImport(&protocol.AppendBackupImportMessage{BaseMessage: protocol.BaseMessage{ID: "append"}, UploadID: ".import-test.part", Data: []byte("x")})
+	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{BaseMessage: protocol.BaseMessage{ID: "commit"}, UploadID: ".import-test.part", FileName: "backup.tar.gz"})
+	session.HandleAbortBackupImport(&protocol.AbortBackupImportMessage{BaseMessage: protocol.BaseMessage{ID: "abort"}, UploadID: ".import-test.part"})
+	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{BaseMessage: protocol.BaseMessage{ID: "read"}, FileName: "backup.tar.gz"})
+
+	msgs := decodeAdminProtoWrites(t, conn)
+	if len(msgs) != 5 {
+		t.Fatalf("response count = %d, want 5", len(msgs))
+	}
+	for _, msg := range msgs {
+		if msg.Type != protocol.MsgTypeError {
+			t.Fatalf("unavailable backup service response = %+v, want error", msg)
+		}
+	}
+}
+
+func TestLockedStatePermitsAbortingUnpublishedBackupUpload(t *testing.T) {
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	svc := &stubServices{}
+	conn := &queueConn{}
+	session := NewSession(conn, svc.backupDeps())
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+	session.HandleAbortBackupImport(&protocol.AbortBackupImportMessage{
+		BaseMessage: protocol.BaseMessage{ID: "abort-locked"}, UploadID: ".import-test.part",
+	})
+
+	msgs := decodeAdminProtoWrites(t, conn)
+	if len(msgs) != 1 || msgs[0].Type != protocol.MsgTypeAbortBackupImportResult {
+		t.Fatalf("locked abort response = %+v, want abort result", msgs)
+	}
+}
+
 type recordingCredentialRestoreAudit struct {
 	recordingAuthorizationAudit
 	intentCalls int
 	intentErr   error
+}
+
+type recordingBackupTransferAudit struct {
+	recordingAuthorizationAudit
+	failedCalls        int
+	exportStartedCalls int
+	lastFailure        string
+	lastExport         string
+}
+
+type backupSuccessOnlyAudit struct {
+	recordingAuthorizationAudit
+	importedCalls      int
+	exportStartedCalls int
+}
+
+func (a *backupSuccessOnlyAudit) LogBackupImportedContext(SessionContext, string, int64) {
+	a.importedCalls++
+}
+
+func (a *backupSuccessOnlyAudit) LogBackupExportStartedContext(SessionContext, string) {
+	a.exportStartedCalls++
+}
+
+type backupFailureOnlyAudit struct {
+	recordingAuthorizationAudit
+	failedCalls int
+}
+
+func (a *backupFailureOnlyAudit) LogBackupFailedContext(SessionContext, string) {
+	a.failedCalls++
+}
+
+func (*recordingBackupTransferAudit) LogBackupImportedContext(SessionContext, string, int64) {}
+
+func (a *recordingBackupTransferAudit) LogBackupFailedContext(_ SessionContext, reason string) {
+	a.failedCalls++
+	a.lastFailure = reason
+}
+
+func (a *recordingBackupTransferAudit) LogBackupExportStartedContext(_ SessionContext, fileName string) {
+	a.exportStartedCalls++
+	a.lastExport = fileName
 }
 
 func (a *recordingCredentialRestoreAudit) LogCredentialRestoreIntentDurableContext(SessionContext, string, string, bool) error {

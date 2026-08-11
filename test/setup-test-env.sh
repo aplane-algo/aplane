@@ -146,7 +146,7 @@ rm -rf "$TEST_ENV"
 mkdir -p "$SIGNER_DATA/.ssh"
 mkdir -p "$SIGNER_RUNTIME_DIR"
 mkdir -p "$CLIENT_DATA/.ssh"
-chmod 700 "$SIGNER_RUNTIME_DIR"
+chmod 700 "$TEST_ENV" "$SIGNER_DATA" "$SIGNER_RUNTIME_DIR"
 
 echo "Creating test environment in $TEST_ENV"
 

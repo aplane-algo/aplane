@@ -496,6 +496,16 @@ only — signing is blocked until the operator resolves the store from recovery
 mode. Clients must treat `recovery_blocked` as a store-integrity state
 distinct from both `unlock_failed` and credential rejection.
 
+The pre-auth `auth_only` request verifies the same passphrase and binds the
+admin session without authorizing or invoking `identity.unlock`. Read-only
+clients use a distinct message type so an older server rejects it before
+processing instead of silently unlocking. Bound-only sentry-reference,
+generation-inventory, and endpoint-settings reads use this mode; operations
+whose handlers require unlocked or recovery state continue to use `auth`.
+`auth_only` describes the handshake side effect, not a server-enforced
+read-only session capability: every later request still uses its normal grant
+and runtime-state checks.
+
 ## apshell Parsing Contracts
 
 The `apshell` command surface remains compatibility-sensitive even when internal parsing is refactored.
@@ -661,6 +671,11 @@ sidecar fails closed instead of falling back to defaults. Authenticated admin
 IPC policy operations are target-aware by policy domain, and role-incompatible
 targets fail closed. Direct YAML edits are checked, signed, and verified
 through `appolicy` or `apstore policy`.
+Policy and sidecar bytes are both staged and synced before either path is
+published. HMAC, encoding, or staging failure therefore preserves the prior
+pair. Interruption between the two publication renames can still leave a
+mixed pair, which verification rejects fail-closed and requires explicit
+repair.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
 sentry overrides are keyed by Witness Key ID. These overrides apply to
@@ -801,10 +816,11 @@ each selected target it then:
   `apenv.sh` is found, emit a warning telling the operator to export the value
   before starting `apconsole`
 
-All file writes use a temporary file followed by atomic rename. Existing target
-mode and ownership are preserved where possible; newly created files use the
-mode supplied by the mutator (`0640` for signer config, `0644` for client
-config/plugin/env files).
+All file writes use a temporary file, file sync, atomic rename, and directory
+sync. Existing ownership is preserved where possible; existing modes are
+clamped to the mutator's ceiling. Newly created files use `0600` for signer
+config and `0644` for client config/plugin/env files. Symlink and non-regular
+targets are rejected.
 
 ### Passphrase Helper Contract
 
@@ -854,6 +870,9 @@ execution, output decoding, environment filtering, and validation.
     templates/*.yaml        # plaintext KeyType Library YAML sources
   backups/<identity>/
     *.tar.gz                # restorable managed/imported backup archives
+    .import-*.part          # unpublished bounded upload residue
+    .import-claimed-*.part  # immutable archive undergoing deep validation
+    .import-validation-*/   # private same-filesystem validation residue
   .ssh/ssh_host_key
   identities/<identity>/
     CURRENT                 # names the active generation (generation layout)
@@ -885,14 +904,49 @@ execution, output decoding, environment filtering, and validation.
 
 Additional signer-state notes:
 
-- admin IPC listens on resolved `ipc_path`; default is `<data_dir>/aplane.sock`, but an absolute `ipc_path` may place the socket outside the signer data dir
+- production signer directories are service-owned mode `0700` and ordinary
+  signer files are service-owned mode `0600`; the recognized root-owned
+  exceptions are `identities/<identity>/passphrase.cred` (`root:root`, `0600`)
+  and installer metadata under `install/`. Systemd setup writes
+  `install/service-principal.json` as root-owned `0640` metadata containing
+  schema version 1 and the numeric service `uid`/`gid`; stopped-store repair
+  uses that root-controlled record and never infers its target from the store
+  root being repaired
+- systemd admin IPC defaults to `/run/apsigner/aplane.sock`; the runtime
+  directory is service-owned `0750` and the socket is `0660`. Same-UID local
+  mode defaults to `<data_dir>/aplane.sock`. An explicit systemd `ipc_path`
+  must be outside the signer store in a service-user-owned directory that is
+  not writable by group or other users. Trusted root/current-owned directory
+  aliases are resolved and both the alias and canonical directory chains are
+  validated before the daemon binds the canonical socket path. A reachable
+  existing listener is a hard collision; startup removes only a stable socket
+  inode that rejects a connection as stale. The configured alias, which
+  clients dial, and the canonical target, which the daemon binds, are each
+  rejected before `listen` when they exceed the running platform's pathname
+  socket capacity: 107 bytes on Linux and a conservative 103 bytes on
+  Darwin/BSD targets. An explicit client `--ipc-path` has highest precedence
+  and must be absolute. An explicit client `-d` is resolved next and cannot be
+  retargeted by inherited `APSIGNER_IPC_PATH`; the absolute environment socket
+  override still takes precedence when the data root came from
+  `APSIGNER_DATA`, which supports unreadable custom managed stores, and it may
+  be used without a data root when the socket path alone identifies the signer.
+  Otherwise normal data-root and runtime discovery apply. Once a selected
+  root's `config.yaml` is visible, IPC discovery reads it strictly: read
+  failures are errors and must never silently select a default socket for
+  another store. The systemd installer derives the paired `apenv.sh` value
+  through `approbe signer-ipc-path`, which uses this same resolver rather than
+  parsing `ipc_path` independently in shell. The read-only environment audit
+  uses the same command with `--honor-ipc-env` when its signer root was not
+  explicitly selected, preserving the normal
+  `APSIGNER_DATA`/`APSIGNER_IPC_PATH` pairing.
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
 - signer-managed backup archives are written under
   `<data_dir>/backups/<identity>/`; the archive contains `README.md` and
   `apb/*.apb` encrypted canonical credential payloads plus `manifest.sealed`
-- imported backup archives are validated and published under
-  `<data_dir>/backups/<identity>/`, making the backup locker the source for
-  restorable archives
+- imported backup archives are validated by the operator client, streamed to
+  the daemon in bounded admin-protocol chunks, and atomically published under
+  `<data_dir>/backups/<identity>/`; exports stream bounded chunks in the other
+  direction, so operators never need filesystem access to the private locker
 - signer `cache/<network>_asa_cache.json` is signer-wide public ASA metadata for policy editing/rendering; it is not identity-scoped and is not authoritative for policy enforcement
 - signer cache files use the same signed JSON/HMAC envelope as client cache files, with `cache/.cache_key` scoped to the signer cache root
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
@@ -957,8 +1011,8 @@ Additional client-state notes:
 - endpoint records carry connection profile fields together: required `role` (`signer` or `sentry`), `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, `token_file`, and endpoint-published `published_sentries`. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. `published_sentries` is valid only on `sentry` endpoints.
 - endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
 - `published_sentries` is keyed by canonical embedded sentry public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime guarded-send routing derives the endpoint for an embedded sentry public key from this endpoint-local inventory.
-- signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apstore endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`.
-- `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then signer `config.yaml` `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
+- signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apstore endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`. The daemon projects it and the configured endpoint ports through authenticated admin settings; the client does not traverse the private store.
+- `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin IPC. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes the daemon-reported `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
 - `apshell endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]` manually creates or replaces a `role: sentry` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--sentryport` is stored as the endpoint `signer_port` REST port used behind SSH sentry endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover sentry keys, copy tokens, or establish SSH host trust.
 - `apshell endpoints discover-sentries [--dry-run]` scans configured `sentry` endpoints with authenticated `/keys`, extracts sentry-key `public_key_hex` values, validates each `component_key` Witness Key ID, and atomically rebuilds endpoint-local `published_sentries` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_sentries` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and Witness Key ID validation failures are hard errors and leave files unchanged. Discovery is local-only and does not require or update a connected primary signer.
@@ -971,6 +1025,18 @@ Additional client-state notes:
 - `apshell --mcp` has a stricter startup contract than interactive `apshell`: MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted `known_hosts`)
 - `apshell --mcp` also requires the startup signer connection to succeed; it does not start in a disconnected or partially enrolled state, and it cannot perform first-use trust or token enrollment itself
 - `apconsole` resolves startup inputs per field in this order: flags, environment variables, explicitly selected profile (`-config` or `APCONSOLE_CONFIG`), auto-discovered profile, then defaults
+- an explicit `-d` or explicitly selected profile `signer_data` is also an
+  explicit signer-store selection for IPC discovery and cannot be retargeted
+  by an inherited `APSIGNER_IPC_PATH`. A signer root selected through
+  `APSIGNER_DATA` may pair with `APSIGNER_IPC_PATH`; auto-discovered profile
+  values remain lower precedence than environment values
+- local `apconsole` lifecycle management requires its client IPC path to equal
+  the path the selected store's daemon will bind. An intentional client-only
+  override must use `--no-start-daemon`; otherwise `apconsole` refuses before
+  attaching to the override or starting a daemon whose readiness it cannot
+  observe. Attach-only mode uses the selected client socket without deriving or
+  validating the store's daemon bind path because it will not manage that
+  daemon's lifecycle
 - conflicting explicit inputs do not auto-resolve: if flags, environment variables, or an explicitly selected profile disagree, `apconsole` exits and requires the operator to remove the conflict or make the values match
 - auto-discovered profile values are convenience defaults only; if they differ from explicit flags or environment variables, `apconsole` keeps the explicit values and emits a warning naming the ignored profile value
 - local-mode signer `apconsole` may start before client enrollment is complete; it requires valid local client/signer data paths, but it allows the embedded shell to perform first-time `request-token` while the local signer/admin panes are available for approval
@@ -1528,7 +1594,9 @@ Sidecar JSON fields:
 - `hmac`: hex HMAC-SHA256 over the exact policy document bytes
 - `policy_sha256`: optional diagnostic SHA-256 of the policy document
 - `signed_at_unix`: optional diagnostic signing timestamp
-- `policy_mtime_ns`: optional diagnostic policy-file mtime
+- `policy_mtime_ns`: accepted legacy diagnostic policy-file mtime. Current
+  writers omit it; readers retain the field solely for strict-schema
+  compatibility with existing sidecars.
 
 Only `version`, `algorithm`, `key_id`, `integrity_term`, and `hmac` are
 security fields. Sidecar JSON is strict: unknown fields, trailing documents,
@@ -1556,9 +1624,15 @@ Policy load behavior:
   `appolicy --save` reads replacement YAML bytes from stdin, validates them in
   the selected policy domain, and writes those exact bytes plus a fresh sidecar
   under the store mutation lock; `--target signer|sentry` explicitly
-  selects the domain; store-backed role-incompatible targets fail closed
+  selects the domain; store-backed role-incompatible targets fail closed. A
+  root-run offline edit of a production store restores the owner recorded in
+  root-controlled `install/service-principal.json` before returning
 - `apstore policy check|verify|sign` checks, verifies, or signs the active
   node-role policy
+- `appolicy --online <draft.yaml>` rejects an empty draft, validates it through
+  the daemon, loads the active snapshot as its optimistic-concurrency base,
+  and opens the draft in the online editor; batch output/check flags validate
+  the positional draft and exit without opening the editor
 
 ### Managed Credential Files (`.key` and `.sen`)
 
@@ -1857,6 +1931,9 @@ Endpoint discovery may also populate this catalog through
 `endpoint-<alias>-<component_key>`, `endpoint_alias`, `last_seen_at`, and
 `synced_at`. They are public candidates derived from the client's
 `endpoints.yaml`; they are not a sentry ownership proof.
+Explicitly importing the identical authority under the same generated name
+promotes the record to `source: "manual"`, clears discovery provenance, and
+prevents a later discovery sync from removing it.
 Human list output treats the Witness Key ID as the primary identifier
 and shows generated endpoint-synced names only in detailed JSON views.
 
@@ -1998,6 +2075,8 @@ Events:
 - `KEY_IMPORTED`
 - `KEY_REJECTED`
 - `BACKUP_CREATED`
+- `BACKUP_IMPORTED`
+- `BACKUP_EXPORT_STARTED`
 - `BACKUP_FAILED`
 - `BACKUP_RESTORE_PREVIEWED`
 - `BACKUP_RESTORE_PREVIEW_FAILED`
@@ -2037,7 +2116,13 @@ Backup-audit semantics:
 
 - `BACKUP_CREATED` is emitted when an authenticated admin backup operation
   writes a managed archive; `reason` contains the archive path
-- `BACKUP_FAILED` is emitted when that operation fails; `reason` contains the failure reason
+- `BACKUP_IMPORTED` is emitted after an uploaded archive passes deep
+  verification and is published into the managed backup set
+- `BACKUP_EXPORT_STARTED` is emitted on the first successful chunk read for a
+  managed archive transfer, including when a client starts at a non-zero
+  offset; reaching EOF closes the inferred transfer for subsequent auditing
+- `BACKUP_FAILED` is emitted when backup creation, import commit, or export
+  streaming fails; `reason` contains the failure reason
 - `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `reason` contains the resolved archive path and `key_count` contains previewed keys
 - `BACKUP_RESTORE_PREVIEW_FAILED` is emitted when an authenticated preview request fails; `reason` contains the failure reason
 - `CREDENTIAL_RESTORE_INTENT` is durably audited before restore can make its
@@ -2154,6 +2239,12 @@ SSH server callbacks are startup-only. Token validation, key checking,
 key enrollment, token provisioning, operator checks, provisioning identity
 checks, session notifications, and admin channel callbacks must be configured
 before `Start`; setters fail fast after the server has started.
+
+Token provisioning reads the target identity's existing token. It never
+creates or rotates a token at request time: store initialization owns token
+creation, and the authenticated revocation flow owns rotation. If the token
+file is absent or unreadable, provisioning fails after key enrollment instead
+of returning a credential that differs from the running authenticator.
 
 ## Approval and Policy Contracts
 
@@ -2690,19 +2781,38 @@ backup contract and no migration from earlier internal tags is provided.
 
 ### Import and inspection
 
-`apstore backup import` validates an external tar archive deeply before
-publishing it under `backups/<identity>/`. Validation includes the archive
-inventory and every credential payload. Import does not compile or install
-templates because templates are not archive members.
+`apstore backup import` asks the daemon to validate an external tar archive
+deeply before publishing it under `backups/<identity>/`. The commit request
+carries the sensitive export passphrase; the daemon authenticates the archive
+inventory and validates every credential payload, then zeros the passphrase
+without persisting it. Client-side archive inspection is not an authorization
+or integrity boundary. Commit is synchronous and can perform one memory-hard
+credential verification per archive member, so first-party clients allow up to
+30 minutes for that bounded request instead of applying the ordinary 30-second
+admin timeout. Import does not compile or install templates because
+templates are not archive members. The IPC transfer declares its exact source
+size and SHA-256 at commit, is capped at 1 GiB while appending, and permits only
+one writable upload per identity. Commit claims the completed upload under the
+identity mutation lock, releases that lock for hashing and deep verification,
+then reacquires it only for the final publish. A new import supersedes writable
+upload residue without deleting an archive already undergoing validation;
+daemon startup removes both kinds of residue left by a prior process. Deep
+validation extracts into an owner-private reserved directory on the signer
+store filesystem rather than the process-global temporary filesystem; normal
+completion and daemon startup remove that validation residue. The final rename
+is the publication commit point. If the following directory sync fails, the
+daemon returns committed success with an operator-visible durability warning;
+it must not report an ordinary retryable failure after the destination name is
+already live.
 
 `preview_restore` and `apstore restore preview` authenticate the archive
 before revealing addresses or key types. Preview reports credential identity,
 destination presence, and validation errors; it performs no store mutation.
 Wrong-passphrase and unauthenticated failures share the restore rate limiter.
-Authenticated `list_backups` and `preview_restore` requests are accepted while
-the identity is either unlocked or recovery-blocked, allowing an operator to
-select and inspect repair material without enabling signing. Locked identities
-remain rejected.
+Authenticated `list_backups`, `read_backup_chunk`, and `preview_restore`
+requests are accepted while the identity is either unlocked or
+recovery-blocked, allowing an operator to select, export, and inspect repair
+material without enabling signing. Locked identities remain rejected.
 
 `apstore verify` is fail-closed: an archive verification error or any invalid
 credential returns the stable local `verification_failed` code and a nonzero

@@ -56,7 +56,7 @@ func TestRestoreListCancelReturnsToKeyList(t *testing.T) {
 	}
 }
 
-func TestRenderRestoreListShowsBackupDirectory(t *testing.T) {
+func TestRenderRestoreListDoesNotExposeDaemonBackupDirectory(t *testing.T) {
 	dataDir := t.TempDir()
 	m := Model{
 		width:     120,
@@ -71,9 +71,8 @@ func TestRenderRestoreListShowsBackupDirectory(t *testing.T) {
 	}
 
 	view := stripANSI(m.renderRestoreList())
-	wantPath := filepath.Join(dataDir, "backups") + string(filepath.Separator)
-	if !strings.Contains(view, "Backup Directory:") || !strings.Contains(view, wantPath) {
-		t.Fatalf("restore list missing backup directory:\n%s", view)
+	if strings.Contains(view, "Backup Directory:") || strings.Contains(view, filepath.Join(dataDir, "backups")) {
+		t.Fatalf("restore list exposed daemon backup directory:\n%s", view)
 	}
 }
 

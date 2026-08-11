@@ -579,6 +579,7 @@ type AuditEntry struct {
     RemoteAddr         string
     Reason             string
     PolicyRuleID       string
+    WitnessKeyID       string
     KeyCount           int
 }
 ```
@@ -698,7 +699,7 @@ This pipeline keeps handler code behind the `Authorizer` interface.
 |----------|----------------|
 | Key derivation | Argon2id (memory-hard, GPU-resistant) |
 | Encryption | AES-256-GCM (authenticated encryption) |
-| Socket security | Unix socket with mode 0660, symlink rejection |
+| Socket security | `/run/apsigner` mode 0750, Unix socket mode 0660, strict non-writable parent validation |
 | Memory protection | `mlockall()` prevents swap when enabled successfully, keys zeroed after use (see below) |
 | Single active admin session | Only one apadmin/apapprover admin connection at a time across IPC and SSH |
 
@@ -931,7 +932,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 
 **Round-trip verification (`write`):**
 
-`WritePassphrase` sends the passphrase on stdin, captures the read-back from stdout, and compares using `subtle.ConstantTimeCompare`. A mismatch aborts the operation. For `changepass`, the current passphrase is always entered manually even when a helper is configured for startup auto-unlock. A helper write failure triggers a full rollback (restoring `.old` files) — the keystore is never left in a state where the keys and the stored passphrase disagree during normal error handling.
+`WritePassphrase` sends the passphrase on stdin, captures the read-back from stdout, and compares using `subtle.ConstantTimeCompare`. A mismatch aborts the operation. For `changepass`, the current passphrase is always entered manually even when a helper is configured for startup auto-unlock. Key re-encryption is authoritative once committed; a later helper-write failure is reported as a warning and requires the operator to repair auto-unlock using the new passphrase.
 
 **Security properties:**
 
@@ -1114,7 +1115,7 @@ On load:  read → verify HMAC → base64 decode → JSON deserialize → data
 
 **Key management:**
 - A 256-bit random signing key is generated on first use
-- Stored in `cache/.cache_key` with mode 0660
+- Stored in `cache/.cache_key` with mode 0600
 - Key is unique per installation (different key per machine/user)
 
 **Protected caches:**

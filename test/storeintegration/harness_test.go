@@ -121,6 +121,12 @@ type checkpointConfig struct {
 func newFreshStoreEnv(t *testing.T, passphrase string) *storeEnv {
 	t.Helper()
 	root := t.TempDir()
+	// The signer rejects an IPC socket below a group/other-writable ancestor.
+	// Go creates TempDir with the process umask applied, so make the fixture
+	// independent of whether the test runner uses umask 002 or 022.
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatalf("make fresh store root private: %v", err)
+	}
 	dataDir := filepath.Join(root, "signer")
 	sshDir := filepath.Join(dataDir, ".ssh")
 	for _, dir := range []string{dataDir, filepath.Join(dataDir, "run"), sshDir} {

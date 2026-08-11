@@ -55,7 +55,7 @@ func PolicyIntegritySidecarPath(policyPath string) string {
 
 // SignPolicyIntegrity returns the sidecar for policyBytes using the keyring's
 // current policy-integrity authority.
-func SignPolicyIntegrity(policyBytes []byte, kr *apcrypto.Keyring, signedAt time.Time, policyMTimeNS int64) (*IntegritySidecar, error) {
+func SignPolicyIntegrity(policyBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) (*IntegritySidecar, error) {
 	if kr == nil {
 		return nil, policyIntegrityError(ErrPolicyIntegrityBadSidecar, "keyring is required")
 	}
@@ -75,7 +75,6 @@ func SignPolicyIntegrity(policyBytes []byte, kr *apcrypto.Keyring, signedAt time
 		HMAC:          mac,
 		PolicySHA256:  hex.EncodeToString(sum[:]),
 		SignedAtUnix:  signedAt.UTC().Unix(),
-		PolicyMTimeNS: policyMTimeNS,
 	}, nil
 }
 

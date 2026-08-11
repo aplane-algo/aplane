@@ -94,6 +94,7 @@ const (
 	// the operator resolves the store from recovery.
 	ResultCodeRecoveryBlocked = "recovery_blocked"
 
+	ResultCodeIdentityBusy         = "identity_busy"
 	ResultCodeListFailed           = "list_failed"
 	ResultCodeInvalidTemplateType  = "invalid_template_type"
 	ResultCodeInstallFailed        = "install_failed"

@@ -65,15 +65,16 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 	if !strings.HasSuffix(archivePath, ".tar.gz") {
 		t.Fatalf("ArchivePath = %q, want .tar.gz suffix", archivePath)
 	}
-	if !strings.Contains(archivePath, filepath.Join("backups", auth.DefaultIdentityID)) {
-		t.Fatalf("ArchivePath = %q, want managed backup directory", archivePath)
+	if archivePath != filepath.Base(archivePath) {
+		t.Fatalf("ArchivePath = %q, want basename-only protocol value", archivePath)
 	}
-	if _, err := os.Stat(archivePath); err != nil {
+	managedArchivePath := filepath.Join(ir.KeyPaths().IdentityBackupsDir(ir.ID()), archivePath)
+	if _, err := os.Stat(managedArchivePath); err != nil {
 		t.Fatalf("backup archive stat error = %v", err)
 	}
 
 	extractDir := t.TempDir()
-	if err := backup.ExtractTarGzArchive(archivePath, extractDir); err != nil {
+	if err := backup.ExtractTarGzArchive(managedArchivePath, extractDir); err != nil {
 		t.Fatalf("ExtractTarGzArchive() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(extractDir, "README.md")); err != nil {

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/adminipc"
 )
 
 func TestLoadConsoleProfileLocalResolvesRelativePaths(t *testing.T) {
@@ -167,6 +169,81 @@ func TestResolveConsoleStartupFallsBackToEnvWithoutProfile(t *testing.T) {
 	if cfg.SignerData == "" {
 		t.Fatal("SignerData empty, want env fallback")
 	}
+}
+
+func TestResolveConsoleIPCPathPreservesSourcePrecedence(t *testing.T) {
+	const environmentIPCPath = "/run/environment/aplane.sock"
+	t.Setenv(adminipc.SocketPathEnv, environmentIPCPath)
+
+	t.Run("explicit profile selects its store", func(t *testing.T) {
+		root := t.TempDir()
+		dataDir := filepath.Join(root, "signer")
+		if err := os.MkdirAll(dataDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		configuredIPCPath := filepath.Join(dataDir, "configured.sock")
+		if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("ipc_path: "+configuredIPCPath+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		writeConsoleProfile(t, root, `
+mode: local
+client_data: ./client
+signer_data: ./signer
+`)
+		cfg, err := resolveConsoleStartup(consoleStartupFlags{ConfigPath: filepath.Join(root, consoleProfileName)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := resolveConsoleIPCPath(cfg.SignerData, "", cfg.signerDataSource)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != configuredIPCPath {
+			t.Fatalf("resolved IPC path = %q, want explicit profile path %q", got, configuredIPCPath)
+		}
+	})
+
+	t.Run("signer environment retains IPC pairing", func(t *testing.T) {
+		cfg, err := resolveConsoleStartup(consoleStartupFlags{
+			CurrentDir:    t.TempDir(),
+			SignerDataEnv: filepath.Join(t.TempDir(), "signer"),
+			ClientDataEnv: filepath.Join(t.TempDir(), "client"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := resolveConsoleIPCPath(cfg.SignerData, "", cfg.signerDataSource)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != environmentIPCPath {
+			t.Fatalf("resolved IPC path = %q, want paired environment path %q", got, environmentIPCPath)
+		}
+	})
+
+	t.Run("auto profile remains below IPC environment", func(t *testing.T) {
+		root := t.TempDir()
+		clientDir := filepath.Join(root, "client")
+		if err := os.MkdirAll(clientDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		writeConsoleProfile(t, root, `
+mode: local
+client_data: ./client
+signer_data: ./signer
+`)
+		cfg, err := resolveConsoleStartup(consoleStartupFlags{CurrentDir: clientDir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := resolveConsoleIPCPath(cfg.SignerData, "", cfg.signerDataSource)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != environmentIPCPath {
+			t.Fatalf("resolved IPC path = %q, want higher-precedence environment path %q", got, environmentIPCPath)
+		}
+	})
 }
 
 func TestResolveConsoleStartupEnvOverridesAutoProfileWithNotice(t *testing.T) {

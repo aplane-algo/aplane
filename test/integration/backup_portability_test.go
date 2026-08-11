@@ -477,8 +477,17 @@ func TestSignerManagedBackupRoundTripViaApstoreRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create signer-managed backup: %v", err)
 	}
-	if _, err := os.Stat(backupResult.ArchivePath); err != nil {
-		t.Fatalf("managed backup archive missing: %v", err)
+	// Managed backup responses intentionally expose only the archive basename.
+	// Export through authenticated apstore IPC before moving the archive to a
+	// different signer; clients must never depend on the daemon's store path.
+	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
+	exportDir := t.TempDir()
+	if output, err := sourceApstore.Run("backup", "export", backupResult.ArchivePath, exportDir); err != nil {
+		t.Fatalf("failed to export signer-managed backup: %v\noutput:\n%s", err, output)
+	}
+	archivePath := filepath.Join(exportDir, filepath.Base(backupResult.ArchivePath))
+	if _, err := os.Stat(archivePath); err != nil {
+		t.Fatalf("exported managed backup archive missing: %v", err)
 	}
 
 	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
@@ -497,7 +506,7 @@ func TestSignerManagedBackupRoundTripViaApstoreRestore(t *testing.T) {
 	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
 	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
-	mustRestoreArchive(t, destApstore, backupResult.ArchivePath, exportPassphrase, address)
+	mustRestoreArchive(t, destApstore, archivePath, exportPassphrase, address)
 
 	destSigner := harness.NewSignerHarness(t)
 	if err := destSigner.Start(); err != nil {

@@ -13,6 +13,33 @@ import (
 	"github.com/aplane-algo/aplane/internal/storelock"
 )
 
+func TestNormalizeManagedStoreOwnershipUsesConfiguredLegacySocket(t *testing.T) {
+	dataDir := t.TempDir()
+	customSocket := filepath.Join(dataDir, "custom.sock")
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("ipc_path: "+customSocket+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	oldManagedStoreOwner := managedStoreOwner
+	managedStoreOwner = func(string) (int, int, error) { return 123, 456, nil }
+	t.Cleanup(func() { managedStoreOwner = oldManagedStoreOwner })
+	oldMigrateManagedStore := migrateManagedStore
+	var gotRoot, gotSocket string
+	var gotUID, gotGID int
+	migrateManagedStore = func(root string, uid, gid int, socketPath string) error {
+		gotRoot, gotUID, gotGID, gotSocket = root, uid, gid, socketPath
+		return nil
+	}
+	t.Cleanup(func() { migrateManagedStore = oldMigrateManagedStore })
+
+	if err := normalizeManagedStoreOwnership(dataDir); err != nil {
+		t.Fatalf("normalizeManagedStoreOwnership() error = %v", err)
+	}
+	if gotRoot != dataDir || gotUID != 123 || gotGID != 456 || gotSocket != customSocket {
+		t.Fatalf("migration inputs = %q %d:%d %q, want %q 123:456 %q", gotRoot, gotUID, gotGID, gotSocket, dataDir, customSocket)
+	}
+}
+
 func TestAcquireOfflineMutationLockAllowsExclusiveMutation(t *testing.T) {
 	for _, command := range []string{"governance", "initialize", "rebuild"} {
 		release, err := acquireOfflineMutationLock(command, t.TempDir())
@@ -63,6 +90,42 @@ func TestAcquireOfflineMutationLockForArgsSkipsManagedBackupLock(t *testing.T) {
 		t.Fatalf("acquireOfflineMutationLockForArgs(managed backup) error = %v", err)
 	}
 	release()
+}
+
+func TestAcquireOfflineMutationLockForArgsSkipsGenerationListLock(t *testing.T) {
+	dataDir := t.TempDir()
+
+	guard, err := storelock.AcquireShared(dataDir)
+	if err != nil {
+		t.Fatalf("AcquireShared() error = %v", err)
+	}
+	defer func() { _ = guard.Close() }()
+
+	release, err := acquireOfflineMutationLockForArgs([]string{"generations", "list"}, dataDir)
+	if err != nil {
+		t.Fatalf("acquireOfflineMutationLockForArgs(generations list) error = %v", err)
+	}
+	release()
+}
+
+func TestPermissionsPreflightBypassesModeGuardAndStoreLock(t *testing.T) {
+	dataDir := t.TempDir()
+	oldCurrentEUID := currentEUID
+	currentEUID = func() int { return 0 }
+	t.Cleanup(func() { currentEUID = oldCurrentEUID })
+
+	args := []string{"permissions", "preflight"}
+	if err := enforceApstoreExecutionMode(dataDir, args); err != nil {
+		t.Fatalf("enforceApstoreExecutionMode(preflight) error = %v", err)
+	}
+	release, err := acquireOfflineMutationLockForArgs(args, dataDir)
+	if err != nil {
+		t.Fatalf("acquireOfflineMutationLockForArgs(preflight) error = %v", err)
+	}
+	release()
+	if _, err := os.Lstat(filepath.Join(dataDir, ".apstore.lock")); !os.IsNotExist(err) {
+		t.Fatalf("preflight lock path exists: %v", err)
+	}
 }
 
 func TestManagedRestoreCommandSetMatchesProtocolV4(t *testing.T) {
@@ -131,14 +194,14 @@ func TestEnforceApstoreExecutionModeRejectsRootForLocalDataDir(t *testing.T) {
 	dataDir := t.TempDir()
 	currentEUID = func() int { return 0 }
 
-	err := enforceApstoreExecutionMode(dataDir, []string{"verify", "backup.tar.gz"})
+	err := enforceApstoreExecutionMode(dataDir, []string{"initialize"})
 	if err == nil {
 		t.Fatal("enforceApstoreExecutionMode() error = nil, want local root refusal")
 	}
 	for _, want := range []string{
 		"local signer data directory",
 		"must not be managed as root",
-		"apstore -d " + dataDir + " verify backup.tar.gz",
+		"apstore -d " + dataDir + " initialize",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want substring %q", err.Error(), want)
@@ -158,14 +221,14 @@ func TestEnforceApstoreExecutionModeRejectsNonRootForProductionDataDir(t *testin
 	}
 	currentEUID = func() int { return 1000 }
 
-	err := enforceApstoreExecutionMode(dataDir, []string{"verify", "backup.tar.gz"})
+	err := enforceApstoreExecutionMode(dataDir, []string{"initialize"})
 	if err == nil {
 		t.Fatal("enforceApstoreExecutionMode() error = nil, want production non-root refusal")
 	}
 	for _, want := range []string{
 		"systemd-managed data directory",
 		"requires root",
-		"sudo apstore -d " + dataDir + " verify backup.tar.gz",
+		"sudo apstore -d " + dataDir + " initialize",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want substring %q", err.Error(), want)
@@ -190,7 +253,7 @@ func TestEnforceApstoreExecutionModeRejectsForeignOwnedLocalDataDir(t *testing.T
 	}
 	currentEUID = func() int { return uid + 1 }
 
-	err = enforceApstoreExecutionMode(dataDir, []string{"changepass"})
+	err = enforceApstoreExecutionMode(dataDir, []string{"initialize"})
 	if err == nil {
 		t.Fatal("enforceApstoreExecutionMode() error = nil, want foreign-owner refusal")
 	}
@@ -198,11 +261,42 @@ func TestEnforceApstoreExecutionModeRejectsForeignOwnedLocalDataDir(t *testing.T
 		"local signer data directory",
 		"owned by uid",
 		"restore the systemd-managed .prod marker",
-		"sudo apstore -d " + dataDir + " changepass",
+		"sudo apstore -d " + dataDir + " initialize",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want substring %q", err.Error(), want)
 		}
+	}
+}
+
+func TestEnforceApstoreExecutionModeAllowsDaemonBackedCommandWithoutStoreAccess(t *testing.T) {
+	for _, args := range [][]string{
+		{"changepass"},
+		{"template", "list"},
+		{"keytype", "list"},
+		{"backup", "list"},
+		{"restore", "preview", "archive.tar.gz"},
+		{"sentry", "list"},
+		{"sentry", "import", "public.json", "lab"},
+		{"generations", "list"},
+		{"endpoint", "export"},
+	} {
+		if err := enforceApstoreExecutionMode("/deliberately/inaccessible", args); err != nil {
+			t.Fatalf("enforceApstoreExecutionMode(%v) error = %v", args, err)
+		}
+	}
+	if isDaemonBackedCommand([]string{"generations", "prune"}) {
+		t.Fatal("generations prune must remain offline")
+	}
+}
+
+func TestEnforceApstoreExecutionModeAllowsExternalVerifyWithoutStore(t *testing.T) {
+	args := []string{"verify", "/mnt/usb/backup.tar.gz"}
+	if !isExternalFileOnlyCommand(args) {
+		t.Fatal("verify external archive was not classified as external-file-only")
+	}
+	if err := enforceApstoreExecutionMode("", args); err != nil {
+		t.Fatalf("enforceApstoreExecutionMode(verify) error = %v", err)
 	}
 }
 
@@ -248,35 +342,4 @@ func TestSudoUserIDs(t *testing.T) {
 			t.Fatalf("sudoUserIDs() error = %q, want invalid SUDO_UID", err.Error())
 		}
 	})
-}
-
-func TestNormalizeManagedStoreOwnershipPreservesSystemdCredOwner(t *testing.T) {
-	dataDir := t.TempDir()
-	identityDir := filepath.Join(dataDir, "identities", productIdentityID())
-	if err := os.MkdirAll(identityDir, 0o700); err != nil {
-		t.Fatalf("MkdirAll(identityDir) error = %v", err)
-	}
-	lockPath := filepath.Join(dataDir, ".apstore.lock")
-	if err := os.WriteFile(lockPath, []byte("lock"), 0o600); err != nil {
-		t.Fatalf("WriteFile(lock) error = %v", err)
-	}
-	credPath := filepath.Join(identityDir, "passphrase.cred")
-	if err := os.WriteFile(credPath, []byte("cred"), 0o600); err != nil {
-		t.Fatalf("WriteFile(cred) error = %v", err)
-	}
-
-	if err := normalizeManagedStoreOwnership(dataDir); err != nil {
-		t.Fatalf("normalizeManagedStoreOwnership() error = %v", err)
-	}
-
-	info, err := os.Stat(lockPath)
-	if err != nil {
-		t.Fatalf("Stat(lock) error = %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o660 {
-		t.Fatalf("lock mode = %04o, want 0660", got)
-	}
-	if _, err := os.Stat(credPath); err != nil {
-		t.Fatalf("Stat(cred) error = %v", err)
-	}
 }

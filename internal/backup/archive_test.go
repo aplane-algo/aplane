@@ -49,6 +49,22 @@ func TestCreateAndExtractTarGzArchive(t *testing.T) {
 	if string(payload) != "payload" {
 		t.Fatalf("archive payload = %q, want %q", string(payload), "payload")
 	}
+	for _, path := range []string{filepath.Join(destDir, "README.md"), filepath.Join(destDir, "apb", "ADDR.apb")} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("extracted file %s mode = %04o, want 0600", path, got)
+		}
+	}
+	info, err := os.Stat(filepath.Join(destDir, "apb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("extracted directory mode = %04o, want 0700", got)
+	}
 }
 
 func TestCreateTarGzArchiveRefusesExistingDestination(t *testing.T) {

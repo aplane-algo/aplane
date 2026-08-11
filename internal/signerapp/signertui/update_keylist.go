@@ -9,22 +9,28 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/fsutil"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// saveTEALToFile saves TEAL source to a file in the data directory
+// saveTEALToFile saves public TEAL source below operator-owned client state,
+// never below the private signer identity directory.
 func saveTEALToFile(dataDir, address, teal string) (string, error) {
-	// Create files directory under the user directory
-	filesDir := filepath.Join(dataDir, "identities", auth.CurrentProductIdentityID(), "files")
-	if err := os.MkdirAll(filesDir, 0750); err != nil {
+	decoded, err := types.DecodeAddress(strings.ToUpper(strings.TrimSpace(address)))
+	if err != nil {
+		return "", fmt.Errorf("invalid account address for TEAL filename: %w", err)
+	}
+	address = decoded.String()
+	filesDir := filepath.Join(dataDir, "files")
+	if err := os.MkdirAll(filesDir, 0o700); err != nil {
 		return "", fmt.Errorf("failed to create files directory: %w", err)
 	}
 
-	// Write TEAL to file
 	filePath := filepath.Join(filesDir, address+".teal")
-	if err := os.WriteFile(filePath, []byte(teal), 0640); err != nil {
+	if err := fsutil.WriteFileDurableWithProfile(filePath, []byte(teal), fsutil.PrivateStoreFileProfile); err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -175,12 +181,14 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "s":
 		// Save TEAL to file (only if TEAL is available)
-		if m.details.teal != "" && m.dataDir != "" {
-			_, err := saveTEALToFile(m.dataDir, m.details.address, m.details.teal)
+		if m.details.teal != "" && m.dataDir == "" {
+			m.details.saveStatus = "Save unavailable: pass --client-data or set APCLIENT_DATA"
+		} else if m.details.teal != "" {
+			savedPath, err := saveTEALToFile(m.dataDir, m.details.address, m.details.teal)
 			if err != nil {
 				m.details.saveStatus = fmt.Sprintf("Save failed: %v", err)
 			} else {
-				m.details.saveStatus = fmt.Sprintf("Saved to files/%s.teal", m.details.address)
+				m.details.saveStatus = fmt.Sprintf("Saved to client files/%s", filepath.Base(savedPath))
 			}
 		}
 		return m, nil

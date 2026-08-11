@@ -8,12 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
-	"path/filepath"
 	"syscall"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/aplane-algo/aplane/internal/adminipc"
 )
 
 const DefaultTimeout = 300 * time.Millisecond
@@ -35,12 +33,16 @@ func (r Result) Running() bool {
 }
 
 type Options struct {
-	Timeout time.Duration
-	Dial    func(socketPath string, timeout time.Duration) (net.Conn, error)
+	Timeout         time.Duration
+	Dial            func(socketPath string, timeout time.Duration) (net.Conn, error)
+	IPCPath         string
+	DataDirExplicit bool
 }
 
 func Check(dataDir string, opts Options) (Result, error) {
-	ipcPath, err := ResolveIPCPath(dataDir)
+	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: dataDir, IPCPath: opts.IPCPath, DataDirExplicit: opts.DataDirExplicit,
+	})
 	if err != nil {
 		return Result{}, err
 	}
@@ -68,27 +70,7 @@ func Check(dataDir string, opts Options) (Result, error) {
 }
 
 func ResolveIPCPath(dataDir string) (string, error) {
-	if dataDir == "" {
-		return "", errors.New("signer data directory is required")
-	}
-
-	configPath := filepath.Join(dataDir, "config.yaml")
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return filepath.Join(dataDir, "aplane.sock"), nil
-		}
-		return "", fmt.Errorf("read signer config %s: %w", configPath, err)
-	}
-
-	var cfg struct {
-		IPCPath string `yaml:"ipc_path"`
-	}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return "", fmt.Errorf("parse signer config %s: %w", configPath, err)
-	}
-	if cfg.IPCPath == "" {
-		return filepath.Join(dataDir, "aplane.sock"), nil
-	}
-	return cfg.IPCPath, nil
+	return adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: dataDir, DataDirExplicit: true,
+	})
 }

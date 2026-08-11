@@ -22,6 +22,7 @@ import (
 
 func TestCmdSentryExportWritesEnvelopeFile(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
+		withLocalSentryAdminClient(t)
 		result, publicKeyHex := generateTestSentryComponentKey(t, passphrase)
 		outputPath := filepath.Join(t.TempDir(), "sentry-public.json")
 
@@ -54,6 +55,7 @@ func TestCmdSentryExportWritesEnvelopeFile(t *testing.T) {
 
 func TestCmdSentryExportStdoutIsJSONOnly(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
+		withLocalSentryAdminClient(t)
 		result, _ := generateTestSentryComponentKey(t, passphrase)
 
 		out, err := withCapturedStdout(func() error {
@@ -77,6 +79,7 @@ func TestCmdSentryExportStdoutIsJSONOnly(t *testing.T) {
 
 func TestCmdSentryExportRequiresPublicSidecar(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
+		withLocalSentryAdminClient(t)
 		result, _ := generateTestSentryComponentKey(t, passphrase)
 		path := apkeys.WitnessPublicMetadataPath(keystorePaths(), productIdentityID(), result.Address)
 		if err := os.Remove(path); err != nil {
@@ -95,6 +98,7 @@ func TestCmdSentryExportRequiresPublicSidecar(t *testing.T) {
 
 func TestCmdSentryExportRejectsSpendingKey(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
+		withLocalSentryAdminClient(t)
 		kr := deriveTestKeyring(t, passphrase)
 
 		result, err := keymgmt.GenerateKey(keystorePaths(), productIdentityID(), "ed25519", kr, nil)

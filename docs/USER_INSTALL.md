@@ -32,7 +32,11 @@ supplies the default `--systemd --bindir` value when `--bindir` is omitted.
 Command-line arguments take precedence over environment variables, and
 environment variables take precedence over prompts/defaults.
 Installer-generated `apenv.sh` files export `APLANE_INSTALL_ROOT`; systemd
-operator `apenv.sh` also exports `APLANE_BINDIR`.
+operator `apenv.sh` also exports `APLANE_BINDIR` and pairs `APSIGNER_DATA`
+with the daemon IPC path resolved by `approbe`: omitted and legacy in-store
+defaults relocate to `/run/apsigner/aplane.sock`, while a valid custom external
+path is preserved. This lets clients reach a private managed store without
+reading it.
 The bootstrap wrapper also accepts `APLANE_VERSION`,
 `APLANE_ENABLE_SERVICE`, `APLANE_START_SERVICE`, and
 `APLANE_REQUIRE_MINISIGN`; matching `APSIGNER_*` names are compatibility
@@ -266,7 +270,10 @@ To inspect an environment without changing it, run:
 
 The audit script checks resolved data directories, config presence, signer/client
 port consistency, listeners, IPC socket state, token and SSH key permissions,
-and common partial-install states.
+and common partial-install states. IPC discovery is delegated to `approbe`; an
+explicit `--signer-data` suppresses inherited socket overrides, while normal
+environment-selected discovery honors an `APSIGNER_DATA`/
+`APSIGNER_IPC_PATH` pair.
 
 ### Uninstalling a local install
 
@@ -516,23 +523,28 @@ Key systemd paths:
 
 | Path | Purpose |
 |------|---------|
-| `/var/lib/apsigner/` | Signer data directory, owned by `aplane:aplane`, mode `2770` |
-| `/var/lib/apsigner/config.yaml` | Signer configuration, owned by `aplane:aplane`, mode `0640` |
+| `/var/lib/apsigner/` | Private signer data directory, owned by `aplane:aplane`, mode `0700` |
+| `/var/lib/apsigner/config.yaml` | Private signer configuration, owned by `aplane:aplane`, mode `0600` |
 | `/var/lib/apsigner/identities/default/` | Default identity keystore, keys, policy, and unlock settings |
+| `/run/apsigner/aplane.sock` | Group-connectable admin IPC socket (`0660`) in a non-group-writable runtime directory (`0750`) |
 | `/var/lib/apsigner/install/uninstall.sh` | Bundled systemd uninstaller |
+| `/var/lib/apsigner/install/service-principal.json` | Root-controlled service uid/gid used by signer-store permission repair |
 | `/etc/systemd/system/apsigner.service` | systemd service unit |
 | `/etc/sudoers.d/99-apsigner-systemctl` | sudoers rule allowing the service user to manage the service |
 | `<operator-root>/` | Operator workspace for the user who ran `sudo install.sh --systemd`; defaults to `~<installing-user>/aplane/` |
 | `<operator-root>/apclient/` | apshell client config, scripts, plugin activation config, and bundled plugin catalog |
-| `<operator-root>/apenv.sh` | Environment file for `APLANE_INSTALL_ROOT`, `APLANE_BINDIR`, `APSIGNER_DATA`, `APCLIENT_DATA`, and `PATH` |
+| `<operator-root>/apenv.sh` | Environment file for `APLANE_INSTALL_ROOT`, `APLANE_BINDIR`, `APSIGNER_DATA`, `APSIGNER_IPC_PATH`, `APCLIENT_DATA`, and `PATH` |
 | `<operator-root>/apconsole.yaml` | apconsole profile pointing at `./apclient` and `/var/lib/apsigner` |
 
 The service starts locked unless you later configure a passphrase helper.
-Users who run `apadmin` against `/var/lib/apsigner` must be members of the
-`aplane` group. `appass` changes systemd passphrase handling and should be
+Users who run `apadmin` must be members of the `aplane` group so they can
+connect to `/run/apsigner/aplane.sock`; group membership does not allow them to
+read `/var/lib/apsigner`. `appass` changes systemd passphrase handling and should be
 run with `sudo appass -d /var/lib/apsigner` while `apsigner` is stopped.
-Systemd `apstore` commands also run with `sudo`; local data directories do
-not. Both tools refuse the wrong mode before prompting or touching the store.
+Daemon-backed `apstore` operations run as the operator through IPC. Offline
+bootstrap, rescue, generation-prune, and permission-migration commands use
+`sudo` on systemd stores. Local data directories do not. The tools refuse the
+wrong mode before prompting or touching the store.
 
 For unattended operation, install normally first, stop the service, then use
 `sudo appass -d /var/lib/apsigner` to configure a passphrase helper such as
@@ -557,6 +569,14 @@ When pointed at an existing systemd install after the service is stopped, the
 installer checks `install/release.json` before upgrading an initialized signer
 store. Passing this check permits installation; it does not transform data
 whose shape is outside the current compatibility contract.
+
+Eligible upgrades close the data-directory root, run the read-only
+`apstore permissions preflight`, then run `permissions migrate` and
+`permissions audit` before installing store-relative management content or
+restarting. Migration validates the complete
+legacy inventory before changing it, refuses symlinks, hardlinks, unexpected
+object types, or unsafe ancestors, and clamps recognized signer state to the
+private ownership contract.
 
 If `identities/<id>/passphrase.cred` exists, the
 installer re-adds the matching `LoadCredentialEncrypted=` directive to the
@@ -583,7 +603,7 @@ sudo chmod 755 /usr/local/bin/appass-systemd-creds
 # Create service user
 sudo useradd -r -m -d /var/lib/apsigner -s /usr/sbin/nologin aplane
 sudo chown aplane:aplane /var/lib/apsigner
-sudo chmod 2770 /var/lib/apsigner
+sudo chmod 700 /var/lib/apsigner
 
 # Install systemd service and sudoers
 sudo ./installer/scripts/systemd-setup.sh aplane aplane /usr/local/bin --data-dir /var/lib/apsigner
@@ -594,15 +614,15 @@ passphrase_timeout: "15m"
 lock_on_disconnect: true
 user_auto_approve: false
 EOF
-sudo chmod 640 /var/lib/apsigner/config.yaml
+sudo chmod 600 /var/lib/apsigner/config.yaml
 
 # Initialize keystore, then enable and start
 sudo apstore -d /var/lib/apsigner initialize
 sudo systemctl enable apsigner
 sudo systemctl start apsigner
 
-# Unlock via apadmin, or use apconsole for the unified secure-machine console
-sudo -u aplane apadmin -d /var/lib/apsigner
+# Unlock as an operator in the aplane group, or use apconsole
+apadmin
 ```
 
 > **Note:** This manual Quick Start calls `systemd-setup.sh` without
@@ -667,7 +687,7 @@ This produces statically linked binaries in `bin/`:
 | `appolicy` | Offline policy checker/editor TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for apshell default network, signer config, plugin activation, and KMD override persistence |
 | `appass-file` | Development-only plaintext passphrase helper |
-| `approbe` | Installer/helper liveness probe for signer IPC reachability |
+| `approbe` | Installer/helper liveness probe and canonical signer IPC-path resolver |
 | `apshell` | Transaction shell (client) |
 
 `applugin-checksum` is built by `make all` through the bundled-plugin build
@@ -697,12 +717,12 @@ Create a dedicated system user with no login shell:
 ```bash
 sudo useradd -r -m -d /var/lib/apsigner -s /usr/sbin/nologin aplane
 sudo chown aplane:aplane /var/lib/apsigner
-sudo chmod 2770 /var/lib/apsigner
+sudo chmod 700 /var/lib/apsigner
 ```
 
 This creates the `aplane` user and group with home directory `/var/lib/apsigner`.
-The `2770` mode keeps the directory private to the service user and `aplane`
-group while preserving group ownership for new files.
+The `0700` mode makes the signer service user the only normal filesystem
+principal. Operators use the group-accessible runtime socket, not the store.
 
 To use an existing user instead, skip this step and substitute your username in the following steps.
 
@@ -725,6 +745,12 @@ sudo ./installer/scripts/systemd-setup.sh <username> <group> [bindir] [--data-di
 | `bindir` | Directory containing the apsigner binary | `../../bin` relative to the script |
 | `--data-dir` | Data directory for apsigner | `/var/lib/apsigner` |
 | `--memory-lock` | Grant `CAP_IPC_LOCK` and `LimitMEMLOCK=infinity` in the systemd unit | disabled |
+
+The systemd `bindir` must be outside `--data-dir`. The setup script rejects a
+data root containing a local-install `bin/` subtree before writing the managed
+marker or changing store permissions. To convert a same-UID local install,
+first install the service binaries in an external system path and remove the
+old store-local `bin/` subtree while the local signer is stopped.
 
 **Example — locked-start (default):**
 
@@ -753,7 +779,7 @@ sudo apstore -d /var/lib/apsigner initialize
 ```
 
 This creates:
-- `/var/lib/apsigner/identities/default/` — identity directory with keystore, group-accessible to `aplane`
+- `/var/lib/apsigner/identities/default/` — private identity directory with keystore, credentials, policy, and settings
 
 Then configure auto-unlock offline:
 
@@ -800,7 +826,7 @@ Ensure systemd ownership and permissions:
 
 ```bash
 sudo chown aplane:aplane /var/lib/apsigner/config.yaml
-sudo chmod 640 /var/lib/apsigner/config.yaml
+sudo chmod 600 /var/lib/apsigner/config.yaml
 ```
 
 Then initialize the keystore and start the service:
@@ -810,7 +836,7 @@ sudo apstore -d /var/lib/apsigner initialize
 # For a dedicated sentry node:
 sudo apstore -d /var/lib/apsigner initialize --role sentry
 sudo systemctl start apsigner
-sudo -u aplane apadmin -d /var/lib/apsigner
+apadmin
 ```
 
 For auto-unlock, stop the daemon after initialization and run `sudo appass -d /var/lib/apsigner`.
@@ -835,7 +861,7 @@ If you skipped Step 5, initialize the keystore before unlocking:
 sudo apstore -d /var/lib/apsigner initialize
 # For a dedicated sentry node:
 sudo apstore -d /var/lib/apsigner initialize --role sentry
-sudo -u aplane apadmin -d /var/lib/apsigner
+apadmin
 ```
 
 Check status:
@@ -874,7 +900,7 @@ sudo usermod -aG aplane <username>
 Log out and back in for the group change to take effect. Group members can then run `apadmin` directly:
 
 ```bash
-apadmin -d /var/lib/apsigner
+apadmin
 ```
 
 ### Generate Keys
@@ -882,7 +908,7 @@ apadmin -d /var/lib/apsigner
 Use the apadmin TUI to generate signing keys:
 
 ```bash
-apadmin -d /var/lib/apsigner
+apadmin
 ```
 
 Press `g` and select a key type to generate. apsigner auto-detects new keys via file watching — no restart needed.
@@ -890,8 +916,8 @@ Press `g` and select a key type to generate. apsigner auto-detects new keys via 
 ### Backup Keys
 
 ```bash
-sudo apstore -d /var/lib/apsigner backup create all
-sudo apstore -d /var/lib/apsigner backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
+apstore backup create all
+apstore backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
 ```
 
 See [USER_STORE_MGMT.md](USER_STORE_MGMT.md) for full backup/restore documentation.
@@ -900,30 +926,16 @@ See [USER_STORE_MGMT.md](USER_STORE_MGMT.md) for full backup/restore documentati
 
 ## Multiple Instances
 
-To run multiple apsigner instances on the same machine, create a separate service unit for each data directory. Copy the installed service file and adjust the `Environment=APSIGNER_DATA=` line:
-
-```bash
-# Create a second data directory
-sudo mkdir -p /var/lib/apsigner-staging
-sudo chown aplane:aplane /var/lib/apsigner-staging
-
-# Initialize it
-sudo /usr/local/bin/apstore -d /var/lib/apsigner-staging initialize
-
-# Configure it (copy and edit config.yaml)
-sudo -u aplane cp /var/lib/apsigner/config.yaml /var/lib/apsigner-staging/config.yaml
-
-# Create a second service unit
-sudo cp /etc/systemd/system/apsigner.service /etc/systemd/system/apsigner-staging.service
-sudo sed -i 's|/var/lib/apsigner|/var/lib/apsigner-staging|g' /etc/systemd/system/apsigner-staging.service
-sudo systemctl daemon-reload
-
-# Enable and start
-sudo systemctl enable apsigner-staging
-sudo systemctl start apsigner-staging
-```
-
-Each instance runs independently with its own keystore, configuration, and IPC socket.
+The supported installer owns one systemd-managed instance and the singleton
+`/run/apsigner/aplane.sock`. Multiple instances are an advanced manual
+deployment: each service needs a distinct private data directory, a distinct
+`RuntimeDirectory`, and an absolute external `ipc_path` within that runtime
+directory. Its store also needs its own root-controlled
+`install/service-principal.json`, `.prod` marker, permission migration, and
+audit before startup. Do not create a second instance by only copying the
+default unit: two units that share `/run/apsigner/aplane.sock` can displace or
+misdirect their admin clients. Select a non-default instance explicitly with
+`--ipc-path`.
 
 ---
 
@@ -962,6 +974,11 @@ client-side token files are written when a client is enrolled via
 `request-token`. `passphrase.cred` exists only when `appass` configures
 auto-unlock with `systemd-creds`.
 
+At the production store root, `install/service-principal.json` is the
+root-controlled numeric UID/GID authority used by permission audit, migration,
+startup validation, and offline repair tools. Other `install/` entries include
+root-controlled release metadata and operator recovery artifacts.
+
 The client data directory grows over time as well:
 
 ```
@@ -996,6 +1013,10 @@ The `installer/` directory contains service files and installer helper scripts f
 | `installer/scripts/config-mcp.sh` | Helper that writes `$APCLIENT_DATA/.mcp.json` and `$APCLIENT_DATA/.codex/config.toml` for `apshell --mcp`. Installers call the same configuration logic automatically. |
 
 ### Manual Installation (Without the Setup Script)
+
+The pre-built unit enables `CAP_IPC_LOCK` and an unlimited memory-lock limit,
+matching `require_memory_protection: true`. Stop any existing
+`apsigner.service` before replacing its unit or migrating its store.
 
 If you prefer not to use `systemd-setup.sh`, you can install the pre-built service file directly:
 
@@ -1044,7 +1065,7 @@ Every service start:
 To rotate the keystore passphrase (auto-unlock mode):
 
 ```bash
-sudo apstore -d /var/lib/apsigner changepass
+apstore changepass
 ```
 
 This asks you to manually enter the current passphrase, generates a fresh key
@@ -1052,12 +1073,11 @@ for the store, atomically re-encrypts all keys under it, re-signs the policy
 and node-role integrity
 sidecars, and updates `passphrase.cred`. Restart the service afterward:
 
-Systemd data directories contain a `.prod` marker. For those directories,
-all `apstore` commands require root and exit before prompting if they are not
-run with `sudo`. Local data directories reject root instead.
-When running against systemd data, `apstore` returns managed store files to
-the signer data directory owner/group after successful mutations and keeps
-`passphrase.cred` root-owned.
+Systemd data directories contain a `.prod` marker. Daemon-backed commands use
+the public admin socket and do not require filesystem access. Offline commands
+such as `initialize`, `rebuild`, policy rescue signing, generation pruning, and
+permission migration require root and a stopped service. Local data
+directories reject root instead.
 
 ```bash
 sudo systemctl restart apsigner
@@ -1071,15 +1091,15 @@ The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot
 
 1. **On the old machine** — create a backup:
    ```bash
-   sudo apstore -d /var/lib/apsigner backup create all
-   sudo apstore -d /var/lib/apsigner backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
+   apstore backup create all
+   apstore backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
    ```
 
 2. **On the new machine** — install apsigner (Steps 1–4 above), then restore:
    ```bash
-   sudo apstore -d /var/lib/apsigner backup import /mnt/usb/aplane-backup.tar.gz
-   sudo apstore -d /var/lib/apsigner restore preview aplane-backup.tar.gz
-   sudo apstore -d /var/lib/apsigner restore apply aplane-backup.tar.gz
+   apstore backup import /mnt/usb/aplane-backup.tar.gz
+   apstore restore preview aplane-backup.tar.gz
+   apstore restore apply aplane-backup.tar.gz
    ```
 
    `restore apply` authenticates and validates the complete credential set,
@@ -1211,11 +1231,17 @@ sudo chown aplane:aplane /var/lib/apsigner
 
 ### Permission denied on IPC socket
 
-The IPC socket is created in the data directory. Ensure the directory is owned by the service user:
+Production IPC is `/run/apsigner/aplane.sock`. Confirm that the service created
+the protected runtime directory and that the operator is in the `aplane`
+group:
 
 ```bash
-sudo chown aplane:aplane /var/lib/apsigner
+stat -c '%U:%G %a' /run/apsigner /run/apsigner/aplane.sock
+id -nG
 ```
+
+Expected modes are `0750` for `/run/apsigner` and `0660` for the socket. Do
+not widen `/var/lib/apsigner`; it must remain `0700`.
 
 ### systemd-creds not found
 

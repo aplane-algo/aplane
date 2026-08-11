@@ -4,9 +4,11 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/backup"
@@ -101,13 +103,13 @@ func TestCmdBackupExportCopiesChecksumMatchIntoDestinationDirectory(t *testing.T
 		t.Fatalf("FileSHA256() error = %v", err)
 	}
 	fake := &fakeApstoreAdminRequester{
+		backupExportData: []byte("archive"),
 		listBackupsResult: protocol.BackupsListMessage{
 			Backups: []protocol.BackupInfo{{
 				FileName: "aplane-backup-20260423-010203.tar.gz",
 				Path:     managedPath,
 				Size:     size,
 				Checksum: checksum,
-				Verified: true,
 			}},
 		},
 	}
@@ -117,8 +119,8 @@ func TestCmdBackupExportCopiesChecksumMatchIntoDestinationDirectory(t *testing.T
 	if err := cmdBackupExport(checksum, destinationDir); err != nil {
 		t.Fatalf("cmdBackupExport(checksum) error = %v", err)
 	}
-	if strings.Join(fake.requests, ",") != protocol.MsgTypeListBackups {
-		t.Fatalf("requests = %v, want list_backups", fake.requests)
+	if strings.Join(fake.requests, ",") != protocol.MsgTypeListBackups+","+protocol.MsgTypeReadBackupChunk {
+		t.Fatalf("requests = %v, want list_backups then read_backup_chunk", fake.requests)
 	}
 	exportedPath := filepath.Join(destinationDir, "aplane-backup-20260423-010203.tar.gz")
 	exported, err := os.ReadFile(exportedPath)
@@ -127,6 +129,176 @@ func TestCmdBackupExportCopiesChecksumMatchIntoDestinationDirectory(t *testing.T
 	}
 	if string(exported) != "archive" {
 		t.Fatalf("exported archive = %q, want archive", string(exported))
+	}
+}
+
+func TestCmdBackupExportReportsSuccessAfterCommittedDirectorySyncFailure(t *testing.T) {
+	managedPath := filepath.Join(t.TempDir(), "aplane-backup-20260423-010203.tar.gz")
+	archive := []byte("archive")
+	if err := os.WriteFile(managedPath, archive, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	checksum, size, err := backup.FileSHA256(managedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeApstoreAdminRequester{
+		backupExportData: archive,
+		listBackupsResult: protocol.BackupsListMessage{Backups: []protocol.BackupInfo{{
+			FileName: filepath.Base(managedPath), Path: managedPath, Size: size, Checksum: checksum,
+		}}},
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	previousSync := syncBackupExportDirectory
+	syncBackupExportDirectory = func(string) error { return syscall.EIO }
+	t.Cleanup(func() { syncBackupExportDirectory = previousSync })
+	destinationDir := t.TempDir()
+	if err := cmdBackupExport(checksum, destinationDir); err != nil {
+		t.Fatalf("cmdBackupExport() error = %v, want committed success", err)
+	}
+	if _, err := os.Stat(filepath.Join(destinationDir, filepath.Base(managedPath))); err != nil {
+		t.Fatalf("committed destination missing: %v", err)
+	}
+}
+
+func TestCmdBackupExportDoesNotReplaceDestinationCreatedDuringTransfer(t *testing.T) {
+	archive := []byte("archive")
+	managedPath := filepath.Join(t.TempDir(), "aplane-backup-20260423-010203.tar.gz")
+	if err := os.WriteFile(managedPath, archive, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	checksum, size, err := backup.FileSHA256(managedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destinationDir := t.TempDir()
+	destination := filepath.Join(destinationDir, filepath.Base(managedPath))
+	fake := &fakeApstoreAdminRequester{}
+	fake.requestFunc = func(msg any, out any) error {
+		switch typed := msg.(type) {
+		case protocol.ListBackupsMessage:
+			fake.requests = append(fake.requests, typed.Type)
+			*out.(*protocol.BackupsListMessage) = protocol.BackupsListMessage{Backups: []protocol.BackupInfo{{
+				FileName: filepath.Base(managedPath), Path: managedPath, Size: size, Checksum: checksum,
+			}}}
+			return nil
+		case protocol.ReadBackupChunkMessage:
+			fake.requests = append(fake.requests, typed.Type)
+			if err := os.WriteFile(destination, []byte("concurrent output"), 0o600); err != nil {
+				return err
+			}
+			*out.(*protocol.BackupChunkMessage) = protocol.BackupChunkMessage{
+				Success: true, FileName: typed.FileName, Offset: typed.Offset, Data: archive, EOF: true,
+			}
+			return nil
+		default:
+			return errors.New("unexpected request")
+		}
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	err = cmdBackupExport(checksum, destinationDir)
+	if err == nil || !strings.Contains(err.Error(), "destination already exists") {
+		t.Fatalf("cmdBackupExport() error = %v, want no-replace failure", err)
+	}
+	got, readErr := os.ReadFile(destination)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != "concurrent output" {
+		t.Fatalf("destination = %q, want concurrent output preserved", got)
+	}
+}
+
+func TestPublishBackupExportFallsBackToAtomicHardLink(t *testing.T) {
+	dir := t.TempDir()
+	tmpPath := filepath.Join(dir, ".backup.part")
+	destination := filepath.Join(dir, "backup.tar.gz")
+	if err := os.WriteFile(tmpPath, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	publication, err := publishBackupExportNoReplaceWith(
+		tmpPath,
+		destination,
+		func(string, string) error { return syscall.EINVAL },
+		os.Link,
+		os.Remove,
+	)
+	if err != nil {
+		t.Fatalf("publishBackupExportNoReplaceWith() error = %v", err)
+	}
+	if len(publication.Warnings) != 0 {
+		t.Fatalf("publishBackupExportNoReplaceWith() warnings = %v", publication.Warnings)
+	}
+	if _, err := os.Lstat(tmpPath); !os.IsNotExist(err) {
+		t.Fatalf("staging path remains after link publication: %v", err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "archive" {
+		t.Fatalf("published backup = %q, want archive", got)
+	}
+}
+
+func TestPublishBackupExportHardLinkFallbackDoesNotReplace(t *testing.T) {
+	dir := t.TempDir()
+	tmpPath := filepath.Join(dir, ".backup.part")
+	destination := filepath.Join(dir, "backup.tar.gz")
+	if err := os.WriteFile(tmpPath, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, []byte("existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := publishBackupExportNoReplaceWith(
+		tmpPath,
+		destination,
+		func(string, string) error { return syscall.EINVAL },
+		os.Link,
+		os.Remove,
+	)
+	if err == nil || !strings.Contains(err.Error(), "destination already exists") {
+		t.Fatalf("publishBackupExportNoReplaceWith() error = %v, want destination-exists failure", err)
+	}
+	got, readErr := os.ReadFile(destination)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != "existing" {
+		t.Fatalf("destination = %q, want existing content preserved", got)
+	}
+}
+
+func TestPublishBackupExportReportsCommittedCleanupWarning(t *testing.T) {
+	dir := t.TempDir()
+	tmpPath := filepath.Join(dir, ".backup.part")
+	destination := filepath.Join(dir, "backup.tar.gz")
+	if err := os.WriteFile(tmpPath, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	publication, err := publishBackupExportNoReplaceWith(
+		tmpPath,
+		destination,
+		func(string, string) error { return syscall.EINVAL },
+		os.Link,
+		func(string) error { return syscall.EIO },
+	)
+	if err != nil {
+		t.Fatalf("publishBackupExportNoReplaceWith() error = %v, want committed success", err)
+	}
+	if len(publication.Warnings) != 1 || !strings.Contains(publication.Warnings[0], "export is committed") {
+		t.Fatalf("publication warnings = %v, want committed cleanup warning", publication.Warnings)
+	}
+	got, readErr := os.ReadFile(destination)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != "archive" {
+		t.Fatalf("published backup = %q, want archive", got)
 	}
 }
 

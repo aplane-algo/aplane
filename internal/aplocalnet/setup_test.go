@@ -105,6 +105,13 @@ networks:
 	if localnet.GenesisHash != newHash {
 		t.Fatalf("localnet genesis_hash = %q, want %q", localnet.GenesisHash, newHash)
 	}
+	configInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(config): %v", err)
+	}
+	if got := configInfo.Mode().Perm(); got != 0o600 {
+		t.Fatalf("signer config mode = %04o, want 0600", got)
+	}
 
 	changed, _, err = EnsureSignerLocalnetConfig(dir, info, DefaultAlgodToken)
 	if err != nil {

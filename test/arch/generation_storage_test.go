@@ -92,6 +92,9 @@ func TestNoHardlinksInStoreCode(t *testing.T) {
 			if !ok || pkg.Name != "os" {
 				return true
 			}
+			if permittedNonStoreHardlink(path, root, file, call.Pos()) {
+				return true
+			}
 			t.Errorf("%s: os.Link is forbidden (independent copies only; a hardlink shares an inode with a sealed generation)",
 				fset.Position(call.Pos()))
 			return true
@@ -101,6 +104,25 @@ func TestNoHardlinksInStoreCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walk error = %v", err)
 	}
+}
+
+// permittedNonStoreHardlink records narrow exceptions inside otherwise
+// store-owning packages. Backup export links a fully written client-side
+// staging file to its operator-selected destination as an atomic no-replace
+// fallback; neither pathname is part of the signer store or a generation.
+func permittedNonStoreHardlink(path, root string, file *ast.File, pos token.Pos) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || filepath.ToSlash(rel) != "cmd/apstore/ipc_backup.go" {
+		return false
+	}
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != "publishBackupExportNoReplaceWith" {
+			continue
+		}
+		return function.Pos() <= pos && pos <= function.End()
+	}
+	return false
 }
 
 // TestLegacyRootStorePathsStayRecoveryOnly prevents the pre-generation

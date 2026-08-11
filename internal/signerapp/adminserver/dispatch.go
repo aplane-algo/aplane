@@ -31,13 +31,18 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeUnlock:       typed("unlock", (*Session).HandleUnlock),
 	protocol.MsgTypeLockIdentity: typed("lock identity", (*Session).HandleLockIdentity),
 
-	protocol.MsgTypeBackup:          typed("backup", (*Session).HandleBackup),
-	protocol.MsgTypeListBackups:     typed("list backups", func(s *Session, m *protocol.ListBackupsMessage) { s.HandleListBackups(m.ID) }),
-	protocol.MsgTypeDeleteBackup:    typed("delete backup", (*Session).HandleDeleteBackup),
-	protocol.MsgTypeChangeStorePass: typed("change store passphrase", (*Session).HandleChangeStorePassphrase),
-	protocol.MsgTypePreviewRestore:  typed("preview restore", (*Session).HandlePreviewRestore),
-	protocol.MsgTypeRestoreBackup:   typed("restore backup", (*Session).HandleRestoreBackup),
-	protocol.MsgTypeRollbackRestore: typed("rollback restore", (*Session).HandleRollbackRestore),
+	protocol.MsgTypeBackup:             typed("backup", (*Session).HandleBackup),
+	protocol.MsgTypeListBackups:        typed("list backups", func(s *Session, m *protocol.ListBackupsMessage) { s.HandleListBackups(m.ID) }),
+	protocol.MsgTypeDeleteBackup:       typed("delete backup", (*Session).HandleDeleteBackup),
+	protocol.MsgTypeBeginBackupImport:  typed("begin backup import", (*Session).HandleBeginBackupImport),
+	protocol.MsgTypeAppendBackupImport: typed("append backup import", (*Session).HandleAppendBackupImport),
+	protocol.MsgTypeCommitBackupImport: typed("commit backup import", (*Session).HandleCommitBackupImport),
+	protocol.MsgTypeAbortBackupImport:  typed("abort backup import", (*Session).HandleAbortBackupImport),
+	protocol.MsgTypeReadBackupChunk:    typed("read backup chunk", (*Session).HandleReadBackupChunk),
+	protocol.MsgTypeChangeStorePass:    typed("change store passphrase", (*Session).HandleChangeStorePassphrase),
+	protocol.MsgTypePreviewRestore:     typed("preview restore", (*Session).HandlePreviewRestore),
+	protocol.MsgTypeRestoreBackup:      typed("restore backup", (*Session).HandleRestoreBackup),
+	protocol.MsgTypeRollbackRestore:    typed("rollback restore", (*Session).HandleRollbackRestore),
 	protocol.MsgTypeReconcileStore: typed("reconcile store", func(s *Session, m *protocol.ReconcileStoreMessage) {
 		s.HandleReconcileStore(m.ID)
 	}),
@@ -49,6 +54,17 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeGetPolicySnapshot: typed("get policy snapshot", (*Session).HandleGetPolicySnapshot),
 	protocol.MsgTypeReplacePolicy:     typed("replace policy", (*Session).HandleReplacePolicy),
 	protocol.MsgTypeValidatePolicy:    typed("validate policy", (*Session).HandleValidatePolicy),
+
+	protocol.MsgTypeListSentryReferences: typed("list sentry references", func(s *Session, m *protocol.ListSentryReferencesMessage) {
+		s.HandleListSentryReferences(m.ID)
+	}),
+	protocol.MsgTypeGetSentryReference:    typed("get sentry reference", (*Session).HandleGetSentryReference),
+	protocol.MsgTypeImportSentryReference: typed("import sentry reference", (*Session).HandleImportSentryReference),
+	protocol.MsgTypeRemoveSentryReference: typed("remove sentry reference", (*Session).HandleRemoveSentryReference),
+	protocol.MsgTypeExportSentryPublic:    typed("export sentry public metadata", (*Session).HandleExportSentryPublic),
+	protocol.MsgTypeListGenerations: typed("list generations", func(s *Session, m *protocol.ListGenerationsMessage) {
+		s.HandleListGenerations(m.ID)
+	}),
 
 	protocol.MsgTypeListKeys:      typed("list keys", func(s *Session, m *protocol.ListKeysMessage) { s.HandleListKeys(m.ID) }),
 	protocol.MsgTypeGetKeyDetails: typed("get key details", (*Session).HandleGetKeyDetails),

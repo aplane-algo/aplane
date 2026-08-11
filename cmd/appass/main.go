@@ -84,10 +84,14 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "Error: systemd-managed data directory %s is marked with .prod, but no apsigner systemd service file was found\n", dataDir)
 			os.Exit(1)
 		}
+		if err := bindManagedServicePrincipal(dataDir, svc); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	} else {
 		svc = localServiceInfo()
 	}
-	if err := enforceModeOwnershipPolicy(dataDir, isLocal, svc); err != nil {
+	if err := enforceModeOwnershipPolicy(dataDir, identityID, isLocal, svc); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -110,7 +114,7 @@ func main() {
 	theme.Init("auto")
 
 	// Launch TUI
-	model := NewModel(dataDir, identityID)
+	model := NewModel(dataDir, identityID, svc, isLocal)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

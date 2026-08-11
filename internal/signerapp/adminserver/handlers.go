@@ -86,6 +86,116 @@ func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
 	_ = s.WriteJSON(ProtocolValidatePolicyResultMessage(msg.ID, result))
 }
 
+func (s *Session) HandleListSentryReferences(requestID string) {
+	ir := s.requireBoundRuntime(requestID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(requestID, auth.ActionSentriesView, auth.Resource{Type: "sentry_references", IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(requestID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	_ = s.WriteJSON(ProtocolSentryReferencesListMessage(requestID, s.inspectionServices.ListSentryReferences(ir)))
+}
+
+func (s *Session) HandleGetSentryReference(msg *protocol.GetSentryReferenceMessage) {
+	ir := s.requireBoundRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_reference", ID: msg.Name, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	result := s.inspectionServices.GetSentryReference(ir, adminproto.GetSentryReferenceRequest{Name: msg.Name})
+	_ = s.WriteJSON(ProtocolSentryReferenceMessage(msg.ID, protocol.MsgTypeSentryReference, result))
+}
+
+func (s *Session) HandleImportSentryReference(msg *protocol.ImportSentryReferenceMessage) {
+	// Reference aliases select the witness public key embedded during guarded
+	// key generation, so mutation shares key generation's unlocked interlock.
+	ir := s.requireUnlockedRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	result := s.inspectionServices.ImportSentryReference(ir, adminproto.ImportSentryReferenceRequest{Name: msg.Name, EnvelopeJSON: msg.EnvelopeJSON})
+	if audit, ok := s.audit.(interface {
+		LogSentryReferenceChangedContext(SessionContext, string, string, string, bool)
+	}); ok {
+		audit.LogSentryReferenceChangedContext(s.SessionContext(), "import", msg.Name, result.Reference.ComponentKey, result.Success)
+	}
+	_ = s.WriteJSON(ProtocolSentryReferenceMessage(
+		msg.ID,
+		protocol.MsgTypeImportSentryReferenceResult,
+		adminproto.GetSentryReferenceResult(result),
+	))
+}
+
+func (s *Session) HandleRemoveSentryReference(msg *protocol.RemoveSentryReferenceMessage) {
+	ir := s.requireUnlockedRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	result := s.inspectionServices.RemoveSentryReference(ir, adminproto.RemoveSentryReferenceRequest{Name: msg.Name})
+	if audit, ok := s.audit.(interface {
+		LogSentryReferenceChangedContext(SessionContext, string, string, string, bool)
+	}); ok {
+		audit.LogSentryReferenceChangedContext(s.SessionContext(), "remove", msg.Name, result.ComponentKey, result.Success)
+	}
+	_ = s.WriteJSON(ProtocolRemoveSentryReferenceResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleExportSentryPublic(msg *protocol.ExportSentryPublicMessage) {
+	ir := s.requireBoundRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_public", ID: msg.WitnessKeyID, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	result := s.inspectionServices.ExportSentryPublic(ir, adminproto.ExportSentryPublicRequest{WitnessKeyID: msg.WitnessKeyID})
+	_ = s.WriteJSON(ProtocolExportSentryPublicResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleListGenerations(requestID string) {
+	ir := s.requireBoundRuntime(requestID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(requestID, auth.ActionGenerationsView, auth.Resource{Type: "generations", IdentityID: ir.ID()}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(requestID, protocol.ErrCodeInternal, "store inspection service unavailable")
+		return
+	}
+	_ = s.WriteJSON(ProtocolGenerationsListMessage(requestID, s.inspectionServices.ListGenerations(ir)))
+}
+
 func (s *Session) HandleRevokeToken(msg *protocol.RevokeTokenMessage) {
 	s.handleRevokeToken(msg)
 }
@@ -171,13 +281,16 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 		ExportPassphrase: exportPassphrase,
 		Addresses:        append([]string(nil), msg.Addresses...),
 	})
-	if audit, ok := s.audit.(interface {
-		LogBackupCreatedContext(SessionContext, string)
-		LogBackupFailedContext(SessionContext, string)
-	}); ok {
-		if result.Success {
+	if result.Success {
+		if audit, ok := s.audit.(interface {
+			LogBackupCreatedContext(SessionContext, string)
+		}); ok {
 			audit.LogBackupCreatedContext(s.SessionContext(), result.ArchivePath)
-		} else if result.Error != "" {
+		}
+	} else if result.Error != "" {
+		if audit, ok := s.audit.(interface {
+			LogBackupFailedContext(SessionContext, string)
+		}); ok {
 			audit.LogBackupFailedContext(s.SessionContext(), result.Error)
 		}
 	}
@@ -214,6 +327,124 @@ func (s *Session) HandleDeleteBackup(msg *protocol.DeleteBackupMessage) {
 	}
 	result := s.backupServices.DeleteBackup(ir, adminproto.DeleteBackupRequest{ArchivePath: msg.ArchivePath})
 	_ = s.WriteJSON(ProtocolDeleteBackupResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleBeginBackupImport(msg *protocol.BeginBackupImportMessage) {
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	result := s.backupServices.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{
+		FileName: msg.FileName,
+	})
+	_ = s.WriteJSON(ProtocolBeginBackupImportResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleAppendBackupImport(msg *protocol.AppendBackupImportMessage) {
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	result := s.backupServices.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: msg.UploadID, Offset: msg.Offset, Data: msg.Data})
+	_ = s.WriteJSON(ProtocolAppendBackupImportResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessage) {
+	defer msg.ExportPassphrase.Zero()
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	result := s.backupServices.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+		UploadID: msg.UploadID, FileName: msg.FileName,
+		ExpectedSize: msg.ExpectedSize, ExpectedSHA256: msg.ExpectedSHA256,
+		ExportPassphrase: msg.ExportPassphrase.Clone(),
+	})
+	if result.Success {
+		if audit, ok := s.audit.(interface {
+			LogBackupImportedContext(SessionContext, string, int64)
+		}); ok {
+			audit.LogBackupImportedContext(s.SessionContext(), result.Backup.FileName, result.Backup.Size)
+		}
+	} else if result.Error != "" {
+		if audit, ok := s.audit.(interface {
+			LogBackupFailedContext(SessionContext, string)
+		}); ok {
+			audit.LogBackupFailedContext(s.SessionContext(), "backup import failed: "+result.Error)
+		}
+	}
+	_ = s.WriteJSON(ProtocolCommitBackupImportResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleAbortBackupImport(msg *protocol.AbortBackupImportMessage) {
+	// Abort removes only an unpublished, path-confined .part upload. Keep this
+	// authorized cleanup available while the bound identity is locked so a
+	// failed import does not require unlocking merely to discard residue.
+	ir := s.requireBoundRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	result := s.backupServices.AbortBackupImport(ir, adminproto.AbortBackupImportRequest{UploadID: msg.UploadID})
+	_ = s.WriteJSON(ProtocolAbortBackupImportResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
+	ir := s.requireRecoveryAdminRuntime(msg.ID)
+	if ir == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+		return
+	}
+	if s.backupServices == nil {
+		_ = s.SendError(msg.ID, "", "backup service unavailable")
+		return
+	}
+	result := s.backupServices.ReadBackupChunk(ir, adminproto.ReadBackupChunkRequest{FileName: msg.FileName, Offset: msg.Offset})
+	if result.Success {
+		if audit, ok := s.audit.(interface {
+			LogBackupExportStartedContext(SessionContext, string)
+		}); ok {
+			if s.markBackupExportChunk(ir.ID(), result.FileName, result.Offset, result.EOF) {
+				audit.LogBackupExportStartedContext(s.SessionContext(), result.FileName)
+			}
+		}
+	} else if result.Error != "" {
+		if audit, ok := s.audit.(interface {
+			LogBackupFailedContext(SessionContext, string)
+		}); ok {
+			audit.LogBackupFailedContext(s.SessionContext(), "backup export failed: "+result.Error)
+		}
+	}
+	_ = s.WriteJSON(ProtocolBackupChunkMessage(msg.ID, result))
 }
 
 func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphraseMessage) {
@@ -260,16 +491,23 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 		ArchivePath:      msg.ArchivePath,
 		ExportPassphrase: exportPassphrase,
 	})
-	if audit, ok := s.audit.(interface {
-		LogBackupRestorePreviewedContext(SessionContext, string, int)
-		LogBackupRestorePreviewFailedContext(SessionContext, string)
-	}); ok {
-		switch {
-		case result.Error != "":
+	switch {
+	case result.Error != "":
+		if audit, ok := s.audit.(interface {
+			LogBackupRestorePreviewFailedContext(SessionContext, string)
+		}); ok {
 			audit.LogBackupRestorePreviewFailedContext(s.SessionContext(), result.Error)
-		case len(result.Errors) > 0:
+		}
+	case len(result.Errors) > 0:
+		if audit, ok := s.audit.(interface {
+			LogBackupRestorePreviewFailedContext(SessionContext, string)
+		}); ok {
 			audit.LogBackupRestorePreviewFailedContext(s.SessionContext(), "restore preview returned key errors")
-		default:
+		}
+	default:
+		if audit, ok := s.audit.(interface {
+			LogBackupRestorePreviewedContext(SessionContext, string, int)
+		}); ok {
 			audit.LogBackupRestorePreviewedContext(s.SessionContext(), result.ArchivePath, len(result.Keys))
 		}
 	}
