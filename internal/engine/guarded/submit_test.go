@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
@@ -498,6 +499,9 @@ func (v testCacheView) BoundedMaxFee(address string) (uint64, bool) {
 	return v.c.BoundedMaxFeeForAddress(address)
 }
 func (v testCacheView) LsigSize(address string) int { return v.c.GetLsigSize(address) }
+func (v testCacheView) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
+	return v.c.LogicSigResourceProfile(address)
+}
 
 // newTestSigner builds a Signer over a populated signer cache, a fresh
 // in-memory auth cache, and an unconnected connection state. Tests reach the

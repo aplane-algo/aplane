@@ -87,6 +87,7 @@ var guardedAllowedImports = map[string]bool{
 	modulePrefix + "/internal/clientsign":       true,
 	modulePrefix + "/internal/config":           true,
 	modulePrefix + "/internal/engine/connect":   true,
+	modulePrefix + "/internal/lsigresource":     true,
 	modulePrefix + "/internal/sentry/canonical": true,
 	modulePrefix + "/internal/signerapi":        true,
 	modulePrefix + "/internal/signerclient":     true,

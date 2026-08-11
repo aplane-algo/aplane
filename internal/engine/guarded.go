@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/guarded"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
 // DiscoveredSentryComponentKey is public sentry-key metadata advertised by a
@@ -52,6 +53,10 @@ func (v guardedSignerCacheView) BoundedMaxFee(address string) (uint64, bool) {
 
 func (v guardedSignerCacheView) LsigSize(address string) int {
 	return v.core.signerCacheLsigSize(address)
+}
+
+func (v guardedSignerCacheView) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
+	return v.core.signerCacheLogicSigResourceProfile(address)
 }
 
 // guardedSigner builds a guarded.Signer bound to the engine's live connection,

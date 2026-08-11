@@ -5,6 +5,7 @@ package engine
 
 import (
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
 )
@@ -66,6 +67,12 @@ func (e *Core) signerCacheLsigSize(address string) int {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
 	return e.SignerCache.GetLsigSize(address)
+}
+
+func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	return e.SignerCache.LogicSigResourceProfile(address)
 }
 
 // DummyFeeReserve returns the additional microAlgo fee a single standalone

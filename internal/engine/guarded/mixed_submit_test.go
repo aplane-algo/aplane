@@ -19,9 +19,11 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -168,7 +170,7 @@ func TestPlanGuardedGroupBudgetsGuardedAuthorizerByEffectiveSigner(t *testing.T)
 
 // TestRequestNonGuardedSignaturesShapesModesAndExtracts verifies the Strategy A
 // intermediate /sign call: non-guarded originals are sign mode, guarded
-// originals are foreign with an lsig_size hint, dummies are foreign, the request
+// originals are foreign with a split resource hint, dummies are foreign, the request
 // passes validation (no forbidden passthrough+foreign mix), and only the
 // non-guarded signed bytes are extracted by index.
 func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
@@ -179,6 +181,10 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
 		c.SetLsigSize(guarded, 1500)
+		c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
+			ProgramBytes: 77,
+			Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
+		})
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
 		c.AddAddress(nonGuarded, "ed25519")
 	})
@@ -224,8 +230,11 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	if mode, _ := req.Requests[0].Mode(); mode != signerapi.RequestModeForeign {
 		t.Fatalf("guarded request[0] mode = %q, want foreign", mode)
 	}
-	if req.Requests[0].LsigSize != 1500 {
-		t.Fatalf("guarded request[0] lsig_size = %d, want 1500", req.Requests[0].LsigSize)
+	if got := req.Requests[0].LsigResources; got == nil || got.ProgramBytes != 77 || got.ArgumentBytes != 1_423 || got.MaxOpcodeCost != 1_700 {
+		t.Fatalf("guarded request[0] lsig_resources = %#v", got)
+	}
+	if req.Requests[0].LsigSize != 0 {
+		t.Fatalf("guarded request[0] legacy lsig_size = %d, want 0", req.Requests[0].LsigSize)
 	}
 	if mode, _ := req.Requests[1].Mode(); mode != signerapi.RequestModeSign {
 		t.Fatalf("non-guarded request[1] mode = %q, want sign", mode)
@@ -238,6 +247,9 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	}
 	if req.Requests[2].LsigSize != 0 {
 		t.Fatalf("dummy request[2] lsig_size = %d, want 0", req.Requests[2].LsigSize)
+	}
+	if got := req.Requests[2].LsigResources; got == nil || got.ProgramBytes != uint64(len(signing.EmbeddedDummyTealTok)) || got.ArgumentBytes != 0 || got.MaxOpcodeCost != 1 {
+		t.Fatalf("dummy request[2] lsig_resources = %#v", got)
 	}
 }
 

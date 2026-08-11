@@ -16,6 +16,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -342,7 +343,8 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 			continue
 		}
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
-		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex, LsigSize: s.cache.LsigSize(effectiveSigner)}
+		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex}
+		applyForeignLogicSigHint(&requests[i], s.cache, effectiveSigner)
 	}
 	return requests
 }
@@ -472,7 +474,13 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 		switch {
 		case i >= originalCount:
 			// Dummy: foreign. Already signed locally and passed through at assembly.
-			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
+			signRequests[i] = signerapi.SignRequest{
+				TxnBytesHex: groupBytesHex[i],
+				LsigResources: &signerapi.LogicSigResourceUsage{
+					ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
+					MaxOpcodeCost: 1,
+				},
+			}
 		case guardedTargets[i].Account != "":
 			// Guarded target: foreign with an lsig_size hint. Kept in the group
 			// for context and budget accounting but not signed here.
@@ -480,10 +488,8 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 			if target.Sender != sender {
 				return nil, nil, fmt.Errorf("guarded target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
 			}
-			signRequests[i] = signerapi.SignRequest{
-				TxnBytesHex: groupBytesHex[i],
-				LsigSize:    s.cache.LsigSize(target.Account),
-			}
+			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
+			applyForeignLogicSigHint(&signRequests[i], s.cache, target.Account)
 		default:
 			// Non-guarded original: sign mode over the canonical bytes. Resolve
 			// the effective signer so a rekeyed account is signed by — and
@@ -508,6 +514,37 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 		}
 	}
 	return signRequests, nonGuarded, nil
+}
+
+func applyForeignLogicSigHint(request *signerapi.SignRequest, cache SignerCacheView, address string) {
+	if request == nil || cache == nil {
+		return
+	}
+	if profile, ok := cache.LogicSigResourceProfile(address); ok {
+		request.LsigResources = conservativeLogicSigResourceUsage(profile)
+		return
+	}
+	request.LsigSize = cache.LsigSize(address)
+}
+
+func conservativeLogicSigResourceUsage(profile lsigresource.Profile) *signerapi.LogicSigResourceUsage {
+	var argumentBytes, opcodeCost uint64
+	paths := []*lsigresource.PathProfile{profile.Default, profile.Spend, profile.SpendingRekey, profile.AdminRekey}
+	for _, path := range paths {
+		if path == nil {
+			continue
+		}
+		argumentBytes = max(argumentBytes, path.ArgumentBytes)
+		opcodeCost = max(opcodeCost, path.MaxOpcodeCost)
+	}
+	if profile.ProgramBytes == 0 || opcodeCost == 0 {
+		return nil
+	}
+	return &signerapi.LogicSigResourceUsage{
+		ProgramBytes:  profile.ProgramBytes,
+		ArgumentBytes: argumentBytes,
+		MaxOpcodeCost: opcodeCost,
+	}
 }
 
 func (s *Signer) requestNonGuardedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]guardedTarget, opts clientsign.SubmitOptions) (map[int]string, error) {

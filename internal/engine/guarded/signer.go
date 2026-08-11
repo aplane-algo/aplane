@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
 // SignerCacheView is the read-only view of the signer key cache that guarded
@@ -41,6 +42,9 @@ type SignerCacheView interface {
 	// LsigSize returns the post-signing LogicSig program+args budget for an
 	// address, or 0 if unknown.
 	LsigSize(address string) int
+	// LogicSigResourceProfile returns the split resource contract derived from
+	// the final compiled program and reviewed authorization paths.
+	LogicSigResourceProfile(address string) (lsigresource.Profile, bool)
 }
 
 // Deps are the collaborators guarded orchestration needs from the client.
