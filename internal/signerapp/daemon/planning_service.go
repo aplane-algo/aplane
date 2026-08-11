@@ -10,6 +10,7 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -87,7 +88,12 @@ func (d signerPlannerDeps) NetworkParams(genesisHash types.Digest) signersigning
 	if cfgErr != nil || algodCfg.Server == "" {
 		return signersigning.PlannerNetworkParams{MinTxnFee: txsigning.DefaultMinFee}
 	}
-	algodClient, err := txsigning.CreateAlgodClient(algodCfg.Server, algodCfg.Token)
+	var algodClient *algod.Client
+	if d.signer.makeAlgod != nil {
+		algodClient, err = d.signer.makeAlgod(algodCfg.Server, algodCfg.Token)
+	} else {
+		algodClient, err = txsigning.CreateAlgodClient(algodCfg.Server, algodCfg.Token)
+	}
 	if err != nil || algodClient == nil {
 		return signersigning.PlannerNetworkParams{MinTxnFee: txsigning.DefaultMinFee}
 	}

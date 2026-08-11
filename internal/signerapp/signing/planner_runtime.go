@@ -5,6 +5,7 @@ package signing
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
@@ -14,6 +15,7 @@ import (
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -71,8 +73,8 @@ func NewPlanner(deps PlannerDeps, opts PlannerOptions) *Planner {
 		VerifySignableKeys: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (int, *ServiceError) {
 			return verifySignableKeys(opts.Console, snapshot, identityID, requests, passthroughIndices, foreignIndices)
 		},
-		CalculateDummies: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, hasPassthrough, isPreGrouped bool) (int, []int, *ServiceError) {
-			return calculateDummies(opts.Console, snapshot, identityID, requests, txns, boundedItems, passthroughIndices, foreignIndices, hasPassthrough, isPreGrouped)
+		CalculateDummies: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, network PlannerNetworkParams, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
+			return calculateLogicSigResources(opts.Console, snapshot, identityID, requests, txns, boundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, network, hasPassthrough, isPreGrouped)
 		},
 		BuildFinalGroup: func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
 			minFee := uint64(0)
@@ -84,6 +86,193 @@ func NewPlanner(deps PlannerDeps, opts PlannerOptions) *Planner {
 		NetworkParams: networkParams,
 		Snapshot:      deps.Snapshot,
 	}
+}
+
+func calculateLogicSigResources(console Console, snapshot PlannerIdentitySnapshot, _ string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, network PlannerNetworkParams, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
+	var profile lsigresource.ConsensusProfile
+	profileResolved := false
+	resolveProfile := func() *ServiceError {
+		if profileResolved {
+			return nil
+		}
+		resolved, profileErr := lsigresource.ResolveConsensus(network.ConsensusVersion)
+		if profileErr != nil {
+			return badRequest(fmt.Sprintf("cannot plan LogicSig resources for consensus %q: %v", network.ConsensusVersion, profileErr))
+		}
+		profile = resolved
+		profileResolved = true
+		return nil
+	}
+
+	usages := make([]lsigresource.Usage, 0, len(requests))
+	lsigIndices := make([]int, 0, len(requests))
+	for i, request := range requests {
+		if passthroughIndices[i] {
+			usage, present, usageErr := passthroughLogicSigUsage(passthroughSignedTxns[i], i+1)
+			if usageErr != nil {
+				return lsigresource.Plan{}, nil, usageErr
+			}
+			if present {
+				usages = append(usages, usage)
+			}
+			continue
+		}
+
+		if foreignIndices[i] {
+			if request.LsigSize != 0 {
+				if profileErr := resolveProfile(); profileErr != nil {
+					return lsigresource.Plan{}, nil, profileErr
+				}
+			}
+			usage, present, usageErr := foreignLogicSigUsage(request, profile, i+1)
+			if usageErr != nil {
+				return lsigresource.Plan{}, nil, usageErr
+			}
+			if present {
+				usages = append(usages, usage)
+			}
+			continue
+		}
+
+		metadata := snapshot.KeyMetadata[request.AuthAddress]
+		if metadata.LogicSigResources == nil {
+			if size, ok := plannedLogicSigSize(snapshot.LSigSizes, request.AuthAddress, boundedItems, i); ok && size > 0 {
+				if profileErr := resolveProfile(); profileErr != nil {
+					return lsigresource.Plan{}, nil, profileErr
+				}
+				if profile.SizingMode == lsigresource.SizingModePricedProgram {
+					return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("transaction %d: LogicSig key %s has legacy combined-size metadata; regenerate this unpublished key before signing on consensus %s", i+1, request.AuthAddress, network.ConsensusVersion))
+				}
+				usages = append(usages, lsigresource.Usage{ProgramBytes: uint64(size), MaxOpcodeCost: 1})
+				lsigIndices = append(lsigIndices, i)
+			}
+			continue
+		}
+
+		path := lsigresource.PathDefault
+		if i < len(boundedItems) && boundedItems[i] != nil {
+			var pathErr error
+			path, pathErr = logicSigAuthorizationPath(boundedItems[i].Path)
+			if pathErr != nil {
+				return lsigresource.Plan{}, nil, internal(fmt.Sprintf("transaction %d: %v", i+1, pathErr))
+			}
+		}
+		usage, usageErr := metadata.LogicSigResources.UsageForPath(path)
+		if usageErr != nil {
+			return lsigresource.Plan{}, nil, internal(fmt.Sprintf("transaction %d: invalid stored LogicSig resource profile: %v", i+1, usageErr))
+		}
+		usages = append(usages, usage)
+		lsigIndices = append(lsigIndices, i)
+	}
+	if len(usages) == 0 {
+		return lsigresource.Plan{
+			TransactionCount: uint64(len(txns)),
+			GroupSize:        uint64(len(txns)),
+		}, nil, nil
+	}
+	if profileErr := resolveProfile(); profileErr != nil {
+		return lsigresource.Plan{}, nil, profileErr
+	}
+
+	dummy := lsigresource.Usage{
+		ProgramBytes:  uint64(len(txsigning.EmbeddedDummyTealTok)),
+		MaxOpcodeCost: 1,
+	}
+	resourcePlan, solveErr := lsigresource.Solve(profile, lsigresource.PlanInput{
+		TransactionCount: uint64(len(txns)),
+		LogicSigs:        usages,
+		Dummy:            dummy,
+	})
+	if solveErr != nil {
+		return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("LogicSig resources do not fit consensus %s: %v", network.ConsensusVersion, solveErr))
+	}
+	if resourcePlan.DummyCount > 0 && (isPreGrouped || hasPassthrough) {
+		return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("immutable group requires %d additional dummy transaction(s) for LogicSig arguments/opcode budget; submit an ungrouped unsigned group instead", resourcePlan.DummyCount))
+	}
+
+	if resourcePlan.DummyCount > 0 && len(lsigIndices) == 0 {
+		for i := range requests {
+			if !foreignIndices[i] && !passthroughIndices[i] {
+				lsigIndices = append(lsigIndices, i)
+				break
+			}
+		}
+	}
+	consoleOf(console).Printf("[GROUP] LogicSig resources: program=%d args=%d opcode<=%d, group=%d (%d dummy)\n",
+		resourcePlan.TotalProgramBytes,
+		resourcePlan.TotalArgumentBytes,
+		resourcePlan.TotalMaxOpcodeCost,
+		resourcePlan.GroupSize,
+		resourcePlan.DummyCount,
+	)
+	if resourcePlan.ProgramFeeFactorUsage > 0 {
+		consoleOf(console).Printf("[GROUP] LogicSig program pricing: %d charged byte(s), fee-factor contribution %d\n",
+			resourcePlan.ChargedProgramBytes,
+			resourcePlan.ProgramFeeFactorUsage,
+		)
+	}
+	return resourcePlan, lsigIndices, nil
+}
+
+func logicSigAuthorizationPath(path boundedPath) (lsigresource.AuthorizationPath, error) {
+	switch path {
+	case boundedPathPureSpend:
+		return lsigresource.PathSpend, nil
+	case boundedPathSpendingKeyRekey:
+		return lsigresource.PathSpendingRekey, nil
+	case boundedPathAdminKeyRekey:
+		return lsigresource.PathAdminRekey, nil
+	default:
+		return 0, fmt.Errorf("unknown bounded authorization path %q", path)
+	}
+}
+
+func foreignLogicSigUsage(request signerapi.SignRequest, profile lsigresource.ConsensusProfile, txnIndex int) (lsigresource.Usage, bool, *ServiceError) {
+	if request.LsigResources != nil {
+		return lsigresource.Usage{
+			ProgramBytes:  request.LsigResources.ProgramBytes,
+			ArgumentBytes: request.LsigResources.ArgumentBytes,
+			MaxOpcodeCost: request.LsigResources.MaxOpcodeCost,
+		}, true, nil
+	}
+	if request.LsigSize == 0 {
+		return lsigresource.Usage{}, false, nil
+	}
+	if request.LsigSize < 0 {
+		return lsigresource.Usage{}, false, badRequest(fmt.Sprintf("transaction %d: invalid negative lsig_size %d", txnIndex, request.LsigSize))
+	}
+	if profile.SizingMode == lsigresource.SizingModePricedProgram {
+		return lsigresource.Usage{}, false, badRequest(fmt.Sprintf("transaction %d: legacy lsig_size cannot describe v42 LogicSig resources; provide lsig_resources", txnIndex))
+	}
+	return lsigresource.Usage{ProgramBytes: uint64(request.LsigSize), MaxOpcodeCost: 1}, true, nil
+}
+
+func passthroughLogicSigUsage(encoded []byte, txnIndex int) (lsigresource.Usage, bool, *ServiceError) {
+	var signed types.SignedTxn
+	if err := msgpack.Decode(encoded, &signed); err != nil {
+		return lsigresource.Usage{}, false, badRequest(fmt.Sprintf("transaction %d (passthrough): invalid signed transaction msgpack", txnIndex))
+	}
+	if len(signed.Lsig.Logic) == 0 {
+		if !signed.Lsig.Blank() || !signed.Lsig.PQsig.Blank() {
+			return lsigresource.Usage{}, false, badRequest(fmt.Sprintf("transaction %d (passthrough): LogicSig authorization fields require a non-empty program", txnIndex))
+		}
+		return lsigresource.Usage{}, false, nil
+	}
+	argumentBytes := uint64(0)
+	for _, argument := range signed.Lsig.Args {
+		if uint64(len(argument)) > math.MaxUint64-argumentBytes {
+			return lsigresource.Usage{}, false, badRequest(fmt.Sprintf("transaction %d (passthrough): LogicSig argument size overflows resource calculation", txnIndex))
+		}
+		argumentBytes += uint64(len(argument))
+	}
+	// The signer cannot prove the dynamic opcode ceiling of immutable foreign
+	// bytecode. The network remains authoritative for execution; the planner
+	// accounts the observed bytes and uses the minimum non-zero solver value.
+	return lsigresource.Usage{
+		ProgramBytes:  uint64(len(signed.Lsig.Logic)),
+		ArgumentBytes: argumentBytes,
+		MaxOpcodeCost: 1,
+	}, true, nil
 }
 
 func verifySignableKeys(console Console, snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError) {

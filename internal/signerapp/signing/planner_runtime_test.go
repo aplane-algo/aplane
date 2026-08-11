@@ -11,6 +11,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
@@ -18,6 +19,7 @@ import (
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -52,7 +54,11 @@ func (d stubPlannerDeps) NetworkParams(genesisHash types.Digest) PlannerNetworkP
 	if d.minTxnFees != nil {
 		minFee = d.minTxnFees[genesisHash]
 	}
-	return PlannerNetworkParams{MinTxnFee: minFee, ConsensusVersion: d.consensusVersion}
+	consensusVersion := d.consensusVersion
+	if consensusVersion == "" {
+		consensusVersion = string(protocol.ConsensusV41)
+	}
+	return PlannerNetworkParams{MinTxnFee: minFee, ConsensusVersion: consensusVersion}
 }
 
 type countingSnapshotPlannerDeps struct {
@@ -85,6 +91,90 @@ func (a *captureAuditLog) LogSignRequest(identityID, authAddress, txnSender, txn
 		txnType:     txnType,
 		details:     details,
 	})
+}
+
+func TestCalculateLogicSigResourcesV42SeparatesProgramArgumentsAndOpcode(t *testing.T) {
+	profile := lsigresource.Profile{
+		ProgramBytes: 4_500,
+		Default: &lsigresource.PathProfile{
+			ArgumentBytes: 1_423,
+			MaxOpcodeCost: 39_999,
+		},
+	}
+	snapshot := PlannerIdentitySnapshot{
+		KeyMetadata: map[string]PlannerKeyMetadata{
+			"LSIG": {LogicSigResources: &profile},
+		},
+	}
+	plan, indices, err := calculateLogicSigResources(
+		nil,
+		snapshot,
+		"default",
+		[]signerapi.SignRequest{{AuthAddress: "LSIG"}},
+		[]types.Transaction{{}},
+		nil,
+		map[int]bool{},
+		map[int]bool{},
+		nil,
+		PlannerNetworkParams{ConsensusVersion: string(protocol.ConsensusV42)},
+		false,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.DummyCount != 1 || plan.GroupSize != 2 {
+		t.Fatalf("resource plan = %#v, want one dummy and group size two", plan)
+	}
+	if plan.TotalArgumentBytes != 1_423 || plan.TotalMaxOpcodeCost != 40_000 {
+		t.Fatalf("resource totals = %#v", plan)
+	}
+	if len(indices) != 1 || indices[0] != 0 {
+		t.Fatalf("fee-capable LogicSig indices = %v, want [0]", indices)
+	}
+}
+
+func TestCalculateLogicSigResourcesV42RejectsLegacyForeignScalar(t *testing.T) {
+	_, _, err := calculateLogicSigResources(
+		nil,
+		PlannerIdentitySnapshot{},
+		"default",
+		[]signerapi.SignRequest{{LsigSize: 1_500}},
+		[]types.Transaction{{}},
+		nil,
+		map[int]bool{},
+		map[int]bool{0: true},
+		nil,
+		PlannerNetworkParams{ConsensusVersion: string(protocol.ConsensusV42)},
+		false,
+		false,
+	)
+	if err == nil || !strings.Contains(err.Error(), "provide lsig_resources") {
+		t.Fatalf("calculateLogicSigResources() error = %v, want structured-profile rejection", err)
+	}
+}
+
+func TestCalculateLogicSigResourcesRejectsOrphanPassthroughLogicSigFields(t *testing.T) {
+	encoded := msgpack.Encode(types.SignedTxn{
+		Lsig: types.LogicSig{Args: [][]byte{{1}}},
+	})
+	_, _, err := calculateLogicSigResources(
+		nil,
+		PlannerIdentitySnapshot{},
+		"default",
+		[]signerapi.SignRequest{{SignedTxnHex: hex.EncodeToString(encoded)}},
+		[]types.Transaction{{}},
+		nil,
+		map[int]bool{0: true},
+		map[int]bool{},
+		map[int][]byte{0: encoded},
+		PlannerNetworkParams{ConsensusVersion: string(protocol.ConsensusV42)},
+		true,
+		true,
+	)
+	if err == nil || !strings.Contains(err.Error(), "require a non-empty program") {
+		t.Fatalf("calculateLogicSigResources() error = %v, want orphan-field rejection", err)
+	}
 }
 
 func TestVerifySignableKeysRequiresKeyTypeMetadata(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -20,7 +21,7 @@ type AuditLogger interface {
 }
 
 type VerifySignableKeysFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
-type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, hasPassthrough, isPreGrouped bool) (dummiesNeeded int, lsigIndices []int, err *ServiceError)
+type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, network PlannerNetworkParams, hasPassthrough, isPreGrouped bool) (resourcePlan lsigresource.Plan, lsigIndices []int, err *ServiceError)
 type BuildFinalGroupFunc func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError)
 type GenerateTxnDescriptionFunc func(txnBytesHex string) string
 
@@ -46,6 +47,7 @@ type PlanResult struct {
 	HasForeign            bool
 	LsigIndices           []int
 	DummiesNeeded         int
+	LogicSigResourcePlan  lsigresource.Plan
 	FeeInfo               DummyFeeInfo
 	NeedsRegroup          bool
 	IsPreGrouped          bool
@@ -162,10 +164,15 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		return nil, err
 	}
 
-	dummiesNeeded, lsigIndices, err := p.CalculateDummies(snapshot, identityID, req.Requests, txns, sizingBoundedItems, passthroughIndices, foreignIndices, hasPassthrough, isPreGrouped)
+	if p.NetworkParams == nil || len(txns) == 0 {
+		return nil, internal("LogicSig planning requires network consensus parameters")
+	}
+	networkParams := p.NetworkParams(txns[0].GenesisHash)
+	resourcePlan, lsigIndices, err := p.CalculateDummies(snapshot, identityID, req.Requests, txns, sizingBoundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, networkParams, hasPassthrough, isPreGrouped)
 	if err != nil {
 		return nil, err
 	}
+	dummiesNeeded := int(resourcePlan.DummyCount)
 
 	allTxns, dummyTxns, feeInfo, needsRegroup, err := p.BuildFinalGroup(txns, dummiesNeeded, lsigIndices, isPreGrouped)
 	if err != nil {
@@ -177,10 +184,6 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		return nil, budgetErr
 	}
 	if hasNativePQAuthorization(budgets) {
-		if p.NetworkParams == nil || len(allTxns) == 0 {
-			return nil, internal("native PQ planning requires network consensus parameters")
-		}
-		networkParams := p.NetworkParams(allTxns[0].GenesisHash)
 		pqDelta, pqIndices, feeErr := applyNativePQFees(allTxns, budgets, networkParams, isPreGrouped || hasPassthrough)
 		if feeErr != nil {
 			return nil, feeErr
@@ -232,6 +235,7 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		HasForeign:            hasForeign,
 		LsigIndices:           lsigIndices,
 		DummiesNeeded:         dummiesNeeded,
+		LogicSigResourcePlan:  resourcePlan,
 		FeeInfo:               feeInfo,
 		NeedsRegroup:          needsRegroup,
 		IsPreGrouped:          isPreGrouped,

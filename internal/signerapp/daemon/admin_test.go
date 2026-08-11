@@ -40,6 +40,7 @@ import (
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 )
 
 // testPassphrase is a fixed passphrase for test keystore creation.
@@ -174,6 +175,15 @@ func configureMockAlgod(t *testing.T, server *Signer) (cleanup func()) {
 	}
 
 	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/v2/transactions/params" {
+			body := fmt.Sprintf(`{"consensus-version":%q,"fee":0,"genesis-hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","genesis-id":"testnet-v1.0","last-round":100,"min-fee":1000}`, protocol.ConsensusV41)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    req,
+			}, nil
+		}
 		if req.URL.Path != "/v2/teal/compile" {
 			return &http.Response{
 				StatusCode: http.StatusNotFound,
