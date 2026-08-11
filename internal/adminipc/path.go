@@ -30,6 +30,8 @@ const (
 	SocketPathEnv = "APSIGNER_IPC_PATH"
 )
 
+var loadServerConfigStrict = serverconfig.LoadServerConfigStrict
+
 // ResolveDaemonPath selects the production runtime socket for a managed
 // instance unless config carries a genuinely custom path. Same-UID instances
 // retain the data-root socket.
@@ -205,8 +207,11 @@ func resolveDataDirectoryPath(dataDir string) (string, bool, error) {
 		return "", false, fmt.Errorf("inspect signer config for IPC discovery: %w", err)
 	}
 
-	cfg, err := serverconfig.LoadServerConfig(dataDir)
+	cfg, err := loadServerConfigStrict(dataDir)
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return privateDataDirectoryFallback(dataDir, err)
+		}
 		return "", false, err
 	}
 	resolved := ResolveDaemonPath(dataDir, cfg.IPCPath, managed)

@@ -4,10 +4,13 @@
 package adminipc
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 )
 
 func TestResolveDaemonPath(t *testing.T) {
@@ -195,6 +198,36 @@ func TestResolveClientPathExplicitDataDirectoryOutranksEnvironmentSocket(t *test
 	}
 }
 
+func TestResolveClientPathExplicitDataDirectoryRejectsUnreadableConfigDespiteEnvironment(t *testing.T) {
+	dataDir := t.TempDir()
+	configPath := filepath.Join(dataDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte("ipc_path: /secure/custom.sock\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(SocketPathEnv, "/run/other-signer.sock")
+
+	oldLoad := loadServerConfigStrict
+	loadServerConfigStrict = func(string) (serverconfig.ServerConfig, error) {
+		return serverconfig.ServerConfig{}, &os.PathError{Op: "open", Path: configPath, Err: os.ErrPermission}
+	}
+	t.Cleanup(func() { loadServerConfigStrict = oldLoad })
+
+	_, err := ResolveClientPath(ClientPathRequest{DataDir: dataDir, DataDirExplicit: true})
+	if err == nil || !errors.Is(err, os.ErrPermission) || !strings.Contains(err.Error(), "refusing to fall back") {
+		t.Fatalf("ResolveClientPath() error = %v, want unreadable-config cross-store rejection", err)
+	}
+}
+
+func TestResolveClientPathEnvironmentPairBypassesUnreadableCustomStore(t *testing.T) {
+	const socket = "/secure/custom/aplane.sock"
+	t.Setenv(SocketPathEnv, socket)
+
+	got, err := ResolveClientPath(ClientPathRequest{DataDir: "/unreadable/custom-signer"})
+	if err != nil || got != socket {
+		t.Fatalf("ResolveClientPath(environment pair) = %q, %v; want %q", got, err, socket)
+	}
+}
+
 func TestResolveClientPathMapsReadableManagedDefaultToSystemRuntime(t *testing.T) {
 	t.Setenv(SocketPathEnv, "")
 	dataDir := t.TempDir()
@@ -211,6 +244,26 @@ func TestResolveClientPathMapsReadableManagedDefaultToSystemRuntime(t *testing.T
 	}
 	if got != SystemSocketPath {
 		t.Fatalf("ResolveClientPath() = %q, want %q", got, SystemSocketPath)
+	}
+}
+
+func TestResolveClientPathReadsManagedExternalCustomPath(t *testing.T) {
+	t.Setenv(SocketPathEnv, "")
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, ".prod"), []byte("systemd-managed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(filepath.Dir(dataDir), "protected-runtime", "custom.sock")
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("ipc_path: "+want+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ResolveClientPath(ClientPathRequest{DataDir: dataDir, DataDirExplicit: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("ResolveClientPath() = %q, want managed custom path %q", got, want)
 	}
 }
 

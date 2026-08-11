@@ -231,7 +231,27 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 		return defaults, nil
 	}
 
-	// Parse YAML
+	return parseServerConfig(dataDir, path, data, defaults)
+}
+
+// LoadServerConfigStrict loads an existing config and propagates every read
+// failure. Discovery and security-sensitive callers use it after establishing
+// that config.yaml exists so an unreadable custom path cannot silently become
+// a default socket or configuration.
+func LoadServerConfigStrict(dataDir string) (ServerConfig, error) {
+	defaults := DefaultServerConfig()
+	if dataDir == "" {
+		return defaults, nil
+	}
+	path := filepath.Join(dataDir, "config.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ServerConfig{}, fmt.Errorf("failed to read config file %s: %w", path, err)
+	}
+	return parseServerConfig(dataDir, path, data, defaults)
+}
+
+func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig) (ServerConfig, error) {
 	config := defaults
 	if err := apconfig.UnmarshalKnownConfigFields(data, &config); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
@@ -240,6 +260,7 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	if err := apconfig.ValidateConfigSchemaVersion("server config", config.SchemaVersion); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
+	var err error
 	if config.Algod, err = mergeServerNetworkAlgodConfig(nil, config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid network in networks config: %w", err)
 	}
