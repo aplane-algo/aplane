@@ -56,16 +56,18 @@ func cmdSentryExport(args []string) error {
 		return fmt.Errorf("invalid Witness Key ID: %w", err)
 	}
 
-	client, err := newApstoreAdminClientForCommand()
+	client, err := newApstoreReadOnlyAdminClientForCommand()
 	if err != nil {
 		return err
 	}
 	defer client.close()
-	var result protocol.ExportSentryPublicResultMessage
-	if err := client.request(protocol.ExportSentryPublicMessage{
-		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeExportSentryPublic, ID: newApstoreRequestID("sentry-export")},
-		WitnessKeyID: componentKey,
-	}, &result); err != nil {
+	result, err := requestInspectionWithRetry(client, func() any {
+		return protocol.ExportSentryPublicMessage{
+			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeExportSentryPublic, ID: newApstoreRequestID("sentry-export")},
+			WitnessKeyID: componentKey,
+		}
+	}, func(result *protocol.ExportSentryPublicResultMessage) string { return result.Code })
+	if err != nil {
 		return err
 	}
 	if !result.Success {
@@ -113,15 +115,17 @@ func cmdSentryImport(path, name string) error {
 }
 
 func cmdSentryList() error {
-	client, err := newApstoreAdminClientForCommand()
+	client, err := newApstoreReadOnlyAdminClientForCommand()
 	if err != nil {
 		return err
 	}
 	defer client.close()
-	var result protocol.SentryReferencesListMessage
-	if err := client.request(protocol.ListSentryReferencesMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListSentryReferences, ID: newApstoreRequestID("sentry-list")},
-	}, &result); err != nil {
+	result, err := requestInspectionWithRetry(client, func() any {
+		return protocol.ListSentryReferencesMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListSentryReferences, ID: newApstoreRequestID("sentry-list")},
+		}
+	}, func(result *protocol.SentryReferencesListMessage) string { return result.Code })
+	if err != nil {
 		return err
 	}
 	if result.Error != "" {
@@ -155,16 +159,18 @@ func sentryReferenceListLabel(rec protocol.SentryReferenceInfo) string {
 }
 
 func cmdSentryShow(name string) error {
-	client, err := newApstoreAdminClientForCommand()
+	client, err := newApstoreReadOnlyAdminClientForCommand()
 	if err != nil {
 		return err
 	}
 	defer client.close()
-	var result protocol.SentryReferenceMessage
-	if err := client.request(protocol.GetSentryReferenceMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetSentryReference, ID: newApstoreRequestID("sentry-show")},
-		Name:        name,
-	}, &result); err != nil {
+	result, err := requestInspectionWithRetry(client, func() any {
+		return protocol.GetSentryReferenceMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetSentryReference, ID: newApstoreRequestID("sentry-show")},
+			Name:        name,
+		}
+	}, func(result *protocol.SentryReferenceMessage) string { return result.Code })
+	if err != nil {
 		return err
 	}
 	if !result.Success {

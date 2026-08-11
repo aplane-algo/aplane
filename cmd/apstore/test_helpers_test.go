@@ -247,8 +247,12 @@ func (f *fakeApstoreAdminRequester) close() {
 func withFakeApstoreAdminClient(t *testing.T, fake apstoreAdminRequester) {
 	t.Helper()
 	oldNewApstoreAdminClientForCommand := newApstoreAdminClientForCommand
+	oldNewApstoreReadOnlyAdminClientForCommand := newApstoreReadOnlyAdminClientForCommand
 	oldNewApstoreAdminClientWithPassphraseForCommand := newApstoreAdminClientWithPassphraseForCommand
 	newApstoreAdminClientForCommand = func() (apstoreAdminRequester, error) {
+		return fake, nil
+	}
+	newApstoreReadOnlyAdminClientForCommand = func() (apstoreAdminRequester, error) {
 		return fake, nil
 	}
 	newApstoreAdminClientWithPassphraseForCommand = func(passphrase []byte) (apstoreAdminRequester, error) {
@@ -259,6 +263,7 @@ func withFakeApstoreAdminClient(t *testing.T, fake apstoreAdminRequester) {
 	}
 	t.Cleanup(func() {
 		newApstoreAdminClientForCommand = oldNewApstoreAdminClientForCommand
+		newApstoreReadOnlyAdminClientForCommand = oldNewApstoreReadOnlyAdminClientForCommand
 		newApstoreAdminClientWithPassphraseForCommand = oldNewApstoreAdminClientWithPassphraseForCommand
 	})
 }

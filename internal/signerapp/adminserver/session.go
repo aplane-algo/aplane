@@ -193,7 +193,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		if base.Type == protocol.MsgTypeInitializeStore {
 			return s.handlePreAuthInitialize(base.ID, raw)
 		}
-		if base.Type != protocol.MsgTypeAuth {
+		if base.Type != protocol.MsgTypeAuth && base.Type != protocol.MsgTypeAuthOnly {
 			s.sendAuthResult(false, protocol.ErrCodeExpectedAuthMessage, "expected auth message")
 			return AuthOutcomeFailed
 		}
@@ -233,19 +233,22 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 
 		sessionIdentity := s.identityServices.NewSessionIdentity(s.method)
 		principal := principalFromIdentity(sessionIdentity)
-		unlockResource := auth.Resource{
-			Type:       "identity",
-			ID:         ir.ID(),
-			IdentityID: ir.ID(),
-		}
-		if err := s.authorizeIdentity(sessionIdentity, auth.ActionIdentityUnlock, unlockResource); err != nil {
-			zeroBytes(passphraseBytes)
-			s.logAuthorizationDenied(sessionIdentity, auth.ActionIdentityUnlock, unlockResource, err.Error())
-			s.sendAuthResult(false, protocol.ErrCodeAuthorizationDenied, "authorization denied")
-			return AuthOutcomeFailed
+		authenticateOnly := base.Type == protocol.MsgTypeAuthOnly
+		if !authenticateOnly {
+			unlockResource := auth.Resource{
+				Type:       "identity",
+				ID:         ir.ID(),
+				IdentityID: ir.ID(),
+			}
+			if err := s.authorizeIdentity(sessionIdentity, auth.ActionIdentityUnlock, unlockResource); err != nil {
+				zeroBytes(passphraseBytes)
+				s.logAuthorizationDenied(sessionIdentity, auth.ActionIdentityUnlock, unlockResource, err.Error())
+				s.sendAuthResult(false, protocol.ErrCodeAuthorizationDenied, "authorization denied")
+				return AuthOutcomeFailed
+			}
 		}
 
-		if !ir.IsUnlocked() {
+		if !authenticateOnly && !ir.IsUnlocked() {
 			success, _, errMsg, code := s.identityServices.UnlockIdentity(ir, passphraseBytes)
 			zeroBytes(passphraseBytes)
 			if !success {

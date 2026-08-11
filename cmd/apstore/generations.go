@@ -31,15 +31,17 @@ func cmdGenerations(args []string) error {
 		if len(args) != 1 {
 			return fmt.Errorf("usage: apstore generations list")
 		}
-		client, err := newApstoreAdminClientForCommand()
+		client, err := newApstoreReadOnlyAdminClientForCommand()
 		if err != nil {
 			return err
 		}
 		defer client.close()
-		var report protocol.GenerationsListMessage
-		if err := client.request(protocol.ListGenerationsMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListGenerations, ID: newApstoreRequestID("generations-list")},
-		}, &report); err != nil {
+		report, err := requestInspectionWithRetry(client, func() any {
+			return protocol.ListGenerationsMessage{
+				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListGenerations, ID: newApstoreRequestID("generations-list")},
+			}
+		}, func(result *protocol.GenerationsListMessage) string { return result.Code })
+		if err != nil {
 			return err
 		}
 		if report.Error != "" {

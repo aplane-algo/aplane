@@ -496,6 +496,13 @@ only — signing is blocked until the operator resolves the store from recovery
 mode. Clients must treat `recovery_blocked` as a store-integrity state
 distinct from both `unlock_failed` and credential rejection.
 
+The pre-auth `auth_only` request verifies the same passphrase and binds the
+admin session without authorizing or invoking `identity.unlock`. Read-only
+clients use a distinct message type so an older server rejects it before
+processing instead of silently unlocking. Bound-only sentry-reference,
+generation-inventory, and endpoint-settings reads use this mode; operations
+whose handlers require unlocked or recovery state continue to use `auth`.
+
 ## apshell Parsing Contracts
 
 The `apshell` command surface remains compatibility-sensitive even when internal parsing is refactored.

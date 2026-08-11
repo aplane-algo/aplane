@@ -468,6 +468,38 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	}
 }
 
+func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
+	ir := identity.New(identity.Config{
+		ID:            auth.DefaultIdentityID,
+		Authenticator: auth.NewTokenAuthenticator("test-token"),
+	})
+	authMsg, err := protocol.MarshalAdminMessage(protocol.AuthMessage{
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuthOnly},
+		Passphrase:      protocol.NewSensitiveBytes("secret"),
+		ProtocolVersion: currentAdminProtocolVersion(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &stubServices{runtime: ir, unlockOK: true, newIdentity: auth.NewDefaultIdentity("ipc-passphrase")}
+	conn := &queueConn{reads: [][]byte{authMsg}}
+	session := NewSession(conn, SessionDeps{Identity: svc})
+	session.SetTransportInfo(TransportIPC, "unix:/tmp/aplane.sock")
+
+	if !session.Authenticate() {
+		t.Fatal("Authenticate() = false, want authenticate-only success")
+	}
+	if svc.unlockCalls != 0 {
+		t.Fatalf("UnlockIdentity calls = %d, want 0", svc.unlockCalls)
+	}
+	if ir.IsUnlocked() {
+		t.Fatal("authenticate-only session unlocked the runtime")
+	}
+	if session.BoundRuntime() != ir {
+		t.Fatal("authenticate-only session was not bound")
+	}
+}
+
 func TestSessionAuthenticateOutcomeHandlesLocalInitialize(t *testing.T) {
 	initMsg, err := protocol.MarshalAdminMessage(protocol.InitializeStoreMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeInitializeStore, ID: "init-1"},

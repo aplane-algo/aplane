@@ -11,6 +11,7 @@ import (
 func InferMessageKind(messageType string) (MessageKind, bool) {
 	switch messageType {
 	case MsgTypeAuth,
+		MsgTypeAuthOnly,
 		MsgTypeUnlock,
 		MsgTypeLockIdentity,
 		MsgTypeInitializeStore,

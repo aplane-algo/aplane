@@ -288,6 +288,49 @@ func TestIPCAuthenticateClientExistsMismatch(t *testing.T) {
 	}
 }
 
+func TestIPCAuthenticateOnlyUsesFailClosedMessageType(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+
+	client := NewIPC("/tmp/test.sock")
+	client.conn = clientConn
+	client.reader = bufio.NewReader(clientConn)
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(errCh)
+		if _, err := serverConn.Write(mustJSONLine(t, protocol.BaseMessage{Type: protocol.MsgTypeAuthRequired})); err != nil {
+			errCh <- err
+			return
+		}
+		line, err := bufio.NewReader(serverConn).ReadBytes('\n')
+		if err != nil {
+			errCh <- err
+			return
+		}
+		var auth protocol.AuthMessage
+		if err := json.Unmarshal(line, &auth); err != nil {
+			errCh <- err
+			return
+		}
+		if auth.Type != protocol.MsgTypeAuthOnly {
+			errCh <- fmt.Errorf("auth type = %q, want %q", auth.Type, protocol.MsgTypeAuthOnly)
+			return
+		}
+		_, err = serverConn.Write(mustJSONLine(t, protocol.AuthResultMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAuthResult}, Success: true,
+		}))
+		errCh <- err
+	}()
+
+	if err := client.AuthenticateOnly("secret", time.Second); err != nil {
+		t.Fatalf("AuthenticateOnly() error = %v", err)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("server side error = %v", err)
+	}
+}
+
 func TestIPCAuthenticateUnauthorizedReturnsFormattedError(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()

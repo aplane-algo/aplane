@@ -14,6 +14,7 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	types := []string{
 		MsgTypeAuthRequired,
 		MsgTypeAuth,
+		MsgTypeAuthOnly,
 		MsgTypeAuthResult,
 		MsgTypeUnlock,
 		MsgTypeUnlockResult,
@@ -120,9 +121,9 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-func TestCurrentAdminProtocolVersionIncludesBackupTransfer(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 3}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.3", got)
+func TestCurrentAdminProtocolVersionIncludesAuthenticateOnly(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 4}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.4", got)
 	}
 }
 

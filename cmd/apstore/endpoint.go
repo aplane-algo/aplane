@@ -95,7 +95,7 @@ func cmdEndpointExport(args []string) error {
 }
 
 func loadEndpointExportSettings() (endpointExportSettings, error) {
-	client, err := newApstoreAdminClientForCommand()
+	client, err := newApstoreReadOnlyAdminClientForCommand()
 	if err != nil {
 		return endpointExportSettings{}, err
 	}

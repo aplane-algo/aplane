@@ -44,6 +44,10 @@ var newApstoreAdminClientForCommand = func() (apstoreAdminRequester, error) {
 	return newApstoreAdminClient()
 }
 
+var newApstoreReadOnlyAdminClientForCommand = func() (apstoreAdminRequester, error) {
+	return newApstoreReadOnlyAdminClient()
+}
+
 var newApstoreAdminClientWithPassphraseForCommand = func(passphrase []byte) (apstoreAdminRequester, error) {
 	return newApstoreAdminClientWithPassphrase(passphrase)
 }
@@ -70,6 +74,19 @@ func newApstoreAdminClient() (*apstoreAdminClient, error) {
 	return client, nil
 }
 
+func newApstoreReadOnlyAdminClient() (*apstoreAdminClient, error) {
+	conn := transport.NewIPC(apstoreIPCPath())
+	if err := conn.Dial(); err != nil {
+		return nil, codedError{code: apstoreCodeIPCUnavailable, message: err.Error()}
+	}
+	client := &apstoreAdminClient{conn: conn}
+	if err := client.authenticateOnly(); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return client, nil
+}
+
 func newApstoreAdminClientWithPassphrase(passphrase []byte) (*apstoreAdminClient, error) {
 	conn := transport.NewIPC(apstoreIPCPath())
 	if err := conn.Dial(); err != nil {
@@ -90,18 +107,35 @@ func (c *apstoreAdminClient) close() {
 }
 
 func (c *apstoreAdminClient) authenticateAndUnlock() error {
+	passphrase, clear, err := readApstoreAdminPassphrase()
+	if err != nil {
+		return err
+	}
+	defer clear()
+	return c.authenticateAndUnlockString(passphrase)
+}
+
+func (c *apstoreAdminClient) authenticateOnly() error {
+	passphrase, clear, err := readApstoreAdminPassphrase()
+	if err != nil {
+		return err
+	}
+	defer clear()
+	return c.conn.AuthenticateOnly(passphrase, apstoreIPCTimeout)
+}
+
+func readApstoreAdminPassphrase() (string, func(), error) {
 	passphrase := os.Getenv("TEST_PASSPHRASE")
 	var passphraseBytes []byte
 	if passphrase == "" {
 		var err error
 		passphraseBytes, err = promptForAdminPassphrase()
 		if err != nil {
-			return fmt.Errorf("failed to read admin passphrase: %w", err)
+			return "", func() {}, fmt.Errorf("failed to read admin passphrase: %w", err)
 		}
-		defer crypto.ZeroBytes(passphraseBytes)
 		passphrase = string(passphraseBytes)
 	}
-	return c.authenticateAndUnlockString(passphrase)
+	return passphrase, func() { crypto.ZeroBytes(passphraseBytes) }, nil
 }
 
 func promptForAdminPassphrase() ([]byte, error) {

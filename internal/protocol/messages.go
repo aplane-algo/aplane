@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 4
-	AdminProtocolVersionMinor = 3
+	AdminProtocolVersionMinor = 4
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
@@ -36,6 +36,7 @@ const (
 	// Authentication message types (sent before any other messages)
 	MsgTypeAuthRequired = "auth_required"
 	MsgTypeAuth         = "auth"
+	MsgTypeAuthOnly     = "auth_only"
 	MsgTypeAuthResult   = "auth_result"
 
 	// Signer state message types

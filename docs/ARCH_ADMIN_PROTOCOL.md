@@ -73,7 +73,8 @@ Source: `internal/protocol/messages.go`. Unsupported client messages yield a gen
 
 Client to Server:
 
-- `auth` (pre-auth handshake response to `auth_required`; required before authenticated dispatch)
+- `auth` (pre-auth handshake response to `auth_required`; verifies, binds, and unlocks before authenticated dispatch)
+- `auth_only` (pre-auth handshake response for bound-runtime reads; verifies and binds without changing locked state)
 - `unlock`
 - `lock_identity`
 - `initialize_store`
@@ -212,7 +213,7 @@ Server to Client:
 
 ### Session and Identity
 
-- `auth`: `passphrase`, optional `identity_id`, required `protocol_version`
+- `auth` / `auth_only`: `passphrase`, optional `identity_id`, required `protocol_version`
 - `auth_result`: `success`, optional `code`, optional `error`
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
@@ -239,6 +240,12 @@ the result reports `success:true` with a zero key count and
 `code:"recovery_blocked"`. The identity is unlocked for administration only;
 signing stays blocked until the operator resolves the store from recovery
 mode.
+
+The pre-auth `auth_only` request performs the same passphrase verification and
+identity binding but never authorizes or invokes `identity.unlock`. It is a
+distinct message type so an older server rejects it before processing instead
+of ignoring a new flag and unlocking. It is limited to operations whose
+handlers require only an authenticated bound runtime.
 
 ### Key Management
 
