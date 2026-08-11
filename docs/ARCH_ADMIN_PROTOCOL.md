@@ -74,7 +74,9 @@ Source: `internal/protocol/messages.go`. Unsupported client messages yield a gen
 Client to Server:
 
 - `auth` (pre-auth handshake response to `auth_required`; verifies, binds, and unlocks before authenticated dispatch)
-- `auth_only` (pre-auth handshake response for bound-runtime reads; verifies and binds without changing locked state)
+- `auth_only` (pre-auth handshake response intended for bound-runtime reads;
+  verifies and binds without changing locked state, but does not create a
+  server-enforced read-only session)
 - `unlock`
 - `lock_identity`
 - `initialize_store`
@@ -244,8 +246,11 @@ mode.
 The pre-auth `auth_only` request performs the same passphrase verification and
 identity binding but never authorizes or invokes `identity.unlock`. It is a
 distinct message type so an older server rejects it before processing instead
-of ignoring a new flag and unlocking. It is limited to operations whose
-handlers require only an authenticated bound runtime.
+of ignoring a new flag and unlocking. First-party clients use it only for
+operations whose handlers require an authenticated bound runtime. It does not
+constrain the authenticated session to a separate read-only capability:
+subsequent messages still pass through their ordinary grant checks and
+locked/unlocked/recovery-state interlocks.
 
 ### Key Management
 

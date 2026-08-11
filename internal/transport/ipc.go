@@ -142,7 +142,9 @@ func (c *IPCClient) Authenticate(passphrase string, timeout time.Duration) error
 }
 
 // AuthenticateOnly verifies and binds the admin session without transitioning
-// a locked identity to unlocked. It is for bound-runtime read operations only.
+// a locked identity to unlocked. It is intended for bound-runtime reads; it
+// does not create a read-only session capability. Subsequent requests remain
+// subject to their normal authorization and runtime-state gates.
 func (c *IPCClient) AuthenticateOnly(passphrase string, timeout time.Duration) error {
 	return authenticateOnly(c, passphrase, timeout)
 }

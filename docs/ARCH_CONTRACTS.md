@@ -502,6 +502,9 @@ clients use a distinct message type so an older server rejects it before
 processing instead of silently unlocking. Bound-only sentry-reference,
 generation-inventory, and endpoint-settings reads use this mode; operations
 whose handlers require unlocked or recovery state continue to use `auth`.
+`auth_only` describes the handshake side effect, not a server-enforced
+read-only session capability: every later request still uses its normal grant
+and runtime-state checks.
 
 ## apshell Parsing Contracts
 
