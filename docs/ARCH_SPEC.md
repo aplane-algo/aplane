@@ -1479,7 +1479,7 @@ contracts remain in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and
 
 See [ARCH_CRYPTO.md](ARCH_CRYPTO.md) for the provider and algorithm model.
 
-Key type identifiers use the canonical form `publisher.family.vN` for APlane-defined LogicSig, template, and compiled-provider key types, and the single-segment built-in `ed25519` for native signing keys. The full contract lives in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Key Type Identifier Contract).
+Key type identifiers use the canonical form `publisher.family.vN` for APlane-defined LogicSig, template, and compiled-provider key types, and the single-segment built-ins `ed25519` and `falcon1024` for native signing keys. Native Falcon uses the `native_pq` authorization kind and top-level `SignedTxn.PQsig`; it is not part of the `aplane.falcon1024.*` LogicSig family. The full contract lives in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Key Type Identifier Contract).
 
 ## Keystore and Key Lifecycle
 
@@ -1855,6 +1855,7 @@ Product-level boundaries:
 | Shell App | `internal/apshellapp/app.go`, `internal/apshellapp/runtime.go`, `internal/apshellapp/connect.go` |
 | Engine | `internal/engine/engine.go`, `internal/engine/core.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go`, `internal/engine/guarded/submit.go` |
 | Signing | `internal/signerapp/signing/service.go`, `internal/signerapp/signing/planner.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/execution.go`, `internal/signerapp/signing/approval.go` |
+| Native Signature Providers | `internal/signing/ed25519`, `internal/signing/falcon1024`, `internal/signing/native_authorizer.go` |
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/*.go`, `internal/backup/*.go` |

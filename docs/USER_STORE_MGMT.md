@@ -86,8 +86,10 @@ external systems.
 
 In the TUI:
 1. Press `i` to import a key
-2. Select a mnemonic-backed key type such as `aplane.falcon1024.v1` or `ed25519`
-3. Enter the 24-word Falcon-1024 LogicSig mnemonic or 25-word Ed25519 mnemonic
+2. Select a mnemonic-backed key type such as native `falcon1024`,
+   `aplane.falcon1024.v1`, or `ed25519`
+3. Enter the matching phrase: 25 words for native `falcon1024` and `ed25519`,
+   or 24 words for the `aplane.falcon1024.v1` LogicSig
 4. Confirm the import
 
 Mnemonic import is accepted only by local AP Admin over IPC. Remote AP Admin
@@ -367,8 +369,10 @@ originated from Lute or Pera:
 ./apadmin
 ```
 1. Press `i` to import a key
-2. Select a mnemonic-backed key type such as `aplane.falcon1024.v1` or `ed25519`
-3. Enter your 24-word Falcon-1024 LogicSig mnemonic or 25-word Ed25519 mnemonic
+2. Select a mnemonic-backed key type such as native `falcon1024`,
+   `aplane.falcon1024.v1`, or `ed25519`
+3. Enter the matching phrase: 25 words for native `falcon1024` and `ed25519`,
+   or 24 words for the `aplane.falcon1024.v1` LogicSig
 4. The key will be restored with the same address
 
 

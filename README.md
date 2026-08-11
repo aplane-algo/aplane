@@ -124,7 +124,8 @@ apshell and apadmin can connect to apsigner over an SSH tunnel, allowing the sig
 
 ### Key Types
 - **ed25519**: Native Algorand keys
-- **falcon1024**: Post-quantum signatures via LogicSig
+- **falcon1024**: Protocol-native post-quantum signatures on consensus v42+
+- **aplane.falcon1024.v1**: Falcon-1024 signatures via LogicSig
 - **general LogicSigs**: timelock, hashlock, user-loaded custom TEAL
 - **hybrid DSA+LogicSig**: falcon1024-hashlock, falcon1024-timelock
 

@@ -159,6 +159,7 @@ Go-defined key types:
 | Key type | Behavior category | Definition source | Catalog visibility | Primary definition |
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
+| `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | default-enabled | `lsig/falcon1024/v1/standard.go` |
 | `aplane.witness-falcon1024.v1` | Witness key (sentry custody or external contract-admin custody) | Go-defined | default-enabled on sentry nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.falcon1024-sentry1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
@@ -166,7 +167,7 @@ Go-defined key types:
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
-`internal/keytypecatalog`: `ed25519`, `aplane.falcon1024.v1`, and
+`internal/keytypecatalog`: `ed25519`, `falcon1024`, `aplane.falcon1024.v1`, and
 `aplane.witness-falcon1024.v1` are default-enabled, while
 `aplane.falcon1024-sentry1024.v1` and
 `aplane.ed25519.v1` are library-visible and not available for generation until
@@ -179,13 +180,19 @@ Opt-in state records are plaintext identity-scoped metadata under
 `identities/<identity>/keytypes/<key_type>.json`; they affect discovery and key
 creation, not the ability to sign with keys that already exist. Mnemonic import
 is additionally gated by the provider's explicit mnemonic-import capability.
-The default-enabled `ed25519` and `aplane.falcon1024.v1` providers allow
+The default-enabled `ed25519`, `falcon1024`, and `aplane.falcon1024.v1` providers allow
 user-entered mnemonic import without identity-local activation; the
 library-visible `aplane.ed25519.v1` provider allows mnemonic import after it is
 enabled for the identity. YAML templates and the other library-visible compiled
 providers do not allow user-entered mnemonic import. `apstore restore` creates
 or enables this state record idempotently when restoring a key for a
 library-visible compiled provider.
+
+Native `falcon1024` is not a LogicSig provider. It uses the explicit
+`native_pq` authorization kind, a 25-word Algorand mnemonic, top-level
+`SignedTxn.PQsig`, and the `internal/signing/falcon1024` signer-only provider.
+Do not route it through `lsig/falcon1024` or reuse the 24-word recovery and
+derivation contract of `aplane.falcon1024.v1`.
 
 Installed YAML templates use the same state-record model. The encrypted
 `.template` file under `identities/<identity>/keytypes/<key_type>.template` is

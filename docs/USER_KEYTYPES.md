@@ -17,7 +17,7 @@ authorities:
 
 | Account authorization type | Meaning | Examples |
 |---|---|---|
-| **Native** | Standard protocol account signature without a LogicSig. | `ed25519` |
+| **Native** | Protocol account signature without a LogicSig. | `ed25519`, `falcon1024` |
 | **DSA LogicSig** | A LogicSig verifies digital signatures and may add transaction policy. | `aplane.falcon1024.v1`, bounded allowlists, guarded accounts |
 | **Generic LogicSig** | TEAL-only account with no DSA private key. | `aplane.htlc.v1` |
 
@@ -48,8 +48,8 @@ APlane has two optional key type paths:
 | Compiled provider | `aplane.ed25519.v1` | Go code in the current binary | `apstore keytype enable` or apadmin KeyType Library |
 | YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apstore template import` or apadmin KeyType Library |
 
-Default-enabled compiled providers, such as `ed25519` and
-`aplane.falcon1024.v1`, are available without extra steps.
+Default-enabled compiled providers, such as `ed25519`, `falcon1024`, and
+`aplane.falcon1024.v1`, are available without extra steps on signer nodes.
 Library-visible compiled providers are present in the binary but require an
 identity-local enablement record before that identity can discover or generate
 them.
@@ -114,6 +114,20 @@ Use the full canonical key type shown by `keytypes`, for example
 `aplane.htlc.v1` or `example.my_escrow.v1`. Files, IPC/HTTP
 responses, and JSON fields use the same canonical `publisher.family.vN`
 identifier.
+
+### Native Falcon versus Falcon LogicSig
+
+The names intentionally describe different account types:
+
+| Key type | Authorization | Recovery | Network requirement |
+|---|---|---|---|
+| `falcon1024` | Protocol-native top-level `PQsig` | 25-word Algorand mnemonic | consensus v42 or an explicitly supported compatible protocol |
+| `aplane.falcon1024.v1` | TEAL LogicSig containing a Falcon signature | 24-word BIP-39 mnemonic | LogicSig-capable networks |
+
+There is no conversion between them. A mnemonic or backup entry for one type
+cannot be imported as the other. Native Falcon transactions also consume a
+higher protocol fee; APlane presents and applies the required fee adjustment
+before approval.
 
 ## Compiled Providers
 
@@ -370,6 +384,7 @@ publisher.family.vN
 For example:
 
 ```text
+falcon1024
 aplane.falcon1024.v1
 aplane.ed25519.v1
 aplane.htlc.v1

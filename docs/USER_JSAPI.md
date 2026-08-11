@@ -164,7 +164,7 @@ persisted alias or set names.
 | `signers(addresses)` | Filtered array containing only addresses that are signer keys |
 | `keys()` | `[{ address, keyType }]` from the connected signer |
 | `signableAddresses()` | Address array |
-| `canSignFor(addressOrAlias)` | `{ canSign, isLsig }` |
+| `canSignFor(addressOrAlias)` | `{ canSign, isLsig, authorizationKind }` where the kind is `ed25519`, `native_pq`, or `logic_sig` |
 | `keyTypes()` | Available key type metadata from the signer |
 | `generateKey(keyType, params = {})` | `{ address, keyType }` |
 | `deleteKey(addressOrAlias)` | `{ address, deleted: true }` |
@@ -173,14 +173,15 @@ persisted alias or set names.
 
 ```javascript
 {
-  keyType: "aplane.falcon1024.v1",
-  family: "aplane.falcon1024",
-  displayName: "Falcon-1024",
+  keyType: "falcon1024",
+  family: "falcon1024",
+  displayName: "falcon1024",
   description: "...",
-  requiresLogicSig: true,
-  mnemonicWordCount: 24,
+  authorizationKind: "native_pq",
+  requiresLogicSig: false,
+  mnemonicWordCount: 25,
   mnemonicImport: true,
-  mnemonicScheme: "bip39",
+  mnemonicScheme: "algorand",
   creationParams: [
     { name, label, description, type, required, example, placeholder, default }
   ],
