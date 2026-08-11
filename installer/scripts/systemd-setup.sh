@@ -131,18 +131,14 @@ case "$service_state" in
         ;;
 esac
 
-# Closing the real data-directory root is the only store mutation permitted
-# before the read-only structural preflight. Once closed, a former group member
-# cannot race the inventory or plant a pathname for a later root operation.
-if [ -L "$DATA_DIR" ]; then
-    echo "Error: signer data directory must not be a symlink: $DATA_DIR" >&2
-    exit 1
-fi
-mkdir -p "$DATA_DIR"
-if [ -L "$DATA_DIR" ] || [ ! -d "$DATA_DIR" ]; then
-    echo "Error: signer data directory changed during setup: $DATA_DIR" >&2
-    exit 1
-fi
+SERVICE_UID="$(id -u "$SVC_USER")"
+SERVICE_GID="$(getent group "$SVC_GROUP" | cut -d: -f3)"
+
+# Create and close the data-directory root through descriptor-based Go code.
+# It rejects writable, unrelated-owner, and symlinked ancestors before any
+# privileged mutation beneath them.
+"$BINDIR/apstore" -d "$DATA_DIR" permissions prepare-managed-root \
+    --uid "$SERVICE_UID" --gid "$SERVICE_GID"
 DATA_DIR="$(cd "$DATA_DIR" && pwd -P)"
 case "$BINDIR" in
     "$DATA_DIR"|"$DATA_DIR"/*)
@@ -168,10 +164,8 @@ else
 fi
 echo ""
 
-# The runtime socket is the group's only filesystem-facing capability. Close
-# traversal of the persistent store before inspecting any credential paths.
-chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR"
-chmod 700 "$DATA_DIR"
+# The runtime socket is the group's only filesystem-facing capability. The
+# persistent root is already closed before inspecting any credential paths.
 "$BINDIR/apstore" -d "$DATA_DIR" permissions preflight
 
 # A production data root contains signer state only. Reject local-install
@@ -181,9 +175,6 @@ if [ -e "$DATA_DIR/bin" ]; then
     echo "Install service binaries outside the data directory and remove the old bin/ subtree before conversion." >&2
     exit 1
 fi
-
-SERVICE_UID="$(id -u "$SVC_USER")"
-SERVICE_GID="$(getent group "$SVC_GROUP" | cut -d: -f3)"
 
 # One Go-owned operation acquires the exclusive store lock before publishing
 # managed metadata. It migrates and audits the tree, then publishes the

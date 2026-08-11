@@ -126,12 +126,21 @@ func TestInstallerPreflightsBeforeStoreChildMutation(t *testing.T) {
 
 	setup := readTextFile(t, filepath.Join(root, "installer", "scripts", "systemd-setup.sh"))
 	assertTextOrder(t, "installer/scripts/systemd-setup.sh", setup,
-		`chmod 700 "$DATA_DIR"`,
+		`permissions prepare-managed-root \`,
 		`"$BINDIR/apstore" -d "$DATA_DIR" permissions preflight`,
 		`"$BINDIR/apstore" -d "$DATA_DIR" permissions convert-managed \`,
 		`' > "$SERVICE_DEST"`,
 		`for f in "$DATA_DIR"/identities/*/passphrase.cred`,
 	)
+	for _, forbidden := range []string{
+		`chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR"`,
+		`chmod 700 "$DATA_DIR"`,
+		`mkdir -p "$DATA_DIR"`,
+	} {
+		if strings.Contains(setup, forbidden) {
+			t.Errorf("systemd-setup.sh retains unsafe root pathname mutation %q", forbidden)
+		}
+	}
 }
 
 func TestInstallerShellAvoidsLegacySharedStoreModes(t *testing.T) {

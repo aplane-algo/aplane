@@ -154,14 +154,17 @@ clean audit is authority to proceed; an incomplete audit is not.
 Stopped migration and post-root-mutation normalization resolve the same exact
 configured legacy in-store socket; neither hardcodes the historical default.
 
-The installer bootstrap uses the narrower read-only
-`apstore permissions preflight` before `.prod`, service-principal metadata, or
-the store lock exists. The caller must first close the real data-directory root
-to group and other access. Preflight then rejects symlinks, hardlinked regular
-files, and unexpected object types without opening file contents or changing
-the tree. Unix sockets are left inert for the subsequent configured-socket
-migration policy to classify. The command deliberately does not infer an owner
-from untrusted store metadata and does not create `.apstore.lock`.
+The installer bootstrap first uses `apstore permissions prepare-managed-root`
+to create and close the real data-directory root through opened directory
+descriptors. That operation rejects symlinked, unrelated-owner, and
+group/other-writable ancestors before any privileged pathname mutation beneath
+them. The narrower read-only `permissions preflight` then runs before `.prod`,
+service-principal metadata, or the store lock exists. Preflight rejects
+symlinks, hardlinked regular files, and unexpected object types without opening
+file contents or changing the tree. Unix sockets are left inert for the
+subsequent configured-socket migration policy to classify. The command
+deliberately does not infer an owner from untrusted store metadata and does not
+create `.apstore.lock`.
 
 `apstore permissions convert-managed` then acquires the exclusive store lock,
 migrates and audits the legacy tree, and publishes root-controlled

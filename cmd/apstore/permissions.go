@@ -19,6 +19,9 @@ func cmdPermissions(args []string) error {
 	if len(args) == 0 {
 		return permissionsUsageError()
 	}
+	if args[0] == "prepare-managed-root" {
+		return cmdPermissionsPrepareManagedRoot(args[1:])
+	}
 	if args[0] == "convert-managed" {
 		return cmdPermissionsConvertManaged(args[1:])
 	}
@@ -82,24 +85,29 @@ func cmdPermissions(args []string) error {
 }
 
 func permissionsUsageError() error {
-	return fmt.Errorf("usage: apstore permissions <preflight|audit|migrate|convert-managed --uid UID --gid GID>")
+	return fmt.Errorf("usage: apstore permissions <preflight|audit|migrate|prepare-managed-root --uid UID --gid GID|convert-managed --uid UID --gid GID>")
+}
+
+func cmdPermissionsPrepareManagedRoot(args []string) error {
+	uid, gid, err := parseManagedPrincipalFlags("permissions prepare-managed-root", args)
+	if err != nil {
+		return err
+	}
+	if currentEUID() != 0 {
+		return fmt.Errorf("permissions prepare-managed-root requires root")
+	}
+	result, err := storeperm.PrepareManagedRoot(dataDirectory, uid, gid)
+	if err != nil {
+		return err
+	}
+	logInfof("managed signer-store root prepared: %s", result.Path)
+	return nil
 }
 
 func cmdPermissionsConvertManaged(args []string) error {
-	flags := flag.NewFlagSet("permissions convert-managed", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	uidText := flags.String("uid", "", "numeric service uid")
-	gidText := flags.String("gid", "", "numeric service gid")
-	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || *uidText == "" || *gidText == "" {
-		return permissionsUsageError()
-	}
-	uid, err := strconv.Atoi(*uidText)
-	if err != nil || uid <= 0 {
-		return fmt.Errorf("invalid managed service uid %q", *uidText)
-	}
-	gid, err := strconv.Atoi(*gidText)
-	if err != nil || gid < 0 {
-		return fmt.Errorf("invalid managed service gid %q", *gidText)
+	uid, gid, err := parseManagedPrincipalFlags("permissions convert-managed", args)
+	if err != nil {
+		return err
 	}
 	if currentEUID() != 0 {
 		return fmt.Errorf("permissions convert-managed requires root")
@@ -127,6 +135,25 @@ func cmdPermissionsConvertManaged(args []string) error {
 	}
 	logInfof("managed store conversion complete: inspected %d object(s), changed %d", result.Inspected, result.Changed)
 	return nil
+}
+
+func parseManagedPrincipalFlags(name string, args []string) (int, int, error) {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	uidText := flags.String("uid", "", "numeric service uid")
+	gidText := flags.String("gid", "", "numeric service gid")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || *uidText == "" || *gidText == "" {
+		return 0, 0, permissionsUsageError()
+	}
+	uid, err := strconv.Atoi(*uidText)
+	if err != nil || uid <= 0 {
+		return 0, 0, fmt.Errorf("invalid managed service uid %q", *uidText)
+	}
+	gid, err := strconv.Atoi(*gidText)
+	if err != nil || gid < 0 {
+		return 0, 0, fmt.Errorf("invalid managed service gid %q", *gidText)
+	}
+	return uid, gid, nil
 }
 
 func configuredLiveAuditSocketPath(root string) (string, error) {

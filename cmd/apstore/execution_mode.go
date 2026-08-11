@@ -73,6 +73,12 @@ func enforceApstoreExecutionMode(dataDir string, args []string) error {
 	if isStorePermissionPreflight(args) {
 		return nil
 	}
+	if isStorePermissionRootPreparation(args) {
+		if currentEUID() != 0 {
+			return fmt.Errorf("permissions prepare-managed-root requires root")
+		}
+		return nil
+	}
 	if isStorePermissionConversion(args) {
 		if currentEUID() != 0 {
 			return fmt.Errorf("permissions convert-managed requires root")
@@ -234,7 +240,8 @@ func acquireOfflineMutationLockForArgs(args []string, dataDir string) (func(), e
 	if len(args) == 0 {
 		return func() {}, nil
 	}
-	if isStorePermissionCommand(args) && len(args) == 2 && (args[1] == "audit" || args[1] == "preflight") {
+	if isStorePermissionCommand(args) && len(args) >= 2 &&
+		(args[1] == "audit" || args[1] == "preflight" || args[1] == "prepare-managed-root") {
 		return func() {}, nil
 	}
 	if args[0] == "policy" {
@@ -258,6 +265,10 @@ func isStorePermissionCommand(args []string) bool {
 
 func isStorePermissionPreflight(args []string) bool {
 	return len(args) == 2 && args[0] == "permissions" && args[1] == "preflight"
+}
+
+func isStorePermissionRootPreparation(args []string) bool {
+	return len(args) >= 2 && args[0] == "permissions" && args[1] == "prepare-managed-root"
 }
 
 func isStorePermissionConversion(args []string) bool {

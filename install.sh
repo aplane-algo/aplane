@@ -1612,22 +1612,13 @@ run_as_service_user() {
 
 ensure_prod_data_dir_permissions() {
     local data_dir="$1"
+    local service_uid
+    local service_gid
 
-    if [ -L "$data_dir" ]; then
-        echo "Error: signer data directory must not be a symlink: $data_dir" >&2
-        return 1
-    fi
-    if [ -e "$data_dir" ] && [ ! -d "$data_dir" ]; then
-        echo "Error: signer data path exists but is not a directory: $data_dir" >&2
-        return 1
-    fi
-    mkdir -p "$data_dir"
-    if [ -L "$data_dir" ] || [ ! -d "$data_dir" ]; then
-        echo "Error: signer data directory changed during setup: $data_dir" >&2
-        return 1
-    fi
-    chown "$SVC_USER:$SVC_GROUP" "$data_dir"
-    chmod 700 "$data_dir"
+    service_uid="$(id -u "$SVC_USER")"
+    service_gid="$(getent group "$SVC_GROUP" | cut -d: -f3)"
+    "$BIN_SRC/apstore" -d "$data_dir" permissions prepare-managed-root \
+        --uid "$service_uid" --gid "$service_gid"
 }
 
 ensure_prod_backup_permissions() {
@@ -2472,14 +2463,14 @@ if [ -z "$DATA_DIR" ]; then
     echo "Error: could not determine home directory for $SVC_USER" >&2
     exit 1
 fi
-if [ ! -d "$DATA_DIR" ]; then
-    echo "Recreating missing data directory $DATA_DIR..."
-fi
-ensure_prod_data_dir_permissions "$DATA_DIR"
 if [ ! -x "$BIN_SRC/apstore" ]; then
     echo "Error: apstore binary not found at $BIN_SRC/apstore; cannot preflight signer store" >&2
     exit 1
 fi
+if [ ! -d "$DATA_DIR" ]; then
+    echo "Recreating missing data directory $DATA_DIR..."
+fi
+ensure_prod_data_dir_permissions "$DATA_DIR"
 "$BIN_SRC/apstore" -d "$DATA_DIR" permissions preflight
 if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
     require_supported_upgrade "$DATA_DIR/install/release.json" "systemd install" "$DATA_DIR"
