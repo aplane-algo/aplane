@@ -172,9 +172,9 @@ func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
 		c.SetSentryComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
 		c.SetSentryPublicKeyForAddress(bounded, sentryHex)
 		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
-		setTestLogicSigSize(c, bounded, 4000)
+		setTestLogicSigResources(c, bounded, 4000)
 		c.AddAddress(plain, "aplane.falcon1024.v1")
-		setTestLogicSigSize(c, plain, 1700)
+		setTestLogicSigResources(c, plain, 1700)
 	})
 	txns := []types.Transaction{
 		testPaymentTxn(t, testAddress(1), testAddress(3), "bounded"),
@@ -478,12 +478,12 @@ func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *ca
 	return s, &signerCache
 }
 
-func newGuardedTestSigner(t *testing.T, sender string, lsigSize int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
+func newGuardedTestSigner(t *testing.T, sender string, programBytes int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
 	t.Helper()
-	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Sentry1024V1, lsigSize, sentryPublicKey)
+	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Sentry1024V1, programBytes, sentryPublicKey)
 }
 
-func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, lsigSize int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
+func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, programBytes int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
 	t.Helper()
 	return newTestSigner(t, func(signerCache *cache.SignerCache) {
 		signerCache.AddAddress(sender, keyType)
@@ -492,8 +492,8 @@ func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, lsigSi
 			signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowSentry1)
 			signerCache.SetSentryComponentKeyTypeForAddress(sender, componentType)
 		}
-		if lsigSize > 0 {
-			setTestLogicSigSize(signerCache, sender, lsigSize)
+		if programBytes > 0 {
+			setTestLogicSigResources(signerCache, sender, programBytes)
 		}
 		if sentryPublicKey != "" {
 			signerCache.SetSentryPublicKeyForAddress(sender, sentryPublicKey)
@@ -501,9 +501,9 @@ func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, lsigSi
 	})
 }
 
-func setTestLogicSigSize(signerCache *cache.SignerCache, address string, size int) {
+func setTestLogicSigResources(signerCache *cache.SignerCache, address string, programBytes int) {
 	signerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
-		ProgramBytes: uint64(size),
+		ProgramBytes: uint64(programBytes),
 		Default:      &lsigresource.PathProfile{MaxOpcodeCost: 1},
 	})
 }

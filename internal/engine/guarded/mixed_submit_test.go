@@ -35,7 +35,7 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
-		setTestLogicSigSize(c, guarded, 1500)
+		setTestLogicSigResources(c, guarded, 1500)
 		c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
 			ProgramBytes: 77,
 			Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
@@ -110,7 +110,7 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guardedAuthorizer, keytypes.GuardedFalcon1024Sentry1024V1)
-		setTestLogicSigSize(c, guardedAuthorizer, 1500)
+		setTestLogicSigResources(c, guardedAuthorizer, 1500)
 		c.SetSentryPublicKeyForAddress(guardedAuthorizer, sentryHex)
 		c.AddAddress(nonGuarded, "ed25519")
 	})
@@ -165,7 +165,7 @@ func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
-		setTestLogicSigSize(c, guarded, 1500)
+		setTestLogicSigResources(c, guarded, 1500)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
 	})
 
@@ -206,7 +206,7 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
-		setTestLogicSigSize(c, guarded, 1500)
+		setTestLogicSigResources(c, guarded, 1500)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
 		c.AddAddress(nonGuarded, "ed25519")
 	})
