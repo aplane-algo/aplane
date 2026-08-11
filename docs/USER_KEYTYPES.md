@@ -122,12 +122,17 @@ The names intentionally describe different account types:
 | Key type | Authorization | Recovery | Network requirement |
 |---|---|---|---|
 | `falcon1024` | Protocol-native top-level `PQsig` | 25-word Algorand mnemonic | consensus v42 or an explicitly supported compatible protocol |
-| `aplane.falcon1024.v1` | TEAL LogicSig containing a Falcon signature | 24-word BIP-39 mnemonic | LogicSig-capable networks |
+| `aplane.falcon1024.v1` | TEAL v13 LogicSig containing a Falcon signature | 24-word BIP-39 mnemonic | recognized consensus-v42-compatible network |
 
 There is no conversion between them. A mnemonic or backup entry for one type
 cannot be imported as the other. Native Falcon transactions also consume a
 higher protocol fee; APlane presents and applies the required fee adjustment
 before approval.
+
+All bundled APlane LogicSig types use TEAL v13 compiler auto-salting. This was
+an in-place pre-release derivation change: delete and regenerate any earlier
+development LogicSig keys rather than expecting their old addresses to remain
+stable.
 
 ## Compiled Providers
 
@@ -228,10 +233,11 @@ client configuration. Confirm the displayed genesis hash as part of a custom
 network ceremony; `complete` verifies it against the selected configured
 network before submission.
 
-The maximum policy cell has 30 recipients and 30 asset IDs. It needs an
-eight-transaction LogicSig budget group and remains viable under the compiled
-10,000 microAlgo fee ceiling only when the network minimum fee is at most
-1,250 microAlgos.
+The maximum policy cell has 30 recipients and 30 asset IDs. Its resource
+profile is path-specific: v42 group size is driven by argument and opcode
+capacity, while any excess program bytes are paid through the group fee. The
+signer rejects a finalized path whose fee would exceed the compiled 10,000
+microAlgo ceiling.
 
 ## YAML Templates
 

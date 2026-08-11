@@ -847,11 +847,12 @@ also the only path to algod.
 Only apsigner can produce a signature for an apsigner-held account, so atomically combining
 the plugin's own signatures with apsigner's — under apsigner's policy and approval — is the
 single thing a plugin cannot do on its own. The plugin returns an *unsigned*
-draft (every intent `type: "raw"`) plus a `pluginSigners` list declaring the slots it
-will sign itself — each with an address, an opaque `signerRef`, and the byte size
-(`lsigResources`) of the LogicSig path it will attach. APlane canonicalizes the group: it plans
-fees, recomputes the group ID, and adds LogicSig opcode-budget transactions **sized from
-the declared program, argument, and opcode resources, while a guard asserts every original slot's
+draft (every intent `type: "raw"`) plus a `pluginSigners` list declaring the
+slots it will sign itself — each with an address, an opaque `signerRef`, and
+structured `lsigResources` for the LogicSig path it will attach. APlane
+canonicalizes the group: it adds resource dummies from the declared argument
+and opcode ceilings, prices program bytes, fixes the aggregate fee, and
+recomputes the group ID, while a guard asserts every original slot's
 transaction fields are preserved (only the group ID and fee may change). APlane then
 calls the plugin's `signTransactions` method to sign its owned slots over the *canonical*
 bytes, and apsigner signs the APlane-managed slots under its normal policy and approval.
@@ -929,10 +930,12 @@ classes of plugin:
 
 The common thread is a plugin that **brings its own cryptography or signing material and
 composes it into transaction groups**, with apsigner retaining authority over its own
-slots. Notably, the `presign-plan` budget mechanism keys on each slot's *LogicSig size*,
-not on any key-type label — so it serves the entire composed-LogicSig family uniformly,
-including schemes that already exist as APlane key types (Falcon multisig, allowlist,
-guarded, composed DSAs), with no per-scheme code. If a plain key type later gains a
+slots. Notably, the `presign-plan` budget mechanism keys on each slot's
+structured *LogicSig resources* (`programBytes`, `argumentBytes`, and
+`maxOpcodeCost`), not on any key-type label. It therefore serves the entire
+composed-LogicSig family uniformly, including schemes that already exist as
+APlane key types (Falcon multisig, allowlist, guarded, composed DSAs), with no
+per-scheme code. If a plain key type later gains a
 native on-chain signature (so it no longer needs a LogicSig), it simply drops out of the
 budget-sizing path automatically; the flow does not change.
 

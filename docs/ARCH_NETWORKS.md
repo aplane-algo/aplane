@@ -158,6 +158,14 @@ Rules:
 
 This prevents a display string from becoming the trust anchor for policy.
 
+Algod's suggested parameters also supply the reported consensus version used
+for authorization-resource and fee planning. APlane maps that value through a
+closed consensus-profile table; it does not infer v42 behavior from a network
+name or compare version strings lexically. Known v41 profiles use legacy
+combined LogicSig sizing. Recognized v42/FNet profiles separate program,
+argument, and opcode resources and price excess program bytes. Unknown
+profiles fail closed when the signer cannot prove the authorization rules.
+
 ## ASA Transfer Guards
 
 Signer safety policy stores ASA transfer guard thresholds as raw units:

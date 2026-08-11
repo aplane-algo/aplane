@@ -9,14 +9,30 @@ Algorand mnemonic, signing emits top-level `PQsig` scheme `f1`, and APlane
 accounts for the protocol's additional post-quantum fee contribution.
 
 This type requires consensus v42 or an explicitly recognized compatible
-network. It is distinct from the existing LogicSig type
-`aplane.falcon1024.v1`, whose 24-word mnemonic, derivation, key material, and
-TEAL authorization remain unchanged and are not convertible.
+network. It is distinct from the LogicSig type `aplane.falcon1024.v1`, whose
+24-word mnemonic and LogicSig key material are not convertible to native
+Falcon.
 
 The implementation temporarily pins the official Algorand Go SDK commit
 `967fcacfacdf` through pseudo-version
 `v2.11.2-0.20260731180711-967fcacfacdf`. Return to the first tagged SDK release
 that contains the same native-PQ wire types and v42 support.
+
+## TEAL v13 LogicSig planning
+
+Bundled APlane LogicSig key types now compile as TEAL v13 and use algod's
+compiler-owned auto-salting. APlane persists the final compiler-returned
+bytecode and independently verifies its derived address is off-curve. Because
+this is a pre-release in-place migration, previously generated development
+LogicSig keys and addresses must be regenerated.
+
+Group planning now models LogicSig program bytes, argument bytes, and opcode
+cost separately. On recognized v42 profiles, dummies are added only for pooled
+arguments or opcode capacity; excess program bytes are paid through the
+group-wide consensus fee. Foreign slots use the structured `lsig_resources`
+wire field, replacing the former combined `lsig_size` scalar. Plugins and SDKs
+must provide `programBytes`, `argumentBytes`, and `maxOpcodeCost` and use the
+signer's `/plan` output as the canonical group.
 
 ## First supported release
 

@@ -138,7 +138,7 @@ DTOs and contract fixtures.
 | Keyring root | Signer identity | `identities/<identity>/keyring.enc` (`aplane.keyring.v2`) | term keys after unlock | none | `internal/crypto`, `internal/keystore` |
 | Keystore marker | Signer identity | `identities/<identity>/.keystore` | store format gate only | none | `internal/crypto` |
 | Term keys/session | Signer identity runtime | unsealed from `keyring.enc`, resident only while unlocked | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
-| Account authority | Signer identity | `identities/<identity>/keys/<address>.key` | address -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
+| Account authority | Signer identity | `identities/<identity>/keys/<address>.key` | address -> key file/type/LogicSig resource-profile indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
 | Sentry witness authority | Sentry identity | `identities/<identity>/keys/<witness_key_id>.sen` | Witness Key ID -> witness credential index | `/keys`, sentry component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
 | Sentry public sidecar | Signer identity | `identities/<identity>/keys/<witness_key_id>.wit.json` | public sentry-key export metadata | `apstore sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
 | Public sentry reference | Signer identity | `identities/<identity>/sentries/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` |
@@ -833,7 +833,7 @@ durable sign request table.
    `endpoints.yaml` and calls sentry `/sign/component`.
 5. If non-guarded originals exist, client calls the primary signer `/sign` over
    the full canonical group: non-guarded originals are sign-mode entries,
-   guarded targets are `foreign` entries with accurate `lsig_size` hints, and
+   guarded targets are `foreign` entries with accurate `lsig_resources` hints, and
    dummies are `foreign` context entries.
 6. Client calls user signer `/sign/assemble` with guarded targets plus
    passthrough signed bytes for non-guarded originals and dummies.

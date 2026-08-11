@@ -313,8 +313,8 @@ controlled unless TEAL fully validates it.
 - Does substitution yield TEAL literals of the intended type for addresses,
   byte strings, integers, and lists?
 - Does the template TEAL avoid raw `bytecblock`/`intcblock`, numeric `bytec N`
-  or `intc N`, and short forms such as `bytec_0` or `intc_0` so APlane can own
-  the generated off-curve salt slot?
+  or `intc N`, and short forms such as `bytec_0` or `intc_0` so compiler-owned
+  TEAL v13 auto-salting can safely manage generated constant blocks?
 
 Template substitution mistakes can silently change the policy being deployed.
 
@@ -334,6 +334,22 @@ or `intcblock` declarations, numeric `bytec` or
 `intc` references, or short forms such as `bytec_0` or `intc_0`. Use declared
 template variables, symbolic `$name` references, and generated-mode list
 expansion instead.
+
+### Final-Bytecode Resource Review
+
+Resource metadata must describe the final compiler-returned bytecode, after
+auto-salting. For every reachable authorization path, review and pin:
+
+- exact `program_bytes` from the persisted final program;
+- the maximum permitted `argument_bytes`, including variable-length signature
+  ceilings (1,423 bytes for deterministic compressed Falcon-1024); and
+- a `max_opcode_cost` ceiling demonstrated at the worst permitted runtime
+  argument/value sizes, including dynamic opcode costs.
+
+Do not publish one combined `program + args` size. On v42, argument and opcode
+capacity may require resource dummies while excess program bytes are paid by a
+group fee surcharge. The signer must finish resource planning and fee mutation
+before assigning the group ID or requesting any signature.
 
 ### 15. Signature Binding
 

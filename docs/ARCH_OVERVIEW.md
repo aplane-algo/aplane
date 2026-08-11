@@ -329,7 +329,14 @@ See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the full REST inventory and wire
 contracts, [ARCH_SENTRY.md](ARCH_SENTRY.md) for guarded choreography, and
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) for bounded choreography.
 
-**Multi-party signing:** Transactions can be marked as **foreign** (`txn_bytes_hex` without `auth_address`) to include them in group building without signing. This works on both `/plan` and `/sign`: `/plan` returns canonical unsigned transactions, while `/sign` returns `""` in foreign positions and signed bytes only for signer-owned or passthrough positions. An optional `lsig_size` hint enables correct dummy calculation for the other party's key type. See [`ARCH_TXNFLOW.md`](ARCH_TXNFLOW.md) for details.
+**Multi-party signing:** Transactions can be marked as **foreign**
+(`txn_bytes_hex` without `auth_address`) to include them in group building
+without signing. This works on both `/plan` and `/sign`: `/plan` returns
+canonical unsigned transactions, while `/sign` returns `""` in foreign
+positions and signed bytes only for signer-owned or passthrough positions. An
+optional structured `lsig_resources` hint enables consensus-aware dummy and
+fee calculation for the other party's selected LogicSig path. See
+[`ARCH_TXNFLOW.md`](ARCH_TXNFLOW.md) for details.
 
 ## apsigner Startup Modes
 
@@ -367,7 +374,7 @@ can be discovered, generated, or imported.
 **Identity-scoped runtime state:**
 
 Each identity owns an `identity.Runtime` containing:
-- key maps (`keys`, `keyTypes`, `keyLsigSizes`) protected by `keysLock`
+- key maps (`keys`, `keyTypes`, `keyMetadata`) protected by `keysLock`
 - key session and keyring access protected by `passphraseLock`
 - approval coordinator (atomic pointer)
 - effective policy config

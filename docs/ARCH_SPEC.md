@@ -785,7 +785,7 @@ The main server struct is `Signer`, which owns:
 Sensitive per-identity state lives under `internal/signerapp/identity.Runtime`, including:
 
 - `keySession`,
-- identity-scoped `keys`, `keyTypes`, `keyLsigSizes`,
+- identity-scoped `keys`, `keyTypes`, and `keyMetadata` resource profiles,
 - signer runtime owner,
 - approval coordinator,
 - watcher lifecycle,
@@ -805,7 +805,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Signer.storeMutationLocks[identityID]` | Identity-owned key/template/config/policy mutation serialization |
 | `signerapp/templates.templateProviderOwners.mu` | Identity ownership counts for process-global installed-template LogicSig providers |
 | `Signer.restoreAttemptMu` | Lazy initialization of the per-identity/archive restore backoff limiter |
-| `identity.Runtime.keysLock` | `keys`, `keyTypes`, `keyLsigSizes` |
+| `identity.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
 | `identity.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
 | `identity.Runtime.watcherMu` | Watcher lifecycle, dirty state |
 | `identity.Runtime.lifecycleMu` | Decommission vs in-flight operation leases |
@@ -1307,14 +1307,14 @@ a signing flow, the client uses guarded orchestration for the whole
 atomic group. The group may mix direct guarded senders, senders rekeyed to a
 guarded authorizer, and ordinary signer-managed senders.
 
-The client first builds one canonical group. The signer sizes LogicSig-budget
-dummies across every LogicSig position from structured resource profiles:
-final compiled program bytes, selected-path maximum argument bytes, and the
-reviewed maximum opcode cost. Bounded profiles derive their path-specific
-argument budgets from the durable argument layout, including the admin-key
-slot only for an admin-key rekey. No combined LogicSig-size scalar participates
-in planning. Fees and group ID are fixed before any downstream component or
-non-guarded signature is produced.
+The client submits one unsigned intended group to `/plan`. The signer returns
+the canonical group after sizing resource dummies across every LogicSig
+position from structured profiles: final compiled program bytes,
+selected-path maximum argument bytes, and the reviewed maximum opcode cost.
+Bounded profiles derive their path-specific argument budgets from the durable
+argument layout, including the admin-key slot only for an admin-key rekey. No
+combined LogicSig-size scalar participates in planning. Fees and group ID are
+fixed before any downstream component or non-guarded signature is produced.
 
 For guarded targets, the client obtains component signatures:
 
@@ -1332,9 +1332,9 @@ when allowed.
 If the original group also has non-guarded positions, the client then calls the
 primary signer `/sign` over the full canonical group: non-guarded originals are
 sign-mode entries, guarded targets are `foreign` entries with accurate
-authorizer `lsig_size` hints, and client-signed dummies are `foreign` context entries. This
-keeps the complete group in approval context and lets the signer's existing
-budget check reject client mis-sizing before algod evaluation.
+selected-path `lsig_resources`, and client-signed dummies are `foreign` context
+entries. This keeps the complete group in approval context and lets the signer
+reject client mis-sizing before algod evaluation.
 
 Finally, the client calls the user signer `/sign/assemble`. The assembly
 request verifies both component signatures against the local guarded account
@@ -1499,7 +1499,8 @@ A scan:
 
 - requires an open keyring,
 - decrypts keys sufficiently to discover address, type, category, the
-  post-signing LogicSig program+args size budget, and stored signing metadata,
+  structured LogicSig program/argument/opcode resource profile, and stored
+  signing metadata,
 - populates a cache of `address -> KeyScanInfo`,
 - is the foundation for the signer’s runtime key indexes.
 

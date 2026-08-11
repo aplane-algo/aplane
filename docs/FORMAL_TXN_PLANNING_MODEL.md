@@ -63,7 +63,7 @@ Every request entry has exactly one mode:
 |------|--------|---------|
 | `sign` | `auth_address` and `txn_bytes_hex` | signer-controlled slot that may be signed by this signer |
 | `passthrough` | `signed_txn_hex` | already-signed slot preserved by this signer |
-| `foreign` | `txn_bytes_hex` without `auth_address`; optional `lsig_size` | context slot owned by another signer |
+| `foreign` | `txn_bytes_hex` without `auth_address`; optional `lsig_resources` | context slot owned by another signer |
 
 Invalid field combinations reject before planning starts.
 
@@ -154,8 +154,8 @@ discards the result.
 
 `Plan` performs group building only. It does not approve a request, produce
 signatures, or assemble final LogicSig authorizations. `/plan` may still require
-unlocked signer metadata because LogicSig budget calculation depends on key
-metadata.
+unlocked signer metadata because selected-path LogicSig resource calculation
+depends on key metadata.
 
 `Plan` is deterministic for a fixed request and equivalent planning snapshot:
 
@@ -224,8 +224,8 @@ own planning step.
 For accepted ungrouped requests:
 
 1. The server determines the finalized group shape.
-2. LogicSig budget is computed for sign-mode entries and for foreign entries
-   that provide `lsig_size`.
+2. Consensus-specific LogicSig resources are computed for sign-mode entries
+   and for foreign entries that provide `lsig_resources`.
 3. Required dummy transactions are generated deterministically from the request
    and planning snapshot, then appended to the finalized group.
 4. Dummy insertion that would exceed Algorand group-size limits rejects.
@@ -235,12 +235,13 @@ For accepted ungrouped requests:
    group position.
 8. Mutation metadata records every dummy, fee, or group-ID change.
 
-Single ungrouped requests with no large LogicSig budget requirement may remain
+Single ungrouped requests with no additional LogicSig resource requirement may remain
 ungrouped, matching the current transaction-flow contract.
 
 A `presign-plan` plugin group reaches the signer as exactly this foreign-entry
-case: the plugin-owned slots arrive as `foreign` entries carrying `lsig_size`,
-so they raise the LogicSig budget above but are never signed by this signer (see
+case: the plugin-owned slots arrive as `foreign` entries carrying
+`lsig_resources`, so they contribute to the resource plan but are never signed
+by this signer (see
 Signing Output Rules). The plugin's own signing of those slots, and the fully
 `pregrouped-signed` all-plugin path that bypasses the signer entirely, are out
 of scope (see [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md) Non-Goals).
@@ -475,11 +476,11 @@ This model assumes:
 - Cryptographic signing primitives satisfy their normal correctness properties.
 - The planning snapshot is internally consistent for the duration of one
   request.
-- The implementation's key metadata accurately reports LogicSig budget
-  requirements for signer-owned slots.
-- LogicSig budget computation is an assumed-correct primitive in this model; a
-  later companion model should cover the budget calculation itself.
-- Foreign `lsig_size` is advisory and may be wrong; this model only requires
+- The implementation's key metadata accurately reports structured LogicSig
+  resource requirements for signer-owned slots.
+- Consensus-specific LogicSig resource computation is an assumed-correct
+  primitive in this model; a later companion model should cover the solver.
+- Foreign `lsig_resources` is advisory and may be wrong; this model only requires
   that the planner uses the hint consistently.
 
 ## Non-Goals

@@ -83,53 +83,25 @@ always means the profile's single Falcon-1024 contract admin key. Supporting
 another admin primitive requires a new bounded-authorization contract.
 
 The 10,000 microAlgo ceiling supports the currently measured Falcon/Falcon
-fixed-list shape at a 1,000 microAlgo network minimum fee, including its
-eight-transaction worst-case path. It is an absolute v1 profile ceiling, not a
-promise of viability on networks with a higher minimum fee. Group size and
-network-fee viability are path-specific. The planner must reject a transaction
-path whose required pooled fee exceeds the compiled ceiling; a profile is
-fully viable on a network only when every enabled path fits.
+fixed-list shape at a 1,000 microAlgo network minimum fee. It is an absolute
+v1 profile ceiling, not a promise of viability on networks with a higher
+minimum fee. Group size and network-fee viability are path-specific. The
+planner resolves argument/opcode dummies and priced program bytes for the
+active consensus profile, then rejects a transaction path whose finalized fee
+exceeds the compiled ceiling.
 
-The composer baseline uses a real Falcon spending verifier and a
-controlled trivially true Layer-3 predicate. At a 1,000-byte LogicSig budget
-contribution per group transaction, LocalNet compilation freezes:
+The composer baseline uses a real Falcon spending verifier and a controlled
+trivially true Layer-3 predicate. Every shipped Layer-3 policy adds its own
+final-bytecode and selected-path resource cells before the key type can be
+enabled. `TestBundledBoundedCompiledBudgetMatrix` compiles the shipped
+templates with the pinned TEAL v13 toolchain, derives argument layouts from
+durable bounded metadata, applies the conservative reviewed opcode ceiling,
+and runs the production v42 resource solver.
 
-| Profile | Bytecode | Spend bytes | Admin-rekey bytes | Largest group |
-|---|---:|---:|---:|---:|
-| pay, rekey disabled | 1,882 | 3,162 | n/a | 4 |
-| pay/axfer, spending-key rekey | 1,931 | 3,211 | n/a | 4 |
-| pay/axfer, Falcon-admin rekey | 3,828 | 5,108 | 6,388 | 7 |
-
-These are compiler/address regression cells, not final product-allowlist
-budgets. Every shipped Layer-3 policy adds its own worst-case cells before the
-key type can be enabled. The baseline proves that the contract-admin envelope
-itself fits under the v1 fee ceiling with three group slots of headroom.
-
-The shipped `aplane.falcon1024-allowlist-alock.v1` worst-case cell compiles
-30 recipients, 30 asset IDs, both amount ceilings, a Falcon spending key, and
-a Falcon contract admin key:
-
-| Policy cell | Bytecode | Spend bytes | Admin-rekey bytes | Largest group |
-|---|---:|---:|---:|---:|
-| fixed allowlist, audited maximum | 5,312 | 6,592 | 7,872 | 8 |
-| Corridor Merkle+sentry | 5,940 | 9,012 | 8,500 | 10 |
-
-For one protected LogicSig transaction, the required group size is
-`ceil(path_lsig_bytes / 1000)` and the finalized protected-transaction fee is
-`required_group * min_fee`. The compiled 10,000 microAlgo `max_fee` applies to
-every path:
-
-| Policy path | LogicSig bytes | Required group | Highest viable `min_fee` |
-|---|---:|---:|---:|
-| Fixed allowlist spend | 6,592 | 7 | 1,428 |
-| Fixed allowlist admin rekey | 7,872 | 8 | 1,250 |
-| Corridor spend | 9,012 | 10 | 1,000 |
-| Corridor admin rekey | 8,500 | 9 | 1,111 |
-
-The fixed-allowlist profile is therefore fully viable through a 1,250
-microAlgo network minimum fee. Corridor is fully viable through 1,000
-microAlgos because its spend path is limiting; its admin-rekey path remains
-viable through 1,111 microAlgos.
+The resulting fee includes transaction bases and priced program bytes. The
+compiled 10,000 microAlgo `max_fee` applies to every path. A higher network
+minimum fee is evaluated through the same unified fee calculation rather than
+through a legacy `ceil(program + args)` projection.
 
 Schema-v1 custom DSA policy is expert mode. Schema-v2 bounded templates may
 also use custom Layer 3 TEAL, but the framework still owns the effect envelope,
@@ -158,19 +130,19 @@ requires the spending key.
 Compiler-backed maximum-path measurements are frozen by
 `TestBundledBoundedCompiledBudgetMatrix`:
 
-| Key type | Bytecode | Spend path | Admin path | Largest group |
-|---|---:|---:|---:|---:|
-| Falcon inline allowlist | 3,159 | 4,439 | n/a | 5 |
-| Falcon Merkle allowlist | 2,188 | 3,980 | n/a | 4 |
-| Falcon timelock | 1,947 | 3,227 | n/a | 4 |
-| Falcon rekey-locked allowlist | 5,312 | 6,592 | 7,872 | 8 |
-| Corridor | 5,940 | 9,012 | 8,500 | 10 |
+| Key type | Final bytecode | Spend args / v42 group / fee | Admin args / v42 group / fee |
+|---|---:|---:|---:|
+| Falcon inline allowlist | 3,155 | 1,423 / 2 / 2,117 | n/a |
+| Falcon Merkle allowlist | 2,184 | 1,935 / 2 / 2,019 | n/a |
+| Falcon timelock | 1,943 | 1,423 / 2 / 2,000 | n/a |
+| Falcon rekey-locked allowlist | 5,308 | 1,423 / 2 / 2,332 | 2,846 / 3 / 3,232 |
+| Corridor | 5,936 | 3,358 / 4 / 4,196 | 2,846 / 3 / 3,295 |
 
-At the 10,000 microAlgo ceiling, Corridor's ten-transaction spend group is
-viable at the current 1,000 microAlgo network minimum fee. The nine-transaction
-admin-rekey path is independently viable through 1,111 microAlgos. The planner
-uses the selected path's LogicSig size and rejects that path before releasing a
-signature when its finalized fee would exceed the profile ceiling.
+Fees are microAlgos at a 1,000-microAlgo minimum fee and include v42 program
+pricing. The table uses the conservative 20,000-opcode per-path ceiling; its
+group count includes the resource dummies and their own program/opcode use.
+The planner rejects a selected path before releasing a signature when its
+finalized fee would exceed the profile ceiling.
 
 ## Effect Model
 
@@ -587,7 +559,7 @@ known-field and duplicate-key rejection at every nested level.
 
 ```yaml
 schema_version: 2
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 template_mode: generated
 base_key_type: aplane.falcon1024.v1
@@ -715,7 +687,8 @@ Existing key signing is driven by durable key metadata, not an installed YAML
 definition. The metadata contract includes the bounded contract, base layout,
 profile, admin operation modes, `layer3_policy`, runtime and derived argument
 declarations, static argument layout, Falcon admin public metadata and binding,
-and maximum post-signing LogicSig size.
+and the selected-path LogicSig argument and opcode ceilings. Program bytes come
+from the final stored bytecode.
 
 Non-bounded LogicSig keys use `signing_metadata_version: 1`. Bounded keys use
 `signing_metadata_version: 2` and require the canonical
@@ -732,8 +705,8 @@ a sentry and `signing_flow: bounded-sentry1` for profiles whose durable
 metadata contains `sentry.contract: sentry1`. Both expose the same typed
 `bounded_authorization` object. `/keytypes` exposes definition-level
 profile and base-layout capabilities. `/keys` additionally exposes the
-instance Contract Admin Key ID, program binding, and maximum post-signing
-LogicSig size. Clients route:
+instance Contract Admin Key ID, program binding, and structured selected-path
+LogicSig resource profile. Clients route:
 
 - non-sentry pure spend to ordinary `/sign`;
 - sentry-gated pure spend through the first-party client's user-first

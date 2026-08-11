@@ -300,8 +300,10 @@ Each entry in a sign/plan request is exactly one of:
 - **Sign** — `auth_address` + `txn_bytes_hex`; the signer signs it.
 - **Passthrough** — `signed_txn_hex`; preserved byte-for-byte (already signed).
 - **Foreign** — `txn_bytes_hex` *without* `auth_address`; included for group
-  building, fee/budget math, and approval context, but never signed here. On
-  `/plan` you get canonical unsigned bytes back; on `/sign` you get `""`.
+  building, resource/fee math, and approval context, but never signed here. A
+  foreign LogicSig may declare `lsig_resources` with `program_bytes`,
+  `argument_bytes`, and `max_opcode_cost`. On `/plan` you get canonical
+  unsigned bytes back; on `/sign` you get `""`.
 
 An **all-foreign request is rejected** (nothing to do). To finalize a group with
 another party's slots, `/plan` first, then resubmit their finalized slots as
@@ -309,14 +311,12 @@ passthrough.
 
 ### Groups, dummies, and fees
 
-- LogicSig budget is **1000 bytes per transaction**. When the group's LogicSig
-  programs exceed the pooled budget, the signer appends zero-fee **dummy**
-  transactions to buy budget.
-- Dummy fees are split **evenly across only the LogicSig transactions the signer
-  actually signs**, remainder added to the first. The split is **additive** —
-  your explicit flat fee is preserved and the dummy share is added on top.
-  Ed25519 entries pay only their own base fee; foreign entries raise the
-  *budget* but carry no fee share.
+- LogicSig program bytes, arguments, and opcode cost are separate resources.
+  On v42, dummies buy argument/opcode capacity; excess program bytes add a
+  group fee surcharge instead. Known v41 profiles retain combined-size pooling.
+- The signer computes one aggregate consensus fee over the final group,
+  credits existing pooled fees, and assigns any deficit only to mutable
+  signer-controlled slots. Foreign and passthrough slots are never rewritten.
 - **Pre-grouped transactions are immutable.** If a pre-grouped batch needs more
   dummies than its budget allows, the request is **rejected** — submit the
   transactions *ungrouped* and let the signer build the group.
@@ -577,7 +577,8 @@ each MCP server instance uses its own:
 - **`keytypes` is the source of truth** for what you can generate, not this list.
 - **Signing can block or be denied** by policy; `Always Review` waits on a human.
 - **A locked signer fails closed.** You cannot unlock it from the client.
-- **Pre-grouped + insufficient LogicSig budget → rejected.** Submit ungrouped.
+- **Pre-grouped + insufficient LogicSig resources or fees → rejected.** Submit
+  ungrouped.
 - **All-foreign sign/plan requests are rejected.**
 - **After `rekey`, run `rekey refresh`.**
 - **`request-token`, `js`, `jssave`, `jslist`, `quit`, `exit`, and `keyreg`

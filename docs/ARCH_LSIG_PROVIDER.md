@@ -78,11 +78,14 @@ sign from stored bytecode/runtime args, and DSA v1 signing-metadata keys require
 the stored `base_key_type` signer-side provider rather than the composed
 template provider for their `key_type`.
 
-Filtered views into the registry are provided by `internal/genericlsig` (Template
-interface) and `internal/logicsigdsa` (LogicSigDSA interface). Shared off-curve
-LogicSig salting lives in `internal/lsigsalt`. Shared LogicSig dummy transaction
-construction, the `TxLsigBudget` constant, and dummy-fee calculation live in
-`internal/signing/`; signer planning lives in `internal/signerapp/signing/`.
+Filtered views into the registry are provided by `internal/genericlsig`
+(Template interface) and `internal/logicsigdsa` (LogicSigDSA interface).
+Compiler-owned TEAL v13 auto-salting produces final bytecode;
+`internal/lsigsalt` verifies the off-curve postcondition and retains legacy
+derivation helpers. `internal/lsigresource` owns consensus resource profiles
+and the pure group-size solver. Shared resource-dummy construction lives in
+`internal/signing/`; final group and fee planning lives in
+`internal/signerapp/signing/`.
 The single registration entry point is `lsig/all.go`.
 
 ## Package Summary
@@ -98,14 +101,15 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/lsigprovider` | **Unified registry** for all providers |
 | `internal/genericlsig` | Template interface, type-filtered lookups |
 | `internal/logicsigdsa` | DSA interface, type-filtered lookups |
-| `internal/lsigsalt` | Shared off-curve LogicSig salting |
+| `internal/lsigsalt` | Off-curve verification and legacy derivation compatibility |
+| `internal/lsigresource` | Structured program/argument/opcode profiles and consensus group solver |
 | `internal/tealtemplate` | Strict `$variable` constant-block template renderer |
 | `internal/tealtemplate/legacy.go` | Generated-mode restricted list expansion and scalar substitution utilities |
 | `internal/keytypecatalog` | Compiled key type visibility catalog |
 | `internal/keytypestate` | Identity-scoped state records for library-visible compiled providers and installed templates |
 | `internal/templatelibrary` | Optional library list/install workflow |
 | `internal/templatestore` | Encrypted template file storage |
-| `internal/signing` | Dummy transaction construction, LogicSig budget and fee distribution, and transaction signing helpers |
+| `internal/signing` | Resource-dummy construction/signing and common transaction helpers |
 | `lsig/composeddsa` | Generic runtime-compiled LogicSig composer used by DSA-backed composed templates, and parser/provider builder for composed DSA YAML templates |
 | `lsig/falcon1024` | Falcon-1024 DSA base provider; `v1/composer.go` is the Falcon-specific wrapper over `lsig/composeddsa` |
 | `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider |
@@ -235,8 +239,9 @@ The `BuildArgs` method encapsulates LogicSig arg ordering:
 **Invariant**: Arg order is determined by `RuntimeArgs()` schema order at key
 generation time, not map iteration. v1 signing-metadata key files persist that
 runtime arg schema and use the stored copy at signing time. LogicSig key files
-without `salt_counter`, or whose stored bytecode derives an on-curve LogicSig
-address, are rejected during key scan. LogicSig key files without
+whose derivation metadata does not match their bytecode, or whose stored
+bytecode derives an on-curve LogicSig address, are rejected during key scan.
+LogicSig key files without
 `signing_metadata_version` are rejected when signing or restore would otherwise
 depend on missing durable signing metadata; the live provider schema is not used
 as a fallback.
@@ -344,34 +349,14 @@ authors write symbolic `$hash` references; validation rejects raw
 user-authored TEAL so the renderer can own generated constants and any
 derivation-version salt anchor layout.
 
-In the implementation, salted address derivation patches the compiled bytecode,
-not the TEAL source. The salt anchor style is part of each versioned provider's
-derivation contract. Template-backed programs with omitted
-`derivation_version` are unsalted: APlane compiles the template as written,
-performs no byte patching, and accepts generation only when the unmodified
-bytecode already derives an off-curve LogicSig address. Template-backed
-programs with `derivation_version: 1` use a stack-neutral generated marker
-preamble (`byte 0x41504c414e455f4c5349475f53414c545f56315f005f454e44; pop`),
-while template-backed programs with `derivation_version: 2` append a trailing
-dead-code `bytecblock 0x00`. Provider-owned bare DSA versions may explicitly
-choose a reference layout such as a fixed `bytecblock 0x00` preamble.
-`aplane.falcon1024.v1` uses the Algorand Foundation
-reference-compatible fixed `bytecblock` preamble, `aplane.ed25519.v1` uses a
-fixed `bytecblock` preamble, generic or composed-template programs with
-`derivation_version: 1` use the generated marker, and generic or
-composed-template programs with `derivation_version: 2` use a trailing
-dead-code `bytecblock`. `internal/lsigsalt` couples each salted style to the
-locator used by `FindOffCurve`, which tries counter values `0..255` and returns
-the first bytecode whose LogicSig address is off-curve. The bytecblock locator
-verifies the preamble immediately after the TEAL version varint and never scans
-later bytes. The marker locator matches
-exactly one APlane-owned marker with 24 fixed bytes around the mutable counter;
-that exact-marker match gives a collision margin of at least `2^-192`, so
-shortening the marker is a derivation-contract change. The marker locator must
-not match generic `pushbytes 0x00` occurrences. The trailing bytecblock locator
-requires the salt block to be the final encoded instruction and patches its
-single byte entry. The selected counter is persisted in the key file as
-`salt_counter`; salt style is not exposed through public wire DTOs.
+Current bundled address derivation delegates auto-salting to the TEAL v13
+compiler. APlane accepts the compiler's final bytecode as authoritative,
+checks its reported address and off-curve postcondition, derives resources from
+that artifact, and persists it with
+`lsig_derivation: algod_v13_auto_salt`. It does not reproduce or patch the
+compiler's salt choice. Legacy derivation versions retain their marker,
+trailing-block, and counter validation only for compatible stored records;
+salt style is not exposed through public wire DTOs.
 
 ### Bounded1 Composer Extension
 
@@ -386,13 +371,12 @@ Bounded-capable bases expose a static signature-argument layout. Bounded1 keeps
 caller runtime Layer-3 arguments into frozen slots selected by the plan. Durable
 key metadata, rather than the installed YAML template, records path routing,
 base argument count/sizes, all argument declarations and slots, profile, Falcon
-contract-admin metadata, and post-signing size.
+contract-admin metadata, and reviewed per-path opcode ceilings.
 
-Bounded emission preserves the base/template's existing resolved salt style; it
-does not invent a bounded salt. The fixed bare-DSA bytecblock layout remains
-incompatible with suffix composition, while `StylePushbytes`, trailing
-bytecblock, and unsalted layouts retain their existing derivation contracts.
-See [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
+Bounded emission uses the template/provider's declared derivation contract; it
+does not invent a second bounded salt. Current bundled providers compile TEAL
+v13 and persist algod's final auto-salted bytecode. See
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 ### Salting Rationale
 
@@ -404,42 +388,23 @@ must produce bytecode whose address cannot correspond to an Ed25519 public key,
 and scan/restore paths reject stored LogicSig bytecode that violates that
 invariant.
 
-The salt byte is only an address-derivation knob. It must change the compiled
-program bytes, and therefore the LogicSig address, without changing the
-authorization policy. APlane patches compiled bytecode rather than source so
-the stored bytecode is the signing authority and the recorded `salt_counter`
-reproduces the exact address chosen at generation time.
+For current bundled providers and `derivation_version: 3` templates, APlane
+asks the pinned algod compiler for TEAL v13 bytecode and treats those returned
+bytes as authoritative. The compiler may leave an already off-curve program
+unchanged, reuse a generated constant block, or append a semantically inert
+constant block while searching. APlane does not reproduce that search. It
+checks that the compiler-reported address matches the final bytes, verifies the
+address is off-curve, derives program length and resource metadata from the
+final artifact, and persists it.
 
-Provider-owned DSA programs may use a fixed `bytecblock 0x00` preamble because
-APlane controls the entire generated program shape. In that setting the
-`bytecblock` salt slot is part of the versioned provider derivation contract,
-the locator can demand the slot immediately after the TEAL version varint, and
-there is no user-authored suffix that depends on byte constant layout.
+Source-to-address golden vectors are pinned to APlane's compiler toolchain,
+not promised across arbitrary assembler implementations. Runtime signing is
+reproducible from the persisted final bytecode.
 
-Template-backed programs use the generated `byte ...; pop` marker instead. A
-`bytecblock` salt would still be present in bytecode and could still vary the
-address, but it would also install byte-constant evaluator state until another
-`bytecblock` replaces it. Template rendering already generates `bytecblock` and
-`intcblock` declarations for symbolic `$name` references, and user-authored
-template TEAL is intentionally relocatable: it cannot contain raw
-`bytecblock`/`intcblock` declarations or numeric `bytec`/`intc` references.
-Using a stack-neutral marker keeps the salt out of that constant-block system.
-After the marker executes it has no stack or constant-pool effect, so salting
-does not depend on where generated template constants are placed or which
-constants the template uses.
-
-Templates that omit `derivation_version` do not use a generated salt anchor at
-all. That mode is deterministic and has no semantic footprint, but generation
-can fail if the unmodified program hash is on-curve. Bundled and production
-template-derived key types should therefore declare `derivation_version: 2`
-unless they intentionally want the unsalted contract, which is selected by
-omitting `derivation_version`.
-
-This is a conservative compatibility choice. A raw/expert template mode could
-relax the constant-block restrictions in the future, but that would be a new
-derivation contract. The existing strict/generated template modes keep APlane
-responsible for constant-block layout and keep salting independent of template
-semantics.
+Legacy derivation versions remain parseable where required by the on-disk
+schema, but all bundled pre-release templates use `derivation_version: 3`.
+Previously generated development LogicSig keys must be regenerated; APlane
+does not silently reinterpret old bytecode.
 
 **Note**: Falcon-1024 verification uses the native `falcon_verify` opcode (TEAL v12+), which takes:
 1. Message (32 bytes) - the transaction ID
@@ -474,7 +439,7 @@ YAML-based TEAL templates with strict constant substitution:
 
 ```yaml
 schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: generic
 template_mode: strict
 publisher: aplane
@@ -503,7 +468,7 @@ YAML-based DSA compositions with parameterized TEAL suffixes:
 
 ```yaml
 schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict

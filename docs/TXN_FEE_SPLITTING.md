@@ -1,359 +1,153 @@
-# Fee Splitting for Multi-Sender LogicSig Groups
+# Group Fee Planning for LogicSig and Native-PQ Authorization
 
 ## Overview
 
-When multiple LogicSig accounts participate in the same atomic group, dummy
-transaction fees are **split evenly** across the LogicSig transactions **the
-signer actually signs**. Foreign unsigned LogicSig entries that provide an
-`lsig_size` hint still contribute to the dummy **budget** calculation (they
-raise how many dummies the group needs), but they do **not** carry a fee
-share: the signer never rewrites the fee on a transaction it neither signs nor
-verifies. If every LogicSig participant is foreign, the pooled fee falls back
-to the first transaction the signer signs (never a foreign or passthrough
-slot).
+APlane computes one required fee for the finalized unsigned group. The fee
+calculation happens after required resource dummies have been appended and
+before the group ID, approval components, or signatures are produced.
 
-> **Why foreign positions are excluded.** Mutating a foreign transaction's fee
-> changes bytes another party must sign and shifts the group ID, relying on an
-> implicit, unenforced cross-party invariant (that a coordinator forwards the
-> fee-adjusted `/plan` output, not the originally submitted bytes). Pooling only
-> across signer-signed positions removes that invariant entirely. The cost is
-> that the local party pays the full dummy fee in a multi-party group rather
-> than splitting it with foreign parties; this is acceptable while no
-> multi-party fee-splitting coordinator ships, and would be revisited (with an
-> explicit `/plan`-bytes contract and a coordinator-side group-ID check)
-> alongside such a feature.
+The planner accounts for:
 
-## Why Fee Splitting is Needed
+- one base fee factor for every transaction;
+- transaction byte-pricing factors enabled by the active consensus profile;
+- the native-PQ scheme contribution for each native Falcon authorization;
+- the v42 LogicSig program-byte factor; and
+- all caller-supplied fees already present across the group.
 
-### The Problem
+The signer raises fees only when the group's aggregate existing fee is below
+the consensus requirement. It never mutates a foreign or passthrough slot.
 
-Some LogicSig verification programs are large (~3180 bytes each), requiring dummy transactions for LogicSig budget pooling:
+## LogicSig Resource Fees
 
-```
-Budget available per transaction: 1000 bytes
-Large LogicSig size: 3180 bytes (measured: ~3041 + 139 safety margin)
-Transactions needed per LogicSig: ceil(3180/1000) = 4 transactions
-Dummies needed per signature: 4 - 1 = 3 dummies
+LogicSig program bytes, argument bytes, and opcode cost are distinct resources.
+
+For a final v42 group of size `N`:
+
+```text
+free_program_bytes = N * 1000
+charged_program_bytes = max(0, sum(program_bytes) - free_program_bytes)
+program_fee_factor = charged_program_bytes * PerByteTxnSurcharge
 ```
 
-**With 2 LogicSig senders:**
-- 2 LogicSig transactions (2 × 3180 = 6360 bytes LogicSig capacity needed)
-- Total capacity needed: ceil(6360/1000) = 7 slots
-- Dummies needed: 7 - 2 = **5 dummy transactions**
+Program bytes do not force dummies on v42. Argument or opcode capacity may
+still require them:
 
-Each dummy has a minimum fee (typically 1000 microAlgos), so **someone needs to pay for them**.
+```text
+N >= ceil(sum(max_opcode_cost) / 20000)
 
-### The Solution
-
-Instead of making the first sender pay for all dummies (unfair), we **split the cost evenly** across the LogicSig participants the signer signs. Foreign participants raise the budget but are never charged a share (see Overview).
-
-## How It Works
-
-### Fee Calculation Formula
-
-```go
-totalDummyFees = dummyCount × minFee
-feePerLSig = totalDummyFees ÷ lsigCount
-remainder = totalDummyFees % lsigCount
-
-// Each LSig pays their share
-for each LogicSig transaction:
-    transaction.Fee += feePerLSig
-
-// First LSig gets any remainder (ensures exact total)
-firstLSig.Fee += remainder
+if any individual LogicSig has argument_bytes > 1000:
+    N >= ceil(sum(argument_bytes) / 1000)
 ```
 
-Dummy fees are additive to each LogicSig transaction's existing fee. If a
-caller sets a high flat fee for other fee-pooling purposes, APlane preserves
-that caller-specified fee and adds the signer-required dummy fee share on top;
-the existing fee is not treated as already covering dummy transaction fees.
+The solver finds the smallest fixed point because every added dummy also has a
+small LogicSig program and opcode cost. It never adds a dummy merely to reduce
+the program surcharge: another transaction costs a full base fee but buys at
+most 1,000 free program bytes.
 
-For example, if a LogicSig transaction starts with a 2,000,000 microAlgo
-fee and signer planning requires 4,000 microAlgos of dummy fees for that
-participant, the final fee is 2,004,000 microAlgos.
+Known v41 protocols retain the legacy combined-size rule:
 
-### Example 1: Two LSig Senders (Even Split)
-
-**Setup:**
-- 2 LogicSig transactions
-- 5 dummies needed
-- minFee = 1000 microAlgos
-
-**Calculation:**
-```
-totalDummyFees = 5 × 1000 = 5000 microAlgos
-feePerLSig = 5000 ÷ 2 = 2500 microAlgos
-remainder = 5000 % 2 = 0 microAlgos
-
-JUNK2 fee: 1000 (base) + 2500 (dummies) + 0 (remainder) = 3500 microAlgos
-JUNK3 fee: 1000 (base) + 2500 (dummies) = 3500 microAlgos
-
-Total fees: 7000 microAlgos (2 × 1000 base + 5 × 1000 dummies)
+```text
+N >= ceil(sum(program_bytes + argument_bytes) / 1000)
+N >= ceil(sum(max_opcode_cost) / 20000)
 ```
 
-### Example 2: Three LSig Senders (With Remainder)
+The sizing mode is an explicit property of APlane's closed consensus profile;
+it is not inferred from whether `PerByteTxnSurcharge` happens to be zero.
 
-**Setup:**
-- 3 LogicSig transactions
-- 7 dummies needed (ceil((3180 × 3) / 1000) - 3 = 7)
-- minFee = 1000 microAlgos
+## Unified Required Fee
 
-**Calculation:**
-```
-totalDummyFees = 7 × 1000 = 7000 microAlgos
-feePerLSig = 7000 ÷ 3 = 2333 microAlgos (integer division)
-remainder = 7000 % 3 = 1 microAlgo
+Algorand represents fee usage in fixed-point factors where one ordinary
+transaction contributes `1_000_000`. APlane sums all applicable factors over
+the final group and scales once by the network minimum fee:
 
-LSig 1 fee: 1000 + 2333 + 1 (remainder) = 3334 microAlgos
-LSig 2 fee: 1000 + 2333 = 3333 microAlgos
-LSig 3 fee: 1000 + 2333 = 3333 microAlgos
-
-Total fees: 10,000 microAlgos (3 × 1000 base + 7 × 1000 dummies)
+```text
+required_group_fee = ceil(min_txn_fee * total_fee_factor / 1_000_000)
+fee_deficit = max(0, required_group_fee - sum(existing transaction fees))
 ```
 
-### Example 3: Four LSig Senders
+`charged_program_bytes * PerByteTxnSurcharge` is a fee-factor contribution,
+not a microAlgo value. Native Falcon's scheme contribution is also a factor;
+the ordinary transaction base must not be counted twice.
 
-**Setup:**
-- 4 LogicSig transactions
-- 9 dummies needed (ceil((3180 × 4) / 1000) - 4 = 9)
-- minFee = 1000 microAlgos
+If a deficit remains, APlane distributes it across mutable signer-controlled
+transactions, preferring the LogicSig participants identified by resource
+planning. Any remainder is assigned deterministically. Existing pooled fees
+count toward the requirement; APlane does not add a second copy of a fee the
+caller has already paid.
 
-**Calculation:**
-```
-totalDummyFees = 9 × 1000 = 9000 microAlgos
-feePerLSig = 9000 ÷ 4 = 2250 microAlgos
-remainder = 9000 % 4 = 0 microAlgos
+Foreign unsigned entries with `lsig_resources` contribute to resource and fee
+planning but are not mutated. Passthrough entries are immutable signed bytes.
+If no signer-controlled transaction can cover a deficit, planning fails.
 
-Each LSig: 1000 + 2250 = 3250 microAlgos
-Total fees: 13,000 microAlgos (4 × 1000 base + 9 × 1000 dummies)
-```
+## Example: Falcon LogicSig on v42
 
-## Implementation Details
+Assume one real transaction has:
 
-### Code Location
-
-**File:** `internal/signing/common.go`
-
-**Planner-facing functions:** `CalculateDummyFees()` and `ApplyDummyFees()`
-
-```go
-func CalculateDummyFees(
-    dummyCount int,
-    lsigCount int,
-    minFee uint64,
-) (DummyFeeInfo, error)
-
-func ApplyDummyFees(
-    txns []types.Transaction,
-    lsigIndices []int,
-    dummyCount int,
-    minFee uint64,
-) (DummyFeeInfo, error)
+```text
+program_bytes = 1804
+argument_bytes = 1423   # conservative deterministic-compressed maximum
+max_opcode_cost = 20000
 ```
 
-`ApplyDummyFees()` delegates the actual even split to
-`AdjustLSigFeesForDummies()` when LSig indices are present, and falls back to
-putting dummy fees on transaction 0 only for internal cases where dummy fees
-must be applied but no LSig index was identified.
+The argument exceeds the individual 1,000-byte allowance, so `N = 2`. The
+group contains the real transaction and one resource dummy. The two group
+members provide 2,000 free program bytes, so no program surcharge is due in
+this example. With a 1,000-microAlgo minimum fee, the group must pay 2,000
+microAlgos total.
 
-### Key Features
+The actual Falcon signature is variable-length. Planning uses the proven
+1,423-byte maximum before signing; signed assembly rejects a signature that
+exceeds that declaration.
 
-1. **Even Distribution**
-   - Total dummy fees divided by number of LogicSig transactions
-   - Integer division ensures whole microAlgos
+## Example: Priced Program Bytes
 
-2. **Remainder Handling**
-   - Any remainder from division goes to the first LSig
-   - Ensures exact total (no rounding errors)
-   - Maximum difference: `lsigCount - 1` microAlgos
+Assume a v42 group is already fixed at `N = 2`, its LogicSig programs total
+4,500 bytes, and no additional dummy is required by arguments or opcode cost:
 
-3. **Lower-Level Incentive Fee Hook**
-   - `AdjustLSigFeesForDummies()` accepts an optional incentive fee for callers
-     that need to add extra fee to the first LogicSig
-   - The current signer group planner uses `ApplyDummyFees()` and passes no
-     incentive fee
-
-4. **Validation**
-   - All indices checked before fee adjustment
-   - Error if no LogicSig transactions provided
-   - Error if any index out of bounds
-
-### When It's Used
-
-**Triggered by:**
-- The signer group planner when dummy transactions are needed for LSig budget pooling
-- `/sign` and `/plan` flows that build or mutate a transaction group
-- Foreign unsigned LogicSig entries with `lsig_size`, which contribute to the
-  dummy budget calculation only (they raise the budget but are never charged a
-  fee share) and are not signed by this signer
-
-**NOT used for:**
-- Pure Ed25519 groups (no dummies needed)
-- Passthrough groups, because pre-signed transactions are immutable and the
-  planner trusts the pre-formed group structure
-- Pre-grouped transactions that would need extra dummies; those are rejected instead of regrouped
-
-## Console Output
-
-When fee splitting occurs, you'll see:
-
-```
-[GROUP] Distributed 5000 microAlgos dummy fees across 2 LSig txn(s) (~2500 each)
+```text
+charged_program_bytes = 4500 - 2000 = 2500
+program_fee_factor = 2500 * 100 = 250000
 ```
 
-This shows:
-- Number of LogicSig transactions sharing the cost
-- Approximate fee per LSig (before remainder)
-- Total dummy fees being distributed
+At a 1,000-microAlgo minimum fee, that factor contributes 250 microAlgos to the
+group requirement. Adding three dummies just to eliminate the surcharge would
+cost 3,000 microAlgos in new base fees, so APlane pays the surcharge instead.
 
-Client-side verbose signing output may also summarize the mutation report:
+## Immutable and Multi-Party Groups
 
-```
-Fee adjustment: +5000 µAlgos across group
-```
+Pre-grouped and passthrough-bearing groups are immutable. If their existing
+shape or aggregate fees do not satisfy the active consensus rules, the signer
+rejects them rather than changing fees, inserting dummies, or recomputing the
+group ID.
 
-## Fee Distribution: First-Sender-Pays vs Even Split
+For an unsigned multi-party group, call `/plan` first. Foreign LogicSig slots
+carry the selected path's structured hint:
 
-aplane splits the group's dummy-fee budget evenly across the paying senders
-rather than letting the first sender absorb all of it.
-
-### First sender pays all (naive)
-
-```
-Transaction Group:
-  [0] JUNK2 → STAN3: Fee = 6000 microAlgos (86% of total)
-  [1] JUNK3 → STAN4: Fee = 1000 microAlgos (14% of total)
-  [2-6] 5 Dummies: Fee = 0 each (paid by JUNK2)
-
-Total: 7000 microAlgos
-Fairness: JUNK2 pays 6× more for equal participation
+```json
+{
+  "txn_bytes_hex": "545800...",
+  "lsig_resources": {
+    "program_bytes": 1804,
+    "argument_bytes": 1423,
+    "max_opcode_cost": 20000
+  }
+}
 ```
 
-### Even split (aplane)
+The coordinator must sign and submit the canonical transactions returned by
+`/plan`, not its original drafts.
 
-```
-Transaction Group:
-  [0] JUNK2 → STAN3: Fee = 3500 microAlgos (50% of total)
-  [1] JUNK3 → STAN4: Fee = 3500 microAlgos (50% of total)
-  [2-6] 5 Dummies: Fee = 0 each (split evenly)
+## Implementation Ownership
 
-Total: 7000 microAlgos
-Fairness: Each sender pays a proportional share
-```
+- `internal/lsigresource` owns closed consensus profiles and the pure resource
+  fixed-point solver.
+- `internal/signerapp/signing/planner_runtime.go` resolves authorization paths
+  and constructs the final group shape.
+- `internal/signerapp/signing/native_pq_fee.go` computes and applies the unified
+  group fee.
+- `internal/signing/dummy_transactions.go` owns deterministic resource-dummy
+  construction and signing.
 
-## Edge Cases
-
-### Case 1: Single LSig Sender
-
-Single LSig groups use the same fee adjustment path. Because there is only one LSig index, that transaction receives the full dummy fee total:
-
-```
-3 dummies, 1 LSig sender:
-  Total = 3000, Per = 3000, Remainder = 0
-  LSig 1: 3000
-```
-
-The first-transaction fallback is reserved for internal cases where dummy fees must be applied but no LSig indices were identified.
-
-### Case 2: Odd Number of Dummies
-
-Remainder goes to first LSig:
-
-```
-3 dummies, 2 senders:
-  Total = 3000, Per = 1500, Remainder = 0
-  Sender 1: 1500 + 0 = 1500
-  Sender 2: 1500
-
-5 dummies, 3 senders:
-  Total = 5000, Per = 1666, Remainder = 2
-  Sender 1: 1666 + 2 = 1668 ← Gets remainder
-  Sender 2: 1666
-  Sender 3: 1666
-```
-
-### Case 3: Mixed with Ed25519
-
-Ed25519 transactions pay only their own base fee (no dummy contribution):
-
-```
-Group: 2 LSig, 1 Ed25519, 5 dummies
-
-LSig 1: 1000 + 2500 = 3500 microAlgos
-LSig 2: 1000 + 2500 = 3500 microAlgos
-Ed25519:  1000 = 1000 microAlgos  ← No dummy fees
-Dummies:  0 each (5 × 1000 paid by LogicSig accounts)
-
-Total: 8000 microAlgos
-```
-
-This is fair because:
-- Ed25519 doesn't need dummies (small signature)
-- Only LogicSig accounts benefit from LogicSig budget pooling
-- Ed25519 just needs group to execute atomically
-
-### Case 4: Variable minFee
-
-If network conditions change minFee (rare):
-
-```
-Normal: minFee = 1000, 5 dummies → 5000 total
-Congested: minFee = 2000, 5 dummies → 10,000 total
-
-With 2 LogicSig senders:
-  Normal: 2500 each
-  Congested: 5000 each
-
-The splitting ratio stays the same (50/50), absolute amounts scale.
-```
-
-## Verification
-
-When fee splitting occurs, you'll see output like:
-
-```
-[GROUP] Distributed 5000 microAlgos dummy fees across 2 LSig txn(s) (~2500 each)
-```
-
-To verify fair splitting, check that each LogicSig transaction's fee includes its share of the dummy costs.
-
-## Benefits
-
-1. **Fairness** - Equal participation = equal cost
-2. **Transparency** - Clear console output shows split
-3. **Scalability** - Works with any number of LogicSig senders
-4. **Predictability** - Simple formula: `totalDummyFees ÷ lsigCount`
-5. **Accuracy** - Remainder handling ensures exact totals
-
-## Technical Notes
-
-### Atomicity
-
-All fees are adjusted **before** group ID assignment, ensuring:
-- Transactions can't be modified after grouping
-- Fee adjustments included in group hash
-- All-or-nothing execution guaranteed
-
-### Fee Structure in Atomic Groups
-
-Algorand allows flexible fee distribution in groups:
-- **Total group fee** must meet minimum requirement
-- Individual fees can be 0 as long as group total is sufficient
-- We set explicit fees per transaction for clarity
-
-### Alternative Approaches Considered
-
-1. **First sender pays all** - Unfair for multi-party scenarios
-2. **Split across ALL transactions** - Ed25519 shouldn't pay for LSig overhead
-3. **Split across all LogicSig incl. foreign** - Fair, but mutates foreign bytes
-   and relies on an unenforced cross-party invariant (rejected; see Overview)
-4. **Split across signer-signed LogicSig only** - Fair among local participants,
-   never mutates foreign bytes (current implementation)
-
----
-
-**Related Documentation:**
-- [TXN_MIXED_GROUPS.md](TXN_MIXED_GROUPS.md) - Mixed group signing architecture
-- [ARCH_CRYPTO.md](ARCH_CRYPTO.md) - Cryptography layer architecture
-- [DEV_TESTING.md](DEV_TESTING.md) - Test suite guide
+Approval output identifies server-added dummies, aggregate fee changes, native
+Falcon contributions, and priced LogicSig program bytes. Policy evaluates the
+final transaction bytes and fees that will actually be signed.

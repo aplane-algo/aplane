@@ -5,11 +5,11 @@ LogicSig-signed transactions with Ed25519 or externally signed transactions.
 
 ## Overview
 
-Some LogicSig verification programs are large enough to require extra
-transactions for LogicSig budget pooling. When a group mixes LogicSig and
-Ed25519 participants, the signer planner decides whether to add dummy
-transactions, how to distribute dummy fees, and whether the group ID can be
-preserved.
+LogicSig authorization consumes program bytes, argument bytes, and opcode
+capacity. Depending on the active consensus profile, a group may require
+resource dummies or a program-byte fee surcharge. When a group mixes LogicSig
+and native or externally signed participants, the signer planner decides the
+final group shape and aggregate fee before any signature is produced.
 
 ## Mixed Guarded/Non-Guarded Groups
 
@@ -24,8 +24,8 @@ frozen bytes.
 Guarded positions are signed through `/sign/component` plus `/sign/assemble`.
 Ordinary signer-managed originals are signed by an intermediate primary-signer
 `/sign` request over the full canonical group: ordinary originals are sign-mode
-entries, guarded targets are `foreign` entries with accurate guarded-authorizer
-`lsig_size` hints, and client-signed dummies are `foreign` context entries. The
+entries, guarded targets are `foreign` entries with accurate selected-path
+`lsig_resources` hints, and client-signed dummies are `foreign` context entries. The
 resulting signed ordinary originals and dummies are then passed through to
 assembly.
 
@@ -41,41 +41,42 @@ versioned component message and LogicSig change.
 
 ## The Three Cases
 
-### Case 1: Pre-grouped with Sufficient Capacity
+### Case 1: Pre-grouped with Sufficient Resources
 
-**Condition**: Group ID present AND `total_budget >= required_budget`
+**Condition**: Group ID present and the existing group satisfies its consensus
+resource and aggregate-fee requirements.
 
 **Behavior**: Sign as-is, no modifications, group ID preserved
 
 ```
-Group: 10 transactions (1 large LSig + 9 others)
-Budget: 10 x 1,000 = 10,000 bytes
-Required: 1 x 3,180 = 3,180 bytes
-Result: 10,000 >= 3,180 -> No dummies needed, sign as-is
+Group: 2 transactions (1 Falcon LogicSig + 1 native transaction)
+LogicSig args: 1,423-byte declared maximum
+Opcode ceiling: <= 40,000 across the group
+Result: existing group has sufficient argument/opcode capacity; sign as-is
 ```
 
 **Output**:
 ```
 [GROUP] Pre-grouped transactions (group ID: ...)
-[GROUP] LSig budget: 3180 bytes needed, 10000 bytes available (10 txns x 1000)
+[GROUP] LogicSig resources: program=1810 args=1423 opcode<=20001, group=2 (0 dummy)
 ```
 
-### Case 2: Pre-grouped with Insufficient Capacity
+### Case 2: Pre-grouped with Insufficient Resources
 
-**Condition**: Group ID present AND `total_budget < required_budget`
+**Condition**: Group ID present, but the immutable group would need another
+resource dummy or a fee mutation.
 
 **Behavior**: Reject with error (cannot add dummies without breaking group ID)
 
 ```
-Group: 2 transactions (1 large LSig + 1 Ed25519)
-Budget: 2 x 1,000 = 2,000 bytes
-Required: 1 x 3,180 = 3,180 bytes
-Result: 2,000 < 3,180 -> Need 2 dummies, but would break group ID
+Group: 1 Falcon LogicSig transaction
+Declared args: 1,423 bytes
+Result: v42 argument pooling requires N=2, but adding a dummy would break the group ID
 ```
 
 **Error**:
 ```
-pre-grouped transactions require 2 additional dummies for LogicSig budget but group is immutable - submit ungrouped transactions instead
+immutable group requires 1 additional dummy transaction for LogicSig arguments/opcode budget; submit an ungrouped unsigned group instead
 ```
 
 **Workaround**: Clear group IDs before signing:
@@ -97,36 +98,44 @@ and any dummy transactions appended by the signer.
 **Behavior**: Add dummies as needed, adjust fees, compute group ID, sign
 
 ```
-Transactions: [large LSig, Ed25519] (no group ID)
-Result: Add 2 dummies, compute new group ID, sign all 4
+Transactions: [Falcon LogicSig] (no group ID)
+Result: Add 1 resource dummy, compute the unified fee and new group ID, sign both
 ```
 
 **Output**:
 ```
 [GROUP] Ungrouped transactions - will compute group ID
-[GROUP] LSig budget: 3180 bytes needed, 2000 bytes available (2 txns x 1000)
-[GROUP] Need 2 dummy transaction(s) for additional budget
-[GROUP] Distributed 2000 microAlgos dummy fees across 1 LSig txn(s) (~2000 each)
+[GROUP] LogicSig resources: program=1810 args=1423 opcode<=20001, group=2 (1 dummy)
+[GROUP] Added 1 resource dummy transaction(s); final fee planning follows
 ```
 
 ## LogicSig Capacity Formula
 
 ```
-Total Budget = Number of Transactions x 1,000 bytes
-Required Budget = Sum of signer-known LSig sizes and foreign lsig_size hints
-Extra Budget Needed = max(Required Budget - Total Budget, 0)
-Dummies Needed = ceil(Extra Budget Needed / 1,000)
+N = final number of transactions, including dummies
+
+v41 required N >= ceil(sum(program bytes + argument bytes) / 1,000)
+
+v42 required N >= ceil(sum(max opcode cost) / 20,000)
+if any LogicSig has more than 1,000 argument bytes:
+    required N >= ceil(sum(argument bytes) / 1,000)
+
+v42 charged program bytes = max(0, sum(program bytes) - N*1,000)
 ```
 
-### Capacity Table
+### v42 Examples
 
-| Txns | Large LSig | Budget | Required | Sufficient? | Dummies |
-|------|--------|--------|----------|-------------|---------|
-| 2 | 1 | 2,000 | 3,180 | No | 2 |
-| 4 | 1 | 4,000 | 3,180 | Yes | 0 |
-| 7 | 2 | 7,000 | 6,360 | Yes | 0 |
-| 6 | 2 | 6,000 | 6,360 | No | 1 |
-| 10 | 3 | 10,000 | 9,540 | Yes | 0 |
+| Real txns | LogicSig arguments | Total opcode ceiling | Final N | Dummies |
+|---:|---|---:|---:|---:|
+| 1 | one 900-byte path | 20,000 | 1 | 0 |
+| 1 | one 1,423-byte Falcon path | 20,000 | 2 | 1 |
+| 2 | two independent 900-byte paths | 40,000 | 2 | 0 |
+| 2 | 1,001 bytes and 999 bytes | 40,000 | 2 | 0 |
+| 2 | two 1,423-byte paths | 40,000 | 3 | 1 |
+
+Once any individual path exceeds 1,000 argument bytes, v42 checks the sum of
+all LogicSig arguments against `N * 1,000`. Program bytes affect the fee but do
+not increase `N`.
 
 ## Group ID Immutability
 
@@ -162,7 +171,9 @@ Modified:  hash([txn1', txn2, d1, d2, d3]) = 0x1234...
 
 ## Fee Distribution
 
-See [TXN_FEE_SPLITTING.md](TXN_FEE_SPLITTING.md) for the fee distribution algorithm and examples. Dummy fees are split across LogicSig participants; Ed25519 entries in a mixed group pay only their base fee.
+See [TXN_FEE_SPLITTING.md](TXN_FEE_SPLITTING.md) for unified group-fee
+planning. Existing fees are pooled, and any remaining deficit is assigned only
+to mutable signer-controlled slots.
 
 ## Implementation
 
@@ -172,27 +183,31 @@ The shared planning/signing pipeline handles all three cases automatically.
 `/plan` and `/sign` both accept foreign entries for planning and full-group
 policy/approval context. Ungrouped foreign requests may be canonicalized by the
 signer; pre-grouped foreign requests are preserved when they already have
-sufficient LogicSig budget. `/sign` signs only signer-owned entries, preserves
+sufficient LogicSig resources and fees. `/sign` signs only signer-owned entries, preserves
 passthrough entries, and returns empty-string placeholders for foreign
 positions.
 
 ```go
-// Planner analyzes the group
-currentBudget := len(txns) * signing.TxLsigBudget
-requiredBudget := totalLsigBytes // signer metadata + foreign lsig_size hints
+// Planner resolves an explicit consensus profile and the selected path of
+// every local or foreign LogicSig.
+plan := lsigresource.Solve(profile, lsigresource.PlanInput{
+    TransactionCount: uint64(len(txns)),
+    LogicSigs:        selectedPathResources,
+    Dummy:            dummyResources,
+})
 
-if isPreGrouped && needsDummies {
+if isPreGrouped && plan.DummyCount != 0 {
     // Pre-grouped transactions are immutable: reject if dummies are needed
-    return error("pre-grouped transactions require additional dummies for LogicSig budget")
+    return error("immutable group requires additional LogicSig resource dummies")
 }
 
-if needsDummies {
-    // Ungrouped transaction set: add dummies, adjust fees, compute group ID
-    dummyTxns := CreateDummyTransactions(dummiesNeeded, sp)
-    ApplyDummyFees(txns, lsigIndices, dummiesNeeded, minFee)
+if plan.DummyCount != 0 {
+    // Ungrouped transaction set: add dummies before unified fee planning.
+    dummyTxns := CreateDummyTransactions(int(plan.DummyCount), sp)
     allTxns := append(txns, dummyTxns...)
-    gid := crypto.ComputeGroupID(allTxns)
 }
+applyGroupFees(allTxns, resourcePlan)
+gid := crypto.ComputeGroupID(allTxns)
 // Sign signer-owned transactions and dummies; preserve passthrough slots and
 // leave foreign slots unsigned.
 ```
@@ -207,9 +222,9 @@ txIDs, submittedTxns, err := clientsign.SignAndSubmitViaGroup(txns, authCache, s
 ```
 
 The server automatically:
-- Analyzes LogicSig budget requirements
+- Resolves consensus-specific LogicSig resource requirements
 - Creates dummy transactions if needed
-- Adjusts fees across LSig transactions
+- Computes one consensus fee requirement across the final group
 - Computes group ID for ungrouped transactions
 
 ### Shared Functions
@@ -218,7 +233,7 @@ The server automatically:
 |----------|----------|---------|
 | `CreateDummyTransactions()` | `internal/signing/dummy_transactions.go` | Creates zero-fee dummy transactions |
 | `SignDummyTransactions()` | `internal/signing/dummy_transactions.go` | Signs dummies with embedded LogicSig |
-| `calculateDummies()` | `internal/signerapp/signing/planner_runtime.go` | Calculates required dummy count from LSig sizes and group budget |
+| `lsigresource.Solve()` | `internal/lsigresource` | Solves the minimum group from program, argument, and opcode resources |
 | `CalculateDummyFees()` | `internal/signing/common.go` | Calculates total dummy fees and approximate per-LSig share |
 | `ApplyDummyFees()` | `internal/signing/common.go` | Planner-facing dummy fee application helper |
 | `AdjustLSigFeesForDummies()` | `internal/signing/common.go` | Lower-level even split helper used by `ApplyDummyFees()` |
@@ -288,7 +303,7 @@ With dummies: [pay, app, d, d, d]     <- positions 0, 1 still valid
 
 It can break contracts that assert `Global.group_size`, depend on final
 positions, or otherwise require an exact group shape. Pre-grouped requests are
-preserved when they already have enough LogicSig budget for this reason.
+preserved when they already have enough LogicSig resources for this reason.
 
 ## Summary Table
 
@@ -344,16 +359,18 @@ For scenarios where unsigned non-local transactions should participate in
 planner budget math and approval context, use foreign mode. The common workflow
 starts ungrouped and lets the server build dummies, fees, and group ID. An
 already pre-grouped foreign request can also be accepted when it already has
-sufficient LogicSig budget and no additional dummies are needed.
+sufficient LogicSig resources and no additional dummies are needed.
 
 ```
 1. Construct the intended group shape.
 
-2. Plan: One party sends all transactions to /plan,
-   marking the other party's as foreign with lsig_size hints:
+2. Plan: One party sends all transactions to /plan, marking the other party's
+   as foreign with structured `lsig_resources` hints:
    [
-     {auth_address: "ALICE", txn_bytes_hex: "..."},        // Alice's txn
-     {txn_bytes_hex: "...", lsig_size: 1700}               // Bob's txn (foreign)
+     {auth_address: "ALICE", txn_bytes_hex: "..."},
+     {txn_bytes_hex: "...", lsig_resources: {
+       program_bytes: 1800, argument_bytes: 1423, max_opcode_cost: 20000
+     }}
    ]
    Server returns finalized group with dummies, fees, and group ID.
 
@@ -375,7 +392,8 @@ sufficient LogicSig budget and no additional dummies are needed.
 - Complete-group SDK convenience helpers may reject these foreign placeholders;
   use `/plan` first, then resubmit finalized foreign slots as passthrough when
   a complete signed group is required
-- `lsig_size` is advisory; incorrect hints may cause insufficient budget at submission
+- `lsig_resources` is advisory; incorrect hints may cause insufficient
+  resources or fees at submission
 - Foreign transactions are included in planning, approval context,
   warning analysis, and audit visibility, but transaction-level hard policy is
   applied only to signer-controlled slots
@@ -384,8 +402,8 @@ sufficient LogicSig budget and no additional dummies are needed.
 
 | Aspect | Passthrough | Foreign |
 |--------|-------------|---------|
-| Group building | Client pre-forms signed immutable group | Server usually builds; pre-grouped foreign requests can be preserved when budget is sufficient |
-| Dummy calculation | Client responsibility | Server computes for ungrouped requests and validates pre-grouped requests with `lsig_size` hints |
+| Group building | Client pre-forms signed immutable group | Server usually builds; pre-grouped foreign requests can be preserved when resources and fees are sufficient |
+| Dummy calculation | Client responsibility | Server computes for ungrouped requests and validates pre-grouped requests with `lsig_resources` hints |
 | Output for other party's txns | Pre-signed bytes | Canonical unsigned bytes from `/plan`, or `""` placeholders in `/sign` |
 | Requires group ID? | Yes | No for server-built groups; allowed for already sufficient pre-grouped groups |
 | Best for | Pre-signed finalized groups | LogicSig swaps needing dummies or unsigned full-group context |

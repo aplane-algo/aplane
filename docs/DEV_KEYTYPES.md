@@ -120,6 +120,14 @@ mode. User template TEAL cannot choose salt style, must remain relocatable,
 and must not depend on absolute constant-block layout or numeric `bytec`/`intc`
 indexes.
 
+The public inventory materializes these contracts as
+`logic_sig_resources`. Each selected path contains `program_bytes`,
+`argument_bytes`, and `max_opcode_cost`. Foreign `/plan` and `/sign` entries use
+the same shape under `lsig_resources`. These values are consensus inputs, not
+display estimates: derive program length after compiler auto-salting, use a
+proven maximum for variable arguments, and demonstrate opcode ceilings against
+worst permitted runtime operand sizes.
+
 Key files may also store `template_fingerprint`, the behavior-only, versioned
 compatibility fingerprint of the template or composed provider that created the
 key, when known. This is provenance for inventory warnings only; it is not

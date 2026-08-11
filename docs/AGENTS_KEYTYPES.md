@@ -180,6 +180,12 @@ new template-derived key types should use `derivation_version: 3` and TEAL v13
 compiler auto-salting. APlane validates the final compiled program and address;
 it does not reproduce the compiler's salt search.
 
+After compilation/auto-salting, derive `program_bytes` from the final persisted
+bytecode and review every path's maximum `argument_bytes` and
+`max_opcode_cost`. Exercise dynamic-cost opcodes at worst permitted input
+sizes. Never collapse these values into one size scalar: v42 prices program
+bytes but pools arguments and opcode cost independently.
+
 For time locks in LogicSig mode, prefer `txn FirstValid` checks. Do not use
 `global Round`.
 
