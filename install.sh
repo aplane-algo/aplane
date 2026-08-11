@@ -2143,6 +2143,11 @@ if [ "$LOCAL_MODE" = "1" ]; then
     # Resolve/build bundled plugin payloads before replacing binaries.
     prepare_builtin_plugin_payloads
 
+    # The local admin socket lives below the install root. Keep every
+    # installer-owned ancestor private so ipcbind's directory-chain validation
+    # cannot be defeated by a permissive umask (for example, 002 -> 0775).
+    chmod 700 "$LOCAL_PATH"
+
     # Create directories
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
     chmod 700 "$INSTALL_ROOT"

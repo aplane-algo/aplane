@@ -201,6 +201,17 @@ func TestInstallerGeneratedConfigsIncludeFNet(t *testing.T) {
 	}
 }
 
+func TestLocalInstallerSecuresSocketAncestor(t *testing.T) {
+	root := repositoryRoot(t)
+	installer := readTextFile(t, filepath.Join(root, "install.sh"))
+	assertTextOrder(t, "install.sh", installer,
+		`prepare_builtin_plugin_payloads`,
+		`chmod 700 "$LOCAL_PATH"`,
+		`mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"`,
+		`chmod 700 "$INSTALL_ROOT"`,
+	)
+}
+
 func TestInstallerCanonicalizesBinaryDirectoryPhysically(t *testing.T) {
 	root := repositoryRoot(t)
 	setup := readTextFile(t, filepath.Join(root, "installer", "scripts", "systemd-setup.sh"))

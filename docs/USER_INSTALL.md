@@ -116,6 +116,11 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 └── start.sh               # Unified console launcher (apconsole)
 ```
 
+The installer sets the local install root and signer data directory to mode
+`0700`. The local IPC socket is stored below the signer data directory, so each
+installer-owned ancestor must be private even when the user's umask would
+otherwise create a group-writable directory.
+
 ### Ports
 
 Each local install selects **random available ports** in the dynamic range (49152–65534) for both the signer REST API and the SSH tunnel. This allows multiple independent APlane instances on the same machine without port conflicts. The selected ports are written into `apsigner/config.yaml` and the primary signer record in `apclient/endpoints.yaml`.
