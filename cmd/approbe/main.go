@@ -158,7 +158,7 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 func printUsage(w io.Writer) {
 	writeln(w, `Usage:
   approbe signer-running [-d <signer-data-dir>] [--ipc-path <socket>] [--quiet] [--timeout 300ms]
-  approbe signer-ipc-path -d <signer-data-dir>
+  approbe signer-ipc-path -d <signer-data-dir> [--honor-ipc-env]
   approbe --version
 
 Exit codes for signer-running:

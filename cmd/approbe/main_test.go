@@ -136,6 +136,17 @@ func TestSubcommandHelpExitsSuccessfully(t *testing.T) {
 	}
 }
 
+func TestTopLevelHelpAdvertisesSignerIPCEnvironmentOption(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"help"}, &stdout, &stderr); code != exitRunning {
+		t.Fatalf("exit = %d, want %d; stderr=%q", code, exitRunning, stderr.String())
+	}
+	const usage = "approbe signer-ipc-path -d <signer-data-dir> [--honor-ipc-env]"
+	if !strings.Contains(stdout.String(), usage) {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), usage)
+	}
+}
+
 func TestRunSignerIPCPathMirrorsManagedDaemonResolution(t *testing.T) {
 	externalRoot := t.TempDir()
 	tests := []struct {

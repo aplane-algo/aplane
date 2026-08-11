@@ -917,23 +917,25 @@ Additional signer-state notes:
   aliases are resolved and both the alias and canonical directory chains are
   validated before the daemon binds the canonical socket path. A reachable
   existing listener is a hard collision; startup removes only a stable socket
-  inode that rejects a connection as stale. Bind paths are rejected before
-  `listen` when they exceed the running platform's pathname socket capacity:
-  107 bytes on Linux and a conservative 103 bytes on Darwin/BSD targets.
-  An explicit client `--ipc-path` has highest precedence and must be absolute.
-  An explicit client `-d` is resolved next and cannot be retargeted by inherited
-  `APSIGNER_IPC_PATH`; the absolute environment socket override still takes
-  precedence
-  when the data root came from `APSIGNER_DATA`, which supports unreadable
-  custom managed stores, and it may be used without a data root when the
-  socket path alone identifies the signer. Otherwise normal data-root and
-  runtime discovery apply. Once a selected root's `config.yaml` is visible, IPC discovery reads
-  it strictly: read failures are errors and must never silently select a
-  default socket for another store. The systemd installer derives the paired `apenv.sh` value through
-  `approbe signer-ipc-path`, which uses this same resolver rather than parsing
-  `ipc_path` independently in shell. The read-only environment audit uses the
-  same command with `--honor-ipc-env` when its signer root was not explicitly
-  selected, preserving the normal `APSIGNER_DATA`/`APSIGNER_IPC_PATH` pairing.
+  inode that rejects a connection as stale. The configured alias, which
+  clients dial, and the canonical target, which the daemon binds, are each
+  rejected before `listen` when they exceed the running platform's pathname
+  socket capacity: 107 bytes on Linux and a conservative 103 bytes on
+  Darwin/BSD targets. An explicit client `--ipc-path` has highest precedence
+  and must be absolute. An explicit client `-d` is resolved next and cannot be
+  retargeted by inherited `APSIGNER_IPC_PATH`; the absolute environment socket
+  override still takes precedence when the data root came from
+  `APSIGNER_DATA`, which supports unreadable custom managed stores, and it may
+  be used without a data root when the socket path alone identifies the signer.
+  Otherwise normal data-root and runtime discovery apply. Once a selected
+  root's `config.yaml` is visible, IPC discovery reads it strictly: read
+  failures are errors and must never silently select a default socket for
+  another store. The systemd installer derives the paired `apenv.sh` value
+  through `approbe signer-ipc-path`, which uses this same resolver rather than
+  parsing `ipc_path` independently in shell. The read-only environment audit
+  uses the same command with `--honor-ipc-env` when its signer root was not
+  explicitly selected, preserving the normal
+  `APSIGNER_DATA`/`APSIGNER_IPC_PATH` pairing.
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
 - signer-managed backup archives are written under
   `<data_dir>/backups/<identity>/`; the archive contains `README.md` and
