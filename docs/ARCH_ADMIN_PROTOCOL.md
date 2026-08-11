@@ -316,8 +316,12 @@ handlers require only an authenticated bound runtime.
   `commit_backup_import` carries the sensitive `export_passphrase`, verifies
   the declared size and SHA-256, authenticates the sealed manifest, deeply
   validates every credential payload, and only then atomically publishes the
-  archive. Validation extraction uses a reserved owner-private directory on
-  the signer store filesystem rather than process-global temporary storage.
+  archive. Commit first renames the writable upload into a reserved immutable
+  claim while holding the identity mutation lock. Hashing, extraction, and
+  memory-hard credential verification run outside that lock; the lock is
+  reacquired only to publish the validated claim. Validation extraction uses a
+  reserved owner-private directory on the signer store filesystem rather than
+  process-global temporary storage.
   Commit is a synchronous, potentially long-running request; first-party
   clients use a dedicated bounded timeout rather than the ordinary 30-second
   admin-request timeout. The daemon zeros the passphrase after the request and

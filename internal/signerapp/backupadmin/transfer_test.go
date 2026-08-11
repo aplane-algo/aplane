@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -132,6 +133,67 @@ func TestBackupTransferRejectsWrongPassphraseBeforePublication(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(paths.IdentityBackupsDir(ir.ID()), "wrong-passphrase.tar.gz")); !os.IsNotExist(err) {
 		t.Fatalf("unauthenticated archive was published: %v", err)
+	}
+}
+
+func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	deps := &lockingBackupTransferDeps{paths: paths}
+	service := Service{Deps: deps}
+	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	archivePath := writeLargeValidImportArchive(t)
+	archiveBytes, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checksum, size, err := backup.FileSHA256(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "concurrent.tar.gz"})
+	if !begin.Success {
+		t.Fatalf("BeginBackupImport() = %#v", begin)
+	}
+	appendBackupImportBytes(t, service, ir, begin.UploadID, archiveBytes)
+
+	originalVerify := deepVerifyImportedBackup
+	verifyStarted := make(chan struct{})
+	releaseVerify := make(chan struct{})
+	deepVerifyImportedBackup = func(root string, passphrase []byte) (*backup.VerifyReport, error) {
+		close(verifyStarted)
+		<-releaseVerify
+		return originalVerify(root, passphrase)
+	}
+	t.Cleanup(func() { deepVerifyImportedBackup = originalVerify })
+
+	commitDone := make(chan adminproto.CommitBackupImportResult, 1)
+	go func() {
+		commitDone <- service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+			UploadID: begin.UploadID, FileName: "concurrent.tar.gz", ExpectedSize: size, ExpectedSHA256: checksum,
+			ExportPassphrase: []byte("export-passphrase"),
+		})
+	}()
+	select {
+	case <-verifyStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("deep verification did not start")
+	}
+
+	mutationDone := make(chan struct{})
+	go func() {
+		_ = deps.WithIdentityMutation(ir.ID(), func() error {
+			close(mutationDone)
+			return nil
+		})
+	}()
+	select {
+	case <-mutationDone:
+	case <-time.After(time.Second):
+		t.Fatal("deep verification retained the identity mutation lock")
+	}
+	close(releaseVerify)
+	if result := <-commitDone; !result.Success {
+		t.Fatalf("CommitBackupImport() = %#v", result)
 	}
 }
 
@@ -274,18 +336,40 @@ func TestCleanupIncompleteBackupImportsRemovesValidationResidue(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(residue, "payload"), []byte("encrypted"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	claim := filepath.Join(dir, backupClaimPrefix+"crash.part")
+	if err := os.WriteFile(claim, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	removed, err := CleanupIncompleteBackupImports(paths, auth.DefaultIdentityID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if removed != 1 {
-		t.Fatalf("removed = %d, want 1", removed)
+	if removed != 2 {
+		t.Fatalf("removed = %d, want 2", removed)
 	}
 	if _, err := os.Lstat(residue); !os.IsNotExist(err) {
 		t.Fatalf("validation residue still exists: %v", err)
 	}
+	if _, err := os.Lstat(claim); !os.IsNotExist(err) {
+		t.Fatalf("claimed upload residue still exists: %v", err)
+	}
 }
+
+type lockingBackupTransferDeps struct {
+	paths storepaths.Paths
+	mu    sync.Mutex
+}
+
+func (d *lockingBackupTransferDeps) KeyPaths() storepaths.Paths             { return d.paths }
+func (d *lockingBackupTransferDeps) GenesisHashMappings() map[string]string { return nil }
+func (d *lockingBackupTransferDeps) RestoreLimiter() RestoreLimiter         { return nil }
+func (d *lockingBackupTransferDeps) WithIdentityMutation(_ string, fn func() error) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return fn()
+}
+func (d *lockingBackupTransferDeps) Logf(string, ...interface{}) {}
 
 func TestCleanupIncompleteBackupImportsRejectsValidationSymlink(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())

@@ -20,8 +20,11 @@ import (
 
 const (
 	backupUploadPrefix     = ".import-"
+	backupClaimPrefix      = ".import-claimed-"
 	backupValidationPrefix = ".import-validation-"
 )
+
+var deepVerifyImportedBackup = backup.DeepVerifyBackupBytes
 
 func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
 	fileName, err := validBackupFileName(req.FileName)
@@ -34,9 +37,10 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 		if err := fsutil.MkdirAllPrivate(dir); err != nil {
 			return err
 		}
-		// Product mode supports one active import per identity. Starting a new
-		// transfer supersedes incomplete client-disconnect residue.
-		if _, err := CleanupIncompleteBackupImports(s.Deps.KeyPaths(), ir.ID()); err != nil {
+		// Product mode supports one writable upload per identity. Starting a new
+		// transfer supersedes client-disconnect residue, but never a claimed
+		// archive undergoing immutable deep validation.
+		if _, err := cleanupSupersededBackupUploads(s.Deps.KeyPaths(), ir.ID()); err != nil {
 			return err
 		}
 		if _, err := os.Lstat(filepath.Join(dir, fileName)); err == nil {
@@ -131,52 +135,71 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		}
 		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
+	dir := s.Deps.KeyPaths().IdentityBackupsDir(ir.ID())
+	claimPath, err := s.claimBackupImport(ir.ID(), dir, req.UploadID, fileName, req.ExpectedSize)
+	if err != nil {
+		return commitImportError(err, s.Deps.KeyPaths().Root())
+	}
+	claimPublished := false
+	defer func() {
+		if !claimPublished {
+			_ = fsutil.RemoveDurable(claimPath)
+		}
+	}()
+
+	checksum, size, err := backup.FileSHA256(claimPath)
+	if err != nil {
+		return commitImportError(err, s.Deps.KeyPaths().Root())
+	}
+	if size != req.ExpectedSize || checksum != strings.ToLower(req.ExpectedSHA256) {
+		return commitImportError(fmt.Errorf("uploaded backup size or checksum mismatch"), s.Deps.KeyPaths().Root())
+	}
+	sourceRoot, err := os.MkdirTemp(dir, backupValidationPrefix+"*")
+	if err != nil {
+		return commitImportError(fmt.Errorf("create backup validation directory: %w", err), s.Deps.KeyPaths().Root())
+	}
+	defer func() {
+		if sourceRoot != "" {
+			_ = removeBackupValidationDirectory(sourceRoot)
+		}
+	}()
+	if err := backup.ExtractTarGzArchive(claimPath, sourceRoot); err != nil {
+		return commitImportError(fmt.Errorf("invalid backup archive: %w", err), s.Deps.KeyPaths().Root())
+	}
+	report, err := deepVerifyImportedBackup(sourceRoot, req.ExportPassphrase)
+	if err != nil {
+		return commitImportError(fmt.Errorf("invalid backup contents: %w", err), s.Deps.KeyPaths().Root())
+	}
+	if report.FailedFiles > 0 {
+		return commitImportError(
+			fmt.Errorf("invalid backup contents: %d of %d credential files failed validation", report.FailedFiles, report.TotalFiles),
+			s.Deps.KeyPaths().Root(),
+		)
+	}
+	if err := removeBackupValidationDirectory(sourceRoot); err != nil {
+		return commitImportError(fmt.Errorf("remove backup validation directory: %w", err), s.Deps.KeyPaths().Root())
+	}
+	sourceRoot = ""
+
 	var info adminproto.BackupInfo
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		dir := s.Deps.KeyPaths().IdentityBackupsDir(ir.ID())
-		uploadPath, err := backupUploadPath(dir, req.UploadID)
-		if err != nil {
-			return err
-		}
-		checksum, size, err := backup.FileSHA256(uploadPath)
-		if err != nil {
-			return err
-		}
-		if size != req.ExpectedSize || checksum != strings.ToLower(req.ExpectedSHA256) {
-			return fmt.Errorf("uploaded backup size or checksum mismatch")
-		}
-		sourceRoot, err := os.MkdirTemp(dir, backupValidationPrefix+"*")
-		if err != nil {
-			return fmt.Errorf("create backup validation directory: %w", err)
-		}
-		defer func() {
-			if sourceRoot != "" {
-				_ = os.RemoveAll(sourceRoot)
-			}
-		}()
-		if err := backup.ExtractTarGzArchive(uploadPath, sourceRoot); err != nil {
-			return fmt.Errorf("invalid backup archive: %w", err)
-		}
-		report, err := backup.DeepVerifyBackupBytes(sourceRoot, req.ExportPassphrase)
-		if err != nil {
-			return fmt.Errorf("invalid backup contents: %w", err)
-		}
-		if report.FailedFiles > 0 {
-			return fmt.Errorf("invalid backup contents: %d of %d credential files failed validation", report.FailedFiles, report.TotalFiles)
-		}
-		if err := removeBackupValidationDirectory(sourceRoot); err != nil {
-			return fmt.Errorf("remove backup validation directory: %w", err)
-		}
-		sourceRoot = ""
 		destination := filepath.Join(dir, fileName)
 		if _, err := os.Lstat(destination); err == nil {
 			return fmt.Errorf("managed backup already exists: %s", fileName)
 		} else if !os.IsNotExist(err) {
 			return err
 		}
-		if err := os.Rename(uploadPath, destination); err != nil {
+		claimInfo, err := os.Lstat(claimPath)
+		if err != nil {
 			return err
 		}
+		if claimInfo.Mode()&os.ModeSymlink != 0 || !claimInfo.Mode().IsRegular() || claimInfo.Size() != size {
+			return fmt.Errorf("claimed backup upload changed during validation")
+		}
+		if err := os.Rename(claimPath, destination); err != nil {
+			return err
+		}
+		claimPublished = true
 		if err := fsutil.SyncDir(dir); err != nil {
 			return err
 		}
@@ -191,6 +214,46 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
 	return adminproto.CommitBackupImportResult{Success: true, Backup: info}
+}
+
+func (s Service) claimBackupImport(identityID, dir, uploadID, fileName string, expectedSize int64) (string, error) {
+	var claimPath string
+	err := s.Deps.WithIdentityMutation(identityID, func() error {
+		uploadPath, err := backupUploadPath(dir, uploadID)
+		if err != nil {
+			return err
+		}
+		uploadInfo, err := os.Lstat(uploadPath)
+		if err != nil {
+			return err
+		}
+		if uploadInfo.Mode()&os.ModeSymlink != 0 || !uploadInfo.Mode().IsRegular() {
+			return fmt.Errorf("backup upload is not a regular file")
+		}
+		if uploadInfo.Size() != expectedSize {
+			return fmt.Errorf("uploaded backup size mismatch")
+		}
+		destination := filepath.Join(dir, fileName)
+		if _, err := os.Lstat(destination); err == nil {
+			return fmt.Errorf("managed backup already exists: %s", fileName)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		claimPath, err = backupClaimPath(dir, uploadID)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Lstat(claimPath); err == nil {
+			return fmt.Errorf("backup upload is already being validated")
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Rename(uploadPath, claimPath); err != nil {
+			return err
+		}
+		return fsutil.SyncDir(dir)
+	})
+	return claimPath, err
 }
 
 func (s Service) AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
@@ -246,6 +309,14 @@ func (s Service) ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackup
 // CleanupIncompleteBackupImports durably removes unpublished upload residue.
 // Callers serialize it with other identity mutations once the daemon is live.
 func CleanupIncompleteBackupImports(paths storepaths.Paths, identityID string) (int, error) {
+	return cleanupBackupImportResidue(paths, identityID, true)
+}
+
+func cleanupSupersededBackupUploads(paths storepaths.Paths, identityID string) (int, error) {
+	return cleanupBackupImportResidue(paths, identityID, false)
+}
+
+func cleanupBackupImportResidue(paths storepaths.Paths, identityID string, includeValidation bool) (int, error) {
 	dir := paths.IdentityBackupsDir(identityID)
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -257,9 +328,11 @@ func CleanupIncompleteBackupImports(paths storepaths.Paths, identityID string) (
 	removed := 0
 	for _, entry := range entries {
 		name := entry.Name()
-		incompleteUpload := strings.HasPrefix(name, backupUploadPrefix) && strings.HasSuffix(name, ".part")
+		incompleteUpload := strings.HasPrefix(name, backupUploadPrefix) &&
+			!strings.HasPrefix(name, backupClaimPrefix) && strings.HasSuffix(name, ".part")
+		claimedUpload := includeValidation && strings.HasPrefix(name, backupClaimPrefix) && strings.HasSuffix(name, ".part")
 		validationDirectory := strings.HasPrefix(name, backupValidationPrefix)
-		if !incompleteUpload && !validationDirectory {
+		if !incompleteUpload && !claimedUpload && (!includeValidation || !validationDirectory) {
 			continue
 		}
 		path := filepath.Join(dir, name)
@@ -267,13 +340,13 @@ func CleanupIncompleteBackupImports(paths storepaths.Paths, identityID string) (
 		if err != nil {
 			return removed, err
 		}
-		if incompleteUpload && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
+		if (incompleteUpload || claimedUpload) && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
 			return removed, fmt.Errorf("incomplete backup upload is not a regular file: %s", path)
 		}
 		if validationDirectory && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
 			return removed, fmt.Errorf("backup validation residue is not a real directory: %s", path)
 		}
-		if incompleteUpload {
+		if incompleteUpload || claimedUpload {
 			if err := fsutil.RemoveDurable(path); err != nil {
 				return removed, err
 			}
@@ -303,10 +376,19 @@ func validBackupFileName(name string) (string, error) {
 }
 
 func backupUploadPath(dir, uploadID string) (string, error) {
-	if filepath.Base(uploadID) != uploadID || !strings.HasPrefix(uploadID, backupUploadPrefix) || !strings.HasSuffix(uploadID, ".part") {
+	if filepath.Base(uploadID) != uploadID || !strings.HasPrefix(uploadID, backupUploadPrefix) ||
+		strings.HasPrefix(uploadID, backupClaimPrefix) || !strings.HasSuffix(uploadID, ".part") {
 		return "", fmt.Errorf("invalid backup upload ID")
 	}
 	return filepath.Join(dir, uploadID), nil
+}
+
+func backupClaimPath(dir, uploadID string) (string, error) {
+	if _, err := backupUploadPath(dir, uploadID); err != nil {
+		return "", err
+	}
+	suffix := strings.TrimPrefix(uploadID, backupUploadPrefix)
+	return filepath.Join(dir, backupClaimPrefix+suffix), nil
 }
 
 func beginImportError(err error, storeRoot string) adminproto.BeginBackupImportResult {
