@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -296,8 +297,13 @@ func verifySignableKeys(console Console, snapshot PlannerIdentitySnapshot, ident
 		if keyType == "" {
 			return 0, internal(fmt.Sprintf("transaction %d: missing key type metadata for auth address %s", i+1, txReq.AuthAddress))
 		}
-		if msg, ok := sentrySignRejectMessage(keyType); ok {
-			return 0, badRequest(fmt.Sprintf("transaction %d: %s", i+1, msg))
+		// Planning is a prerequisite of guarded signing: /plan freezes the
+		// group before /sign/component and /sign/assemble run. Guarded account
+		// keys are therefore valid planning authorities even though the ordinary
+		// /sign executor rejects them. Witness keys are not transaction
+		// authorities at all and remain invalid here.
+		if witness.IsKeyType(keyType) {
+			return 0, badRequest(fmt.Sprintf("transaction %d: %s", i+1, sentryComponentSignRejectMessage))
 		}
 		consoleOf(console).Printf("[GROUP]   [%d] auth=%s type=%s ok\n", i+1, txReq.AuthAddress[:8]+"...", keytypefmt.Display(keyType))
 		signableCount++

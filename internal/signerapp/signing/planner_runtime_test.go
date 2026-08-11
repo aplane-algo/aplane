@@ -205,7 +205,7 @@ func TestVerifySignableKeysRequiresKeyFileInSnapshot(t *testing.T) {
 	}
 }
 
-func TestVerifySignableKeysRejectsSentryKeyTypes(t *testing.T) {
+func TestVerifySignableKeysRejectsWitnessKeyTypes(t *testing.T) {
 	tests := []struct {
 		name    string
 		keyType string
@@ -220,11 +220,6 @@ func TestVerifySignableKeysRejectsSentryKeyTypes(t *testing.T) {
 			name:    "falcon sentry key",
 			keyType: witness.Falcon1024V1,
 			want:    sentryComponentSignRejectMessage,
-		},
-		{
-			name:    "guarded account",
-			keyType: keytypes.GuardedFalcon1024Sentry1024V1,
-			want:    guardedAccountSignRejectMessage,
 		},
 	}
 
@@ -255,6 +250,26 @@ func TestVerifySignableKeysRejectsSentryKeyTypes(t *testing.T) {
 				t.Fatalf("error message = %q, want %q", err.Message, tt.want)
 			}
 		})
+	}
+}
+
+func TestVerifySignableKeysAllowsGuardedAccountPlanning(t *testing.T) {
+	addr := types.Address{1}.String()
+	requests := []signerapi.SignRequest{{
+		AuthAddress: addr,
+		TxnBytesHex: "deadbeef",
+	}}
+	snapshot := PlannerIdentitySnapshot{
+		KeyFiles: map[string]string{addr: "keys/" + addr + ".key"},
+		KeyTypes: map[string]string{addr: keytypes.GuardedFalcon1024Sentry1024V1},
+	}
+
+	count, err := verifySignableKeys(nil, snapshot, "default", requests, map[int]bool{}, map[int]bool{})
+	if err != nil {
+		t.Fatalf("verifySignableKeys() error = %v, want guarded planning to succeed", err)
+	}
+	if count != 1 {
+		t.Fatalf("verifySignableKeys() count = %d, want 1", count)
 	}
 }
 
