@@ -181,8 +181,8 @@ func TestEnvironmentAuditUsesManagedSocketWithoutSharedTempFiles(t *testing.T) {
 	audit := readTextFile(t, filepath.Join(root, "installer", "scripts", "aplane-env-audit.sh"))
 	for _, required := range []string{
 		`SIGNER_PROD_MANAGED=1`,
-		`[ "$resolved_ipc_path" = "$SIGNER_DATA/aplane.sock" ]`,
-		`signer_ipc_path="/run/apsigner/aplane.sock"`,
+		`approbe_ipc_args=(signer-ipc-path -d "$SIGNER_DATA")`,
+		`approbe_ipc_args+=(--honor-ipc-env)`,
 		`version_output="$("$bin" --version 2>/dev/null)"`,
 	} {
 		if !strings.Contains(audit, required) {
@@ -191,6 +191,9 @@ func TestEnvironmentAuditUsesManagedSocketWithoutSharedTempFiles(t *testing.T) {
 	}
 	if strings.Contains(audit, "/tmp/aplane-audit-version") {
 		t.Error("aplane-env-audit.sh retains a predictable shared-temp version probe")
+	}
+	if strings.Contains(audit, `read_top_level_value "$SIGNER_CONFIG" "ipc_path"`) {
+		t.Error("aplane-env-audit.sh still parses ipc_path independently of approbe")
 	}
 }
 

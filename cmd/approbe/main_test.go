@@ -182,3 +182,33 @@ func TestRunSignerIPCPathMirrorsManagedDaemonResolution(t *testing.T) {
 		})
 	}
 }
+
+func TestRunSignerIPCPathIgnoresInheritedIPCPathByDefault(t *testing.T) {
+	root := t.TempDir()
+	want := filepath.Join(root, "configured.sock")
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte(fmt.Sprintf("ipc_path: %q\n", want)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(adminipc.SocketPathEnv, "/run/unrelated.sock")
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"signer-ipc-path", "-d", root}, &stdout, &stderr); code != exitRunning {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != want {
+		t.Fatalf("resolved path = %q, want configured path %q", got, want)
+	}
+}
+
+func TestRunSignerIPCPathCanHonorEnvironmentPairing(t *testing.T) {
+	const want = "/secure/custom/aplane.sock"
+	t.Setenv(adminipc.SocketPathEnv, want)
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"signer-ipc-path", "--honor-ipc-env", "-d", "/unreadable/custom-store"}, &stdout, &stderr); code != exitRunning {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != want {
+		t.Fatalf("resolved path = %q, want environment path %q", got, want)
+	}
+}

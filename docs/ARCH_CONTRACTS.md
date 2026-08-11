@@ -917,7 +917,9 @@ Additional signer-state notes:
   it strictly: read failures are errors and must never silently select a
   default socket for another store. The systemd installer derives the paired `apenv.sh` value through
   `approbe signer-ipc-path`, which uses this same resolver rather than parsing
-  `ipc_path` independently in shell.
+  `ipc_path` independently in shell. The read-only environment audit uses the
+  same command with `--honor-ipc-env` when its signer root was not explicitly
+  selected, preserving the normal `APSIGNER_DATA`/`APSIGNER_IPC_PATH` pairing.
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
 - signer-managed backup archives are written under
   `<data_dir>/backups/<identity>/`; the archive contains `README.md` and

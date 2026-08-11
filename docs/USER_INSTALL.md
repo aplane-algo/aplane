@@ -270,7 +270,10 @@ To inspect an environment without changing it, run:
 
 The audit script checks resolved data directories, config presence, signer/client
 port consistency, listeners, IPC socket state, token and SSH key permissions,
-and common partial-install states.
+and common partial-install states. IPC discovery is delegated to `approbe`; an
+explicit `--signer-data` suppresses inherited socket overrides, while normal
+environment-selected discovery honors an `APSIGNER_DATA`/
+`APSIGNER_IPC_PATH` pair.
 
 ### Uninstalling a local install
 

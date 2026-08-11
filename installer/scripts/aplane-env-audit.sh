@@ -349,18 +349,19 @@ fi
 signer_port=""
 signer_ssh_port=""
 signer_ipc_path=""
-if [ -S /run/apsigner/aplane.sock ]; then
-  signer_ipc_path="/run/apsigner/aplane.sock"
-elif [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
-  configured_ipc_path="$(read_top_level_value "$SIGNER_CONFIG" "ipc_path")"
-  resolved_ipc_path="$(resolve_path "$configured_ipc_path" "$SIGNER_DATA")"
-  if [ "$SIGNER_PROD_MANAGED" -eq 1 ] && { [ -z "$configured_ipc_path" ] || [ "$resolved_ipc_path" = "$SIGNER_DATA/aplane.sock" ]; }; then
-    signer_ipc_path="/run/apsigner/aplane.sock"
-  else
-    signer_ipc_path="$resolved_ipc_path"
-  fi
+signer_ipc_resolution_warning=""
+approbe_bin="$(find_binary "approbe" "$SIGNER_DATA/bin")"
+if [ -z "$approbe_bin" ]; then
+  signer_ipc_resolution_warning="approbe not found in $SIGNER_DATA/bin or PATH"
 else
-  signer_ipc_path="/run/apsigner/aplane.sock"
+  approbe_ipc_args=(signer-ipc-path -d "$SIGNER_DATA")
+  if [ -z "$SIGNER_DATA_OVERRIDE" ]; then
+    approbe_ipc_args+=(--honor-ipc-env)
+  fi
+  if ! signer_ipc_path="$("$approbe_bin" "${approbe_ipc_args[@]}" 2>&1)"; then
+    signer_ipc_resolution_warning="$signer_ipc_path"
+    signer_ipc_path=""
+  fi
 fi
 signer_host_key_path=""
 signer_authorized_keys_path=""
@@ -377,13 +378,6 @@ client_ssh_port="$(read_section_value "$CLIENT_CONFIG" "ssh" "port")"
 client_identity_file="$(read_section_value "$CLIENT_CONFIG" "ssh" "identity_file")"
 client_known_hosts_path="$(read_section_value "$CLIENT_CONFIG" "ssh" "known_hosts_path")"
 
-if [ -z "$signer_ipc_path" ]; then
-  if [ "$SIGNER_PROD_MANAGED" -eq 1 ] || [ "$SIGNER_STORE_TRAVERSABLE" -eq 0 ]; then
-    signer_ipc_path="/run/apsigner/aplane.sock"
-  else
-    signer_ipc_path="$SIGNER_DATA/aplane.sock"
-  fi
-fi
 [ -n "$signer_host_key_path" ] || signer_host_key_path=".ssh/ssh_host_key"
 [ -n "$signer_authorized_keys_path" ] || signer_authorized_keys_path=".ssh/authorized_keys"
 [ -n "$client_identity_file" ] || client_identity_file=".ssh/id_ed25519"
@@ -464,8 +458,14 @@ else
 fi
 
 section "IPC"
-info "socket path" "$signer_ipc_path"
-if [ "$signer_ipc_path" = "/run/apsigner/aplane.sock" ]; then
+if [ -n "$signer_ipc_resolution_warning" ]; then
+  warn "IPC resolver" "$signer_ipc_resolution_warning"
+else
+  info "socket path" "$signer_ipc_path"
+fi
+if [ -z "$signer_ipc_path" ]; then
+  warn "IPC socket" "path was not resolved"
+elif [ "$signer_ipc_path" = "/run/apsigner/aplane.sock" ]; then
   check_real_dir_mode_owner "IPC runtime dir" "/run/apsigner" "750" "$SIGNER_SERVICE_OWNER"
   check_socket_mode_owner "IPC socket" "$signer_ipc_path" "660" "$SIGNER_SERVICE_OWNER"
 elif [ -S "$signer_ipc_path" ]; then

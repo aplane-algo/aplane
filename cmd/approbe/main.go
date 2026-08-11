@@ -55,12 +55,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 func runSignerIPCPath(args []string, stdout, stderr io.Writer) int {
 	var dataDir string
+	var honorIPCEnv bool
 	fs := flag.NewFlagSet("signer-ipc-path", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&dataDir, "d", "", "signer data directory")
 	fs.StringVar(&dataDir, "data-dir", "", "signer data directory")
+	fs.BoolVar(&honorIPCEnv, "honor-ipc-env", false, "apply APSIGNER_IPC_PATH before data-directory discovery")
 	fs.Usage = func() {
-		writeln(stderr, "Usage: approbe signer-ipc-path -d <signer-data-dir>")
+		writeln(stderr, "Usage: approbe signer-ipc-path -d <signer-data-dir> [--honor-ipc-env]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return exitUnknown
@@ -82,7 +84,7 @@ func runSignerIPCPath(args []string, stdout, stderr io.Writer) int {
 	}
 	dataDir = serverconfig.GetSignerDataDir(dataDir)
 	path, err := resolveSignerIPCPath(adminipc.ClientPathRequest{
-		DataDir: dataDir, DataDirExplicit: true,
+		DataDir: dataDir, DataDirExplicit: !honorIPCEnv,
 	})
 	if err != nil {
 		writef(stderr, "Error: resolve signer IPC path: %v\n", err)
