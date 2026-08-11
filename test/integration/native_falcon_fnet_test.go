@@ -32,16 +32,16 @@ func TestNativeFalconFNetProfile(t *testing.T) {
 
 	funding, err := harness.NewFundingAccount()
 	if err != nil {
-		t.Fatalf("load FNet Ed25519 funding account: %v", err)
+		t.Fatalf("load FNet native Falcon funding account: %v", err)
 	}
 	if err := funding.EnsureFunded(network.Client); err != nil {
-		t.Fatalf("validate FNet Ed25519 funding account: %v", err)
+		t.Fatalf("validate FNet native Falcon funding account: %v", err)
 	}
 	balance, err := network.GetAccountInfo(funding.Address)
 	if err != nil {
-		t.Fatalf("read funded Ed25519 account: %v", err)
+		t.Fatalf("read funded native Falcon account: %v", err)
 	}
-	t.Logf("validated funded FNet Ed25519 account %s with %d microAlgos", funding.Address, balance)
+	t.Logf("validated funded FNet native Falcon account %s with %d microAlgos", funding.Address, balance)
 }
 
 func TestNativeFalconFNetPayment(t *testing.T) {
@@ -64,7 +64,7 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 
 	funder, err := harness.NewFundTestAccount(network.Client)
 	if err != nil {
-		t.Fatalf("load FNet Ed25519 funder: %v", err)
+		t.Fatalf("load FNet native Falcon funder: %v", err)
 	}
 	fundingAddress := funder.GetAddress()
 
@@ -100,7 +100,7 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 	}
 
 	if err := funder.FundMicroAlgosAndWait(childAddress, 300_000); err != nil {
-		t.Fatalf("fund native Falcon child from Ed25519 funder: %v", err)
+		t.Fatalf("fund native Falcon child from native Falcon funder: %v", err)
 	}
 	if err := funder.FundMicroAlgosAndWait(edAddress, 300_000); err != nil {
 		t.Fatalf("fund disposable Ed25519 child: %v", err)

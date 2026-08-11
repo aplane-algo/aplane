@@ -256,6 +256,11 @@ func pregroupedMatrixSignRequest(t *testing.T, sp types.SuggestedParams, funder 
 	}
 	sponsorTxn := mustPaymentTxnForMatrix(t, sp, funder.GetAddress(), funder.GetAddress(), "keytype-matrix-sponsor", "", uint64(signTxns[0].txn.FirstValid))
 	sponsorTxn.Fee = types.MicroAlgos(uint64(dummyCount+1) * minFee)
+	preparedSponsor, err := funder.PrepareTransaction(sponsorTxn, minFee)
+	if err != nil {
+		t.Fatalf("failed to prepare native Falcon matrix fee sponsor: %v", err)
+	}
+	sponsorTxn = preparedSponsor
 
 	dummySP := sp
 	dummySP.FirstRoundValid = signTxns[0].txn.FirstValid
@@ -285,7 +290,7 @@ func pregroupedMatrixSignRequest(t *testing.T, sp types.SuggestedParams, funder 
 		dummies[i].Group = groupID
 	}
 
-	_, sponsorBytes, err := algocrypto.SignTransaction(funder.GetPrivateKey(), sponsorTxn)
+	_, sponsorBytes, err := funder.SignTransaction(sponsorTxn)
 	if err != nil {
 		t.Fatalf("failed to sign matrix fee sponsor: %v", err)
 	}

@@ -32,14 +32,14 @@ func TestMain(m *testing.M) {
 		if os.Getenv("APLANE_FNET_FULL_SUITE") == "1" {
 			fundingAccount, err := harness.NewFundingAccount()
 			if err != nil {
-				panic("failed to load FNet Ed25519 funding account: " + err.Error())
+				panic("failed to load FNet native Falcon funding account: " + err.Error())
 			}
 			network, err := harness.NewTestnetConfig()
 			if err != nil {
 				panic("failed to reconnect to FNet: " + err.Error())
 			}
 			if err := fundingAccount.EnsureFunded(network.Client); err != nil {
-				panic("FNet Ed25519 funding account check failed: " + err.Error())
+				panic("FNet native Falcon funding account check failed: " + err.Error())
 			}
 		}
 		os.Exit(m.Run())
@@ -91,14 +91,14 @@ func TestBasicFalconTransaction(t *testing.T) {
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 	defer apadmin.Cleanup() // Clean up keys created during test
 
-	// Import the funded ed25519 account into Signer
+	// Import the funded native Falcon account into Signer
 	fundingMnemonic := os.Getenv("TEST_FUNDING_MNEMONIC")
 	if fundingMnemonic == "" {
 		t.Skip("TEST_FUNDING_MNEMONIC not set")
 	}
 
 	t.Log("Importing funded account into Signer...")
-	fundingAddr, err := apadmin.ImportKey(fundingMnemonic)
+	fundingAddr, err := apadmin.ImportFundingKey(fundingMnemonic)
 	if err != nil {
 		t.Fatalf("Failed to import funding account: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestBasicFalconTransaction(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	// Fund the Falcon account using apshell (ed25519 → Falcon)
+	// Fund the Falcon account using apshell (native Falcon → LogicSig Falcon)
 	t.Logf("Funding Falcon account %s with 0.25 ALGO from %s...", falconAddr, fundingAddr)
 	fundTxid, err := apshell.SendTransaction(fundingAddr, falconAddr, 0.25)
 	if err != nil {

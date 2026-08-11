@@ -10,8 +10,6 @@ import (
 	"os"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/mnemonic"
 )
 
 // FundingAccount represents a test funding account that provides ALGO and assets for tests
@@ -22,30 +20,20 @@ type FundingAccount struct {
 	USDCAssetID uint64 // Asset ID for USDC on testnet
 }
 
-// NewFundingAccount creates a funding account checker from environment variables
-// Accepts either TEST_FUNDING_ACCOUNT (address) or TEST_FUNDING_MNEMONIC (derives address from mnemonic)
+// NewFundingAccount creates a funding account checker from the native Falcon
+// TEST_FUNDING_MNEMONIC. TEST_FUNDING_ACCOUNT may repeat the derived address,
+// but may not select a different account.
 func NewFundingAccount() (*FundingAccount, error) {
-	addr := os.Getenv("TEST_FUNDING_ACCOUNT")
-
-	// If no address, try to derive from mnemonic
-	if addr == "" {
-		mn := os.Getenv("TEST_FUNDING_MNEMONIC")
-		if mn == "" {
-			return nil, fmt.Errorf("neither TEST_FUNDING_ACCOUNT nor TEST_FUNDING_MNEMONIC environment variable set")
-		}
-
-		// Derive address from mnemonic
-		privateKey, err := mnemonic.ToPrivateKey(mn)
-		if err != nil {
-			return nil, fmt.Errorf("invalid TEST_FUNDING_MNEMONIC: %w", err)
-		}
-
-		// Generate address from private key
-		address, err := crypto.GenerateAddressFromSK(privateKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate address from mnemonic: %w", err)
-		}
-		addr = address.String()
+	mn := os.Getenv("TEST_FUNDING_MNEMONIC")
+	if mn == "" {
+		return nil, fmt.Errorf("TEST_FUNDING_MNEMONIC environment variable not set")
+	}
+	addr, err := NativeFundingAddressFromMnemonic(mn)
+	if err != nil {
+		return nil, fmt.Errorf("invalid native Falcon TEST_FUNDING_MNEMONIC: %w", err)
+	}
+	if configured := os.Getenv("TEST_FUNDING_ACCOUNT"); configured != "" && configured != addr {
+		return nil, fmt.Errorf("TEST_FUNDING_ACCOUNT %s does not match native Falcon mnemonic address %s", configured, addr)
 	}
 
 	return &FundingAccount{

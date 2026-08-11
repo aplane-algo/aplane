@@ -213,6 +213,12 @@ func (v *ApAdminHarness) ImportKey(mnemonic string) (string, error) {
 	return v.ImportKeyWithType("ed25519", mnemonic)
 }
 
+// ImportFundingKey imports TEST_FUNDING_MNEMONIC using its fixed integration
+// contract: the funding account is always protocol-native Falcon-1024.
+func (v *ApAdminHarness) ImportFundingKey(mnemonic string) (string, error) {
+	return v.ImportKeyWithType("falcon1024", mnemonic)
+}
+
 // ImportKeyWithType imports a key of the specified type from mnemonic using test mode.
 // Note: Imported keys are NOT tracked for cleanup since they are pre-existing.
 func (v *ApAdminHarness) ImportKeyWithType(keyType, mnemonic string) (string, error) {

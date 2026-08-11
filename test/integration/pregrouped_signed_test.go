@@ -43,7 +43,6 @@ func TestPregroupedSignedVerbatimSubmit(t *testing.T) {
 	}
 
 	sender := funder.GetAddress()
-	sk := funder.GetPrivateKey()
 
 	// Build a 2-txn self-payment group (distinct notes => distinct TxIDs).
 	txn0, err := transaction.MakePaymentTxn(sender, sender, 0, []byte("pregrouped-signed-0"), "", sp)
@@ -55,6 +54,14 @@ func TestPregroupedSignedVerbatimSubmit(t *testing.T) {
 		t.Fatalf("make txn1: %v", err)
 	}
 
+	txn0, err = funder.PrepareTransaction(txn0, sp.MinFee)
+	if err != nil {
+		t.Fatalf("prepare txn0: %v", err)
+	}
+	txn1, err = funder.PrepareTransaction(txn1, sp.MinFee)
+	if err != nil {
+		t.Fatalf("prepare txn1: %v", err)
+	}
 	gid, err := crypto.ComputeGroupID([]types.Transaction{txn0, txn1})
 	if err != nil {
 		t.Fatalf("compute group id: %v", err)
@@ -64,11 +71,11 @@ func TestPregroupedSignedVerbatimSubmit(t *testing.T) {
 
 	// Sign both (as a plugin's owned signer would) and base64 the signed blobs to
 	// mimic plugin "signed" intents.
-	_, raw0, err := crypto.SignTransaction(sk, txn0)
+	_, raw0, err := funder.SignTransaction(txn0)
 	if err != nil {
 		t.Fatalf("sign txn0: %v", err)
 	}
-	_, raw1, err := crypto.SignTransaction(sk, txn1)
+	_, raw1, err := funder.SignTransaction(txn1)
 	if err != nil {
 		t.Fatalf("sign txn1: %v", err)
 	}

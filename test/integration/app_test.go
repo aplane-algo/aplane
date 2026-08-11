@@ -59,15 +59,14 @@ func TestAppDeployAndExercise(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
 	// --- Deploy ---
-	app, err := harness.DeployTestApp(t, testnet.Client, creatorAddr, creatorSK)
+	app, err := harness.DeployTestApp(t, testnet.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)
 	}
 	defer func() {
-		if err := app.DestroyTestApp(creatorSK); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("warning: failed to destroy test app: %v", err)
 		}
 	}()
@@ -78,7 +77,7 @@ func TestAppDeployAndExercise(t *testing.T) {
 	t.Run("Increment", func(t *testing.T) {
 		err := app.CallMethod(
 			[][]byte{harness.IncrementSelector(), harness.EncodeUint64(5)},
-			creatorAddr, creatorSK, nil,
+			funder, nil,
 		)
 		if err != nil {
 			t.Fatalf("increment(5) failed: %v", err)
@@ -108,7 +107,7 @@ func TestAppDeployAndExercise(t *testing.T) {
 	t.Run("IncrementAdditive", func(t *testing.T) {
 		err := app.CallMethod(
 			[][]byte{harness.IncrementSelector(), harness.EncodeUint64(7)},
-			creatorAddr, creatorSK, nil,
+			funder, nil,
 		)
 		if err != nil {
 			t.Fatalf("increment(7) failed: %v", err)
@@ -128,7 +127,7 @@ func TestAppDeployAndExercise(t *testing.T) {
 
 	// --- Test opt-in (local state) ---
 	t.Run("OptIn", func(t *testing.T) {
-		err := app.OptIn(creatorAddr, creatorSK)
+		err := app.OptIn(funder)
 		if err != nil {
 			t.Fatalf("opt-in failed: %v", err)
 		}
@@ -161,7 +160,7 @@ func TestAppDeployAndExercise(t *testing.T) {
 		boxValue := []byte("test-value")
 		err = app.CallMethod(
 			[][]byte{harness.SetBoxSelector(), harness.EncodeBytes(boxName), harness.EncodeBytes(boxValue)},
-			creatorAddr, creatorSK,
+			funder,
 			[]types.AppBoxReference{{AppID: app.AppID, Name: boxName}},
 		)
 		if err != nil {
@@ -174,7 +173,7 @@ func TestAppDeployAndExercise(t *testing.T) {
 	t.Run("GroupedDeposit", func(t *testing.T) {
 		depositAmount := uint64(100_000) // 0.1 ALGO
 		err := app.SubmitGroupedPaymentAndAppCall(
-			creatorAddr, creatorSK,
+			funder,
 			depositAmount,
 			[][]byte{harness.DepositSelector()},
 		)
@@ -214,26 +213,25 @@ func TestAppReadCommands(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
-	app, err := harness.DeployTestApp(t, testnet.Client, creatorAddr, creatorSK)
+	app, err := harness.DeployTestApp(t, testnet.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)
 	}
 	defer func() {
-		if err := app.DestroyTestApp(creatorSK); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("warning: failed to destroy test app: %v", err)
 		}
 	}()
 
 	if err := app.CallMethod(
 		[][]byte{harness.IncrementSelector(), harness.EncodeUint64(9)},
-		creatorAddr, creatorSK, nil,
+		funder, nil,
 	); err != nil {
 		t.Fatalf("increment setup failed: %v", err)
 	}
 
-	if err := app.OptIn(creatorAddr, creatorSK); err != nil {
+	if err := app.OptIn(funder); err != nil {
 		t.Fatalf("opt-in setup failed: %v", err)
 	}
 	if err := app.FundApp(funder, 200_000); err != nil {
@@ -244,7 +242,7 @@ func TestAppReadCommands(t *testing.T) {
 	boxValue := []byte("test-value")
 	if err := app.CallMethod(
 		[][]byte{harness.SetBoxSelector(), harness.EncodeBytes(boxName), harness.EncodeBytes(boxValue)},
-		creatorAddr, creatorSK,
+		funder,
 		[]types.AppBoxReference{{AppID: app.AppID, Name: boxName}},
 	); err != nil {
 		t.Fatalf("set_box setup failed: %v", err)
@@ -436,7 +434,6 @@ func TestAppDeployCommands(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
@@ -445,7 +442,7 @@ func TestAppDeployCommands(t *testing.T) {
 	defer func() { _ = signerd.Stop() }()
 
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
-	if _, err := apadmin.ImportKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
+	if _, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
 		t.Fatalf("failed to import funding account into Signer: %v", err)
 	}
 	if err := apadmin.StartUnlockBackground(); err != nil {
@@ -473,7 +470,7 @@ func TestAppDeployCommands(t *testing.T) {
 		appID, appAddr := parseCreatedAppFromOutput(t, output)
 
 		defer func() {
-			if err := harness.DestroyApp(t, testnet.Client, appID, creatorAddr, creatorSK); err != nil {
+			if err := harness.DestroyApp(t, testnet.Client, appID, funder); err != nil {
 				t.Logf("warning: failed to destroy source-deployed app %d: %v", appID, err)
 			}
 		}()
@@ -509,7 +506,7 @@ func TestAppDeployCommands(t *testing.T) {
 		appID, appAddr := parseCreatedAppFromOutput(t, output)
 
 		defer func() {
-			if err := harness.DestroyApp(t, testnet.Client, appID, creatorAddr, creatorSK); err != nil {
+			if err := harness.DestroyApp(t, testnet.Client, appID, funder); err != nil {
 				t.Logf("warning: failed to destroy compiled-deployed app %d: %v", appID, err)
 			}
 		}()
@@ -550,9 +547,8 @@ func TestAppUpdateAndDeleteCommands(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
-	app, err := harness.DeployTestApp(t, testnet.Client, creatorAddr, creatorSK)
+	app, err := harness.DeployTestApp(t, testnet.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)
 	}
@@ -562,7 +558,7 @@ func TestAppUpdateAndDeleteCommands(t *testing.T) {
 		if deleted {
 			return
 		}
-		if err := app.DestroyTestApp(creatorSK); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("warning: failed to destroy test app: %v", err)
 		}
 	}()
@@ -574,7 +570,7 @@ func TestAppUpdateAndDeleteCommands(t *testing.T) {
 	defer func() { _ = signerd.Stop() }()
 
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
-	if _, err := apadmin.ImportKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
+	if _, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
 		t.Fatalf("failed to import funding account into Signer: %v", err)
 	}
 	if err := apadmin.StartUnlockBackground(); err != nil {
@@ -602,7 +598,7 @@ func TestAppUpdateAndDeleteCommands(t *testing.T) {
 	updateOutput := runApshellScript(t, apshell, updateCommand)
 	requireOutputContainsAll(t, updateOutput,
 		"✓ Confirmed in round ",
-		fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
+		fmt.Sprintf("Calling app %d from %s using falcon1024...", app.AppID, signableAddressText(creatorAddr)),
 	)
 
 	appInfo, err := testnet.Client.GetApplicationByID(app.AppID).Do(context.Background())
@@ -618,7 +614,7 @@ func TestAppUpdateAndDeleteCommands(t *testing.T) {
 
 	if err := app.CallMethod(
 		[][]byte{harness.IncrementSelector(), harness.EncodeUint64(5)},
-		creatorAddr, creatorSK, nil,
+		funder, nil,
 	); err != nil {
 		t.Fatalf("increment after update failed: %v", err)
 	}
@@ -639,7 +635,7 @@ func TestAppUpdateAndDeleteCommands(t *testing.T) {
 	deleteOutput := runApshellScript(t, apshell, deleteCommand)
 	requireOutputContainsAll(t, deleteOutput,
 		"✓ Confirmed in round ",
-		fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
+		fmt.Sprintf("Calling app %d from %s using falcon1024...", app.AppID, signableAddressText(creatorAddr)),
 	)
 
 	if _, err := testnet.Client.GetApplicationByID(app.AppID).Do(context.Background()); err == nil {
@@ -664,14 +660,13 @@ func TestAppCallRawCommand(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
-	app, err := harness.DeployTestApp(t, testnet.Client, creatorAddr, creatorSK)
+	app, err := harness.DeployTestApp(t, testnet.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)
 	}
 	defer func() {
-		if err := app.DestroyTestApp(creatorSK); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("warning: failed to destroy test app: %v", err)
 		}
 	}()
@@ -683,7 +678,7 @@ func TestAppCallRawCommand(t *testing.T) {
 	defer func() { _ = signerd.Stop() }()
 
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
-	if _, err := apadmin.ImportKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
+	if _, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
 		t.Fatalf("failed to import funding account into Signer: %v", err)
 	}
 	if err := apadmin.StartUnlockBackground(); err != nil {
@@ -707,7 +702,7 @@ func TestAppCallRawCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
+			fmt.Sprintf("Calling app %d from %s using falcon1024...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		state, err := app.ReadGlobalState()
@@ -744,7 +739,7 @@ func TestAppCallRawCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
+			fmt.Sprintf("Calling app %d from %s using falcon1024...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		// Verify box via algod direct read
@@ -768,7 +763,7 @@ func TestAppCallRawCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
+			fmt.Sprintf("Calling app %d from %s using falcon1024...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		// Verify local state exists via harness direct read
@@ -802,19 +797,18 @@ func TestAppCallRawPayCommand(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
-	app, err := harness.DeployTestApp(t, testnet.Client, creatorAddr, creatorSK)
+	app, err := harness.DeployTestApp(t, testnet.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)
 	}
 	defer func() {
-		if err := app.DestroyTestApp(creatorSK); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("warning: failed to destroy test app: %v", err)
 		}
 	}()
 
-	if err := app.OptIn(creatorAddr, creatorSK); err != nil {
+	if err := app.OptIn(funder); err != nil {
 		t.Fatalf("opt-in setup failed: %v", err)
 	}
 	if err := app.FundApp(funder, 200_000); err != nil {
@@ -828,7 +822,7 @@ func TestAppCallRawPayCommand(t *testing.T) {
 	defer func() { _ = signerd.Stop() }()
 
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
-	if _, err := apadmin.ImportKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
+	if _, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
 		t.Fatalf("failed to import funding account into Signer: %v", err)
 	}
 	if err := apadmin.StartUnlockBackground(); err != nil {
@@ -876,7 +870,7 @@ func TestAppCallRawPayCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d raw from %s with companion payment of %d microAlgos using Ed25519 key...", app.AppID, signableAddressText(creatorAddr), depositAmount),
+			fmt.Sprintf("Calling app %d raw from %s with companion payment of %d microAlgos using falcon1024...", app.AppID, signableAddressText(creatorAddr), depositAmount),
 		)
 
 		localState, err := app.ReadLocalState(creatorAddr)
@@ -905,14 +899,13 @@ func TestAppCallMethodCommand(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
-	app, err := harness.DeployTestApp(t, testnet.Client, creatorAddr, creatorSK)
+	app, err := harness.DeployTestApp(t, testnet.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)
 	}
 	defer func() {
-		if err := app.DestroyTestApp(creatorSK); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("warning: failed to destroy test app: %v", err)
 		}
 	}()
@@ -924,7 +917,7 @@ func TestAppCallMethodCommand(t *testing.T) {
 	defer func() { _ = signerd.Stop() }()
 
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
-	if _, err := apadmin.ImportKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
+	if _, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
 		t.Fatalf("failed to import funding account into Signer: %v", err)
 	}
 	if err := apadmin.StartUnlockBackground(); err != nil {
@@ -947,7 +940,7 @@ func TestAppCallMethodCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d method increment(uint64)void from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
+			fmt.Sprintf("Calling app %d method increment(uint64)void from %s using falcon1024...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		state, err := app.ReadGlobalState()
@@ -974,7 +967,7 @@ func TestAppCallMethodCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d method set_box(byte[],byte[])void from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
+			fmt.Sprintf("Calling app %d method set_box(byte[],byte[])void from %s using falcon1024...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		box, err := testnet.Client.GetApplicationBoxByName(app.AppID, []byte("cfg")).Do(context.Background())
@@ -996,7 +989,7 @@ func TestAppCallMethodCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d method optin()void from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
+			fmt.Sprintf("Calling app %d method optin()void from %s using falcon1024...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		localState, err := app.ReadLocalState(creatorAddr)
@@ -1026,19 +1019,18 @@ func TestAppCallMethodPayCommand(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
-	app, err := harness.DeployTestApp(t, testnet.Client, creatorAddr, creatorSK)
+	app, err := harness.DeployTestApp(t, testnet.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)
 	}
 	defer func() {
-		if err := app.DestroyTestApp(creatorSK); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("warning: failed to destroy test app: %v", err)
 		}
 	}()
 
-	if err := app.OptIn(creatorAddr, creatorSK); err != nil {
+	if err := app.OptIn(funder); err != nil {
 		t.Fatalf("opt-in setup failed: %v", err)
 	}
 	if err := app.FundApp(funder, 200_000); err != nil {
@@ -1052,7 +1044,7 @@ func TestAppCallMethodPayCommand(t *testing.T) {
 	defer func() { _ = signerd.Stop() }()
 
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
-	if _, err := apadmin.ImportKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
+	if _, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
 		t.Fatalf("failed to import funding account into Signer: %v", err)
 	}
 	if err := apadmin.StartUnlockBackground(); err != nil {
@@ -1129,19 +1121,18 @@ func TestAppJSAPI(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
-	app, err := harness.DeployTestApp(t, testnet.Client, creatorAddr, creatorSK)
+	app, err := harness.DeployTestApp(t, testnet.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)
 	}
 	defer func() {
-		if err := app.DestroyTestApp(creatorSK); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("warning: failed to destroy test app: %v", err)
 		}
 	}()
 
-	if err := app.OptIn(creatorAddr, creatorSK); err != nil {
+	if err := app.OptIn(funder); err != nil {
 		t.Fatalf("opt-in setup failed: %v", err)
 	}
 	if err := app.FundApp(funder, 200_000); err != nil {
@@ -1155,7 +1146,7 @@ func TestAppJSAPI(t *testing.T) {
 	defer func() { _ = signerd.Stop() }()
 
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
-	if _, err := apadmin.ImportKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
+	if _, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
 		t.Fatalf("failed to import funding account into Signer: %v", err)
 	}
 	if err := apadmin.StartUnlockBackground(); err != nil {
@@ -1348,19 +1339,18 @@ func TestPreparedGroupDepositFlow(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
-	app, err := harness.DeployTestApp(t, testnet.Client, creatorAddr, creatorSK)
+	app, err := harness.DeployTestApp(t, testnet.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)
 	}
 	defer func() {
-		if err := app.DestroyTestApp(creatorSK); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("warning: failed to destroy test app: %v", err)
 		}
 	}()
 
-	if err := app.OptIn(creatorAddr, creatorSK); err != nil {
+	if err := app.OptIn(funder); err != nil {
 		t.Fatalf("opt-in setup failed: %v", err)
 	}
 
@@ -1371,7 +1361,7 @@ func TestPreparedGroupDepositFlow(t *testing.T) {
 	defer func() { _ = signerd.Stop() }()
 
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
-	if _, err := apadmin.ImportKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
+	if _, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
 		t.Fatalf("failed to import funding account into Signer: %v", err)
 	}
 	if err := apadmin.StartUnlockBackground(); err != nil {
@@ -1488,19 +1478,18 @@ func TestPreparedGroupDepositMethodFlow(t *testing.T) {
 	}
 
 	creatorAddr := funder.GetAddress()
-	creatorSK := funder.GetPrivateKey()
 
-	app, err := harness.DeployTestApp(t, testnet.Client, creatorAddr, creatorSK)
+	app, err := harness.DeployTestApp(t, testnet.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)
 	}
 	defer func() {
-		if err := app.DestroyTestApp(creatorSK); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("warning: failed to destroy test app: %v", err)
 		}
 	}()
 
-	if err := app.OptIn(creatorAddr, creatorSK); err != nil {
+	if err := app.OptIn(funder); err != nil {
 		t.Fatalf("opt-in setup failed: %v", err)
 	}
 
@@ -1511,7 +1500,7 @@ func TestPreparedGroupDepositMethodFlow(t *testing.T) {
 	defer func() { _ = signerd.Stop() }()
 
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
-	if _, err := apadmin.ImportKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
+	if _, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC")); err != nil {
 		t.Fatalf("failed to import funding account into Signer: %v", err)
 	}
 	if err := apadmin.StartUnlockBackground(); err != nil {

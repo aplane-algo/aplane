@@ -18,7 +18,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
-	"github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -38,16 +37,13 @@ func TestPassthroughMixedGroup(t *testing.T) {
 		t.Fatalf("Failed to connect to testnet: %v", err)
 	}
 
-	// Get funding account private key (for external signing - simulates Party B)
-	fundingPrivKey, err := mnemonic.ToPrivateKey(fundingMnemonic)
+	// Load the native Falcon funding authorizer for external signing (simulates Party B).
+	funder, err := harness.NewFundTestAccount(testnet.Client)
 	if err != nil {
-		t.Fatalf("Failed to convert mnemonic to private key: %v", err)
+		t.Fatalf("Failed to load native Falcon funding account: %v", err)
 	}
-	fundingAddr, err := crypto.GenerateAddressFromSK(fundingPrivKey)
-	if err != nil {
-		t.Fatalf("Failed to generate address from SK: %v", err)
-	}
-	t.Logf("Funding account (Party B - external signer): %s", fundingAddr.String())
+	fundingAddr := funder.GetAddress()
+	t.Logf("Funding account (Party B - external native Falcon signer): %s", fundingAddr)
 
 	// Start Signer
 	signerd := harness.NewSignerHarness(t)
@@ -63,7 +59,7 @@ func TestPassthroughMixedGroup(t *testing.T) {
 	// Import the funding account into Signer as well (for signing txn A)
 	// This represents Party A who uses apsigner
 	t.Log("Importing funding account into Signer (Party A)...")
-	importedAddr, err := apadmin.ImportKey(fundingMnemonic)
+	importedAddr, err := apadmin.ImportFundingKey(fundingMnemonic)
 	if err != nil {
 		t.Fatalf("Failed to import funding account: %v", err)
 	}
@@ -88,7 +84,7 @@ func TestPassthroughMixedGroup(t *testing.T) {
 
 	// Transaction A: funding -> burn (to be signed by server)
 	txnA, err := transaction.MakePaymentTxn(
-		fundingAddr.String(),
+		fundingAddr,
 		burnAddr,
 		0, // 0 ALGO (validation-style)
 		[]byte("txn-A-server-signs"),
@@ -101,7 +97,7 @@ func TestPassthroughMixedGroup(t *testing.T) {
 
 	// Transaction B: funding -> burn (to be signed externally, passthrough)
 	txnB, err := transaction.MakePaymentTxn(
-		fundingAddr.String(),
+		fundingAddr,
 		burnAddr,
 		0, // 0 ALGO
 		[]byte("txn-B-passthrough"),
@@ -112,7 +108,16 @@ func TestPassthroughMixedGroup(t *testing.T) {
 		t.Fatalf("Failed to create txn B: %v", err)
 	}
 
-	// Compute group ID and assign to both
+	txnA, err = funder.PrepareTransaction(txnA, sp.MinFee)
+	if err != nil {
+		t.Fatalf("Failed to prepare txn A native Falcon fee: %v", err)
+	}
+	txnB, err = funder.PrepareTransaction(txnB, sp.MinFee)
+	if err != nil {
+		t.Fatalf("Failed to prepare txn B native Falcon fee: %v", err)
+	}
+
+	// Compute group ID after authorization-dependent fees are final.
 	gid, err := crypto.ComputeGroupID([]types.Transaction{txnA, txnB})
 	if err != nil {
 		t.Fatalf("Failed to compute group ID: %v", err)
@@ -122,7 +127,7 @@ func TestPassthroughMixedGroup(t *testing.T) {
 	t.Logf("Group ID: %x", gid[:8])
 
 	// Sign txn B externally (simulates Party B signing their part)
-	_, stxnBBytes, err := crypto.SignTransaction(fundingPrivKey, txnB)
+	_, stxnBBytes, err := funder.SignTransaction(txnB)
 	if err != nil {
 		t.Fatalf("Failed to sign txn B externally: %v", err)
 	}
@@ -139,7 +144,7 @@ func TestPassthroughMixedGroup(t *testing.T) {
 		Requests: []signerapi.SignRequest{
 			{
 				// Txn A: sign mode
-				AuthAddress: fundingAddr.String(),
+				AuthAddress: fundingAddr,
 				TxnBytesHex: txnAHex,
 			},
 			{
@@ -233,11 +238,11 @@ func TestPassthroughMixedGroup(t *testing.T) {
 		}
 
 		// Verify signature is present
-		if stxn.Sig == (types.Signature{}) && len(stxn.Lsig.Logic) == 0 {
+		if stxn.Sig == (types.Signature{}) && len(stxn.Lsig.Logic) == 0 && stxn.PQsig.Blank() {
 			t.Errorf("Txn %d has no signature", i)
 		}
 
-		t.Logf("Txn %d: sender=%s, has_sig=%v", i, stxn.Txn.Sender.String(), stxn.Sig != types.Signature{})
+		t.Logf("Txn %d: sender=%s, has_sig=%v, has_pqsig=%v", i, stxn.Txn.Sender.String(), stxn.Sig != types.Signature{}, !stxn.PQsig.Blank())
 	}
 
 	t.Log("Passthrough mixed group test passed!")
@@ -273,7 +278,7 @@ func TestPassthroughResign(t *testing.T) {
 
 	// Import the funding account (account 1)
 	t.Log("Importing funding account (account 1)...")
-	addr1, err := apadmin.ImportKey(fundingMnemonic)
+	addr1, err := apadmin.ImportFundingKey(fundingMnemonic)
 	if err != nil {
 		t.Fatalf("Failed to import funding account: %v", err)
 	}
@@ -324,7 +329,16 @@ func TestPassthroughResign(t *testing.T) {
 		t.Fatalf("Failed to create txn2: %v", err)
 	}
 
-	// Compute group ID
+	funder, err := harness.NewFundTestAccount(testnet.Client)
+	if err != nil {
+		t.Fatalf("Failed to load native Falcon funding authorizer: %v", err)
+	}
+	txn1, err = funder.PrepareTransaction(txn1, sp.MinFee)
+	if err != nil {
+		t.Fatalf("Failed to prepare account 1 native Falcon fee: %v", err)
+	}
+
+	// Compute group ID after the native Falcon fee is final.
 	gid, err := crypto.ComputeGroupID([]types.Transaction{txn1, txn2})
 	if err != nil {
 		t.Fatalf("Failed to compute group ID: %v", err)
@@ -383,7 +397,7 @@ func TestPassthroughResign(t *testing.T) {
 		if err := msgpack.Decode(stxnBytes, &stxn); err != nil {
 			t.Fatalf("Failed to decode signed txn %d: %v", i, err)
 		}
-		if stxn.Sig == (types.Signature{}) {
+		if stxn.Sig == (types.Signature{}) && stxn.PQsig.Blank() {
 			t.Fatalf("Txn %d has no signature after initial sign", i)
 		}
 		t.Logf("Txn %d signed: sender=%s", i, stxn.Txn.Sender.String())
@@ -461,10 +475,10 @@ func TestPassthroughResign(t *testing.T) {
 		if stxn.Txn.Group != gid {
 			t.Errorf("Txn %d has wrong group ID after resign", i)
 		}
-		if stxn.Sig == (types.Signature{}) {
+		if stxn.Sig == (types.Signature{}) && stxn.PQsig.Blank() {
 			t.Errorf("Txn %d has no signature after resign", i)
 		}
-		t.Logf("Txn %d: sender=%s, sig=%x...", i, stxn.Txn.Sender.String(), stxn.Sig[:4])
+		t.Logf("Txn %d: sender=%s, has_sig=%v, has_pqsig=%v", i, stxn.Txn.Sender.String(), stxn.Sig != types.Signature{}, !stxn.PQsig.Blank())
 	}
 
 	t.Log("Passthrough resign test passed!")
@@ -504,9 +518,11 @@ func TestPassthroughRequiresPreGrouped(t *testing.T) {
 		t.Fatalf("Failed to connect to testnet: %v", err)
 	}
 
-	// Get funding account
-	fundingPrivKey, _ := mnemonic.ToPrivateKey(fundingMnemonic)
-	fundingAddr, _ := crypto.GenerateAddressFromSK(fundingPrivKey)
+	funder, err := harness.NewFundTestAccount(testnet.Client)
+	if err != nil {
+		t.Fatalf("Failed to load native Falcon funding account: %v", err)
+	}
+	fundingAddr := funder.GetAddress()
 
 	// Start Signer
 	signerd := harness.NewSignerHarness(t)
@@ -523,7 +539,7 @@ func TestPassthroughRequiresPreGrouped(t *testing.T) {
 
 	// Create a transaction WITHOUT group ID
 	txn, _ := transaction.MakePaymentTxn(
-		fundingAddr.String(),
+		fundingAddr,
 		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 		0,
 		nil,
@@ -531,8 +547,15 @@ func TestPassthroughRequiresPreGrouped(t *testing.T) {
 		sp,
 	)
 
-	// Sign it externally (but without group ID)
-	_, stxnBytes, _ := crypto.SignTransaction(fundingPrivKey, txn)
+	// Sign it externally (but without group ID).
+	txn, err = funder.PrepareTransaction(txn, sp.MinFee)
+	if err != nil {
+		t.Fatalf("Failed to prepare native Falcon passthrough transaction: %v", err)
+	}
+	_, stxnBytes, err := funder.SignTransaction(txn)
+	if err != nil {
+		t.Fatalf("Failed to sign native Falcon passthrough transaction: %v", err)
+	}
 	stxnHex := hex.EncodeToString(stxnBytes)
 
 	// Try to submit as passthrough (should fail)

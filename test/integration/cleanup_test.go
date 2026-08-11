@@ -5,7 +5,6 @@ package integration
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -15,9 +14,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/abi"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
 // TestCleanupLeakedApps deletes leaked test apps left behind by previous
@@ -37,16 +36,6 @@ func TestCleanupLeakedApps(t *testing.T) {
 	if mn == "" {
 		t.Fatal("TEST_FUNDING_MNEMONIC not set")
 	}
-	sk, err := mnemonic.ToPrivateKey(mn)
-	if err != nil {
-		t.Fatalf("invalid mnemonic: %v", err)
-	}
-	account, err := crypto.AccountFromPrivateKey(sk)
-	if err != nil {
-		t.Fatalf("failed to derive account: %v", err)
-	}
-	addr := account.Address.String()
-
 	algodURL := os.Getenv("ALGOD_URL")
 	if algodURL == "" {
 		algodURL = "https://testnet-api.4160.nodely.dev"
@@ -55,6 +44,11 @@ func TestCleanupLeakedApps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create algod client: %v", err)
 	}
+	funder, err := harness.NewFundTestAccount(client)
+	if err != nil {
+		t.Fatalf("invalid native Falcon funding mnemonic: %v", err)
+	}
+	addr := funder.GetAddress()
 
 	sp, err := client.SuggestedParams().Do(context.Background())
 	if err != nil {
@@ -84,7 +78,7 @@ func TestCleanupLeakedApps(t *testing.T) {
 		}
 
 		t.Logf("cleaning app %d...", app.Id)
-		if err := cleanupLeakedApp(client, app.Id, addr, sk, approvalBytes, clearBytes); err != nil {
+		if err := cleanupLeakedApp(client, app.Id, funder, approvalBytes, clearBytes); err != nil {
 			t.Logf("  FAILED: %v", err)
 			failed++
 		} else {
@@ -148,30 +142,30 @@ func compileCleanupPrograms(t *testing.T, client *algod.Client) (approval, clear
 	return approval, clear
 }
 
-func cleanupLeakedApp(client *algod.Client, appID uint64, creatorAddr string, creatorSK ed25519.PrivateKey, approvalBytes, clearBytes []byte) error {
-	sender, err := types.DecodeAddress(creatorAddr)
+func cleanupLeakedApp(client *algod.Client, appID uint64, funder *harness.FundTestAccount, approvalBytes, clearBytes []byte) error {
+	sender, err := types.DecodeAddress(funder.GetAddress())
 	if err != nil {
 		return err
 	}
 
 	// Step 1: Update the app's program so it has delete_box support.
-	if err := updateAppProgram(client, appID, sender, creatorSK, approvalBytes, clearBytes); err != nil {
+	if err := updateAppProgram(client, appID, sender, funder, approvalBytes, clearBytes); err != nil {
 		return fmt.Errorf("update program: %w", err)
 	}
 
 	// Step 2: Delete all boxes.
-	if err := deleteAppBoxes(client, appID, sender, creatorSK); err != nil {
+	if err := deleteAppBoxes(client, appID, sender, funder); err != nil {
 		return fmt.Errorf("delete boxes: %w", err)
 	}
 
 	// Step 3: Delete the app.
-	if err := deleteApp(client, appID, sender, creatorSK); err != nil {
+	if err := deleteApp(client, appID, sender, funder); err != nil {
 		return fmt.Errorf("delete app: %w", err)
 	}
 	return nil
 }
 
-func updateAppProgram(client *algod.Client, appID uint64, sender types.Address, sk ed25519.PrivateKey, approval, clear []byte) error {
+func updateAppProgram(client *algod.Client, appID uint64, sender types.Address, funder *harness.FundTestAccount, approval, clear []byte) error {
 	ctx := context.Background()
 	sp, err := client.SuggestedParams().Do(ctx)
 	if err != nil {
@@ -188,10 +182,10 @@ func updateAppProgram(client *algod.Client, appID uint64, sender types.Address, 
 	if err != nil {
 		return err
 	}
-	return signSubmitWait(client, sk, txn)
+	return signSubmitWait(client, funder, txn, sp.MinFee)
 }
 
-func deleteAppBoxes(client *algod.Client, appID uint64, sender types.Address, sk ed25519.PrivateKey) error {
+func deleteAppBoxes(client *algod.Client, appID uint64, sender types.Address, funder *harness.FundTestAccount) error {
 	ctx := context.Background()
 	resp, err := client.GetApplicationBoxes(appID).Do(ctx)
 	if err != nil {
@@ -226,14 +220,14 @@ func deleteAppBoxes(client *algod.Client, appID uint64, sender types.Address, sk
 		if err != nil {
 			return fmt.Errorf("build delete_box for %q: %w", string(nameBytes), err)
 		}
-		if err := signSubmitWait(client, sk, txn); err != nil {
+		if err := signSubmitWait(client, funder, txn, sp.MinFee); err != nil {
 			return fmt.Errorf("delete_box %q: %w", string(nameBytes), err)
 		}
 	}
 	return nil
 }
 
-func deleteApp(client *algod.Client, appID uint64, sender types.Address, sk ed25519.PrivateKey) error {
+func deleteApp(client *algod.Client, appID uint64, sender types.Address, funder *harness.FundTestAccount) error {
 	ctx := context.Background()
 	sp, err := client.SuggestedParams().Do(ctx)
 	if err != nil {
@@ -259,17 +253,16 @@ func deleteApp(client *algod.Client, appID uint64, sender types.Address, sk ed25
 	if err != nil {
 		return err
 	}
-	return signSubmitWait(client, sk, txn)
+	return signSubmitWait(client, funder, txn, sp.MinFee)
 }
 
-func signSubmitWait(client *algod.Client, sk ed25519.PrivateKey, txn types.Transaction) error {
+func signSubmitWait(client *algod.Client, funder *harness.FundTestAccount, txn types.Transaction, minFee uint64) error {
 	ctx := context.Background()
-	_, stxnBytes, err := crypto.SignTransaction(sk, txn)
+	txid, stxnBytes, err := funder.PrepareAndSignTransaction(txn, minFee)
 	if err != nil {
 		return err
 	}
-	txid, err := client.SendRawTransaction(stxnBytes).Do(ctx)
-	if err != nil {
+	if _, err := client.SendRawTransaction(stxnBytes).Do(ctx); err != nil {
 		return err
 	}
 	_, err = transaction.WaitForConfirmation(client, txid, 10, ctx)

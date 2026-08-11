@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -197,12 +196,12 @@ func generateFundedCommandCoverageKey(
 func deployCommandCoverageApp(t *testing.T, network *harness.TestnetConfig, funder *harness.FundTestAccount) *harness.TestApp {
 	t.Helper()
 
-	app, err := harness.DeployTestApp(t, network.Client, funder.GetAddress(), funder.GetPrivateKey())
+	app, err := harness.DeployTestApp(t, network.Client, funder)
 	if err != nil {
 		t.Fatalf("deploy command coverage app: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := app.DestroyTestApp(funder.GetPrivateKey()); err != nil {
+		if err := app.DestroyTestApp(funder); err != nil {
 			t.Logf("destroy command coverage app %d: %v", app.AppID, err)
 		}
 	})
@@ -311,12 +310,15 @@ func signAndSubmitCommandCoverageTxn(
 ) string {
 	t.Helper()
 
-	_, signedBytes, err := crypto.SignTransaction(funder.GetPrivateKey(), txn)
+	sp, err := network.GetSuggestedParams()
+	if err != nil {
+		t.Fatalf("get suggested params for command coverage transaction: %v", err)
+	}
+	txid, signedBytes, err := funder.PrepareAndSignTransaction(txn, sp.MinFee)
 	if err != nil {
 		t.Fatalf("sign command coverage transaction: %v", err)
 	}
-	txid, err := network.Client.SendRawTransaction(signedBytes).Do(context.Background())
-	if err != nil {
+	if _, err := network.Client.SendRawTransaction(signedBytes).Do(context.Background()); err != nil {
 		t.Fatalf("submit command coverage transaction: %v", err)
 	}
 	return txid

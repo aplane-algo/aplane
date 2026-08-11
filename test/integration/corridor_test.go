@@ -512,7 +512,7 @@ func createCorridorTestAsset(t *testing.T, testnet *harness.TestnetConfig, funde
 	if err != nil {
 		t.Fatalf("failed to build corridor test asset creation transaction: %v", err)
 	}
-	txid := submitEd25519TxnExpectSuccess(t, testnet, funder.GetPrivateKey(), txn)
+	txid := submitFundingTxnExpectSuccess(t, testnet, funder, txn)
 	info, _, err := testnet.Client.PendingTransactionInformation(txid).Do(context.Background())
 	if err != nil {
 		t.Fatalf("failed to read corridor test asset creation transaction %s: %v", txid, err)
@@ -526,7 +526,26 @@ func createCorridorTestAsset(t *testing.T, testnet *harness.TestnetConfig, funde
 func sendAssetFromFunder(t *testing.T, testnet *harness.TestnetConfig, funder *harness.FundTestAccount, to string, assetID, amount uint64) {
 	t.Helper()
 	txn := corridorAssetTransferTxn(t, mustSuggestedParams(t, testnet), funder.GetAddress(), to, amount, assetID, "corridor-asset-fund")
-	submitEd25519TxnExpectSuccess(t, testnet, funder.GetPrivateKey(), txn)
+	submitFundingTxnExpectSuccess(t, testnet, funder, txn)
+}
+
+func submitFundingTxnExpectSuccess(t *testing.T, testnet *harness.TestnetConfig, funder *harness.FundTestAccount, txn types.Transaction) string {
+	t.Helper()
+	sp, err := testnet.GetSuggestedParams()
+	if err != nil {
+		t.Fatalf("failed to read suggested params for corridor setup transaction: %v", err)
+	}
+	txid, signedBytes, err := funder.PrepareAndSignTransaction(txn, sp.MinFee)
+	if err != nil {
+		t.Fatalf("failed to sign corridor setup transaction: %v", err)
+	}
+	if _, err := testnet.Client.SendRawTransaction(signedBytes).Do(context.Background()); err != nil {
+		t.Fatalf("corridor setup transaction %s failed to submit: %v", txid, err)
+	}
+	if _, err := testnet.WaitForConfirmation(txid, 10); err != nil {
+		t.Fatalf("corridor transaction %s failed to confirm: %v", txid, err)
+	}
+	return txid
 }
 
 func submitEd25519TxnExpectSuccess(t *testing.T, testnet *harness.TestnetConfig, privateKey stded25519.PrivateKey, txn types.Transaction) string {
