@@ -125,6 +125,8 @@ type KeyScanInfo struct {
 	KeyFile                string // Path to the key file
 	KeyType                string // Key type (ed25519, aplane.falcon1024.v1, timelock-v3, etc.)
 	Category               string // Key category from the key file, if present
+	PQScheme               string
+	PQAddressSalt          *byte
 	LsigSize               int    // Total LogicSig size in bytes (bytecode + signature), 0 for ed25519
 	PublicKeyHex           string // Hex-encoded public key (for /keys API)
 	BaseKeyType            string // Base DSA key type used for signing metadata, if present
@@ -429,6 +431,8 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc 
 			KeyFile:                keyFile,
 			KeyType:                keyType,
 			Category:               category,
+			PQScheme:               signingMeta.PQScheme,
+			PQAddressSalt:          cloneBytePtr(signingMeta.PQAddressSalt),
 			LsigSize:               lsigSize,
 			PublicKeyHex:           publicKeyHex,
 			BaseKeyType:            signingMeta.BaseKeyType,
@@ -499,6 +503,8 @@ func logicSigAddressBytes(bytecode []byte) (types.Address, error) {
 
 type SigningMetadata struct {
 	Category               string
+	PQScheme               string
+	PQAddressSalt          *byte
 	BaseKeyType            string
 	Parameters             map[string]string
 	SigningArgs            []StoredSigningArg

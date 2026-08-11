@@ -193,7 +193,7 @@ func validateCredentialRuntimeSupport(entry *CredentialEntry) error {
 				payload.KeyType,
 			)
 		}
-	case keys.CategoryEd25519, keys.CategoryGenericLsig, keys.CategoryWitness:
+	case keys.CategoryEd25519, keys.CategoryNativePQ, keys.CategoryGenericLsig, keys.CategoryWitness:
 		// Native Ed25519 and witness support is compiled into their node-role
 		// runtimes. Generic LogicSig execution uses the bytecode and signing
 		// argument contract stored in the credential itself.

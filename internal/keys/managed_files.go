@@ -48,7 +48,7 @@ var (
 // sole signer-managed filename class.
 func ManagedCredentialClassForCategory(category string) (ManagedCredentialClass, error) {
 	switch category {
-	case CategoryEd25519, CategoryDSALsig, CategoryGenericLsig:
+	case CategoryEd25519, CategoryNativePQ, CategoryDSALsig, CategoryGenericLsig:
 		return ManagedCredentialAccount, nil
 	case CategoryWitness:
 		return ManagedCredentialSentry, nil

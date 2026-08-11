@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	sentrywitness "github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -31,6 +32,8 @@ type Payload struct {
 	KeyType                string
 	PublicKey              []byte
 	PrivateKey             []byte
+	PQScheme               string
+	PQAddressSalt          *byte
 	Parameters             map[string]string
 	LogicSigBytecode       []byte
 	SaltCounter            *byte
@@ -50,6 +53,8 @@ type CanonicalPayloadMetadata struct {
 	Category               string
 	KeyType                string
 	PublicKeyHex           string
+	PQScheme               string
+	PQAddressSalt          *byte
 	Parameters             map[string]string
 	LogicSigBytecodeHex    string
 	SaltCounter            *byte
@@ -70,6 +75,8 @@ type payloadWireV1 struct {
 	KeyType                string                `json:"key_type"`
 	PublicKeyHex           string                `json:"public_key,omitempty"`
 	PrivateKeyHex          string                `json:"private_key,omitempty"`
+	PQScheme               string                `json:"pq_scheme,omitempty"`
+	PQAddressSalt          *byte                 `json:"pq_address_salt,omitempty"`
 	Parameters             map[string]string     `json:"parameters,omitempty"`
 	LogicSigBytecodeHex    string                `json:"lsig_bytecode,omitempty"`
 	SaltCounter            *byte                 `json:"salt_counter,omitempty"`
@@ -90,6 +97,20 @@ func NewEd25519Payload(publicKey, privateKey []byte) *Payload {
 		KeyType:       "ed25519",
 		PublicKey:     bytes.Clone(publicKey),
 		PrivateKey:    bytes.Clone(privateKey),
+		CreatedAt:     time.Now().UTC().Truncate(time.Second),
+	}
+}
+
+// NewNativeFalconPayload constructs a native Falcon-1024 key payload.
+func NewNativeFalconPayload(publicKey, privateKey []byte, salt byte) *Payload {
+	return &Payload{
+		FormatVersion: CurrentKeyFormatVersion,
+		Category:      CategoryNativePQ,
+		KeyType:       nativefalcon.KeyType,
+		PublicKey:     bytes.Clone(publicKey),
+		PrivateKey:    bytes.Clone(privateKey),
+		PQScheme:      nativefalcon.Scheme,
+		PQAddressSalt: cloneBytePtr(&salt),
 		CreatedAt:     time.Now().UTC().Truncate(time.Second),
 	}
 }
@@ -225,6 +246,8 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		KeyType:                payload.KeyType,
 		PublicKeyHex:           hex.EncodeToString(payload.PublicKey),
 		PrivateKeyHex:          hex.EncodeToString(payload.PrivateKey),
+		PQScheme:               payload.PQScheme,
+		PQAddressSalt:          cloneBytePtr(payload.PQAddressSalt),
 		Parameters:             maps.Clone(payload.Parameters),
 		LogicSigBytecodeHex:    hex.EncodeToString(payload.LogicSigBytecode),
 		SaltCounter:            cloneBytePtr(payload.SaltCounter),
@@ -270,6 +293,11 @@ func (p *Payload) Validate() error {
 		if err := validateEd25519Payload(p); err != nil {
 			return err
 		}
+		return validateNonLogicSigPayload(p)
+	case CategoryNativePQ:
+		if err := validateNativePQPayload(p); err != nil {
+			return err
+		}
 		return validateNoLogicSigFields(p)
 	case CategoryWitness:
 		if !sentrywitness.IsKeyType(p.KeyType) {
@@ -278,13 +306,16 @@ func (p *Payload) Validate() error {
 		if err := validateWitnessPayload(p); err != nil {
 			return err
 		}
-		return validateNoLogicSigFields(p)
+		return validateNonLogicSigPayload(p)
 	case CategoryDSALsig:
 		if len(p.PublicKey) == 0 || len(p.PrivateKey) == 0 {
 			return incompatibleKeyFormat("dsa_lsig requires public_key and private_key")
 		}
 		if p.BaseKeyType == "" || p.BaseKeyType != strings.TrimSpace(p.BaseKeyType) {
 			return incompatibleKeyFormat("dsa_lsig requires canonical base_key_type")
+		}
+		if err := validateNoNativePQFields(p); err != nil {
+			return err
 		}
 		return validateLogicSigFields(p)
 	case CategoryGenericLsig:
@@ -293,6 +324,9 @@ func (p *Payload) Validate() error {
 		}
 		if p.BaseKeyType != "" {
 			return incompatibleKeyFormat("generic_lsig forbids base_key_type")
+		}
+		if err := validateNoNativePQFields(p); err != nil {
+			return err
 		}
 		return validateLogicSigFields(p)
 	default:
@@ -320,6 +354,15 @@ func (p *Payload) Selector() (string, error) {
 		var address types.Address
 		copy(address[:], p.PublicKey)
 		return address.String(), nil
+	case CategoryNativePQ:
+		if p.PQScheme != nativefalcon.Scheme || p.PQAddressSalt == nil {
+			return "", incompatibleKeyFormat("native_pq requires scheme and address salt")
+		}
+		address, err := nativefalcon.Address(*p.PQAddressSalt, p.PublicKey)
+		if err != nil {
+			return "", incompatibleKeyFormat("derive native PQ address: %v", err)
+		}
+		return address.String(), nil
 	case CategoryWitness:
 		return sentrywitness.ID(p.KeyType, p.PublicKey)
 	case CategoryDSALsig, CategoryGenericLsig:
@@ -342,6 +385,8 @@ func (p *Payload) Metadata() CanonicalPayloadMetadata {
 		Category:               p.Category,
 		KeyType:                p.KeyType,
 		PublicKeyHex:           hex.EncodeToString(p.PublicKey),
+		PQScheme:               p.PQScheme,
+		PQAddressSalt:          cloneBytePtr(p.PQAddressSalt),
 		Parameters:             maps.Clone(p.Parameters),
 		LogicSigBytecodeHex:    hex.EncodeToString(p.LogicSigBytecode),
 		SaltCounter:            cloneBytePtr(p.SaltCounter),
@@ -363,6 +408,8 @@ func (p *Payload) SigningMetadata() SigningMetadata {
 	}
 	return SigningMetadata{
 		Category:               p.Category,
+		PQScheme:               p.PQScheme,
+		PQAddressSalt:          cloneBytePtr(p.PQAddressSalt),
 		BaseKeyType:            p.BaseKeyType,
 		Parameters:             maps.Clone(p.Parameters),
 		SigningArgs:            cloneStoredSigningArgs(p.SigningArgs),
@@ -408,6 +455,8 @@ func payloadFromWire(wire payloadWireV1) (*Payload, error) {
 		KeyType:                wire.KeyType,
 		PublicKey:              publicKey,
 		PrivateKey:             privateKey,
+		PQScheme:               wire.PQScheme,
+		PQAddressSalt:          cloneBytePtr(wire.PQAddressSalt),
 		Parameters:             maps.Clone(wire.Parameters),
 		LogicSigBytecode:       bytecode,
 		SaltCounter:            cloneBytePtr(wire.SaltCounter),
@@ -452,6 +501,52 @@ func validateEd25519Payload(p *Payload) error {
 	}
 	if !bytes.Equal([]byte(derived[ed25519.SeedSize:]), p.PublicKey) {
 		return incompatibleKeyFormat("ed25519 public key does not match private key")
+	}
+	return nil
+}
+
+func validateNativePQPayload(p *Payload) error {
+	if p.KeyType != nativefalcon.KeyType {
+		return incompatibleKeyFormat("native_pq category requires key_type %q", nativefalcon.KeyType)
+	}
+	if p.PQScheme != nativefalcon.Scheme {
+		return incompatibleKeyFormat("native_pq requires pq_scheme %q", nativefalcon.Scheme)
+	}
+	if p.PQAddressSalt == nil {
+		return incompatibleKeyFormat("native_pq requires pq_address_salt")
+	}
+	if len(p.PublicKey) != nativefalcon.PublicKeySize {
+		return incompatibleKeyFormat("native Falcon public key length %d invalid (expected %d bytes)", len(p.PublicKey), nativefalcon.PublicKeySize)
+	}
+	if len(p.PrivateKey) != nativefalcon.PrivateKeySize {
+		return incompatibleKeyFormat("native Falcon private key length %d invalid (expected %d bytes)", len(p.PrivateKey), nativefalcon.PrivateKeySize)
+	}
+	canonicalSalt, address, err := nativefalcon.CanonicalAddress(p.PublicKey)
+	if err != nil {
+		return incompatibleKeyFormat("derive native Falcon address: %v", err)
+	}
+	if canonicalSalt != *p.PQAddressSalt {
+		return incompatibleKeyFormat("native Falcon address salt %d is not canonical (expected %d)", *p.PQAddressSalt, canonicalSalt)
+	}
+	if !nativefalcon.IsCompliant(address) {
+		return incompatibleKeyFormat("native Falcon address is not PQ compliant")
+	}
+	if err := validateNativePQKeyPair(p.PQScheme, p.PublicKey, p.PrivateKey); err != nil {
+		return incompatibleKeyFormat("invalid native PQ key pair: %v", err)
+	}
+	return nil
+}
+
+func validateNonLogicSigPayload(p *Payload) error {
+	if err := validateNoNativePQFields(p); err != nil {
+		return err
+	}
+	return validateNoLogicSigFields(p)
+}
+
+func validateNoNativePQFields(p *Payload) error {
+	if p.PQScheme != "" || p.PQAddressSalt != nil {
+		return incompatibleKeyFormat("category %q forbids native PQ fields", p.Category)
 	}
 	return nil
 }

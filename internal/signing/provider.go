@@ -31,6 +31,8 @@ type KeyMaterial struct {
 	PublicKey              []byte                       // Public key bytes, when available from the key file
 	Bytecode               []byte                       // LogicSig bytecode (nil for native ed25519)
 	Category               string                       // Key category recorded in the key file, if any
+	PQScheme               string                       // Native PQ scheme tag, when Category is native_pq
+	PQAddressSalt          *byte                        // Canonical native PQ address salt
 	BaseKeyType            string                       // Base DSA key type used for signer ops, if different from Type
 	Parameters             map[string]string            // Creation parameters recorded in the key file, if any
 	SigningArgs            []lsigprovider.RuntimeArgDef // Durable signing-time LogicSig arg contract

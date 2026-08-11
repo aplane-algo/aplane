@@ -18,6 +18,7 @@ type ImportKeyResult struct {
 
 const (
 	CategoryEd25519         = "ed25519"
+	CategoryNativePQ        = "native_pq"
 	CategoryDSALsig         = "dsa_lsig"
 	CategoryGenericLsig     = "generic_lsig"
 	CategoryWitness         = "witness"

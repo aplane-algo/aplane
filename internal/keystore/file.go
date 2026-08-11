@@ -276,6 +276,11 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	// unconditionally from the validated payload, so providers only supply
 	// Type and the cryptographic Value.
 	km.Category = signingMeta.Category
+	km.PQScheme = signingMeta.PQScheme
+	if signingMeta.PQAddressSalt != nil {
+		salt := *signingMeta.PQAddressSalt
+		km.PQAddressSalt = &salt
+	}
 	km.BaseKeyType = signingMeta.BaseKeyType
 	km.Bytecode = bytes.Clone(payload.LogicSigBytecode)
 	km.PublicKey = bytes.Clone(payload.PublicKey)
