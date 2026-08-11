@@ -265,7 +265,7 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 		context.Background(),
 		txns,
 		map[string]string{pluginAccount.Address.String(): "plugin-ref"},
-		map[string]int{pluginAccount.Address.String(): 0},
+		nil,
 		func(requests []PluginSlotSignRequest) ([]PluginSlotSigned, error) {
 			pluginCalls.Add(1)
 			out := make([]PluginSlotSigned, len(requests))

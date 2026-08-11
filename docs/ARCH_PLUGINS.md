@@ -849,9 +849,9 @@ the plugin's own signatures with apsigner's — under apsigner's policy and appr
 single thing a plugin cannot do on its own. The plugin returns an *unsigned*
 draft (every intent `type: "raw"`) plus a `pluginSigners` list declaring the slots it
 will sign itself — each with an address, an opaque `signerRef`, and the byte size
-(`lsigSize`) of the LogicSig it will attach. APlane canonicalizes the group: it pools
+(`lsigResources`) of the LogicSig path it will attach. APlane canonicalizes the group: it plans
 fees, recomputes the group ID, and adds LogicSig opcode-budget transactions **sized from
-the declared `lsigSize` values**, while a guard asserts every original slot's
+the declared program, argument, and opcode resources, while a guard asserts every original slot's
 transaction fields are preserved (only the group ID and fee may change). APlane then
 calls the plugin's `signTransactions` method to sign its owned slots over the *canonical*
 bytes, and apsigner signs the APlane-managed slots under its normal policy and approval.
@@ -876,7 +876,11 @@ result, alongside the unsigned `raw` intents:
       "address": "PLUGIN_OWNED_ADDR...",
       "kind": "plugin-callback",
       "signerRef": "opaque-plugin-key-id",
-      "lsigSize": 2048
+      "lsigResources": {
+        "programBytes": 2048,
+        "argumentBytes": 1423,
+        "maxOpcodeCost": 20000
+      }
     }
   ]
 }
@@ -889,7 +893,7 @@ result, alongside the unsigned `raw` intents:
 | `address` | string | Sender of the slot the plugin signs |
 | `kind` | string | Signer kind; `plugin-callback` |
 | `signerRef` | string | Opaque plugin-owned identifier echoed back in the `signTransactions` request so the plugin can locate its key |
-| `lsigSize` | int | Byte size of the LogicSig (program + args) the plugin attaches to this slot. APlane counts it toward the group's pooled LogicSig budget. Omit or `0` when the slot carries no LogicSig |
+| `lsigResources` | object | Selected-path LogicSig resource declaration: `programBytes`, `argumentBytes`, and reviewed worst-case `maxOpcodeCost`. Omit only when the slot carries no LogicSig. |
 
 The `groupMode` field is the top-level selector for the flow; `presign-plan` requires a
 `pluginSigners` entry for every plugin-owned slot, and `pregrouped-signed` uses no
@@ -919,7 +923,7 @@ classes of plugin:
 | Plugin class | Examples | Mode used |
 |---|---|---|
 | **External / non-exportable custody** | HSM/KMS bridge, MPC or threshold-signature coordinator, hardware-wallet bridge | `presign-plan` (plugin signs its slot via the callback) |
-| **Smart-signature / composed-LogicSig auth** | multisig, allowlist, hashlock/HTLC escrows, atomic swaps, fee sponsors (paymaster: managed account pays, plugin LogicSig authorizes) | `presign-plan` (budget sized from `lsigSize`) |
+| **Smart-signature / composed-LogicSig auth** | multisig, allowlist, hashlock/HTLC escrows, atomic swaps, fee sponsors (paymaster: managed account pays, plugin LogicSig authorizes) | `presign-plan` (budget and surcharge planned from `lsigResources`) |
 | **Counterparty / relayer flows** | RFQ or order-book fills (maker pre-signs, taker submits), gasless meta-transactions, signed-voucher redemption | `pregrouped-signed` (submit the counterparty-signed group verbatim) |
 | **Privacy / shielded pools** | mixers, confidential transfers, private voting | `presign-plan` (fund a shielded deposit) + `pregrouped-signed` (self-authorizing spend) |
 

@@ -50,15 +50,15 @@ type PluginSlotSigned struct {
 // SignAndSubmitWithPluginSigners runs the pre-sign planning flow. pluginSignerRefs
 // maps a slot sender address to its opaque signerRef; those slots are signed by the
 // plugin via signSlots. All other slots are APlane-managed (apsigner sign-mode).
-// pluginSlotSizes maps the same plugin-owned addresses to the byte size of the
-// LogicSig the plugin will attach during the callback; it is forwarded to /plan as
-// the foreign slot's lsig_size hint so the signer sizes the group's pooled LogicSig
-// byte budget (and budget dummies) correctly. A nil/absent entry means size 0.
+// pluginSlotResources maps plugin-owned addresses to the selected LogicSig path
+// the plugin will attach during the callback. It is forwarded to /plan without
+// combining program bytes, argument bytes, and opcode cost. An absent entry means
+// the slot carries no LogicSig.
 func (e *Engine) SignAndSubmitWithPluginSigners(
 	ctx context.Context,
 	txns []types.Transaction,
 	pluginSignerRefs map[string]string,
-	pluginSlotSizes map[string]int,
+	pluginSlotResources map[string]signerapi.LogicSigResourceUsage,
 	signSlots PluginSlotSigner,
 	lsigArgs []map[string][]byte,
 ) (*PluginSubmitResult, error) {
@@ -88,15 +88,12 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	planRequests := make([]signerapi.SignRequest, len(txns))
 	for i, txn := range txns {
 		if _, owned := pluginSignerRefs[txn.Sender.String()]; owned {
-			// Foreign slot (no key on this signer): declare its LogicSig byte size so
-			// the planner counts it toward the pooled LogicSig budget and adds the
-			// budget dummies the group needs to satisfy len(group)*1000 >= total
-			// LogicSig bytes at submit. Without this the large verifier LogicSigs are
-			// invisible to pool sizing and a Falcon-funded group overflows the pool.
-			planRequests[i] = signerapi.SignRequest{
-				TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
-				LsigSize:    pluginSlotSizes[txn.Sender.String()],
+			request := signerapi.SignRequest{TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)}
+			if resource, ok := pluginSlotResources[txn.Sender.String()]; ok {
+				copy := resource
+				request.LsigResources = &copy
 			}
+			planRequests[i] = request
 		} else {
 			planRequests[i] = e.managedSignRequest(txn, lsigArgsAt(lsigArgs, i))
 		}

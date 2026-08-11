@@ -418,7 +418,11 @@ signing or triggering approval. Request fields:
   txnSender,
   txnBytesHex,
   signedTxnHex,
-  lsigSize,
+  lsigResources: {
+    programBytes,
+    argumentBytes,
+    maxOpcodeCost
+  },
   lsigArgs: { name: "hex-string" }
 }
 ```

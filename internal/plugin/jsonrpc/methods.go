@@ -196,13 +196,20 @@ type PluginSigner struct {
 	Address   string `json:"address"`
 	Kind      string `json:"kind"`      // e.g. "plugin-callback"
 	SignerRef string `json:"signerRef"` // opaque plugin-owned identifier
-	// LsigSize is the byte size of the LogicSig (program + args) the plugin will
-	// attach to this slot during the signTransactions callback. APlane can't know
-	// it (the slot is unsigned at /plan time and the program is plugin-private), so
-	// the plugin declares it; the signer counts it toward the group's pooled
-	// LogicSig byte budget and adds budget dummies accordingly. 0 (omitted) means
-	// the slot carries no LogicSig or the plugin doesn't report a size.
-	LsigSize int `json:"lsigSize,omitempty"`
+	// LsigResources declares the selected authorization path the plugin will
+	// attach during signTransactions. APlane cannot derive these values while the
+	// slot is unsigned and the program remains plugin-private. Omit it only when
+	// the slot carries no LogicSig.
+	LsigResources *PluginLogicSigResources `json:"lsigResources,omitempty"`
+}
+
+// PluginLogicSigResources keeps the three v42 consensus resources separate.
+// MaxOpcodeCost is a reviewed worst-case ceiling for the selected path, not a
+// value sampled from one execution.
+type PluginLogicSigResources struct {
+	ProgramBytes  uint64 `json:"programBytes"`
+	ArgumentBytes uint64 `json:"argumentBytes"`
+	MaxOpcodeCost uint64 `json:"maxOpcodeCost"`
 }
 
 // PluginSignerKind values.

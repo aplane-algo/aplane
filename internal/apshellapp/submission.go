@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
+	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -159,7 +160,7 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 	}
 
 	refs := make(map[string]string, len(result.PluginSigners))
-	sizes := make(map[string]int, len(result.PluginSigners))
+	resources := make(map[string]signerapi.LogicSigResourceUsage, len(result.PluginSigners))
 	for i, ps := range result.PluginSigners {
 		if ps.Kind != jsonrpc.PluginSignerKindCallback {
 			return nil, fmt.Errorf("pluginSigners[%d]: unsupported kind %q", i, ps.Kind)
@@ -167,14 +168,22 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 		if ps.Address == "" || ps.SignerRef == "" {
 			return nil, fmt.Errorf("pluginSigners[%d]: missing address or signerRef", i)
 		}
-		if ps.LsigSize < 0 {
-			return nil, fmt.Errorf("pluginSigners[%d]: negative lsigSize %d", i, ps.LsigSize)
-		}
 		if _, dup := refs[ps.Address]; dup {
 			return nil, fmt.Errorf("pluginSigners[%d]: duplicate address %s", i, ps.Address)
 		}
 		refs[ps.Address] = ps.SignerRef
-		sizes[ps.Address] = ps.LsigSize
+		if ps.LsigResources != nil {
+			resource := signerapi.LogicSigResourceUsage{
+				ProgramBytes:  ps.LsigResources.ProgramBytes,
+				ArgumentBytes: ps.LsigResources.ArgumentBytes,
+				MaxOpcodeCost: ps.LsigResources.MaxOpcodeCost,
+			}
+			probe := signerapi.SignRequest{TxnBytesHex: "probe", LsigResources: &resource}
+			if err := probe.Validate(); err != nil {
+				return nil, fmt.Errorf("pluginSigners[%d]: %w", i, err)
+			}
+			resources[ps.Address] = resource
+		}
 	}
 
 	// apsigner signs the managed slots, so this flow needs a signer connection.
@@ -208,7 +217,7 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 
 	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
 	confirmed := !a.eng.GetSimulate()
-	submit, err := a.eng.SignAndSubmitWithPluginSigners(ctx, txns, refs, sizes, signSlots, lsigArgsSlice)
+	submit, err := a.eng.SignAndSubmitWithPluginSigners(ctx, txns, refs, resources, signSlots, lsigArgsSlice)
 	if err != nil {
 		if submit != nil {
 			return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), err

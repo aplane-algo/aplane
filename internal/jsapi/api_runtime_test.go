@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"reflect"
 	"strings"
@@ -440,7 +439,7 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		})}})
 	})
 
-	t.Run("oversized lsig size", func(t *testing.T) {
+	t.Run("invalid LogicSig resource", func(t *testing.T) {
 		_, _, api := newTestAPI(t)
 
 		defer func() {
@@ -448,15 +447,19 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			if r == nil {
 				t.Fatal("expected panic")
 			}
-			if got := r.(goja.Value).String(); !strings.Contains(got, "invalid lsigSize") || !strings.Contains(got, "too large") {
-				t.Fatalf("panic = %q, want lsigSize too-large error", got)
+			if got := r.(goja.Value).String(); !strings.Contains(got, "invalid lsigResources.programBytes") {
+				t.Fatalf("panic = %q, want LogicSig resource error", got)
 			}
 		}()
 
 		api.jsPlan(goja.FunctionCall{Arguments: []goja.Value{api.runtime.ToValue([]interface{}{
 			map[string]interface{}{
 				"txnBytesHex": "5458",
-				"lsigSize":    float64(math.MaxInt) + 1,
+				"lsigResources": map[string]interface{}{
+					"programBytes":  -1,
+					"argumentBytes": 0,
+					"maxOpcodeCost": 1,
+				},
 			},
 		})}})
 	})
@@ -506,7 +509,11 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			},
 			map[string]interface{}{
 				"txnBytesHex": "5458beef",
-				"lsigSize":    float64(123),
+				"lsigResources": map[string]interface{}{
+					"programBytes":  float64(123),
+					"argumentBytes": float64(45),
+					"maxOpcodeCost": float64(6_789),
+				},
 			},
 		})}})
 
@@ -523,7 +530,9 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			},
 			{
 				TxnBytesHex: "5458beef",
-				LsigSize:    123,
+				LsigResources: &signerapi.LogicSigResourceUsage{
+					ProgramBytes: 123, ArgumentBytes: 45, MaxOpcodeCost: 6_789,
+				},
 			},
 		}) {
 			t.Fatalf("request = %#v, want mapped sign requests", gotReq.Requests)
