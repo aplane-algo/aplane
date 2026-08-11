@@ -163,6 +163,12 @@ the tree. Unix sockets are left inert for the subsequent configured-socket
 migration policy to classify. The command deliberately does not infer an owner
 from untrusted store metadata and does not create `.apstore.lock`.
 
+`apstore permissions convert-managed` then acquires the exclusive store lock,
+migrates and audits the legacy tree, and publishes root-controlled
+`install/service-principal.json` followed by `.prod`. A busy store therefore
+fails before either managed marker appears. The marker is published last so a
+failed migration remains an unmarked local store.
+
 `apstore permissions preflight` and `permissions audit` are read-only. Same-UID audit recognizes the local
 installer's non-writable executable `bin/` subtree without treating those
 files as signer data. `apstore permissions migrate` is restricted to

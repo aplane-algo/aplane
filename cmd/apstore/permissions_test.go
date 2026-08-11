@@ -8,7 +8,33 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/storelock"
 )
+
+func TestPermissionsConvertManagedLockFailsBeforeMetadataPublication(t *testing.T) {
+	root := t.TempDir()
+	shared, err := storelock.AcquireShared(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = shared.Close() }()
+
+	release, err := acquireOfflineMutationLockForArgs(
+		[]string{"permissions", "convert-managed", "--uid", "123", "--gid", "456"}, root,
+	)
+	if release != nil {
+		release()
+	}
+	if err == nil || !strings.Contains(err.Error(), "holds the store lock") {
+		t.Fatalf("conversion lock error = %v, want busy-store refusal", err)
+	}
+	for _, absent := range []string{".prod", filepath.Join("install", "service-principal.json")} {
+		if _, statErr := os.Lstat(filepath.Join(root, absent)); !os.IsNotExist(statErr) {
+			t.Fatalf("failed conversion lock created %s: %v", absent, statErr)
+		}
+	}
+}
 
 func TestCmdPermissionsMigrateRejectsLocalInstallWithoutMutation(t *testing.T) {
 	oldDataDirectory := dataDirectory

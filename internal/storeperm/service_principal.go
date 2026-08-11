@@ -8,6 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
 const (
@@ -71,4 +75,68 @@ func parseServicePrincipalMetadata(data []byte) (servicePrincipalMetadata, error
 		return metadata, fmt.Errorf("service gid must not be negative")
 	}
 	return metadata, nil
+}
+
+// PublishManagedMetadata records the service principal and publishes the
+// managed-store marker last. Callers must hold the exclusive store lock and
+// must have completed the legacy migration before calling this function.
+func PublishManagedMetadata(root string, uid, gid int) error {
+	if uid <= 0 || gid < 0 {
+		return fmt.Errorf("invalid managed service ownership %d:%d", uid, gid)
+	}
+	installDir := filepath.Join(root, "install")
+	if err := ensureRootControlledInstallDir(installDir, gid); err != nil {
+		return err
+	}
+	principal, err := json.Marshal(servicePrincipalMetadata{SchemaVersion: 1, UID: uid, GID: gid})
+	if err != nil {
+		return fmt.Errorf("encode managed service principal metadata: %w", err)
+	}
+	principal = append(principal, '\n')
+	if err := fsutil.WriteRootOwnedGroupReadableFileDurable(
+		filepath.Join(root, ServicePrincipalRelativePath), principal, gid,
+	); err != nil {
+		return fmt.Errorf("publish managed service principal metadata: %w", err)
+	}
+	if err := fsutil.WriteServiceOwnedFileDurable(
+		filepath.Join(root, ".prod"), []byte("systemd-managed\n"), uid, gid,
+	); err != nil {
+		return fmt.Errorf("publish managed-store marker: %w", err)
+	}
+	return nil
+}
+
+func ensureRootControlledInstallDir(path string, gid int) error {
+	if err := os.Mkdir(path, 0o700); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("create install metadata directory: %w", err)
+	}
+	before, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("inspect install metadata directory: %w", err)
+	}
+	if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
+		return fmt.Errorf("install metadata path is not a real directory: %s", path)
+	}
+	dir, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open install metadata directory: %w", err)
+	}
+	defer func() { _ = dir.Close() }()
+	after, err := dir.Stat()
+	if err != nil {
+		return fmt.Errorf("inspect opened install metadata directory: %w", err)
+	}
+	if !after.IsDir() || !os.SameFile(before, after) {
+		return fmt.Errorf("install metadata directory changed while opening: %s", path)
+	}
+	if err := dir.Chown(0, gid); err != nil {
+		return fmt.Errorf("set install metadata directory ownership: %w", err)
+	}
+	if err := dir.Chmod(0o750); err != nil {
+		return fmt.Errorf("set install metadata directory mode: %w", err)
+	}
+	if err := dir.Sync(); err != nil {
+		return fmt.Errorf("sync install metadata directory: %w", err)
+	}
+	return fsutil.SyncDir(filepath.Dir(path))
 }

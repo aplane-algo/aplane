@@ -12,7 +12,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "apstore - Signer keystore management\n\n")
 	fmt.Fprintf(os.Stderr, "Usage:\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] initialize [--role signer|sentry]\n")
-	fmt.Fprintf(os.Stderr, "  apstore [-d path] permissions <preflight|audit|migrate>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] permissions <preflight|audit|migrate|convert-managed --uid UID --gid GID>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup create all\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup create address <ADDRESS>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup import <archive-path>\n")

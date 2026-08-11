@@ -17,14 +17,16 @@ import (
 // remaining group-bearing modes. The per-literal shape prevents an approved
 // file from silently acquiring a different shared mode later.
 var sharedModeAllowlist = map[string]map[string]struct{}{
-	"internal/apshellapp/modes.go":     {"0o750": {}},
-	"internal/backup/copy.go":          {"0750": {}},
-	"internal/backup/service.go":       {"0750": {}},
-	"internal/clientdata/lock.go":      {"0o770": {}, "0o660": {}},
-	"internal/clientstate/watcher.go":  {"0o770": {}},
-	"internal/engine/txnwrite.go":      {"0750": {}},
-	"internal/signerapp/daemon/ipc.go": {"0660": {}},
-	"internal/storeperm/audit.go":      {"0o770": {}, "0o660": {}, "0o640": {}, "0o750": {}},
+	"internal/apshellapp/modes.go":            {"0o750": {}},
+	"internal/backup/copy.go":                 {"0750": {}},
+	"internal/backup/service.go":              {"0750": {}},
+	"internal/clientdata/lock.go":             {"0o770": {}, "0o660": {}},
+	"internal/clientstate/watcher.go":         {"0o770": {}},
+	"internal/engine/txnwrite.go":             {"0750": {}},
+	"internal/fsutil/durable.go":              {"0o640": {}},
+	"internal/signerapp/daemon/ipc.go":        {"0660": {}},
+	"internal/storeperm/audit.go":             {"0o770": {}, "0o660": {}, "0o640": {}, "0o750": {}},
+	"internal/storeperm/service_principal.go": {"0o750": {}},
 }
 
 func TestLegacySharedModesStayOutOfSignerStoreWriters(t *testing.T) {
@@ -126,9 +128,7 @@ func TestInstallerPreflightsBeforeStoreChildMutation(t *testing.T) {
 	assertTextOrder(t, "installer/scripts/systemd-setup.sh", setup,
 		`chmod 700 "$DATA_DIR"`,
 		`"$BINDIR/apstore" -d "$DATA_DIR" permissions preflight`,
-		`publish_managed_metadata \`,
-		`publish_managed_metadata "$PROD_MARKER_PATH"`,
-		`"$BINDIR/apstore" -d "$DATA_DIR" permissions migrate`,
+		`"$BINDIR/apstore" -d "$DATA_DIR" permissions convert-managed \`,
 		`' > "$SERVICE_DEST"`,
 		`for f in "$DATA_DIR"/identities/*/passphrase.cred`,
 	)

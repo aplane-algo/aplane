@@ -151,6 +151,19 @@ func WriteServiceOwnedFileDurable(path string, data []byte, uid, gid int) error 
 	}}})
 }
 
+// WriteRootOwnedGroupReadableFileDurable publishes installer metadata owned
+// by root and readable by one resolved service group. The mode is fixed at
+// 0640; callers cannot select a broader root-owned file policy.
+func WriteRootOwnedGroupReadableFileDurable(path string, data []byte, gid int) error {
+	if gid < 0 {
+		return fmt.Errorf("invalid service group %d", gid)
+	}
+	return writeFileSetDurableWithPolicies([]durableWritePlan{{path: path, data: data, policy: durableFilePolicy{
+		mode:  0o640,
+		owner: &durableOwner{uid: 0, gid: gid},
+	}}})
+}
+
 func stageDurableFile(path string, data []byte, policy durableFilePolicy) (*stagedDurableFile, error) {
 	info, statErr := os.Lstat(path)
 	if statErr != nil && !os.IsNotExist(statErr) {

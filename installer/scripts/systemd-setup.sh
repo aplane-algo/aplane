@@ -182,55 +182,14 @@ if [ -e "$DATA_DIR/bin" ]; then
     exit 1
 fi
 
-publish_managed_metadata() {
-    local destination="$1"
-    local owner="$2"
-    local group="$3"
-    local mode="$4"
-    local line="$5"
-    local parent
-    local base
-    local staged
-
-    parent="$(dirname "$destination")"
-    base="$(basename "$destination")"
-    if [ -L "$destination" ] || { [ -e "$destination" ] && [ ! -f "$destination" ]; }; then
-        echo "Error: managed metadata target is not a regular file: $destination" >&2
-        return 1
-    fi
-    staged="$(mktemp "$parent/.${base}.aplane.XXXXXX")"
-    printf '%s\n' "$line" > "$staged"
-    chown "$owner:$group" "$staged"
-    chmod "$mode" "$staged"
-    mv -fT -- "$staged" "$destination"
-}
-
-# Record the expected service uid/gid in root-controlled metadata before any
-# permission migration. The repair command must not infer its target owner
-# from a store root whose ownership may itself be damaged.
-INSTALL_METADATA_DIR="$DATA_DIR/install"
-if [ -L "$INSTALL_METADATA_DIR" ] || { [ -e "$INSTALL_METADATA_DIR" ] && [ ! -d "$INSTALL_METADATA_DIR" ]; }; then
-    echo "Error: signer install metadata path is not a real directory: $INSTALL_METADATA_DIR" >&2
-    exit 1
-fi
-mkdir -p "$INSTALL_METADATA_DIR"
-chown root:"$SVC_GROUP" "$INSTALL_METADATA_DIR"
-chmod 750 "$INSTALL_METADATA_DIR"
 SERVICE_UID="$(id -u "$SVC_USER")"
 SERVICE_GID="$(getent group "$SVC_GROUP" | cut -d: -f3)"
-SERVICE_PRINCIPAL_PATH="$INSTALL_METADATA_DIR/service-principal.json"
-publish_managed_metadata \
-    "$SERVICE_PRINCIPAL_PATH" root "$SVC_GROUP" 640 \
-    "{\"schema_version\":1,\"uid\":$SERVICE_UID,\"gid\":$SERVICE_GID}"
 
-PROD_MARKER_PATH="$DATA_DIR/.prod"
-publish_managed_metadata "$PROD_MARKER_PATH" "$SVC_USER" "$SVC_GROUP" 600 "systemd-managed"
-echo "Marked $DATA_DIR as a systemd-managed data directory"
-
-# The Go migrator is now the sole descendant ownership/mode repair mechanism.
-# It validates the complete inventory before opening any entry for mutation.
-"$BINDIR/apstore" -d "$DATA_DIR" permissions migrate
-"$BINDIR/apstore" -d "$DATA_DIR" permissions audit
+# One Go-owned operation acquires the exclusive store lock before publishing
+# managed metadata. It migrates and audits the tree, then publishes the
+# root-controlled service principal and the .prod marker last.
+"$BINDIR/apstore" -d "$DATA_DIR" permissions convert-managed \
+    --uid "$SERVICE_UID" --gid "$SERVICE_GID"
 
 # Install service with placeholder substitution
 if [ "$MEMORY_LOCK" = "1" ]; then

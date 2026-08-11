@@ -4,8 +4,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -14,8 +16,14 @@ import (
 )
 
 func cmdPermissions(args []string) error {
+	if len(args) == 0 {
+		return permissionsUsageError()
+	}
+	if args[0] == "convert-managed" {
+		return cmdPermissionsConvertManaged(args[1:])
+	}
 	if len(args) != 1 || (args[0] != "preflight" && args[0] != "audit" && args[0] != "migrate") {
-		return fmt.Errorf("usage: apstore permissions <preflight|audit|migrate>")
+		return permissionsUsageError()
 	}
 	if args[0] == "preflight" {
 		result, err := storeperm.PreflightLegacy(dataDirectory)
@@ -70,6 +78,54 @@ func cmdPermissions(args []string) error {
 		return fmt.Errorf("private store permission audit failed with %d finding(s)", len(findings))
 	}
 	logInfof("private store permission audit passed")
+	return nil
+}
+
+func permissionsUsageError() error {
+	return fmt.Errorf("usage: apstore permissions <preflight|audit|migrate|convert-managed --uid UID --gid GID>")
+}
+
+func cmdPermissionsConvertManaged(args []string) error {
+	flags := flag.NewFlagSet("permissions convert-managed", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	uidText := flags.String("uid", "", "numeric service uid")
+	gidText := flags.String("gid", "", "numeric service gid")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || *uidText == "" || *gidText == "" {
+		return permissionsUsageError()
+	}
+	uid, err := strconv.Atoi(*uidText)
+	if err != nil || uid <= 0 {
+		return fmt.Errorf("invalid managed service uid %q", *uidText)
+	}
+	gid, err := strconv.Atoi(*gidText)
+	if err != nil || gid < 0 {
+		return fmt.Errorf("invalid managed service gid %q", *gidText)
+	}
+	if currentEUID() != 0 {
+		return fmt.Errorf("permissions convert-managed requires root")
+	}
+	if _, err := storeperm.PreflightLegacy(dataDirectory); err != nil {
+		return err
+	}
+	socketPath, err := configuredMigrationSocketPath(dataDirectory)
+	if err != nil {
+		return err
+	}
+	result, err := storeperm.MigratePrivate(storeperm.LegacyMigrationOptions(dataDirectory, uid, gid, socketPath))
+	if err != nil {
+		return err
+	}
+	if err := storeperm.PublishManagedMetadata(dataDirectory, uid, gid); err != nil {
+		return err
+	}
+	findings, err := storeperm.Audit(storeperm.ProductionAuditOptions(dataDirectory, uid, gid))
+	if err != nil {
+		return err
+	}
+	if len(findings) != 0 {
+		return fmt.Errorf("managed signer-store verification failed after conversion: %w", findings[0])
+	}
+	logInfof("managed store conversion complete: inspected %d object(s), changed %d", result.Inspected, result.Changed)
 	return nil
 }
 
