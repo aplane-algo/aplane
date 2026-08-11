@@ -1,7 +1,7 @@
 # Integration Testing
 
 Integration tests for APlane that validate end-to-end functionality against
-Algorand testnet or an explicitly selected AlgoKit LocalNet. Tests spin up
+Algorand TestNet, FNet, or an explicitly selected AlgoKit LocalNet. Tests spin up
 their own apsigner process — no manual process management required.
 
 ## Prerequisites
@@ -26,6 +26,16 @@ same `TEST_FUNDING_MNEMONIC` contract used by the tests:
 APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
 ```
 
+Native Falcon-1024 positive acceptance runs on FNet, whose fnet5 consensus
+token enables the v42 feature set. Keep the disposable funded mnemonic in an
+ignored mode-0600 file:
+
+```bash
+export APLANE_INTEGRATION_NETWORK=fnet
+export APLANE_FNET_FALCON_MNEMONIC_FILE="$PWD/temp/HXK6I7UPOE7H2CPXV52QVN7OYURJ355YSRWZKJGA7I4LNGE3633LTESHZQ.txt"
+./test/setup-test-env.sh
+```
+
 This creates configs, SSH keys, token, and keystore, then writes `.env.test`
 in the project root with all required environment variables.
 
@@ -37,6 +47,10 @@ APLANE_INTEGRATION_NETWORK=testnet make integration-test
 
 # LocalNet run against an already running AlgoKit LocalNet
 APLANE_INTEGRATION_NETWORK=localnet make integration-test
+
+# Focused native Falcon FNet acceptance
+APLANE_INTEGRATION_NETWORK=fnet make integration-test \
+  INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run TestNativeFalconFNet'
 
 # Faster reuse path: keep the existing fixture and .env.test as-is
 make integration-test-reuse
@@ -97,6 +111,19 @@ fixture, run `go run ./test/integration/cmd/localnet-clean-test-keys` after
 sourcing `.env.test`. It is dry-run by default; add `-yes` to delete. The helper
 only operates on the APlane signer fixture and does not delete KMD wallet keys
 or algod accounts.
+
+FNet mode defaults to Nodely's test endpoints:
+
+- algod: https://fnet-api.4160.nodely.dev
+- indexer: https://fnet-idx.4160.nodely.dev
+- expected genesis: fnet-v1 /
+  kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA=
+- required active consensus token: fnet5
+
+Override the endpoints with APLANE_FNET_ALGOD_URL and
+APLANE_FNET_INDEXER_URL; set APLANE_FNET_ALGOD_TOKEN if the selected algod
+requires one. The harness checks genesis ID, genesis hash, suggested-parameter
+consensus, and node-status consensus before using the funded root.
 
 For capacity and endurance checks, run `make soak-test-localnet`. It is
 LocalNet-only and opt-in; the target regenerates the fixture, starts `apsigner`
@@ -233,7 +260,7 @@ func TestMyAppFeature(t *testing.T) {
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `APLANE_INTEGRATION_NETWORK` | Integration network profile: `testnet` or `localnet` | required |
+| `APLANE_INTEGRATION_NETWORK` | Integration network profile: `testnet`, `localnet`, or `fnet` | required |
 | `APSIGNER_DATA` | Signer data directory | (from setup-test-env.sh) |
 | `APCLIENT_DATA` | Client data directory | (from setup-test-env.sh) |
 | `TEST_PASSPHRASE` | Keystore passphrase | (from setup-test-env.sh) |
@@ -243,6 +270,9 @@ func TestMyAppFeature(t *testing.T) {
 | `ALGOD_TOKEN` | Algod API token | empty for testnet, AlgoKit token for localnet |
 | `APLANE_LOCALNET_KMD_URL` | LocalNet KMD endpoint | `http://localhost:4002` |
 | `APLANE_LOCALNET_WALLET` | LocalNet KMD wallet used for funding export | `unencrypted-default-wallet` |
+| `APLANE_FNET_FALCON_MNEMONIC_FILE` | Ignored mode-0600 file containing the funded native Falcon root's 25-word test mnemonic | required for FNet |
+| `APLANE_FNET_ALGOD_URL` | FNet algod endpoint override | Nodely FNet algod |
+| `APLANE_FNET_INDEXER_URL` | FNet indexer endpoint override | Nodely FNet indexer |
 
 ## Debugging
 

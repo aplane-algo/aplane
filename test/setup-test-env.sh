@@ -14,6 +14,8 @@
 # Prerequisites:
 #   - testnet mode: TEST_FUNDING_MNEMONIC must be set (25-word Algorand testnet mnemonic)
 #   - localnet mode: AlgoKit LocalNet algod/KMD must be running
+#   - fnet mode: APLANE_FNET_FALCON_MNEMONIC_FILE must name an ignored
+#     25-word native Falcon test mnemonic file
 #   - ssh-keygen must be available
 #
 # Output:
@@ -32,17 +34,18 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 INTEGRATION_NETWORK="${APLANE_INTEGRATION_NETWORK:-}"
 case "$INTEGRATION_NETWORK" in
-    testnet|localnet)
+    testnet|localnet|fnet)
         ;;
     "")
-        echo "ERROR: APLANE_INTEGRATION_NETWORK must be set to 'testnet' or 'localnet'" >&2
+        echo "ERROR: APLANE_INTEGRATION_NETWORK must be set to 'testnet', 'localnet', or 'fnet'" >&2
         echo "  Example: APLANE_INTEGRATION_NETWORK=testnet make integration-test" >&2
         echo "  Example: APLANE_INTEGRATION_NETWORK=localnet make integration-test" >&2
+        echo "  Example: APLANE_INTEGRATION_NETWORK=fnet make integration-test" >&2
         echo "  Setup only: APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh" >&2
         exit 1
         ;;
     *)
-        echo "ERROR: APLANE_INTEGRATION_NETWORK must be 'testnet' or 'localnet' (got '$INTEGRATION_NETWORK')" >&2
+        echo "ERROR: APLANE_INTEGRATION_NETWORK must be 'testnet', 'localnet', or 'fnet' (got '$INTEGRATION_NETWORK')" >&2
         exit 1
         ;;
 esac
@@ -61,6 +64,15 @@ if [ "$INTEGRATION_NETWORK" = "testnet" ] && [ -z "${TEST_FUNDING_MNEMONIC:-}" ]
     echo "  Or set the variable directly before running this script" >&2
     echo "  Or run against localnet with: APLANE_INTEGRATION_NETWORK=localnet make integration-test" >&2
     exit 1
+fi
+
+if [ "$INTEGRATION_NETWORK" = "fnet" ]; then
+    FNET_MNEMONIC_FILE="${APLANE_FNET_FALCON_MNEMONIC_FILE:-}"
+    if [ -z "$FNET_MNEMONIC_FILE" ] || [ ! -f "$FNET_MNEMONIC_FILE" ]; then
+        echo "ERROR: APLANE_FNET_FALCON_MNEMONIC_FILE must name the ignored native Falcon test mnemonic file" >&2
+        exit 1
+    fi
+    FNET_MNEMONIC_FILE="$(cd "$(dirname "$FNET_MNEMONIC_FILE")" && pwd -P)/$(basename "$FNET_MNEMONIC_FILE")"
 fi
 
 if ! command -v ssh-keygen &>/dev/null; then
@@ -82,6 +94,8 @@ LOCALNET_GENESIS_HASH=""
 LOCALNET_KMD_URL="${APLANE_LOCALNET_KMD_URL:-http://localhost:4002}"
 LOCALNET_WALLET="${APLANE_LOCALNET_WALLET:-unencrypted-default-wallet}"
 LOCALNET_WALLET_PASSWORD="${APLANE_LOCALNET_WALLET_PASSWORD:-}"
+FNET_MNEMONIC_FILE="${FNET_MNEMONIC_FILE:-}"
+FNET_INDEXER_URL=""
 
 if [ "$INTEGRATION_NETWORK" = "localnet" ]; then
     ALGOD_URL="${ALGOD_URL:-${APLANE_LOCALNET_ALGOD_URL:-http://localhost:4001}}"
@@ -119,6 +133,12 @@ if [ "$INTEGRATION_NETWORK" = "localnet" ]; then
     fi
     echo "  Selected LocalNet funding account $TEST_FUNDING_ACCOUNT"
     echo "  LocalNet genesis: ${LOCALNET_GENESIS_ID:-unknown}"
+elif [ "$INTEGRATION_NETWORK" = "fnet" ]; then
+    ALGOD_URL="${ALGOD_URL:-${APLANE_FNET_ALGOD_URL:-https://fnet-api.4160.nodely.dev}}"
+    ALGOD_TOKEN="${ALGOD_TOKEN:-${APLANE_FNET_ALGOD_TOKEN:-}}"
+    FNET_INDEXER_URL="${INDEXER_URL:-${APLANE_FNET_INDEXER_URL:-https://fnet-idx.4160.nodely.dev}}"
+    TEST_FUNDING_ACCOUNT=""
+    TEST_FUNDING_MNEMONIC=""
 else
     ALGOD_URL="${ALGOD_URL:-https://testnet-api.4160.nodely.dev}"
     ALGOD_TOKEN="${ALGOD_TOKEN:-}"
@@ -172,6 +192,8 @@ echo "  Generated client SSH key and authorized it"
 SIGNER_GENESIS_CONFIG=""
 if [ "$INTEGRATION_NETWORK" = "localnet" ]; then
     SIGNER_GENESIS_CONFIG="    genesis_hash: \"$LOCALNET_GENESIS_HASH\""
+elif [ "$INTEGRATION_NETWORK" = "fnet" ]; then
+    SIGNER_GENESIS_CONFIG="    genesis_hash: \"kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA=\""
 fi
 
 cat > "$SIGNER_DATA/config.yaml" << YAML
@@ -309,6 +331,10 @@ APLANE_LOCALNET_KMD_URL="$ENV_LOCALNET_KMD_URL"
 APLANE_LOCALNET_TOKEN="$ENV_LOCALNET_TOKEN"
 APLANE_LOCALNET_WALLET="$ENV_LOCALNET_WALLET"
 APLANE_LOCALNET_WALLET_PASSWORD="$ENV_LOCALNET_WALLET_PASSWORD"
+APLANE_FNET_FALCON_MNEMONIC_FILE="$FNET_MNEMONIC_FILE"
+APLANE_FNET_ALGOD_URL="${APLANE_FNET_ALGOD_URL:-}"
+APLANE_FNET_ALGOD_TOKEN="${APLANE_FNET_ALGOD_TOKEN:-}"
+APLANE_FNET_INDEXER_URL="$FNET_INDEXER_URL"
 LOCALNET_GENESIS_ID="$LOCALNET_GENESIS_ID"
 LOCALNET_GENESIS_HASH="$LOCALNET_GENESIS_HASH"
 DISABLE_MEMORY_LOCK=1

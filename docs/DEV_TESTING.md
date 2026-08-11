@@ -27,7 +27,7 @@ The project uses a layered testing approach:
 3. **Architecture Tests**: Layering, guarded-surface, signing-flow,
    bounded-vocabulary, key-type inventory, managed-credential, and
    witness-boundary guards under `test/arch`
-4. **Integration Tests**: End-to-end tests against an explicitly selected Algorand network profile, either public testnet or a running AlgoKit LocalNet (Go test framework)
+4. **Integration Tests**: End-to-end tests against an explicitly selected Algorand network profile: public TestNet, native-PQ FNet, or a running AlgoKit LocalNet (Go test framework)
 5. **Docker Install Smoke Tests**: Local and Systemd installer/uninstaller checks
 6. **REPL Tests**: Interactive command-line testing for user workflows (manual)
 
@@ -295,6 +295,15 @@ APLANE_INTEGRATION_NETWORK=localnet make integration-test
 APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
 ```
 
+FNet is the positive native Falcon-1024 profile. It requires an ignored private
+file containing the disposable funded account's 25-word mnemonic:
+
+```bash
+APLANE_INTEGRATION_NETWORK=fnet \
+APLANE_FNET_FALCON_MNEMONIC_FILE="$PWD/temp/HXK6I7UPOE7H2CPXV52QVN7OYURJ355YSRWZKJGA7I4LNGE3633LTESHZQ.txt" \
+make integration-test INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run TestNativeFalconFNet'
+```
+
 This creates `/tmp/aplane-test-env/` containing:
 
 ```
@@ -363,11 +372,14 @@ All per-test temp directories (binary builds, apshell work dirs) use Go's `t.Tem
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `APLANE_INTEGRATION_NETWORK` | Integration profile: `testnet` or `localnet` | Always, before setup |
+| `APLANE_INTEGRATION_NETWORK` | Integration profile: `testnet`, `localnet`, or `fnet` | Always, before setup |
 | `TEST_FUNDING_MNEMONIC` | 25-word funding mnemonic. In testnet mode, provide a funded testnet account. In localnet mode, setup exports one from KMD. | Testnet input; localnet auto |
 | `TEST_FUNDING_ACCOUNT` | Funding account address. Optional in testnet mode; setup writes the exported KMD account in localnet mode. | Optional before setup |
 | `ALGOD_URL` | Algod endpoint. Defaults by profile. | Optional |
 | `ALGOD_TOKEN` | Algod token. Defaults empty for testnet and the AlgoKit token for localnet. | Optional |
+| `APLANE_FNET_FALCON_MNEMONIC_FILE` | Private ignored file containing the disposable funded native Falcon root mnemonic. | FNet |
+| `APLANE_FNET_ALGOD_URL` | FNet algod override; defaults to the Nodely FNet endpoint. | Optional |
+| `APLANE_FNET_INDEXER_URL` | FNet indexer override; defaults to the Nodely FNet endpoint. | Optional |
 | `APLANE_LOCALNET_ALGOD_URL` | LocalNet algod endpoint fallback when `ALGOD_URL` is unset. | Optional localnet |
 | `APLANE_LOCALNET_KMD_URL` | LocalNet KMD endpoint. | Optional localnet |
 | `APLANE_LOCALNET_TOKEN` | LocalNet algod/KMD token fallback when `ALGOD_TOKEN` is unset. | Optional localnet |

@@ -25,6 +25,13 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
+	if harness.IntegrationNetwork() == harness.IntegrationNetworkFNet {
+		if _, err := harness.NewTestnetConfig(); err != nil {
+			panic("failed to validate FNet integration profile: " + err.Error())
+		}
+		os.Exit(m.Run())
+	}
+
 	// Check for funding account
 	fundingAccount, err := harness.NewFundingAccount()
 	if err != nil {
