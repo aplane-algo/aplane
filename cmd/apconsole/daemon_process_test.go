@@ -7,10 +7,32 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestResolveDaemonIPCPathForLifecycleSkipsAttachOnlyValidation(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, ".prod"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inStorePath := filepath.Join(dataDir, "run", "aplane.sock")
+
+	got, err := resolveDaemonIPCPathForLifecycle(dataDir, inStorePath, false)
+	if err != nil {
+		t.Fatalf("attach-only resolution error = %v, want nil", err)
+	}
+	if got != "" {
+		t.Fatalf("attach-only daemon path = %q, want empty", got)
+	}
+
+	if _, err := resolveDaemonIPCPathForLifecycle(dataDir, inStorePath, true); err == nil ||
+		!strings.Contains(err.Error(), "must be outside signer data directory") {
+		t.Fatalf("managed-start resolution error = %v, want in-store rejection", err)
+	}
+}
 
 func TestPrepareDaemonProcessDisabled(t *testing.T) {
 	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/override.sock", "/tmp/configured.sock", false, daemonTestDeps())

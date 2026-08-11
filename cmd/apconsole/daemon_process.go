@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/adminipc"
 )
 
 type daemonStatus string
@@ -102,6 +104,14 @@ func defaultDaemonDeps() daemonDeps {
 
 func prepareDaemonProcess(dataDir, ipcPath, daemonIPCPath string, start bool) (*daemonProcess, daemonInfo) {
 	return prepareDaemonProcessWithDeps(dataDir, ipcPath, daemonIPCPath, start, defaultDaemonDeps())
+}
+
+func resolveDaemonIPCPathForLifecycle(dataDir, configuredPath string, start bool) (string, error) {
+	if !start {
+		return "", nil
+	}
+	path, _, err := adminipc.ResolveDaemonPathForDataDir(dataDir, configuredPath)
+	return path, err
 }
 
 func prepareDaemonProcessWithDeps(dataDir, ipcPath, daemonIPCPath string, start bool, deps daemonDeps) (*daemonProcess, daemonInfo) {

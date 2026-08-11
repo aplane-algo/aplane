@@ -168,7 +168,7 @@ func main() {
 		logErrorf("%v", err)
 		os.Exit(1)
 	}
-	daemonIPCPath, _, err := adminipc.ResolveDaemonPathForDataDir(startup.DataDir, startup.Config.IPCPath)
+	daemonIPCPath, err := resolveDaemonIPCPathForLifecycle(startup.DataDir, startup.Config.IPCPath, !*noStartDaemon)
 	if err != nil {
 		logErrorf("cannot resolve daemon IPC path: %v", err)
 		os.Exit(1)
