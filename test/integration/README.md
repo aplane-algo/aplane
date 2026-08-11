@@ -49,8 +49,8 @@ APLANE_INTEGRATION_NETWORK=testnet make integration-test
 APLANE_INTEGRATION_NETWORK=localnet make integration-test
 
 # Focused native Falcon FNet acceptance
-APLANE_INTEGRATION_NETWORK=fnet make integration-test \
-  INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run TestNativeFalconFNet'
+APLANE_FNET_FALCON_MNEMONIC_FILE="$PWD/temp/HXK6I7UPOE7H2CPXV52QVN7OYURJ355YSRWZKJGA7I4LNGE3633LTESHZQ.txt" \
+  make native-falcon-fnet-test
 
 # Faster reuse path: keep the existing fixture and .env.test as-is
 make integration-test-reuse

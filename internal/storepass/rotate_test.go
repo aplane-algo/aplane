@@ -7,20 +7,27 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha512"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/algorand/falcon"
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signing"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	"github.com/aplane-algo/aplane/internal/signing/falcon1024/signerops"
+	nativefalconsignerreg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
@@ -176,6 +183,97 @@ func TestRotatePreservesCanonicalKeyPayloadBytes(t *testing.T) {
 	defer crypto.ZeroBytes(rotatedPayload)
 	if !bytes.Equal(rotatedPayload, keyJSON) {
 		t.Fatalf("rotated plaintext payload changed\nbefore:\n%s\nafter:\n%s", keyJSON, rotatedPayload)
+	}
+}
+
+func TestRotatePreservesNativeFalconAddressAndSigning(t *testing.T) {
+	nativefalconsignerreg.RegisterKeyValidator()
+	paths := storepaths.NewPaths(t.TempDir())
+	genstoretest.MintFirst(t, paths, "default")
+	identityID := "default"
+	oldPassphrase := []byte("native-falcon-old-passphrase")
+	newPassphrase := []byte("native-falcon-new-passphrase")
+
+	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+
+	entropy := bytes.Repeat([]byte{0x5a}, nativefalcon.RecoveryEntropySize)
+	seedInput := append([]byte("PQK"+nativefalcon.Scheme), entropy...)
+	workingSeed := sha512.Sum512_256(seedInput)
+	crypto.ZeroBytes(seedInput)
+	crypto.ZeroBytes(entropy)
+	publicKey, privateKey, err := falcon.GenerateKey(workingSeed[:])
+	crypto.ZeroBytes(workingSeed[:])
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	defer crypto.ZeroBytes(privateKey[:])
+	salt, address, err := nativefalcon.CanonicalAddress(publicKey[:])
+	if err != nil {
+		t.Fatalf("CanonicalAddress() error = %v", err)
+	}
+	payload := apkeys.NewNativeFalconPayload(publicKey[:], privateKey[:], salt)
+	payload.CreatedAt = time.Unix(1700000000, 0).UTC()
+	defer payload.ZeroSecrets()
+	keyJSON, err := apkeys.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload() error = %v", err)
+	}
+	defer crypto.ZeroBytes(keyJSON)
+
+	keyPath := apkeys.AccountKeyFilePath(paths, identityID, address.String())
+	writeEncryptedForRotateTest(t, keyPath, keyJSON, oldMasterKeyRing)
+	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
+	if _, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), newPassphrase)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore() error = %v", err)
+	}
+	defer kr.Zero()
+	rotatedJSON, err := decryptForRotateTest(t, keyPath, kr)
+	if err != nil {
+		t.Fatalf("decrypt rotated native Falcon payload: %v", err)
+	}
+	defer crypto.ZeroBytes(rotatedJSON)
+	if !bytes.Equal(rotatedJSON, keyJSON) {
+		t.Fatal("native Falcon payload changed during passphrase rotation")
+	}
+
+	rotated, err := apkeys.ParsePayload(rotatedJSON)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
+	}
+	defer rotated.ZeroSecrets()
+	selector, err := rotated.Selector()
+	if err != nil || selector != address.String() {
+		t.Fatalf("rotated Selector() = %q, %v; want %s", selector, err, address)
+	}
+	provider := &nativefalconsignerreg.Provider{}
+	material, err := provider.LoadKeyMaterial(signing.ProviderKey{
+		Type:       rotated.KeyType,
+		PrivateKey: rotated.PrivateKey,
+	})
+	if err != nil {
+		t.Fatalf("LoadKeyMaterial() error = %v", err)
+	}
+	defer provider.ZeroKey(material)
+	material.Category = rotated.Category
+	material.PQScheme = rotated.PQScheme
+	material.PQAddressSalt = rotated.PQAddressSalt
+	material.PublicKey = append([]byte(nil), rotated.PublicKey...)
+	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: address}}
+	signed, err := provider.AuthorizeTransaction(material, txn, address)
+	if err != nil {
+		t.Fatalf("AuthorizeTransaction() error = %v", err)
+	}
+	if err := signerops.ValidateTransaction(signed, txn, address); err != nil {
+		t.Fatalf("ValidateTransaction() error = %v", err)
 	}
 }
 

@@ -301,7 +301,7 @@ file containing the disposable funded account's 25-word mnemonic:
 ```bash
 APLANE_INTEGRATION_NETWORK=fnet \
 APLANE_FNET_FALCON_MNEMONIC_FILE="$PWD/temp/HXK6I7UPOE7H2CPXV52QVN7OYURJ355YSRWZKJGA7I4LNGE3633LTESHZQ.txt" \
-make integration-test INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run TestNativeFalconFNet'
+make native-falcon-fnet-test
 ```
 
 This creates `/tmp/aplane-test-env/` containing:
