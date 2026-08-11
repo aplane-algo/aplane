@@ -81,6 +81,18 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 			}},
 		})
 	})
+	mux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+		var req signerapi.GroupSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		transactions := make([]string, len(req.Requests))
+		for i, request := range req.Requests {
+			transactions[i] = request.TxnBytesHex
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: transactions})
+	})
 	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, r *http.Request) {
 		var req signerapi.ComponentSignRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

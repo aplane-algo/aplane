@@ -126,7 +126,7 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		guardedTargetsByIndex[target.Index] = target
 	}
 
-	plannedTxns, dummyTxns, err := s.planGuardedGroup(txns, targets, w)
+	plannedTxns, dummyTxns, err := s.planGuardedGroupWithSigner(opts.Ctx, txns, targets, opts, w)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -216,6 +216,60 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	}
 	writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
 	return txIDs, submittedTxns, nil
+}
+
+// planGuardedGroupWithSigner makes the signer-side consensus planner the sole
+// authority for dummy membership, fee factors, and final group IDs. Guarded
+// positions are sign-mode here because /plan never signs or prompts; this lets
+// the signer use its exact stored path profile instead of trusting a client
+// approximation. The component-signing choreography begins only after these
+// returned bytes are frozen.
+func (s *Signer) planGuardedGroupWithSigner(ctx context.Context, txns []types.Transaction, targets []guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
+	targetsByIndex := make(map[int]guardedTarget, len(targets))
+	for _, target := range targets {
+		targetsByIndex[target.Index] = target
+	}
+	requests := make([]signerapi.SignRequest, len(txns))
+	for i, txn := range txns {
+		authorizer := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
+		if target, ok := targetsByIndex[i]; ok {
+			authorizer = target.Account
+		}
+		requests[i] = signerapi.SignRequest{
+			AuthAddress: authorizer,
+			TxnSender:   txn.Sender.String(),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
+		}
+		if i < len(opts.LsigArgsMap) && opts.LsigArgsMap[i] != nil {
+			requests[i].LsigArgs = make(map[string]string, len(opts.LsigArgsMap[i]))
+			for name, value := range opts.LsigArgsMap[i] {
+				requests[i].LsigArgs[name] = hex.EncodeToString(value)
+			}
+		}
+		if i < len(opts.AppCallInfo) {
+			requests[i].AppCallInfo = opts.AppCallInfo[i]
+		}
+	}
+	response, err := s.conn.RequestGroupPlanWithContext(ctx, requests)
+	if err != nil {
+		return nil, nil, fmt.Errorf("guarded group planning failed: %w", err)
+	}
+	group, err := canonical.DecodeGroupHex(response.Transactions)
+	if err != nil {
+		return nil, nil, fmt.Errorf("signer returned invalid guarded group plan: %w", err)
+	}
+	planned := make([]types.Transaction, len(group.Entries))
+	for i, entry := range group.Entries {
+		planned[i] = entry.Txn
+	}
+	if err := validateBoundedComponentPlan(txns, planned, response.Mutations); err != nil {
+		return nil, nil, fmt.Errorf("invalid guarded group plan: %w", err)
+	}
+	dummies := append([]types.Transaction(nil), planned[len(txns):]...)
+	if len(dummies) > 0 && w != nil {
+		_, _ = fmt.Fprintf(w, "[GUARDED] Signer added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", len(dummies))
+	}
+	return planned, dummies, nil
 }
 
 func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targets []guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
