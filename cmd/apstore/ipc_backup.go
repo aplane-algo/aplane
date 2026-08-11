@@ -549,50 +549,75 @@ func cmdBackupExport(name, destinationDir string) error {
 	if info.Checksum != "" && checksum != info.Checksum {
 		return codedError{code: "verification_failed", message: fmt.Sprintf("exported backup checksum mismatch: got %s, want %s", checksum, info.Checksum)}
 	}
-	if err := publishBackupExportNoReplace(tmpPath, destination); err != nil {
+	publication, err := publishBackupExportNoReplace(tmpPath, destination)
+	if err != nil {
 		return err
 	}
-	if err := fsutil.SyncDir(destinationDir); err != nil {
-		return err
+	if err := syncBackupExportDirectory(destinationDir); err != nil {
+		publication.Warnings = append(publication.Warnings, fmt.Sprintf("destination directory durability could not be confirmed: %v", err))
+	}
+	for _, warning := range publication.Warnings {
+		logWarnf("backup export warning: %s", warning)
 	}
 	logInfof("backup exported: %s", destination)
 	logInfof("checksum: %s", checksum)
 	return nil
 }
 
-func publishBackupExportNoReplace(tmpPath, destination string) error {
-	return publishBackupExportNoReplaceWith(tmpPath, destination, renameBackupExportNoReplace)
+type backupExportPublication struct {
+	Warnings []string
 }
 
-func publishBackupExportNoReplaceWith(tmpPath, destination string, renameNoReplace func(string, string) error) error {
+var syncBackupExportDirectory = fsutil.SyncDir
+
+func publishBackupExportNoReplace(tmpPath, destination string) (backupExportPublication, error) {
+	return publishBackupExportNoReplaceWith(
+		tmpPath,
+		destination,
+		renameBackupExportNoReplace,
+		os.Link,
+		os.Remove,
+	)
+}
+
+func publishBackupExportNoReplaceWith(
+	tmpPath, destination string,
+	renameNoReplace func(string, string) error,
+	link func(string, string) error,
+	remove func(string) error,
+) (backupExportPublication, error) {
 	err := renameNoReplace(tmpPath, destination)
 	if err == nil {
-		return nil
+		return backupExportPublication{}, nil
 	}
 	if errors.Is(err, os.ErrExist) {
-		return fmt.Errorf("backup export destination already exists: %s", destination)
+		return backupExportPublication{}, fmt.Errorf("backup export destination already exists: %s", destination)
 	}
 	if !backupExportNoReplaceUnsupported(err) {
-		return fmt.Errorf("publish backup export: %w", err)
+		return backupExportPublication{}, fmt.Errorf("publish backup export: %w", err)
 	}
 
 	// The staging file is created in the destination directory, so a hard link
 	// provides an atomic no-replace fallback without a cross-filesystem case.
 	// Do not fall back to Lstat followed by Rename: that would reintroduce the
 	// overwrite race this publication boundary exists to prevent.
-	if linkErr := os.Link(tmpPath, destination); linkErr != nil {
+	if linkErr := link(tmpPath, destination); linkErr != nil {
 		if errors.Is(linkErr, os.ErrExist) {
-			return fmt.Errorf("backup export destination already exists: %s", destination)
+			return backupExportPublication{}, fmt.Errorf("backup export destination already exists: %s", destination)
 		}
-		return fmt.Errorf(
+		return backupExportPublication{}, fmt.Errorf(
 			"publish backup export: destination filesystem supports neither no-replace rename nor hard-link publication: %w",
 			linkErr,
 		)
 	}
-	if removeErr := os.Remove(tmpPath); removeErr != nil {
-		return fmt.Errorf("backup export published but failed to remove staging file %s: %w", tmpPath, removeErr)
+	publication := backupExportPublication{}
+	if removeErr := remove(tmpPath); removeErr != nil {
+		publication.Warnings = append(
+			publication.Warnings,
+			fmt.Sprintf("export is committed, but staging file %s could not be removed: %v", tmpPath, removeErr),
+		)
 	}
-	return nil
+	return publication, nil
 }
 
 func cmdBackupDelete(name string) error {
