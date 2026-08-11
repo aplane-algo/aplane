@@ -2620,7 +2620,11 @@ if [ -n "$SUDO_USER" ]; then
     APCLIENT_DIR="${APCLIENT_DIR:-$OPERATOR_ROOT/apclient}"
     ENV_SH="$OPERATOR_ROOT/apenv.sh"
     SIGNER_IPC_PATH="$("$BINDIR/approbe" signer-ipc-path -d "$DATA_DIR")"
+    BINDIR_SHELL="$(shell_quote "$BINDIR")"
+    OPERATOR_ROOT_SHELL="$(shell_quote "$OPERATOR_ROOT")"
+    DATA_DIR_SHELL="$(shell_quote "$DATA_DIR")"
     SIGNER_IPC_PATH_SHELL="$(shell_quote "$SIGNER_IPC_PATH")"
+    APCLIENT_DIR_SHELL="$(shell_quote "$APCLIENT_DIR")"
     echo ""
     echo "Writing $ENV_SH..."
     cat > "$ENV_SH" <<ENVEOF
@@ -2649,14 +2653,14 @@ _aplane_prepend_path() {
     PATH="\$add"
   fi
 }
-_aplane_prepend_path "$BINDIR"
+_aplane_prepend_path $BINDIR_SHELL
 export PATH
 unset -f _aplane_prepend_path
-export APLANE_INSTALL_ROOT="$OPERATOR_ROOT"
-export APLANE_BINDIR="$BINDIR"
-export APSIGNER_DATA="$DATA_DIR"
+export APLANE_INSTALL_ROOT=$OPERATOR_ROOT_SHELL
+export APLANE_BINDIR=$BINDIR_SHELL
+export APSIGNER_DATA=$DATA_DIR_SHELL
 export APSIGNER_IPC_PATH=$SIGNER_IPC_PATH_SHELL
-export APCLIENT_DATA="$APCLIENT_DIR"
+export APCLIENT_DATA=$APCLIENT_DIR_SHELL
 ENVEOF
     bash -n "$ENV_SH"
     chown "$SUDO_USER" "$ENV_SH"
@@ -2729,7 +2733,8 @@ echo "  apadmin"
 echo ""
 echo "Start a new shell, or run:"
 echo "  source $(shell_quote "${ENV_SH:-~/aplane/apenv.sh}")"
-echo "If apadmin cannot connect to /run/apsigner/aplane.sock, refresh your login session for $SVC_GROUP group access."
+RESOLVED_SIGNER_IPC_PATH="$("$BINDIR/approbe" signer-ipc-path -d "$DATA_DIR")"
+echo "If apadmin cannot connect to $RESOLVED_SIGNER_IPC_PATH, refresh your login session for $SVC_GROUP group access."
 echo ""
 echo "The systemd uninstaller is available at:"
 echo "  $DATA_DIR/install/uninstall.sh"

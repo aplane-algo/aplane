@@ -51,8 +51,9 @@ identities/<identity>/policy.yaml.hmac
 ```
 
 The HMAC covers the exact YAML bytes for the document and uses a key derived
-from the identity's current term key. Sidecar metadata such as signing time, policy
-SHA-256, and file mtime is diagnostic; the HMAC is the security check. After
+from the identity's current term key. Sidecar metadata such as signing time,
+policy SHA-256, and legacy file mtime is diagnostic; current writers omit the
+mtime and the HMAC is the security check. After
 the signed baseline exists, a missing or mismatched sidecar fails closed
 instead of loading defaults. On reload failure, the previous in-memory policy
 remains active.

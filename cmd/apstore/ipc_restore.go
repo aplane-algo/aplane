@@ -186,12 +186,12 @@ func renderRestorePreviewResult(result protocol.RestorePreviewMessage) error {
 }
 
 func promptPassphrase(prompt string) ([]byte, error) {
-	fmt.Print(prompt)
+	_, _ = fmt.Fprint(backupPassphrasePromptOutput, prompt)
 	passphrase, err := readPassword()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read passphrase: %w", err)
 	}
-	fmt.Println()
+	_, _ = fmt.Fprintln(backupPassphrasePromptOutput)
 	if len(passphrase) == 0 {
 		return nil, fmt.Errorf("passphrase cannot be empty")
 	}

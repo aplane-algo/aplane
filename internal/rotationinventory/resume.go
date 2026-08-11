@@ -253,7 +253,7 @@ func resumePolicySidecar(
 			state.ToTerm,
 		)
 	}
-	target, err := policy.SignPolicyIntegrity(documentBytes, kr, time.Now(), 0)
+	target, err := policy.SignPolicyIntegrity(documentBytes, kr, time.Now())
 	if err != nil {
 		return fmt.Errorf("resume rotation sign policy sidecar: %w", err)
 	}

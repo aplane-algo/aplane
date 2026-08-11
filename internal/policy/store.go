@@ -120,7 +120,7 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *cry
 	}
 
 	sidecarPath := PolicyIntegritySidecarPath(path)
-	sidecar, err := SignPolicyIntegrity(policyBytes, kr, signedAt, 0)
+	sidecar, err := SignPolicyIntegrity(policyBytes, kr, signedAt)
 	if err != nil {
 		return err
 	}
@@ -185,11 +185,7 @@ func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt tim
 	if _, err := parser(data); err != nil {
 		return fmt.Errorf("failed to parse %s: %w", configLabel, err)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("failed to stat %s: %w", configLabel, err)
-	}
-	sidecar, err := SignPolicyIntegrity(data, kr, signedAt, info.ModTime().UnixNano())
+	sidecar, err := SignPolicyIntegrity(data, kr, signedAt)
 	if err != nil {
 		return err
 	}

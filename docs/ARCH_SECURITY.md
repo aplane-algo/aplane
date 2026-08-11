@@ -932,7 +932,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 
 **Round-trip verification (`write`):**
 
-`WritePassphrase` sends the passphrase on stdin, captures the read-back from stdout, and compares using `subtle.ConstantTimeCompare`. A mismatch aborts the operation. For `changepass`, the current passphrase is always entered manually even when a helper is configured for startup auto-unlock. A helper write failure triggers a full rollback (restoring `.old` files) — the keystore is never left in a state where the keys and the stored passphrase disagree during normal error handling.
+`WritePassphrase` sends the passphrase on stdin, captures the read-back from stdout, and compares using `subtle.ConstantTimeCompare`. A mismatch aborts the operation. For `changepass`, the current passphrase is always entered manually even when a helper is configured for startup auto-unlock. Key re-encryption is authoritative once committed; a later helper-write failure is reported as a warning and requires the operator to repair auto-unlock using the new passphrase.
 
 **Security properties:**
 

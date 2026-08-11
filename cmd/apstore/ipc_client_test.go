@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -44,6 +45,37 @@ func TestAdminPassphrasePromptDoesNotWriteStdout(t *testing.T) {
 	}
 	if string(passphrase) != "secret" {
 		t.Fatalf("passphrase = %q", passphrase)
+	}
+}
+
+func TestBackupPassphrasePromptsDoNotWriteStdout(t *testing.T) {
+	originalOutput := backupPassphrasePromptOutput
+	t.Cleanup(func() { backupPassphrasePromptOutput = originalOutput })
+	var prompt bytes.Buffer
+	backupPassphrasePromptOutput = &prompt
+	t.Setenv("APSIGNER_PASSPHRASE", "export-secret")
+
+	stdout, err := withCapturedStdout(func() error {
+		confirmed, readErr := promptConfirmedPassphrase("Enter export: ", "Confirm export: ")
+		if readErr != nil {
+			return readErr
+		}
+		defer crypto.ZeroBytes(confirmed)
+		plain, readErr := promptPassphrase("Enter restore: ")
+		if readErr != nil {
+			return readErr
+		}
+		crypto.ZeroBytes(plain)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want machine-readable stream untouched", stdout)
+	}
+	if got := prompt.String(); got != "Enter export: \nConfirm export: \nEnter restore: \n" {
+		t.Fatalf("prompt output = %q", got)
 	}
 }
 

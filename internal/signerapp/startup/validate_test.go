@@ -155,17 +155,20 @@ func TestValidateProductionStorePermissionsReturnsManualAncestorRepairHint(t *te
 		return os.Geteuid(), os.Getegid(), nil
 	}
 	unsafeAncestor := filepath.Dir(dataDir)
-	auditPrivateStore = func(storeperm.AuditOptions) ([]storeperm.Finding, error) {
-		return []storeperm.Finding{{
-			Path: unsafeAncestor, Code: "ancestor-write", Detail: "store ancestor is group/other writable",
-		}}, nil
-	}
-
-	err := ValidateProductionStorePermissions(dataDir)
-	if err == nil || !strings.Contains(err.Error(), unsafeAncestor) ||
-		!strings.Contains(err.Error(), "permissions migrate cannot repair") ||
-		!strings.Contains(err.Error(), "permissions audit") {
-		t.Fatalf("ValidateProductionStorePermissions() error = %v, want manual ancestor repair guidance", err)
+	for _, code := range []string{"ancestor-write", "ancestor-owner", "ancestor-type"} {
+		t.Run(code, func(t *testing.T) {
+			auditPrivateStore = func(storeperm.AuditOptions) ([]storeperm.Finding, error) {
+				return []storeperm.Finding{{
+					Path: unsafeAncestor, Code: code, Detail: "unsafe store ancestor",
+				}}, nil
+			}
+			err := ValidateProductionStorePermissions(dataDir)
+			if err == nil || !strings.Contains(err.Error(), unsafeAncestor) ||
+				!strings.Contains(err.Error(), "permissions migrate cannot repair") ||
+				!strings.Contains(err.Error(), "permissions audit") {
+				t.Fatalf("ValidateProductionStorePermissions() error = %v, want manual ancestor repair guidance", err)
+			}
+		})
 	}
 }
 

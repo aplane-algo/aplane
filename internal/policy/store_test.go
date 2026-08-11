@@ -234,7 +234,7 @@ func TestLoadVerifiedStoredConfigRejectsMalformedSignedPolicy(t *testing.T) {
 	if err := os.WriteFile(path, policyBytes, 0o600); err != nil {
 		t.Fatalf("WriteFile(policy) error = %v", err)
 	}
-	sidecar, err := SignPolicyIntegrity(policyBytes, key, time.Time{}, 0)
+	sidecar, err := SignPolicyIntegrity(policyBytes, key, time.Time{})
 	if err != nil {
 		t.Fatalf("SignPolicyIntegrity() error = %v", err)
 	}

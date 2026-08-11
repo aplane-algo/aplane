@@ -32,6 +32,7 @@ type apstoreAdminClient struct {
 }
 
 var adminPassphrasePromptOutput io.Writer = os.Stderr
+var backupPassphrasePromptOutput io.Writer = os.Stderr
 var readAdminPassphrase = readPassword
 
 type apstoreAdminRequester interface {
@@ -435,12 +436,12 @@ func cmdBackupImport(args []string) error {
 
 func readBackupImportPassphrase() ([]byte, error) {
 	logInfof("daemon validation requires the export passphrase")
-	fmt.Print("Enter export passphrase: ")
+	_, _ = fmt.Fprint(backupPassphrasePromptOutput, "Enter export passphrase: ")
 	exportPassphrase, err := readPromptedPassword()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read export passphrase: %w", err)
 	}
-	fmt.Println()
+	_, _ = fmt.Fprintln(backupPassphrasePromptOutput)
 	if len(exportPassphrase) == 0 {
 		return nil, fmt.Errorf("export passphrase cannot be empty")
 	}
@@ -652,23 +653,23 @@ func findManagedBackupWithClient(client apstoreAdminRequester, name string) (pro
 }
 
 func promptConfirmedPassphrase(prompt, confirmPrompt string) ([]byte, error) {
-	fmt.Print(prompt)
+	_, _ = fmt.Fprint(backupPassphrasePromptOutput, prompt)
 	passphrase, err := readPassword()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read passphrase: %w", err)
 	}
-	fmt.Println()
+	_, _ = fmt.Fprintln(backupPassphrasePromptOutput)
 	if len(passphrase) == 0 {
 		return nil, fmt.Errorf("passphrase cannot be empty")
 	}
-	fmt.Print(confirmPrompt)
+	_, _ = fmt.Fprint(backupPassphrasePromptOutput, confirmPrompt)
 	confirm, err := readPassword()
 	if err != nil {
 		crypto.ZeroBytes(passphrase)
 		return nil, fmt.Errorf("failed to read confirmation: %w", err)
 	}
 	defer crypto.ZeroBytes(confirm)
-	fmt.Println()
+	_, _ = fmt.Fprintln(backupPassphrasePromptOutput)
 	if string(passphrase) != string(confirm) {
 		crypto.ZeroBytes(passphrase)
 		return nil, fmt.Errorf("passphrases do not match")

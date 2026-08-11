@@ -96,7 +96,7 @@ func ValidateProductionStorePermissions(dataDir string) error {
 	}
 	if len(findings) != 0 {
 		for _, finding := range findings {
-			if finding.Code == "ancestor-write" || finding.Code == "ancestor-type" {
+			if finding.Code == "ancestor-write" || finding.Code == "ancestor-owner" || finding.Code == "ancestor-type" {
 				return fmt.Errorf(
 					"unsafe signer-store ancestor: %s; permissions migrate cannot repair paths outside %s; stop apsigner, repair the reported ancestor, then run 'sudo apstore -d %s permissions audit'",
 					finding.Error(), dataDir, dataDir,

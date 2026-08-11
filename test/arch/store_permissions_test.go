@@ -154,7 +154,12 @@ func TestGeneratedEnvironmentPreservesConfiguredIPCPath(t *testing.T) {
 	installer := readTextFile(t, filepath.Join(root, "install.sh"))
 	for _, required := range []string{
 		`SIGNER_IPC_PATH="$("$BINDIR/approbe" signer-ipc-path -d "$DATA_DIR")"`,
+		`export APLANE_INSTALL_ROOT=$OPERATOR_ROOT_SHELL`,
+		`export APLANE_BINDIR=$BINDIR_SHELL`,
+		`export APSIGNER_DATA=$DATA_DIR_SHELL`,
 		`export APSIGNER_IPC_PATH=$SIGNER_IPC_PATH_SHELL`,
+		`export APCLIENT_DATA=$APCLIENT_DIR_SHELL`,
+		`RESOLVED_SIGNER_IPC_PATH="$("$BINDIR/approbe" signer-ipc-path -d "$DATA_DIR")"`,
 	} {
 		if !strings.Contains(installer, required) {
 			t.Errorf("install.sh is missing generated IPC-path contract %q", required)

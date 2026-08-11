@@ -4,6 +4,7 @@
 package policy
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -17,7 +18,7 @@ import (
 func TestPolicyIntegrityRoundTrip(t *testing.T) {
 	key := policyIntegrityTestKey(t)
 	policyBytes := []byte("reject_foreign_rekey: true\n")
-	sidecar, err := SignPolicyIntegrity(policyBytes, key, time.Unix(1700000000, 0), 123)
+	sidecar, err := SignPolicyIntegrity(policyBytes, key, time.Unix(1700000000, 0))
 	if err != nil {
 		t.Fatalf("SignPolicyIntegrity() error = %v", err)
 	}
@@ -45,6 +46,9 @@ func TestPolicyIntegrityRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalPolicyIntegritySidecar() error = %v", err)
 	}
+	if bytes.Contains(encoded, []byte("policy_mtime_ns")) {
+		t.Fatalf("new sidecar contains legacy policy_mtime_ns: %s", encoded)
+	}
 	parsed, err := ParsePolicyIntegritySidecar(encoded)
 	if err != nil {
 		t.Fatalf("ParsePolicyIntegritySidecar() error = %v", err)
@@ -56,7 +60,7 @@ func TestPolicyIntegrityRoundTrip(t *testing.T) {
 
 func TestPolicyIntegrityRejectsPolicyByteChange(t *testing.T) {
 	key := policyIntegrityTestKey(t)
-	sidecar, err := SignPolicyIntegrity([]byte("reject_foreign_rekey: true\n"), key, time.Time{}, 0)
+	sidecar, err := SignPolicyIntegrity([]byte("reject_foreign_rekey: true\n"), key, time.Time{})
 	if err != nil {
 		t.Fatalf("SignPolicyIntegrity() error = %v", err)
 	}
@@ -73,7 +77,7 @@ func TestPolicyIntegrityRejectsPolicyByteChange(t *testing.T) {
 func TestPolicyIntegrityDiagnosticFieldsAreNotTrusted(t *testing.T) {
 	key := policyIntegrityTestKey(t)
 	policyBytes := []byte("max_fee_microalgos: 1000\n")
-	sidecar, err := SignPolicyIntegrity(policyBytes, key, time.Unix(1700000000, 0), 123)
+	sidecar, err := SignPolicyIntegrity(policyBytes, key, time.Unix(1700000000, 0))
 	if err != nil {
 		t.Fatalf("SignPolicyIntegrity() error = %v", err)
 	}
@@ -89,7 +93,7 @@ func TestPolicyIntegrityDiagnosticFieldsAreNotTrusted(t *testing.T) {
 func TestPolicyIntegrityRejectsUnsupportedSecurityFields(t *testing.T) {
 	key := policyIntegrityTestKey(t)
 	policyBytes := []byte("{}\n")
-	base, err := SignPolicyIntegrity(policyBytes, key, time.Time{}, 0)
+	base, err := SignPolicyIntegrity(policyBytes, key, time.Time{})
 	if err != nil {
 		t.Fatalf("SignPolicyIntegrity() error = %v", err)
 	}
@@ -116,7 +120,7 @@ func TestPolicyIntegrityRejectsUnsupportedSecurityFields(t *testing.T) {
 
 func TestPolicyIntegrityRejectsBadSidecarHMAC(t *testing.T) {
 	key := policyIntegrityTestKey(t)
-	sidecar, err := SignPolicyIntegrity([]byte("{}\n"), key, time.Time{}, 0)
+	sidecar, err := SignPolicyIntegrity([]byte("{}\n"), key, time.Time{})
 	if err != nil {
 		t.Fatalf("SignPolicyIntegrity() error = %v", err)
 	}
@@ -130,7 +134,7 @@ func TestPolicyIntegrityRejectsBadSidecarHMAC(t *testing.T) {
 
 func TestPolicyIntegrityRejectsUnauthorizedTerm(t *testing.T) {
 	kr := policyIntegrityTestKey(t)
-	sidecar, err := SignPolicyIntegrity([]byte("{}\n"), kr, time.Time{}, 0)
+	sidecar, err := SignPolicyIntegrity([]byte("{}\n"), kr, time.Time{})
 	if err != nil {
 		t.Fatalf("SignPolicyIntegrity() error = %v", err)
 	}
@@ -153,7 +157,7 @@ func TestPolicyIntegritySidecarParsingIsStrict(t *testing.T) {
 }
 
 func TestPolicyIntegrityRejectsMissingKeyring(t *testing.T) {
-	_, err := SignPolicyIntegrity([]byte("{}\n"), nil, time.Time{}, 0)
+	_, err := SignPolicyIntegrity([]byte("{}\n"), nil, time.Time{})
 	if !errors.Is(err, ErrPolicyIntegrityBadSidecar) {
 		t.Fatalf("SignPolicyIntegrity() error = %v, want ErrPolicyIntegrityBadSidecar", err)
 	}
@@ -174,7 +178,7 @@ func TestLoadPolicyIntegritySidecarMissing(t *testing.T) {
 func TestLoadPolicyIntegritySidecar(t *testing.T) {
 	key := policyIntegrityTestKey(t)
 	policyBytes := []byte("{}\n")
-	sidecar, err := SignPolicyIntegrity(policyBytes, key, time.Time{}, 0)
+	sidecar, err := SignPolicyIntegrity(policyBytes, key, time.Time{})
 	if err != nil {
 		t.Fatalf("SignPolicyIntegrity() error = %v", err)
 	}
