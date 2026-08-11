@@ -695,8 +695,9 @@ integration-test-testnet:
 integration-test-localnet:
 	@APLANE_INTEGRATION_NETWORK=localnet $(MAKE) integration-test
 
-# Focused positive acceptance for protocol-native Falcon-1024. This deliberately
-# omits the unrelated SDK integration pass run by the broad integration target.
+# Focused positive acceptance for protocol-native Falcon-1024 and v42 LogicSig
+# resource planning. This deliberately omits the unrelated SDK integration pass
+# run by the broad integration target.
 native-falcon-fnet-test:
 	@echo "Running native Falcon FNet acceptance tests..."
 	@APLANE_INTEGRATION_NETWORK=fnet ./test/setup-test-env.sh

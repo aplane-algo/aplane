@@ -241,6 +241,131 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 		fundingTxIDs[0], mixedTxIDs[0], rekeyID, rekeyedSpendID, unrekeyID, closeID)
 }
 
+func TestNativeFalconFNetLogicSigPlanning(t *testing.T) {
+	if harness.IntegrationNetwork() != harness.IntegrationNetworkFNet {
+		t.Skip("set APLANE_INTEGRATION_NETWORK=fnet to run v42 LogicSig acceptance")
+	}
+	harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{})
+	network, err := harness.NewTestnetConfig()
+	if err != nil {
+		t.Fatalf("validate FNet network profile: %v", err)
+	}
+
+	signerd := harness.NewSignerHarness(t)
+	if err := signerd.Start(); err != nil {
+		t.Fatalf("start signer: %v", err)
+	}
+	t.Cleanup(func() { _ = signerd.Stop() })
+	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
+	t.Cleanup(apadmin.Cleanup)
+
+	rootAddress, err := apadmin.ImportKeyWithTypeAndParams(
+		nativefalcon.KeyType,
+		readFNetFalconMnemonic(t),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("import native Falcon FNet root: %v", err)
+	}
+	lsigAddress, err := apadmin.GenerateKeyWithType("aplane.falcon1024.v1")
+	if err != nil {
+		t.Fatalf("generate v13 Falcon LogicSig account: %v", err)
+	}
+	token := readSignerToken(t, signerd)
+	if !waitForKey(t, signerd.GetURL(), token, rootAddress, 10*time.Second) ||
+		!waitForKey(t, signerd.GetURL(), token, lsigAddress, 10*time.Second) {
+		t.Fatal("signer did not publish FNet root and LogicSig keys")
+	}
+
+	sp, err := network.GetSuggestedParams()
+	if err != nil {
+		t.Fatalf("get FNet suggested params: %v", err)
+	}
+	funding, err := transaction.MakePaymentTxn(
+		rootAddress,
+		lsigAddress,
+		300_000,
+		[]byte("aplane-v42-lsig-funding"),
+		"",
+		sp,
+	)
+	if err != nil {
+		t.Fatalf("build LogicSig funding transaction: %v", err)
+	}
+	fundingResponse := signFNetGroup(t, signerd.GetURL(), token, []signerapi.SignRequest{
+		nativeFNetSignRequest(rootAddress, funding),
+	})
+	fundingIDs := submitSignedTxnGroup(t, network, fundingResponse.Signed)
+	if _, err := network.WaitForConfirmation(fundingIDs[0], 10); err != nil {
+		t.Fatalf("LogicSig funding did not confirm: %v", err)
+	}
+
+	sp, err = network.GetSuggestedParams()
+	if err != nil {
+		t.Fatalf("refresh FNet suggested params: %v", err)
+	}
+	closeTxn, err := transaction.MakePaymentTxn(
+		lsigAddress,
+		rootAddress,
+		0,
+		nil,
+		rootAddress,
+		sp,
+	)
+	if err != nil {
+		t.Fatalf("build LogicSig close transaction: %v", err)
+	}
+	response := signFNetGroup(t, signerd.GetURL(), token, []signerapi.SignRequest{
+		nativeFNetSignRequest(lsigAddress, closeTxn),
+	})
+	if len(response.Signed) != 2 {
+		t.Fatalf("v42 Falcon LogicSig group has %d transactions, want 2", len(response.Signed))
+	}
+	if response.Mutations == nil || response.Mutations.DummiesAdded != 1 {
+		t.Fatalf("v42 Falcon LogicSig mutations = %#v, want one argument/opcode dummy", response.Mutations)
+	}
+
+	signed := decodeSignedTxnHex(t, response.Signed[0])
+	dummy := decodeSignedTxnHex(t, response.Signed[1])
+	if len(signed.Lsig.Logic) == 0 || signed.Lsig.Logic[0] != 13 {
+		t.Fatalf("Falcon LogicSig program is not TEAL v13: %x", signed.Lsig.Logic)
+	}
+	if len(signed.Lsig.Args) != 1 || len(signed.Lsig.Args[0]) == 0 || len(signed.Lsig.Args[0]) > 1_423 {
+		t.Fatalf("Falcon LogicSig argument layout = %d args/%d bytes", len(signed.Lsig.Args), firstArgLength(signed))
+	}
+	if len(dummy.Lsig.Logic) == 0 || len(dummy.Lsig.Args) != 0 {
+		t.Fatal("signer-appended v42 dummy has the wrong LogicSig envelope")
+	}
+	chargedProgramBytes := len(signed.Lsig.Logic) + len(dummy.Lsig.Logic) - 2_000
+	if chargedProgramBytes < 0 {
+		chargedProgramBytes = 0
+	}
+	requiredFee := uint64(2_000 + (chargedProgramBytes+9)/10)
+	paidFee := uint64(signed.Txn.Fee) + uint64(dummy.Txn.Fee)
+	if paidFee != requiredFee {
+		t.Fatalf("v42 LogicSig group fee = %d, want exact %d for %d charged program bytes",
+			paidFee, requiredFee, chargedProgramBytes)
+	}
+	if signed.Txn.Group == (types.Digest{}) || signed.Txn.Group != dummy.Txn.Group {
+		t.Fatal("v42 LogicSig transaction and dummy do not share a final group ID")
+	}
+
+	txids := submitSignedTxnGroup(t, network, response.Signed)
+	if _, err := network.WaitForConfirmation(txids[0], 10); err != nil {
+		t.Fatalf("v42 Falcon LogicSig group did not confirm: %v", err)
+	}
+	t.Logf("confirmed v42 Falcon LogicSig group on FNet: txid=%s group=%d dummies=%d arg_bytes=%d charged_program_bytes=%d fee=%d",
+		txids[0], len(response.Signed), response.Mutations.DummiesAdded,
+		len(signed.Lsig.Args[0]), chargedProgramBytes, paidFee)
+}
+
+func firstArgLength(signed types.SignedTxn) int {
+	if len(signed.Lsig.Args) == 0 {
+		return 0
+	}
+	return len(signed.Lsig.Args[0])
+}
+
 func nativeFNetSignRequest(authorizer string, txn types.Transaction) signerapi.SignRequest {
 	return signerapi.SignRequest{
 		AuthAddress: authorizer,

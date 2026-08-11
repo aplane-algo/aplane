@@ -26,9 +26,9 @@ same `TEST_FUNDING_MNEMONIC` contract used by the tests:
 APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
 ```
 
-Native Falcon-1024 positive acceptance runs on FNet, whose fnet5 consensus
-token enables the v42 feature set. Keep the disposable funded mnemonic in an
-ignored mode-0600 file:
+Native Falcon-1024 and v42 LogicSig resource-planning acceptance run on FNet,
+whose fnet5 consensus token enables the v42 feature set. Keep the disposable
+funded mnemonic in an ignored mode-0600 file:
 
 ```bash
 export APLANE_INTEGRATION_NETWORK=fnet
@@ -48,7 +48,7 @@ APLANE_INTEGRATION_NETWORK=testnet make integration-test
 # LocalNet run against an already running AlgoKit LocalNet
 APLANE_INTEGRATION_NETWORK=localnet make integration-test
 
-# Focused native Falcon FNet acceptance
+# Focused native Falcon and v42 LogicSig FNet acceptance
 APLANE_FNET_FALCON_MNEMONIC_FILE="$PWD/temp/HXK6I7UPOE7H2CPXV52QVN7OYURJ355YSRWZKJGA7I4LNGE3633LTESHZQ.txt" \
   make native-falcon-fnet-test
 
