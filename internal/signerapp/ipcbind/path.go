@@ -10,6 +10,10 @@ import (
 	"syscall"
 )
 
+// portableUnixSocketPathMaxBytes fits Darwin's 104-byte sockaddr_un.sun_path
+// including its terminating NUL, and is therefore also safe on Linux.
+const portableUnixSocketPathMaxBytes = 103
+
 // ValidateBindPath checks whether socketPath is safe to remove and bind.
 func ValidateBindPath(socketPath string) error {
 	_, err := ResolveBindPath(socketPath)
@@ -25,6 +29,9 @@ func ResolveBindPath(socketPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve IPC socket path: %w", err)
 	}
+	if err := validateSocketPathLength(absSocket); err != nil {
+		return "", err
+	}
 	originalParent := filepath.Dir(absSocket)
 	resolvedParent, err := filepath.EvalSymlinks(originalParent)
 	if err != nil {
@@ -35,6 +42,9 @@ func ResolveBindPath(socketPath string) (string, error) {
 		return "", fmt.Errorf("resolve canonical IPC socket directory: %w", err)
 	}
 	resolvedSocket := filepath.Join(resolvedParent, filepath.Base(absSocket))
+	if err := validateSocketPathLength(resolvedSocket); err != nil {
+		return "", err
+	}
 
 	if err := validateSocketPath(resolvedSocket); err != nil {
 		return "", err
@@ -49,6 +59,14 @@ func ResolveBindPath(socketPath string) (string, error) {
 		}
 	}
 	return resolvedSocket, nil
+}
+
+func validateSocketPathLength(socketPath string) error {
+	if len([]byte(socketPath)) > portableUnixSocketPathMaxBytes {
+		return fmt.Errorf("IPC socket path is too long (%d bytes; portable maximum is %d): %s",
+			len([]byte(socketPath)), portableUnixSocketPathMaxBytes, socketPath)
+	}
+	return nil
 }
 
 // validateSocketPath checks for symlink attacks and ownership issues.

@@ -146,6 +146,17 @@ func TestResolveClientPathExplicitAndEnvironment(t *testing.T) {
 	}
 }
 
+func TestResolveClientPathRejectsRelativeOverrides(t *testing.T) {
+	if _, err := ResolveClientPath(ClientPathRequest{IPCPath: "run/aplane.sock"}); err == nil || !strings.Contains(err.Error(), "--ipc-path must be an absolute") {
+		t.Fatalf("ResolveClientPath(relative explicit path) error = %v", err)
+	}
+
+	t.Setenv(SocketPathEnv, "run/aplane.sock")
+	if _, err := ResolveClientPath(ClientPathRequest{}); err == nil || !strings.Contains(err.Error(), SocketPathEnv+" must be an absolute") {
+		t.Fatalf("ResolveClientPath(relative environment path) error = %v", err)
+	}
+}
+
 func TestResolveClientPathReadsLegacyConfig(t *testing.T) {
 	t.Setenv(SocketPathEnv, "")
 	dataDir := t.TempDir()

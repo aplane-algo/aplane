@@ -42,6 +42,14 @@ func TestValidateBindPathRejectsTmpDirectory(t *testing.T) {
 	}
 }
 
+func TestResolveBindPathRejectsNonportableSocketPathLength(t *testing.T) {
+	path := string(filepath.Separator) + strings.Repeat("a", portableUnixSocketPathMaxBytes)
+	_, err := ResolveBindPath(path)
+	if err == nil || !strings.Contains(err.Error(), "IPC socket path is too long") {
+		t.Fatalf("ResolveBindPath(long path) error = %v, want portable-length rejection", err)
+	}
+}
+
 func TestValidateBindPathAllowsPrivateDirectoryBelowTmp(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Chmod(root, 0o700); err != nil {

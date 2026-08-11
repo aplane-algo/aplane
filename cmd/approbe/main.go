@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -65,6 +66,9 @@ func runSignerIPCPath(args []string, stdout, stderr io.Writer) int {
 		writeln(stderr, "Usage: approbe signer-ipc-path -d <signer-data-dir> [--honor-ipc-env]")
 	}
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return exitRunning
+		}
 		return exitUnknown
 	}
 	if fs.NArg() != 0 {
@@ -111,6 +115,9 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 		writeln(stderr, "Usage: approbe signer-running -d <signer-data-dir> [--quiet] [--timeout 300ms]")
 	}
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return exitRunning
+		}
 		return exitUnknown
 	}
 	if fs.NArg() != 0 {

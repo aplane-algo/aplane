@@ -129,7 +129,7 @@ type ClientPathRequest struct {
 // established system runtime path.
 func ResolveClientPath(request ClientPathRequest) (string, error) {
 	if request.IPCPath != "" {
-		return filepath.Clean(request.IPCPath), nil
+		return resolveClientSocketOverride("--ipc-path", request.IPCPath)
 	}
 	if request.DataDirExplicit && request.DataDir != "" {
 		path, resolved, err := resolveDataDirectoryPath(request.DataDir)
@@ -142,7 +142,7 @@ func ResolveClientPath(request ClientPathRequest) (string, error) {
 		return resolveSystemRuntimePath()
 	}
 	if fromEnv := os.Getenv(SocketPathEnv); fromEnv != "" {
-		return filepath.Clean(fromEnv), nil
+		return resolveClientSocketOverride(SocketPathEnv, fromEnv)
 	}
 	if request.DataDir != "" {
 		path, resolved, err := resolveDataDirectoryPath(request.DataDir)
@@ -154,6 +154,14 @@ func ResolveClientPath(request ClientPathRequest) (string, error) {
 		}
 	}
 	return resolveSystemRuntimePath()
+}
+
+func resolveClientSocketOverride(source, path string) (string, error) {
+	cleaned := filepath.Clean(path)
+	if !filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("%s must be an absolute IPC socket path: %s", source, path)
+	}
+	return cleaned, nil
 }
 
 func resolveSystemRuntimePath() (string, error) {

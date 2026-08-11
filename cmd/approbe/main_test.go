@@ -122,6 +122,20 @@ func TestRunSignerIPCPathRequiresExplicitDataDir(t *testing.T) {
 	}
 }
 
+func TestSubcommandHelpExitsSuccessfully(t *testing.T) {
+	for _, command := range []string{"signer-ipc-path", "signer-running"} {
+		t.Run(command, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if code := run([]string{command, "-h"}, &stdout, &stderr); code != exitRunning {
+				t.Fatalf("exit = %d, want %d; stderr=%q", code, exitRunning, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "Usage:") {
+				t.Fatalf("stderr = %q, want usage", stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunSignerIPCPathMirrorsManagedDaemonResolution(t *testing.T) {
 	externalRoot := t.TempDir()
 	tests := []struct {
