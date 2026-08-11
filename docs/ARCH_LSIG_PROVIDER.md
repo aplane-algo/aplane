@@ -443,7 +443,7 @@ semantics.
 
 **Note**: Falcon-1024 verification uses the native `falcon_verify` opcode (TEAL v12+), which takes:
 1. Message (32 bytes) - the transaction ID
-2. Signature (variable, typically ~1230–1280 bytes) - Falcon-1024 compressed signature
+2. Signature (variable, at most 1,423 bytes) - deterministic compressed Falcon-1024 signature
 3. Public key (1793 bytes) - Falcon-1024 public key
 
 ## Template Systems

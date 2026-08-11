@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 )
 
@@ -54,8 +55,8 @@ func TestFalcon1024V1DSAMetadata(t *testing.T) {
 		t.Fatal("aplane.falcon1024.v1 not registered")
 	}
 
-	if dsa.CryptoSignatureSize() != 1280 {
-		t.Errorf("CryptoSignatureSize = %d, want %d", dsa.CryptoSignatureSize(), 1280)
+	if dsa.CryptoSignatureSize() != family.MaxSignatureSize {
+		t.Errorf("CryptoSignatureSize = %d, want %d", dsa.CryptoSignatureSize(), family.MaxSignatureSize)
 	}
 	sp, ok := p.(lsigprovider.SigningProvider)
 	if !ok {

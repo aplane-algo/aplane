@@ -195,7 +195,7 @@ u32(admin_operation_count) ||
 field(kind) || field(authorization) || field(policy_gate) per admin operation in rekey order ||
 u32(sentry_present) ||
 if present: field("sentry1") || field("aplane.witness-falcon1024.v1") ||
-u32(1280) || u32(1) || field("spend") ||
+u32(1423) || u32(1) || field("spend") ||
 field(layer3_policy) ||
 u32(base_signature_arg_count) || u32(each base maximum) ||
 u32(derived_arg_count) || field/name/kind/parameter/maximum records ||
@@ -223,7 +223,8 @@ runtime values do not. A sentry-enabled profile does include its injected
 path masks are part of the canonical profile above.
 
 The sole bounded1 contract admin primitive is Falcon-1024. Its public key is
-exactly 1,793 bytes and its signature is non-empty and at most 1,280 bytes. The
+exactly 1,793 bytes and its deterministic compressed signature is non-empty
+and at most 1,423 bytes. The
 `contract_admin_key_id` field carries the uppercase unpadded base32 Witness Key
 ID of the enrolled admin witness:
 
@@ -287,10 +288,10 @@ Contract Admin Key ID:
 MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
-23aebf3166f64d6a0e6467d0fde647191094907f733c60fb946129d7cc828509
+bddc0ee16bac8ebad4519c1f138bbfc87e94817fc1d68119f310567fb98e5001
 
 admin_message:
-324dfa8eee495b7f4ddaa67f640c906184beb49abfd304d1336be233e84998b6
+dc6c476953d76d3fcea7ace82ef90624b170fa6aed699988d381ce790a613ce1
 ```
 
 Argument slots are statically ordered as base signatures, signer-derived Layer

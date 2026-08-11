@@ -166,7 +166,7 @@ Box names also accept `<app-id>:<name>`.
 | Category | What signs | Signature lands in |
 |----------|-----------|--------------------|
 | **Native Ed25519** (`ed25519`) | the key signs the full transaction | `SignedTxn.Sig` (64 bytes) |
-| **DSA-backed LogicSig** (`dsa_lsig`) | a crypto key signs, wrapped in a LogicSig | `LogicSig.Args[0]` (Falcon ≈ 1280 bytes) |
+| **DSA-backed LogicSig** (`dsa_lsig`) | a crypto key signs, wrapped in a LogicSig | `LogicSig.Args[0]` (Falcon variable, at most 1,423 bytes) |
 | **Generic LogicSig** (`generic_lsig`) | TEAL logic only — **no key, no signature** | args filled from the key file's stored schema |
 
 Every account key type except native `ed25519` is LogicSig-backed. Witness keys

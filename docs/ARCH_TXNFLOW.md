@@ -75,7 +75,7 @@ signature = falcon.Sign(privateKey, messageBytes)
 On-chain TEAL verification:
 ```teal
 txn TxID          // Push transaction ID (32 bytes)
-arg 0             // Push signature (1280 bytes)
+arg 0             // Push signature (variable, at most 1,423 bytes)
 byte 0x<pubkey>   // Push public key (1793 bytes)
 falcon_verify     // Verify: returns 1 if valid
 ```
@@ -86,7 +86,7 @@ falcon_verify     // Verify: returns 1 if valid
 
 - **Ed25519**: Signs full message for SDK compatibility. The Algorand SDK expects signatures over `"TX"` + msgpack.
 - **Falcon-1024**: Signs the transaction ID (32 bytes) because:
-  1. Falcon signatures are large (1280 bytes)—signing a 32-byte transaction ID is more efficient than signing the full preimage
+  1. Falcon signatures are large (up to 1,423 bytes)—signing a 32-byte transaction ID is more efficient than signing the full preimage
   2. TEAL provides `txn TxID` opcode for verification
   3. Because the transaction ID is itself derived from the canonical Algorand transaction encoding, signing the txid still commits to the full transaction contents
 
@@ -616,7 +616,7 @@ Server receives: { auth_address, txn_bytes_hex }
 | Aspect | Value |
 |--------|-------|
 | Message signed | 32-byte transaction ID |
-| Signature size | ~1280 bytes (Falcon-1024) |
+| Signature size | variable, at most 1,423 bytes (Falcon-1024) |
 | Signature location | `LogicSig.Args[0]` |
 | TEAL verifier | Embedded in `LogicSig.Logic` |
 
@@ -687,7 +687,7 @@ The live template is not consulted at sign time.
 
 ## Dummy Transactions and Fee Pooling
 
-Post-quantum signatures (e.g., Falcon ~1280 bytes) exceed Algorand's 1000-byte LogicSig budget per transaction. The server automatically adds dummy transactions to provide additional budget.
+Post-quantum signatures (e.g., Falcon up to 1,423 bytes) exceed Algorand's 1,000-byte LogicSig argument allowance per transaction. The server automatically adds dummy transactions when the active consensus resource rules require them.
 
 ### How It Works
 
@@ -702,10 +702,11 @@ Post-quantum signatures (e.g., Falcon ~1280 bytes) exceed Algorand's 1000-byte L
 
 ### Example
 
-For 1 Falcon transaction (1280-byte signature):
-- Budget needed: 1280 bytes
+For one Falcon transaction planned at the 1,423-byte signature ceiling under
+the legacy combined-size rule:
+- Signature budget needed: 1,423 bytes
 - Budget per txn: 1000 bytes
-- Dummies needed: `ceil(1280/1000) - 1 = 1`
+- Dummies needed from the signature alone: `ceil(1423/1000) - 1 = 1`
 
 The server returns 2 signed transactions: the main transaction + 1 dummy.
 
@@ -903,7 +904,7 @@ ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
 | Aspect | Ed25519 | LogicSig DSA | Generic LogicSig |
 |--------|---------|--------------|------------------|
 | **What server signs** | Full txn bytes | 32-byte transaction ID | N/A |
-| **Signature size** | 64 bytes | ~1280 bytes (Falcon) | N/A |
+| **Signature size** | 64 bytes | variable, at most 1,423 bytes (Falcon) | N/A |
 | **Needs dummies** | No | Yes (if sig > 1000 bytes) | No |
 | **Runtime args** | No | Optional for composed DSA | Optional |
 | **Authorization** | Signature verification | TEAL verifies sig | TEAL logic only |

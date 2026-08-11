@@ -67,7 +67,7 @@ is a complete value-spending policy.
 | Admin policy gate | `none` or `layer3`; admin-key authorization requires `none` |
 | Contract admin primitive | Falcon-1024 only |
 | Contract admin public key | exactly 1,793 bytes |
-| Contract admin signature | non-empty, at most 1,280 bytes |
+| Contract admin signature | non-empty, at most 1,423 bytes |
 | Maximum compiled `max_fee` | 10,000 microAlgos |
 | Layer-3 arguments | declared static runtime and signer-derived slots |
 | Signer-derived primitive | fixed-depth Merkle allowlist proof (512 bytes) |
@@ -255,7 +255,7 @@ canonical_bounded_profile =
     field(operation_0.policy_gate) || ... ||
   u32(sentry_present) ||
     if present: field("sentry1") ||
-      field("aplane.witness-falcon1024.v1") || u32(1280) ||
+      field("aplane.witness-falcon1024.v1") || u32(1423) ||
       u32(1) || field("spend") ||
   field(layer3_policy) ||
   u32(base_signature_arg_count) || u32(base_arg_0_max) || ... ||
@@ -365,7 +365,7 @@ runtime_args: []
 argument_layout:
   - {index: 0, name: base_signature_0, source: base_signature, max_size: 4,
      paths: {spend: required, spending_rekey: required, admin_rekey: required}}
-  - {index: 1, name: admin_signature, source: admin, max_size: 1280,
+  - {index: 1, name: admin_signature, source: admin, max_size: 1423,
      paths: {spend: forbidden, spending_rekey: forbidden, admin_rekey: required}}
 behavior parameter recipients (address[]): one 32-byte value of 0x33
 transaction_id: 32 bytes of 0x44
@@ -384,7 +384,7 @@ canonical_bounded_profile_hex:
   10626173655f7369676e61747572655f300000000e626173655f7369676e6174
   7572650000000400000008726571756972656400000008726571756972656400
   0000087265717569726564000000010000000f61646d696e5f7369676e617475
-  72650000000561646d696e0000050000000009666f7262696464656e00000009
+  72650000000561646d696e0000058f00000009666f7262696464656e00000009
   666f7262696464656e000000087265717569726564
 
 canonical_behavior_parameters_length: 116
@@ -398,10 +398,10 @@ contract_admin_key_id:
   MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
-  23aebf3166f64d6a0e6467d0fde647191094907f733c60fb946129d7cc828509
+  bddc0ee16bac8ebad4519c1f138bbfc87e94817fc1d68119f310567fb98e5001
 
 admin_message:
-  324dfa8eee495b7f4ddaa67f640c906184beb49abfd304d1336be233e84998b6
+  dc6c476953d76d3fcea7ace82ef90624b170fa6aed699988d381ce790a613ce1
 ```
 
 Whitespace and line wrapping above are presentation only. Code tests decode
@@ -437,10 +437,10 @@ frozen argument layout is:
 
 | Index | Name | Source | Max bytes | Spend | Spending rekey | Admin rekey |
 |---:|---|---|---:|---|---|---|
-| 0 | `base_signature_0` | `base_signature` | 1280 | `required` | `required` | `required` |
+| 0 | `base_signature_0` | `base_signature` | 1423 | `required` | `required` | `required` |
 | 1 | `merkle_proof` | `derived` | 512 | `optional` | `forbidden` | `forbidden` |
-| 2 | `sentry_signature` | `sentry` | 1280 | `required` | `forbidden` | `forbidden` |
-| 3 | `admin_signature` | `admin` | 1280 | `forbidden` | `forbidden` | `required` |
+| 2 | `sentry_signature` | `sentry` | 1423 | `required` | `forbidden` | `forbidden` |
+| 3 | `admin_signature` | `admin` | 1423 | `forbidden` | `forbidden` | `required` |
 
 Expected canonical encodings:
 
@@ -452,19 +452,19 @@ corridor_canonical_bounded_profile_hex:
   0c61737365745f6f70745f696e0000000000002710000000010000000572656b
   65790000000961646d696e5f6b6579000000046e6f6e65000000010000000773
   656e747279310000001c61706c616e652e7769746e6573732d66616c636f6e31
-  3032342e76310000050000000001000000057370656e64000000106d65726b6c
-  655f616c6c6f776c6973740000000100000500000000010000000c6d65726b6c
+  3032342e76310000058f00000001000000057370656e64000000106d65726b6c
+  655f616c6c6f776c697374000000010000058f000000010000000c6d65726b6c
   655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f70726f6f
   660000000a726563697069656e74730000020000000000000000040000000000
   000010626173655f7369676e61747572655f300000000e626173655f7369676e
-  6174757265000005000000000872657175697265640000000872657175697265
+  61747572650000058f0000000872657175697265640000000872657175697265
   64000000087265717569726564000000010000000c6d65726b6c655f70726f6f
   66000000076465726976656400000200000000086f7074696f6e616c00000009
   666f7262696464656e00000009666f7262696464656e00000002000000107365
-  6e7472795f7369676e61747572650000000673656e7472790000050000000008
+  6e7472795f7369676e61747572650000000673656e7472790000058f00000008
   726571756972656400000009666f7262696464656e00000009666f7262696464
   656e000000030000000f61646d696e5f7369676e61747572650000000561646d
-  696e0000050000000009666f7262696464656e00000009666f7262696464656e
+  696e0000058f00000009666f7262696464656e00000009666f7262696464656e
   000000087265717569726564
 
 corridor_canonical_behavior_parameters_length: 1979
@@ -567,10 +567,10 @@ corridor_merkle_proof_hex:
   48c12a8dd675e9dcd3c63141fbfde6d11056c392b4379c3bbdc79a8511d0e65b
 
 corridor_bounded_program_binding:
-  4da9e512e48629601b5065850ef7514023251363d4664cfe9b941a108c6dd837
+  7bb8609d66e2eb10af283b15c1b4b409a02498ce5a02c693b073c9cbffd9c0f7
 
 corridor_admin_message:
-  f4ff0b4c08ca085cea41db660f91952225428f474f169ad2cf3ebfcdbf14073e
+  e9e0a641e1cb1aee5f4c23e24d5489bf3dbbca5fc3cc7eaf0827a2d9764cec41
 ```
 
 Whitespace and line wrapping are presentation only.

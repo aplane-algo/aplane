@@ -13,6 +13,7 @@ import (
 
 	"github.com/algorand/falcon"
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
+	"github.com/aplane-algo/aplane/internal/falconparams"
 )
 
 // VerifyFalcon1024 verifies a user-role Falcon-1024 component signature.
@@ -32,12 +33,7 @@ func VerifyFalcon1024(publicKey, message, signature []byte) error {
 	return nil
 }
 
-// Falcon-1024 sizes are fixed by the algorithm specification; they are
-// declared as literals so this package's only falcon dependencies are the
-// upstream implementation libraries, not the aplane lsig family tree
-// (verify_consistency_test.go cross-checks them against
-// lsig/falcon1024/family).
 const (
-	falcon1024PublicKeySize    = 1793
-	falcon1024MaxSignatureSize = 1280
+	falcon1024PublicKeySize    = falconparams.PublicKeySize
+	falcon1024MaxSignatureSize = falconparams.CompressedSignatureMaxSize
 )

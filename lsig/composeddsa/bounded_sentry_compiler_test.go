@@ -100,16 +100,16 @@ teal: |
 		t.Fatalf("Validate(compiled bounded sentry) error = %v", err)
 	}
 	hash := sha256.Sum256([]byte(teal))
-	if got, want := hex.EncodeToString(hash[:]), "7a22f2f695612ff7a1b26b722f2726ab35ff1340d5c81046681de4306d72e11c"; got != want {
+	if got, want := hex.EncodeToString(hash[:]), "b1240515d2e62ba74d772e42486af984ff65d7e55523e6e7090a96135e1c7f5c"; got != want {
 		t.Fatalf("TEAL SHA-256 = %s, want %s", got, want)
 	}
 	if got, want := len(bytecode), 5_673; got != want {
 		t.Fatalf("compiled bytecode size = %d, want %d; TEAL SHA-256 %x", got, want, hash)
 	}
-	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathSpend), 8_233; got != want {
+	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathSpend), 8_519; got != want {
 		t.Fatalf("spend LogicSig size = %d, want %d", got, want)
 	}
-	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathAdminRekey), 8_233; got != want {
+	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathAdminRekey), 8_519; got != want {
 		t.Fatalf("admin-rekey LogicSig size = %d, want %d", got, want)
 	}
 }

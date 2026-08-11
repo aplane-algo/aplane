@@ -55,7 +55,7 @@ type testFalcon1024V1 struct{}
 func (f *testFalcon1024V1) KeyType() string          { return "aplane.falcon1024.v1" }
 func (f *testFalcon1024V1) RoutingFamily() string    { return "falcon1024" }
 func (f *testFalcon1024V1) Version() int             { return 1 }
-func (f *testFalcon1024V1) CryptoSignatureSize() int { return 1280 }
+func (f *testFalcon1024V1) CryptoSignatureSize() int { return family.MaxSignatureSize }
 func (f *testFalcon1024V1) MnemonicScheme() string   { return "bip39" }
 func (f *testFalcon1024V1) MnemonicWordCount() int   { return 24 }
 func (f *testFalcon1024V1) DisplayColor() string     { return "33" }
@@ -164,14 +164,14 @@ func (*boundedGeneratorTestDSA) BaseKeyType() string   { return "aplane.falcon10
 func (*boundedGeneratorTestDSA) BuildBoundedAuthorizationMetadata(_ []byte, _ map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
 	return &boundedmeta.Metadata{
 		Contract:                boundedmeta.ContractV1,
-		BaseSignatureArgLayout:  boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, false),
+		BaseSignatureArgLayout:  boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}},
+		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}, false),
 		SpendEffects:            []string{"pay"},
 		MaxFee:                  1_000,
 		AdminOperations:         []boundedmeta.AdminOperation{},
 		RuntimeArgs:             []boundedmeta.RuntimeArg{},
 		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
-		PostSigningLogicSigSize: len(bytecode) + 1280,
+		PostSigningLogicSigSize: len(bytecode) + family.MaxSignatureSize,
 	}, nil
 }
 
@@ -312,7 +312,7 @@ func TestGenerateFromSeedPersistsBoundedMetadataAfterDerivation(t *testing.T) {
 	if payload.SigningMetadataVersion != apkeys.BoundedSigningMetadataVersion || payload.BoundedAuthorization == nil {
 		t.Fatalf("bounded authorization metadata = %#v", payload.BoundedAuthorization)
 	}
-	if got, want := payload.BoundedAuthorization.PostSigningLogicSigSize, len(payload.LogicSigBytecode)+1280; got != want {
+	if got, want := payload.BoundedAuthorization.PostSigningLogicSigSize, len(payload.LogicSigBytecode)+family.MaxSignatureSize; got != want {
 		t.Fatalf("PostSigningLogicSigSize = %d, want %d", got, want)
 	}
 }

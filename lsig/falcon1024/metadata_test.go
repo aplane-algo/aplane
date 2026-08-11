@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
 func TestFalconMetadata(t *testing.T) {
@@ -20,7 +21,7 @@ func TestFalconMetadata(t *testing.T) {
 
 	t.Run("CryptoSignatureSize", func(t *testing.T) {
 		// Max Falcon-1024 signature size (matches LogicSigDSA)
-		expectedSize := 1280
+		expectedSize := family.MaxSignatureSize
 		if m.CryptoSignatureSize() != expectedSize {
 			t.Errorf("CryptoSignatureSize() = %v, want %d", m.CryptoSignatureSize(), expectedSize)
 		}

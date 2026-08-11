@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	sentrymessage "github.com/aplane-algo/aplane/internal/sentry/message"
 )
 
@@ -201,7 +202,7 @@ func testExpectedProgramWithOptions(t *testing.T, adminArgIndex int, withSentry 
 	b.op(0x44)
 	b.arg(adminArgIndex)
 	b.op(0x15)
-	b.pushInt(1280)
+	b.pushInt(uint64(boundedmeta.FalconAdminSignatureSize))
 	b.op(0x0e)
 	b.op(0x44)
 	b.pushBytes(prefix)
@@ -224,7 +225,7 @@ func testExpectedProgramWithOptions(t *testing.T, adminArgIndex int, withSentry 
 		b.op(0x44)
 		b.arg(sentryArgIndex)
 		b.op(0x15)
-		b.pushInt(1280)
+		b.pushInt(uint64(boundedmeta.SentrySignatureMaxSizeV1))
 		b.op(0x0e)
 		b.op(0x44)
 		b.pushBytes([]byte(sentrymessage.DomainTagV1))

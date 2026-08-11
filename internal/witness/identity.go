@@ -12,6 +12,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/falconparams"
 )
 
 const (
@@ -20,9 +22,9 @@ const (
 	// admin; one keypair must never serve both roles.
 	Falcon1024V1 = "aplane.witness-falcon1024.v1"
 
-	Falcon1024PublicKeySize  = 1793
-	Falcon1024PrivateKeySize = 2305
-	Falcon1024SignatureSize  = 1280
+	Falcon1024PublicKeySize  = falconparams.PublicKeySize
+	Falcon1024PrivateKeySize = falconparams.PrivateKeySize
+	Falcon1024SignatureSize  = falconparams.CompressedSignatureMaxSize
 
 	IDLength = 52
 	idDomain = "APLANE_WITNESS_KEY_ID_V1"

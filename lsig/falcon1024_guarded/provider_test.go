@@ -113,6 +113,32 @@ func TestBuildArgsUnpacksComponentSignatures(t *testing.T) {
 	}
 }
 
+func TestComponentSignaturePackingUsesCompressedMaximum(t *testing.T) {
+	for _, size := range []int{1281, family.MaxSignatureSize} {
+		userSig := bytes.Repeat([]byte{0x11}, size)
+		sentrySig := bytes.Repeat([]byte{0x22}, size)
+		packed, err := PackComponentSignatures(userSig, sentrySig)
+		if err != nil {
+			t.Fatalf("PackComponentSignatures(%d) error = %v", size, err)
+		}
+		gotUser, gotSentry, err := UnpackComponentSignaturesForKeyType(KeyTypeV1, packed)
+		if err != nil {
+			t.Fatalf("UnpackComponentSignaturesForKeyType(%d) error = %v", size, err)
+		}
+		if !bytes.Equal(gotUser, userSig) || !bytes.Equal(gotSentry, sentrySig) {
+			t.Fatalf("signature round trip at %d bytes did not preserve components", size)
+		}
+	}
+
+	tooLarge := bytes.Repeat([]byte{0x33}, family.MaxSignatureSize+1)
+	if _, err := PackComponentSignatures(tooLarge, []byte{1}); err == nil {
+		t.Fatalf("PackComponentSignatures accepted %d-byte user signature", len(tooLarge))
+	}
+	if _, err := PackComponentSignatures([]byte{1}, tooLarge); err == nil {
+		t.Fatalf("PackComponentSignatures accepted %d-byte sentry signature", len(tooLarge))
+	}
+}
+
 func TestBuildArgsRejectsMalformedSignatureBlob(t *testing.T) {
 	p := NewProviderV1()
 	_, err := p.BuildArgs([]byte{0, 1, 2}, nil)

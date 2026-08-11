@@ -70,19 +70,19 @@ func TestCorridorGoldenVector(t *testing.T) {
 		"0c61737365745f6f70745f696e0000000000002710000000010000000572656b" +
 		"65790000000961646d696e5f6b6579000000046e6f6e65000000010000000773" +
 		"656e747279310000001c61706c616e652e7769746e6573732d66616c636f6e31" +
-		"3032342e76310000050000000001000000057370656e64000000106d65726b6c" +
-		"655f616c6c6f776c6973740000000100000500000000010000000c6d65726b6c" +
+		"3032342e76310000058f00000001000000057370656e64000000106d65726b6c" +
+		"655f616c6c6f776c697374000000010000058f000000010000000c6d65726b6c" +
 		"655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f70726f6f" +
 		"660000000a726563697069656e74730000020000000000000000040000000000" +
 		"000010626173655f7369676e61747572655f300000000e626173655f7369676e" +
-		"6174757265000005000000000872657175697265640000000872657175697265" +
+		"61747572650000058f0000000872657175697265640000000872657175697265" +
 		"64000000087265717569726564000000010000000c6d65726b6c655f70726f6f" +
 		"66000000076465726976656400000200000000086f7074696f6e616c00000009" +
 		"666f7262696464656e00000009666f7262696464656e00000002000000107365" +
-		"6e7472795f7369676e61747572650000000673656e7472790000050000000008" +
+		"6e7472795f7369676e61747572650000000673656e7472790000058f00000008" +
 		"726571756972656400000009666f7262696464656e00000009666f7262696464" +
 		"656e000000030000000f61646d696e5f7369676e61747572650000000561646d" +
-		"696e0000050000000009666f7262696464656e00000009666f7262696464656e" +
+		"696e0000058f00000009666f7262696464656e00000009666f7262696464656e" +
 		"000000087265717569726564"
 	if got := hex.EncodeToString(profileEncoding); got != wantProfile {
 		t.Fatalf("canonical profile = %s, want %s", got, wantProfile)
@@ -106,7 +106,7 @@ func TestCorridorGoldenVector(t *testing.T) {
 
 	wantSlots := []boundedmeta.ArgumentSlot{
 		{
-			Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 1280,
+			Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: falconfamily.MaxSignatureSize,
 			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired},
 		},
 		{
@@ -114,11 +114,11 @@ func TestCorridorGoldenVector(t *testing.T) {
 			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
 		},
 		{
-			Index: 2, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry, MaxSize: 1280,
+			Index: 2, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry, MaxSize: falconfamily.MaxSignatureSize,
 			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
 		},
 		{
-			Index: 3, Name: "admin_signature", Source: boundedmeta.ArgSourceAdmin, MaxSize: 1280,
+			Index: 3, Name: "admin_signature", Source: boundedmeta.ArgSourceAdmin, MaxSize: falconfamily.MaxSignatureSize,
 			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgRequired},
 		},
 	}
@@ -130,8 +130,8 @@ func TestCorridorGoldenVector(t *testing.T) {
 		wantSentryKeyID = "MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ"
 		wantAdminKeyID  = "WCM6OW66SGGHSCTSAYDHOUGOPEXJLK2YPFQVUSWX6UASKCWRC4DQ"
 		wantRoot        = "ea4421efa4bc1d9d5bfaf9d578e25655591bd27af8658bf94eee1687ec9c5d8d"
-		wantBinding     = "4da9e512e48629601b5065850ef7514023251363d4664cfe9b941a108c6dd837"
-		wantAdminMsg    = "f4ff0b4c08ca085cea41db660f91952225428f474f169ad2cf3ebfcdbf14073e"
+		wantBinding     = "7bb8609d66e2eb10af283b15c1b4b409a02498ce5a02c693b073c9cbffd9c0f7"
+		wantAdminMsg    = "e9e0a641e1cb1aee5f4c23e24d5489bf3dbbca5fc3cc7eaf0827a2d9764cec41"
 	)
 	if metadata.Sentry == nil || metadata.Sentry.ComponentKeyID != wantSentryKeyID {
 		t.Fatalf("sentry key ID = %#v, want %s", metadata.Sentry, wantSentryKeyID)
@@ -259,10 +259,10 @@ func assertCorridorGoldenDocumentation(t *testing.T, vector corridorGoldenDocume
 		}
 	}
 	for _, row := range []string{
-		"|0|base_signature_0|base_signature|1280|required|required|required|",
+		"|0|base_signature_0|base_signature|1423|required|required|required|",
 		"|1|merkle_proof|derived|512|optional|forbidden|forbidden|",
-		"|2|sentry_signature|sentry|1280|required|forbidden|forbidden|",
-		"|3|admin_signature|admin|1280|forbidden|forbidden|required|",
+		"|2|sentry_signature|sentry|1423|required|forbidden|forbidden|",
+		"|3|admin_signature|admin|1423|forbidden|forbidden|required|",
 	} {
 		if !strings.Contains(normalized, row) {
 			t.Errorf("ARCH_BOUNDED_DSA.md does not document slot row %q", row)

@@ -754,7 +754,7 @@ func TestBuildFinalGroupRejectsImplausibleMinFee(t *testing.T) {
 func TestCalculateDummies_BoundedAdminSlotTopUp(t *testing.T) {
 	const addr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	// Spend-path size that fits a single txn's budget exactly: no dummies for
-	// a spend, but the admin top-up (+1280) forces dummies for an admin rekey.
+	// a spend, but the admin signature top-up forces dummies for an admin rekey.
 	deps := stubPlannerDeps{
 		keyTypes:  map[string]string{addr: "aplane.falcon1024-bounded.v1"},
 		lsigSizes: map[string]int{addr: coresigning.TxLsigBudget},
