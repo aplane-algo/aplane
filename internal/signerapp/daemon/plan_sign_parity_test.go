@@ -486,11 +486,11 @@ func TestPlanAndSignAgreeOnDummyAndFeeMutationsForSingleFalconGroup(t *testing.T
 	if planResp.Mutations.DummiesAdded <= 0 {
 		t.Fatalf("/plan mutations dummies_added = %#v, want > 0", planResp.Mutations)
 	}
-	if !reflect.DeepEqual(planResp.Mutations.FeesModified, []int{0}) {
-		t.Fatalf("/plan fees_modified = %#v, want [0]", planResp.Mutations.FeesModified)
+	if len(planResp.Mutations.FeesModified) != 0 {
+		t.Fatalf("/plan fees_modified = %#v, want none because the original fee already funds the group", planResp.Mutations.FeesModified)
 	}
-	if want := planResp.Mutations.DummiesAdded * 1000; planResp.Mutations.TotalFeesDelta != want {
-		t.Fatalf("/plan total_fees_delta = %d, want %d", planResp.Mutations.TotalFeesDelta, want)
+	if planResp.Mutations.TotalFeesDelta != 0 {
+		t.Fatalf("/plan total_fees_delta = %d, want 0 from pooled overpayment", planResp.Mutations.TotalFeesDelta)
 	}
 	if planResp.Mutations.OriginalCount != 1 || planResp.Mutations.FinalCount != len(planResp.Transactions) {
 		t.Fatalf("/plan mutations counts = %#v, want original=1 final=%d", planResp.Mutations, len(planResp.Transactions))

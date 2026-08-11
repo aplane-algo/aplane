@@ -175,9 +175,18 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 
 	if isSingleTxn {
 		b.WriteString("=== SINGLE TRANSACTION ===\n\n")
-		if plan.FeeInfo.PQFeeDelta > 0 {
+		if plan.FeeInfo.TotalFees > 0 {
 			b.WriteString("[MODIFIED BY SERVER]\n")
-			b.WriteString(fmt.Sprintf("  • Native Falcon fee adjustment: +%d microAlgos\n\n", plan.FeeInfo.PQFeeDelta))
+			b.WriteString(fmt.Sprintf("  • Group fee adjustment: +%d microAlgos\n", plan.FeeInfo.TotalFees))
+		}
+		if plan.FeeInfo.ProgramFeeContribution > 0 {
+			b.WriteString(fmt.Sprintf("  • LogicSig program fee contribution: %d microAlgos (%d charged byte(s))\n", plan.FeeInfo.ProgramFeeContribution, plan.LogicSigResourcePlan.ChargedProgramBytes))
+		}
+		if plan.FeeInfo.NativePQFeeContribution > 0 {
+			b.WriteString(fmt.Sprintf("  • Native Falcon fee contribution: %d microAlgos\n", plan.FeeInfo.NativePQFeeContribution))
+		}
+		if plan.FeeInfo.TotalFees > 0 || plan.FeeInfo.ProgramFeeContribution > 0 || plan.FeeInfo.NativePQFeeContribution > 0 {
+			b.WriteString("\n")
 		}
 	} else {
 		totalTxns := len(req.Requests)
@@ -191,22 +200,22 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 		}
 		if plan.DummiesNeeded > 0 {
 			b.WriteString("[MODIFIED BY SERVER]\n")
-			b.WriteString(fmt.Sprintf("  • Added %d dummy transaction(s) for LSig budget\n", plan.DummiesNeeded))
-			if plan.FeeInfo.LSigCount > 0 {
-				b.WriteString(fmt.Sprintf("  • Fee adjustment: +%d microAlgos across %d LSig txn(s)\n", plan.FeeInfo.TotalFees, plan.FeeInfo.LSigCount))
-			} else {
-				b.WriteString(fmt.Sprintf("  • Fee adjustment: +%d microAlgos on first txn\n", plan.FeeInfo.TotalFees))
-			}
-			b.WriteString("  • Group ID recomputed\n")
+			b.WriteString(fmt.Sprintf("  • Added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded))
 		}
-		if plan.FeeInfo.PQFeeDelta > 0 {
+		if plan.FeeInfo.TotalFees > 0 {
 			if plan.DummiesNeeded == 0 {
 				b.WriteString("[MODIFIED BY SERVER]\n")
 			}
-			b.WriteString(fmt.Sprintf("  • Native Falcon fee adjustment: +%d microAlgos\n", plan.FeeInfo.PQFeeDelta))
-			if plan.DummiesNeeded == 0 && len(allTxns) > 1 {
-				b.WriteString("  • Group ID recomputed\n")
-			}
+			b.WriteString(fmt.Sprintf("  • Group fee adjustment: +%d microAlgos across transaction(s) %v\n", plan.FeeInfo.TotalFees, plan.FeeInfo.FeeIndices))
+		}
+		if plan.FeeInfo.ProgramFeeContribution > 0 {
+			b.WriteString(fmt.Sprintf("  • LogicSig program fee contribution: %d microAlgos (%d charged byte(s))\n", plan.FeeInfo.ProgramFeeContribution, plan.LogicSigResourcePlan.ChargedProgramBytes))
+		}
+		if plan.FeeInfo.NativePQFeeContribution > 0 {
+			b.WriteString(fmt.Sprintf("  • Native Falcon fee contribution: %d microAlgos\n", plan.FeeInfo.NativePQFeeContribution))
+		}
+		if (plan.DummiesNeeded > 0 || plan.FeeInfo.TotalFees > 0) && len(allTxns) > 1 {
+			b.WriteString("  • Group ID recomputed\n")
 		}
 		b.WriteString("\n")
 	}
@@ -332,6 +341,9 @@ func routingExemptIndicesForPlan(plan *PlanResult, allTxns []types.Transaction) 
 }
 
 func matchesSelfNoOpTransferPlanAutoApproval(plan *PlanResult, allTxns []types.Transaction) bool {
+	if plan.FeeInfo.ProgramFeeContribution != 0 || plan.FeeInfo.NativePQFeeContribution != 0 {
+		return false
+	}
 	dummyCount := len(plan.DummyTxns)
 	if plan.DummiesNeeded != dummyCount || len(allTxns) != 1+dummyCount {
 		return false

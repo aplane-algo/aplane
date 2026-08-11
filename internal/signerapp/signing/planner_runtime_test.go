@@ -875,10 +875,8 @@ func TestCalculateDummies_BoundedAdminSlotTopUp(t *testing.T) {
 }
 
 // TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling pins that the bounded
-// MaxFee ceiling is enforced against finalized fees: pooled dummy fees are
-// added to LogicSig slots after the sizing classification, and a plan whose
-// pooled fee crosses the ceiling must be rejected at plan time, not at
-// execution after operator approval.
+// MaxFee ceiling is enforced by the unified group-fee allocator before any
+// transaction is mutated.
 func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 	var genesisHash types.Digest
 	resolver, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{
@@ -889,7 +887,8 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 	}
 
 	authAddr := types.Address{1}.String()
-	metadata := testBoundedMetadata(t, "") // MaxFee 5000, no admin operations
+	metadata := testBoundedMetadata(t, "")
+	metadata.MaxFee = 2_000
 	metadata.PostSigningLogicSigSize = 2500
 	deps := stubPlannerDeps{
 		keyTypes: map[string]string{authAddr: "aplane.falcon1024-bounded.v1"},
@@ -925,26 +924,13 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 		}}}
 	}
 
-	// Fee 4000 passes the pre-pooling check (4000 <= 5000) but the 2000
-	// microAlgos of pooled dummy fees push the finalized fee to 6000.
-	_, planErr := planner.PlanGroup("default", makeRequest(4000))
+	// The three-member group requires 3000 microAlgos. The starting fee is
+	// valid, but the bounded account can absorb only another 1000.
+	_, planErr := planner.PlanGroup("default", makeRequest(1000))
 	if planErr == nil {
-		t.Fatal("PlanGroup() error = nil, want bounded fee ceiling rejection after dummy pooling")
+		t.Fatal("PlanGroup() error = nil, want bounded fee-capacity rejection")
 	}
-	if !strings.Contains(planErr.Message, "exceeds account maximum") {
-		t.Fatalf("PlanGroup() error = %q, want fee ceiling rejection", planErr.Message)
-	}
-
-	// Fee 1000 finalizes at 3000, within the ceiling: plan succeeds and the
-	// authoritative bounded item reflects the finalized classification.
-	plan, planErr := planner.PlanGroup("default", makeRequest(1000))
-	if planErr != nil {
-		t.Fatalf("PlanGroup() error = %v", planErr)
-	}
-	if len(plan.BoundedItems) != 1 || plan.BoundedItems[0] == nil || plan.BoundedItems[0].Path != boundedPathPureSpend {
-		t.Fatalf("BoundedItems = %+v, want one pure-spend item", plan.BoundedItems)
-	}
-	if plan.DummiesNeeded != 2 {
-		t.Fatalf("DummiesNeeded = %d, want 2", plan.DummiesNeeded)
+	if !strings.Contains(planErr.Message, "exceeds signer-controlled bounded fee capacity") {
+		t.Fatalf("PlanGroup() error = %q, want bounded fee-capacity rejection", planErr.Message)
 	}
 }

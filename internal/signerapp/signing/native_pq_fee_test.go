@@ -13,6 +13,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 )
@@ -65,10 +66,71 @@ func TestApplyNativePQFees(t *testing.T) {
 	t.Run("rejects immutable underfunding", func(t *testing.T) {
 		txns := []types.Transaction{baseTxn}
 		_, _, err := applyNativePQFees(txns, []authorizationBudget{{pqScheme: nativefalcon.Scheme}}, fnet, true)
-		if err == nil || !strings.Contains(err.Message, "immutable native PQ group") {
+		if err == nil || !strings.Contains(err.Message, "immutable group") {
 			t.Fatalf("error = %#v, want immutable fee rejection", err)
 		}
 	})
+}
+
+func TestApplyGroupFeesCombinesDummyProgramAndPQUsage(t *testing.T) {
+	fnet := PlannerNetworkParams{MinTxnFee: 1_000, ConsensusVersion: string(protocol.ConsensusVFnet5)}
+	txns := []types.Transaction{
+		{Type: types.PaymentTx, Header: types.Header{Fee: 1_000}},
+		{Type: types.PaymentTx},
+	}
+	resourcePlan := lsigresource.Plan{
+		TransactionCount:      1,
+		DummyCount:            1,
+		GroupSize:             2,
+		ChargedProgramBytes:   2_500,
+		ProgramFeeFactorUsage: 250_000,
+	}
+	info, err := applyGroupFees(
+		txns,
+		[]authorizationBudget{{pqScheme: nativefalcon.Scheme, mutable: true}},
+		fnet,
+		resourcePlan,
+		1,
+		[]int{0},
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two transaction bases (2000), native Falcon (2000), and the priced
+	// program (250) require 4250 total. The original paid 1000.
+	if info.TotalFees != 3_250 || uint64(txns[0].Fee) != 4_250 {
+		t.Fatalf("fee result = %#v, fee %d; want delta 3250/final 4250", info, txns[0].Fee)
+	}
+	if info.DummyFeeContribution != 1_000 || info.ProgramFeeContribution != 250 || info.NativePQFeeContribution != 2_000 {
+		t.Fatalf("fee contributions = %#v", info)
+	}
+	if len(info.FeeIndices) != 1 || info.FeeIndices[0] != 0 {
+		t.Fatalf("fee indices = %v, want [0]", info.FeeIndices)
+	}
+}
+
+func TestApplyGroupFeesUsesExistingPooledFees(t *testing.T) {
+	fnet := PlannerNetworkParams{MinTxnFee: 1_000, ConsensusVersion: string(protocol.ConsensusVFnet5)}
+	txns := []types.Transaction{
+		{Type: types.PaymentTx, Header: types.Header{Fee: 5_000}},
+		{Type: types.PaymentTx},
+	}
+	info, err := applyGroupFees(
+		txns,
+		[]authorizationBudget{{mutable: true}},
+		fnet,
+		lsigresource.Plan{TransactionCount: 1, DummyCount: 1, GroupSize: 2},
+		1,
+		[]int{0},
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.TotalFees != 0 || len(info.FeeIndices) != 0 || uint64(txns[0].Fee) != 5_000 {
+		t.Fatalf("pooled overpayment was mutated: info=%#v fee=%d", info, txns[0].Fee)
+	}
 }
 
 func TestAuthorizationBudgetsRecognizePassthroughPQ(t *testing.T) {
@@ -80,7 +142,7 @@ func TestAuthorizationBudgetsRecognizePassthroughPQ(t *testing.T) {
 		raw := msgpack.Encode(stxn)
 		budgets, err := authorizationBudgets(
 			[]signerapi.SignRequest{{SignedTxnHex: hex.EncodeToString(raw)}},
-			PlannerIdentitySnapshot{}, map[int]bool{0: true}, map[int]bool{}, map[int][]byte{0: raw},
+			PlannerIdentitySnapshot{}, nil, map[int]bool{0: true}, map[int]bool{}, map[int][]byte{0: raw},
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -125,7 +187,7 @@ func TestPlanGroupBudgetsNativeFalconBeforeApproval(t *testing.T) {
 		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: authorizer}}},
 		plan, plan.AllTxns, func(types.Transaction) string { return "payment" },
 	)
-	if !strings.Contains(description, "Native Falcon fee adjustment: +2000 microAlgos") {
+	if !strings.Contains(description, "Native Falcon fee contribution: 2000 microAlgos") || !strings.Contains(description, "Group fee adjustment: +2000 microAlgos") {
 		t.Fatalf("approval description did not disclose native PQ fee mutation:\n%s", description)
 	}
 }

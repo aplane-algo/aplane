@@ -26,10 +26,12 @@ type BuildFinalGroupFunc func(txns []types.Transaction, dummiesNeeded int, lsigI
 type GenerateTxnDescriptionFunc func(txnBytesHex string) string
 
 type DummyFeeInfo struct {
-	TotalFees    uint64
-	LSigCount    int
-	PQFeeDelta   uint64
-	PQFeeIndices []int
+	TotalFees               uint64
+	LSigCount               int
+	FeeIndices              []int
+	DummyFeeContribution    uint64
+	ProgramFeeContribution  uint64
+	NativePQFeeContribution uint64
 }
 
 type PlannerNetworkParams struct {
@@ -179,31 +181,28 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		return nil, err
 	}
 
-	budgets, budgetErr := authorizationBudgets(req.Requests, snapshot, passthroughIndices, foreignIndices, passthroughSignedTxns)
+	budgets, budgetErr := authorizationBudgets(req.Requests, snapshot, sizingBoundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns)
 	if budgetErr != nil {
 		return nil, budgetErr
 	}
-	if hasNativePQAuthorization(budgets) {
-		pqDelta, pqIndices, feeErr := applyNativePQFees(allTxns, budgets, networkParams, isPreGrouped || hasPassthrough)
+	if networkParams.ConsensusVersion != "" || dummiesNeeded > 0 || resourcePlan.ProgramFeeFactorUsage > 0 || hasNativePQAuthorization(budgets) {
+		plannedFees, feeErr := applyGroupFees(allTxns, budgets, networkParams, resourcePlan, dummiesNeeded, lsigIndices, isPreGrouped || hasPassthrough)
 		if feeErr != nil {
 			return nil, feeErr
 		}
-		feeInfo.PQFeeDelta = pqDelta
-		feeInfo.PQFeeIndices = pqIndices
-		if pqDelta > 0 {
-			needsRegroup = true
-			if len(allTxns) > 1 {
-				for i := range allTxns {
-					allTxns[i].Group = types.Digest{}
-				}
-				gid, groupErr := algocrypto.ComputeGroupID(allTxns)
-				if groupErr != nil {
-					return nil, internal(fmt.Sprintf("failed to recompute group ID after native PQ fee adjustment: %v", groupErr))
-				}
-				for i := range allTxns {
-					allTxns[i].Group = gid
-				}
-			}
+		feeInfo = plannedFees
+		needsRegroup = needsRegroup || feeInfo.TotalFees > 0
+	}
+	if needsRegroup && len(allTxns) > 1 {
+		for i := range allTxns {
+			allTxns[i].Group = types.Digest{}
+		}
+		gid, groupErr := algocrypto.ComputeGroupID(allTxns)
+		if groupErr != nil {
+			return nil, internal(fmt.Sprintf("failed to compute final group ID: %v", groupErr))
+		}
+		for i := range allTxns {
+			allTxns[i].Group = gid
 		}
 	}
 
@@ -259,7 +258,7 @@ func knownAddressesFromSnapshot(snapshot PlannerIdentitySnapshot) map[string]boo
 
 func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.MutationReport {
 	groupIDChanged := plan.NeedsRegroup && len(plan.AllTxns) > 1
-	if plan.DummiesNeeded == 0 && plan.FeeInfo.PQFeeDelta == 0 && !groupIDChanged && !plan.HasPassthrough && !plan.HasForeign {
+	if plan.DummiesNeeded == 0 && plan.FeeInfo.TotalFees == 0 && !groupIDChanged && !plan.HasPassthrough && !plan.HasForeign {
 		return nil
 	}
 
@@ -270,19 +269,18 @@ func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.Mutatio
 
 	if plan.DummiesNeeded > 0 {
 		mutations.DummiesAdded = plan.DummiesNeeded
-		mutations.TotalFeesDelta = int(plan.FeeInfo.TotalFees)
 		mutations.Reason = "lsig_budget"
-
-		if len(plan.LsigIndices) > 0 {
-			mutations.FeesModified = plan.LsigIndices
+	}
+	mutations.TotalFeesDelta = int(plan.FeeInfo.TotalFees)
+	mutations.FeesModified = appendUniqueIndices(mutations.FeesModified, plan.FeeInfo.FeeIndices...)
+	if plan.FeeInfo.ProgramFeeContribution > 0 {
+		if mutations.Reason == "" {
+			mutations.Reason = "lsig_program_fee"
 		} else {
-			mutations.FeesModified = []int{0}
+			mutations.Reason += "+lsig_program_fee"
 		}
 	}
-
-	if plan.FeeInfo.PQFeeDelta > 0 {
-		mutations.TotalFeesDelta += int(plan.FeeInfo.PQFeeDelta)
-		mutations.FeesModified = appendUniqueIndices(mutations.FeesModified, plan.FeeInfo.PQFeeIndices...)
+	if plan.FeeInfo.NativePQFeeContribution > 0 {
 		if mutations.Reason == "" {
 			mutations.Reason = "native_pq_fee"
 		} else {
