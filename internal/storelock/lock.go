@@ -20,7 +20,9 @@ var ErrBusy = errors.New("store is locked by another process")
 
 // Guard holds a cooperative advisory flock on signer store state.
 type Guard struct {
-	f *os.File
+	f         *os.File
+	dataDir   string
+	exclusive bool
 }
 
 // AcquireShared acquires a non-blocking shared lock for live readers/users of the store.
@@ -77,7 +79,24 @@ func acquire(dataDir string, how int) (*Guard, error) {
 		return nil, fmt.Errorf("failed to lock store: %w", err)
 	}
 
-	return &Guard{f: f}, nil
+	resolvedDataDir, err := filepath.Abs(filepath.Clean(dataDir))
+	if err != nil {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+		return nil, fmt.Errorf("resolve locked data directory: %w", err)
+	}
+	return &Guard{f: f, dataDir: resolvedDataDir, exclusive: how&syscall.LOCK_EX != 0}, nil
+}
+
+// HoldsExclusiveFor reports whether this active guard owns the exclusive
+// cooperative lock for dataDir. It lets a higher-level operation pass one
+// lock through nested storage layers without acquiring the same flock twice.
+func (g *Guard) HoldsExclusiveFor(dataDir string) bool {
+	if g == nil || g.f == nil || !g.exclusive || dataDir == "" {
+		return false
+	}
+	resolved, err := filepath.Abs(filepath.Clean(dataDir))
+	return err == nil && resolved == g.dataDir
 }
 
 // Close releases the held lock.
@@ -88,6 +107,8 @@ func (g *Guard) Close() error {
 	errUnlock := syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN)
 	errClose := g.f.Close()
 	g.f = nil
+	g.dataDir = ""
+	g.exclusive = false
 	if errUnlock != nil {
 		return errUnlock
 	}

@@ -29,6 +29,35 @@ func TestAcquireExclusiveBlockedBySharedLock(t *testing.T) {
 	}
 }
 
+func TestGuardReportsExclusiveDataDirectory(t *testing.T) {
+	dir := t.TempDir()
+	exclusive, err := AcquireExclusive(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exclusive.HoldsExclusiveFor(dir) {
+		t.Fatal("exclusive guard does not report its data directory")
+	}
+	if exclusive.HoldsExclusiveFor(t.TempDir()) {
+		t.Fatal("exclusive guard reports a different data directory")
+	}
+	if err := exclusive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if exclusive.HoldsExclusiveFor(dir) {
+		t.Fatal("closed guard still reports an exclusive lock")
+	}
+
+	shared, err := AcquireShared(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = shared.Close() }()
+	if shared.HoldsExclusiveFor(dir) {
+		t.Fatal("shared guard reports an exclusive lock")
+	}
+}
+
 func TestAcquireExclusiveRejectsSymlinkLock(t *testing.T) {
 	dir := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside")

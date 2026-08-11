@@ -88,9 +88,10 @@ inventory validation, and the installation-mode owner check. They preserve the
 narrow root-owned `identities/<identity>/passphrase.cred` exception and the
 installer-owned `install/` metadata artifacts.
 
-Root-run offline `appolicy` saves acquire the exclusive lock while publishing
-the policy and again while normalizing the managed store, so ownership repair
-cannot race a daemon that starts between those two fail-closed phases.
+Root-run offline `appolicy` saves hold one exclusive lock across policy
+publication and managed-store ownership normalization. The already-held guard
+is passed into the offline policy store so nested save code does not reacquire
+the same flock, and a daemon cannot start between publication and repair.
 
 ### External-file-only operations
 

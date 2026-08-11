@@ -156,6 +156,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			return 1
 		}
 		defer guard.Close()
+		if err := guard.Bind(store); err != nil {
+			writef(stderr, "appolicy: refusing offline policy save: %v\n", err)
+			return 1
+		}
 		if err := store.SaveYAML(ctx, saveInput); err != nil {
 			writef(stderr, "appolicy: %v\n", err)
 			return 1
@@ -175,6 +179,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			return 1
 		}
 		defer interactiveGuard.Close()
+		if err := interactiveGuard.Bind(store); err != nil {
+			writef(stderr, "appolicy: refusing offline policy editor: %v\n", err)
+			return 1
+		}
 	}
 
 	stored, err := store.Load(ctx)
@@ -471,6 +479,10 @@ func runPolicyFile(ctx context.Context, path string, opts options, store *policy
 			return 1
 		}
 		defer interactiveGuard.Close()
+		if err := interactiveGuard.Bind(store); err != nil {
+			writef(stderr, "appolicy: refusing offline policy editor: %v\n", err)
+			return 1
+		}
 	}
 	data, err := readPolicyYAMLFile(path)
 	if err != nil {
@@ -601,6 +613,13 @@ func (g *offlinePolicyMutation) Normalize() error {
 		return nil
 	}
 	return migrateOfflinePolicyStore(g.dataDir, g.uid, g.gid, g.socketPath)
+}
+
+func (g *offlinePolicyMutation) Bind(store *policyeditor.OfflineStore) error {
+	if g == nil || g.lock == nil {
+		return nil
+	}
+	return store.UseExclusiveMutationLock(g.lock)
 }
 
 func (g *offlinePolicyMutation) Close() {

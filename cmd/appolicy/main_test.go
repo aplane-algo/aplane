@@ -574,6 +574,52 @@ func TestRunSaveRefusesBusyManagedStoreBeforeWrite(t *testing.T) {
 	}
 }
 
+func TestRunSaveManagedStoreReusesOneRealExclusiveLock(t *testing.T) {
+	root, passphrase := initializedAppolicyStore(t)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+
+	oldEUID := appolicyEUID
+	oldManaged := isManagedPolicyStore
+	oldOwner := managedPolicyOwner
+	oldMigrate := migrateOfflinePolicyStore
+	t.Cleanup(func() {
+		appolicyEUID = oldEUID
+		isManagedPolicyStore = oldManaged
+		managedPolicyOwner = oldOwner
+		migrateOfflinePolicyStore = oldMigrate
+	})
+	appolicyEUID = func() int { return 0 }
+	isManagedPolicyStore = func(string) (bool, error) { return true, nil }
+	managedPolicyOwner = func(string) (int, int, error) { return os.Geteuid(), os.Getegid(), nil }
+	normalized := false
+	migrateOfflinePolicyStore = func(dataDir string, _, _ int, _ string) error {
+		competing, err := storelock.AcquireExclusive(dataDir)
+		if competing != nil {
+			_ = competing.Close()
+		}
+		if !errors.Is(err, storelock.ErrBusy) {
+			t.Fatalf("normalization competing lock error = %v, want outer lock still held", err)
+		}
+		normalized = true
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"-d", root, "--save"},
+		strings.NewReader("reject_foreign_rekey: false\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run(--save managed) code=%d stderr=%q", code, stderr.String())
+	}
+	if !normalized {
+		t.Fatal("managed store normalization did not run")
+	}
+	guard, err := storelock.AcquireExclusive(root)
+	if err != nil {
+		t.Fatalf("outer lock remains held after run: %v", err)
+	}
+	_ = guard.Close()
+}
+
 func TestRunCheckDoesNotAcquireManagedMutationLock(t *testing.T) {
 	root, passphrase := initializedAppolicyStore(t)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
