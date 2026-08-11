@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/dsafamily"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig/family"
@@ -27,6 +28,9 @@ func (metadata) CryptoSignatureSize() int     { return family.MaxSignatureSize }
 func (metadata) MnemonicWordCount() int       { return family.MnemonicWordCount }
 func (metadata) SupportsMnemonicImport() bool { return true }
 func (metadata) MnemonicScheme() string       { return family.MnemonicScheme }
+func (metadata) AuthorizationKind() algorithm.AuthorizationKind {
+	return algorithm.AuthorizationLogicSig
+}
 func (metadata) RequiresLogicSig() bool       { return true }
 func (metadata) CurrentLsigVersion() int      { return 1 }
 func (metadata) SupportedLsigVersions() []int { return []int{1} }

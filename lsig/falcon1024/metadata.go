@@ -4,6 +4,7 @@
 package falcon
 
 import (
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/derivation"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
@@ -16,6 +17,9 @@ func (m *FalconMetadata) CryptoSignatureSize() int     { return family.MaxSignat
 func (m *FalconMetadata) MnemonicWordCount() int       { return family.MnemonicWordCount }
 func (m *FalconMetadata) SupportsMnemonicImport() bool { return true }
 func (m *FalconMetadata) MnemonicScheme() string       { return family.MnemonicScheme }
+func (m *FalconMetadata) AuthorizationKind() algorithm.AuthorizationKind {
+	return algorithm.AuthorizationLogicSig
+}
 func (m *FalconMetadata) RequiresLogicSig() bool       { return true }
 func (m *FalconMetadata) CurrentLsigVersion() int      { return derivation.CurrentVersion }
 func (m *FalconMetadata) SupportedLsigVersions() []int { return derivation.SupportedVersions() }

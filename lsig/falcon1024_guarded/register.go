@@ -6,6 +6,7 @@ package falcon1024guarded
 import (
 	"sync"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/lsig/dsafamily"
 
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -22,6 +23,9 @@ func (m metadata) CryptoSignatureSize() int   { return m.signatureSize }
 func (metadata) MnemonicWordCount() int       { return family.MnemonicWordCount }
 func (metadata) SupportsMnemonicImport() bool { return false }
 func (metadata) MnemonicScheme() string       { return family.MnemonicScheme }
+func (metadata) AuthorizationKind() algorithm.AuthorizationKind {
+	return algorithm.AuthorizationLogicSig
+}
 func (metadata) RequiresLogicSig() bool       { return true }
 func (metadata) CurrentLsigVersion() int      { return 1 }
 func (metadata) SupportedLsigVersions() []int { return []int{1} }

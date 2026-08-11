@@ -133,6 +133,9 @@ func (m algorithmMetadata) CryptoSignatureSize() int     { return m.signatureSiz
 func (m algorithmMetadata) MnemonicWordCount() int       { return m.mnemonicWordCount }
 func (m algorithmMetadata) SupportsMnemonicImport() bool { return false }
 func (m algorithmMetadata) MnemonicScheme() string       { return m.mnemonicScheme }
+func (m algorithmMetadata) AuthorizationKind() algorithm.AuthorizationKind {
+	return algorithm.AuthorizationLogicSig
+}
 func (m algorithmMetadata) RequiresLogicSig() bool       { return true }
 func (m algorithmMetadata) CurrentLsigVersion() int      { return 1 }
 func (m algorithmMetadata) SupportedLsigVersions() []int { return []int{1} }
