@@ -917,8 +917,9 @@ Additional signer-state notes:
   aliases are resolved and both the alias and canonical directory chains are
   validated before the daemon binds the canonical socket path. A reachable
   existing listener is a hard collision; startup removes only a stable socket
-  inode that rejects a connection as stale. Bind paths are limited to the
-  portable 103-byte Unix-socket pathname maximum.
+  inode that rejects a connection as stale. Bind paths are rejected before
+  `listen` when they exceed the running platform's pathname socket capacity:
+  107 bytes on Linux and a conservative 103 bytes on Darwin/BSD targets.
   An explicit client `--ipc-path` has highest precedence and must be absolute.
   An explicit client `-d` is resolved next and cannot be retargeted by inherited
   `APSIGNER_IPC_PATH`; the absolute environment socket override still takes

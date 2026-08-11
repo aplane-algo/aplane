@@ -6,6 +6,7 @@ package ipcbind
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -42,11 +43,22 @@ func TestValidateBindPathRejectsTmpDirectory(t *testing.T) {
 	}
 }
 
-func TestResolveBindPathRejectsNonportableSocketPathLength(t *testing.T) {
-	path := string(filepath.Separator) + strings.Repeat("a", portableUnixSocketPathMaxBytes)
+func TestResolveBindPathRejectsPlatformSocketPathLength(t *testing.T) {
+	path := string(filepath.Separator) + strings.Repeat("a", unixSocketPathMaxBytes(runtime.GOOS))
 	_, err := ResolveBindPath(path)
 	if err == nil || !strings.Contains(err.Error(), "IPC socket path is too long") {
-		t.Fatalf("ResolveBindPath(long path) error = %v, want portable-length rejection", err)
+		t.Fatalf("ResolveBindPath(long path) error = %v, want platform-length rejection", err)
+	}
+}
+
+func TestUnixSocketPathMaxBytesUsesKernelLimit(t *testing.T) {
+	if got := unixSocketPathMaxBytes("linux"); got != 107 {
+		t.Fatalf("linux socket path maximum = %d, want 107", got)
+	}
+	for _, goos := range []string{"darwin", "freebsd", "openbsd", "netbsd", "unknown"} {
+		if got := unixSocketPathMaxBytes(goos); got != 103 {
+			t.Fatalf("%s socket path maximum = %d, want conservative 103", goos, got)
+		}
 	}
 }
 

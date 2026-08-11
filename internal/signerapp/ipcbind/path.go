@@ -7,12 +7,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 )
 
-// portableUnixSocketPathMaxBytes fits Darwin's 104-byte sockaddr_un.sun_path
-// including its terminating NUL, and is therefore also safe on Linux.
-const portableUnixSocketPathMaxBytes = 103
+const (
+	// Darwin and the BSDs expose a 104-byte sockaddr_un.sun_path including
+	// its terminating NUL.
+	portableUnixSocketPathMaxBytes = 103
+	// Linux exposes a 108-byte sockaddr_un.sun_path including its terminating
+	// NUL. Enforcing Darwin's smaller limit on Linux rejects paths the running
+	// kernel can bind and makes valid temp-root stores environment-dependent.
+	linuxUnixSocketPathMaxBytes = 107
+)
 
 // ValidateBindPath checks whether socketPath is safe to remove and bind.
 func ValidateBindPath(socketPath string) error {
@@ -62,11 +69,19 @@ func ResolveBindPath(socketPath string) (string, error) {
 }
 
 func validateSocketPathLength(socketPath string) error {
-	if len([]byte(socketPath)) > portableUnixSocketPathMaxBytes {
-		return fmt.Errorf("IPC socket path is too long (%d bytes; portable maximum is %d): %s",
-			len([]byte(socketPath)), portableUnixSocketPathMaxBytes, socketPath)
+	maximum := unixSocketPathMaxBytes(runtime.GOOS)
+	if len([]byte(socketPath)) > maximum {
+		return fmt.Errorf("IPC socket path is too long (%d bytes; %s maximum is %d): %s",
+			len([]byte(socketPath)), runtime.GOOS, maximum, socketPath)
 	}
 	return nil
+}
+
+func unixSocketPathMaxBytes(goos string) int {
+	if goos == "linux" || goos == "android" {
+		return linuxUnixSocketPathMaxBytes
+	}
+	return portableUnixSocketPathMaxBytes
 }
 
 // validateSocketPath checks for symlink attacks and ownership issues.
