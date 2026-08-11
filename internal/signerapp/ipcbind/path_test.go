@@ -43,11 +43,37 @@ func TestValidateBindPathRejectsTmpDirectory(t *testing.T) {
 	}
 }
 
-func TestResolveBindPathRejectsPlatformSocketPathLength(t *testing.T) {
+func TestResolveBindPathRejectsOverlongConfiguredAlias(t *testing.T) {
 	path := string(filepath.Separator) + strings.Repeat("a", unixSocketPathMaxBytes(runtime.GOOS))
 	_, err := ResolveBindPath(path)
 	if err == nil || !strings.Contains(err.Error(), "IPC socket path is too long") {
-		t.Fatalf("ResolveBindPath(long path) error = %v, want platform-length rejection", err)
+		t.Fatalf("ResolveBindPath(long alias) error = %v, want platform-length rejection", err)
+	}
+}
+
+func TestResolveBindPathRejectsOverlongCanonicalTarget(t *testing.T) {
+	root := shortPrivateTempDir(t)
+	segment := "canonical"
+	for len(filepath.Join(root, segment, "private", "apsigner.sock")) <= unixSocketPathMaxBytes(runtime.GOOS) {
+		segment += "x"
+	}
+	realRoot := filepath.Join(root, segment)
+	parent := filepath.Join(realRoot, "private")
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "l")
+	if err := os.Symlink(realRoot, link); err != nil {
+		t.Fatal(err)
+	}
+
+	alias := filepath.Join(link, "private", "apsigner.sock")
+	if len(alias) > unixSocketPathMaxBytes(runtime.GOOS) {
+		t.Fatalf("test alias length = %d, want at most %d", len(alias), unixSocketPathMaxBytes(runtime.GOOS))
+	}
+	_, err := ResolveBindPath(alias)
+	if err == nil || !strings.Contains(err.Error(), "IPC socket path is too long") {
+		t.Fatalf("ResolveBindPath(long canonical target) error = %v, want platform-length rejection", err)
 	}
 }
 
@@ -118,10 +144,7 @@ func TestValidateBindPathRejectsWritableIntermediateAncestor(t *testing.T) {
 }
 
 func TestResolveBindPathCanonicalizesTrustedSymlinkedAncestor(t *testing.T) {
-	root := t.TempDir()
-	if err := os.Chmod(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	root := shortPrivateTempDir(t)
 	realRoot := filepath.Join(root, "real")
 	parent := filepath.Join(realRoot, "private")
 	if err := os.MkdirAll(parent, 0o700); err != nil {
@@ -231,4 +254,21 @@ func privateTempDir(t *testing.T) string {
 		t.Fatalf("abs temp dir: %v", err)
 	}
 	return abs
+}
+
+func shortPrivateTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "apl-")
+	if err != nil {
+		t.Fatalf("create short temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Errorf("remove short temp dir: %v", err)
+		}
+	})
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatalf("chmod short temp dir: %v", err)
+	}
+	return dir
 }

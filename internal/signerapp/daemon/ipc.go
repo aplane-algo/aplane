@@ -47,6 +47,10 @@ func (s *IPCServer) Start() error {
 	}
 	s.path = resolvedPath
 
+	// ResolveBindPath has already proven that the canonical parent and any
+	// configured alias chain are current-UID/root controlled and not writable
+	// by group or other users. removeStaleIPCSocket relies on that invariant for
+	// the final pathname operation after its stable-inode recheck.
 	if err := removeStaleIPCSocket(s.path); err != nil {
 		return err
 	}
