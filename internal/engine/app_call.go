@@ -124,6 +124,7 @@ func (e *Engine) PrepareAppCallRaw(ctx context.Context, params RawAppCallParams)
 		types.StateSchema{},
 		types.StateSchema{},
 		0,
+		0, // app version (v42 SDK; zero preserves legacy behavior)
 		sp,
 		sender,
 		[]byte(params.Note),

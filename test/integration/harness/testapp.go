@@ -249,6 +249,7 @@ func (app *TestApp) CallMethod(appArgs [][]byte, sender string, sk ed25519.Priva
 		nil, nil,
 		types.StateSchema{}, types.StateSchema{},
 		0, // extra pages
+		0, // app version
 		sp, senderAddr,
 		nil, types.Digest{}, lease, types.Address{},
 	)
@@ -427,6 +428,7 @@ func (app *TestApp) DestroyTestApp(creatorSK ed25519.PrivateKey) error {
 		nil, nil,
 		types.StateSchema{}, types.StateSchema{},
 		0,
+		0, // app version
 		sp, sender,
 		nil, types.Digest{}, lease, types.Address{},
 	)
@@ -530,6 +532,7 @@ func (app *TestApp) deleteAllBoxes(sk ed25519.PrivateKey) error {
 			nil, nil,
 			types.StateSchema{}, types.StateSchema{},
 			0,
+			0, // app version
 			sp, sender,
 			nil, types.Digest{}, lease, types.Address{},
 		)

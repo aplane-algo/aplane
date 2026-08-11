@@ -104,6 +104,7 @@ func (e *Engine) PrepareAppDeploy(ctx context.Context, params AppDeployParams) (
 		types.StateSchema{NumUint: params.GlobalUint, NumByteSlice: params.GlobalBytes},
 		types.StateSchema{NumUint: params.LocalUint, NumByteSlice: params.LocalBytes},
 		params.ExtraPages,
+		0, // app version (v42 SDK; zero preserves legacy behavior)
 		sp,
 		sender,
 		[]byte(params.Note),

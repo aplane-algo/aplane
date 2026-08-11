@@ -220,7 +220,7 @@ func deleteAppBoxes(client *algod.Client, appID uint64, sender types.Address, sk
 			types.NoOpOC,
 			nil, nil,
 			types.StateSchema{}, types.StateSchema{},
-			0, sp, sender,
+			0, 0, sp, sender,
 			nil, types.Digest{}, [32]byte{}, types.Address{},
 		)
 		if err != nil {
@@ -253,7 +253,7 @@ func deleteApp(client *algod.Client, appID uint64, sender types.Address, sk ed25
 		types.DeleteApplicationOC,
 		nil, nil,
 		types.StateSchema{}, types.StateSchema{},
-		0, sp, sender,
+		0, 0, sp, sender,
 		nil, types.Digest{}, [32]byte{}, types.Address{},
 	)
 	if err != nil {
