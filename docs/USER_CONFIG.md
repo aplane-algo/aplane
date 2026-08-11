@@ -73,15 +73,17 @@ additions/deletions made elsewhere.
 
 ### Algod Endpoints
 
-Installer-written client and signer configs include `testnet`, `mainnet`, and
-`localnet` under `networks` by default. `testnet` and `mainnet` use public
-Nodely endpoints. `localnet` uses the standard AlgoKit LocalNet algod endpoint
-and token. Installer-written client configs restrict `networks_allowed` to
-`mainnet` and `testnet` by default. For AlgoKit LocalNet, run `aplocalnet` to
-set `network: localnet`, refresh the signer genesis mapping, enable the bundled
-LocalNet plugin, and add `localnet` to a non-empty `networks_allowed` list. If
-you edit config manually, add `localnet` to `networks_allowed` before switching
-apshell to that network.
+Installer-written client and signer configs include `testnet`, `mainnet`,
+`fnet`, and `localnet` under `networks` by default. `testnet`, `mainnet`, and
+`fnet` use public Nodely endpoints. The signer entry for `fnet` also pins its
+genesis hash so policy can identify FNet transactions. `localnet` uses the
+standard AlgoKit LocalNet algod endpoint and token. Installer-written client
+configs restrict `networks_allowed` to `mainnet`, `testnet`, and `fnet` by
+default. The default active network remains `testnet`. For AlgoKit LocalNet,
+run `aplocalnet` to set `network: localnet`, refresh the signer genesis mapping,
+enable the bundled LocalNet plugin, and add `localnet` to a non-empty
+`networks_allowed` list. If you edit config manually, add `localnet` to
+`networks_allowed` before switching apshell to that network.
 
 Network names are context tokens: 1-64 lowercase letters, digits, `_`, or `-`,
 starting with a letter or digit. Built-in Algorand tokens are `mainnet`,
@@ -94,6 +96,7 @@ network: testnet
 networks_allowed:
   - mainnet
   - testnet
+  - fnet
 networks:
   testnet:
     algod:
@@ -102,6 +105,10 @@ networks:
   mainnet:
     algod:
       server: https://mainnet-api.4160.nodely.dev
+      token: ""
+  fnet:
+    algod:
+      server: https://fnet-api.4160.nodely.dev
       token: ""
   localnet:
     algod:
