@@ -6,6 +6,7 @@ package keys
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -36,6 +37,7 @@ type Payload struct {
 	PQAddressSalt          *byte
 	Parameters             map[string]string
 	LogicSigBytecode       []byte
+	LogicSigDerivation     string
 	SaltCounter            *byte
 	TEALSource             string
 	SigningMetadataVersion int
@@ -57,6 +59,7 @@ type CanonicalPayloadMetadata struct {
 	PQAddressSalt          *byte
 	Parameters             map[string]string
 	LogicSigBytecodeHex    string
+	LogicSigDerivation     string
 	SaltCounter            *byte
 	TEALSource             string
 	SigningMetadataVersion int
@@ -79,6 +82,7 @@ type payloadWireV1 struct {
 	PQAddressSalt          *byte                 `json:"pq_address_salt,omitempty"`
 	Parameters             map[string]string     `json:"parameters,omitempty"`
 	LogicSigBytecodeHex    string                `json:"lsig_bytecode,omitempty"`
+	LogicSigDerivation     string                `json:"lsig_derivation,omitempty"`
 	SaltCounter            *byte                 `json:"salt_counter,omitempty"`
 	TEALSource             string                `json:"teal_source,omitempty"`
 	SigningMetadataVersion int                   `json:"signing_metadata_version,omitempty"`
@@ -88,6 +92,16 @@ type payloadWireV1 struct {
 	TemplateFingerprint    string                `json:"template_fingerprint,omitempty"`
 	CreatedAt              string                `json:"created_at"`
 }
+
+const (
+	// LogicSigDerivationManualCounter is the transitional manual-salt key-file
+	// contract. The empty durable value also means this mode for existing keys.
+	LogicSigDerivationManualCounter = "manual_counter"
+
+	// LogicSigDerivationAlgodV13AutoSalt records that the stored bytecode is the
+	// authoritative final output of algod's TEAL v13 auto-salting assembler.
+	LogicSigDerivationAlgodV13AutoSalt = "algod_v13_auto_salt"
+)
 
 // NewEd25519Payload constructs a canonical native Ed25519 key payload.
 func NewEd25519Payload(publicKey, privateKey []byte) *Payload {
@@ -158,6 +172,25 @@ func NewDSALSigPayload(
 	}
 }
 
+// NewAutoSaltedDSALSigPayload constructs a DSA-backed LogicSig whose final
+// bytecode was auto-salted by the TEAL v13 assembler.
+func NewAutoSaltedDSALSigPayload(
+	keyType string,
+	baseKeyType string,
+	publicKey []byte,
+	privateKey []byte,
+	parameters map[string]string,
+	bytecode []byte,
+	tealSource string,
+	signingArgs []StoredSigningArg,
+	templateFingerprint string,
+) *Payload {
+	p := NewDSALSigPayload(keyType, baseKeyType, publicKey, privateKey, parameters, bytecode, 0, tealSource, signingArgs, templateFingerprint)
+	p.SaltCounter = nil
+	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
+	return p
+}
+
 // NewGenericLSigPayload constructs a canonical TEAL-only LogicSig payload.
 func NewGenericLSigPayload(
 	keyType string,
@@ -181,6 +214,22 @@ func NewGenericLSigPayload(
 		TemplateFingerprint:    templateFingerprint,
 		CreatedAt:              time.Now().UTC().Truncate(time.Second),
 	}
+}
+
+// NewAutoSaltedGenericLSigPayload constructs a TEAL-only LogicSig whose final
+// bytecode was auto-salted by the TEAL v13 assembler.
+func NewAutoSaltedGenericLSigPayload(
+	keyType string,
+	parameters map[string]string,
+	bytecode []byte,
+	tealSource string,
+	signingArgs []StoredSigningArg,
+	templateFingerprint string,
+) *Payload {
+	p := NewGenericLSigPayload(keyType, parameters, bytecode, 0, tealSource, signingArgs, templateFingerprint)
+	p.SaltCounter = nil
+	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
+	return p
 }
 
 // SetBoundedAuthorization attaches a validated bounded signing contract and
@@ -250,6 +299,7 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		PQAddressSalt:          cloneBytePtr(payload.PQAddressSalt),
 		Parameters:             maps.Clone(payload.Parameters),
 		LogicSigBytecodeHex:    hex.EncodeToString(payload.LogicSigBytecode),
+		LogicSigDerivation:     payload.LogicSigDerivation,
 		SaltCounter:            cloneBytePtr(payload.SaltCounter),
 		TEALSource:             payload.TEALSource,
 		SigningMetadataVersion: payload.SigningMetadataVersion,
@@ -389,6 +439,7 @@ func (p *Payload) Metadata() CanonicalPayloadMetadata {
 		PQAddressSalt:          cloneBytePtr(p.PQAddressSalt),
 		Parameters:             maps.Clone(p.Parameters),
 		LogicSigBytecodeHex:    hex.EncodeToString(p.LogicSigBytecode),
+		LogicSigDerivation:     p.LogicSigDerivation,
 		SaltCounter:            cloneBytePtr(p.SaltCounter),
 		TEALSource:             p.TEALSource,
 		SigningMetadataVersion: p.SigningMetadataVersion,
@@ -459,6 +510,7 @@ func payloadFromWire(wire payloadWireV1) (*Payload, error) {
 		PQAddressSalt:          cloneBytePtr(wire.PQAddressSalt),
 		Parameters:             maps.Clone(wire.Parameters),
 		LogicSigBytecode:       bytecode,
+		LogicSigDerivation:     wire.LogicSigDerivation,
 		SaltCounter:            cloneBytePtr(wire.SaltCounter),
 		TEALSource:             wire.TEALSource,
 		SigningMetadataVersion: wire.SigningMetadataVersion,
@@ -573,7 +625,7 @@ func validateWitnessPayload(p *Payload) error {
 }
 
 func validateNoLogicSigFields(p *Payload) error {
-	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.SaltCounter != nil ||
+	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.LogicSigDerivation != "" || p.SaltCounter != nil ||
 		p.TEALSource != "" || p.SigningMetadataVersion != 0 || p.BaseKeyType != "" ||
 		len(p.SigningArgs) != 0 || p.BoundedAuthorization != nil || p.TemplateFingerprint != "" {
 		return incompatibleKeyFormat("category %q forbids LogicSig fields", p.Category)
@@ -585,8 +637,21 @@ func validateLogicSigFields(p *Payload) error {
 	if len(p.LogicSigBytecode) == 0 {
 		return incompatibleKeyFormatErr(fmt.Errorf("%w: %s requires lsig_bytecode", ErrInvalidLogicSigBytecode, p.Category))
 	}
-	if p.SaltCounter == nil {
-		return ErrMissingLogicSigSaltCounter
+	switch p.LogicSigDerivation {
+	case "", LogicSigDerivationManualCounter:
+		if p.SaltCounter == nil {
+			return ErrMissingLogicSigSaltCounter
+		}
+	case LogicSigDerivationAlgodV13AutoSalt:
+		if p.SaltCounter != nil {
+			return incompatibleKeyFormat("%s derivation forbids salt_counter", LogicSigDerivationAlgodV13AutoSalt)
+		}
+		version, n := binary.Uvarint(p.LogicSigBytecode)
+		if n <= 0 || version < 13 {
+			return incompatibleKeyFormat("%s derivation requires final TEAL v13+ bytecode", LogicSigDerivationAlgodV13AutoSalt)
+		}
+	default:
+		return incompatibleKeyFormat("unsupported lsig_derivation %q", p.LogicSigDerivation)
 	}
 	if p.BoundedAuthorization == nil {
 		if p.SigningMetadataVersion != CurrentSigningMetadataVersion {

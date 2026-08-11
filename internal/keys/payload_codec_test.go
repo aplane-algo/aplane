@@ -370,6 +370,48 @@ func TestPayloadCategoryValidation(t *testing.T) {
 	}
 }
 
+func TestAutoSaltedLogicSigPayloadContract(t *testing.T) {
+	bytecode := canonicalOffCurveBytecodeForVersion(t, 13)
+	payload := NewAutoSaltedGenericLSigPayload(
+		"test.generic.v1", nil, bytecode, "#pragma version 13\nint 1", nil, "",
+	)
+	payload.CreatedAt = canonicalTestTime
+	if err := payload.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	encoded, err := MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload() error = %v", err)
+	}
+	if strings.Contains(string(encoded), `"salt_counter"`) || !strings.Contains(string(encoded), `"lsig_derivation": "algod_v13_auto_salt"`) {
+		t.Fatalf("auto-salted payload JSON = %s", encoded)
+	}
+	decoded, err := ParsePayload(encoded)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
+	}
+	defer decoded.ZeroSecrets()
+	if decoded.LogicSigDerivation != LogicSigDerivationAlgodV13AutoSalt || decoded.SaltCounter != nil {
+		t.Fatalf("decoded derivation = %q salt=%v", decoded.LogicSigDerivation, decoded.SaltCounter)
+	}
+
+	withCounter := *payload
+	withCounter.SaltCounter = SaltCounterPtr(0)
+	if err := withCounter.Validate(); err == nil || !strings.Contains(err.Error(), "forbids salt_counter") {
+		t.Fatalf("Validate(auto-salted with counter) error = %v", err)
+	}
+	oldVersion := *payload
+	oldVersion.LogicSigBytecode = canonicalOffCurveBytecodeForVersion(t, 12)
+	if err := oldVersion.Validate(); err == nil || !strings.Contains(err.Error(), "requires final TEAL v13+") {
+		t.Fatalf("Validate(auto-salted v12) error = %v", err)
+	}
+	unknown := *payload
+	unknown.LogicSigDerivation = "future"
+	if err := unknown.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported lsig_derivation") {
+		t.Fatalf("Validate(unknown derivation) error = %v", err)
+	}
+}
+
 func TestPayloadSelectorsComeFromAuthoritativeMaterial(t *testing.T) {
 	publicKey, privateKey := canonicalEd25519Pair(t, 0x33)
 	componentPublicKey, componentPrivateKey := canonicalFalconComponentPair(t, 0x34)
@@ -506,9 +548,13 @@ func canonicalFalconComponentPair(t *testing.T, fill byte) ([]byte, []byte) {
 var registerFalconComponentTestValidator sync.Once
 
 func canonicalOffCurveBytecode(t *testing.T) []byte {
+	return canonicalOffCurveBytecodeForVersion(t, 6)
+}
+
+func canonicalOffCurveBytecodeForVersion(t *testing.T, version byte) []byte {
 	t.Helper()
 	for counter := 0; counter < 256; counter++ {
-		bytecode := []byte{0x06, 0x81, 0x01, byte(counter)}
+		bytecode := []byte{version, 0x81, 0x01, byte(counter)}
 		address, err := logicSigAddressBytes(bytecode)
 		if err != nil {
 			t.Fatalf("logicSigAddressBytes() error = %v", err)

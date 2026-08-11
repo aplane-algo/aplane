@@ -85,7 +85,7 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *identity.
 	mut := storemut.New(ir.ID(), ir.KeyPaths(), nil, nil)
 	signingArgs := keys.StoreSigningArgs(template.RuntimeArgs())
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		return mut.SaveGenericLSig(keyType, parameters, bytecode, saltCounter, tealSource, signingArgs, mk)
+		return mut.SaveGenericLSig(keyType, parameters, bytecode, saltCounter, salted.CompilerAutoSalted, tealSource, signingArgs, mk)
 	}); err != nil {
 		if errors.Is(err, keystore.ErrStoreLocked) {
 			return "", err

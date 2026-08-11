@@ -38,6 +38,10 @@ func (testOps) TEALVersion() int                            { return 12 }
 func (testOps) BuildSignatureArgs([]byte) ([][]byte, error) { return nil, nil }
 func (testOps) BuildVerifyTEAL([]byte) (string, error)      { return "int 1\nreturn\n", nil }
 
+type autoSaltTestOps struct{ testOps }
+
+func (autoSaltTestOps) TEALVersion() int { return 13 }
+
 type suffixTestOps struct{}
 
 func (suffixTestOps) PublicKeySize() int                              { return 1 }
@@ -69,6 +73,7 @@ func (falconBoundaryTestOps) SignatureArgLayout() SignatureArgLayout {
 
 type compileMockTransport struct {
 	bytecode []byte
+	hash     string
 }
 
 func (m compileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -83,7 +88,11 @@ func (m compileMockTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	if _, err := io.ReadAll(req.Body); err != nil {
 		return nil, err
 	}
-	body := `{"result":"` + base64.StdEncoding.EncodeToString(m.bytecode) + `","hash":"unused"}`
+	hash := m.hash
+	if hash == "" {
+		hash = "unused"
+	}
+	body := `{"result":"` + base64.StdEncoding.EncodeToString(m.bytecode) + `","hash":"` + hash + `"}`
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -165,6 +174,60 @@ func TestComposedDSADeriveLsigWithSaltReturnsCounter(t *testing.T) {
 	}
 	if string(bytecode) != string(want.Bytecode) || address != want.Address.String() {
 		t.Fatalf("DeriveLsig() = (%x, %s), want (%x, %s)", bytecode, address, want.Bytecode, want.Address)
+	}
+}
+
+func TestComposedDSADeriveUsesAlgodV13AutoSalt(t *testing.T) {
+	dsa := NewComposedDSA(Config{
+		KeyType:     "test-auto-v1",
+		FamilyName:  "test",
+		Version:     1,
+		DisplayName: "Test Auto",
+		Ops:         autoSaltTestOps{},
+		SaltStyle:   lsigsalt.StyleAlgodAutoSalt,
+	})
+	compiled := []byte{13, 0x81, 0}
+	var want lsigsalt.FindResult
+	for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
+		compiled[2] = byte(counter)
+		candidate, err := lsigsalt.UseUnmodifiedOffCurve(compiled)
+		if err == nil {
+			want = candidate
+			break
+		}
+	}
+	if len(want.Bytecode) == 0 {
+		t.Fatal("failed to find deterministic off-curve bytecode")
+	}
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{
+		bytecode: want.Bytecode,
+		hash:     want.Address.String(),
+	})
+	if err != nil {
+		t.Fatalf("MakeClientWithTransport() error = %v", err)
+	}
+	dsa.SetAlgodClient(client)
+
+	got, err := dsa.DeriveLsigWithSalt(context.Background(), []byte{1}, nil)
+	if err != nil {
+		t.Fatalf("DeriveLsigWithSalt() error = %v", err)
+	}
+	if !got.CompilerAutoSalted || got.Address != want.Address || !bytes.Equal(got.Bytecode, want.Bytecode) {
+		t.Fatalf("DeriveLsigWithSalt() = %+v, want compiler-owned result", got)
+	}
+	teal, err := dsa.GenerateTEAL([]byte{1}, nil)
+	if err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+	if strings.Contains(teal, "Counter byte") || strings.Contains(teal, "bytecblock 0x00") || !strings.Contains(teal, "#pragma version 13") {
+		t.Fatalf("auto-salted source contains manual salt anchor or wrong version:\n%s", teal)
+	}
+}
+
+func TestComposedDSAAutoSaltRejectsPreV13Ops(t *testing.T) {
+	dsa := NewComposedDSA(Config{KeyType: "test-auto-v1", FamilyName: "test", Ops: testOps{}, SaltStyle: lsigsalt.StyleAlgodAutoSalt})
+	if _, err := dsa.GenerateTEAL([]byte{1}, nil); err == nil || !strings.Contains(err.Error(), "requires TEAL v13+") {
+		t.Fatalf("GenerateTEAL() error = %v, want TEAL version rejection", err)
 	}
 }
 

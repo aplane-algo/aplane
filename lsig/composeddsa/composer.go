@@ -484,7 +484,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		}
 	}
 
-	if style != lsigsalt.StyleNone && style != lsigsalt.StyleTrailingBytecblock {
+	if style != lsigsalt.StyleNone && style != lsigsalt.StyleAlgodAutoSalt && style != lsigsalt.StyleTrailingBytecblock {
 		preamble, err := c.saltPreamble(style)
 		if err != nil {
 			return "", err
@@ -584,7 +584,7 @@ func (c *ComposedDSA) saltLocator() (lsigsalt.Locator, error) {
 	if err != nil {
 		return nil, err
 	}
-	if style == lsigsalt.StyleNone {
+	if style == lsigsalt.StyleNone || style == lsigsalt.StyleAlgodAutoSalt {
 		return nil, fmt.Errorf("LogicSig salt style %q has no salt locator", style)
 	}
 	return style.Locator()
@@ -596,6 +596,12 @@ func (c *ComposedDSA) hasSuffix() bool {
 
 func (c *ComposedDSA) resolvedSaltStyle() (lsigsalt.Style, error) {
 	if c.saltStyle != "" {
+		if c.saltStyle == lsigsalt.StyleAlgodAutoSalt {
+			if c.ops.TEALVersion() < 13 {
+				return "", fmt.Errorf("composed DSA salt style %q requires TEAL v13+, got v%d", c.saltStyle, c.ops.TEALVersion())
+			}
+			return c.saltStyle, nil
+		}
 		if c.saltStyle == lsigsalt.StyleNone {
 			return c.saltStyle, nil
 		}
@@ -699,6 +705,13 @@ func (c *ComposedDSA) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, 
 	style, err := c.resolvedSaltStyle()
 	if err != nil {
 		return lsigsalt.FindResult{}, err
+	}
+	if style == lsigsalt.StyleAlgodAutoSalt {
+		autoSalted, err := lsigsalt.UseCompilerAutoSalted(bytecode, result.Hash)
+		if err != nil {
+			return lsigsalt.FindResult{}, fmt.Errorf("failed to validate compiler-auto-salted LogicSig: %w", err)
+		}
+		return autoSalted, nil
 	}
 	if style == lsigsalt.StyleNone {
 		unsalted, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)

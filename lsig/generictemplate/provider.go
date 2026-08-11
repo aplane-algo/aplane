@@ -380,6 +380,13 @@ func (t *YAMLTemplate) CompileWithSalt(ctx context.Context, params map[string]st
 	if err != nil {
 		return lsigsalt.FindResult{}, err
 	}
+	if style == lsigsalt.StyleAlgodAutoSalt {
+		autoSalted, err := lsigsalt.UseCompilerAutoSalted(bytecode, result.Hash)
+		if err != nil {
+			return lsigsalt.FindResult{}, fmt.Errorf("failed to validate compiler-auto-salted LogicSig: %w", err)
+		}
+		return autoSalted, nil
+	}
 	if style == lsigsalt.StyleNone {
 		unsalted, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
 		if err != nil {
@@ -411,7 +418,7 @@ func (t *YAMLTemplate) applySaltAnchor(teal string) (string, error) {
 		return "", err
 	}
 	switch style {
-	case lsigsalt.StyleNone:
+	case lsigsalt.StyleNone, lsigsalt.StyleAlgodAutoSalt:
 		return teal, nil
 	case lsigsalt.StylePushbytes:
 		return prependSaltPreamble(teal), nil
@@ -431,6 +438,8 @@ func SaltStyleForDerivationVersion(version int) (lsigsalt.Style, error) {
 		return lsigsalt.StylePushbytes, nil
 	case templatestore.DerivationVersionTrailingBytecblock:
 		return lsigsalt.StyleTrailingBytecblock, nil
+	case templatestore.DerivationVersionAlgodAutoSalt:
+		return lsigsalt.StyleAlgodAutoSalt, nil
 	default:
 		return "", fmt.Errorf("derivation_version %d is not supported", version)
 	}

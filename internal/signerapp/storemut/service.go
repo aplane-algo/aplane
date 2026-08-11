@@ -92,16 +92,19 @@ func (s *Service) ImportKeyFromMnemonicWithActivatedContext(ctx context.Context,
 }
 
 // SaveGenericLSig persists a generated generic LogicSig key file.
-func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, bytecode []byte, saltCounter byte, tealSource string, signingArgs []keys.StoredSigningArg, kr *crypto.Keyring) error {
-	payload := keys.NewGenericLSigPayload(
-		keyType,
-		parameters,
-		bytecode,
-		saltCounter,
-		tealSource,
-		signingArgs,
-		keys.TemplateFingerprintForKeyType(keyType),
-	)
+func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, bytecode []byte, saltCounter byte, compilerAutoSalted bool, tealSource string, signingArgs []keys.StoredSigningArg, kr *crypto.Keyring) error {
+	var payload *keys.Payload
+	if compilerAutoSalted {
+		payload = keys.NewAutoSaltedGenericLSigPayload(
+			keyType, parameters, bytecode, tealSource, signingArgs,
+			keys.TemplateFingerprintForKeyType(keyType),
+		)
+	} else {
+		payload = keys.NewGenericLSigPayload(
+			keyType, parameters, bytecode, saltCounter, tealSource, signingArgs,
+			keys.TemplateFingerprintForKeyType(keyType),
+		)
+	}
 	_, err := keys.SavePayload(s.keyPaths, s.identityID, payload, kr)
 	return err
 }

@@ -210,7 +210,7 @@ func TestLogicSigGeneratorKeyType(t *testing.T) {
 }
 
 func TestDeriveSaltedLogicSigRequiresSaltedDeriver(t *testing.T) {
-	_, _, _, err := deriveSaltedLogicSig(context.Background(), unsaltedTestDSA{}, []byte{1}, nil)
+	_, err := deriveSaltedLogicSig(context.Background(), unsaltedTestDSA{}, []byte{1}, nil)
 	if err == nil {
 		t.Fatal("deriveSaltedLogicSig() error = nil, want missing SaltedDeriver error")
 	}

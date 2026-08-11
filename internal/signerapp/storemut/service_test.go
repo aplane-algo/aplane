@@ -186,6 +186,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		map[string]string{"unlock_round": "123"},
 		salted.Bytecode,
 		salted.Counter,
+		false,
 		"#pragma version 10\nint 1\nreturn",
 		nil,
 		masterKey,

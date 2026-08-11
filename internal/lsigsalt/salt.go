@@ -52,6 +52,11 @@ const (
 	// unchanged and must already derive an off-curve LogicSig address.
 	StyleNone Style = "none"
 
+	// StyleAlgodAutoSalt delegates the off-curve search to the TEAL v13
+	// assembler. APlane treats the compiler-returned bytecode as authoritative,
+	// verifies its reported address, and never patches it locally.
+	StyleAlgodAutoSalt Style = "algod_v13_auto_salt"
+
 	// StyleBytecblock uses an explicit bytecblock salt slot. This is suitable
 	// only for provider-owned TEAL whose bytecode foundation intentionally uses
 	// this layout.
@@ -72,7 +77,7 @@ const (
 // return an empty preamble and should be paired with SourceTrailer.
 func (s Style) SourcePreamble() (string, error) {
 	switch s {
-	case StyleNone:
+	case StyleNone, StyleAlgodAutoSalt:
 		return "", nil
 	case StyleBytecblock:
 		return "bytecblock 0x00\n", nil
@@ -89,7 +94,7 @@ func (s Style) SourcePreamble() (string, error) {
 // use a trailer.
 func (s Style) SourceTrailer() (string, error) {
 	switch s {
-	case StyleNone, StyleBytecblock, StylePushbytes:
+	case StyleNone, StyleAlgodAutoSalt, StyleBytecblock, StylePushbytes:
 		return "", nil
 	case StyleTrailingBytecblock:
 		return "bytecblock 0x00\n", nil
@@ -101,7 +106,7 @@ func (s Style) SourceTrailer() (string, error) {
 // Locator returns the compiled-bytecode salt locator for style.
 func (s Style) Locator() (Locator, error) {
 	switch s {
-	case StyleNone:
+	case StyleNone, StyleAlgodAutoSalt:
 		return nil, fmt.Errorf("LogicSig salt style %q has no salt locator", s)
 	case StyleBytecblock:
 		return BytecblockPreambleLocator, nil
@@ -120,9 +125,10 @@ type Locator func(bytecode []byte) (offset int, err error)
 
 // FindResult is the successful result of an off-curve salt search.
 type FindResult struct {
-	Bytecode []byte
-	Address  types.Address
-	Counter  byte
+	Bytecode           []byte
+	Address            types.Address
+	Counter            byte
+	CompilerAutoSalted bool
 }
 
 // IsOnCurve reports whether addr decodes to a valid Ed25519 curve point and
@@ -283,6 +289,45 @@ func UseUnmodifiedOffCurve(bytecode []byte) (FindResult, error) {
 		Bytecode: append([]byte(nil), bytecode...),
 		Address:  addr,
 		Counter:  0,
+	}, nil
+}
+
+// UseCompilerAutoSalted validates the final TEAL v13 bytecode returned by
+// algod. The reported hash is checked independently against the address APlane
+// derives from the returned bytes, and the resulting address must be
+// off-curve. No assembler salting algorithm is reproduced here.
+func UseCompilerAutoSalted(bytecode []byte, reportedHash string) (FindResult, error) {
+	if len(bytecode) == 0 {
+		return FindResult{}, fmt.Errorf("compiler returned empty LogicSig bytecode")
+	}
+	version, _, err := tealVersionVarint(bytecode)
+	if err != nil {
+		return FindResult{}, fmt.Errorf("compiler returned invalid LogicSig bytecode version: %w", err)
+	}
+	if version < 13 {
+		return FindResult{}, fmt.Errorf("compiler auto-salt requires final TEAL v13+ bytecode, got v%d", version)
+	}
+	if reportedHash == "" {
+		return FindResult{}, fmt.Errorf("compiler returned an empty LogicSig hash")
+	}
+	reported, err := types.DecodeAddress(reportedHash)
+	if err != nil {
+		return FindResult{}, fmt.Errorf("compiler returned invalid LogicSig hash: %w", err)
+	}
+	derived, err := deriveLogicSigAddress(bytecode)
+	if err != nil {
+		return FindResult{}, err
+	}
+	if reported != derived {
+		return FindResult{}, fmt.Errorf("compiler LogicSig hash %s does not match locally derived address %s", reportedHash, derived.String())
+	}
+	if IsOnCurve(derived) {
+		return FindResult{}, ErrUnsaltedAddressOnCurve
+	}
+	return FindResult{
+		Bytecode:           append([]byte(nil), bytecode...),
+		Address:            derived,
+		CompilerAutoSalted: true,
 	}, nil
 }
 

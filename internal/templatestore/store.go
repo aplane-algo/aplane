@@ -55,6 +55,11 @@ const (
 	// DerivationVersionTrailingBytecblock uses a dead-code bytecblock after the
 	// program's logical exit as the single-byte salt anchor.
 	DerivationVersionTrailingBytecblock = 2
+
+	// DerivationVersionAlgodAutoSalt uses TEAL v13 assembler auto-salting. The
+	// compiler-returned bytecode is authoritative and is never patched by
+	// APlane.
+	DerivationVersionAlgodAutoSalt = 3
 )
 
 // KeyType returns the computed key type using publisher.family.vN.
@@ -75,7 +80,7 @@ func (s *BaseTemplateSpec) ValidateBase(maxSchemaVersion int) error {
 	}
 	if s.DerivationVersion != nil {
 		switch *s.DerivationVersion {
-		case DerivationVersionPushbytes, DerivationVersionTrailingBytecblock:
+		case DerivationVersionPushbytes, DerivationVersionTrailingBytecblock, DerivationVersionAlgodAutoSalt:
 		default:
 			return fmt.Errorf("derivation_version %d is not supported", *s.DerivationVersion)
 		}

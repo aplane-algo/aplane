@@ -54,6 +54,7 @@ func testBaseWithDerivationVersion(version int) templatestore.BaseTemplateSpec {
 
 type compileMockTransport struct {
 	bytecode []byte
+	hash     string
 }
 
 func (m compileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -68,7 +69,11 @@ func (m compileMockTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	if _, err := io.ReadAll(req.Body); err != nil {
 		return nil, err
 	}
-	body := `{"result":"` + base64.StdEncoding.EncodeToString(m.bytecode) + `","hash":"ignored-unsalted-hash"}`
+	hash := m.hash
+	if hash == "" {
+		hash = "ignored-unsalted-hash"
+	}
+	body := `{"result":"` + base64.StdEncoding.EncodeToString(m.bytecode) + `","hash":"` + hash + `"}`
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -1041,6 +1046,41 @@ return`,
 	}
 }
 
+func TestYAMLTemplateCompileWithAlgodV13AutoSalt(t *testing.T) {
+	tmpl := NewYAMLTemplate(&TemplateSpec{
+		BaseTemplateSpec: testBaseWithDerivationVersion(templatestore.DerivationVersionAlgodAutoSalt),
+		TEAL: `#pragma version 13
+int 1
+return`,
+	})
+	compiled := unsaltedOffCurveBytecodeForVersion(t, 13)
+	want, err := lsigsalt.UseUnmodifiedOffCurve(compiled)
+	if err != nil {
+		t.Fatalf("UseUnmodifiedOffCurve() error = %v", err)
+	}
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{
+		bytecode: compiled,
+		hash:     want.Address.String(),
+	})
+	if err != nil {
+		t.Fatalf("MakeClientWithTransport() error = %v", err)
+	}
+	got, err := tmpl.CompileWithSalt(context.Background(), nil, client)
+	if err != nil {
+		t.Fatalf("CompileWithSalt() error = %v", err)
+	}
+	if !got.CompilerAutoSalted || got.Address != want.Address || !bytes.Equal(got.Bytecode, compiled) {
+		t.Fatalf("CompileWithSalt() = %+v, want compiler-owned bytes/address", got)
+	}
+	generated, err := tmpl.GenerateTEAL(nil)
+	if err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+	if strings.Contains(generated, "Salt byte") || strings.Contains(generated, "bytecblock 0x00") {
+		t.Fatalf("auto-salted source contains APlane salt anchor:\n%s", generated)
+	}
+}
+
 func TestYAMLTemplateCompileWithSaltTrailingBytecblock(t *testing.T) {
 	tmpl := NewYAMLTemplate(&TemplateSpec{
 		BaseTemplateSpec: testBaseWithDerivationVersion(templatestore.DerivationVersionTrailingBytecblock),
@@ -1329,8 +1369,12 @@ func assertCompileWithSaltOffCurve(t *testing.T, tmpl *YAMLTemplate, params map[
 }
 
 func unsaltedOffCurveBytecodeForTest(t *testing.T) []byte {
+	return unsaltedOffCurveBytecodeForVersion(t, 10)
+}
+
+func unsaltedOffCurveBytecodeForVersion(t *testing.T, version byte) []byte {
 	t.Helper()
-	bytecode := []byte{0x0a, 0x81, 0x00}
+	bytecode := []byte{version, 0x81, 0x00}
 	for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
 		bytecode[2] = byte(counter)
 		if _, err := lsigsalt.UseUnmodifiedOffCurve(bytecode); err == nil {
