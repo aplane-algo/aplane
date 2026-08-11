@@ -146,7 +146,7 @@ func recognizedLegacySocket(root, socketPath string) (string, error) {
 		return "", fmt.Errorf("resolve legacy signer socket: %w", err)
 	}
 	rel, err := filepath.Rel(root, socket)
-	if err != nil || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("legacy signer socket is outside store root: %s", socket)
 	}
 	return socket, nil

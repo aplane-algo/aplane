@@ -100,6 +100,49 @@ func TestConfiguredLiveAuditSocketPathUsesSameUIDConfig(t *testing.T) {
 	}
 }
 
+func TestCmdPermissionsAuditCanonicalizesSameUIDSymlinkedAncestor(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.Chmod(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	realParent := filepath.Join(workspace, "real")
+	realRoot := filepath.Join(realParent, "store")
+	if err := os.MkdirAll(realRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(realParent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(realRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(realRoot, "config.yaml"), []byte("ipc_path: ''\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	aliasParent := filepath.Join(workspace, "alias")
+	if err := os.Symlink(realParent, aliasParent); err != nil {
+		t.Fatal(err)
+	}
+
+	oldDataDirectory := dataDirectory
+	dataDirectory = filepath.Join(aliasParent, "store")
+	t.Cleanup(func() { dataDirectory = oldDataDirectory })
+	if err := cmdPermissions([]string{"audit"}); err != nil {
+		t.Fatalf("cmdPermissions(audit through symlinked ancestor) error = %v", err)
+	}
+}
+
+func TestCanonicalSameUIDAuditRootRejectsSymlinkLeaf(t *testing.T) {
+	realRoot := t.TempDir()
+	link := filepath.Join(t.TempDir(), "store-link")
+	if err := os.Symlink(realRoot, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := canonicalSameUIDAuditRoot(link); err == nil || !strings.Contains(err.Error(), "not a real directory") {
+		t.Fatalf("canonicalSameUIDAuditRoot(symlink leaf) error = %v, want rejection", err)
+	}
+}
+
 func TestConfiguredMigrationSocketPathUsesCustomInStoreConfig(t *testing.T) {
 	root := t.TempDir()
 	custom := filepath.Join(root, "run", "custom.sock")

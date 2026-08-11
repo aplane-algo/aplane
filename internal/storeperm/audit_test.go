@@ -419,6 +419,13 @@ func TestMigratePrivateRemovesRecognizedLegacySocket(t *testing.T) {
 	}
 }
 
+func TestRecognizedLegacySocketRejectsStoreRoot(t *testing.T) {
+	root := workspaceTempDir(t)
+	if _, err := recognizedLegacySocket(root, root); err == nil {
+		t.Fatal("recognizedLegacySocket(root) error = nil, want confinement rejection")
+	}
+}
+
 func TestMigratePrivateRejectsUnrecognizedSocket(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix socket contract")

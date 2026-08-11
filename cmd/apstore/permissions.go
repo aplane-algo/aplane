@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
@@ -43,7 +44,14 @@ func cmdPermissions(args []string) error {
 	if args[0] == "migrate" && !managed {
 		return fmt.Errorf("permissions migrate is only supported for systemd-managed signer stores")
 	}
-	uid, gid, err := storePermissionOwner(dataDirectory, managed)
+	auditRoot := dataDirectory
+	if !managed && args[0] == "audit" {
+		auditRoot, err = canonicalSameUIDAuditRoot(dataDirectory)
+		if err != nil {
+			return err
+		}
+	}
+	uid, gid, err := storePermissionOwner(auditRoot, managed)
 	if err != nil {
 		return err
 	}
@@ -64,11 +72,15 @@ func cmdPermissions(args []string) error {
 	if managed {
 		opts = storeperm.ProductionAuditOptions(dataDirectory, uid, gid)
 	} else {
-		socketPath, err := configuredLiveAuditSocketPath(dataDirectory)
+		socketPath, err := configuredLiveAuditSocketPath(auditRoot)
 		if err != nil {
 			return err
 		}
-		opts = storeperm.SameUIDAuditOptions(dataDirectory, uid, gid, socketPath)
+		socketPath, err = canonicalSocketParent(socketPath)
+		if err != nil {
+			return err
+		}
+		opts = storeperm.SameUIDAuditOptions(auditRoot, uid, gid, socketPath)
 	}
 	findings, err := storeperm.Audit(opts)
 	if err != nil {
@@ -82,6 +94,39 @@ func cmdPermissions(args []string) error {
 	}
 	logInfof("private store permission audit passed")
 	return nil
+}
+
+func canonicalSameUIDAuditRoot(root string) (string, error) {
+	info, err := os.Lstat(root)
+	if err != nil {
+		return "", fmt.Errorf("inspect same-UID signer data directory: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "", fmt.Errorf("same-UID signer data directory is not a real directory: %s", root)
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve same-UID signer data directory: %w", err)
+	}
+	resolved, err = filepath.Abs(filepath.Clean(resolved))
+	if err != nil {
+		return "", fmt.Errorf("resolve absolute same-UID signer data directory: %w", err)
+	}
+	return resolved, nil
+}
+
+func canonicalSocketParent(socketPath string) (string, error) {
+	if socketPath == "" {
+		return "", nil
+	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(socketPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return filepath.Clean(socketPath), nil
+		}
+		return "", fmt.Errorf("resolve same-UID signer socket parent: %w", err)
+	}
+	return filepath.Join(parent, filepath.Base(socketPath)), nil
 }
 
 func permissionsUsageError() error {

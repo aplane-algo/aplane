@@ -178,7 +178,9 @@ failed migration remains an unmarked local store.
 
 `apstore permissions preflight` and `permissions audit` are read-only. Same-UID audit recognizes the local
 installer's non-writable executable `bin/` subtree without treating those
-files as signer data. `apstore permissions migrate` is restricted to
+files as signer data. It retains the real-directory requirement for the store
+leaf but canonicalizes trusted platform aliases in its ancestor chain and
+socket parent before applying the ancestor policy. `apstore permissions migrate` is restricted to
 systemd-managed stores, requires the normal offline execution mode and
 exclusive store lock, and rejects any store-local `bin/` subtree rather than
 stripping binary execute bits or file capabilities. The standalone systemd
