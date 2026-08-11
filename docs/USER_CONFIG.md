@@ -448,6 +448,9 @@ Local IPC remains the default admin transport:
 - an explicit `-d` takes precedence over inherited `APSIGNER_IPC_PATH`; use
   `-ipc-path` as well when intentionally overriding the socket for that
   explicitly selected store
+- `apconsole` only manages daemon startup when the client path matches the
+  selected store's configured daemon path. Use `--no-start-daemon` for an
+  intentional attach-only IPC override.
 - cannot be snooped with tcpdump (no network stack)
 - local apadmin and apapprover connect via this socket
 

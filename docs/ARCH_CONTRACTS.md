@@ -1004,6 +1004,11 @@ Additional client-state notes:
 - `apshell --mcp` has a stricter startup contract than interactive `apshell`: MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted `known_hosts`)
 - `apshell --mcp` also requires the startup signer connection to succeed; it does not start in a disconnected or partially enrolled state, and it cannot perform first-use trust or token enrollment itself
 - `apconsole` resolves startup inputs per field in this order: flags, environment variables, explicitly selected profile (`-config` or `APCONSOLE_CONFIG`), auto-discovered profile, then defaults
+- local `apconsole` lifecycle management requires its client IPC path to equal
+  the path the selected store's daemon will bind. An intentional client-only
+  override must use `--no-start-daemon`; otherwise `apconsole` refuses before
+  attaching to the override or starting a daemon whose readiness it cannot
+  observe
 - conflicting explicit inputs do not auto-resolve: if flags, environment variables, or an explicitly selected profile disagree, `apconsole` exits and requires the operator to remove the conflict or make the values match
 - auto-discovered profile values are convenience defaults only; if they differ from explicit flags or environment variables, `apconsole` keeps the explicit values and emits a warning naming the ignored profile value
 - local-mode signer `apconsole` may start before client enrollment is complete; it requires valid local client/signer data paths, but it allows the embedded shell to perform first-time `request-token` while the local signer/admin panes are available for approval

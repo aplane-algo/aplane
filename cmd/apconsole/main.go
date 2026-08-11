@@ -168,10 +168,15 @@ func main() {
 		logErrorf("%v", err)
 		os.Exit(1)
 	}
+	daemonIPCPath, _, err := adminipc.ResolveDaemonPathForDataDir(startup.DataDir, startup.Config.IPCPath)
+	if err != nil {
+		logErrorf("cannot resolve daemon IPC path: %v", err)
+		os.Exit(1)
+	}
 	theme.Init(startup.Config.Theme)
 	configureAlgodOnDSAs(startup.Config)
 	nodeRole, roleWarning := consoleNodeRole(startup.Paths)
-	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, ipcPath, !*noStartDaemon)
+	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, ipcPath, daemonIPCPath, !*noStartDaemon)
 	if daemonStartup.Status == daemonStatusStarting {
 		waitForDaemonReady(ipcPath, daemonProcess, daemonReadyTimeout)
 	}

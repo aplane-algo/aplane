@@ -7,12 +7,13 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestPrepareDaemonProcessDisabled(t *testing.T) {
-	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/apsigner.sock", false, daemonTestDeps())
+	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/override.sock", "/tmp/configured.sock", false, daemonTestDeps())
 	if proc != nil {
 		t.Fatal("process != nil, want nil")
 	}
@@ -21,6 +22,29 @@ func TestPrepareDaemonProcessDisabled(t *testing.T) {
 	}
 	if info.Owned {
 		t.Fatal("Owned = true, want false")
+	}
+}
+
+func TestPrepareDaemonProcessRefusesMismatchedClientAndDaemonPaths(t *testing.T) {
+	deps := daemonTestDeps()
+	deps.stat = func(string) (os.FileInfo, error) {
+		t.Fatal("mismatched path was inspected for attachment")
+		return nil, nil
+	}
+	deps.start = func(string, string) (*daemonProcess, error) {
+		t.Fatal("daemon started with a mismatched readiness path")
+		return nil, nil
+	}
+
+	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/override.sock", "/tmp/configured.sock", true, deps)
+	if proc != nil {
+		t.Fatal("process != nil, want refusal")
+	}
+	if info.Status != daemonStatusFailed {
+		t.Fatalf("status = %s, want %s", info.Status, daemonStatusFailed)
+	}
+	if !strings.Contains(info.Detail, "--no-start-daemon") {
+		t.Fatalf("detail = %q, want attach-only remediation", info.Detail)
 	}
 }
 
@@ -39,7 +63,7 @@ func TestPrepareDaemonProcessAttachesExistingIPC(t *testing.T) {
 		return fakeCloser{}, nil
 	}
 
-	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/apsigner.sock", true, deps)
+	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/apsigner.sock", "/tmp/apsigner.sock", true, deps)
 	if proc != nil {
 		t.Fatal("process != nil, want nil")
 	}
@@ -81,7 +105,7 @@ func TestPrepareDaemonProcessStartsWhenIPCFileIsStale(t *testing.T) {
 		return &daemonProcess{events: make(chan daemonEvent), done: make(chan struct{})}, nil
 	}
 
-	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/stale.sock", true, deps)
+	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/stale.sock", "/tmp/stale.sock", true, deps)
 	if !started {
 		t.Fatal("start was not called")
 	}
@@ -102,7 +126,7 @@ func TestPrepareDaemonProcessReportsMissingBinary(t *testing.T) {
 	deps.executable = func() (string, error) { return "/opt/aplane/apconsole", nil }
 	deps.stat = func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
 
-	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/missing.sock", true, deps)
+	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/missing.sock", "/tmp/missing.sock", true, deps)
 	if proc != nil {
 		t.Fatal("process != nil, want nil")
 	}
@@ -130,7 +154,7 @@ func TestPrepareDaemonProcessStartsOwnedDaemon(t *testing.T) {
 		return &daemonProcess{events: make(chan daemonEvent), done: make(chan struct{})}, nil
 	}
 
-	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/missing.sock", true, deps)
+	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/missing.sock", "/tmp/missing.sock", true, deps)
 	if !started {
 		t.Fatal("start was not called")
 	}
@@ -166,7 +190,7 @@ func TestPrepareDaemonProcessStartsReadinessWatch(t *testing.T) {
 		}
 	}
 
-	_, info := prepareDaemonProcessWithDeps("/signer", "/tmp/missing.sock", true, deps)
+	_, info := prepareDaemonProcessWithDeps("/signer", "/tmp/missing.sock", "/tmp/missing.sock", true, deps)
 	if info.Status != daemonStatusStarting {
 		t.Fatalf("status = %s, want %s", info.Status, daemonStatusStarting)
 	}
