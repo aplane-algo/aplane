@@ -37,7 +37,7 @@ type PlannerKeyMetadata struct {
 // PlannerDeps supplies process-specific data needed by the package-owned planner.
 type PlannerDeps interface {
 	Snapshot(identityID string) PlannerIdentitySnapshot
-	MinTxnFee(genesisHash types.Digest) uint64
+	NetworkParams(genesisHash types.Digest) PlannerNetworkParams
 }
 
 // PlannerOptions configures non-environmental planner behavior.
@@ -50,6 +50,17 @@ type PlannerOptions struct {
 
 // NewPlanner constructs the canonical signer planner using package-owned planning logic.
 func NewPlanner(deps PlannerDeps, opts PlannerOptions) *Planner {
+	var cachedNetworkHash types.Digest
+	var cachedNetworkParams PlannerNetworkParams
+	var networkParamsCached bool
+	networkParams := func(genesisHash types.Digest) PlannerNetworkParams {
+		if !networkParamsCached || cachedNetworkHash != genesisHash {
+			cachedNetworkHash = genesisHash
+			cachedNetworkParams = deps.NetworkParams(genesisHash)
+			networkParamsCached = true
+		}
+		return cachedNetworkParams
+	}
 	return &Planner{
 		AuditLog:               opts.AuditLog,
 		Console:                opts.Console,
@@ -62,9 +73,14 @@ func NewPlanner(deps PlannerDeps, opts PlannerOptions) *Planner {
 			return calculateDummies(opts.Console, snapshot, identityID, requests, txns, boundedItems, passthroughIndices, foreignIndices, hasPassthrough, isPreGrouped)
 		},
 		BuildFinalGroup: func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
-			return buildFinalGroup(deps, opts.Console, txns, dummiesNeeded, lsigIndices, isPreGrouped)
+			minFee := uint64(0)
+			if len(txns) > 0 {
+				minFee = networkParams(txns[0].GenesisHash).MinTxnFee
+			}
+			return buildFinalGroup(minFee, opts.Console, txns, dummiesNeeded, lsigIndices, isPreGrouped)
 		},
-		Snapshot: deps.Snapshot,
+		NetworkParams: networkParams,
+		Snapshot:      deps.Snapshot,
 	}
 }
 
@@ -217,11 +233,7 @@ func addLsigBytes(total, size, txnIndex int, label string) (int, *ServiceError) 
 	return total + size, nil
 }
 
-func buildFinalGroup(deps PlannerDeps, console Console, txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError) {
-	minFee := txsigning.DefaultMinFee
-	if len(txns) > 0 {
-		minFee = deps.MinTxnFee(txns[0].GenesisHash)
-	}
+func buildFinalGroup(minFee uint64, console Console, txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError) {
 	if minFee == 0 {
 		minFee = txsigning.DefaultMinFee
 	}

@@ -1696,6 +1696,9 @@ Native Falcon authorization occupies top-level `SignedTxn.PQsig`, never
 `SignedTxn.Sig` or `SignedTxn.Lsig`, and contributes `2e6` fixed-point fee
 units in addition to the transaction's ordinary `1e6` base factor. It is
 accepted only on explicitly recognized consensus-v42-capable networks.
+The signer derives this authorization budget from local key metadata or a
+passthrough `PQsig`. An unsigned foreign native-PQ slot in `/plan` or `/sign`
+declares `pq_scheme: "f1"`; this hint is mutually exclusive with `lsig_size`.
 
 The existing `aplane.falcon1024.v1` remains a LogicSig DSA with a 24-word
 BIP-39 mnemonic, TEAL authorization, and its existing derivation. Neither

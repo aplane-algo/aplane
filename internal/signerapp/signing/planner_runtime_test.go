@@ -22,12 +22,13 @@ import (
 )
 
 type stubPlannerDeps struct {
-	keyTypes    map[string]string
-	keyFiles    map[string]string
-	lsigSizes   map[string]int
-	keyMetadata map[string]PlannerKeyMetadata
-	minTxnFee   uint64
-	minTxnFees  map[types.Digest]uint64
+	keyTypes         map[string]string
+	keyFiles         map[string]string
+	lsigSizes        map[string]int
+	keyMetadata      map[string]PlannerKeyMetadata
+	minTxnFee        uint64
+	minTxnFees       map[types.Digest]uint64
+	consensusVersion string
 }
 
 func (d stubPlannerDeps) Snapshot(identityID string) PlannerIdentitySnapshot {
@@ -46,11 +47,12 @@ func (d stubPlannerDeps) Snapshot(identityID string) PlannerIdentitySnapshot {
 	}
 }
 
-func (d stubPlannerDeps) MinTxnFee(genesisHash types.Digest) uint64 {
+func (d stubPlannerDeps) NetworkParams(genesisHash types.Digest) PlannerNetworkParams {
+	minFee := d.minTxnFee
 	if d.minTxnFees != nil {
-		return d.minTxnFees[genesisHash]
+		minFee = d.minTxnFees[genesisHash]
 	}
-	return d.minTxnFee
+	return PlannerNetworkParams{MinTxnFee: minFee, ConsensusVersion: d.consensusVersion}
 }
 
 type countingSnapshotPlannerDeps struct {
@@ -710,7 +712,7 @@ func TestBuildFinalGroupUsesTransactionGenesisHashForMinFee(t *testing.T) {
 		},
 	}
 
-	allTxns, dummyTxns, feeInfo, _, err := buildFinalGroup(deps, nil, txns, 2, []int{0}, false)
+	allTxns, dummyTxns, feeInfo, _, err := buildFinalGroup(deps.NetworkParams(genesisHash).MinTxnFee, nil, txns, 2, []int{0}, false)
 	if err != nil {
 		t.Fatalf("buildFinalGroup() error = %v", err)
 	}
@@ -740,7 +742,7 @@ func TestBuildFinalGroupRejectsImplausibleMinFee(t *testing.T) {
 		minTxnFees: map[types.Digest]uint64{genesisHash: 2_000_000}, // absurd min fee
 	}
 
-	_, _, _, _, err := buildFinalGroup(deps, nil, txns, 2, []int{0}, false)
+	_, _, _, _, err := buildFinalGroup(deps.NetworkParams(genesisHash).MinTxnFee, nil, txns, 2, []int{0}, false)
 	if err == nil || !strings.Contains(err.Error(), "implausibly high") {
 		t.Fatalf("buildFinalGroup() error = %v, want implausible-min-fee rejection", err)
 	}

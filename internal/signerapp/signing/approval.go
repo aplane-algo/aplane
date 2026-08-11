@@ -175,6 +175,10 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 
 	if isSingleTxn {
 		b.WriteString("=== SINGLE TRANSACTION ===\n\n")
+		if plan.FeeInfo.PQFeeDelta > 0 {
+			b.WriteString("[MODIFIED BY SERVER]\n")
+			b.WriteString(fmt.Sprintf("  • Native Falcon fee adjustment: +%d microAlgos\n\n", plan.FeeInfo.PQFeeDelta))
+		}
 	} else {
 		totalTxns := len(req.Requests)
 		b.WriteString(fmt.Sprintf("=== TRANSACTION GROUP (%d transactions) ===\n", totalTxns))
@@ -194,6 +198,15 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 				b.WriteString(fmt.Sprintf("  • Fee adjustment: +%d microAlgos on first txn\n", plan.FeeInfo.TotalFees))
 			}
 			b.WriteString("  • Group ID recomputed\n")
+		}
+		if plan.FeeInfo.PQFeeDelta > 0 {
+			if plan.DummiesNeeded == 0 {
+				b.WriteString("[MODIFIED BY SERVER]\n")
+			}
+			b.WriteString(fmt.Sprintf("  • Native Falcon fee adjustment: +%d microAlgos\n", plan.FeeInfo.PQFeeDelta))
+			if plan.DummiesNeeded == 0 && len(allTxns) > 1 {
+				b.WriteString("  • Group ID recomputed\n")
+			}
 		}
 		b.WriteString("\n")
 	}

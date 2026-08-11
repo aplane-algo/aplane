@@ -25,8 +25,15 @@ type BuildFinalGroupFunc func(txns []types.Transaction, dummiesNeeded int, lsigI
 type GenerateTxnDescriptionFunc func(txnBytesHex string) string
 
 type DummyFeeInfo struct {
-	TotalFees uint64
-	LSigCount int
+	TotalFees    uint64
+	LSigCount    int
+	PQFeeDelta   uint64
+	PQFeeIndices []int
+}
+
+type PlannerNetworkParams struct {
+	MinTxnFee        uint64
+	ConsensusVersion string
 }
 
 // PlanResult contains the output of group-building shared by /sign and /plan.
@@ -65,6 +72,7 @@ type Planner struct {
 	CalculateDummies       CalculateDummiesFunc
 	BuildFinalGroup        BuildFinalGroupFunc
 	GenesisHashResolver    apconfig.GenesisHashNetworkResolver
+	NetworkParams          func(genesisHash types.Digest) PlannerNetworkParams
 	Snapshot               SnapshotFunc
 }
 
@@ -164,6 +172,38 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		return nil, err
 	}
 
+	budgets, budgetErr := authorizationBudgets(req.Requests, snapshot, passthroughIndices, foreignIndices, passthroughSignedTxns)
+	if budgetErr != nil {
+		return nil, budgetErr
+	}
+	if hasNativePQAuthorization(budgets) {
+		if p.NetworkParams == nil || len(allTxns) == 0 {
+			return nil, internal("native PQ planning requires network consensus parameters")
+		}
+		networkParams := p.NetworkParams(allTxns[0].GenesisHash)
+		pqDelta, pqIndices, feeErr := applyNativePQFees(allTxns, budgets, networkParams, isPreGrouped || hasPassthrough)
+		if feeErr != nil {
+			return nil, feeErr
+		}
+		feeInfo.PQFeeDelta = pqDelta
+		feeInfo.PQFeeIndices = pqIndices
+		if pqDelta > 0 {
+			needsRegroup = true
+			if len(allTxns) > 1 {
+				for i := range allTxns {
+					allTxns[i].Group = types.Digest{}
+				}
+				gid, groupErr := algocrypto.ComputeGroupID(allTxns)
+				if groupErr != nil {
+					return nil, internal(fmt.Sprintf("failed to recompute group ID after native PQ fee adjustment: %v", groupErr))
+				}
+				for i := range allTxns {
+					allTxns[i].Group = gid
+				}
+			}
+		}
+	}
+
 	// Re-classify against the finalized transactions: pooled dummy fees mutate
 	// the original LogicSig slots, and the bounded fee ceiling must hold for the
 	// fees actually signed. Fee pooling cannot change a transaction's shape, so
@@ -215,7 +255,7 @@ func knownAddressesFromSnapshot(snapshot PlannerIdentitySnapshot) map[string]boo
 
 func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.MutationReport {
 	groupIDChanged := plan.NeedsRegroup && len(plan.AllTxns) > 1
-	if plan.DummiesNeeded == 0 && !groupIDChanged && !plan.HasPassthrough && !plan.HasForeign {
+	if plan.DummiesNeeded == 0 && plan.FeeInfo.PQFeeDelta == 0 && !groupIDChanged && !plan.HasPassthrough && !plan.HasForeign {
 		return nil
 	}
 
@@ -233,6 +273,16 @@ func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.Mutatio
 			mutations.FeesModified = plan.LsigIndices
 		} else {
 			mutations.FeesModified = []int{0}
+		}
+	}
+
+	if plan.FeeInfo.PQFeeDelta > 0 {
+		mutations.TotalFeesDelta += int(plan.FeeInfo.PQFeeDelta)
+		mutations.FeesModified = appendUniqueIndices(mutations.FeesModified, plan.FeeInfo.PQFeeIndices...)
+		if mutations.Reason == "" {
+			mutations.Reason = "native_pq_fee"
+		} else {
+			mutations.Reason += "+native_pq_fee"
 		}
 	}
 
@@ -255,6 +305,22 @@ func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.Mutatio
 	}
 
 	return mutations
+}
+
+func appendUniqueIndices(dst []int, indices ...int) []int {
+	for _, index := range indices {
+		found := false
+		for _, existing := range dst {
+			if existing == index {
+				found = true
+				break
+			}
+		}
+		if !found {
+			dst = append(dst, index)
+		}
+	}
+	return dst
 }
 
 func categorizeRequests(requests []signerapi.SignRequest) (passthroughIndices, foreignIndices map[int]bool, err *ServiceError) {

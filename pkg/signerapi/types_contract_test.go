@@ -145,6 +145,7 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		run  func(*testing.T, string)
 	}{
 		{"group_sign_request_mixed.json", assertContractRoundTrip[GroupSignRequest]},
+		{"group_sign_request_native_pq.json", assertContractRoundTrip[GroupSignRequest]},
 		{"group_sign_response_mutated.json", assertContractRoundTrip[GroupSignResponse]},
 		{"bounded_admin_request.json", assertContractRoundTrip[BoundedAdminRequest]},
 		{"bounded_admin_partial_response.json", assertContractRoundTrip[BoundedAdminPartialResponse]},

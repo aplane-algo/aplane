@@ -21,7 +21,9 @@ const maxSignRequestIDLength = 128
 // Foreign mode is accepted on both /plan and /sign. It includes the
 // transaction in group building (dummies, fees, group ID) but does not sign
 // it. The optional lsig_size hint reserves LSig budget for the foreign
-// party's key type.
+// party's key type. The optional pq_scheme hint declares the native-PQ
+// authorization shape of an unsigned foreign slot; it is mutually exclusive
+// with lsig_size.
 type SignRequest struct {
 	// Sign mode fields (server signs this transaction)
 	AuthAddress string            `json:"auth_address,omitempty"`  // Auth address (which key to use for signing)
@@ -29,6 +31,7 @@ type SignRequest struct {
 	TxnBytesHex string            `json:"txn_bytes_hex,omitempty"` // Full transaction bytes (TX + msgpack) - server derives what to sign from this
 	LsigArgs    map[string]string `json:"lsig_args,omitempty"`     // Runtime args for generic LSigs (name -> hex value)
 	LsigSize    int               `json:"lsig_size,omitempty"`     // LSig size hint for foreign transactions (no key on this signer)
+	PQScheme    string            `json:"pq_scheme,omitempty"`     // Native-PQ scheme hint for foreign transactions (currently "f1")
 	AppCallInfo *AppCallInfo      `json:"app_call_info,omitempty"` // Optional app-call metadata for approval rendering
 
 	// Passthrough mode field (transaction already signed externally)
@@ -121,8 +124,17 @@ func (r SignRequest) Mode() (RequestMode, error) {
 
 // Validate checks that the request uses exactly one supported request mode.
 func (r SignRequest) Validate() error {
-	_, err := r.Mode()
-	return err
+	mode, err := r.Mode()
+	if err != nil {
+		return err
+	}
+	if r.PQScheme != "" && mode != RequestModeForeign {
+		return fmt.Errorf("pq_scheme is allowed only for foreign transactions")
+	}
+	if r.PQScheme != "" && r.LsigSize != 0 {
+		return fmt.Errorf("foreign transaction cannot specify both pq_scheme and lsig_size")
+	}
+	return nil
 }
 
 // Validate checks that all contained requests use a supported request mode.
@@ -138,8 +150,11 @@ func (r GroupSignRequest) Validate() error {
 	passthroughCount := 0
 	foreignCount := 0
 	for i, req := range r.Requests {
+		if err := req.Validate(); err != nil {
+			return fmt.Errorf("transaction %d: %w", i+1, err)
+		}
 		mode, err := req.Mode()
-		if err != nil {
+		if err != nil { // unreachable after Validate; keep the mode contract explicit
 			return fmt.Errorf("transaction %d: %w", i+1, err)
 		}
 		switch mode {

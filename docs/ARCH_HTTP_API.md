@@ -125,7 +125,12 @@ from `pkg/signerapi/types.go` (re-exported internally via `internal/signerapi/ty
 - each entry is one of:
   - sign: `auth_address`, optional `txn_sender`, `txn_bytes_hex`, optional `lsig_args`, optional `app_call_info`
   - passthrough: `signed_txn_hex`
-  - foreign: `txn_bytes_hex` without `auth_address`, optional `lsig_size`
+  - foreign: `txn_bytes_hex` without `auth_address`, with at most one authorization-budget hint: optional `lsig_size` or native-PQ `pq_scheme` (`f1`)
+
+The signer derives authorization shape for locally held keys and from the
+envelope of passthrough transactions. An unsigned foreign native-PQ slot must
+declare `pq_scheme:"f1"` so pooled protocol fees are correct; `pq_scheme` is
+not an alias for `lsig_size` and the two hints are mutually exclusive.
 
 `txn_sender` is an advisory display hint for clients. Signer authority,
 policy, and audit decisions use the sender decoded from `txn_bytes_hex`.

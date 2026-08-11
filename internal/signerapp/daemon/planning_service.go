@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
@@ -68,26 +69,30 @@ func (d signerPlannerDeps) Snapshot(identityID string) signersigning.PlannerIden
 	}
 }
 
-func (d signerPlannerDeps) MinTxnFee(genesisHash types.Digest) uint64 {
+func (d signerPlannerDeps) NetworkParams(genesisHash types.Digest) signersigning.PlannerNetworkParams {
 	if d.signer == nil {
-		return txsigning.DefaultMinFee
+		return signersigning.PlannerNetworkParams{MinTxnFee: txsigning.DefaultMinFee}
 	}
 	cfg := d.signer.ConfigSnapshot()
 	resolver, err := apconfig.NewGenesisHashNetworkResolver(cfg.GenesisHashNetworks)
 	if err != nil {
-		return txsigning.DefaultMinFee
+		return signersigning.PlannerNetworkParams{MinTxnFee: txsigning.DefaultMinFee}
 	}
 	network, ok := resolver.NetworkForGenesisHashBytes(genesisHash[:])
 	if !ok {
-		return txsigning.DefaultMinFee
+		return signersigning.PlannerNetworkParams{MinTxnFee: txsigning.DefaultMinFee}
 	}
 	algodCfg, cfgErr := cfg.GetAlgodConfig(network)
 	if cfgErr != nil || algodCfg.Server == "" {
-		return txsigning.DefaultMinFee
+		return signersigning.PlannerNetworkParams{MinTxnFee: txsigning.DefaultMinFee}
 	}
 	algodClient, err := txsigning.CreateAlgodClient(algodCfg.Server, algodCfg.Token)
 	if err != nil || algodClient == nil {
-		return txsigning.DefaultMinFee
+		return signersigning.PlannerNetworkParams{MinTxnFee: txsigning.DefaultMinFee}
 	}
-	return txsigning.GetMinFeeFromAlgod(algodClient)
+	params, err := algodClient.SuggestedParams().Do(context.Background())
+	if err != nil {
+		return signersigning.PlannerNetworkParams{MinTxnFee: txsigning.DefaultMinFee}
+	}
+	return signersigning.PlannerNetworkParams{MinTxnFee: params.MinFee, ConsensusVersion: params.ConsensusVersion}
 }
