@@ -257,8 +257,8 @@ func TestBoundedAuthorizationMetadataSnapshotsSentryContract(t *testing.T) {
 	if metadata.Sentry == nil || metadata.Sentry.ComponentKeyID != wantID || metadata.Sentry.PublicKeyHex != hex.EncodeToString(sentryPublicKey) {
 		t.Fatalf("Sentry = %#v", metadata.Sentry)
 	}
-	if got, want := metadata.PostSigningLogicSigSize, 100+4+boundedmeta.SentrySignatureMaxSizeV1; got != want {
-		t.Fatalf("PostSigningLogicSigSize = %d, want %d", got, want)
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 4+boundedmeta.SentrySignatureMaxSizeV1; got != want {
+		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
 	if _, err := provider.BuildBoundedAuthorizationMetadata(
 		sentryPublicKey,
@@ -594,8 +594,8 @@ func TestBoundedAuthorizationMetadataSnapshotsAdminContract(t *testing.T) {
 	if metadata.AdminKeyID == "" || len(metadata.ProgramBindingHex) != 64 {
 		t.Fatalf("admin metadata = %#v", metadata)
 	}
-	if want := 100 + 4 + BoundedAdminSignatureMaxSize; metadata.PostSigningLogicSigSize != want {
-		t.Fatalf("PostSigningLogicSigSize = %d, want %d", metadata.PostSigningLogicSigSize, want)
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey), 4+BoundedAdminSignatureMaxSize; got != want {
+		t.Fatalf("admin argument bytes = %d, want %d", got, want)
 	}
 	if got := len(metadata.ArgumentLayout); got != 2 || metadata.ArgumentLayout[1].Source != boundedmeta.ArgSourceAdmin {
 		t.Fatalf("ArgumentLayout = %#v", metadata.ArgumentLayout)

@@ -97,11 +97,11 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			spend := metadata.LogicSigSizeForPath(boundedmeta.PathSpend)
+			spend := len(bytecode) + metadata.ArgumentBytesForPath(boundedmeta.PathSpend)
 			admin := 0
 			maxSize := spend
 			if metadata.RequiresAdminKey() {
-				admin = metadata.LogicSigSizeForPath(boundedmeta.PathAdminRekey)
+				admin = len(bytecode) + metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey)
 				if admin > maxSize {
 					maxSize = admin
 				}

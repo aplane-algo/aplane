@@ -618,19 +618,18 @@ func TestBuildKeyTypesServesBoundedSentryMetadata(t *testing.T) {
 
 func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 	metadata := &boundedmeta.Metadata{
-		Contract:                boundedmeta.ContractV1,
-		BaseSignatureArgLayout:  boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, true),
-		SpendEffects:            []string{"pay"},
-		MaxFee:                  1_000,
-		AdminOperations:         []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone}},
-		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
-		AdminKeyID:              "ADMIN",
-		ProgramBindingHex:       strings.Repeat("ab", 32),
-		PostSigningLogicSigSize: 4_096,
+		Contract:               boundedmeta.ContractV1,
+		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, true),
+		SpendEffects:           []string{"pay"},
+		MaxFee:                 1_000,
+		AdminOperations:        []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone}},
+		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
+		AdminKeyID:             "ADMIN",
+		ProgramBindingHex:      strings.Repeat("ab", 32),
 	}
 	info := boundedInfo(metadata)
-	if info.AdminKeyID != "ADMIN" || info.ProgramBindingHex != metadata.ProgramBindingHex || info.PostSigningLogicSigSize != 4_096 || info.Layer3Policy != boundedmeta.Layer3PolicyCustom {
+	if info.AdminKeyID != "ADMIN" || info.ProgramBindingHex != metadata.ProgramBindingHex || info.Layer3Policy != boundedmeta.Layer3PolicyCustom {
 		t.Fatalf("boundedInfo() = %#v", info)
 	}
 }

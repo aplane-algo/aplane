@@ -163,15 +163,14 @@ func (*boundedGeneratorTestDSA) RoutingFamily() string { return "generator-bound
 func (*boundedGeneratorTestDSA) BaseKeyType() string   { return "aplane.falcon1024.v1" }
 func (*boundedGeneratorTestDSA) BuildBoundedAuthorizationMetadata(_ []byte, _ map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
 	return &boundedmeta.Metadata{
-		Contract:                boundedmeta.ContractV1,
-		BaseSignatureArgLayout:  boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}},
-		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}, false),
-		SpendEffects:            []string{"pay"},
-		MaxFee:                  1_000,
-		AdminOperations:         []boundedmeta.AdminOperation{},
-		RuntimeArgs:             []boundedmeta.RuntimeArg{},
-		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
-		PostSigningLogicSigSize: len(bytecode) + family.MaxSignatureSize,
+		Contract:               boundedmeta.ContractV1,
+		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}},
+		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}, false),
+		SpendEffects:           []string{"pay"},
+		MaxFee:                 1_000,
+		AdminOperations:        []boundedmeta.AdminOperation{},
+		RuntimeArgs:            []boundedmeta.RuntimeArg{},
+		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 	}, nil
 }
 
@@ -312,8 +311,8 @@ func TestGenerateFromSeedPersistsBoundedMetadataAfterDerivation(t *testing.T) {
 	if payload.SigningMetadataVersion != apkeys.BoundedSigningMetadataVersion || payload.BoundedAuthorization == nil {
 		t.Fatalf("bounded authorization metadata = %#v", payload.BoundedAuthorization)
 	}
-	if got, want := payload.BoundedAuthorization.PostSigningLogicSigSize, len(payload.LogicSigBytecode)+family.MaxSignatureSize; got != want {
-		t.Fatalf("PostSigningLogicSigSize = %d, want %d", got, want)
+	if got, want := payload.BoundedAuthorization.ArgumentBytesForPath(boundedmeta.PathSpend), family.MaxSignatureSize; got != want {
+		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
 }
 

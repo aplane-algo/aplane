@@ -106,10 +106,10 @@ teal: |
 	if got, want := len(bytecode), 5_673; got != want {
 		t.Fatalf("compiled bytecode size = %d, want %d; TEAL SHA-256 %x", got, want, hash)
 	}
-	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathSpend), 8_519; got != want {
-		t.Fatalf("spend LogicSig size = %d, want %d", got, want)
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 2_846; got != want {
+		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
-	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathAdminRekey), 8_519; got != want {
-		t.Fatalf("admin-rekey LogicSig size = %d, want %d", got, want)
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey), 2_846; got != want {
+		t.Fatalf("admin-rekey argument bytes = %d, want %d", got, want)
 	}
 }

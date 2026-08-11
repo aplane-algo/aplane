@@ -30,8 +30,7 @@
         ],
         "layer3_policy": "fixed_allowlist",
         "admin_key_id": "bounded-admin:falcon1024:EXAMPLE",
-        "program_binding": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
-        "post_signing_lsig_size": 7872
+        "program_binding": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
       },
       "parameters": {
         "recipients": "ADDR1,ADDR2",
@@ -137,8 +136,7 @@
         ],
         "layer3_policy": "merkle_allowlist",
         "admin_key_id": "bounded-admin:falcon1024:CORRIDOR",
-        "program_binding": "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f",
-        "post_signing_lsig_size": 9664
+        "program_binding": "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f"
       },
       "parameters": {
         "recipients": "ADDR1,ADDR2",

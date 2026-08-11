@@ -391,12 +391,11 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 			Count:    metadata.BaseSignatureArgLayout.Count,
 			MaxSizes: append([]int(nil), metadata.BaseSignatureArgLayout.MaxSizes...),
 		},
-		SpendEffects:            append([]string(nil), metadata.SpendEffects...),
-		MaxFee:                  metadata.MaxFee,
-		Layer3Policy:            metadata.Layer3Policy,
-		AdminKeyID:              metadata.AdminKeyID,
-		ProgramBindingHex:       metadata.ProgramBindingHex,
-		PostSigningLogicSigSize: metadata.PostSigningLogicSigSize,
+		SpendEffects:      append([]string(nil), metadata.SpendEffects...),
+		MaxFee:            metadata.MaxFee,
+		Layer3Policy:      metadata.Layer3Policy,
+		AdminKeyID:        metadata.AdminKeyID,
+		ProgramBindingHex: metadata.ProgramBindingHex,
 	}
 	if metadata.Sentry != nil {
 		info.Sentry = &signerapi.BoundedSentryAuthorizationInfo{

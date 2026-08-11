@@ -397,10 +397,11 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
   `spend_effects`, `max_fee`, `admin_operations` (including each operation's
   `policy_gate`), `runtime_args`, `derived_args`, the path-specific
   `argument_layout`, and `layer3_policy`. `/keys` also includes instance-only
-  `admin_key_id`, `program_binding`, and `post_signing_lsig_size` when
+  `admin_key_id` and `program_binding` when
   applicable. This is routing and assembly metadata, not permission; signer
   classification and stored bytecode remain authoritative.
-- optional `lsig_size`
+- optional `logic_sig_resources`, containing final compiled program bytes and
+  path-specific argument-byte and maximum-opcode-cost ceilings
 - optional `is_generic_lsig`
 - optional `is_witness_key` and `is_spending_account`: sentry-key rows use
   `address` as the Witness Key ID, not as an Algorand spending address.

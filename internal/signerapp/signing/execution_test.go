@@ -815,7 +815,6 @@ func TestResolveBoundedPlanItemsAcceptsDeclaredRuntimeArgs(t *testing.T) {
 		Index: 1, Name: "preimage", Source: boundedmeta.ArgSourceRuntime, MaxSize: 2,
 		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
 	})
-	metadata.PostSigningLogicSigSize += 2
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("runtime metadata invalid: %v", err)
 	}

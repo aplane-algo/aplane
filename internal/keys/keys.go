@@ -404,21 +404,16 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc 
 			}
 			continue
 		}
-		var lsigSize int
+		var baseArgumentBytes int
 		switch category {
 		case CategoryGenericLsig:
 			publicKeyHex = ""
-			lsigSize = len(payload.LogicSigBytecode)
 		case CategoryDSALsig:
-			if signingMeta.BoundedAuthorization != nil {
-				// Spend-path size: group budgeting covers ordinary spends. The
-				// admin-key rekey slot is topped up per path by the planner.
-				lsigSize = signingMeta.BoundedAuthorization.SpendPathLogicSigSize()
-			} else {
-				lsigSize = len(payload.LogicSigBytecode) + dsaLogicSigArgBudgetForKey(keyType, signingMeta.BaseKeyType)
+			if signingMeta.BoundedAuthorization == nil {
+				baseArgumentBytes = dsaLogicSigArgBudgetForKey(keyType, signingMeta.BaseKeyType)
 			}
 		}
-		logicSigResources, resourceErr := scanLogicSigResources(payload, lsigSize)
+		logicSigResources, resourceErr := scanLogicSigResources(payload, baseArgumentBytes)
 		if resourceErr != nil {
 			payload.ZeroSecrets()
 			crypto.ZeroBytes(data)
@@ -460,7 +455,7 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc 
 	return &KeyScanReport{Keys: keysMap, Warnings: warnings}, nil
 }
 
-func scanLogicSigResources(payload *Payload, legacyCombinedSize int) (*lsigresource.Profile, error) {
+func scanLogicSigResources(payload *Payload, baseArgumentBytes int) (*lsigresource.Profile, error) {
 	if payload == nil || (payload.Category != CategoryDSALsig && payload.Category != CategoryGenericLsig) {
 		return nil, nil
 	}
@@ -469,12 +464,12 @@ func scanLogicSigResources(payload *Payload, legacyCombinedSize int) (*lsigresou
 		return nil, fmt.Errorf("LogicSig resource profile has empty program")
 	}
 	if payload.LogicSigOpcodeProfile == (lsigresource.OpcodeProfile{}) {
-		return scanLegacyLogicSigResources(payload, legacyCombinedSize)
+		return scanLegacyLogicSigResources(payload, baseArgumentBytes)
 	}
 	if metadata := payload.BoundedAuthorization; metadata != nil {
 		return profileFromBoundedMetadata(uint64(programBytes), metadata, payload.LogicSigOpcodeProfile)
 	}
-	argumentBytes := legacyCombinedSize - programBytes
+	argumentBytes := baseArgumentBytes
 	for _, arg := range payload.SigningArgs {
 		if arg.ByteLength > 0 {
 			argumentBytes += arg.ByteLength
@@ -493,7 +488,7 @@ func scanLogicSigResources(payload *Payload, legacyCombinedSize int) (*lsigresou
 	return &profile, nil
 }
 
-func scanLegacyLogicSigResources(payload *Payload, legacyCombinedSize int) (*lsigresource.Profile, error) {
+func scanLegacyLogicSigResources(payload *Payload, baseArgumentBytes int) (*lsigresource.Profile, error) {
 	programBytes := len(payload.LogicSigBytecode)
 	path := func(argumentBytes int) *lsigresource.PathProfile {
 		return &lsigresource.PathProfile{ArgumentBytes: uint64(argumentBytes)}
@@ -505,7 +500,7 @@ func scanLegacyLogicSigResources(payload *Payload, legacyCombinedSize int) (*lsi
 		profile.AdminRekey = path(metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey))
 		return profile, nil
 	}
-	argumentBytes := legacyCombinedSize - programBytes
+	argumentBytes := baseArgumentBytes
 	for _, arg := range payload.SigningArgs {
 		if arg.ByteLength > 0 {
 			argumentBytes += arg.ByteLength

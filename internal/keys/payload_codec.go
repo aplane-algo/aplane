@@ -719,13 +719,6 @@ func validateLogicSigFields(p *Payload) error {
 		if len(p.SigningArgs) != 0 {
 			return incompatibleKeyFormat("bounded1 forbids caller-supplied signing_args")
 		}
-		expectedSize := len(p.LogicSigBytecode)
-		for _, slot := range p.BoundedAuthorization.ArgumentLayout {
-			expectedSize += slot.MaxSize
-		}
-		if p.BoundedAuthorization.PostSigningLogicSigSize != expectedSize {
-			return incompatibleKeyFormat("bounded_authorization post_signing_lsig_size %d does not match derived size %d", p.BoundedAuthorization.PostSigningLogicSigSize, expectedSize)
-		}
 	}
 	address, err := logicSigAddressBytes(p.LogicSigBytecode)
 	if err != nil {

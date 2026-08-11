@@ -466,19 +466,18 @@ type BoundedSentryAuthorizationInfo struct {
 // projection shared by /keytypes and /keys. Instance-only fields are omitted
 // from /keytypes until a concrete LogicSig has been generated.
 type BoundedAuthorizationInfo struct {
-	Contract                string                          `json:"contract"`
-	BaseSignatureArgLayout  BoundedSignatureArgLayout       `json:"base_signature_arg_layout"`
-	SpendEffects            []string                        `json:"spend_effects"`
-	MaxFee                  uint64                          `json:"max_fee"`
-	AdminOperations         []BoundedAdminOperationInfo     `json:"admin_operations"`
-	Sentry                  *BoundedSentryAuthorizationInfo `json:"sentry,omitempty"`
-	RuntimeArgs             []RuntimeArgInfo                `json:"runtime_args"`
-	DerivedArgs             []BoundedDerivedArgInfo         `json:"derived_args"`
-	ArgumentLayout          []BoundedArgumentSlotInfo       `json:"argument_layout"`
-	Layer3Policy            string                          `json:"layer3_policy"`
-	AdminKeyID              string                          `json:"admin_key_id,omitempty"`
-	ProgramBindingHex       string                          `json:"program_binding,omitempty"`
-	PostSigningLogicSigSize int                             `json:"post_signing_lsig_size,omitempty"`
+	Contract               string                          `json:"contract"`
+	BaseSignatureArgLayout BoundedSignatureArgLayout       `json:"base_signature_arg_layout"`
+	SpendEffects           []string                        `json:"spend_effects"`
+	MaxFee                 uint64                          `json:"max_fee"`
+	AdminOperations        []BoundedAdminOperationInfo     `json:"admin_operations"`
+	Sentry                 *BoundedSentryAuthorizationInfo `json:"sentry,omitempty"`
+	RuntimeArgs            []RuntimeArgInfo                `json:"runtime_args"`
+	DerivedArgs            []BoundedDerivedArgInfo         `json:"derived_args"`
+	ArgumentLayout         []BoundedArgumentSlotInfo       `json:"argument_layout"`
+	Layer3Policy           string                          `json:"layer3_policy"`
+	AdminKeyID             string                          `json:"admin_key_id,omitempty"`
+	ProgramBindingHex      string                          `json:"program_binding,omitempty"`
 }
 
 // KeyTypeInfo describes an available key type from the /keytypes endpoint.

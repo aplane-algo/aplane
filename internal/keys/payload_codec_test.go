@@ -153,12 +153,11 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{
 			Count: 1, MaxSizes: []int{4},
 		},
-		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}, false),
-		SpendEffects:            []string{"pay", "axfer"},
-		MaxFee:                  1_000,
-		AdminOperations:         []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateNone}},
-		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
-		PostSigningLogicSigSize: len(bytecode) + 4,
+		ArgumentLayout:  boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}, false),
+		SpendEffects:    []string{"pay", "axfer"},
+		MaxFee:          1_000,
+		AdminOperations: []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateNone}},
+		Layer3Policy:    boundedmeta.Layer3PolicyCustom,
 	}
 	if err := payload.SetBoundedAuthorization(metadata); err != nil {
 		t.Fatalf("SetBoundedAuthorization() error = %v", err)
@@ -180,7 +179,7 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 	if parsed.SigningMetadataVersion != BoundedSigningMetadataVersion {
 		t.Fatalf("SigningMetadataVersion = %d, want %d", parsed.SigningMetadataVersion, BoundedSigningMetadataVersion)
 	}
-	if got := parsed.BoundedAuthorization; got == nil || got.Contract != boundedmeta.ContractV1 || got.PostSigningLogicSigSize != len(bytecode)+4 {
+	if got := parsed.BoundedAuthorization; got == nil || got.Contract != boundedmeta.ContractV1 || got.ArgumentBytesForPath(boundedmeta.PathSpend) != 4 {
 		t.Fatalf("BoundedAuthorization = %#v", got)
 	}
 
@@ -216,7 +215,6 @@ func TestBoundedSentryPayloadMetadataRoundTrip(t *testing.T) {
 			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired}},
 			{Index: 1, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry, MaxSize: boundedmeta.SentrySignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
 		},
-		PostSigningLogicSigSize: len(bytecode) + 4 + boundedmeta.SentrySignatureMaxSizeV1,
 	}
 	if err := payload.SetBoundedAuthorization(metadata); err != nil {
 		t.Fatal(err)
@@ -244,13 +242,13 @@ func TestBoundedSentryPayloadMetadataRoundTrip(t *testing.T) {
 func TestParsePayloadRejectsInvalidBoundedMetadata(t *testing.T) {
 	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
 	base := `{"format_version":1}`
-	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded1","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"admin_operations":[],"runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","admin_rekey":"required"}}],"layer3_policy":"custom","post_signing_lsig_size":9999},"created_at":"2026-07-10T12:34:56Z"}`
+	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded1","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"admin_operations":[],"runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","admin_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
 	tests := []struct {
 		name string
 		data string
 		want string
 	}{
-		{name: "size mismatch", data: base, want: "does not match derived size"},
+		{name: "obsolete combined size", data: strings.Replace(base, `"contract":"bounded1"`, `"contract":"bounded1","post_signing_lsig_size":9999`, 1), want: "unknown field"},
 		{name: "unknown nested field", data: strings.Replace(base, `"contract":"bounded1"`, `"contract":"bounded1","future":true`, 1), want: "unknown field"},
 		{name: "duplicate nested field", data: strings.Replace(base, `"contract":"bounded1"`, `"contract":"bounded1","contract":"bounded1"`, 1), want: `duplicate object member "contract"`},
 		{name: "wrong metadata version", data: strings.Replace(base, `"signing_metadata_version":2`, `"signing_metadata_version":1`, 1), want: "requires signing_metadata_version 2"},

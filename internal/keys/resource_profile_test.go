@@ -21,7 +21,7 @@ func TestScanLogicSigResourcesSeparatesProgramAndArguments(t *testing.T) {
 			{Name: "note", Type: "bytes", MaxSize: 64},
 		},
 	}
-	profile, err := scanLogicSigResources(payload, 250+1_423)
+	profile, err := scanLogicSigResources(payload, 1_423)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestScanAutoSaltedResourcesUsesDurableOpcodeProfile(t *testing.T) {
 		LogicSigBytecode:      make([]byte, 1_800),
 		LogicSigOpcodeProfile: lsigresource.DefaultOpcodeProfile(1_750),
 	}
-	profile, err := scanLogicSigResources(payload, 1_800+1_423)
+	profile, err := scanLogicSigResources(payload, 1_423)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,7 +59,7 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	if len(inventoryMetadata.ArgumentLayout) != 2 || inventoryMetadata.ArgumentLayout[1].Source != boundedmeta.ArgSourceAdmin || inventoryMetadata.ArgumentLayout[1].Paths.Spend != boundedmeta.ArgForbidden || inventoryMetadata.ArgumentLayout[1].Paths.AdminRekey != boundedmeta.ArgRequired {
 		t.Fatalf("admin argument layout = %#v", inventoryMetadata.ArgumentLayout)
 	}
-	if inventoryMetadata.AdminKeyID != "" || inventoryMetadata.ProgramBindingHex != "" || inventoryMetadata.PostSigningLogicSigSize != 0 {
+	if inventoryMetadata.AdminKeyID != "" || inventoryMetadata.ProgramBindingHex != "" {
 		t.Fatalf("template inventory contains instance metadata: %#v", inventoryMetadata)
 	}
 
@@ -105,11 +105,11 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	if metadata == nil || metadata.Contract != boundedmeta.ContractV1 || metadata.AdminKeyID == "" || metadata.AdminPublicKeyHex != hex.EncodeToString(adminKey) || metadata.ProgramBindingHex == "" || len(metadata.DerivedArgs) != 0 || metadata.Layer3Policy != boundedmeta.Layer3PolicyFixedAllowlist {
 		t.Fatalf("BoundedAuthorizationMetadata() = %#v", metadata)
 	}
-	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathSpend), 3+falconfamily.MaxSignatureSize; got != want {
-		t.Fatalf("spend LogicSig size = %d, want %d", got, want)
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), falconfamily.MaxSignatureSize; got != want {
+		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
-	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathAdminRekey), 3+falconfamily.MaxSignatureSize+boundedmeta.FalconAdminSignatureSize; got != want {
-		t.Fatalf("admin LogicSig size = %d, want %d", got, want)
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey), falconfamily.MaxSignatureSize+boundedmeta.FalconAdminSignatureSize; got != want {
+		t.Fatalf("admin argument bytes = %d, want %d", got, want)
 	}
 	if got, want := provider.CompatibilityFingerprint(), "1:03da87e5491d266432cba9472eaf067639a362543ec50be941295eec4aaee399"; got != want {
 		t.Fatalf("CompatibilityFingerprint() = %q, want %q", got, want)
@@ -276,9 +276,10 @@ func TestBundledFalconAdminAllowlistV1MaximumBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	groupSize := (metadata.PostSigningLogicSigSize + 999) / 1000
-	if len(bytecode) != 5308 || metadata.PostSigningLogicSigSize != 8154 || groupSize != 9 {
-		t.Fatalf("maximum budget = bytecode %d, post-signing %d, group %d; want 5308/8154/9", len(bytecode), metadata.PostSigningLogicSigSize, groupSize)
+	argumentBytes := metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey)
+	groupSize := (len(bytecode) + argumentBytes + 999) / 1000
+	if len(bytecode) != 5308 || argumentBytes != 2846 || groupSize != 9 {
+		t.Fatalf("maximum legacy budget = bytecode %d, arguments %d, group %d; want 5308/2846/9", len(bytecode), argumentBytes, groupSize)
 	}
 	feeTests := []struct {
 		minFee uint64

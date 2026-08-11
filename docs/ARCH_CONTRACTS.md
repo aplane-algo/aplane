@@ -1055,16 +1055,13 @@ Additional client-state notes:
 - cache files are signed JSON with a per-client `.cache_key` and are local, rebuildable client state; the signed envelope has `version: 1`, and versioned cache payloads carry `schema_version: 1`; a missing payload version is interpreted as v1
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
   inventory. It may persist address key types, generic-LogicSig flags,
-  `lsig_sizes`, key-file signing argument schemas, `signing_flows`,
-  `sentry_component_key_types`, and `sentry_public_keys`. `lsig_sizes` is the
-  signer-advertised spend-path post-signing LogicSig program+args budget used
-  for dummy planning and foreign `lsig_size` hints: bytecode plus cryptographic
-  signature args and any runtime or signer-generated args such as proof
-  material. For bounded accounts it excludes the contract-admin signature slot:
-  only the `/sign/bounded-admin` choreography attaches that signature, and the
-  signer's own planner reserves its bytes when budgeting an admin-key rekey
-  (the stored `post_signing_lsig_size` metadata field remains
-  admin-inclusive). For guarded signing, clients route on `signing_flows`; a cached
+  structured `logic_sig_resources`, key-file signing argument schemas,
+  `signing_flows`, `sentry_component_key_types`, and `sentry_public_keys`.
+  Each LogicSig resource profile keeps final compiled program bytes separate
+  from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
+  Bounded profiles expose spend, spending-rekey, and admin-rekey paths from the
+  durable argument layout; no combined program-plus-arguments scalar is stored.
+  For guarded signing, clients route on `signing_flows`; a cached
   built-in guarded key type with missing flow or sentry metadata is only a
   stale-cache signal that triggers `/keys` refresh before route selection.
 - persisted alias and set names are canonicalized to lowercase by
@@ -1746,12 +1743,12 @@ Bounded signing-metadata version 2 additionally requires the canonical
 - `admin_public_key`, `admin_key_id`, and `program_binding` when an operation
   uses `authorization: admin_key`; the key ID must derive from that public key,
   and the public key must equal `parameters.bounded_admin_public_key`
-- `post_signing_lsig_size`: exact stored bytecode size plus every slot maximum;
-  path-specific sizing subtracts slots forbidden on the selected path
+- the final stored bytecode plus `argument_layout` and the durable opcode
+  profile are the independent sources for program, argument, and opcode budgets
 
 Bounded payloads with metadata version 1, non-bounded payloads with metadata
 version 2, unknown nested fields, duplicate object members, invalid or
-colliding argument declarations, or inconsistent size/admin metadata are
+colliding argument declarations, or inconsistent admin metadata are
 rejected. Backup and restore preserve the object unchanged.
 
 Stored LogicSig bytecode and stored signing metadata are authoritative for

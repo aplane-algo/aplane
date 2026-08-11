@@ -1307,17 +1307,14 @@ a signing flow, the client uses guarded orchestration for the whole
 atomic group. The group may mix direct guarded senders, senders rekeyed to a
 guarded authorizer, and ordinary signer-managed senders.
 
-The client first builds one canonical group. It sizes LogicSig-budget dummies
-across every LogicSig position from signer-advertised `lsig_size`, including
-non-guarded positions budgeted by effective signer/AuthAddr, then fixes fees
-and group ID. `lsig_size` is the expected spend-path post-signing LogicSig
-program plus args budget: bytecode plus cryptographic signature args and any
-runtime or signer-generated args used by that path. For bounded1 accounts it
-excludes the contract-admin signature slot, which only
-`/sign/bounded-admin` attaches; the signer's planner adds that slot when it
-classifies an admin-key rekey. The stored bounded
-`post_signing_lsig_size` remains admin-inclusive. All downstream component and
-non-guarded signatures are over the frozen transaction bytes.
+The client first builds one canonical group. The signer sizes LogicSig-budget
+dummies across every LogicSig position from structured resource profiles:
+final compiled program bytes, selected-path maximum argument bytes, and the
+reviewed maximum opcode cost. Bounded profiles derive their path-specific
+argument budgets from the durable argument layout, including the admin-key
+slot only for an admin-key rekey. No combined LogicSig-size scalar participates
+in planning. Fees and group ID are fixed before any downstream component or
+non-guarded signature is produced.
 
 For guarded targets, the client obtains component signatures:
 

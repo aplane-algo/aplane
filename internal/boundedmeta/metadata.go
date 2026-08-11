@@ -82,20 +82,19 @@ type SentryAuthorization struct {
 
 // Metadata is the complete non-secret signing contract for one bounded key.
 type Metadata struct {
-	Contract                string               `json:"contract"`
-	BaseSignatureArgLayout  SignatureArgLayout   `json:"base_signature_arg_layout"`
-	SpendEffects            []string             `json:"spend_effects"`
-	MaxFee                  uint64               `json:"max_fee"`
-	AdminOperations         []AdminOperation     `json:"admin_operations"`
-	Sentry                  *SentryAuthorization `json:"sentry,omitempty"`
-	RuntimeArgs             []RuntimeArg         `json:"runtime_args"`
-	DerivedArgs             []DerivedArg         `json:"derived_args"`
-	ArgumentLayout          []ArgumentSlot       `json:"argument_layout"`
-	Layer3Policy            string               `json:"layer3_policy"`
-	AdminPublicKeyHex       string               `json:"admin_public_key,omitempty"`
-	AdminKeyID              string               `json:"admin_key_id,omitempty"`
-	ProgramBindingHex       string               `json:"program_binding,omitempty"`
-	PostSigningLogicSigSize int                  `json:"post_signing_lsig_size"`
+	Contract               string               `json:"contract"`
+	BaseSignatureArgLayout SignatureArgLayout   `json:"base_signature_arg_layout"`
+	SpendEffects           []string             `json:"spend_effects"`
+	MaxFee                 uint64               `json:"max_fee"`
+	AdminOperations        []AdminOperation     `json:"admin_operations"`
+	Sentry                 *SentryAuthorization `json:"sentry,omitempty"`
+	RuntimeArgs            []RuntimeArg         `json:"runtime_args"`
+	DerivedArgs            []DerivedArg         `json:"derived_args"`
+	ArgumentLayout         []ArgumentSlot       `json:"argument_layout"`
+	Layer3Policy           string               `json:"layer3_policy"`
+	AdminPublicKeyHex      string               `json:"admin_public_key,omitempty"`
+	AdminKeyID             string               `json:"admin_key_id,omitempty"`
+	ProgramBindingHex      string               `json:"program_binding,omitempty"`
 }
 
 // Clone returns a deep copy suitable for crossing cache and API boundaries.
@@ -156,8 +155,7 @@ func (metadata *Metadata) Equal(other *Metadata) bool {
 		metadata.Layer3Policy == other.Layer3Policy &&
 		metadata.AdminPublicKeyHex == other.AdminPublicKeyHex &&
 		metadata.AdminKeyID == other.AdminKeyID &&
-		metadata.ProgramBindingHex == other.ProgramBindingHex &&
-		metadata.PostSigningLogicSigSize == other.PostSigningLogicSigSize
+		metadata.ProgramBindingHex == other.ProgramBindingHex
 }
 
 // Validate checks the durable bounded1 vocabulary without consulting an
@@ -165,9 +163,6 @@ func (metadata *Metadata) Equal(other *Metadata) bool {
 func (metadata *Metadata) Validate() error {
 	if err := metadata.ValidateProfile(); err != nil {
 		return err
-	}
-	if metadata.PostSigningLogicSigSize <= 0 {
-		return fmt.Errorf("post_signing_lsig_size must be positive")
 	}
 	if err := validateAdminMetadata(metadata, metadata.RequiresAdminKey()); err != nil {
 		return err
@@ -179,8 +174,8 @@ func (metadata *Metadata) Validate() error {
 }
 
 // ValidateProfile checks the template-level bounded contract fields. Instance
-// fields such as the rendered program binding and final LogicSig size are
-// intentionally validated only by Validate after key generation.
+// fields such as the rendered program binding are intentionally validated only
+// by Validate after key generation.
 func (metadata *Metadata) ValidateProfile() error {
 	if metadata == nil {
 		return fmt.Errorf("bounded authorization metadata is nil")
@@ -335,15 +330,6 @@ func (metadata *Metadata) RequiresAdminKey() bool {
 		}
 	}
 	return false
-}
-
-// SpendPathLogicSigSize returns the post-signing LogicSig size for the
-// ordinary spend path: bytecode plus base signature args only. The stored
-// PostSigningLogicSigSize additionally reserves the Falcon contract-admin
-// signature slot for admin-capable profiles, which only the admin-key
-// choreography attaches.
-func (metadata *Metadata) SpendPathLogicSigSize() int {
-	return metadata.LogicSigSizeForPath(PathSpend)
 }
 
 func ValidateSignatureLayout(layout SignatureArgLayout) error {

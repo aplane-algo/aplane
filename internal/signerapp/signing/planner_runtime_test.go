@@ -505,7 +505,6 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 	authAddr := types.Address{1}.String()
 	metadata := testBoundedMetadata(t, "")
 	metadata.MaxFee = 2_000
-	metadata.PostSigningLogicSigSize = 2500
 	deps := stubPlannerDeps{
 		keyTypes: map[string]string{authAddr: "aplane.falcon1024-bounded.v1"},
 		// Spend resources need 2 dummies for a single txn: pooled fee = 2 * minFee.
