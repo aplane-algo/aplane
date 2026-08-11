@@ -66,6 +66,9 @@ Every protocol, config, key file, template, and key type state field named
 Canonical forms:
 
 - native Ed25519 is the single-segment built-in `ed25519`
+- native Falcon-1024 is the single-segment built-in `falcon1024`. It is a
+  protocol-native post-quantum account and is distinct from every
+  `aplane.falcon1024.*` LogicSig key type
 - APlane-defined LogicSig, template, and compiled-provider key types use
   `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
   decimal version, for example `aplane.falcon1024.v1`,
@@ -1639,7 +1642,7 @@ Policy load behavior:
 Both managed classes use the same encrypted envelope and canonical payload
 schema. Their extension is fixed by payload category:
 
-- `.key`: `ed25519`, `dsa_lsig`, and `generic_lsig` account authority,
+- `.key`: `ed25519`, `native_pq`, `dsa_lsig`, and `generic_lsig` account authority,
   selected by a 58-character Algorand address;
 - `.sen`: `witness` authority assigned to sentry custody, selected by a
   52-character Witness Key ID.
@@ -1658,6 +1661,7 @@ Managed credential files carry:
 Categories:
 
 - native signing keys,
+- protocol-native post-quantum signing keys (`native_pq`),
 - DSA-backed LogicSig keys,
 - generic LogicSig template instances,
 - signer-custodied witness keys serving the sentry role (durable category
@@ -1679,6 +1683,23 @@ noncanonical payload aliases. Creation parameters are stored only in `parameters
 LogicSig bytecode is stored only in `lsig_bytecode`. The durable payload does
 not store a separately trusted address, template name, entropy, derivation
 record, or runtime-argument metadata under `runtime_args`.
+
+Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`,
+`pq_scheme: "f1"`, and a required numeric `pq_address_salt` in `0..255`.
+The public key is exactly 1793 bytes and the private key exactly 2305 bytes.
+The salt is the lowest byte whose
+`SHA512/256("PQA" || "f1" || salt || public_key)` address is not an
+Ed25519 curve point. Its 25-word Algorand mnemonic encodes 32 bytes of
+recovery entropy; the Falcon working seed is
+`SHA512/256("PQK" || "f1" || entropy)`. Recovery entropy is never persisted.
+Native Falcon authorization occupies top-level `SignedTxn.PQsig`, never
+`SignedTxn.Sig` or `SignedTxn.Lsig`, and contributes `2e6` fixed-point fee
+units in addition to the transaction's ordinary `1e6` base factor. It is
+accepted only on explicitly recognized consensus-v42-capable networks.
+
+The existing `aplane.falcon1024.v1` remains a LogicSig DSA with a 24-word
+BIP-39 mnemonic, TEAL authorization, and its existing derivation. Neither
+mnemonic nor stored key material is interchangeable between the two types.
 
 This document uses **versioned signing-metadata keys** for key files that carry
 `signing_metadata_version >= 1`. Non-bounded LogicSig keys use version 1;
