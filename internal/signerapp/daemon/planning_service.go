@@ -58,6 +58,7 @@ func (d signerPlannerDeps) Snapshot(identityID string) signersigning.PlannerIden
 		keyMetadata[selector] = signersigning.PlannerKeyMetadata{
 			Category: metadata.Category, PublicKeyHex: metadata.PublicKeyHex, Parameters: metadata.Parameters,
 			BoundedAuthorization: metadata.BoundedAuthorization,
+			LogicSigResources:    metadata.LogicSigResources,
 		}
 	}
 	return signersigning.PlannerIdentitySnapshot{

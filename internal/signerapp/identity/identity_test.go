@@ -19,6 +19,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -249,6 +250,10 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 		Category:     "governance",
 		PublicKeyHex: "abcd",
 		Parameters:   map[string]string{"purpose": "rekey"},
+		LogicSigResources: &lsigresource.Profile{
+			ProgramBytes: 10,
+			Default:      &lsigresource.PathProfile{ArgumentBytes: 20, MaxOpcodeCost: 30},
+		},
 	}
 	ir.keysLock.Unlock()
 
@@ -275,12 +280,16 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	metadata := snapshot.KeyMetadata["ADDR1"]
 	metadata.Category = "mutated"
 	metadata.Parameters["purpose"] = "mutated"
+	metadata.LogicSigResources.Default.ArgumentBytes = 999
 	snapshot.KeyMetadata["ADDR1"] = metadata
 	if got := ir.keyMetadata["ADDR1"].Category; got != "governance" {
 		t.Fatalf("runtime metadata category = %q after caller mutation, want governance", got)
 	}
 	if got := ir.keyMetadata["ADDR1"].Parameters["purpose"]; got != "rekey" {
 		t.Fatalf("runtime metadata purpose = %q after caller mutation, want rekey", got)
+	}
+	if got := ir.keyMetadata["ADDR1"].LogicSigResources.Default.ArgumentBytes; got != 20 {
+		t.Fatalf("runtime LogicSig argument bytes = %d after caller mutation, want 20", got)
 	}
 	ir.PublishSnapshot(
 		map[string]string{"ADDR2": "keys/ADDR2.key"},

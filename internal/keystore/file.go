@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -46,6 +47,7 @@ type SigningSummary struct {
 	BoundedAuthorization   *boundedmeta.Metadata
 	SigningMetadataVersion int
 	TemplateFingerprint    string
+	LogicSigResources      *lsigresource.Profile
 }
 
 // NewFileKeyStoreForPaths creates a new file-based key store rooted at the provided keystore paths.
@@ -470,6 +472,10 @@ func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 			SigningMetadataVersion: v.SigningMetadataVersion,
 			BoundedAuthorization:   boundedmeta.Clone(v.BoundedAuthorization),
 			TemplateFingerprint:    v.TemplateFingerprint,
+		}
+		if v.LogicSigResources != nil {
+			cloned := v.LogicSigResources.Clone()
+			summary.LogicSigResources = &cloned
 		}
 		if v.SigningMetadataVersion > 0 && len(v.SigningArgs) > 0 {
 			summary.SigningArgs = keys.SigningArgDefs(v.SigningArgs)

@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 
@@ -32,6 +33,7 @@ type PlannerKeyMetadata struct {
 	PublicKeyHex         string
 	Parameters           map[string]string
 	BoundedAuthorization *boundedmeta.Metadata
+	LogicSigResources    *lsigresource.Profile
 }
 
 // PlannerDeps supplies process-specific data needed by the package-owned planner.

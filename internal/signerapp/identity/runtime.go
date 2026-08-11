@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -161,6 +162,7 @@ type KeyPublicMetadata struct {
 	PublicKeyHex         string
 	Parameters           map[string]string
 	BoundedAuthorization *boundedmeta.Metadata
+	LogicSigResources    *lsigresource.Profile
 }
 
 // Config is the construction parameters for an identity Runtime.
@@ -802,6 +804,10 @@ func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
 	for k, v := range ir.keyMetadata {
 		v.Parameters = maps.Clone(v.Parameters)
 		v.BoundedAuthorization = boundedmeta.Clone(v.BoundedAuthorization)
+		if v.LogicSigResources != nil {
+			cloned := v.LogicSigResources.Clone()
+			v.LogicSigResources = &cloned
+		}
 		snapshot.KeyMetadata[k] = v
 	}
 	return snapshot
@@ -848,6 +854,7 @@ func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string, lsigSizes m
 			metadata[selector] = KeyPublicMetadata{
 				Category: summary.Category, PublicKeyHex: publicKeys[selector], Parameters: summary.Parameters,
 				BoundedAuthorization: summary.BoundedAuthorization,
+				LogicSigResources:    summary.LogicSigResources,
 			}
 		}
 	}

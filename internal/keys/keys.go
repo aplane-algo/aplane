@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -127,7 +128,8 @@ type KeyScanInfo struct {
 	Category               string // Key category from the key file, if present
 	PQScheme               string
 	PQAddressSalt          *byte
-	LsigSize               int    // Total LogicSig size in bytes (bytecode + signature), 0 for ed25519
+	LsigSize               int // Total LogicSig size in bytes (bytecode + signature), 0 for ed25519
+	LogicSigResources      *lsigresource.Profile
 	PublicKeyHex           string // Hex-encoded public key (for /keys API)
 	BaseKeyType            string // Base DSA key type used for signing metadata, if present
 	Parameters             map[string]string
@@ -417,6 +419,13 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc 
 				lsigSize = len(payload.LogicSigBytecode) + dsaLogicSigArgBudgetForKey(keyType, signingMeta.BaseKeyType)
 			}
 		}
+		logicSigResources, resourceErr := scanLogicSigResources(payload, lsigSize)
+		if resourceErr != nil {
+			payload.ZeroSecrets()
+			crypto.ZeroBytes(data)
+			warn(KeyScanWarningIncompatibleFormat, keyFile, resourceErr)
+			continue
+		}
 
 		createdAt := payloadMeta.CreatedAt
 		payload.ZeroSecrets()
@@ -434,6 +443,7 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc 
 			PQScheme:               signingMeta.PQScheme,
 			PQAddressSalt:          cloneBytePtr(signingMeta.PQAddressSalt),
 			LsigSize:               lsigSize,
+			LogicSigResources:      logicSigResources,
 			PublicKeyHex:           publicKeyHex,
 			BaseKeyType:            signingMeta.BaseKeyType,
 			Parameters:             signingMeta.Parameters,
@@ -450,6 +460,44 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc 
 	}
 
 	return &KeyScanReport{Keys: keysMap, Warnings: warnings}, nil
+}
+
+func scanLogicSigResources(payload *Payload, legacyCombinedSize int) (*lsigresource.Profile, error) {
+	if payload == nil || (payload.Category != CategoryDSALsig && payload.Category != CategoryGenericLsig) {
+		return nil, nil
+	}
+	programBytes := len(payload.LogicSigBytecode)
+	if programBytes == 0 {
+		return nil, fmt.Errorf("LogicSig resource profile has empty program")
+	}
+	path := func(argumentBytes int) *lsigresource.PathProfile {
+		return &lsigresource.PathProfile{
+			ArgumentBytes: uint64(argumentBytes),
+			// Filled only after a provider/template supplies a reviewed ceiling.
+			// Zero is deliberately unusable by Profile.UsageForPath.
+			MaxOpcodeCost: 0,
+		}
+	}
+	profile := &lsigresource.Profile{ProgramBytes: uint64(programBytes)}
+	if metadata := payload.BoundedAuthorization; metadata != nil {
+		profile.Spend = path(metadata.ArgumentBytesForPath(boundedmeta.PathSpend))
+		profile.SpendingRekey = path(metadata.ArgumentBytesForPath(boundedmeta.PathSpendingRekey))
+		profile.AdminRekey = path(metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey))
+		return profile, nil
+	}
+	argumentBytes := legacyCombinedSize - programBytes
+	for _, arg := range payload.SigningArgs {
+		if arg.ByteLength > 0 {
+			argumentBytes += arg.ByteLength
+		} else {
+			argumentBytes += arg.MaxSize
+		}
+	}
+	if argumentBytes < 0 {
+		return nil, fmt.Errorf("LogicSig resource profile has negative argument size")
+	}
+	profile.Default = path(argumentBytes)
+	return profile, nil
 }
 
 func managedCredentialClassMismatchError(err error) error {
