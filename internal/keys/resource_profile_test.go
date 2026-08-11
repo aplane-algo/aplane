@@ -56,3 +56,24 @@ func TestScanBoundedResourcesUsesPathMasks(t *testing.T) {
 		t.Fatal("bounded resource profile exposed a default path")
 	}
 }
+
+func TestScanAutoSaltedResourcesUsesDurableOpcodeProfile(t *testing.T) {
+	t.Parallel()
+
+	payload := &Payload{
+		Category:              CategoryDSALsig,
+		LogicSigBytecode:      make([]byte, 1_800),
+		LogicSigOpcodeProfile: lsigresource.DefaultOpcodeProfile(1_750),
+	}
+	profile, err := scanLogicSigResources(payload, 1_800+1_423)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := profile.UsageForPath(lsigresource.PathDefault)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage != (lsigresource.Usage{ProgramBytes: 1_800, ArgumentBytes: 1_423, MaxOpcodeCost: 1_750}) {
+		t.Fatalf("usage = %#v", usage)
+	}
+}

@@ -21,6 +21,56 @@ const (
 	PathAdminRekey
 )
 
+// MaximumDeclaredOpcodeCost is the largest path ceiling accepted in durable
+// metadata. It is the full v42 group pool, not a per-transaction allowance.
+const MaximumDeclaredOpcodeCost = 16 * SingleTransactionOpcodeCeiling
+
+// OpcodeProfile is the durable portion of a LogicSig resource profile. The
+// program length and argument maxima are derived from other authoritative key
+// fields; only reviewed opcode ceilings need their own stored contract.
+type OpcodeProfile struct {
+	Default       uint64 `json:"default,omitempty"`
+	Spend         uint64 `json:"spend,omitempty"`
+	SpendingRekey uint64 `json:"spending_rekey,omitempty"`
+	AdminRekey    uint64 `json:"admin_rekey,omitempty"`
+}
+
+// DefaultOpcodeProfile returns the closed profile for a non-bounded LogicSig.
+func DefaultOpcodeProfile(maxCost uint64) OpcodeProfile {
+	return OpcodeProfile{Default: maxCost}
+}
+
+// BoundedOpcodeProfile returns the closed profile for bounded authorization.
+func BoundedOpcodeProfile(spend, spendingRekey, adminRekey uint64) OpcodeProfile {
+	return OpcodeProfile{Spend: spend, SpendingRekey: spendingRekey, AdminRekey: adminRekey}
+}
+
+// Validate checks that exactly the expected path vocabulary is populated.
+func (p OpcodeProfile) Validate(bounded bool) error {
+	check := func(path string, value uint64, required bool) error {
+		if required && value == 0 {
+			return fmt.Errorf("%w: %s opcode ceiling is missing", ErrInvalidUsage, path)
+		}
+		if !required && value != 0 {
+			return fmt.Errorf("%w: %s opcode ceiling is not valid for this profile", ErrInvalidUsage, path)
+		}
+		if value > MaximumDeclaredOpcodeCost {
+			return fmt.Errorf("%w: %s opcode ceiling %d exceeds maximum %d", ErrInvalidUsage, path, value, MaximumDeclaredOpcodeCost)
+		}
+		return nil
+	}
+	if err := check("default", p.Default, !bounded); err != nil {
+		return err
+	}
+	if err := check("spend", p.Spend, bounded); err != nil {
+		return err
+	}
+	if err := check("spending_rekey", p.SpendingRekey, bounded); err != nil {
+		return err
+	}
+	return check("admin_rekey", p.AdminRekey, bounded)
+}
+
 // PathProfile is the maximum resource use of one reachable authorization path.
 type PathProfile struct {
 	ArgumentBytes uint64 `json:"argument_bytes"`
@@ -37,6 +87,30 @@ type Profile struct {
 	Spend         *PathProfile
 	SpendingRekey *PathProfile
 	AdminRekey    *PathProfile
+}
+
+// Materialize combines derived program/argument sizes with the durable opcode
+// ceilings. Bounded path arguments must contain all three closed paths.
+func Materialize(programBytes uint64, defaultArgs *uint64, boundedArgs map[AuthorizationPath]uint64, opcodes OpcodeProfile) (Profile, error) {
+	bounded := defaultArgs == nil
+	if err := opcodes.Validate(bounded); err != nil {
+		return Profile{}, err
+	}
+	profile := Profile{ProgramBytes: programBytes}
+	if !bounded {
+		profile.Default = &PathProfile{ArgumentBytes: *defaultArgs, MaxOpcodeCost: opcodes.Default}
+		return profile, nil
+	}
+	spend, spendOK := boundedArgs[PathSpend]
+	spendingRekey, spendingRekeyOK := boundedArgs[PathSpendingRekey]
+	adminRekey, adminRekeyOK := boundedArgs[PathAdminRekey]
+	if !spendOK || !spendingRekeyOK || !adminRekeyOK {
+		return Profile{}, fmt.Errorf("%w: bounded argument profile is incomplete", ErrInvalidUsage)
+	}
+	profile.Spend = &PathProfile{ArgumentBytes: spend, MaxOpcodeCost: opcodes.Spend}
+	profile.SpendingRekey = &PathProfile{ArgumentBytes: spendingRekey, MaxOpcodeCost: opcodes.SpendingRekey}
+	profile.AdminRekey = &PathProfile{ArgumentBytes: adminRekey, MaxOpcodeCost: opcodes.AdminRekey}
+	return profile, nil
 }
 
 // UsageForPath returns a complete solver usage for the selected path.

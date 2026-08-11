@@ -79,10 +79,13 @@ Terminology:
 
 Templates are generation/catalog definitions. The stored signing metadata
 referenced above is `signing_metadata_version`, `lsig_derivation`,
-`base_key_type` for DSA LogicSig keys, and optional `signing_args`.
+`lsig_opcode_profile`, `base_key_type` for DSA LogicSig keys, and optional
+`signing_args`.
 `lsig_derivation: algod_v13_auto_salt` records that the final TEAL v13 bytecode
 was salted by the configured algod compiler; legacy records may instead carry
-`salt_counter`. Non-bounded LogicSig keys
+`salt_counter`. `lsig_opcode_profile` stores only reviewed per-path opcode
+ceilings; program length and argument maxima are derived from the final
+bytecode and the frozen argument layout. Non-bounded LogicSig keys
 use signing-metadata version 1. Bounded keys use version 2 and persist the full
 typed `bounded_authorization` contract, including the static base, derived,
 runtime, and optional admin argument layout; path masks; profile; public admin

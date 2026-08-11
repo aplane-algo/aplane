@@ -470,13 +470,35 @@ func scanLogicSigResources(payload *Payload, legacyCombinedSize int) (*lsigresou
 	if programBytes == 0 {
 		return nil, fmt.Errorf("LogicSig resource profile has empty program")
 	}
-	path := func(argumentBytes int) *lsigresource.PathProfile {
-		return &lsigresource.PathProfile{
-			ArgumentBytes: uint64(argumentBytes),
-			// Filled only after a provider/template supplies a reviewed ceiling.
-			// Zero is deliberately unusable by Profile.UsageForPath.
-			MaxOpcodeCost: 0,
+	if payload.LogicSigOpcodeProfile == (lsigresource.OpcodeProfile{}) {
+		return scanLegacyLogicSigResources(payload, legacyCombinedSize)
+	}
+	if metadata := payload.BoundedAuthorization; metadata != nil {
+		return profileFromBoundedMetadata(uint64(programBytes), metadata, payload.LogicSigOpcodeProfile)
+	}
+	argumentBytes := legacyCombinedSize - programBytes
+	for _, arg := range payload.SigningArgs {
+		if arg.ByteLength > 0 {
+			argumentBytes += arg.ByteLength
+		} else {
+			argumentBytes += arg.MaxSize
 		}
+	}
+	if argumentBytes < 0 {
+		return nil, fmt.Errorf("LogicSig resource profile has negative argument size")
+	}
+	argumentBytesValue := uint64(argumentBytes)
+	profile, err := lsigresource.Materialize(uint64(programBytes), &argumentBytesValue, nil, payload.LogicSigOpcodeProfile)
+	if err != nil {
+		return nil, err
+	}
+	return &profile, nil
+}
+
+func scanLegacyLogicSigResources(payload *Payload, legacyCombinedSize int) (*lsigresource.Profile, error) {
+	programBytes := len(payload.LogicSigBytecode)
+	path := func(argumentBytes int) *lsigresource.PathProfile {
+		return &lsigresource.PathProfile{ArgumentBytes: uint64(argumentBytes)}
 	}
 	profile := &lsigresource.Profile{ProgramBytes: uint64(programBytes)}
 	if metadata := payload.BoundedAuthorization; metadata != nil {
@@ -498,6 +520,19 @@ func scanLogicSigResources(payload *Payload, legacyCombinedSize int) (*lsigresou
 	}
 	profile.Default = path(argumentBytes)
 	return profile, nil
+}
+
+func profileFromBoundedMetadata(programBytes uint64, metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile) (*lsigresource.Profile, error) {
+	arguments := map[lsigresource.AuthorizationPath]uint64{
+		lsigresource.PathSpend:         uint64(metadata.ArgumentBytesForPath(boundedmeta.PathSpend)),
+		lsigresource.PathSpendingRekey: uint64(metadata.ArgumentBytesForPath(boundedmeta.PathSpendingRekey)),
+		lsigresource.PathAdminRekey:    uint64(metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey)),
+	}
+	profile, err := lsigresource.Materialize(programBytes, nil, arguments, opcodes)
+	if err != nil {
+		return nil, err
+	}
+	return &profile, nil
 }
 
 func managedCredentialClassMismatchError(err error) error {
@@ -556,6 +591,7 @@ type SigningMetadata struct {
 	BaseKeyType            string
 	Parameters             map[string]string
 	SigningArgs            []StoredSigningArg
+	LogicSigOpcodeProfile  lsigresource.OpcodeProfile
 	BoundedAuthorization   *boundedmeta.Metadata
 	SigningMetadataVersion int
 }

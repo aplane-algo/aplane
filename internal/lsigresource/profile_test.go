@@ -59,3 +59,50 @@ func TestProfileRejectsIncompleteUsage(t *testing.T) {
 		}
 	}
 }
+
+func TestOpcodeProfileRequiresClosedPathShape(t *testing.T) {
+	t.Parallel()
+
+	if err := DefaultOpcodeProfile(1_900).Validate(false); err != nil {
+		t.Fatalf("default profile: %v", err)
+	}
+	if err := BoundedOpcodeProfile(1_700, 1_800, 3_400).Validate(true); err != nil {
+		t.Fatalf("bounded profile: %v", err)
+	}
+	tests := []struct {
+		name    string
+		profile OpcodeProfile
+		bounded bool
+	}{
+		{name: "missing default"},
+		{name: "mixed vocabulary", profile: OpcodeProfile{Default: 1, Spend: 1}},
+		{name: "incomplete bounded", profile: OpcodeProfile{Spend: 1, SpendingRekey: 1}, bounded: true},
+		{name: "over maximum", profile: OpcodeProfile{Default: MaximumDeclaredOpcodeCost + 1}},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if err := test.profile.Validate(test.bounded); err == nil {
+				t.Fatal("Validate() error = nil")
+			}
+		})
+	}
+}
+
+func TestMaterializeCombinesOnlyDerivedAndDurableFields(t *testing.T) {
+	t.Parallel()
+
+	args := uint64(1_423)
+	profile, err := Materialize(1_800, &args, nil, DefaultOpcodeProfile(1_750))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := profile.UsageForPath(PathDefault)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage != (Usage{ProgramBytes: 1_800, ArgumentBytes: 1_423, MaxOpcodeCost: 1_750}) {
+		t.Fatalf("usage = %#v", usage)
+	}
+}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	sentrywitness "github.com/aplane-algo/aplane/internal/witness"
@@ -38,6 +39,7 @@ type Payload struct {
 	Parameters             map[string]string
 	LogicSigBytecode       []byte
 	LogicSigDerivation     string
+	LogicSigOpcodeProfile  lsigresource.OpcodeProfile
 	SaltCounter            *byte
 	TEALSource             string
 	SigningMetadataVersion int
@@ -60,6 +62,7 @@ type CanonicalPayloadMetadata struct {
 	Parameters             map[string]string
 	LogicSigBytecodeHex    string
 	LogicSigDerivation     string
+	LogicSigOpcodeProfile  lsigresource.OpcodeProfile
 	SaltCounter            *byte
 	TEALSource             string
 	SigningMetadataVersion int
@@ -73,24 +76,25 @@ type CanonicalPayloadMetadata struct {
 // payloadWireV1 is the sole canonical JSON DTO for decrypted key payloads.
 // It remains private so durable JSON field ownership stays in this package.
 type payloadWireV1 struct {
-	FormatVersion          *int                  `json:"format_version"`
-	Category               string                `json:"category"`
-	KeyType                string                `json:"key_type"`
-	PublicKeyHex           string                `json:"public_key,omitempty"`
-	PrivateKeyHex          string                `json:"private_key,omitempty"`
-	PQScheme               string                `json:"pq_scheme,omitempty"`
-	PQAddressSalt          *byte                 `json:"pq_address_salt,omitempty"`
-	Parameters             map[string]string     `json:"parameters,omitempty"`
-	LogicSigBytecodeHex    string                `json:"lsig_bytecode,omitempty"`
-	LogicSigDerivation     string                `json:"lsig_derivation,omitempty"`
-	SaltCounter            *byte                 `json:"salt_counter,omitempty"`
-	TEALSource             string                `json:"teal_source,omitempty"`
-	SigningMetadataVersion int                   `json:"signing_metadata_version,omitempty"`
-	BaseKeyType            string                `json:"base_key_type,omitempty"`
-	SigningArgs            []StoredSigningArg    `json:"signing_args,omitempty"`
-	BoundedAuthorization   *boundedmeta.Metadata `json:"bounded_authorization,omitempty"`
-	TemplateFingerprint    string                `json:"template_fingerprint,omitempty"`
-	CreatedAt              string                `json:"created_at"`
+	FormatVersion          *int                        `json:"format_version"`
+	Category               string                      `json:"category"`
+	KeyType                string                      `json:"key_type"`
+	PublicKeyHex           string                      `json:"public_key,omitempty"`
+	PrivateKeyHex          string                      `json:"private_key,omitempty"`
+	PQScheme               string                      `json:"pq_scheme,omitempty"`
+	PQAddressSalt          *byte                       `json:"pq_address_salt,omitempty"`
+	Parameters             map[string]string           `json:"parameters,omitempty"`
+	LogicSigBytecodeHex    string                      `json:"lsig_bytecode,omitempty"`
+	LogicSigDerivation     string                      `json:"lsig_derivation,omitempty"`
+	LogicSigOpcodeProfile  *lsigresource.OpcodeProfile `json:"lsig_opcode_profile,omitempty"`
+	SaltCounter            *byte                       `json:"salt_counter,omitempty"`
+	TEALSource             string                      `json:"teal_source,omitempty"`
+	SigningMetadataVersion int                         `json:"signing_metadata_version,omitempty"`
+	BaseKeyType            string                      `json:"base_key_type,omitempty"`
+	SigningArgs            []StoredSigningArg          `json:"signing_args,omitempty"`
+	BoundedAuthorization   *boundedmeta.Metadata       `json:"bounded_authorization,omitempty"`
+	TemplateFingerprint    string                      `json:"template_fingerprint,omitempty"`
+	CreatedAt              string                      `json:"created_at"`
 }
 
 const (
@@ -188,6 +192,7 @@ func NewAutoSaltedDSALSigPayload(
 	p := NewDSALSigPayload(keyType, baseKeyType, publicKey, privateKey, parameters, bytecode, 0, tealSource, signingArgs, templateFingerprint)
 	p.SaltCounter = nil
 	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
+	p.LogicSigOpcodeProfile = lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
 	return p
 }
 
@@ -229,6 +234,7 @@ func NewAutoSaltedGenericLSigPayload(
 	p := NewGenericLSigPayload(keyType, parameters, bytecode, 0, tealSource, signingArgs, templateFingerprint)
 	p.SaltCounter = nil
 	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
+	p.LogicSigOpcodeProfile = lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
 	return p
 }
 
@@ -245,6 +251,11 @@ func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error 
 		return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
 	}
 	p.BoundedAuthorization = boundedmeta.Clone(metadata)
+	p.LogicSigOpcodeProfile = lsigresource.BoundedOpcodeProfile(
+		lsigresource.SingleTransactionOpcodeCeiling,
+		lsigresource.SingleTransactionOpcodeCeiling,
+		lsigresource.SingleTransactionOpcodeCeiling,
+	)
 	p.SigningMetadataVersion = BoundedSigningMetadataVersion
 	// Bounded metadata owns the complete argument contract. Legacy signing_args
 	// must not survive the upgrade or provide a second caller-controlled layout.
@@ -300,6 +311,7 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		Parameters:             maps.Clone(payload.Parameters),
 		LogicSigBytecodeHex:    hex.EncodeToString(payload.LogicSigBytecode),
 		LogicSigDerivation:     payload.LogicSigDerivation,
+		LogicSigOpcodeProfile:  opcodeProfilePtr(payload.LogicSigOpcodeProfile),
 		SaltCounter:            cloneBytePtr(payload.SaltCounter),
 		TEALSource:             payload.TEALSource,
 		SigningMetadataVersion: payload.SigningMetadataVersion,
@@ -440,6 +452,7 @@ func (p *Payload) Metadata() CanonicalPayloadMetadata {
 		Parameters:             maps.Clone(p.Parameters),
 		LogicSigBytecodeHex:    hex.EncodeToString(p.LogicSigBytecode),
 		LogicSigDerivation:     p.LogicSigDerivation,
+		LogicSigOpcodeProfile:  p.LogicSigOpcodeProfile,
 		SaltCounter:            cloneBytePtr(p.SaltCounter),
 		TEALSource:             p.TEALSource,
 		SigningMetadataVersion: p.SigningMetadataVersion,
@@ -464,6 +477,7 @@ func (p *Payload) SigningMetadata() SigningMetadata {
 		BaseKeyType:            p.BaseKeyType,
 		Parameters:             maps.Clone(p.Parameters),
 		SigningArgs:            cloneStoredSigningArgs(p.SigningArgs),
+		LogicSigOpcodeProfile:  p.LogicSigOpcodeProfile,
 		SigningMetadataVersion: p.SigningMetadataVersion,
 		BoundedAuthorization:   boundedmeta.Clone(p.BoundedAuthorization),
 	}
@@ -511,6 +525,7 @@ func payloadFromWire(wire payloadWireV1) (*Payload, error) {
 		Parameters:             maps.Clone(wire.Parameters),
 		LogicSigBytecode:       bytecode,
 		LogicSigDerivation:     wire.LogicSigDerivation,
+		LogicSigOpcodeProfile:  opcodeProfileValue(wire.LogicSigOpcodeProfile),
 		SaltCounter:            cloneBytePtr(wire.SaltCounter),
 		TEALSource:             wire.TEALSource,
 		SigningMetadataVersion: wire.SigningMetadataVersion,
@@ -625,7 +640,7 @@ func validateWitnessPayload(p *Payload) error {
 }
 
 func validateNoLogicSigFields(p *Payload) error {
-	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.LogicSigDerivation != "" || p.SaltCounter != nil ||
+	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.LogicSigDerivation != "" || p.LogicSigOpcodeProfile != (lsigresource.OpcodeProfile{}) || p.SaltCounter != nil ||
 		p.TEALSource != "" || p.SigningMetadataVersion != 0 || p.BaseKeyType != "" ||
 		len(p.SigningArgs) != 0 || p.BoundedAuthorization != nil || p.TemplateFingerprint != "" {
 		return incompatibleKeyFormat("category %q forbids LogicSig fields", p.Category)
@@ -649,6 +664,9 @@ func validateLogicSigFields(p *Payload) error {
 		version, n := binary.Uvarint(p.LogicSigBytecode)
 		if n <= 0 || version < 13 {
 			return incompatibleKeyFormat("%s derivation requires final TEAL v13+ bytecode", LogicSigDerivationAlgodV13AutoSalt)
+		}
+		if err := p.LogicSigOpcodeProfile.Validate(p.BoundedAuthorization != nil); err != nil {
+			return incompatibleKeyFormat("invalid lsig_opcode_profile: %v", err)
 		}
 	default:
 		return incompatibleKeyFormat("unsupported lsig_derivation %q", p.LogicSigDerivation)
@@ -836,6 +854,21 @@ func cloneStoredSigningArgs(args []StoredSigningArg) []StoredSigningArg {
 		return nil
 	}
 	return append([]StoredSigningArg(nil), args...)
+}
+
+func opcodeProfilePtr(profile lsigresource.OpcodeProfile) *lsigresource.OpcodeProfile {
+	if profile == (lsigresource.OpcodeProfile{}) {
+		return nil
+	}
+	copy := profile
+	return &copy
+}
+
+func opcodeProfileValue(profile *lsigresource.OpcodeProfile) lsigresource.OpcodeProfile {
+	if profile == nil {
+		return lsigresource.OpcodeProfile{}
+	}
+	return *profile
 }
 
 func cloneBytePtr(value *byte) *byte {

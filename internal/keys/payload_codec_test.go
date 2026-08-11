@@ -383,7 +383,9 @@ func TestAutoSaltedLogicSigPayloadContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalPayload() error = %v", err)
 	}
-	if strings.Contains(string(encoded), `"salt_counter"`) || !strings.Contains(string(encoded), `"lsig_derivation": "algod_v13_auto_salt"`) {
+	if strings.Contains(string(encoded), `"salt_counter"`) ||
+		!strings.Contains(string(encoded), `"lsig_derivation": "algod_v13_auto_salt"`) ||
+		!strings.Contains(string(encoded), `"lsig_opcode_profile"`) {
 		t.Fatalf("auto-salted payload JSON = %s", encoded)
 	}
 	decoded, err := ParsePayload(encoded)
