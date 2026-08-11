@@ -52,6 +52,7 @@ func TestGroupSignRequestValidate(t *testing.T) {
 		{name: "client request ID", request: GroupSignRequest{RequestID: "cli.abc_123:test", Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}}}},
 		{name: "mixed sign and foreign", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe"}}}},
 		{name: "foreign native pq", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", PQScheme: "f1"}}}},
+		{name: "foreign LogicSig resources", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", LsigResources: &LogicSigResourceUsage{ProgramBytes: 1_800, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000}}}}},
 		{name: "passthrough mode", request: GroupSignRequest{Requests: []SignRequest{{SignedTxnHex: "cafebabe"}}}},
 		{name: "all passthrough mode", request: GroupSignRequest{Requests: []SignRequest{{SignedTxnHex: "cafebabe"}, {SignedTxnHex: "feedface"}}}},
 		{
@@ -62,6 +63,10 @@ func TestGroupSignRequestValidate(t *testing.T) {
 		{name: "auth without txn bytes", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR"}}}, wantErr: "transaction 1: txn_bytes_hex is required for sign mode"},
 		{name: "pq hint on sign mode", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef", PQScheme: "f1"}}}, wantErr: "pq_scheme is allowed only for foreign"},
 		{name: "foreign pq and lsig hints", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", PQScheme: "f1", LsigSize: 10}}}, wantErr: "cannot specify both pq_scheme and lsig_size"},
+		{name: "resources on sign mode", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef", LsigResources: &LogicSigResourceUsage{ProgramBytes: 1, MaxOpcodeCost: 1}}}}, wantErr: "lsig_resources is allowed only for foreign"},
+		{name: "resources and legacy size", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", LsigSize: 2, LsigResources: &LogicSigResourceUsage{ProgramBytes: 1, MaxOpcodeCost: 1}}}}, wantErr: "cannot specify both lsig_resources and lsig_size"},
+		{name: "resources and pq", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", PQScheme: "f1", LsigResources: &LogicSigResourceUsage{ProgramBytes: 1, MaxOpcodeCost: 1}}}}, wantErr: "cannot specify both pq_scheme and lsig_resources"},
+		{name: "invalid resources", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", LsigResources: &LogicSigResourceUsage{ProgramBytes: 16_001, MaxOpcodeCost: 1}}}}, wantErr: "program_bytes 16001 exceeds"},
 		{name: "empty entry", request: GroupSignRequest{Requests: []SignRequest{{}}}, wantErr: "transaction 1: must specify either sign fields"},
 		{name: "empty request array", request: GroupSignRequest{}, wantErr: "requests array is empty"},
 		{name: "invalid client request ID", request: GroupSignRequest{RequestID: "bad id", Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}}}, wantErr: "request_id contains invalid character"},

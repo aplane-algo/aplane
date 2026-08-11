@@ -82,11 +82,11 @@ type PathProfile struct {
 // independent authority. Bounded paths are explicit; they never fall back to
 // Default silently.
 type Profile struct {
-	ProgramBytes  uint64
-	Default       *PathProfile
-	Spend         *PathProfile
-	SpendingRekey *PathProfile
-	AdminRekey    *PathProfile
+	ProgramBytes  uint64       `json:"program_bytes"`
+	Default       *PathProfile `json:"default,omitempty"`
+	Spend         *PathProfile `json:"spend,omitempty"`
+	SpendingRekey *PathProfile `json:"spending_rekey,omitempty"`
+	AdminRekey    *PathProfile `json:"admin_rekey,omitempty"`
 }
 
 // Materialize combines derived program/argument sizes with the durable opcode

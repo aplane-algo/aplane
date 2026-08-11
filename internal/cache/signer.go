@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
@@ -18,6 +19,7 @@ func NewSignerCache() SignerCache {
 		Keys:                    make(map[string]string),
 		GenericLsigs:            make(map[string]bool),
 		LsigSizes:               make(map[string]int),
+		LogicSigResources:       make(map[string]lsigresource.Profile),
 		SigningArgs:             make(map[string][]SigningArgInfo),
 		SigningFlows:            make(map[string]string),
 		SentryComponentKeyTypes: make(map[string]string),
@@ -70,6 +72,7 @@ func (cache *SignerCache) RemoveAddress(address string) {
 	delete(cache.Keys, address)
 	delete(cache.GenericLsigs, address)
 	delete(cache.LsigSizes, address)
+	delete(cache.LogicSigResources, address)
 	delete(cache.SigningArgs, address)
 	delete(cache.SigningFlows, address)
 	delete(cache.SentryComponentKeyTypes, address)
@@ -117,6 +120,27 @@ func (cache *SignerCache) SetLsigSize(address string, size int) {
 		cache.LsigSizes = make(map[string]int)
 	}
 	cache.LsigSizes[address] = size
+}
+
+// LogicSigResourceProfile returns a defensive copy of the address's complete
+// LogicSig resource profile.
+func (cache *SignerCache) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
+	if cache.LogicSigResources == nil {
+		return lsigresource.Profile{}, false
+	}
+	profile, ok := cache.LogicSigResources[address]
+	if !ok {
+		return lsigresource.Profile{}, false
+	}
+	return profile.Clone(), true
+}
+
+// SetLogicSigResourceProfile stores a defensive copy of a complete profile.
+func (cache *SignerCache) SetLogicSigResourceProfile(address string, profile lsigresource.Profile) {
+	if cache.LogicSigResources == nil {
+		cache.LogicSigResources = make(map[string]lsigresource.Profile)
+	}
+	cache.LogicSigResources[address] = profile.Clone()
 }
 
 // SigningFlowForAddress returns the signing choreography label the signer

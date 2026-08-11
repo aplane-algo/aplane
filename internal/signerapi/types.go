@@ -10,6 +10,8 @@ package signerapi
 import pub "github.com/aplane-algo/aplane/pkg/signerapi"
 
 type SignRequest = pub.SignRequest
+type LogicSigResourceUsage = pub.LogicSigResourceUsage
+type LogicSigResourceProfile = pub.LogicSigResourceProfile
 type AppCallInfo = pub.AppCallInfo
 type SignResponse = pub.SignResponse
 type GroupSignRequest = pub.GroupSignRequest

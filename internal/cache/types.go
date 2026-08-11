@@ -4,6 +4,7 @@
 package cache
 
 import (
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signingargs"
 )
 
@@ -36,13 +37,14 @@ type SignerCache struct {
 	GenericLsigs  map[string]bool   `json:"generic_lsigs"` // address -> true if generic lsig (no signature needed)
 	// LsigSizes is the address -> spend-path LogicSig size used for budgeting.
 	// Bounded admin-signature bytes are added by the signer's admin-path planner.
-	LsigSizes               map[string]int              `json:"lsig_sizes"`
-	SigningArgs             map[string][]SigningArgInfo `json:"signing_args"`                         // address -> key-file signing arg schema for LogicSigs
-	SigningFlows            map[string]string           `json:"signing_flows,omitempty"`              // address -> signing choreography label (e.g. "sentry1"); empty = plain /sign
-	SentryComponentKeyTypes map[string]string           `json:"sentry_component_key_types,omitempty"` // address -> sentry component key type for signing_flow "sentry1"
-	SentryPublicKeys        map[string]string           `json:"sentry_public_keys,omitempty"`         // address -> embedded sentry public key hex
-	BoundedMaxFees          map[string]uint64           `json:"bounded_max_fees,omitempty"`           // address -> bounded authorization max_fee
-	Locked                  bool                        `json:"-"`                                    // True if signer reported 403 (locked) on last /keys check
+	LsigSizes               map[string]int                  `json:"lsig_sizes"`
+	LogicSigResources       map[string]lsigresource.Profile `json:"logic_sig_resources,omitempty"`
+	SigningArgs             map[string][]SigningArgInfo     `json:"signing_args"`                         // address -> key-file signing arg schema for LogicSigs
+	SigningFlows            map[string]string               `json:"signing_flows,omitempty"`              // address -> signing choreography label (e.g. "sentry1"); empty = plain /sign
+	SentryComponentKeyTypes map[string]string               `json:"sentry_component_key_types,omitempty"` // address -> sentry component key type for signing_flow "sentry1"
+	SentryPublicKeys        map[string]string               `json:"sentry_public_keys,omitempty"`         // address -> embedded sentry public key hex
+	BoundedMaxFees          map[string]uint64               `json:"bounded_max_fees,omitempty"`           // address -> bounded authorization max_fee
+	Locked                  bool                            `json:"-"`                                    // True if signer reported 403 (locked) on last /keys check
 	store                   *Store
 }
 

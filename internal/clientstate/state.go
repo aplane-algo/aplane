@@ -11,6 +11,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientdata"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -159,6 +160,7 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 	s.SignerCache.Keys = make(map[string]string, len(keys))
 	s.SignerCache.GenericLsigs = make(map[string]bool)
 	s.SignerCache.LsigSizes = make(map[string]int)
+	s.SignerCache.LogicSigResources = make(map[string]lsigresource.Profile)
 	s.SignerCache.SigningArgs = make(map[string][]cache.SigningArgInfo)
 	s.SignerCache.SigningFlows = make(map[string]string)
 	s.SignerCache.SentryComponentKeyTypes = make(map[string]string)
@@ -171,6 +173,11 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 
 		if keyInfo.LsigSize > 0 {
 			s.SignerCache.SetLsigSize(keyInfo.Address, keyInfo.LsigSize)
+		}
+		if keyInfo.LogicSigResources != nil {
+			if profile, ok := internalLogicSigResourceProfile(keyInfo.LogicSigResources); ok {
+				s.SignerCache.SetLogicSigResourceProfile(keyInfo.Address, profile)
+			}
 		}
 		if keyInfo.IsGenericLsig {
 			s.SignerCache.SetGenericLsig(keyInfo.Address, true)
@@ -207,6 +214,35 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 			s.SignerCache.SetSigningArgs(keyInfo.Address, signingArgs)
 		}
 	}
+}
+
+func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile) (lsigresource.Profile, bool) {
+	if profile == nil {
+		return lsigresource.Profile{}, false
+	}
+	programBytes := uint64(0)
+	path := func(usage *signerapi.LogicSigResourceUsage) *lsigresource.PathProfile {
+		if usage == nil {
+			return nil
+		}
+		if programBytes == 0 {
+			programBytes = usage.ProgramBytes
+		} else if programBytes != usage.ProgramBytes {
+			programBytes = ^uint64(0)
+		}
+		return &lsigresource.PathProfile{ArgumentBytes: usage.ArgumentBytes, MaxOpcodeCost: usage.MaxOpcodeCost}
+	}
+	converted := lsigresource.Profile{
+		Default:       path(profile.Default),
+		Spend:         path(profile.Spend),
+		SpendingRekey: path(profile.SpendingRekey),
+		AdminRekey:    path(profile.AdminRekey),
+	}
+	if programBytes == 0 || programBytes == ^uint64(0) {
+		return lsigresource.Profile{}, false
+	}
+	converted.ProgramBytes = programBytes
+	return converted, true
 }
 
 // SaveSignerCache persists the signer cache to disk under APCLIENT_DATA.

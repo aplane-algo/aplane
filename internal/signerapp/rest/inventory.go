@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
@@ -55,6 +56,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			LsigSize:      lsigSizesCopy[address],
 			IsGenericLsig: isGeneric,
 		}
+		keyInfo.LogicSigResources = publicLogicSigResourceProfile(summary.LogicSigResources)
 		if isComponent {
 			spending := false
 			keyInfo.IsWitnessKey = true
@@ -83,6 +85,28 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 	}
 
 	return keyList
+}
+
+func publicLogicSigResourceProfile(profile *lsigresource.Profile) *signerapi.LogicSigResourceProfile {
+	if profile == nil {
+		return nil
+	}
+	usage := func(path *lsigresource.PathProfile) *signerapi.LogicSigResourceUsage {
+		if path == nil {
+			return nil
+		}
+		return &signerapi.LogicSigResourceUsage{
+			ProgramBytes:  profile.ProgramBytes,
+			ArgumentBytes: path.ArgumentBytes,
+			MaxOpcodeCost: path.MaxOpcodeCost,
+		}
+	}
+	return &signerapi.LogicSigResourceProfile{
+		Default:       usage(profile.Default),
+		Spend:         usage(profile.Spend),
+		SpendingRekey: usage(profile.SpendingRekey),
+		AdminRekey:    usage(profile.AdminRekey),
+	}
 }
 
 func guardedAccountParameters(_ string, parameters map[string]string) map[string]string {
