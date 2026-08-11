@@ -95,6 +95,34 @@ The maintenance fence adds no new concurrency actor to `lifecycle.tla`, because
 its only caller brackets it inside `WithIdentityMutation` — the writer critical
 section the lifecycle model already represents.
 
+**Model extension candidate: authenticate-without-unlock (`auth_only`).**
+Admin protocol 4.4 added a second pre-auth message. `auth_only`
+(`internal/signerapp/adminserver/session.go` `AuthenticateOutcome`,
+`internal/transport/protocol_flow.go` `authenticateOnly`) verifies the
+passphrase and binds the session runtime but never authorizes or invokes
+`identity.unlock`; `apstore`'s read-only sentry, generation-inventory, and
+endpoint-settings reads use it. `session_ownership.tla`'s `AuthSucceed`
+couples authentication to `unlocked' = TRUE`, so it now models the `auth`
+message only.
+
+No modeled invariant diverged. The new path returns the same
+`AuthOutcomeAuthenticated` and runs the identical ownership sequence
+(`MovePendingToIdentity`, displacement offer, `PromoteToActive`) and the
+identical disconnect defer, so SO1 is unaffected by construction; and SO2's
+antecedent requires `unlocked`, which an authenticate-only session never sets,
+while the `Exit` cleanup that re-locks is unchanged. Splitting `AuthSucceed`
+into unlock/no-unlock variants would widen explored behavior without weakening
+any predicate, and is the natural extension if a session-mode distinction ever
+becomes load-bearing — for instance if authenticate-only sessions were ever
+excluded from ownership, which would change the `~othersActive` disjunct's
+meaning.
+
+The related non-blocking `identity_busy` result
+(`daemon/server.go` `tryWithIdentityInspection`) is a plain `TryLock` on the
+existing store-mutation lock with client-side retry in
+`cmd/apstore/inspection_retry.go`. A failed acquire never becomes in-flight
+work, so it adds no actor and no fairness obligation to `lifecycle.tla`.
+
 Otherwise, no actionable test gaps remain. Per-invariant status lives in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The lifecycle L4-L7
 audit is closed by the explicit lease-release and writer-pending tests

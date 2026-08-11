@@ -91,6 +91,16 @@ The restored spec passes.
   `PromoteReplace` is the swap.
 - **`lock_on_disconnect` chosen at Init, never changed.** SO2 is vacuous when
   it is FALSE (the operator opted out of re-locking); TLC explores both.
+- **`AuthSucceed` models `auth`, not `auth_only`.** Admin protocol 4.4 added
+  `auth_only` (`adminserver/session.go` `AuthenticateOutcome`,
+  `transport/protocol_flow.go` `authenticateOnly`), which verifies the
+  passphrase and binds the runtime without authorizing or invoking
+  `identity.unlock`. It returns the same `AuthOutcomeAuthenticated` and runs
+  the same ownership path and disconnect defer, so everything SO1 depends on
+  is already modeled; the only unmodeled difference is that it leaves
+  `unlocked` untouched, which cannot create SO2's antecedent. Widening
+  `AuthSucceed` into an unlock/no-unlock pair is a coverage extension, tracked
+  in [FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md).
 
 ## How to check
 

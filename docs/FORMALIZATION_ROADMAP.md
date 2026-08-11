@@ -490,6 +490,53 @@ note that `generation_commit.tla` and `rotation_transition.tla` are the first
 modules documented only in this roadmap and their own spec headers, with no
 separate `FORMAL_TLA_*_MODEL.md` companion.
 
+**Drift review (2026-08-11, HEAD `09205594`).** Re-checked after 99 commits
+since `bb103a75`, dominated by the signer-store trust-tier collapse (PR #37,
+90 commits) and the credential-restore simplification already reviewed in the
+2026-08-07 working-tree pass. All 17 standard and 11 deep TLC runs pass at
+recorded metrics; the copied-operator sync check passes. Four of the six
+anchored areas — approval, lifecycle, guarded assembly, and plugin signing —
+had zero commits in the range, so their transcriptions are unchanged by
+inspection.
+
+Session ownership took 20 commits but none inside the modeled machinery:
+`adminserver/manager.go` has a zero diff over the whole range, so
+`PromoteToActive`, `DisplaceSession`, `MovePendingToIdentity`, and
+`ClearActive` are byte-identical, and `ipc.go`'s diff is confined to socket
+placement and stale-socket removal (`ResolveBindPath`, `removeStaleIPCSocket`)
+rather than `handleRegisteredClient`. The disconnect-defer condition
+`authenticated && boundIR != nil && (wasActiveClient || !HasClient(...))` is
+unchanged.
+
+The sign boundary took one commit, `8013ba1b`, which routes every planner call
+through `planGroupWhileSignable` so a lock transition that races an unlocked
+precondition reports locked rather than a missing-key planning error. This is
+outside the modeled boundary — `sign_boundary.tla` and `policy_precedence.tla`
+model mode validation, output-slot classes, and verdict precedence, and contain
+no lock state — and it moves in the fail-closed direction, so no transcription
+changed.
+
+The substantive finding is new surface, not divergence: admin protocol 4.4
+added the `auth_only` message, which authenticates and binds a session without
+unlocking. `session_ownership.tla`'s `AuthSucceed` couples authentication to
+`unlocked' = TRUE` and therefore now models the `auth` message only. SO1 and
+SO2 both still hold — the new path runs the identical ownership sequence and
+disconnect defer, and it never establishes SO2's `unlocked` antecedent — but
+because that soundness rests on the coupling no longer being universal, it is
+recorded as a model-extension candidate in
+[FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md) rather than left implicit, and the
+scope limit is now stated in both `session_ownership.tla`'s header and
+[FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md](FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md)
+instead of being contradicted by them. The companion `identity_busy` result is
+a non-blocking `TryLock` on the existing store-mutation lock with client-side
+retry; a failed acquire never becomes in-flight work, so it adds no actor or
+fairness obligation to `lifecycle.tla`.
+
+Mechanical sweep of [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) resolved
+cleanly: all 74 distinct path anchors exist and all 107 named function/test
+anchors still resolve, with no corrections needed. `metrics.json` matches the
+module table and every model-doc status header.
+
 ### Milestone status
 
 | Milestone | Status | Notes |

@@ -38,6 +38,21 @@ The code's mechanism, modeled here exactly:
     that unlocked but never became owner still re-locks on its way out
     unless someone else took over.
 
+Scope note (admin protocol 4.4, `auth_only`): AuthSucceed models the `auth`
+message, which unlocks. The later `auth_only` message (session.go
+AuthenticateOutcome, transport authenticateOnly) verifies the passphrase and
+binds the session runtime WITHOUT authorizing or invoking identity.unlock, then
+returns the same AuthOutcomeAuthenticated and runs the identical ownership path
+(MovePendingToIdentity, displacement offer, PromoteToActive) and the identical
+disconnect defer. The ownership machinery modeled here therefore covers it
+unchanged, and an "authenticate without unlock" action would differ from
+AuthSucceed only in leaving `unlocked` untouched. Such an action cannot violate
+SO1 (it changes no ownership step) nor SO2 (SO2's antecedent requires
+`unlocked`, which the action never sets, and the Exit cleanup that re-locks is
+unchanged). It is recorded as a model-extension candidate in
+FORMAL_TEST_GAPS.md rather than left implicit -- adding it would widen
+coverage, not repair a violation.
+
 Invariants:
   - SO1 : at most one session is the active owner.
   - SO2 : while the identity is unlocked with lock_on_disconnect set,
