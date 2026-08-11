@@ -12,10 +12,10 @@
 # self-contained — it does not depend on any existing signer installation.
 #
 # Prerequisites:
-#   - testnet mode: TEST_FUNDING_MNEMONIC must be set (25-word Algorand testnet mnemonic)
+#   - testnet mode: TEST_FUNDING_MNEMONIC must be set (funded Ed25519 account)
 #   - localnet mode: AlgoKit LocalNet algod/KMD must be running
-#   - fnet mode: APLANE_FNET_FALCON_MNEMONIC_FILE must name an ignored
-#     25-word native Falcon test mnemonic file
+#   - fnet mode: TEST_FUNDING_MNEMONIC must identify an Ed25519 account funded
+#     on FNet. The same mnemonic may be used for TestNet and FNet.
 #   - ssh-keygen must be available
 #
 # Output:
@@ -50,7 +50,8 @@ case "$INTEGRATION_NETWORK" in
         ;;
 esac
 
-if [ "$INTEGRATION_NETWORK" = "testnet" ] && [ -z "${TEST_FUNDING_MNEMONIC:-}" ]; then
+if { [ "$INTEGRATION_NETWORK" = "testnet" ] || [ "$INTEGRATION_NETWORK" = "fnet" ]; } &&
+   [ -z "${TEST_FUNDING_MNEMONIC:-}" ]; then
     MNEMONIC_FILE="$PROJECT_ROOT/test-mnemonic.sh"
     if [ -f "$MNEMONIC_FILE" ]; then
         # shellcheck source=/dev/null
@@ -58,22 +59,25 @@ if [ "$INTEGRATION_NETWORK" = "testnet" ] && [ -z "${TEST_FUNDING_MNEMONIC:-}" ]
     fi
 fi
 
-if [ "$INTEGRATION_NETWORK" = "testnet" ] && [ -z "${TEST_FUNDING_MNEMONIC:-}" ]; then
+if { [ "$INTEGRATION_NETWORK" = "testnet" ] || [ "$INTEGRATION_NETWORK" = "fnet" ]; } &&
+   [ -z "${TEST_FUNDING_MNEMONIC:-}" ]; then
     echo "ERROR: TEST_FUNDING_MNEMONIC must be set" >&2
+    echo "  The Ed25519 account must be funded on $INTEGRATION_NETWORK." >&2
+    echo "  The same mnemonic may be used on TestNet and FNet when its address is funded on both networks." >&2
     echo "  Either create test-mnemonic.sh with: export TEST_FUNDING_MNEMONIC='your 25 word mnemonic here'" >&2
     echo "  Or set the variable directly before running this script" >&2
     echo "  Or run against localnet with: APLANE_INTEGRATION_NETWORK=localnet make integration-test" >&2
     exit 1
 fi
 
-if [ "$INTEGRATION_NETWORK" = "fnet" ]; then
-    FNET_MNEMONIC_FILE="${APLANE_FNET_FALCON_MNEMONIC_FILE:-}"
-    if [ -z "$FNET_MNEMONIC_FILE" ] || [ ! -f "$FNET_MNEMONIC_FILE" ]; then
-        echo "ERROR: APLANE_FNET_FALCON_MNEMONIC_FILE must name the ignored native Falcon test mnemonic file" >&2
+case "${APLANE_FNET_FULL_SUITE:-0}" in
+    0|1)
+        ;;
+    *)
+        echo "ERROR: APLANE_FNET_FULL_SUITE must be 0 or 1" >&2
         exit 1
-    fi
-    FNET_MNEMONIC_FILE="$(cd "$(dirname "$FNET_MNEMONIC_FILE")" && pwd -P)/$(basename "$FNET_MNEMONIC_FILE")"
-fi
+        ;;
+esac
 
 if ! command -v ssh-keygen &>/dev/null; then
     echo "ERROR: ssh-keygen is required" >&2
@@ -94,8 +98,9 @@ LOCALNET_GENESIS_HASH=""
 LOCALNET_KMD_URL="${APLANE_LOCALNET_KMD_URL:-http://localhost:4002}"
 LOCALNET_WALLET="${APLANE_LOCALNET_WALLET:-unencrypted-default-wallet}"
 LOCALNET_WALLET_PASSWORD="${APLANE_LOCALNET_WALLET_PASSWORD:-}"
-FNET_MNEMONIC_FILE="${FNET_MNEMONIC_FILE:-}"
 FNET_INDEXER_URL=""
+INTEGRATION_GENESIS_ID=""
+INTEGRATION_GENESIS_HASH=""
 
 if [ "$INTEGRATION_NETWORK" = "localnet" ]; then
     ALGOD_URL="${ALGOD_URL:-${APLANE_LOCALNET_ALGOD_URL:-http://localhost:4001}}"
@@ -133,15 +138,21 @@ if [ "$INTEGRATION_NETWORK" = "localnet" ]; then
     fi
     echo "  Selected LocalNet funding account $TEST_FUNDING_ACCOUNT"
     echo "  LocalNet genesis: ${LOCALNET_GENESIS_ID:-unknown}"
+    INTEGRATION_GENESIS_ID="$LOCALNET_GENESIS_ID"
+    INTEGRATION_GENESIS_HASH="$LOCALNET_GENESIS_HASH"
 elif [ "$INTEGRATION_NETWORK" = "fnet" ]; then
     ALGOD_URL="${ALGOD_URL:-${APLANE_FNET_ALGOD_URL:-https://fnet-api.4160.nodely.dev}}"
     ALGOD_TOKEN="${ALGOD_TOKEN:-${APLANE_FNET_ALGOD_TOKEN:-}}"
     FNET_INDEXER_URL="${INDEXER_URL:-${APLANE_FNET_INDEXER_URL:-https://fnet-idx.4160.nodely.dev}}"
-    TEST_FUNDING_ACCOUNT=""
-    TEST_FUNDING_MNEMONIC=""
+    INTEGRATION_GENESIS_ID="fnet-v1"
+    INTEGRATION_GENESIS_HASH="kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA="
+
+    echo "  Using the operator-supplied Ed25519 funding account for FNet"
 else
     ALGOD_URL="${ALGOD_URL:-https://testnet-api.4160.nodely.dev}"
     ALGOD_TOKEN="${ALGOD_TOKEN:-}"
+    INTEGRATION_GENESIS_ID="testnet-v1.0"
+    INTEGRATION_GENESIS_HASH="SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI="
 fi
 
 ENV_LOCALNET_ALGOD_URL=""
@@ -319,6 +330,8 @@ cat > "$PROJECT_ROOT/.env.test" << EOF
 #   set -a && . .env.test && set +a && make integration-test
 
 APLANE_INTEGRATION_NETWORK="$INTEGRATION_NETWORK"
+APLANE_INTEGRATION_GENESIS_ID="$INTEGRATION_GENESIS_ID"
+APLANE_INTEGRATION_GENESIS_HASH="$INTEGRATION_GENESIS_HASH"
 TEST_FUNDING_ACCOUNT="${TEST_FUNDING_ACCOUNT:-}"
 TEST_FUNDING_MNEMONIC="$TEST_FUNDING_MNEMONIC"
 TEST_PASSPHRASE="$TEST_PASSPHRASE"
@@ -331,7 +344,7 @@ APLANE_LOCALNET_KMD_URL="$ENV_LOCALNET_KMD_URL"
 APLANE_LOCALNET_TOKEN="$ENV_LOCALNET_TOKEN"
 APLANE_LOCALNET_WALLET="$ENV_LOCALNET_WALLET"
 APLANE_LOCALNET_WALLET_PASSWORD="$ENV_LOCALNET_WALLET_PASSWORD"
-APLANE_FNET_FALCON_MNEMONIC_FILE="$FNET_MNEMONIC_FILE"
+APLANE_FNET_FULL_SUITE="${APLANE_FNET_FULL_SUITE:-0}"
 APLANE_FNET_ALGOD_URL="${APLANE_FNET_ALGOD_URL:-}"
 APLANE_FNET_ALGOD_TOKEN="${APLANE_FNET_ALGOD_TOKEN:-}"
 APLANE_FNET_INDEXER_URL="$FNET_INDEXER_URL"

@@ -1690,10 +1690,15 @@ long-running LocalNet transaction coverage and
 
 The integration harness behavior is part of the effective repository contract:
 
-- `make integration-test` requires
-  `APLANE_INTEGRATION_NETWORK=testnet|localnet`, and fails closed when the
-  profile is absent or invalid; `make integration-test-testnet` and
-  `make integration-test-localnet` are the convenience targets,
+- `make integration-test` requires an explicit TestNet, LocalNet, or FNet
+  profile and fails closed when the profile is absent or invalid;
+  `make integration-test-testnet`, `make integration-test-localnet`, and
+  `make integration-test-fnet` are the convenience targets,
+- the full FNet profile preserves the ordinary suite's Ed25519
+  `TEST_FUNDING_MNEMONIC` contract: the operator supplies an Ed25519 account
+  funded on FNet, and may use the same mnemonic as TestNet when that address is
+  funded on both networks; native-Falcon cases generate disposable native
+  accounts and fund them from that Ed25519 account,
 - `make integration-test` regenerates the shared test fixture and `.env.test` before running the suite,
 - the shared fixture lives under `/tmp/aplane-test-env`,
 - the generated signer fixture uses a private runtime directory with `ipc_path: run/aplane.sock`,
