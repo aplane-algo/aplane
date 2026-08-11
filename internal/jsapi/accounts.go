@@ -13,6 +13,8 @@ import (
 	"fmt"
 
 	"github.com/dop251/goja"
+
+	"github.com/aplane-algo/aplane/internal/algorithm"
 )
 
 // jsBalance returns balance info for an address or alias.
@@ -348,7 +350,7 @@ func (a *API) jsSignableAddresses(call goja.FunctionCall) goja.Value {
 }
 
 // jsCanSignFor checks if we can sign for an address.
-// canSignFor(address) - Returns {canSign: bool, isLsig: bool}
+// canSignFor(address) - Returns {canSign: bool, isLsig: bool, authorizationKind: string}
 func (a *API) jsCanSignFor(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "canSignFor() requires an address argument")
 	addressOrAlias := call.Arguments[0].String()
@@ -357,10 +359,11 @@ func (a *API) jsCanSignFor(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("canSignFor() error resolving address: %v", err)))
 	}
 
-	canSign, isLsig := a.engine.CanSignForAddress(address)
+	canSign, authorizationKind := a.engine.CanSignForAddressWithKind(address)
 
 	return a.runtime.ToValue(map[string]interface{}{
-		"canSign": canSign,
-		"isLsig":  isLsig,
+		"canSign":           canSign,
+		"isLsig":            authorizationKind == algorithm.AuthorizationLogicSig,
+		"authorizationKind": authorizationKind,
 	})
 }

@@ -3,23 +3,28 @@
 
 package apshellapp
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/aplane-algo/aplane/internal/algorithm"
+)
 
 func TestDisplaySigningKeyType(t *testing.T) {
 	tests := []struct {
-		name       string
-		keyType    string
-		isLogicSig bool
-		want       string
+		name    string
+		keyType string
+		kind    algorithm.AuthorizationKind
+		want    string
 	}{
-		{"ed25519", "ed25519", false, "Ed25519 key"},
-		{"falcon lsig", "aplane.falcon1024.v1", true, "aplane.falcon1024.v1 lsig"},
+		{"ed25519", "ed25519", algorithm.AuthorizationEd25519, "Ed25519 key"},
+		{"native falcon", "falcon1024", algorithm.AuthorizationNativePQ, "falcon1024"},
+		{"falcon lsig", "aplane.falcon1024.v1", algorithm.AuthorizationLogicSig, "aplane.falcon1024.v1 lsig"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := displaySigningKeyType(tc.keyType, tc.isLogicSig)
+			got := displaySigningKeyType(tc.keyType, tc.kind)
 			if got != tc.want {
-				t.Errorf("displaySigningKeyType(%q, %v) = %q, want %q", tc.keyType, tc.isLogicSig, got, tc.want)
+				t.Errorf("displaySigningKeyType(%q, %q) = %q, want %q", tc.keyType, tc.kind, got, tc.want)
 			}
 		})
 	}

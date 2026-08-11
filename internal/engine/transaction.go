@@ -14,6 +14,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
@@ -265,19 +266,38 @@ func (e *Engine) WaitForConfirmationResult(ctx context.Context, txid string, rou
 }
 
 // CanSignForAddress checks if we can sign for the given address.
-// Returns (canSign, isLsig).
+// Returns (canSign, isLsig). New callers that need to distinguish native
+// authorization kinds should use CanSignForAddressWithKind.
 func (e *Engine) CanSignForAddress(address string) (bool, bool) {
+	canSign, kind := e.CanSignForAddressWithKind(address)
+	return canSign, kind == algorithm.AuthorizationLogicSig
+}
+
+// CanSignForAddressWithKind checks whether the signer owns an address and
+// returns the authorization envelope its key type produces.
+func (e *Engine) CanSignForAddressWithKind(address string) (bool, algorithm.AuthorizationKind) {
 	// Check if we have this address in the signer cache
 	hasRemoteSigner := e.signerCacheHasAddress(address)
 	if !hasRemoteSigner {
-		return false, false
+		return false, ""
 	}
 
-	// Check if it's an LSig type by key type
-	keyType := e.signerCacheKeyType(address)
-	isLsig := e.signerCacheIsGenericLsig(address) || (keyType != "" && keyType != "ed25519")
+	// Generic LogicSigs may not have registered metadata in a client process.
+	if e.signerCacheIsGenericLsig(address) {
+		return true, algorithm.AuthorizationLogicSig
+	}
 
-	return true, isLsig
+	keyType := e.signerCacheKeyType(address)
+	if keyType == "ed25519" {
+		return true, algorithm.AuthorizationEd25519
+	}
+	if meta, err := algorithm.GetMetadata(keyType); err == nil {
+		return true, meta.AuthorizationKind()
+	}
+
+	// Preserve the historical fail-closed display classification for an unknown
+	// signer key type. Registered native types never reach this fallback.
+	return true, algorithm.AuthorizationLogicSig
 }
 
 func (e *Engine) SignAndSubmitGroup(ctx context.Context, txns []types.Transaction, lsigArgs []map[string][]byte) (*SignTransactionsResult, error) {

@@ -6,6 +6,7 @@ package apshellapp
 import (
 	"context"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 )
@@ -15,22 +16,27 @@ func signingContextDetailsFromEngine(signingCtx *engine.SigningContext) SigningC
 		return SigningContextDetails{}
 	}
 	return SigningContextDetails{
-		Address:        signingCtx.Address,
-		SigningAddress: signingCtx.SigningAddr,
-		KeyType:        signingCtx.KeyType,
-		SigSize:        signingCtx.SigSize,
-		IsLogicSig:     signingCtx.IsLSig,
-		DisplayKeyType: displaySigningKeyType(signingCtx.KeyType, signingCtx.IsLSig),
+		Address:           signingCtx.Address,
+		SigningAddress:    signingCtx.SigningAddr,
+		KeyType:           signingCtx.KeyType,
+		SigSize:           signingCtx.SigSize,
+		IsLogicSig:        signingCtx.IsLSig,
+		AuthorizationKind: signingCtx.AuthorizationKind,
+		DisplayKeyType:    displaySigningKeyType(signingCtx.KeyType, signingCtx.AuthorizationKind),
 	}
 }
 
 // displaySigningKeyType renders the human-readable signing key-type label.
 // Presentation lives here in the UI layer, not in the engine.
-func displaySigningKeyType(keyType string, isLogicSig bool) string {
-	if isLogicSig {
+func displaySigningKeyType(keyType string, authorizationKind algorithm.AuthorizationKind) string {
+	switch authorizationKind {
+	case algorithm.AuthorizationLogicSig:
 		return keytypefmt.Display(keyType) + " lsig"
+	case algorithm.AuthorizationNativePQ:
+		return keytypefmt.Display(keyType)
+	default:
+		return "Ed25519 key"
 	}
-	return "Ed25519 key"
 }
 
 // ResolveSigningContext resolves the signer-facing signing context for an address or alias.

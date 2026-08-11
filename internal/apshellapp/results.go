@@ -4,6 +4,7 @@
 package apshellapp
 
 import (
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -608,20 +609,21 @@ type AuthRefreshCommandResult struct {
 
 // RekeyCommandResult describes the semantic outcome of a rekey or unrekey command.
 type RekeyCommandResult struct {
-	From               string
-	To                 string
-	CurrentAuthAddress string
-	IsUnrekey          bool
-	CanSignForTarget   bool
-	TargetIsLsig       bool
-	TxID               string
-	Confirmed          bool
-	Output             string
-	RefreshWarning     string
-	PreSubmitLines     []string
-	ConfirmedLines     []string
-	PendingLines       []string
-	Warnings           []Warning
+	From                    string
+	To                      string
+	CurrentAuthAddress      string
+	IsUnrekey               bool
+	CanSignForTarget        bool
+	TargetIsLsig            bool
+	TargetAuthorizationKind algorithm.AuthorizationKind
+	TxID                    string
+	Confirmed               bool
+	Output                  string
+	RefreshWarning          string
+	PreSubmitLines          []string
+	ConfirmedLines          []string
+	PendingLines            []string
+	Warnings                []Warning
 }
 
 // CloseCommandResult describes the semantic outcome of a close command.

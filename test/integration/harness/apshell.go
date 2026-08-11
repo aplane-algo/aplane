@@ -128,7 +128,7 @@ func (a *ApshellHarness) RunWithInput(input string, args ...string) (string, err
 func ensureIntegrationClientConfig(clientData string) error {
 	network := IntegrationNetwork()
 	if network == "" {
-		return fmt.Errorf("%s must be set to %q or %q", IntegrationNetworkEnv, IntegrationNetworkTestnet, IntegrationNetworkLocalnet)
+		return fmt.Errorf("%s must be set to %q, %q, or %q", IntegrationNetworkEnv, IntegrationNetworkTestnet, IntegrationNetworkLocalnet, IntegrationNetworkFNet)
 	}
 	cfg, err := config.LoadConfig(clientData)
 	if err != nil {
@@ -209,6 +209,20 @@ func (a *ApshellHarness) SendTransaction(from, to string, amount float64) (strin
 // CloseRemainderTo, returning the full balance minus fee.
 func (a *ApshellHarness) CloseAccount(account, destination string) (string, error) {
 	input := fmt.Sprintf("close %s to %s\nquit\n", account, destination)
+	return a.parseTxID(input)
+}
+
+// RekeyAccount rekeys account to destination and returns the submitted
+// transaction ID.
+func (a *ApshellHarness) RekeyAccount(account, destination string) (string, error) {
+	input := fmt.Sprintf("rekey %s to %s\nquit\n", account, destination)
+	return a.parseTxID(input)
+}
+
+// UnrekeyAccount rekeys account back to itself and returns the submitted
+// transaction ID.
+func (a *ApshellHarness) UnrekeyAccount(account string) (string, error) {
+	input := fmt.Sprintf("unrekey %s\nquit\n", account)
 	return a.parseTxID(input)
 }
 
