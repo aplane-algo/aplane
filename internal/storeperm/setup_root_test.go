@@ -107,3 +107,34 @@ func TestPrepareManagedRootRejectsSymlinkWithoutTouchingReferent(t *testing.T) {
 		t.Fatalf("referent mode = %04o, want 0755", got)
 	}
 }
+
+func TestPrepareManagedRootRejectsReplacedFinalEntry(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.Chmod(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(parent, "signer")
+	detached := filepath.Join(parent, "detached")
+	if err := os.Mkdir(root, 0o770); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := prepareManagedRoot(root, os.Geteuid(), os.Getegid(), func() {
+		if renameErr := os.Rename(root, detached); renameErr != nil {
+			t.Fatalf("replace hook Rename() error = %v", renameErr)
+		}
+		if mkdirErr := os.Mkdir(root, 0o755); mkdirErr != nil {
+			t.Fatalf("replace hook Mkdir() error = %v", mkdirErr)
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed during managed setup") {
+		t.Fatalf("prepareManagedRoot(replaced leaf) error = %v, want binding rejection", err)
+	}
+	replacement, statErr := os.Stat(root)
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if got := replacement.Mode().Perm(); got != 0o755 {
+		t.Fatalf("replacement mode = %04o, want 0755 untouched", got)
+	}
+}

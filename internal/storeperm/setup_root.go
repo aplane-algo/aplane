@@ -27,6 +27,10 @@ type PrepareManagedRootResult struct {
 // the final directory. It rejects symlinked, unrelated-owner, and writable
 // ancestors before performing a privileged pathname mutation beneath them.
 func PrepareManagedRoot(rootPath string, uid, gid int) (PrepareManagedRootResult, error) {
+	return prepareManagedRoot(rootPath, uid, gid, nil)
+}
+
+func prepareManagedRoot(rootPath string, uid, gid int, beforeOwnership func()) (PrepareManagedRootResult, error) {
 	if rootPath == "" {
 		return PrepareManagedRootResult{}, fmt.Errorf("store root is required")
 	}
@@ -43,6 +47,12 @@ func PrepareManagedRoot(rootPath string, uid, gid int) (PrepareManagedRootResult
 		return PrepareManagedRootResult{}, fmt.Errorf("open filesystem root: %w", err)
 	}
 	defer func() { _ = current.Close() }()
+	var finalParent *os.File
+	defer func() {
+		if finalParent != nil {
+			_ = finalParent.Close()
+		}
+	}()
 	rootInfo, err := current.Stat()
 	if err != nil {
 		return PrepareManagedRootResult{}, fmt.Errorf("inspect filesystem root: %w", err)
@@ -96,7 +106,12 @@ func PrepareManagedRoot(rootPath string, uid, gid int) (PrepareManagedRootResult
 			_ = unix.Close(nextFD)
 			return PrepareManagedRootResult{}, fmt.Errorf("open signer data path component %s", filepath.Join(currentPath, component))
 		}
-		if err := current.Close(); err != nil {
+		if final {
+			// Retain the final parent so the leaf can be reopened relative to the
+			// same trusted directory after ownership changes. This is necessary
+			// for a root directly beneath an allowed sticky temporary directory.
+			finalParent = current
+		} else if err := current.Close(); err != nil {
 			_ = next.Close()
 			return PrepareManagedRootResult{}, fmt.Errorf("close signer data ancestor %s: %w", currentPath, err)
 		}
@@ -104,10 +119,20 @@ func PrepareManagedRoot(rootPath string, uid, gid int) (PrepareManagedRootResult
 		currentPath = filepath.Join(currentPath, component)
 	}
 
+	if beforeOwnership != nil {
+		beforeOwnership()
+	}
 	// Chown can clear mode bits, so ownership is applied first. Both operations
 	// target the opened directory rather than resolving rootPath again.
 	if err := current.Chown(uid, gid); err != nil {
 		return PrepareManagedRootResult{}, fmt.Errorf("set signer data root ownership: %w", err)
+	}
+	openedInfo, err := current.Stat()
+	if err != nil {
+		return PrepareManagedRootResult{}, fmt.Errorf("inspect opened signer data root: %w", err)
+	}
+	if err := verifyManagedRootBinding(finalParent, filepath.Base(root), openedInfo, root); err != nil {
+		return PrepareManagedRootResult{}, err
 	}
 	if err := current.Chmod(0o700); err != nil {
 		return PrepareManagedRootResult{}, fmt.Errorf("close signer data root permissions: %w", err)
@@ -116,6 +141,35 @@ func PrepareManagedRoot(rootPath string, uid, gid int) (PrepareManagedRootResult
 		return PrepareManagedRootResult{}, fmt.Errorf("sync signer data root: %w", err)
 	}
 	return PrepareManagedRootResult{Path: root, Created: createdRoot}, nil
+}
+
+func verifyManagedRootBinding(parent *os.File, leaf string, openedInfo os.FileInfo, root string) error {
+	if parent == nil {
+		return fmt.Errorf("signer data root parent is unavailable: %s", root)
+	}
+	pathFD, err := unix.Openat(
+		int(parent.Fd()),
+		leaf,
+		unix.O_RDONLY|unix.O_CLOEXEC|unix.O_DIRECTORY|unix.O_NOFOLLOW,
+		0,
+	)
+	if err != nil {
+		return fmt.Errorf("reopen prepared signer data root %s: %w", root, err)
+	}
+	pathFile := os.NewFile(uintptr(pathFD), root)
+	if pathFile == nil {
+		_ = unix.Close(pathFD)
+		return fmt.Errorf("reopen prepared signer data root %s", root)
+	}
+	defer func() { _ = pathFile.Close() }()
+	pathInfo, err := pathFile.Stat()
+	if err != nil {
+		return fmt.Errorf("inspect rebound signer data root %s: %w", root, err)
+	}
+	if !os.SameFile(openedInfo, pathInfo) {
+		return fmt.Errorf("signer data root changed during managed setup: %s", root)
+	}
+	return nil
 }
 
 func validateManagedSetupAncestor(path string, dir *os.File, serviceUID, rootUID int) error {

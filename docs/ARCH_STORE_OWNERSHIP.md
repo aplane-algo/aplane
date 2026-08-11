@@ -158,7 +158,10 @@ The installer bootstrap first uses `apstore permissions prepare-managed-root`
 to create and close the real data-directory root through opened directory
 descriptors. That operation rejects symlinked, unrelated-owner, and
 group/other-writable ancestors before any privileged pathname mutation beneath
-them. The narrower read-only `permissions preflight` then runs before `.prod`,
+them. It retains the final parent descriptor and, after changing ownership,
+reopens the leaf without following symlinks to prove the pathname still names
+the secured inode; this closes the allowed sticky-temporary-root replacement
+window. The narrower read-only `permissions preflight` then runs before `.prod`,
 service-principal metadata, or the store lock exists. Preflight rejects
 symlinks, hardlinked regular files, and unexpected object types without opening
 file contents or changing the tree. Unix sockets are left inert for the
