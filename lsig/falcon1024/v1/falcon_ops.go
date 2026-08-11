@@ -47,7 +47,7 @@ falcon_verify
 
 // TEALVersion returns the minimum TEAL version required for Falcon verification.
 func (o *FalconOps) TEALVersion() int {
-	return 12
+	return 13
 }
 
 // BuildSignatureArgs packs Falcon signature into one LogicSig arg.

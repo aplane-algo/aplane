@@ -1,5 +1,5 @@
 schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_mode: generated
 publisher: aplane
 family: htlc
@@ -61,7 +61,7 @@ runtime_args:
     byte_length: 32
 
 teal: |
-  #pragma version 10
+  #pragma version 13
 
   // HTLC LogicSig - Two spending paths:
   // 1. Claim: recipient provides correct preimage as arg 0 before timeout.

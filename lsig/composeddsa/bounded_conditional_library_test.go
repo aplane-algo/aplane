@@ -30,8 +30,8 @@ func TestBundledBoundedConditionalGoldens(t *testing.T) {
 		{
 			name:            "aplane.falcon1024-timelock.v1.yaml",
 			parameters:      map[string]string{"unlock_round": "50000000"},
-			wantFingerprint: "1:2c68993508b5f0e5ef969456e0d20750711139963e0399a962185c4fb19736e3",
-			wantTEALSHA256:  "ba093fba6122367d99b6159b792733ec881ca0774ef63e6d2adcc11749391529",
+			wantFingerprint: "1:27dab7e9f25f9f2fa697c995f4c2fec9f59966b2adccc98d29b96dfb939104d6",
+			wantTEALSHA256:  "abd6342e671e964d545908b3e99723e191449085a5bfae3b74e8fa89db26f934",
 		},
 	}
 

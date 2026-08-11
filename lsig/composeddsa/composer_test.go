@@ -53,6 +53,10 @@ func (suffixTestOps) TEALVersion() int                                { return 1
 func (suffixTestOps) BuildSignatureArgs(sig []byte) ([][]byte, error) { return [][]byte{sig}, nil }
 func (suffixTestOps) BuildVerifyTEAL([]byte) (string, error)          { return "test_verify\n", nil }
 
+type noLayoutV13Ops struct{ suffixTestOps }
+
+func (noLayoutV13Ops) TEALVersion() int { return 13 }
+
 type falconBoundaryTestOps struct{}
 
 func (falconBoundaryTestOps) PublicKeySize() int       { return 4 }
@@ -60,7 +64,7 @@ func (falconBoundaryTestOps) CryptoSignatureSize() int { return 4 }
 func (falconBoundaryTestOps) MnemonicScheme() string   { return "" }
 func (falconBoundaryTestOps) MnemonicWordCount() int   { return 0 }
 func (falconBoundaryTestOps) DisplayColor() string     { return "" }
-func (falconBoundaryTestOps) TEALVersion() int         { return 12 }
+func (falconBoundaryTestOps) TEALVersion() int         { return 13 }
 func (falconBoundaryTestOps) BuildSignatureArgs(sig []byte) ([][]byte, error) {
 	return [][]byte{sig}, nil
 }

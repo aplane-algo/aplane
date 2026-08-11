@@ -100,7 +100,7 @@ teal: |
 		t.Fatalf("Validate(compiled bounded sentry) error = %v", err)
 	}
 	hash := sha256.Sum256([]byte(teal))
-	if got, want := hex.EncodeToString(hash[:]), "b1240515d2e62ba74d772e42486af984ff65d7e55523e6e7090a96135e1c7f5c"; got != want {
+	if got, want := hex.EncodeToString(hash[:]), "96de55303aabf531166ae54870f0f345bebf1b3626cb7bc76b053dce98252003"; got != want {
 		t.Fatalf("TEAL SHA-256 = %s, want %s", got, want)
 	}
 	if got, want := len(bytecode), 5_673; got != want {

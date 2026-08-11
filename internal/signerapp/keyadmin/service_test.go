@@ -895,16 +895,32 @@ teal: |
 
 func configureFalconCompileMock(t *testing.T) {
 	t.Helper()
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, falconCompileMockTransport{})
+	bytecode := []byte{13, 0x81, 0}
+	var hash string
+	for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
+		bytecode[2] = byte(counter)
+		candidate, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
+		if err == nil {
+			hash = candidate.Address.String()
+			break
+		}
+	}
+	if hash == "" {
+		t.Fatal("failed to construct compiler-auto-salted mock bytecode")
+	}
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, falconCompileMockTransport{bytecode: bytecode, hash: hash})
 	if err != nil {
 		t.Fatalf("MakeClientWithTransport() error = %v", err)
 	}
 	lsigprovider.ConfigureAlgodClient(client)
 }
 
-type falconCompileMockTransport struct{}
+type falconCompileMockTransport struct {
+	bytecode []byte
+	hash     string
+}
 
-func (falconCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (m falconCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodPost || req.URL.Path != "/v2/teal/compile" {
 		return &http.Response{
 			StatusCode: http.StatusNotFound,
@@ -916,8 +932,7 @@ func (falconCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, 
 	if _, err := io.ReadAll(req.Body); err != nil {
 		return nil, err
 	}
-	bytecode := []byte{0x0c, 0x26, 0x01, 0x01, 0x00, 0x22}
-	body := []byte(`{"result":"` + base64.StdEncoding.EncodeToString(bytecode) + `","hash":"TESTHASH"}`)
+	body := []byte(`{"result":"` + base64.StdEncoding.EncodeToString(m.bytecode) + `","hash":"` + m.hash + `"}`)
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},

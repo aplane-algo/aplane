@@ -19,5 +19,5 @@ const (
 	MnemonicScheme    = "algorand"
 	MnemonicWordCount = 25
 	DisplayColor      = "36"
-	TEALVersion       = 12
+	TEALVersion       = 13
 )

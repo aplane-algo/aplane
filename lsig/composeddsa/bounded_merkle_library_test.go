@@ -48,7 +48,7 @@ func TestBundledBoundedMerkleAllowlistGolden(t *testing.T) {
 	hash := sha256.Sum256([]byte(teal))
 	gotHash := hex.EncodeToString(hash[:])
 	gotFingerprint := provider.CompatibilityFingerprint()
-	if gotFingerprint != "1:aed0ec97bfba114dadf4914654e43f4dea17d5dccc53d406dbe01fae702773a2" || gotHash != "bc92b273667a8a23205428a4150e9dc33acf0fd71cfba0ebb7a91c2bb0f0cbd3" {
+	if gotFingerprint != "1:a7f4d0591ad2733f9ecf560dbc1e62246da26df70499cc35104481aeaa448cfe" || gotHash != "86647d4db3512458f08bff9f7fbe342d8f31c84a53324b89b8870bf4c4b3fe87" {
 		t.Errorf("goldens: fingerprint %q; TEAL SHA-256 %q", gotFingerprint, gotHash)
 	}
 }

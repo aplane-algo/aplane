@@ -8,7 +8,7 @@
 // This package vendors each derivation version to ensure stability.
 //
 // Version History:
-//   - v1: falcon-signatures v1.1.1 (TEAL v12, falcon_verify opcode)
+//   - v1: Falcon-1024 LogicSig using TEAL v13 compiler auto-salting
 package derivation
 
 // CurrentVersion is the derivation version used for new keys.

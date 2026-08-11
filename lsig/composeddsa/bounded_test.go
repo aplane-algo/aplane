@@ -28,7 +28,7 @@ func (boundedTestOps) CryptoSignatureSize() int { return 4 }
 func (boundedTestOps) MnemonicScheme() string   { return "" }
 func (boundedTestOps) MnemonicWordCount() int   { return 0 }
 func (boundedTestOps) DisplayColor() string     { return "" }
-func (boundedTestOps) TEALVersion() int         { return 12 }
+func (boundedTestOps) TEALVersion() int         { return 13 }
 func (boundedTestOps) BuildVerifyTEAL([]byte) (string, error) {
 	return "// BOUNDED_TEST_VERIFIER\nint 1\n", nil
 }
@@ -490,7 +490,7 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 			name: "base without static layout",
 			make: func() *ComposedDSA {
 				provider := newBoundedTestProvider(valid)
-				provider.ops = suffixTestOps{}
+				provider.ops = noLayoutV13Ops{}
 				return provider
 			},
 			want: "does not expose a static bounded signature argument layout",
@@ -664,7 +664,7 @@ func TestNilBoundedPreservesLegacyTEAL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
-	const want = "#pragma version 12\n\n// BOUNDED_TEST_VERIFIER\nint 1\nassert\n\n// LEGACY_POLICY\nint 1\nassert\n\nint 1\nreturn\n"
+	const want = "#pragma version 13\n\n// BOUNDED_TEST_VERIFIER\nint 1\nassert\n\n// LEGACY_POLICY\nint 1\nassert\n\nint 1\nreturn\n"
 	if teal != want {
 		t.Fatalf("nil-profile TEAL changed:\n%s\nwant:\n%s", teal, want)
 	}

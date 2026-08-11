@@ -27,7 +27,7 @@ func TestBundledBoundedInlineAllowlistGoldens(t *testing.T) {
 		wantFingerprint string
 		wantTEALSHA256  string
 	}{
-		{name: "aplane.falcon1024-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), wantFingerprint: "1:a2a8cec6f70e63092c4a3dfccce46043f4f379b19d289c11587e47eaa99b4435", wantTEALSHA256: "b589d59e41d2c32829c42e3a8a78b226f18b5b7871fcf5df819cdf4f07014afa"},
+		{name: "aplane.falcon1024-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), wantFingerprint: "1:527d9beb4a92723347a14258225fb2cd3024b1aa63d878c4b7d69467e99fcd59", wantTEALSHA256: "b08fa7a01a034c6e2a73597b5d42e006cc668c62869bec9daaa73fee0dccf4b0"},
 	}
 
 	for _, test := range tests {

@@ -15,7 +15,7 @@ func TestBundledGenericTemplateCompatibilityFingerprints(t *testing.T) {
 		file string
 		want string
 	}{
-		{name: "htlc", file: "aplane.htlc.v1.yaml", want: "1:d0fb70ab0540fc66d3aac6b7ef804f6cabf301fbcacbd2b2f983e5a1cb53ffce"},
+		{name: "htlc", file: "aplane.htlc.v1.yaml", want: "1:00b38a61c2ad82427171c683e70253bd69b7fc4d27a6fd3e58b1bc286bb1cec6"},
 	}
 
 	for _, tc := range tests {

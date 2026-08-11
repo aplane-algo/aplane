@@ -325,9 +325,11 @@ concrete salt style is chosen by APlane as part of the versioned
 provider/template derivation contract, not by user YAML. Templates with omitted
 `derivation_version` are unsalted and compile exactly as written, succeeding
 only if the unmodified bytecode already derives an off-curve LogicSig address.
-New template-derived key types use `derivation_version: 2`, which appends a
-trailing dead-code `bytecblock 0x00` after the program's terminating
-instruction. User-authored template TEAL must not hand-write raw `bytecblock`
+`derivation_version: 2` appends a trailing dead-code `bytecblock 0x00` after
+the program's terminating instruction and is retained as a legacy derivation
+contract. Current templates use `derivation_version: 3` and TEAL v13 compiler
+auto-salting; APlane persists and validates the compiler's final bytecode rather
+than patching it. User-authored template TEAL must not hand-write raw `bytecblock`
 or `intcblock` declarations, numeric `bytec` or
 `intc` references, or short forms such as `bytec_0` or `intc_0`. Use declared
 template variables, symbolic `$name` references, and generated-mode list

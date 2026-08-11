@@ -164,8 +164,8 @@ func TestComposedFalconHashlockGenerateTEAL(t *testing.T) {
 	}
 
 	// Verify TEAL contains expected elements
-	if !strings.Contains(teal, "#pragma version 12") {
-		t.Error("TEAL should contain '#pragma version 12'")
+	if !strings.Contains(teal, "#pragma version 13") {
+		t.Error("TEAL should contain '#pragma version 13'")
 	}
 	preamble, _ := lsigsalt.StylePushbytes.SourcePreamble()
 	if !strings.Contains(teal, strings.TrimSpace(preamble)) {

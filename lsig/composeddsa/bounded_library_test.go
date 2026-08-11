@@ -111,7 +111,7 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathAdminRekey), 3+falconfamily.MaxSignatureSize+boundedmeta.FalconAdminSignatureSize; got != want {
 		t.Fatalf("admin LogicSig size = %d, want %d", got, want)
 	}
-	if got, want := provider.CompatibilityFingerprint(), "1:977f3346462f7156470e4df11b84be52699bebd8a7440c2f520620f50be36ce7"; got != want {
+	if got, want := provider.CompatibilityFingerprint(), "1:03da87e5491d266432cba9472eaf067639a362543ec50be941295eec4aaee399"; got != want {
 		t.Fatalf("CompatibilityFingerprint() = %q, want %q", got, want)
 	}
 
@@ -277,8 +277,8 @@ func TestBundledFalconAdminAllowlistV1MaximumBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	groupSize := (metadata.PostSigningLogicSigSize + 999) / 1000
-	if len(bytecode) != 5312 || metadata.PostSigningLogicSigSize != 8158 || groupSize != 9 {
-		t.Fatalf("maximum budget = bytecode %d, post-signing %d, group %d; want 5312/8158/9", len(bytecode), metadata.PostSigningLogicSigSize, groupSize)
+	if len(bytecode) != 5308 || metadata.PostSigningLogicSigSize != 8154 || groupSize != 9 {
+		t.Fatalf("maximum budget = bytecode %d, post-signing %d, group %d; want 5308/8154/9", len(bytecode), metadata.PostSigningLogicSigSize, groupSize)
 	}
 	feeTests := []struct {
 		minFee uint64

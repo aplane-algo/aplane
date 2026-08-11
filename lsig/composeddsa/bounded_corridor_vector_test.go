@@ -130,8 +130,8 @@ func TestCorridorGoldenVector(t *testing.T) {
 		wantSentryKeyID = "MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ"
 		wantAdminKeyID  = "WCM6OW66SGGHSCTSAYDHOUGOPEXJLK2YPFQVUSWX6UASKCWRC4DQ"
 		wantRoot        = "ea4421efa4bc1d9d5bfaf9d578e25655591bd27af8658bf94eee1687ec9c5d8d"
-		wantBinding     = "7bb8609d66e2eb10af283b15c1b4b409a02498ce5a02c693b073c9cbffd9c0f7"
-		wantAdminMsg    = "e9e0a641e1cb1aee5f4c23e24d5489bf3dbbca5fc3cc7eaf0827a2d9764cec41"
+		wantBinding     = "fea0a4e58434a64714bcde9762f19d674e98808192e1280b1fb85b6acd76eb0c"
+		wantAdminMsg    = "076546841ec805465aa8bf90a201014b157be5775288b6958688267af2174a8f"
 	)
 	if metadata.Sentry == nil || metadata.Sentry.ComponentKeyID != wantSentryKeyID {
 		t.Fatalf("sentry key ID = %#v, want %s", metadata.Sentry, wantSentryKeyID)
@@ -181,7 +181,7 @@ func TestCorridorGoldenVector(t *testing.T) {
 	binding := composeddsa.BoundedProgramBinding(
 		provider.KeyType(),
 		provider.BaseKeyType(),
-		12,
+		13,
 		spendingKey,
 		adminKey,
 		profileEncoding,

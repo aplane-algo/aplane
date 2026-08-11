@@ -66,7 +66,7 @@ type ContractManifest struct {
 
 var bounded1Manifest = mustValidManifest(ContractManifest{
 	Contract:     "bounded1",
-	TEALVersion:  12,
+	TEALVersion:  13,
 	SpendEffects: []SpendEffect{SpendEffectPay, SpendEffectAxfer, SpendEffectAssetOptIn},
 	Predicates: []FieldPredicate{
 		{Effect: EffectRekey, Field: FieldRekeyTo, Test: TestAddressNonZero},

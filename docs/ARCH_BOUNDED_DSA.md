@@ -567,10 +567,10 @@ corridor_merkle_proof_hex:
   48c12a8dd675e9dcd3c63141fbfde6d11056c392b4379c3bbdc79a8511d0e65b
 
 corridor_bounded_program_binding:
-  7bb8609d66e2eb10af283b15c1b4b409a02498ce5a02c693b073c9cbffd9c0f7
+  fea0a4e58434a64714bcde9762f19d674e98808192e1280b1fb85b6acd76eb0c
 
 corridor_admin_message:
-  e9e0a641e1cb1aee5f4c23e24d5489bf3dbbca5fc3cc7eaf0827a2d9764cec41
+  076546841ec805465aa8bf90a201014b157be5775288b6958688267af2174a8f
 ```
 
 Whitespace and line wrapping are presentation only.

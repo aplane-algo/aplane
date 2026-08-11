@@ -99,20 +99,16 @@ func (f *Falcon1024V1) DeriveLsigWithSalt(ctx context.Context, publicKey []byte,
 	return comp.DeriveLsigWithSalt(ctx, publicKey, nil)
 }
 
-// newFalconV1Composed creates a ComposedDSA with no TEAL suffix that produces
-// bytecode identical to the standard aplane.falcon1024.v1 precompiled derivation.
+// newFalconV1Composed creates the canonical Falcon-1024 ComposedDSA. The
+// configured algod compiler owns TEAL v13 auto-salting, so the compiler's final
+// bytecode is the authoritative address-bearing artifact. With no suffix, the
+// generated source is:
 //
-// This is the canonical Falcon-1024 implementation as a ComposedDSA.
-// With no suffix, the generated TEAL is:
-//
-//	#pragma version 12
-//	bytecblock 0x00
+//	#pragma version 13
 //	txn TxID
 //	arg 0
 //	byte 0x<pubkey>
 //	falcon_verify
-//
-// Which compiles to identical bytecode as the precompiled v1 template.
 func newFalconV1Composed() *ComposedFalcon {
 	return NewComposedFalcon(ComposedFalconConfig{
 		KeyType:     "aplane.falcon1024.v1",
@@ -121,7 +117,7 @@ func newFalconV1Composed() *ComposedFalcon {
 		DisplayName: "Falcon-1024",
 		Description: "Falcon-1024 signature scheme",
 		Base:        family.FalconBase,
-		SaltStyle:   lsigsalt.StyleBytecblock,
+		SaltStyle:   lsigsalt.StyleAlgodAutoSalt,
 		// No TEALSuffix, no Params, no RuntimeArgs = pure Falcon-1024
 	})
 }

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
@@ -56,8 +55,7 @@ func TestGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 	}
 
 	checks := []string{
-		"#pragma version 12",
-		"byte 0x" + lsigsalt.PushbytesSaltMarkerHex(0),
+		"#pragma version 13",
 		"sha512_256",
 		"arg 0",
 		"falcon_verify",
@@ -73,6 +71,9 @@ func TestGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 		if !strings.Contains(teal, want) {
 			t.Fatalf("GenerateTEAL() missing %q:\n%s", want, teal)
 		}
+	}
+	if strings.Contains(teal, "APLANE_LSIG_SALT") || strings.Contains(teal, "Counter marker") {
+		t.Fatalf("GenerateTEAL() contains a manual salt anchor:\n%s", teal)
 	}
 
 	if strings.Index(teal, "arg 0") > strings.Index(teal, "arg 1") {

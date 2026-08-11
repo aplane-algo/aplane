@@ -360,8 +360,8 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 			if len(payload.LogicSigBytecode) == 0 {
 				t.Fatal("LogicSigBytecode is empty")
 			}
-			if payload.SaltCounter == nil {
-				t.Fatal("SaltCounter is nil")
+			if payload.SaltCounter != nil || payload.LogicSigDerivation != keys.LogicSigDerivationAlgodV13AutoSalt {
+				t.Fatalf("derivation = %q salt counter = %v, want compiler auto-salt without counter", payload.LogicSigDerivation, payload.SaltCounter)
 			}
 			if payload.SigningMetadataVersion != keys.CurrentSigningMetadataVersion {
 				t.Fatalf("SigningMetadataVersion = %d, want %d", payload.SigningMetadataVersion, keys.CurrentSigningMetadataVersion)
@@ -441,16 +441,32 @@ func containsKeyType(items []string, keyType string) bool {
 
 func configureGuardedCompileMock(t *testing.T) {
 	t.Helper()
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, guardedCompileMockTransport{})
+	bytecode := []byte{13, 0x81, 0}
+	var hash string
+	for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
+		bytecode[2] = byte(counter)
+		result, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
+		if err == nil {
+			hash = result.Address.String()
+			break
+		}
+	}
+	if hash == "" {
+		t.Fatal("failed to find deterministic compiler-auto-salted test bytecode")
+	}
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, guardedCompileMockTransport{bytecode: bytecode, hash: hash})
 	if err != nil {
 		t.Fatalf("MakeClientWithTransport() error = %v", err)
 	}
 	lsigprovider.ConfigureAlgodClient(client)
 }
 
-type guardedCompileMockTransport struct{}
+type guardedCompileMockTransport struct {
+	bytecode []byte
+	hash     string
+}
 
-func (guardedCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (m guardedCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodPost || req.URL.Path != "/v2/teal/compile" {
 		return &http.Response{
 			StatusCode: http.StatusNotFound,
@@ -462,22 +478,13 @@ func (guardedCompileMockTransport) RoundTrip(req *http.Request) (*http.Response,
 	if _, err := io.ReadAll(req.Body); err != nil {
 		return nil, err
 	}
-	bytecode := compiledGuardedPushbytesSaltBytecode(0)
-	body := `{"result":"` + base64.StdEncoding.EncodeToString(bytecode) + `","hash":"TESTHASH"}`
+	body := `{"result":"` + base64.StdEncoding.EncodeToString(m.bytecode) + `","hash":"` + m.hash + `"}`
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(body)),
 		Request:    req,
 	}, nil
-}
-
-func compiledGuardedPushbytesSaltBytecode(counter byte) []byte {
-	marker := lsigsalt.PushbytesSaltMarker(counter)
-	bytecode := []byte{0x0c, 0x80, byte(len(marker))}
-	bytecode = append(bytecode, marker...)
-	bytecode = append(bytecode, 0x48, 0x81, 0x01)
-	return bytecode
 }
 
 func canonicalGenericKeyJSON(t *testing.T, keyType string, parameters map[string]string, tealSource string) []byte {

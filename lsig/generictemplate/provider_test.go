@@ -1351,11 +1351,21 @@ func assertCompileWithSaltOffCurve(t *testing.T, tmpl *YAMLTemplate, params map[
 			compiled = compiledPushbytesSaltBytecode(0)
 		case templatestore.DerivationVersionTrailingBytecblock:
 			compiled = compiledTrailingBytecblockSaltBytecode(0)
+		case templatestore.DerivationVersionAlgodAutoSalt:
+			compiled = unsaltedOffCurveBytecodeForVersion(t, 13)
 		default:
 			t.Fatalf("unsupported derivation version %d", *tmpl.spec.DerivationVersion)
 		}
 	}
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{bytecode: compiled})
+	transport := compileMockTransport{bytecode: compiled}
+	if tmpl.spec.DerivationVersion != nil && *tmpl.spec.DerivationVersion == templatestore.DerivationVersionAlgodAutoSalt {
+		result, err := lsigsalt.UseUnmodifiedOffCurve(compiled)
+		if err != nil {
+			t.Fatalf("UseUnmodifiedOffCurve() error = %v", err)
+		}
+		transport.hash = result.Address.String()
+	}
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, transport)
 	if err != nil {
 		t.Fatalf("MakeClientWithTransport() error = %v", err)
 	}

@@ -170,14 +170,15 @@ control is intentionally owned by signer policy.
 
 Template TEAL must be relocatable. Do not write raw `bytecblock`/`intcblock`
 declarations or numeric `bytec`/`intc` references in user-authored TEAL; use
-template variables and symbolic references so APlane can own generated
-constants and any derivation-version salt anchor safely. Do not add a custom
+template variables and symbolic references so the compiler can own generated
+constants and any TEAL v13 auto-salt safely. Do not add a custom
 salt preamble or expose a YAML salt-style selector. Salt style is a versioned
 provider/template derivation contract owned by APlane. Templates with omitted
 `derivation_version` are unsalted and compile exactly as written, succeeding
 only if the unmodified bytecode already derives an off-curve LogicSig address;
-new template-derived key types should use `derivation_version: 2` for the
-trailing dead-code `bytecblock` salt anchor.
+new template-derived key types should use `derivation_version: 3` and TEAL v13
+compiler auto-salting. APlane validates the final compiled program and address;
+it does not reproduce the compiler's salt search.
 
 For time locks in LogicSig mode, prefer `txn FirstValid` checks. Do not use
 `global Round`.

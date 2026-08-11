@@ -32,7 +32,7 @@ func newComposed() *composeddsa.ComposedDSA {
 		DisplayName: "Ed25519 LogicSig",
 		Description: "Ed25519 signature scheme verified inside a LogicSig",
 		Ops:         NewOps(),
-		SaltStyle:   lsigsalt.StyleBytecblock,
+		SaltStyle:   lsigsalt.StyleAlgodAutoSalt,
 	})
 }
 

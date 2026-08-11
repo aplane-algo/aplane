@@ -187,23 +187,41 @@ func configureMockAlgod(t *testing.T, server *Signer) (cleanup func()) {
 			return nil, err
 		}
 		bytecode := compiledPushbytesSaltBytecode(0)
-		isTrailingBytecblockSalt := strings.HasSuffix(strings.TrimSpace(string(source)), "bytecblock 0x00")
-		if isTrailingBytecblockSalt {
-			bytecode = []byte{0x0c, 0x81, 0x01, 0x43, 0x26, 0x01, 0x01, 0x00}
-		} else if bytes.Contains(source, []byte("bytecblock 0x00")) {
-			bytecode = []byte{
-				0x0c,
-				0x26, 0x01, 0x01, 0x00,
-				0x31, 0x17,
-				0x2d,
-				0x81, 0x01,
+		hash := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+		if bytes.Contains(source, []byte("#pragma version 13")) &&
+			!bytes.Contains(source, []byte("APLANE_LSIG_SALT")) &&
+			!bytes.Contains(source, []byte("bytecblock 0x00")) {
+			bytecode = append([]byte{13, 0x81, 0}, make([]byte, 32)...)
+			for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
+				bytecode[2] = byte(counter)
+				candidate, candidateErr := lsigsalt.UseUnmodifiedOffCurve(bytecode)
+				if candidateErr == nil {
+					hash = candidate.Address.String()
+					break
+				}
+			}
+			if hash == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ" {
+				t.Fatal("failed to construct compiler-auto-salted mock bytecode")
+			}
+		} else {
+			isTrailingBytecblockSalt := strings.HasSuffix(strings.TrimSpace(string(source)), "bytecblock 0x00")
+			if isTrailingBytecblockSalt {
+				bytecode = []byte{0x0c, 0x81, 0x01, 0x43, 0x26, 0x01, 0x01, 0x00}
+			} else if bytes.Contains(source, []byte("bytecblock 0x00")) {
+				bytecode = []byte{
+					0x0c,
+					0x26, 0x01, 0x01, 0x00,
+					0x31, 0x17,
+					0x2d,
+					0x81, 0x01,
+				}
+			}
+			if !isTrailingBytecblockSalt {
+				bytecode = append(bytecode, make([]byte, 32)...)
 			}
 		}
-		if !isTrailingBytecblockSalt {
-			bytecode = append(bytecode, make([]byte, 32)...)
-		}
 		body, err := json.Marshal(map[string]interface{}{
-			"hash":   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"hash":   hash,
 			"result": base64.StdEncoding.EncodeToString(bytecode),
 		})
 		if err != nil {

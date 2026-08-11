@@ -242,8 +242,8 @@ func TestConfigureAlgodClient(t *testing.T) {
 		t.Fatalf("DeriveLsig() error: %v", err)
 	}
 
-	if len(bytecode) != 1805 {
-		t.Errorf("Bytecode length = %d, want 1805", len(bytecode))
+	if len(bytecode) != 1801 {
+		t.Errorf("Bytecode length = %d, want 1801", len(bytecode))
 	}
 
 	if addr == "" {

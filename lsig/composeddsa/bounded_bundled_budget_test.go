@@ -52,19 +52,19 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 		spendMinFeeCeiling uint64
 		adminMinFeeCeiling uint64
 	}{
-		{name: "aplane.falcon1024-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": strings.Join(recipients, ",")}, bytecode: 3159, spend: 4582, spendGroup: 5, group: 5, spendMinFeeCeiling: 2000},
-		{name: "aplane.falcon1024-allowlist.v2.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": recipients[0]}, bytecode: 2188, spend: 4123, spendGroup: 5, group: 5, spendMinFeeCeiling: 2000},
-		{name: "aplane.falcon1024-timelock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"unlock_round": "18446744073709551615"}, bytecode: 1947, spend: 3370, spendGroup: 4, group: 4, spendMinFeeCeiling: 2500},
+		{name: "aplane.falcon1024-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": strings.Join(recipients, ",")}, bytecode: 3155, spend: 4578, spendGroup: 5, group: 5, spendMinFeeCeiling: 2000},
+		{name: "aplane.falcon1024-allowlist.v2.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": recipients[0]}, bytecode: 2184, spend: 4119, spendGroup: 5, group: 5, spendMinFeeCeiling: 2000},
+		{name: "aplane.falcon1024-timelock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"unlock_round": "18446744073709551615"}, bytecode: 1943, spend: 3366, spendGroup: 4, group: 4, spendMinFeeCeiling: 2500},
 		{name: "aplane.falcon1024-allowlist-alock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{
 			"recipients": strings.Join(recipients, ","), "asset_ids": strings.Join(assetIDs, ","),
 			"max_payment_amount": "18446744073709551615", "max_asset_amount": "18446744073709551615",
 			composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),
-		}, bytecode: 5312, spend: 6735, admin: 8158, spendGroup: 7, adminGroup: 9, group: 9, spendMinFeeCeiling: 1428, adminMinFeeCeiling: 1111},
+		}, bytecode: 5308, spend: 6731, admin: 8154, spendGroup: 7, adminGroup: 9, group: 9, spendMinFeeCeiling: 1428, adminMinFeeCeiling: 1111},
 		{name: "aplane.corridor.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{
 			"recipients": recipients[0],
 			composeddsa.BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryKey),
 			composeddsa.BoundedAdminPublicKeyParameter:  hex.EncodeToString(adminKey),
-		}, bytecode: 5940, spend: 9298, admin: 8786, spendGroup: 10, adminGroup: 9, group: 10, spendMinFeeCeiling: 1000, adminMinFeeCeiling: 1111},
+		}, bytecode: 5936, spend: 9294, admin: 8782, spendGroup: 10, adminGroup: 9, group: 10, spendMinFeeCeiling: 1000, adminMinFeeCeiling: 1111},
 	}
 
 	for _, test := range tests {
