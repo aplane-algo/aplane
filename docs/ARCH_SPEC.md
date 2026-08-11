@@ -1694,11 +1694,13 @@ The integration harness behavior is part of the effective repository contract:
   profile and fails closed when the profile is absent or invalid;
   `make integration-test-testnet`, `make integration-test-localnet`, and
   `make integration-test-fnet` are the convenience targets,
-- the full FNet profile preserves the ordinary suite's Ed25519
-  `TEST_FUNDING_MNEMONIC` contract: the operator supplies an Ed25519 account
-  funded on FNet, and may use the same mnemonic as TestNet when that address is
-  funded on both networks; native-Falcon cases generate disposable native
-  accounts and fund them from that Ed25519 account,
+- `TEST_FUNDING_MNEMONIC` has one authorization meaning on every integration
+  network: it is a protocol-native Falcon-1024 recovery mnemonic; the harness
+  adds the native-PQ fee contribution before group IDs and emits structured
+  `PQsig` envelopes for direct fixture transactions,
+- LocalNet setup uses a KMD Ed25519 account only as a bootstrap source for a
+  disposable funded native Falcon account; TestNet/FNet use an operator-supplied
+  funded native Falcon account and therefore require a v42-capable network,
 - `make integration-test` regenerates the shared test fixture and `.env.test` before running the suite,
 - the shared fixture lives under `/tmp/aplane-test-env`,
 - the generated signer fixture uses a private runtime directory with `ipc_path: run/aplane.sock`,

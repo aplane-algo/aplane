@@ -20,7 +20,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/kmd"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/mnemonic"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
+	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
+	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
@@ -104,6 +107,7 @@ func main() {
 	if _, err := rand.Read(entropy); err != nil {
 		fatalf("generate native Falcon funding entropy: %v", err)
 	}
+	defer securecrypto.ZeroBytes(entropy)
 	mn, err := mnemonic.FromKey(entropy)
 	if err != nil {
 		fatalf("encode native Falcon funding mnemonic: %v", err)
@@ -134,6 +138,10 @@ func fundNativeAccount(
 	sp, err := client.SuggestedParams().Do(ctx)
 	if err != nil {
 		return fmt.Errorf("read suggested params for native funding: %w", err)
+	}
+	params, ok := sdkconfig.Consensus[protocol.ConsensusVersion(sp.ConsensusVersion)]
+	if !ok || !params.EnablePQSchemeFalcon1024 {
+		return fmt.Errorf("localnet consensus %q does not support native Falcon-1024 authorization", sp.ConsensusVersion)
 	}
 	txn, err := transaction.MakePaymentTxn(
 		bootstrapAddress,

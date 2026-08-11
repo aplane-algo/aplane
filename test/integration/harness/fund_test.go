@@ -72,6 +72,37 @@ func TestPrepareTransactionPreservesExistingFeeAndUsesDefaultMinimum(t *testing.
 	}
 }
 
+func TestFundingEnvironmentUsesOnlyNativeFalconAddress(t *testing.T) {
+	mnemonicWords := nativeFundingTestMnemonic(t)
+	wantAddress, err := NativeFundingAddressFromMnemonic(mnemonicWords)
+	if err != nil {
+		t.Fatalf("NativeFundingAddressFromMnemonic() error = %v", err)
+	}
+	t.Setenv("TEST_FUNDING_MNEMONIC", mnemonicWords)
+	t.Setenv("TEST_FUNDING_ACCOUNT", wantAddress)
+
+	funding, err := NewFundingAccount()
+	if err != nil {
+		t.Fatalf("NewFundingAccount() error = %v", err)
+	}
+	if funding.Address != wantAddress {
+		t.Fatalf("NewFundingAccount() address = %s, want %s", funding.Address, wantAddress)
+	}
+	funder, err := NewFundTestAccount(nil)
+	if err != nil {
+		t.Fatalf("NewFundTestAccount() error = %v", err)
+	}
+	defer funder.authorizer.zero()
+	if funder.GetAddress() != wantAddress {
+		t.Fatalf("NewFundTestAccount() address = %s, want %s", funder.GetAddress(), wantAddress)
+	}
+
+	t.Setenv("TEST_FUNDING_ACCOUNT", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ")
+	if _, err := NewFundingAccount(); err == nil {
+		t.Fatal("NewFundingAccount() accepted an address that does not match the native Falcon mnemonic")
+	}
+}
+
 func nativeFundingTestMnemonic(t *testing.T) string {
 	t.Helper()
 	entropy := make([]byte, nativefalcon.RecoveryEntropySize)

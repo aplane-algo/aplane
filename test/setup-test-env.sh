@@ -12,10 +12,12 @@
 # self-contained — it does not depend on any existing signer installation.
 #
 # Prerequisites:
-#   - testnet mode: TEST_FUNDING_MNEMONIC must be set (funded Ed25519 account)
-#   - localnet mode: AlgoKit LocalNet algod/KMD must be running
-#   - fnet mode: TEST_FUNDING_MNEMONIC must identify an Ed25519 account funded
-#     on FNet. The same mnemonic may be used for TestNet and FNet.
+#   - testnet mode: TEST_FUNDING_MNEMONIC must identify a funded native
+#     Falcon-1024 account (requires the v42 network upgrade)
+#   - localnet mode: a v42-capable AlgoKit LocalNet algod/KMD must be running;
+#     setup bootstraps a disposable native Falcon funding account from KMD
+#   - fnet mode: TEST_FUNDING_MNEMONIC must identify a funded native
+#     Falcon-1024 account on FNet
 #   - ssh-keygen must be available
 #
 # Output:
@@ -62,8 +64,7 @@ fi
 if { [ "$INTEGRATION_NETWORK" = "testnet" ] || [ "$INTEGRATION_NETWORK" = "fnet" ]; } &&
    [ -z "${TEST_FUNDING_MNEMONIC:-}" ]; then
     echo "ERROR: TEST_FUNDING_MNEMONIC must be set" >&2
-    echo "  The Ed25519 account must be funded on $INTEGRATION_NETWORK." >&2
-    echo "  The same mnemonic may be used on TestNet and FNet when its address is funded on both networks." >&2
+    echo "  The native Falcon-1024 account must be funded on $INTEGRATION_NETWORK." >&2
     echo "  Either create test-mnemonic.sh with: export TEST_FUNDING_MNEMONIC='your 25 word mnemonic here'" >&2
     echo "  Or set the variable directly before running this script" >&2
     echo "  Or run against localnet with: APLANE_INTEGRATION_NETWORK=localnet make integration-test" >&2
@@ -147,12 +148,15 @@ elif [ "$INTEGRATION_NETWORK" = "fnet" ]; then
     INTEGRATION_GENESIS_ID="fnet-v1"
     INTEGRATION_GENESIS_HASH="kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA="
 
-    echo "  Using the operator-supplied Ed25519 funding account for FNet"
+    TEST_FUNDING_ACCOUNT="$(TEST_FUNDING_MNEMONIC="$TEST_FUNDING_MNEMONIC" go run "$PROJECT_ROOT/test/integration/cmd/native-funding-address")"
+    echo "  Using native Falcon FNet funding account $TEST_FUNDING_ACCOUNT"
 else
     ALGOD_URL="${ALGOD_URL:-https://testnet-api.4160.nodely.dev}"
     ALGOD_TOKEN="${ALGOD_TOKEN:-}"
     INTEGRATION_GENESIS_ID="testnet-v1.0"
     INTEGRATION_GENESIS_HASH="SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI="
+    TEST_FUNDING_ACCOUNT="$(TEST_FUNDING_MNEMONIC="$TEST_FUNDING_MNEMONIC" go run "$PROJECT_ROOT/test/integration/cmd/native-funding-address")"
+    echo "  Using native Falcon TestNet funding account $TEST_FUNDING_ACCOUNT"
 fi
 
 ENV_LOCALNET_ALGOD_URL=""
