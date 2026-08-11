@@ -84,7 +84,7 @@ func TestKeyDerivationRegression(t *testing.T) {
 			name:        "aplane.falcon1024.v1",
 			keyType:     "aplane.falcon1024.v1",
 			mnemonic:    falcon1024TestMnemonic,
-			wantAddress: "X62BVELWGZ7U2SCP3PCO2REMW24MRLJORKHEW25VR37EZNQW74BXWQWTHE",
+			wantAddress: "52OSLC522XU3LGQLZPALTQEV2I5ZC24P747JVOEFZSJDZU6QPNBPJXNCR4",
 		},
 		{
 			name:     "aplane.htlc.v1",
@@ -96,7 +96,7 @@ func TestKeyDerivationRegression(t *testing.T) {
 				"refund_address": integrationBurnAddress,
 				"timeout_round":  fixedTimeoutRound,
 			},
-			wantAddress: "IL3QVEJLECESYIDLRXXOASBZ3NDTNYZ4YFQS625HV5KJTME4UGYYSHL2XU",
+			wantAddress: "MG4FJOLMCZ4A26VVPMDPLEX7V4GOS6OQ6EHP3BGOICFIDTKG5ETYMTOQYY",
 		},
 	}
 

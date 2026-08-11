@@ -26,7 +26,7 @@ import (
 // Mithras deposit will take, with a generic stub plugin (no Mithras dependency):
 //
 //	engine.SignAndSubmitWithPluginSigners
-//	  -> /plan          (real apsigner: canonicalize, add Falcon budget dummies)
+//	  -> /plan          (real apsigner: canonicalize and budget v42 resources)
 //	  -> signSlots      (the "plugin" signs its owned slot over the canonical bytes)
 //	  -> /sign          (real apsigner Falcon-signs the managed funder slot)
 //	  -> submit         (real localnet algod)
@@ -105,7 +105,8 @@ func TestPresignPlanConnectedEngineSubmit(t *testing.T) {
 	}
 
 	// Ungrouped draft: a managed Falcon slot + a plugin-owned slot. /plan computes
-	// the group id and appends Falcon budget dummies.
+	// the group ID. Under v42 the plugin slot supplies the second group member
+	// required by Falcon's argument pool, so no dummy is needed.
 	managedTxn, err := transaction.MakePaymentTxn(falconAddr, falconAddr, 0, []byte("presign-connected-managed"), "", sp)
 	if err != nil {
 		t.Fatalf("make managed txn: %v", err)
@@ -149,10 +150,8 @@ func TestPresignPlanConnectedEngineSubmit(t *testing.T) {
 		t.Fatalf("SignAndSubmitWithPluginSigners: %v\n%s", err, out)
 	}
 
-	// The Falcon key needs opcode-budget dummies, so the submitted group is larger
-	// than the 2-slot draft — proof /plan added budget and the whole group submitted.
-	if len(res.TxIDs) < 3 {
-		t.Fatalf("expected >=3 submitted txids (2 draft + Falcon budget dummies), got %d", len(res.TxIDs))
+	if len(res.TxIDs) != 2 {
+		t.Fatalf("expected the two real v42 group members with no dummy, got %d txids", len(res.TxIDs))
 	}
 
 	// The group confirms atomically; verify the managed Falcon slot landed on-chain.

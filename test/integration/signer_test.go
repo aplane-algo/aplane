@@ -639,7 +639,7 @@ func TestHiddenRekeyPaymentEmitsCriticalAlertAndChangesAuthAddr(t *testing.T) {
 				t,
 				sp,
 				sourceAddr,
-				integrationBurnAddress,
+				funder.GetAddress(),
 				1_000,
 				"hidden-rekey-test",
 				stealthAuthAccount.Address.String(),
@@ -785,7 +785,7 @@ func TestHiddenCloseRemainderPaymentEmitsCriticalAlertAndClosesAccount(t *testin
 		t.Fatalf("failed to get suggested params: %v", err)
 	}
 
-	txn, err := transaction.MakePaymentTxn(sourceAddr, integrationBurnAddress, 1_000, []byte("hidden-close-test"), "", sp)
+	txn, err := transaction.MakePaymentTxn(sourceAddr, funder.GetAddress(), 1_000, []byte("hidden-close-test"), "", sp)
 	if err != nil {
 		t.Fatalf("failed to build payment txn: %v", err)
 	}
@@ -1334,7 +1334,7 @@ func TestRekeyedAccountSignsViaAuthAddress(t *testing.T) {
 		t.Fatalf("expected account %s to be rekeyed to %s, got %s", rekeyedAddr, fundingAddr, accountInfo.AuthAddr)
 	}
 
-	txid, err := apshell.SendTransaction(rekeyedAddr, integrationBurnAddress, 0.01)
+	txid, err := apshell.SendTransaction(rekeyedAddr, fundingAddr, 0.01)
 	if err != nil {
 		t.Fatalf("failed to send from rekeyed account: %v", err)
 	}
@@ -1652,7 +1652,7 @@ func TestFalconPassphraseSigning(t *testing.T) {
 		closeAccountToFunding(t, apshell, testnet, falconAddr, funder.GetAddress())
 	})
 
-	txid, err := apshell.SendTransaction(falconAddr, integrationBurnAddress, 0.01)
+	txid, err := apshell.SendTransaction(falconAddr, funder.GetAddress(), 0.01)
 	if err != nil {
 		t.Fatalf("failed to send Falcon transaction after unlock: %v", err)
 	}
@@ -1762,7 +1762,7 @@ func TestSignerRestartPreservesUsableKeys(t *testing.T) {
 	})
 
 	// Step 1: sign and confirm before restart
-	txid1, err := apshell.SendTransaction(addr, integrationBurnAddress, 0.01)
+	txid1, err := apshell.SendTransaction(addr, funder.GetAddress(), 0.01)
 	if err != nil {
 		t.Fatalf("pre-restart transaction failed: %v", err)
 	}
@@ -1792,7 +1792,7 @@ func TestSignerRestartPreservesUsableKeys(t *testing.T) {
 		t.Fatalf("key %s not available after restart", addr)
 	}
 
-	txid2, err := apshell.SendTransaction(addr, integrationBurnAddress, 0.01)
+	txid2, err := apshell.SendTransaction(addr, funder.GetAddress(), 0.01)
 	if err != nil {
 		t.Fatalf("post-restart transaction failed: %v", err)
 	}

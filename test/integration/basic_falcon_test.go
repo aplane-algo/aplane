@@ -143,7 +143,10 @@ func TestBasicFalconTransaction(t *testing.T) {
 
 	// Send a Falcon-signed transaction
 	t.Log("Sending Falcon-signed transaction...")
-	recipient := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ" // burn address
+	// Return a small payment to the already-funded source. A sub-minimum
+	// payment to an empty burn address is rejected client-side on public
+	// networks before it can exercise Falcon signing.
+	recipient := fundingAddr
 	txid, err := apshell.SendTransaction(falconAddr, recipient, 0.01)
 	if err != nil {
 		t.Fatalf("Failed to send Falcon transaction: %v", err)

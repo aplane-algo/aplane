@@ -173,7 +173,9 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 		t.Fatalf("template remove output = %q, want in-use context", output)
 	}
 
-	assertLogicSigSendRejected(t, apshellForSigner(t, signerd), lsigAddr, integrationBurnAddress)
+	// The account itself already exists, so the client reaches the on-chain
+	// template rejection instead of rejecting a sub-minimum new-account send.
+	assertLogicSigSendRejected(t, apshellForSigner(t, signerd), lsigAddr, lsigAddr)
 
 	apshell := apshellForSigner(t, signerd)
 	closeTxID, err := apshell.CloseAccount(lsigAddr, funder.GetAddress())
@@ -289,7 +291,7 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 		t.Fatalf("composed template remove output = %q, want in-use context", output)
 	}
 
-	assertLogicSigSendRejected(t, apshellForSigner(t, signerd), lsigAddr, integrationBurnAddress)
+	assertLogicSigSendRejected(t, apshellForSigner(t, signerd), lsigAddr, lsigAddr)
 
 	apshell := apshellForSigner(t, signerd)
 	sendTxID, err := apshell.SendTransaction(lsigAddr, funder.GetAddress(), 0.05)
@@ -335,7 +337,7 @@ func writeGenericAllowlistTemplate(t *testing.T, family string) string {
 
 	templatePath := filepath.Join(t.TempDir(), "generic-allowlist.yaml")
 	templateYAML := fmt.Sprintf(`schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: generic
 template_mode: generated
 publisher: %s
@@ -354,7 +356,7 @@ parameters:
     description: "Comma-separated Algorand addresses that may receive funds from this LogicSig"
 
 teal: |
-  #pragma version 10
+  #pragma version 13
 
   txn RekeyTo
   global ZeroAddress
@@ -402,7 +404,7 @@ func writeGenericFundingClosebackTemplate(t *testing.T, family, fundingAddress s
 
 	templatePath := filepath.Join(t.TempDir(), "generic-funding-closeback.yaml")
 	templateYAML := fmt.Sprintf(`schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: generic
 template_mode: generated
 publisher: %s
@@ -412,7 +414,7 @@ display_name: "Integration Funding Closeback"
 description: "Integration test template that permits payments and close-out only to the funding account"
 
 teal: |
-  #pragma version 10
+  #pragma version 13
 
   txn RekeyTo
   global ZeroAddress
@@ -452,7 +454,7 @@ func writeComposedFundingClosebackTemplate(t *testing.T, family, fundingAddress 
 
 	templatePath := filepath.Join(t.TempDir(), "composed-funding-closeback.yaml")
 	templateYAML := fmt.Sprintf(`schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: generated

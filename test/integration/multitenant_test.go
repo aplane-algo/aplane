@@ -218,7 +218,7 @@ func integrationTestnetGenesisHash() []byte {
 
 func integrationGenericTemplateYAML(family string) []byte {
 	return []byte(fmt.Sprintf(`schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: generic
 template_mode: generated
 publisher: %s
@@ -229,7 +229,7 @@ description: "Integration test template for identity-scoped inventory"
 parameters: []
 runtime_args: []
 teal: |
-  #pragma version 8
+  #pragma version 13
   int 1
   return
 `, integrationTemplatePublisher, family))

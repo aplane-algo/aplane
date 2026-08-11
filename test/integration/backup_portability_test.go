@@ -123,7 +123,7 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 				keyType := integrationTemplateKeyType(family)
 				templatePath := filepath.Join(t.TempDir(), "custom-allowlist.yaml")
 				templateYAML := fmt.Sprintf(`schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: generic
 template_mode: generated
 publisher: %s
@@ -142,7 +142,7 @@ parameters:
     description: "Comma-separated Algorand addresses that may receive funds from this LogicSig"
 
 teal: |
-  #pragma version 10
+  #pragma version 13
 
   txn RekeyTo
   global ZeroAddress
@@ -201,7 +201,7 @@ teal: |
 				keyType := integrationTemplateKeyType(family)
 				templatePath := filepath.Join(t.TempDir(), "custom-composed-allowlist.yaml")
 				templateYAML := fmt.Sprintf(`schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: generated
