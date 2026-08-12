@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 )
 
@@ -43,7 +44,6 @@ publisher: test
 family: template-base-allowlist
 version: 1
 display_name: "Template Base Allowlist"
-max_opcode_cost: 20000
 parameters:
   - name: recipient
     type: address
@@ -66,6 +66,9 @@ teal: |
 	}
 	if provider.KeyType() != "test.template-base-allowlist.v1" {
 		t.Fatalf("KeyType() = %q, want test.template-base-allowlist.v1", provider.KeyType())
+	}
+	if got := provider.LogicSigOpcodeProfile(); got != lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling) {
+		t.Fatalf("LogicSigOpcodeProfile() = %#v, want one-member default", got)
 	}
 }
 

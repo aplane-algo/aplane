@@ -345,9 +345,16 @@ auto-salting. For every reachable authorization path, review and pin:
 - a `max_opcode_cost` ceiling demonstrated at the worst permitted runtime
   argument/value sizes, including dynamic opcode costs.
 
-Declare that reviewed ceiling as top-level `max_opcode_cost` in template YAML.
-The field is required: installation rejects a missing or zero declaration
-rather than inventing a ceiling on the template author's behalf.
+Declare a reviewed ceiling as top-level `max_opcode_cost` when an accepted path
+can exceed one transaction's opcode budget or when an absolute bound should be
+recorded explicitly. If the field is omitted, APlane uses the numeric
+one-transaction ceiling shared by every consensus version it currently
+supports: 20,000. An explicit zero is rejected.
+
+Omission is a practical authoring default, not proof of a maximum. APlane-owned
+templates retain explicit declarations and maximum-input simulation vectors;
+third-party authors should review loops and dynamically priced operations and
+use an explicit override when a path may exceed 20,000.
 
 Do not publish one combined `program + args` size. On v42, argument and opcode
 capacity may require resource dummies while excess program bytes are paid by a

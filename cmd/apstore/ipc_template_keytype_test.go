@@ -152,6 +152,26 @@ func TestCmdTemplateImportUsesIPC(t *testing.T) {
 	}
 }
 
+func TestTemplateUsesDefaultOpcodeCeiling(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{name: "omitted", yaml: "schema_version: 1\n", want: true},
+		{name: "explicit default", yaml: "max_opcode_cost: 20000\n"},
+		{name: "explicit override", yaml: "max_opcode_cost: 45000\n"},
+		{name: "invalid YAML does not invent warning", yaml: "[", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := templateUsesDefaultOpcodeCeiling([]byte(test.yaml)); got != test.want {
+				t.Fatalf("templateUsesDefaultOpcodeCeiling() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
 func TestCmdTemplateImportReportsIPCFailure(t *testing.T) {
 	templatePath := filepath.Join(t.TempDir(), "template.yaml")
 	if err := os.WriteFile(templatePath, []byte("not: a valid template\n"), 0o600); err != nil {

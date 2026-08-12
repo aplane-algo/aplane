@@ -17,7 +17,7 @@
 // - display_name: Human-readable name
 // - description: Short description for UI
 // - display_color: ANSI color code (optional)
-// - max_opcode_cost: Required reviewed worst-case opcode cost
+// - max_opcode_cost: Optional absolute opcode ceiling; omission uses one member
 // - parameters: List of parameter definitions
 // - teal: TEAL source with @variable substitution
 package generictemplate

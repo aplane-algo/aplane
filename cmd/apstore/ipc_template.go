@@ -8,7 +8,10 @@ import (
 	"os"
 
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/protocol"
+
+	"gopkg.in/yaml.v3"
 )
 
 func cmdTemplates() error {
@@ -95,12 +98,25 @@ func cmdImportTemplate(yamlPath string) error {
 	if !result.Success {
 		return resultError("template import failed", result.Code, result.Error)
 	}
+	if templateUsesDefaultOpcodeCeiling(templateYAML) {
+		logWarnf(
+			"template declares no max_opcode_cost; using the default single-transaction opcode ceiling (%d for every consensus version currently supported by APlane)",
+			lsigresource.SingleTransactionOpcodeCeiling,
+		)
+	}
 	if result.AlreadyExists {
 		logInfof("%s template %s is already installed", result.TemplateType, displayKeyType(result.KeyType))
 		return nil
 	}
 	logInfof("%s template %s imported", result.TemplateType, displayKeyType(result.KeyType))
 	return nil
+}
+
+func templateUsesDefaultOpcodeCeiling(templateYAML []byte) bool {
+	var header struct {
+		MaxOpcodeCost *uint64 `yaml:"max_opcode_cost"`
+	}
+	return yaml.Unmarshal(templateYAML, &header) == nil && header.MaxOpcodeCost == nil
 }
 
 func cmdRemoveTemplate(keyType string) error {

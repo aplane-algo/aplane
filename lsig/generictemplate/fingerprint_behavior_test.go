@@ -59,6 +59,14 @@ func TestGenericFingerprintCarriesVersionPrefix(t *testing.T) {
 	}
 }
 
+func TestGenericFingerprintCollapsesOmittedAndExplicitDefaultOpcodeCeiling(t *testing.T) {
+	explicit := mustGenericFingerprint(t, fingerprintBaseYAML)
+	omittedYAML := strings.Replace(fingerprintBaseYAML, "max_opcode_cost: 20000\n", "", 1)
+	if omitted := mustGenericFingerprint(t, omittedYAML); omitted != explicit {
+		t.Fatalf("omitted/default fingerprints differ: %q != %q", omitted, explicit)
+	}
+}
+
 // TestGenericFingerprintIdentityRenameStable proves identity/display metadata is
 // excluded: changing publisher/family/version/display_name/description/color
 // does not change the fingerprint.

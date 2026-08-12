@@ -126,9 +126,15 @@ display estimates: derive program length after compiler auto-salting, use a
 proven maximum for variable arguments, and demonstrate opcode ceilings against
 worst permitted runtime operand sizes.
 
-Every generic or composed template must declare a non-zero top-level
-`max_opcode_cost`. Import and library installation reject an omitted value;
-there is no inferred or full-group fallback.
+Generic and composed templates may omit top-level `max_opcode_cost`. Omission
+uses the numeric one-transaction ceiling shared by every consensus version
+APlane currently supports: 20,000. The effective value is persisted in key
+metadata. An explicit positive value is an absolute override; explicit zero
+and values above the supported 320,000 whole-group pool are rejected.
+
+APlane-owned templates keep explicit reviewed declarations and maximum-input
+simulation vectors. Omission is a usability default, not evidence that an
+arbitrary program's worst-case cost has been proven.
 
 For APlane-owned types, add a maximum-input accepted vector to the integration
 opcode-ceiling gate. `harness.ValidateDeclaredOpcodeCeiling` simulates the exact
@@ -595,7 +601,7 @@ schema. The core fields are:
 ```yaml
 schema_version: 1
 derivation_version: 3
-max_opcode_cost: 20000  # reviewed worst-case cost of every reachable path
+max_opcode_cost: 20000  # optional absolute override; omission defaults to 20000
 template_type: <type>        # generic | composed; optional for generic templates
 base_key_type: <key_type>    # composed signing primitive; omitted for generic templates
 template_mode: <mode>        # strict | generated

@@ -131,7 +131,6 @@ family: %s
 version: 1
 display_name: "Backup Portability Custom Allowlist"
 description: "Custom allowlist template used by backup portability integration tests"
-max_opcode_cost: 20000
 
 parameters:
   - name: recipients
@@ -211,7 +210,6 @@ family: %s
 version: 1
 display_name: "Backup Portability Custom Falcon Allowlist"
 description: "Custom Falcon allowlist template used by backup portability integration tests"
-max_opcode_cost: 20000
 
 parameters:
   - name: recipients

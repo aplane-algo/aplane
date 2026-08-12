@@ -186,9 +186,16 @@ bytecode and review every path's maximum `argument_bytes` and
 sizes. Never collapse these values into one size scalar: v42 prices program
 bytes but pools arguments and opcode cost independently.
 
-`max_opcode_cost` is mandatory for installed template YAML. Do not omit it or
-substitute a generic full-group value; installation rejects missing and zero
-declarations.
+`max_opcode_cost` is optional for installed template YAML. Omission uses the
+numeric one-transaction opcode ceiling shared by every consensus version
+APlane currently supports: 20,000. An explicit positive value is an absolute
+override; an explicit zero is rejected. Do not substitute the full-group
+320,000 ceiling as a generic fallback.
+
+APlane-owned templates still require an explicit reviewed declaration, even
+when it is 20,000, so repository review and maximum-input simulation evidence
+remain visible. The default primarily serves third-party and personal
+templates whose authors should not be forced to copy a meaningless number.
 
 For an APlane-owned key type, add a maximum-input accepted integration vector
 that calls `harness.ValidateDeclaredOpcodeCeiling` with the final production

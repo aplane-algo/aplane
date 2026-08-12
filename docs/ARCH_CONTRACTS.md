@@ -2006,8 +2006,9 @@ contains:
 
 - `schema_version`
 - `derivation_version` (optional; omitted means no generated salting)
-- `max_opcode_cost` (required reviewed worst-case LogicSig opcode cost; missing
-  or zero declarations are rejected before installation)
+- `max_opcode_cost` (optional absolute reviewed worst-case LogicSig opcode
+  cost; omission resolves to the numeric 20,000 one-transaction default shared
+  by every currently supported consensus version; explicit zero is rejected)
 - `template_type` (`generic` or `composed`)
 - `base_key_type` (required for `composed`, rejected for `generic`)
 - `publisher`
@@ -2037,10 +2038,14 @@ Template capability notes:
 - omitted `derivation_version` compiles the template without a generated salt
   anchor and therefore succeeds only when the unmodified bytecode already
   derives an off-curve LogicSig address
-- `max_opcode_cost` is a compatibility-bearing declaration for the final
+- the effective `max_opcode_cost` is compatibility-bearing for the final
   compiled/autosalted program and must cover the worst permitted runtime
-  argument/value sizes; APlane rejects omitted or zero declarations rather
-  than inventing a ceiling
+  argument/value sizes; omission materializes and persists as 20,000, while an
+  explicit positive declaration is preserved as an absolute override and an
+  explicit zero is rejected
+- APlane's closed consensus contract tests require every supported profile to
+  retain `LogicSigMaxCost == 20,000` and `MaxTxGroupSize == 16`; supporting a
+  profile with different values requires revisiting this numeric default
 - `derivation_version: 3` uses compiler-owned TEAL v13 auto-salting and is the
   only explicit contract accepted; the retired `derivation_version: 1`
   (generated `pushbytes; pop` marker) and `derivation_version: 2` (trailing
