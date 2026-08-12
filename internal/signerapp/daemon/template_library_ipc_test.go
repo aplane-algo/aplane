@@ -655,6 +655,7 @@ family: %s
 version: %d
 display_name: %q
 description: "test template"
+max_opcode_cost: 20000
 teal: |
   #pragma version 8
   %s

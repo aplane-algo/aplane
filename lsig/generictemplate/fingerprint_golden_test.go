@@ -44,6 +44,7 @@ family: synthetic-generic
 version: 7
 display_name: "Synthetic Generic"
 description: "Exercises every canonical fingerprint field"
+max_opcode_cost: 20000
 parameters:
   - name: owner
     type: address
@@ -101,7 +102,7 @@ teal: |
 	if err != nil {
 		t.Fatalf("SemanticFingerprint(synthetic) error = %v", err)
 	}
-	const want = "1:f2d2d3c68dd067b16833f41e0ea2c062a86b1ac52b73417e84125b8e7cbde9fc"
+	const want = "1:56662af43842a4d57dc202b53605aa1d8a0d3e66a9c2254ecb47eb2211f5e7bc"
 	if got != want {
 		t.Fatalf("SemanticFingerprint(synthetic) = %q, want %q", got, want)
 	}

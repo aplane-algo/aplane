@@ -186,6 +186,10 @@ bytecode and review every path's maximum `argument_bytes` and
 sizes. Never collapse these values into one size scalar: v42 prices program
 bytes but pools arguments and opcode cost independently.
 
+`max_opcode_cost` is mandatory for installed template YAML. Do not omit it or
+substitute a generic full-group value; installation rejects missing and zero
+declarations.
+
 For an APlane-owned key type, add a maximum-input accepted integration vector
 that calls `harness.ValidateDeclaredOpcodeCeiling` with the final production
 bytecode and the provider/template's actual declared profile. Reuse the signer

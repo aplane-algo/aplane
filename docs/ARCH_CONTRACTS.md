@@ -2006,8 +2006,8 @@ contains:
 
 - `schema_version`
 - `derivation_version` (optional; omitted means no generated salting)
-- `max_opcode_cost` (optional reviewed worst-case LogicSig opcode cost; omission
-  reserves the full 320,000-opcode group pool)
+- `max_opcode_cost` (required reviewed worst-case LogicSig opcode cost; missing
+  or zero declarations are rejected before installation)
 - `template_type` (`generic` or `composed`)
 - `base_key_type` (required for `composed`, rejected for `generic`)
 - `publisher`
@@ -2037,10 +2037,10 @@ Template capability notes:
 - omitted `derivation_version` compiles the template without a generated salt
   anchor and therefore succeeds only when the unmodified bytecode already
   derives an off-curve LogicSig address
-- `max_opcode_cost`, when present, is a compatibility-bearing declaration for
-  the final compiled/autosalted program and must cover the worst permitted
-  runtime argument/value sizes; when omitted, APlane plans conservatively for
-  the full 16-transaction opcode pool rather than inventing a smaller ceiling
+- `max_opcode_cost` is a compatibility-bearing declaration for the final
+  compiled/autosalted program and must cover the worst permitted runtime
+  argument/value sizes; APlane rejects omitted or zero declarations rather
+  than inventing a ceiling
 - `derivation_version: 3` uses compiler-owned TEAL v13 auto-salting and is the
   only explicit contract accepted; the retired `derivation_version: 1`
   (generated `pushbytes; pop` marker) and `derivation_version: 2` (trailing

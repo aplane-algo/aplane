@@ -46,9 +46,8 @@ type BaseTemplateSpec struct {
 	DisplayName  string `yaml:"display_name"`
 	Description  string `yaml:"description"`
 	DisplayColor string `yaml:"display_color"`
-	// MaxOpcodeCost is the reviewed worst-case cost of every reachable path in
-	// the final compiler-returned program. Zero deliberately means undeclared;
-	// generation then uses the conservative full-group ceiling.
+	// MaxOpcodeCost is the required, reviewed worst-case cost of every reachable
+	// path in the final compiler-returned program.
 	MaxOpcodeCost uint64 `yaml:"max_opcode_cost"`
 }
 
@@ -121,11 +120,20 @@ func (s *BaseTemplateSpec) ValidateBase(maxSchemaVersion int) error {
 	return nil
 }
 
-// LogicSigOpcodeProfile materializes the template's explicit reviewed ceiling,
-// or a conservative full-group profile when it was omitted.
-func (s *BaseTemplateSpec) LogicSigOpcodeProfile(bounded bool) lsigresource.OpcodeProfile {
+// ValidateOpcodeCostDeclaration requires an explicit reviewed ceiling before a
+// template can be installed or registered.
+func (s *BaseTemplateSpec) ValidateOpcodeCostDeclaration() error {
 	if s == nil || s.MaxOpcodeCost == 0 {
-		return lsigresource.ConservativeOpcodeProfile(bounded)
+		return fmt.Errorf("max_opcode_cost is required and must be greater than zero")
+	}
+	return nil
+}
+
+// LogicSigOpcodeProfile materializes the template's required reviewed ceiling.
+// Callers validate the template before using this method.
+func (s *BaseTemplateSpec) LogicSigOpcodeProfile(bounded bool) lsigresource.OpcodeProfile {
+	if s == nil {
+		return lsigresource.OpcodeProfile{}
 	}
 	if bounded {
 		return lsigresource.BoundedOpcodeProfile(s.MaxOpcodeCost, s.MaxOpcodeCost, s.MaxOpcodeCost)

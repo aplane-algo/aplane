@@ -43,6 +43,7 @@ publisher: test
 family: template-base-allowlist
 version: 1
 display_name: "Template Base Allowlist"
+max_opcode_cost: 20000
 parameters:
   - name: recipient
     type: address
@@ -81,6 +82,7 @@ publisher: test
 family: template-derivation
 version: 1
 display_name: "Template Derivation"
+max_opcode_cost: 20000
 teal: |
   int 1
   assert
@@ -109,6 +111,7 @@ publisher: test
 family: template-unsalted
 version: 1
 display_name: "Template Unsalted"
+max_opcode_cost: 20000
 teal: |
   int 1
   assert
@@ -235,6 +238,7 @@ publisher: test
 family: template-bounded
 version: 1
 display_name: Template Bounded
+max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [axfer, pay]
@@ -433,6 +437,7 @@ publisher: aplane
 family: bounded-sentry-test
 version: 1
 display_name: Bounded Sentry Test
+max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [pay]
@@ -669,6 +674,7 @@ publisher: test
 family: relocatable-strict
 version: 1
 display_name: "Relocatable Strict"
+max_opcode_cost: 20000
 parameters:
   - name: hash
     type: bytes
@@ -711,6 +717,7 @@ publisher: test
 family: existing-provider
 version: 1
 display_name: "Existing Provider"
+max_opcode_cost: 20000
 teal: |
   int 1
   assert
@@ -789,6 +796,7 @@ publisher: test
 family: fingerprint-template
 version: 1
 display_name: "Fingerprint Template"
+max_opcode_cost: 20000
 teal: |
   int 1
 `

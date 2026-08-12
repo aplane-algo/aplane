@@ -17,6 +17,7 @@ version: 1
 display_name: "Synthetic Generic"
 description: "behavior fingerprint base"
 display_color: "35"
+max_opcode_cost: 20000
 parameters:
   - name: owner
     type: address
@@ -90,8 +91,8 @@ func TestGenericFingerprintBehaviorSensitive(t *testing.T) {
 		{
 			name: "opcode ceiling",
 			yaml: strings.Replace(fingerprintBaseYAML,
-				"template_mode: strict",
-				"template_mode: strict\nmax_opcode_cost: 12345",
+				"max_opcode_cost: 20000",
+				"max_opcode_cost: 12345",
 				1),
 		},
 		{

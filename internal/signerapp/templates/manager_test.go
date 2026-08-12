@@ -666,6 +666,7 @@ family: ` + family + `
 version: 1
 display_name: "Manager Generic"
 description: "Manager generic template"
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -685,6 +686,7 @@ family: ` + family + `
 version: 1
 display_name: "Manager Composed"
 description: "Manager composed template"
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |

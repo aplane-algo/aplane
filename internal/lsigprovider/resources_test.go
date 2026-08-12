@@ -17,13 +17,10 @@ func (p testOpcodeProfileProvider) LogicSigOpcodeProfile() lsigresource.OpcodePr
 	return p.profile
 }
 
-func TestResolveOpcodeProfileUsesConservativeFallback(t *testing.T) {
-	profile, err := ResolveOpcodeProfile(struct{}{}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if profile.Default != lsigresource.MaximumDeclaredOpcodeCost {
-		t.Fatalf("default ceiling = %d, want %d", profile.Default, lsigresource.MaximumDeclaredOpcodeCost)
+func TestResolveOpcodeProfileRequiresProviderDeclaration(t *testing.T) {
+	_, err := ResolveOpcodeProfile(struct{}{}, false)
+	if err == nil {
+		t.Fatal("provider without opcode declaration was accepted")
 	}
 }
 

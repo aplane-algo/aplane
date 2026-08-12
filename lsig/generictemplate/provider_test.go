@@ -34,6 +34,7 @@ func testBase() templatestore.BaseTemplateSpec {
 		Family:            "test",
 		Version:           1,
 		DisplayName:       "Test",
+		MaxOpcodeCost:     20_000,
 	}
 }
 
@@ -551,6 +552,7 @@ func TestValidateSpec(t *testing.T) {
 					Family:        "test",
 					Version:       1,
 					DisplayName:   "Test",
+					MaxOpcodeCost: 20_000,
 				},
 				TEAL: "return",
 			},
@@ -601,6 +603,7 @@ func TestValidateSpec(t *testing.T) {
 					Family:        "test",
 					Version:       1,
 					DisplayName:   "Test",
+					MaxOpcodeCost: 20_000,
 				},
 				TemplateMode: TemplateModeStrict,
 				Parameters: []ParameterSpec{
@@ -618,6 +621,22 @@ func TestValidateSpec(t *testing.T) {
 				TEAL: "txn FirstValid\n$unlock_round\n>=\nassert",
 			},
 			wantErr: false,
+		},
+		{
+			name: "missing opcode ceiling",
+			spec: &TemplateSpec{
+				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+					SchemaVersion: 1,
+					Publisher:     "test",
+					Family:        "missing-opcode-ceiling",
+					Version:       1,
+					DisplayName:   "Missing Opcode Ceiling",
+				},
+				TemplateMode: TemplateModeGenerated,
+				TEAL:         "int 1\nreturn",
+			},
+			wantErr: true,
+			errMsg:  "max_opcode_cost is required",
 		},
 		{
 			name: "schema v1 strict rejects legacy scalar substitution",
@@ -1054,6 +1073,7 @@ publisher: test
 family: good
 version: 1
 display_name: Good Template
+max_opcode_cost: 20000
 teal: "return"
 parameters: []
 `
@@ -1087,6 +1107,7 @@ publisher: test
 family: from-yaml
 version: 1
 display_name: "From YAML"
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |

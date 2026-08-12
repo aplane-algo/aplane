@@ -22,6 +22,7 @@ import (
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
@@ -72,6 +73,9 @@ func (f *testFalcon1024V1) ValidateCreationParams(params map[string]string) erro
 }
 func (f *testFalcon1024V1) RuntimeArgs() []lsigprovider.RuntimeArgDef {
 	return nil
+}
+func (f *testFalcon1024V1) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
 }
 func (f *testFalcon1024V1) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
 	if signature == nil {
@@ -161,6 +165,13 @@ type boundedGeneratorTestDSA struct{ testFalcon1024V1 }
 func (*boundedGeneratorTestDSA) KeyType() string       { return "test.generator-bounded.v1" }
 func (*boundedGeneratorTestDSA) RoutingFamily() string { return "generator-bounded" }
 func (*boundedGeneratorTestDSA) BaseKeyType() string   { return "aplane.falcon1024.v1" }
+func (*boundedGeneratorTestDSA) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return lsigresource.BoundedOpcodeProfile(
+		lsigresource.SingleTransactionOpcodeCeiling,
+		lsigresource.SingleTransactionOpcodeCeiling,
+		lsigresource.SingleTransactionOpcodeCeiling,
+	)
+}
 func (*boundedGeneratorTestDSA) BuildBoundedAuthorizationMetadata(_ []byte, _ map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
 	return &boundedmeta.Metadata{
 		Contract:               boundedmeta.ContractV1,

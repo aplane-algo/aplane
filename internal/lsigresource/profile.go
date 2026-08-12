@@ -45,21 +45,6 @@ func BoundedOpcodeProfile(spend, spendingRekey, adminRekey uint64) OpcodeProfile
 	return OpcodeProfile{Spend: spend, SpendingRekey: spendingRekey, AdminRekey: adminRekey}
 }
 
-// ConservativeOpcodeProfile returns a profile that reserves the complete
-// consensus group opcode pool. It is the safe fallback when a provider has not
-// supplied an independently reviewed ceiling: planning may be inefficient,
-// but it cannot understate opcode capacity on the provider's behalf.
-func ConservativeOpcodeProfile(bounded bool) OpcodeProfile {
-	if bounded {
-		return BoundedOpcodeProfile(
-			MaximumDeclaredOpcodeCost,
-			MaximumDeclaredOpcodeCost,
-			MaximumDeclaredOpcodeCost,
-		)
-	}
-	return DefaultOpcodeProfile(MaximumDeclaredOpcodeCost)
-}
-
 // Validate checks that exactly the expected path vocabulary is populated.
 func (p OpcodeProfile) Validate(bounded bool) error {
 	check := func(path string, value uint64, required bool) error {

@@ -33,6 +33,7 @@ publisher: aplane
 family: bounded-sentry-compiler-test
 version: 1
 display_name: Bounded Sentry Compiler Test
+max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [pay, axfer, asset_opt_in]

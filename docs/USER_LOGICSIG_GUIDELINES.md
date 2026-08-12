@@ -346,9 +346,8 @@ auto-salting. For every reachable authorization path, review and pin:
   argument/value sizes, including dynamic opcode costs.
 
 Declare that reviewed ceiling as top-level `max_opcode_cost` in template YAML.
-When it is omitted, APlane deliberately reserves the complete 320,000-opcode
-group pool. That fallback is safe but can require a full 16-transaction group;
-it is not a substitute for reviewing and pinning the template's actual cost.
+The field is required: installation rejects a missing or zero declaration
+rather than inventing a ceiling on the template author's behalf.
 
 Do not publish one combined `program + args` size. On v42, argument and opcode
 capacity may require resource dummies while excess program bytes are paid by a

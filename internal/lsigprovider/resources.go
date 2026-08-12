@@ -17,15 +17,16 @@ type OpcodeProfileProvider interface {
 	LogicSigOpcodeProfile() lsigresource.OpcodeProfile
 }
 
-// ResolveOpcodeProfile returns a provider-owned profile when available and a
-// conservative full-group profile otherwise. The bounded flag describes the
-// final durable authorization shape and prevents default-path metadata from
-// being attached to a bounded key (or vice versa).
+// ResolveOpcodeProfile returns the required provider-owned reviewed profile.
+// The bounded flag describes the final durable authorization shape and
+// prevents default-path metadata from being attached to a bounded key (or vice
+// versa).
 func ResolveOpcodeProfile(provider any, bounded bool) (lsigresource.OpcodeProfile, error) {
-	profile := lsigresource.ConservativeOpcodeProfile(bounded)
-	if declared, ok := provider.(OpcodeProfileProvider); ok {
-		profile = declared.LogicSigOpcodeProfile()
+	declared, ok := provider.(OpcodeProfileProvider)
+	if !ok {
+		return lsigresource.OpcodeProfile{}, fmt.Errorf("provider does not declare a reviewed LogicSig opcode profile")
 	}
+	profile := declared.LogicSigOpcodeProfile()
 	if err := profile.Validate(bounded); err != nil {
 		return lsigresource.OpcodeProfile{}, fmt.Errorf("invalid reviewed LogicSig opcode profile: %w", err)
 	}

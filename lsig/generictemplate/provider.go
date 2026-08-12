@@ -17,7 +17,7 @@
 // - display_name: Human-readable name
 // - description: Short description for UI
 // - display_color: ANSI color code (optional)
-// - max_opcode_cost: Reviewed worst-case opcode cost (optional; conservative when omitted)
+// - max_opcode_cost: Required reviewed worst-case opcode cost
 // - parameters: List of parameter definitions
 // - teal: TEAL source with @variable substitution
 package generictemplate
@@ -221,8 +221,7 @@ func (t *YAMLTemplate) DisplayColor() string {
 // Category returns the LSig category (generic_lsig for templates).
 func (t *YAMLTemplate) Category() string { return lsigprovider.CategoryGenericLsig }
 
-// LogicSigOpcodeProfile returns the template author's reviewed ceiling, or the
-// full-group conservative fallback when max_opcode_cost was omitted.
+// LogicSigOpcodeProfile returns the template author's required reviewed ceiling.
 func (t *YAMLTemplate) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
 	return t.spec.LogicSigOpcodeProfile(false)
 }
@@ -651,7 +650,7 @@ func ValidateSpec(spec *TemplateSpec) error {
 	if err := ValidateTemplateSpecMode(spec); err != nil {
 		return err
 	}
-	return nil
+	return spec.ValidateOpcodeCostDeclaration()
 }
 
 // ValidateRelocatableTEAL rejects user-authored constant-block layout. APlane

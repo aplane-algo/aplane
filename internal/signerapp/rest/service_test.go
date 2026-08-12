@@ -28,6 +28,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
@@ -954,6 +955,7 @@ family: generic-rest-disabled
 version: 1
 display_name: Generic Rest Disabled
 description: Test disabled template
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -1005,6 +1007,7 @@ family: generic-rest-identity-scoped
 version: 1
 display_name: Generic Rest Identity Scoped
 description: Test identity-scoped template
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -1233,6 +1236,7 @@ family: ` + family + `
 version: 1
 display_name: ` + displayName + `
 description: Test generic template
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -1269,6 +1273,16 @@ func (p restTestDSAProvider) ValidateCreationParams(map[string]string) error {
 	return nil
 }
 func (p restTestDSAProvider) RuntimeArgs() []lsigprovider.RuntimeArgDef { return nil }
+func (p restTestDSAProvider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	if p.bounded != nil {
+		return lsigresource.BoundedOpcodeProfile(
+			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
+		)
+	}
+	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
+}
 func (p restTestDSAProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, error) {
 	return nil, nil
 }
@@ -1452,10 +1466,11 @@ func registerRestGenericTemplate(t *testing.T) {
 	t.Helper()
 	spec := &generictemplate.TemplateSpec{
 		BaseTemplateSpec: templatestore.BaseTemplateSpec{
-			Publisher:   "test",
-			Family:      "generic-rest-error",
-			Version:     1,
-			DisplayName: "Generic Rest Error",
+			Publisher:     "test",
+			Family:        "generic-rest-error",
+			Version:       1,
+			DisplayName:   "Generic Rest Error",
+			MaxOpcodeCost: 20_000,
 		},
 		TEAL: "#pragma version 8\nint 1\nreturn",
 	}
@@ -1474,6 +1489,7 @@ family: generic-rest-error
 version: 1
 display_name: Generic Rest Error
 description: Test generic rest template
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |

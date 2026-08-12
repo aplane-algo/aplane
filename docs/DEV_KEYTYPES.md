@@ -126,6 +126,10 @@ display estimates: derive program length after compiler auto-salting, use a
 proven maximum for variable arguments, and demonstrate opcode ceilings against
 worst permitted runtime operand sizes.
 
+Every generic or composed template must declare a non-zero top-level
+`max_opcode_cost`. Import and library installation reject an omitted value;
+there is no inferred or full-group fallback.
+
 For APlane-owned types, add a maximum-input accepted vector to the integration
 opcode-ceiling gate. `harness.ValidateDeclaredOpcodeCeiling` simulates the exact
 production-generated signed group through the same algod selected by the signer

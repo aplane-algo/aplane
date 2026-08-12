@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 )
 
@@ -39,10 +40,11 @@ func TestSyntheticComposedDSACompatibilityFingerprint(t *testing.T) {
 			{Name: "preimage", Type: "bytes", Required: true, ByteLength: 32},
 			{Name: "note", Type: "string"},
 		},
+		OpcodeProfile: lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling),
 	})
 
 	got := dsa.CompatibilityFingerprint()
-	const want = "1:ec4c68ca89f682df4dae56bf74f89f4c2d2ed9e3973306fae2f339f4fa65792f"
+	const want = "1:af88e794770ae2ea19d3590893c6eb4753253e2fc6f0dc5a267357edd6d41886"
 	if got != want {
 		t.Fatalf("CompatibilityFingerprint() = %q, want %q", got, want)
 	}

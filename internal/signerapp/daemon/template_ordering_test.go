@@ -44,6 +44,7 @@ family: %s
 version: 1
 display_name: "Ordering Template"
 description: "ordering check"
+max_opcode_cost: 20000
 runtime_args:
   - name: preimage
     label: "Preimage"

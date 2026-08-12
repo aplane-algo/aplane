@@ -135,11 +135,10 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 	params := append([]lsigprovider.ParameterDef(nil), cfg.Params...)
 	bounded := cloneBoundedProfile(cfg.Bounded)
 	opcodeProfile := cfg.OpcodeProfile
-	if opcodeProfile == (lsigresource.OpcodeProfile{}) {
-		opcodeProfile = lsigresource.ConservativeOpcodeProfile(bounded != nil)
-	}
-	if err := opcodeProfile.Validate(bounded != nil); err != nil {
-		panic("composeddsa: invalid opcode profile: " + err.Error())
+	if opcodeProfile != (lsigresource.OpcodeProfile{}) {
+		if err := opcodeProfile.Validate(bounded != nil); err != nil {
+			panic("composeddsa: invalid opcode profile: " + err.Error())
+		}
 	}
 	if boundedRequiresAdminKey(bounded) && !hasParameter(params, BoundedAdminPublicKeyParameter) {
 		params = append(params, boundedAdminPublicKeyParameterDef())

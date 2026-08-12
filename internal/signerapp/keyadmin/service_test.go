@@ -260,6 +260,7 @@ publisher: test
 family: falcon1024-bounded-sentry-keyadmin
 version: 1
 display_name: Bounded Sentry Keyadmin Test
+max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [pay]
@@ -446,6 +447,7 @@ family: generic-keyadmin-other-identity
 version: 1
 display_name: Generic Keyadmin Other Identity
 description: Test identity-scoped generation
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -495,6 +497,7 @@ family: falcon1024-keyadmin-cross-identity
 version: 1
 display_name: "Falcon Keyadmin Cross Identity"
 description: "F1 canary: cross-identity composed template"
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -837,10 +840,11 @@ func registerServiceGenericTemplate(t *testing.T) {
 	t.Helper()
 	spec := &generictemplate.TemplateSpec{
 		BaseTemplateSpec: templatestore.BaseTemplateSpec{
-			Publisher:   "test",
-			Family:      "generic-service-test",
-			Version:     1,
-			DisplayName: "Generic Service Test",
+			Publisher:     "test",
+			Family:        "generic-service-test",
+			Version:       1,
+			DisplayName:   "Generic Service Test",
+			MaxOpcodeCost: 20_000,
 		},
 		Parameters: []generictemplate.ParameterSpec{{
 			Name:     "owner",
@@ -881,6 +885,7 @@ family: generic-service-test
 version: 1
 display_name: Generic Service Test
 description: Test generic service template
+max_opcode_cost: 20000
 parameters:
   - name: owner
     type: address
@@ -985,6 +990,9 @@ func (addressListImportProvider) CreationParams() []lsigprovider.ParameterDef {
 }
 func (addressListImportProvider) ValidateCreationParams(map[string]string) error { return nil }
 func (addressListImportProvider) RuntimeArgs() []lsigprovider.RuntimeArgDef      { return nil }
+func (addressListImportProvider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
+}
 func (addressListImportProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, error) {
 	return nil, nil
 }

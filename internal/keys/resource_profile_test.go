@@ -101,7 +101,7 @@ func TestLogicSigPayloadConstructorsRequireExplicitOpcodeProfile(t *testing.T) {
 		if _, err := scanLogicSigResources(payload, 0); err == nil {
 			t.Errorf("%s payload without explicit profile scanned successfully", name)
 		}
-		if err := payload.SetLogicSigOpcodeProfile(lsigresource.ConservativeOpcodeProfile(false), false); err != nil {
+		if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.MaximumDeclaredOpcodeCost), false); err != nil {
 			t.Errorf("%s conservative profile: %v", name, err)
 		} else if _, err := scanLogicSigResources(payload, 0); err != nil {
 			t.Errorf("%s payload with explicit profile did not scan: %v", name, err)

@@ -105,6 +105,22 @@ teal: |
 	}
 }
 
+func TestValidateImportableSchemaRejectsMissingOpcodeCeiling(t *testing.T) {
+	err := ValidateImportableSchema([]byte(`schema_version: 1
+template_type: generic
+template_mode: generated
+publisher: test
+family: missing-opcode-ceiling
+version: 1
+display_name: Missing Opcode Ceiling
+teal: |
+  int 1
+`))
+	if err == nil || !strings.Contains(err.Error(), "max_opcode_cost is required") {
+		t.Fatalf("ValidateImportableSchema() error = %v, want max_opcode_cost rejection", err)
+	}
+}
+
 func TestInstallComposedSchemaV2BoundedTemplate(t *testing.T) {
 	falcon.RegisterClient()
 	paths := newLibraryTestPaths(t)
@@ -118,6 +134,7 @@ version: 1
 display_name: Bounded Library
 description: Test bounded template
 derivation_version: 3
+max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [pay, axfer]
@@ -408,6 +425,7 @@ family: install-conflict
 version: 1
 display_name: "Install Conflict Changed"
 description: "changed same-key-type template"
+max_opcode_cost: 20000
 teal: |
   #pragma version 8
   int 0
@@ -1124,6 +1142,7 @@ family: ` + family + `
 version: 1
 display_name: "` + displayName + `"
 description: "Test generic template"
+max_opcode_cost: 20000
 parameters:
   - name: recipient
     label: "Recipient"
@@ -1148,6 +1167,7 @@ family: ` + family + `
 version: 1
 display_name: "` + displayName + `"
 description: "Test composed template"
+max_opcode_cost: 20000
 parameters:
   - name: recipient
     label: "Recipient"
