@@ -4,10 +4,42 @@
 package apshellapp
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/asa"
 )
+
+func TestAuthorizationFeeReserveForSweepSkipsASA(t *testing.T) {
+	called := false
+	reserve := func(context.Context, string) (uint64, error) {
+		called = true
+		return 0, errors.New("authorization reserve should not be queried")
+	}
+
+	got, err := authorizationFeeReserveForSweep(t.Context(), 10458941, "ADDR", reserve)
+	if err != nil || got != 0 {
+		t.Fatalf("authorizationFeeReserveForSweep(ASA) = %d, %v; want 0, nil", got, err)
+	}
+	if called {
+		t.Fatal("authorization reserve dependency was called for an ASA sweep")
+	}
+}
+
+func TestAuthorizationFeeReserveForSweepUsesAlgoReserve(t *testing.T) {
+	reserve := func(_ context.Context, sender string) (uint64, error) {
+		if sender != "ADDR" {
+			t.Fatalf("reserve sender = %q, want ADDR", sender)
+		}
+		return 2_000, nil
+	}
+
+	got, err := authorizationFeeReserveForSweep(t.Context(), 0, "ADDR", reserve)
+	if err != nil || got != 2_000 {
+		t.Fatalf("authorizationFeeReserveForSweep(ALGO) = %d, %v; want 2000, nil", got, err)
+	}
+}
 
 func TestDecorateSweepResult(t *testing.T) {
 	result := &SweepCommandResult{

@@ -772,7 +772,12 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			}
 		}
 
-		authorizationReserve, err := a.eng.AuthorizationFeeReserve(ctx, fromAddress)
+		authorizationReserve, err := authorizationFeeReserveForSweep(
+			ctx,
+			assetMeta.AssetID,
+			fromAddress,
+			a.eng.AuthorizationFeeReserve,
+		)
 		if err != nil {
 			item.Error = fmt.Sprintf("failed to plan authorization fee reserve: %v", err)
 			result.FailureCount++
@@ -853,6 +858,21 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		return result, fmt.Errorf("all %d transaction(s) failed", result.FailureCount)
 	}
 	return result, nil
+}
+
+func authorizationFeeReserveForSweep(
+	ctx context.Context,
+	assetID uint64,
+	sender string,
+	reserve func(context.Context, string) (uint64, error),
+) (uint64, error) {
+	// The reserve affects only the amount of ALGO that can be swept. An ASA
+	// sweep sends asset units, so querying authorization resources cannot alter
+	// its amount and must not introduce an unrelated algod/profile failure.
+	if assetID != 0 {
+		return 0, nil
+	}
+	return reserve(ctx, sender)
 }
 
 // sweepSendAmount computes how much to send so the account is left with exactly
