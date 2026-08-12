@@ -321,14 +321,18 @@ func validateMatrixSpendingRekeyOpcodeCeilings(
 				status, body = postSignRequest(t, signerURL, "aplane "+token, req)
 			}()
 			approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
-			if approval.Address != account.address {
-				t.Fatalf("spending-rekey approval address = %s, want %s", approval.Address, account.address)
-			}
+			// matrixSignRequest includes the LogicSig transaction and a native-Falcon
+			// fee sponsor, so the approval correctly represents two authorizers.
+			const wantApprovalAddress = "2 auth addresses (see details)"
+			gotApprovalAddress := approval.Address
 			mustApproveIPCSignRequest(t, approvalClient, approval.ID)
 			select {
 			case <-done:
 			case <-time.After(10 * time.Second):
 				t.Fatal("timed out waiting for approved spending-rekey signing")
+			}
+			if gotApprovalAddress != wantApprovalAddress {
+				t.Fatalf("spending-rekey approval address = %s, want %s", gotApprovalAddress, wantApprovalAddress)
 			}
 			if status != http.StatusOK {
 				t.Fatalf("expected spending-key rekey signing to succeed, got %d: %s", status, string(body))
