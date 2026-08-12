@@ -778,6 +778,9 @@ installer gate with comparable metadata.
 # Four-node local build using rootless APlane installs
 make docker-local-test
 
+# Three APlane containers using public FNet and host-side native Falcon funding
+TEST_FUNDING_MNEMONIC="your funded native Falcon mnemonic" make docker-fnet-test
+
 # Four-node test using published APlane and SDK packages
 make docker-local-release-test
 
@@ -792,6 +795,15 @@ LocalNet reachability, SSH token provisioning for signer and sentry endpoints,
 sentry enrollment and discovery, guarded signing, Corridor allowlist and
 external-admin behavior, and guarded preparation/signing through a local Python
 SDK checkout.
+
+`make docker-fnet-test` selects the FNet profile of the same script. It starts
+only the signer, sentry, and client/admin containers, validates the configured
+FNet genesis and `fnet5` consensus through the public algod, and authorizes
+fixture funding on the host with `TEST_FUNDING_MNEMONIC`. The mnemonic is not
+copied into a container or written to generated configuration. Override the
+default endpoint with `APLANE_FNET_ALGOD_URL` and
+`APLANE_FNET_ALGOD_TOKEN`. Each run creates three ephemeral accounts and funds
+each with 0.15 ALGO; those test funds are not automatically recovered.
 
 `make docker-local-release-test` runs the same topology and product assertions,
 but installs APlane from GitHub release assets, Python from PyPI, and TypeScript

@@ -1681,6 +1681,11 @@ guards:
   Docker network. It verifies local install layout, shared LocalNet
   reachability, SSH token provisioning, client signer reachability, guarded
   signing, and corridor allowlist enforcement across the Docker network.
+- `make docker-fnet-test` runs the same installed signer, sentry, and
+  client/admin topology against the public FNet algod. Funding transactions
+  are authorized on the host by the protocol-native Falcon account in
+  `TEST_FUNDING_MNEMONIC`; the mnemonic is not copied into a container or
+  persisted in generated node configuration.
 - `make docker-local-release-test` runs the same topology and assertions using
   published GitHub APlane release assets plus the PyPI and npm SDK packages.
 
