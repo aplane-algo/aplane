@@ -265,6 +265,9 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 
 	if keyMaterial.Bytecode == nil {
 		if transactionAuthorizer, ok := provider.(coresigning.TransactionAuthorizer); ok {
+			if keyType != nativefalcon.KeyType {
+				return nil, keyType, internal(fmt.Sprintf("key type %s unexpectedly implements structured transaction authorization", keyType))
+			}
 			authorizer, err := types.DecodeAddress(authAddr)
 			if err != nil {
 				if e.AuditLog != nil {
@@ -278,9 +281,6 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 					e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("structured sign failed: %v", err))
 				}
 				return nil, keyType, internal(fmt.Sprintf("failed to sign: %v", err))
-			}
-			if keyType != nativefalcon.KeyType {
-				return nil, keyType, internal(fmt.Sprintf("key type %s unexpectedly implements structured transaction authorization", keyType))
 			}
 			if err := falconsignerops.ValidateTransaction(stxn, txn, authorizer); err != nil {
 				return nil, keyType, internal(fmt.Sprintf("provider returned invalid authorization: %v", err))

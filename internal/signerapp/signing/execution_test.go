@@ -75,6 +75,16 @@ func (p *testNativeSigningProvider) ZeroKey(key *coresigning.KeyMaterial) {
 	key.Value = nil
 }
 
+type unexpectedTransactionAuthorizerProvider struct {
+	testNativeSigningProvider
+	called bool
+}
+
+func (p *unexpectedTransactionAuthorizerProvider) AuthorizeTransaction(_ *coresigning.KeyMaterial, txn types.Transaction, _ types.Address) (types.SignedTxn, error) {
+	p.called = true
+	return types.SignedTxn{Txn: txn}, nil
+}
+
 var testApprovalProgram = []byte{0x06, 0x81, 0x01}
 
 type cancelAfterGetKeyStore struct {
@@ -314,6 +324,37 @@ func TestExecutorSignCryptoKeyRejectsInvalidAuthAddress(t *testing.T) {
 	}
 	if !strings.Contains(err.Message, "invalid auth address") {
 		t.Fatalf("error message = %q, want invalid auth address", err.Message)
+	}
+}
+
+func TestExecutorRejectsUnexpectedTransactionAuthorizerBeforeInvocation(t *testing.T) {
+	keyType := "test-unexpected-transaction-authorizer"
+	provider := &unexpectedTransactionAuthorizerProvider{
+		testNativeSigningProvider: testNativeSigningProvider{family: keyType},
+	}
+	coresigning.Register(provider)
+	privateKey := []byte{1, 2, 3}
+
+	_, gotKeyType, err := (&Executor{}).signCryptoKey(
+		types.Transaction{},
+		types.Address{1}.String(),
+		types.Address{1}.String(),
+		nil,
+		nil,
+		&coresigning.KeyMaterial{Type: keyType, Value: privateKey},
+		"default",
+	)
+	if err == nil || !strings.Contains(err.Message, "unexpectedly implements structured transaction authorization") {
+		t.Fatalf("signCryptoKey() error = %#v, want unexpected transaction authorizer rejection", err)
+	}
+	if gotKeyType != keyType {
+		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
+	}
+	if provider.called {
+		t.Fatal("unexpected transaction authorizer was invoked before its key type was rejected")
+	}
+	if !bytes.Equal(privateKey, []byte{0, 0, 0}) {
+		t.Fatalf("private key bytes = %v, want zeroed", privateKey)
 	}
 }
 
