@@ -19,6 +19,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	txsigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -175,6 +177,9 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			address:             address,
 		})
 	}
+	resourceProfiles := matrixLogicSigResourceProfiles(t, signerClient)
+	approvalClient := mustConnectIPCClient(t, signerd.GetWorkDir())
+	t.Cleanup(approvalClient.Close)
 
 	for _, account := range generated {
 		if account.negative.name == "" {
@@ -199,7 +204,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			if signResp.Error != "" {
 				t.Fatalf("unexpected sign error: %s", signResp.Error)
 			}
-			assertMatrixPlannerDidNotPad(t, signResp, len(req.Requests))
+			assertMatrixPlannerDummies(t, signResp, len(req.Requests), 0)
 			submitSignedTxnGroupExpectFailure(t, testnet, signResp.Signed)
 		})
 	}
@@ -208,7 +213,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 		t, compileAlgod, signerd.GetURL(), token, fundingAddress, generated, mustSuggestedParams(t, testnet),
 	)
 	validateMatrixSpendingRekeyOpcodeCeilings(
-		t, compileAlgod, signerd.GetURL(), token, fundingAddress, generated, mustSuggestedParams(t, testnet),
+		t, compileAlgod, signerd.GetURL(), token, fundingAddress, generated, mustSuggestedParams(t, testnet), approvalClient,
 	)
 
 	for i := 0; i < len(generated); i += 3 {
@@ -226,7 +231,8 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			for _, account := range batch {
 				signTxns = append(signTxns, account.positiveSignTxn(t, sp, funder.GetAddress()))
 			}
-			req := plannedMatrixSignRequest(t, signerClient, sp, fundingAddress, signTxns)
+			expectedDummies := matrixExpectedResourceDummies(t, sp.ConsensusVersion, batch, resourceProfiles)
+			req := plannedMatrixSignRequest(t, signerClient, sp, fundingAddress, signTxns, expectedDummies)
 			status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
 			if status != http.StatusOK {
 				t.Fatalf("expected positive batch sign to succeed, got %d: %s", status, string(body))
@@ -238,7 +244,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			if signResp.Error != "" {
 				t.Fatalf("unexpected positive batch sign error: %s", signResp.Error)
 			}
-			assertMatrixPlannerDidNotPad(t, signResp, len(req.Requests))
+			assertMatrixPlannerDummies(t, signResp, len(req.Requests), expectedDummies)
 			assertMatrixAccountsDrainExactly(t, signResp.Signed, len(signTxns))
 			validateMatrixOpcodeCeilings(t, compileAlgod, batch, signResp.Signed)
 			txids := submitSignedTxnGroup(t, testnet, signResp.Signed)
@@ -291,6 +297,7 @@ func validateMatrixSpendingRekeyOpcodeCeilings(
 	fundingAddress string,
 	accounts []includedKeyTypeAccount,
 	sp types.SuggestedParams,
+	approvalClient *transport.IPCClient,
 ) {
 	t.Helper()
 	for _, account := range accounts {
@@ -306,7 +313,23 @@ func validateMatrixSpendingRekeyOpcodeCeilings(
 				authAddress: account.address,
 				txn:         txn,
 			}})
-			status, body := postSignRequest(t, signerURL, "aplane "+token, req)
+			var status int
+			var body []byte
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				status, body = postSignRequest(t, signerURL, "aplane "+token, req)
+			}()
+			approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
+			if approval.Address != account.address {
+				t.Fatalf("spending-rekey approval address = %s, want %s", approval.Address, account.address)
+			}
+			mustApproveIPCSignRequest(t, approvalClient, approval.ID)
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Fatal("timed out waiting for approved spending-rekey signing")
+			}
 			if status != http.StatusOK {
 				t.Fatalf("expected spending-key rekey signing to succeed, got %d: %s", status, string(body))
 			}
@@ -317,7 +340,7 @@ func validateMatrixSpendingRekeyOpcodeCeilings(
 			if signResp.Error != "" {
 				t.Fatalf("unexpected spending-key rekey sign error: %s", signResp.Error)
 			}
-			assertMatrixPlannerDidNotPad(t, signResp, len(req.Requests))
+			assertMatrixPlannerDummies(t, signResp, len(req.Requests), 0)
 			signed := make([]types.SignedTxn, len(signResp.Signed))
 			for i, encoded := range signResp.Signed {
 				signed[i] = decodeSignedTxnHex(t, encoded)
@@ -393,7 +416,7 @@ func validateMatrixHTLCAssetOptInOpcodeCeilings(
 			if signResp.Error != "" {
 				t.Fatalf("unexpected HTLC asset opt-in sign error: %s", signResp.Error)
 			}
-			assertMatrixPlannerDidNotPad(t, signResp, len(req.Requests))
+			assertMatrixPlannerDummies(t, signResp, len(req.Requests), 0)
 			signed := make([]types.SignedTxn, len(signResp.Signed))
 			for i, encoded := range signResp.Signed {
 				signed[i] = decodeSignedTxnHex(t, encoded)
@@ -490,6 +513,7 @@ func plannedMatrixSignRequest(
 	sp types.SuggestedParams,
 	fundingAddress string,
 	signTxns []matrixSignTxn,
+	expectedDummies int,
 ) signerapi.GroupSignRequest {
 	t.Helper()
 	// Ask the same production planner used by /sign for the exact per-slot
@@ -503,11 +527,12 @@ func plannedMatrixSignRequest(
 	if plan.Mutations == nil {
 		t.Fatal("v42 matrix plan omitted mutation details")
 	}
-	if plan.Mutations.DummiesAdded != 0 {
-		t.Fatalf("v42 matrix plan added %d unexpected dummy transaction(s)", plan.Mutations.DummiesAdded)
+	if plan.Mutations.DummiesAdded != expectedDummies {
+		t.Fatalf("v42 matrix plan added %d dummy transaction(s), want minimal resource count %d", plan.Mutations.DummiesAdded, expectedDummies)
 	}
-	if got := len(plan.Transactions); got != len(draft.Requests) {
-		t.Fatalf("v42 matrix plan returned %d transactions for %d requested", got, len(draft.Requests))
+	wantTransactions := len(draft.Requests) + expectedDummies
+	if got := len(plan.Transactions); got != wantTransactions {
+		t.Fatalf("v42 matrix plan returned %d transactions, want %d", got, wantTransactions)
 	}
 
 	for i := range signTxns {
@@ -524,20 +549,78 @@ func plannedMatrixSignRequest(
 	return matrixSignRequest(t, sp, fundingAddress, signTxns)
 }
 
-func assertMatrixPlannerDidNotPad(t *testing.T, response signerapi.GroupSignResponse, requested int) {
+func assertMatrixPlannerDummies(t *testing.T, response signerapi.GroupSignResponse, requested, expectedDummies int) {
 	t.Helper()
 	if response.Mutations == nil {
 		t.Fatal("matrix sign response omitted planner mutation details")
 	}
-	if response.Mutations.DummiesAdded != 0 {
-		t.Fatalf("v42 matrix planner added %d unexpected dummy transaction(s)", response.Mutations.DummiesAdded)
+	if response.Mutations.DummiesAdded != expectedDummies {
+		t.Fatalf("v42 matrix planner added %d dummy transaction(s), want %d", response.Mutations.DummiesAdded, expectedDummies)
 	}
-	if got := len(response.Signed); got != requested {
-		t.Fatalf("v42 matrix planner returned %d transactions for %d requested", got, requested)
+	wantFinal := requested + expectedDummies
+	if got := len(response.Signed); got != wantFinal {
+		t.Fatalf("v42 matrix planner returned %d transactions, want %d", got, wantFinal)
 	}
-	if response.Mutations.FinalCount != requested {
-		t.Fatalf("v42 matrix mutation report final_count=%d, want %d", response.Mutations.FinalCount, requested)
+	if response.Mutations.FinalCount != wantFinal {
+		t.Fatalf("v42 matrix mutation report final_count=%d, want %d", response.Mutations.FinalCount, wantFinal)
 	}
+}
+
+func matrixLogicSigResourceProfiles(t *testing.T, client *signerclient.Client) map[string]*signerapi.LogicSigResourceProfile {
+	t.Helper()
+	keys, err := client.GetKeys()
+	if err != nil {
+		t.Fatalf("read generated key resource profiles: %v", err)
+	}
+	profiles := make(map[string]*signerapi.LogicSigResourceProfile, len(keys.Keys))
+	for _, key := range keys.Keys {
+		profiles[key.Address] = key.LogicSigResources
+	}
+	return profiles
+}
+
+func matrixExpectedResourceDummies(
+	t *testing.T,
+	consensusVersion string,
+	batch []includedKeyTypeAccount,
+	profiles map[string]*signerapi.LogicSigResourceProfile,
+) int {
+	t.Helper()
+	consensus, err := lsigresource.ResolveConsensus(consensusVersion)
+	if err != nil {
+		t.Fatalf("resolve matrix consensus %q: %v", consensusVersion, err)
+	}
+	usages := make([]lsigresource.Usage, 0, len(batch))
+	for _, account := range batch {
+		profile := profiles[account.address]
+		if profile == nil {
+			continue
+		}
+		selected := profile.Default
+		if profile.Spend != nil {
+			selected = profile.Spend
+		}
+		if selected == nil {
+			t.Fatalf("generated LogicSig key %s (%s) has no positive-path resource usage", account.address, account.keyType)
+		}
+		usages = append(usages, lsigresource.Usage{
+			ProgramBytes:  selected.ProgramBytes,
+			ArgumentBytes: selected.ArgumentBytes,
+			MaxOpcodeCost: selected.MaxOpcodeCost,
+		})
+	}
+	plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
+		TransactionCount: uint64(len(batch) + 1), // one native-Falcon fee sponsor
+		LogicSigs:        usages,
+		Dummy: lsigresource.Usage{
+			ProgramBytes:  uint64(len(txsigning.EmbeddedDummyTealTok)),
+			MaxOpcodeCost: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("solve expected matrix LogicSig resources: %v", err)
+	}
+	return int(plan.DummyCount)
 }
 
 func assertMatrixAccountsDrainExactly(t *testing.T, signed []string, accountCount int) {
