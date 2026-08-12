@@ -1061,6 +1061,12 @@ Additional client-state notes:
   from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
   Bounded profiles expose spend, spending-rekey, and admin-rekey paths from the
   durable argument layout; no combined program-plus-arguments scalar is stored.
+  Covered APlane-owned declarations are exercised by the integration
+  opcode-ceiling gate: production-generated final bytecode and maximum-input
+  accepted paths are simulated by the same algod selected by the signer fixture's
+  `teal_compile_network`, and its nonzero `logic-sig-budget-consumed` result
+  must not exceed the persisted declaration. This validates the selected path
+  ceiling, not the feasibility of every assembled group.
   For guarded signing, clients route on `signing_flows`; a cached
   built-in guarded key type with missing flow or sentry metadata is only a
   stale-cache signal that triggers `/keys` refresh before route selection.
@@ -1707,6 +1713,15 @@ and TEAL authorization, but its pre-release derivation moved in place to TEAL
 v13 compiler auto-salting. Neither mnemonic nor stored key material is
 interchangeable with native `falcon1024`.
 
+LogicSig program sizing and fees are consensus-defined, so planning a group
+that contains any LogicSig entry requires the signer to learn the active
+consensus version from a reachable algod for the transaction's network. When
+that lookup fails — no matching `genesis_hash_networks` entry, no configured
+algod for the network, or an unreachable node — the signer keeps planning
+ordinary ed25519 groups at the default minimum fee but refuses LogicSig
+planning, and the refusal names the specific reason. A group with no LogicSig
+entry never consults the consensus profile.
+
 This document uses **versioned signing-metadata keys** for key files that carry
 `signing_metadata_version >= 1`. Non-bounded LogicSig keys use version 1;
 bounded keys require version 2. LogicSig key payloads include:
@@ -1816,8 +1831,9 @@ LogicSig salting is a generation-time contract:
   exact final artifact.
 - Source-to-address goldens are pinned to the configured compiler toolchain;
   runtime reproducibility comes from persisted final bytecode.
-- Legacy derivation modes retain their counter/anchor validation only for
-  compatible stored records. New template-derived key types use
+- Manual-counter derivation remains parseable only for stored records that also
+  carry a valid reviewed opcode profile. Pre-profile development records are
+  rejected with regeneration guidance. New template-derived key types use
   `derivation_version: 3`.
 - The stored bytecode, not a live template or regenerated TEAL, is the signing
   authority.
@@ -1990,6 +2006,8 @@ contains:
 
 - `schema_version`
 - `derivation_version` (optional; omitted means no generated salting)
+- `max_opcode_cost` (optional reviewed worst-case LogicSig opcode cost; omission
+  reserves the full 320,000-opcode group pool)
 - `template_type` (`generic` or `composed`)
 - `base_key_type` (required for `composed`, rejected for `generic`)
 - `publisher`
@@ -2019,10 +2037,14 @@ Template capability notes:
 - omitted `derivation_version` compiles the template without a generated salt
   anchor and therefore succeeds only when the unmodified bytecode already
   derives an off-curve LogicSig address
-- `derivation_version: 1` uses the legacy generated `pushbytes; pop` marker,
-  `derivation_version: 2` uses the legacy trailing dead-code `bytecblock` salt
-  anchor, and `derivation_version: 3` uses compiler-owned TEAL v13 auto-salting;
-  new template-derived key types use version 3
+- `max_opcode_cost`, when present, is a compatibility-bearing declaration for
+  the final compiled/autosalted program and must cover the worst permitted
+  runtime argument/value sizes; when omitted, APlane plans conservatively for
+  the full 16-transaction opcode pool rather than inventing a smaller ceiling
+- `derivation_version: 3` uses compiler-owned TEAL v13 auto-salting and is the
+  only explicit contract accepted; the retired `derivation_version: 1`
+  (generated `pushbytes; pop` marker) and `derivation_version: 2` (trailing
+  dead-code `bytecblock` salt anchor) are rejected at template validation
 - `template_mode` is required for imported, installed, bundled, and library
   templates; templates without `template_mode` are rejected rather than
   interpreted

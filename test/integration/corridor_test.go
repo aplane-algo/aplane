@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -21,12 +22,67 @@ import (
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
+	sdkalgod "github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 const corridorExecutionGroupSize = 10
+
+func TestCorridorDeclaredOpcodeCeilings(t *testing.T) {
+	network, err := harness.NewTestnetConfig()
+	if err != nil {
+		t.Fatalf("connect to integration algod: %v", err)
+	}
+	compileAlgod := matrixCompileAlgod(t, network)
+	funder, err := harness.NewFundTestAccount(network.Client)
+	if err != nil {
+		t.Fatalf("load funding account: %v", err)
+	}
+	funderAddress := mustDecodeAddress(t, funder.GetAddress())
+	account := newCorridorExecutionAccountWithCompiler(t, compileAlgod, []types.Address{funderAddress})
+	if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
+		t.Fatalf("fund Corridor opcode-validation account: %v", err)
+	}
+	cleanupAuthority := algocrypto.GenerateAccount()
+	t.Cleanup(func() {
+		bestEffortCorridorAdminRekey(t, network, account, cleanupAuthority.Address)
+		bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), cleanupAuthority.PrivateKey)
+	})
+
+	sp := mustSuggestedParams(t, network)
+	spendTxn := corridorPaymentTxn(t, sp, account.address, funder.GetAddress(), 0, "corridor-opcode-spend")
+	spendGroup, _ := account.signedGroup(t, spendTxn, account.proofFor(t, funderAddress), nil)
+	rekeyTxn := corridorPaymentTxn(t, sp, account.address, account.address, 0, "corridor-opcode-admin-rekey")
+	rekeyTxn.RekeyTo = cleanupAuthority.Address
+	adminGroup, _ := account.signedGroup(t, rekeyTxn, nil, func(txid types.Digest, args [][]byte) [][]byte {
+		return account.adminRekeyArgs(t, args[0], txid)
+	})
+
+	profile := matrixDeclaredOpcodeProfile(t, "aplane.corridor.v1")
+	report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compileAlgod, harness.OpcodeCeilingValidation{
+		Name:         "aplane.corridor.v1",
+		FinalProgram: account.bytecode,
+		Profile:      profile,
+		Bounded:      true,
+		RequiredPaths: []lsigresource.AuthorizationPath{
+			lsigresource.PathSpend,
+			lsigresource.PathAdminRekey,
+		},
+		Vectors: []harness.OpcodeCeilingVector{
+			{Name: "maximum-spend", Path: lsigresource.PathSpend, SignedTxns: spendGroup, LSigIndex: 0},
+			{Name: "maximum-admin-rekey", Path: lsigresource.PathAdminRekey, SignedTxns: adminGroup, LSigIndex: 0},
+		},
+	})
+	if err != nil {
+		t.Fatalf("validate Corridor opcode ceilings: %v", err)
+	}
+	for path, observed := range report.Paths {
+		t.Logf("Corridor path %d opcode cost: %d observed / %d declared", path, observed.MaximumObserved, observed.DeclaredCeiling)
+	}
+}
 
 func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 	if harness.IntegrationNetwork() != harness.IntegrationNetworkLocalnet {
@@ -214,6 +270,15 @@ type corridorExecutionAccount struct {
 
 func newCorridorExecutionAccount(t *testing.T, testnet *harness.TestnetConfig, recipients []types.Address) corridorExecutionAccount {
 	t.Helper()
+	return newCorridorExecutionAccountWithCompiler(t, testnet.Client, recipients)
+}
+
+func newCorridorExecutionAccountWithCompiler(
+	t *testing.T,
+	compiler *sdkalgod.Client,
+	recipients []types.Address,
+) corridorExecutionAccount {
+	t.Helper()
 	if len(recipients) == 0 {
 		t.Fatal("corridor execution account requires at least one recipient")
 	}
@@ -250,7 +315,7 @@ func newCorridorExecutionAccount(t *testing.T, testnet *harness.TestnetConfig, r
 	if err != nil {
 		t.Fatalf("failed to build Corridor provider: %v", err)
 	}
-	provider.SetAlgodClient(testnet.Client)
+	provider.SetAlgodClient(compiler)
 	params := map[string]string{
 		"recipients": recipientsParam,
 		composeddsa.BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryPublicKey),
@@ -286,6 +351,16 @@ func (a corridorExecutionAccount) proofFor(t *testing.T, recipient types.Address
 }
 
 func (a corridorExecutionAccount) signGroup(t *testing.T, targetTxn types.Transaction, proof []byte, mutateArgs func(types.Digest, [][]byte) [][]byte) ([]byte, string) {
+	t.Helper()
+	signed, txid := a.signedGroup(t, targetTxn, proof, mutateArgs)
+	rawGroup := make([]byte, 0)
+	for _, stxn := range signed {
+		rawGroup = append(rawGroup, msgpack.Encode(stxn)...)
+	}
+	return rawGroup, txid
+}
+
+func (a corridorExecutionAccount) signedGroup(t *testing.T, targetTxn types.Transaction, proof []byte, mutateArgs func(types.Digest, [][]byte) [][]byte) ([]types.SignedTxn, string) {
 	t.Helper()
 
 	minFee := uint64(1_000)
@@ -347,12 +422,20 @@ func (a corridorExecutionAccount) signGroup(t *testing.T, targetTxn types.Transa
 		t.Fatalf("failed to sign corridor dummy transactions: %v", err)
 	}
 
-	rawGroup := make([]byte, 0, len(signedTarget)+len(signedDummies)*len(signedDummies[0]))
-	rawGroup = append(rawGroup, signedTarget...)
-	for _, signedDummy := range signedDummies {
-		rawGroup = append(rawGroup, signedDummy...)
+	group := make([]types.SignedTxn, 0, 1+len(signedDummies))
+	var target types.SignedTxn
+	if err := msgpack.Decode(signedTarget, &target); err != nil {
+		t.Fatalf("decode signed corridor target: %v", err)
 	}
-	return rawGroup, algocrypto.GetTxID(targetTxn)
+	group = append(group, target)
+	for _, signedDummy := range signedDummies {
+		var dummy types.SignedTxn
+		if err := msgpack.Decode(signedDummy, &dummy); err != nil {
+			t.Fatalf("decode signed corridor dummy: %v", err)
+		}
+		group = append(group, dummy)
+	}
+	return group, algocrypto.GetTxID(targetTxn)
 }
 
 func (a corridorExecutionAccount) argumentIndex(t *testing.T, source string) int {

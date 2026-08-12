@@ -707,6 +707,18 @@ native-falcon-fnet-test:
 	@APLANE_INTEGRATION_NETWORK=fnet ./test/setup-test-env.sh
 	@set -a && . ./.env.test && set +a && APLANE_INTEGRATION_NETWORK=fnet INTEGRATION=1 go test -count=1 -timeout 25m -v -run '^TestNativeFalconFNet' $(INTEGRATION_TEST_PKG)
 
+# Validate reviewed LogicSig opcode ceilings through the same algod selected
+# for TEAL compilation. TEST_FUNDING_MNEMONIC must identify a funded native
+# Falcon account on the selected integration network.
+.PHONY: logicsig-opcode-validation
+logicsig-opcode-validation:
+	@if [ -z "$(APLANE_INTEGRATION_NETWORK)" ]; then \
+		echo "APLANE_INTEGRATION_NETWORK must be set to fnet, testnet, or localnet"; \
+		exit 2; \
+	fi
+	@APLANE_INTEGRATION_NETWORK=$(APLANE_INTEGRATION_NETWORK) ./test/setup-test-env.sh
+	@set -a && . ./.env.test && set +a && APLANE_INTEGRATION_NETWORK=$(APLANE_INTEGRATION_NETWORK) INTEGRATION=1 go test -count=1 -timeout 30m -v -run '^(TestIncludedKeyTypesSignInBatchedGroups|TestALockDeclaredOpcodeCeilings|TestCorridorDeclaredOpcodeCeilings)$$' $(INTEGRATION_TEST_PKG)
+
 soak-test-localnet:
 	@echo "Running LocalNet soak test..."
 	@APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
@@ -991,6 +1003,7 @@ help:
 	@echo "  make integration-test-fnet - Run the full integration suite against FNet"
 	@echo "  make integration-test-testnet - Regenerate fixture and run integration tests against testnet"
 	@echo "  make integration-test-localnet - Regenerate fixture and run integration tests against LocalNet"
+	@echo "  APLANE_INTEGRATION_NETWORK=fnet make logicsig-opcode-validation - Simulate reviewed LogicSig ceilings through the compile algod"
 	@echo "  make integration-test-reuse - Run integration tests with existing fixture"
 	@echo "  make soak-test-localnet - Run opt-in LocalNet transaction soak test"
 	@echo "  make apshell-command-coverage-localnet - Run broad LocalNet apshell command coverage"

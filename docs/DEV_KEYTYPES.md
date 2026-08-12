@@ -82,8 +82,9 @@ referenced above is `signing_metadata_version`, `lsig_derivation`,
 `lsig_opcode_profile`, `base_key_type` for DSA LogicSig keys, and optional
 `signing_args`.
 `lsig_derivation: algod_v13_auto_salt` records that the final TEAL v13 bytecode
-was salted by the configured algod compiler; legacy records may instead carry
-`salt_counter`. `lsig_opcode_profile` stores only reviewed per-path opcode
+was salted by the configured algod compiler; compatible manual-counter records
+may instead carry `salt_counter`, but pre-profile development records must be
+regenerated. `lsig_opcode_profile` stores only reviewed per-path opcode
 ceilings; program length and argument maxima are derived from the final
 bytecode and the frozen argument layout. Non-bounded LogicSig keys
 use signing-metadata version 1. Bounded keys use version 2 and persist the full
@@ -102,18 +103,15 @@ verifies that the compiler-reported address matches it, and rejects an on-curve
 address. The derivation mode is part of a versioned provider/template contract:
 templates with omitted `derivation_version` are unsalted and compile exactly as
 written, succeeding only if the unmodified bytecode already derives an
-off-curve LogicSig address; template `derivation_version: 1` uses the v1
-stack-neutral generated marker preamble
-(`byte 0x41504c414e455f4c5349475f53414c545f56315f005f454e44; pop`), while
-template `derivation_version: 2` appends a trailing dead-code
-`bytecblock 0x00` after the program's terminating instruction. Template
-`derivation_version: 3` requires TEAL v13 and delegates salting to the compiler.
-New template-derived key types should use `derivation_version: 3`. To intentionally
-use the unsalted contract, omit `derivation_version`. Provider-owned
-bare DSA versions use compiler auto-salting. Assignments are: omitted `derivation_version`
-means unsalted, explicit `derivation_version: 1` means generated marker,
-explicit `derivation_version: 2` means trailing dead-code `bytecblock`,
-and explicit `derivation_version: 3` means compiler-owned TEAL v13 auto-salting.
+off-curve LogicSig address. Template `derivation_version: 3` requires TEAL v13
+and delegates salting to the compiler, and is the only explicit contract still
+accepted. The retired `derivation_version: 1` (stack-neutral generated marker
+preamble) and `derivation_version: 2` (trailing dead-code `bytecblock 0x00`
+after the program's terminating instruction) are rejected at template
+validation; republish such a template with `derivation_version: 3`. Provider-owned
+bare DSA versions use compiler auto-salting. Assignments are: omitted
+`derivation_version` means unsalted, and explicit `derivation_version: 3` means
+compiler-owned TEAL v13 auto-salting.
 The bundled `aplane.falcon1024.v1`, `aplane.ed25519.v1`, and dedicated guarded
 sentry provider (`aplane.falcon1024-sentry1024.v1`) all use the compiler-owned
 mode. User template TEAL cannot choose salt style, must remain relocatable,
@@ -128,6 +126,13 @@ display estimates: derive program length after compiler auto-salting, use a
 proven maximum for variable arguments, and demonstrate opcode ceilings against
 worst permitted runtime operand sizes.
 
+For APlane-owned types, add a maximum-input accepted vector to the integration
+opcode-ceiling gate. `harness.ValidateDeclaredOpcodeCeiling` simulates the exact
+production-generated signed group through the same algod selected by the signer
+fixture's `teal_compile_network` and rejects missing/zero cost reporting or
+consumption above the declared ceiling. Simulation is evidence for the reviewed
+vectors; it is not a general proof over arbitrary TEAL inputs.
+
 Key files may also store `template_fingerprint`, the behavior-only, versioned
 compatibility fingerprint of the template or composed provider that created the
 key, when known. This is provenance for inventory warnings only; it is not
@@ -137,10 +142,11 @@ Fingerprint authoring rules:
 
 - The fingerprint hashes only behavior-bearing definition fields (TEAL /
   `teal_suffix`, `salt_style`, the base primitive token, `template_mode`,
-  `template_variables`, `parameters`, `runtime_args`). Identity, routing, and
-  display fields (`key_type`, `family`, `version`, `publisher`, `display_name`,
-  `description`, `display_color`, labels/examples) are forbidden from the hash,
-  so an identifier or display rename never changes the fingerprint.
+  `template_variables`, `parameters`, `runtime_args`, and the effective opcode
+  profile). Identity, routing, and display fields (`key_type`, `family`,
+  `version`, `publisher`, `display_name`, `description`, `display_color`,
+  labels/examples) are forbidden from the hash, so an identifier or display
+  rename never changes the fingerprint.
 - Base key types are projected to a frozen `base_primitive` token namespace
   (`FingerprintBasePrimitive`): add rows, never rename tokens. A base-identifier
   rename adds a new raw->token row pointing at the existing token, so the hash
@@ -584,7 +590,8 @@ schema. The core fields are:
 
 ```yaml
 schema_version: 1
-derivation_version: 2
+derivation_version: 3
+max_opcode_cost: 20000  # reviewed worst-case cost of every reachable path
 template_type: <type>        # generic | composed; optional for generic templates
 base_key_type: <key_type>    # composed signing primitive; omitted for generic templates
 template_mode: <mode>        # strict | generated
@@ -758,7 +765,8 @@ A full generic template showing all field types and both spending paths:
 
 ```yaml
 schema_version: 1
-derivation_version: 2
+derivation_version: 3
+max_opcode_cost: 20000
 template_type: generic
 template_mode: strict
 publisher: aplane

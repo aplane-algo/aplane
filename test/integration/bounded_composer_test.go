@@ -24,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -381,9 +382,8 @@ type boundedExecutionAccount struct {
 	spendingPrivateKey []byte
 	adminPublicKey     []byte
 	adminPrivateKey    []byte
-	profile            *composeddsa.BoundedAuthorizationProfile
 	provider           *composeddsa.ComposedDSA
-	params             map[string]string
+	metadata           *boundedmeta.Metadata
 }
 
 func newBoundedExecutionAccount(t *testing.T, network *harness.TestnetConfig, recipient string) boundedExecutionAccount {
@@ -409,16 +409,29 @@ func newBoundedExecutionAccount(t *testing.T, network *harness.TestnetConfig, re
 	if err != nil {
 		t.Fatalf("derive bounded LogicSig: %v", err)
 	}
+	metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingPublicKey, params, derived.Bytecode)
+	if err != nil {
+		t.Fatalf("build bounded authorization metadata: %v", err)
+	}
 	return boundedExecutionAccount{
 		address: derived.Address.String(), bytecode: append([]byte(nil), derived.Bytecode...),
 		spendingPublicKey: append([]byte(nil), spendingPublicKey...), spendingPrivateKey: append([]byte(nil), spendingPrivateKey...),
 		adminPublicKey: append([]byte(nil), adminPublicKey...), adminPrivateKey: append([]byte(nil), adminPrivateKey...),
-		profile: profile, provider: provider,
-		params: params,
+		provider: provider, metadata: metadata,
 	}
 }
 
 func (account boundedExecutionAccount) signGroup(t *testing.T, targetTxn types.Transaction, includeAdmin bool) ([]byte, string) {
+	t.Helper()
+	signed, txid := account.signedGroup(t, targetTxn, includeAdmin)
+	rawGroup := make([]byte, 0)
+	for _, stxn := range signed {
+		rawGroup = append(rawGroup, msgpack.Encode(stxn)...)
+	}
+	return rawGroup, txid
+}
+
+func (account boundedExecutionAccount) signedGroup(t *testing.T, targetTxn types.Transaction, includeAdmin bool) ([]types.SignedTxn, string) {
 	t.Helper()
 	minFee := uint64(1_000)
 	if targetTxn.Fee > 0 && uint64(targetTxn.Fee) < composeddsa.BoundedMaxFeeV1+1 {
@@ -456,15 +469,15 @@ func (account boundedExecutionAccount) signGroup(t *testing.T, targetTxn types.T
 		t.Fatalf("build bounded base args: %v", err)
 	}
 	if includeAdmin {
-		profileEncoding, err := composeddsa.CanonicalBoundedProfile(account.profile, account.provider.BoundedAuthorizationMetadata())
+		encodedBinding, err := hex.DecodeString(account.metadata.ProgramBindingHex)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("decode bounded program binding: %v", err)
 		}
-		behaviorEncoding, err := composeddsa.CanonicalBoundedBehaviorParameters(account.params, account.provider.CreationParams())
-		if err != nil {
-			t.Fatal(err)
+		if len(encodedBinding) != 32 {
+			t.Fatalf("bounded program binding is %d bytes, want 32", len(encodedBinding))
 		}
-		binding := composeddsa.BoundedProgramBinding(boundedIntegrationKeyType, "aplane.falcon1024.v1", 12, account.spendingPublicKey, account.adminPublicKey, profileEncoding, behaviorEncoding)
+		var binding [32]byte
+		copy(binding[:], encodedBinding)
 		message, err := composeddsa.BoundedAdminMessage(composeddsa.AdminOperationRekey, binding, txID)
 		if err != nil {
 			t.Fatal(err)
@@ -484,11 +497,20 @@ func (account boundedExecutionAccount) signGroup(t *testing.T, targetTxn types.T
 	if err != nil {
 		t.Fatalf("sign bounded dummies: %v", err)
 	}
-	rawGroup := append([]byte(nil), signedTarget...)
-	for _, signedDummy := range signedDummies {
-		rawGroup = append(rawGroup, signedDummy...)
+	group := make([]types.SignedTxn, 0, 1+len(signedDummies))
+	var target types.SignedTxn
+	if err := msgpack.Decode(signedTarget, &target); err != nil {
+		t.Fatalf("decode signed bounded target: %v", err)
 	}
-	return rawGroup, algocrypto.GetTxID(targetTxn)
+	group = append(group, target)
+	for _, signedDummy := range signedDummies {
+		var dummy types.SignedTxn
+		if err := msgpack.Decode(signedDummy, &dummy); err != nil {
+			t.Fatalf("decode signed bounded dummy: %v", err)
+		}
+		group = append(group, dummy)
+	}
+	return group, algocrypto.GetTxID(targetTxn)
 }
 
 func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {

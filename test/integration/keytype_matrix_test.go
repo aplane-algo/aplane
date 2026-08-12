@@ -12,14 +12,23 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/library/templates"
+	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	edlsigv1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
+	falconlsigv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
+	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
+	sdkalgod "github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -28,6 +37,7 @@ import (
 const matrixAccountFunding = 500_000
 
 func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
+	assertBundledOpcodeValidationInventory(t)
 	lockOnDisconnect := false
 	env := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	installAllBundledTemplates(t, env.SignerDataDir)
@@ -40,6 +50,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to load funding account: %v", err)
 	}
+	compileAlgod := matrixCompileAlgod(t, testnet)
 
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
@@ -76,21 +87,28 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	preimage := bytes.Repeat([]byte("k"), 32)
 	preimageHash := sha256.Sum256(preimage)
 	timelockRound := baseRound
+	htlcAssetID := createCorridorTestAsset(t, testnet, funder)
 
 	cases := []includedKeyTypeCase{
 		{
 			keyType: "ed25519",
 		},
 		{
+			keyType: "aplane.ed25519.v1",
+		},
+		{
 			keyType: "aplane.falcon1024.v1",
 		},
 		{
-			keyType: "aplane.htlc.v1",
+			keyType:            "aplane.htlc.v1",
+			opcodeVectorName:   "maximum-claim",
+			opcodeAssetOptInID: htlcAssetID,
 			params: map[string]string{
-				"hash":           hex.EncodeToString(preimageHash[:]),
-				"recipient":      funder.GetAddress(),
-				"refund_address": funder.GetAddress(),
-				"timeout_round":  fmt.Sprintf("%d", baseRound+1_000),
+				"hash":                 hex.EncodeToString(preimageHash[:]),
+				"recipient":            funder.GetAddress(),
+				"refund_address":       funder.GetAddress(),
+				"timeout_round":        fmt.Sprintf("%d", baseRound+1_000),
+				"allowed_optin_assets": matrixAssetIDsEndingWith(htlcAssetID, 16),
 			},
 			positiveArgs: map[string]string{"preimage": hex.EncodeToString(preimage)},
 			negative: includedKeyTypeNegative{
@@ -99,11 +117,36 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			},
 		},
 		{
+			keyType:            "aplane.htlc.v1",
+			opcodeVectorName:   "refund-after-timeout",
+			positiveFirstValid: baseRound,
+			params: map[string]string{
+				"hash":           hex.EncodeToString(preimageHash[:]),
+				"recipient":      funder.GetAddress(),
+				"refund_address": funder.GetAddress(),
+				"timeout_round":  fmt.Sprintf("%d", baseRound),
+			},
+		},
+		{
 			keyType: "aplane.falcon1024-allowlist.v1",
-			params:  map[string]string{"recipients": funder.GetAddress()},
+			params:  map[string]string{"recipients": matrixMaximumRecipients(funder.GetAddress())},
 			negative: includedKeyTypeNegative{
 				name:     "non-allowlisted receiver",
 				receiver: integrationBurnAddress,
+			},
+		},
+		{
+			keyType: "aplane.falcon1024-allowlist.v2",
+			params:  map[string]string{"recipients": matrixMaximumRecipients(funder.GetAddress())},
+		},
+		{
+			keyType: "aplane.falcon1024-allowlist-alock.v1",
+			params: map[string]string{
+				"recipients":         matrixMaximumRecipients(funder.GetAddress()),
+				"asset_ids":          matrixMaximumAssetIDs(),
+				"max_payment_amount": "18446744073709551615",
+				"max_asset_amount":   "18446744073709551615",
+				composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)),
 			},
 		},
 		{
@@ -157,6 +200,13 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 		})
 	}
 
+	validateMatrixHTLCAssetOptInOpcodeCeilings(
+		t, compileAlgod, signerd.GetURL(), token, fundingAddress, generated, mustSuggestedParams(t, testnet),
+	)
+	validateMatrixSpendingRekeyOpcodeCeilings(
+		t, compileAlgod, signerd.GetURL(), token, fundingAddress, generated, mustSuggestedParams(t, testnet),
+	)
+
 	for i := 0; i < len(generated); i += 3 {
 		end := i + 3
 		if end > len(generated) {
@@ -186,6 +236,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			}
 			assertMatrixPlannerDidNotPad(t, signResp, len(req.Requests))
 			assertMatrixAccountsDrainExactly(t, signResp.Signed, len(signTxns))
+			validateMatrixOpcodeCeilings(t, compileAlgod, batch, signResp.Signed)
 			txids := submitSignedTxnGroup(t, testnet, signResp.Signed)
 			if len(txids) == 0 {
 				t.Fatal("positive batch produced no transaction IDs")
@@ -197,12 +248,169 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	}
 }
 
+func assertBundledOpcodeValidationInventory(t *testing.T) {
+	t.Helper()
+	validated := map[string]struct{}{
+		"aplane.corridor.v1.yaml":                   {},
+		"aplane.falcon1024-allowlist-alock.v1.yaml": {},
+		"aplane.falcon1024-allowlist.v1.yaml":       {},
+		"aplane.falcon1024-allowlist.v2.yaml":       {},
+		"aplane.falcon1024-timelock.v1.yaml":        {},
+		"aplane.htlc.v1.yaml":                       {},
+	}
+	entries, err := templates.FS.ReadDir(".")
+	if err != nil {
+		t.Fatalf("list bundled LogicSig templates: %v", err)
+	}
+	seen := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		seen[entry.Name()] = struct{}{}
+		if _, ok := validated[entry.Name()]; !ok {
+			t.Errorf("bundled template %s has no opcode-ceiling integration vector", entry.Name())
+		}
+	}
+	for name := range validated {
+		if _, ok := seen[name]; !ok {
+			t.Errorf("opcode-ceiling inventory names missing bundled template %s", name)
+		}
+	}
+}
+
+func validateMatrixSpendingRekeyOpcodeCeilings(
+	t *testing.T,
+	client *sdkalgod.Client,
+	signerURL string,
+	token string,
+	fundingAddress string,
+	accounts []includedKeyTypeAccount,
+	sp types.SuggestedParams,
+) {
+	t.Helper()
+	for _, account := range accounts {
+		if !matrixSupportsSpendingRekey(account.keyType) {
+			continue
+		}
+		t.Run(account.keyType+"/opcode/spending-rekey", func(t *testing.T) {
+			txn := mustPaymentTxnForMatrix(
+				t, sp, account.address, account.address, "keytype-matrix-spending-rekey", "", account.positiveFirstValid,
+			)
+			txn.RekeyTo = algocrypto.GenerateAccount().Address
+			req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{{
+				authAddress: account.address,
+				txn:         txn,
+			}})
+			status, body := postSignRequest(t, signerURL, "aplane "+token, req)
+			if status != http.StatusOK {
+				t.Fatalf("expected spending-key rekey signing to succeed, got %d: %s", status, string(body))
+			}
+			var signResp signerapi.GroupSignResponse
+			if err := json.Unmarshal(body, &signResp); err != nil {
+				t.Fatalf("parse spending-key rekey sign response: %v", err)
+			}
+			if signResp.Error != "" {
+				t.Fatalf("unexpected spending-key rekey sign error: %s", signResp.Error)
+			}
+			assertMatrixPlannerDidNotPad(t, signResp, len(req.Requests))
+			signed := make([]types.SignedTxn, len(signResp.Signed))
+			for i, encoded := range signResp.Signed {
+				signed[i] = decodeSignedTxnHex(t, encoded)
+			}
+			profile := matrixDeclaredOpcodeProfile(t, account.keyType)
+			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), client, harness.OpcodeCeilingValidation{
+				Name:          account.keyType,
+				FinalProgram:  signed[0].Lsig.Logic,
+				Profile:       profile,
+				Bounded:       true,
+				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpendingRekey},
+				Vectors: []harness.OpcodeCeilingVector{{
+					Name: "maximum-spending-key-rekey", Path: lsigresource.PathSpendingRekey, SignedTxns: signed, LSigIndex: 0,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("validate spending-key rekey opcode ceiling: %v", err)
+			}
+			observed := report.Paths[lsigresource.PathSpendingRekey]
+			t.Logf("spending-rekey opcode cost: %d observed / %d declared", observed.MaximumObserved, observed.DeclaredCeiling)
+		})
+	}
+}
+
+func matrixSupportsSpendingRekey(keyType string) bool {
+	switch keyType {
+	case "aplane.falcon1024-allowlist.v1",
+		"aplane.falcon1024-allowlist.v2",
+		"aplane.falcon1024-timelock.v1":
+		return true
+	default:
+		return false
+	}
+}
+
 type includedKeyTypeCase struct {
 	keyType            string
+	opcodeVectorName   string
+	opcodeAssetOptInID uint64
 	params             map[string]string
 	positiveArgs       map[string]string
 	positiveFirstValid uint64
 	negative           includedKeyTypeNegative
+}
+
+func validateMatrixHTLCAssetOptInOpcodeCeilings(
+	t *testing.T,
+	client *sdkalgod.Client,
+	signerURL string,
+	token string,
+	fundingAddress string,
+	accounts []includedKeyTypeAccount,
+	sp types.SuggestedParams,
+) {
+	t.Helper()
+	for _, account := range accounts {
+		if account.opcodeAssetOptInID == 0 {
+			continue
+		}
+		t.Run(account.keyType+"/opcode/maximum-asset-optin", func(t *testing.T) {
+			txn := corridorAssetTransferTxn(
+				t, sp, account.address, account.address, 0, account.opcodeAssetOptInID, "keytype-matrix-asset-optin",
+			)
+			req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{{authAddress: account.address, txn: txn}})
+			status, body := postSignRequest(t, signerURL, "aplane "+token, req)
+			if status != http.StatusOK {
+				t.Fatalf("expected HTLC asset opt-in signing to succeed, got %d: %s", status, string(body))
+			}
+			var signResp signerapi.GroupSignResponse
+			if err := json.Unmarshal(body, &signResp); err != nil {
+				t.Fatalf("parse HTLC asset opt-in sign response: %v", err)
+			}
+			if signResp.Error != "" {
+				t.Fatalf("unexpected HTLC asset opt-in sign error: %s", signResp.Error)
+			}
+			assertMatrixPlannerDidNotPad(t, signResp, len(req.Requests))
+			signed := make([]types.SignedTxn, len(signResp.Signed))
+			for i, encoded := range signResp.Signed {
+				signed[i] = decodeSignedTxnHex(t, encoded)
+			}
+			profile := matrixDeclaredOpcodeProfile(t, account.keyType)
+			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), client, harness.OpcodeCeilingValidation{
+				Name:          account.keyType,
+				FinalProgram:  signed[0].Lsig.Logic,
+				Profile:       profile,
+				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathDefault},
+				Vectors: []harness.OpcodeCeilingVector{{
+					Name: "maximum-asset-optin", Path: lsigresource.PathDefault, SignedTxns: signed, LSigIndex: 0,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("validate HTLC asset opt-in opcode ceiling: %v", err)
+			}
+			observed := report.Paths[lsigresource.PathDefault]
+			t.Logf("asset-optin opcode cost: %d observed / %d declared", observed.MaximumObserved, observed.DeclaredCeiling)
+		})
+	}
 }
 
 type includedKeyTypeNegative struct {
@@ -339,6 +547,136 @@ func assertMatrixAccountsDrainExactly(t *testing.T, signed []string, accountCoun
 	}
 }
 
+func matrixCompileAlgod(t *testing.T, network *harness.TestnetConfig) *sdkalgod.Client {
+	t.Helper()
+	client := network.Client
+	if client == nil {
+		t.Fatal("compile/simulation algod client is not configured")
+	}
+	sp, err := client.SuggestedParams().Do(context.Background())
+	if err != nil {
+		t.Fatalf("read compile/simulation algod suggested params: %v", err)
+	}
+	status, err := client.Status().Do(context.Background())
+	if err != nil {
+		t.Fatalf("read compile/simulation algod status: %v", err)
+	}
+	for label, version := range map[string]string{"suggested": sp.ConsensusVersion, "status": status.LastVersion} {
+		profile, err := lsigresource.ResolveConsensus(version)
+		if err != nil {
+			t.Fatalf("compile/simulation algod %s consensus %q is unsupported: %v", label, version, err)
+		}
+		if profile.SizingMode != lsigresource.SizingModePricedProgram || profile.MaximumLogicSigVersion < 13 {
+			t.Fatalf(
+				"compile/simulation algod %s consensus %q is not v42-compatible (mode=%d LogicSigVersion=%d)",
+				label, version, profile.SizingMode, profile.MaximumLogicSigVersion,
+			)
+		}
+	}
+	return client
+}
+
+func validateMatrixOpcodeCeilings(
+	t *testing.T,
+	client *sdkalgod.Client,
+	accounts []includedKeyTypeAccount,
+	signedHexes []string,
+) {
+	t.Helper()
+	signed := make([]types.SignedTxn, len(signedHexes))
+	for i, encoded := range signedHexes {
+		signed[i] = decodeSignedTxnHex(t, encoded)
+	}
+	for i, account := range accounts {
+		if len(signed[i].Lsig.Logic) == 0 {
+			continue
+		}
+		profile := matrixDeclaredOpcodeProfile(t, account.keyType)
+		bounded := profile.Default == 0
+		path := lsigresource.PathDefault
+		if bounded {
+			path = lsigresource.PathSpend
+		}
+		vectorName := account.opcodeVectorName
+		if vectorName == "" {
+			vectorName = "maximum-positive-matrix"
+		}
+		report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), client, harness.OpcodeCeilingValidation{
+			Name:          account.keyType,
+			FinalProgram:  signed[i].Lsig.Logic,
+			Profile:       profile,
+			Bounded:       bounded,
+			RequiredPaths: []lsigresource.AuthorizationPath{path},
+			Vectors: []harness.OpcodeCeilingVector{{
+				Name: vectorName, Path: path, SignedTxns: signed, LSigIndex: i,
+			}},
+		})
+		if err != nil {
+			t.Fatalf("validate %s opcode ceiling: %v", account.keyType, err)
+		}
+		observed := report.Paths[path]
+		t.Logf(
+			"%s LogicSig opcode cost: %d observed / %d declared",
+			account.keyType, observed.MaximumObserved, observed.DeclaredCeiling,
+		)
+	}
+}
+
+func matrixDeclaredOpcodeProfile(t *testing.T, keyType string) lsigresource.OpcodeProfile {
+	t.Helper()
+	switch keyType {
+	case "aplane.ed25519.v1":
+		return edlsigv1.NewProvider().LogicSigOpcodeProfile()
+	case "aplane.falcon1024.v1":
+		return (&falconlsigv1.Falcon1024V1{}).LogicSigOpcodeProfile()
+	case "aplane.htlc.v1":
+		data, err := templates.ReadFile(keyType + ".yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		spec, err := generictemplate.ParseTemplateSpec(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return generictemplate.NewYAMLTemplate(spec).LogicSigOpcodeProfile()
+	default:
+		data, err := templates.ReadFile(keyType + ".yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		spec, err := composeddsa.ParseTemplateSpec(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return provider.LogicSigOpcodeProfile()
+	}
+}
+
+func matrixMaximumRecipients(destination string) string {
+	recipients := []string{destination}
+	for i := byte(1); len(recipients) < 30; i++ {
+		var address types.Address
+		address[0] = i
+		encoded := address.String()
+		if encoded != destination {
+			recipients = append(recipients, encoded)
+		}
+	}
+	return strings.Join(recipients, ",")
+}
+
+func matrixMaximumAssetIDs() string {
+	ids := make([]string, 30)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%d", i+1)
+	}
+	return strings.Join(ids, ",")
+}
+
 func mustPaymentTxnForMatrix(
 	t *testing.T,
 	sp types.SuggestedParams,
@@ -404,6 +742,7 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 		"aplane.htlc.v1.yaml",
 		"aplane.falcon1024-allowlist.v1.yaml",
 		"aplane.falcon1024-allowlist.v2.yaml",
+		"aplane.falcon1024-allowlist-alock.v1.yaml",
 		"aplane.falcon1024-timelock.v1.yaml",
 	}
 	templatePaths := make([]string, 0, len(templateFiles))

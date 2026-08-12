@@ -186,6 +186,14 @@ bytecode and review every path's maximum `argument_bytes` and
 sizes. Never collapse these values into one size scalar: v42 prices program
 bytes but pools arguments and opcode cost independently.
 
+For an APlane-owned key type, add a maximum-input accepted integration vector
+that calls `harness.ValidateDeclaredOpcodeCeiling` with the final production
+bytecode and the provider/template's actual declared profile. Reuse the signer
+fixture's `teal_compile_network` algod for simulation. Treat absent/zero cost
+reporting, uncovered reachable paths, simulation failure, or an observed
+ceiling overrun as release-blocking; never raise a declaration automatically
+from test output.
+
 For time locks in LogicSig mode, prefer `txn FirstValid` checks. Do not use
 `global Round`.
 
