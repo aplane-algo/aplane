@@ -53,9 +53,12 @@ func TestNewRequest(t *testing.T) {
 	}
 }
 
-func TestPluginProtocolVersion(t *testing.T) {
-	if PluginProtocolVersion != "2.0" {
-		t.Fatalf("PluginProtocolVersion = %q, want breaking-wire version 2.0", PluginProtocolVersion)
+func TestPluginProtocolIdentifier(t *testing.T) {
+	if PluginProtocol != "aplane-plugin/2" {
+		t.Fatalf("PluginProtocol = %q, want aplane-plugin/2", PluginProtocol)
+	}
+	if PluginProtocol == Version {
+		t.Fatalf("plugin protocol %q must differ from JSON-RPC envelope version", PluginProtocol)
 	}
 }
 

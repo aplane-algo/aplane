@@ -37,8 +37,9 @@ program, and native-PQ fees. Foreign slots use the structured
 `lsig_resources` wire field, replacing the former combined `lsig_size` scalar.
 Plugins and SDKs must provide `programBytes`, `argumentBytes`, and
 `maxOpcodeCost` and use the signer's `/plan` output as the canonical group.
-The breaking plugin wire change advances the APlane plugin protocol to `2.0`;
-plugins must independently validate that handshake version. JavaScript
+The breaking plugin wire change uses the one-way protocol declaration
+`initialize.result.protocol: "aplane-plugin/2"`; the host sends no protocol
+token that a legacy plugin could echo. JavaScript
 `plan()` and `presign-plan` plugin signers can declare native Falcon foreign
 slots with `pqScheme: "f1"` so the planner includes their PQ fee contribution.
 

@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const pluginProtocolVersion = "2.0"
+const pluginProtocol = "aplane-plugin/2"
 
 // JSON-RPC structures
 type Request struct {
@@ -41,13 +41,12 @@ type InitializeParams struct {
 	AlgodURL   string `json:"algodUrl"`
 	AlgodToken string `json:"algodToken"`
 	IndexerURL string `json:"indexerUrl"`
-	Version    string `json:"version"` // APlane plugin protocol version
 }
 
 type InitializeResult struct {
-	Success bool   `json:"success"`
-	Message string `json:"message,omitempty"`
-	Version string `json:"version"` // APlane plugin protocol version
+	Success  bool   `json:"success"`
+	Message  string `json:"message,omitempty"`
+	Protocol string `json:"protocol"`
 }
 
 type ExecuteParams struct {
@@ -149,23 +148,15 @@ func handleInitialize(req *Request) *Response {
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return errorResponse(req.ID, -32602, "Invalid params", err.Error())
 	}
-	if params.Version != pluginProtocolVersion {
-		return successResponse(req.ID, InitializeResult{
-			Success: false,
-			Message: fmt.Sprintf("unsupported APlane plugin protocol %q; plugin supports %q", params.Version, pluginProtocolVersion),
-			Version: pluginProtocolVersion,
-		})
-	}
-
 	network = params.Network
 	algodURL = params.AlgodURL
 
 	logInfo("Initialized with network=%s, algod=%s", network, algodURL)
 
 	result := InitializeResult{
-		Success: true,
-		Message: fmt.Sprintf("Echo plugin initialized on %s", network),
-		Version: pluginProtocolVersion,
+		Success:  true,
+		Message:  fmt.Sprintf("Echo plugin initialized on %s", network),
+		Protocol: pluginProtocol,
 	}
 
 	return successResponse(req.ID, result)

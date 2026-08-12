@@ -427,13 +427,12 @@ available for direct command-line use.
 Plugins communicate with APlane Shell using JSON-RPC 2.0 over stdin/stdout.
 The JSON-RPC envelope version (`jsonrpc: "2.0"`), the plugin manifest schema
 version (`manifest_format`), and the APlane plugin protocol version are
-separate contracts. The host sends the current APlane plugin protocol version
-in `initialize.params.version`; the plugin must compare it with its own
-hard-coded supported version and return that independently supported version in
-`initialize.result.version`, or startup fails closed. A plugin must not merely
-echo the host's value. A plugin's semantic
-package version lives in its manifest `version` field and in `getInfo`, not in
-the initialize handshake.
+separate contracts. The host does not send the accepted plugin protocol token.
+Each plugin must independently return the hard-coded declaration
+`"aplane-plugin/2"` in `initialize.result.protocol`, or startup fails closed.
+This one-way declaration cannot be satisfied by echoing host input. A plugin's
+semantic package version lives in its manifest `version` field and in
+`getInfo`, not in the initialize handshake.
 
 #### initialize
 
@@ -449,8 +448,7 @@ Called once after the plugin starts.
     "network": "testnet",
     "algodUrl": "https://testnet-api.4160.nodely.dev",
     "algodToken": "",
-    "indexerUrl": "https://testnet-idx.4160.nodely.dev",
-    "version": "2.0"
+    "indexerUrl": "https://testnet-idx.4160.nodely.dev"
   }
 }
 ```
@@ -463,7 +461,7 @@ Called once after the plugin starts.
   "result": {
     "success": true,
     "message": "Plugin initialized",
-    "version": "2.0"
+    "protocol": "aplane-plugin/2"
   }
 }
 ```

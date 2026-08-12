@@ -19,10 +19,12 @@ const (
 	MethodShutdown   = "shutdown"
 )
 
-// PluginProtocolVersion is the APlane plugin protocol version used in the
-// initialize handshake. It is distinct from the JSON-RPC envelope version and
-// from the plugin package's semantic version in its manifest/getInfo response.
-const PluginProtocolVersion = "2.0"
+// PluginProtocol identifies the APlane plugin protocol declared by a plugin
+// during initialization. The host does not send this value to the plugin: the
+// declaration must come from plugin-owned code rather than echoing host input.
+// It is distinct from the JSON-RPC envelope version and the plugin package's
+// semantic version in its manifest/getInfo response.
+const PluginProtocol = "aplane-plugin/2"
 
 // Optional methods a plugin may implement.
 const (
@@ -39,14 +41,13 @@ type InitializeParams struct {
 	AlgodURL   string `json:"algodUrl"`   // Algorand node API URL
 	AlgodToken string `json:"algodToken"` // Algod API token (empty for public nodes)
 	IndexerURL string `json:"indexerUrl"` // Indexer URL if available
-	Version    string `json:"version"`    // APlane plugin protocol version
 }
 
 // InitializeResult returned from plugin initialization
 type InitializeResult struct {
-	Success bool   `json:"success"`
-	Message string `json:"message,omitempty"`
-	Version string `json:"version"` // APlane plugin protocol version independently supported by the plugin
+	Success  bool   `json:"success"`
+	Message  string `json:"message,omitempty"`
+	Protocol string `json:"protocol"` // Plugin-owned APlane protocol declaration
 }
 
 // ExecuteParams sent when executing a command
@@ -216,7 +217,7 @@ func (s *PluginSigner) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if _, retired := fields["lsigSize"]; retired {
-		return fmt.Errorf("plugin signer field %q is unsupported by plugin protocol %s; use %q", "lsigSize", PluginProtocolVersion, "lsigResources")
+		return fmt.Errorf("plugin signer field %q is unsupported by plugin protocol %s; use %q", "lsigSize", PluginProtocol, "lsigResources")
 	}
 
 	type wire PluginSigner

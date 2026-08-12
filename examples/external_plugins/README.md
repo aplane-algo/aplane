@@ -179,11 +179,11 @@ Your plugin must handle these methods:
 - **shutdown** - Clean shutdown request
 
 JSON-RPC frames use `jsonrpc: "2.0"`. `manifest_format` is the manifest schema
-version. The `initialize.params.version` field is the APlane plugin protocol
-version; compare it with a plugin-owned constant and return that independently
-supported value in `initialize.result.version`. Do not merely echo the host's
-value. Your plugin's semantic package version stays in `manifest.json` and
-`getInfo`.
+version. The host does not send the APlane plugin protocol identifier. Return
+the plugin-owned constant `"aplane-plugin/2"` in
+`initialize.result.protocol`; startup rejects a missing or different
+declaration. Your plugin's semantic package version stays in `manifest.json`
+and `getInfo`.
 
 ### 3. Communication Protocol
 

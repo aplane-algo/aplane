@@ -476,7 +476,6 @@ func (m *Manager) initializePlugin(instance *Instance, cfg runtimeConfig) error 
 		AlgodURL:   cfg.algodURL,
 		AlgodToken: cfg.algodToken,
 		IndexerURL: cfg.indexerURL,
-		Version:    jsonrpc.PluginProtocolVersion,
 	}
 
 	var result jsonrpc.InitializeResult
@@ -493,8 +492,8 @@ func (m *Manager) initializePlugin(instance *Instance, cfg runtimeConfig) error 
 	if !result.Success {
 		return fmt.Errorf("plugin initialization failed: %s", result.Message)
 	}
-	if result.Version != jsonrpc.PluginProtocolVersion {
-		return fmt.Errorf("unsupported plugin protocol version %q: host supports %q", result.Version, jsonrpc.PluginProtocolVersion)
+	if result.Protocol != jsonrpc.PluginProtocol {
+		return fmt.Errorf("unsupported plugin protocol %q: host requires %q", result.Protocol, jsonrpc.PluginProtocol)
 	}
 
 	return nil
