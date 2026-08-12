@@ -60,7 +60,7 @@ is a complete value-spending policy.
 |---|---|
 | Contract identifier | `bounded1` |
 | Composed YAML schema | `schema_version: 2` |
-| TEAL version | 12 |
+| TEAL version | 13 |
 | Spend effects | non-empty closed subset of `pay`, `axfer`, `asset_opt_in` |
 | Admin operations | `rekey` only |
 | Admin authorization | `spending_key` or `admin_key` |
@@ -149,7 +149,8 @@ finalized fee would exceed the profile ceiling.
 The independent machine-readable inventory is
 [`BOUNDED1_PROTOCOL_INVENTORY.json`](BOUNDED1_PROTOCOL_INVENTORY.json). It is
 maintained independently of renderer/classifier code and pinned to
-go-algorand-sdk v2.11.0, go-algorand reference `589c761a1cfc`, and AVM v12.
+go-algorand-sdk v2.11.2 pseudo-version `967fcacfacdf`, go-algorand reference
+`68e036affd9e`, and AVM v13.
 It separately freezes the flattened SDK transaction-field surface and parses
 the pinned SDK source in tests to detect newly introduced transaction types.
 

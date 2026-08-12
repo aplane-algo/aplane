@@ -22,9 +22,11 @@ var bounded1ContractManifest = txeffects.Bounded1Manifest()
 
 const invalidOpcodeSize = 255
 
-// avmV12OpcodeSizes is generated from go-algorand's langspec_v12.json. Zero
-// identifies one of the eight variable-width opcodes handled explicitly.
-var avmV12OpcodeSizes = [256]uint8{
+// avmOpcodeSizes is generated from go-algorand's langspec_v12.json. Zero
+// identifies variable-width opcodes handled explicitly. TEAL v13 retains
+// these fixed sizes except that b/bz/bnz/callsub use signed varint offsets;
+// decodeProgram selects that encoding from the program version.
+var avmOpcodeSizes = [256]uint8{
 	1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1,
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 	0, 2, 1, 1, 1, 1, 0, 2, 1, 1, 1, 1, 2, 1, 1, 1,
@@ -78,10 +80,33 @@ func Validate(bytecode []byte, expected Expected) error {
 	if err := validateExpected(expected); err != nil {
 		return err
 	}
-	parsed, err := decodeProgram(bytecode)
-	if err != nil {
-		return err
+	version, used := binary.Uvarint(bytecode)
+	if used <= 0 {
+		return fmt.Errorf("invalid AVM version prefix")
 	}
+	modes := []branchEncoding{branchEncodingFixed}
+	if version >= 13 {
+		// FNet's pre-release TEAL v13 compiler uses the historical fixed-width
+		// branch encoding, while the finalized upstream v13 assembler uses
+		// signed varints. The bytecode has no encoding marker, so validate the
+		// complete bounded contract under each recognized v13 encoding.
+		modes = []branchEncoding{branchEncodingVarint, branchEncodingFixed}
+	}
+	var failures []string
+	for _, mode := range modes {
+		parsed, err := decodeProgram(bytecode, mode)
+		if err == nil {
+			err = validateDecoded(parsed, expected)
+		}
+		if err == nil {
+			return nil
+		}
+		failures = append(failures, mode.String()+": "+err.Error())
+	}
+	return fmt.Errorf("bounded1 program validation failed (%s)", strings.Join(failures, "; "))
+}
+
+func validateDecoded(parsed disassembly, expected Expected) error {
 	if parsed.version != bounded1ContractManifest.TEALVersion {
 		return fmt.Errorf("bounded1 program version %d invalid (expected %d)", parsed.version, bounded1ContractManifest.TEALVersion)
 	}
@@ -320,7 +345,21 @@ type disassembly struct {
 	labels       map[string]int
 }
 
-func decodeProgram(program []byte) (disassembly, error) {
+type branchEncoding uint8
+
+const (
+	branchEncodingFixed branchEncoding = iota
+	branchEncodingVarint
+)
+
+func (encoding branchEncoding) String() string {
+	if encoding == branchEncodingVarint {
+		return "varint branches"
+	}
+	return "fixed-width branches"
+}
+
+func decodeProgram(program []byte, branchEncoding branchEncoding) (disassembly, error) {
 	version, versionBytes := binary.Uvarint(program)
 	if versionBytes <= 0 {
 		return disassembly{}, fmt.Errorf("invalid AVM version prefix")
@@ -331,9 +370,18 @@ func decodeProgram(program []byte) (disassembly, error) {
 	pcToIndex := make(map[int]int)
 	for pc := versionBytes; pc < len(program); {
 		opcode := program[pc]
-		size := int(avmV12OpcodeSizes[opcode])
+		size := int(avmOpcodeSizes[opcode])
 		if size == invalidOpcodeSize {
-			return disassembly{}, fmt.Errorf("invalid AVM v12 opcode 0x%02x at pc %d", opcode, pc)
+			previous := "program start"
+			if count := len(result.instructions); count != 0 {
+				last := result.instructions[count-1]
+				previous = fmt.Sprintf("%s at pc %d", last.name, last.pc)
+			}
+			from, to := max(0, pc-8), min(len(program), pc+9)
+			return disassembly{}, fmt.Errorf(
+				"invalid AVM v%d opcode 0x%02x at pc %d after %s (bytes %d:%d = %x)",
+				result.version, opcode, pc, previous, from, to, program[from:to],
+			)
 		}
 		inst := instruction{pc: pc, name: fmt.Sprintf("op_%02x", opcode)}
 		var err error
@@ -355,6 +403,15 @@ func decodeProgram(program []byte) (disassembly, error) {
 		case 0x8d, 0x8e:
 			size, inst.args, err = decodeBranchVector(program, pc)
 			inst.name = fixedOpcodeNames[opcode]
+		case 0x40, 0x41, 0x42, 0x88:
+			if result.version >= 13 && branchEncoding == branchEncodingVarint {
+				size, inst.args, err = decodeVarintBranch(program, pc)
+				inst.name = fixedOpcodeNames[opcode]
+			} else if pc+size > len(program) {
+				err = fmt.Errorf("instruction at pc %d exceeds program", pc)
+			} else {
+				inst, err = decodeFixedInstruction(program, pc, size, intConstants, byteConstants)
+			}
 		default:
 			if pc+size > len(program) {
 				err = fmt.Errorf("instruction at pc %d exceeds program", pc)
@@ -391,6 +448,27 @@ func decodeProgram(program []byte) (disassembly, error) {
 		}
 	}
 	return result, nil
+}
+
+func decodeVarintBranch(program []byte, pc int) (int, []string, error) {
+	if pc < 0 || pc+1 >= len(program) {
+		return 0, nil, fmt.Errorf("invalid varint branch at pc %d", pc)
+	}
+	offset, used := binary.Varint(program[pc+1:])
+	if used <= 0 {
+		return 0, nil, fmt.Errorf("invalid varint branch at pc %d", pc)
+	}
+	size := 1 + used
+	var target int64
+	if offset < 0 {
+		target = int64(pc) + offset
+	} else {
+		target = int64(pc+size) + offset
+	}
+	if target < 0 || target > int64(len(program)) {
+		return 0, nil, fmt.Errorf("varint branch at pc %d targets outside program", pc)
+	}
+	return size, []string{strconv.FormatInt(target, 10)}, nil
 }
 
 func decodeFixedInstruction(program []byte, pc, size int, ints []uint64, byteArrays [][]byte) (instruction, error) {

@@ -14,18 +14,26 @@ import (
 )
 
 type testProgramBuilder struct {
-	program []byte
-	labels  map[string]int
-	fixups  map[int]testProgramFixup
+	program        []byte
+	labels         map[string]int
+	fixups         map[int]testProgramFixup
+	varintBranches bool
 }
 
 type testProgramFixup struct {
-	label string
-	base  int
+	label  string
+	base   int
+	pc     int
+	varint bool
 }
 
-func newTestProgramBuilder() *testProgramBuilder {
-	return &testProgramBuilder{program: []byte{byte(bounded1ContractManifest.TEALVersion)}, labels: map[string]int{}, fixups: map[int]testProgramFixup{}}
+func newTestProgramBuilderWithBranches(varintBranches bool) *testProgramBuilder {
+	return &testProgramBuilder{
+		program:        []byte{byte(bounded1ContractManifest.TEALVersion)},
+		labels:         map[string]int{},
+		fixups:         map[int]testProgramFixup{},
+		varintBranches: varintBranches,
+	}
 }
 
 func (b *testProgramBuilder) op(opcode byte, immediate ...byte) {
@@ -56,8 +64,15 @@ func (b *testProgramBuilder) label(name string) { b.labels[name] = len(b.program
 
 func (b *testProgramBuilder) branch(opcode byte, label string) {
 	pc := len(b.program)
-	b.op(opcode, 0, 0)
-	b.fixups[pc+1] = testProgramFixup{label: label, base: pc + 3}
+	if !b.varintBranches {
+		b.op(opcode, 0, 0)
+		b.fixups[pc+1] = testProgramFixup{label: label, base: pc + 3}
+		return
+	}
+	// Fixed-width overlong encodings keep test label positions stable while
+	// exercising TEAL v13's signed-varint branch decoder.
+	b.op(opcode, 0x80, 0x80, 0x80, 0x80, 0)
+	b.fixups[pc+1] = testProgramFixup{label: label, base: pc + 6, pc: pc, varint: true}
 }
 
 func (b *testProgramBuilder) branchVector(opcode byte, labels ...string) {
@@ -79,9 +94,28 @@ func (b *testProgramBuilder) finish(t *testing.T) []byte {
 			t.Fatalf("missing label %q", fixup.label)
 		}
 		offset := target - fixup.base
+		if fixup.varint {
+			if target < fixup.pc {
+				offset = target - fixup.pc
+			}
+			putFixedVarint5(b.program[offsetAt:offsetAt+5], int64(offset))
+			continue
+		}
 		binary.BigEndian.PutUint16(b.program[offsetAt:offsetAt+2], uint16(int16(offset)))
 	}
 	return b.program
+}
+
+func putFixedVarint5(dst []byte, value int64) {
+	u := uint64(value) << 1
+	if value < 0 {
+		u = uint64(^value)<<1 | 1
+	}
+	for i := 0; i < 4; i++ {
+		dst[i] = byte(u) | 0x80
+		u >>= 7
+	}
+	dst[4] = byte(u)
 }
 
 func testExpectedProgram(t *testing.T) ([]byte, Expected) {
@@ -107,6 +141,10 @@ func testExpectedSentryProgram(t *testing.T) ([]byte, Expected) {
 }
 
 func testExpectedProgramWithOptions(t *testing.T, adminArgIndex int, withSentry bool, layer3 func(*testProgramBuilder)) ([]byte, Expected) {
+	return testExpectedProgramWithBranchEncoding(t, adminArgIndex, withSentry, true, layer3)
+}
+
+func testExpectedProgramWithBranchEncoding(t *testing.T, adminArgIndex int, withSentry, varintBranches bool, layer3 func(*testProgramBuilder)) ([]byte, Expected) {
 	t.Helper()
 	spendingKey := make([]byte, 1793)
 	adminKey := make([]byte, 1793)
@@ -125,7 +163,7 @@ func testExpectedProgramWithOptions(t *testing.T, adminArgIndex int, withSentry 
 		t.Fatal(err)
 	}
 
-	b := newTestProgramBuilder()
+	b := newTestProgramBuilderWithBranches(varintBranches)
 	// Falcon spending authentication.
 	b.op(0x31, 23)
 	b.op(0x2d)
@@ -330,6 +368,16 @@ func TestValidateAcceptsFrozenStructure(t *testing.T) {
 	program, expected := testExpectedProgram(t)
 	if err := Validate(program, expected); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidateAcceptsDeployedFNetV13FixedWidthBranches(t *testing.T) {
+	program, expected := testExpectedProgramWithBranchEncoding(t, 1, false, false, func(b *testProgramBuilder) {
+		b.pushInt(1)
+		b.branch(0x42, "accept")
+	})
+	if err := Validate(program, expected); err != nil {
+		t.Fatalf("Validate() rejected deployed FNet branch encoding: %v", err)
 	}
 }
 
