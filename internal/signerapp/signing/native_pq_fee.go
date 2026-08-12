@@ -157,10 +157,23 @@ func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, net
 	}
 	targets := make([]int, 0, len(budgets))
 	seen := make(map[int]bool, len(budgets))
+	preferred := make(map[int]bool, len(preferredTargets))
+	for _, index := range preferredTargets {
+		preferred[index] = true
+	}
 	addTarget := func(index int) {
 		if index >= 0 && index < len(budgets) && budgets[index].mutable && !seen[index] {
 			seen[index] = true
 			targets = append(targets, index)
+		}
+	}
+	// A top-level native-PQ authorization creates its own fee contribution.
+	// Prefer that signer-controlled slot before LogicSig participants so an
+	// external native-PQ sponsor does not invalidate a LogicSig's compiled fee
+	// ceiling. A delegated PQ LogicSig remains in the ordinary LogicSig order.
+	for i, budget := range budgets {
+		if budget.pqScheme == nativefalcon.Scheme && !preferred[i] {
+			addTarget(i)
 		}
 	}
 	for _, index := range preferredTargets {

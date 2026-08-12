@@ -70,10 +70,13 @@ not a microAlgo value. Native Falcon's scheme contribution is also a factor;
 the ordinary transaction base must not be counted twice.
 
 If a deficit remains, APlane distributes it across mutable signer-controlled
-transactions, preferring the LogicSig participants identified by resource
-planning. Any remainder is assigned deterministically. Existing pooled fees
-count toward the requirement; APlane does not add a second copy of a fee the
-caller has already paid.
+transactions. A top-level native-PQ slot outside the LogicSig participant set
+is preferred first because that authorization creates its own PQ fee
+contribution; this also lets an explicit native-PQ sponsor preserve a
+LogicSig's compiled fee ceiling. LogicSig participants identified by resource
+planning follow, then any remaining mutable slots. Any remainder is assigned
+deterministically. Existing pooled fees count toward the requirement; APlane
+does not add a second copy of a fee the caller has already paid.
 
 Foreign unsigned entries with `lsig_resources` contribute to resource and fee
 planning but are not mutated. Passthrough entries are immutable signed bytes.

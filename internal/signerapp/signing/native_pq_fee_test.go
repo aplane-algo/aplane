@@ -133,6 +133,38 @@ func TestApplyGroupFeesUsesExistingPooledFees(t *testing.T) {
 	}
 }
 
+func TestApplyGroupFeesChargesTopLevelNativePQBeforeLogicSig(t *testing.T) {
+	fnet := PlannerNetworkParams{MinTxnFee: 1_000, ConsensusVersion: string(protocol.ConsensusVFnet5)}
+	txns := []types.Transaction{
+		{Type: types.PaymentTx, Header: types.Header{Fee: 1_000}},
+		{Type: types.PaymentTx, Header: types.Header{Fee: 1_000}},
+	}
+	info, err := applyGroupFees(
+		txns,
+		[]authorizationBudget{{mutable: true}, {pqScheme: nativefalcon.Scheme, mutable: true}},
+		fnet,
+		lsigresource.Plan{TransactionCount: 2, GroupSize: 2},
+		0,
+		[]int{0},
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.TotalFees != 2_000 {
+		t.Fatalf("fee delta = %d, want 2000", info.TotalFees)
+	}
+	if got := uint64(txns[0].Fee); got != 1_000 {
+		t.Fatalf("LogicSig fee = %d, want preserved fee 1000", got)
+	}
+	if got := uint64(txns[1].Fee); got != 3_000 {
+		t.Fatalf("native-PQ sponsor fee = %d, want 3000", got)
+	}
+	if len(info.FeeIndices) != 1 || info.FeeIndices[0] != 1 {
+		t.Fatalf("fee indices = %v, want [1]", info.FeeIndices)
+	}
+}
+
 func TestAuthorizationBudgetsRecognizePassthroughPQ(t *testing.T) {
 	proof := types.PQSig{Scheme: types.PQScheme{'f', '1'}, PublicKey: []byte{1}, Signature: []byte{2}}
 	for _, stxn := range []types.SignedTxn{
