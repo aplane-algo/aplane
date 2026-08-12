@@ -68,12 +68,20 @@ func (c *ASACache) setCachePayloadSchemaVersion(version int) {
 	c.SchemaVersion = version
 }
 
+func (c *ASACache) supportedCachePayloadSchemaVersion() int {
+	return cachePayloadSchemaVersion
+}
+
 func (c *AliasCache) cachePayloadSchemaVersion() int {
 	return c.SchemaVersion
 }
 
 func (c *AliasCache) setCachePayloadSchemaVersion(version int) {
 	c.SchemaVersion = version
+}
+
+func (c *AliasCache) supportedCachePayloadSchemaVersion() int {
+	return cachePayloadSchemaVersion
 }
 
 func (c *SignerCache) cachePayloadSchemaVersion() int {
@@ -84,12 +92,20 @@ func (c *SignerCache) setCachePayloadSchemaVersion(version int) {
 	c.SchemaVersion = version
 }
 
+func (c *SignerCache) supportedCachePayloadSchemaVersion() int {
+	return signerCachePayloadSchemaVersion
+}
+
 func (c *AuthAddressCache) cachePayloadSchemaVersion() int {
 	return c.SchemaVersion
 }
 
 func (c *AuthAddressCache) setCachePayloadSchemaVersion(version int) {
 	c.SchemaVersion = version
+}
+
+func (c *AuthAddressCache) supportedCachePayloadSchemaVersion() int {
+	return cachePayloadSchemaVersion
 }
 
 func (c *ASACache) bindStore(store *Store) {

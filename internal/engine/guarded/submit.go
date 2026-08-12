@@ -401,7 +401,7 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 		}
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
 		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex}
-		if err := applyForeignLogicSigHint(&requests[i], s.cache, effectiveSigner); err != nil {
+		if err := applyForeignAuthorizationHint(&requests[i], s.cache, effectiveSigner); err != nil {
 			return nil, fmt.Errorf("prepare foreign transaction %d: %w", i+1, err)
 		}
 	}
@@ -615,7 +615,7 @@ func applyForeignLogicSigPathHint(request *signerapi.SignRequest, cache SignerCa
 	return nil
 }
 
-func applyForeignLogicSigHint(request *signerapi.SignRequest, cache SignerCacheView, address string) error {
+func applyForeignAuthorizationHint(request *signerapi.SignRequest, cache SignerCacheView, address string) error {
 	if request == nil || cache == nil {
 		return fmt.Errorf("signer cache is unavailable")
 	}
@@ -625,6 +625,10 @@ func applyForeignLogicSigHint(request *signerapi.SignRequest, cache SignerCacheV
 	}
 	if kind == "" {
 		return fmt.Errorf("authorization metadata for %s is unavailable", address)
+	}
+	if kind == authorizationNativePQ {
+		request.PQScheme = signerapi.PQSchemeFalcon1024
+		return nil
 	}
 	if kind != authorizationLogicSig {
 		return nil

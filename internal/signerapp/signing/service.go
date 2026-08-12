@@ -234,6 +234,9 @@ func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID str
 }
 
 func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession, plan *PlanResult) (*SignGroupResult, *ServiceError) {
+	if err := rejectOrdinarySignKeyTypes(plan); err != nil {
+		return nil, err
+	}
 	allTxns := plan.AllTxns
 	txns := allTxns[:len(req.Requests)]
 	alwaysReviewRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, req, plan)
@@ -255,6 +258,18 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID strin
 		Signed:    execResult.SignedTxns,
 		Mutations: BuildMutationReport(plan, len(req.Requests)),
 	}, nil
+}
+
+func rejectOrdinarySignKeyTypes(plan *PlanResult) *ServiceError {
+	if plan == nil {
+		return internal("signing plan is nil")
+	}
+	for i, keyType := range plan.AuthKeyTypes {
+		if message, rejected := sentrySignRejectMessage(keyType); rejected {
+			return badRequest(fmt.Sprintf("transaction %d: %s", i+1, message))
+		}
+	}
+	return nil
 }
 
 func (s *Service) approveGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, plan *PlanResult) (string, func(), *ServiceError) {

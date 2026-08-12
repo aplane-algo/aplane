@@ -460,6 +460,35 @@ func TestSignerCache_LoadFromEmptyStore(t *testing.T) {
 	}
 }
 
+func TestSignerCache_LoadLegacySizeCacheReturnsEmpty(t *testing.T) {
+	store := NewStore(t.TempDir())
+	key, err := getOrCreateCacheKey(store)
+	if err != nil {
+		t.Fatalf("getOrCreateCacheKey() error = %v", err)
+	}
+	payloadBytes := []byte(`{"schema_version":1,"keys":{"ADDR":"aplane.falcon1024.v1"},"generic_lsigs":{},"lsig_sizes":{"ADDR":4000},"signing_args":{}}`)
+	signed := SignedCache{
+		Version: signedCacheEnvelopeVersion,
+		Data:    base64.StdEncoding.EncodeToString(payloadBytes),
+		HMAC:    signCacheData(payloadBytes, key),
+	}
+	raw, err := json.Marshal(signed)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(storePath(store, "signer_cache.json"), raw, 0o600); err != nil {
+		t.Fatalf("write legacy signer cache: %v", err)
+	}
+
+	loaded := LoadSignerCacheFromStore(store)
+	if loaded.Count() != 0 {
+		t.Fatalf("loaded signer count = %d, want empty cache requiring inventory refresh", loaded.Count())
+	}
+	if loaded.SchemaVersion != signerCachePayloadSchemaVersion {
+		t.Fatalf("loaded schema version = %d, want %d", loaded.SchemaVersion, signerCachePayloadSchemaVersion)
+	}
+}
+
 func TestSignerCache_LoadTamperedCacheReturnsEmpty(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewStore(tmpDir)

@@ -6,10 +6,12 @@ package engine
 import (
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -20,7 +22,9 @@ import (
 // dummy budgeting), so it is asserted directly.
 func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	addr := testAddress(1).String()
+	nativeFalconAddr := testAddress(2).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
+	nativefalcon.RegisterClient()
 
 	signerCache := cache.NewSignerCache()
 	signerCache.AddAddress(addr, keytypes.GuardedFalcon1024Sentry1024V1)
@@ -28,12 +32,16 @@ func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	signerCache.SetSentryComponentKeyTypeForAddress(addr, witness.Falcon1024V1)
 	signerCache.SetSentryPublicKeyForAddress(addr, sentryHex)
 	signerCache.SetLogicSigResourceProfile(addr, lsigresource.Profile{ProgramBytes: 1_500, Default: &lsigresource.PathProfile{MaxOpcodeCost: 1}})
+	signerCache.AddAddress(nativeFalconAddr, nativefalcon.KeyType)
 
 	eng, err := NewEngine("testnet", WithSignerCache(signerCache))
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 	view := guardedSignerCacheView{eng.Core}
+	if got, ok := view.AuthorizationKind(nativeFalconAddr); !ok || got != string(algorithm.AuthorizationNativePQ) {
+		t.Fatalf("AuthorizationKind(native Falcon) = %q/%v, want %s/true", got, ok, algorithm.AuthorizationNativePQ)
+	}
 
 	if got := view.SigningFlow(addr); got != signerapi.SigningFlowSentry1 {
 		t.Fatalf("SigningFlow() = %q, want %q", got, signerapi.SigningFlowSentry1)

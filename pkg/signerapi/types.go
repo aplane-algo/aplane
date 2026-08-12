@@ -6,6 +6,7 @@
 package signerapi
 
 import (
+	"encoding/json"
 	"fmt"
 )
 
@@ -69,6 +70,27 @@ type SignRequest struct {
 
 	// Passthrough mode field (transaction already signed externally)
 	SignedTxnHex string `json:"signed_txn_hex,omitempty"` // Already-signed transaction (msgpack, hex-encoded) - included as-is
+}
+
+// UnmarshalJSON rejects the retired combined LogicSig size hint. Silently
+// discarding it would turn an old foreign-slot declaration into a request with
+// no LogicSig resources and could freeze an under-budgeted group.
+func (r *SignRequest) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if _, retired := fields["lsig_size"]; retired {
+		return fmt.Errorf("sign request field %q is unsupported; use %q", "lsig_size", "lsig_resources")
+	}
+
+	type wire SignRequest
+	var decoded wire
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*r = SignRequest(decoded)
+	return nil
 }
 
 // AppCallInfo carries optional high-level app-call metadata from the caller to

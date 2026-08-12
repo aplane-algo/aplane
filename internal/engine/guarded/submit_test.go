@@ -488,6 +488,9 @@ func (v testCacheView) AuthorizationKind(address string) (string, bool) {
 	if keyType == "ed25519" {
 		return "ed25519", true
 	}
+	if keyType == "falcon1024" {
+		return authorizationNativePQ, true
+	}
 	return "", true
 }
 

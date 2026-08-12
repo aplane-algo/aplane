@@ -15,7 +15,7 @@ import (
 // NewSignerCache creates an empty SignerCache
 func NewSignerCache() SignerCache {
 	cache := SignerCache{
-		SchemaVersion:           cachePayloadSchemaVersion,
+		SchemaVersion:           signerCachePayloadSchemaVersion,
 		Keys:                    make(map[string]string),
 		GenericLsigs:            make(map[string]bool),
 		LogicSigResources:       make(map[string]lsigresource.Profile),

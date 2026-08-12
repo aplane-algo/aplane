@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -25,6 +26,10 @@ func (p *testVersionedCachePayload) cachePayloadSchemaVersion() int {
 
 func (p *testVersionedCachePayload) setCachePayloadSchemaVersion(version int) {
 	p.SchemaVersion = version
+}
+
+func (p *testVersionedCachePayload) supportedCachePayloadSchemaVersion() int {
+	return cachePayloadSchemaVersion
 }
 
 func TestGetOrCreateCacheKeyPersistsPerStore(t *testing.T) {
@@ -203,7 +208,7 @@ func TestSaveSignedCacheWritesPayloadSchemaVersion(t *testing.T) {
 	}
 }
 
-func TestLoadSignedCacheDefaultsLegacyPayloadSchemaVersion(t *testing.T) {
+func TestLoadSignedCacheDefaultsMissingPayloadSchemaToV1(t *testing.T) {
 	store := NewStore(t.TempDir())
 	filename := storePath(store, "legacy-versioned.json")
 
@@ -229,11 +234,8 @@ func TestLoadSignedCacheDefaultsLegacyPayloadSchemaVersion(t *testing.T) {
 	if err := LoadSignedCache(filename, key, &loaded); err != nil {
 		t.Fatalf("LoadSignedCache() error = %v", err)
 	}
-	if loaded.Value != "legacy" {
-		t.Fatalf("loaded.Value = %q, want legacy", loaded.Value)
-	}
-	if loaded.SchemaVersion != cachePayloadSchemaVersion {
-		t.Fatalf("loaded.SchemaVersion = %d, want %d", loaded.SchemaVersion, cachePayloadSchemaVersion)
+	if loaded.Value != "legacy" || loaded.SchemaVersion != cachePayloadSchemaVersion {
+		t.Fatalf("loaded payload = %#v, want legacy v1 payload", loaded)
 	}
 }
 
@@ -277,7 +279,7 @@ func TestLoadSignedCacheRejectsUnsupportedPayloadSchemaVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getOrCreateCacheKey() error = %v", err)
 	}
-	payloadBytes := []byte(`{"schema_version":2,"value":"future"}`)
+	payloadBytes := []byte(fmt.Sprintf(`{"schema_version":%d,"value":"future"}`, cachePayloadSchemaVersion+1))
 	signed := SignedCache{
 		Version: signedCacheEnvelopeVersion,
 		Data:    base64.StdEncoding.EncodeToString(payloadBytes),

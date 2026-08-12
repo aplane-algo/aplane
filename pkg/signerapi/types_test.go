@@ -4,9 +4,18 @@
 package signerapi
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+func TestSignRequestRejectsRetiredLogicSigSize(t *testing.T) {
+	var request GroupSignRequest
+	err := json.Unmarshal([]byte(`{"requests":[{"txn_bytes_hex":"deadbeef","lsig_size":4000}]}`), &request)
+	if err == nil || !strings.Contains(err.Error(), `field "lsig_size" is unsupported`) {
+		t.Fatalf("json.Unmarshal() error = %v, want retired lsig_size rejection", err)
+	}
+}
 
 func TestSignRequestMode(t *testing.T) {
 	tests := []struct {

@@ -102,6 +102,40 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	}
 }
 
+func TestBuildBoundedComponentRequestsDeclaresForeignNativeFalcon(t *testing.T) {
+	guarded := testAddress(1).String()
+	nativeFalcon := testAddress(2).String()
+	sentryHex := testSentryPublicKeyHex(0xd6)
+	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
+		setTestLogicSigResources(c, guarded, 1_500)
+		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
+		c.AddAddress(nativeFalcon, "falcon1024")
+	})
+
+	txns := []types.Transaction{
+		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(2), testAddress(5), "native-falcon"),
+	}
+	requests, err := s.buildBoundedComponentRequests(
+		txns,
+		map[int]guardedTarget{0: guardedTargetForTest(guarded, sentryHex)},
+		clientsign.SubmitOptions{},
+	)
+	if err != nil {
+		t.Fatalf("buildBoundedComponentRequests() error = %v", err)
+	}
+	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign {
+		t.Fatalf("native Falcon request mode = %q, want foreign", mode)
+	}
+	if got := requests[1].PQScheme; got != signerapi.PQSchemeFalcon1024 {
+		t.Fatalf("native Falcon pq_scheme = %q, want %q", got, signerapi.PQSchemeFalcon1024)
+	}
+	if requests[1].LsigResources != nil {
+		t.Fatalf("native Falcon lsig_resources = %#v, want nil", requests[1].LsigResources)
+	}
+}
+
 func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T) {
 	sender := testAddress(4).String()
 	guardedAuthorizer := testAddress(1).String()

@@ -22,7 +22,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
-const authorizationLogicSig = "logic_sig"
+const (
+	authorizationLogicSig = "logic_sig"
+	authorizationNativePQ = "native_pq"
+)
 
 // SignerCacheView is the read-only view of the signer key cache that guarded
 // orchestration needs: per-address signer-advertised metadata used to detect

@@ -133,7 +133,9 @@ The signer derives authorization shape for locally held keys and from the
 envelope of passthrough transactions. An unsigned foreign native-PQ slot must
 declare `pq_scheme:"f1"` so pooled protocol fees are correct. A LogicSig slot
 instead declares `lsig_resources` with `program_bytes`, `argument_bytes`, and
-`max_opcode_cost`; the two authorization hints are mutually exclusive.
+`max_opcode_cost`; the two authorization hints are mutually exclusive. The
+retired combined `lsig_size` field is rejected explicitly rather than ignored,
+because silently dropping it would understate foreign LogicSig resources.
 
 `txn_sender` is an advisory display hint for clients. Signer authority,
 policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
@@ -157,7 +159,13 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 
 - Both endpoints accept the same per-entry modes; mixing passthrough and foreign in one request is invalid, and all-foreign requests are rejected on both endpoints.
 - `/plan` performs canonical group building only. It never touches keys and returns canonical unsigned transactions in `transactions[]`.
-- `/sign` performs canonical group building plus approval/signing. Transaction-level hard policy is applied only to signer-controlled slots; passthrough and foreign entries contribute to group consistency, approval context, warning analysis, and audit visibility.
+- `/sign` performs canonical group building plus approval/signing.
+  Signer-controlled guarded account keys are rejected before approval because
+  they require the guarded component/assembly endpoints; `/plan` may admit
+  them to freeze those guarded workflows. Transaction-level hard policy is
+  applied only to signer-controlled slots; passthrough and foreign entries
+  contribute to group consistency, approval context, warning analysis, and
+  audit visibility.
 - `/sign/bounded-admin` performs the same planning, policy, forced review, group
   finalization, and spending-key signing for one admin-key-authorized pure
   rekey, then returns a typed partial for external contract-admin completion.

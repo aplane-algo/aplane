@@ -1052,7 +1052,13 @@ Additional client-state notes:
 - remote `apadmin` has the same client enrollment prerequisite as `apconsole`: it requires a default signer endpoint, the endpoint token, and a trusted signer host in the endpoint `known_hosts_path`; it does not prompt for first-use host trust
 - shared non-interactive client-enrollment preflight lives in `internal/clientenroll/preflight.go` and is used by `apshell --mcp`, remote-mode `apconsole`, and remote `apadmin`
 - tombstones suppress locally deleted proposals for that local actor
-- cache files are signed JSON with a per-client `.cache_key` and are local, rebuildable client state; the signed envelope has `version: 1`, and versioned cache payloads carry `schema_version: 1`; a missing payload version is interpreted as v1
+- cache files are signed JSON with a per-client `.cache_key` and are local,
+  rebuildable client state. The signed envelope has `version: 1`; alias, set,
+  ASA, and auth-address payloads carry `schema_version: 1`, while
+  `signer_cache.json` carries `schema_version: 2` for structured LogicSig
+  resources. A missing payload version is interpreted as v1. The signer cache
+  therefore rejects a missing or v1 payload and rebuilds it from authenticated
+  signer inventory without invalidating unrelated client caches.
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
   inventory. It may persist address key types, generic-LogicSig flags,
   structured `logic_sig_resources`, key-file signing argument schemas,
@@ -1707,7 +1713,8 @@ algod that reports another contract before constructing transactions.
 The signer derives this authorization budget from local key metadata or a
 passthrough `PQsig`. An unsigned foreign native-PQ slot in `/plan` or `/sign`
 declares `pq_scheme: "f1"`; this hint is mutually exclusive with the structured
-`lsig_resources` hint used by foreign LogicSig slots.
+`lsig_resources` hint used by foreign LogicSig slots. The retired combined
+`lsig_size` HTTP field is rejected explicitly rather than silently discarded.
 
 `aplane.falcon1024.v1` remains a LogicSig DSA with a 24-word BIP-39 mnemonic
 and TEAL authorization, but its pre-release derivation moved in place to TEAL
