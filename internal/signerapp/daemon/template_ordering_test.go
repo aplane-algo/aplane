@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -64,6 +65,9 @@ teal: |
 			ByteLength: 32,
 		}}
 		payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "#pragma version 6\nint 1", signingArgs, "")
+		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
+			return profileErr
+		}
 		result, saveErr := keys.SavePayload(server.keyPaths, auth.DefaultIdentityID, payload, masterKey)
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)

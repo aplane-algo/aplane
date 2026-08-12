@@ -88,6 +88,13 @@ func TestGenericFingerprintBehaviorSensitive(t *testing.T) {
 		yaml string
 	}{
 		{
+			name: "opcode ceiling",
+			yaml: strings.Replace(fingerprintBaseYAML,
+				"template_mode: strict",
+				"template_mode: strict\nmax_opcode_cost: 12345",
+				1),
+		},
+		{
 			name: "teal",
 			yaml: strings.Replace(fingerprintBaseYAML, "int 32", "int 64", 1),
 		},
@@ -106,10 +113,12 @@ func TestGenericFingerprintBehaviorSensitive(t *testing.T) {
 				1),
 		},
 		{
+			// The base YAML omits derivation_version; adding the one supported
+			// contract must still move the fingerprint.
 			name: "derivation_version",
 			yaml: strings.Replace(fingerprintBaseYAML,
 				"schema_version: 1",
-				"schema_version: 1\nderivation_version: 1",
+				"schema_version: 1\nderivation_version: 3",
 				1),
 		},
 	}

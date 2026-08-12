@@ -24,7 +24,6 @@ import (
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -37,6 +36,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
@@ -247,16 +247,12 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 }
 
 func TestServiceGenerateBoundedSentryFromReference(t *testing.T) {
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	lsigprovider.ConfigureAlgodClient(client)
+	configureFalconCompileMock(t)
 	ir := setupIdentityRuntime(t)
 	const keyType = "test.falcon1024-bounded-sentry-keyadmin.v1"
 	spec, err := composeddsa.ParseTemplateSpec([]byte(`
 schema_version: 2
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
@@ -641,6 +637,9 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	address := logicSigAddressString(t, bytecode)
 	payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "", nil, "1:"+strings.Repeat("b", 64))
+	if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
+		t.Fatal(err)
+	}
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		result, saveErr := keys.SavePayload(ir.KeyPaths(), ir.ID(), payload, mk)
 		if saveErr == nil && result.Address != address {

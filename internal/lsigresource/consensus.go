@@ -39,6 +39,11 @@ var supportedSizingModes = map[protocol.ConsensusVersion]SizingMode{
 	protocol.ConsensusV41:    SizingModeLegacyCombined,
 	protocol.ConsensusV42:    SizingModePricedProgram,
 	protocol.ConsensusVFnet5: SizingModePricedProgram,
+	// ConsensusFuture is what a development LocalNet reports. The SDK defines
+	// it as v42 with a higher LogicSigVersion, so it prices programs the same
+	// way; omitting it makes every LogicSig unplannable on LocalNet while
+	// ed25519 keeps working.
+	protocol.ConsensusFuture: SizingModePricedProgram,
 }
 
 // ResolveConsensus returns a fail-closed profile for a specifically supported

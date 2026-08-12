@@ -37,6 +37,12 @@ type DummyFeeInfo struct {
 type PlannerNetworkParams struct {
 	MinTxnFee        uint64
 	ConsensusVersion string
+	// ConsensusUnavailable explains why ConsensusVersion is empty. Fee
+	// planning tolerates an empty version by falling back to the default min
+	// fee, but LogicSig resource planning cannot: sizing mode and program
+	// pricing are consensus-defined. Carrying the reason keeps the resulting
+	// refusal actionable instead of reporting an empty consensus name.
+	ConsensusUnavailable string
 }
 
 // PlanResult contains the output of group-building shared by /sign and /plan.

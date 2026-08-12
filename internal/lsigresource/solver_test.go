@@ -37,6 +37,13 @@ func TestResolveConsensusUsesClosedSizingModes(t *testing.T) {
 	if fnet.SizingMode != SizingModePricedProgram {
 		t.Fatalf("fnet5 sizing mode = %d", fnet.SizingMode)
 	}
+	// A development LocalNet reports "future". Without it every LogicSig is
+	// unplannable there while ed25519 keeps working, which reads as a key-type
+	// bug rather than a missing consensus entry.
+	future := mustProfile(t, protocol.ConsensusFuture)
+	if future.SizingMode != SizingModePricedProgram || future.PerByteTxnSurcharge != 100 {
+		t.Fatalf("future profile = %#v", future)
+	}
 	if _, err := ResolveConsensus("future-unreviewed"); !errors.Is(err, ErrUnknownConsensus) {
 		t.Fatalf("ResolveConsensus(unknown) error = %v", err)
 	}

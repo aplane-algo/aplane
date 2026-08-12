@@ -82,7 +82,7 @@ func TestBundledCorridorV1Contract(t *testing.T) {
 	hash := sha256.Sum256([]byte(teal))
 	gotHash := hex.EncodeToString(hash[:])
 	gotFingerprint := provider.CompatibilityFingerprint()
-	if gotFingerprint != "1:f6bfd830ddbb3ce750a2c06b3a9831ec4ab36f3841f77610da8d4745ca09d45d" || gotHash != "94812b576a1f729e1f1fa063730288476a2fe9c29b733ca4be1b87028a9ec3a6" {
+	if gotFingerprint != "1:3dfda4de78223ea2c1dde50f33e14cf527f0acbc795a68a7d3d4f59e04265131" || gotHash != "94812b576a1f729e1f1fa063730288476a2fe9c29b733ca4be1b87028a9ec3a6" {
 		t.Fatalf("Corridor goldens: fingerprint %q; TEAL SHA-256 %q", gotFingerprint, gotHash)
 	}
 }

@@ -129,6 +129,7 @@ func NewProviderFromTemplateSpec(spec *TemplateSpec) (*ComposedDSA, error) {
 		DerivedArgs:        boundedDerivedArgsFromTemplate(spec.Bounded),
 		Bounded:            bounded,
 		Layer3:             layer3,
+		OpcodeProfile:      spec.LogicSigOpcodeProfile(bounded != nil),
 	}), nil
 }
 

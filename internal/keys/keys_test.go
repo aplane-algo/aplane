@@ -697,6 +697,7 @@ func TestScanKeysDirectoryWithKeyringLoadsGenericUnderDerivedAddress(t *testing.
 		"category": "generic_lsig",
 		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
+		"lsig_opcode_profile": {"default": 20000},
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
@@ -726,6 +727,7 @@ func TestScanKeysDirectoryWithKeyringRejectsGenericFilenameAddressMismatch(t *te
 		"category": "generic_lsig",
 		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
+		"lsig_opcode_profile": {"default": 20000},
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"

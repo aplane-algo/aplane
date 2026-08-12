@@ -151,7 +151,7 @@ func TestFixedAllowlistPolicyRejectsLayer3GatedRekeyWithoutPay(t *testing.T) {
 
 func TestLayer3SchemaRejectsUnknownNestedField(t *testing.T) {
 	_, err := ParseTemplateSpec([]byte(`schema_version: 2
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: generated

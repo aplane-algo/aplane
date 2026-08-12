@@ -192,7 +192,6 @@ func NewAutoSaltedDSALSigPayload(
 	p := NewDSALSigPayload(keyType, baseKeyType, publicKey, privateKey, parameters, bytecode, 0, tealSource, signingArgs, templateFingerprint)
 	p.SaltCounter = nil
 	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
-	p.LogicSigOpcodeProfile = lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
 	return p
 }
 
@@ -234,8 +233,22 @@ func NewAutoSaltedGenericLSigPayload(
 	p := NewGenericLSigPayload(keyType, parameters, bytecode, 0, tealSource, signingArgs, templateFingerprint)
 	p.SaltCounter = nil
 	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
-	p.LogicSigOpcodeProfile = lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
 	return p
+}
+
+// SetLogicSigOpcodeProfile attaches an independently reviewed (or explicitly
+// conservative) opcode profile to a newly generated LogicSig payload. Generic
+// constructors intentionally leave this field empty because bytecode and salt
+// style do not prove a program's worst-case execution cost.
+func (p *Payload) SetLogicSigOpcodeProfile(profile lsigresource.OpcodeProfile, bounded bool) error {
+	if p == nil {
+		return incompatibleKeyFormat("key payload is nil")
+	}
+	if err := profile.Validate(bounded); err != nil {
+		return incompatibleKeyFormat("invalid lsig_opcode_profile: %v", err)
+	}
+	p.LogicSigOpcodeProfile = profile
+	return nil
 }
 
 // SetBoundedAuthorization attaches a validated bounded signing contract and
@@ -250,12 +263,10 @@ func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error 
 	if err := metadata.Validate(); err != nil {
 		return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
 	}
+	if err := p.LogicSigOpcodeProfile.Validate(true); err != nil {
+		return incompatibleKeyFormat("bounded authorization requires a reviewed bounded opcode profile: %v", err)
+	}
 	p.BoundedAuthorization = boundedmeta.Clone(metadata)
-	p.LogicSigOpcodeProfile = lsigresource.BoundedOpcodeProfile(
-		lsigresource.SingleTransactionOpcodeCeiling,
-		lsigresource.SingleTransactionOpcodeCeiling,
-		lsigresource.SingleTransactionOpcodeCeiling,
-	)
 	p.SigningMetadataVersion = BoundedSigningMetadataVersion
 	// Bounded metadata owns the complete argument contract. Legacy signing_args
 	// must not survive the upgrade or provide a second caller-controlled layout.

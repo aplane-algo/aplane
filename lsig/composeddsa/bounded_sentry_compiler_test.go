@@ -25,7 +25,7 @@ func TestBoundedSentryCompilerGolden(t *testing.T) {
 	falcon1024.RegisterClient()
 	spec, err := composeddsa.ParseTemplateSpec([]byte(`
 schema_version: 2
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
@@ -99,11 +99,16 @@ teal: |
 	}); err != nil {
 		t.Fatalf("Validate(compiled bounded sentry) error = %v", err)
 	}
+	// Golden moved when derivation_version 2 was retired: under the v13
+	// auto-salt contract finishSaltedTEAL appends no counter-byte trailer, so
+	// the emitted TEAL loses exactly the trailing comment and `bytecblock 0x00`.
 	hash := sha256.Sum256([]byte(teal))
-	if got, want := hex.EncodeToString(hash[:]), "96de55303aabf531166ae54870f0f345bebf1b3626cb7bc76b053dce98252003"; got != want {
+	if got, want := hex.EncodeToString(hash[:]), "b747f4a983896901af9ac8229263407e4790516e38a7cae00afa7d5877c2ba0b"; got != want {
 		t.Fatalf("TEAL SHA-256 = %s, want %s", got, want)
 	}
-	if got, want := len(bytecode), 5_673; got != want {
+	// 4 bytes smaller than the retired v2 golden: bytecblock opcode, element
+	// count, element length, and the single salt byte.
+	if got, want := len(bytecode), 5_669; got != want {
 		t.Fatalf("compiled bytecode size = %d, want %d; TEAL SHA-256 %x", got, want, hash)
 	}
 	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 2_846; got != want {

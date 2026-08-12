@@ -130,6 +130,64 @@ func TestCalculateLogicSigResourcesV42SeparatesProgramArgumentsAndOpcode(t *test
 	}
 }
 
+// An unreachable or unconfigured algod leaves the consensus version empty.
+// LogicSig planning must refuse, but the refusal has to name the cause: the
+// bare `consensus ""` form sent operators looking for a key-type bug.
+func TestCalculateLogicSigResourcesExplainsMissingConsensus(t *testing.T) {
+	profile := lsigresource.Profile{
+		ProgramBytes: 4_500,
+		Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 39_999},
+	}
+	snapshot := PlannerIdentitySnapshot{
+		KeyMetadata: map[string]PlannerKeyMetadata{"LSIG": {LogicSigResources: &profile}},
+	}
+	_, _, err := calculateLogicSigResources(
+		nil,
+		snapshot,
+		"default",
+		[]signerapi.SignRequest{{AuthAddress: "LSIG"}},
+		[]types.Transaction{{}},
+		nil,
+		map[int]bool{},
+		map[int]bool{},
+		nil,
+		PlannerNetworkParams{ConsensusUnavailable: `no algod server is configured for network "testnet"`},
+		false,
+		false,
+	)
+	if err == nil {
+		t.Fatal("calculateLogicSigResources() error = nil, want refusal")
+	}
+	if !strings.Contains(err.Error(), `no algod server is configured for network "testnet"`) {
+		t.Fatalf("calculateLogicSigResources() error = %v, want the algod reason", err)
+	}
+	if strings.Contains(err.Error(), `consensus ""`) {
+		t.Fatalf("calculateLogicSigResources() error = %v, still reports an empty consensus name", err)
+	}
+}
+
+// A group with no LogicSig entries never needs a consensus profile, so an
+// unavailable algod must not block ordinary ed25519 signing.
+func TestCalculateLogicSigResourcesAllowsNonLogicSigGroupWithoutConsensus(t *testing.T) {
+	_, _, err := calculateLogicSigResources(
+		nil,
+		PlannerIdentitySnapshot{},
+		"default",
+		[]signerapi.SignRequest{{AuthAddress: "ED25519"}},
+		[]types.Transaction{{}},
+		nil,
+		map[int]bool{},
+		map[int]bool{},
+		nil,
+		PlannerNetworkParams{ConsensusUnavailable: "algod unreachable"},
+		false,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("calculateLogicSigResources() error = %v, want success", err)
+	}
+}
+
 func TestCalculateLogicSigResourcesRejectsOrphanPassthroughLogicSigFields(t *testing.T) {
 	encoded := msgpack.Encode(types.SignedTxn{
 		Lsig: types.LogicSig{Args: [][]byte{{1}}},

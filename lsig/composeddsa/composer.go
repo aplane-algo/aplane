@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -87,6 +88,7 @@ type Config struct {
 	DerivedArgs        []boundedmeta.DerivedArg
 	Bounded            *BoundedAuthorizationProfile
 	Layer3             *Layer3Policy
+	OpcodeProfile      lsigresource.OpcodeProfile
 }
 
 // ComposedDSA composes:
@@ -117,6 +119,7 @@ type ComposedDSA struct {
 	derivedArgs        []boundedmeta.DerivedArg
 	bounded            *BoundedAuthorizationProfile
 	layer3             *Layer3Policy
+	opcodeProfile      lsigresource.OpcodeProfile
 
 	// Algod client for TEAL compilation (must be set before DeriveLsig)
 	algodClient *algod.Client
@@ -131,6 +134,13 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 	}
 	params := append([]lsigprovider.ParameterDef(nil), cfg.Params...)
 	bounded := cloneBoundedProfile(cfg.Bounded)
+	opcodeProfile := cfg.OpcodeProfile
+	if opcodeProfile == (lsigresource.OpcodeProfile{}) {
+		opcodeProfile = lsigresource.ConservativeOpcodeProfile(bounded != nil)
+	}
+	if err := opcodeProfile.Validate(bounded != nil); err != nil {
+		panic("composeddsa: invalid opcode profile: " + err.Error())
+	}
 	if boundedRequiresAdminKey(bounded) && !hasParameter(params, BoundedAdminPublicKeyParameter) {
 		params = append(params, boundedAdminPublicKeyParameterDef())
 	}
@@ -155,6 +165,7 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 		derivedArgs:        append([]boundedmeta.DerivedArg(nil), cfg.DerivedArgs...),
 		bounded:            bounded,
 		layer3:             cloneLayer3Policy(cfg.Layer3),
+		opcodeProfile:      opcodeProfile,
 	}
 }
 
@@ -169,6 +180,11 @@ func (c *ComposedDSA) SetAlgodClient(client *algod.Client) {
 // KeyType returns the full identifier including version.
 func (c *ComposedDSA) KeyType() string {
 	return c.keyType
+}
+
+// LogicSigOpcodeProfile returns the provider-owned reviewed resource contract.
+func (c *ComposedDSA) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return c.opcodeProfile
 }
 
 // BaseKeyType returns the underlying DSA key type used for key generation and
@@ -383,6 +399,7 @@ func (c *ComposedDSA) buildBoundedSpendArgs(signatureArgs, runtimeArgs [][]byte)
 func (c *ComposedDSA) CompatibilityFingerprint() string {
 	type canonicalSpec struct {
 		BasePrimitive string                             `json:"base_primitive,omitempty"`
+		OpcodeProfile lsigresource.OpcodeProfile         `json:"opcode_profile"`
 		TEALSuffix    string                             `json:"teal_suffix"`
 		SaltStyle     string                             `json:"salt_style"`
 		TemplateMode  string                             `json:"template_mode,omitempty"`
@@ -410,6 +427,7 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 	}
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
 		BasePrimitive: lsigprovider.FingerprintBasePrimitive(c.baseKeyType),
+		OpcodeProfile: c.opcodeProfile,
 		TEALSuffix:    strings.TrimSpace(c.tealSuffix),
 		SaltStyle:     c.fingerprintSaltStyle(),
 		TemplateMode:  c.effectiveTemplateMode(),

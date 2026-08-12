@@ -21,6 +21,7 @@ import (
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -434,6 +435,9 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 		bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 		payload := apkeys.NewDSALSigPayload(keyType, keyType, []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
 		defer payload.ZeroSecrets()
+		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
+			return profileErr
+		}
 		_, saveErr := apkeys.SavePayload(server.keyPaths, ir.ID(), payload, masterKey)
 		return saveErr
 	}); err != nil {

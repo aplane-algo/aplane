@@ -16,6 +16,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
@@ -110,6 +111,12 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 
 func (p *Provider) RuntimeArgs() []lsigprovider.RuntimeArgDef {
 	return nil
+}
+
+// LogicSigOpcodeProfile is the reviewed worst-case ceiling for the fixed
+// guarded Falcon program, including both verification paths.
+func (p *Provider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
 }
 
 // BuildArgs assembles LogicSig args as:

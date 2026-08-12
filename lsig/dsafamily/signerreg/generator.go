@@ -138,6 +138,17 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	if provider != nil {
 		signingArgs = keys.StoreSigningArgs(provider.RuntimeArgs())
 	}
+	var boundedMetadata *boundedmeta.Metadata
+	if boundedProvider, ok := dsa.(boundedAuthorizationMetadataProvider); ok {
+		boundedMetadata, err = boundedProvider.BuildBoundedAuthorizationMetadata(pub, params, lsigBytecode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to capture bounded authorization metadata: %w", err)
+		}
+	}
+	opcodeProfile, err := lsigprovider.ResolveOpcodeProfile(dsa, boundedMetadata != nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve LogicSig opcode profile: %w", err)
+	}
 	var payload *keys.Payload
 	if derived.CompilerAutoSalted {
 		payload = keys.NewAutoSaltedDSALSigPayload(
@@ -151,15 +162,12 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 		)
 	}
 	defer payload.ZeroSecrets()
-	if boundedProvider, ok := dsa.(boundedAuthorizationMetadataProvider); ok {
-		metadata, err := boundedProvider.BuildBoundedAuthorizationMetadata(pub, params, lsigBytecode)
-		if err != nil {
-			return nil, fmt.Errorf("failed to capture bounded authorization metadata: %w", err)
-		}
-		if metadata != nil {
-			if err := payload.SetBoundedAuthorization(metadata); err != nil {
-				return nil, err
-			}
+	if err := payload.SetLogicSigOpcodeProfile(opcodeProfile, boundedMetadata != nil); err != nil {
+		return nil, err
+	}
+	if boundedMetadata != nil {
+		if err := payload.SetBoundedAuthorization(boundedMetadata); err != nil {
+			return nil, err
 		}
 	}
 

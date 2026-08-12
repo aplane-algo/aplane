@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -49,7 +50,7 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 		},
 		{
 			name: "dsa_lsig",
-			payload: NewDSALSigPayload(
+			payload: payloadWithOpcodeProfile(t, NewDSALSigPayload(
 				"test.dsa.v1",
 				"test.base.v1",
 				[]byte{0x01, 0x02},
@@ -60,16 +61,17 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 				"#pragma version 8\nint 1",
 				[]StoredSigningArg{{Name: "proof", Type: "bytes", Required: true}},
 				"1:test",
-			),
+			), false),
 			fields: []string{
 				"base_key_type", "category", "created_at", "format_version", "key_type",
-				"lsig_bytecode", "parameters", "private_key", "public_key", "salt_counter",
-				"signing_args", "signing_metadata_version", "teal_source", "template_fingerprint",
+				"lsig_bytecode", "lsig_opcode_profile", "parameters", "private_key", "public_key",
+				"salt_counter", "signing_args", "signing_metadata_version", "teal_source",
+				"template_fingerprint",
 			},
 		},
 		{
 			name: "generic_lsig",
-			payload: NewGenericLSigPayload(
+			payload: payloadWithOpcodeProfile(t, NewGenericLSigPayload(
 				"test.generic.v1",
 				map[string]string{"recipient": "ALICE"},
 				bytecode,
@@ -77,11 +79,11 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 				"#pragma version 8\nint 1",
 				nil,
 				"1:test",
-			),
+			), false),
 			fields: []string{
 				"category", "created_at", "format_version", "key_type", "lsig_bytecode",
-				"parameters", "salt_counter", "signing_metadata_version", "teal_source",
-				"template_fingerprint",
+				"lsig_opcode_profile", "parameters", "salt_counter", "signing_metadata_version",
+				"teal_source", "template_fingerprint",
 			},
 		},
 	}
@@ -133,6 +135,22 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 	}
 }
 
+func payloadWithOpcodeProfile(t *testing.T, payload *Payload, bounded bool) *Payload {
+	t.Helper()
+	profile := lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
+	if bounded {
+		profile = lsigresource.BoundedOpcodeProfile(
+			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
+		)
+	}
+	if err := payload.SetLogicSigOpcodeProfile(profile, bounded); err != nil {
+		t.Fatal(err)
+	}
+	return payload
+}
+
 func TestCanonicalPayloadRejectsStandaloneWitnessBundle(t *testing.T) {
 	data := []byte(`{"schema":"aplane.witness-key-bundle.v1","key_type":"aplane.witness-falcon1024.v1","witness_key_id":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","public_key_hex":"00","encryption":{}}`)
 	if _, err := ParsePayload(data); err == nil || !errors.Is(err, ErrIncompatibleKeyFormat) {
@@ -148,6 +166,7 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 	)
 	defer payload.ZeroSecrets()
 	payload.CreatedAt = canonicalTestTime
+	payloadWithOpcodeProfile(t, payload, true)
 	metadata := &boundedmeta.Metadata{
 		Contract: boundedmeta.ContractV1,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{
@@ -203,6 +222,7 @@ func TestBoundedSentryPayloadMetadataRoundTrip(t *testing.T) {
 	)
 	defer payload.ZeroSecrets()
 	payload.CreatedAt = canonicalTestTime
+	payloadWithOpcodeProfile(t, payload, true)
 	metadata := &boundedmeta.Metadata{
 		Contract: boundedmeta.ContractV1, BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
 		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: 1_000, Layer3Policy: boundedmeta.Layer3PolicyCustom,
@@ -373,6 +393,7 @@ func TestAutoSaltedLogicSigPayloadContract(t *testing.T) {
 	payload := NewAutoSaltedGenericLSigPayload(
 		"test.generic.v1", nil, bytecode, "#pragma version 13\nint 1", nil, "",
 	)
+	payloadWithOpcodeProfile(t, payload, false)
 	payload.CreatedAt = canonicalTestTime
 	if err := payload.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)

@@ -463,8 +463,12 @@ func scanLogicSigResources(payload *Payload, baseArgumentBytes int) (*lsigresour
 	if programBytes == 0 {
 		return nil, fmt.Errorf("LogicSig resource profile has empty program")
 	}
+	// Every supported LogicSig generation/import path attaches an opcode
+	// profile before persistence, so a zero profile is a malformed or obsolete
+	// development key file. Failing here beats materializing a profile with a
+	// zero opcode ceiling that Profile.UsageForPath rejects later while signing.
 	if payload.LogicSigOpcodeProfile == (lsigresource.OpcodeProfile{}) {
-		return scanLegacyLogicSigResources(payload, baseArgumentBytes)
+		return nil, fmt.Errorf("LogicSig resource profile has no opcode profile")
 	}
 	if metadata := payload.BoundedAuthorization; metadata != nil {
 		return profileFromBoundedMetadata(uint64(programBytes), metadata, payload.LogicSigOpcodeProfile)
@@ -486,33 +490,6 @@ func scanLogicSigResources(payload *Payload, baseArgumentBytes int) (*lsigresour
 		return nil, err
 	}
 	return &profile, nil
-}
-
-func scanLegacyLogicSigResources(payload *Payload, baseArgumentBytes int) (*lsigresource.Profile, error) {
-	programBytes := len(payload.LogicSigBytecode)
-	path := func(argumentBytes int) *lsigresource.PathProfile {
-		return &lsigresource.PathProfile{ArgumentBytes: uint64(argumentBytes)}
-	}
-	profile := &lsigresource.Profile{ProgramBytes: uint64(programBytes)}
-	if metadata := payload.BoundedAuthorization; metadata != nil {
-		profile.Spend = path(metadata.ArgumentBytesForPath(boundedmeta.PathSpend))
-		profile.SpendingRekey = path(metadata.ArgumentBytesForPath(boundedmeta.PathSpendingRekey))
-		profile.AdminRekey = path(metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey))
-		return profile, nil
-	}
-	argumentBytes := baseArgumentBytes
-	for _, arg := range payload.SigningArgs {
-		if arg.ByteLength > 0 {
-			argumentBytes += arg.ByteLength
-		} else {
-			argumentBytes += arg.MaxSize
-		}
-	}
-	if argumentBytes < 0 {
-		return nil, fmt.Errorf("LogicSig resource profile has negative argument size")
-	}
-	profile.Default = path(argumentBytes)
-	return profile, nil
 }
 
 func profileFromBoundedMetadata(programBytes uint64, metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile) (*lsigresource.Profile, error) {

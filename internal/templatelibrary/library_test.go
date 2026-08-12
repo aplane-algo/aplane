@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
@@ -116,7 +117,7 @@ family: bounded-library
 version: 1
 display_name: Bounded Library
 description: Test bounded template
-derivation_version: 2
+derivation_version: 3
 bounded:
   contract: bounded1
   spend_effects: [pay, axfer]
@@ -583,6 +584,9 @@ func TestDeactivateCompiledProviderRejectsKeyTypeInUse(t *testing.T) {
 	}
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	payload := apkeys.NewDSALSigPayload(keyType, keyType, []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
+	if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
+		t.Fatal(err)
+	}
 	defer payload.ZeroSecrets()
 	if _, err := apkeys.SavePayload(paths, testIdentityID, payload, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
@@ -1048,6 +1052,9 @@ func writeTemplateKeyInUse(t *testing.T, paths storepaths.Paths, keyType string,
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	address := logicSigAddressForTemplateTest(t, bytecode)
 	payload := apkeys.NewGenericLSigPayload(keyType, map[string]string{"recipient": address}, bytecode, 5, "", nil, "")
+	if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := apkeys.SavePayload(paths, testIdentityID, payload, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
 	}

@@ -15,7 +15,7 @@ func TestBundledGenericTemplateCompatibilityFingerprints(t *testing.T) {
 		file string
 		want string
 	}{
-		{name: "htlc", file: "aplane.htlc.v1.yaml", want: "1:00b38a61c2ad82427171c683e70253bd69b7fc4d27a6fd3e58b1bc286bb1cec6"},
+		{name: "htlc", file: "aplane.htlc.v1.yaml", want: "1:761ae862adaa3af2860ba4b9d5ba54b535db070000d261a1a4e56c9d7b17411e"},
 	}
 
 	for _, tc := range tests {
@@ -101,7 +101,7 @@ teal: |
 	if err != nil {
 		t.Fatalf("SemanticFingerprint(synthetic) error = %v", err)
 	}
-	const want = "1:328eede0d895c241594ca3809dd9209e418b30e0e1bd87dc5b2900369d6f8322"
+	const want = "1:f2d2d3c68dd067b16833f41e0ea2c062a86b1ac52b73417e84125b8e7cbde9fc"
 	if got != want {
 		t.Fatalf("SemanticFingerprint(synthetic) = %q, want %q", got, want)
 	}

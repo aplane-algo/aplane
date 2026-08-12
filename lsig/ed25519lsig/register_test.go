@@ -43,7 +43,7 @@ func TestEd25519LogicSigBaseAcceptsComposedTemplateShape(t *testing.T) {
 
 	spec, err := composeddsa.ParseTemplateSpec([]byte(`
 schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.ed25519.v1
 template_mode: generated

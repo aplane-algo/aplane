@@ -6,9 +6,7 @@ package generictemplate
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
@@ -18,7 +16,6 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
@@ -27,10 +24,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
 
-// testBase returns a BaseTemplateSpec with common test values and explicit
-// pushbytes derivation for tests that exercise the historical salted path.
+// testBase returns a BaseTemplateSpec with common test values and the only
+// supported derivation contract, TEAL v13 compiler auto-salting.
 func testBase() templatestore.BaseTemplateSpec {
-	derivationVersion := templatestore.DerivationVersionPushbytes
+	derivationVersion := templatestore.DerivationVersionAlgodAutoSalt
 	return templatestore.BaseTemplateSpec{
 		DerivationVersion: &derivationVersion,
 		Publisher:         "test",
@@ -831,7 +828,8 @@ func TestYAMLTemplateGenerateTEAL(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expected := "// Salt byte, patched post-compilation to avoid ed25519-curve addresses.\nbyte 0x" + lsigsalt.PushbytesSaltMarkerHex(0) + "\npop\n\naddr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ\nint 12345\nreturn"
+	// Auto-salt leaves template TEAL untouched; the v13 assembler owns the salt.
+	expected := "addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ\nint 12345\nreturn"
 	if teal != expected {
 		t.Errorf("expected:\n%s\ngot:\n%s", expected, teal)
 	}
@@ -868,48 +866,30 @@ func TestYAMLTemplateGenerateTEALOmittedDerivationIsUnsalted(t *testing.T) {
 	}
 }
 
-func TestYAMLTemplateGenerateTEALTrailingBytecblockDerivation(t *testing.T) {
-	spec := &TemplateSpec{
-		BaseTemplateSpec: testBaseWithDerivationVersion(templatestore.DerivationVersionTrailingBytecblock),
-		Parameters: []ParameterSpec{
-			{Name: "recipient", Type: "address", Required: true},
-			{Name: "unlock_round", Type: "uint64", Required: true},
-		},
-		TEAL: "addr @recipient\nint @unlock_round\nreturn",
-	}
-
-	tmpl := NewYAMLTemplate(spec)
-	teal, err := tmpl.GenerateTEAL(map[string]string{
-		"recipient":    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-		"unlock_round": "12345",
-	})
-	if err != nil {
-		t.Fatalf("GenerateTEAL() error = %v", err)
-	}
-
-	expected := "addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ\nint 12345\nreturn\n\n// Salt byte, patched post-compilation to avoid ed25519-curve addresses.\nbytecblock 0x00"
-	if teal != expected {
-		t.Errorf("expected:\n%s\ngot:\n%s", expected, teal)
-	}
-}
-
-func TestYAMLTemplateGenerateTEALTrailingBytecblockRequiresExit(t *testing.T) {
-	tmpl := NewYAMLTemplate(&TemplateSpec{
-		BaseTemplateSpec: testBaseWithDerivationVersion(templatestore.DerivationVersionTrailingBytecblock),
-		TEAL:             "int 1",
-	})
-
-	_, err := tmpl.GenerateTEAL(nil)
-	if err == nil {
-		t.Fatal("GenerateTEAL() error = nil, want final exit rejection")
-	}
-	if !strings.Contains(err.Error(), "requires template TEAL to end with return or err") {
-		t.Fatalf("GenerateTEAL() error = %v, want final exit rejection", err)
+// Retired derivation contracts must not be resurrectable by a hand-authored
+// template: rejection happens in ValidateBase, before any salt anchoring.
+func TestYAMLTemplateRejectsRetiredDerivationVersions(t *testing.T) {
+	for _, version := range []int{
+		templatestore.DerivationVersionPushbytes,
+		templatestore.DerivationVersionTrailingBytecblock,
+	} {
+		spec := &TemplateSpec{
+			BaseTemplateSpec: testBaseWithDerivationVersion(version),
+			TEAL:             "int 1\nreturn",
+		}
+		if err := ValidateSpec(spec); err == nil {
+			t.Errorf("ValidateSpec(derivation_version %d) error = nil, want rejection", version)
+		} else if !strings.Contains(err.Error(), "retired") {
+			t.Errorf("ValidateSpec(derivation_version %d) error = %v, want retirement message", version, err)
+		}
+		if _, err := NewYAMLTemplate(spec).GenerateTEAL(nil); err == nil {
+			t.Errorf("GenerateTEAL(derivation_version %d) error = nil, want rejection", version)
+		}
 	}
 }
 
 func TestYAMLTemplateGenerateTEALStrict(t *testing.T) {
-	derivationVersion := templatestore.DerivationVersionPushbytes
+	derivationVersion := templatestore.DerivationVersionAlgodAutoSalt
 	spec := &TemplateSpec{
 		BaseTemplateSpec: templatestore.BaseTemplateSpec{
 			SchemaVersion:     1,
@@ -965,10 +945,6 @@ assert`,
 intcblock 42
 bytecblock 0xabcd
 
-// Salt byte, patched post-compilation to avoid ed25519-curve addresses.
-byte 0x` + lsigsalt.PushbytesSaltMarkerHex(0) + `
-pop
-
 txn FirstValid
 intc_0
 >=
@@ -980,43 +956,6 @@ bytec_0
 assert`
 	if teal != want {
 		t.Fatalf("GenerateTEAL() =\n%s\nwant\n%s", teal, want)
-	}
-}
-
-func TestYAMLTemplateCompileWithSalt(t *testing.T) {
-	tmpl := NewYAMLTemplate(&TemplateSpec{
-		BaseTemplateSpec: testBase(),
-		TEAL: `#pragma version 10
-int 1
-	return`,
-	})
-	compiled := compiledPushbytesSaltBytecode(0)
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{bytecode: compiled})
-	if err != nil {
-		t.Fatalf("MakeClientWithTransport() error = %v", err)
-	}
-
-	want, err := lsigsalt.FindOffCurve(compiled, lsigsalt.PushbytesLocator)
-	if err != nil {
-		t.Fatalf("FindOffCurve() error = %v", err)
-	}
-	got, err := tmpl.CompileWithSalt(context.Background(), nil, client)
-	if err != nil {
-		t.Fatalf("CompileWithSalt() error = %v", err)
-	}
-	if got.Counter != want.Counter || got.Address != want.Address || string(got.Bytecode) != string(want.Bytecode) {
-		t.Fatalf("CompileWithSalt() = %+v, want %+v", got, want)
-	}
-	if lsigsalt.IsOnCurve(got.Address) {
-		t.Fatal("CompileWithSalt() returned on-curve address")
-	}
-
-	bytecode, address, err := tmpl.Compile(context.Background(), nil, client)
-	if err != nil {
-		t.Fatalf("Compile() error = %v", err)
-	}
-	if string(bytecode) != string(want.Bytecode) || address != want.Address.String() {
-		t.Fatalf("Compile() = (%x, %s), want (%x, %s)", bytecode, address, want.Bytecode, want.Address)
 	}
 }
 
@@ -1079,98 +1018,6 @@ return`,
 	if strings.Contains(generated, "Salt byte") || strings.Contains(generated, "bytecblock 0x00") {
 		t.Fatalf("auto-salted source contains APlane salt anchor:\n%s", generated)
 	}
-}
-
-func TestYAMLTemplateCompileWithSaltTrailingBytecblock(t *testing.T) {
-	tmpl := NewYAMLTemplate(&TemplateSpec{
-		BaseTemplateSpec: testBaseWithDerivationVersion(templatestore.DerivationVersionTrailingBytecblock),
-		TEAL: `#pragma version 10
-int 1
-return`,
-	})
-	compiled := compiledTrailingBytecblockSaltBytecode(0)
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{bytecode: compiled})
-	if err != nil {
-		t.Fatalf("MakeClientWithTransport() error = %v", err)
-	}
-
-	want, err := lsigsalt.FindOffCurve(compiled, lsigsalt.TrailingBytecblockLocator)
-	if err != nil {
-		t.Fatalf("FindOffCurve() error = %v", err)
-	}
-	got, err := tmpl.CompileWithSalt(context.Background(), nil, client)
-	if err != nil {
-		t.Fatalf("CompileWithSalt() error = %v", err)
-	}
-	if got.Counter != want.Counter || got.Address != want.Address || string(got.Bytecode) != string(want.Bytecode) {
-		t.Fatalf("CompileWithSalt() = %+v, want %+v", got, want)
-	}
-}
-
-func TestYAMLTemplateSaltDerivationGolden(t *testing.T) {
-	tmpl := NewYAMLTemplate(&TemplateSpec{
-		BaseTemplateSpec: testBase(),
-		TEAL: `#pragma version 10
-int 1
-return`,
-	})
-	teal, err := tmpl.GenerateTEAL(nil)
-	if err != nil {
-		t.Fatalf("GenerateTEAL() error = %v", err)
-	}
-	compiled := compiledPushbytesSaltBytecode(0)
-	if _, err := lsigsalt.PushbytesMarkerLocator(compiled); err != nil {
-		t.Fatalf("PushbytesMarkerLocator() error = %v", err)
-	}
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{bytecode: compiled})
-	if err != nil {
-		t.Fatalf("MakeClientWithTransport() error = %v", err)
-	}
-	salted, err := tmpl.CompileWithSalt(context.Background(), nil, client)
-	if err != nil {
-		t.Fatalf("CompileWithSalt() error = %v", err)
-	}
-	if lsigsalt.IsOnCurve(salted.Address) {
-		t.Fatalf("CompileWithSalt() returned on-curve address %s", salted.Address.String())
-	}
-
-	assertGolden(t, "teal hash", sha256Hex([]byte(teal)), "f006aa5b2397340bf36f6eb2842ec5ff501485d5c2d00f7f6ee3829ffdd3bc75")
-	assertGolden(t, "pre-salt bytecode hash", sha256Hex(compiled), "920691094839c8db0b2ca0b6c11299fb56594ba8fe86d6aa883b7eb534d0611e")
-	assertGolden(t, "salt counter", hex.EncodeToString([]byte{salted.Counter}), "01")
-	assertGolden(t, "derived address", salted.Address.String(), "EZJ3DQPMCFPZIZVAR6ZUQRP57OOWI4RFHBBKUWMYWRWU6B74O7VODDPYLA")
-}
-
-func TestYAMLTemplatePatchedBytecodeMatchesCounterSourceCompile(t *testing.T) {
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
-	if err != nil {
-		t.Skipf("Could not create algod client: %v", err)
-	}
-	tmpl := NewYAMLTemplate(&TemplateSpec{
-		BaseTemplateSpec: testBase(),
-		TEAL: `#pragma version 10
-int 1
-return`,
-	})
-	teal, err := tmpl.GenerateTEAL(nil)
-	if err != nil {
-		t.Fatalf("GenerateTEAL() error = %v", err)
-	}
-	compiled := compileTEALForSaltTest(t, client, teal)
-	offset, err := lsigsalt.PushbytesMarkerLocator(compiled)
-	if err != nil {
-		t.Fatalf("PushbytesMarkerLocator() error = %v", err)
-	}
-	salted, err := lsigsalt.FindOffCurve(compiled, lsigsalt.PushbytesMarkerLocator)
-	if err != nil {
-		t.Fatalf("FindOffCurve() error = %v", err)
-	}
-	counterSource := strings.Replace(teal, "byte 0x"+lsigsalt.PushbytesSaltMarkerHex(0), "byte 0x"+lsigsalt.PushbytesSaltMarkerHex(salted.Counter), 1)
-	counterCompiled := compileTEALForSaltTest(t, client, counterSource)
-
-	if !bytes.Equal(counterCompiled, salted.Bytecode) {
-		t.Fatalf("compiled counter source does not match patched bytecode")
-	}
-	assertOnlyOffsetChanged(t, compiled, salted.Bytecode, offset)
 }
 
 func TestYAMLTemplateGenerateTEALWithAddressList(t *testing.T) {
@@ -1347,10 +1194,6 @@ func assertCompileWithSaltOffCurve(t *testing.T, tmpl *YAMLTemplate, params map[
 		compiled = unsaltedOffCurveBytecodeForTest(t)
 	} else {
 		switch *tmpl.spec.DerivationVersion {
-		case templatestore.DerivationVersionPushbytes:
-			compiled = compiledPushbytesSaltBytecode(0)
-		case templatestore.DerivationVersionTrailingBytecblock:
-			compiled = compiledTrailingBytecblockSaltBytecode(0)
 		case templatestore.DerivationVersionAlgodAutoSalt:
 			compiled = unsaltedOffCurveBytecodeForVersion(t, 13)
 		default:
@@ -1393,62 +1236,6 @@ func unsaltedOffCurveBytecodeForVersion(t *testing.T, version byte) []byte {
 	}
 	t.Fatal("failed to find deterministic off-curve unsalted bytecode")
 	return nil
-}
-
-func compiledPushbytesSaltBytecode(counter byte) []byte {
-	marker := lsigsalt.PushbytesSaltMarker(counter)
-	bytecode := []byte{0x0a, 0x80, byte(len(marker))}
-	bytecode = append(bytecode, marker...)
-	bytecode = append(bytecode, 0x48, 0x81, 0x01)
-	return bytecode
-}
-
-func compiledTrailingBytecblockSaltBytecode(counter byte) []byte {
-	return []byte{0x0a, 0x81, 0x01, 0x43, 0x26, 0x01, 0x01, counter}
-}
-
-func sha256Hex(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
-func compileTEALForSaltTest(t *testing.T, client *algod.Client, teal string) []byte {
-	t.Helper()
-
-	result, err := client.TealCompile([]byte(teal)).Do(context.Background())
-	if err != nil {
-		t.Fatalf("TealCompile() error = %v", err)
-	}
-	bytecode, err := base64.StdEncoding.DecodeString(result.Result)
-	if err != nil {
-		t.Fatalf("DecodeString() error = %v", err)
-	}
-	return bytecode
-}
-
-func assertOnlyOffsetChanged(t *testing.T, before, after []byte, offset int) {
-	t.Helper()
-	if len(before) != len(after) {
-		t.Fatalf("patched bytecode length = %d, want %d", len(after), len(before))
-	}
-	for i := range before {
-		if i == offset {
-			continue
-		}
-		if before[i] != after[i] {
-			t.Fatalf("byte offset %d changed: got %x want %x", i, after[i], before[i])
-		}
-	}
-}
-
-func assertGolden(t *testing.T, label, got, want string) {
-	t.Helper()
-	if want == "" {
-		t.Fatalf("%s golden: %s", label, got)
-	}
-	if got != want {
-		t.Fatalf("%s = %s, want %s", label, got, want)
-	}
 }
 
 func TestDefaultDisplayColor(t *testing.T) {

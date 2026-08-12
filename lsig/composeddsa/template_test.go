@@ -73,7 +73,7 @@ func TestNewProviderFromTemplateSpecUsesDerivationVersion(t *testing.T) {
 
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: test.template-derivation-base.v1
 template_mode: generated
@@ -92,8 +92,8 @@ teal: |
 	if err != nil {
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
-	if got := provider.fingerprintSaltStyle(); got != string(lsigsalt.StyleTrailingBytecblock) {
-		t.Fatalf("fingerprintSaltStyle() = %q, want %q", got, lsigsalt.StyleTrailingBytecblock)
+	if got := provider.fingerprintSaltStyle(); got != string(lsigsalt.StyleAlgodAutoSalt) {
+		t.Fatalf("fingerprintSaltStyle() = %q, want %q", got, lsigsalt.StyleAlgodAutoSalt)
 	}
 }
 

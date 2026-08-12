@@ -115,6 +115,16 @@ func calculateLogicSigResources(console Console, snapshot PlannerIdentitySnapsho
 		if profileResolved {
 			return nil
 		}
+		if network.ConsensusVersion == "" {
+			reason := network.ConsensusUnavailable
+			if reason == "" {
+				reason = "the signer could not determine the active consensus version"
+			}
+			return badRequest(fmt.Sprintf(
+				"cannot plan LogicSig resources: %s; LogicSig program sizing and fees are consensus-defined, so this signer needs a reachable algod for the transaction's network",
+				reason,
+			))
+		}
 		resolved, profileErr := lsigresource.ResolveConsensus(network.ConsensusVersion)
 		if profileErr != nil {
 			return badRequest(fmt.Sprintf("cannot plan LogicSig resources for consensus %q: %v", network.ConsensusVersion, profileErr))

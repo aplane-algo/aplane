@@ -8,6 +8,7 @@ family: corridor
 version: 1
 display_name: "Corridor"
 description: "Bounded Falcon-1024 account with sentry authorization and a Merkle recipient allowlist."
+max_opcode_cost: 20000
 
 bounded:
   contract: bounded1

@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -189,6 +190,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		false,
 		"#pragma version 10\nint 1\nreturn",
 		nil,
+		lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling),
 		masterKey,
 	)
 	if err != nil {

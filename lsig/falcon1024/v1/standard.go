@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 
@@ -111,13 +112,14 @@ func (f *Falcon1024V1) DeriveLsigWithSalt(ctx context.Context, publicKey []byte,
 //	falcon_verify
 func newFalconV1Composed() *ComposedFalcon {
 	return NewComposedFalcon(ComposedFalconConfig{
-		KeyType:     "aplane.falcon1024.v1",
-		FamilyName:  family.Name,
-		Version:     1,
-		DisplayName: "Falcon-1024",
-		Description: "Falcon-1024 signature scheme",
-		Base:        family.FalconBase,
-		SaltStyle:   lsigsalt.StyleAlgodAutoSalt,
+		KeyType:       "aplane.falcon1024.v1",
+		FamilyName:    family.Name,
+		Version:       1,
+		DisplayName:   "Falcon-1024",
+		Description:   "Falcon-1024 signature scheme",
+		Base:          family.FalconBase,
+		SaltStyle:     lsigsalt.StyleAlgodAutoSalt,
+		OpcodeProfile: lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling),
 		// No TEALSuffix, no Params, no RuntimeArgs = pure Falcon-1024
 	})
 }
@@ -132,6 +134,12 @@ func (f *Falcon1024V1) GenerateTEAL(publicKey []byte, params map[string]string) 
 // Category returns the LSig category for Falcon-1024.
 func (f *Falcon1024V1) Category() string {
 	return lsigprovider.CategoryDSALsig
+}
+
+// LogicSigOpcodeProfile returns the reviewed ceiling for the fixed Falcon
+// verification program.
+func (f *Falcon1024V1) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
 }
 
 // DisplayName returns the human-readable name.

@@ -22,6 +22,8 @@ func TestPinnedLogicSigConsensusContracts(t *testing.T) {
 		{name: "v41", version: protocol.ConsensusV41, logicSigVersion: 12},
 		{name: "v42", version: protocol.ConsensusV42, logicSigVersion: 13, perByteSurcharge: 100},
 		{name: "fnet5", version: protocol.ConsensusVFnet5, logicSigVersion: 13, perByteSurcharge: 100},
+		// LocalNet reports "future"; it is v42 with a newer LogicSigVersion.
+		{name: "future", version: protocol.ConsensusFuture, logicSigVersion: 14, perByteSurcharge: 100},
 	}
 
 	for _, test := range tests {

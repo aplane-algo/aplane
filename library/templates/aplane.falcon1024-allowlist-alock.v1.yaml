@@ -8,6 +8,7 @@ family: falcon1024-allowlist-alock
 version: 1
 display_name: "Falcon-1024 Rekey-Locked Allowlist"
 description: "Framework-owned ALGO/ASA allowlist with optional asset and amount limits, plus external Falcon contract-admin authorization for pure rekeys."
+max_opcode_cost: 20000
 
 bounded:
   contract: bounded1

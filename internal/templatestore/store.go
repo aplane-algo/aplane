@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -45,20 +46,26 @@ type BaseTemplateSpec struct {
 	DisplayName  string `yaml:"display_name"`
 	Description  string `yaml:"description"`
 	DisplayColor string `yaml:"display_color"`
+	// MaxOpcodeCost is the reviewed worst-case cost of every reachable path in
+	// the final compiler-returned program. Zero deliberately means undeclared;
+	// generation then uses the conservative full-group ceiling.
+	MaxOpcodeCost uint64 `yaml:"max_opcode_cost"`
 }
 
 const (
-	// DerivationVersionPushbytes is the legacy template derivation layout that
-	// uses a generated pushbytes marker followed by pop.
+	// DerivationVersionPushbytes is the retired template derivation layout that
+	// used a generated pushbytes marker followed by pop. It is rejected; the
+	// constant survives only so the rejection can name it.
 	DerivationVersionPushbytes = 1
 
-	// DerivationVersionTrailingBytecblock uses a dead-code bytecblock after the
-	// program's logical exit as the single-byte salt anchor.
+	// DerivationVersionTrailingBytecblock is the retired layout that used a
+	// dead-code bytecblock after the program's logical exit as the single-byte
+	// salt anchor. It is rejected for the same reason as Pushbytes.
 	DerivationVersionTrailingBytecblock = 2
 
 	// DerivationVersionAlgodAutoSalt uses TEAL v13 assembler auto-salting. The
 	// compiler-returned bytecode is authoritative and is never patched by
-	// APlane.
+	// APlane. It is the only supported derivation contract.
 	DerivationVersionAlgodAutoSalt = 3
 )
 
@@ -80,7 +87,12 @@ func (s *BaseTemplateSpec) ValidateBase(maxSchemaVersion int) error {
 	}
 	if s.DerivationVersion != nil {
 		switch *s.DerivationVersion {
-		case DerivationVersionPushbytes, DerivationVersionTrailingBytecblock, DerivationVersionAlgodAutoSalt:
+		case DerivationVersionAlgodAutoSalt:
+		case DerivationVersionPushbytes, DerivationVersionTrailingBytecblock:
+			return fmt.Errorf(
+				"derivation_version %d is retired; republish this template with derivation_version %d (TEAL v13 compiler auto-salting)",
+				*s.DerivationVersion, DerivationVersionAlgodAutoSalt,
+			)
 		default:
 			return fmt.Errorf("derivation_version %d is not supported", *s.DerivationVersion)
 		}
@@ -103,7 +115,22 @@ func (s *BaseTemplateSpec) ValidateBase(maxSchemaVersion int) error {
 	if s.DisplayName == "" {
 		return fmt.Errorf("display_name is required")
 	}
+	if s.MaxOpcodeCost > lsigresource.MaximumDeclaredOpcodeCost {
+		return fmt.Errorf("max_opcode_cost %d exceeds maximum %d", s.MaxOpcodeCost, lsigresource.MaximumDeclaredOpcodeCost)
+	}
 	return nil
+}
+
+// LogicSigOpcodeProfile materializes the template's explicit reviewed ceiling,
+// or a conservative full-group profile when it was omitted.
+func (s *BaseTemplateSpec) LogicSigOpcodeProfile(bounded bool) lsigresource.OpcodeProfile {
+	if s == nil || s.MaxOpcodeCost == 0 {
+		return lsigresource.ConservativeOpcodeProfile(bounded)
+	}
+	if bounded {
+		return lsigresource.BoundedOpcodeProfile(s.MaxOpcodeCost, s.MaxOpcodeCost, s.MaxOpcodeCost)
+	}
+	return lsigresource.DefaultOpcodeProfile(s.MaxOpcodeCost)
 }
 
 // TemplateType identifies the type of template.

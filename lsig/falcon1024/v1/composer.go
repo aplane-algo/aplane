@@ -5,6 +5,7 @@ package v1
 
 import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -23,13 +24,14 @@ type ComposedFalconConfig struct {
 	DisplayName string
 	Description string
 
-	Base         family.DSABase
-	TEALSuffix   string
-	SaltStyle    lsigsalt.Style
-	TemplateMode string
-	TemplateVars []tealtemplate.TemplateVariable
-	Params       []lsigprovider.ParameterDef
-	RuntimeArgs  []lsigprovider.RuntimeArgDef
+	Base          family.DSABase
+	TEALSuffix    string
+	SaltStyle     lsigsalt.Style
+	TemplateMode  string
+	TemplateVars  []tealtemplate.TemplateVariable
+	Params        []lsigprovider.ParameterDef
+	RuntimeArgs   []lsigprovider.RuntimeArgDef
+	OpcodeProfile lsigresource.OpcodeProfile
 }
 
 // NewComposedFalcon returns a Falcon-composed provider powered by the generic
@@ -42,18 +44,19 @@ func NewComposedFalcon(cfg ComposedFalconConfig) *ComposedFalcon {
 	ops := NewFalconOps(base)
 
 	return composeddsa.NewComposedDSA(composeddsa.Config{
-		KeyType:      cfg.KeyType,
-		BaseKeyType:  cfg.BaseKeyType,
-		FamilyName:   cfg.FamilyName,
-		Version:      cfg.Version,
-		DisplayName:  cfg.DisplayName,
-		Description:  cfg.Description,
-		Ops:          ops,
-		TEALSuffix:   cfg.TEALSuffix,
-		SaltStyle:    cfg.SaltStyle,
-		TemplateMode: cfg.TemplateMode,
-		TemplateVars: cfg.TemplateVars,
-		Params:       cfg.Params,
-		RuntimeArgs:  cfg.RuntimeArgs,
+		KeyType:       cfg.KeyType,
+		BaseKeyType:   cfg.BaseKeyType,
+		FamilyName:    cfg.FamilyName,
+		Version:       cfg.Version,
+		DisplayName:   cfg.DisplayName,
+		Description:   cfg.Description,
+		Ops:           ops,
+		TEALSuffix:    cfg.TEALSuffix,
+		SaltStyle:     cfg.SaltStyle,
+		TemplateMode:  cfg.TemplateMode,
+		TemplateVars:  cfg.TemplateVars,
+		Params:        cfg.Params,
+		RuntimeArgs:   cfg.RuntimeArgs,
+		OpcodeProfile: cfg.OpcodeProfile,
 	})
 }

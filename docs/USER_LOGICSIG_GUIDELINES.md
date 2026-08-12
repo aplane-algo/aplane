@@ -325,11 +325,10 @@ concrete salt style is chosen by APlane as part of the versioned
 provider/template derivation contract, not by user YAML. Templates with omitted
 `derivation_version` are unsalted and compile exactly as written, succeeding
 only if the unmodified bytecode already derives an off-curve LogicSig address.
-`derivation_version: 2` appends a trailing dead-code `bytecblock 0x00` after
-the program's terminating instruction and is retained as a legacy derivation
-contract. Current templates use `derivation_version: 3` and TEAL v13 compiler
-auto-salting; APlane persists and validates the compiler's final bytecode rather
-than patching it. User-authored template TEAL must not hand-write raw `bytecblock`
+Templates use `derivation_version: 3` and TEAL v13 compiler auto-salting;
+APlane persists and validates the compiler's final bytecode rather than patching
+it. The retired `derivation_version: 1` and `derivation_version: 2` contracts
+are rejected; republish such a template with `derivation_version: 3`. User-authored template TEAL must not hand-write raw `bytecblock`
 or `intcblock` declarations, numeric `bytec` or
 `intc` references, or short forms such as `bytec_0` or `intc_0`. Use declared
 template variables, symbolic `$name` references, and generated-mode list
@@ -345,6 +344,11 @@ auto-salting. For every reachable authorization path, review and pin:
   ceilings (1,423 bytes for deterministic compressed Falcon-1024); and
 - a `max_opcode_cost` ceiling demonstrated at the worst permitted runtime
   argument/value sizes, including dynamic opcode costs.
+
+Declare that reviewed ceiling as top-level `max_opcode_cost` in template YAML.
+When it is omitted, APlane deliberately reserves the complete 320,000-opcode
+group pool. That fallback is safe but can require a full 16-transaction group;
+it is not a substitute for reviewing and pinning the template's actual cost.
 
 Do not publish one combined `program + args` size. On v42, argument and opcode
 capacity may require resource dummies while excess program bytes are paid by a
