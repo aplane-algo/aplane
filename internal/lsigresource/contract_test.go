@@ -25,9 +25,11 @@ func TestPinnedLogicSigConsensusContracts(t *testing.T) {
 		// LocalNet reports "future"; it is v42 with a newer LogicSigVersion.
 		{name: "future", version: protocol.ConsensusFuture, logicSigVersion: 14, perByteSurcharge: 100},
 	}
+	covered := make(map[protocol.ConsensusVersion]bool, len(tests))
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			covered[test.version] = true
 			params, ok := sdkconfig.Consensus[test.version]
 			if !ok {
 				t.Fatalf("SDK consensus table has no entry for %s", test.version)
@@ -44,10 +46,18 @@ func TestPinnedLogicSigConsensusContracts(t *testing.T) {
 			if params.LogicSigMaxCost != 20_000 {
 				t.Fatalf("LogicSigMaxCost = %d, want 20000", params.LogicSigMaxCost)
 			}
+			if params.MaxTxGroupSize != 16 {
+				t.Fatalf("MaxTxGroupSize = %d, want 16", params.MaxTxGroupSize)
+			}
 			if got := uint64(params.PerByteTxnSurcharge); got != test.perByteSurcharge {
 				t.Fatalf("PerByteTxnSurcharge = %d, want %d", got, test.perByteSurcharge)
 			}
 		})
+	}
+	for version := range supportedSizingModes {
+		if !covered[version] {
+			t.Fatalf("supported consensus version %s is missing from pinned contract vectors", version)
+		}
 	}
 }
 
