@@ -156,6 +156,48 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 	}
 }
 
+func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
+	guarded := testAddress(1).String()
+	nonGuarded := testAddress(2).String()
+	sentryHex := testSentryPublicKeyHex(0xd6)
+
+	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
+		c.AddAddress(guarded, "test.bounded-sentry.v1")
+		c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
+			ProgramBytes:  2_500,
+			Spend:         &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
+			SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 22_000},
+			AdminRekey:    &lsigresource.PathProfile{ArgumentBytes: 2_846, MaxOpcodeCost: 45_000},
+		})
+		c.AddAddress(nonGuarded, "ed25519")
+	})
+
+	txns := []types.Transaction{
+		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(2), testAddress(5), "ordinary"),
+	}
+	requests, signIndices, err := s.buildGroupSignRequests(
+		txns,
+		encodeGroupHex(txns),
+		len(txns),
+		map[int]guardedTarget{0: {
+			Index: 0, Sender: guarded, Account: guarded,
+			Flow: signerapi.SigningFlowBoundedSentry1, SentryPublicKey: sentryHex,
+		}},
+		clientsign.SubmitOptions{},
+	)
+	if err != nil {
+		t.Fatalf("buildGroupSignRequests() error = %v", err)
+	}
+	if len(signIndices) != 1 || signIndices[0] != 1 {
+		t.Fatalf("sign indices = %v, want [1]", signIndices)
+	}
+	got := requests[0].LsigResources
+	if got == nil || got.ProgramBytes != 2_500 || got.ArgumentBytes != 1_423 || got.MaxOpcodeCost != 1_700 {
+		t.Fatalf("bounded spend resources = %#v, want exact spend path", got)
+	}
+}
+
 // TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall verifies the
 // all-guarded path is unchanged: with no non-guarded originals, no /sign call is
 // made and no passthrough entries are produced.

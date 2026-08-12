@@ -536,14 +536,20 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 				},
 			}
 		case guardedTargets[i].Account != "":
-			// Guarded target: foreign with an LogicSig resource hint. Kept in the group
+			// Guarded target: foreign with a LogicSig resource hint. Kept in the group
 			// for context and budget accounting but not signed here.
 			target := guardedTargets[i]
 			if target.Sender != sender {
 				return nil, nil, fmt.Errorf("guarded target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
 			}
 			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
-			applyForeignLogicSigHint(&signRequests[i], s.cache, target.Account)
+			path, err := guardedLogicSigResourcePath(target.Flow)
+			if err != nil {
+				return nil, nil, fmt.Errorf("guarded target %d: %w", i, err)
+			}
+			if err := applyForeignLogicSigPathHint(&signRequests[i], s.cache, target.Account, path); err != nil {
+				return nil, nil, fmt.Errorf("guarded target %d: %w", i, err)
+			}
 		default:
 			// Non-guarded original: sign mode over the canonical bytes. Resolve
 			// the effective signer so a rekeyed account is signed by — and
@@ -568,6 +574,40 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 		}
 	}
 	return signRequests, nonGuarded, nil
+}
+
+func guardedLogicSigResourcePath(flow string) (lsigresource.AuthorizationPath, error) {
+	switch flow {
+	case "", signerapi.SigningFlowSentry1:
+		return lsigresource.PathDefault, nil
+	case signerapi.SigningFlowBoundedSentry1:
+		// Bounded component preparation admits only the pure-spend path. Carry
+		// that exact path into the later mixed-group /sign call rather than
+		// replacing it with the maximum across unrelated rekey paths.
+		return lsigresource.PathSpend, nil
+	default:
+		return 0, fmt.Errorf("unsupported guarded signing flow %q", flow)
+	}
+}
+
+func applyForeignLogicSigPathHint(request *signerapi.SignRequest, cache SignerCacheView, address string, path lsigresource.AuthorizationPath) error {
+	if request == nil || cache == nil {
+		return fmt.Errorf("LogicSig resource cache is unavailable")
+	}
+	profile, ok := cache.LogicSigResourceProfile(address)
+	if !ok {
+		return fmt.Errorf("LogicSig resource profile for %s is unavailable", address)
+	}
+	usage, err := profile.UsageForPath(path)
+	if err != nil {
+		return fmt.Errorf("resolve selected LogicSig resource path for %s: %w", address, err)
+	}
+	request.LsigResources = &signerapi.LogicSigResourceUsage{
+		ProgramBytes:  usage.ProgramBytes,
+		ArgumentBytes: usage.ArgumentBytes,
+		MaxOpcodeCost: usage.MaxOpcodeCost,
+	}
+	return nil
 }
 
 func applyForeignLogicSigHint(request *signerapi.SignRequest, cache SignerCacheView, address string) {
