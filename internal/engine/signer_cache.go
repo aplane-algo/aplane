@@ -14,9 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
-
-	"github.com/algorand/go-algorand-sdk/v2/protocol"
-	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 )
 
 func (e *Core) signerCacheCount() int {
@@ -104,14 +101,11 @@ func (e *Core) AuthorizationFeeReserve(ctx context.Context, sender string) (uint
 	if minFee == 0 {
 		minFee = signing.DefaultMinFee
 	}
+	consensus, err := resolveSupportedConsensus(params.ConsensusVersion)
+	if err != nil {
+		return 0, fmt.Errorf("resolve authorization fee reserve: %w", err)
+	}
 	if isNativeFalcon {
-		consensus, known := sdkconfig.Consensus[protocol.ConsensusVersion(params.ConsensusVersion)]
-		if !known {
-			return 0, fmt.Errorf("resolve native Falcon fee reserve: unsupported consensus %q", params.ConsensusVersion)
-		}
-		if !consensus.EnablePQSchemeFalcon1024 {
-			return 0, fmt.Errorf("resolve native Falcon fee reserve: consensus %q does not enable Falcon-1024", params.ConsensusVersion)
-		}
 		reserve, overflow := scaleFeeFactor(minFee, nativefalcon.PQFeeContribution)
 		if overflow {
 			return 0, fmt.Errorf("native Falcon fee reserve overflowed")
@@ -124,10 +118,6 @@ func (e *Core) AuthorizationFeeReserve(ctx context.Context, sender string) (uint
 	}
 	if err != nil {
 		return 0, fmt.Errorf("resolve LogicSig spend resources: %w", err)
-	}
-	consensus, err := lsigresource.ResolveConsensus(params.ConsensusVersion)
-	if err != nil {
-		return 0, fmt.Errorf("resolve LogicSig fee reserve: %w", err)
 	}
 	plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
 		TransactionCount: 1,

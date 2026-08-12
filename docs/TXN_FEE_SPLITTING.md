@@ -6,16 +6,18 @@ APlane computes one required fee for the finalized unsigned group. The fee
 calculation happens after required resource dummies have been appended and
 before the group ID, approval components, or signatures are produced.
 
-The planner accounts for:
+The client sets ordinary transaction fees from its algod SuggestedParams. The
+signer verifies that ordinary requirement and then accounts for:
 
 - one base fee factor for every transaction;
-- transaction byte-pricing factors enabled by the active consensus profile;
+- transaction byte-pricing factors in the compiled v42 contract;
 - the native-PQ scheme contribution for each native Falcon authorization;
 - the v42 LogicSig program-byte factor; and
 - all caller-supplied fees already present across the group.
 
-The signer raises fees only when the group's aggregate existing fee is below
-the consensus requirement. It never mutates a foreign or passthrough slot.
+The signer does not repair a client-created ordinary fee deficit. It raises
+fees only for authorization-induced requirements and never mutates a foreign
+or passthrough slot.
 
 ## LogicSig Resource Fees
 
@@ -44,21 +46,14 @@ small LogicSig program and opcode cost. It never adds a dummy merely to reduce
 the program surcharge: another transaction costs a full base fee but buys at
 most 1,000 free program bytes.
 
-Known v41 protocols retain the legacy combined-size rule:
-
-```text
-N >= ceil(sum(program_bytes + argument_bytes) / 1000)
-N >= ceil(sum(max_opcode_cost) / 20000)
-```
-
-The sizing mode is an explicit property of APlane's closed consensus profile;
-it is not inferred from whether `PerByteTxnSurcharge` happens to be zero.
+This release has no legacy sizing mode. APlane must be upgraded deliberately
+before supporting a consensus contract other than v42.
 
 ## Unified Required Fee
 
 Algorand represents fee usage in fixed-point factors where one ordinary
 transaction contributes `1_000_000`. APlane sums all applicable factors over
-the final group and scales once by the network minimum fee:
+the final group and scales once by the v42 minimum fee:
 
 ```text
 required_group_fee = ceil(min_txn_fee * total_fee_factor / 1_000_000)

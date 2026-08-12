@@ -9,7 +9,6 @@ import (
 	"math/bits"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
-	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -20,9 +19,10 @@ import (
 const feeFactorScale = uint64(1_000_000)
 
 type authorizationBudget struct {
-	pqScheme string
-	mutable  bool
-	maxFee   uint64
+	pqScheme          string
+	mutable           bool
+	maxFeeConstrained bool
+	maxFee            uint64
 }
 
 func authorizationBudgets(requests []signerapi.SignRequest, snapshot PlannerIdentitySnapshot, boundedItems []*boundedPlanItem, passthrough, foreign map[int]bool, passthroughBytes map[int][]byte) ([]authorizationBudget, *ServiceError) {
@@ -44,6 +44,7 @@ func authorizationBudgets(requests []signerapi.SignRequest, snapshot PlannerIden
 		default:
 			budgets[i].mutable = true
 			if i < len(boundedItems) && boundedItems[i] != nil && boundedItems[i].Metadata != nil {
+				budgets[i].maxFeeConstrained = true
 				budgets[i].maxFee = boundedItems[i].Metadata.MaxFee
 			}
 			if snapshot.KeyTypes[request.AuthAddress] == nativefalcon.KeyType {
@@ -72,35 +73,11 @@ func signedTxnPQScheme(stxn types.SignedTxn) (string, error) {
 	return "", nil
 }
 
-func hasNativePQAuthorization(budgets []authorizationBudget) bool {
-	for _, budget := range budgets {
-		if budget.pqScheme == nativefalcon.Scheme {
-			return true
-		}
-	}
-	return false
-}
-
-func applyNativePQFees(txns []types.Transaction, budgets []authorizationBudget, network PlannerNetworkParams, immutable bool) (uint64, []int, *ServiceError) {
-	targets := make([]int, 0, len(budgets))
-	for i, budget := range budgets {
-		if budget.mutable {
-			targets = append(targets, i)
-		}
-	}
-	info, err := applyGroupFees(txns, budgets, network, lsigresource.Plan{TransactionCount: uint64(len(txns)), GroupSize: uint64(len(txns))}, 0, targets, immutable)
-	return info.TotalFees, info.FeeIndices, err
-}
-
-func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, network PlannerNetworkParams, resourcePlan lsigresource.Plan, dummyCount int, preferredTargets []int, immutable bool) (DummyFeeInfo, *ServiceError) {
+func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, resourcePlan lsigresource.Plan, dummyCount int, preferredTargets []int, immutable bool) (DummyFeeInfo, *ServiceError) {
 	var info DummyFeeInfo
-	params, ok := sdkconfig.Consensus[protocol.ConsensusVersion(network.ConsensusVersion)]
+	params, ok := sdkconfig.Consensus[lsigresource.CurrentConsensusVersion]
 	if !ok {
-		version := network.ConsensusVersion
-		if version == "" {
-			version = "unknown"
-		}
-		return info, badRequest(fmt.Sprintf("group fee planning requires a supported consensus protocol (got %s)", version))
+		return info, internal(fmt.Sprintf("SDK has no parameters for the compiled consensus contract %s", lsigresource.CurrentConsensusVersion))
 	}
 	pqCount := uint64(0)
 	for _, budget := range budgets {
@@ -109,25 +86,36 @@ func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, net
 		}
 	}
 	if pqCount > 0 && !params.EnablePQSchemeFalcon1024 {
-		return info, badRequest(fmt.Sprintf("native Falcon authorization requires a PQ-capable consensus protocol (got %s)", network.ConsensusVersion))
+		return info, internal(fmt.Sprintf("compiled consensus contract %s does not enable native Falcon", lsigresource.CurrentConsensusVersion))
 	}
-	minFee := network.MinTxnFee
-	if minFee == 0 {
-		minFee = 1_000
-	}
+	minFee := params.MinTxnFee
 	const maxSaneMinFee = uint64(1_000_000)
 	if minFee > maxSaneMinFee {
-		return info, badRequest(fmt.Sprintf("network minimum fee %d microAlgos is implausibly high; refusing group fee planning", minFee))
+		return info, internal(fmt.Sprintf("compiled v42 minimum fee %d microAlgos is implausibly high", minFee))
 	}
 	var usage uint64
+	var ordinaryUsage uint64
 	var paid uint64
 	for i, txn := range txns {
 		factor := transactionFeeFactor(txn, params)
+		if uint64(i) < resourcePlan.TransactionCount {
+			ordinaryUsage = saturatingAdd(ordinaryUsage, factor)
+		}
 		if i < len(budgets) && budgets[i].pqScheme == nativefalcon.Scheme {
 			factor = saturatingAdd(factor, nativefalcon.PQFeeContribution)
 		}
 		usage = saturatingAdd(usage, factor)
 		paid = saturatingAdd(paid, uint64(txn.Fee))
+	}
+	ordinaryRequired, overflow := scaledFee(minFee, ordinaryUsage)
+	if overflow {
+		return info, badRequest("ordinary transaction fee calculation overflowed")
+	}
+	if paid < ordinaryRequired {
+		return info, badRequest(fmt.Sprintf(
+			"client-supplied group pays %d microAlgos, below the v42 ordinary transaction requirement of %d; construct the transactions with current algod suggested fees",
+			paid, ordinaryRequired,
+		))
 	}
 	usage = saturatingAdd(usage, resourcePlan.ProgramFeeFactorUsage)
 	required, overflow := scaledFee(minFee, usage)
@@ -191,7 +179,7 @@ func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, net
 	for _, target := range targets {
 		current := uint64(txns[target].Fee)
 		capacity := uint64(math.MaxUint64 - current)
-		if budgets[target].maxFee > 0 {
+		if budgets[target].maxFeeConstrained {
 			if current >= budgets[target].maxFee {
 				capacity = 0
 			} else {
@@ -207,7 +195,7 @@ func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, net
 	for _, target := range targets {
 		current := uint64(txns[target].Fee)
 		capacity := math.MaxUint64 - current
-		if budgets[target].maxFee > 0 {
+		if budgets[target].maxFeeConstrained {
 			if current >= budgets[target].maxFee {
 				continue
 			}

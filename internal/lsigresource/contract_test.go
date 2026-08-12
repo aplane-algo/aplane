@@ -14,28 +14,28 @@ func TestPinnedLogicSigConsensusContracts(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name             string
-		version          protocol.ConsensusVersion
-		logicSigVersion  uint64
-		perByteSurcharge uint64
+		name    string
+		version protocol.ConsensusVersion
 	}{
-		{name: "v41", version: protocol.ConsensusV41, logicSigVersion: 12},
-		{name: "v42", version: protocol.ConsensusV42, logicSigVersion: 13, perByteSurcharge: 100},
-		{name: "fnet5", version: protocol.ConsensusVFnet5, logicSigVersion: 13, perByteSurcharge: 100},
-		// LocalNet reports "future"; it is v42 with a newer LogicSigVersion.
-		{name: "future", version: protocol.ConsensusFuture, logicSigVersion: 14, perByteSurcharge: 100},
+		{name: "v42", version: protocol.ConsensusV42},
+		{name: "fnet5 v42 deployment", version: protocol.ConsensusVFnet5},
 	}
-	covered := make(map[protocol.ConsensusVersion]bool, len(tests))
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			covered[test.version] = true
-			params, ok := sdkconfig.Consensus[test.version]
-			if !ok {
-				t.Fatalf("SDK consensus table has no entry for %s", test.version)
+			profile, err := ResolveConsensus(string(test.version))
+			if err != nil {
+				t.Fatal(err)
 			}
-			if params.LogicSigVersion != test.logicSigVersion {
-				t.Fatalf("LogicSigVersion = %d, want %d", params.LogicSigVersion, test.logicSigVersion)
+			if profile.Version != CurrentConsensusVersion {
+				t.Fatalf("profile version = %s, want %s", profile.Version, CurrentConsensusVersion)
+			}
+			params, ok := sdkconfig.Consensus[CurrentConsensusVersion]
+			if !ok {
+				t.Fatalf("SDK consensus table has no entry for %s", CurrentConsensusVersion)
+			}
+			if params.LogicSigVersion != 13 {
+				t.Fatalf("LogicSigVersion = %d, want 13", params.LogicSigVersion)
 			}
 			if params.LogicSigMaxSize != 1_000 {
 				t.Fatalf("LogicSigMaxSize = %d, want 1000", params.LogicSigMaxSize)
@@ -49,63 +49,53 @@ func TestPinnedLogicSigConsensusContracts(t *testing.T) {
 			if params.MaxTxGroupSize != 16 {
 				t.Fatalf("MaxTxGroupSize = %d, want 16", params.MaxTxGroupSize)
 			}
-			if got := uint64(params.PerByteTxnSurcharge); got != test.perByteSurcharge {
-				t.Fatalf("PerByteTxnSurcharge = %d, want %d", got, test.perByteSurcharge)
+			if got := uint64(params.PerByteTxnSurcharge); got != 100 {
+				t.Fatalf("PerByteTxnSurcharge = %d, want 100", got)
 			}
 		})
 	}
-	for version := range supportedSizingModes {
-		if !covered[version] {
-			t.Fatalf("supported consensus version %s is missing from pinned contract vectors", version)
-		}
-	}
 }
 
-func TestPinnedV41AndV42LogicSigSizeVectors(t *testing.T) {
+func TestPinnedV42LogicSigSizeVectors(t *testing.T) {
 	t.Parallel()
 
-	v41 := sdkconfig.Consensus[protocol.ConsensusV41]
 	v42 := sdkconfig.Consensus[protocol.ConsensusV42]
 	tests := []struct {
 		name     string
 		programs []int
 		args     []int
 		group    int
-		v41OK    bool
 		v42OK    bool
 	}{
 		{
-			name:     "large program is priced only in v42",
+			name:     "large program is priced",
 			programs: []int{4_500}, args: []int{0}, group: 1,
-			v41OK: false, v42OK: true,
+			v42OK: true,
 		},
 		{
 			name:     "individual argument allowance does not pool small args",
 			programs: []int{1, 1}, args: []int{900, 900}, group: 2,
-			v41OK: true, v42OK: true,
+			v42OK: true,
 		},
 		{
 			name:     "one large argument activates the whole argument pool",
 			programs: []int{1, 1}, args: []int{1_001, 1_000}, group: 2,
-			v41OK: false, v42OK: false,
+			v42OK: false,
 		},
 		{
 			name:     "large argument pool fits after group expansion",
 			programs: []int{1, 1}, args: []int{1_001, 1_000}, group: 3,
-			v41OK: true, v42OK: true,
+			v42OK: true,
 		},
 		{
 			name:     "program hard cap is independent of pricing",
 			programs: []int{16_001}, args: []int{0}, group: 16,
-			v41OK: false, v42OK: false,
+			v42OK: false,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := referenceLogicSigSizeAllowed(v41, test.programs, test.args, test.group); got != test.v41OK {
-				t.Fatalf("v41 allowed = %t, want %t", got, test.v41OK)
-			}
 			if got := referenceLogicSigSizeAllowed(v42, test.programs, test.args, test.group); got != test.v42OK {
 				t.Fatalf("v42 allowed = %t, want %t", got, test.v42OK)
 			}
@@ -147,21 +137,16 @@ func referenceLogicSigSizeAllowed(params sdkconfig.ConsensusParams, programs, ar
 	if len(programs) != len(args) || groupSize <= 0 {
 		return false
 	}
-	pooledSize := 0
 	argSize := 0
 	largeArg := false
 	for i, program := range programs {
 		if program < 0 || args[i] < 0 || uint64(program) > params.MaxAbsoluteLogicSigProgramSize {
 			return false
 		}
-		pooledSize += program + args[i]
 		argSize += args[i]
 		largeArg = largeArg || uint64(args[i]) > params.LogicSigMaxSize
 	}
 	available := groupSize * int(params.LogicSigMaxSize)
-	if params.PerByteTxnSurcharge == 0 && pooledSize > available {
-		return false
-	}
 	return !largeArg || argSize <= available
 }
 

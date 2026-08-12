@@ -147,27 +147,12 @@ func requiredGroupSize(profile ConsensusProfile, requested uint64, totals resour
 	}
 	required = max(required, costRequired)
 
-	switch profile.SizingMode {
-	case SizingModeLegacyCombined:
-		combined, err := checkedAdd(totals.programBytes, totals.argumentBytes)
+	if totals.largeArgument {
+		argsRequired, err := ceilDiv(totals.argumentBytes, profile.SizeUnit)
 		if err != nil {
 			return 0, err
 		}
-		sizeRequired, err := ceilDiv(combined, profile.SizeUnit)
-		if err != nil {
-			return 0, err
-		}
-		required = max(required, sizeRequired)
-	case SizingModePricedProgram:
-		if totals.largeArgument {
-			argsRequired, err := ceilDiv(totals.argumentBytes, profile.SizeUnit)
-			if err != nil {
-				return 0, err
-			}
-			required = max(required, argsRequired)
-		}
-	default:
-		return 0, fmt.Errorf("%w: unknown sizing mode %d", ErrInvalidUsage, profile.SizingMode)
+		required = max(required, argsRequired)
 	}
 	return required, nil
 }
@@ -179,18 +164,16 @@ func finalizePlan(profile ConsensusProfile, requested, dummies uint64, totals re
 	}
 	chargedProgramBytes := uint64(0)
 	programFeeFactorUsage := uint64(0)
-	if profile.SizingMode == SizingModePricedProgram {
-		freeProgramBytes, err := checkedMul(groupSize, profile.SizeUnit)
-		if err != nil {
-			return Plan{}, err
-		}
-		if totals.programBytes > freeProgramBytes {
-			chargedProgramBytes = totals.programBytes - freeProgramBytes
-		}
-		programFeeFactorUsage, err = checkedMul(chargedProgramBytes, profile.PerByteTxnSurcharge)
-		if err != nil {
-			return Plan{}, err
-		}
+	freeProgramBytes, err := checkedMul(groupSize, profile.SizeUnit)
+	if err != nil {
+		return Plan{}, err
+	}
+	if totals.programBytes > freeProgramBytes {
+		chargedProgramBytes = totals.programBytes - freeProgramBytes
+	}
+	programFeeFactorUsage, err = checkedMul(chargedProgramBytes, profile.PerByteTxnSurcharge)
+	if err != nil {
+		return Plan{}, err
 	}
 	return Plan{
 		TransactionCount:      requested,

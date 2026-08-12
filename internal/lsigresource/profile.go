@@ -5,7 +5,7 @@ package lsigresource
 
 import "fmt"
 
-// SingleTransactionOpcodeCeiling is the v41/v42 stateless per-group-member
+// SingleTransactionOpcodeCeiling is the v42 stateless per-group-member
 // opcode unit. It may be used as a conservative path ceiling only for a
 // program independently reviewed to fit one unit; it is not an analyzer.
 const SingleTransactionOpcodeCeiling = 20_000

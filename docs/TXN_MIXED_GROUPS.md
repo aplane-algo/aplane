@@ -114,8 +114,6 @@ Result: Add 1 resource dummy, compute the unified fee and new group ID, sign bot
 ```
 N = final number of transactions, including dummies
 
-v41 required N >= ceil(sum(program bytes + argument bytes) / 1,000)
-
 v42 required N >= ceil(sum(max opcode cost) / 20,000)
 if any LogicSig has more than 1,000 argument bytes:
     required N >= ceil(sum(argument bytes) / 1,000)

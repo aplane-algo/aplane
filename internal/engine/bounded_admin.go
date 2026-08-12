@@ -87,6 +87,9 @@ func (e *Engine) SubmitCompletedBoundedAdmin(ctx context.Context, preparation *B
 	if err != nil {
 		return nil, fmt.Errorf("query genesis context before bounded-admin submission: %w", err)
 	}
+	if _, err := resolveSupportedConsensus(params.ConsensusVersion); err != nil {
+		return nil, err
+	}
 	if hex.EncodeToString(params.GenesisHash) != preparation.Request.Payload.GenesisHashHex {
 		return nil, fmt.Errorf("bounded-admin genesis hash does not match active network")
 	}

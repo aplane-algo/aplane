@@ -21,7 +21,7 @@ type AuditLogger interface {
 }
 
 type VerifySignableKeysFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
-type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, network PlannerNetworkParams, hasPassthrough, isPreGrouped bool) (resourcePlan lsigresource.Plan, lsigIndices []int, err *ServiceError)
+type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (resourcePlan lsigresource.Plan, lsigIndices []int, err *ServiceError)
 type BuildFinalGroupFunc func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError)
 type GenerateTxnDescriptionFunc func(txnBytesHex string) string
 
@@ -32,17 +32,6 @@ type DummyFeeInfo struct {
 	DummyFeeContribution    uint64
 	ProgramFeeContribution  uint64
 	NativePQFeeContribution uint64
-}
-
-type PlannerNetworkParams struct {
-	MinTxnFee        uint64
-	ConsensusVersion string
-	// ConsensusUnavailable explains why ConsensusVersion is empty. Fee
-	// planning tolerates an empty version by falling back to the default min
-	// fee, but LogicSig resource planning cannot: sizing mode and program
-	// pricing are consensus-defined. Carrying the reason keeps the resulting
-	// refusal actionable instead of reporting an empty consensus name.
-	ConsensusUnavailable string
 }
 
 // PlanResult contains the output of group-building shared by /sign and /plan.
@@ -82,7 +71,6 @@ type Planner struct {
 	CalculateDummies       CalculateDummiesFunc
 	BuildFinalGroup        BuildFinalGroupFunc
 	GenesisHashResolver    apconfig.GenesisHashNetworkResolver
-	NetworkParams          func(genesisHash types.Digest) PlannerNetworkParams
 	Snapshot               SnapshotFunc
 }
 
@@ -172,11 +160,7 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		return nil, err
 	}
 
-	if p.NetworkParams == nil || len(txns) == 0 {
-		return nil, internal("LogicSig planning requires network consensus parameters")
-	}
-	networkParams := p.NetworkParams(txns[0].GenesisHash)
-	resourcePlan, lsigIndices, err := p.CalculateDummies(snapshot, identityID, req.Requests, txns, sizingBoundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, networkParams, hasPassthrough, isPreGrouped)
+	resourcePlan, lsigIndices, err := p.CalculateDummies(snapshot, identityID, req.Requests, txns, sizingBoundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
 	if err != nil {
 		return nil, err
 	}
@@ -191,14 +175,12 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 	if budgetErr != nil {
 		return nil, budgetErr
 	}
-	if networkParams.ConsensusVersion != "" || dummiesNeeded > 0 || resourcePlan.ProgramFeeFactorUsage > 0 || hasNativePQAuthorization(budgets) {
-		plannedFees, feeErr := applyGroupFees(allTxns, budgets, networkParams, resourcePlan, dummiesNeeded, lsigIndices, isPreGrouped || hasPassthrough)
-		if feeErr != nil {
-			return nil, feeErr
-		}
-		feeInfo = plannedFees
-		needsRegroup = needsRegroup || feeInfo.TotalFees > 0
+	plannedFees, feeErr := applyGroupFees(allTxns, budgets, resourcePlan, dummiesNeeded, lsigIndices, isPreGrouped || hasPassthrough)
+	if feeErr != nil {
+		return nil, feeErr
 	}
+	feeInfo = plannedFees
+	needsRegroup = needsRegroup || feeInfo.TotalFees > 0
 	if needsRegroup && len(allTxns) > 1 {
 		for i := range allTxns {
 			allTxns[i].Group = types.Digest{}

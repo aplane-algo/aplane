@@ -1701,8 +1701,9 @@ recovery entropy; the Falcon working seed is
 `SHA512/256("PQK" || "f1" || entropy)`. Recovery entropy is never persisted.
 Native Falcon authorization occupies top-level `SignedTxn.PQsig`, never
 `SignedTxn.Sig` or `SignedTxn.Lsig`, and contributes `2e6` fixed-point fee
-units in addition to the transaction's ordinary `1e6` base factor. It is
-accepted only on explicitly recognized consensus-v42-capable networks.
+units in addition to the transaction's ordinary `1e6` base factor. This
+APlane release implements the v42 authorization contract; clients reject an
+algod that reports another contract before constructing transactions.
 The signer derives this authorization budget from local key metadata or a
 passthrough `PQsig`. An unsigned foreign native-PQ slot in `/plan` or `/sign`
 declares `pq_scheme: "f1"`; this hint is mutually exclusive with the structured
@@ -1713,14 +1714,15 @@ and TEAL authorization, but its pre-release derivation moved in place to TEAL
 v13 compiler auto-salting. Neither mnemonic nor stored key material is
 interchangeable with native `falcon1024`.
 
-LogicSig program sizing and fees are consensus-defined, so planning a group
-that contains any LogicSig entry requires the signer to learn the active
-consensus version from a reachable algod for the transaction's network. When
-that lookup fails — no matching `genesis_hash_networks` entry, no configured
-algod for the network, or an unreachable node — the signer keeps planning
-ordinary ed25519 groups at the default minimum fee but refuses LogicSig
-planning, and the refusal names the specific reason. A group with no LogicSig
-entry never consults the consensus profile.
+LogicSig program sizing and native-PQ contributions are consensus-defined.
+This release compiles exactly one reviewed contract, v42, into the signer.
+`/plan` and `/sign` never query a per-network algod. The client owns ordinary
+transaction fee selection through its algod SuggestedParams response and
+validates that response as v42-compatible (`fnet5` is the explicit FNet alias).
+The signer rejects an ordinary fee deficit, then adds only authorization-
+induced requirements: resource-dummy base fees, priced LogicSig program bytes,
+and native-PQ contributions. The signer's separately configured compile algod
+remains responsible only for template compilation/simulation workflows.
 
 This document uses **versioned signing-metadata keys** for key files that carry
 `signing_metadata_version >= 1`. Non-bounded LogicSig keys use version 1;

@@ -41,7 +41,6 @@ type PlannerKeyMetadata struct {
 // PlannerDeps supplies process-specific data needed by the package-owned planner.
 type PlannerDeps interface {
 	Snapshot(identityID string) PlannerIdentitySnapshot
-	NetworkParams(genesisHash types.Digest) PlannerNetworkParams
 }
 
 // PlannerOptions configures non-environmental planner behavior.
@@ -54,17 +53,6 @@ type PlannerOptions struct {
 
 // NewPlanner constructs the canonical signer planner using package-owned planning logic.
 func NewPlanner(deps PlannerDeps, opts PlannerOptions) *Planner {
-	var cachedNetworkHash types.Digest
-	var cachedNetworkParams PlannerNetworkParams
-	var networkParamsCached bool
-	networkParams := func(genesisHash types.Digest) PlannerNetworkParams {
-		if !networkParamsCached || cachedNetworkHash != genesisHash {
-			cachedNetworkHash = genesisHash
-			cachedNetworkParams = deps.NetworkParams(genesisHash)
-			networkParamsCached = true
-		}
-		return cachedNetworkParams
-	}
 	return &Planner{
 		AuditLog:               opts.AuditLog,
 		Console:                opts.Console,
@@ -73,14 +61,13 @@ func NewPlanner(deps PlannerDeps, opts PlannerOptions) *Planner {
 		VerifySignableKeys: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (int, *ServiceError) {
 			return verifySignableKeys(opts.Console, snapshot, identityID, requests, passthroughIndices, foreignIndices)
 		},
-		CalculateDummies: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, network PlannerNetworkParams, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
-			return calculateLogicSigResources(opts.Console, snapshot, identityID, requests, txns, boundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, network, hasPassthrough, isPreGrouped)
+		CalculateDummies: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
+			return calculateLogicSigResources(opts.Console, snapshot, identityID, requests, txns, boundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
 		},
 		BuildFinalGroup: func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
 			return buildFinalGroupWithoutFees(opts.Console, txns, dummiesNeeded, isPreGrouped)
 		},
-		NetworkParams: networkParams,
-		Snapshot:      deps.Snapshot,
+		Snapshot: deps.Snapshot,
 	}
 }
 
@@ -108,32 +95,17 @@ func buildFinalGroupWithoutFees(console Console, txns []types.Transaction, dummi
 	return allTxns, dummyTxns, feeInfo, dummiesNeeded > 0 || !isPreGrouped, nil
 }
 
-func calculateLogicSigResources(console Console, snapshot PlannerIdentitySnapshot, _ string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, network PlannerNetworkParams, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
-	var profile lsigresource.ConsensusProfile
-	profileResolved := false
-	resolveProfile := func() *ServiceError {
-		if profileResolved {
-			return nil
-		}
-		if network.ConsensusVersion == "" {
-			reason := network.ConsensusUnavailable
-			if reason == "" {
-				reason = "the signer could not determine the active consensus version"
-			}
-			return badRequest(fmt.Sprintf(
-				"cannot plan LogicSig resources: %s; LogicSig program sizing and fees are consensus-defined, so this signer needs a reachable algod for the transaction's network",
-				reason,
-			))
-		}
-		resolved, profileErr := lsigresource.ResolveConsensus(network.ConsensusVersion)
-		if profileErr != nil {
-			return badRequest(fmt.Sprintf("cannot plan LogicSig resources for consensus %q: %v", network.ConsensusVersion, profileErr))
-		}
-		profile = resolved
-		profileResolved = true
-		return nil
+func calculateLogicSigResources(console Console, snapshot PlannerIdentitySnapshot, _ string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
+	profile, profileErr := lsigresource.CurrentConsensus()
+	if profileErr != nil {
+		return lsigresource.Plan{}, nil, internal(fmt.Sprintf("load compiled v42 LogicSig contract: %v", profileErr))
 	}
-
+	if uint64(len(txns)) > profile.MaxGroupSize {
+		return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf(
+			"transaction group has %d members; compiled v42 maximum is %d",
+			len(txns), profile.MaxGroupSize,
+		))
+	}
 	usages := make([]lsigresource.Usage, 0, len(requests))
 	lsigIndices := make([]int, 0, len(requests))
 	for i, request := range requests {
@@ -188,10 +160,6 @@ func calculateLogicSigResources(console Console, snapshot PlannerIdentitySnapsho
 			GroupSize:        uint64(len(txns)),
 		}, nil, nil
 	}
-	if profileErr := resolveProfile(); profileErr != nil {
-		return lsigresource.Plan{}, nil, profileErr
-	}
-
 	dummy := lsigresource.Usage{
 		ProgramBytes:  uint64(len(txsigning.EmbeddedDummyTealTok)),
 		MaxOpcodeCost: 1,
@@ -202,7 +170,7 @@ func calculateLogicSigResources(console Console, snapshot PlannerIdentitySnapsho
 		Dummy:            dummy,
 	})
 	if solveErr != nil {
-		return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("LogicSig resources do not fit consensus %s: %v", network.ConsensusVersion, solveErr))
+		return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("LogicSig resources do not fit the v42 consensus contract: %v", solveErr))
 	}
 	if resourcePlan.DummyCount > 0 && (isPreGrouped || hasPassthrough) {
 		return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("immutable group requires %d additional dummy transaction(s) for LogicSig arguments/opcode budget; submit an ungrouped unsigned group instead", resourcePlan.DummyCount))

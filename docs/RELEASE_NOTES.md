@@ -8,8 +8,9 @@ nodes through the ordinary key-management workflows. Recovery uses a 25-word
 Algorand mnemonic, signing emits top-level `PQsig` scheme `f1`, and APlane
 accounts for the protocol's additional post-quantum fee contribution.
 
-This type requires consensus v42 or an explicitly recognized compatible
-network. It is distinct from the LogicSig type `aplane.falcon1024.v1`, whose
+This release supports exactly the consensus-v42 authorization contract (with
+FNet's `fnet5` identifier as an explicit deployment alias). It is distinct
+from the LogicSig type `aplane.falcon1024.v1`, whose
 24-word mnemonic and LogicSig key material are not convertible to native
 Falcon.
 
@@ -27,12 +28,15 @@ this is a pre-release in-place migration, previously generated development
 LogicSig keys and addresses must be regenerated.
 
 Group planning now models LogicSig program bytes, argument bytes, and opcode
-cost separately. On recognized v42 profiles, dummies are added only for pooled
-arguments or opcode capacity; excess program bytes are paid through the
-group-wide consensus fee. Foreign slots use the structured `lsig_resources`
-wire field, replacing the former combined `lsig_size` scalar. Plugins and SDKs
-must provide `programBytes`, `argumentBytes`, and `maxOpcodeCost` and use the
-signer's `/plan` output as the canonical group.
+cost separately under one compiled v42 contract. Dummies are added only for
+pooled arguments or opcode capacity; excess program bytes are paid through the
+group-wide consensus fee. Clients validate algod's consensus identifier and
+own ordinary transaction fee selection. The signer does not contact a network
+algod during `/plan` or `/sign`; it adds only authorization-induced dummy,
+program, and native-PQ fees. Foreign slots use the structured
+`lsig_resources` wire field, replacing the former combined `lsig_size` scalar.
+Plugins and SDKs must provide `programBytes`, `argumentBytes`, and
+`maxOpcodeCost` and use the signer's `/plan` output as the canonical group.
 
 ## First supported release
 

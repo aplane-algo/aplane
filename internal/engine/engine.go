@@ -331,6 +331,9 @@ func (e *Core) getSuggestedParamsWithFee(ctx context.Context, fee uint64, useFla
 	if err != nil {
 		return types.SuggestedParams{}, fmt.Errorf("failed to get suggested params: %w", err)
 	}
+	if _, err := resolveSupportedConsensus(sp.ConsensusVersion); err != nil {
+		return types.SuggestedParams{}, err
+	}
 	// A client-side genesis-hash assertion was considered here (audit finding:
 	// mis-pointed algod). It is deferred: the signer authoritatively rejects an
 	// unrecognized genesis hash (signing.validateKnownNetwork) and its policy is

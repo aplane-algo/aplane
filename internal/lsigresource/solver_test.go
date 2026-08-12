@@ -22,30 +22,21 @@ func mustProfile(t *testing.T, version protocol.ConsensusVersion) ConsensusProfi
 	return profile
 }
 
-func TestResolveConsensusUsesClosedSizingModes(t *testing.T) {
+func TestResolveConsensusUsesSingleV42Contract(t *testing.T) {
 	t.Parallel()
 
-	v41 := mustProfile(t, protocol.ConsensusV41)
-	if v41.SizingMode != SizingModeLegacyCombined || v41.PerByteTxnSurcharge != 0 {
-		t.Fatalf("v41 profile = %#v", v41)
-	}
 	v42 := mustProfile(t, protocol.ConsensusV42)
-	if v42.SizingMode != SizingModePricedProgram || v42.PerByteTxnSurcharge != 100 {
+	if v42.Version != CurrentConsensusVersion || v42.PerByteTxnSurcharge != 100 {
 		t.Fatalf("v42 profile = %#v", v42)
 	}
 	fnet := mustProfile(t, protocol.ConsensusVFnet5)
-	if fnet.SizingMode != SizingModePricedProgram {
-		t.Fatalf("fnet5 sizing mode = %d", fnet.SizingMode)
+	if fnet != v42 {
+		t.Fatalf("fnet5 profile = %#v, want v42 contract %#v", fnet, v42)
 	}
-	// A development LocalNet reports "future". Without it every LogicSig is
-	// unplannable there while ed25519 keeps working, which reads as a key-type
-	// bug rather than a missing consensus entry.
-	future := mustProfile(t, protocol.ConsensusFuture)
-	if future.SizingMode != SizingModePricedProgram || future.PerByteTxnSurcharge != 100 {
-		t.Fatalf("future profile = %#v", future)
-	}
-	if _, err := ResolveConsensus("future-unreviewed"); !errors.Is(err, ErrUnknownConsensus) {
-		t.Fatalf("ResolveConsensus(unknown) error = %v", err)
+	for _, unsupported := range []protocol.ConsensusVersion{protocol.ConsensusV41, protocol.ConsensusFuture, "future-unreviewed"} {
+		if _, err := ResolveConsensus(string(unsupported)); !errors.Is(err, ErrUnknownConsensus) {
+			t.Fatalf("ResolveConsensus(%q) error = %v, want unsupported", unsupported, err)
+		}
 	}
 }
 
@@ -108,55 +99,6 @@ func TestSolveV42PricesProgramsWithoutAddingDummies(t *testing.T) {
 	}
 	if plan.GroupSize != 2 || plan.ChargedProgramBytes != 2_501 || plan.ProgramFeeFactorUsage != 250_100 {
 		t.Fatalf("Falcon program plan = %#v", plan)
-	}
-}
-
-func TestSolveLegacyCombinesProgramAndArguments(t *testing.T) {
-	t.Parallel()
-
-	profile := mustProfile(t, protocol.ConsensusV41)
-	plan, err := Solve(profile, PlanInput{
-		TransactionCount: 1,
-		LogicSigs:        []Usage{{ProgramBytes: 4_500, ArgumentBytes: 1_423, MaxOpcodeCost: 1}},
-		Dummy:            minimalDummy,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.GroupSize != 6 || plan.DummyCount != 5 || plan.ChargedProgramBytes != 0 || plan.ProgramFeeFactorUsage != 0 {
-		t.Fatalf("legacy plan = %#v, want six transactions and no priced program usage", plan)
-	}
-}
-
-func TestSolveUsesExplicitModeNotSurchargeValue(t *testing.T) {
-	t.Parallel()
-
-	legacy := mustProfile(t, protocol.ConsensusV41)
-	legacy.PerByteTxnSurcharge = 100
-	legacyPlan, err := Solve(legacy, PlanInput{
-		TransactionCount: 1,
-		LogicSigs:        []Usage{{ProgramBytes: 2_000}},
-		Dummy:            minimalDummy,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if legacyPlan.GroupSize != 3 || legacyPlan.ProgramFeeFactorUsage != 0 {
-		t.Fatalf("legacy mode followed surcharge value: %#v", legacyPlan)
-	}
-
-	priced := mustProfile(t, protocol.ConsensusV42)
-	priced.PerByteTxnSurcharge = 0
-	pricedPlan, err := Solve(priced, PlanInput{
-		TransactionCount: 1,
-		LogicSigs:        []Usage{{ProgramBytes: 2_000}},
-		Dummy:            minimalDummy,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pricedPlan.GroupSize != 1 || pricedPlan.ChargedProgramBytes != 1_000 {
-		t.Fatalf("priced mode followed surcharge value: %#v", pricedPlan)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/engine"
 )
 
 // SwitchNetworkRequest changes the active Algorand network.
@@ -18,7 +19,7 @@ type SwitchNetworkRequest struct {
 
 // SwitchNetwork changes the active Algorand network and updates dependent
 // application services such as plugins.
-func (a *App) SwitchNetwork(_ context.Context, req SwitchNetworkRequest) (*SwitchNetworkResult, error) {
+func (a *App) SwitchNetwork(ctx context.Context, req SwitchNetworkRequest) (*SwitchNetworkResult, error) {
 	if err := config.ValidateNetworkID(req.Network); err != nil {
 		return nil, err
 	}
@@ -29,6 +30,9 @@ func (a *App) SwitchNetwork(_ context.Context, req SwitchNetworkRequest) (*Switc
 	algodClient, err := algo.GetAlgodClientWithConfig(req.Network, &a.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to %s: %w", req.Network, err)
+	}
+	if err := engine.ValidateAlgodConsensus(ctx, algodClient); err != nil {
+		return nil, fmt.Errorf("cannot switch to %s: %w", req.Network, err)
 	}
 
 	oldNetwork := a.eng.GetNetwork()

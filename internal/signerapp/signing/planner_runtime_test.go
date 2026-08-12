@@ -17,17 +17,13 @@ import (
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
-	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 type stubPlannerDeps struct {
-	keyTypes         map[string]string
-	keyFiles         map[string]string
-	keyMetadata      map[string]PlannerKeyMetadata
-	minTxnFee        uint64
-	minTxnFees       map[types.Digest]uint64
-	consensusVersion string
+	keyTypes    map[string]string
+	keyFiles    map[string]string
+	keyMetadata map[string]PlannerKeyMetadata
 }
 
 func (d stubPlannerDeps) Snapshot(identityID string) PlannerIdentitySnapshot {
@@ -43,18 +39,6 @@ func (d stubPlannerDeps) Snapshot(identityID string) PlannerIdentitySnapshot {
 		KeyTypes:    d.keyTypes,
 		KeyMetadata: d.keyMetadata,
 	}
-}
-
-func (d stubPlannerDeps) NetworkParams(genesisHash types.Digest) PlannerNetworkParams {
-	minFee := d.minTxnFee
-	if d.minTxnFees != nil {
-		minFee = d.minTxnFees[genesisHash]
-	}
-	consensusVersion := d.consensusVersion
-	if consensusVersion == "" {
-		consensusVersion = string(protocol.ConsensusV41)
-	}
-	return PlannerNetworkParams{MinTxnFee: minFee, ConsensusVersion: consensusVersion}
 }
 
 type countingSnapshotPlannerDeps struct {
@@ -112,7 +96,6 @@ func TestCalculateLogicSigResourcesV42SeparatesProgramArgumentsAndOpcode(t *test
 		map[int]bool{},
 		map[int]bool{},
 		nil,
-		PlannerNetworkParams{ConsensusVersion: string(protocol.ConsensusV42)},
 		false,
 		false,
 	)
@@ -130,10 +113,9 @@ func TestCalculateLogicSigResourcesV42SeparatesProgramArgumentsAndOpcode(t *test
 	}
 }
 
-// An unreachable or unconfigured algod leaves the consensus version empty.
-// LogicSig planning must refuse, but the refusal has to name the cause: the
-// bare `consensus ""` form sent operators looking for a key-type bug.
-func TestCalculateLogicSigResourcesExplainsMissingConsensus(t *testing.T) {
+// LogicSig planning is governed by the compiled v42 contract and therefore
+// does not depend on a reachable per-network algod.
+func TestCalculateLogicSigResourcesUsesCompiledConsensus(t *testing.T) {
 	profile := lsigresource.Profile{
 		ProgramBytes: 4_500,
 		Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 39_999},
@@ -141,7 +123,7 @@ func TestCalculateLogicSigResourcesExplainsMissingConsensus(t *testing.T) {
 	snapshot := PlannerIdentitySnapshot{
 		KeyMetadata: map[string]PlannerKeyMetadata{"LSIG": {LogicSigResources: &profile}},
 	}
-	_, _, err := calculateLogicSigResources(
+	plan, _, err := calculateLogicSigResources(
 		nil,
 		snapshot,
 		"default",
@@ -151,24 +133,18 @@ func TestCalculateLogicSigResourcesExplainsMissingConsensus(t *testing.T) {
 		map[int]bool{},
 		map[int]bool{},
 		nil,
-		PlannerNetworkParams{ConsensusUnavailable: `no algod server is configured for network "testnet"`},
 		false,
 		false,
 	)
-	if err == nil {
-		t.Fatal("calculateLogicSigResources() error = nil, want refusal")
+	if err != nil {
+		t.Fatalf("calculateLogicSigResources() error = %v, want fixed-contract success", err)
 	}
-	if !strings.Contains(err.Error(), `no algod server is configured for network "testnet"`) {
-		t.Fatalf("calculateLogicSigResources() error = %v, want the algod reason", err)
-	}
-	if strings.Contains(err.Error(), `consensus ""`) {
-		t.Fatalf("calculateLogicSigResources() error = %v, still reports an empty consensus name", err)
+	if plan.GroupSize != 2 || plan.DummyCount != 1 {
+		t.Fatalf("resource plan = %#v, want compiled v42 group size 2", plan)
 	}
 }
 
-// A group with no LogicSig entries never needs a consensus profile, so an
-// unavailable algod must not block ordinary ed25519 signing.
-func TestCalculateLogicSigResourcesAllowsNonLogicSigGroupWithoutConsensus(t *testing.T) {
+func TestCalculateLogicSigResourcesAllowsNonLogicSigGroup(t *testing.T) {
 	_, _, err := calculateLogicSigResources(
 		nil,
 		PlannerIdentitySnapshot{},
@@ -179,12 +155,32 @@ func TestCalculateLogicSigResourcesAllowsNonLogicSigGroupWithoutConsensus(t *tes
 		map[int]bool{},
 		map[int]bool{},
 		nil,
-		PlannerNetworkParams{ConsensusUnavailable: "algod unreachable"},
 		false,
 		false,
 	)
 	if err != nil {
 		t.Fatalf("calculateLogicSigResources() error = %v, want success", err)
+	}
+}
+
+func TestCalculateLogicSigResourcesRejectsOversizedNonLogicSigGroup(t *testing.T) {
+	requests := make([]signerapi.SignRequest, 17)
+	txns := make([]types.Transaction, len(requests))
+	_, _, err := calculateLogicSigResources(
+		nil,
+		PlannerIdentitySnapshot{},
+		"default",
+		requests,
+		txns,
+		nil,
+		map[int]bool{},
+		map[int]bool{},
+		nil,
+		false,
+		true,
+	)
+	if err == nil || !strings.Contains(err.Error(), "maximum is 16") {
+		t.Fatalf("calculateLogicSigResources() error = %v, want maximum-group rejection", err)
 	}
 }
 
@@ -202,7 +198,6 @@ func TestCalculateLogicSigResourcesRejectsOrphanPassthroughLogicSigFields(t *tes
 		map[int]bool{0: true},
 		map[int]bool{},
 		map[int][]byte{0: encoded},
-		PlannerNetworkParams{ConsensusVersion: string(protocol.ConsensusV42)},
 		true,
 		true,
 	)
@@ -345,6 +340,7 @@ func TestPlannerUsesSingleIdentitySnapshot(t *testing.T) {
 		Type: types.PaymentTx,
 		Header: types.Header{
 			Sender:      types.Address{2},
+			Fee:         1_000,
 			FirstValid:  1,
 			LastValid:   10,
 			GenesisHash: genesisHash,
@@ -357,8 +353,7 @@ func TestPlannerUsesSingleIdentitySnapshot(t *testing.T) {
 
 	deps := &countingSnapshotPlannerDeps{
 		stubPlannerDeps: stubPlannerDeps{
-			keyTypes:  map[string]string{authAddr: "ed25519"},
-			minTxnFee: 1000,
+			keyTypes: map[string]string{authAddr: "ed25519"},
 		},
 	}
 	planner := NewPlanner(deps, PlannerOptions{GenesisHashResolver: resolver})
@@ -397,6 +392,7 @@ func TestPlannerAuditsDecodedTxnSender(t *testing.T) {
 		Type: types.PaymentTx,
 		Header: types.Header{
 			Sender:      types.Address{2},
+			Fee:         1_000,
 			FirstValid:  1,
 			LastValid:   10,
 			GenesisHash: genesisHash,
@@ -408,8 +404,7 @@ func TestPlannerAuditsDecodedTxnSender(t *testing.T) {
 	}
 	audit := &captureAuditLog{}
 	deps := stubPlannerDeps{
-		keyTypes:  map[string]string{authAddr: "ed25519"},
-		minTxnFee: 1000,
+		keyTypes: map[string]string{authAddr: "ed25519"},
 	}
 	planner := NewPlanner(deps, PlannerOptions{
 		AuditLog:            audit,
@@ -577,10 +572,11 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 
 	authAddr := types.Address{1}.String()
 	metadata := testBoundedMetadata(t, "")
-	metadata.MaxFee = 2_000
+	metadata.MaxFee = 1_000
 	deps := stubPlannerDeps{
 		keyTypes: map[string]string{authAddr: "aplane.falcon1024-bounded.v1"},
-		// Spend resources need 2 dummies for a single txn: pooled fee = 2 * minFee.
+		// The v42 program surcharge needs a signer-side fee increase, but the
+		// bounded path permits no increase above the client-supplied base fee.
 		keyMetadata: map[string]PlannerKeyMetadata{authAddr: {
 			Category:             "dsa_lsig",
 			PublicKeyHex:         "aabb",
@@ -592,7 +588,6 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 				AdminRekey:    &lsigresource.PathProfile{MaxOpcodeCost: 1},
 			},
 		}},
-		minTxnFee: 1000,
 	}
 	planner := NewPlanner(deps, PlannerOptions{GenesisHashResolver: resolver})
 
@@ -617,8 +612,8 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 		}}}
 	}
 
-	// The three-member group requires 3000 microAlgos. The starting fee is
-	// valid, but the bounded account can absorb only another 1000.
+	// The starting fee satisfies the ordinary transaction requirement, but the
+	// bounded account cannot absorb the priced-program contribution.
 	_, planErr := planner.PlanGroup("default", makeRequest(1000))
 	if planErr == nil {
 		t.Fatal("PlanGroup() error = nil, want bounded fee-capacity rejection")

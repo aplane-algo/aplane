@@ -653,10 +653,10 @@ func matrixCompileAlgod(t *testing.T, network *harness.TestnetConfig) *sdkalgod.
 		if err != nil {
 			t.Fatalf("compile/simulation algod %s consensus %q is unsupported: %v", label, version, err)
 		}
-		if profile.SizingMode != lsigresource.SizingModePricedProgram || profile.MaximumLogicSigVersion < 13 {
+		if profile.MaximumLogicSigVersion < 13 {
 			t.Fatalf(
-				"compile/simulation algod %s consensus %q is not v42-compatible (mode=%d LogicSigVersion=%d)",
-				label, version, profile.SizingMode, profile.MaximumLogicSigVersion,
+				"compile/simulation algod %s consensus %q is not v42-compatible (LogicSigVersion=%d)",
+				label, version, profile.MaximumLogicSigVersion,
 			)
 		}
 	}

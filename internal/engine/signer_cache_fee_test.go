@@ -19,8 +19,8 @@ func TestAuthorizationFeeReserveUsesConsensusResourceModel(t *testing.T) {
 		consensus protocol.ConsensusVersion
 		want      uint64
 	}{
-		{name: "v41 combined bytes require five dummies", consensus: protocol.ConsensusV41, want: 5_000},
-		{name: "v42 args require one dummy and all program bytes are priced", consensus: protocol.ConsensusV42, want: 1_251},
+		{name: "v42", consensus: protocol.ConsensusV42, want: 1_251},
+		{name: "fnet5 alias", consensus: protocol.ConsensusVFnet5, want: 1_251},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -43,6 +43,22 @@ func TestAuthorizationFeeReserveUsesConsensusResourceModel(t *testing.T) {
 				t.Fatalf("AuthorizationFeeReserve() = %d, want %d", got, test.want)
 			}
 		})
+	}
+}
+
+func TestAuthorizationFeeReserveRejectsUnsupportedConsensus(t *testing.T) {
+	const address = "ADDR"
+	transport := newAccountMockTransport(t)
+	transport.txParams.ConsensusVersion = string(protocol.ConsensusV41)
+	engine := setupEngineWithMockAlgod(t, transport)
+	engine.SignerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
+		ProgramBytes: 1,
+		Spend:        &lsigresource.PathProfile{MaxOpcodeCost: 1},
+	})
+
+	_, err := engine.AuthorizationFeeReserve(context.Background(), address)
+	if err == nil {
+		t.Fatal("AuthorizationFeeReserve() error = nil, want unsupported-consensus rejection")
 	}
 }
 

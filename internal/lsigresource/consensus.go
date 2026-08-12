@@ -11,22 +11,17 @@ import (
 	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 )
 
-var ErrUnknownConsensus = errors.New("unsupported LogicSig consensus profile")
+var ErrUnknownConsensus = errors.New("unsupported consensus contract")
 
-// SizingMode selects a consensus algorithm explicitly. Numeric fee parameters
-// do not imply a mode because pricing and sizing may evolve independently.
-type SizingMode uint8
-
-const (
-	SizingModeLegacyCombined SizingMode = iota + 1
-	SizingModePricedProgram
-)
+// CurrentConsensusVersion is the sole consensus contract implemented by this
+// APlane release. Supporting another protocol requires updating and reviewing
+// this package; versions are never ordered or inferred at runtime.
+const CurrentConsensusVersion = protocol.ConsensusV42
 
 // ConsensusProfile is the closed subset of consensus parameters required by
 // LogicSig resource planning.
 type ConsensusProfile struct {
 	Version                protocol.ConsensusVersion
-	SizingMode             SizingMode
 	MaxGroupSize           uint64
 	SizeUnit               uint64
 	MaxProgramBytes        uint64
@@ -35,32 +30,26 @@ type ConsensusProfile struct {
 	MaximumLogicSigVersion uint64
 }
 
-var supportedSizingModes = map[protocol.ConsensusVersion]SizingMode{
-	protocol.ConsensusV41:    SizingModeLegacyCombined,
-	protocol.ConsensusV42:    SizingModePricedProgram,
-	protocol.ConsensusVFnet5: SizingModePricedProgram,
-	// ConsensusFuture is what a development LocalNet reports. The SDK defines
-	// it as v42 with a higher LogicSigVersion, so it prices programs the same
-	// way; omitting it makes every LogicSig unplannable on LocalNet while
-	// ed25519 keeps working.
-	protocol.ConsensusFuture: SizingModePricedProgram,
-}
-
-// ResolveConsensus returns a fail-closed profile for a specifically supported
-// protocol. Adding an SDK consensus entry does not silently select a mode.
+// ResolveConsensus verifies that an algod-reported identifier represents the
+// one consensus contract supported by this release, then returns the compiled
+// v42 profile. fnet5 is the explicit FNet deployment of the same v42 contract;
+// it is an identifier alias, not a second planning model.
 func ResolveConsensus(version string) (ConsensusProfile, error) {
 	consensusVersion := protocol.ConsensusVersion(version)
-	mode, ok := supportedSizingModes[consensusVersion]
-	if !ok {
+	if consensusVersion != CurrentConsensusVersion && consensusVersion != protocol.ConsensusVFnet5 {
 		return ConsensusProfile{}, fmt.Errorf("%w: %q", ErrUnknownConsensus, version)
 	}
-	params, ok := sdkconfig.Consensus[consensusVersion]
+	return CurrentConsensus()
+}
+
+// CurrentConsensus returns the compiled and validated v42 planning contract.
+func CurrentConsensus() (ConsensusProfile, error) {
+	params, ok := sdkconfig.Consensus[CurrentConsensusVersion]
 	if !ok {
-		return ConsensusProfile{}, fmt.Errorf("%w: SDK has no parameters for %q", ErrUnknownConsensus, version)
+		return ConsensusProfile{}, fmt.Errorf("%w: SDK has no parameters for %q", ErrUnknownConsensus, CurrentConsensusVersion)
 	}
 	profile := ConsensusProfile{
-		Version:                consensusVersion,
-		SizingMode:             mode,
+		Version:                CurrentConsensusVersion,
 		MaxGroupSize:           uint64(params.MaxTxGroupSize),
 		SizeUnit:               params.LogicSigMaxSize,
 		MaxProgramBytes:        params.MaxAbsoluteLogicSigProgramSize,
@@ -69,15 +58,12 @@ func ResolveConsensus(version string) (ConsensusProfile, error) {
 		MaximumLogicSigVersion: params.LogicSigVersion,
 	}
 	if err := profile.validate(); err != nil {
-		return ConsensusProfile{}, fmt.Errorf("consensus profile %q: %w", version, err)
+		return ConsensusProfile{}, fmt.Errorf("consensus profile %q: %w", CurrentConsensusVersion, err)
 	}
 	return profile, nil
 }
 
 func (p ConsensusProfile) validate() error {
-	if p.SizingMode != SizingModeLegacyCombined && p.SizingMode != SizingModePricedProgram {
-		return fmt.Errorf("%w: unknown sizing mode %d", ErrInvalidUsage, p.SizingMode)
-	}
 	if p.MaxGroupSize == 0 || p.SizeUnit == 0 || p.MaxProgramBytes == 0 || p.OpcodeUnit == 0 {
 		return fmt.Errorf("%w: consensus resource unit is zero", ErrInvalidUsage)
 	}

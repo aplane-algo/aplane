@@ -18,6 +18,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/appspec"
@@ -401,7 +402,7 @@ func (m *mockAlgodTransport) RoundTrip(req *http.Request) (*http.Response, error
 			GenesisHash:      genesisHash,
 			GenesisId:        "testnet-v1.0",
 			LastRound:        77,
-			ConsensusVersion: "test",
+			ConsensusVersion: string(protocol.ConsensusV42),
 			MinFee:           1000,
 		})
 		if err != nil {

@@ -158,13 +158,13 @@ Rules:
 
 This prevents a display string from becoming the trust anchor for policy.
 
-Algod's suggested parameters also supply the reported consensus version used
-for authorization-resource and fee planning. APlane maps that value through a
-closed consensus-profile table; it does not infer v42 behavior from a network
-name or compare version strings lexically. Known v41 profiles use legacy
-combined LogicSig sizing. Recognized v42/FNet profiles separate program,
-argument, and opcode resources and price excess program bytes. Unknown
-profiles fail closed when the signer cannot prove the authorization rules.
+This APlane release implements one compiled authorization contract: consensus
+v42. Client transaction construction validates algod's reported consensus
+identifier before using suggested parameters; FNet's `fnet5` identifier is an
+explicit alias for the same v42 contract. Other identifiers fail closed. The
+signer does not query a network algod during `/plan` or `/sign`: it validates
+the transaction genesis hash for policy context, then applies the compiled v42
+LogicSig and native-PQ rules.
 
 ## ASA Transfer Guards
 

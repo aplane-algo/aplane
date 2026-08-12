@@ -14,6 +14,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
@@ -36,7 +37,7 @@ func newAccountMockTransport(t *testing.T) *accountMockTransport {
 		accounts: make(map[string]models.Account),
 		assets:   make(map[uint64]models.Asset),
 		txParams: models.TransactionParametersResponse{
-			ConsensusVersion: "test",
+			ConsensusVersion: string(protocol.ConsensusV42),
 			Fee:              1000,
 			GenesisId:        "testnet-v1.0",
 			GenesisHash:      []byte("SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI="),
