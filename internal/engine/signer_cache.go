@@ -13,6 +13,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
+	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 )
 
 func (e *Core) signerCacheCount() int {
@@ -74,15 +78,45 @@ func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.
 	return e.SignerCache.LogicSigResourceProfile(address)
 }
 
-// LogicSigFeeReserve returns the additional microAlgo fee a standalone
-// transaction from sender needs beyond its ordinary base fee. It includes both
-// resource-dummy base fees and the v42 priced-program contribution. Sweep flows
-// reserve it before choosing a spend-everything amount.
-func (e *Core) LogicSigFeeReserve(ctx context.Context, sender string) (uint64, error) {
+// AuthorizationFeeReserve returns the additional microAlgo fee a standalone
+// transaction from sender needs beyond its ordinary base fee. It covers
+// LogicSig resource dummies and priced program bytes, plus the native-PQ fee
+// contribution. Sweep flows reserve it before choosing a spend-everything
+// amount.
+func (e *Core) AuthorizationFeeReserve(ctx context.Context, sender string) (uint64, error) {
 	effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
 	profile, ok := e.signerCacheLogicSigResourceProfile(effectiveSigner)
-	if !ok {
+	isNativeFalcon := e.signerCacheKeyType(effectiveSigner) == nativefalcon.KeyType
+	if !ok && !isNativeFalcon {
 		return 0, nil
+	}
+	if ok && isNativeFalcon {
+		return 0, fmt.Errorf("signer cache classifies %s as both LogicSig and native Falcon", effectiveSigner)
+	}
+	if e.AlgodClient == nil {
+		return 0, ErrNoAlgodClient
+	}
+	params, err := e.AlgodClient.SuggestedParams().Do(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("load consensus parameters for authorization fee reserve: %w", err)
+	}
+	minFee := params.MinFee
+	if minFee == 0 {
+		minFee = signing.DefaultMinFee
+	}
+	if isNativeFalcon {
+		consensus, known := sdkconfig.Consensus[protocol.ConsensusVersion(params.ConsensusVersion)]
+		if !known {
+			return 0, fmt.Errorf("resolve native Falcon fee reserve: unsupported consensus %q", params.ConsensusVersion)
+		}
+		if !consensus.EnablePQSchemeFalcon1024 {
+			return 0, fmt.Errorf("resolve native Falcon fee reserve: consensus %q does not enable Falcon-1024", params.ConsensusVersion)
+		}
+		reserve, overflow := scaleFeeFactor(minFee, nativefalcon.PQFeeContribution)
+		if overflow {
+			return 0, fmt.Errorf("native Falcon fee reserve overflowed")
+		}
+		return reserve, nil
 	}
 	usage, err := profile.UsageForPath(lsigresource.PathSpend)
 	if err != nil {
@@ -90,13 +124,6 @@ func (e *Core) LogicSigFeeReserve(ctx context.Context, sender string) (uint64, e
 	}
 	if err != nil {
 		return 0, fmt.Errorf("resolve LogicSig spend resources: %w", err)
-	}
-	if e.AlgodClient == nil {
-		return 0, ErrNoAlgodClient
-	}
-	params, err := e.AlgodClient.SuggestedParams().Do(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("load consensus parameters for LogicSig fee reserve: %w", err)
 	}
 	consensus, err := lsigresource.ResolveConsensus(params.ConsensusVersion)
 	if err != nil {
@@ -112,10 +139,6 @@ func (e *Core) LogicSigFeeReserve(ctx context.Context, sender string) (uint64, e
 	})
 	if err != nil {
 		return 0, fmt.Errorf("plan LogicSig fee reserve: %w", err)
-	}
-	minFee := params.MinFee
-	if minFee == 0 {
-		minFee = signing.DefaultMinFee
 	}
 	dummyFees, overflow := multiplyReserve(plan.DummyCount, minFee)
 	if overflow {

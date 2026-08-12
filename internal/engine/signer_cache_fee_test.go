@@ -12,7 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
-func TestLogicSigFeeReserveUsesConsensusResourceModel(t *testing.T) {
+func TestAuthorizationFeeReserveUsesConsensusResourceModel(t *testing.T) {
 	const address = "ADDR"
 	tests := []struct {
 		name      string
@@ -35,24 +35,40 @@ func TestLogicSigFeeReserveUsesConsensusResourceModel(t *testing.T) {
 				},
 			})
 
-			got, err := engine.LogicSigFeeReserve(context.Background(), address)
+			got, err := engine.AuthorizationFeeReserve(context.Background(), address)
 			if err != nil {
-				t.Fatalf("LogicSigFeeReserve() error = %v", err)
+				t.Fatalf("AuthorizationFeeReserve() error = %v", err)
 			}
 			if got != test.want {
-				t.Fatalf("LogicSigFeeReserve() = %d, want %d", got, test.want)
+				t.Fatalf("AuthorizationFeeReserve() = %d, want %d", got, test.want)
 			}
 		})
 	}
 }
 
-func TestLogicSigFeeReserveSkipsNonLogicSigWithoutAlgod(t *testing.T) {
+func TestAuthorizationFeeReserveUsesNativeFalconContribution(t *testing.T) {
+	const address = "ADDR"
+	transport := newAccountMockTransport(t)
+	transport.txParams.ConsensusVersion = string(protocol.ConsensusV42)
+	engine := setupEngineWithMockAlgod(t, transport)
+	engine.SignerCache.AddAddress(address, "falcon1024")
+
+	got, err := engine.AuthorizationFeeReserve(context.Background(), address)
+	if err != nil {
+		t.Fatalf("AuthorizationFeeReserve() error = %v", err)
+	}
+	if got != 2_000 {
+		t.Fatalf("AuthorizationFeeReserve() = %d, want 2000", got)
+	}
+}
+
+func TestAuthorizationFeeReserveSkipsOrdinaryAccountWithoutAlgod(t *testing.T) {
 	engine, err := NewEngine("test")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	got, err := engine.LogicSigFeeReserve(context.Background(), "ADDR")
+	got, err := engine.AuthorizationFeeReserve(context.Background(), "ADDR")
 	if err != nil || got != 0 {
-		t.Fatalf("LogicSigFeeReserve() = %d, %v; want 0, nil", got, err)
+		t.Fatalf("AuthorizationFeeReserve() = %d, %v; want 0, nil", got, err)
 	}
 }

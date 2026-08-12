@@ -772,14 +772,14 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			}
 		}
 
-		logicSigReserve, err := a.eng.LogicSigFeeReserve(ctx, fromAddress)
+		authorizationReserve, err := a.eng.AuthorizationFeeReserve(ctx, fromAddress)
 		if err != nil {
-			item.Error = fmt.Sprintf("failed to plan LogicSig fee reserve: %v", err)
+			item.Error = fmt.Sprintf("failed to plan authorization fee reserve: %v", err)
 			result.FailureCount++
 			result.Items = append(result.Items, item)
 			continue
 		}
-		sendAmount, feeReserve, ok := sweepSendAmount(balance, leavingAmount.Raw, assetMeta.AssetID, req.Fee, req.UseFlatFee, logicSigReserve)
+		sendAmount, feeReserve, ok := sweepSendAmount(balance, leavingAmount.Raw, assetMeta.AssetID, req.Fee, req.UseFlatFee, authorizationReserve)
 		if !ok {
 			item.SkippedReason = fmt.Sprintf("balance %d <= leaving amount %d", balance, leavingAmount.Raw)
 			if assetMeta.AssetID == 0 && balance > leavingAmount.Raw {
@@ -857,11 +857,11 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 
 // sweepSendAmount computes how much to send so the account is left with exactly
 // `leaving`. For ALGO sweeps the fee reserve is the base transaction fee plus
-// logicSigFeeReserve — dummy base fees plus any priced-program contribution the
-// signer pools onto a LogicSig sender — so sweeping from a LogicSig account does
-// not overspend. ASA sweeps pay their fee from the ALGO balance, not the swept
-// asset, so logicSigFeeReserve does not apply there.
-func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, logicSigFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
+// authorizationFeeReserve — LogicSig dummy/program fees or the native-PQ fee
+// contribution — so sweeping from a non-Ed25519 account does not overspend.
+// ASA sweeps pay their fee from the ALGO balance, not the swept asset, so the
+// authorization reserve does not apply there.
+func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, authorizationFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
 	if balance <= leaving {
 		return 0, 0, false
 	}
@@ -875,10 +875,10 @@ func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, log
 	if useFlatFee {
 		baseFee = fee
 	}
-	if logicSigFeeReserve > math.MaxUint64-baseFee {
+	if authorizationFeeReserve > math.MaxUint64-baseFee {
 		return 0, math.MaxUint64, false
 	}
-	feeReserve = baseFee + logicSigFeeReserve
+	feeReserve = baseFee + authorizationFeeReserve
 	if available <= feeReserve {
 		return 0, feeReserve, false
 	}
