@@ -160,7 +160,7 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 	}
 
 	refs := make(map[string]string, len(result.PluginSigners))
-	resources := make(map[string]signerapi.LogicSigResourceUsage, len(result.PluginSigners))
+	authorizations := make(map[string]engine.PluginSlotAuthorization, len(result.PluginSigners))
 	for i, ps := range result.PluginSigners {
 		if ps.Kind != jsonrpc.PluginSignerKindCallback {
 			return nil, fmt.Errorf("pluginSigners[%d]: unsupported kind %q", i, ps.Kind)
@@ -172,17 +172,25 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 			return nil, fmt.Errorf("pluginSigners[%d]: duplicate address %s", i, ps.Address)
 		}
 		refs[ps.Address] = ps.SignerRef
+		authorization := engine.PluginSlotAuthorization{PQScheme: ps.PQScheme}
 		if ps.LsigResources != nil {
 			resource := signerapi.LogicSigResourceUsage{
 				ProgramBytes:  ps.LsigResources.ProgramBytes,
 				ArgumentBytes: ps.LsigResources.ArgumentBytes,
 				MaxOpcodeCost: ps.LsigResources.MaxOpcodeCost,
 			}
-			probe := signerapi.SignRequest{TxnBytesHex: "probe", LsigResources: &resource}
-			if err := probe.Validate(); err != nil {
-				return nil, fmt.Errorf("pluginSigners[%d]: %w", i, err)
-			}
-			resources[ps.Address] = resource
+			authorization.LsigResources = &resource
+		}
+		probe := signerapi.SignRequest{
+			TxnBytesHex:   "probe",
+			LsigResources: authorization.LsigResources,
+			PQScheme:      authorization.PQScheme,
+		}
+		if err := probe.Validate(); err != nil {
+			return nil, fmt.Errorf("pluginSigners[%d]: %w", i, err)
+		}
+		if authorization.LsigResources != nil || authorization.PQScheme != "" {
+			authorizations[ps.Address] = authorization
 		}
 	}
 
@@ -217,7 +225,7 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 
 	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
 	confirmed := !a.eng.GetSimulate()
-	submit, err := a.eng.SignAndSubmitWithPluginSigners(ctx, txns, refs, resources, signSlots, lsigArgsSlice)
+	submit, err := a.eng.SignAndSubmitWithPluginSigners(ctx, txns, refs, authorizations, signSlots, lsigArgsSlice)
 	if err != nil {
 		if submit != nil {
 			return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), err

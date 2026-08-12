@@ -278,6 +278,12 @@ func TestBuildApprovalDescriptionTreatsSingleRequestedTxnWithDummiesAsSingle(t *
 	if strings.Contains(desc, "TRANSACTION GROUP") {
 		t.Fatalf("description = %q, did not expect group header", desc)
 	}
+	if !strings.Contains(desc, "[MODIFIED BY SERVER]") || !strings.Contains(desc, "Added 1 dummy transaction") {
+		t.Fatalf("description = %q, want explicit dummy disclosure", desc)
+	}
+	if !strings.Contains(desc, "Group ID recomputed") {
+		t.Fatalf("description = %q, want group ID disclosure", desc)
+	}
 	if firstValid != 100 || lastValid != 200 {
 		t.Fatalf("approval window = (%d, %d), want (100, 200)", firstValid, lastValid)
 	}

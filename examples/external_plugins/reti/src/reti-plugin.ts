@@ -7,6 +7,7 @@ import { AlgoAmount } from '@algorandfoundation/algokit-utils/types/amount'
 import { StakingPoolClient } from './contracts/StakingPoolClient.js'
 import { ValidatorRegistryClient, type ValidatorConfig } from './contracts/ValidatorRegistryClient.js'
 
+const PLUGIN_PROTOCOL_VERSION = '2.0'
 const GATING_TYPE_NONE = 0
 const GATING_TYPE_ASSETS_CREATED_BY = 1
 const GATING_TYPE_ASSET_ID = 2
@@ -310,6 +311,14 @@ function ensureRetiAppConfigured(): void {
 }
 
 async function handleInitialize(params: any): Promise<any> {
+  if (params.version !== PLUGIN_PROTOCOL_VERSION) {
+    return {
+      success: false,
+      message: `Unsupported APlane plugin protocol ${JSON.stringify(params.version)}; plugin supports ${PLUGIN_PROTOCOL_VERSION}`,
+      version: PLUGIN_PROTOCOL_VERSION,
+    }
+  }
+
   await configurePlugin({
     network: params.network || 'testnet',
     algodUrl: params.algodUrl,
@@ -323,7 +332,7 @@ async function handleInitialize(params: any): Promise<any> {
   return {
     success: true,
     message: `Reti plugin initialized on ${pluginState.network} (${appIdMessage})`,
-    version: params.version,
+    version: PLUGIN_PROTOCOL_VERSION,
   }
 }
 

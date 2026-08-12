@@ -244,7 +244,7 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 	}
 }
 
-func TestInitializePluginRequiresProtocolVersionEcho(t *testing.T) {
+func TestInitializePluginRequiresSupportedProtocolVersion(t *testing.T) {
 	tests := []struct {
 		name        string
 		echoVersion string
@@ -252,7 +252,7 @@ func TestInitializePluginRequiresProtocolVersionEcho(t *testing.T) {
 	}{
 		{name: "supported", echoVersion: jsonrpc.PluginProtocolVersion},
 		{name: "missing", echoVersion: "", wantErr: `unsupported plugin protocol version ""`},
-		{name: "mismatch", echoVersion: "2.0", wantErr: `unsupported plugin protocol version "2.0"`},
+		{name: "mismatch", echoVersion: "1.0", wantErr: `unsupported plugin protocol version "1.0"`},
 	}
 
 	for _, tt := range tests {

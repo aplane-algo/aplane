@@ -122,6 +122,9 @@ const (
 	RequestModePassthrough RequestMode = "passthrough"
 	RequestModeForeign     RequestMode = "foreign"
 
+	// PQSchemeFalcon1024 is the v42 native Falcon-1024 authorization scheme.
+	PQSchemeFalcon1024 = "f1"
+
 	// SignCancelStateCanceled means the request is canceled or a pre-pending
 	// cancellation was recorded for that request ID.
 	SignCancelStateCanceled SignCancelState = "canceled"
@@ -163,6 +166,9 @@ func (r SignRequest) Validate() error {
 	}
 	if r.PQScheme != "" && mode != RequestModeForeign {
 		return fmt.Errorf("pq_scheme is allowed only for foreign transactions")
+	}
+	if r.PQScheme != "" && r.PQScheme != PQSchemeFalcon1024 {
+		return fmt.Errorf("unsupported pq_scheme %q", r.PQScheme)
 	}
 	if r.LsigResources != nil && mode != RequestModeForeign {
 		return fmt.Errorf("lsig_resources is allowed only for foreign transactions")

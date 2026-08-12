@@ -180,8 +180,10 @@ Your plugin must handle these methods:
 
 JSON-RPC frames use `jsonrpc: "2.0"`. `manifest_format` is the manifest schema
 version. The `initialize.params.version` field is the APlane plugin protocol
-version; return the same value in `initialize.result.version`. Your plugin's
-semantic package version stays in `manifest.json` and `getInfo`.
+version; compare it with a plugin-owned constant and return that independently
+supported value in `initialize.result.version`. Do not merely echo the host's
+value. Your plugin's semantic package version stays in `manifest.json` and
+`getInfo`.
 
 ### 3. Communication Protocol
 

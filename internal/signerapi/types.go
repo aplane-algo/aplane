@@ -84,6 +84,7 @@ const (
 	RequestModeSign             = pub.RequestModeSign
 	RequestModePassthrough      = pub.RequestModePassthrough
 	RequestModeForeign          = pub.RequestModeForeign
+	PQSchemeFalcon1024          = pub.PQSchemeFalcon1024
 	SignCancelStateCanceled     = pub.SignCancelStateCanceled
 	SignCancelStateNotFound     = pub.SignCancelStateNotFound
 	ComponentSignRoleUser       = pub.ComponentSignRoleUser

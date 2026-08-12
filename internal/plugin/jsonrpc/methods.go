@@ -6,6 +6,7 @@ package jsonrpc
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -21,7 +22,7 @@ const (
 // PluginProtocolVersion is the APlane plugin protocol version used in the
 // initialize handshake. It is distinct from the JSON-RPC envelope version and
 // from the plugin package's semantic version in its manifest/getInfo response.
-const PluginProtocolVersion = "1.0"
+const PluginProtocolVersion = "2.0"
 
 // Optional methods a plugin may implement.
 const (
@@ -45,7 +46,7 @@ type InitializeParams struct {
 type InitializeResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,omitempty"`
-	Version string `json:"version"` // APlane plugin protocol version echoed by plugin
+	Version string `json:"version"` // APlane plugin protocol version independently supported by the plugin
 }
 
 // ExecuteParams sent when executing a command
@@ -201,6 +202,30 @@ type PluginSigner struct {
 	// slot is unsigned and the program remains plugin-private. Omit it only when
 	// the slot carries no LogicSig.
 	LsigResources *PluginLogicSigResources `json:"lsigResources,omitempty"`
+	// PQScheme declares the native-PQ authorization the plugin will attach.
+	// It is mutually exclusive with LsigResources; "f1" is Falcon-1024.
+	PQScheme string `json:"pqScheme,omitempty"`
+}
+
+// UnmarshalJSON rejects the retired scalar LogicSig size declaration. Protocol
+// 1.0 plugins could otherwise echo the host-provided handshake version and have
+// encoding/json silently discard lsigSize, producing an under-budgeted group.
+func (s *PluginSigner) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if _, retired := fields["lsigSize"]; retired {
+		return fmt.Errorf("plugin signer field %q is unsupported by plugin protocol %s; use %q", "lsigSize", PluginProtocolVersion, "lsigResources")
+	}
+
+	type wire PluginSigner
+	var decoded wire
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*s = PluginSigner(decoded)
+	return nil
 }
 
 // PluginLogicSigResources keeps the three v42 consensus resources separate.

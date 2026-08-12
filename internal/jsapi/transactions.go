@@ -12,6 +12,7 @@ package jsapi
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dop251/goja"
 
@@ -585,6 +586,13 @@ func (a *API) jsPlan(call goja.FunctionCall) goja.Value {
 		if v, ok := m["signedTxnHex"].(string); ok {
 			requests[i].SignedTxnHex = v
 		}
+		if v, exists := m["pqScheme"]; exists {
+			scheme, ok := v.(string)
+			if !ok || strings.TrimSpace(scheme) == "" {
+				panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: pqScheme must be a non-empty string", i+1)))
+			}
+			requests[i].PQScheme = scheme
+		}
 		if v, ok := m["lsigResources"]; ok {
 			resources, ok := v.(map[string]interface{})
 			if !ok {
@@ -617,6 +625,9 @@ func (a *API) jsPlan(call goja.FunctionCall) goja.Value {
 				args[k] = s
 			}
 			requests[i].LsigArgs = args
+		}
+		if err := requests[i].Validate(); err != nil {
+			panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: %v", i+1, err)))
 		}
 	}
 

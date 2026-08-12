@@ -428,8 +428,10 @@ Plugins communicate with APlane Shell using JSON-RPC 2.0 over stdin/stdout.
 The JSON-RPC envelope version (`jsonrpc: "2.0"`), the plugin manifest schema
 version (`manifest_format`), and the APlane plugin protocol version are
 separate contracts. The host sends the current APlane plugin protocol version
-in `initialize.params.version`; the plugin must echo the same value in
-`initialize.result.version`, or startup fails closed. A plugin's semantic
+in `initialize.params.version`; the plugin must compare it with its own
+hard-coded supported version and return that independently supported version in
+`initialize.result.version`, or startup fails closed. A plugin must not merely
+echo the host's value. A plugin's semantic
 package version lives in its manifest `version` field and in `getInfo`, not in
 the initialize handshake.
 
@@ -448,7 +450,7 @@ Called once after the plugin starts.
     "algodUrl": "https://testnet-api.4160.nodely.dev",
     "algodToken": "",
     "indexerUrl": "https://testnet-idx.4160.nodely.dev",
-    "version": "1.0"
+    "version": "2.0"
   }
 }
 ```
@@ -461,7 +463,7 @@ Called once after the plugin starts.
   "result": {
     "success": true,
     "message": "Plugin initialized",
-    "version": "1.0"
+    "version": "2.0"
   }
 }
 ```
@@ -849,7 +851,8 @@ the plugin's own signatures with apsigner's — under apsigner's policy and appr
 single thing a plugin cannot do on its own. The plugin returns an *unsigned*
 draft (every intent `type: "raw"`) plus a `pluginSigners` list declaring the
 slots it will sign itself — each with an address, an opaque `signerRef`, and
-structured `lsigResources` for the LogicSig path it will attach. APlane
+either structured `lsigResources` for the LogicSig path it will attach or a
+`pqScheme` for native-PQ authorization. APlane
 canonicalizes the group: it adds resource dummies from the declared argument
 and opcode ceilings, prices program bytes, fixes the aggregate fee, and
 recomputes the group ID, while a guard asserts every original slot's
@@ -895,6 +898,7 @@ result, alongside the unsigned `raw` intents:
 | `kind` | string | Signer kind; `plugin-callback` |
 | `signerRef` | string | Opaque plugin-owned identifier echoed back in the `signTransactions` request so the plugin can locate its key |
 | `lsigResources` | object | Selected-path LogicSig resource declaration: `programBytes`, `argumentBytes`, and reviewed worst-case `maxOpcodeCost`. Omit only when the slot carries no LogicSig. |
+| `pqScheme` | string | Native-PQ authorization scheme attached by the plugin; currently `f1` for Falcon-1024. Mutually exclusive with `lsigResources`. |
 
 The `groupMode` field is the top-level selector for the flow; `presign-plan` requires a
 `pluginSigners` entry for every plugin-owned slot, and `pregrouped-signed` uses no

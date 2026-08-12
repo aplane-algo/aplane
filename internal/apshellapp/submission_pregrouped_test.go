@@ -112,6 +112,22 @@ func TestSubmitPresignPlanRejections(t *testing.T) {
 			},
 			wantSub: "duplicate address",
 		},
+		{
+			name: "LogicSig and native PQ are mutually exclusive",
+			signers: []jsonrpc.PluginSigner{{
+				Address: "A", Kind: jsonrpc.PluginSignerKindCallback, SignerRef: "r",
+				LsigResources: &jsonrpc.PluginLogicSigResources{ProgramBytes: 1, MaxOpcodeCost: 1},
+				PQScheme:      "f1",
+			}},
+			wantSub: "cannot specify both pq_scheme and lsig_resources",
+		},
+		{
+			name: "unsupported native PQ scheme",
+			signers: []jsonrpc.PluginSigner{{
+				Address: "A", Kind: jsonrpc.PluginSignerKindCallback, SignerRef: "r", PQScheme: "f2",
+			}},
+			wantSub: `unsupported pq_scheme "f2"`,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

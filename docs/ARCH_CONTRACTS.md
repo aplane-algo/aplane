@@ -2591,10 +2591,11 @@ apshell to sign arbitrary bytes on their behalf.
 - `algodToken`
 - optional `indexerUrl`
 - a `version` field containing the current APlane plugin protocol version
-  (`"1.0"`). It is distinct from the JSON-RPC protocol version (`"2.0"`), from
+  (`"2.0"`). It is distinct from the JSON-RPC protocol version (`"2.0"`), from
   `manifest_format` (`"1.0"`), and from the plugin's semantic package version.
-  The plugin must echo the same value in `initialize.result.version`; mismatches
-  fail plugin startup.
+  The plugin must compare it with its own hard-coded supported version and
+  return that independent version in `initialize.result.version`; it must not
+  simply echo the host value. Mismatches fail plugin startup.
 
 `execute` carries:
 

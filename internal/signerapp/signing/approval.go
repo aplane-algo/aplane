@@ -176,10 +176,16 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 	if isSingleTxn {
 		b.WriteString("=== SINGLE TRANSACTION ===\n\n")
 		hasAuthorizationFeeRequirement := plan.FeeInfo.ProgramFeeContribution > 0 || plan.FeeInfo.NativePQFeeContribution > 0
-		if plan.FeeInfo.TotalFees > 0 {
+		if plan.DummiesNeeded > 0 {
 			b.WriteString("[MODIFIED BY SERVER]\n")
+			b.WriteString(fmt.Sprintf("  • Added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", plan.DummiesNeeded))
+		}
+		if plan.FeeInfo.TotalFees > 0 {
+			if plan.DummiesNeeded == 0 {
+				b.WriteString("[MODIFIED BY SERVER]\n")
+			}
 			b.WriteString(fmt.Sprintf("  • Group fee adjustment: +%d microAlgos\n", plan.FeeInfo.TotalFees))
-		} else if hasAuthorizationFeeRequirement {
+		} else if plan.DummiesNeeded == 0 && hasAuthorizationFeeRequirement {
 			b.WriteString("[FEE REQUIREMENT COVERED BY EXISTING FEES]\n")
 		}
 		if plan.FeeInfo.ProgramFeeContribution > 0 {
@@ -188,7 +194,10 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 		if plan.FeeInfo.NativePQFeeContribution > 0 {
 			b.WriteString(fmt.Sprintf("  • Required native Falcon contribution: %d microAlgos\n", plan.FeeInfo.NativePQFeeContribution))
 		}
-		if plan.FeeInfo.TotalFees > 0 || plan.FeeInfo.ProgramFeeContribution > 0 || plan.FeeInfo.NativePQFeeContribution > 0 {
+		if (plan.DummiesNeeded > 0 || plan.FeeInfo.TotalFees > 0) && len(allTxns) > 1 {
+			b.WriteString("  • Group ID recomputed\n")
+		}
+		if plan.DummiesNeeded > 0 || plan.FeeInfo.TotalFees > 0 || plan.FeeInfo.ProgramFeeContribution > 0 || plan.FeeInfo.NativePQFeeContribution > 0 {
 			b.WriteString("\n")
 		}
 	} else {

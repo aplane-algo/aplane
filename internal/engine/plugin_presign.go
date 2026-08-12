@@ -47,18 +47,26 @@ type PluginSlotSigned struct {
 	Encoded string // base64 signed transaction msgpack
 }
 
+// PluginSlotAuthorization declares the authorization shape a plugin will add
+// to an unsigned slot. LogicSig resources and a native-PQ scheme are mutually
+// exclusive; SignRequest.Validate enforces that shared wire invariant.
+type PluginSlotAuthorization struct {
+	LsigResources *signerapi.LogicSigResourceUsage
+	PQScheme      string
+}
+
 // SignAndSubmitWithPluginSigners runs the pre-sign planning flow. pluginSignerRefs
 // maps a slot sender address to its opaque signerRef; those slots are signed by the
 // plugin via signSlots. All other slots are APlane-managed (apsigner sign-mode).
-// pluginSlotResources maps plugin-owned addresses to the selected LogicSig path
-// the plugin will attach during the callback. It is forwarded to /plan without
-// combining program bytes, argument bytes, and opcode cost. An absent entry means
-// the slot carries no LogicSig.
+// pluginSlotAuthorizations maps plugin-owned addresses to the authorization the
+// plugin will attach during the callback. LogicSig resources are forwarded to
+// /plan without combining program bytes, argument bytes, and opcode cost; native
+// PQ is forwarded as its scheme tag. An absent entry means ordinary authorization.
 func (e *Engine) SignAndSubmitWithPluginSigners(
 	ctx context.Context,
 	txns []types.Transaction,
 	pluginSignerRefs map[string]string,
-	pluginSlotResources map[string]signerapi.LogicSigResourceUsage,
+	pluginSlotAuthorizations map[string]PluginSlotAuthorization,
 	signSlots PluginSlotSigner,
 	lsigArgs []map[string][]byte,
 ) (*PluginSubmitResult, error) {
@@ -89,9 +97,12 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	for i, txn := range txns {
 		if _, owned := pluginSignerRefs[txn.Sender.String()]; owned {
 			request := signerapi.SignRequest{TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)}
-			if resource, ok := pluginSlotResources[txn.Sender.String()]; ok {
-				copy := resource
-				request.LsigResources = &copy
+			if authorization, ok := pluginSlotAuthorizations[txn.Sender.String()]; ok {
+				if authorization.LsigResources != nil {
+					copy := *authorization.LsigResources
+					request.LsigResources = &copy
+				}
+				request.PQScheme = authorization.PQScheme
 			}
 			planRequests[i] = request
 		} else {

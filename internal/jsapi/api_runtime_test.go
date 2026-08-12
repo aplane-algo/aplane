@@ -464,6 +464,24 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		})}})
 	})
 
+	t.Run("invalid pq scheme type", func(t *testing.T) {
+		_, _, api := newTestAPI(t)
+
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("expected panic")
+			}
+			if got := r.(goja.Value).String(); !strings.Contains(got, "pqScheme must be a non-empty string") {
+				t.Fatalf("panic = %q, want pqScheme validation error", got)
+			}
+		}()
+
+		api.jsPlan(goja.FunctionCall{Arguments: []goja.Value{api.runtime.ToValue([]interface{}{
+			map[string]interface{}{"txnBytesHex": "5458", "pqScheme": float64(1)},
+		})}})
+	})
+
 	t.Run("maps request and response", func(t *testing.T) {
 		eng, _, api := newTestAPI(t)
 
@@ -480,16 +498,16 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 				t.Fatalf("decode request: %v", err)
 			}
 			return jsonResponse(r, http.StatusOK, signerapi.GroupPlanResponse{
-				Transactions: []string{"TXabc", "TXdef"},
+				Transactions: []string{"TXabc", "TXdef", "TXghi"},
 				Mutations: &signerapi.MutationReport{
 					DummiesAdded:     1,
 					GroupIDChanged:   true,
 					FeesModified:     []int{0, 2},
 					TotalFeesDelta:   3000,
-					OriginalCount:    2,
-					FinalCount:       3,
+					OriginalCount:    3,
+					FinalCount:       4,
 					PassthroughCount: 0,
-					ForeignCount:     1,
+					ForeignCount:     2,
 					Reason:           "lsig_budget",
 				},
 			})
@@ -515,6 +533,10 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 					"maxOpcodeCost": float64(6_789),
 				},
 			},
+			map[string]interface{}{
+				"txnBytesHex": "5458cafe",
+				"pqScheme":    signerapi.PQSchemeFalcon1024,
+			},
 		})}})
 
 		got := value.Export().(map[string]interface{})
@@ -534,11 +556,15 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 					ProgramBytes: 123, ArgumentBytes: 45, MaxOpcodeCost: 6_789,
 				},
 			},
+			{
+				TxnBytesHex: "5458cafe",
+				PQScheme:    signerapi.PQSchemeFalcon1024,
+			},
 		}) {
 			t.Fatalf("request = %#v, want mapped sign requests", gotReq.Requests)
 		}
 
-		if !reflect.DeepEqual(toStringArrayValue(got["transactions"]), []string{"TXabc", "TXdef"}) {
+		if !reflect.DeepEqual(toStringArrayValue(got["transactions"]), []string{"TXabc", "TXdef", "TXghi"}) {
 			t.Fatalf("transactions = %#v, want planned transactions", got["transactions"])
 		}
 

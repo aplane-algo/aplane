@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -170,6 +171,10 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if got := req.Requests[0].PQScheme; got != signerapi.PQSchemeFalcon1024 {
+			http.Error(w, fmt.Sprintf("plugin PQ scheme = %q, want %q", got, signerapi.PQSchemeFalcon1024), http.StatusBadRequest)
+			return
+		}
 		planned := make([]types.Transaction, len(req.Requests))
 		for i, item := range req.Requests {
 			txn, err := txnutil.DecodePrefixedHex(item.TxnBytesHex)
@@ -265,7 +270,9 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 		context.Background(),
 		txns,
 		map[string]string{pluginAccount.Address.String(): "plugin-ref"},
-		nil,
+		map[string]PluginSlotAuthorization{
+			pluginAccount.Address.String(): {PQScheme: signerapi.PQSchemeFalcon1024},
+		},
 		func(requests []PluginSlotSignRequest) ([]PluginSlotSigned, error) {
 			pluginCalls.Add(1)
 			out := make([]PluginSlotSigned, len(requests))

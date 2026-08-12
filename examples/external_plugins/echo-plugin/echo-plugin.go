@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+const pluginProtocolVersion = "2.0"
+
 // JSON-RPC structures
 type Request struct {
 	Jsonrpc string          `json:"jsonrpc"`
@@ -147,6 +149,13 @@ func handleInitialize(req *Request) *Response {
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return errorResponse(req.ID, -32602, "Invalid params", err.Error())
 	}
+	if params.Version != pluginProtocolVersion {
+		return successResponse(req.ID, InitializeResult{
+			Success: false,
+			Message: fmt.Sprintf("unsupported APlane plugin protocol %q; plugin supports %q", params.Version, pluginProtocolVersion),
+			Version: pluginProtocolVersion,
+		})
+	}
 
 	network = params.Network
 	algodURL = params.AlgodURL
@@ -156,7 +165,7 @@ func handleInitialize(req *Request) *Response {
 	result := InitializeResult{
 		Success: true,
 		Message: fmt.Sprintf("Echo plugin initialized on %s", network),
-		Version: params.Version,
+		Version: pluginProtocolVersion,
 	}
 
 	return successResponse(req.ID, result)

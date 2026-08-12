@@ -418,14 +418,29 @@ signing or triggering approval. Request fields:
   txnSender,
   txnBytesHex,
   signedTxnHex,
+  lsigArgs: { name: "hex-string" }
+}
+```
+
+An unsigned foreign slot may declare exactly one authorization hint:
+
+```javascript
+{ txnBytesHex, pqScheme: "f1" }
+
+// or
+{
+  txnBytesHex,
   lsigResources: {
     programBytes,
     argumentBytes,
     maxOpcodeCost
-  },
-  lsigArgs: { name: "hex-string" }
+  }
 }
 ```
+
+`pqScheme` declares native-PQ authorization for an unsigned foreign slot and
+currently accepts `"f1"` (Falcon-1024). It is mutually exclusive with
+`lsigResources`, which declares LogicSig authorization.
 
 ## Application Interaction
 

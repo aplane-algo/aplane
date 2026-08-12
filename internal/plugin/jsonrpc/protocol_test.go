@@ -53,6 +53,20 @@ func TestNewRequest(t *testing.T) {
 	}
 }
 
+func TestPluginProtocolVersion(t *testing.T) {
+	if PluginProtocolVersion != "2.0" {
+		t.Fatalf("PluginProtocolVersion = %q, want breaking-wire version 2.0", PluginProtocolVersion)
+	}
+}
+
+func TestPluginSignerRejectsRetiredLogicSigSize(t *testing.T) {
+	var signer PluginSigner
+	err := json.Unmarshal([]byte(`{"address":"A","kind":"plugin-callback","signerRef":"r","lsigSize":4000}`), &signer)
+	if err == nil || !strings.Contains(err.Error(), `field "lsigSize" is unsupported`) {
+		t.Fatalf("Unmarshal() error = %v, want retired lsigSize rejection", err)
+	}
+}
+
 func TestRequestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
