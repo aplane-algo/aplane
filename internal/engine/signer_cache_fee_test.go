@@ -4,72 +4,43 @@
 package engine
 
 import (
-	"context"
 	"testing"
-
-	"github.com/algorand/go-algorand-sdk/v2/protocol"
 
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
-func TestAuthorizationFeeReserveUsesConsensusResourceModel(t *testing.T) {
+func TestAuthorizationFeeReserveUsesCompiledV42ResourceModel(t *testing.T) {
 	const address = "ADDR"
-	tests := []struct {
-		name      string
-		consensus protocol.ConsensusVersion
-		want      uint64
-	}{
-		{name: "v42", consensus: protocol.ConsensusV42, want: 1_251},
-		{name: "fnet5 alias", consensus: protocol.ConsensusVFnet5, want: 1_251},
+	engine, err := NewEngine("test")
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			transport := newAccountMockTransport(t)
-			transport.txParams.ConsensusVersion = string(test.consensus)
-			engine := setupEngineWithMockAlgod(t, transport)
-			engine.SignerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
-				ProgramBytes: 4_500,
-				Spend: &lsigresource.PathProfile{
-					ArgumentBytes: 1_423,
-					MaxOpcodeCost: 20_000,
-				},
-			})
-
-			got, err := engine.AuthorizationFeeReserve(context.Background(), address)
-			if err != nil {
-				t.Fatalf("AuthorizationFeeReserve() error = %v", err)
-			}
-			if got != test.want {
-				t.Fatalf("AuthorizationFeeReserve() = %d, want %d", got, test.want)
-			}
-		})
-	}
-}
-
-func TestAuthorizationFeeReserveRejectsUnsupportedConsensus(t *testing.T) {
-	const address = "ADDR"
-	transport := newAccountMockTransport(t)
-	transport.txParams.ConsensusVersion = string(protocol.ConsensusV41)
-	engine := setupEngineWithMockAlgod(t, transport)
 	engine.SignerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
-		ProgramBytes: 1,
-		Spend:        &lsigresource.PathProfile{MaxOpcodeCost: 1},
+		ProgramBytes: 4_500,
+		Spend: &lsigresource.PathProfile{
+			ArgumentBytes: 1_423,
+			MaxOpcodeCost: 20_000,
+		},
 	})
 
-	_, err := engine.AuthorizationFeeReserve(context.Background(), address)
-	if err == nil {
-		t.Fatal("AuthorizationFeeReserve() error = nil, want unsupported-consensus rejection")
+	got, err := engine.AuthorizationFeeReserve(address)
+	if err != nil {
+		t.Fatalf("AuthorizationFeeReserve() error = %v", err)
+	}
+	if got != 1_251 {
+		t.Fatalf("AuthorizationFeeReserve() = %d, want 1251", got)
 	}
 }
 
 func TestAuthorizationFeeReserveUsesNativeFalconContribution(t *testing.T) {
 	const address = "ADDR"
-	transport := newAccountMockTransport(t)
-	transport.txParams.ConsensusVersion = string(protocol.ConsensusV42)
-	engine := setupEngineWithMockAlgod(t, transport)
+	engine, err := NewEngine("test")
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
 	engine.SignerCache.AddAddress(address, "falcon1024")
 
-	got, err := engine.AuthorizationFeeReserve(context.Background(), address)
+	got, err := engine.AuthorizationFeeReserve(address)
 	if err != nil {
 		t.Fatalf("AuthorizationFeeReserve() error = %v", err)
 	}
@@ -83,7 +54,7 @@ func TestAuthorizationFeeReserveSkipsOrdinaryAccountWithoutAlgod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	got, err := engine.AuthorizationFeeReserve(context.Background(), "ADDR")
+	got, err := engine.AuthorizationFeeReserve("ADDR")
 	if err != nil || got != 0 {
 		t.Fatalf("AuthorizationFeeReserve() = %d, %v; want 0, nil", got, err)
 	}

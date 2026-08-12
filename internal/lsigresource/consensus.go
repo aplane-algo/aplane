@@ -23,6 +23,7 @@ const CurrentConsensusVersion = protocol.ConsensusV42
 type ConsensusProfile struct {
 	Version                protocol.ConsensusVersion
 	MaxGroupSize           uint64
+	MinTxnFee              uint64
 	SizeUnit               uint64
 	MaxProgramBytes        uint64
 	OpcodeUnit             uint64
@@ -51,6 +52,7 @@ func CurrentConsensus() (ConsensusProfile, error) {
 	profile := ConsensusProfile{
 		Version:                CurrentConsensusVersion,
 		MaxGroupSize:           uint64(params.MaxTxGroupSize),
+		MinTxnFee:              params.MinTxnFee,
 		SizeUnit:               params.LogicSigMaxSize,
 		MaxProgramBytes:        params.MaxAbsoluteLogicSigProgramSize,
 		OpcodeUnit:             params.LogicSigMaxCost,
@@ -64,7 +66,7 @@ func CurrentConsensus() (ConsensusProfile, error) {
 }
 
 func (p ConsensusProfile) validate() error {
-	if p.MaxGroupSize == 0 || p.SizeUnit == 0 || p.MaxProgramBytes == 0 || p.OpcodeUnit == 0 {
+	if p.MaxGroupSize == 0 || p.MinTxnFee == 0 || p.SizeUnit == 0 || p.MaxProgramBytes == 0 || p.OpcodeUnit == 0 {
 		return fmt.Errorf("%w: consensus resource unit is zero", ErrInvalidUsage)
 	}
 	return nil

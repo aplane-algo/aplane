@@ -49,6 +49,9 @@ func TestPinnedLogicSigConsensusContracts(t *testing.T) {
 			if params.MaxTxGroupSize != 16 {
 				t.Fatalf("MaxTxGroupSize = %d, want 16", params.MaxTxGroupSize)
 			}
+			if params.MinTxnFee != 1_000 || profile.MinTxnFee != params.MinTxnFee {
+				t.Fatalf("MinTxnFee = SDK %d/profile %d, want 1000", params.MinTxnFee, profile.MinTxnFee)
+			}
 			if got := uint64(params.PerByteTxnSurcharge); got != 100 {
 				t.Fatalf("PerByteTxnSurcharge = %d, want 100", got)
 			}

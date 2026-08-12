@@ -4,7 +4,6 @@
 package engine
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"math/bits"
@@ -79,8 +78,9 @@ func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.
 // transaction from sender needs beyond its ordinary base fee. It covers
 // LogicSig resource dummies and priced program bytes, plus the native-PQ fee
 // contribution. Sweep flows reserve it before choosing a spend-everything
-// amount.
-func (e *Core) AuthorizationFeeReserve(ctx context.Context, sender string) (uint64, error) {
+// amount. The calculation is local and deterministic because this release
+// implements one compiled v42 consensus contract.
+func (e *Core) AuthorizationFeeReserve(sender string) (uint64, error) {
 	effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
 	profile, ok := e.signerCacheLogicSigResourceProfile(effectiveSigner)
 	isNativeFalcon := e.signerCacheKeyType(effectiveSigner) == nativefalcon.KeyType
@@ -90,21 +90,11 @@ func (e *Core) AuthorizationFeeReserve(ctx context.Context, sender string) (uint
 	if ok && isNativeFalcon {
 		return 0, fmt.Errorf("signer cache classifies %s as both LogicSig and native Falcon", effectiveSigner)
 	}
-	if e.AlgodClient == nil {
-		return 0, ErrNoAlgodClient
-	}
-	params, err := e.AlgodClient.SuggestedParams().Do(ctx)
+	consensus, err := lsigresource.CurrentConsensus()
 	if err != nil {
-		return 0, fmt.Errorf("load consensus parameters for authorization fee reserve: %w", err)
+		return 0, fmt.Errorf("load compiled v42 authorization contract: %w", err)
 	}
-	minFee := params.MinFee
-	if minFee == 0 {
-		minFee = signing.DefaultMinFee
-	}
-	consensus, err := resolveSupportedConsensus(params.ConsensusVersion)
-	if err != nil {
-		return 0, fmt.Errorf("resolve authorization fee reserve: %w", err)
-	}
+	minFee := consensus.MinTxnFee
 	if isNativeFalcon {
 		reserve, overflow := scaleFeeFactor(minFee, nativefalcon.PQFeeContribution)
 		if overflow {

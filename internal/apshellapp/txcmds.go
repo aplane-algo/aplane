@@ -773,7 +773,6 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		}
 
 		authorizationReserve, err := authorizationFeeReserveForSweep(
-			ctx,
 			assetMeta.AssetID,
 			fromAddress,
 			a.eng.AuthorizationFeeReserve,
@@ -861,10 +860,9 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 }
 
 func authorizationFeeReserveForSweep(
-	ctx context.Context,
 	assetID uint64,
 	sender string,
-	reserve func(context.Context, string) (uint64, error),
+	reserve func(string) (uint64, error),
 ) (uint64, error) {
 	// The reserve affects only the amount of ALGO that can be swept. An ASA
 	// sweep sends asset units, so querying authorization resources cannot alter
@@ -872,7 +870,7 @@ func authorizationFeeReserveForSweep(
 	if assetID != 0 {
 		return 0, nil
 	}
-	return reserve(ctx, sender)
+	return reserve(sender)
 }
 
 // sweepSendAmount computes how much to send so the account is left with exactly

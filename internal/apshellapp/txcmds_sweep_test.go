@@ -4,7 +4,6 @@
 package apshellapp
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -13,12 +12,12 @@ import (
 
 func TestAuthorizationFeeReserveForSweepSkipsASA(t *testing.T) {
 	called := false
-	reserve := func(context.Context, string) (uint64, error) {
+	reserve := func(string) (uint64, error) {
 		called = true
 		return 0, errors.New("authorization reserve should not be queried")
 	}
 
-	got, err := authorizationFeeReserveForSweep(t.Context(), 10458941, "ADDR", reserve)
+	got, err := authorizationFeeReserveForSweep(10458941, "ADDR", reserve)
 	if err != nil || got != 0 {
 		t.Fatalf("authorizationFeeReserveForSweep(ASA) = %d, %v; want 0, nil", got, err)
 	}
@@ -28,14 +27,14 @@ func TestAuthorizationFeeReserveForSweepSkipsASA(t *testing.T) {
 }
 
 func TestAuthorizationFeeReserveForSweepUsesAlgoReserve(t *testing.T) {
-	reserve := func(_ context.Context, sender string) (uint64, error) {
+	reserve := func(sender string) (uint64, error) {
 		if sender != "ADDR" {
 			t.Fatalf("reserve sender = %q, want ADDR", sender)
 		}
 		return 2_000, nil
 	}
 
-	got, err := authorizationFeeReserveForSweep(t.Context(), 0, "ADDR", reserve)
+	got, err := authorizationFeeReserveForSweep(0, "ADDR", reserve)
 	if err != nil || got != 2_000 {
 		t.Fatalf("authorizationFeeReserveForSweep(ALGO) = %d, %v; want 2000, nil", got, err)
 	}
