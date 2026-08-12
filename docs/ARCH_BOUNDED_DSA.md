@@ -318,6 +318,16 @@ the current authorization address. The helper structurally validates every
 composer-owned gate and verification site rather than searching for byte
 substrings.
 
+During the pre-release FNet transition, TEAL v13 bounded programs can contain
+either FNet's historical fixed-width branch offsets or the finalized signed
+varint encoding. The offline helper does not accept a program merely because
+one interpretation satisfies the bounded contract. It decodes both forms and
+accepts the sole syntactically valid instruction stream, or two streams whose
+complete instruction boundaries, operands, and normalized control-flow targets
+are identical. Divergent dual parses are rejected before bounded-contract
+validation. The fixed-width compatibility path is transitional and should be
+removed after FNet no longer produces or requires that pre-release encoding.
+
 ### Golden vector 1
 
 The first implementation must freeze and test a vector using:

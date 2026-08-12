@@ -84,26 +84,14 @@ func Validate(bytecode []byte, expected Expected) error {
 	if used <= 0 {
 		return fmt.Errorf("invalid AVM version prefix")
 	}
-	modes := []branchEncoding{branchEncodingFixed}
-	if version >= 13 {
-		// FNet's pre-release TEAL v13 compiler uses the historical fixed-width
-		// branch encoding, while the finalized upstream v13 assembler uses
-		// signed varints. The bytecode has no encoding marker, so validate the
-		// complete bounded contract under each recognized v13 encoding.
-		modes = []branchEncoding{branchEncodingVarint, branchEncodingFixed}
+	parsed, err := decodeProgramUnambiguously(bytecode, version)
+	if err != nil {
+		return fmt.Errorf("bounded1 program validation failed: %w", err)
 	}
-	var failures []string
-	for _, mode := range modes {
-		parsed, err := decodeProgram(bytecode, mode)
-		if err == nil {
-			err = validateDecoded(parsed, expected)
-		}
-		if err == nil {
-			return nil
-		}
-		failures = append(failures, mode.String()+": "+err.Error())
+	if err := validateDecoded(parsed, expected); err != nil {
+		return fmt.Errorf("bounded1 program validation failed: %w", err)
 	}
-	return fmt.Errorf("bounded1 program validation failed (%s)", strings.Join(failures, "; "))
+	return nil
 }
 
 func validateDecoded(parsed disassembly, expected Expected) error {
@@ -357,6 +345,76 @@ func (encoding branchEncoding) String() string {
 		return "varint branches"
 	}
 	return "fixed-width branches"
+}
+
+// decodeProgramUnambiguously recognizes both branch encodings that have been
+// deployed for AVM v13 without accepting a program merely because one of two
+// divergent interpretations satisfies the bounded contract. The sole
+// syntactically valid interpretation is safe to inspect: selecting the other
+// encoding on-chain can only make the program invalid. When both parse, their
+// complete instruction boundaries, operations, operands, and control-flow
+// targets must agree.
+func decodeProgramUnambiguously(program []byte, version uint64) (disassembly, error) {
+	if version < 13 {
+		return decodeProgram(program, branchEncodingFixed)
+	}
+
+	varintProgram, varintErr := decodeProgram(program, branchEncodingVarint)
+	fixedProgram, fixedErr := decodeProgram(program, branchEncodingFixed)
+	switch {
+	case varintErr == nil && fixedErr == nil:
+		if !equivalentDisassembly(varintProgram, fixedProgram) {
+			return disassembly{}, fmt.Errorf(
+				"ambiguous AVM v%d branch encoding: varint and fixed-width decodings differ",
+				version,
+			)
+		}
+		return varintProgram, nil
+	case varintErr == nil:
+		return varintProgram, nil
+	case fixedErr == nil:
+		return fixedProgram, nil
+	default:
+		return disassembly{}, fmt.Errorf(
+			"cannot decode AVM v%d program (%s: %v; %s: %v)",
+			version,
+			branchEncodingVarint,
+			varintErr,
+			branchEncodingFixed,
+			fixedErr,
+		)
+	}
+}
+
+func equivalentDisassembly(left, right disassembly) bool {
+	if left.version != right.version || len(left.instructions) != len(right.instructions) {
+		return false
+	}
+	for i := range left.instructions {
+		leftInstruction := left.instructions[i]
+		rightInstruction := right.instructions[i]
+		if leftInstruction.pc != rightInstruction.pc ||
+			leftInstruction.name != rightInstruction.name ||
+			len(leftInstruction.args) != len(rightInstruction.args) {
+			return false
+		}
+		for argIndex := range leftInstruction.args {
+			leftArg := leftInstruction.args[argIndex]
+			rightArg := rightInstruction.args[argIndex]
+			if isBranchInstruction(leftInstruction.name) {
+				leftTarget, leftOK := left.labels[leftArg]
+				rightTarget, rightOK := right.labels[rightArg]
+				if !leftOK || !rightOK || leftTarget != rightTarget {
+					return false
+				}
+				continue
+			}
+			if leftArg != rightArg {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func decodeProgram(program []byte, branchEncoding branchEncoding) (disassembly, error) {

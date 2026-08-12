@@ -381,6 +381,26 @@ func TestValidateAcceptsDeployedFNetV13FixedWidthBranches(t *testing.T) {
 	}
 }
 
+func TestDecodeProgramUnambiguouslyRejectsDivergentV13BranchInterpretations(t *testing.T) {
+	// Under signed-varint branches this is:
+	//
+	//     b +0; err; op_01; return
+	//
+	// Under fixed-width branches it is:
+	//
+	//     b +1; return
+	//
+	// Both streams are syntactically valid, but their instruction boundaries
+	// and branch targets differ. Bounded validation must never choose whichever
+	// interpretation happens to satisfy its structural contract.
+	program := []byte{13, 0x42, 0x00, 0x01, 0x43}
+
+	_, err := decodeProgramUnambiguously(program, 13)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous AVM v13 branch encoding") {
+		t.Fatalf("decodeProgramUnambiguously() error = %v, want ambiguity rejection", err)
+	}
+}
+
 func TestValidateAcceptsFrozenSentryStructure(t *testing.T) {
 	program, expected := testExpectedSentryProgram(t)
 	if err := Validate(program, expected); err != nil {
