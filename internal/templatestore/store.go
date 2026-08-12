@@ -46,9 +46,12 @@ type BaseTemplateSpec struct {
 	DisplayName  string `yaml:"display_name"`
 	Description  string `yaml:"description"`
 	DisplayColor string `yaml:"display_color"`
-	// MaxOpcodeCost is the required, reviewed worst-case cost of every reachable
-	// path in the final compiler-returned program.
-	MaxOpcodeCost uint64 `yaml:"max_opcode_cost"`
+	// MaxOpcodeCost optionally declares an absolute reviewed worst-case cost of
+	// every reachable path in the final compiler-returned program. Omission uses
+	// SingleTransactionOpcodeCeiling, the one-member opcode unit shared by every
+	// consensus profile APlane currently supports. A pointer preserves the
+	// distinction between omission and an invalid explicit zero while parsing.
+	MaxOpcodeCost *uint64 `yaml:"max_opcode_cost,omitempty"`
 }
 
 const (
@@ -114,31 +117,39 @@ func (s *BaseTemplateSpec) ValidateBase(maxSchemaVersion int) error {
 	if s.DisplayName == "" {
 		return fmt.Errorf("display_name is required")
 	}
-	if s.MaxOpcodeCost > lsigresource.MaximumDeclaredOpcodeCost {
-		return fmt.Errorf("max_opcode_cost %d exceeds maximum %d", s.MaxOpcodeCost, lsigresource.MaximumDeclaredOpcodeCost)
+	if s.MaxOpcodeCost != nil && *s.MaxOpcodeCost > lsigresource.MaximumDeclaredOpcodeCost {
+		return fmt.Errorf("max_opcode_cost %d exceeds maximum %d", *s.MaxOpcodeCost, lsigresource.MaximumDeclaredOpcodeCost)
 	}
 	return nil
 }
 
-// ValidateOpcodeCostDeclaration requires an explicit reviewed ceiling before a
-// template can be installed or registered.
+// ValidateOpcodeCostDeclaration accepts omission as the supported one-member
+// default while rejecting an explicitly declared zero ceiling.
 func (s *BaseTemplateSpec) ValidateOpcodeCostDeclaration() error {
-	if s == nil || s.MaxOpcodeCost == 0 {
-		return fmt.Errorf("max_opcode_cost is required and must be greater than zero")
+	if s == nil {
+		return fmt.Errorf("template specification is required")
+	}
+	if s.MaxOpcodeCost != nil && *s.MaxOpcodeCost == 0 {
+		return fmt.Errorf("max_opcode_cost must be greater than zero when declared")
 	}
 	return nil
 }
 
-// LogicSigOpcodeProfile materializes the template's required reviewed ceiling.
-// Callers validate the template before using this method.
+// LogicSigOpcodeProfile materializes the template's effective numeric ceiling.
+// Omission resolves to the compiled one-member default and is persisted
+// numerically with generated keys. Callers validate the template first.
 func (s *BaseTemplateSpec) LogicSigOpcodeProfile(bounded bool) lsigresource.OpcodeProfile {
 	if s == nil {
 		return lsigresource.OpcodeProfile{}
 	}
-	if bounded {
-		return lsigresource.BoundedOpcodeProfile(s.MaxOpcodeCost, s.MaxOpcodeCost, s.MaxOpcodeCost)
+	maxCost := uint64(lsigresource.SingleTransactionOpcodeCeiling)
+	if s.MaxOpcodeCost != nil {
+		maxCost = *s.MaxOpcodeCost
 	}
-	return lsigresource.DefaultOpcodeProfile(s.MaxOpcodeCost)
+	if bounded {
+		return lsigresource.BoundedOpcodeProfile(maxCost, maxCost, maxCost)
+	}
+	return lsigresource.DefaultOpcodeProfile(maxCost)
 }
 
 // TemplateType identifies the type of template.

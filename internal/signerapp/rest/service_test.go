@@ -1466,11 +1466,10 @@ func registerRestGenericTemplate(t *testing.T) {
 	t.Helper()
 	spec := &generictemplate.TemplateSpec{
 		BaseTemplateSpec: templatestore.BaseTemplateSpec{
-			Publisher:     "test",
-			Family:        "generic-rest-error",
-			Version:       1,
-			DisplayName:   "Generic Rest Error",
-			MaxOpcodeCost: 20_000,
+			Publisher:   "test",
+			Family:      "generic-rest-error",
+			Version:     1,
+			DisplayName: "Generic Rest Error",
 		},
 		TEAL: "#pragma version 8\nint 1\nreturn",
 	}

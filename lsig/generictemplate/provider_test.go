@@ -34,7 +34,7 @@ func testBase() templatestore.BaseTemplateSpec {
 		Family:            "test",
 		Version:           1,
 		DisplayName:       "Test",
-		MaxOpcodeCost:     20_000,
+		MaxOpcodeCost:     ptrUint64(20_000),
 	}
 }
 
@@ -552,7 +552,7 @@ func TestValidateSpec(t *testing.T) {
 					Family:        "test",
 					Version:       1,
 					DisplayName:   "Test",
-					MaxOpcodeCost: 20_000,
+					MaxOpcodeCost: ptrUint64(20_000),
 				},
 				TEAL: "return",
 			},
@@ -603,7 +603,7 @@ func TestValidateSpec(t *testing.T) {
 					Family:        "test",
 					Version:       1,
 					DisplayName:   "Test",
-					MaxOpcodeCost: 20_000,
+					MaxOpcodeCost: ptrUint64(20_000),
 				},
 				TemplateMode: TemplateModeStrict,
 				Parameters: []ParameterSpec{
@@ -623,7 +623,7 @@ func TestValidateSpec(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "missing opcode ceiling",
+			name: "omitted opcode ceiling uses default",
 			spec: &TemplateSpec{
 				BaseTemplateSpec: templatestore.BaseTemplateSpec{
 					SchemaVersion: 1,
@@ -635,8 +635,24 @@ func TestValidateSpec(t *testing.T) {
 				TemplateMode: TemplateModeGenerated,
 				TEAL:         "int 1\nreturn",
 			},
+			wantErr: false,
+		},
+		{
+			name: "explicit zero opcode ceiling",
+			spec: &TemplateSpec{
+				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+					SchemaVersion: 1,
+					Publisher:     "test",
+					Family:        "zero-opcode-ceiling",
+					Version:       1,
+					DisplayName:   "Zero Opcode Ceiling",
+					MaxOpcodeCost: ptrUint64(0),
+				},
+				TemplateMode: TemplateModeGenerated,
+				TEAL:         "int 1\nreturn",
+			},
 			wantErr: true,
-			errMsg:  "max_opcode_cost is required",
+			errMsg:  "max_opcode_cost must be greater than zero",
 		},
 		{
 			name: "schema v1 strict rejects legacy scalar substitution",

@@ -105,7 +105,7 @@ teal: |
 	}
 }
 
-func TestValidateImportableSchemaRejectsMissingOpcodeCeiling(t *testing.T) {
+func TestValidateImportableSchemaDefaultsMissingOpcodeCeiling(t *testing.T) {
 	err := ValidateImportableSchema([]byte(`schema_version: 1
 template_type: generic
 template_mode: generated
@@ -116,8 +116,25 @@ display_name: Missing Opcode Ceiling
 teal: |
   int 1
 `))
-	if err == nil || !strings.Contains(err.Error(), "max_opcode_cost is required") {
-		t.Fatalf("ValidateImportableSchema() error = %v, want max_opcode_cost rejection", err)
+	if err != nil {
+		t.Fatalf("ValidateImportableSchema() error = %v, want omitted ceiling accepted", err)
+	}
+}
+
+func TestValidateImportableSchemaRejectsExplicitZeroOpcodeCeiling(t *testing.T) {
+	err := ValidateImportableSchema([]byte(`schema_version: 1
+template_type: generic
+template_mode: generated
+publisher: test
+family: zero-opcode-ceiling
+version: 1
+display_name: Zero Opcode Ceiling
+max_opcode_cost: 0
+teal: |
+  int 1
+`))
+	if err == nil || !strings.Contains(err.Error(), "max_opcode_cost must be greater than zero") {
+		t.Fatalf("ValidateImportableSchema() error = %v, want explicit-zero rejection", err)
 	}
 }
 

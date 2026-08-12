@@ -840,11 +840,10 @@ func registerServiceGenericTemplate(t *testing.T) {
 	t.Helper()
 	spec := &generictemplate.TemplateSpec{
 		BaseTemplateSpec: templatestore.BaseTemplateSpec{
-			Publisher:     "test",
-			Family:        "generic-service-test",
-			Version:       1,
-			DisplayName:   "Generic Service Test",
-			MaxOpcodeCost: 20_000,
+			Publisher:   "test",
+			Family:      "generic-service-test",
+			Version:     1,
+			DisplayName: "Generic Service Test",
 		},
 		Parameters: []generictemplate.ParameterSpec{{
 			Name:     "owner",
