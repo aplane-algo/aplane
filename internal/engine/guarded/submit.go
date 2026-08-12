@@ -277,7 +277,10 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	for _, target := range targets {
 		targetsByIndex[target.Index] = target
 	}
-	requests := s.buildBoundedComponentRequests(txns, targetsByIndex, opts)
+	requests, err := s.buildBoundedComponentRequests(txns, targetsByIndex, opts)
+	if err != nil {
+		return nil, nil, err
+	}
 	componentResp, err := s.conn.RequestBoundedComponentWithContext(opts.Ctx, signerapi.BoundedComponentRequest{Requests: requests})
 	if err != nil {
 		return nil, nil, fmt.Errorf("bounded base component signing failed: %w", err)
@@ -379,7 +382,7 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	return txIDs, submittedTxns, nil
 }
 
-func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions) []signerapi.SignRequest {
+func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions) ([]signerapi.SignRequest, error) {
 	requests := make([]signerapi.SignRequest, len(txns))
 	for i, txn := range txns {
 		txnHex := txnutil.EncodeWithPrefixHex(txn)
@@ -398,9 +401,11 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 		}
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
 		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex}
-		applyForeignLogicSigHint(&requests[i], s.cache, effectiveSigner)
+		if err := applyForeignLogicSigHint(&requests[i], s.cache, effectiveSigner); err != nil {
+			return nil, fmt.Errorf("prepare foreign transaction %d: %w", i+1, err)
+		}
 	}
-	return requests
+	return requests, nil
 }
 
 // verifyAssembledAgainstFrozen pins the client's frozen-bytes invariant at the
@@ -610,13 +615,30 @@ func applyForeignLogicSigPathHint(request *signerapi.SignRequest, cache SignerCa
 	return nil
 }
 
-func applyForeignLogicSigHint(request *signerapi.SignRequest, cache SignerCacheView, address string) {
+func applyForeignLogicSigHint(request *signerapi.SignRequest, cache SignerCacheView, address string) error {
 	if request == nil || cache == nil {
-		return
+		return fmt.Errorf("signer cache is unavailable")
 	}
-	if profile, ok := cache.LogicSigResourceProfile(address); ok {
-		request.LsigResources = conservativeLogicSigResourceUsage(profile)
+	kind, present := cache.AuthorizationKind(address)
+	if !present {
+		return nil
 	}
+	if kind == "" {
+		return fmt.Errorf("authorization metadata for %s is unavailable", address)
+	}
+	if kind != authorizationLogicSig {
+		return nil
+	}
+	profile, ok := cache.LogicSigResourceProfile(address)
+	if !ok {
+		return fmt.Errorf("LogicSig resource profile for %s is unavailable", address)
+	}
+	usage := conservativeLogicSigResourceUsage(profile)
+	if usage == nil {
+		return fmt.Errorf("LogicSig resource profile for %s is invalid", address)
+	}
+	request.LsigResources = usage
+	return nil
 }
 
 func conservativeLogicSigResourceUsage(profile lsigresource.Profile) *signerapi.LogicSigResourceUsage {

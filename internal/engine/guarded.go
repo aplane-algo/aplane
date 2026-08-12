@@ -35,6 +35,14 @@ var (
 // cache to the guarded package's read-only SignerCacheView.
 type guardedSignerCacheView struct{ core *Core }
 
+func (v guardedSignerCacheView) AuthorizationKind(address string) (string, bool) {
+	kind, present := v.core.signerCacheAuthorizationKind(address)
+	if !present {
+		return "", false
+	}
+	return string(kind), true
+}
+
 func (v guardedSignerCacheView) SigningFlow(address string) string {
 	return v.core.signerCacheSigningFlow(address)
 }

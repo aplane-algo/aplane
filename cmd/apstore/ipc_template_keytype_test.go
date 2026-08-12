@@ -172,6 +172,16 @@ func TestTemplateUsesDefaultOpcodeCeiling(t *testing.T) {
 	}
 }
 
+func TestDefaultOpcodeCeilingWarningSkipsAlreadyInstalledTemplate(t *testing.T) {
+	templateYAML := []byte("schema_version: 1\n")
+	if !shouldWarnAboutDefaultOpcodeCeiling(templateYAML, false) {
+		t.Fatal("new template with omitted max_opcode_cost should warn")
+	}
+	if shouldWarnAboutDefaultOpcodeCeiling(templateYAML, true) {
+		t.Fatal("already-installed template should not warn")
+	}
+}
+
 func TestCmdTemplateImportReportsIPCFailure(t *testing.T) {
 	templatePath := filepath.Join(t.TempDir(), "template.yaml")
 	if err := os.WriteFile(templatePath, []byte("not: a valid template\n"), 0o600); err != nil {

@@ -175,15 +175,18 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 
 	if isSingleTxn {
 		b.WriteString("=== SINGLE TRANSACTION ===\n\n")
+		hasAuthorizationFeeRequirement := plan.FeeInfo.ProgramFeeContribution > 0 || plan.FeeInfo.NativePQFeeContribution > 0
 		if plan.FeeInfo.TotalFees > 0 {
 			b.WriteString("[MODIFIED BY SERVER]\n")
 			b.WriteString(fmt.Sprintf("  • Group fee adjustment: +%d microAlgos\n", plan.FeeInfo.TotalFees))
+		} else if hasAuthorizationFeeRequirement {
+			b.WriteString("[FEE REQUIREMENT COVERED BY EXISTING FEES]\n")
 		}
 		if plan.FeeInfo.ProgramFeeContribution > 0 {
-			b.WriteString(fmt.Sprintf("  • LogicSig program fee contribution: %d microAlgos (%d charged byte(s))\n", plan.FeeInfo.ProgramFeeContribution, plan.LogicSigResourcePlan.ChargedProgramBytes))
+			b.WriteString(fmt.Sprintf("  • Required LogicSig program contribution: %d microAlgos (%d charged byte(s))\n", plan.FeeInfo.ProgramFeeContribution, plan.LogicSigResourcePlan.ChargedProgramBytes))
 		}
 		if plan.FeeInfo.NativePQFeeContribution > 0 {
-			b.WriteString(fmt.Sprintf("  • Native Falcon fee contribution: %d microAlgos\n", plan.FeeInfo.NativePQFeeContribution))
+			b.WriteString(fmt.Sprintf("  • Required native Falcon contribution: %d microAlgos\n", plan.FeeInfo.NativePQFeeContribution))
 		}
 		if plan.FeeInfo.TotalFees > 0 || plan.FeeInfo.ProgramFeeContribution > 0 || plan.FeeInfo.NativePQFeeContribution > 0 {
 			b.WriteString("\n")
@@ -206,13 +209,15 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 			if plan.DummiesNeeded == 0 {
 				b.WriteString("[MODIFIED BY SERVER]\n")
 			}
-			b.WriteString(fmt.Sprintf("  • Group fee adjustment: +%d microAlgos across transaction(s) %v\n", plan.FeeInfo.TotalFees, plan.FeeInfo.FeeIndices))
+			b.WriteString(fmt.Sprintf("  • Group fee adjustment: +%d microAlgos across transaction(s) %v\n", plan.FeeInfo.TotalFees, approvalTransactionNumbers(plan.FeeInfo.FeeIndices)))
+		} else if plan.DummiesNeeded == 0 && (plan.FeeInfo.ProgramFeeContribution > 0 || plan.FeeInfo.NativePQFeeContribution > 0) {
+			b.WriteString("[FEE REQUIREMENT COVERED BY EXISTING FEES]\n")
 		}
 		if plan.FeeInfo.ProgramFeeContribution > 0 {
-			b.WriteString(fmt.Sprintf("  • LogicSig program fee contribution: %d microAlgos (%d charged byte(s))\n", plan.FeeInfo.ProgramFeeContribution, plan.LogicSigResourcePlan.ChargedProgramBytes))
+			b.WriteString(fmt.Sprintf("  • Required LogicSig program contribution: %d microAlgos (%d charged byte(s))\n", plan.FeeInfo.ProgramFeeContribution, plan.LogicSigResourcePlan.ChargedProgramBytes))
 		}
 		if plan.FeeInfo.NativePQFeeContribution > 0 {
-			b.WriteString(fmt.Sprintf("  • Native Falcon fee contribution: %d microAlgos\n", plan.FeeInfo.NativePQFeeContribution))
+			b.WriteString(fmt.Sprintf("  • Required native Falcon contribution: %d microAlgos\n", plan.FeeInfo.NativePQFeeContribution))
 		}
 		if (plan.DummiesNeeded > 0 || plan.FeeInfo.TotalFees > 0) && len(allTxns) > 1 {
 			b.WriteString("  • Group ID recomputed\n")
@@ -244,6 +249,14 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 
 	firstValid, lastValid = approvalWindow(allTxns)
 	return b.String(), firstValid, lastValid
+}
+
+func approvalTransactionNumbers(indices []int) []int {
+	numbers := make([]int, len(indices))
+	for i, index := range indices {
+		numbers[i] = index + 1
+	}
+	return numbers
 }
 
 func boundedAuthorizationLabel(item *boundedPlanItem) string {

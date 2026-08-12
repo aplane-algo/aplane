@@ -22,11 +22,16 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
+const authorizationLogicSig = "logic_sig"
+
 // SignerCacheView is the read-only view of the signer key cache that guarded
 // orchestration needs: per-address signer-advertised metadata used to detect
 // guarded targets and size LogicSig budgets. It is implemented by the engine
 // over its concurrency-guarded signer cache.
 type SignerCacheView interface {
+	// AuthorizationKind returns the cached authorization envelope and whether
+	// the address is present. A present address with an empty kind is invalid.
+	AuthorizationKind(address string) (string, bool)
 	// SigningFlow returns the signer-advertised signing_flow for an address,
 	// or "" if the address is not a guarded key.
 	SigningFlow(address string) string

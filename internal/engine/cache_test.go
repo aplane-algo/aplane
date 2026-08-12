@@ -761,9 +761,11 @@ func TestReconnectReplacesStaleSignerCacheWithFreshInventory(t *testing.T) {
 
 	eng := newEngine()
 	eng.SignerCache.BindStore(cacheStore)
-	eng.PopulateSignerCache([]signerapi.KeyInfo{
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
 		{Address: staleAddr, KeyType: "ed25519"},
-	})
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache(stale) error = %v", err)
+	}
 	if err := eng.SaveSignerCache(); err != nil {
 		t.Fatalf("SaveSignerCache(stale) error = %v", err)
 	}
@@ -778,9 +780,11 @@ func TestReconnectReplacesStaleSignerCacheWithFreshInventory(t *testing.T) {
 		t.Fatalf("SignerCache.Count() after disconnect = %d, want 0", got)
 	}
 
-	eng.PopulateSignerCache([]signerapi.KeyInfo{
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
 		{Address: freshAddr, KeyType: "aplane.falcon1024.v1"},
-	})
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache(fresh) error = %v", err)
+	}
 	if err := eng.SaveSignerCache(); err != nil {
 		t.Fatalf("SaveSignerCache(fresh) error = %v", err)
 	}
@@ -801,6 +805,21 @@ func TestReconnectReplacesStaleSignerCacheWithFreshInventory(t *testing.T) {
 	}
 	if got := reloaded.SignerCache.Count(); got != 1 {
 		t.Fatalf("reloaded SignerCache.Count() = %d, want 1", got)
+	}
+}
+
+func TestCanSignForAddressRejectsUnknownCachedKeyType(t *testing.T) {
+	eng, err := NewEngine("testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{{Address: address, KeyType: ""}}); err != nil {
+		t.Fatal(err)
+	}
+	canSign, kind := eng.CanSignForAddressWithKind(address)
+	if canSign || kind != "" {
+		t.Fatalf("CanSignForAddressWithKind() = %t/%q, want false/empty", canSign, kind)
 	}
 }
 

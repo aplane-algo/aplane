@@ -319,8 +319,10 @@ func (e *Core) EnsureSignerCache(ctx context.Context) error {
 	if err := e.withClientDataLock(func() error {
 		return e.populateAndSaveSignerCacheUnderClientLock(keysResp.Keys)
 	}); err != nil {
+		if populateErr := e.populateSignerCache(keysResp.Keys); populateErr != nil {
+			return fmt.Errorf("invalid signer key inventory: %w", populateErr)
+		}
 		cache.Debug("failed to save signer cache", "error", err)
-		e.populateSignerCache(keysResp.Keys)
 	}
 
 	return nil

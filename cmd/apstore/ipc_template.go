@@ -98,15 +98,15 @@ func cmdImportTemplate(yamlPath string) error {
 	if !result.Success {
 		return resultError("template import failed", result.Code, result.Error)
 	}
-	if templateUsesDefaultOpcodeCeiling(templateYAML) {
-		logWarnf(
-			"template declares no max_opcode_cost; using the default single-transaction opcode ceiling (%d for every consensus version currently supported by APlane)",
-			lsigresource.SingleTransactionOpcodeCeiling,
-		)
-	}
 	if result.AlreadyExists {
 		logInfof("%s template %s is already installed", result.TemplateType, displayKeyType(result.KeyType))
 		return nil
+	}
+	if shouldWarnAboutDefaultOpcodeCeiling(templateYAML, result.AlreadyExists) {
+		logWarnf(
+			"template declares no max_opcode_cost; using the compiled v42 single-group-member opcode ceiling (%d) for each applicable authorization path",
+			lsigresource.SingleTransactionOpcodeCeiling,
+		)
 	}
 	logInfof("%s template %s imported", result.TemplateType, displayKeyType(result.KeyType))
 	return nil
@@ -117,6 +117,10 @@ func templateUsesDefaultOpcodeCeiling(templateYAML []byte) bool {
 		MaxOpcodeCost *uint64 `yaml:"max_opcode_cost"`
 	}
 	return yaml.Unmarshal(templateYAML, &header) == nil && header.MaxOpcodeCost == nil
+}
+
+func shouldWarnAboutDefaultOpcodeCeiling(templateYAML []byte, alreadyExists bool) bool {
+	return !alreadyExists && templateUsesDefaultOpcodeCeiling(templateYAML)
 }
 
 func cmdRemoveTemplate(keyType string) error {

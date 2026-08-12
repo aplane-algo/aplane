@@ -136,7 +136,7 @@ func TestSignerCacheConcurrentRefreshAndReadIsRaceSafe(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				if j%2 == 0 {
-					eng.populateSignerCache(keys)
+					_ = eng.populateSignerCache(keys)
 				} else {
 					eng.resetSignerCache(false)
 				}

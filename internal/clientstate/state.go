@@ -4,6 +4,7 @@
 package clientstate
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -155,8 +156,23 @@ func (s *State) ApplyCacheChanges(changes CacheChanges) {
 	}
 }
 
-// PopulateSignerCache rebuilds the signer cache from signer key metadata.
-func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
+// PopulateSignerCache rebuilds the signer cache from signer key metadata. It
+// validates every advertised LogicSig resource profile before mutating the
+// existing cache so a malformed inventory cannot silently lose budgeting
+// metadata or replace a previously valid snapshot.
+func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
+	logicSigProfiles := make(map[string]lsigresource.Profile)
+	for _, keyInfo := range keys {
+		if keyInfo.LogicSigResources == nil {
+			continue
+		}
+		profile, err := internalLogicSigResourceProfile(keyInfo.LogicSigResources)
+		if err != nil {
+			return fmt.Errorf("key %s LogicSig resource profile: %w", keyInfo.Address, err)
+		}
+		logicSigProfiles[keyInfo.Address] = profile
+	}
+
 	s.SignerCache.Keys = make(map[string]string, len(keys))
 	s.SignerCache.GenericLsigs = make(map[string]bool)
 	s.SignerCache.LogicSigResources = make(map[string]lsigresource.Profile)
@@ -170,10 +186,8 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 	for _, keyInfo := range keys {
 		s.SignerCache.Keys[keyInfo.Address] = keyInfo.KeyType
 
-		if keyInfo.LogicSigResources != nil {
-			if profile, ok := internalLogicSigResourceProfile(keyInfo.LogicSigResources); ok {
-				s.SignerCache.SetLogicSigResourceProfile(keyInfo.Address, profile)
-			}
+		if profile, ok := logicSigProfiles[keyInfo.Address]; ok {
+			s.SignerCache.SetLogicSigResourceProfile(keyInfo.Address, profile)
 		}
 		if keyInfo.IsGenericLsig {
 			s.SignerCache.SetGenericLsig(keyInfo.Address, true)
@@ -210,35 +224,65 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 			s.SignerCache.SetSigningArgs(keyInfo.Address, signingArgs)
 		}
 	}
+	return nil
 }
 
-func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile) (lsigresource.Profile, bool) {
+func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile) (lsigresource.Profile, error) {
 	if profile == nil {
-		return lsigresource.Profile{}, false
+		return lsigresource.Profile{}, fmt.Errorf("profile is missing")
 	}
-	programBytes := uint64(0)
-	path := func(usage *signerapi.LogicSigResourceUsage) *lsigresource.PathProfile {
+	hasDefault := profile.Default != nil
+	boundedPaths := 0
+	for _, usage := range []*signerapi.LogicSigResourceUsage{profile.Spend, profile.SpendingRekey, profile.AdminRekey} {
+		if usage != nil {
+			boundedPaths++
+		}
+	}
+	if hasDefault && boundedPaths != 0 {
+		return lsigresource.Profile{}, fmt.Errorf("default and bounded authorization paths cannot be mixed")
+	}
+	if !hasDefault && boundedPaths != 3 {
+		return lsigresource.Profile{}, fmt.Errorf("bounded resource profile must contain spend, spending_rekey, and admin_rekey paths")
+	}
+
+	var programBytes uint64
+	seenProgram := false
+	var conversionErr error
+	path := func(name string, usage *signerapi.LogicSigResourceUsage) *lsigresource.PathProfile {
 		if usage == nil {
 			return nil
 		}
-		if programBytes == 0 {
+		if usage.ProgramBytes == 0 {
+			conversionErr = fmt.Errorf("%s program_bytes must be greater than zero", name)
+			return nil
+		}
+		if usage.MaxOpcodeCost == 0 || usage.MaxOpcodeCost > lsigresource.MaximumDeclaredOpcodeCost {
+			conversionErr = fmt.Errorf("%s max_opcode_cost must be between 1 and %d", name, lsigresource.MaximumDeclaredOpcodeCost)
+			return nil
+		}
+		if !seenProgram {
 			programBytes = usage.ProgramBytes
+			seenProgram = true
 		} else if programBytes != usage.ProgramBytes {
-			programBytes = ^uint64(0)
+			conversionErr = fmt.Errorf("%s program_bytes %d does not match %d", name, usage.ProgramBytes, programBytes)
+			return nil
 		}
 		return &lsigresource.PathProfile{ArgumentBytes: usage.ArgumentBytes, MaxOpcodeCost: usage.MaxOpcodeCost}
 	}
 	converted := lsigresource.Profile{
-		Default:       path(profile.Default),
-		Spend:         path(profile.Spend),
-		SpendingRekey: path(profile.SpendingRekey),
-		AdminRekey:    path(profile.AdminRekey),
+		Default:       path("default", profile.Default),
+		Spend:         path("spend", profile.Spend),
+		SpendingRekey: path("spending_rekey", profile.SpendingRekey),
+		AdminRekey:    path("admin_rekey", profile.AdminRekey),
 	}
-	if programBytes == 0 || programBytes == ^uint64(0) {
-		return lsigresource.Profile{}, false
+	if conversionErr != nil {
+		return lsigresource.Profile{}, conversionErr
+	}
+	if !seenProgram {
+		return lsigresource.Profile{}, fmt.Errorf("profile has no authorization paths")
 	}
 	converted.ProgramBytes = programBytes
-	return converted, true
+	return converted, nil
 }
 
 // SaveSignerCache persists the signer cache to disk under APCLIENT_DATA.

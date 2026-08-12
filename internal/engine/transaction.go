@@ -276,28 +276,8 @@ func (e *Engine) CanSignForAddress(address string) (bool, bool) {
 // CanSignForAddressWithKind checks whether the signer owns an address and
 // returns the authorization envelope its key type produces.
 func (e *Engine) CanSignForAddressWithKind(address string) (bool, algorithm.AuthorizationKind) {
-	// Check if we have this address in the signer cache
-	hasRemoteSigner := e.signerCacheHasAddress(address)
-	if !hasRemoteSigner {
-		return false, ""
-	}
-
-	// Generic LogicSigs may not have registered metadata in a client process.
-	if e.signerCacheIsGenericLsig(address) {
-		return true, algorithm.AuthorizationLogicSig
-	}
-
-	keyType := e.signerCacheKeyType(address)
-	if keyType == "ed25519" {
-		return true, algorithm.AuthorizationEd25519
-	}
-	if meta, err := algorithm.GetMetadata(keyType); err == nil {
-		return true, meta.AuthorizationKind()
-	}
-
-	// Preserve the historical fail-closed display classification for an unknown
-	// signer key type. Registered native types never reach this fallback.
-	return true, algorithm.AuthorizationLogicSig
+	kind, present := e.signerCacheAuthorizationKind(address)
+	return present && kind != "", kind
 }
 
 func (e *Engine) SignAndSubmitGroup(ctx context.Context, txns []types.Transaction, lsigArgs []map[string][]byte) (*SignTransactionsResult, error) {

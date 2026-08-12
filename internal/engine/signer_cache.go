@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/bits"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -41,10 +42,10 @@ func (e *Core) resetSignerCache(locked bool) {
 	e.SignerCache.BindStore(e.CacheStore)
 }
 
-func (e *Core) populateSignerCache(keys []signerapi.KeyInfo) {
+func (e *Core) populateSignerCache(keys []signerapi.KeyInfo) error {
 	e.signerCacheMu.Lock()
 	defer e.signerCacheMu.Unlock()
-	e.PopulateSignerCache(keys)
+	return e.PopulateSignerCache(keys)
 }
 
 // populateAndSaveSignerCacheUnderClientLock refreshes the in-memory signer
@@ -52,7 +53,9 @@ func (e *Core) populateSignerCache(keys []signerapi.KeyInfo) {
 func (e *Core) populateAndSaveSignerCacheUnderClientLock(keys []signerapi.KeyInfo) error {
 	e.signerCacheMu.Lock()
 	defer e.signerCacheMu.Unlock()
-	e.PopulateSignerCache(keys)
+	if err := e.PopulateSignerCache(keys); err != nil {
+		return err
+	}
 	return e.SaveSignerCacheLocked()
 }
 
@@ -72,6 +75,32 @@ func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
 	return e.SignerCache.LogicSigResourceProfile(address)
+}
+
+// signerCacheAuthorizationKind classifies an address from one consistent
+// signer-cache snapshot. The boolean reports whether the address is present;
+// a present address with an empty kind has invalid or unknown key metadata.
+func (e *Core) signerCacheAuthorizationKind(address string) (algorithm.AuthorizationKind, bool) {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	if !e.SignerCache.HasAddress(address) {
+		return "", false
+	}
+	if e.SignerCache.IsGenericLsig(address) {
+		return algorithm.AuthorizationLogicSig, true
+	}
+	if _, ok := e.SignerCache.LogicSigResourceProfile(address); ok {
+		return algorithm.AuthorizationLogicSig, true
+	}
+	keyType := e.SignerCache.GetKeyType(address)
+	if keyType == "ed25519" {
+		return algorithm.AuthorizationEd25519, true
+	}
+	metadata, err := algorithm.GetMetadata(keyType)
+	if err != nil {
+		return "", true
+	}
+	return metadata.AuthorizationKind(), true
 }
 
 // AuthorizationFeeReserve returns the additional microAlgo fee a standalone

@@ -187,9 +187,12 @@ func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
 	if targets[0].BoundedMaxFee != 10_000 {
 		t.Fatalf("bounded max fee = %d, want 10000", targets[0].BoundedMaxFee)
 	}
-	requests := s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{
+	requests, err := s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{
 		LsigArgsMap: []map[string][]byte{{"preimage": {0xaa}}, nil},
 	})
+	if err != nil {
+		t.Fatalf("buildBoundedComponentRequests() error = %v", err)
+	}
 	if mode, _ := requests[0].Mode(); mode != signerapi.RequestModeSign || requests[0].AuthAddress != bounded || requests[0].LsigArgs["preimage"] != "aa" {
 		t.Fatalf("bounded request = %#v", requests[0])
 	}
@@ -198,6 +201,33 @@ func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
 	}
 	if sc.SigningFlowForAddress(bounded) != signerapi.SigningFlowBoundedSentry1 || !s.HasGuardedEffectiveSigner(txns) {
 		t.Fatal("bounded-sentry flow did not enter guarded orchestration")
+	}
+}
+
+func TestBuildBoundedComponentRequestsRejectsKnownLogicSigWithoutResources(t *testing.T) {
+	bounded := testAddress(1).String()
+	foreign := testAddress(2).String()
+	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
+		c.AddAddress(bounded, "test.bounded-sentry.v1")
+		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowBoundedSentry1)
+		c.SetSentryComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
+		c.SetSentryPublicKeyForAddress(bounded, testSentryPublicKeyHex(0xd6))
+		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
+		setTestLogicSigResources(c, bounded, 4_000)
+		c.AddAddress(foreign, "test.generic.v1")
+		c.SetGenericLsig(foreign, true)
+	})
+	txns := []types.Transaction{
+		testPaymentTxn(t, testAddress(1), testAddress(3), "bounded"),
+		testPaymentTxn(t, testAddress(2), testAddress(3), "foreign"),
+	}
+	targets, err := s.guardedTargets(txns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{})
+	if err == nil || !strings.Contains(err.Error(), "LogicSig resource profile") {
+		t.Fatalf("buildBoundedComponentRequests() error = %v, want missing LogicSig resource profile", err)
 	}
 }
 
@@ -443,6 +473,23 @@ func TestDecodeGuardedSignedGroupReturnsSignedObjects(t *testing.T) {
 
 // testCacheView adapts a cache.SignerCache to SignerCacheView for tests.
 type testCacheView struct{ c *cache.SignerCache }
+
+func (v testCacheView) AuthorizationKind(address string) (string, bool) {
+	if !v.c.HasAddress(address) {
+		return "", false
+	}
+	if v.c.IsGenericLsig(address) {
+		return authorizationLogicSig, true
+	}
+	if _, ok := v.c.LogicSigResourceProfile(address); ok {
+		return authorizationLogicSig, true
+	}
+	keyType := v.c.GetKeyType(address)
+	if keyType == "ed25519" {
+		return "ed25519", true
+	}
+	return "", true
+}
 
 func (v testCacheView) SigningFlow(address string) string { return v.c.SigningFlowForAddress(address) }
 func (v testCacheView) SentryComponentKeyType(address string) (string, bool) {
