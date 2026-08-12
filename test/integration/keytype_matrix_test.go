@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	edlsigv1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	falconlsigv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -62,6 +63,9 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	t.Cleanup(apadmin.Cleanup)
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
+	}
+	if err := apadmin.ActivateKeyType(ed25519lsig.KeyTypeV1); err != nil {
+		t.Fatalf("failed to activate %s for key-type matrix: %v", ed25519lsig.KeyTypeV1, err)
 	}
 	token := readSignerToken(t, signerd)
 	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)

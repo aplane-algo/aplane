@@ -226,6 +226,7 @@ family: %s
 version: 1
 display_name: "Integration Identity Scoped"
 description: "Integration test template for identity-scoped inventory"
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
