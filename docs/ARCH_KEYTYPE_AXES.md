@@ -396,18 +396,19 @@ constraints.
 
 ---
 
-## Not a fourth axis: the metadata display fallback
+## Not a fourth axis: the LogicSig metadata fallback
 
 `internal/algorithm/metadata.go`'s `GetMetadata` resolves via `ResolveByKeyType`
 (the Resolve axis). When that fails it has a best-effort `hasFamilyPrefix`
 fallback that substring-matches the key type against registered families. This is
-**display-only** — it exists so an unregistered template (e.g. a keystore template
-not loaded in this process, queried client-side for a display color) still gets a
-plausible color. Keygen and signing never reach it: they always have a registered
-provider or a stored base key type in the key file. The fallback avoids threading
-the stored base key type through the `addressdisplay.ColorFormatter` callback
-for cosmetic display. It is a fallback on the Resolve axis, not a separate
-resolution mechanism.
+primarily a client compatibility aid for an unregistered LogicSig template (for
+example, a keystore template not loaded in this process). Because the returned
+metadata also carries authorization and mnemonic semantics, the fallback is
+restricted to registered `logic_sig` families. Native Ed25519 and native PQ
+families resolve only by exact registered identity and are never inferred from a
+third-party key-type substring. Keygen and signer execution still use registered
+providers or the stored base key type. This remains a fallback on the Resolve
+axis, not a separate resolution mechanism.
 
 ---
 

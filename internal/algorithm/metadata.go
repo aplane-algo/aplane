@@ -116,9 +116,10 @@ func RegisterMetadata(metadata SignatureMetadata) {
 // routing family (e.g. "aplane.falcon1024.v1" -> "aplane.falcon1024"). If that
 // fails it falls back to a best-effort prefix match (see hasFamilyPrefix).
 //
-// This rides the RESOLVE axis (docs/ARCH_KEYTYPE_AXES.md); the hasFamilyPrefix
-// fallback below is a display-only best-effort, not a separate resolution
-// mechanism.
+// This rides the RESOLVE axis (docs/ARCH_KEYTYPE_AXES.md). The prefix fallback
+// is limited to LogicSig families because callers also consume authorization
+// and mnemonic semantics from the returned metadata; native algorithms must
+// resolve only by their exact registered identity.
 func GetMetadata(keyType string) (SignatureMetadata, error) {
 	if metadata, ok := logicsigdsa.ResolveByKeyType(keyType, metadataRegistry.Get); ok {
 		return metadata, nil
@@ -131,16 +132,17 @@ func GetMetadata(keyType string) (SignatureMetadata, error) {
 	// the key type against registered families ("aplane.falcon1024-timelock.v1"
 	// -> the "aplane.falcon1024" family's metadata).
 	//
-	// This path is display-only: keygen and signing never reach it because they
-	// always have a registered provider or a stored base key type in the key
-	// file. Removing it cleanly would require threading that stored base through
-	// the display-color callback (addressdisplay.ColorFormatter), a cross-layer
-	// API change not worth it for a cosmetic fallback.
+	// Prefix matching is safe only for LogicSig families: composed/template key
+	// types deliberately extend their base family name. Applying the same guess
+	// to a native family could assign native authorization semantics to an
+	// unrelated third-party key type that merely contains the same word.
 	for _, registeredFamily := range metadataRegistry.Keys() {
+		metadata, ok := metadataRegistry.Get(registeredFamily)
+		if !ok || metadata.AuthorizationKind() != AuthorizationLogicSig {
+			continue
+		}
 		if hasFamilyPrefix(keyType, registeredFamily) {
-			if metadata, ok := metadataRegistry.Get(registeredFamily); ok {
-				return metadata, nil
-			}
+			return metadata, nil
 		}
 	}
 
