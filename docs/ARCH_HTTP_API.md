@@ -204,6 +204,14 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 - passthrough entries contain the original signed transaction bytes, returned unchanged.
 - foreign entries contain the empty string `""`.
 - server-added dummy slots appear as appended signed dummy transactions.
+- The ordinary client `/sign` path treats `mutations` as an authorization to
+  transform transaction bodies, not merely as display metadata. Before
+  simulation or submission it verifies the report counts and fee delta,
+  permits only reported fee increases and group-ID assignment on original
+  positions, recomputes the canonical final group ID, and reconstructs every
+  appended dummy transaction and its embedded LogicSig authorization. Any
+  unreported field change, malformed report, or non-canonical dummy fails
+  closed on the client.
 - Admin-key bounded operations are rejected with `code:"bounded_admin_required"`;
   pure spends and explicitly spending-key-authorized rekeys return complete
   base-argument LogicSigs from `/sign` only when no sentry is required.

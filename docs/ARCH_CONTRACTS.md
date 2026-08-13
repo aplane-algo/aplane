@@ -318,6 +318,13 @@ profile-fee-invalid requests. Every non-spend bounded path carries the unconditi
 `bounded_admin_operation_requires_review` into the approval gate before blanket
 or self-no-op autoapproval.
 
+The ordinary client `/sign` submission path independently validates the
+returned mutation report before sending bytes to algod. Original positions may
+change only through reported fee increases and group-ID assignment; the client
+recomputes the final canonical group ID and reconstructs appended resource
+dummies, including their embedded LogicSig authorization. Unreported body
+changes and inconsistent reports are rejected locally.
+
 Schema-v1 composed YAML rejects `bounded`; schema v2 requires it. Every schema
 version rejects unknown and duplicate fields at every level. Bounded reserves
 user namespace `bounded_` and composer label namespace `__aplane_bounded1_`.

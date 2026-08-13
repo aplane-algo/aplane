@@ -153,6 +153,9 @@ func SignAndSubmitViaGroup(
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := validateSignedGroupMutations(txns, signedObjects, signedTxns, resp.Mutations); err != nil {
+		return nil, nil, fmt.Errorf("verify signer response: %w", err)
+	}
 	if opts.Simulate {
 		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(opts.Ctx, signedObjects, algodClient, w)
 		writeSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
