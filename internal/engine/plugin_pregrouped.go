@@ -156,6 +156,9 @@ func (e *Engine) SubmitPregroupedSigned(ctx context.Context, g *PregroupedSigned
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
+	if err := ValidateAlgodConsensus(ctx, e.AlgodClient); err != nil {
+		return nil, fmt.Errorf("validate algod consensus before pregrouped submission: %w", err)
+	}
 
 	if e.Simulate {
 		var output bytes.Buffer

@@ -29,6 +29,9 @@ func ValidateAlgodConsensus(ctx context.Context, client *algod.Client) error {
 	if client == nil {
 		return ErrNoAlgodClient
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	params, err := client.SuggestedParams().Do(ctx)
 	if err != nil {
 		return fmt.Errorf("query algod consensus: %w", err)

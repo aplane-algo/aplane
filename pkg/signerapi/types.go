@@ -51,6 +51,9 @@ func (r LogicSigResourceUsage) validate() error {
 //   - Foreign mode: txn_bytes_hex without auth_address (belongs to another signer; context-only)
 //
 // Passthrough mode requires pre-grouped transactions (group ID already set).
+// A passthrough LogicSig must also declare lsig_resources. The signer verifies
+// the observable program and argument byte counts against the signed envelope
+// and uses the declared reviewed opcode ceiling for consensus planning.
 // Foreign mode is accepted on both /plan and /sign. It includes the
 // transaction in group building (dummies, fees, group ID) but does not sign
 // it. The optional lsig_resources hint declares the selected LogicSig path for
@@ -64,7 +67,7 @@ type SignRequest struct {
 	TxnSender     string                 `json:"txn_sender,omitempty"`     // Advisory display hint; server derives authority from txn bytes
 	TxnBytesHex   string                 `json:"txn_bytes_hex,omitempty"`  // Full transaction bytes (TX + msgpack) - server derives what to sign from this
 	LsigArgs      map[string]string      `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs (name -> hex value)
-	LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Selected-path resource hint for a foreign LogicSig
+	LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Selected-path resource hint for a foreign or passthrough LogicSig
 	PQScheme      string                 `json:"pq_scheme,omitempty"`      // Native-PQ scheme hint for foreign transactions (currently "f1")
 	AppCallInfo   *AppCallInfo           `json:"app_call_info,omitempty"`  // Optional app-call metadata for approval rendering
 
@@ -192,8 +195,8 @@ func (r SignRequest) Validate() error {
 	if r.PQScheme != "" && r.PQScheme != PQSchemeFalcon1024 {
 		return fmt.Errorf("unsupported pq_scheme %q", r.PQScheme)
 	}
-	if r.LsigResources != nil && mode != RequestModeForeign {
-		return fmt.Errorf("lsig_resources is allowed only for foreign transactions")
+	if r.LsigResources != nil && mode != RequestModeForeign && mode != RequestModePassthrough {
+		return fmt.Errorf("lsig_resources is allowed only for foreign or passthrough transactions")
 	}
 	if r.LsigResources != nil && r.PQScheme != "" {
 		return fmt.Errorf("foreign transaction cannot specify both pq_scheme and lsig_resources")

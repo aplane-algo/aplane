@@ -124,18 +124,24 @@ from `pkg/signerapi/types.go` (re-exported internally via `internal/signerapi/ty
 - top-level fields: optional `request_id`, `requests[]`
 - each entry is one of:
   - sign: `auth_address`, optional `txn_sender`, `txn_bytes_hex`, optional `lsig_args`, optional `app_call_info`
-  - passthrough: `signed_txn_hex`
+  - passthrough: `signed_txn_hex`; if the signed envelope uses LogicSig,
+    `lsig_resources` is required
   - foreign: `txn_bytes_hex` without `auth_address`, with at most one
     authorization-resource hint: optional `lsig_resources` or native-PQ
     `pq_scheme` (`f1`)
 
-The signer derives authorization shape for locally held keys and from the
-envelope of passthrough transactions. An unsigned foreign native-PQ slot must
-declare `pq_scheme:"f1"` so pooled protocol fees are correct. A LogicSig slot
-instead declares `lsig_resources` with `program_bytes`, `argument_bytes`, and
-`max_opcode_cost`; the two authorization hints are mutually exclusive. The
-retired combined `lsig_size` field is rejected explicitly rather than ignored,
-because silently dropping it would understate foreign LogicSig resources.
+The signer derives authorization shape for locally held keys. An unsigned
+foreign native-PQ slot must declare `pq_scheme:"f1"` so pooled protocol fees
+are correct. A foreign LogicSig slot declares `lsig_resources` with
+`program_bytes`, `argument_bytes`, and `max_opcode_cost`.
+
+A passthrough LogicSig also requires `lsig_resources`. The signer verifies
+`program_bytes` and `argument_bytes` against the signed envelope and uses the
+declared reviewed `max_opcode_cost`; it never substitutes a guessed minimum for
+immutable foreign bytecode. Supplying `lsig_resources` for a non-LogicSig
+passthrough is rejected. The retired combined `lsig_size` field is rejected
+explicitly rather than ignored, because silently dropping it would understate
+LogicSig resources.
 
 `txn_sender` is an advisory display hint for clients. Signer authority,
 policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
@@ -187,6 +193,12 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
   obtain every managed signature through ordinary signing, preserve plugin
   passthrough signatures, and send the exact final group from the client to
   algod simulation.
+- First-party client workflows validate the live algod consensus identifier
+  before asking apsigner to plan, requesting or releasing signatures, invoking
+  plugin signers, or broadcasting/simulating a pregrouped signed group. This is
+  an apshell/engine boundary; apsigner's `/plan` endpoint remains
+  network-independent and uses its compiled v42 contract without querying
+  algod.
 
 `/sign` response (`signerapi.GroupSignResponse`):
 
@@ -580,6 +592,9 @@ Additional compatibility-sensitive request failures:
 
 - missing `txn_bytes_hex` for sign mode: `400`
 - passthrough entries without an existing group ID: `400`
+- passthrough LogicSig entries without `lsig_resources`, with declarations
+  whose program/argument sizes differ from the signed envelope, or with
+  `lsig_resources` on a non-LogicSig passthrough: `400`
 - immutable pre-grouped transactions that would require extra dummies: `400`
 - requests whose required dummies would push the group above 16 transactions: `400`
 - invalid runtime args or generic LogicSig arg decoding: `400`

@@ -407,7 +407,8 @@ Online `keyreg` options:
 | `sign(filepath, { wait = true } = {})` | `{ txids, confirmed }` |
 | `plan(signRequests)` | `{ transactions, mutations? }` |
 
-`sign()` reads an external transaction file, signs, submits, and optionally waits.
+`sign()` reads an external transaction file, verifies the live algod is
+v42-compatible, signs, submits, and optionally waits.
 
 `plan()` sends transaction sign requests to the signer group planner without
 signing or triggering approval. Request fields:
@@ -440,7 +441,11 @@ An unsigned foreign slot may declare exactly one authorization hint:
 
 `pqScheme` declares native-PQ authorization for an unsigned foreign slot and
 currently accepts `"f1"` (Falcon-1024). It is mutually exclusive with
-`lsigResources`, which declares LogicSig authorization.
+`lsigResources`, which declares LogicSig authorization. A passthrough request
+whose `signedTxnHex` carries a LogicSig must also include `lsigResources`; the
+signer checks the program and argument byte counts against the signed envelope
+and uses the declared reviewed opcode ceiling. `plan()` validates that the live
+client algod is v42-compatible before contacting apsigner.
 
 ## Application Interaction
 

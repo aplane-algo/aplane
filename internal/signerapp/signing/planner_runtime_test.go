@@ -206,6 +206,86 @@ func TestCalculateLogicSigResourcesRejectsOrphanPassthroughLogicSigFields(t *tes
 	}
 }
 
+func TestPassthroughLogicSigUsageRequiresReviewedResources(t *testing.T) {
+	encoded := msgpack.Encode(types.SignedTxn{
+		Lsig: types.LogicSig{
+			Logic: []byte{1, 2, 3},
+			Args:  [][]byte{{4, 5}},
+		},
+	})
+
+	t.Run("missing declaration", func(t *testing.T) {
+		_, _, err := passthroughLogicSigUsage(encoded, nil, 1)
+		if err == nil || !strings.Contains(err.Error(), "requires lsig_resources") {
+			t.Fatalf("passthroughLogicSigUsage() error = %v, want declaration rejection", err)
+		}
+	})
+
+	t.Run("observed sizes must match", func(t *testing.T) {
+		_, _, err := passthroughLogicSigUsage(encoded, &signerapi.LogicSigResourceUsage{
+			ProgramBytes:  4,
+			ArgumentBytes: 2,
+			MaxOpcodeCost: 20_000,
+		}, 1)
+		if err == nil || !strings.Contains(err.Error(), "program_bytes is 4, observed 3") {
+			t.Fatalf("passthroughLogicSigUsage() error = %v, want program-size rejection", err)
+		}
+	})
+
+	t.Run("declaration on non-LogicSig", func(t *testing.T) {
+		plain := msgpack.Encode(types.SignedTxn{})
+		_, _, err := passthroughLogicSigUsage(plain, &signerapi.LogicSigResourceUsage{
+			ProgramBytes:  1,
+			MaxOpcodeCost: 1,
+		}, 1)
+		if err == nil || !strings.Contains(err.Error(), "without LogicSig authorization") {
+			t.Fatalf("passthroughLogicSigUsage() error = %v, want orphan-declaration rejection", err)
+		}
+	})
+
+	t.Run("uses declared opcode ceiling", func(t *testing.T) {
+		usage, present, err := passthroughLogicSigUsage(encoded, &signerapi.LogicSigResourceUsage{
+			ProgramBytes:  3,
+			ArgumentBytes: 2,
+			MaxOpcodeCost: 40_000,
+		}, 1)
+		if err != nil {
+			t.Fatalf("passthroughLogicSigUsage() error = %v", err)
+		}
+		if !present || usage.MaxOpcodeCost != 40_000 {
+			t.Fatalf("passthrough usage = %#v, present=%v; want declared opcode ceiling", usage, present)
+		}
+	})
+}
+
+func TestCalculateLogicSigResourcesRejectsUnderprovisionedImmutablePassthrough(t *testing.T) {
+	encoded := msgpack.Encode(types.SignedTxn{
+		Lsig: types.LogicSig{Logic: []byte{1}},
+	})
+	_, _, err := calculateLogicSigResources(
+		nil,
+		PlannerIdentitySnapshot{},
+		"default",
+		[]signerapi.SignRequest{{
+			SignedTxnHex: hex.EncodeToString(encoded),
+			LsigResources: &signerapi.LogicSigResourceUsage{
+				ProgramBytes:  1,
+				MaxOpcodeCost: 40_000,
+			},
+		}},
+		[]types.Transaction{{}},
+		nil,
+		map[int]bool{0: true},
+		map[int]bool{},
+		map[int][]byte{0: encoded},
+		true,
+		true,
+	)
+	if err == nil || !strings.Contains(err.Error(), "requires 2 additional dummy transaction") {
+		t.Fatalf("calculateLogicSigResources() error = %v, want immutable-group dummy rejection", err)
+	}
+}
+
 func TestVerifySignableKeysRequiresKeyTypeMetadata(t *testing.T) {
 	const addr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	requests := []signerapi.SignRequest{{

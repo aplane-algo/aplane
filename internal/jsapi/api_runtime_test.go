@@ -10,12 +10,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	algoCrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/dop251/goja"
 
@@ -484,6 +488,21 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 
 	t.Run("maps request and response", func(t *testing.T) {
 		eng, _, api := newTestAPI(t)
+		algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v2/transactions/params" {
+				http.NotFound(w, r)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
+				ConsensusVersion: string(protocol.ConsensusV42),
+			})
+		}))
+		defer algodServer.Close()
+		algodClient, err := algod.MakeClient(algodServer.URL, "")
+		if err != nil {
+			t.Fatalf("algod.MakeClient() error = %v", err)
+		}
+		eng.AlgodClient = algodClient
 
 		var gotReq signerapi.GroupSignRequest
 		signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")

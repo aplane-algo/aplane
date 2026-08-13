@@ -179,7 +179,7 @@ type SignRequest struct {
     TxnSender    string            `json:"txn_sender,omitempty"`    // Transaction sender (for display)
     TxnBytesHex  string            `json:"txn_bytes_hex,omitempty"` // TX + msgpack(txn)
     LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs
-    LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign selected-path resources
+    LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign/passthrough selected-path resources
     AppCallInfo   *AppCallInfo            `json:"app_call_info,omitempty"`  // Optional approval metadata
 
     // Passthrough mode field
@@ -197,7 +197,11 @@ type AppCallInfo struct {
 `/plan` and `/sign` accept three mutually exclusive per-entry modes:
 
 - **Sign** — `auth_address` + `txn_bytes_hex`. The server signs the entry with its key.
-- **Passthrough** — `signed_txn_hex`. The entry is already signed elsewhere and is preserved byte-for-byte. Requires a pre-formed group ID.
+- **Passthrough** — `signed_txn_hex`. The entry is already signed elsewhere
+  and is preserved byte-for-byte. It requires a pre-formed group ID. A
+  passthrough LogicSig also requires `lsig_resources`; the signer checks its
+  declared program/argument bytes against the envelope and uses the reviewed
+  opcode ceiling for planning.
 - **Foreign** — `txn_bytes_hex` without `auth_address`. The entry is part of
   the group for canonicalization, policy context, and approval rendering, but
   is never signed by this signer. Optional `lsig_resources` declares
@@ -275,8 +279,8 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
 
 5. Resolve the active consensus profile, calculate LogicSig resources, and
    append dummies if required.
-   - This applies to sign-mode entries and to foreign entries that provide
-     `lsig_resources`.
+   - This applies to sign-mode entries, foreign entries that provide
+     `lsig_resources`, and passthrough LogicSigs whose declaration is required.
    - On v42, only pooled arguments and opcode capacity can require dummies;
      excess program bytes contribute to the group fee instead.
    - If dummy insertion would exceed Algorand's maximum group size, the request is rejected.
@@ -396,7 +400,10 @@ Passthrough mode enables multi-party signing scenarios where some transactions i
 
 1. **Pre-grouped required**: Passthrough transactions require a pre-set group ID. The server cannot add dummies or modify the group without invalidating existing signatures.
 
-2. **Group structure is fixed**: When passthrough is used, the server trusts the pre-formed group is complete and does not calculate dummy requirements.
+2. **Group structure is fixed**: The server calculates the complete resource
+   requirement for a passthrough group but cannot change it. If the declared
+   LogicSig resource demand requires more dummies than the immutable group
+   already contains, planning rejects before additional signatures are released.
 
 3. **Approval context still applies**: All transactions (including passthrough) still contribute to approval context, warning analysis, and audit visibility. Even though passthrough bytes are not modified, their decoded transaction contents are still part of the reviewed group.
 
@@ -515,11 +522,13 @@ submission. APlane never signs with plugin-supplied secret keys.
 `groupMode:"presign-plan"` generalizes the mixed-signing shape for plugin-owned
 signers whose key material cannot be exported. The plugin emits an unsigned
 draft plus `pluginSigners`; apshell sends plugin-owned slots to `/plan` as
-foreign entries with optional `lsig_resources` hints, verifies `/plan` preserved all
+foreign entries with `lsig_resources` for LogicSig slots, verifies `/plan` preserved all
 original fields except `Group` and `Fee`, calls the plugin's `signTransactions`
 callback over the canonical bytes, then submits a `/sign` request with
-plugin-signed slots as passthrough and managed slots in sign mode. This is the
-path used when plugin LogicSigs need pooled opcode/byte budget.
+plugin-signed slots as passthrough and managed slots in sign mode. Apshell
+verifies the returned authorization class and observable LogicSig sizes match
+the declaration, then retains the declaration on the final passthrough request.
+This is the path used when plugin LogicSigs need pooled opcode/byte budget.
 
 `groupMode:"pregrouped-signed"` is the all-plugin signed case. The plugin
 returns already-signed, already-grouped bytes; apshell validates the embedded
@@ -541,9 +550,9 @@ entries from `signed_txn_hex`. Decoded transactions are checked for group
 consistency, recognized genesis network, overlapping validity windows,
 passthrough's pre-grouped requirement, and the presence of at least one
 signable entry under the authenticated identity. Dummy calculation runs next
-(skipped for passthrough groups) and enforces the maximum group size and
-pre-grouped immutability; if dummies are needed, the planner creates them,
-adjusts fees, and recomputes the group ID. The finalized group passes through
+and enforces the maximum group size and pre-grouped immutability; if dummies are
+needed for an immutable passthrough/pre-grouped group, it rejects. Otherwise
+the planner creates them, adjusts fees, and recomputes the group ID. The finalized group passes through
 hard policy linting, forced-review policy, explicit auto-approval, and then
 either group-mode or single-transaction operator approval (or the
 `user_auto_approve:true` operator-default shortcut).

@@ -110,7 +110,7 @@ func calculateLogicSigResources(console Console, snapshot PlannerIdentitySnapsho
 	lsigIndices := make([]int, 0, len(requests))
 	for i, request := range requests {
 		if passthroughIndices[i] {
-			usage, present, usageErr := passthroughLogicSigUsage(passthroughSignedTxns[i], i+1)
+			usage, present, usageErr := passthroughLogicSigUsage(passthroughSignedTxns[i], request.LsigResources, i+1)
 			if usageErr != nil {
 				return lsigresource.Plan{}, nil, usageErr
 			}
@@ -224,7 +224,7 @@ func foreignLogicSigUsage(request signerapi.SignRequest) (lsigresource.Usage, bo
 	return lsigresource.Usage{}, false, nil
 }
 
-func passthroughLogicSigUsage(encoded []byte, txnIndex int) (lsigresource.Usage, bool, *ServiceError) {
+func passthroughLogicSigUsage(encoded []byte, declared *signerapi.LogicSigResourceUsage, txnIndex int) (lsigresource.Usage, bool, *ServiceError) {
 	var signed types.SignedTxn
 	if err := msgpack.Decode(encoded, &signed); err != nil {
 		return lsigresource.Usage{}, false, badRequest(fmt.Sprintf("transaction %d (passthrough): invalid signed transaction msgpack", txnIndex))
@@ -233,7 +233,13 @@ func passthroughLogicSigUsage(encoded []byte, txnIndex int) (lsigresource.Usage,
 		if !signed.Lsig.Blank() || !signed.Lsig.PQsig.Blank() {
 			return lsigresource.Usage{}, false, badRequest(fmt.Sprintf("transaction %d (passthrough): LogicSig authorization fields require a non-empty program", txnIndex))
 		}
+		if declared != nil {
+			return lsigresource.Usage{}, false, badRequest(fmt.Sprintf("transaction %d (passthrough): lsig_resources was provided for a transaction without LogicSig authorization", txnIndex))
+		}
 		return lsigresource.Usage{}, false, nil
+	}
+	if declared == nil {
+		return lsigresource.Usage{}, false, badRequest(fmt.Sprintf("transaction %d (passthrough): LogicSig authorization requires lsig_resources with a reviewed max_opcode_cost", txnIndex))
 	}
 	argumentBytes := uint64(0)
 	for _, argument := range signed.Lsig.Args {
@@ -242,13 +248,26 @@ func passthroughLogicSigUsage(encoded []byte, txnIndex int) (lsigresource.Usage,
 		}
 		argumentBytes += uint64(len(argument))
 	}
-	// The signer cannot prove the dynamic opcode ceiling of immutable foreign
-	// bytecode. The network remains authoritative for execution; the planner
-	// accounts the observed bytes and uses the minimum non-zero solver value.
+	programBytes := uint64(len(signed.Lsig.Logic))
+	if declared.ProgramBytes != programBytes {
+		return lsigresource.Usage{}, false, badRequest(fmt.Sprintf(
+			"transaction %d (passthrough): lsig_resources program_bytes is %d, observed %d",
+			txnIndex, declared.ProgramBytes, programBytes,
+		))
+	}
+	if declared.ArgumentBytes != argumentBytes {
+		return lsigresource.Usage{}, false, badRequest(fmt.Sprintf(
+			"transaction %d (passthrough): lsig_resources argument_bytes is %d, observed %d",
+			txnIndex, declared.ArgumentBytes, argumentBytes,
+		))
+	}
+	// Program and argument bytes are observable in the immutable signed
+	// envelope. Dynamic opcode cost is not, so callers must supply the reviewed
+	// selected-path ceiling instead of letting the signer guess a minimum.
 	return lsigresource.Usage{
-		ProgramBytes:  uint64(len(signed.Lsig.Logic)),
+		ProgramBytes:  programBytes,
 		ArgumentBytes: argumentBytes,
-		MaxOpcodeCost: 1,
+		MaxOpcodeCost: declared.MaxOpcodeCost,
 	}, true, nil
 }
 

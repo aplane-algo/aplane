@@ -63,6 +63,7 @@ func TestGroupSignRequestValidate(t *testing.T) {
 		{name: "foreign native pq", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", PQScheme: "f1"}}}},
 		{name: "foreign LogicSig resources", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", LsigResources: &LogicSigResourceUsage{ProgramBytes: 1_800, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000}}}}},
 		{name: "passthrough mode", request: GroupSignRequest{Requests: []SignRequest{{SignedTxnHex: "cafebabe"}}}},
+		{name: "passthrough LogicSig resources", request: GroupSignRequest{Requests: []SignRequest{{SignedTxnHex: "cafebabe", LsigResources: &LogicSigResourceUsage{ProgramBytes: 1_800, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000}}}}},
 		{name: "all passthrough mode", request: GroupSignRequest{Requests: []SignRequest{{SignedTxnHex: "cafebabe"}, {SignedTxnHex: "feedface"}}}},
 		{
 			name:    "conflicting sign and passthrough",
@@ -72,7 +73,7 @@ func TestGroupSignRequestValidate(t *testing.T) {
 		{name: "auth without txn bytes", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR"}}}, wantErr: "transaction 1: txn_bytes_hex is required for sign mode"},
 		{name: "pq hint on sign mode", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef", PQScheme: "f1"}}}, wantErr: "pq_scheme is allowed only for foreign"},
 		{name: "unsupported pq hint", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", PQScheme: "f2"}}}, wantErr: `unsupported pq_scheme "f2"`},
-		{name: "resources on sign mode", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef", LsigResources: &LogicSigResourceUsage{ProgramBytes: 1, MaxOpcodeCost: 1}}}}, wantErr: "lsig_resources is allowed only for foreign"},
+		{name: "resources on sign mode", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef", LsigResources: &LogicSigResourceUsage{ProgramBytes: 1, MaxOpcodeCost: 1}}}}, wantErr: "lsig_resources is allowed only for foreign or passthrough"},
 		{name: "resources and pq", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", PQScheme: "f1", LsigResources: &LogicSigResourceUsage{ProgramBytes: 1, MaxOpcodeCost: 1}}}}, wantErr: "cannot specify both pq_scheme and lsig_resources"},
 		{name: "invalid resources", request: GroupSignRequest{Requests: []SignRequest{{AuthAddress: "ADDR", TxnBytesHex: "deadbeef"}, {TxnBytesHex: "cafebabe", LsigResources: &LogicSigResourceUsage{ProgramBytes: 16_001, MaxOpcodeCost: 1}}}}, wantErr: "program_bytes 16001 exceeds"},
 		{name: "empty entry", request: GroupSignRequest{Requests: []SignRequest{{}}}, wantErr: "transaction 1: must specify either sign fields"},

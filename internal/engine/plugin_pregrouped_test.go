@@ -4,12 +4,14 @@
 package engine
 
 import (
+	"context"
 	"encoding/base64"
 	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -196,4 +198,23 @@ func TestDecodePregroupedSigned(t *testing.T) {
 			t.Fatal("want error for bad base64")
 		}
 	})
+}
+
+func TestSubmitPregroupedSignedRejectsUnsupportedConsensusBeforeBroadcast(t *testing.T) {
+	encoded, _ := signedGroup(t, "a", "b")
+	group, err := DecodePregroupedSigned(encoded)
+	if err != nil {
+		t.Fatalf("DecodePregroupedSigned() error = %v", err)
+	}
+	client, server := consensusTestAlgod(t, string(protocol.ConsensusV41), nil)
+	defer server.Close()
+	eng, err := NewEngine("test", WithAlgodClient(client))
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	_, err = eng.SubmitPregroupedSigned(context.Background(), group)
+	if err == nil || !strings.Contains(err.Error(), "network consensus") {
+		t.Fatalf("SubmitPregroupedSigned() error = %v, want unsupported-consensus rejection", err)
+	}
 }

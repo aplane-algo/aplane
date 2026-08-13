@@ -38,6 +38,9 @@ func (e *Engine) PrepareExternalBoundedAdmin(ctx context.Context, prep *Transact
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
+	if err := ValidateAlgodConsensus(ctx, e.AlgodClient); err != nil {
+		return nil, fmt.Errorf("validate algod consensus before bounded-admin signing: %w", err)
+	}
 	txn := prep.Transaction
 	sender := txn.Sender.String()
 	if _, err := e.RefreshAuthAddressWithContext(ctx, sender); err != nil {

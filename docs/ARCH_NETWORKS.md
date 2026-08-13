@@ -161,10 +161,13 @@ This prevents a display string from becoming the trust anchor for policy.
 This APlane release implements one compiled authorization contract: consensus
 v42. Client transaction construction validates algod's reported consensus
 identifier before using suggested parameters; FNet's `fnet5` identifier is an
-explicit alias for the same v42 contract. Other identifiers fail closed. The
-signer does not query a network algod during `/plan` or `/sign`: it validates
-the transaction genesis hash for policy context, then applies the compiled v42
-LogicSig and native-PQ rules.
+explicit alias for the same v42 contract. First-party planning and executable
+workflows refresh that validation before asking apsigner to plan, requesting
+signatures, or submitting/simulating pre-signed bytes, so prebuilt and
+plugin-produced groups cannot bypass it. Other identifiers fail closed. The
+signer itself remains network-independent: during `/plan` or `/sign` it
+validates the transaction genesis hash for policy context, then applies the
+compiled v42 LogicSig and native-PQ rules.
 
 ## ASA Transfer Guards
 

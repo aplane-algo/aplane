@@ -856,7 +856,11 @@ and opcode ceilings, prices program bytes, fixes the aggregate fee, and
 recomputes the group ID, while a guard asserts every original slot's
 transaction fields are preserved (only the group ID and fee may change). APlane then
 calls the plugin's `signTransactions` method to sign its owned slots over the *canonical*
-bytes, and apsigner signs the APlane-managed slots under its normal policy and approval.
+bytes. APlane verifies that each returned signed envelope preserves the planned
+transaction and matches its declared authorization class. For LogicSig slots,
+the observable program and argument byte counts must match `lsigResources`,
+and the same declaration is retained on the final passthrough `/sign` request.
+Apsigner then signs the APlane-managed slots under its normal policy and approval.
 **The plugin's signing keys are never exported** — it signs by reference, via the
 callback.
 
@@ -910,7 +914,9 @@ accounts pay.
 **Trust boundary.** In `presign-plan`, apsigner still owns its slots — it applies its
 full policy and approval to the managed transactions, exactly as for a direct `/sign`.
 A plugin can *add* signers to a group; it cannot bypass apsigner's authority over
-apsigner's keys.
+apsigner's keys. APlane validates the live client algod as v42-compatible before
+invoking a `presign-plan` callback. It performs the same check before broadcasting
+or simulating a `pregrouped-signed` group verbatim.
 
 #### What these flows enable
 

@@ -147,8 +147,10 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 
 	// --- Phase 2: gather plugin slots for the callback; sign dummies locally ---
 	passthrough := make(map[int]string) // index -> signed txn hex
+	passthroughResources := make(map[int]*signerapi.LogicSigResourceUsage)
 	var callbackReqs []PluginSlotSignRequest
 	expected := make(map[int]types.Transaction)
+	expectedAuthorization := make(map[int]PluginSlotAuthorization)
 	for i, ctxn := range canonicalTxns {
 		if i < originalCount {
 			if ref, owned := pluginSignerRefs[ctxn.Sender.String()]; owned {
@@ -159,6 +161,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 					Encoded:   base64.StdEncoding.EncodeToString(msgpack.Encode(ctxn)),
 				})
 				expected[i] = ctxn
+				expectedAuthorization[i] = clonePluginSlotAuthorization(pluginSlotAuthorizations[ctxn.Sender.String()])
 			}
 		} else {
 			stxn, err := signing.SignDummyTransaction(ctxn)
@@ -166,6 +169,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 				return nil, fmt.Errorf("failed to sign dummy transaction %d: %w", i, err)
 			}
 			passthrough[i] = hex.EncodeToString(msgpack.Encode(stxn))
+			passthroughResources[i] = dummyLogicSigResourceUsage()
 		}
 	}
 
@@ -185,18 +189,27 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		if _, dup := passthrough[s.Index]; dup {
 			return nil, fmt.Errorf("plugin returned duplicate slot %d", s.Index)
 		}
-		signedHex, err := validatePluginSignedSlot(ctxn, s.Encoded)
+		authorization := expectedAuthorization[s.Index]
+		signedHex, err := validatePluginSignedSlot(ctxn, s.Encoded, authorization)
 		if err != nil {
 			return nil, fmt.Errorf("plugin slot %d: %w", s.Index, err)
 		}
 		passthrough[s.Index] = signedHex
+		if authorization.LsigResources != nil {
+			passthroughResources[s.Index] = cloneLogicSigResourceUsage(authorization.LsigResources)
+		}
 	}
 
 	// --- Phase 3: /sign — passthrough plugin+dummy, sign-mode managed ---
 	signRequests := make([]signerapi.SignRequest, len(canonicalTxns))
 	for i, ctxn := range canonicalTxns {
 		if stxnHex, ok := passthrough[i]; ok {
-			signRequests[i] = signerapi.SignRequest{SignedTxnHex: stxnHex}
+			signRequests[i] = signerapi.SignRequest{
+				SignedTxnHex: stxnHex,
+				LsigResources: cloneLogicSigResourceUsage(
+					passthroughResources[i],
+				),
+			}
 			continue
 		}
 		signRequests[i] = e.managedSignRequest(ctxn, lsigArgsAt(lsigArgs, i))
@@ -295,7 +308,7 @@ func assertSlotArtifactFieldsPreserved(draft, canonical types.Transaction) error
 // validatePluginSignedSlot decodes a plugin-signed blob and verifies it signs the
 // EXACT canonical transaction APlane planned — never a substitute. Returns the
 // signed transaction as hex for passthrough.
-func validatePluginSignedSlot(canonical types.Transaction, encoded string) (string, error) {
+func validatePluginSignedSlot(canonical types.Transaction, encoded string, authorization PluginSlotAuthorization) (string, error) {
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode signed bytes: %w", err)
@@ -307,5 +320,97 @@ func validatePluginSignedSlot(canonical types.Transaction, encoded string) (stri
 	if !bytes.Equal(msgpack.Encode(stxn.Txn), msgpack.Encode(canonical)) {
 		return "", fmt.Errorf("signed transaction does not match the canonical bytes")
 	}
+	if err := validatePluginSignedAuthorization(stxn, authorization); err != nil {
+		return "", err
+	}
 	return hex.EncodeToString(raw), nil
+}
+
+func validatePluginSignedAuthorization(stxn types.SignedTxn, authorization PluginSlotAuthorization) error {
+	switch {
+	case authorization.LsigResources != nil:
+		if stxn.Sig != (types.Signature{}) || !stxn.Msig.Blank() || !stxn.PQsig.Blank() {
+			return fmt.Errorf("declared LogicSig slot carries another top-level authorization")
+		}
+		if len(stxn.Lsig.Logic) == 0 {
+			return fmt.Errorf("declared LogicSig slot returned no LogicSig program")
+		}
+		_, _, _, nestedCount := stxn.Lsig.SignatureCount()
+		if !stxn.Lsig.PQsig.Blank() {
+			nestedCount++
+		}
+		if nestedCount > 1 {
+			return fmt.Errorf("declared LogicSig slot carries multiple delegated authorization mechanisms")
+		}
+		programBytes := uint64(len(stxn.Lsig.Logic))
+		argumentBytes := uint64(0)
+		for _, argument := range stxn.Lsig.Args {
+			argumentBytes += uint64(len(argument))
+		}
+		if authorization.LsigResources.ProgramBytes != programBytes {
+			return fmt.Errorf(
+				"declared LogicSig program_bytes is %d, signed envelope contains %d",
+				authorization.LsigResources.ProgramBytes,
+				programBytes,
+			)
+		}
+		if authorization.LsigResources.ArgumentBytes != argumentBytes {
+			return fmt.Errorf(
+				"declared LogicSig argument_bytes is %d, signed envelope contains %d",
+				authorization.LsigResources.ArgumentBytes,
+				argumentBytes,
+			)
+		}
+		return nil
+	case authorization.PQScheme != "":
+		if stxn.PQsig.Blank() {
+			return fmt.Errorf("declared native-PQ slot returned no native-PQ authorization")
+		}
+		if got := string(stxn.PQsig.Scheme[:]); got != authorization.PQScheme {
+			return fmt.Errorf("declared native-PQ scheme is %q, signed envelope contains %q", authorization.PQScheme, got)
+		}
+		if stxn.Sig != (types.Signature{}) || !stxn.Msig.Blank() || !pluginLogicSigBlank(stxn.Lsig) {
+			return fmt.Errorf("declared native-PQ slot carries another authorization mechanism")
+		}
+		return nil
+	default:
+		if !pluginLogicSigBlank(stxn.Lsig) {
+			return fmt.Errorf("plugin returned LogicSig authorization without declaring lsig_resources")
+		}
+		if !stxn.PQsig.Blank() {
+			return fmt.Errorf("plugin returned native-PQ authorization without declaring pq_scheme")
+		}
+		hasSignature := stxn.Sig != (types.Signature{})
+		hasMultisig := !stxn.Msig.Blank()
+		if hasSignature == hasMultisig {
+			return fmt.Errorf("ordinary plugin slot must carry exactly one Ed25519 or multisig authorization")
+		}
+		return nil
+	}
+}
+
+func pluginLogicSigBlank(lsig types.LogicSig) bool {
+	return len(lsig.Logic) == 0 && lsig.Args == nil && lsig.Sig == (types.Signature{}) &&
+		lsig.Msig.Blank() && lsig.LMsig.Blank() && lsig.PQsig.Blank()
+}
+
+func clonePluginSlotAuthorization(authorization PluginSlotAuthorization) PluginSlotAuthorization {
+	authorization.LsigResources = cloneLogicSigResourceUsage(authorization.LsigResources)
+	return authorization
+}
+
+func cloneLogicSigResourceUsage(usage *signerapi.LogicSigResourceUsage) *signerapi.LogicSigResourceUsage {
+	if usage == nil {
+		return nil
+	}
+	copy := *usage
+	return &copy
+}
+
+func dummyLogicSigResourceUsage() *signerapi.LogicSigResourceUsage {
+	return &signerapi.LogicSigResourceUsage{
+		ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
+		ArgumentBytes: 0,
+		MaxOpcodeCost: 1,
+	}
 }

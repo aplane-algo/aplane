@@ -100,6 +100,9 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	if e.AlgodClient == nil {
 		return nil, nil, ErrNoAlgodClient
 	}
+	if err := ValidateAlgodConsensus(opts.Ctx, e.AlgodClient); err != nil {
+		return nil, nil, fmt.Errorf("validate algod consensus before signing: %w", err)
+	}
 	if err := e.refreshSubmitSigningState(opts.Ctx, txns); err != nil {
 		return nil, nil, err
 	}

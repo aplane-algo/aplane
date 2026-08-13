@@ -1716,11 +1716,17 @@ Native Falcon authorization occupies top-level `SignedTxn.PQsig`, never
 `SignedTxn.Sig` or `SignedTxn.Lsig`, and contributes `2e6` fixed-point fee
 units in addition to the transaction's ordinary `1e6` base factor. This
 APlane release implements the v42 authorization contract; clients reject an
-algod that reports another contract before constructing transactions.
+algod that reports another contract before constructing transactions and
+refresh the check before executable signing or submission workflows.
 The signer derives this authorization budget from local key metadata or a
 passthrough `PQsig`. An unsigned foreign native-PQ slot in `/plan` or `/sign`
 declares `pq_scheme: "f1"`; this hint is mutually exclusive with the structured
-`lsig_resources` hint used by foreign LogicSig slots. The retired combined
+`lsig_resources` hint used by foreign LogicSig slots. A signed passthrough
+LogicSig must also carry `lsig_resources`: apsigner verifies the declared
+program and argument byte counts against the immutable envelope and uses the
+declared reviewed opcode ceiling. It rejects a missing declaration, a size
+mismatch, or `lsig_resources` on a non-LogicSig passthrough rather than guessing
+an opcode cost. The retired combined
 `lsig_size` HTTP field is rejected explicitly rather than silently discarded.
 
 `aplane.falcon1024.v1` remains a LogicSig DSA with a 24-word BIP-39 mnemonic
@@ -1733,6 +1739,12 @@ This release compiles exactly one reviewed contract, v42, into the signer.
 `/plan` and `/sign` never query a per-network algod. The client owns ordinary
 transaction fee selection through its algod SuggestedParams response and
 validates that response as v42-compatible (`fnet5` is the explicit FNet alias).
+First-party planning and executable workflows refresh this check before asking
+apsigner to plan, releasing signatures, or submitting, including JavaScript
+`plan()`, prebuilt transaction signing, plugin pre-sign callbacks, guarded
+signing, bounded-admin partial signing, and verbatim pregrouped
+submission/simulation. The apsigner `/plan` endpoint itself remains independent
+of a client algod.
 The signer rejects an ordinary fee deficit, then adds only authorization-
 induced requirements: resource-dummy base fees, priced LogicSig program bytes,
 and native-PQ contributions. The signer's separately configured compile algod
@@ -3004,7 +3016,9 @@ All SDKs communicate via the same HTTP REST API as `apshell`. Auth header is `Au
 Cross-SDK compatibility-bearing behavior:
 
 - concatenated-group and list-per-slot signing APIs are distinct supported shapes
-- passthrough semantics are first-class for final signing
+- passthrough semantics are first-class for final signing; passthrough
+  LogicSigs require selected-path `lsig_resources`, with observable sizes
+  checked against the signed envelope
 - high-level signing helpers return base64 payloads converted from server hex
 - `FromEnv` and connection helper path resolution are part of the product contract
 - SDK-native prepared transaction models carry unsigned transaction bytes plus

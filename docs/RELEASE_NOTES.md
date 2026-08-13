@@ -37,6 +37,12 @@ program, and native-PQ fees. Foreign slots use the structured
 `lsig_resources` wire field, replacing the former combined `lsig_size` scalar.
 Plugins and SDKs must provide `programBytes`, `argumentBytes`, and
 `maxOpcodeCost` and use the signer's `/plan` output as the canonical group.
+Passthrough LogicSig requests must retain that structured declaration through
+final `/sign`; apsigner verifies the observable program/argument sizes and uses
+the reviewed opcode ceiling instead of guessing. First-party executable paths
+also refresh the live algod v42 check before signature release or verbatim
+pregrouped submission. First-party `plan()` performs the same check; the
+apsigner `/plan` endpoint remains network-independent.
 The breaking plugin wire change uses the one-way protocol declaration
 `initialize.result.protocol: "aplane-plugin/2"`; the host sends no protocol
 token that a legacy plugin could echo. JavaScript

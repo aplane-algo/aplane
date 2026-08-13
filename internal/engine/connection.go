@@ -101,6 +101,9 @@ func (e *Core) AdminSyncSentryReferencesWithContext(ctx context.Context, candida
 }
 
 func (e *Core) RequestGroupPlanWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
+	if err := ValidateAlgodConsensus(ctx, e.AlgodClient); err != nil {
+		return nil, fmt.Errorf("validate algod consensus before group planning: %w", err)
+	}
 	return e.Connection.RequestGroupPlanWithContext(ctx, requests)
 }
 
