@@ -211,7 +211,7 @@ func inspectCredentialBackupEntry(
 	srcFile := filepath.Join(keysDir, selector+".apb")
 	// #nosec G304 -- keysDir is the private extracted archive root and selector
 	// is restricted to one validated basename before this function is called.
-	data, err := os.ReadFile(srcFile)
+	data, _, err := fsutil.ReadRegularFileLimited(srcFile, crypto.MaxStandaloneEnvelopeBytes)
 	if err != nil {
 		return CredentialEntry{}, fmt.Errorf("read backup file: %w", err)
 	}

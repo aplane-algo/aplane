@@ -419,6 +419,11 @@ than treating the library YAML as active state.
 - standalone passphrase-based encryption used for backup/export is
   `envelope_version: 2`
 
+Standalone version 2 accepts exactly Argon2id time 2, memory 65,536 KiB, and
+parallelism 4. The complete encoded envelope is limited to 1 MiB. Missing or
+different KDF values require a new envelope version and are rejected before
+Argon2id runs.
+
 The term envelope's additional authenticated data binds the term and the
 object's logical identity: a class and a canonical selector.
 

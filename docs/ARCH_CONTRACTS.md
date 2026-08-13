@@ -2811,6 +2811,13 @@ Export:
    the export passphrase
 5. writes `apb/<selector>.apb`
 
+Standalone envelope version 2 fixes the Argon2id tuple at time 2, memory
+65,536 KiB, and parallelism 4. Readers reject omitted, partial, or altered KDF
+parameters before decoding the envelope body or invoking Argon2id; changing the
+tuple requires a new envelope version. Encoded standalone envelopes are limited
+to 1 MiB, and archive readers enforce that bound while reading each regular
+file rather than after an unbounded allocation.
+
 An all-credentials backup is fail-hard: if any selected active credential
 cannot be read, decrypted, canonicalized, or exported, no archive is
 published. It never silently reports a partial archive as a complete backup.
