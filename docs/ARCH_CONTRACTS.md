@@ -1736,6 +1736,11 @@ interchangeable with native `falcon1024`.
 
 LogicSig program sizing and native-PQ contributions are consensus-defined.
 This release compiles exactly one reviewed contract, v42, into the signer.
+`internal/lsigresource` owns that closed consensus profile and the pure
+fixed-point group/resource solver. `internal/signerapp/signing` selects and
+validates per-slot authorization usages, invokes the solver, and applies its
+resource result to canonical group and fee planning.
+
 `/plan` and `/sign` never query a per-network algod. The client owns ordinary
 transaction fee selection through its algod SuggestedParams response and
 validates that response as v42-compatible (`fnet5` is the explicit FNet alias).
