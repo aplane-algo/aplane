@@ -164,10 +164,13 @@ identifier before using suggested parameters; FNet's `fnet5` identifier is an
 explicit alias for the same v42 contract. First-party planning and executable
 workflows refresh that validation before asking apsigner to plan, requesting
 signatures, or submitting/simulating pre-signed bytes, so prebuilt and
-plugin-produced groups cannot bypass it. Other identifiers fail closed. The
-signer itself remains network-independent: during `/plan` or `/sign` it
-validates the transaction genesis hash for policy context, then applies the
-compiled v42 LogicSig and native-PQ rules.
+plugin-produced groups cannot bypass it. A successful SuggestedParams check is
+reused for at most 30 seconds by the same algod client, avoiding a redundant
+round trip inside one interactive workflow; changing the active network or
+algod client invalidates it. Other identifiers fail closed. The signer itself
+remains network-independent: during `/plan` or `/sign` it validates the
+transaction genesis hash for policy context, then applies the compiled v42
+LogicSig and native-PQ rules.
 
 ## ASA Transfer Guards
 

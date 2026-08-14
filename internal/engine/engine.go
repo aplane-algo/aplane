@@ -166,6 +166,7 @@ func (e *Core) SetNetwork(network string, algodClient *algod.Client) error {
 		return fmt.Errorf("%w: %s", ErrInvalidNetwork, err)
 	}
 
+	e.clearAlgodConsensusValidation()
 	e.Network = network
 	e.AlgodClient = algodClient
 	e.AsaCache = cache.LoadASACacheFromStore(e.CacheStore, network)
@@ -329,11 +330,15 @@ func (e *Core) EnsureSignerCache(ctx context.Context) error {
 }
 
 func (e *Core) getSuggestedParamsWithFee(ctx context.Context, fee uint64, useFlatFee bool) (types.SuggestedParams, error) {
-	sp, err := e.AlgodClient.SuggestedParams().Do(ctx)
+	client := e.AlgodClient
+	if client == nil {
+		return types.SuggestedParams{}, ErrNoAlgodClient
+	}
+	sp, err := client.SuggestedParams().Do(ctx)
 	if err != nil {
 		return types.SuggestedParams{}, fmt.Errorf("failed to get suggested params: %w", err)
 	}
-	if _, err := resolveSupportedConsensus(sp.ConsensusVersion); err != nil {
+	if err := e.rememberAlgodConsensus(client, sp.ConsensusVersion); err != nil {
 		return types.SuggestedParams{}, err
 	}
 	// A client-side genesis-hash assertion was considered here (audit finding:

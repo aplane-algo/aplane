@@ -38,7 +38,7 @@ func (e *Engine) PrepareExternalBoundedAdmin(ctx context.Context, prep *Transact
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
-	if err := ValidateAlgodConsensus(ctx, e.AlgodClient); err != nil {
+	if err := e.validateAlgodConsensus(ctx); err != nil {
 		return nil, fmt.Errorf("validate algod consensus before bounded-admin signing: %w", err)
 	}
 	txn := prep.Transaction
