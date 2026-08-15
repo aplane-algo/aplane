@@ -97,7 +97,11 @@ func TestPregroupedSignedVerbatimSubmit(t *testing.T) {
 	}
 	res, err := eng.SubmitPregroupedSigned(ctx, group)
 	if err != nil {
-		t.Fatalf("SubmitPregroupedSigned: %v\n%s", err, res.Output)
+		out := ""
+		if res != nil {
+			out = res.Output
+		}
+		t.Fatalf("SubmitPregroupedSigned: %v\n%s", err, out)
 	}
 	if len(res.TxIDs) != 2 {
 		t.Fatalf("expected 2 txIDs, got %d", len(res.TxIDs))
