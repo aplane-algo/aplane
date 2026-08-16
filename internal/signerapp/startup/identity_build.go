@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"sort"
 	"sync"
 	"time"
 
@@ -53,64 +52,14 @@ type IdentityBuildHooks struct {
 	Warn               func(string)
 }
 
-// BuildRegistry discovers and constructs all startup identity runtimes,
-// registering them into the provided registry and returning the product
-// identity runtime.
+// BuildRegistry validates the product layout and constructs only the fixed
+// product identity runtime. The registry remains temporarily as a startup
+// adapter until the single runtime is owned directly by the daemon.
 func BuildRegistry(reg *identity.Registry, opts IdentityBuildOptions, hooks IdentityBuildHooks) (*identity.Runtime, error) {
-	ids, err := StartupIdentityIDs(opts.DataDir, opts.ProductIdentityID)
-	if err != nil {
+	if err := identity.ValidateProductIdentityLayout(opts.DataDir, opts.ProductIdentityID); err != nil {
 		return nil, err
 	}
-
-	var product *identity.Runtime
-	for _, identityID := range ids {
-		ir, err := BuildIdentityRuntime(reg, opts, hooks, identityID)
-		if err != nil {
-			return nil, err
-		}
-		if identityID == opts.ProductIdentityID {
-			product = ir
-		}
-	}
-	if product == nil {
-		return nil, fmt.Errorf("product identity runtime missing: %s", opts.ProductIdentityID)
-	}
-	return product, nil
-}
-
-// StartupIdentityIDs returns the discovered, non-decommissioned identities
-// present at startup, always including the product identity.
-func StartupIdentityIDs(dataDir string, productID string) ([]string, error) {
-	discovered, err := identity.DiscoverIdentities(dataDir)
-	if err != nil {
-		return nil, err
-	}
-
-	seen := make(map[string]bool, len(discovered)+1)
-	ids := make([]string, 0, len(discovered)+1)
-	for _, id := range discovered {
-		storedCfg, cfgErr := identity.LoadStoredConfig(dataDir, id)
-		if cfgErr != nil {
-			return nil, fmt.Errorf("load config for identity %q: %w", id, cfgErr)
-		}
-		if storedCfg.IsDecommissioned() {
-			if id == productID {
-				return nil, fmt.Errorf("product identity %q is decommissioned", id)
-			}
-			continue
-		}
-		if !seen[id] {
-			ids = append(ids, id)
-			seen[id] = true
-		}
-	}
-
-	if !seen[productID] {
-		ids = append(ids, productID)
-	}
-
-	sort.Strings(ids)
-	return ids, nil
+	return BuildIdentityRuntime(reg, opts, hooks, opts.ProductIdentityID)
 }
 
 // BuildIdentityRuntime constructs and registers one identity runtime.

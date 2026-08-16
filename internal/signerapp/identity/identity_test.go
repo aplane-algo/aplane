@@ -26,38 +26,79 @@ import (
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestDiscoverIdentities(t *testing.T) {
-	root := t.TempDir()
-	usersDir := filepath.Join(root, "identities")
-
-	// No identities dir — returns empty
-	ids, err := DiscoverIdentities(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ids) != 0 {
-		t.Fatalf("expected 0 identities, got %d", len(ids))
-	}
-
-	// Create users dir with identities
-	for _, id := range []string{"alice", "bob", ".hidden"} {
-		if err := os.MkdirAll(filepath.Join(usersDir, id), 0700); err != nil {
+func TestValidateProductIdentityLayout(t *testing.T) {
+	t.Run("missing identities", func(t *testing.T) {
+		if err := ValidateProductIdentityLayout(t.TempDir(), auth.DefaultIdentityID); err != nil {
 			t.Fatal(err)
 		}
-	}
-	// Create a regular file (should be skipped)
-	if err := os.WriteFile(filepath.Join(usersDir, "notadir"), []byte("x"), 0600); err != nil {
-		t.Fatal(err)
+	})
+	t.Run("missing default", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.Mkdir(filepath.Join(root, "identities"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("real default", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "identities", auth.DefaultIdentityID), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	for _, entryType := range []string{"directory", "file", "hidden", "symlink"} {
+		entryType := entryType
+		t.Run("reject extra "+entryType, func(t *testing.T) {
+			root := t.TempDir()
+			identitiesDir := filepath.Join(root, "identities")
+			if err := os.MkdirAll(filepath.Join(identitiesDir, auth.DefaultIdentityID), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			name := "alice"
+			switch entryType {
+			case "directory":
+				if err := os.Mkdir(filepath.Join(identitiesDir, name), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "file":
+				if err := os.WriteFile(filepath.Join(identitiesDir, name), []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "hidden":
+				name = ".stale"
+				if err := os.Mkdir(filepath.Join(identitiesDir, name), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink":
+				if err := os.Symlink(t.TempDir(), filepath.Join(identitiesDir, name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID)
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("ValidateProductIdentityLayout() error = %v, want unexpected entry %q", err, name)
+			}
+		})
 	}
 
-	ids, err = DiscoverIdentities(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sort.Strings(ids)
-	if len(ids) != 2 || ids[0] != "alice" || ids[1] != "bob" {
-		t.Fatalf("expected [alice bob], got %v", ids)
-	}
+	t.Run("reject symlinked default", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.Mkdir(filepath.Join(root, "identities"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(t.TempDir(), filepath.Join(root, "identities", auth.DefaultIdentityID)); err != nil {
+			t.Fatal(err)
+		}
+		err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID)
+		if err == nil || !strings.Contains(err.Error(), "real directory") {
+			t.Fatalf("ValidateProductIdentityLayout() error = %v, want real-directory rejection", err)
+		}
+	})
 }
 
 func TestRegistryRemove(t *testing.T) {

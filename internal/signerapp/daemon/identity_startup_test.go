@@ -7,7 +7,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -31,44 +30,31 @@ func writeTestNodeRole(t *testing.T, root string, role noderole.Role) {
 	}
 }
 
-func TestStartupIdentityIDsIncludesProductIdentity(t *testing.T) {
+func TestBuildRegistryRejectsExtraIdentityBeforeLoadingSecrets(t *testing.T) {
 	root := t.TempDir()
-	for _, id := range []string{"alice", "bob"} {
-		if err := os.MkdirAll(filepath.Join(root, "identities", id), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	ids, err := signerstartup.StartupIdentityIDs(root, auth.CurrentProductIdentityID())
-	if err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "identities", "alice"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(ids)
-
-	want := []string{"alice", "bob", auth.CurrentProductIdentityID()}
-	sort.Strings(want)
-	if len(ids) != len(want) {
-		t.Fatalf("ids len = %d, want %d (%v)", len(ids), len(want), ids)
+	cfg := serverconfig.DefaultServerConfig()
+	_, err := signerstartup.BuildRegistry(identity.NewRegistry(), signerstartup.IdentityBuildOptions{
+		DataDir:               root,
+		KeyPaths:              utilkeys.NewPaths(root),
+		Config:                &cfg,
+		DefaultSessionTimeout: 15 * time.Minute,
+		ProductIdentityID:     auth.CurrentProductIdentityID(),
+	}, signerstartup.IdentityBuildHooks{})
+	if err == nil {
+		t.Fatal("BuildRegistry() error = nil")
 	}
-	for i := range want {
-		if ids[i] != want[i] {
-			t.Fatalf("ids[%d] = %q, want %q (all=%v)", i, ids[i], want[i], ids)
-		}
+	if !strings.Contains(err.Error(), "alice") || strings.Contains(err.Error(), "node role") || strings.Contains(err.Error(), "token") {
+		t.Fatalf("BuildRegistry() error = %q, want layout rejection before secret loading", err)
 	}
 }
 
-// Characterizes the supported product layout before multi-identity startup is
-// removed: a blank identities tree still constructs exactly the default
-// product runtime candidate.
-func TestStartupIdentityIDsDefaultOnlyHappyPath(t *testing.T) {
+func TestValidateProductIdentityLayoutBlankStore(t *testing.T) {
 	root := t.TempDir()
-
-	ids, err := signerstartup.StartupIdentityIDs(root, auth.CurrentProductIdentityID())
-	if err != nil {
+	if err := identity.ValidateProductIdentityLayout(root, auth.CurrentProductIdentityID()); err != nil {
 		t.Fatal(err)
-	}
-	if len(ids) != 1 || ids[0] != auth.DefaultIdentityID {
-		t.Fatalf("StartupIdentityIDs() = %v, want [%s]", ids, auth.DefaultIdentityID)
 	}
 }
 
@@ -153,35 +139,6 @@ func TestBuildIdentityRuntimeRejectsStoredMode(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "identity config mode is unsupported") {
 		t.Fatalf("BuildIdentityRuntime() error = %q, want unsupported mode", err.Error())
-	}
-}
-
-func TestStartupIdentityIDsSkipsDecommissionedIdentities(t *testing.T) {
-	root := t.TempDir()
-	for _, id := range []string{"alice", "bob"} {
-		if err := os.MkdirAll(filepath.Join(root, "identities", id), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := identity.SaveStoredSetting(root, "bob", "decommissioned", true); err != nil {
-		t.Fatal(err)
-	}
-
-	ids, err := signerstartup.StartupIdentityIDs(root, auth.CurrentProductIdentityID())
-	if err != nil {
-		t.Fatal(err)
-	}
-	sort.Strings(ids)
-
-	want := []string{"alice", auth.CurrentProductIdentityID()}
-	sort.Strings(want)
-	if len(ids) != len(want) {
-		t.Fatalf("ids len = %d, want %d (%v)", len(ids), len(want), ids)
-	}
-	for i := range want {
-		if ids[i] != want[i] {
-			t.Fatalf("ids[%d] = %q, want %q (all=%v)", i, ids[i], want[i], ids)
-		}
 	}
 }
 

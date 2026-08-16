@@ -213,16 +213,14 @@ func Run(dataDir string) int {
 		logErrorf("%v", err)
 		return 1
 	}
-	logInfof("identity runtimes initialized: %d", server.registry.Count())
-	for _, id := range server.registry.IDs() {
-		removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths, id)
-		if cleanupErr != nil {
-			logErrorf("failed to clean incomplete backup imports for identity %s: %v", id, cleanupErr)
-			return 1
-		}
-		if removed != 0 {
-			logInfof("removed %d incomplete backup import(s) for identity %s", removed, id)
-		}
+	logInfof("product identity runtime initialized")
+	removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths, identityID)
+	if cleanupErr != nil {
+		logErrorf("failed to clean incomplete backup imports: %v", cleanupErr)
+		return 1
+	}
+	if removed != 0 {
+		logInfof("removed %d incomplete backup import(s)", removed)
 	}
 	logInfof("API token loaded from %s", tokenfile.GetAPlaneTokenPathForRoot(startupOpts.Paths.Root(), identityID))
 
