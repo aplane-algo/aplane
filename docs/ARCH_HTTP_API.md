@@ -414,6 +414,10 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
 - `count`
 - `keys[]` with `address`, `public_key_hex`, `key_type`
+- optional `authorization_kind` with closed account-authorization values
+  `ed25519`, `native_pq`, or `logic_sig`. It is derived from the durable key
+  category and is authoritative for choosing the transaction authorization
+  envelope. Witness rows omit it because they are not spending accounts.
 - optional `signing_flow`: explicit signing choreography label. `sentry1`
   selects legacy guarded component signing, `bounded1` selects bounded routing
   without an online sentry, `bounded-sentry1` selects the user-first bounded

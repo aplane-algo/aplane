@@ -19,11 +19,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -467,6 +469,9 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 	if keysResp.Keys[0].Address != genResp.Address {
 		t.Fatalf("Keys address = %q, want %q", keysResp.Keys[0].Address, genResp.Address)
 	}
+	if keysResp.Keys[0].AuthorizationKind != string(algorithm.AuthorizationEd25519) {
+		t.Fatalf("Keys authorization kind = %q, want %q", keysResp.Keys[0].AuthorizationKind, algorithm.AuthorizationEd25519)
+	}
 
 	delResp, delErr := svc.AdminDelete(ir, genResp.Address)
 	if delErr != nil {
@@ -474,6 +479,27 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 	}
 	if !delResp.Success {
 		t.Fatalf("AdminDelete response = %#v, want success", delResp)
+	}
+}
+
+func TestAuthorizationKindForCategory(t *testing.T) {
+	tests := []struct {
+		category string
+		want     string
+	}{
+		{category: keys.CategoryEd25519, want: string(algorithm.AuthorizationEd25519)},
+		{category: keys.CategoryNativePQ, want: string(algorithm.AuthorizationNativePQ)},
+		{category: keys.CategoryDSALsig, want: string(algorithm.AuthorizationLogicSig)},
+		{category: keys.CategoryGenericLsig, want: string(algorithm.AuthorizationLogicSig)},
+		{category: keys.CategoryWitness, want: ""},
+		{category: "future-category", want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.category, func(t *testing.T) {
+			if got := authorizationKindForCategory(test.category); got != test.want {
+				t.Fatalf("authorizationKindForCategory(%q) = %q, want %q", test.category, got, test.want)
+			}
+		})
 	}
 }
 
