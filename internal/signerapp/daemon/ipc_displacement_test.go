@@ -24,8 +24,8 @@ func TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted(t *testing
 		manager: adminserver.NewSessionManager(),
 	}
 	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer, nil), adminserver.SessionDeps{})
-	_ = server.manager.RegisterPending(auth.CurrentProductIdentityID(), oldSession)
-	_, _ = server.manager.PromoteToActive(auth.CurrentProductIdentityID(), oldSession)
+	_ = server.manager.RegisterPending(oldSession)
+	_, _ = server.manager.PromoteToActive(oldSession)
 
 	newServer, newClient := net.Pipe()
 	defer func() { _ = newClient.Close() }()
@@ -70,10 +70,10 @@ func TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted(t *testing
 	}
 
 	newSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), adminserver.SessionDeps{})
-	if !server.manager.RegisterPending(auth.CurrentProductIdentityID(), newSession) {
+	if !server.manager.RegisterPending(newSession) {
 		t.Fatal("RegisterPending(newSession) = false, want true")
 	}
-	replaced, ok := server.manager.PromoteToActive(auth.CurrentProductIdentityID(), newSession)
+	replaced, ok := server.manager.PromoteToActive(newSession)
 	if !ok {
 		t.Fatal("PromoteToActive(newSession) = false, want true")
 	}
@@ -105,54 +105,6 @@ func TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted(t *testing
 	}
 }
 
-func TestPreboundAdminSessionDoesNotDisplaceDifferentIdentity(t *testing.T) {
-	signer, cleanup := setupTestSigner(t)
-	defer cleanup()
-
-	ipcServer := &IPCServer{
-		signer:  signer,
-		manager: adminserver.NewSessionManager(),
-	}
-	bobSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
-	_ = ipcServer.manager.RegisterPending("bob", bobSession)
-	_, _ = ipcServer.manager.PromoteToActive("bob", bobSession)
-
-	newServer, newClient := net.Pipe()
-	defer func() { _ = newClient.Close() }()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		ipcServer.acceptAdminSession(adminproto.NewUnixAdminConn(newServer, nil), "ssh", "ssh-passphrase", "alice")
-	}()
-
-	reader := bufio.NewReader(newClient)
-	line, err := reader.ReadBytes('\n')
-	if err != nil {
-		t.Fatalf("ReadBytes() error = %v", err)
-	}
-	var msg protocol.AuthRequiredMessage
-	if err := json.Unmarshal(line[:len(line)-1], &msg); err != nil {
-		t.Fatalf("Unmarshal(auth_required) error = %v", err)
-	}
-	if msg.Type != protocol.MsgTypeAuthRequired {
-		t.Fatalf("first message type = %q, want %q", msg.Type, protocol.MsgTypeAuthRequired)
-	}
-	if ipcServer.activeIdentitySession("bob") != bobSession {
-		t.Fatal("bob active session was displaced by alice session")
-	}
-	if ipcServer.activeIdentitySession(auth.CurrentProductIdentityID()) != nil {
-		t.Fatal("product active session unexpectedly set")
-	}
-
-	_ = newClient.Close()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for admin session to exit")
-	}
-}
-
 func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 	signer, cleanup := setupTestSigner(t)
 	defer cleanup()
@@ -165,10 +117,10 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 		manager: adminserver.NewSessionManager(),
 	}
 	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
-	if !ipcServer.manager.RegisterPending(auth.DefaultIdentityID, oldSession) {
+	if !ipcServer.manager.RegisterPending(oldSession) {
 		t.Fatal("RegisterPending(oldSession) = false, want true")
 	}
-	if _, ok := ipcServer.manager.PromoteToActive(auth.DefaultIdentityID, oldSession); !ok {
+	if _, ok := ipcServer.manager.PromoteToActive(oldSession); !ok {
 		t.Fatal("PromoteToActive(oldSession) = false, want true")
 	}
 
@@ -182,7 +134,6 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 			adminproto.NewUnixAdminConn(serverConn, nil),
 			adminserver.TransportIPC,
 			"ipc-passphrase",
-			"",
 		)
 	}()
 
@@ -220,7 +171,7 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 		t.Fatal("timed out waiting for failed replacement session cleanup")
 	}
 
-	if ipcServer.activeIdentitySession(auth.DefaultIdentityID) != oldSession {
+	if ipcServer.activeSession() != oldSession {
 		t.Fatal("old active session was not retained after replacement auth failure")
 	}
 	if !ir.IsUnlocked() {
@@ -243,10 +194,10 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 	defer func() { _ = oldClient.Close() }()
 	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer, nil), signer.adminSessionDeps())
 	oldSession.Bind(auth.NewDefaultIdentity("test"), ir)
-	if !ipcServer.manager.RegisterPending(auth.DefaultIdentityID, oldSession) {
+	if !ipcServer.manager.RegisterPending(oldSession) {
 		t.Fatal("RegisterPending(oldSession) = false, want true")
 	}
-	if _, ok := ipcServer.manager.PromoteToActive(auth.DefaultIdentityID, oldSession); !ok {
+	if _, ok := ipcServer.manager.PromoteToActive(oldSession); !ok {
 		t.Fatal("PromoteToActive(oldSession) = false, want true")
 	}
 
@@ -277,7 +228,6 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 			adminproto.NewUnixAdminConn(newServer, nil),
 			adminserver.TransportIPC,
 			"ipc-passphrase",
-			"",
 		)
 	}()
 

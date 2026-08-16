@@ -257,8 +257,8 @@ func TestBuildIdentityRuntimeRoutesLockedNotificationByIdentity(t *testing.T) {
 		DefaultSessionTimeout: 15 * time.Minute,
 		ProductIdentityID:     auth.CurrentProductIdentityID(),
 	}, signerstartup.IdentityBuildHooks{
-		NotifyLocked: func(identityID string) {
-			hub.NotifyLocked(identityID, adminproto.SignerLockedNotification{Reason: "locked"})
+		NotifyLocked: func() {
+			hub.NotifyLocked(adminproto.SignerLockedNotification{Reason: "locked"})
 		},
 	}, "alice")
 	if err != nil {
@@ -268,8 +268,8 @@ func TestBuildIdentityRuntimeRoutesLockedNotificationByIdentity(t *testing.T) {
 	ir.SetUnlocked()
 	ir.Lock()
 
-	if hub.lockedIdentity != "alice" {
-		t.Fatalf("NotifyLocked identity = %q, want alice", hub.lockedIdentity)
+	if !hub.lockedCalled {
+		t.Fatal("NotifyLocked was not called")
 	}
 }
 

@@ -157,7 +157,7 @@ func TestRequestSigningApprovalTimeoutCleansPendingRequest(t *testing.T) {
 	}
 }
 
-func TestApprovalCoordinatorRoutesHubCallsByIdentity(t *testing.T) {
+func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 	hub := &recordingAdminHub{}
 	signer := &Signer{
 		registry: identity.NewRegistry(),
@@ -178,11 +178,11 @@ func TestApprovalCoordinatorRoutesHubCallsByIdentity(t *testing.T) {
 	if approved {
 		t.Fatal("approved = true, want false")
 	}
-	if hub.hasClientIdentity != "alice" {
-		t.Fatalf("HasClient identity = %q, want alice", hub.hasClientIdentity)
+	if !hub.hasClientCalled {
+		t.Fatal("HasClient was not called")
 	}
-	if hub.signIdentity != "alice" {
-		t.Fatalf("SendSignRequest identity = %q, want alice", hub.signIdentity)
+	if !hub.signCalled {
+		t.Fatal("SendSignRequest was not called")
 	}
 
 	hub.reset()
@@ -193,15 +193,15 @@ func TestApprovalCoordinatorRoutesHubCallsByIdentity(t *testing.T) {
 	if approved {
 		t.Fatal("approved = true, want false")
 	}
-	if hub.hasClientIdentity != "alice" {
-		t.Fatalf("HasClient identity = %q, want alice", hub.hasClientIdentity)
+	if !hub.hasClientCalled {
+		t.Fatal("HasClient was not called")
 	}
-	if hub.tokenIdentity != "alice" {
-		t.Fatalf("SendTokenProvisioningRequest identity = %q, want alice", hub.tokenIdentity)
+	if !hub.tokenCalled {
+		t.Fatal("SendTokenProvisioningRequest was not called")
 	}
 }
 
-func TestReloadServiceRoutesKeysChangedByIdentity(t *testing.T) {
+func TestReloadServiceNotifiesProductAdminHub(t *testing.T) {
 	hub := &recordingAdminHub{}
 	signer := &Signer{hub: hub}
 	ir := identity.New(identity.Config{
@@ -215,8 +215,8 @@ func TestReloadServiceRoutesKeysChangedByIdentity(t *testing.T) {
 	}
 	svc.NotifyKeysChanged(signertemplates.KeysChangedNotification{KeyCount: 3})
 
-	if hub.keysIdentity != "alice" {
-		t.Fatalf("NotifyKeysChanged identity = %q, want alice", hub.keysIdentity)
+	if !hub.keysCalled {
+		t.Fatal("NotifyKeysChanged was not called")
 	}
 }
 
@@ -241,7 +241,7 @@ func TestReloadServiceClosesRegistryOnNodeRoleConflict(t *testing.T) {
 	}
 }
 
-func TestApprovalServiceChecksClientForTargetIdentity(t *testing.T) {
+func TestApprovalServiceChecksProductAdminClient(t *testing.T) {
 	hub := &recordingAdminHub{}
 	signer := &Signer{
 		registry: identity.NewRegistry(),
@@ -260,8 +260,8 @@ func TestApprovalServiceChecksClientForTargetIdentity(t *testing.T) {
 	if !svc.HasClient("alice") {
 		t.Fatal("ApprovalService.HasClient(alice) = false, want true")
 	}
-	if hub.hasClientIdentity != "alice" {
-		t.Fatalf("HasClient identity = %q, want alice", hub.hasClientIdentity)
+	if !hub.hasClientCalled {
+		t.Fatal("HasClient was not called")
 	}
 }
 
@@ -348,47 +348,47 @@ func (s *hubStubConn) SetReadDeadline(time.Time) error  { return nil }
 func (s *hubStubConn) SetWriteDeadline(time.Time) error { return nil }
 
 type recordingAdminHub struct {
-	hasClientIdentity string
-	signIdentity      string
-	cancelIdentity    string
-	tokenIdentity     string
-	lockedIdentity    string
-	keysIdentity      string
-	statusIdentity    string
+	hasClientCalled bool
+	signCalled      bool
+	cancelCalled    bool
+	tokenCalled     bool
+	lockedCalled    bool
+	keysCalled      bool
+	statusCalled    bool
 }
 
 func (h *recordingAdminHub) reset() {
 	*h = recordingAdminHub{}
 }
 
-func (h *recordingAdminHub) HasClient(identityID string) bool {
-	h.hasClientIdentity = identityID
+func (h *recordingAdminHub) HasClient() bool {
+	h.hasClientCalled = true
 	return true
 }
 
-func (h *recordingAdminHub) SendSignRequest(identityID string, _ *signerapproval.SignRequest) bool {
-	h.signIdentity = identityID
+func (h *recordingAdminHub) SendSignRequest(_ *signerapproval.SignRequest) bool {
+	h.signCalled = true
 	return false
 }
 
-func (h *recordingAdminHub) SendSignRequestCanceled(identityID string, _ *signerapproval.SignRequestCanceled) bool {
-	h.cancelIdentity = identityID
+func (h *recordingAdminHub) SendSignRequestCanceled(_ *signerapproval.SignRequestCanceled) bool {
+	h.cancelCalled = true
 	return false
 }
 
-func (h *recordingAdminHub) SendTokenProvisioningRequest(identityID string, _ *signerapproval.TokenProvisioningRequest) bool {
-	h.tokenIdentity = identityID
+func (h *recordingAdminHub) SendTokenProvisioningRequest(_ *signerapproval.TokenProvisioningRequest) bool {
+	h.tokenCalled = true
 	return false
 }
 
-func (h *recordingAdminHub) NotifyLocked(identityID string, _ adminproto.SignerLockedNotification) {
-	h.lockedIdentity = identityID
+func (h *recordingAdminHub) NotifyLocked(_ adminproto.SignerLockedNotification) {
+	h.lockedCalled = true
 }
 
-func (h *recordingAdminHub) NotifyKeysChanged(identityID string, _ adminproto.KeysChangedNotification) {
-	h.keysIdentity = identityID
+func (h *recordingAdminHub) NotifyKeysChanged(_ adminproto.KeysChangedNotification) {
+	h.keysCalled = true
 }
 
-func (h *recordingAdminHub) NotifyStatus(identityID, _ string, _ int) {
-	h.statusIdentity = identityID
+func (h *recordingAdminHub) NotifyStatus(_ string, _ int) {
+	h.statusCalled = true
 }

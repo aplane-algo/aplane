@@ -69,24 +69,6 @@ func (s signerAdminServices) ProductIdentityRuntime() *identity.Runtime {
 	return s.signer.productIdentityRuntime()
 }
 
-func (s signerAdminServices) ResolveIdentity(identityID string) (*identity.Runtime, error) {
-	if err := s.signer.registry.CloseError(); err != nil {
-		return nil, err
-	}
-	targetIdentityID := identityID
-	if targetIdentityID == "" {
-		targetIdentityID = auth.CurrentProductIdentityID()
-	}
-	// Product-mode admin restrictions live in adminproto.Session's auth
-	// reconciliation. This resolver stays registry-scoped so SSH-prebound
-	// sessions can resolve the identity authenticated by the SSH layer.
-	ir := s.signer.registry.Get(targetIdentityID)
-	if ir == nil {
-		return nil, fmt.Errorf("identity not available: %s", targetIdentityID)
-	}
-	return ir, nil
-}
-
 func (s signerAdminServices) VerifyPassphrase(ir *identity.Runtime, passphrase []byte) error {
 	return crypto.VerifyPassphraseWithKeyring(passphrase, ir.KeyPaths().KeystoreMetadataDir(ir.ID()))
 }
@@ -428,7 +410,7 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) (*si
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	if s.signer != nil {
 		if hub := s.signer.adminHub(); hub != nil {
-			hub.NotifyStatus(ir.ID(), ir.GetState().String(), ir.KeyCount())
+			hub.NotifyStatus(ir.GetState().String(), ir.KeyCount())
 		}
 	}
 	return report, true

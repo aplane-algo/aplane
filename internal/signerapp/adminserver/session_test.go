@@ -48,9 +48,7 @@ type stubServices struct {
 	unlockOK     bool
 	unlockErrMsg string
 	unlockCode   string
-	resolveErr   error
 	newIdentity  *auth.Identity
-	resolveIDs   []string
 	verifyCalls  int
 	unlockCalls  int
 
@@ -133,13 +131,6 @@ type stubServices struct {
 }
 
 func (s *stubServices) ProductIdentityRuntime() *identity.Runtime { return s.runtime }
-func (s *stubServices) ResolveIdentity(identityID string) (*identity.Runtime, error) {
-	s.resolveIDs = append(s.resolveIDs, identityID)
-	if s.resolveErr != nil {
-		return nil, s.resolveErr
-	}
-	return s.runtime, nil
-}
 func (s *stubServices) VerifyPassphrase(ir *identity.Runtime, passphrase []byte) error {
 	s.verifyCalls++
 	if len(s.verifyErrs) == 0 {
@@ -604,7 +595,7 @@ func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
 	}
 }
 
-func TestSessionAuthenticateDefaultsToPreboundIdentity(t *testing.T) {
+func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 	ir := identity.New(identity.Config{
 		ID:            "alice",
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
@@ -628,34 +619,22 @@ func TestSessionAuthenticateDefaultsToPreboundIdentity(t *testing.T) {
 	}
 	session := NewSession(conn, svc.templateDeps())
 	session.SetAuthMethod("ssh-passphrase")
-	session.SetPreboundIdentityID("alice")
 
 	if !session.Authenticate() {
 		t.Fatal("Authenticate() = false, want true")
-	}
-	if len(svc.resolveIDs) != 1 || svc.resolveIDs[0] != "alice" {
-		t.Fatalf("ResolveIdentity IDs = %v, want [alice]", svc.resolveIDs)
 	}
 	if session.TargetIdentityID() != "alice" {
 		t.Fatalf("TargetIdentityID() = %q, want alice", session.TargetIdentityID())
 	}
 }
 
-func TestSessionAuthenticateRejectsMismatchedPreboundIdentityBeforeUnlock(t *testing.T) {
+func TestSessionAuthenticateRejectsStaleIdentitySelectorBeforePassphrase(t *testing.T) {
 	ir := identity.New(identity.Config{
 		ID:            "bob",
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 
-	authMsg, err := json.Marshal(protocol.AuthMessage{
-		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
-		IdentityID:      "bob",
-		Passphrase:      protocol.NewSensitiveBytes("secret"),
-		ProtocolVersion: currentAdminProtocolVersion(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","identity_id":"bob","protocol_version":{"major":5,"minor":0}}`)
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	svc := &stubServices{
@@ -664,13 +643,9 @@ func TestSessionAuthenticateRejectsMismatchedPreboundIdentityBeforeUnlock(t *tes
 	}
 	session := NewSession(conn, svc.templateDeps())
 	session.SetAuthMethod("ssh-passphrase")
-	session.SetPreboundIdentityID("alice")
 
 	if session.Authenticate() {
 		t.Fatal("Authenticate() = true, want false")
-	}
-	if len(svc.resolveIDs) != 0 {
-		t.Fatalf("ResolveIdentity IDs = %v, want none", svc.resolveIDs)
 	}
 	if svc.verifyCalls != 0 {
 		t.Fatalf("VerifyPassphrase calls = %d, want 0", svc.verifyCalls)
@@ -689,26 +664,18 @@ func TestSessionAuthenticateRejectsMismatchedPreboundIdentityBeforeUnlock(t *tes
 	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Success || result.Code != protocol.ErrCodeAuthenticationFailed || result.Error != "authentication failed" {
-		t.Fatalf("auth result = %+v, want authentication failure", result)
+	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "invalid auth message format" {
+		t.Fatalf("auth result = %+v, want stale selector rejection", result)
 	}
 }
 
-func TestSessionAuthenticateRejectsUnboundNonProductIdentityBeforeResolve(t *testing.T) {
+func TestSessionAuthenticateRejectsOldVersionBeforeStaleSelector(t *testing.T) {
 	ir := identity.New(identity.Config{
 		ID:            "alice",
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 
-	authMsg, err := json.Marshal(protocol.AuthMessage{
-		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
-		IdentityID:      "alice",
-		Passphrase:      protocol.NewSensitiveBytes("secret"),
-		ProtocolVersion: currentAdminProtocolVersion(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","identity_id":"alice","protocol_version":{"major":4,"minor":5}}`)
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	svc := &stubServices{
@@ -719,9 +686,6 @@ func TestSessionAuthenticateRejectsUnboundNonProductIdentityBeforeResolve(t *tes
 
 	if session.Authenticate() {
 		t.Fatal("Authenticate() = true, want false")
-	}
-	if len(svc.resolveIDs) != 0 {
-		t.Fatalf("ResolveIdentity IDs = %v, want none", svc.resolveIDs)
 	}
 	if svc.verifyCalls != 0 {
 		t.Fatalf("VerifyPassphrase calls = %d, want 0", svc.verifyCalls)
@@ -734,8 +698,8 @@ func TestSessionAuthenticateRejectsUnboundNonProductIdentityBeforeResolve(t *tes
 	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Success || result.Code != protocol.ErrCodeAuthenticationFailed || result.Error != "authentication failed" {
-		t.Fatalf("auth result = %+v, want authentication failure", result)
+	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol major version mismatch: client=4 server=5" {
+		t.Fatalf("auth result = %+v, want version-first rejection", result)
 	}
 }
 
@@ -788,10 +752,9 @@ func TestSessionAuthenticateRetriesInvalidPassphrase(t *testing.T) {
 	}
 }
 
-func TestSessionAuthenticateResolveIdentityFailureIsGeneric(t *testing.T) {
+func TestSessionAuthenticateMissingProductRuntimeIsGeneric(t *testing.T) {
 	authMsg, err := json.Marshal(protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
-		IdentityID:      "missing",
 		Passphrase:      protocol.NewSensitiveBytes("secret"),
 		ProtocolVersion: currentAdminProtocolVersion(),
 	})
@@ -800,9 +763,7 @@ func TestSessionAuthenticateResolveIdentityFailureIsGeneric(t *testing.T) {
 	}
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
-	session := NewSession(conn, stubServices{
-		resolveErr: errors.New("unsupported identity"),
-	}.deps())
+	session := NewSession(conn, stubServices{}.deps())
 
 	if session.Authenticate() {
 		t.Fatal("Authenticate() = true, want false")

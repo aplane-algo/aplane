@@ -4,11 +4,11 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
 
@@ -17,8 +17,8 @@ func newIPCServerWithActiveConn(conn net.Conn) *IPCServer {
 		manager: adminserver.NewSessionManager(),
 	}
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), adminserver.SessionDeps{})
-	_ = server.manager.RegisterPending(auth.CurrentProductIdentityID(), session)
-	server.manager.PromoteToActive(auth.CurrentProductIdentityID(), session)
+	_ = server.manager.RegisterPending(session)
+	server.manager.PromoteToActive(session)
 	return server
 }
 

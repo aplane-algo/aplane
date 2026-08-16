@@ -501,7 +501,7 @@ inspection.
 
 Session ownership took 20 commits but none inside the modeled machinery:
 `adminserver/manager.go` has a zero diff over the whole range, so
-`PromoteToActive`, `DisplaceSession`, `MovePendingToIdentity`, and
+`PromoteToActive`, `DisplaceSession`, `BindPreAuthPending`, and
 `ClearActive` are byte-identical, and `ipc.go`'s diff is confined to socket
 placement and stale-socket removal (`ResolveBindPath`, `removeStaleIPCSocket`)
 rather than `handleRegisteredClient`. The disconnect-defer condition

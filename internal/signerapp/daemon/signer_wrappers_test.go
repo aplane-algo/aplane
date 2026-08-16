@@ -58,14 +58,11 @@ func (fs *Signer) newApprovalServiceForIdentity(ir *identity.Runtime) *signersig
 // offerDisplacement sends a client_exists message to the new connection and waits
 // for a displace_confirm response. If confirmed, it displaces the old client.
 // Returns the bufio.Reader (to avoid data loss from buffering) and true on success.
-// This legacy IPC helper is product-mode scoped; identity-aware paths should
-// call offerDisplacementSession with an explicit identity.
 func (s *IPCServer) offerDisplacement(newConn net.Conn) bool {
-	identityID := auth.CurrentProductIdentityID()
-	return s.offerDisplacementSession(s.activeIdentitySession(identityID), adminproto.NewUnixAdminConn(newConn, nil))
+	return s.offerDisplacementSession(s.activeSession(), adminproto.NewUnixAdminConn(newConn, nil))
 }
 
 // handleClient handles a single IPC client connection.
 func (s *IPCServer) handleClient(conn net.Conn) {
-	s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase", "")
+	s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase")
 }

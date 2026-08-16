@@ -37,12 +37,12 @@ type IdentityBuildOptions struct {
 // IdentityBuildHooks provides the non-owning process callbacks needed by
 // identity runtime assembly.
 type IdentityBuildHooks struct {
-	HasAdminClient               func(identityID string) bool
-	SendSignRequest              func(identityID string, req *approval.SignRequest) bool
-	SendSignRequestCanceled      func(identityID string, msg *approval.SignRequestCanceled) bool
-	SendTokenProvisioningRequest func(identityID string, req *approval.TokenProvisioningRequest) bool
-	NotifyLocked                 func(identityID string)
-	NotifyKeysChanged            func(identityID string, keyCount int)
+	HasAdminClient               func() bool
+	SendSignRequest              func(req *approval.SignRequest) bool
+	SendSignRequestCanceled      func(msg *approval.SignRequestCanceled) bool
+	SendTokenProvisioningRequest func(req *approval.TokenProvisioningRequest) bool
+	NotifyLocked                 func()
+	NotifyKeysChanged            func(keyCount int)
 	ReloadAuditLog               signertemplates.AuditLogger
 	NodeFailClosed               func(error)
 	// ReloadMutationLock returns the identity-scoped store mutation lock that
@@ -135,7 +135,7 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 		},
 		OnLocked: func() {
 			if hooks.NotifyLocked != nil {
-				hooks.NotifyLocked(identityID)
+				hooks.NotifyLocked()
 			}
 		},
 	})
@@ -152,13 +152,12 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 // WireApprovalCoordinator creates and installs an approval coordinator on the
 // identity runtime using the process hooks.
 func WireApprovalCoordinator(ir *identity.Runtime, hooks IdentityBuildHooks) {
-	identityID := ir.ID()
 	coordinator := approval.NewWithDecommission(
 		func() bool {
 			if hooks.HasAdminClient == nil {
 				return false
 			}
-			return hooks.HasAdminClient(identityID)
+			return hooks.HasAdminClient()
 		},
 		func() bool {
 			return ir.IsDecommissioned()
@@ -167,19 +166,19 @@ func WireApprovalCoordinator(ir *identity.Runtime, hooks IdentityBuildHooks) {
 			if hooks.SendSignRequest == nil {
 				return false
 			}
-			return hooks.SendSignRequest(identityID, msg)
+			return hooks.SendSignRequest(msg)
 		},
 		func(msg *approval.SignRequestCanceled) bool {
 			if hooks.SendSignRequestCanceled == nil {
 				return false
 			}
-			return hooks.SendSignRequestCanceled(identityID, msg)
+			return hooks.SendSignRequestCanceled(msg)
 		},
 		func(msg *approval.TokenProvisioningRequest) bool {
 			if hooks.SendTokenProvisioningRequest == nil {
 				return false
 			}
-			return hooks.SendTokenProvisioningRequest(identityID, msg)
+			return hooks.SendTokenProvisioningRequest(msg)
 		},
 	)
 	ir.SetApprovalCoordinator(coordinator)
@@ -231,7 +230,7 @@ func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ide
 	}
 	if hooks.NotifyKeysChanged != nil {
 		svc.NotifyKeysChanged = func(notification signertemplates.KeysChangedNotification) {
-			hooks.NotifyKeysChanged(identityID, notification.KeyCount)
+			hooks.NotifyKeysChanged(notification.KeyCount)
 		}
 	}
 	return svc

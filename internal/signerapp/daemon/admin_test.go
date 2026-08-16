@@ -567,8 +567,8 @@ func TestAdminSyncSentriesNotifiesAdminKeyTypesChanged(t *testing.T) {
 	if resp.Added != 1 {
 		t.Fatalf("Added = %d, want 1", resp.Added)
 	}
-	if hub.keysIdentity != auth.CurrentProductIdentityID() {
-		t.Fatalf("NotifyKeysChanged identity = %q, want %q", hub.keysIdentity, auth.CurrentProductIdentityID())
+	if !hub.keysCalled {
+		t.Fatal("NotifyKeysChanged was not called")
 	}
 }
 

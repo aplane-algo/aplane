@@ -4,6 +4,7 @@
 package adminserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -55,10 +56,6 @@ type Session struct {
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	activeBackupExports map[backupExportAuditKey]struct{}
-
-	// preboundIdentityID is set by transports that authenticate an identity
-	// before the admin protocol auth message, such as SSH.
-	preboundIdentityID string
 }
 
 type backupExportAuditKey struct {
@@ -198,26 +195,29 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 			return AuthOutcomeFailed
 		}
 
-		var authMsg protocol.AuthMessage
-		if err := json.Unmarshal(raw, &authMsg); err != nil {
+		var versionEnvelope struct {
+			ProtocolVersion *protocol.ProtocolVersion `json:"protocol_version"`
+		}
+		if err := json.Unmarshal(raw, &versionEnvelope); err != nil {
 			s.sendAuthResult(false, protocol.ErrCodeInvalidAuthMessage, "invalid auth message format")
 			return AuthOutcomeFailed
 		}
-		if ok, errMsg := validateAdminProtocolVersion(authMsg.ProtocolVersion); !ok {
-			authMsg.Passphrase.Zero()
+		if ok, errMsg := validateAdminProtocolVersion(versionEnvelope.ProtocolVersion); !ok {
 			s.sendAuthResult(false, protocol.ErrCodeInvalidAuthMessage, errMsg)
 			return AuthOutcomeFailed
 		}
 
-		targetIdentityID, ok := s.reconcileAuthIdentity(authMsg.IdentityID)
-		if !ok {
+		var authMsg protocol.AuthMessage
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&authMsg); err != nil {
 			authMsg.Passphrase.Zero()
-			s.sendAuthResult(false, protocol.ErrCodeAuthenticationFailed, "authentication failed")
+			s.sendAuthResult(false, protocol.ErrCodeInvalidAuthMessage, "invalid auth message format")
 			return AuthOutcomeFailed
 		}
 
-		ir, err := s.identityServices.ResolveIdentity(targetIdentityID)
-		if err != nil {
+		ir := s.identityServices.ProductIdentityRuntime()
+		if ir == nil {
 			authMsg.Passphrase.Zero()
 			s.sendAuthResult(false, protocol.ErrCodeAuthenticationFailed, "authentication failed")
 			return AuthOutcomeFailed
@@ -419,15 +419,6 @@ func (s *Session) SetTransportInfo(transport, remoteAddr string) {
 	}
 }
 
-func (s *Session) SetPreboundIdentityID(identityID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.preboundIdentityID = identityID
-	if identityID != "" {
-		s.context.TargetIdentityID = identityID
-	}
-}
-
 func validateAdminProtocolVersion(clientVersion *protocol.ProtocolVersion) (bool, string) {
 	if clientVersion == nil {
 		return false, "admin protocol version is required"
@@ -442,23 +433,6 @@ func validateAdminProtocolVersion(clientVersion *protocol.ProtocolVersion) (bool
 			"server_minor", protocol.AdminProtocolVersionMinor)
 	}
 	return true, ""
-}
-
-func (s *Session) reconcileAuthIdentity(authIdentityID string) (string, bool) {
-	s.mu.Lock()
-	preboundIdentityID := s.preboundIdentityID
-	s.mu.Unlock()
-
-	if preboundIdentityID == "" {
-		if authIdentityID != "" && !auth.IsCurrentProductIdentity(authIdentityID) {
-			return "", false
-		}
-		return authIdentityID, true
-	}
-	if authIdentityID == "" {
-		return preboundIdentityID, true
-	}
-	return authIdentityID, authIdentityID == preboundIdentityID
 }
 
 func (s *Session) Conn() adminproto.AdminConn {

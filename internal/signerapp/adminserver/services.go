@@ -13,7 +13,6 @@ import (
 
 type IdentityServices interface {
 	ProductIdentityRuntime() *identity.Runtime
-	ResolveIdentity(identityID string) (*identity.Runtime, error)
 	VerifyPassphrase(ir *identity.Runtime, passphrase []byte) error
 	UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string)
 	InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult

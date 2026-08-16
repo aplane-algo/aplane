@@ -63,7 +63,6 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 					adminproto.NewUnixAdminConn(serverConn, nil),
 					adminserver.TransportIPC,
 					"ipc-passphrase",
-					"",
 				)
 			}()
 
@@ -117,7 +116,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 	signer.ipcServer = ipcServer
 
 	blocker := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
-	if !ipcServer.manager.RegisterPending(auth.DefaultIdentityID, blocker) {
+	if !ipcServer.manager.RegisterPending(blocker) {
 		t.Fatal("RegisterPending(blocker) = false, want true")
 	}
 
@@ -131,7 +130,6 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 			adminproto.NewUnixAdminConn(serverConn, nil),
 			adminserver.TransportIPC,
 			"ipc-passphrase",
-			"",
 		)
 	}()
 
@@ -164,7 +162,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 	if ir.IsUnlocked() {
 		t.Fatal("identity remained unlocked after authenticated session failed promotion")
 	}
-	if ipcServer.sessionManager().HasClient(auth.DefaultIdentityID) {
+	if ipcServer.sessionManager().HasClient() {
 		t.Fatal("identity unexpectedly has an active admin client")
 	}
 }

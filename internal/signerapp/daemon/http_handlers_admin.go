@@ -40,7 +40,7 @@ func (fs *Signer) handleAdminSyncSentries(w http.ResponseWriter, r *http.Request
 	}
 	if response.Added > 0 || response.Updated > 0 || response.Removed > 0 {
 		if hub := fs.adminHub(); hub != nil {
-			hub.NotifyKeysChanged(ir.ID(), adminproto.KeysChangedNotification{KeyCount: ir.KeyCount()})
+			hub.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: ir.KeyCount()})
 		}
 	}
 	writeJSON(w, http.StatusOK, response)

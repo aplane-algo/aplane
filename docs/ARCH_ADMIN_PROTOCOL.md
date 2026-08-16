@@ -26,18 +26,14 @@ The `apadmin` TUI may see `client_exists` before auth for displacement
 negotiation. `client_exists`, `displace_confirm`, and `displaced` are not part
 of the generic transport contract.
 
-Admin sessions bind to one identity runtime. Product-mode clients normally omit
-`identity_id`, which defaults to the product identity. Local IPC remains
-product-scoped: an explicit non-product `identity_id` is rejected unless the
-transport was already pre-bound to that identity. SSH admin sessions may be
-pre-bound by the SSH-authenticated identity; in that case an omitted
-admin-protocol `identity_id` defaults to the SSH identity and an explicit
-mismatched `identity_id` is rejected before runtime unlock or admin work.
+Admin sessions bind directly to the one product runtime. The v5 auth shape has
+no identity selector. A stale `identity_id` field is rejected by strict
+known-field decoding before passphrase verification or runtime work; it is not
+silently ignored.
 
-The UI presents one product admin workflow. Internally, active
-and pending admin sessions are stored per identity so approval routing,
-notifications, displacement, disconnect cleanup, and lock-on-disconnect affect
-only the bound identity.
+IPC and SSH share one process-wide authenticated-pending slot and one active
+admin slot. Local IPC additionally has one pre-auth pending slot until its
+passphrase has been verified.
 
 Transport notes:
 
@@ -51,7 +47,7 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 4.5; `auth_required` carries it as
+- the current admin protocol version is 5.0; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -61,7 +57,7 @@ Transport notes:
 - the generic client helpers in `internal/transport` expect `auth_required` for
   a normal handshake and preserve pre-auth protocol `error` messages as
   formatted server rejections,
-- displacement negotiation is handled only by the `apadmin` TUI path and is identity-scoped internally,
+- displacement negotiation is handled only by the `apadmin` TUI path and is process-wide,
 - generic clients observe some auth/displacement failures as formatted protocol errors rather than stable typed transport errors.
 - admin frames are bounded to 4 MiB before JSON decoding on both transports.
 
@@ -215,7 +211,8 @@ Server to Client:
 
 ### Session and Identity
 
-- `auth` / `auth_only`: `passphrase`, optional `identity_id`, required `protocol_version`
+- `auth` / `auth_only`: `passphrase`, required `protocol_version`; unknown
+  fields are rejected after the protocol major is validated
 - `auth_result`: `success`, optional `code`, optional `error`
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal

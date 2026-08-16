@@ -5,22 +5,18 @@ package adminserver
 
 import "sync"
 
-// SessionManager tracks active and pending admin sessions by identity.
-// Local IPC sessions start in the pre-auth pending slot until auth resolves
-// their target identity. Transports that already know the target identity can
-// register directly into identity-scoped pending storage.
+// SessionManager tracks the process-wide active and pending admin sessions.
+// Local IPC sessions start in the pre-auth pending slot. SSH sessions enter
+// the authenticated pending slot directly.
 type SessionManager struct {
 	mu             sync.Mutex
-	active         map[string]*Session
-	pending        map[string]*Session
+	active         *Session
+	pending        *Session
 	preAuthPending *Session
 }
 
 func NewSessionManager() *SessionManager {
-	return &SessionManager{
-		active:  make(map[string]*Session),
-		pending: make(map[string]*Session),
-	}
+	return &SessionManager{}
 }
 
 func (m *SessionManager) RegisterPreAuthPending(s *Session) bool {
@@ -33,56 +29,50 @@ func (m *SessionManager) RegisterPreAuthPending(s *Session) bool {
 	return true
 }
 
-func (m *SessionManager) RegisterPending(identityID string, s *Session) bool {
+func (m *SessionManager) RegisterPending(s *Session) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if identityID == "" || m.pending[identityID] != nil {
+	if m.pending != nil {
 		return false
 	}
-	m.pending[identityID] = s
+	m.pending = s
 	return true
 }
 
-func (m *SessionManager) MovePendingToIdentity(identityID string, s *Session) (active *Session, ok bool) {
+func (m *SessionManager) BindPreAuthPending(s *Session) (active *Session, ok bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if identityID == "" {
-		return nil, false
-	}
 
 	switch {
-	case m.pending[identityID] == s:
-		return m.active[identityID], true
-	case m.pending[identityID] != nil:
+	case m.pending == s:
+		return m.active, true
+	case m.pending != nil:
 		return nil, false
 	case m.preAuthPending == s:
 		m.preAuthPending = nil
-		m.pending[identityID] = s
-		return m.active[identityID], true
+		m.pending = s
+		return m.active, true
 	default:
 		return nil, false
 	}
 }
 
-func (m *SessionManager) PromoteToActive(identityID string, s *Session) (replaced *Session, ok bool) {
+func (m *SessionManager) PromoteToActive(s *Session) (replaced *Session, ok bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if identityID == "" {
-		return nil, false
+	if m.pending == s {
+		m.pending = nil
 	}
-	if m.pending[identityID] == s {
-		delete(m.pending, identityID)
-	}
-	replaced = m.active[identityID]
-	m.active[identityID] = s
+	replaced = m.active
+	m.active = s
 	return replaced, true
 }
 
-func (m *SessionManager) ClearPending(identityID string, s *Session) {
+func (m *SessionManager) ClearPending(s *Session) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if identityID != "" && m.pending[identityID] == s {
-		delete(m.pending, identityID)
+	if m.pending == s {
+		m.pending = nil
 	}
 }
 
@@ -94,27 +84,24 @@ func (m *SessionManager) ClearPreAuthPending(s *Session) {
 	}
 }
 
-func (m *SessionManager) ClearActive(identityID string, s *Session) bool {
+func (m *SessionManager) ClearActive(s *Session) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if identityID == "" || m.active[identityID] != s {
+	if m.active != s {
 		return false
 	}
-	delete(m.active, identityID)
+	m.active = nil
 	return true
 }
 
-func (m *SessionManager) HasClient(identityID string) bool {
+func (m *SessionManager) HasClient() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return identityID != "" && m.active[identityID] != nil
+	return m.active != nil
 }
 
-func (m *SessionManager) ActiveSession(identityID string) *Session {
+func (m *SessionManager) ActiveSession() *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if identityID == "" {
-		return nil
-	}
-	return m.active[identityID]
+	return m.active
 }

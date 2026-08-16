@@ -107,7 +107,7 @@ message only.
 
 No modeled invariant diverged. The new path returns the same
 `AuthOutcomeAuthenticated` and runs the identical ownership sequence
-(`MovePendingToIdentity`, displacement offer, `PromoteToActive`) and the
+(`BindPreAuthPending`, displacement offer, `PromoteToActive`) and the
 identical disconnect defer, so SO1 is unaffected by construction; and SO2's
 antecedent requires `unlocked`, which an authenticate-only session never sets,
 while the `Exit` cleanup that re-locks is unchanged. Splitting `AuthSucceed`

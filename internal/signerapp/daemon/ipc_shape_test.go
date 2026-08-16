@@ -34,7 +34,7 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n"
+	authLine := `{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine))),
@@ -73,7 +73,7 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine))),
@@ -157,7 +157,7 @@ func TestNotifyKeysChangedEmitsNotificationShape(t *testing.T) {
 	recorder := &ipcJSONRecorderConn{}
 	ipcServer := newIPCServerWithActiveConn(recorder)
 
-	ipcServer.NotifyKeysChanged(auth.CurrentProductIdentityID(), adminproto.KeysChangedNotification{KeyCount: 7})
+	ipcServer.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: 7})
 
 	msgs := recorder.messages(t)
 	if len(msgs) != 1 {
@@ -263,7 +263,7 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 	server.auditLog = logger
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
 	conn := newIPCMockConn(authLine, "unix:/tmp/test-ipc.sock")
 
 	ipcServer := &IPCServer{signer: server}
@@ -323,7 +323,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
 	unknownLine := `{"kind":"request","type":"definitely_unknown","id":"req-1"}` + "\n"
 	conn := newIPCMockConn(authLine+unknownLine, "unix:/tmp/test-ipc.sock")
 
@@ -334,7 +334,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 		t.Fatal("RegisterPreAuthPending() = false, want true")
 	}
 
-	ipcServer.handleRegisteredClient(session, "ipc", "", nil)
+	ipcServer.handleRegisteredClient(session, "ipc", nil)
 
 	msgs := parseJSONLines(t, conn.writes.Bytes())
 	if len(msgs) < 4 {

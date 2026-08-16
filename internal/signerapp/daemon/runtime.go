@@ -16,9 +16,10 @@ const (
 )
 
 func (fs *Signer) hasClientForIdentity(identityID string) bool {
+	_ = identityID
 	hub := fs.adminHub()
 	if hub == nil {
 		return false
 	}
-	return hub.HasClient(identityID)
+	return hub.HasClient()
 }

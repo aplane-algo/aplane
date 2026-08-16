@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -133,7 +132,7 @@ func (s *IPCServer) acceptLoop() {
 		}
 
 		logInfof("apadmin client connected via IPC")
-		go s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase", "")
+		go s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase")
 	}
 }
 
@@ -148,23 +147,20 @@ func (s *IPCServer) offerDisplacementSession(active *adminserver.Session, newCon
 	return confirmed
 }
 
-func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport, authMethod, preboundIdentityID string) {
+func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport, authMethod string) {
 	session := adminserver.NewSession(adminConn, s.signer.adminSessionDeps())
 	session.SetAuthMethod(authMethod)
 	session.SetTransportInfo(transport, adminConn.RemoteAddr())
-	session.SetPreboundIdentityID(preboundIdentityID)
 
-	pendingIdentityID := preboundIdentityID
 	var active *adminserver.Session
 	var displacementConfirmedFor *adminserver.Session
 	var ok bool
-	if pendingIdentityID != "" {
-		ok = s.sessionManager().RegisterPending(pendingIdentityID, session)
-		active = s.activeIdentitySession(pendingIdentityID)
+	if transport == "ssh" {
+		ok = s.sessionManager().RegisterPending(session)
+		active = s.activeSession()
 	} else {
 		ok = s.sessionManager().RegisterPreAuthPending(session)
-		pendingIdentityID = auth.CurrentProductIdentityID()
-		active = s.activeIdentitySession(pendingIdentityID)
+		active = s.activeSession()
 	}
 	if !ok {
 		errMsg := protocol.ErrorMessage{
@@ -177,16 +173,16 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport
 	}
 	if active != nil {
 		if !s.offerDisplacementSession(active, adminConn) {
-			s.clearPendingSession(preboundIdentityID, session)
+			s.clearPendingSession(session)
 			_ = session.Close()
 			return
 		}
 		displacementConfirmedFor = active
 	}
-	s.handleRegisteredClient(session, transport, preboundIdentityID, displacementConfirmedFor)
+	s.handleRegisteredClient(session, transport, displacementConfirmedFor)
 }
 
-func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transport, preboundIdentityID string, displacementConfirmedFor *adminserver.Session) {
+func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transport string, displacementConfirmedFor *adminserver.Session) {
 	// If auth unlocks an identity for this session, either the session becomes
 	// the active owner or cleanup must leave the identity locked (when
 	// lock_on_disconnect is set) with no pending approvals stranded.
@@ -194,20 +190,16 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	adminConn := session.Conn()
 
 	defer func() {
-		s.clearPendingSession(preboundIdentityID, session)
+		s.clearPendingSession(session)
 		boundIR := session.BoundRuntime()
-		boundIdentityID := ""
-		if boundIR != nil {
-			boundIdentityID = boundIR.ID()
-			s.sessionManager().ClearPending(boundIdentityID, session)
-		}
-		wasActiveClient := s.sessionManager().ClearActive(boundIdentityID, session)
+		s.sessionManager().ClearPending(session)
+		wasActiveClient := s.sessionManager().ClearActive(session)
 		_ = session.Close() // Best-effort cleanup
 
 		// Run owner cleanup whenever this authenticated session exits and no
 		// active owner remains. Displaced clients skip cleanup because the
 		// replacement is already active before they are notified and closed.
-		if authenticated && boundIR != nil && (wasActiveClient || !s.sessionManager().HasClient(boundIdentityID)) {
+		if authenticated && boundIR != nil && (wasActiveClient || !s.sessionManager().HasClient()) {
 			// Route disconnect cleanup through the bound identity
 			if wasActiveClient && s.signer != nil {
 				s.signer.adminServices().LogSessionDisconnectedContext(session.SessionContext())
@@ -244,21 +236,20 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	if boundIR == nil {
 		return
 	}
-	identityID := boundIR.ID()
-	active, ok := s.sessionManager().MovePendingToIdentity(identityID, session)
+	active, ok := s.sessionManager().BindPreAuthPending(session)
 	if !ok {
-		logWarnf("%s client could not bind pending session to identity %q", strings.ToUpper(transport), identityID)
+		logWarnf("%s client could not bind the pending product session", strings.ToUpper(transport))
 		return
 	}
 	if active != nil && active != session && active != displacementConfirmedFor {
 		if !s.offerDisplacementSession(active, adminConn) {
-			s.sessionManager().ClearPending(identityID, session)
+			s.sessionManager().ClearPending(session)
 			return
 		}
 	}
-	replaced, ok := s.sessionManager().PromoteToActive(identityID, session)
+	replaced, ok := s.sessionManager().PromoteToActive(session)
 	if !ok {
-		logWarnf("%s client could not promote session for identity %q", strings.ToUpper(transport), identityID)
+		logWarnf("%s client could not promote the product session", strings.ToUpper(transport))
 		return
 	}
 	if replaced != nil && replaced != session {
@@ -297,14 +288,14 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	}
 }
 
-// HasClient returns true if an IPC client is connected for the identity.
-func (s *IPCServer) HasClient(identityID string) bool {
-	return s.sessionManager().HasClient(identityID)
+// HasClient returns true if an admin client is connected.
+func (s *IPCServer) HasClient() bool {
+	return s.sessionManager().HasClient()
 }
 
 // SendSignRequest sends a signing request to the IPC client.
-func (s *IPCServer) SendSignRequest(identityID string, req *signerapproval.SignRequest) bool {
-	active := s.activeIdentitySession(identityID)
+func (s *IPCServer) SendSignRequest(req *signerapproval.SignRequest) bool {
+	active := s.activeSession()
 	if active == nil {
 		return false
 	}
@@ -313,8 +304,8 @@ func (s *IPCServer) SendSignRequest(identityID string, req *signerapproval.SignR
 
 // SendSignRequestCanceled tells the IPC client that a previously delivered
 // signing request is no longer actionable.
-func (s *IPCServer) SendSignRequestCanceled(identityID string, msg *signerapproval.SignRequestCanceled) bool {
-	active := s.activeIdentitySession(identityID)
+func (s *IPCServer) SendSignRequestCanceled(msg *signerapproval.SignRequestCanceled) bool {
+	active := s.activeSession()
 	if active == nil || msg == nil {
 		return false
 	}
@@ -322,8 +313,8 @@ func (s *IPCServer) SendSignRequestCanceled(identityID string, msg *signerapprov
 }
 
 // SendTokenProvisioningRequest sends a token provisioning request to the IPC client.
-func (s *IPCServer) SendTokenProvisioningRequest(identityID string, req *signerapproval.TokenProvisioningRequest) bool {
-	active := s.activeIdentitySession(identityID)
+func (s *IPCServer) SendTokenProvisioningRequest(req *signerapproval.TokenProvisioningRequest) bool {
+	active := s.activeSession()
 	if active == nil {
 		return false
 	}
@@ -332,9 +323,9 @@ func (s *IPCServer) SendTokenProvisioningRequest(identityID string, req *signera
 
 // NotifyLocked sends a signer_locked notification to the connected IPC client.
 // This allows apadmin to transition to the unlock screen when the signer locks.
-func (s *IPCServer) NotifyLocked(identityID string, notification adminproto.SignerLockedNotification) {
+func (s *IPCServer) NotifyLocked(notification adminproto.SignerLockedNotification) {
 	msg := adminserver.ProtocolSignerLockedMessage(notification)
-	active := s.activeIdentitySession(identityID)
+	active := s.activeSession()
 	if active == nil {
 		return
 	}
@@ -345,8 +336,8 @@ func (s *IPCServer) NotifyLocked(identityID string, notification adminproto.Sign
 // Used when the runtime state changes without a client request that already
 // reports it — e.g. leaving recovery mode after the marker rescan comes back
 // clean.
-func (s *IPCServer) NotifyStatus(identityID, state string, keyCount int) {
-	active := s.activeIdentitySession(identityID)
+func (s *IPCServer) NotifyStatus(state string, keyCount int) {
+	active := s.activeSession()
 	if active == nil {
 		return
 	}
@@ -355,9 +346,9 @@ func (s *IPCServer) NotifyStatus(identityID, state string, keyCount int) {
 
 // NotifyKeysChanged sends a keys_changed notification to the connected IPC client.
 // This allows apadmin to refresh its key list when keys are added/removed.
-func (s *IPCServer) NotifyKeysChanged(identityID string, notification adminproto.KeysChangedNotification) {
+func (s *IPCServer) NotifyKeysChanged(notification adminproto.KeysChangedNotification) {
 	msg := adminserver.ProtocolKeysChangedMessage(notification)
-	active := s.activeIdentitySession(identityID)
+	active := s.activeSession()
 	if active == nil {
 		return
 	}
@@ -371,21 +362,13 @@ func (s *IPCServer) sessionManager() *adminserver.SessionManager {
 	return s.manager
 }
 
-// activeSession is a product-mode compatibility helper for legacy tests and
-// local IPC call sites that have not selected an identity explicitly.
 func (s *IPCServer) activeSession() *adminserver.Session {
-	return s.activeIdentitySession(auth.CurrentProductIdentityID())
+	return s.sessionManager().ActiveSession()
 }
 
-func (s *IPCServer) activeIdentitySession(identityID string) *adminserver.Session {
-	return s.sessionManager().ActiveSession(identityID)
-}
-
-func (s *IPCServer) clearPendingSession(identityID string, session *adminserver.Session) {
+func (s *IPCServer) clearPendingSession(session *adminserver.Session) {
 	s.sessionManager().ClearPreAuthPending(session)
-	if identityID != "" {
-		s.sessionManager().ClearPending(identityID, session)
-	}
+	s.sessionManager().ClearPending(session)
 }
 
 func writeJSONMessage(conn adminproto.AdminConn, v interface{}) error {

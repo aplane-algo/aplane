@@ -423,8 +423,8 @@ producing output) yields a counterexample.
 
 [formal/session_ownership.tla](formal/session_ownership.tla) (see
 [FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md](FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md))
-models admin-session ownership against one identity: authentication unlocks the
-identity before ownership is established, so the invariant is that no failure
+models process-wide admin-session ownership: authentication unlocks the product
+runtime before ownership is established, so the invariant is that no failure
 between unlock and promotion strands the identity unlocked with no live
 authenticated session responsible for re-locking (`lock_on_disconnect`). It is
 a temporal-transition spec; TLC checked under `Sessions = {a1, a2, a3}` with
