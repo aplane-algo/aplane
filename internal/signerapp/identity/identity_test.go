@@ -7,8 +7,6 @@ import (
 	"context"
 	"errors"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
@@ -964,45 +962,6 @@ func TestStoredConfigIsDecommissioned(t *testing.T) {
 	}
 	if !cfg.IsDecommissioned() {
 		t.Fatal("IsDecommissioned() = false, want true")
-	}
-}
-
-func TestRegistryAuthenticatorSkipsDecommissionedIdentity(t *testing.T) {
-	reg := NewRegistry()
-	active := New(Config{
-		ID:            "active",
-		Authenticator: auth.NewTokenAuthenticator("active-token"),
-	})
-	decommissioned := New(Config{
-		ID:            "disabled",
-		Authenticator: auth.NewTokenAuthenticator("disabled-token"),
-	})
-	if err := reg.Register(active); err != nil {
-		t.Fatal(err)
-	}
-	if err := reg.Register(decommissioned); err != nil {
-		t.Fatal(err)
-	}
-	if err := decommissioned.Decommission(); err != nil {
-		t.Fatal(err)
-	}
-
-	ra := NewRegistryAuthenticator(reg)
-
-	req := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	req.Header.Set("Authorization", "aplane disabled-token")
-	if _, err := ra.Authenticate(context.Background(), req); err != auth.ErrInvalidCredentials {
-		t.Fatalf("Authenticate(disabled-token) error = %v, want %v", err, auth.ErrInvalidCredentials)
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/keys", nil)
-	req.Header.Set("Authorization", "aplane active-token")
-	ident, err := ra.Authenticate(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Authenticate(active-token) error = %v", err)
-	}
-	if ident.ID != "active" {
-		t.Fatalf("identity ID = %q, want %q", ident.ID, "active")
 	}
 }
 

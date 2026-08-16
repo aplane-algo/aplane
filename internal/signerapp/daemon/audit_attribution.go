@@ -28,7 +28,7 @@ func signingAuditAttributionFromRequest(r *http.Request) auditAttribution {
 	if ident == nil {
 		return attr
 	}
-	attr.TargetIdentityID = ident.ID
+	attr.TargetIdentityID = auth.CurrentProductIdentityID()
 	attr.RequesterPrincipal = ident.ID
 	return attr
 }

@@ -49,8 +49,8 @@ func encodeTxnToHex(txn types.Transaction) string {
 // Returns hex-encoded msgpack of the signed transaction, or error.
 
 type Signer struct {
-	registry           *identity.Registry                 // Identity runtime registry
-	registryAuth       *identity.RegistryAuthenticator    // Scans all identities to resolve token → identity
+	registry           *identity.Registry                 // Temporary single-runtime startup adapter
+	httpAuth           auth.Authenticator                 // Product token authenticator; never selects a runtime
 	authorizer         auth.Authorizer                    // Pluggable authorization
 	auditLog           *AuditLogger                       // Audit logger for security events
 	ipcServer          *IPCServer                         // IPC server for local Unix socket connections

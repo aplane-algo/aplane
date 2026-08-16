@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	authzpkg "github.com/aplane-algo/aplane/internal/authz"
 )
 
 type stubAuthorizer struct {
@@ -41,7 +41,6 @@ func (s *stubAuthorizer) Authorize(ctx context.Context, ident *auth.Identity, ac
 func newAuthTestSigner(t *testing.T) (*Signer, func()) {
 	t.Helper()
 	server, cleanup := setupTestSigner(t)
-	server.registryAuth = identity.NewRegistryAuthenticator(server.registry)
 	return server, cleanup
 }
 
@@ -140,11 +139,11 @@ func TestRequireAuthForbidden(t *testing.T) {
 	if got := decodeErrorResponse(t, w); got != "Forbidden" {
 		t.Fatalf("error = %q, want Forbidden", got)
 	}
-	if authz.got.identityID != auth.DefaultIdentityID {
-		t.Fatalf("identityID = %q, want %q", authz.got.identityID, auth.DefaultIdentityID)
+	if authz.got.identityID != authzpkg.SystemProductAdminPrincipalID {
+		t.Fatalf("identityID = %q, want %q", authz.got.identityID, authzpkg.SystemProductAdminPrincipalID)
 	}
-	if authz.got.contextIdentityID != auth.DefaultIdentityID {
-		t.Fatalf("context identityID = %q, want %q", authz.got.contextIdentityID, auth.DefaultIdentityID)
+	if authz.got.contextIdentityID != authzpkg.SystemProductAdminPrincipalID {
+		t.Fatalf("context identityID = %q, want %q", authz.got.contextIdentityID, authzpkg.SystemProductAdminPrincipalID)
 	}
 	if authz.got.action != auth.ActionKeysDelete {
 		t.Fatalf("action = %q, want %q", authz.got.action, auth.ActionKeysDelete)
@@ -181,8 +180,8 @@ func TestRequireAuthInjectsIdentityOnSuccess(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 
-	authz := &stubAuthorizer{}
-	server.authorizer = authz
+	authorizer := &stubAuthorizer{}
+	server.authorizer = authorizer
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
@@ -196,8 +195,8 @@ func TestRequireAuthInjectsIdentityOnSuccess(t *testing.T) {
 			t.Fatal("identity missing from context")
 			return
 		}
-		if ident.ID != auth.DefaultIdentityID {
-			t.Fatalf("identity ID = %q, want %q", ident.ID, auth.DefaultIdentityID)
+		if ident.ID != authzpkg.SystemProductAdminPrincipalID {
+			t.Fatalf("principal ID = %q, want %q", ident.ID, authzpkg.SystemProductAdminPrincipalID)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})(w, r)
@@ -210,68 +209,45 @@ func TestRequireAuthInjectsIdentityOnSuccess(t *testing.T) {
 	}
 }
 
-func TestRequireAuthAndIdentityFromRequestUseAuthenticatedIdentities(t *testing.T) {
+func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 
-	alice := registerAdditionalAdminTestIdentity(t, server, "alice")
-	bob := registerAdditionalAdminTestIdentity(t, server, "bob")
+	productRuntime := server.registry.Get(auth.DefaultIdentityID)
+	additional := registerAdditionalAdminTestIdentity(t, server, "alice")
+	_ = additional
 
-	for _, tc := range []struct {
-		name       string
-		token      string
-		identityID string
-		runtime    *identity.Runtime
-	}{
-		{name: "alice", token: "alice-token", identityID: "alice", runtime: alice},
-		{name: "bob", token: "bob-token", identityID: "bob", runtime: bob},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			authz := &stubAuthorizer{}
-			server.authorizer = authz
+	invalid := httptest.NewRecorder()
+	invalidRequest := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	invalidRequest.Header.Set("Authorization", "aplane alice-token")
+	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
+		t.Fatal("additional runtime token must not authenticate")
+	})(invalid, invalidRequest)
+	if invalid.Code != http.StatusUnauthorized {
+		t.Fatalf("additional runtime token status = %d, want 401", invalid.Code)
+	}
 
-			w := httptest.NewRecorder()
-			r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-			r.Header.Set("Authorization", "aplane "+tc.token)
-
-			called := false
-			server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(w http.ResponseWriter, r *http.Request) {
-				called = true
-				ident := auth.IdentityFromContext(r.Context())
-				if ident == nil {
-					t.Fatal("identity missing from context")
-					return
-				}
-				if ident.ID != tc.identityID {
-					t.Fatalf("identity ID = %q, want %q", ident.ID, tc.identityID)
-				}
-
-				ir, status, errMsg := server.identityFromRequest(r)
-				if errMsg != "" {
-					t.Fatalf("identityFromRequest() error = status %d msg %q", status, errMsg)
-				}
-				if ir != tc.runtime {
-					t.Fatal("identityFromRequest() did not resolve authenticated runtime")
-				}
-				w.WriteHeader(http.StatusNoContent)
-			})(w, r)
-
-			if !called {
-				t.Fatal("next handler was not called")
-			}
-			if w.Code != http.StatusNoContent {
-				t.Fatalf("status = %d, want 204", w.Code)
-			}
-			if authz.got.identityID != tc.identityID {
-				t.Fatalf("authorizer identityID = %q, want %q", authz.got.identityID, tc.identityID)
-			}
-			if authz.got.contextIdentityID != tc.identityID {
-				t.Fatalf("authorizer context identityID = %q, want %q", authz.got.contextIdentityID, tc.identityID)
-			}
-			if authz.got.resource.IdentityID != tc.identityID {
-				t.Fatalf("authorizer resource identityID = %q, want %q", authz.got.resource.IdentityID, tc.identityID)
-			}
-		})
+	authorizer := &stubAuthorizer{}
+	server.authorizer = authorizer
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	r.Header.Set("Authorization", "aplane test-token")
+	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(w http.ResponseWriter, r *http.Request) {
+		ident := auth.IdentityFromContext(r.Context())
+		if ident == nil || ident.ID != authzpkg.SystemProductAdminPrincipalID {
+			t.Fatalf("authenticated principal = %#v", ident)
+		}
+		ir, status, errMsg := server.identityFromRequest(r)
+		if errMsg != "" || status != 0 || ir != productRuntime {
+			t.Fatalf("identityFromRequest() = (%v, %d, %q), want product runtime", ir, status, errMsg)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})(w, r)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", w.Code)
+	}
+	if authorizer.got.identityID != authzpkg.SystemProductAdminPrincipalID || authorizer.got.resource.IdentityID != auth.DefaultIdentityID {
+		t.Fatalf("authorization binding = %#v", authorizer.got)
 	}
 }
 
@@ -279,14 +255,12 @@ func TestRequireAuthRejectsCrossIdentityResource(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 
-	registerAdditionalAdminTestIdentity(t, server, "alice")
-	registerAdditionalAdminTestIdentity(t, server, "bob")
 	authz := &stubAuthorizer{}
 	server.authorizer = authz
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	r.Header.Set("Authorization", "aplane alice-token")
+	r.Header.Set("Authorization", "aplane test-token")
 
 	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys", IdentityID: "bob"}, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("next handler should not be called")
@@ -300,39 +274,30 @@ func TestRequireAuthRejectsCrossIdentityResource(t *testing.T) {
 	}
 }
 
-func TestIdentityFromRequestRejectsMissingAndDecommissionedRuntime(t *testing.T) {
+func TestIdentityFromRequestIgnoresPrincipalIDAndPreservesNodeFailClosed(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 
-	t.Run("missing runtime", func(t *testing.T) {
+	t.Run("principal does not select runtime", func(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/keys", nil)
 		r = r.WithContext(auth.ContextWithIdentity(r.Context(), &auth.Identity{
 			ID:     "missing",
-			Type:   "service",
+			Type:   "system",
 			Method: "aplane-token",
 		}))
 
 		ir, status, errMsg := server.identityFromRequest(r)
-		if ir != nil || status != http.StatusForbidden || errMsg != "identity not available: missing" {
-			t.Fatalf("identityFromRequest() = (%v, %d, %q), want missing runtime 403", ir, status, errMsg)
+		if ir != server.registry.Get(auth.DefaultIdentityID) || status != 0 || errMsg != "" {
+			t.Fatalf("identityFromRequest() = (%v, %d, %q), want fixed product runtime", ir, status, errMsg)
 		}
 	})
 
-	t.Run("decommissioned runtime", func(t *testing.T) {
-		alice := registerAdditionalAdminTestIdentity(t, server, "alice")
-		if err := alice.Decommission(); err != nil {
-			t.Fatalf("Decommission() error = %v", err)
-		}
+	t.Run("node fail closed", func(t *testing.T) {
+		server.registry.CloseFailClosed(context.Canceled)
 		r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-		r = r.WithContext(auth.ContextWithIdentity(r.Context(), &auth.Identity{
-			ID:     "alice",
-			Type:   "service",
-			Method: "aplane-token",
-		}))
-
 		ir, status, errMsg := server.identityFromRequest(r)
-		if ir != nil || status != http.StatusForbidden || errMsg != "identity decommissioned: alice" {
-			t.Fatalf("identityFromRequest() = (%v, %d, %q), want decommissioned runtime 403", ir, status, errMsg)
+		if ir != nil || status != http.StatusServiceUnavailable || errMsg == "" {
+			t.Fatalf("identityFromRequest() = (%v, %d, %q), want node-fail-closed 503", ir, status, errMsg)
 		}
 	})
 }

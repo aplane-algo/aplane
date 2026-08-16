@@ -193,13 +193,12 @@ func Run(dataDir string) int {
 	// Create the process root server (shared infrastructure only)
 	reg := identity.NewRegistry()
 	server := &Signer{
-		registry:     reg,
-		registryAuth: identity.NewRegistryAuthenticator(reg),
-		authorizer:   authorizer,
-		auditLog:     auditLog,
-		config:       &config,
-		keyPaths:     startupOpts.Paths,
-		dataDir:      resolvedDataDir,
+		registry:   reg,
+		authorizer: authorizer,
+		auditLog:   auditLog,
+		config:     &config,
+		keyPaths:   startupOpts.Paths,
+		dataDir:    resolvedDataDir,
 	}
 
 	ir, err := signerstartup.BuildRegistry(server.registry, signerstartup.IdentityBuildOptions{
@@ -213,6 +212,7 @@ func Run(dataDir string) int {
 		logErrorf("%v", err)
 		return 1
 	}
+	server.httpAuth = newProductAuthenticator(server.registry, ir)
 	logInfof("product identity runtime initialized")
 	removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths, identityID)
 	if cleanupErr != nil {

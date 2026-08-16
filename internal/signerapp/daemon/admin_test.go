@@ -119,6 +119,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		NodeRole:      noderole.RoleSigner,
 	})
 	_ = server.registry.Register(ir)
+	server.httpAuth = newProductAuthenticator(server.registry, ir)
 	// All stores are generational in this release: mint the first
 	// generation the way initialize does before any test writes keys.
 	convertTestSignerToGenerational(t, server)
@@ -821,7 +822,7 @@ func TestAdminGenerateRejectsGloballyRegisteredGenericTemplateNotInstalledForIde
 	}
 }
 
-func TestAdminGenerateRejectsUnavailableAuthenticatedIdentity(t *testing.T) {
+func TestAdminGenerateDoesNotUsePrincipalAsRuntimeSelector(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -830,14 +831,14 @@ func TestAdminGenerateRejectsUnavailableAuthenticatedIdentity(t *testing.T) {
 	r := requestWithIdentityID(http.MethodPost, "/admin/generate", reqBody, "other-identity")
 	server.handleAdminGenerate(w, r)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("Expected 403, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200 from fixed product runtime, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
-	if !strings.Contains(resp.Error, "identity not available: other-identity") {
-		t.Fatalf("Expected identity not available error, got %q", resp.Error)
+	if resp.Address == "" || resp.Error != "" {
+		t.Fatalf("product runtime generation response = %#v", resp)
 	}
 }
 

@@ -60,29 +60,27 @@ func decodeError(err error) (int, string) {
 	return http.StatusBadRequest, "invalid JSON"
 }
 
-func authenticatedIdentityIDFromRequest(r *http.Request) (string, int, string) {
+func hasAuthenticatedPrincipal(r *http.Request) (int, string) {
 	ident := auth.IdentityFromContext(r.Context())
 	if ident == nil {
-		return "", http.StatusUnauthorized, "no authenticated identity"
+		return http.StatusUnauthorized, "no authenticated principal"
 	}
-	return ident.ID, 0, ""
+	return 0, ""
 }
 
-// identityFromRequest resolves the identity runtime for an authenticated request.
+// identityFromRequest returns the fixed product runtime for an authenticated
+// principal. The principal never participates in runtime selection.
 func (fs *Signer) identityFromRequest(r *http.Request) (*identity.Runtime, int, string) {
 	if err := fs.registry.CloseError(); err != nil {
 		return nil, http.StatusServiceUnavailable, err.Error()
 	}
-	identityID, status, errMsg := authenticatedIdentityIDFromRequest(r)
+	status, errMsg := hasAuthenticatedPrincipal(r)
 	if errMsg != "" {
 		return nil, status, errMsg
 	}
-	ir := fs.registry.Get(identityID)
+	ir := fs.registry.Get(auth.CurrentProductIdentityID())
 	if ir == nil {
-		return nil, http.StatusForbidden, "identity not available: " + identityID
-	}
-	if ir.IsDecommissioned() {
-		return nil, http.StatusForbidden, "identity decommissioned: " + identityID
+		return nil, http.StatusServiceUnavailable, "product runtime unavailable"
 	}
 	return ir, 0, ""
 }

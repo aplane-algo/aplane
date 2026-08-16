@@ -35,7 +35,7 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		ident, err := fs.registryAuth.Authenticate(ctx, r)
+		ident, err := fs.httpAuth.Authenticate(ctx, r)
 		if err != nil {
 			if fs.auditLog != nil {
 				fs.auditLog.LogAuthFailed("", r.RemoteAddr, authFailureReason(err))
@@ -44,17 +44,17 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 				writeErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 				return
 			}
-			writeErrorJSON(w, http.StatusUnauthorized, authRequiredError(fs.registryAuth.Method()))
+			writeErrorJSON(w, http.StatusUnauthorized, authRequiredError(fs.httpAuth.Method()))
 			return
 		}
 
 		targetResource := resource
 		if targetResource.IdentityID == "" {
-			targetResource.IdentityID = ident.ID
+			targetResource.IdentityID = auth.CurrentProductIdentityID()
 		}
-		if targetResource.IdentityID != ident.ID {
+		if err := auth.RequireCurrentProductIdentity(targetResource.IdentityID); err != nil {
 			if fs.auditLog != nil {
-				fs.auditLog.LogAuthFailed(ident.ID, r.RemoteAddr, "cross_identity_forbidden: "+targetResource.IdentityID)
+				fs.auditLog.LogAuthFailed(auth.CurrentProductIdentityID(), r.RemoteAddr, "non_product_identity_forbidden: "+targetResource.IdentityID)
 			}
 			writeErrorJSON(w, http.StatusForbidden, "Forbidden")
 			return
@@ -64,7 +64,7 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 		if fs.authorizer != nil {
 			if err := fs.authorizer.Authorize(authCtx, ident, action, targetResource); err != nil {
 				if fs.auditLog != nil {
-					fs.auditLog.LogAuthFailed(ident.ID, r.RemoteAddr, "unauthorized: "+string(action))
+					fs.auditLog.LogAuthFailed(auth.CurrentProductIdentityID(), r.RemoteAddr, "unauthorized: "+string(action))
 				}
 				writeErrorJSON(w, http.StatusForbidden, "Forbidden")
 				return

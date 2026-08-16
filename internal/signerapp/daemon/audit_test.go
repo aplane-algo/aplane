@@ -271,7 +271,7 @@ func TestHTTPSigningAuditAttributionUsesRequestIdentity(t *testing.T) {
 		t.Fatalf("entry count = %d, want 2", len(entries))
 	}
 	for _, entry := range entries {
-		if entry.TargetIdentityID != "alice" || entry.RequesterPrincipal != "alice" {
+		if entry.TargetIdentityID != auth.DefaultIdentityID || entry.RequesterPrincipal != "alice" {
 			t.Fatalf("HTTP signing attribution = %#v", entry)
 		}
 		if entry.Transport != auditTransportHTTP || entry.RemoteAddr != "203.0.113.10:4000" {
