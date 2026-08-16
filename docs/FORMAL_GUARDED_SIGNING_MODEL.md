@@ -144,11 +144,12 @@ canonical group.
 ### Build Canonical Group
 
 The client classifies original positions into guarded targets and non-guarded
-originals, plans the transaction group, adds required dummy transactions for
-LogicSig budget across every LogicSig position, fixes fees and group ID, and
-encodes the canonical unsigned group bytes. Non-guarded positions are budgeted
-by effective signer/AuthAddr, not by transaction sender alone. Component
-signatures are always over target transaction IDs from this canonical group.
+originals, asks the signer to plan structured LogicSig resources across every
+LogicSig position, accepts the canonical resource dummies, fixes the unified
+fee and group ID, and encodes the canonical unsigned group bytes. Non-guarded
+positions are resolved by effective signer/AuthAddr, not by transaction sender
+alone. Component signatures are always over target transaction IDs from this
+canonical group.
 
 ### User Component Sign
 
@@ -188,7 +189,7 @@ transactions.
 If the canonical group contains non-guarded original positions, the client
 calls the primary signer `/sign` over the full canonical group. Non-guarded
 originals are sign-mode entries, guarded target positions are `foreign` entries
-with accurate `lsig_size` hints, and client-signed dummies are `foreign`
+with accurate `lsig_resources` hints, and client-signed dummies are `foreign`
 context entries. The signer returns signed bytes only for the non-guarded
 positions and `""` for the foreign slots.
 

@@ -182,6 +182,36 @@ func TestGeneratedEnvironmentPreservesConfiguredIPCPath(t *testing.T) {
 	}
 }
 
+func TestInstallerGeneratedConfigsIncludeFNet(t *testing.T) {
+	root := repositoryRoot(t)
+	installer := readTextFile(t, filepath.Join(root, "install.sh"))
+
+	const endpoint = "https://fnet-api.4160.nodely.dev"
+	if got := strings.Count(installer, endpoint); got != 3 {
+		t.Fatalf("install.sh contains %d FNet algod endpoints; want one in each of the 3 generated configs", got)
+	}
+
+	const genesis = `genesis_hash: "kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA="`
+	if got := strings.Count(installer, genesis); got != 1 {
+		t.Fatalf("install.sh contains %d FNet genesis mappings; want 1 in the signer config", got)
+	}
+
+	if got := strings.Count(installer, "  - fnet\n"); got != 2 {
+		t.Fatalf("install.sh contains %d FNet client allow-list entries; want 2", got)
+	}
+}
+
+func TestLocalInstallerSecuresSocketAncestor(t *testing.T) {
+	root := repositoryRoot(t)
+	installer := readTextFile(t, filepath.Join(root, "install.sh"))
+	assertTextOrder(t, "install.sh", installer,
+		`prepare_builtin_plugin_payloads`,
+		`chmod 700 "$LOCAL_PATH"`,
+		`mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"`,
+		`chmod 700 "$INSTALL_ROOT"`,
+	)
+}
+
 func TestInstallerCanonicalizesBinaryDirectoryPhysically(t *testing.T) {
 	root := repositoryRoot(t)
 	setup := readTextFile(t, filepath.Join(root, "installer", "scripts", "systemd-setup.sh"))

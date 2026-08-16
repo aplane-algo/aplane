@@ -10,9 +10,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,6 +23,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -121,7 +124,7 @@ func TestValidatePluginSignedSlot(t *testing.T) {
 	}
 
 	t.Run("signs exact canonical -> ok", func(t *testing.T) {
-		hexStr, err := validatePluginSignedSlot(canonical, sign(canonical))
+		hexStr, err := validatePluginSignedSlot(canonical, sign(canonical), PluginSlotAuthorization{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -133,29 +136,83 @@ func TestValidatePluginSignedSlot(t *testing.T) {
 	t.Run("signs a different txn -> rejected", func(t *testing.T) {
 		other := canonical
 		other.Amount++ // substitution
-		if _, err := validatePluginSignedSlot(canonical, sign(other)); err == nil {
+		if _, err := validatePluginSignedSlot(canonical, sign(other), PluginSlotAuthorization{}); err == nil {
 			t.Fatal("expected substitution to be rejected")
 		}
 	})
 
 	t.Run("bad base64 -> error", func(t *testing.T) {
-		if _, err := validatePluginSignedSlot(canonical, "!!!"); err == nil {
+		if _, err := validatePluginSignedSlot(canonical, "!!!", PluginSlotAuthorization{}); err == nil {
 			t.Fatal("expected error for bad base64")
 		}
 	})
 
 	t.Run("bad msgpack -> error", func(t *testing.T) {
-		if _, err := validatePluginSignedSlot(canonical, base64.StdEncoding.EncodeToString([]byte("nope"))); err == nil {
+		if _, err := validatePluginSignedSlot(canonical, base64.StdEncoding.EncodeToString([]byte("nope")), PluginSlotAuthorization{}); err == nil {
 			t.Fatal("expected error for bad msgpack")
+		}
+	})
+
+	logicSigned := func(logic []byte, args [][]byte) string {
+		return base64.StdEncoding.EncodeToString(msgpack.Encode(types.SignedTxn{
+			Txn:  canonical,
+			Lsig: types.LogicSig{Logic: logic, Args: args},
+		}))
+	}
+	t.Run("LogicSig authorization matches declaration", func(t *testing.T) {
+		resources := &signerapi.LogicSigResourceUsage{ProgramBytes: 3, ArgumentBytes: 2, MaxOpcodeCost: 20_000}
+		if _, err := validatePluginSignedSlot(canonical, logicSigned([]byte{1, 2, 3}, [][]byte{{4, 5}}), PluginSlotAuthorization{LsigResources: resources}); err != nil {
+			t.Fatalf("validatePluginSignedSlot() error = %v", err)
+		}
+	})
+	t.Run("undeclared LogicSig authorization rejects", func(t *testing.T) {
+		_, err := validatePluginSignedSlot(canonical, logicSigned([]byte{1}, nil), PluginSlotAuthorization{})
+		if err == nil || !strings.Contains(err.Error(), "without declaring lsig_resources") {
+			t.Fatalf("validatePluginSignedSlot() error = %v, want declaration rejection", err)
+		}
+	})
+	t.Run("LogicSig size mismatch rejects", func(t *testing.T) {
+		resources := &signerapi.LogicSigResourceUsage{ProgramBytes: 2, MaxOpcodeCost: 20_000}
+		_, err := validatePluginSignedSlot(canonical, logicSigned([]byte{1}, nil), PluginSlotAuthorization{LsigResources: resources})
+		if err == nil || !strings.Contains(err.Error(), "program_bytes") {
+			t.Fatalf("validatePluginSignedSlot() error = %v, want program mismatch", err)
+		}
+	})
+	t.Run("native-PQ authorization matches declaration", func(t *testing.T) {
+		encoded := base64.StdEncoding.EncodeToString(msgpack.Encode(types.SignedTxn{
+			Txn: canonical,
+			PQsig: types.PQSig{
+				Scheme:    types.PQScheme{'f', '1'},
+				Signature: []byte{1},
+			},
+		}))
+		if _, err := validatePluginSignedSlot(canonical, encoded, PluginSlotAuthorization{PQScheme: signerapi.PQSchemeFalcon1024}); err != nil {
+			t.Fatalf("validatePluginSignedSlot() error = %v", err)
+		}
+	})
+	t.Run("unsigned ordinary authorization rejects", func(t *testing.T) {
+		encoded := base64.StdEncoding.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: canonical}))
+		_, err := validatePluginSignedSlot(canonical, encoded, PluginSlotAuthorization{})
+		if err == nil || !strings.Contains(err.Error(), "exactly one") {
+			t.Fatalf("validatePluginSignedSlot() error = %v, want missing-authorization rejection", err)
 		}
 	})
 }
 
 func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing.T) {
-	pluginAccount := crypto.GenerateAccount()
+	pluginAddress, err := signing.DummyAddress()
+	if err != nil {
+		t.Fatalf("signing.DummyAddress() error = %v", err)
+	}
 	managedAccount := crypto.GenerateAccount()
+	pluginProgram := append([]byte(nil), signing.EmbeddedDummyTealTok...)
+	pluginResources := &signerapi.LogicSigResourceUsage{
+		ProgramBytes:  uint64(len(pluginProgram)),
+		ArgumentBytes: 0,
+		MaxOpcodeCost: 20_000,
+	}
 	txns := []types.Transaction{
-		presignTestTxn(t, pluginAccount.Address.String(), "plugin"),
+		presignTestTxn(t, pluginAddress.String(), "plugin"),
 		presignTestTxn(t, managedAccount.Address.String(), "managed"),
 	}
 
@@ -168,6 +225,10 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 		var req signerapi.GroupSignRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if got := req.Requests[0].LsigResources; got == nil || *got != *pluginResources {
+			http.Error(w, fmt.Sprintf("plugin LogicSig resources = %#v, want %#v", got, pluginResources), http.StatusBadRequest)
 			return
 		}
 		planned := make([]types.Transaction, len(req.Requests))
@@ -199,6 +260,10 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 		signed := make([]string, len(req.Requests))
 		for i, item := range req.Requests {
 			if item.SignedTxnHex != "" {
+				if i == 0 && (item.LsigResources == nil || *item.LsigResources != *pluginResources) {
+					http.Error(w, fmt.Sprintf("final plugin LogicSig resources = %#v, want %#v", item.LsigResources, pluginResources), http.StatusBadRequest)
+					return
+				}
 				signed[i] = item.SignedTxnHex
 				continue
 			}
@@ -228,8 +293,15 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 
 	var simulateReq models.SimulateRequest
 	algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/transactions/params" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
+				ConsensusVersion: string(protocol.ConsensusV42),
+			})
+			return
+		}
 		if r.URL.Path != "/v2/transactions/simulate" {
-			t.Fatalf("algod path = %s, want /v2/transactions/simulate", r.URL.Path)
+			t.Fatalf("algod path = %s, want params or simulate", r.URL.Path)
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -264,8 +336,10 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 	result, err := engine.SignAndSubmitWithPluginSigners(
 		context.Background(),
 		txns,
-		map[string]string{pluginAccount.Address.String(): "plugin-ref"},
-		map[string]int{pluginAccount.Address.String(): 0},
+		map[string]string{pluginAddress.String(): "plugin-ref"},
+		map[string]PluginSlotAuthorization{
+			pluginAddress.String(): {LsigResources: pluginResources},
+		},
 		func(requests []PluginSlotSignRequest) ([]PluginSlotSigned, error) {
 			pluginCalls.Add(1)
 			out := make([]PluginSlotSigned, len(requests))
@@ -278,10 +352,10 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 				if err := msgpack.Decode(rawTxn, &txn); err != nil {
 					return nil, err
 				}
-				_, signed, err := crypto.SignTransaction(pluginAccount.PrivateKey, txn)
-				if err != nil {
-					return nil, err
-				}
+				signed := msgpack.Encode(types.SignedTxn{
+					Txn:  txn,
+					Lsig: types.LogicSig{Logic: pluginProgram},
+				})
 				out[i] = PluginSlotSigned{Index: request.Index, Encoded: base64.StdEncoding.EncodeToString(signed)}
 			}
 			return out, nil
@@ -343,6 +417,39 @@ func TestSignAndSubmitWithPluginSignersRejectsNilAlgodBeforeSigning(t *testing.T
 	)
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("SignAndSubmitWithPluginSigners(nil algod) error = %v, want ErrNoAlgodClient", err)
+	}
+	if pluginCalls.Load() != 0 {
+		t.Fatalf("plugin signing calls = %d, want 0", pluginCalls.Load())
+	}
+}
+
+func TestSignAndSubmitWithPluginSignersRejectsUnsupportedConsensusBeforePlanning(t *testing.T) {
+	pluginAccount := crypto.GenerateAccount()
+	managedAccount := crypto.GenerateAccount()
+	txns := []types.Transaction{
+		presignTestTxn(t, pluginAccount.Address.String(), "plugin"),
+		presignTestTxn(t, managedAccount.Address.String(), "managed"),
+	}
+	client, server := consensusTestAlgod(t, string(protocol.ConsensusV41), nil)
+	defer server.Close()
+	engine, err := NewEngine("test", WithAlgodClient(client))
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	var pluginCalls atomic.Int32
+	_, err = engine.SignAndSubmitWithPluginSigners(
+		context.Background(),
+		txns,
+		map[string]string{pluginAccount.Address.String(): "plugin-ref"},
+		nil,
+		func(requests []PluginSlotSignRequest) ([]PluginSlotSigned, error) {
+			pluginCalls.Add(1)
+			return nil, nil
+		},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "network consensus") {
+		t.Fatalf("SignAndSubmitWithPluginSigners() error = %v, want unsupported-consensus rejection", err)
 	}
 	if pluginCalls.Load() != 0 {
 		t.Fatalf("plugin signing calls = %d, want 0", pluginCalls.Load())

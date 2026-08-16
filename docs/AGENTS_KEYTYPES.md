@@ -170,14 +170,40 @@ control is intentionally owned by signer policy.
 
 Template TEAL must be relocatable. Do not write raw `bytecblock`/`intcblock`
 declarations or numeric `bytec`/`intc` references in user-authored TEAL; use
-template variables and symbolic references so APlane can own generated
-constants and any derivation-version salt anchor safely. Do not add a custom
+template variables and symbolic references so the compiler can own generated
+constants and any TEAL v13 auto-salt safely. Do not add a custom
 salt preamble or expose a YAML salt-style selector. Salt style is a versioned
 provider/template derivation contract owned by APlane. Templates with omitted
 `derivation_version` are unsalted and compile exactly as written, succeeding
 only if the unmodified bytecode already derives an off-curve LogicSig address;
-new template-derived key types should use `derivation_version: 2` for the
-trailing dead-code `bytecblock` salt anchor.
+new template-derived key types should use `derivation_version: 3` and TEAL v13
+compiler auto-salting. APlane validates the final compiled program and address;
+it does not reproduce the compiler's salt search.
+
+After compilation/auto-salting, derive `program_bytes` from the final persisted
+bytecode and review every path's maximum `argument_bytes` and
+`max_opcode_cost`. Exercise dynamic-cost opcodes at worst permitted input
+sizes. Never collapse these values into one size scalar: v42 prices program
+bytes but pools arguments and opcode cost independently.
+
+`max_opcode_cost` is optional for installed template YAML. Omission uses the
+numeric one-transaction opcode ceiling shared by every consensus version
+APlane currently supports: 20,000. An explicit positive value is an absolute
+override; an explicit zero is rejected. Do not substitute the full-group
+320,000 ceiling as a generic fallback.
+
+APlane-owned templates still require an explicit reviewed declaration, even
+when it is 20,000, so repository review and maximum-input simulation evidence
+remain visible. The default primarily serves third-party and personal
+templates whose authors should not be forced to copy a meaningless number.
+
+For an APlane-owned key type, add a maximum-input accepted integration vector
+that calls `harness.ValidateDeclaredOpcodeCeiling` with the final production
+bytecode and the provider/template's actual declared profile. Reuse the signer
+fixture's `teal_compile_network` algod for simulation. Treat absent/zero cost
+reporting, uncovered reachable paths, simulation failure, or an observed
+ceiling overrun as release-blocking; never raise a declaration automatically
+from test output.
 
 For time locks in LogicSig mode, prefer `txn FirstValid` checks. Do not use
 `global Round`.

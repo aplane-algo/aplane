@@ -1,5 +1,5 @@
 schema_version: 2
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
@@ -8,6 +8,7 @@ family: corridor
 version: 1
 display_name: "Corridor"
 description: "Bounded Falcon-1024 account with sentry authorization and a Merkle recipient allowlist."
+max_opcode_cost: 20000
 
 bounded:
   contract: bounded1

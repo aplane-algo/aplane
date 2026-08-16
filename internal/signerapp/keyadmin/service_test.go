@@ -24,7 +24,6 @@ import (
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -37,6 +36,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
@@ -160,7 +160,7 @@ func reloadKeysForTest(ir *identity.Runtime, _ storepaths.Paths) error {
 	if err := ks.Scan(nil); err != nil {
 		return err
 	}
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes(), ks.GetLsigSizes())
+	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
 	return nil
 }
 
@@ -247,16 +247,12 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 }
 
 func TestServiceGenerateBoundedSentryFromReference(t *testing.T) {
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	lsigprovider.ConfigureAlgodClient(client)
+	configureFalconCompileMock(t)
 	ir := setupIdentityRuntime(t)
 	const keyType = "test.falcon1024-bounded-sentry-keyadmin.v1"
 	spec, err := composeddsa.ParseTemplateSpec([]byte(`
 schema_version: 2
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
@@ -264,6 +260,7 @@ publisher: test
 family: falcon1024-bounded-sentry-keyadmin
 version: 1
 display_name: Bounded Sentry Keyadmin Test
+max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [pay]
@@ -450,6 +447,7 @@ family: generic-keyadmin-other-identity
 version: 1
 display_name: Generic Keyadmin Other Identity
 description: Test identity-scoped generation
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -499,6 +497,7 @@ family: falcon1024-keyadmin-cross-identity
 version: 1
 display_name: "Falcon Keyadmin Cross Identity"
 description: "F1 canary: cross-identity composed template"
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -641,6 +640,9 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	address := logicSigAddressString(t, bytecode)
 	payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "", nil, "1:"+strings.Repeat("b", 64))
+	if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
+		t.Fatal(err)
+	}
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		result, saveErr := keys.SavePayload(ir.KeyPaths(), ir.ID(), payload, mk)
 		if saveErr == nil && result.Address != address {
@@ -882,6 +884,7 @@ family: generic-service-test
 version: 1
 display_name: Generic Service Test
 description: Test generic service template
+max_opcode_cost: 20000
 parameters:
   - name: owner
     type: address
@@ -895,16 +898,32 @@ teal: |
 
 func configureFalconCompileMock(t *testing.T) {
 	t.Helper()
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, falconCompileMockTransport{})
+	bytecode := []byte{13, 0x81, 0}
+	var hash string
+	for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
+		bytecode[2] = byte(counter)
+		candidate, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
+		if err == nil {
+			hash = candidate.Address.String()
+			break
+		}
+	}
+	if hash == "" {
+		t.Fatal("failed to construct compiler-auto-salted mock bytecode")
+	}
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, falconCompileMockTransport{bytecode: bytecode, hash: hash})
 	if err != nil {
 		t.Fatalf("MakeClientWithTransport() error = %v", err)
 	}
 	lsigprovider.ConfigureAlgodClient(client)
 }
 
-type falconCompileMockTransport struct{}
+type falconCompileMockTransport struct {
+	bytecode []byte
+	hash     string
+}
 
-func (falconCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (m falconCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodPost || req.URL.Path != "/v2/teal/compile" {
 		return &http.Response{
 			StatusCode: http.StatusNotFound,
@@ -916,8 +935,7 @@ func (falconCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, 
 	if _, err := io.ReadAll(req.Body); err != nil {
 		return nil, err
 	}
-	bytecode := []byte{0x0c, 0x26, 0x01, 0x01, 0x00, 0x22}
-	body := []byte(`{"result":"` + base64.StdEncoding.EncodeToString(bytecode) + `","hash":"TESTHASH"}`)
+	body := []byte(`{"result":"` + base64.StdEncoding.EncodeToString(m.bytecode) + `","hash":"` + m.hash + `"}`)
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -971,6 +989,9 @@ func (addressListImportProvider) CreationParams() []lsigprovider.ParameterDef {
 }
 func (addressListImportProvider) ValidateCreationParams(map[string]string) error { return nil }
 func (addressListImportProvider) RuntimeArgs() []lsigprovider.RuntimeArgDef      { return nil }
+func (addressListImportProvider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
+}
 func (addressListImportProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, error) {
 	return nil, nil
 }

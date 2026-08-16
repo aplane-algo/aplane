@@ -15,7 +15,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -486,8 +488,8 @@ func TestSignGroupLogsPolicyRejectionToAudit(t *testing.T) {
 			VerifySignableKeys: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (int, *ServiceError) {
 				return 1, nil
 			},
-			CalculateDummies: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, hasPassthrough, isPreGrouped bool) (int, []int, *ServiceError) {
-				return 0, nil, nil
+			CalculateDummies: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
+				return lsigresource.Plan{}, nil, nil
 			},
 			BuildFinalGroup: func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
 				return txns, nil, DummyFeeInfo{}, false, nil
@@ -566,6 +568,43 @@ func TestPlanGroupWhileSignablePreservesPlannerErrorWhileUnlocked(t *testing.T) 
 	_, err := service.planGroupWhileSignable("default", signerapi.GroupSignRequest{})
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("planGroupWhileSignable() error = %#v, want planner bad request", err)
+	}
+}
+
+func TestOrdinarySignRejectsGuardedKeyBeforeApproval(t *testing.T) {
+	approvalCalled := false
+	service := &Service{
+		Approval: &ApprovalService{
+			HasClient: func(string) bool {
+				approvalCalled = true
+				return true
+			},
+			RequestSigningApproval: func(string, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
+				approvalCalled = true
+				return true, nil
+			},
+		},
+		Executor: &Executor{},
+	}
+	request := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+		AuthAddress: "GUARDED",
+		TxnBytesHex: "deadbeef",
+	}}}
+	plan := &PlanResult{
+		AllTxns:        []types.Transaction{{}},
+		AuthKeyTypes:   []string{keytypes.GuardedFalcon1024Sentry1024V1},
+		ForeignIndices: map[int]bool{},
+	}
+
+	result, err := service.signGroupWithPlanContext(context.Background(), "default", request, nil, plan)
+	if result != nil {
+		t.Fatalf("signGroupWithPlanContext() result = %#v, want nil", result)
+	}
+	if err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, guardedAccountSignRejectMessage) {
+		t.Fatalf("signGroupWithPlanContext() error = %#v, want guarded-flow rejection", err)
+	}
+	if approvalCalled {
+		t.Fatal("ordinary /sign reached approval for a guarded key")
 	}
 }
 

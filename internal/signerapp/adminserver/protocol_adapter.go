@@ -729,6 +729,7 @@ func protocolKeyTypes(items []signerapi.KeyTypeInfo) []protocol.KeyTypeInfo {
 			Family:            item.Family,
 			DisplayName:       item.DisplayName,
 			Description:       item.Description,
+			AuthorizationKind: item.AuthorizationKind,
 			RequiresLogicSig:  item.RequiresLogicSig,
 			MnemonicWordCount: item.MnemonicWordCount,
 			MnemonicImport:    item.MnemonicImport,

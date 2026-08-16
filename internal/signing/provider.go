@@ -19,6 +19,7 @@ package signing
 import (
 	"fmt"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
@@ -31,6 +32,8 @@ type KeyMaterial struct {
 	PublicKey              []byte                       // Public key bytes, when available from the key file
 	Bytecode               []byte                       // LogicSig bytecode (nil for native ed25519)
 	Category               string                       // Key category recorded in the key file, if any
+	PQScheme               string                       // Native PQ scheme tag, when Category is native_pq
+	PQAddressSalt          *byte                        // Canonical native PQ address salt
 	BaseKeyType            string                       // Base DSA key type used for signer ops, if different from Type
 	Parameters             map[string]string            // Creation parameters recorded in the key file, if any
 	SigningArgs            []lsigprovider.RuntimeArgDef // Durable signing-time LogicSig arg contract
@@ -82,6 +85,15 @@ type Provider interface {
 
 	// ZeroKey securely zeros the private key material
 	ZeroKey(key *KeyMaterial)
+}
+
+// TransactionAuthorizer is an optional provider capability for native
+// authorization schemes whose wire proof is not the fixed-size Ed25519 Sig
+// field. Implementations return a complete structured authorization envelope;
+// the signing executor independently validates it before encoding it for the
+// client.
+type TransactionAuthorizer interface {
+	AuthorizeTransaction(key *KeyMaterial, txn types.Transaction, authorizer types.Address) (types.SignedTxn, error)
 }
 
 // ValidateKeyMaterial checks if KeyMaterial has the expected type

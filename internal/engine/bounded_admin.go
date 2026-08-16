@@ -38,6 +38,9 @@ func (e *Engine) PrepareExternalBoundedAdmin(ctx context.Context, prep *Transact
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
+	if err := e.validateAlgodConsensus(ctx); err != nil {
+		return nil, fmt.Errorf("validate algod consensus before bounded-admin signing: %w", err)
+	}
 	txn := prep.Transaction
 	sender := txn.Sender.String()
 	if _, err := e.RefreshAuthAddressWithContext(ctx, sender); err != nil {
@@ -86,6 +89,9 @@ func (e *Engine) SubmitCompletedBoundedAdmin(ctx context.Context, preparation *B
 	params, err := e.AlgodClient.SuggestedParams().Do(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query genesis context before bounded-admin submission: %w", err)
+	}
+	if _, err := resolveSupportedConsensus(params.ConsensusVersion); err != nil {
+		return nil, err
 	}
 	if hex.EncodeToString(params.GenesisHash) != preparation.Request.Payload.GenesisHashHex {
 		return nil, fmt.Errorf("bounded-admin genesis hash does not match active network")

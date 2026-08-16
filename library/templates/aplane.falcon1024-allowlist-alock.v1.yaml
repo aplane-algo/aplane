@@ -1,5 +1,5 @@
 schema_version: 2
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: generated
@@ -8,6 +8,7 @@ family: falcon1024-allowlist-alock
 version: 1
 display_name: "Falcon-1024 Rekey-Locked Allowlist"
 description: "Framework-owned ALGO/ASA allowlist with optional asset and amount limits, plus external Falcon contract-admin authorization for pure rekeys."
+max_opcode_cost: 20000
 
 bounded:
   contract: bounded1

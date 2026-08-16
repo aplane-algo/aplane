@@ -1,7 +1,7 @@
 # Integration Testing
 
 Integration tests for APlane that validate end-to-end functionality against
-Algorand testnet or an explicitly selected AlgoKit LocalNet. Tests spin up
+Algorand TestNet, FNet, or an explicitly selected AlgoKit LocalNet. Tests spin up
 their own apsigner process — no manual process management required.
 
 ## Prerequisites
@@ -18,13 +18,28 @@ export TEST_FUNDING_MNEMONIC="your twenty five word mnemonic phrase here..."
 ./test/setup-test-env.sh
 ```
 
-To run against an already running AlgoKit LocalNet instead, do not provide a
-testnet mnemonic. The setup script exports a funded LocalNet KMD account as the
-same `TEST_FUNDING_MNEMONIC` contract used by the tests:
+To run against an already running v42-capable AlgoKit LocalNet instead, do not
+provide a mnemonic. Setup funds a new disposable native Falcon account from
+KMD, then exports that account under the same `TEST_FUNDING_MNEMONIC` contract:
 
 ```bash
 APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
 ```
+
+Native Falcon-1024 authorization acceptance runs on FNet, whose fnet5 consensus
+token enables the native authorization scheme. Supply a native Falcon account
+funded on FNet:
+
+```bash
+export APLANE_INTEGRATION_NETWORK=fnet
+export TEST_FUNDING_MNEMONIC="your native Falcon mnemonic funded on FNet"
+./test/setup-test-env.sh
+```
+
+`TEST_FUNDING_MNEMONIC` always identifies a protocol-native `falcon1024`
+account. It is never interpreted as Ed25519. Public-network runs therefore
+require v42; this branch is not intended to merge until TestNet and MainNet
+have activated native Falcon authorization.
 
 This creates configs, SSH keys, token, and keystore, then writes `.env.test`
 in the project root with all required environment variables.
@@ -37,6 +52,13 @@ APLANE_INTEGRATION_NETWORK=testnet make integration-test
 
 # LocalNet run against an already running AlgoKit LocalNet
 APLANE_INTEGRATION_NETWORK=localnet make integration-test
+
+# Focused native Falcon FNet acceptance
+TEST_FUNDING_MNEMONIC="your native Falcon mnemonic funded on FNet" make native-falcon-fnet-test
+
+# Full TestNet-equivalent suite on FNet, plus native Falcon/v42 acceptance
+TEST_FUNDING_MNEMONIC="your native Falcon mnemonic funded on FNet" \
+  make integration-test-fnet
 
 # Faster reuse path: keep the existing fixture and .env.test as-is
 make integration-test-reuse
@@ -87,8 +109,8 @@ defaults to:
 - token: the standard AlgoKit LocalNet `aaaaaaaa...` token
 - wallet: `unencrypted-default-wallet`
 
-The localnet setup path exports the selected KMD account as
-`TEST_FUNDING_ACCOUNT` and `TEST_FUNDING_MNEMONIC`, writes
+The localnet setup path creates and funds a disposable native Falcon account,
+exports it as `TEST_FUNDING_ACCOUNT` and `TEST_FUNDING_MNEMONIC`, writes
 `networks.localnet.genesis_hash` into signer config, and seeds the integration
 burn address so tests that send small payments to it behave like testnet.
 
@@ -97,6 +119,24 @@ fixture, run `go run ./test/integration/cmd/localnet-clean-test-keys` after
 sourcing `.env.test`. It is dry-run by default; add `-yes` to delete. The helper
 only operates on the APlane signer fixture and does not delete KMD wallet keys
 or algod accounts.
+
+FNet mode defaults to Nodely's test endpoints:
+
+- algod: https://fnet-api.4160.nodely.dev
+- indexer: https://fnet-idx.4160.nodely.dev
+- expected genesis: fnet-v1 /
+  kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA=
+- required active consensus token: fnet5
+
+Override the endpoints with APLANE_FNET_ALGOD_URL and
+APLANE_FNET_INDEXER_URL; set APLANE_FNET_ALGOD_TOKEN if the selected algod
+requires one. The harness checks genesis ID, genesis hash, suggested-parameter
+consensus, and node-status consensus before using the funded root.
+
+`make integration-test-fnet` uses the operator-supplied
+`TEST_FUNDING_MNEMONIC` for ordinary funding operations. The mnemonic is
+derived as native Falcon on every network. The same native address may be used
+on multiple ledgers, but it must be funded separately on each one.
 
 For capacity and endurance checks, run `make soak-test-localnet`. It is
 LocalNet-only and opt-in; the target regenerates the fixture, starts `apsigner`
@@ -127,8 +167,8 @@ and intentionally skips plugins, token provisioning, and keyreg-online.
 |------|---------|
 | `harness/testnet.go` | Selected integration network algod client, suggested params, submit, wait for confirmation |
 | `harness/funding.go` | Pre-flight funding account balance check |
-| `harness/fund.go` | Fund addresses from `TEST_FUNDING_MNEMONIC` via direct SDK signing |
-| `cmd/localnet-funding` | Test-only helper that exports a funded LocalNet KMD account and genesis metadata |
+| `harness/fund.go` | Derive and directly sign with the native Falcon `TEST_FUNDING_MNEMONIC` |
+| `cmd/localnet-funding` | Bootstrap a disposable native Falcon funder from LocalNet KMD and export genesis metadata |
 
 ### App Fixture
 
@@ -221,9 +261,8 @@ func TestMyAppFeature(t *testing.T) {
     network, _ := harness.NewTestnetConfig()
     funder, _ := harness.NewFundTestAccount(network.Client)
 
-    app, _ := harness.DeployTestApp(t, network.Client,
-        funder.GetAddress(), funder.GetPrivateKey())
-    defer app.DestroyTestApp(funder.GetPrivateKey())
+    app, _ := harness.DeployTestApp(t, network.Client, funder)
+    defer app.DestroyTestApp(funder)
 
     // Set up known state, then test APlane features against it
 }
@@ -233,16 +272,18 @@ func TestMyAppFeature(t *testing.T) {
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `APLANE_INTEGRATION_NETWORK` | Integration network profile: `testnet` or `localnet` | required |
+| `APLANE_INTEGRATION_NETWORK` | Integration network profile: `testnet`, `localnet`, or `fnet` | required |
 | `APSIGNER_DATA` | Signer data directory | (from setup-test-env.sh) |
 | `APCLIENT_DATA` | Client data directory | (from setup-test-env.sh) |
 | `TEST_PASSPHRASE` | Keystore passphrase | (from setup-test-env.sh) |
-| `TEST_FUNDING_MNEMONIC` | Mnemonic for funding test accounts; KMD-exported in localnet mode | (required for testnet setup) |
-| `TEST_FUNDING_ACCOUNT` | Funded address (derived/exported by setup) | (optional before setup) |
+| `TEST_FUNDING_MNEMONIC` | Native Falcon-1024 funding mnemonic; operator-supplied for TestNet/FNet and generated/funded from KMD on LocalNet | required for TestNet/FNet setup |
+| `TEST_FUNDING_ACCOUNT` | Native Falcon address derived by setup | (optional before setup) |
 | `ALGOD_URL` | Algod API endpoint | testnet Nodely URL or `http://localhost:4001` |
 | `ALGOD_TOKEN` | Algod API token | empty for testnet, AlgoKit token for localnet |
 | `APLANE_LOCALNET_KMD_URL` | LocalNet KMD endpoint | `http://localhost:4002` |
-| `APLANE_LOCALNET_WALLET` | LocalNet KMD wallet used for funding export | `unencrypted-default-wallet` |
+| `APLANE_LOCALNET_WALLET` | LocalNet KMD wallet used to bootstrap the native Falcon funder | `unencrypted-default-wallet` |
+| `APLANE_FNET_ALGOD_URL` | FNet algod endpoint override | Nodely FNet algod |
+| `APLANE_FNET_INDEXER_URL` | FNet indexer endpoint override | Nodely FNet indexer |
 
 ## Debugging
 

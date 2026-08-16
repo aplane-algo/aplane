@@ -152,17 +152,22 @@ spending key.
 `CloseRemainderTo`, `AssetCloseTo`, and `AssetSender` remain zero on every
 transaction authorized by Corridor itself.
 
-## Compiler and Fee Budget
+## Compiler and Resource Budget
 
-The pinned single-recipient compiler cell is:
+Corridor stores one resource profile over its final compiler-auto-salted
+bytecode. The spend, spending-key rekey, and contract-admin rekey paths each
+publish their own maximum argument bytes and reviewed opcode ceiling. Under
+v42, argument/opcode capacity determines the minimum group size; bytecode above
+the final group's free program pool contributes to the aggregate fee instead
+of manufacturing extra dummies.
 
-| Bytecode | Spend LogicSig | Admin-rekey LogicSig | Required pooled group |
-|---:|---:|---:|---:|
-| 5,940 bytes | 9,012 bytes | 8,500 bytes | 10 transactions |
-
-At the current 1,000 microAlgo minimum fee, the target fee is the compiled
-10,000 microAlgo ceiling. A network with a higher minimum fee is rejected by
-planning for this profile.
+The pinned one-recipient compiler cell is approximately 5.9 KB of final
+bytecode. Its worst-case spend and admin argument layouts remain distinct and
+are derived from durable bounded metadata. The planner evaluates the selected
+path, adds only required resource dummies, applies the v42 program surcharge,
+and rejects the finalized transaction if its fee exceeds the compiled 10,000
+microAlgo ceiling. Compiler golden values are toolchain-pinned; the stored
+final bytecode is authoritative.
 
 For shared definitions, see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md),
 [ARCH_SENTRY.md](ARCH_SENTRY.md), [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md),

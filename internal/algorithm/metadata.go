@@ -41,6 +41,11 @@ type SignatureMetadata interface {
 	// MnemonicScheme returns the mnemonic scheme used (e.g., "bip39", "algorand")
 	MnemonicScheme() string
 
+	// AuthorizationKind returns the consensus authorization shape produced by
+	// this key family. It is authoritative for display and fee/signing logic;
+	// RequiresLogicSig remains for compatibility with older projections.
+	AuthorizationKind() AuthorizationKind
+
 	// RequiresLogicSig returns true if this key type requires LogicSig derivation
 	RequiresLogicSig() bool
 
@@ -61,6 +66,16 @@ type SignatureMetadata interface {
 	DisplayColor() string
 }
 
+// AuthorizationKind is the closed set of account-authorization envelopes
+// understood by APlane.
+type AuthorizationKind string
+
+const (
+	AuthorizationEd25519  AuthorizationKind = "ed25519"
+	AuthorizationNativePQ AuthorizationKind = "native_pq"
+	AuthorizationLogicSig AuthorizationKind = "logic_sig"
+)
+
 // basicMetadata is a simple implementation of SignatureMetadata
 type basicMetadata struct {
 	family                 string
@@ -68,6 +83,7 @@ type basicMetadata struct {
 	mnemonicWordCount      int
 	supportsMnemonicImport bool
 	mnemonicScheme         string
+	authorizationKind      AuthorizationKind
 	requiresLogicSig       bool
 	currentLsigVersion     int
 	supportedLsigVersions  []int
@@ -75,16 +91,17 @@ type basicMetadata struct {
 	displayColor           string
 }
 
-func (m *basicMetadata) RoutingFamily() string        { return m.family }
-func (m *basicMetadata) CryptoSignatureSize() int     { return m.signatureSize }
-func (m *basicMetadata) MnemonicWordCount() int       { return m.mnemonicWordCount }
-func (m *basicMetadata) SupportsMnemonicImport() bool { return m.supportsMnemonicImport }
-func (m *basicMetadata) MnemonicScheme() string       { return m.mnemonicScheme }
-func (m *basicMetadata) RequiresLogicSig() bool       { return m.requiresLogicSig }
-func (m *basicMetadata) CurrentLsigVersion() int      { return m.currentLsigVersion }
-func (m *basicMetadata) SupportedLsigVersions() []int { return m.supportedLsigVersions }
-func (m *basicMetadata) DefaultDerivation() string    { return m.defaultDerivation }
-func (m *basicMetadata) DisplayColor() string         { return m.displayColor }
+func (m *basicMetadata) RoutingFamily() string                { return m.family }
+func (m *basicMetadata) CryptoSignatureSize() int             { return m.signatureSize }
+func (m *basicMetadata) MnemonicWordCount() int               { return m.mnemonicWordCount }
+func (m *basicMetadata) SupportsMnemonicImport() bool         { return m.supportsMnemonicImport }
+func (m *basicMetadata) MnemonicScheme() string               { return m.mnemonicScheme }
+func (m *basicMetadata) AuthorizationKind() AuthorizationKind { return m.authorizationKind }
+func (m *basicMetadata) RequiresLogicSig() bool               { return m.requiresLogicSig }
+func (m *basicMetadata) CurrentLsigVersion() int              { return m.currentLsigVersion }
+func (m *basicMetadata) SupportedLsigVersions() []int         { return m.supportedLsigVersions }
+func (m *basicMetadata) DefaultDerivation() string            { return m.defaultDerivation }
+func (m *basicMetadata) DisplayColor() string                 { return m.displayColor }
 
 // Global registry instance
 var metadataRegistry = xregistry.NewStringRegistry[SignatureMetadata]()
@@ -99,9 +116,10 @@ func RegisterMetadata(metadata SignatureMetadata) {
 // routing family (e.g. "aplane.falcon1024.v1" -> "aplane.falcon1024"). If that
 // fails it falls back to a best-effort prefix match (see hasFamilyPrefix).
 //
-// This rides the RESOLVE axis (docs/ARCH_KEYTYPE_AXES.md); the hasFamilyPrefix
-// fallback below is a display-only best-effort, not a separate resolution
-// mechanism.
+// This rides the RESOLVE axis (docs/ARCH_KEYTYPE_AXES.md). The prefix fallback
+// is limited to LogicSig families because callers also consume authorization
+// and mnemonic semantics from the returned metadata; native algorithms must
+// resolve only by their exact registered identity.
 func GetMetadata(keyType string) (SignatureMetadata, error) {
 	if metadata, ok := logicsigdsa.ResolveByKeyType(keyType, metadataRegistry.Get); ok {
 		return metadata, nil
@@ -114,16 +132,17 @@ func GetMetadata(keyType string) (SignatureMetadata, error) {
 	// the key type against registered families ("aplane.falcon1024-timelock.v1"
 	// -> the "aplane.falcon1024" family's metadata).
 	//
-	// This path is display-only: keygen and signing never reach it because they
-	// always have a registered provider or a stored base key type in the key
-	// file. Removing it cleanly would require threading that stored base through
-	// the display-color callback (addressdisplay.ColorFormatter), a cross-layer
-	// API change not worth it for a cosmetic fallback.
+	// Prefix matching is safe only for LogicSig families: composed/template key
+	// types deliberately extend their base family name. Applying the same guess
+	// to a native family could assign native authorization semantics to an
+	// unrelated third-party key type that merely contains the same word.
 	for _, registeredFamily := range metadataRegistry.Keys() {
+		metadata, ok := metadataRegistry.Get(registeredFamily)
+		if !ok || metadata.AuthorizationKind() != AuthorizationLogicSig {
+			continue
+		}
 		if hasFamilyPrefix(keyType, registeredFamily) {
-			if metadata, ok := metadataRegistry.Get(registeredFamily); ok {
-				return metadata, nil
-			}
+			return metadata, nil
 		}
 	}
 
@@ -143,12 +162,15 @@ func hasFamilyPrefix(keyType, family string) bool {
 }
 
 // DisplayLabel returns a short human-readable label for a key type's category.
-// Derived from RequiresLogicSig: "LogicSig DSA" or "standard Algorand".
 func DisplayLabel(meta SignatureMetadata) string {
-	if meta.RequiresLogicSig() {
+	switch meta.AuthorizationKind() {
+	case AuthorizationLogicSig:
 		return "LogicSig DSA"
+	case AuthorizationNativePQ:
+		return "native post-quantum"
+	default:
+		return "standard Algorand"
 	}
-	return "standard Algorand"
 }
 
 // GetDisplayColor returns the ANSI color code for a key type
@@ -179,6 +201,7 @@ func RegisterEd25519Metadata() {
 			mnemonicWordCount:      25,
 			supportsMnemonicImport: true,
 			mnemonicScheme:         "algorand",
+			authorizationKind:      AuthorizationEd25519,
 			requiresLogicSig:       false,
 			currentLsigVersion:     0,   // No LSig needed
 			supportedLsigVersions:  nil, // No LSig needed

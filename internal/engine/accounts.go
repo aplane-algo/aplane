@@ -181,8 +181,10 @@ func (e *Engine) RefreshKeys(ctx context.Context) ([]KeyInfo, error) {
 	if err := e.withClientDataLock(func() error {
 		return e.populateAndSaveSignerCacheUnderClientLock(keysResp.Keys)
 	}); err != nil {
+		if populateErr := e.populateSignerCache(keysResp.Keys); populateErr != nil {
+			return nil, fmt.Errorf("invalid signer key inventory: %w", populateErr)
+		}
 		cache.Debug("failed to save signer cache", "error", err)
-		e.populateSignerCache(keysResp.Keys)
 	}
 	// Build result
 	var result []KeyInfo

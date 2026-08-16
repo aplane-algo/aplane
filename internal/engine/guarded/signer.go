@@ -19,6 +19,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
+)
+
+const (
+	authorizationLogicSig = "logic_sig"
+	authorizationNativePQ = "native_pq"
 )
 
 // SignerCacheView is the read-only view of the signer key cache that guarded
@@ -26,6 +32,9 @@ import (
 // guarded targets and size LogicSig budgets. It is implemented by the engine
 // over its concurrency-guarded signer cache.
 type SignerCacheView interface {
+	// AuthorizationKind returns the cached authorization envelope and whether
+	// the address is present. A present address with an empty kind is invalid.
+	AuthorizationKind(address string) (string, bool)
 	// SigningFlow returns the signer-advertised signing_flow for an address,
 	// or "" if the address is not a guarded key.
 	SigningFlow(address string) string
@@ -38,9 +47,9 @@ type SignerCacheView interface {
 	// BoundedMaxFee returns the advertised on-chain fee ceiling for a bounded
 	// account.
 	BoundedMaxFee(address string) (uint64, bool)
-	// LsigSize returns the post-signing LogicSig program+args budget for an
-	// address, or 0 if unknown.
-	LsigSize(address string) int
+	// LogicSigResourceProfile returns the split resource contract derived from
+	// the final compiled program and reviewed authorization paths.
+	LogicSigResourceProfile(address string) (lsigresource.Profile, bool)
 }
 
 // Deps are the collaborators guarded orchestration needs from the client.

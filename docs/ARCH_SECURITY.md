@@ -1074,7 +1074,7 @@ submission. See [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 | Swap file leakage | Memory locking prevents swap (`require_memory_protection: true` enforces this) |
 | Socket hijacking | Permissions check, symlink rejection |
 | Blind signing | TxnBytesHex required, transaction verification |
-| Foreign LSig budget manipulation | `lsig_size` is advisory; incorrect hints cause submission failure, not security bypass |
+| Foreign LSig resource manipulation | `lsig_resources` is advisory; incorrect hints cause submission failure, not security bypass |
 | LogicSig delegation | "Program" prefix blocked (prevents standing spend authorization) |
 | MITM on SSH | TOFU host key verification via known_hosts |
 | Cache tampering | HMAC-signed cache files (see below) |

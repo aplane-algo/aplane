@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/guarded"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
 // DiscoveredSentryComponentKey is public sentry-key metadata advertised by a
@@ -34,6 +35,14 @@ var (
 // cache to the guarded package's read-only SignerCacheView.
 type guardedSignerCacheView struct{ core *Core }
 
+func (v guardedSignerCacheView) AuthorizationKind(address string) (string, bool) {
+	kind, present := v.core.signerCacheAuthorizationKind(address)
+	if !present {
+		return "", false
+	}
+	return string(kind), true
+}
+
 func (v guardedSignerCacheView) SigningFlow(address string) string {
 	return v.core.signerCacheSigningFlow(address)
 }
@@ -50,8 +59,8 @@ func (v guardedSignerCacheView) BoundedMaxFee(address string) (uint64, bool) {
 	return v.core.signerCacheBoundedMaxFee(address)
 }
 
-func (v guardedSignerCacheView) LsigSize(address string) int {
-	return v.core.signerCacheLsigSize(address)
+func (v guardedSignerCacheView) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
+	return v.core.signerCacheLogicSigResourceProfile(address)
 }
 
 // guardedSigner builds a guarded.Signer bound to the engine's live connection,

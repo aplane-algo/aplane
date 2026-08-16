@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
 func TestValidateLsigArgs_UnknownArgsRejected(t *testing.T) {
@@ -329,21 +331,6 @@ func TestSignerCache_GenericLsig(t *testing.T) {
 	}
 }
 
-func TestSignerCache_LsigSize(t *testing.T) {
-	cache := NewSignerCache()
-
-	// Default
-	if got := cache.GetLsigSize("ADDR1"); got != 0 {
-		t.Errorf("GetLsigSize() = %d, want 0 for unknown address", got)
-	}
-
-	// Set and get
-	cache.SetLsigSize("ADDR1", 1234)
-	if got := cache.GetLsigSize("ADDR1"); got != 1234 {
-		t.Errorf("GetLsigSize() = %d, want 1234", got)
-	}
-}
-
 func TestSignerCache_SigningArgs_RoundTrip(t *testing.T) {
 	cache := NewSignerCache()
 
@@ -384,7 +371,10 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	original.AddAddress("ADDR1", "ed25519")
 	original.AddAddress("ADDR2", "aplane.falcon1024.v1")
 	original.SetGenericLsig("ADDR3", true)
-	original.SetLsigSize("ADDR2", 5000)
+	original.SetLogicSigResourceProfile("ADDR2", lsigresource.Profile{
+		ProgramBytes: 3_577,
+		Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
+	})
 	original.SetSigningArgs("ADDR3", []SigningArgInfo{
 		{Name: "preimage", Type: "bytes", Required: true},
 	})
@@ -413,8 +403,8 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	if !loaded.IsGenericLsig("ADDR3") {
 		t.Error("ADDR3 should be generic lsig after load")
 	}
-	if loaded.GetLsigSize("ADDR2") != 5000 {
-		t.Errorf("ADDR2 lsig size = %d, want 5000", loaded.GetLsigSize("ADDR2"))
+	if profile, ok := loaded.LogicSigResourceProfile("ADDR2"); !ok || profile.ProgramBytes != 3_577 || profile.Default == nil || profile.Default.ArgumentBytes != 1_423 {
+		t.Errorf("ADDR2 LogicSig resources = %+v/%v, want persisted profile", profile, ok)
 	}
 	args := loaded.GetSigningArgs("ADDR3")
 	if len(args) != 1 || args[0].Name != "preimage" {
@@ -467,6 +457,35 @@ func TestSignerCache_LoadFromEmptyStore(t *testing.T) {
 	loaded := LoadSignerCacheFromStore(store)
 	if loaded.Count() != 0 {
 		t.Errorf("Count() = %d, want 0 for empty store", loaded.Count())
+	}
+}
+
+func TestSignerCache_LoadLegacySizeCacheReturnsEmpty(t *testing.T) {
+	store := NewStore(t.TempDir())
+	key, err := getOrCreateCacheKey(store)
+	if err != nil {
+		t.Fatalf("getOrCreateCacheKey() error = %v", err)
+	}
+	payloadBytes := []byte(`{"schema_version":1,"keys":{"ADDR":"aplane.falcon1024.v1"},"generic_lsigs":{},"lsig_sizes":{"ADDR":4000},"signing_args":{}}`)
+	signed := SignedCache{
+		Version: signedCacheEnvelopeVersion,
+		Data:    base64.StdEncoding.EncodeToString(payloadBytes),
+		HMAC:    signCacheData(payloadBytes, key),
+	}
+	raw, err := json.Marshal(signed)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(storePath(store, "signer_cache.json"), raw, 0o600); err != nil {
+		t.Fatalf("write legacy signer cache: %v", err)
+	}
+
+	loaded := LoadSignerCacheFromStore(store)
+	if loaded.Count() != 0 {
+		t.Fatalf("loaded signer count = %d, want empty cache requiring inventory refresh", loaded.Count())
+	}
+	if loaded.SchemaVersion != signerCachePayloadSchemaVersion {
+		t.Fatalf("loaded schema version = %d, want %d", loaded.SchemaVersion, signerCachePayloadSchemaVersion)
 	}
 }
 

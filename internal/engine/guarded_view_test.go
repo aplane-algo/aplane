@@ -6,9 +6,12 @@ package engine
 import (
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -19,20 +22,26 @@ import (
 // dummy budgeting), so it is asserted directly.
 func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	addr := testAddress(1).String()
+	nativeFalconAddr := testAddress(2).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
+	nativefalcon.RegisterClient()
 
 	signerCache := cache.NewSignerCache()
 	signerCache.AddAddress(addr, keytypes.GuardedFalcon1024Sentry1024V1)
 	signerCache.SetSigningFlowForAddress(addr, signerapi.SigningFlowSentry1)
 	signerCache.SetSentryComponentKeyTypeForAddress(addr, witness.Falcon1024V1)
 	signerCache.SetSentryPublicKeyForAddress(addr, sentryHex)
-	signerCache.SetLsigSize(addr, 1500)
+	signerCache.SetLogicSigResourceProfile(addr, lsigresource.Profile{ProgramBytes: 1_500, Default: &lsigresource.PathProfile{MaxOpcodeCost: 1}})
+	signerCache.AddAddress(nativeFalconAddr, nativefalcon.KeyType)
 
 	eng, err := NewEngine("testnet", WithSignerCache(signerCache))
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 	view := guardedSignerCacheView{eng.Core}
+	if got, ok := view.AuthorizationKind(nativeFalconAddr); !ok || got != string(algorithm.AuthorizationNativePQ) {
+		t.Fatalf("AuthorizationKind(native Falcon) = %q/%v, want %s/true", got, ok, algorithm.AuthorizationNativePQ)
+	}
 
 	if got := view.SigningFlow(addr); got != signerapi.SigningFlowSentry1 {
 		t.Fatalf("SigningFlow() = %q, want %q", got, signerapi.SigningFlowSentry1)
@@ -43,8 +52,8 @@ func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	if got, ok := view.SentryPublicKey(addr); !ok || got != sentryHex {
 		t.Fatalf("SentryPublicKey() = %q/%v, want %s/true", got, ok, sentryHex)
 	}
-	if got := view.LsigSize(addr); got != 1500 {
-		t.Fatalf("LsigSize() = %d, want 1500", got)
+	if profile, ok := view.LogicSigResourceProfile(addr); !ok || profile.ProgramBytes != 1_500 {
+		t.Fatalf("LogicSigResourceProfile() = %+v/%v, want profile", profile, ok)
 	}
 
 	unknown := testAddress(9).String()
@@ -54,7 +63,7 @@ func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	if _, ok := view.SentryComponentKeyType(unknown); ok {
 		t.Fatal("SentryComponentKeyType(unknown) ok = true, want false")
 	}
-	if got := view.LsigSize(unknown); got != 0 {
-		t.Fatalf("LsigSize(unknown) = %d, want 0", got)
+	if _, ok := view.LogicSigResourceProfile(unknown); ok {
+		t.Fatal("LogicSigResourceProfile(unknown) ok = true, want false")
 	}
 }

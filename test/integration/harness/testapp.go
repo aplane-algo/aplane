@@ -5,7 +5,6 @@ package harness
 
 import (
 	"context"
-	"crypto/ed25519"
 	crand "crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -41,7 +40,7 @@ type TestApp struct {
 
 // DeployTestApp deploys the test contract and returns a TestApp handle.
 // Uses direct SDK signing — deployment is test infrastructure, not the thing being tested.
-func DeployTestApp(t *testing.T, client *algod.Client, creatorAddr string, creatorSK ed25519.PrivateKey) (*TestApp, error) {
+func DeployTestApp(t *testing.T, client *algod.Client, creator TransactionAuthorizer) (*TestApp, error) {
 	t.Helper()
 
 	projectRoot, err := findProjectRoot()
@@ -94,6 +93,7 @@ func DeployTestApp(t *testing.T, client *algod.Client, creatorAddr string, creat
 	}
 
 	// Build application create transaction
+	creatorAddr := creator.GetAddress()
 	sender, err := types.DecodeAddress(creatorAddr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid creator address: %w", err)
@@ -122,13 +122,12 @@ func DeployTestApp(t *testing.T, client *algod.Client, creatorAddr string, creat
 	}
 
 	// Sign and submit
-	_, stxnBytes, err := crypto.SignTransaction(creatorSK, txn)
+	txid, stxnBytes, err := prepareAndSignFixtureTransaction(creator, txn, sp.MinFee)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign app create transaction: %w", err)
 	}
 
-	txid, err := client.SendRawTransaction(stxnBytes).Do(ctx)
-	if err != nil {
+	if _, err := client.SendRawTransaction(stxnBytes).Do(ctx); err != nil {
 		return nil, fmt.Errorf("failed to submit app create transaction: %w", err)
 	}
 
@@ -166,7 +165,7 @@ func (app *TestApp) FundApp(funder *FundTestAccount, amountMicroAlgos uint64) er
 
 // OptIn opts an account into the app via direct SDK signing.
 // For use in test fixture setup only — not for testing opt-in through apsigner.
-func (app *TestApp) OptIn(addr string, sk ed25519.PrivateKey) error {
+func (app *TestApp) OptIn(authorizer TransactionAuthorizer) error {
 	app.t.Helper()
 
 	sp, err := app.client.SuggestedParams().Do(context.Background())
@@ -179,7 +178,7 @@ func (app *TestApp) OptIn(addr string, sk ed25519.PrivateKey) error {
 		return fmt.Errorf("failed to generate lease: %w", err)
 	}
 
-	sender, err := types.DecodeAddress(addr)
+	sender, err := types.DecodeAddress(authorizer.GetAddress())
 	if err != nil {
 		return fmt.Errorf("invalid address: %w", err)
 	}
@@ -197,13 +196,12 @@ func (app *TestApp) OptIn(addr string, sk ed25519.PrivateKey) error {
 		return fmt.Errorf("failed to create opt-in transaction: %w", err)
 	}
 
-	_, stxnBytes, err := crypto.SignTransaction(sk, txn)
+	txid, stxnBytes, err := prepareAndSignFixtureTransaction(authorizer, txn, sp.MinFee)
 	if err != nil {
 		return fmt.Errorf("failed to sign opt-in transaction: %w", err)
 	}
 
-	txid, err := app.client.SendRawTransaction(stxnBytes).Do(context.Background())
-	if err != nil {
+	if _, err := app.client.SendRawTransaction(stxnBytes).Do(context.Background()); err != nil {
 		return fmt.Errorf("failed to submit opt-in transaction: %w", err)
 	}
 
@@ -218,7 +216,7 @@ func (app *TestApp) OptIn(addr string, sk ed25519.PrivateKey) error {
 // CallMethod calls an ARC-4 method via direct SDK signing.
 // appArgs should include the method selector as the first element.
 // For use in test fixture setup only.
-func (app *TestApp) CallMethod(appArgs [][]byte, sender string, sk ed25519.PrivateKey, boxes []types.AppBoxReference) error {
+func (app *TestApp) CallMethod(appArgs [][]byte, authorizer TransactionAuthorizer, boxes []types.AppBoxReference) error {
 	app.t.Helper()
 
 	sp, err := app.client.SuggestedParams().Do(context.Background())
@@ -233,7 +231,7 @@ func (app *TestApp) CallMethod(appArgs [][]byte, sender string, sk ed25519.Priva
 		return fmt.Errorf("failed to generate lease: %w", err)
 	}
 
-	senderAddr, err := types.DecodeAddress(sender)
+	senderAddr, err := types.DecodeAddress(authorizer.GetAddress())
 	if err != nil {
 		return fmt.Errorf("invalid sender address: %w", err)
 	}
@@ -249,6 +247,7 @@ func (app *TestApp) CallMethod(appArgs [][]byte, sender string, sk ed25519.Priva
 		nil, nil,
 		types.StateSchema{}, types.StateSchema{},
 		0, // extra pages
+		0, // app version
 		sp, senderAddr,
 		nil, types.Digest{}, lease, types.Address{},
 	)
@@ -256,13 +255,12 @@ func (app *TestApp) CallMethod(appArgs [][]byte, sender string, sk ed25519.Priva
 		return fmt.Errorf("failed to create app call transaction: %w", err)
 	}
 
-	_, stxnBytes, err := crypto.SignTransaction(sk, txn)
+	txid, stxnBytes, err := prepareAndSignFixtureTransaction(authorizer, txn, sp.MinFee)
 	if err != nil {
 		return fmt.Errorf("failed to sign app call transaction: %w", err)
 	}
 
-	txid, err := app.client.SendRawTransaction(stxnBytes).Do(context.Background())
-	if err != nil {
+	if _, err := app.client.SendRawTransaction(stxnBytes).Do(context.Background()); err != nil {
 		return fmt.Errorf("failed to submit app call transaction: %w", err)
 	}
 
@@ -328,7 +326,7 @@ func (app *TestApp) ReadLocalState(addr string) (map[string]interface{}, error) 
 // ClearState removes an account's local state for the app via direct SDK signing.
 // Clear state cannot be rejected by the approval program, so it is safer than
 // close-out for test cleanup.
-func (app *TestApp) ClearState(addr string, sk ed25519.PrivateKey) error {
+func (app *TestApp) ClearState(authorizer TransactionAuthorizer) error {
 	app.t.Helper()
 
 	sp, err := app.client.SuggestedParams().Do(context.Background())
@@ -341,7 +339,7 @@ func (app *TestApp) ClearState(addr string, sk ed25519.PrivateKey) error {
 		return fmt.Errorf("failed to generate lease: %w", err)
 	}
 
-	sender, err := types.DecodeAddress(addr)
+	sender, err := types.DecodeAddress(authorizer.GetAddress())
 	if err != nil {
 		return fmt.Errorf("invalid address: %w", err)
 	}
@@ -363,13 +361,12 @@ func (app *TestApp) ClearState(addr string, sk ed25519.PrivateKey) error {
 		return fmt.Errorf("failed to create clear-state transaction: %w", err)
 	}
 
-	_, stxnBytes, err := crypto.SignTransaction(sk, txn)
+	txid, stxnBytes, err := prepareAndSignFixtureTransaction(authorizer, txn, sp.MinFee)
 	if err != nil {
 		return fmt.Errorf("failed to sign close-out transaction: %w", err)
 	}
 
-	txid, err := app.client.SendRawTransaction(stxnBytes).Do(context.Background())
-	if err != nil {
+	if _, err := app.client.SendRawTransaction(stxnBytes).Do(context.Background()); err != nil {
 		return fmt.Errorf("failed to submit clear-state transaction: %w", err)
 	}
 
@@ -383,17 +380,17 @@ func (app *TestApp) ClearState(addr string, sk ed25519.PrivateKey) error {
 
 // DestroyTestApp clears the creator's local state (if any), deletes all
 // boxes via the app's delete_box method, then deletes the application.
-func (app *TestApp) DestroyTestApp(creatorSK ed25519.PrivateKey) error {
+func (app *TestApp) DestroyTestApp(creator TransactionAuthorizer) error {
 	app.t.Helper()
 
 	// Best-effort clear-state before delete. Ignore errors — the creator may
 	// not be opted in. ClearState cannot be rejected by the approval program.
-	_ = app.ClearState(app.Creator, creatorSK)
+	_ = app.ClearState(creator)
 
 	// Delete all boxes before the app delete so the AVM doesn't reject
 	// with "outstanding boxes". This is a test-only account running one
 	// integration test at a time, so all discovered boxes are safe to remove.
-	if err := app.deleteAllBoxes(creatorSK); err != nil {
+	if err := app.deleteAllBoxes(creator); err != nil {
 		return fmt.Errorf("failed to delete app boxes before destroy: %w", err)
 	}
 
@@ -427,6 +424,7 @@ func (app *TestApp) DestroyTestApp(creatorSK ed25519.PrivateKey) error {
 		nil, nil,
 		types.StateSchema{}, types.StateSchema{},
 		0,
+		0, // app version
 		sp, sender,
 		nil, types.Digest{}, lease, types.Address{},
 	)
@@ -434,13 +432,12 @@ func (app *TestApp) DestroyTestApp(creatorSK ed25519.PrivateKey) error {
 		return fmt.Errorf("failed to create app delete transaction: %w", err)
 	}
 
-	_, stxnBytes, err := crypto.SignTransaction(creatorSK, txn)
+	txid, stxnBytes, err := prepareAndSignFixtureTransaction(creator, txn, sp.MinFee)
 	if err != nil {
 		return fmt.Errorf("failed to sign app delete transaction: %w", err)
 	}
 
-	txid, err := app.client.SendRawTransaction(stxnBytes).Do(context.Background())
-	if err != nil {
+	if _, err := app.client.SendRawTransaction(stxnBytes).Do(context.Background()); err != nil {
 		return fmt.Errorf("failed to submit app delete transaction: %w", err)
 	}
 
@@ -486,7 +483,7 @@ func (app *TestApp) deleteBoxRefs() ([]types.AppBoxReference, error) {
 
 // deleteAllBoxes calls the app's delete_box(byte[])void method for each
 // box discovered via the algod boxes endpoint.
-func (app *TestApp) deleteAllBoxes(sk ed25519.PrivateKey) error {
+func (app *TestApp) deleteAllBoxes(authorizer TransactionAuthorizer) error {
 	app.t.Helper()
 
 	resp, err := app.client.GetApplicationBoxes(app.AppID).Do(context.Background())
@@ -530,6 +527,7 @@ func (app *TestApp) deleteAllBoxes(sk ed25519.PrivateKey) error {
 			nil, nil,
 			types.StateSchema{}, types.StateSchema{},
 			0,
+			0, // app version
 			sp, sender,
 			nil, types.Digest{}, lease, types.Address{},
 		)
@@ -537,12 +535,11 @@ func (app *TestApp) deleteAllBoxes(sk ed25519.PrivateKey) error {
 			return fmt.Errorf("failed to build delete_box call for %q: %w", string(nameBytes), err)
 		}
 
-		_, stxnBytes, err := crypto.SignTransaction(sk, txn)
+		txid, stxnBytes, err := prepareAndSignFixtureTransaction(authorizer, txn, sp.MinFee)
 		if err != nil {
 			return fmt.Errorf("failed to sign delete_box call: %w", err)
 		}
-		txid, err := app.client.SendRawTransaction(stxnBytes).Do(context.Background())
-		if err != nil {
+		if _, err := app.client.SendRawTransaction(stxnBytes).Do(context.Background()); err != nil {
 			return fmt.Errorf("failed to submit delete_box for %q: %w", string(nameBytes), err)
 		}
 		_, err = transaction.WaitForConfirmation(app.client, txid, 10, context.Background())
@@ -555,23 +552,23 @@ func (app *TestApp) deleteAllBoxes(sk ed25519.PrivateKey) error {
 
 // DestroyApp deletes an application by ID using direct SDK signing.
 // This is used by integration tests that create apps through apshell rather than DeployTestApp.
-func DestroyApp(t *testing.T, client *algod.Client, appID uint64, creatorAddr string, creatorSK ed25519.PrivateKey) error {
+func DestroyApp(t *testing.T, client *algod.Client, appID uint64, creator TransactionAuthorizer) error {
 	t.Helper()
 
 	app := &TestApp{
 		AppID:      appID,
 		AppAddress: crypto.GetApplicationAddress(appID).String(),
-		Creator:    creatorAddr,
+		Creator:    creator.GetAddress(),
 		client:     client,
 		t:          t,
 	}
-	return app.DestroyTestApp(creatorSK)
+	return app.DestroyTestApp(creator)
 }
 
 // SubmitGroupedPaymentAndAppCall submits a payment + app call as an atomic group.
 // Used for testing the deposit() method. Uses direct SDK signing.
 func (app *TestApp) SubmitGroupedPaymentAndAppCall(
-	sender string, sk ed25519.PrivateKey,
+	authorizer TransactionAuthorizer,
 	paymentAmount uint64, appArgs [][]byte,
 ) error {
 	app.t.Helper()
@@ -590,6 +587,7 @@ func (app *TestApp) SubmitGroupedPaymentAndAppCall(
 		return fmt.Errorf("failed to generate app call lease: %w", err)
 	}
 
+	sender := authorizer.GetAddress()
 	senderAddr, err := types.DecodeAddress(sender)
 	if err != nil {
 		return fmt.Errorf("invalid sender address: %w", err)
@@ -617,7 +615,16 @@ func (app *TestApp) SubmitGroupedPaymentAndAppCall(
 		return fmt.Errorf("failed to create app call transaction: %w", err)
 	}
 
-	// Assign group ID
+	payTxn, err = authorizer.PrepareTransaction(payTxn, sp.MinFee)
+	if err != nil {
+		return fmt.Errorf("failed to prepare payment transaction: %w", err)
+	}
+	callTxn, err = authorizer.PrepareTransaction(callTxn, sp.MinFee)
+	if err != nil {
+		return fmt.Errorf("failed to prepare app call transaction: %w", err)
+	}
+
+	// Assign group ID after authorization-dependent fees are final.
 	gid, err := crypto.ComputeGroupID([]types.Transaction{payTxn, callTxn})
 	if err != nil {
 		return fmt.Errorf("failed to compute group ID: %w", err)
@@ -626,11 +633,11 @@ func (app *TestApp) SubmitGroupedPaymentAndAppCall(
 	callTxn.Group = gid
 
 	// Sign both
-	_, stxn1Bytes, err := crypto.SignTransaction(sk, payTxn)
+	_, stxn1Bytes, err := authorizer.SignTransaction(payTxn)
 	if err != nil {
 		return fmt.Errorf("failed to sign payment transaction: %w", err)
 	}
-	_, stxn2Bytes, err := crypto.SignTransaction(sk, callTxn)
+	_, stxn2Bytes, err := authorizer.SignTransaction(callTxn)
 	if err != nil {
 		return fmt.Errorf("failed to sign app call transaction: %w", err)
 	}
@@ -651,6 +658,14 @@ func (app *TestApp) SubmitGroupedPaymentAndAppCall(
 	}
 
 	return nil
+}
+
+func prepareAndSignFixtureTransaction(authorizer TransactionAuthorizer, txn types.Transaction, minFee uint64) (string, []byte, error) {
+	prepared, err := authorizer.PrepareTransaction(txn, minFee)
+	if err != nil {
+		return "", nil, err
+	}
+	return authorizer.SignTransaction(prepared)
 }
 
 func randomLease() ([32]byte, error) {

@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
@@ -36,7 +37,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 
 	// KeySnapshot skips the per-key metadata deep-clone; the metadata this
 	// listing needs comes from GetSigningSummary below.
-	keysCopy, keyTypesCopy, lsigSizesCopy := ir.KeySnapshot()
+	keysCopy, keyTypesCopy := ir.KeySnapshot()
 	publicKeyHexMap := ks.GetPublicKeyHexMap()
 	signingSummary := ks.GetSigningSummary()
 
@@ -52,9 +53,9 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			Address:       address,
 			PublicKeyHex:  publicKeyHexMap[address],
 			KeyType:       keyType,
-			LsigSize:      lsigSizesCopy[address],
 			IsGenericLsig: isGeneric,
 		}
+		keyInfo.LogicSigResources = publicLogicSigResourceProfile(summary.LogicSigResources)
 		if isComponent {
 			spending := false
 			keyInfo.IsWitnessKey = true
@@ -83,6 +84,28 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 	}
 
 	return keyList
+}
+
+func publicLogicSigResourceProfile(profile *lsigresource.Profile) *signerapi.LogicSigResourceProfile {
+	if profile == nil {
+		return nil
+	}
+	usage := func(path *lsigresource.PathProfile) *signerapi.LogicSigResourceUsage {
+		if path == nil {
+			return nil
+		}
+		return &signerapi.LogicSigResourceUsage{
+			ProgramBytes:  profile.ProgramBytes,
+			ArgumentBytes: path.ArgumentBytes,
+			MaxOpcodeCost: path.MaxOpcodeCost,
+		}
+	}
+	return &signerapi.LogicSigResourceProfile{
+		Default:       usage(profile.Default),
+		Spend:         usage(profile.Spend),
+		SpendingRekey: usage(profile.SpendingRekey),
+		AdminRekey:    usage(profile.AdminRekey),
+	}
 }
 
 func guardedAccountParameters(_ string, parameters map[string]string) map[string]string {
@@ -223,6 +246,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		meta, err := algorithm.GetMetadata(keyType)
 		if err == nil {
 			info.Family = meta.RoutingFamily()
+			info.AuthorizationKind = string(meta.AuthorizationKind())
 			info.RequiresLogicSig = meta.RequiresLogicSig()
 			info.MnemonicWordCount = meta.MnemonicWordCount()
 			info.MnemonicImport = keymgmt.SupportsMnemonicImport(keyType)
@@ -276,8 +300,13 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 				})
 			}
 		} else {
-			info.DisplayName = strings.ToUpper(keyType[:1]) + keyType[1:]
-			info.Description = "Native Algorand signing keys"
+			if info.AuthorizationKind == string(algorithm.AuthorizationNativePQ) {
+				info.DisplayName = keyType
+				info.Description = "Native Algorand Falcon-1024 signing key"
+			} else {
+				info.DisplayName = strings.ToUpper(keyType[:1]) + keyType[1:]
+				info.Description = "Native Algorand signing key"
+			}
 		}
 
 		keyTypes = append(keyTypes, info)
@@ -294,13 +323,14 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			continue
 		}
 		info := signerapi.KeyTypeInfo{
-			KeyType:          tmpl.KeyType(),
-			Family:           tmpl.RoutingFamily(),
-			DisplayName:      tmpl.DisplayName(),
-			Description:      tmpl.Description(),
-			RequiresLogicSig: true,
-			CreationParams:   []signerapi.CreationParamInfo{},
-			RuntimeArgs:      []signerapi.RuntimeArgInfo{},
+			KeyType:           tmpl.KeyType(),
+			Family:            tmpl.RoutingFamily(),
+			DisplayName:       tmpl.DisplayName(),
+			Description:       tmpl.Description(),
+			AuthorizationKind: string(algorithm.AuthorizationLogicSig),
+			RequiresLogicSig:  true,
+			CreationParams:    []signerapi.CreationParamInfo{},
+			RuntimeArgs:       []signerapi.RuntimeArgInfo{},
 		}
 
 		for _, p := range tmpl.CreationParams() {
@@ -361,12 +391,11 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 			Count:    metadata.BaseSignatureArgLayout.Count,
 			MaxSizes: append([]int(nil), metadata.BaseSignatureArgLayout.MaxSizes...),
 		},
-		SpendEffects:            append([]string(nil), metadata.SpendEffects...),
-		MaxFee:                  metadata.MaxFee,
-		Layer3Policy:            metadata.Layer3Policy,
-		AdminKeyID:              metadata.AdminKeyID,
-		ProgramBindingHex:       metadata.ProgramBindingHex,
-		PostSigningLogicSigSize: metadata.PostSigningLogicSigSize,
+		SpendEffects:      append([]string(nil), metadata.SpendEffects...),
+		MaxFee:            metadata.MaxFee,
+		Layer3Policy:      metadata.Layer3Policy,
+		AdminKeyID:        metadata.AdminKeyID,
+		ProgramBindingHex: metadata.ProgramBindingHex,
 	}
 	if metadata.Sentry != nil {
 		info.Sentry = &signerapi.BoundedSentryAuthorizationInfo{

@@ -6,6 +6,7 @@ package keys
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -16,7 +17,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	sentrywitness "github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -31,8 +34,12 @@ type Payload struct {
 	KeyType                string
 	PublicKey              []byte
 	PrivateKey             []byte
+	PQScheme               string
+	PQAddressSalt          *byte
 	Parameters             map[string]string
 	LogicSigBytecode       []byte
+	LogicSigDerivation     string
+	LogicSigOpcodeProfile  lsigresource.OpcodeProfile
 	SaltCounter            *byte
 	TEALSource             string
 	SigningMetadataVersion int
@@ -50,8 +57,12 @@ type CanonicalPayloadMetadata struct {
 	Category               string
 	KeyType                string
 	PublicKeyHex           string
+	PQScheme               string
+	PQAddressSalt          *byte
 	Parameters             map[string]string
 	LogicSigBytecodeHex    string
+	LogicSigDerivation     string
+	LogicSigOpcodeProfile  lsigresource.OpcodeProfile
 	SaltCounter            *byte
 	TEALSource             string
 	SigningMetadataVersion int
@@ -65,22 +76,36 @@ type CanonicalPayloadMetadata struct {
 // payloadWireV1 is the sole canonical JSON DTO for decrypted key payloads.
 // It remains private so durable JSON field ownership stays in this package.
 type payloadWireV1 struct {
-	FormatVersion          *int                  `json:"format_version"`
-	Category               string                `json:"category"`
-	KeyType                string                `json:"key_type"`
-	PublicKeyHex           string                `json:"public_key,omitempty"`
-	PrivateKeyHex          string                `json:"private_key,omitempty"`
-	Parameters             map[string]string     `json:"parameters,omitempty"`
-	LogicSigBytecodeHex    string                `json:"lsig_bytecode,omitempty"`
-	SaltCounter            *byte                 `json:"salt_counter,omitempty"`
-	TEALSource             string                `json:"teal_source,omitempty"`
-	SigningMetadataVersion int                   `json:"signing_metadata_version,omitempty"`
-	BaseKeyType            string                `json:"base_key_type,omitempty"`
-	SigningArgs            []StoredSigningArg    `json:"signing_args,omitempty"`
-	BoundedAuthorization   *boundedmeta.Metadata `json:"bounded_authorization,omitempty"`
-	TemplateFingerprint    string                `json:"template_fingerprint,omitempty"`
-	CreatedAt              string                `json:"created_at"`
+	FormatVersion          *int                        `json:"format_version"`
+	Category               string                      `json:"category"`
+	KeyType                string                      `json:"key_type"`
+	PublicKeyHex           string                      `json:"public_key,omitempty"`
+	PrivateKeyHex          string                      `json:"private_key,omitempty"`
+	PQScheme               string                      `json:"pq_scheme,omitempty"`
+	PQAddressSalt          *byte                       `json:"pq_address_salt,omitempty"`
+	Parameters             map[string]string           `json:"parameters,omitempty"`
+	LogicSigBytecodeHex    string                      `json:"lsig_bytecode,omitempty"`
+	LogicSigDerivation     string                      `json:"lsig_derivation,omitempty"`
+	LogicSigOpcodeProfile  *lsigresource.OpcodeProfile `json:"lsig_opcode_profile,omitempty"`
+	SaltCounter            *byte                       `json:"salt_counter,omitempty"`
+	TEALSource             string                      `json:"teal_source,omitempty"`
+	SigningMetadataVersion int                         `json:"signing_metadata_version,omitempty"`
+	BaseKeyType            string                      `json:"base_key_type,omitempty"`
+	SigningArgs            []StoredSigningArg          `json:"signing_args,omitempty"`
+	BoundedAuthorization   *boundedmeta.Metadata       `json:"bounded_authorization,omitempty"`
+	TemplateFingerprint    string                      `json:"template_fingerprint,omitempty"`
+	CreatedAt              string                      `json:"created_at"`
 }
+
+const (
+	// LogicSigDerivationManualCounter is the transitional manual-salt key-file
+	// contract. The empty durable value also means this mode for existing keys.
+	LogicSigDerivationManualCounter = "manual_counter"
+
+	// LogicSigDerivationAlgodV13AutoSalt records that the stored bytecode is the
+	// authoritative final output of algod's TEAL v13 auto-salting assembler.
+	LogicSigDerivationAlgodV13AutoSalt = "algod_v13_auto_salt"
+)
 
 // NewEd25519Payload constructs a canonical native Ed25519 key payload.
 func NewEd25519Payload(publicKey, privateKey []byte) *Payload {
@@ -90,6 +115,20 @@ func NewEd25519Payload(publicKey, privateKey []byte) *Payload {
 		KeyType:       "ed25519",
 		PublicKey:     bytes.Clone(publicKey),
 		PrivateKey:    bytes.Clone(privateKey),
+		CreatedAt:     time.Now().UTC().Truncate(time.Second),
+	}
+}
+
+// NewNativeFalconPayload constructs a native Falcon-1024 key payload.
+func NewNativeFalconPayload(publicKey, privateKey []byte, salt byte) *Payload {
+	return &Payload{
+		FormatVersion: CurrentKeyFormatVersion,
+		Category:      CategoryNativePQ,
+		KeyType:       nativefalcon.KeyType,
+		PublicKey:     bytes.Clone(publicKey),
+		PrivateKey:    bytes.Clone(privateKey),
+		PQScheme:      nativefalcon.Scheme,
+		PQAddressSalt: cloneBytePtr(&salt),
 		CreatedAt:     time.Now().UTC().Truncate(time.Second),
 	}
 }
@@ -137,6 +176,25 @@ func NewDSALSigPayload(
 	}
 }
 
+// NewAutoSaltedDSALSigPayload constructs a DSA-backed LogicSig whose final
+// bytecode was auto-salted by the TEAL v13 assembler.
+func NewAutoSaltedDSALSigPayload(
+	keyType string,
+	baseKeyType string,
+	publicKey []byte,
+	privateKey []byte,
+	parameters map[string]string,
+	bytecode []byte,
+	tealSource string,
+	signingArgs []StoredSigningArg,
+	templateFingerprint string,
+) *Payload {
+	p := NewDSALSigPayload(keyType, baseKeyType, publicKey, privateKey, parameters, bytecode, 0, tealSource, signingArgs, templateFingerprint)
+	p.SaltCounter = nil
+	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
+	return p
+}
+
 // NewGenericLSigPayload constructs a canonical TEAL-only LogicSig payload.
 func NewGenericLSigPayload(
 	keyType string,
@@ -162,6 +220,37 @@ func NewGenericLSigPayload(
 	}
 }
 
+// NewAutoSaltedGenericLSigPayload constructs a TEAL-only LogicSig whose final
+// bytecode was auto-salted by the TEAL v13 assembler.
+func NewAutoSaltedGenericLSigPayload(
+	keyType string,
+	parameters map[string]string,
+	bytecode []byte,
+	tealSource string,
+	signingArgs []StoredSigningArg,
+	templateFingerprint string,
+) *Payload {
+	p := NewGenericLSigPayload(keyType, parameters, bytecode, 0, tealSource, signingArgs, templateFingerprint)
+	p.SaltCounter = nil
+	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
+	return p
+}
+
+// SetLogicSigOpcodeProfile attaches an independently reviewed (or explicitly
+// conservative) opcode profile to a newly generated LogicSig payload. Generic
+// constructors intentionally leave this field empty because bytecode and salt
+// style do not prove a program's worst-case execution cost.
+func (p *Payload) SetLogicSigOpcodeProfile(profile lsigresource.OpcodeProfile, bounded bool) error {
+	if p == nil {
+		return incompatibleKeyFormat("key payload is nil")
+	}
+	if err := profile.Validate(bounded); err != nil {
+		return incompatibleKeyFormat("invalid lsig_opcode_profile: %v", err)
+	}
+	p.LogicSigOpcodeProfile = profile
+	return nil
+}
+
 // SetBoundedAuthorization attaches a validated bounded signing contract and
 // upgrades this LogicSig payload to the bounded metadata version.
 func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error {
@@ -173,6 +262,9 @@ func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error 
 	}
 	if err := metadata.Validate(); err != nil {
 		return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
+	}
+	if err := p.LogicSigOpcodeProfile.Validate(true); err != nil {
+		return incompatibleKeyFormat("bounded authorization requires a reviewed bounded opcode profile: %v", err)
 	}
 	p.BoundedAuthorization = boundedmeta.Clone(metadata)
 	p.SigningMetadataVersion = BoundedSigningMetadataVersion
@@ -225,8 +317,12 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		KeyType:                payload.KeyType,
 		PublicKeyHex:           hex.EncodeToString(payload.PublicKey),
 		PrivateKeyHex:          hex.EncodeToString(payload.PrivateKey),
+		PQScheme:               payload.PQScheme,
+		PQAddressSalt:          cloneBytePtr(payload.PQAddressSalt),
 		Parameters:             maps.Clone(payload.Parameters),
 		LogicSigBytecodeHex:    hex.EncodeToString(payload.LogicSigBytecode),
+		LogicSigDerivation:     payload.LogicSigDerivation,
+		LogicSigOpcodeProfile:  opcodeProfilePtr(payload.LogicSigOpcodeProfile),
 		SaltCounter:            cloneBytePtr(payload.SaltCounter),
 		TEALSource:             payload.TEALSource,
 		SigningMetadataVersion: payload.SigningMetadataVersion,
@@ -270,6 +366,11 @@ func (p *Payload) Validate() error {
 		if err := validateEd25519Payload(p); err != nil {
 			return err
 		}
+		return validateNonLogicSigPayload(p)
+	case CategoryNativePQ:
+		if err := validateNativePQPayload(p); err != nil {
+			return err
+		}
 		return validateNoLogicSigFields(p)
 	case CategoryWitness:
 		if !sentrywitness.IsKeyType(p.KeyType) {
@@ -278,13 +379,16 @@ func (p *Payload) Validate() error {
 		if err := validateWitnessPayload(p); err != nil {
 			return err
 		}
-		return validateNoLogicSigFields(p)
+		return validateNonLogicSigPayload(p)
 	case CategoryDSALsig:
 		if len(p.PublicKey) == 0 || len(p.PrivateKey) == 0 {
 			return incompatibleKeyFormat("dsa_lsig requires public_key and private_key")
 		}
 		if p.BaseKeyType == "" || p.BaseKeyType != strings.TrimSpace(p.BaseKeyType) {
 			return incompatibleKeyFormat("dsa_lsig requires canonical base_key_type")
+		}
+		if err := validateNoNativePQFields(p); err != nil {
+			return err
 		}
 		return validateLogicSigFields(p)
 	case CategoryGenericLsig:
@@ -293,6 +397,9 @@ func (p *Payload) Validate() error {
 		}
 		if p.BaseKeyType != "" {
 			return incompatibleKeyFormat("generic_lsig forbids base_key_type")
+		}
+		if err := validateNoNativePQFields(p); err != nil {
+			return err
 		}
 		return validateLogicSigFields(p)
 	default:
@@ -320,6 +427,15 @@ func (p *Payload) Selector() (string, error) {
 		var address types.Address
 		copy(address[:], p.PublicKey)
 		return address.String(), nil
+	case CategoryNativePQ:
+		if p.PQScheme != nativefalcon.Scheme || p.PQAddressSalt == nil {
+			return "", incompatibleKeyFormat("native_pq requires scheme and address salt")
+		}
+		address, err := nativefalcon.Address(*p.PQAddressSalt, p.PublicKey)
+		if err != nil {
+			return "", incompatibleKeyFormat("derive native PQ address: %v", err)
+		}
+		return address.String(), nil
 	case CategoryWitness:
 		return sentrywitness.ID(p.KeyType, p.PublicKey)
 	case CategoryDSALsig, CategoryGenericLsig:
@@ -342,8 +458,12 @@ func (p *Payload) Metadata() CanonicalPayloadMetadata {
 		Category:               p.Category,
 		KeyType:                p.KeyType,
 		PublicKeyHex:           hex.EncodeToString(p.PublicKey),
+		PQScheme:               p.PQScheme,
+		PQAddressSalt:          cloneBytePtr(p.PQAddressSalt),
 		Parameters:             maps.Clone(p.Parameters),
 		LogicSigBytecodeHex:    hex.EncodeToString(p.LogicSigBytecode),
+		LogicSigDerivation:     p.LogicSigDerivation,
+		LogicSigOpcodeProfile:  p.LogicSigOpcodeProfile,
 		SaltCounter:            cloneBytePtr(p.SaltCounter),
 		TEALSource:             p.TEALSource,
 		SigningMetadataVersion: p.SigningMetadataVersion,
@@ -363,9 +483,12 @@ func (p *Payload) SigningMetadata() SigningMetadata {
 	}
 	return SigningMetadata{
 		Category:               p.Category,
+		PQScheme:               p.PQScheme,
+		PQAddressSalt:          cloneBytePtr(p.PQAddressSalt),
 		BaseKeyType:            p.BaseKeyType,
 		Parameters:             maps.Clone(p.Parameters),
 		SigningArgs:            cloneStoredSigningArgs(p.SigningArgs),
+		LogicSigOpcodeProfile:  p.LogicSigOpcodeProfile,
 		SigningMetadataVersion: p.SigningMetadataVersion,
 		BoundedAuthorization:   boundedmeta.Clone(p.BoundedAuthorization),
 	}
@@ -408,8 +531,12 @@ func payloadFromWire(wire payloadWireV1) (*Payload, error) {
 		KeyType:                wire.KeyType,
 		PublicKey:              publicKey,
 		PrivateKey:             privateKey,
+		PQScheme:               wire.PQScheme,
+		PQAddressSalt:          cloneBytePtr(wire.PQAddressSalt),
 		Parameters:             maps.Clone(wire.Parameters),
 		LogicSigBytecode:       bytecode,
+		LogicSigDerivation:     wire.LogicSigDerivation,
+		LogicSigOpcodeProfile:  opcodeProfileValue(wire.LogicSigOpcodeProfile),
 		SaltCounter:            cloneBytePtr(wire.SaltCounter),
 		TEALSource:             wire.TEALSource,
 		SigningMetadataVersion: wire.SigningMetadataVersion,
@@ -456,6 +583,52 @@ func validateEd25519Payload(p *Payload) error {
 	return nil
 }
 
+func validateNativePQPayload(p *Payload) error {
+	if p.KeyType != nativefalcon.KeyType {
+		return incompatibleKeyFormat("native_pq category requires key_type %q", nativefalcon.KeyType)
+	}
+	if p.PQScheme != nativefalcon.Scheme {
+		return incompatibleKeyFormat("native_pq requires pq_scheme %q", nativefalcon.Scheme)
+	}
+	if p.PQAddressSalt == nil {
+		return incompatibleKeyFormat("native_pq requires pq_address_salt")
+	}
+	if len(p.PublicKey) != nativefalcon.PublicKeySize {
+		return incompatibleKeyFormat("native Falcon public key length %d invalid (expected %d bytes)", len(p.PublicKey), nativefalcon.PublicKeySize)
+	}
+	if len(p.PrivateKey) != nativefalcon.PrivateKeySize {
+		return incompatibleKeyFormat("native Falcon private key length %d invalid (expected %d bytes)", len(p.PrivateKey), nativefalcon.PrivateKeySize)
+	}
+	canonicalSalt, address, err := nativefalcon.CanonicalAddress(p.PublicKey)
+	if err != nil {
+		return incompatibleKeyFormat("derive native Falcon address: %v", err)
+	}
+	if canonicalSalt != *p.PQAddressSalt {
+		return incompatibleKeyFormat("native Falcon address salt %d is not canonical (expected %d)", *p.PQAddressSalt, canonicalSalt)
+	}
+	if !nativefalcon.IsCompliant(address) {
+		return incompatibleKeyFormat("native Falcon address is not PQ compliant")
+	}
+	if err := validateNativePQKeyPair(p.PQScheme, p.PublicKey, p.PrivateKey); err != nil {
+		return incompatibleKeyFormat("invalid native PQ key pair: %v", err)
+	}
+	return nil
+}
+
+func validateNonLogicSigPayload(p *Payload) error {
+	if err := validateNoNativePQFields(p); err != nil {
+		return err
+	}
+	return validateNoLogicSigFields(p)
+}
+
+func validateNoNativePQFields(p *Payload) error {
+	if p.PQScheme != "" || p.PQAddressSalt != nil {
+		return incompatibleKeyFormat("category %q forbids native PQ fields", p.Category)
+	}
+	return nil
+}
+
 func validateWitnessPayload(p *Payload) error {
 	publicSize, ok := sentrywitness.PublicKeySize(p.KeyType)
 	if !ok {
@@ -478,7 +651,7 @@ func validateWitnessPayload(p *Payload) error {
 }
 
 func validateNoLogicSigFields(p *Payload) error {
-	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.SaltCounter != nil ||
+	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.LogicSigDerivation != "" || p.LogicSigOpcodeProfile != (lsigresource.OpcodeProfile{}) || p.SaltCounter != nil ||
 		p.TEALSource != "" || p.SigningMetadataVersion != 0 || p.BaseKeyType != "" ||
 		len(p.SigningArgs) != 0 || p.BoundedAuthorization != nil || p.TemplateFingerprint != "" {
 		return incompatibleKeyFormat("category %q forbids LogicSig fields", p.Category)
@@ -490,8 +663,24 @@ func validateLogicSigFields(p *Payload) error {
 	if len(p.LogicSigBytecode) == 0 {
 		return incompatibleKeyFormatErr(fmt.Errorf("%w: %s requires lsig_bytecode", ErrInvalidLogicSigBytecode, p.Category))
 	}
-	if p.SaltCounter == nil {
-		return ErrMissingLogicSigSaltCounter
+	switch p.LogicSigDerivation {
+	case "", LogicSigDerivationManualCounter:
+		if p.SaltCounter == nil {
+			return ErrMissingLogicSigSaltCounter
+		}
+	case LogicSigDerivationAlgodV13AutoSalt:
+		if p.SaltCounter != nil {
+			return incompatibleKeyFormat("%s derivation forbids salt_counter", LogicSigDerivationAlgodV13AutoSalt)
+		}
+		version, n := binary.Uvarint(p.LogicSigBytecode)
+		if n <= 0 || version < 13 {
+			return incompatibleKeyFormat("%s derivation requires final TEAL v13+ bytecode", LogicSigDerivationAlgodV13AutoSalt)
+		}
+		if err := p.LogicSigOpcodeProfile.Validate(p.BoundedAuthorization != nil); err != nil {
+			return incompatibleKeyFormat("invalid lsig_opcode_profile: %v", err)
+		}
+	default:
+		return incompatibleKeyFormat("unsupported lsig_derivation %q", p.LogicSigDerivation)
 	}
 	if p.BoundedAuthorization == nil {
 		if p.SigningMetadataVersion != CurrentSigningMetadataVersion {
@@ -540,13 +729,6 @@ func validateLogicSigFields(p *Payload) error {
 		}
 		if len(p.SigningArgs) != 0 {
 			return incompatibleKeyFormat("bounded1 forbids caller-supplied signing_args")
-		}
-		expectedSize := len(p.LogicSigBytecode)
-		for _, slot := range p.BoundedAuthorization.ArgumentLayout {
-			expectedSize += slot.MaxSize
-		}
-		if p.BoundedAuthorization.PostSigningLogicSigSize != expectedSize {
-			return incompatibleKeyFormat("bounded_authorization post_signing_lsig_size %d does not match derived size %d", p.BoundedAuthorization.PostSigningLogicSigSize, expectedSize)
 		}
 	}
 	address, err := logicSigAddressBytes(p.LogicSigBytecode)
@@ -676,6 +858,21 @@ func cloneStoredSigningArgs(args []StoredSigningArg) []StoredSigningArg {
 		return nil
 	}
 	return append([]StoredSigningArg(nil), args...)
+}
+
+func opcodeProfilePtr(profile lsigresource.OpcodeProfile) *lsigresource.OpcodeProfile {
+	if profile == (lsigresource.OpcodeProfile{}) {
+		return nil
+	}
+	copy := profile
+	return &copy
+}
+
+func opcodeProfileValue(profile *lsigresource.OpcodeProfile) lsigresource.OpcodeProfile {
+	if profile == nil {
+		return lsigresource.OpcodeProfile{}
+	}
+	return *profile
 }
 
 func cloneBytePtr(value *byte) *byte {

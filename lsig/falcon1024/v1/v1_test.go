@@ -6,10 +6,6 @@ package v1
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -17,10 +13,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
-	reference "github.com/aplane-algo/aplane/lsig/falcon1024/v1/reference"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/algorandfoundation/falcon-signatures/falcongo"
 )
 
 func TestFalcon1024V1_KeyType(t *testing.T) {
@@ -44,7 +38,7 @@ func TestFalcon1024V1_Version(t *testing.T) {
 	}
 }
 
-func TestFalcon1024V1GenerateTEALUsesReferenceSaltStyle(t *testing.T) {
+func TestFalcon1024V1GenerateTEALUsesV13AutoSalt(t *testing.T) {
 	f := &Falcon1024V1{}
 	pubKey := make([]byte, family.PublicKeySize)
 
@@ -52,57 +46,16 @@ func TestFalcon1024V1GenerateTEALUsesReferenceSaltStyle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
-	if !strings.Contains(teal, "bytecblock 0x00") {
-		t.Fatalf("GenerateTEAL() missing bytecblock salt style:\n%s", teal)
+	if !strings.Contains(teal, "#pragma version 13") {
+		t.Fatalf("GenerateTEAL() missing TEAL v13:\n%s", teal)
 	}
 	preamble, _ := lsigsalt.StylePushbytes.SourcePreamble()
-	if strings.Contains(teal, strings.TrimSpace(preamble)) {
-		t.Fatalf("GenerateTEAL() should not use pushbytes salt style:\n%s", teal)
+	if strings.Contains(teal, "bytecblock 0x00") || strings.Contains(teal, strings.TrimSpace(preamble)) || strings.Contains(teal, "Counter byte") {
+		t.Fatalf("GenerateTEAL() contains an APlane manual salt anchor:\n%s", teal)
 	}
 }
 
-func TestFalcon1024V1SaltDerivationGolden(t *testing.T) {
-	f := &Falcon1024V1{}
-	pubKey := falconTestPublicKey(t)
-
-	teal, err := f.GenerateTEAL(pubKey, nil)
-	if err != nil {
-		t.Fatalf("GenerateTEAL() error = %v", err)
-	}
-	compiled := falconV1PreSaltBytecode(pubKey)
-	offset, err := lsigsalt.BytecblockPreambleLocator(compiled)
-	if err != nil {
-		t.Fatalf("BytecblockPreambleLocator() error = %v", err)
-	}
-	if offset != 4 {
-		t.Fatalf("BytecblockPreambleLocator() = %d, want 4", offset)
-	}
-	salted, err := lsigsalt.FindOffCurve(compiled, lsigsalt.BytecblockPreambleLocator)
-	if err != nil {
-		t.Fatalf("FindOffCurve() error = %v", err)
-	}
-
-	var pub falcongo.PublicKey
-	copy(pub[:], pubKey)
-	referenceAcct, err := reference.DerivePQLogicSig(pub)
-	if err != nil {
-		t.Fatalf("reference DerivePQLogicSig() error = %v", err)
-	}
-	referenceAddr, err := referenceAcct.Address()
-	if err != nil {
-		t.Fatalf("reference Address() error = %v", err)
-	}
-	if !bytes.Equal(salted.Bytecode, referenceAcct.Lsig.Logic) || salted.Address != referenceAddr {
-		t.Fatalf("salted derivation differs from reference")
-	}
-
-	assertGolden(t, "teal hash", sha256Hex([]byte(teal)), "2dd97ae616e3889a6203bef8e1fcb59ccdf9dbac5ad121b97585cb09f98794b0")
-	assertGolden(t, "pre-salt bytecode hash", sha256Hex(compiled), "a02b4961c86e1081afa95458e76ba2a5f35be03b552f9521265c2350fdb0bc68")
-	assertGolden(t, "salt counter", hex.EncodeToString([]byte{salted.Counter}), "03")
-	assertGolden(t, "derived address", salted.Address.String(), "MSPG5XNFIFHRROJAWHDTDZBXUN4G4YCCVGRTRNH3WO3UKB22W3XWOUFHG4")
-}
-
-func TestFalcon1024V1PatchedBytecodeMatchesCounterSourceCompile(t *testing.T) {
+func TestFalcon1024V1CompilerAutoSaltGolden(t *testing.T) {
 	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Skipf("Could not create algod client: %v", err)
@@ -110,26 +63,17 @@ func TestFalcon1024V1PatchedBytecodeMatchesCounterSourceCompile(t *testing.T) {
 
 	f := &Falcon1024V1{}
 	pubKey := falconTestPublicKey(t)
-	teal, err := f.GenerateTEAL(pubKey, nil)
+	f.SetAlgodClient(client)
+	derived, err := f.DeriveLsigWithSalt(context.Background(), pubKey, nil)
 	if err != nil {
-		t.Fatalf("GenerateTEAL() error = %v", err)
+		t.Fatalf("DeriveLsigWithSalt() error = %v", err)
 	}
-	compiled := compileTEALForSaltTest(t, client, teal)
-	offset, err := lsigsalt.BytecblockPreambleLocator(compiled)
-	if err != nil {
-		t.Fatalf("BytecblockPreambleLocator() error = %v", err)
+	if !derived.CompilerAutoSalted || lsigsalt.IsOnCurve(derived.Address) {
+		t.Fatalf("derived result = %+v, want compiler-auto-salted off-curve bytecode", derived)
 	}
-	salted, err := lsigsalt.FindOffCurve(compiled, lsigsalt.BytecblockPreambleLocator)
-	if err != nil {
-		t.Fatalf("FindOffCurve() error = %v", err)
+	if len(derived.Bytecode) != 1801 || derived.Address.String() != "MS4DNTRYOOLQZ4UXK5APVE4XEWMU4CDTUYGOO5UQCWLONDRUP56DZDOBVA" {
+		t.Fatalf("compiler golden = %d bytes / %s", len(derived.Bytecode), derived.Address.String())
 	}
-	counterSource := strings.Replace(teal, "bytecblock 0x00", fmt.Sprintf("bytecblock 0x%02x", salted.Counter), 1)
-	counterCompiled := compileTEALForSaltTest(t, client, counterSource)
-
-	if !bytes.Equal(counterCompiled, salted.Bytecode) {
-		t.Fatalf("compiled counter source does not match patched bytecode")
-	}
-	assertOnlyOffsetChanged(t, compiled, salted.Bytecode, offset)
 }
 
 func TestFalcon1024V1_DeriveLsig_RequiresAlgod(t *testing.T) {
@@ -165,63 +109,6 @@ func falconTestPublicKey(t *testing.T) []byte {
 	return pubKey
 }
 
-func falconV1PreSaltBytecode(pubKey []byte) []byte {
-	bytecode := []byte{
-		0x0c,
-		0x26, 0x01, 0x01, 0x00,
-		0x31, 0x17,
-		0x2d,
-		0x80, 0x81, 0x0e,
-	}
-	bytecode = append(bytecode, pubKey...)
-	bytecode = append(bytecode, 0x85)
-	return bytecode
-}
-
-func sha256Hex(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
-func compileTEALForSaltTest(t *testing.T, client *algod.Client, teal string) []byte {
-	t.Helper()
-
-	result, err := client.TealCompile([]byte(teal)).Do(context.Background())
-	if err != nil {
-		t.Fatalf("TealCompile() error = %v", err)
-	}
-	bytecode, err := base64.StdEncoding.DecodeString(result.Result)
-	if err != nil {
-		t.Fatalf("DecodeString() error = %v", err)
-	}
-	return bytecode
-}
-
-func assertOnlyOffsetChanged(t *testing.T, before, after []byte, offset int) {
-	t.Helper()
-	if len(before) != len(after) {
-		t.Fatalf("patched bytecode length = %d, want %d", len(after), len(before))
-	}
-	for i := range before {
-		if i == offset {
-			continue
-		}
-		if before[i] != after[i] {
-			t.Fatalf("byte offset %d changed: got %x want %x", i, after[i], before[i])
-		}
-	}
-}
-
-func assertGolden(t *testing.T, label, got, want string) {
-	t.Helper()
-	if want == "" {
-		t.Fatalf("%s golden: %s", label, got)
-	}
-	if got != want {
-		t.Fatalf("%s = %s, want %s", label, got, want)
-	}
-}
-
 func TestFalcon1024V1_DeriveLsig(t *testing.T) {
 	// Create algod client
 	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
@@ -249,8 +136,8 @@ func TestFalcon1024V1_DeriveLsig(t *testing.T) {
 		t.Fatalf("DeriveLsig() error: %v", err)
 	}
 
-	if len(bytecode) != 1805 {
-		t.Errorf("Bytecode length = %d, want 1805", len(bytecode))
+	if len(bytecode) != 1801 {
+		t.Errorf("Bytecode length = %d, want 1801", len(bytecode))
 	}
 
 	if addr == "" {
@@ -265,6 +152,9 @@ func TestFalcon1024V1_DeriveLsig(t *testing.T) {
 	}
 	if lsigsalt.IsOnCurve(salted.Address) {
 		t.Fatalf("DeriveLsigWithSalt() returned on-curve address %s", salted.Address.String())
+	}
+	if !salted.CompilerAutoSalted {
+		t.Fatal("DeriveLsigWithSalt() did not identify compiler auto-salting")
 	}
 
 	// Verify determinism
@@ -282,62 +172,6 @@ func TestFalcon1024V1_DeriveLsig(t *testing.T) {
 	}
 
 	t.Logf("Derived address: %s", addr)
-}
-
-// TestFalcon1024V1_MatchesPrecompiledV1 verifies that the composed system produces
-// identical bytecode to the frozen precompiled v1 derivation.
-func TestFalcon1024V1_MatchesPrecompiledV1(t *testing.T) {
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
-	if err != nil {
-		t.Skipf("Could not create algod client: %v", err)
-	}
-
-	// Generate keypair from test seed
-	seed := make([]byte, 64)
-	for i := range seed {
-		seed[i] = byte(i)
-	}
-
-	f := &Falcon1024V1{}
-	f.SetAlgodClient(client)
-
-	pubKey, _, err := signerops.New(nil).GenerateKeypair(seed)
-	if err != nil {
-		t.Fatalf("GenerateKeypair() error: %v", err)
-	}
-
-	// Derive using Falcon1024V1 (composed system)
-	composedBytecode, composedAddr, err := f.DeriveLsig(context.Background(), pubKey, nil)
-	if err != nil {
-		t.Fatalf("Composed DeriveLsig() error: %v", err)
-	}
-
-	// Derive using precompiled v1 directly (frozen derivation)
-	var pub falcongo.PublicKey
-	copy(pub[:], pubKey)
-	lsigAcct, err := reference.DerivePQLogicSig(pub)
-	if err != nil {
-		t.Fatalf("Precompiled DerivePQLogicSig() error: %v", err)
-	}
-	precompiledBytecode := lsigAcct.Lsig.Logic
-	precompiledAddrTyped, err := lsigAcct.Address()
-	if err != nil {
-		t.Fatalf("Address() error: %v", err)
-	}
-	precompiledAddr := precompiledAddrTyped.String()
-
-	// Compare
-	t.Logf("Precompiled v1: %s (%d bytes)", precompiledAddr, len(precompiledBytecode))
-	t.Logf("Composed:       %s (%d bytes)", composedAddr, len(composedBytecode))
-
-	if precompiledAddr != composedAddr {
-		t.Errorf("Addresses differ:\n  precompiled: %s\n  composed: %s", precompiledAddr, composedAddr)
-	}
-
-	if !bytes.Equal(precompiledBytecode, composedBytecode) {
-		t.Errorf("Bytecode differs:\n  precompiled len: %d\n  composed len: %d",
-			len(precompiledBytecode), len(composedBytecode))
-	}
 }
 
 // TestZeroSuffixMatchesStandardFalcon verifies that a composed provider
@@ -363,19 +197,12 @@ func TestZeroSuffixMatchesStandardFalcon(t *testing.T) {
 		t.Fatalf("GenerateKeypair() error: %v", err)
 	}
 
-	// Derive using precompiled v1 (the original frozen derivation)
-	var pub falcongo.PublicKey
-	copy(pub[:], pubKey)
-	lsigAcct, err := reference.DerivePQLogicSig(pub)
+	standard := &Falcon1024V1{}
+	standard.SetAlgodClient(client)
+	standardBytecode, standardAddr, err := standard.DeriveLsig(context.Background(), pubKey, nil)
 	if err != nil {
-		t.Fatalf("Standard DerivePQLogicSig() error: %v", err)
+		t.Fatalf("standard DeriveLsig() error: %v", err)
 	}
-	standardBytecode := lsigAcct.Lsig.Logic
-	standardAddrTyped, err := lsigAcct.Address()
-	if err != nil {
-		t.Fatalf("Address() error: %v", err)
-	}
-	standardAddr := standardAddrTyped.String()
 
 	// Derive using composed with no TEAL suffix
 	composedBytecode, composedAddr, err := pureComposed.DeriveLsig(context.Background(), pubKey, nil)
@@ -384,7 +211,7 @@ func TestZeroSuffixMatchesStandardFalcon(t *testing.T) {
 	}
 
 	// Compare
-	t.Logf("Standard aplane.falcon1024.v1 (precompiled):")
+	t.Logf("Standard aplane.falcon1024.v1:")
 	t.Logf("  Address: %s", standardAddr)
 	t.Logf("  Bytecode length: %d bytes", len(standardBytecode))
 	t.Logf("  First 20 bytes: %x", standardBytecode[:20])

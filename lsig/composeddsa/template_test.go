@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 )
 
@@ -66,6 +67,9 @@ teal: |
 	if provider.KeyType() != "test.template-base-allowlist.v1" {
 		t.Fatalf("KeyType() = %q, want test.template-base-allowlist.v1", provider.KeyType())
 	}
+	if got := provider.LogicSigOpcodeProfile(); got != lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling) {
+		t.Fatalf("LogicSigOpcodeProfile() = %#v, want one-member default", got)
+	}
 }
 
 func TestNewProviderFromTemplateSpecUsesDerivationVersion(t *testing.T) {
@@ -73,7 +77,7 @@ func TestNewProviderFromTemplateSpecUsesDerivationVersion(t *testing.T) {
 
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: test.template-derivation-base.v1
 template_mode: generated
@@ -81,6 +85,7 @@ publisher: test
 family: template-derivation
 version: 1
 display_name: "Template Derivation"
+max_opcode_cost: 20000
 teal: |
   int 1
   assert
@@ -92,8 +97,8 @@ teal: |
 	if err != nil {
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
-	if got := provider.fingerprintSaltStyle(); got != string(lsigsalt.StyleTrailingBytecblock) {
-		t.Fatalf("fingerprintSaltStyle() = %q, want %q", got, lsigsalt.StyleTrailingBytecblock)
+	if got := provider.fingerprintSaltStyle(); got != string(lsigsalt.StyleAlgodAutoSalt) {
+		t.Fatalf("fingerprintSaltStyle() = %q, want %q", got, lsigsalt.StyleAlgodAutoSalt)
 	}
 }
 
@@ -109,6 +114,7 @@ publisher: test
 family: template-unsalted
 version: 1
 display_name: "Template Unsalted"
+max_opcode_cost: 20000
 teal: |
   int 1
   assert
@@ -235,6 +241,7 @@ publisher: test
 family: template-bounded
 version: 1
 display_name: Template Bounded
+max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [axfer, pay]
@@ -433,6 +440,7 @@ publisher: aplane
 family: bounded-sentry-test
 version: 1
 display_name: Bounded Sentry Test
+max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [pay]
@@ -669,6 +677,7 @@ publisher: test
 family: relocatable-strict
 version: 1
 display_name: "Relocatable Strict"
+max_opcode_cost: 20000
 parameters:
   - name: hash
     type: bytes
@@ -711,6 +720,7 @@ publisher: test
 family: existing-provider
 version: 1
 display_name: "Existing Provider"
+max_opcode_cost: 20000
 teal: |
   int 1
   assert
@@ -789,6 +799,7 @@ publisher: test
 family: fingerprint-template
 version: 1
 display_name: "Fingerprint Template"
+max_opcode_cost: 20000
 teal: |
   int 1
 `

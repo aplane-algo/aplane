@@ -4,6 +4,7 @@
 package signing
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -17,6 +18,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	falconsignerops "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -258,6 +261,40 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 	defer zeroLoadedKeyMaterial(keyMaterial)
 	if provider == nil {
 		return nil, keyType, internal(fmt.Sprintf("unsupported key type: %s", keyType))
+	}
+
+	if keyMaterial.Bytecode == nil {
+		if transactionAuthorizer, ok := provider.(coresigning.TransactionAuthorizer); ok {
+			if keyType != nativefalcon.KeyType {
+				return nil, keyType, internal(fmt.Sprintf("key type %s unexpectedly implements structured transaction authorization", keyType))
+			}
+			authorizer, err := types.DecodeAddress(authAddr)
+			if err != nil {
+				if e.AuditLog != nil {
+					e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
+				}
+				return nil, keyType, badRequest(fmt.Sprintf("invalid auth address %q: %v", authAddr, err))
+			}
+			stxn, err := transactionAuthorizer.AuthorizeTransaction(keyMaterial, txn, authorizer)
+			if err != nil {
+				if e.AuditLog != nil {
+					e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("structured sign failed: %v", err))
+				}
+				return nil, keyType, internal(fmt.Sprintf("failed to sign: %v", err))
+			}
+			if err := falconsignerops.ValidateTransaction(stxn, txn, authorizer); err != nil {
+				return nil, keyType, internal(fmt.Sprintf("provider returned invalid authorization: %v", err))
+			}
+			encoded := msgpack.Encode(stxn)
+			var decoded types.SignedTxn
+			if err := msgpack.Decode(encoded, &decoded); err != nil {
+				return nil, keyType, internal(fmt.Sprintf("failed to decode assembled authorization: %v", err))
+			}
+			if reencoded := msgpack.Encode(decoded); !bytes.Equal(reencoded, encoded) {
+				return nil, keyType, internal("assembled authorization is not canonically encoded")
+			}
+			return encoded, keyType, nil
+		}
 	}
 
 	var messageBytes []byte

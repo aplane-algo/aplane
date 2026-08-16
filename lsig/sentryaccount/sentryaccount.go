@@ -84,8 +84,8 @@ func (h *AlgodHolder) AlgodClient() (*algod.Client, error) {
 	return h.client, nil
 }
 
-// CompileSalted compiles TEAL through algod and finds the pushbytes salt
-// counter that yields an off-curve LogicSig address.
+// CompileSalted compiles TEAL through algod and validates the compiler-owned
+// TEAL v13 auto-salted bytecode and address.
 func CompileSalted(ctx context.Context, client *algod.Client, teal string) (lsigsalt.FindResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -101,9 +101,9 @@ func CompileSalted(ctx context.Context, client *algod.Client, teal string) (lsig
 	if err != nil {
 		return lsigsalt.FindResult{}, fmt.Errorf("failed to decode compiled bytecode: %w", err)
 	}
-	salted, err := lsigsalt.FindOffCurve(bytecode, lsigsalt.PushbytesMarkerLocator)
+	salted, err := lsigsalt.UseCompilerAutoSalted(bytecode, result.Hash)
 	if err != nil {
-		return lsigsalt.FindResult{}, fmt.Errorf("failed to derive off-curve LogicSig address: %w", err)
+		return lsigsalt.FindResult{}, fmt.Errorf("failed to validate compiler-auto-salted LogicSig: %w", err)
 	}
 	return salted, nil
 }
@@ -133,6 +133,9 @@ func (m algorithmMetadata) CryptoSignatureSize() int     { return m.signatureSiz
 func (m algorithmMetadata) MnemonicWordCount() int       { return m.mnemonicWordCount }
 func (m algorithmMetadata) SupportsMnemonicImport() bool { return false }
 func (m algorithmMetadata) MnemonicScheme() string       { return m.mnemonicScheme }
+func (m algorithmMetadata) AuthorizationKind() algorithm.AuthorizationKind {
+	return algorithm.AuthorizationLogicSig
+}
 func (m algorithmMetadata) RequiresLogicSig() bool       { return true }
 func (m algorithmMetadata) CurrentLsigVersion() int      { return 1 }
 func (m algorithmMetadata) SupportedLsigVersions() []int { return []int{1} }

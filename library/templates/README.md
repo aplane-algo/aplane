@@ -55,6 +55,13 @@ apstore template import library/templates/aplane.falcon1024-allowlist.v1.yaml
   set produces the same LogicSig address regardless of input order.
 - Template key types are compatibility boundaries. Do not change the behavior of
   an installed key type in place; create a new versioned key type instead.
+- `max_opcode_cost` is optional. Omission uses the numeric one-transaction
+  opcode ceiling shared by every consensus version APlane currently supports:
+  20,000. An explicit value is an absolute reviewed worst-case cost of the
+  final compiled and auto-salted program across every permitted authorization
+  path and runtime input; an explicit zero is rejected. APlane-owned library
+  templates keep explicit reviewed declarations and maximum-input simulation
+  vectors even when their ceiling equals the default.
 - Imported templates are identity-scoped. Installing a template for one signer
   identity does not make it available to other identities.
 

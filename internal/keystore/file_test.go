@@ -24,6 +24,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
@@ -450,6 +451,10 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 			{Name: "proof", Type: "bytes", Required: true, ByteLength: 32},
 		},
 		TemplateFingerprint: "semantic-a",
+		LogicSigResources: &lsigresource.Profile{
+			ProgramBytes: 10,
+			Default:      &lsigresource.PathProfile{ArgumentBytes: 20, MaxOpcodeCost: 30},
+		},
 	}
 
 	summary := store.GetSigningSummary()
@@ -478,6 +483,10 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 	got.SigningArgs[0].Name = "mutated"
 	if store.cache["addr1"].SigningArgs[0].Name != "proof" {
 		t.Fatal("GetSigningSummary should return a copy, not mutate cached signing args")
+	}
+	got.LogicSigResources.Default.ArgumentBytes = 999
+	if store.cache["addr1"].LogicSigResources.Default.ArgumentBytes != 20 {
+		t.Fatal("GetSigningSummary should deep-clone LogicSig resource profiles")
 	}
 }
 

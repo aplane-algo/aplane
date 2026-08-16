@@ -1,12 +1,12 @@
 module github.com/aplane-algo/aplane
 
-go 1.25
+go 1.25.0
 
 require (
 	filippo.io/edwards25519 v1.2.0
 	github.com/algorand/avm-abi v0.2.0
 	github.com/algorand/falcon v0.1.0
-	github.com/algorand/go-algorand-sdk/v2 v2.11.0
+	github.com/algorand/go-algorand-sdk/v2 v2.11.2-0.20260731180711-967fcacfacdf
 	github.com/algorandfoundation/falcon-signatures v1.1.1
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10

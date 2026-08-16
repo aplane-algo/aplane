@@ -354,8 +354,8 @@ otherwise a connected admin client must approve it.
 
 All component signatures and ordinary signatures are over the same frozen
 group. This matters for mixed groups: guarded targets, non-guarded originals,
-and dummy transactions must all agree on transaction bytes, group ID, and
-LogicSig budget.
+and resource-dummy transactions must all agree on transaction bytes, group ID,
+selected-path LogicSig resources, and aggregate fee.
 
 ## Assembly Invariants
 
@@ -445,16 +445,18 @@ approval context:
 
 - guarded targets receive user and sentry component signatures,
 - non-guarded signer targets use ordinary `/sign`,
-- dummy transactions are included consistently for LogicSig budget,
+- resource-dummy transactions are included consistently for LogicSig argument
+  and opcode capacity,
 - signer-side `/sign` sees the complete group context for non-guarded approval
   and policy,
 - `/sign/assemble` receives signed non-guarded entries as passthrough bytes.
 
-The client supplies accurate LogicSig-size hints for guarded positions when it
-calls ordinary `/sign` for the non-guarded subset. The signer keeps its normal
-budget computation as an independent backstop. A mis-sized client group should
-fail early with a clear pre-grouped budget rejection rather than later as an
-opaque algod evaluation failure.
+The client supplies accurate selected-path `lsig_resources` for guarded
+positions when it calls ordinary `/sign` for the non-guarded subset. These
+values come from signer inventory, not client estimates. The signer keeps its
+normal consensus resource computation as an independent backstop. A mis-sized
+client group fails early with a clear immutable-group rejection rather than
+later as an opaque algod evaluation failure.
 
 ## Failure Model
 

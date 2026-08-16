@@ -163,7 +163,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Client cache key | cache secret | `cache/.cache_key` | HMAC key for cache envelopes | `internal/cache`, `internal/clientstate` | Local only; regenerated cache means rebuildable state. |
 | Alias cache | cache/display | `cache/alias_cache.json` | alias to address/set references | `internal/cache`, `internal/clientstate`, `internal/refname` | Names canonicalized; cache is not signing authority. |
 | Set cache | cache/display | `cache/set_cache.json` | named address sets | `internal/cache`, `internal/clientstate`, `internal/refname` | Reserved names rejected near persistence. |
-| Signer inventory cache | cache/display | `cache/signer_cache.json` | local view of signer keys, key types, LSig sizes | `internal/cache`, `internal/engine` | Rebuilt from `/keys`/`/keytypes`; `Locked` is non-persisted runtime state. |
+| Signer inventory cache | cache/display | `cache/signer_cache.json` | local view of signer keys, key types, and structured LogicSig resources | `internal/cache`, `internal/engine` | Rebuilt from `/keys`/`/keytypes`; `Locked` is non-persisted runtime state. |
 | ASA cache | cache/display | `cache/<network>_asa_cache.json` | ASA metadata lookup by network | `internal/cache`, `internal/asa`, `internal/engine` | Signed JSON; symbolic ambiguity rejects instead of guessing. |
 | Auth-address cache | cache/display | `cache/<network>_auth_cache.json` | account auth-address lookups | `internal/cache`, `internal/clientstate` | Network-scoped; rebuilt from algod. |
 

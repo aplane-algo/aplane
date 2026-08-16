@@ -98,9 +98,9 @@ If you modify the contract:
 - `SubmitGroupedPaymentAndAppCall()` — atomic payment + app call
 - `DestroyTestApp()` — delete the application (cleanup)
 
-All fixture operations use direct SDK signing with the funding account's
-private key. This avoids circular dependencies — the fixture sets up state
-for the features being tested, it is not the thing being tested.
+All fixture operations use the harness's direct native Falcon authorizer. This
+avoids circular dependencies — the fixture sets up state for the features being
+tested, it is not the thing being tested.
 
 ## Usage From Tests
 
@@ -109,14 +109,13 @@ func TestMyAppFeature(t *testing.T) {
     testnet, _ := harness.NewTestnetConfig()
     funder, _ := harness.NewFundTestAccount(testnet.Client)
 
-    app, _ := harness.DeployTestApp(t, testnet.Client,
-        funder.GetAddress(), funder.GetPrivateKey())
-    defer app.DestroyTestApp(funder.GetPrivateKey())
+    app, _ := harness.DeployTestApp(t, testnet.Client, funder)
+    defer app.DestroyTestApp(funder)
 
     // Set up state via harness (direct SDK signing)
     app.CallMethod(
         [][]byte{harness.IncrementSelector(), harness.EncodeUint64(5)},
-        funder.GetAddress(), funder.GetPrivateKey(), nil,
+        funder, nil,
     )
 
     // Now test your APlane feature against the known state...

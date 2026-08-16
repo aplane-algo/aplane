@@ -25,7 +25,7 @@ func TestBoundedSentryCompilerGolden(t *testing.T) {
 	falcon1024.RegisterClient()
 	spec, err := composeddsa.ParseTemplateSpec([]byte(`
 schema_version: 2
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
@@ -33,6 +33,7 @@ publisher: aplane
 family: bounded-sentry-compiler-test
 version: 1
 display_name: Bounded Sentry Compiler Test
+max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [pay, axfer, asset_opt_in]
@@ -99,17 +100,22 @@ teal: |
 	}); err != nil {
 		t.Fatalf("Validate(compiled bounded sentry) error = %v", err)
 	}
+	// Golden moved when derivation_version 2 was retired: under the v13
+	// auto-salt contract finishSaltedTEAL appends no counter-byte trailer, so
+	// the emitted TEAL loses exactly the trailing comment and `bytecblock 0x00`.
 	hash := sha256.Sum256([]byte(teal))
-	if got, want := hex.EncodeToString(hash[:]), "7a22f2f695612ff7a1b26b722f2726ab35ff1340d5c81046681de4306d72e11c"; got != want {
+	if got, want := hex.EncodeToString(hash[:]), "b747f4a983896901af9ac8229263407e4790516e38a7cae00afa7d5877c2ba0b"; got != want {
 		t.Fatalf("TEAL SHA-256 = %s, want %s", got, want)
 	}
-	if got, want := len(bytecode), 5_673; got != want {
+	// Pin the configured FNet compiler output separately from the source hash so
+	// compiler-toolchain drift remains visible even when the TEAL is unchanged.
+	if got, want := len(bytecode), 5_663; got != want {
 		t.Fatalf("compiled bytecode size = %d, want %d; TEAL SHA-256 %x", got, want, hash)
 	}
-	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathSpend), 8_233; got != want {
-		t.Fatalf("spend LogicSig size = %d, want %d", got, want)
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 2_846; got != want {
+		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
-	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathAdminRekey), 8_233; got != want {
-		t.Fatalf("admin-rekey LogicSig size = %d, want %d", got, want)
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey), 2_846; got != want {
+		t.Fatalf("admin-rekey argument bytes = %d, want %d", got, want)
 	}
 }

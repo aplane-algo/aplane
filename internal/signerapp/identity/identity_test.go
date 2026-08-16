@@ -19,6 +19,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -212,7 +213,6 @@ func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
 	ir.PublishSnapshot(
 		map[string]string{"ADDR1": "keys/ADDR1.key"},
 		map[string]string{"ADDR1": "ed25519"},
-		map[string]int{},
 	)
 	if got := ir.KeysetRevision(); got != 1 {
 		t.Fatalf("KeysetRevision() after first publish = %d, want 1", got)
@@ -221,7 +221,6 @@ func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
 	ir.PublishSnapshot(
 		map[string]string{"ADDR1": "keys/ADDR1.key"},
 		map[string]string{"ADDR1": "ed25519"},
-		map[string]int{},
 	)
 	if got := ir.KeysetRevision(); got != 2 {
 		t.Fatalf("KeysetRevision() after second publish = %d, want 2", got)
@@ -242,13 +241,16 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	ir.PublishSnapshot(
 		map[string]string{"ADDR1": "keys/ADDR1.key"},
 		map[string]string{"ADDR1": "ed25519"},
-		map[string]int{"ADDR1": 123},
 	)
 	ir.keysLock.Lock()
 	ir.keyMetadata["ADDR1"] = KeyPublicMetadata{
 		Category:     "governance",
 		PublicKeyHex: "abcd",
 		Parameters:   map[string]string{"purpose": "rekey"},
+		LogicSigResources: &lsigresource.Profile{
+			ProgramBytes: 10,
+			Default:      &lsigresource.PathProfile{ArgumentBytes: 20, MaxOpcodeCost: 30},
+		},
 	}
 	ir.keysLock.Unlock()
 
@@ -262,19 +264,16 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	if got := snapshot.KeyTypes["ADDR1"]; got != "ed25519" {
 		t.Fatalf("snapshot key type = %q, want ed25519", got)
 	}
-	if got := snapshot.LSigSizes["ADDR1"]; got != 123 {
-		t.Fatalf("snapshot lsig size = %d, want 123", got)
-	}
 	if got := snapshot.KeyMetadata["ADDR1"].Parameters["purpose"]; got != "rekey" {
 		t.Fatalf("snapshot key metadata purpose = %q, want rekey", got)
 	}
 
 	snapshot.KeyFiles["ADDR1"] = "mutated.key"
 	snapshot.KeyTypes["ADDR1"] = "mutated"
-	snapshot.LSigSizes["ADDR1"] = 999
 	metadata := snapshot.KeyMetadata["ADDR1"]
 	metadata.Category = "mutated"
 	metadata.Parameters["purpose"] = "mutated"
+	metadata.LogicSigResources.Default.ArgumentBytes = 999
 	snapshot.KeyMetadata["ADDR1"] = metadata
 	if got := ir.keyMetadata["ADDR1"].Category; got != "governance" {
 		t.Fatalf("runtime metadata category = %q after caller mutation, want governance", got)
@@ -282,10 +281,12 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	if got := ir.keyMetadata["ADDR1"].Parameters["purpose"]; got != "rekey" {
 		t.Fatalf("runtime metadata purpose = %q after caller mutation, want rekey", got)
 	}
+	if got := ir.keyMetadata["ADDR1"].LogicSigResources.Default.ArgumentBytes; got != 20 {
+		t.Fatalf("runtime LogicSig argument bytes = %d after caller mutation, want 20", got)
+	}
 	ir.PublishSnapshot(
 		map[string]string{"ADDR2": "keys/ADDR2.key"},
 		map[string]string{"ADDR2": "aplane.falcon1024.v1"},
-		map[string]int{"ADDR2": 456},
 	)
 
 	if got := snapshot.KeyFiles["ADDR1"]; got != "mutated.key" {
@@ -366,8 +367,8 @@ func TestDecommission(t *testing.T) {
 	}
 
 	// KeySnapshot returns nil maps
-	keys, keyTypes, lsigSizes := ir.KeySnapshot()
-	if keys != nil || keyTypes != nil || lsigSizes != nil {
+	keys, keyTypes := ir.KeySnapshot()
+	if keys != nil || keyTypes != nil {
 		t.Fatal("KeySnapshot should return nil maps for decommissioned identity")
 	}
 

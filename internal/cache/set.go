@@ -24,6 +24,10 @@ func (cache *SetCache) setCachePayloadSchemaVersion(version int) {
 	cache.SchemaVersion = version
 }
 
+func (cache *SetCache) supportedCachePayloadSchemaVersion() int {
+	return cachePayloadSchemaVersion
+}
+
 // LoadSetCacheFromStore loads the set cache from the provided store.
 func LoadSetCacheFromStore(store *Store) SetCache {
 	cache := SetCache{SchemaVersion: cachePayloadSchemaVersion, Sets: make(map[string][]string)}

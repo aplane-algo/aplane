@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
@@ -14,10 +15,10 @@ import (
 // NewSignerCache creates an empty SignerCache
 func NewSignerCache() SignerCache {
 	cache := SignerCache{
-		SchemaVersion:           cachePayloadSchemaVersion,
+		SchemaVersion:           signerCachePayloadSchemaVersion,
 		Keys:                    make(map[string]string),
 		GenericLsigs:            make(map[string]bool),
-		LsigSizes:               make(map[string]int),
+		LogicSigResources:       make(map[string]lsigresource.Profile),
 		SigningArgs:             make(map[string][]SigningArgInfo),
 		SigningFlows:            make(map[string]string),
 		SentryComponentKeyTypes: make(map[string]string),
@@ -69,7 +70,7 @@ func (cache *SignerCache) AddAddress(address string, keyType string) {
 func (cache *SignerCache) RemoveAddress(address string) {
 	delete(cache.Keys, address)
 	delete(cache.GenericLsigs, address)
-	delete(cache.LsigSizes, address)
+	delete(cache.LogicSigResources, address)
 	delete(cache.SigningArgs, address)
 	delete(cache.SigningFlows, address)
 	delete(cache.SentryComponentKeyTypes, address)
@@ -102,21 +103,25 @@ func (cache *SignerCache) SetGenericLsig(address string, isGeneric bool) {
 	}
 }
 
-// GetLsigSize returns the total LogicSig size for an address (0 if not LSig)
-// This includes bytecode + crypto signature size for DSA-based LSigs.
-func (cache *SignerCache) GetLsigSize(address string) int {
-	if cache.LsigSizes == nil {
-		return 0
+// LogicSigResourceProfile returns a defensive copy of the address's complete
+// LogicSig resource profile.
+func (cache *SignerCache) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
+	if cache.LogicSigResources == nil {
+		return lsigresource.Profile{}, false
 	}
-	return cache.LsigSizes[address]
+	profile, ok := cache.LogicSigResources[address]
+	if !ok {
+		return lsigresource.Profile{}, false
+	}
+	return profile.Clone(), true
 }
 
-// SetLsigSize sets the total LogicSig size for an address
-func (cache *SignerCache) SetLsigSize(address string, size int) {
-	if cache.LsigSizes == nil {
-		cache.LsigSizes = make(map[string]int)
+// SetLogicSigResourceProfile stores a defensive copy of a complete profile.
+func (cache *SignerCache) SetLogicSigResourceProfile(address string, profile lsigresource.Profile) {
+	if cache.LogicSigResources == nil {
+		cache.LogicSigResources = make(map[string]lsigresource.Profile)
 	}
-	cache.LsigSizes[address] = size
+	cache.LogicSigResources[address] = profile.Clone()
 }
 
 // SigningFlowForAddress returns the signing choreography label the signer

@@ -244,6 +244,7 @@ family: %s
 version: %d
 display_name: %q
 description: %q
+max_opcode_cost: 20000
 teal: |
   #pragma version 8
   int 1

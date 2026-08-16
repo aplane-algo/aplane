@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -87,6 +88,7 @@ type Config struct {
 	DerivedArgs        []boundedmeta.DerivedArg
 	Bounded            *BoundedAuthorizationProfile
 	Layer3             *Layer3Policy
+	OpcodeProfile      lsigresource.OpcodeProfile
 }
 
 // ComposedDSA composes:
@@ -117,6 +119,7 @@ type ComposedDSA struct {
 	derivedArgs        []boundedmeta.DerivedArg
 	bounded            *BoundedAuthorizationProfile
 	layer3             *Layer3Policy
+	opcodeProfile      lsigresource.OpcodeProfile
 
 	// Algod client for TEAL compilation (must be set before DeriveLsig)
 	algodClient *algod.Client
@@ -131,6 +134,12 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 	}
 	params := append([]lsigprovider.ParameterDef(nil), cfg.Params...)
 	bounded := cloneBoundedProfile(cfg.Bounded)
+	opcodeProfile := cfg.OpcodeProfile
+	if opcodeProfile != (lsigresource.OpcodeProfile{}) {
+		if err := opcodeProfile.Validate(bounded != nil); err != nil {
+			panic("composeddsa: invalid opcode profile: " + err.Error())
+		}
+	}
 	if boundedRequiresAdminKey(bounded) && !hasParameter(params, BoundedAdminPublicKeyParameter) {
 		params = append(params, boundedAdminPublicKeyParameterDef())
 	}
@@ -155,6 +164,7 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 		derivedArgs:        append([]boundedmeta.DerivedArg(nil), cfg.DerivedArgs...),
 		bounded:            bounded,
 		layer3:             cloneLayer3Policy(cfg.Layer3),
+		opcodeProfile:      opcodeProfile,
 	}
 }
 
@@ -169,6 +179,11 @@ func (c *ComposedDSA) SetAlgodClient(client *algod.Client) {
 // KeyType returns the full identifier including version.
 func (c *ComposedDSA) KeyType() string {
 	return c.keyType
+}
+
+// LogicSigOpcodeProfile returns the provider-owned reviewed resource contract.
+func (c *ComposedDSA) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return c.opcodeProfile
 }
 
 // BaseKeyType returns the underlying DSA key type used for key generation and
@@ -383,6 +398,7 @@ func (c *ComposedDSA) buildBoundedSpendArgs(signatureArgs, runtimeArgs [][]byte)
 func (c *ComposedDSA) CompatibilityFingerprint() string {
 	type canonicalSpec struct {
 		BasePrimitive string                             `json:"base_primitive,omitempty"`
+		OpcodeProfile lsigresource.OpcodeProfile         `json:"opcode_profile"`
 		TEALSuffix    string                             `json:"teal_suffix"`
 		SaltStyle     string                             `json:"salt_style"`
 		TemplateMode  string                             `json:"template_mode,omitempty"`
@@ -410,6 +426,7 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 	}
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
 		BasePrimitive: lsigprovider.FingerprintBasePrimitive(c.baseKeyType),
+		OpcodeProfile: c.opcodeProfile,
 		TEALSuffix:    strings.TrimSpace(c.tealSuffix),
 		SaltStyle:     c.fingerprintSaltStyle(),
 		TemplateMode:  c.effectiveTemplateMode(),
@@ -484,7 +501,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		}
 	}
 
-	if style != lsigsalt.StyleNone && style != lsigsalt.StyleTrailingBytecblock {
+	if style != lsigsalt.StyleNone && style != lsigsalt.StyleAlgodAutoSalt && style != lsigsalt.StyleTrailingBytecblock {
 		preamble, err := c.saltPreamble(style)
 		if err != nil {
 			return "", err
@@ -584,7 +601,7 @@ func (c *ComposedDSA) saltLocator() (lsigsalt.Locator, error) {
 	if err != nil {
 		return nil, err
 	}
-	if style == lsigsalt.StyleNone {
+	if style == lsigsalt.StyleNone || style == lsigsalt.StyleAlgodAutoSalt {
 		return nil, fmt.Errorf("LogicSig salt style %q has no salt locator", style)
 	}
 	return style.Locator()
@@ -596,6 +613,12 @@ func (c *ComposedDSA) hasSuffix() bool {
 
 func (c *ComposedDSA) resolvedSaltStyle() (lsigsalt.Style, error) {
 	if c.saltStyle != "" {
+		if c.saltStyle == lsigsalt.StyleAlgodAutoSalt {
+			if c.ops.TEALVersion() < 13 {
+				return "", fmt.Errorf("composed DSA salt style %q requires TEAL v13+, got v%d", c.saltStyle, c.ops.TEALVersion())
+			}
+			return c.saltStyle, nil
+		}
 		if c.saltStyle == lsigsalt.StyleNone {
 			return c.saltStyle, nil
 		}
@@ -699,6 +722,13 @@ func (c *ComposedDSA) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, 
 	style, err := c.resolvedSaltStyle()
 	if err != nil {
 		return lsigsalt.FindResult{}, err
+	}
+	if style == lsigsalt.StyleAlgodAutoSalt {
+		autoSalted, err := lsigsalt.UseCompilerAutoSalted(bytecode, result.Hash)
+		if err != nil {
+			return lsigsalt.FindResult{}, fmt.Errorf("failed to validate compiler-auto-salted LogicSig: %w", err)
+		}
+		return autoSalted, nil
 	}
 	if style == lsigsalt.StyleNone {
 		unsalted, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)

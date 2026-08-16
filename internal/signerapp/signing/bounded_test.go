@@ -20,13 +20,12 @@ import (
 func testBoundedMetadata(t *testing.T, authorization string) *boundedmeta.Metadata {
 	t.Helper()
 	metadata := &boundedmeta.Metadata{
-		Contract:                boundedmeta.ContractV1,
-		BaseSignatureArgLayout:  boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, authorization == boundedmeta.AdminAuthorizationAdmin),
-		SpendEffects:            []string{"pay", "axfer"},
-		MaxFee:                  5_000,
-		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
-		PostSigningLogicSigSize: 2_000,
+		Contract:               boundedmeta.ContractV1,
+		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, authorization == boundedmeta.AdminAuthorizationAdmin),
+		SpendEffects:           []string{"pay", "axfer"},
+		MaxFee:                 5_000,
+		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 	}
 	if authorization != "" {
 		metadata.AdminOperations = []boundedmeta.AdminOperation{{

@@ -7,9 +7,6 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
-	txsigning "github.com/aplane-algo/aplane/internal/signing"
-
-	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 func (fs *Signer) newPlannerWithAudit(auditLog signersigning.AuditLogger) *signersigning.Planner {
@@ -57,37 +54,13 @@ func (d signerPlannerDeps) Snapshot(identityID string) signersigning.PlannerIden
 		keyMetadata[selector] = signersigning.PlannerKeyMetadata{
 			Category: metadata.Category, PublicKeyHex: metadata.PublicKeyHex, Parameters: metadata.Parameters,
 			BoundedAuthorization: metadata.BoundedAuthorization,
+			LogicSigResources:    metadata.LogicSigResources,
 		}
 	}
 	return signersigning.PlannerIdentitySnapshot{
 		Revision:    snapshot.Revision,
 		KeyFiles:    snapshot.KeyFiles,
 		KeyTypes:    snapshot.KeyTypes,
-		LSigSizes:   snapshot.LSigSizes,
 		KeyMetadata: keyMetadata,
 	}
-}
-
-func (d signerPlannerDeps) MinTxnFee(genesisHash types.Digest) uint64 {
-	if d.signer == nil {
-		return txsigning.DefaultMinFee
-	}
-	cfg := d.signer.ConfigSnapshot()
-	resolver, err := apconfig.NewGenesisHashNetworkResolver(cfg.GenesisHashNetworks)
-	if err != nil {
-		return txsigning.DefaultMinFee
-	}
-	network, ok := resolver.NetworkForGenesisHashBytes(genesisHash[:])
-	if !ok {
-		return txsigning.DefaultMinFee
-	}
-	algodCfg, cfgErr := cfg.GetAlgodConfig(network)
-	if cfgErr != nil || algodCfg.Server == "" {
-		return txsigning.DefaultMinFee
-	}
-	algodClient, err := txsigning.CreateAlgodClient(algodCfg.Server, algodCfg.Token)
-	if err != nil || algodClient == nil {
-		return txsigning.DefaultMinFee
-	}
-	return txsigning.GetMinFeeFromAlgod(algodClient)
 }

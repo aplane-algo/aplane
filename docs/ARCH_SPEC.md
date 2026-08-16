@@ -172,7 +172,7 @@ Documentation notes:
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/signerapp/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
-| Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/rotationinventory`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/storeintegration`, `test/registry`, `test/soak`, `internal/testcheckpoint`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
@@ -239,6 +239,16 @@ and adds the domain command methods (payments, assets, apps, key management,
 guarded signing). This keeps the shared infrastructure in one place rather than
 interleaved with domain logic on a single flat facade.
 
+The live consensus boundary is client-owned in `internal/engine/consensus.go`.
+Transaction construction validates algod SuggestedParams, and first-party
+planning and executable workflows refresh the v42/`fnet5` check before asking
+apsigner to plan, releasing signatures, invoking plugin signers, or submitting
+or simulating immutable signed groups. The guarded flow enters through the same
+checked submit boundary. `NewInitializedEngine` may leave `AlgodClient` nil when
+algod is not configured or client creation fails; consensus-gated operations
+then fail with `ErrNoAlgodClient` before contacting a signer, plugin, or network.
+Apsigner remains network-independent and applies its compiled v42 contract.
+
 Engine code must not depend on UI parsing or formatting packages; this is
 enforced by `test/arch/client_layering_test.go` (see Architectural Invariants).
 
@@ -249,12 +259,18 @@ enforced by `test/arch/client_layering_test.go` (see Architectural Invariants).
 The provider layer supports multiple signing and LogicSig families:
 
 - native Ed25519 in `internal/signing/ed25519`
+- protocol-native Falcon in `internal/signing/falcon1024`, with signer-only
+  registration and operations under `signerreg` and `signerops`
+- client-safe shared Falcon size constants in `internal/falconparams`
 - LogicSig DSA providers in `lsig/`
+- compiled consensus resource profiles and the pure LogicSig group solver in
+  `internal/lsigresource`
 - provider metadata in `internal/algorithm`
 - key generation in `internal/keygen`
 - mnemonic support in `internal/mnemonic`
 - unified LogicSig provider registry in `internal/lsigprovider`
-- shared off-curve LogicSig salting in `internal/lsigsalt`
+- shared off-curve LogicSig validation and derivation helpers, including legacy
+  manual-counter support, in `internal/lsigsalt`
 
 Registration is explicit and happens from binary entrypoints via `RegisterProviders()`, not via package-global magic hidden from `main`.
 
@@ -762,8 +778,10 @@ LogicSig key files carry their own bytecode and signing arg contract, so
 signing an existing key does not depend on the installed template definition.
 The complete key file and key type state machines are documented in
 [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
-LogicSig key files without `salt_counter`, or whose stored bytecode derives an
-on-curve address, are rejected during key scan. LogicSig key files without
+LogicSig key files whose stored bytecode derives an on-curve address are
+rejected during key scan. Legacy empty/`manual_counter` derivations require
+`salt_counter`; `algod_v13_auto_salt` derivations forbid it and require final
+TEAL v13+ bytecode plus a valid `lsig_opcode_profile`. LogicSig key files without
 `signing_metadata_version` are rejected when signing or restore would need
 durable signing metadata. Key files with `signing_metadata_version >= 1` are
 **versioned signing-metadata keys**; non-bounded keys use version 1 and bounded
@@ -785,7 +803,7 @@ The main server struct is `Signer`, which owns:
 Sensitive per-identity state lives under `internal/signerapp/identity.Runtime`, including:
 
 - `keySession`,
-- identity-scoped `keys`, `keyTypes`, `keyLsigSizes`,
+- identity-scoped `keys`, `keyTypes`, and `keyMetadata` resource profiles,
 - signer runtime owner,
 - approval coordinator,
 - watcher lifecycle,
@@ -805,7 +823,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Signer.storeMutationLocks[identityID]` | Identity-owned key/template/config/policy mutation serialization |
 | `signerapp/templates.templateProviderOwners.mu` | Identity ownership counts for process-global installed-template LogicSig providers |
 | `Signer.restoreAttemptMu` | Lazy initialization of the per-identity/archive restore backoff limiter |
-| `identity.Runtime.keysLock` | `keys`, `keyTypes`, `keyLsigSizes` |
+| `identity.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
 | `identity.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
 | `identity.Runtime.watcherMu` | Watcher lifecycle, dirty state |
 | `identity.Runtime.lifecycleMu` | Decommission vs in-flight operation leases |
@@ -1307,17 +1325,14 @@ a signing flow, the client uses guarded orchestration for the whole
 atomic group. The group may mix direct guarded senders, senders rekeyed to a
 guarded authorizer, and ordinary signer-managed senders.
 
-The client first builds one canonical group. It sizes LogicSig-budget dummies
-across every LogicSig position from signer-advertised `lsig_size`, including
-non-guarded positions budgeted by effective signer/AuthAddr, then fixes fees
-and group ID. `lsig_size` is the expected spend-path post-signing LogicSig
-program plus args budget: bytecode plus cryptographic signature args and any
-runtime or signer-generated args used by that path. For bounded1 accounts it
-excludes the contract-admin signature slot, which only
-`/sign/bounded-admin` attaches; the signer's planner adds that slot when it
-classifies an admin-key rekey. The stored bounded
-`post_signing_lsig_size` remains admin-inclusive. All downstream component and
-non-guarded signatures are over the frozen transaction bytes.
+The client submits one unsigned intended group to `/plan`. The signer returns
+the canonical group after sizing resource dummies across every LogicSig
+position from structured profiles: final compiled program bytes,
+selected-path maximum argument bytes, and the reviewed maximum opcode cost.
+Bounded profiles derive their path-specific argument budgets from the durable
+argument layout, including the admin-key slot only for an admin-key rekey. No
+combined LogicSig-size scalar participates in planning. Fees and group ID are
+fixed before any downstream component or non-guarded signature is produced.
 
 For guarded targets, the client obtains component signatures:
 
@@ -1335,9 +1350,9 @@ when allowed.
 If the original group also has non-guarded positions, the client then calls the
 primary signer `/sign` over the full canonical group: non-guarded originals are
 sign-mode entries, guarded targets are `foreign` entries with accurate
-authorizer `lsig_size` hints, and client-signed dummies are `foreign` context entries. This
-keeps the complete group in approval context and lets the signer's existing
-budget check reject client mis-sizing before algod evaluation.
+selected-path `lsig_resources`, and client-signed dummies are `foreign` context
+entries. This keeps the complete group in approval context and lets the signer
+reject client mis-sizing before algod evaluation.
 
 Finally, the client calls the user signer `/sign/assemble`. The assembly
 request verifies both component signatures against the local guarded account
@@ -1479,7 +1494,7 @@ contracts remain in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and
 
 See [ARCH_CRYPTO.md](ARCH_CRYPTO.md) for the provider and algorithm model.
 
-Key type identifiers use the canonical form `publisher.family.vN` for APlane-defined LogicSig, template, and compiled-provider key types, and the single-segment built-in `ed25519` for native signing keys. The full contract lives in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Key Type Identifier Contract).
+Key type identifiers use the canonical form `publisher.family.vN` for APlane-defined LogicSig, template, and compiled-provider key types, and the single-segment built-ins `ed25519` and `falcon1024` for native signing keys. Native Falcon uses the `native_pq` authorization kind and top-level `SignedTxn.PQsig`; it is not part of the `aplane.falcon1024.*` LogicSig family. The full contract lives in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Key Type Identifier Contract).
 
 ## Keystore and Key Lifecycle
 
@@ -1502,7 +1517,8 @@ A scan:
 
 - requires an open keyring,
 - decrypts keys sufficiently to discover address, type, category, the
-  post-signing LogicSig program+args size budget, and stored signing metadata,
+  structured LogicSig program/argument/opcode resource profile, and stored
+  signing metadata,
 - populates a cache of `address -> KeyScanInfo`,
 - is the foundation for the signer’s runtime key indexes.
 
@@ -1623,8 +1639,10 @@ The repo uses:
   `keytype_inventory_test.go` pins the bundled key-type inventory;
   `managed_credential_files_test.go` pins managed credential extension
   ownership; `witness_boundary_test.go` pins witness custody and signing
-  boundaries; and `generation_storage_test.go` pins the no-hardlink rule and
+  boundaries; `generation_storage_test.go` pins the no-hardlink rule and
   store-owning package inventory from ARCH_GENERATIONS;
+  `store_permissions_test.go` pins the audited shared-mode allowlist and keeps
+  legacy group-bearing modes out of signer-store writers;
   `kdf_confinement_test.go` pins key-derivation, raw-term-key, test-fixture,
   and historical-term boundaries,
 - the opt-in `test/storeintegration` process harness, invoked through
@@ -1683,6 +1701,11 @@ guards:
   Docker network. It verifies local install layout, shared LocalNet
   reachability, SSH token provisioning, client signer reachability, guarded
   signing, and corridor allowlist enforcement across the Docker network.
+- `make docker-fnet-test` runs the same installed signer, sentry, and
+  client/admin topology against the public FNet algod. Funding transactions
+  are authorized on the host by the protocol-native Falcon account in
+  `TEST_FUNDING_MNEMONIC`; the mnemonic is not copied into a container or
+  persisted in generated node configuration.
 - `make docker-local-release-test` runs the same topology and assertions using
   published GitHub APlane release assets plus the PyPI and npm SDK packages.
 
@@ -1692,10 +1715,17 @@ long-running LocalNet transaction coverage and
 
 The integration harness behavior is part of the effective repository contract:
 
-- `make integration-test` requires
-  `APLANE_INTEGRATION_NETWORK=testnet|localnet`, and fails closed when the
-  profile is absent or invalid; `make integration-test-testnet` and
-  `make integration-test-localnet` are the convenience targets,
+- `make integration-test` requires an explicit TestNet, LocalNet, or FNet
+  profile and fails closed when the profile is absent or invalid;
+  `make integration-test-testnet`, `make integration-test-localnet`, and
+  `make integration-test-fnet` are the convenience targets,
+- `TEST_FUNDING_MNEMONIC` has one authorization meaning on every integration
+  network: it is a protocol-native Falcon-1024 recovery mnemonic; the harness
+  adds the native-PQ fee contribution before group IDs and emits structured
+  `PQsig` envelopes for direct fixture transactions,
+- LocalNet setup uses a KMD Ed25519 account only as a bootstrap source for a
+  disposable funded native Falcon account; TestNet/FNet use an operator-supplied
+  funded native Falcon account and therefore require a v42-capable network,
 - `make integration-test` regenerates the shared test fixture and `.env.test` before running the suite,
 - the shared fixture lives under `/tmp/aplane-test-env`,
 - the generated signer fixture uses a private runtime directory with `ipc_path: run/aplane.sock`,
@@ -1798,9 +1828,20 @@ Architecturally:
 11. Product UI/docs are single-operator.
 12. Registry lookup does not own runtime lifecycle; runtime decommission is the stop signal for in-flight work.
 13. File mutations and watcher reloads for one identity share the same per-identity mutation lock.
-14. Pure shell binaries register only client-safe providers; binaries that own admin, store mutation, or local signer composition (`apsigner`, `apconsole`, `apadmin`, `apstore`) additionally register the signer-side keygen, sign, and mnemonic registries through `lsig/signerreg.RegisterSigner()` and `internal/signing/ed25519.RegisterSigner()`.
+14. Pure shell binaries register only client-safe providers; binaries that own
+    admin, store mutation, or local signer composition (`apsigner`, `apconsole`,
+    `apadmin`, `apstore`) additionally register signer-side keygen, sign, and
+    mnemonic capabilities through `lsig/signerreg.RegisterSigner()`,
+    `internal/signing/ed25519/signerreg.RegisterSigner()`, and
+    `internal/signing/falcon1024/signerreg.RegisterSigner()`.
+    `cmd/apshell/deps_test.go` pins the client/signer registration boundary,
+    including native Falcon signer registration and operations.
 15. LogicSig key files are the signing authority: every signable LogicSig key file has versioned signing metadata (version 1 for non-bounded, version 2 for bounded). Signing and restore reject files without `signing_metadata_version` or with a metadata version/shape mismatch; templates and live providers are not consulted to reconstruct missing signing metadata.
-16. Every persisted LogicSig key file has an off-curve address. LogicSig key files without `salt_counter`, or whose stored bytecode derives an on-curve LogicSig address, are rejected on load.
+16. Every persisted LogicSig key file has an off-curve address. Stored bytecode
+    that derives an on-curve LogicSig address is rejected on load. Legacy
+    empty/`manual_counter` derivations require `salt_counter`;
+    `algod_v13_auto_salt` derivations must omit it and carry final TEAL v13+
+    bytecode plus a valid `lsig_opcode_profile`.
 
 ## Architectural Seams
 
@@ -1853,14 +1894,15 @@ Product-level boundaries:
 | Client | `cmd/apshell/main.go`, `internal/apshellcli/registry.go`, `internal/apshellcli/mcp.go`, `internal/apshellcli/status_poll.go`, `internal/shellrepl/*.go` |
 | Client Enrollment / Remote Preflight | `internal/clientenroll/preflight.go`, `cmd/apconsole/preflight.go`, `cmd/apadmin/remote.go` |
 | Shell App | `internal/apshellapp/app.go`, `internal/apshellapp/runtime.go`, `internal/apshellapp/connect.go` |
-| Engine | `internal/engine/engine.go`, `internal/engine/core.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go`, `internal/engine/guarded/submit.go` |
+| Engine | `internal/engine/engine.go`, `internal/engine/core.go`, `internal/engine/consensus.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go`, `internal/engine/guarded/submit.go` |
 | Signing | `internal/signerapp/signing/service.go`, `internal/signerapp/signing/planner.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/execution.go`, `internal/signerapp/signing/approval.go` |
+| Native Signature Providers | `internal/signing/ed25519`, `internal/signing/falcon1024/address.go`, `internal/signing/falcon1024/register.go`, `internal/signing/falcon1024/signerreg/*.go`, `internal/signing/falcon1024/signerops/*.go`, `internal/falconparams/params.go` |
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/*.go`, `internal/backup/*.go` |
 | Store Ownership / Permissions | `internal/storeperm/*.go`, `internal/fsutil/perms.go`, `internal/fsutil/durable.go`, `internal/adminipc/path.go`, `cmd/apstore/permissions.go`, `docs/ARCH_STORE_OWNERSHIP.md` |
 | Store Integration Harness | `test/storeintegration/*.go`, `internal/testcheckpoint/*.go`, `Makefile` (`store-lifecycle-test`, `store-crash-test`, `store-release-drill`) |
-| LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `library/templates/aplane.corridor.v1.yaml`, `lsig/sentryaccount/sentryaccount.go`, `internal/boundedadmin/message/message.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
+| LSig Providers / Resource Planning | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/lsigresource/consensus.go`, `internal/lsigresource/solver.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/native_pq_fee.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `library/templates/aplane.corridor.v1.yaml`, `lsig/sentryaccount/sentryaccount.go`, `internal/boundedadmin/message/message.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
 | LocalNet Setup | `cmd/aplocalnet/main.go`, `internal/aplocalnet/setup.go`, `plugins/algokit-localnet/algokit-localnet.go`, `plugins/algokit-localnet/manifest.json` |

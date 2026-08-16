@@ -12,7 +12,7 @@ package jsapi
 
 import (
 	"fmt"
-	"math"
+	"strings"
 
 	"github.com/dop251/goja"
 
@@ -586,15 +586,34 @@ func (a *API) jsPlan(call goja.FunctionCall) goja.Value {
 		if v, ok := m["signedTxnHex"].(string); ok {
 			requests[i].SignedTxnHex = v
 		}
-		if v, ok := m["lsigSize"]; ok {
-			val, err := toUint64Interface(v)
-			if err != nil {
-				panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: invalid lsigSize: %v", i+1, err)))
+		if v, exists := m["pqScheme"]; exists {
+			scheme, ok := v.(string)
+			if !ok || strings.TrimSpace(scheme) == "" {
+				panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: pqScheme must be a non-empty string", i+1)))
 			}
-			if val > uint64(math.MaxInt) {
-				panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: invalid lsigSize: value exceeds max int", i+1)))
+			requests[i].PQScheme = scheme
+		}
+		if v, ok := m["lsigResources"]; ok {
+			resources, ok := v.(map[string]interface{})
+			if !ok {
+				panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: lsigResources must be an object", i+1)))
 			}
-			requests[i].LsigSize = int(val)
+			read := func(name string) uint64 {
+				value, exists := resources[name]
+				if !exists {
+					panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: lsigResources.%s is required", i+1, name)))
+				}
+				parsed, err := toUint64Interface(value)
+				if err != nil {
+					panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: invalid lsigResources.%s: %v", i+1, name, err)))
+				}
+				return parsed
+			}
+			requests[i].LsigResources = &signerapi.LogicSigResourceUsage{
+				ProgramBytes:  read("programBytes"),
+				ArgumentBytes: read("argumentBytes"),
+				MaxOpcodeCost: read("maxOpcodeCost"),
+			}
 		}
 		if v, ok := m["lsigArgs"].(map[string]interface{}); ok {
 			args := make(map[string]string, len(v))
@@ -606,6 +625,9 @@ func (a *API) jsPlan(call goja.FunctionCall) goja.Value {
 				args[k] = s
 			}
 			requests[i].LsigArgs = args
+		}
+		if err := requests[i].Validate(); err != nil {
+			panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: %v", i+1, err)))
 		}
 	}
 

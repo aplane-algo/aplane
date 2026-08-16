@@ -17,6 +17,7 @@
 // - display_name: Human-readable name
 // - description: Short description for UI
 // - display_color: ANSI color code (optional)
+// - max_opcode_cost: Optional absolute opcode ceiling; omission uses one member
 // - parameters: List of parameter definitions
 // - teal: TEAL source with @variable substitution
 package generictemplate
@@ -38,6 +39,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
@@ -191,6 +193,7 @@ type YAMLTemplate struct {
 // Compile-time check that YAMLTemplate implements Template
 var _ genericlsig.Template = (*YAMLTemplate)(nil)
 var _ genericlsig.SaltedTemplate = (*YAMLTemplate)(nil)
+var _ lsigprovider.OpcodeProfileProvider = (*YAMLTemplate)(nil)
 
 // NewYAMLTemplate creates a new YAMLTemplate from a spec.
 func NewYAMLTemplate(spec *TemplateSpec) *YAMLTemplate {
@@ -217,6 +220,11 @@ func (t *YAMLTemplate) DisplayColor() string {
 
 // Category returns the LSig category (generic_lsig for templates).
 func (t *YAMLTemplate) Category() string { return lsigprovider.CategoryGenericLsig }
+
+// LogicSigOpcodeProfile returns the template author's required reviewed ceiling.
+func (t *YAMLTemplate) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return t.spec.LogicSigOpcodeProfile(false)
+}
 
 // RuntimeArgs returns runtime arguments needed at signing time.
 func (t *YAMLTemplate) RuntimeArgs() []lsigprovider.RuntimeArgDef {
@@ -380,6 +388,13 @@ func (t *YAMLTemplate) CompileWithSalt(ctx context.Context, params map[string]st
 	if err != nil {
 		return lsigsalt.FindResult{}, err
 	}
+	if style == lsigsalt.StyleAlgodAutoSalt {
+		autoSalted, err := lsigsalt.UseCompilerAutoSalted(bytecode, result.Hash)
+		if err != nil {
+			return lsigsalt.FindResult{}, fmt.Errorf("failed to validate compiler-auto-salted LogicSig: %w", err)
+		}
+		return autoSalted, nil
+	}
 	if style == lsigsalt.StyleNone {
 		unsalted, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
 		if err != nil {
@@ -411,12 +426,8 @@ func (t *YAMLTemplate) applySaltAnchor(teal string) (string, error) {
 		return "", err
 	}
 	switch style {
-	case lsigsalt.StyleNone:
+	case lsigsalt.StyleNone, lsigsalt.StyleAlgodAutoSalt:
 		return teal, nil
-	case lsigsalt.StylePushbytes:
-		return prependSaltPreamble(teal), nil
-	case lsigsalt.StyleTrailingBytecblock:
-		return appendSaltTrailer(teal)
 	default:
 		return "", fmt.Errorf("generic template derivation does not support salt style %q", style)
 	}
@@ -424,91 +435,14 @@ func (t *YAMLTemplate) applySaltAnchor(teal string) (string, error) {
 
 // SaltStyleForDerivationVersion maps template derivation contracts to their
 // concrete salt anchor. It is shared by generic and composed YAML templates;
-// Go-defined providers still choose their style directly in code.
+// Go-defined providers still choose their style directly in code. Only the
+// TEAL v13 auto-salt contract survives; templatestore.ValidateBase rejects the
+// retired versions before a template reaches this point.
 func SaltStyleForDerivationVersion(version int) (lsigsalt.Style, error) {
-	switch version {
-	case templatestore.DerivationVersionPushbytes:
-		return lsigsalt.StylePushbytes, nil
-	case templatestore.DerivationVersionTrailingBytecblock:
-		return lsigsalt.StyleTrailingBytecblock, nil
-	default:
-		return "", fmt.Errorf("derivation_version %d is not supported", version)
+	if version == templatestore.DerivationVersionAlgodAutoSalt {
+		return lsigsalt.StyleAlgodAutoSalt, nil
 	}
-}
-
-func prependSaltPreamble(teal string) string {
-	lines := strings.Split(strings.TrimSpace(teal), "\n")
-	insertAt := saltPreambleInsertIndex(lines)
-
-	out := make([]string, 0, len(lines)+2)
-	out = append(out, lines[:insertAt]...)
-	out = append(out, "// Salt byte, patched post-compilation to avoid ed25519-curve addresses.")
-	out = append(out, saltPreambleLines()...)
-	out = append(out, "")
-	out = append(out, lines[insertAt:]...)
-	return strings.TrimSpace(strings.Join(out, "\n"))
-}
-
-func appendSaltTrailer(teal string) (string, error) {
-	trimmed := strings.TrimSpace(teal)
-	if !endsWithUnconditionalExit(trimmed) {
-		return "", fmt.Errorf("derivation_version %d requires template TEAL to end with return or err before the trailing salt block", templatestore.DerivationVersionTrailingBytecblock)
-	}
-	trailer, err := lsigsalt.StyleTrailingBytecblock.SourceTrailer()
-	if err != nil {
-		return "", err
-	}
-	out := []string{
-		trimmed,
-		"",
-		"// Salt byte, patched post-compilation to avoid ed25519-curve addresses.",
-		strings.TrimSuffix(trailer, "\n"),
-	}
-	return strings.TrimSpace(strings.Join(out, "\n")), nil
-}
-
-func endsWithUnconditionalExit(teal string) bool {
-	lines := strings.Split(teal, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(stripTEALComment(lines[i]))
-		if line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		return len(fields) == 1 && (fields[0] == "return" || fields[0] == "err")
-	}
-	return false
-}
-
-func saltPreambleLines() []string {
-	preamble, err := lsigsalt.StylePushbytes.SourcePreamble()
-	if err != nil {
-		panic("generictemplate: invalid salt style: " + err.Error())
-	}
-	return strings.Split(strings.TrimSuffix(preamble, "\n"), "\n")
-}
-
-func saltPreambleInsertIndex(lines []string) int {
-	insertAt := 0
-	if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[0]), "#pragma ") {
-		insertAt = 1
-	}
-
-	sawConstantBlock := false
-	for insertAt < len(lines) {
-		trimmed := strings.TrimSpace(lines[insertAt])
-		if strings.HasPrefix(trimmed, "intcblock ") || strings.HasPrefix(trimmed, "bytecblock ") {
-			sawConstantBlock = true
-			insertAt++
-			continue
-		}
-		if sawConstantBlock && trimmed == "" {
-			insertAt++
-			continue
-		}
-		break
-	}
-	return insertAt
+	return "", fmt.Errorf("derivation_version %d is not supported", version)
 }
 
 // loadTemplatesFrom loads YAML templates from the given filesystem, skipping
@@ -716,13 +650,7 @@ func ValidateSpec(spec *TemplateSpec) error {
 	if err := ValidateTemplateSpecMode(spec); err != nil {
 		return err
 	}
-	if spec.DerivationVersion != nil &&
-		*spec.DerivationVersion == templatestore.DerivationVersionTrailingBytecblock &&
-		!endsWithUnconditionalExit(spec.TEAL) {
-		return fmt.Errorf("derivation_version %d requires template TEAL to end with return or err before the trailing salt block", templatestore.DerivationVersionTrailingBytecblock)
-	}
-
-	return nil
+	return spec.ValidateOpcodeCostDeclaration()
 }
 
 // ValidateRelocatableTEAL rejects user-authored constant-block layout. APlane
@@ -906,6 +834,7 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 	type canonicalSpec struct {
 		DerivationVersion int                                `json:"derivation_version,omitempty"`
+		MaxOpcodeCost     uint64                             `json:"max_opcode_cost,omitempty"`
 		TemplateMode      string                             `json:"template_mode,omitempty"`
 		TemplateVariables []tealtemplate.TemplateVariable    `json:"template_variables,omitempty"`
 		TEAL              string                             `json:"teal"`
@@ -940,6 +869,7 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
 		DerivationVersion: fingerprintDerivationVersion(spec),
+		MaxOpcodeCost:     spec.LogicSigOpcodeProfile(false).Default,
 		TemplateMode:      EffectiveTemplateMode(spec),
 		TemplateVariables: spec.TemplateVariables,
 		TEAL:              strings.TrimSpace(spec.TEAL),

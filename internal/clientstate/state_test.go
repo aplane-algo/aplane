@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -233,15 +234,21 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	state := New("testnet")
 	original := &state.SignerCache
 
-	state.PopulateSignerCache([]signerapi.KeyInfo{{
+	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
 		Address:                "ADDR1",
 		KeyType:                "aplane.falcon1024-sentry1024.v1",
 		SentryComponentKeyType: "aplane.witness-falcon1024.v1",
-		LsigSize:               1500,
+		LogicSigResources: &signerapi.LogicSigResourceProfile{
+			Spend:         &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
+			SpendingRekey: &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
+			AdminRekey:    &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
+		},
 		Parameters: map[string]string{
 			"sentry_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
 		},
-	}})
+	}}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 	if &state.SignerCache != original {
 		t.Fatal("PopulateSignerCache replaced SignerCache storage; existing completer pointers would go stale")
 	}
@@ -254,11 +261,13 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	if got, ok := original.SentryComponentKeyTypeForAddress("ADDR1"); !ok || got != "aplane.witness-falcon1024.v1" {
 		t.Fatalf("sentry component key type = %q/%v, want cached value", got, ok)
 	}
-	if got := original.GetLsigSize("ADDR1"); got != 1500 {
-		t.Fatalf("lsig size = %d, want 1500", got)
+	if profile, ok := original.LogicSigResourceProfile("ADDR1"); !ok || profile.Spend == nil || profile.Spend.ArgumentBytes != 1_423 {
+		t.Fatalf("LogicSig resources = %+v/%v, want cached spend profile", profile, ok)
 	}
 
-	state.PopulateSignerCache(nil)
+	if err := state.PopulateSignerCache(nil); err != nil {
+		t.Fatalf("PopulateSignerCache(nil) error = %v", err)
+	}
 	if original.Count() != 0 {
 		t.Fatalf("original pointer count after empty populate = %d, want 0", original.Count())
 	}
@@ -269,7 +278,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 
 func TestPopulateSignerCacheReadsBoundedSentryMetadata(t *testing.T) {
 	state := New("testnet")
-	state.PopulateSignerCache([]signerapi.KeyInfo{{
+	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
 		Address: "BOUNDED", KeyType: "aplane.custom-bounded-sentry.v1",
 		SigningFlow:            signerapi.SigningFlowBoundedSentry1,
 		SentryComponentKeyType: "aplane.witness-falcon1024.v1",
@@ -277,7 +286,9 @@ func TestPopulateSignerCacheReadsBoundedSentryMetadata(t *testing.T) {
 			MaxFee: 10_000,
 			Sentry: &signerapi.BoundedSentryAuthorizationInfo{PublicKeyHex: "abcd"},
 		},
-	}})
+	}}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 	if got, ok := state.SignerCache.SentryPublicKeyForAddress("BOUNDED"); !ok || got != "abcd" {
 		t.Fatalf("bounded sentry public key = %q/%v", got, ok)
 	}
@@ -286,6 +297,41 @@ func TestPopulateSignerCacheReadsBoundedSentryMetadata(t *testing.T) {
 	}
 	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("BOUNDED"); !ok || got != 10_000 {
 		t.Fatalf("bounded max fee = %d/%v", got, ok)
+	}
+}
+
+func TestPopulateSignerCacheRejectsMalformedLogicSigResourcesWithoutMutation(t *testing.T) {
+	state := New("testnet")
+	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{Address: "GOOD", KeyType: "ed25519"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := state.PopulateSignerCache([]signerapi.KeyInfo{{
+		Address: "BAD", KeyType: "aplane.falcon1024.v1",
+		LogicSigResources: &signerapi.LogicSigResourceProfile{
+			Default: &signerapi.LogicSigResourceUsage{ProgramBytes: 0, MaxOpcodeCost: 20_000},
+		},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "program_bytes must be greater than zero") {
+		t.Fatalf("PopulateSignerCache() error = %v, want invalid program_bytes", err)
+	}
+	if !state.SignerCache.HasAddress("GOOD") || state.SignerCache.HasAddress("BAD") {
+		t.Fatalf("signer cache mutated after invalid inventory: %+v", state.SignerCache.Keys)
+	}
+}
+
+func TestPopulateSignerCacheRejectsInconsistentLogicSigProgramBytes(t *testing.T) {
+	state := New("testnet")
+	err := state.PopulateSignerCache([]signerapi.KeyInfo{{
+		Address: "BAD", KeyType: "test.bounded.v1",
+		LogicSigResources: &signerapi.LogicSigResourceProfile{
+			Spend:         &signerapi.LogicSigResourceUsage{ProgramBytes: 100, MaxOpcodeCost: 20_000},
+			SpendingRekey: &signerapi.LogicSigResourceUsage{ProgramBytes: 101, MaxOpcodeCost: 20_000},
+			AdminRekey:    &signerapi.LogicSigResourceUsage{ProgramBytes: 100, MaxOpcodeCost: 20_000},
+		},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("PopulateSignerCache() error = %v, want inconsistent program_bytes", err)
 	}
 }
 

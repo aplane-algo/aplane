@@ -6,11 +6,13 @@ package apshellcli
 import (
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/manifest"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/signing"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 )
 
 func init() {
@@ -27,6 +29,13 @@ func TestProvidersAreRegistered(t *testing.T) {
 }
 
 func TestRegisterProvidersIsClientOnly(t *testing.T) {
+	metadata, err := algorithm.GetMetadata(nativefalcon.KeyType)
+	if err != nil {
+		t.Fatalf("apshell has no client-safe native Falcon metadata: %v", err)
+	}
+	if metadata.AuthorizationKind() != algorithm.AuthorizationNativePQ {
+		t.Fatalf("native Falcon authorization kind = %q", metadata.AuthorizationKind())
+	}
 	if got := signing.GetRegisteredFamilies(); len(got) != 0 {
 		t.Fatalf("apshell registered signer-side signing providers: %v", got)
 	}
@@ -43,5 +52,17 @@ func TestRegisterProvidersIsClientOnly(t *testing.T) {
 	}
 	if len(m.SigningProviders) != 0 {
 		t.Fatalf("apshell manifest should not expose signer-side providers: %v", m.SigningProviders)
+	}
+	foundNativeFalcon := false
+	for _, info := range m.AlgorithmMetadata {
+		if info.Family == nativefalcon.KeyType {
+			foundNativeFalcon = true
+			if info.AuthorizationKind != string(algorithm.AuthorizationNativePQ) {
+				t.Fatalf("native Falcon manifest authorization kind = %q", info.AuthorizationKind)
+			}
+		}
+	}
+	if !foundNativeFalcon {
+		t.Fatal("apshell manifest omitted native Falcon metadata")
 	}
 }

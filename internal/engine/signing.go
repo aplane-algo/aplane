@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 )
@@ -15,11 +16,12 @@ import (
 // It carries the raw key type; presentation of a human-readable label is the
 // UI layer's concern, not the engine's.
 type SigningContext struct {
-	Address     string // Resolved address (the account)
-	SigningAddr string // Auth address (may differ if rekeyed)
-	KeyType     string // e.g., "ed25519", "aplane.falcon1024.v1", "aplane.htlc.v1"
-	SigSize     int    // Crypto signature size (for fee calculation), 0 for ed25519 and generic lsigs
-	IsLSig      bool   // true for LSig-based accounts (DSA or generic)
+	Address           string // Resolved address (the account)
+	SigningAddr       string // Auth address (may differ if rekeyed)
+	KeyType           string // e.g., "ed25519", "aplane.falcon1024.v1", "aplane.htlc.v1"
+	SigSize           int    // Crypto signature size (for fee calculation), 0 for ed25519 and generic lsigs
+	IsLSig            bool   // true for LSig-based accounts (DSA or generic)
+	AuthorizationKind algorithm.AuthorizationKind
 }
 
 // BuildSigningContext builds a complete signing context using the
@@ -106,15 +108,25 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 		keyType = "ed25519" // Default to ed25519 if not specified
 	}
 
-	// Determine if this is an LSig type (anything other than ed25519)
-	isLSig := keyType != "ed25519"
+	// Unknown non-Ed25519 types preserve the compatibility assumption that
+	// they are LogicSigs. Registered metadata is authoritative for known types,
+	// including native Falcon, which is neither Ed25519 nor a LogicSig.
+	authorizationKind := algorithm.AuthorizationLogicSig
+	if keyType == "ed25519" {
+		authorizationKind = algorithm.AuthorizationEd25519
+	}
+	if meta, err := algorithm.GetMetadata(keyType); err == nil {
+		authorizationKind = meta.AuthorizationKind()
+	}
+	isLSig := authorizationKind == algorithm.AuthorizationLogicSig
 
 	return &SigningContext{
-		Address:     address,
-		SigningAddr: signingAddr,
-		KeyType:     keyType,
-		SigSize:     logicsigdsa.GetCryptoSignatureSize(keyType), // 0 for ed25519 and generic lsigs
-		IsLSig:      isLSig,
+		Address:           address,
+		SigningAddr:       signingAddr,
+		KeyType:           keyType,
+		SigSize:           logicsigdsa.GetCryptoSignatureSize(keyType), // 0 for ed25519 and generic lsigs
+		IsLSig:            isLSig,
+		AuthorizationKind: authorizationKind,
 	}, nil
 }
 

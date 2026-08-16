@@ -23,7 +23,7 @@ func (splitSignatureOps) DisplayColor() string     { return "" }
 func (splitSignatureOps) BuildVerifyTEAL([]byte) (string, error) {
 	return "txn TxID\narg 0\narg 1\n", nil
 }
-func (splitSignatureOps) TEALVersion() int { return 12 }
+func (splitSignatureOps) TEALVersion() int { return 13 }
 func (splitSignatureOps) BuildSignatureArgs(signature []byte) ([][]byte, error) {
 	if len(signature) != 64 {
 		return nil, fmt.Errorf("signature length %d, want 64", len(signature))

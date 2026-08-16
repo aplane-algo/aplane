@@ -255,7 +255,7 @@ func validateBaseImportableSchema(base templatestore.BaseTemplateSpec, templateM
 	if strings.TrimSpace(templateMode) == "" {
 		return fmt.Errorf("template_mode is required")
 	}
-	return nil
+	return base.ValidateOpcodeCostDeclaration()
 }
 
 func InstallParsed(paths storepaths.Paths, identityID string, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {

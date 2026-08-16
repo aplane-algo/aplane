@@ -29,6 +29,7 @@ func (a *API) jsKeyTypes(call goja.FunctionCall) goja.Value {
 			"family":            kt.Family,
 			"displayName":       kt.DisplayName,
 			"description":       kt.Description,
+			"authorizationKind": kt.AuthorizationKind,
 			"requiresLogicSig":  kt.RequiresLogicSig,
 			"mnemonicWordCount": kt.MnemonicWordCount,
 			"mnemonicImport":    kt.MnemonicImport,

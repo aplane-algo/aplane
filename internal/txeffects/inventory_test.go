@@ -85,8 +85,9 @@ func TestIndependentInventoryClassifiesEveryAVMField(t *testing.T) {
 
 func TestIndependentInventoryMatchesPinnedSDKSurface(t *testing.T) {
 	inventory := readProtocolInventory(t)
-	if inventory.GoAlgorandSDK != "github.com/algorand/go-algorand-sdk/v2 v2.11.0" {
-		t.Fatalf("go_algorand_sdk = %q, want pinned v2.11.0", inventory.GoAlgorandSDK)
+	const pinnedSDK = "github.com/algorand/go-algorand-sdk/v2 v2.11.2-0.20260731180711-967fcacfacdf"
+	if inventory.GoAlgorandSDK != pinnedSDK {
+		t.Fatalf("go_algorand_sdk = %q, want %q", inventory.GoAlgorandSDK, pinnedSDK)
 	}
 
 	wantTypes := make([]string, 0, len(inventory.TransactionTypes))

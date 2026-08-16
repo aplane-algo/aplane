@@ -26,7 +26,11 @@ entirely after local client review. Top-level `localSigners` is unsupported and
 rejected. See [Plugin Group Modes](#plugin-group-modes) below and
 [ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the plugin protocol.
 
-**Group immutability rule**: Pre-grouped transactions (group ID already set) are always immutable. The server will not add dummies, adjust fees, or recompute the group ID. If a pre-grouped group has insufficient LogicSig budget, the request is rejected. Clients that need server-side canonicalization must submit ungrouped transactions.
+**Group immutability rule**: Pre-grouped transactions (group ID already set)
+are always immutable. The server will not add dummies, adjust fees, or
+recompute the group ID. If a pre-grouped group has insufficient LogicSig
+resources or aggregate fee, the request is rejected. Clients that need
+server-side canonicalization must submit ungrouped transactions.
 
 > **Approval semantics**: "Group" means 2+ client-requested transactions. Server-added dummies do not convert a single-transaction request into group approval mode.
 
@@ -75,7 +79,7 @@ signature = falcon.Sign(privateKey, messageBytes)
 On-chain TEAL verification:
 ```teal
 txn TxID          // Push transaction ID (32 bytes)
-arg 0             // Push signature (1280 bytes)
+arg 0             // Push signature (variable, at most 1,423 bytes)
 byte 0x<pubkey>   // Push public key (1793 bytes)
 falcon_verify     // Verify: returns 1 if valid
 ```
@@ -86,7 +90,7 @@ falcon_verify     // Verify: returns 1 if valid
 
 - **Ed25519**: Signs full message for SDK compatibility. The Algorand SDK expects signatures over `"TX"` + msgpack.
 - **Falcon-1024**: Signs the transaction ID (32 bytes) because:
-  1. Falcon signatures are large (1280 bytes)—signing a 32-byte transaction ID is more efficient than signing the full preimage
+  1. Falcon signatures are large (up to 1,423 bytes)—signing a 32-byte transaction ID is more efficient than signing the full preimage
   2. TEAL provides `txn TxID` opcode for verification
   3. Because the transaction ID is itself derived from the canonical Algorand transaction encoding, signing the txid still commits to the full transaction contents
 
@@ -174,9 +178,9 @@ type SignRequest struct {
     AuthAddress  string            `json:"auth_address,omitempty"`  // Which key to use for signing
     TxnSender    string            `json:"txn_sender,omitempty"`    // Transaction sender (for display)
     TxnBytesHex  string            `json:"txn_bytes_hex,omitempty"` // TX + msgpack(txn)
-    LsigArgs     map[string]string `json:"lsig_args,omitempty"`     // Runtime args for generic LSigs
-    LsigSize     int               `json:"lsig_size,omitempty"`     // LSig size hint for foreign txns
-    AppCallInfo  *AppCallInfo      `json:"app_call_info,omitempty"` // Optional approval metadata
+    LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs
+    LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign/passthrough selected-path resources
+    AppCallInfo   *AppCallInfo            `json:"app_call_info,omitempty"`  // Optional approval metadata
 
     // Passthrough mode field
     SignedTxnHex string `json:"signed_txn_hex,omitempty"` // Already-signed txn (msgpack, hex)
@@ -193,14 +197,22 @@ type AppCallInfo struct {
 `/plan` and `/sign` accept three mutually exclusive per-entry modes:
 
 - **Sign** — `auth_address` + `txn_bytes_hex`. The server signs the entry with its key.
-- **Passthrough** — `signed_txn_hex`. The entry is already signed elsewhere and is preserved byte-for-byte. Requires a pre-formed group ID.
-- **Foreign** — `txn_bytes_hex` without `auth_address`. The entry is part of the group for canonicalization, policy context, and approval rendering, but is never signed by this signer. The optional `lsig_size` hint reserves LogicSig budget for the foreign party's key type.
+- **Passthrough** — `signed_txn_hex`. The entry is already signed elsewhere
+  and is preserved byte-for-byte. It requires a pre-formed group ID. A
+  passthrough LogicSig also requires `lsig_resources`; the signer checks its
+  declared program/argument bytes against the envelope and uses the reviewed
+  opcode ceiling for planning.
+- **Foreign** — `txn_bytes_hex` without `auth_address`. The entry is part of
+  the group for canonicalization, policy context, and approval rendering, but
+  is never signed by this signer. Optional `lsig_resources` declares
+  `program_bytes`, `argument_bytes`, and `max_opcode_cost` for the foreign
+  party's selected LogicSig authorization path.
 
 Both or neither → error. Passthrough and foreign are mutually exclusive within
 one request. Passthrough supplies already-signed bytes and preserves them
 byte-for-byte; foreign entries are unsigned context and still participate in
-decoding, group consistency, approval rendering, and LogicSig-budget math
-through `lsig_size` hints. Foreign mode can be used with ungrouped requests the
+decoding, group consistency, approval rendering, and LogicSig-resource math
+through `lsig_resources` hints. Foreign mode can be used with ungrouped requests the
 server canonicalizes, or with already pre-grouped requests that have sufficient
 budget.
 
@@ -216,7 +228,7 @@ type GroupSignResponse struct {
 }
 
 type MutationReport struct {
-    DummiesAdded     int    `json:"dummies_added,omitempty"`     // Dummy txns added for LSig budget
+    DummiesAdded     int    `json:"dummies_added,omitempty"`     // Dummy txns added for LSig resources
     GroupIDChanged   bool   `json:"group_id_changed,omitempty"`  // Group ID was computed/recomputed
     FeesModified     []int  `json:"fees_modified,omitempty"`     // Indices of fee-modified txns (0-based)
     TotalFeesDelta   int    `json:"total_fees_delta,omitempty"`  // Total fee increase (microAlgos)
@@ -231,8 +243,11 @@ type MutationReport struct {
 The `Signed` array maps 1:1 to the finalized group positions. Signable and passthrough entries contain pre-assembled signed transaction bytes. Foreign entries are returned as empty strings `""` because they contributed to canonicalization but were not signed by this signer. Server-added dummy transactions are appended to the array.
 
 The `Mutations` field provides observability into server modifications:
-- **Dummies**: If `dummies_added > 0`, the server added dummy transactions to meet LogicSig byte budget requirements
-- **Fees**: The `fees_modified` array lists which transactions had their fees increased to cover dummy transaction costs
+- **Dummies**: If `dummies_added > 0`, the server added dummy transactions to
+  meet LogicSig argument or opcode requirements.
+- **Fees**: The `fees_modified` array lists transactions whose fees increased
+  to meet the final group's aggregate consensus fee, including transaction
+  bases, priced LogicSig program bytes, and native-PQ contributions.
 - **Group ID**: If `group_id_changed` is true, the server computed a new group ID for an ungrouped request. Pre-grouped transactions remain immutable; requests that would require dummy insertion into a pre-grouped group are rejected.
 - **Passthrough**: If `passthrough_count > 0`, some transactions were pre-signed and included as-is
 - **Foreign**: This count is useful on both `/plan` and `/sign`. On `/sign`, foreign entries remain in the request as context-only slots and return `""` in the aligned `signed[]` response.
@@ -262,8 +277,12 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
    - If the input is already pre-grouped and immutable, the server preserves that shape.
    - If the input is ungrouped, the server computes the canonical grouped form.
 
-5. Calculate LogicSig budget and append dummies if required.
-   - This applies to sign-mode entries and to foreign entries that provide `lsig_size`.
+5. Resolve the active consensus profile, calculate LogicSig resources, and
+   append dummies if required.
+   - This applies to sign-mode entries, foreign entries that provide
+     `lsig_resources`, and passthrough LogicSigs whose declaration is required.
+   - On v42, only pooled arguments and opcode capacity can require dummies;
+     excess program bytes contribute to the group fee instead.
    - If dummy insertion would exceed Algorand's maximum group size, the request is rejected.
 
 6. Pool or adjust fees if required by the finalized group.
@@ -381,7 +400,10 @@ Passthrough mode enables multi-party signing scenarios where some transactions i
 
 1. **Pre-grouped required**: Passthrough transactions require a pre-set group ID. The server cannot add dummies or modify the group without invalidating existing signatures.
 
-2. **Group structure is fixed**: When passthrough is used, the server trusts the pre-formed group is complete and does not calculate dummy requirements.
+2. **Group structure is fixed**: The server calculates the complete resource
+   requirement for a passthrough group but cannot change it. If the declared
+   LogicSig resource demand requires more dummies than the immutable group
+   already contains, planning rejects before additional signatures are released.
 
 3. **Approval context still applies**: All transactions (including passthrough) still contribute to approval context, warning analysis, and audit visibility. Even though passthrough bytes are not modified, their decoded transaction contents are still part of the reviewed group.
 
@@ -404,7 +426,7 @@ That allows clients to move from planning to signing without rewriting the reque
 1. Construct the intended multi-party group shape.
 
 2. Plan: One party sends all intended transactions to /plan with any needed
-   `lsig_size` hints for foreign slots.
+   `lsig_resources` hints for foreign slots.
    The signer returns the finalized canonical group with dummies, fees, and
    group ID.
 
@@ -430,13 +452,20 @@ That allows clients to move from planning to signing without rewriting the reque
     },
     {
       "txn_bytes_hex": "545800...",
-      "lsig_size": 1700
+      "lsig_resources": {
+        "program_bytes": 1800,
+        "argument_bytes": 1423,
+        "max_opcode_cost": 20000
+      }
     }
   ]
 }
 ```
 
-The second entry has `txn_bytes_hex` but no `auth_address` — this is a foreign transaction. The optional `lsig_size` hint (in bytes) tells the server how much LogicSig budget to reserve for the foreign party's key type, enabling correct dummy calculation.
+The second entry has `txn_bytes_hex` but no `auth_address` — this is a foreign
+transaction. Its optional `lsig_resources` object tells the server the exact
+final-program length and reviewed argument/opcode ceilings for the selected
+authorization path, enabling consensus-correct dummy and fee calculation.
 
 ### Response
 
@@ -463,10 +492,10 @@ The second entry has `txn_bytes_hex` but no `auth_address` — this is a foreign
 
 3. **Policy applies to signer-controlled slots**: Hard policy linting runs only on signer-controlled transactions. Foreign slots are part of planning and approval context, but are not hard-rejected by the signer's policy engine.
 
-4. **`lsig_size` is advisory for generic foreign entries**: An estimated final
-   LogicSig serialized size in bytes, used only for dummy-budget planning. The
-   server trusts the hint. Guarded mixed-group clients provide accurate hints
-   for guarded foreign entries so client and server budget calculations stay in
+4. **`lsig_resources` is advisory for generic foreign entries**: It is a
+   structured selected-path declaration used for dummy and program-fee
+   planning. The server trusts the hint. Guarded mixed-group clients provide
+   signer-advertised values so client and server resource calculations stay in
    parity; incorrect hints can cause early pre-grouped rejection or later algod
    failure.
 
@@ -493,11 +522,13 @@ submission. APlane never signs with plugin-supplied secret keys.
 `groupMode:"presign-plan"` generalizes the mixed-signing shape for plugin-owned
 signers whose key material cannot be exported. The plugin emits an unsigned
 draft plus `pluginSigners`; apshell sends plugin-owned slots to `/plan` as
-foreign entries with optional `lsig_size` hints, verifies `/plan` preserved all
+foreign entries with `lsig_resources` for LogicSig slots, verifies `/plan` preserved all
 original fields except `Group` and `Fee`, calls the plugin's `signTransactions`
 callback over the canonical bytes, then submits a `/sign` request with
-plugin-signed slots as passthrough and managed slots in sign mode. This is the
-path used when plugin LogicSigs need pooled opcode/byte budget.
+plugin-signed slots as passthrough and managed slots in sign mode. Apshell
+verifies the returned authorization class and observable LogicSig sizes match
+the declaration, then retains the declaration on the final passthrough request.
+This is the path used when plugin LogicSigs need pooled opcode/byte budget.
 
 `groupMode:"pregrouped-signed"` is the all-plugin signed case. The plugin
 returns already-signed, already-grouped bytes; apshell validates the embedded
@@ -519,9 +550,9 @@ entries from `signed_txn_hex`. Decoded transactions are checked for group
 consistency, recognized genesis network, overlapping validity windows,
 passthrough's pre-grouped requirement, and the presence of at least one
 signable entry under the authenticated identity. Dummy calculation runs next
-(skipped for passthrough groups) and enforces the maximum group size and
-pre-grouped immutability; if dummies are needed, the planner creates them,
-adjusts fees, and recomputes the group ID. The finalized group passes through
+and enforces the maximum group size and pre-grouped immutability; if dummies are
+needed for an immutable passthrough/pre-grouped group, it rejects. Otherwise
+the planner creates them, adjusts fees, and recomputes the group ID. The finalized group passes through
 hard policy linting, forced-review policy, explicit auto-approval, and then
 either group-mode or single-transaction operator approval (or the
 `user_auto_approve:true` operator-default shortcut).
@@ -616,7 +647,7 @@ Server receives: { auth_address, txn_bytes_hex }
 | Aspect | Value |
 |--------|-------|
 | Message signed | 32-byte transaction ID |
-| Signature size | ~1280 bytes (Falcon-1024) |
+| Signature size | variable, at most 1,423 bytes (Falcon-1024) |
 | Signature location | `LogicSig.Args[0]` |
 | TEAL verifier | Embedded in `LogicSig.Logic` |
 
@@ -687,25 +718,30 @@ The live template is not consulted at sign time.
 
 ## Dummy Transactions and Fee Pooling
 
-Post-quantum signatures (e.g., Falcon ~1280 bytes) exceed Algorand's 1000-byte LogicSig budget per transaction. The server automatically adds dummy transactions to provide additional budget.
+Post-quantum signatures (e.g., Falcon up to 1,423 bytes) exceed Algorand's 1,000-byte LogicSig argument allowance per transaction. The server automatically adds dummy transactions when the active consensus resource rules require them.
 
 ### How It Works
 
 1. Server analyzes transactions to identify LogicSig DSA signers
-2. Calculates total LogicSig budget needed
-3. Creates dummy self-payment transactions to provide extra budget
-4. Adds dummy fees to the LogicSig transaction fees, split across identified LogicSig participants when possible (dummies have fee=0)
-   These fees are added to existing transaction fees and are not netted
-   against any caller-supplied fee pool.
-5. Computes group ID across all transactions (main + dummies)
-6. Signs and returns the complete group
+2. Resolves the selected path's program, argument, and opcode resources.
+3. Solves the smallest consensus-valid group and creates required resource
+   dummy self-payments.
+4. Computes one aggregate fee requirement across the final group, crediting
+   caller-supplied fees and assigning any deficit only to mutable signer slots.
+5. Computes the group ID across the fee-finalized transactions.
+6. Approves, signs, and returns the complete group.
 
 ### Example
 
-For 1 Falcon transaction (1280-byte signature):
-- Budget needed: 1280 bytes
-- Budget per txn: 1000 bytes
-- Dummies needed: `ceil(1280/1000) - 1 = 1`
+For one Falcon transaction planned at the 1,423-byte signature ceiling under
+v42:
+
+- the individual argument allowance is 1,000 bytes;
+- argument pooling therefore applies;
+- the group must contain at least two transactions;
+- program bytes are priced only if the final group's free program pool is
+  insufficient; and
+- the opcode ceiling must also fit `2 * 20,000`.
 
 The server returns 2 signed transactions: the main transaction + 1 dummy.
 
@@ -713,7 +749,7 @@ The server returns 2 signed transactions: the main transaction + 1 dummy.
 
 The server may modify transactions (add dummies, adjust fees, compute group ID) depending on the input format and whether large LogicSigs are involved:
 
-| Input | Large LSig? | Dummies Added | Fees Modified | Group ID Modified |
+| Input | Needs more resources/fees? | Dummies Added | Fees Modified | Group ID Modified |
 |-------|-------------|---------------|---------------|-------------------|
 | Single ungrouped txn | No | No | No | No (stays empty) |
 | Single ungrouped txn | Yes | Yes | Yes | Yes (new group ID) |
@@ -724,7 +760,10 @@ The server may modify transactions (add dummies, adjust fees, compute group ID) 
 | Multiple pre-grouped txns | No | No | No | No (preserved) |
 | Multiple pre-grouped txns | Yes | **Rejected** | **Rejected** | **Rejected** |
 
-**Pre-grouped transactions are immutable.** If they require additional dummies for LogicSig budget, the request is rejected — the client must submit ungrouped transactions instead so the server can canonicalize the group. Pre-grouped groups are only accepted if they already have sufficient LogicSig budget.
+**Pre-grouped transactions are immutable.** If they require additional dummies
+or fees, the request is rejected — the client must submit ungrouped transactions
+instead so the server can canonicalize the group. Pre-grouped groups are only
+accepted if they already have sufficient LogicSig resources and aggregate fee.
 
 ### Modified Transaction Consistency
 
@@ -763,7 +802,10 @@ The following runtime and policy settings affect server behavior:
 | `max_asa_amounts` | `identities/<identity>/policy.yaml` | unset | Reject ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset ceiling. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
 | `key_overrides` | `identities/<identity>/policy.yaml` | unset | YAML-only sparse policy overrides. Signer-domain overrides are keyed by signing auth address; sentry-domain overrides are keyed by Witness Key ID. Unset fields inherit identity-wide policy, and nested overrides are rejected. |
 
-**Pre-grouped immutability**: Pre-grouped transactions are always immutable. If they require additional dummies for LogicSig budget, the request is rejected. Clients should submit ungrouped transactions to let the server canonicalize the group.
+**Pre-grouped immutability**: Pre-grouped transactions are always immutable. If
+they require additional resource dummies or fees, the request is rejected.
+Clients should submit ungrouped transactions to let the server canonicalize the
+group.
 
 Signing behavior is governed by hard-reject safety policy, warnings, and approval.
 
@@ -903,7 +945,7 @@ ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
 | Aspect | Ed25519 | LogicSig DSA | Generic LogicSig |
 |--------|---------|--------------|------------------|
 | **What server signs** | Full txn bytes | 32-byte transaction ID | N/A |
-| **Signature size** | 64 bytes | ~1280 bytes (Falcon) | N/A |
+| **Signature size** | 64 bytes | variable, at most 1,423 bytes (Falcon) | N/A |
 | **Needs dummies** | No | Yes (if sig > 1000 bytes) | No |
 | **Runtime args** | No | Optional for composed DSA | Optional |
 | **Authorization** | Signature verification | TEAL verifies sig | TEAL logic only |

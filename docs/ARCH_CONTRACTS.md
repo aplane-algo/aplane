@@ -66,6 +66,9 @@ Every protocol, config, key file, template, and key type state field named
 Canonical forms:
 
 - native Ed25519 is the single-segment built-in `ed25519`
+- native Falcon-1024 is the single-segment built-in `falcon1024`. It is a
+  protocol-native post-quantum account and is distinct from every
+  `aplane.falcon1024.*` LogicSig key type
 - APlane-defined LogicSig, template, and compiled-provider key types use
   `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
   decimal version, for example `aplane.falcon1024.v1`,
@@ -164,7 +167,7 @@ compatibility-bearing; such keys must be recreated. The canonical profile and
 goldens below, including the optional-sentry presence encoding, establish the
 v1 baseline.
 
-Bounded1 uses TEAL v12 and admits only pure payments, pure asset transfers,
+Bounded1 uses TEAL v13 and admits only pure payments, pure asset transfers,
 asset opt-ins, plus an optional pure `pay` rekey. Asset opt-in is a distinct
 effect (`AssetAmount == 0` and `AssetReceiver == Sender`), so permission to
 transfer assets does not implicitly permit opting into one. Every path requires
@@ -192,7 +195,7 @@ u32(admin_operation_count) ||
 field(kind) || field(authorization) || field(policy_gate) per admin operation in rekey order ||
 u32(sentry_present) ||
 if present: field("sentry1") || field("aplane.witness-falcon1024.v1") ||
-u32(1280) || u32(1) || field("spend") ||
+u32(1423) || u32(1) || field("spend") ||
 field(layer3_policy) ||
 u32(base_signature_arg_count) || u32(each base maximum) ||
 u32(derived_arg_count) || field/name/kind/parameter/maximum records ||
@@ -220,7 +223,8 @@ runtime values do not. A sentry-enabled profile does include its injected
 path masks are part of the canonical profile above.
 
 The sole bounded1 contract admin primitive is Falcon-1024. Its public key is
-exactly 1,793 bytes and its signature is non-empty and at most 1,280 bytes. The
+exactly 1,793 bytes and its deterministic compressed signature is non-empty
+and at most 1,423 bytes. The
 `contract_admin_key_id` field carries the uppercase unpadded base32 Witness Key
 ID of the enrolled admin witness:
 
@@ -284,10 +288,10 @@ Contract Admin Key ID:
 MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
-23aebf3166f64d6a0e6467d0fde647191094907f733c60fb946129d7cc828509
+bddc0ee16bac8ebad4519c1f138bbfc87e94817fc1d68119f310567fb98e5001
 
 admin_message:
-324dfa8eee495b7f4ddaa67f640c906184beb49abfd304d1336be233e84998b6
+dc6c476953d76d3fcea7ace82ef90624b170fa6aed699988d381ce790a613ce1
 ```
 
 Argument slots are statically ordered as base signatures, signer-derived Layer
@@ -313,6 +317,13 @@ rejects wrong-source, oversized, missing, forbidden, hybrid, disabled, and
 profile-fee-invalid requests. Every non-spend bounded path carries the unconditional stable rule
 `bounded_admin_operation_requires_review` into the approval gate before blanket
 or self-no-op autoapproval.
+
+The ordinary client `/sign` submission path independently validates the
+returned mutation report before sending bytes to algod. Original positions may
+change only through reported fee increases and group-ID assignment; the client
+recomputes the final canonical group ID and reconstructs appended resource
+dummies, including their embedded LogicSig authorization. Unreported body
+changes and inconsistent reports are rejected locally.
 
 Schema-v1 composed YAML rejects `bounded`; schema v2 requires it. Every schema
 version rejects unknown and duplicate fields at every level. Bounded reserves
@@ -605,9 +616,10 @@ Client config is loaded from `config.yaml` under the resolved data directory.
 It supports optional `schema_version: 1`; absent means v1 for existing configs,
 and unsupported versions fail during load.
 Installer-written client configs include `networks` entries for `testnet`,
-`mainnet`, and `localnet`, but restrict `networks_allowed` to `mainnet` and
-`testnet` by default; existing configs are left unchanged if the installer is
-pointed at a supported in-place upgrade target.
+`mainnet`, `fnet`, and `localnet`, but restrict `networks_allowed` to `mainnet`,
+`testnet`, and `fnet` by default; existing configs are left unchanged if the
+installer is pointed at a supported in-place upgrade target. The FNet entry is
+an installer-configured custom network context, not a built-in reserved token.
 Unknown YAML fields are rejected by the Go loader with guidance that the file
 may have been written by a newer version or may contain a typo.
 
@@ -651,8 +663,9 @@ Loaded from `-d <path>` or `APSIGNER_DATA`.
 It supports optional `schema_version: 1`; absent means v1 for existing configs,
 and unsupported versions fail during load.
 Installer-written signer configs include `networks` entries for `testnet`,
-`mainnet`, and `localnet`; existing configs are left unchanged if the installer
-is pointed at a supported in-place upgrade target.
+`mainnet`, `fnet`, and `localnet`. The FNet entry pins its public algod endpoint
+and genesis hash; existing configs are left unchanged if the installer is
+pointed at a supported in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader with guidance that the file
 may have been written by a newer version or may contain a typo.
 
@@ -1046,19 +1059,28 @@ Additional client-state notes:
 - remote `apadmin` has the same client enrollment prerequisite as `apconsole`: it requires a default signer endpoint, the endpoint token, and a trusted signer host in the endpoint `known_hosts_path`; it does not prompt for first-use host trust
 - shared non-interactive client-enrollment preflight lives in `internal/clientenroll/preflight.go` and is used by `apshell --mcp`, remote-mode `apconsole`, and remote `apadmin`
 - tombstones suppress locally deleted proposals for that local actor
-- cache files are signed JSON with a per-client `.cache_key` and are local, rebuildable client state; the signed envelope has `version: 1`, and versioned cache payloads carry `schema_version: 1`; a missing payload version is interpreted as v1
+- cache files are signed JSON with a per-client `.cache_key` and are local,
+  rebuildable client state. The signed envelope has `version: 1`; alias, set,
+  ASA, and auth-address payloads carry `schema_version: 1`, while
+  `signer_cache.json` carries `schema_version: 2` for structured LogicSig
+  resources. A missing payload version is interpreted as v1. The signer cache
+  therefore rejects a missing or v1 payload and rebuilds it from authenticated
+  signer inventory without invalidating unrelated client caches.
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
   inventory. It may persist address key types, generic-LogicSig flags,
-  `lsig_sizes`, key-file signing argument schemas, `signing_flows`,
-  `sentry_component_key_types`, and `sentry_public_keys`. `lsig_sizes` is the
-  signer-advertised spend-path post-signing LogicSig program+args budget used
-  for dummy planning and foreign `lsig_size` hints: bytecode plus cryptographic
-  signature args and any runtime or signer-generated args such as proof
-  material. For bounded accounts it excludes the contract-admin signature slot:
-  only the `/sign/bounded-admin` choreography attaches that signature, and the
-  signer's own planner reserves its bytes when budgeting an admin-key rekey
-  (the stored `post_signing_lsig_size` metadata field remains
-  admin-inclusive). For guarded signing, clients route on `signing_flows`; a cached
+  structured `logic_sig_resources`, key-file signing argument schemas,
+  `signing_flows`, `sentry_component_key_types`, and `sentry_public_keys`.
+  Each LogicSig resource profile keeps final compiled program bytes separate
+  from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
+  Bounded profiles expose spend, spending-rekey, and admin-rekey paths from the
+  durable argument layout; no combined program-plus-arguments scalar is stored.
+  Covered APlane-owned declarations are exercised by the integration
+  opcode-ceiling gate: production-generated final bytecode and maximum-input
+  accepted paths are simulated by the same algod selected by the signer fixture's
+  `teal_compile_network`, and its nonzero `logic-sig-budget-consumed` result
+  must not exceed the persisted declaration. This validates the selected path
+  ceiling, not the feasibility of every assembled group.
+  For guarded signing, clients route on `signing_flows`; a cached
   built-in guarded key type with missing flow or sentry metadata is only a
   stale-cache signal that triggers `/keys` refresh before route selection.
 - persisted alias and set names are canonicalized to lowercase by
@@ -1639,7 +1661,7 @@ Policy load behavior:
 Both managed classes use the same encrypted envelope and canonical payload
 schema. Their extension is fixed by payload category:
 
-- `.key`: `ed25519`, `dsa_lsig`, and `generic_lsig` account authority,
+- `.key`: `ed25519`, `native_pq`, `dsa_lsig`, and `generic_lsig` account authority,
   selected by a 58-character Algorand address;
 - `.sen`: `witness` authority assigned to sentry custody, selected by a
   52-character Witness Key ID.
@@ -1658,13 +1680,15 @@ Managed credential files carry:
 Categories:
 
 - native signing keys,
+- protocol-native post-quantum signing keys (`native_pq`),
 - DSA-backed LogicSig keys,
 - generic LogicSig template instances,
 - signer-custodied witness keys serving the sentry role (durable category
   `witness`; used only through sentry-role `/sign/component`).
 
-Generic LogicSig entries contain salted bytecode, `salt_counter`, and
-parameters rather than a private signing key.
+Generic LogicSig entries contain final compiler bytecode, derivation metadata,
+and parameters rather than a private signing key. Current compiler-auto-salted
+entries omit the legacy `salt_counter`.
 
 Bounded account key files retain category `dsa_lsig`, base key type, stored
 bytecode, creation parameters, and signing metadata version 2. The injected
@@ -1680,14 +1704,67 @@ LogicSig bytecode is stored only in `lsig_bytecode`. The durable payload does
 not store a separately trusted address, template name, entropy, derivation
 record, or runtime-argument metadata under `runtime_args`.
 
+Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`,
+`pq_scheme: "f1"`, and a required numeric `pq_address_salt` in `0..255`.
+The public key is exactly 1793 bytes and the private key exactly 2305 bytes.
+The salt is the lowest byte whose
+`SHA512/256("PQA" || "f1" || salt || public_key)` address is not an
+Ed25519 curve point. Its 25-word Algorand mnemonic encodes 32 bytes of
+recovery entropy; the Falcon working seed is
+`SHA512/256("PQK" || "f1" || entropy)`. Recovery entropy is never persisted.
+Native Falcon authorization occupies top-level `SignedTxn.PQsig`, never
+`SignedTxn.Sig` or `SignedTxn.Lsig`, and contributes `2e6` fixed-point fee
+units in addition to the transaction's ordinary `1e6` base factor. This
+APlane release implements the v42 authorization contract; clients reject an
+algod that reports another contract before constructing transactions and
+refresh the check before executable signing or submission workflows.
+The signer derives this authorization budget from local key metadata or a
+passthrough `PQsig`. An unsigned foreign native-PQ slot in `/plan` or `/sign`
+declares `pq_scheme: "f1"`; this hint is mutually exclusive with the structured
+`lsig_resources` hint used by foreign LogicSig slots. A signed passthrough
+LogicSig must also carry `lsig_resources`: apsigner verifies the declared
+program and argument byte counts against the immutable envelope and uses the
+declared reviewed opcode ceiling. It rejects a missing declaration, a size
+mismatch, or `lsig_resources` on a non-LogicSig passthrough rather than guessing
+an opcode cost. The retired combined
+`lsig_size` HTTP field is rejected explicitly rather than silently discarded.
+
+`aplane.falcon1024.v1` remains a LogicSig DSA with a 24-word BIP-39 mnemonic
+and TEAL authorization, but its pre-release derivation moved in place to TEAL
+v13 compiler auto-salting. Neither mnemonic nor stored key material is
+interchangeable with native `falcon1024`.
+
+LogicSig program sizing and native-PQ contributions are consensus-defined.
+This release compiles exactly one reviewed contract, v42, into the signer.
+`internal/lsigresource` owns that closed consensus profile and the pure
+fixed-point group/resource solver. `internal/signerapp/signing` selects and
+validates per-slot authorization usages, invokes the solver, and applies its
+resource result to canonical group and fee planning.
+
+`/plan` and `/sign` never query a per-network algod. The client owns ordinary
+transaction fee selection through its algod SuggestedParams response and
+validates that response as v42-compatible (`fnet5` is the explicit FNet alias).
+First-party planning and executable workflows refresh this check before asking
+apsigner to plan, releasing signatures, or submitting, including JavaScript
+`plan()`, prebuilt transaction signing, plugin pre-sign callbacks, guarded
+signing, bounded-admin partial signing, and verbatim pregrouped
+submission/simulation. The apsigner `/plan` endpoint itself remains independent
+of a client algod.
+The signer rejects an ordinary fee deficit, then adds only authorization-
+induced requirements: resource-dummy base fees, priced LogicSig program bytes,
+and native-PQ contributions. The signer's separately configured compile algod
+remains responsible only for template compilation/simulation workflows.
+
 This document uses **versioned signing-metadata keys** for key files that carry
 `signing_metadata_version >= 1`. Non-bounded LogicSig keys use version 1;
 bounded keys require version 2. LogicSig key payloads include:
 
 - `signing_metadata_version` — required; key files lacking it are rejected for
   signing and restore
-- `salt_counter` — required; the single-byte counter used to select the stored
-  off-curve LogicSig bytecode/address
+- `lsig_derivation` — the derivation contract for final stored bytecode;
+  current bundled keys use `algod_v13_auto_salt`
+- `salt_counter` — present only for legacy APlane-salted derivations; absent
+  for compiler-auto-salted bytecode
 - `signing_args` — optional; the signing-time arg schema in TEAL argument
   order, represented internally by `internal/signingargs.Info`; absent and
   empty are equivalent and mean the key takes no runtime args
@@ -1719,12 +1796,12 @@ Bounded signing-metadata version 2 additionally requires the canonical
 - `admin_public_key`, `admin_key_id`, and `program_binding` when an operation
   uses `authorization: admin_key`; the key ID must derive from that public key,
   and the public key must equal `parameters.bounded_admin_public_key`
-- `post_signing_lsig_size`: exact stored bytecode size plus every slot maximum;
-  path-specific sizing subtracts slots forbidden on the selected path
+- the final stored bytecode plus `argument_layout` and the durable opcode
+  profile are the independent sources for program, argument, and opcode budgets
 
 Bounded payloads with metadata version 1, non-bounded payloads with metadata
 version 2, unknown nested fields, duplicate object members, invalid or
-colliding argument declarations, or inconsistent size/admin metadata are
+colliding argument declarations, or inconsistent admin metadata are
 rejected. Backup and restore preserve the object unchanged.
 
 Stored LogicSig bytecode and stored signing metadata are authoritative for
@@ -1751,9 +1828,10 @@ Key address identity is derived from key material, not from signing metadata:
 
 Fields such as `signing_args`, `signing_metadata_version`, `base_key_type`,
 and `template_fingerprint` are signing/provenance metadata, not address
-derivation inputs. `salt_counter` records the byte already embedded in stored
-LogicSig bytecode; changing the metadata field alone does not rederive or
-change the key address.
+derivation inputs. For legacy derivations, `salt_counter` records a value
+already embedded in stored LogicSig bytecode; changing metadata alone never
+rederives or changes the key address. For compiler-auto-salted keys, the final
+stored bytecode itself is the complete address authority.
 
 Signer scanning binds accepted authority to the category-sensitive canonical
 filename:
@@ -1772,44 +1850,26 @@ for the same selector even with `overwrite:true`; an exact canonical destination
 is replaced only when overwrite is explicit.
 
 Every persisted LogicSig key file must derive an off-curve LogicSig address.
-Signer load, key scanning, backup verify, and restore reject LogicSig key
-payloads that omit `salt_counter` or whose stored bytecode derives an on-curve
-address.
+Signer load, key scanning, backup verify, and restore reject an on-curve
+program or a payload whose derivation metadata does not match its bytecode.
 
 LogicSig salting is a generation-time contract:
 
-- Salt anchor style is a versioned provider/template derivation contract, not a
-  wire field. Template-backed programs with omitted `derivation_version` do not
-  reserve a generated salt slot; the signer compiles the template as written
-  and accepts it only if the unmodified bytecode already derives an off-curve
-  LogicSig address. Template-backed programs with `derivation_version: 1` use a
-  stack-neutral generated marker preamble
-  (`byte 0x41504c414e455f4c5349475f53414c545f56315f005f454e44; pop`) so
-  algod can own constant-block layout. Template-backed programs with
-  `derivation_version: 2` use a trailing dead-code `bytecblock 0x00` salt
-  anchor. Provider-owned bare DSA versions may explicitly choose a reference
-  layout such as a fixed `bytecblock 0x00` preamble.
-- Salt-style assignments: generic and composed templates with omitted
-  `derivation_version` are unsalted, generic and composed templates with
-  `derivation_version: 1` use the generated marker, generic and composed
-  templates with `derivation_version: 2` use the trailing dead-code
-  `bytecblock`, `aplane.falcon1024.v1` uses the Algorand Foundation
-  reference-compatible fixed `bytecblock` preamble, and
-  `aplane.ed25519.v1` uses a fixed `bytecblock` preamble.
-- After algod compilation, salted providers patch the selected byte through
-  counter values `0..255` and persist the first compiled bytecode whose LogicSig
-  address is off-curve. Unsalted template providers perform no patching and
-  fail generation if the unmodified address is on-curve.
-- Bytecblock-style providers must verify the expected preamble immediately
-  after the TEAL version varint; they must not scan arbitrary bytecode for a
-  matching byte sequence. Template-backed marker style must locate exactly one
-  generated marker and must not match generic `pushbytes 0x00`.
-- `salt_counter` records the selected byte for salted providers. It remains
-  required on disk for LogicSig key files; unsalted template-derived keys store
-  `0` as compatibility metadata. The field is not exposed through signer HTTP
-  DTOs or SDK DTOs.
-- The stored bytecode, not a live template or regenerated TEAL, is the
-  signing authority.
+- Current bundled providers and templates use TEAL v13 compiler auto-salting
+  (`derivation_version: 3` / `lsig_derivation: algod_v13_auto_salt`).
+- Algod returns the final program and address. APlane verifies that the address
+  matches those bytes and is off-curve, but does not reproduce the compiler's
+  deterministic salt search.
+- Program length and resource profiles are derived after auto-salting from the
+  exact final artifact.
+- Source-to-address goldens are pinned to the configured compiler toolchain;
+  runtime reproducibility comes from persisted final bytecode.
+- Manual-counter derivation remains parseable only for stored records that also
+  carry a valid reviewed opcode profile. Pre-profile development records are
+  rejected with regeneration guidance. New template-derived key types use
+  `derivation_version: 3`.
+- The stored bytecode, not a live template or regenerated TEAL, is the signing
+  authority.
 
 Templates are the source for generation, discovery, and new key creation;
 they are not consulted at sign time. `template_fingerprint` is provenance only:
@@ -1827,8 +1887,8 @@ consulted to reconstruct missing signing metadata.
 
 - A v1 signing-metadata LogicSig key file persists the TEAL bytecode and the
   signing-time argument contract captured at generation.
-- Generic LogicSig keys store bytecode, the `salt_counter` that selected the
-  off-curve address, and runtime argument schema.
+- Generic LogicSig keys store final bytecode, derivation metadata, and runtime
+  argument schema. Only legacy derivations carry `salt_counter`.
 - DSA-backed LogicSig keys additionally store `base_key_type`; that private
   signing primitive must be available because the signer must produce and pack
   the DSA signature. The field is not a claim that the base provider owns the
@@ -1979,6 +2039,9 @@ contains:
 
 - `schema_version`
 - `derivation_version` (optional; omitted means no generated salting)
+- `max_opcode_cost` (optional absolute reviewed worst-case LogicSig opcode
+  cost; omission resolves to the numeric 20,000 one-transaction default shared
+  by every currently supported consensus version; explicit zero is rejected)
 - `template_type` (`generic` or `composed`)
 - `base_key_type` (required for `composed`, rejected for `generic`)
 - `publisher`
@@ -2008,10 +2071,18 @@ Template capability notes:
 - omitted `derivation_version` compiles the template without a generated salt
   anchor and therefore succeeds only when the unmodified bytecode already
   derives an off-curve LogicSig address
-- `derivation_version: 1` uses the generated `pushbytes; pop` marker,
-  and `derivation_version: 2` uses the trailing dead-code `bytecblock` salt
-  anchor; new template-derived key types that need reliable generation should
-  use `derivation_version: 2`
+- the effective `max_opcode_cost` is compatibility-bearing for the final
+  compiled/autosalted program and must cover the worst permitted runtime
+  argument/value sizes; omission materializes and persists as 20,000, while an
+  explicit positive declaration is preserved as an absolute override and an
+  explicit zero is rejected
+- APlane's closed consensus contract tests require every supported profile to
+  retain `LogicSigMaxCost == 20,000` and `MaxTxGroupSize == 16`; supporting a
+  profile with different values requires revisiting this numeric default
+- `derivation_version: 3` uses compiler-owned TEAL v13 auto-salting and is the
+  only explicit contract accepted; the retired `derivation_version: 1`
+  (generated `pushbytes; pop` marker) and `derivation_version: 2` (trailing
+  dead-code `bytecblock` salt anchor) are rejected at template validation
 - `template_mode` is required for imported, installed, bundled, and library
   templates; templates without `template_mode` are rejected rather than
   interpreted
@@ -2296,7 +2367,7 @@ Always-review policy includes:
 
 Auto-approval policy includes:
 
-- `auto_approve_self_noop_transfer`: approve a single signer-controlled request without operator review only when the real transaction is either a 0 ALGO payment to self or a 0-unit ASA transfer to self, has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and its fee after subtracting signer-added dummy fees is at most 1000 microAlgos. Server-generated LogicSig-budget dummy transactions are allowed only when they use APlane's embedded dummy LogicSig address, match the real transaction's network and validity window, carry no fee, and the real transaction fee increase exactly covers those dummies. The ASA form may opt into an asset if the account does not already hold it.
+- `auto_approve_self_noop_transfer`: approve a single signer-controlled request without operator review only when the real transaction is either a 0 ALGO payment to self or a 0-unit ASA transfer to self, has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and its fee after subtracting signer-added dummy fees is at most 1000 microAlgos. Server-generated LogicSig-resource dummy transactions are allowed only when they use APlane's embedded dummy LogicSig address, match the real transaction's network and validity window, carry no fee, and the real transaction fee increase exactly covers those dummies. Priced program bytes and native-PQ fee contributions disable this narrow auto-approval. The ASA form may opt into an asset if the account does not already hold it.
 
 `user_auto_approve` is not an auto-approval policy rule. It is the per-identity
 fallback switch stored in identity config and shown in `apadmin` as
@@ -2422,8 +2493,9 @@ by `startup.WireReloadFunc` to `templates.ReloadService.Reload`. Its order is:
 Template installation and identity key-type state are resolved from key type
 state records before key scan so generation/discovery state is current. The key scan
 classifies generic LogicSig keys and exposes signing args directly from the
-v1 signing-metadata key payload. LogicSig key files missing `salt_counter` or
-whose bytecode derives an on-curve address are rejected during scan. LogicSig
+v1 signing-metadata key payload. LogicSig key files whose derivation metadata
+does not match their bytecode, or whose bytecode derives an on-curve address,
+are rejected during scan. LogicSig
 key files missing `signing_metadata_version` are rejected when signing or
 restoring would otherwise depend on missing durable signing metadata.
 
@@ -2448,6 +2520,13 @@ Identity filtering:
 - `/keytypes`, admin `list_key_types`, and key generation filter by the target identity's default-enabled key types plus enabled identity state records,
 - a globally registered generic/composed template that is not installed or enabled for an identity is not generatable by that identity,
 - existing keys remain isolated by identity keystore ownership; provider lookup only supplies compatible signing/derivation code for keys already owned by that identity.
+
+Key-type inventory carries an additive `authorization_kind` field whose closed
+values are `ed25519`, `native_pq`, and `logic_sig`. This field is authoritative
+for new clients that need to distinguish the consensus authorization envelope.
+The older `requires_logicsig` boolean remains present for compatibility and is
+true only for `logic_sig` entries. Clients must not infer that every false value
+means Ed25519; native Falcon-1024 also has `requires_logicsig:false`.
 
 `internal/signerapp/templates` reports this through a `ReloadReport` with:
 
@@ -2542,11 +2621,13 @@ apshell to sign arbitrary bytes on their behalf.
 - `algodUrl`
 - `algodToken`
 - optional `indexerUrl`
-- a `version` field containing the current APlane plugin protocol version
-  (`"1.0"`). It is distinct from the JSON-RPC protocol version (`"2.0"`), from
-  `manifest_format` (`"1.0"`), and from the plugin's semantic package version.
-  The plugin must echo the same value in `initialize.result.version`; mismatches
-  fail plugin startup.
+
+The host does not send its accepted plugin protocol identifier. A plugin must
+independently declare the hard-coded identifier `"aplane-plugin/2"` in
+`initialize.result.protocol`. A missing or different declaration fails plugin
+startup. The identifier is distinct from the JSON-RPC envelope version
+(`"2.0"`), from `manifest_format` (`"1.0"`), and from the plugin's semantic
+package version.
 
 `execute` carries:
 
@@ -2754,6 +2835,13 @@ Export:
    the export passphrase
 5. writes `apb/<selector>.apb`
 
+Standalone envelope version 2 fixes the Argon2id tuple at time 2, memory
+65,536 KiB, and parallelism 4. Readers reject omitted, partial, or altered KDF
+parameters before decoding the envelope body or invoking Argon2id; changing the
+tuple requires a new envelope version. Encoded standalone envelopes are limited
+to 1 MiB, and archive readers enforce that bound while reading each regular
+file rather than after an unbounded allocation.
+
 An all-credentials backup is fail-hard: if any selected active credential
 cannot be read, decrypted, canonicalized, or exported, no archive is
 published. It never silently reports a partial archive as a complete backup.
@@ -2933,12 +3021,14 @@ All SDKs communicate via the same HTTP REST API as `apshell`. Auth header is `Au
 Cross-SDK compatibility-bearing behavior:
 
 - concatenated-group and list-per-slot signing APIs are distinct supported shapes
-- passthrough semantics are first-class for final signing
+- passthrough semantics are first-class for final signing; passthrough
+  LogicSigs require selected-path `lsig_resources`, with observable sizes
+  checked against the signed envelope
 - high-level signing helpers return base64 payloads converted from server hex
 - `FromEnv` and connection helper path resolution are part of the product contract
 - SDK-native prepared transaction models carry unsigned transaction bytes plus
   signer metadata such as effective auth address, optional LogicSig args,
-  optional LogicSig size hints, optional app-call display metadata, and
+  optional selected-path LogicSig resource hints, optional app-call display metadata, and
   SDK-side preflight checks. Prepared groups preserve caller/apshell-equivalent
   transaction ordering before handoff to `/plan`, `/sign`, or the
   guarded component flow.
@@ -2961,8 +3051,8 @@ Cross-SDK compatibility-bearing behavior:
 - Guarded prepared signing is a special client-prep path because component
   signatures require canonical bytes before user and sentry signatures are
   requested. SDKs may mirror apshell's guarded client flow by classifying
-  guarded targets, sizing LogicSig-budget dummies from signer-advertised
-  `lsig_size` program+args budgets, fixing fees and group ID, signing
+  guarded targets, sending signer-advertised structured LogicSig resources to
+  `/plan`, accepting the signer's canonical dummies, fees, and group ID, signing
   dummy/passthrough slots locally, and then using `/sign/component` plus
   `/sign/assemble`. Final guarded assembly remains signer-owned. User-role
   `/sign/component` requests run the signer-domain approval gates and can
@@ -3087,7 +3177,7 @@ Proposal notes include:
 - `terms_hash`
 - `app_id`
 - proposer and acceptor legs
-- proposer LogicSig size
+- proposer selected-path LogicSig resource profile
 - expiry round
 - creation timestamp
 

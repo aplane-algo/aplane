@@ -16,6 +16,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -125,7 +126,7 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		guardedTargetsByIndex[target.Index] = target
 	}
 
-	plannedTxns, dummyTxns, err := s.planGuardedGroup(txns, targets, w)
+	plannedTxns, dummyTxns, err := s.planGuardedGroupWithSigner(opts.Ctx, txns, targets, opts, w)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -217,12 +218,69 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	return txIDs, submittedTxns, nil
 }
 
+// planGuardedGroupWithSigner makes the signer-side consensus planner the sole
+// authority for dummy membership, fee factors, and final group IDs. Guarded
+// positions are sign-mode here because /plan never signs or prompts; this lets
+// the signer use its exact stored path profile instead of trusting a client
+// approximation. The component-signing choreography begins only after these
+// returned bytes are frozen.
+func (s *Signer) planGuardedGroupWithSigner(ctx context.Context, txns []types.Transaction, targets []guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
+	targetsByIndex := make(map[int]guardedTarget, len(targets))
+	for _, target := range targets {
+		targetsByIndex[target.Index] = target
+	}
+	requests := make([]signerapi.SignRequest, len(txns))
+	for i, txn := range txns {
+		authorizer := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
+		if target, ok := targetsByIndex[i]; ok {
+			authorizer = target.Account
+		}
+		requests[i] = signerapi.SignRequest{
+			AuthAddress: authorizer,
+			TxnSender:   txn.Sender.String(),
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
+		}
+		if i < len(opts.LsigArgsMap) && opts.LsigArgsMap[i] != nil {
+			requests[i].LsigArgs = make(map[string]string, len(opts.LsigArgsMap[i]))
+			for name, value := range opts.LsigArgsMap[i] {
+				requests[i].LsigArgs[name] = hex.EncodeToString(value)
+			}
+		}
+		if i < len(opts.AppCallInfo) {
+			requests[i].AppCallInfo = opts.AppCallInfo[i]
+		}
+	}
+	response, err := s.conn.RequestGroupPlanWithContext(ctx, requests)
+	if err != nil {
+		return nil, nil, fmt.Errorf("guarded group planning failed: %w", err)
+	}
+	group, err := canonical.DecodeGroupHex(response.Transactions)
+	if err != nil {
+		return nil, nil, fmt.Errorf("signer returned invalid guarded group plan: %w", err)
+	}
+	planned := make([]types.Transaction, len(group.Entries))
+	for i, entry := range group.Entries {
+		planned[i] = entry.Txn
+	}
+	if err := validateBoundedComponentPlan(txns, planned, response.Mutations); err != nil {
+		return nil, nil, fmt.Errorf("invalid guarded group plan: %w", err)
+	}
+	dummies := append([]types.Transaction(nil), planned[len(txns):]...)
+	if len(dummies) > 0 && w != nil {
+		_, _ = fmt.Fprintf(w, "[GUARDED] Signer added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", len(dummies))
+	}
+	return planned, dummies, nil
+}
+
 func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targets []guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
 	targetsByIndex := make(map[int]guardedTarget, len(targets))
 	for _, target := range targets {
 		targetsByIndex[target.Index] = target
 	}
-	requests := s.buildBoundedComponentRequests(txns, targetsByIndex, opts)
+	requests, err := s.buildBoundedComponentRequests(txns, targetsByIndex, opts)
+	if err != nil {
+		return nil, nil, err
+	}
 	componentResp, err := s.conn.RequestBoundedComponentWithContext(opts.Ctx, signerapi.BoundedComponentRequest{Requests: requests})
 	if err != nil {
 		return nil, nil, fmt.Errorf("bounded base component signing failed: %w", err)
@@ -324,7 +382,7 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	return txIDs, submittedTxns, nil
 }
 
-func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions) []signerapi.SignRequest {
+func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions) ([]signerapi.SignRequest, error) {
 	requests := make([]signerapi.SignRequest, len(txns))
 	for i, txn := range txns {
 		txnHex := txnutil.EncodeWithPrefixHex(txn)
@@ -342,9 +400,12 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 			continue
 		}
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
-		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex, LsigSize: s.cache.LsigSize(effectiveSigner)}
+		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex}
+		if err := applyForeignAuthorizationHint(&requests[i], s.cache, effectiveSigner); err != nil {
+			return nil, fmt.Errorf("prepare foreign transaction %d: %w", i+1, err)
+		}
 	}
-	return requests
+	return requests, nil
 }
 
 // verifyAssembledAgainstFrozen pins the client's frozen-bytes invariant at the
@@ -454,7 +515,7 @@ func validateBoundedTargetFees(planned []types.Transaction, targets []guardedTar
 // requestNonGuardedSignatures signs the non-guarded original positions of a
 // mixed guarded group over the frozen canonical bytes, so every signature in
 // the group commits to the same final transaction IDs. Guarded targets and
-// dummies are sent as foreign — guarded with an lsig_size hint for the guarded
+// dummies are sent as foreign — guarded with an LogicSig resource hint for the guarded
 // authorizer so the signer's budget accounting stays exact and honest — and
 // only the non-guarded originals are signed; the guarded positions are
 // assembled later via /sign/assemble. Returns signed-transaction hex keyed by
@@ -462,7 +523,7 @@ func validateBoundedTargetFees(planned []types.Transaction, targets []guardedTar
 // it makes no signer call.
 // buildGroupSignRequests builds the per-position /sign request array for the
 // frozen guarded group: dummies as foreign placeholders, guarded targets as
-// foreign entries with lsig_size hints, and non-guarded originals in sign
+// foreign entries with LogicSig resource hints, and non-guarded originals in sign
 // mode. It returns the requests plus the non-guarded sign-mode indices.
 func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]guardedTarget, opts clientsign.SubmitOptions) ([]signerapi.SignRequest, []int, error) {
 	signRequests := make([]signerapi.SignRequest, len(plannedTxns))
@@ -472,17 +533,27 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 		switch {
 		case i >= originalCount:
 			// Dummy: foreign. Already signed locally and passed through at assembly.
-			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
+			signRequests[i] = signerapi.SignRequest{
+				TxnBytesHex: groupBytesHex[i],
+				LsigResources: &signerapi.LogicSigResourceUsage{
+					ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
+					MaxOpcodeCost: 1,
+				},
+			}
 		case guardedTargets[i].Account != "":
-			// Guarded target: foreign with an lsig_size hint. Kept in the group
+			// Guarded target: foreign with a LogicSig resource hint. Kept in the group
 			// for context and budget accounting but not signed here.
 			target := guardedTargets[i]
 			if target.Sender != sender {
 				return nil, nil, fmt.Errorf("guarded target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
 			}
-			signRequests[i] = signerapi.SignRequest{
-				TxnBytesHex: groupBytesHex[i],
-				LsigSize:    s.cache.LsigSize(target.Account),
+			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
+			path, err := guardedLogicSigResourcePath(target.Flow)
+			if err != nil {
+				return nil, nil, fmt.Errorf("guarded target %d: %w", i, err)
+			}
+			if err := applyForeignLogicSigPathHint(&signRequests[i], s.cache, target.Account, path); err != nil {
+				return nil, nil, fmt.Errorf("guarded target %d: %w", i, err)
 			}
 		default:
 			// Non-guarded original: sign mode over the canonical bytes. Resolve
@@ -508,6 +579,90 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 		}
 	}
 	return signRequests, nonGuarded, nil
+}
+
+func guardedLogicSigResourcePath(flow string) (lsigresource.AuthorizationPath, error) {
+	switch flow {
+	case "", signerapi.SigningFlowSentry1:
+		return lsigresource.PathDefault, nil
+	case signerapi.SigningFlowBoundedSentry1:
+		// Bounded component preparation admits only the pure-spend path. Carry
+		// that exact path into the later mixed-group /sign call rather than
+		// replacing it with the maximum across unrelated rekey paths.
+		return lsigresource.PathSpend, nil
+	default:
+		return 0, fmt.Errorf("unsupported guarded signing flow %q", flow)
+	}
+}
+
+func applyForeignLogicSigPathHint(request *signerapi.SignRequest, cache SignerCacheView, address string, path lsigresource.AuthorizationPath) error {
+	if request == nil || cache == nil {
+		return fmt.Errorf("LogicSig resource cache is unavailable")
+	}
+	profile, ok := cache.LogicSigResourceProfile(address)
+	if !ok {
+		return fmt.Errorf("LogicSig resource profile for %s is unavailable", address)
+	}
+	usage, err := profile.UsageForPath(path)
+	if err != nil {
+		return fmt.Errorf("resolve selected LogicSig resource path for %s: %w", address, err)
+	}
+	request.LsigResources = &signerapi.LogicSigResourceUsage{
+		ProgramBytes:  usage.ProgramBytes,
+		ArgumentBytes: usage.ArgumentBytes,
+		MaxOpcodeCost: usage.MaxOpcodeCost,
+	}
+	return nil
+}
+
+func applyForeignAuthorizationHint(request *signerapi.SignRequest, cache SignerCacheView, address string) error {
+	if request == nil || cache == nil {
+		return fmt.Errorf("signer cache is unavailable")
+	}
+	kind, present := cache.AuthorizationKind(address)
+	if !present {
+		return nil
+	}
+	if kind == "" {
+		return fmt.Errorf("authorization metadata for %s is unavailable", address)
+	}
+	if kind == authorizationNativePQ {
+		request.PQScheme = signerapi.PQSchemeFalcon1024
+		return nil
+	}
+	if kind != authorizationLogicSig {
+		return nil
+	}
+	profile, ok := cache.LogicSigResourceProfile(address)
+	if !ok {
+		return fmt.Errorf("LogicSig resource profile for %s is unavailable", address)
+	}
+	usage := conservativeLogicSigResourceUsage(profile)
+	if usage == nil {
+		return fmt.Errorf("LogicSig resource profile for %s is invalid", address)
+	}
+	request.LsigResources = usage
+	return nil
+}
+
+func conservativeLogicSigResourceUsage(profile lsigresource.Profile) *signerapi.LogicSigResourceUsage {
+	var argumentBytes, opcodeCost uint64
+	paths := []*lsigresource.PathProfile{profile.Default, profile.Spend, profile.SpendingRekey, profile.AdminRekey}
+	for _, path := range paths {
+		if path == nil {
+			continue
+		}
+		argumentBytes = max(argumentBytes, path.ArgumentBytes)
+		opcodeCost = max(opcodeCost, path.MaxOpcodeCost)
+	}
+	if profile.ProgramBytes == 0 || opcodeCost == 0 {
+		return nil
+	}
+	return &signerapi.LogicSigResourceUsage{
+		ProgramBytes:  profile.ProgramBytes,
+		ArgumentBytes: argumentBytes,
+		MaxOpcodeCost: opcodeCost,
+	}
 }
 
 func (s *Signer) requestNonGuardedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]guardedTarget, opts clientsign.SubmitOptions) (map[int]string, error) {
@@ -642,108 +797,6 @@ func shortSentryPublicKeyHex(publicKeyHex string) string {
 		return trimmed
 	}
 	return trimmed[:12] + "..." + trimmed[len(trimmed)-12:]
-}
-
-func (s *Signer) planGuardedGroup(txns []types.Transaction, targets []guardedTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
-	originalCount := len(txns)
-	planned := append([]types.Transaction(nil), txns...)
-	guardedTargets := make(map[int]guardedTarget, len(targets))
-	for _, target := range targets {
-		guardedTargets[target.Index] = target
-	}
-	// Size LogicSig budget across every LogicSig position, not just guarded
-	// ones: a mixed group can include non-guarded LogicSig senders (e.g. a
-	// plain falcon1024 account) that also consume program-size budget. The
-	// same indices later absorb the dummy fees in ApplyDummyFees.
-	//
-	// Non-guarded positions are budgeted against the effective signer (the auth
-	// address for rekeyed accounts), because that is the LogicSig that goes
-	// on-chain and the address the signer sizes budget against — keeping the
-	// client and server dummy counts in agreement. Guarded positions are
-	// budgeted against the guarded effective signer, because that is the
-	// LogicSig that goes on-chain as sender or AuthAddr.
-	lsigIndices := make([]int, 0, len(planned))
-	totalLsigBytes := 0
-	for i, txn := range planned {
-		sender := txn.Sender.String()
-		budgetAddr := s.authCache.ResolveEffectiveSigner(sender)
-		target, guarded := guardedTargets[i]
-		if guarded {
-			if target.Sender != sender {
-				return nil, nil, fmt.Errorf("guarded target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
-			}
-			budgetAddr = target.Account
-		}
-		size := s.cache.LsigSize(budgetAddr)
-		if guarded && size <= 0 {
-			return nil, nil, missingGuardedLsigSizeMessage(target)
-		}
-		if size > 0 {
-			totalLsigBytes += size
-			lsigIndices = append(lsigIndices, i)
-		}
-	}
-
-	currentBudget := len(planned) * signing.TxLsigBudget
-	dummiesNeeded := 0
-	if totalLsigBytes > currentBudget {
-		extraBudgetNeeded := totalLsigBytes - currentBudget
-		dummiesNeeded = (extraBudgetNeeded + signing.TxLsigBudget - 1) / signing.TxLsigBudget
-	}
-	if len(planned)+dummiesNeeded > 16 {
-		return nil, nil, fmt.Errorf("guarded group would be %d transactions (max 16) after adding %d LogicSig-budget dummies", len(planned)+dummiesNeeded, dummiesNeeded)
-	}
-
-	var empty types.Digest
-	isPreGrouped := planned[0].Group != empty
-	for i := range planned {
-		if isPreGrouped && planned[i].Group != planned[0].Group {
-			return nil, nil, fmt.Errorf("transaction %d has different group ID - request must contain single group", i+1)
-		}
-		if !isPreGrouped && planned[i].Group != empty {
-			return nil, nil, fmt.Errorf("transaction %d has group ID but transaction 1 does not - inconsistent grouping", i+1)
-		}
-	}
-	if isPreGrouped && dummiesNeeded > 0 {
-		return nil, nil, fmt.Errorf("pre-grouped guarded transactions require %d additional dummies for LogicSig budget but group is immutable", dummiesNeeded)
-	}
-
-	var dummyTxns []types.Transaction
-	if dummiesNeeded > 0 {
-		sp := suggestedParamsFromTxn(planned[0])
-		var err error
-		dummyTxns, err = signing.CreateDummyTransactions(dummiesNeeded, sp)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create guarded dummy transactions: %w", err)
-		}
-		if _, err := signing.ApplyDummyFees(planned, lsigIndices, dummiesNeeded, signing.DefaultMinFee); err != nil {
-			return nil, nil, fmt.Errorf("failed to adjust guarded transaction fees: %w", err)
-		}
-		if w != nil {
-			_, _ = fmt.Fprintf(w, "[GUARDED] Added %d dummy transaction(s) for LogicSig budget\n", dummiesNeeded)
-		}
-	}
-
-	planned = append(planned, dummyTxns...)
-	if len(planned) > 1 && (!isPreGrouped || dummiesNeeded > 0) {
-		for i := range planned {
-			planned[i].Group = types.Digest{}
-		}
-		if _, err := signing.AssignGroupID(planned); err != nil {
-			return nil, nil, err
-		}
-	}
-	if originalCount < len(planned) {
-		dummyTxns = append([]types.Transaction(nil), planned[originalCount:]...)
-	}
-	return planned, dummyTxns, nil
-}
-
-func missingGuardedLsigSizeMessage(target guardedTarget) error {
-	if target.Sender == target.Account {
-		return fmt.Errorf("guarded account %s is missing LogicSig size metadata; run keys refresh", target.Account)
-	}
-	return fmt.Errorf("guarded authorizer %s for sender %s is missing LogicSig size metadata; run keys refresh", target.Account, target.Sender)
 }
 
 func suggestedParamsFromTxn(txn types.Transaction) types.SuggestedParams {

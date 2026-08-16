@@ -1,9 +1,9 @@
 {
   "schema": "aplane.bounded-protocol-inventory.v1",
   "contract": "bounded1",
-  "teal_version": 12,
-  "go_algorand_sdk": "github.com/algorand/go-algorand-sdk/v2 v2.11.0",
-  "go_algorand_reference": "589c761a1cfc",
+  "teal_version": 13,
+  "go_algorand_sdk": "github.com/algorand/go-algorand-sdk/v2 v2.11.2-0.20260731180711-967fcacfacdf",
+  "go_algorand_reference": "68e036affd9e",
   "spend_effects": ["pay", "axfer", "asset_opt_in"],
   "sdk_transaction_fields": [
     "Type",

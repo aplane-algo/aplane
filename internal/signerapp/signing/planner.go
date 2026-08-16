@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -20,13 +21,17 @@ type AuditLogger interface {
 }
 
 type VerifySignableKeysFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
-type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, hasPassthrough, isPreGrouped bool) (dummiesNeeded int, lsigIndices []int, err *ServiceError)
+type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (resourcePlan lsigresource.Plan, lsigIndices []int, err *ServiceError)
 type BuildFinalGroupFunc func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError)
 type GenerateTxnDescriptionFunc func(txnBytesHex string) string
 
 type DummyFeeInfo struct {
-	TotalFees uint64
-	LSigCount int
+	TotalFees               uint64
+	LSigCount               int
+	FeeIndices              []int
+	DummyFeeContribution    uint64
+	ProgramFeeContribution  uint64
+	NativePQFeeContribution uint64
 }
 
 // PlanResult contains the output of group-building shared by /sign and /plan.
@@ -39,6 +44,7 @@ type PlanResult struct {
 	HasForeign            bool
 	LsigIndices           []int
 	DummiesNeeded         int
+	LogicSigResourcePlan  lsigresource.Plan
 	FeeInfo               DummyFeeInfo
 	NeedsRegroup          bool
 	IsPreGrouped          bool
@@ -154,14 +160,38 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		return nil, err
 	}
 
-	dummiesNeeded, lsigIndices, err := p.CalculateDummies(snapshot, identityID, req.Requests, txns, sizingBoundedItems, passthroughIndices, foreignIndices, hasPassthrough, isPreGrouped)
+	resourcePlan, lsigIndices, err := p.CalculateDummies(snapshot, identityID, req.Requests, txns, sizingBoundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
 	if err != nil {
 		return nil, err
 	}
+	dummiesNeeded := int(resourcePlan.DummyCount)
 
 	allTxns, dummyTxns, feeInfo, needsRegroup, err := p.BuildFinalGroup(txns, dummiesNeeded, lsigIndices, isPreGrouped)
 	if err != nil {
 		return nil, err
+	}
+
+	budgets, budgetErr := authorizationBudgets(req.Requests, snapshot, sizingBoundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns)
+	if budgetErr != nil {
+		return nil, budgetErr
+	}
+	plannedFees, feeErr := applyGroupFees(allTxns, budgets, resourcePlan, dummiesNeeded, lsigIndices, isPreGrouped || hasPassthrough)
+	if feeErr != nil {
+		return nil, feeErr
+	}
+	feeInfo = plannedFees
+	needsRegroup = needsRegroup || feeInfo.TotalFees > 0
+	if needsRegroup && len(allTxns) > 1 {
+		for i := range allTxns {
+			allTxns[i].Group = types.Digest{}
+		}
+		gid, groupErr := algocrypto.ComputeGroupID(allTxns)
+		if groupErr != nil {
+			return nil, internal(fmt.Sprintf("failed to compute final group ID: %v", groupErr))
+		}
+		for i := range allTxns {
+			allTxns[i].Group = gid
+		}
 	}
 
 	// Re-classify against the finalized transactions: pooled dummy fees mutate
@@ -192,6 +222,7 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		HasForeign:            hasForeign,
 		LsigIndices:           lsigIndices,
 		DummiesNeeded:         dummiesNeeded,
+		LogicSigResourcePlan:  resourcePlan,
 		FeeInfo:               feeInfo,
 		NeedsRegroup:          needsRegroup,
 		IsPreGrouped:          isPreGrouped,
@@ -215,7 +246,7 @@ func knownAddressesFromSnapshot(snapshot PlannerIdentitySnapshot) map[string]boo
 
 func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.MutationReport {
 	groupIDChanged := plan.NeedsRegroup && len(plan.AllTxns) > 1
-	if plan.DummiesNeeded == 0 && !groupIDChanged && !plan.HasPassthrough && !plan.HasForeign {
+	if plan.DummiesNeeded == 0 && plan.FeeInfo.TotalFees == 0 && !groupIDChanged && !plan.HasPassthrough && !plan.HasForeign {
 		return nil
 	}
 
@@ -226,13 +257,22 @@ func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.Mutatio
 
 	if plan.DummiesNeeded > 0 {
 		mutations.DummiesAdded = plan.DummiesNeeded
-		mutations.TotalFeesDelta = int(plan.FeeInfo.TotalFees)
 		mutations.Reason = "lsig_budget"
-
-		if len(plan.LsigIndices) > 0 {
-			mutations.FeesModified = plan.LsigIndices
+	}
+	mutations.TotalFeesDelta = int(plan.FeeInfo.TotalFees)
+	mutations.FeesModified = appendUniqueIndices(mutations.FeesModified, plan.FeeInfo.FeeIndices...)
+	if plan.FeeInfo.ProgramFeeContribution > 0 {
+		if mutations.Reason == "" {
+			mutations.Reason = "lsig_program_fee"
 		} else {
-			mutations.FeesModified = []int{0}
+			mutations.Reason += "+lsig_program_fee"
+		}
+	}
+	if plan.FeeInfo.NativePQFeeContribution > 0 {
+		if mutations.Reason == "" {
+			mutations.Reason = "native_pq_fee"
+		} else {
+			mutations.Reason += "+native_pq_fee"
 		}
 	}
 
@@ -255,6 +295,22 @@ func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.Mutatio
 	}
 
 	return mutations
+}
+
+func appendUniqueIndices(dst []int, indices ...int) []int {
+	for _, index := range indices {
+		found := false
+		for _, existing := range dst {
+			if existing == index {
+				found = true
+				break
+			}
+		}
+		if !found {
+			dst = append(dst, index)
+		}
+	}
+	return dst
 }
 
 func categorizeRequests(requests []signerapi.SignRequest) (passthroughIndices, foreignIndices map[int]bool, err *ServiceError) {

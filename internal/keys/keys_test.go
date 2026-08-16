@@ -244,9 +244,6 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if info.KeyType != "ed25519" {
 			t.Errorf("key type = %q, want %q", info.KeyType, "ed25519")
 		}
-		if info.LsigSize != 0 {
-			t.Errorf("lsig size = %d, want 0 for ed25519", info.LsigSize)
-		}
 		if info.PublicKeyHex == "" {
 			t.Error("public key hex should not be empty")
 		}
@@ -700,6 +697,7 @@ func TestScanKeysDirectoryWithKeyringLoadsGenericUnderDerivedAddress(t *testing.
 		"category": "generic_lsig",
 		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
+		"lsig_opcode_profile": {"default": 20000},
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
@@ -729,6 +727,7 @@ func TestScanKeysDirectoryWithKeyringRejectsGenericFilenameAddressMismatch(t *te
 		"category": "generic_lsig",
 		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
+		"lsig_opcode_profile": {"default": 20000},
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"

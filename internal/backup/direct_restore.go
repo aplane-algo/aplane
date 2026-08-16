@@ -193,7 +193,7 @@ func validateCredentialRuntimeSupport(entry *CredentialEntry) error {
 				payload.KeyType,
 			)
 		}
-	case keys.CategoryEd25519, keys.CategoryGenericLsig, keys.CategoryWitness:
+	case keys.CategoryEd25519, keys.CategoryNativePQ, keys.CategoryGenericLsig, keys.CategoryWitness:
 		// Native Ed25519 and witness support is compiled into their node-role
 		// runtimes. Generic LogicSig execution uses the bytecode and signing
 		// argument contract stored in the credential itself.
@@ -211,7 +211,7 @@ func inspectCredentialBackupEntry(
 	srcFile := filepath.Join(keysDir, selector+".apb")
 	// #nosec G304 -- keysDir is the private extracted archive root and selector
 	// is restricted to one validated basename before this function is called.
-	data, err := os.ReadFile(srcFile)
+	data, _, err := fsutil.ReadRegularFileLimited(srcFile, crypto.MaxStandaloneEnvelopeBytes)
 	if err != nil {
 		return CredentialEntry{}, fmt.Errorf("read backup file: %w", err)
 	}

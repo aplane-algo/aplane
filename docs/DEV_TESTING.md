@@ -27,7 +27,7 @@ The project uses a layered testing approach:
 3. **Architecture Tests**: Layering, guarded-surface, signing-flow,
    bounded-vocabulary, key-type inventory, managed-credential, and
    witness-boundary guards under `test/arch`
-4. **Integration Tests**: End-to-end tests against an explicitly selected Algorand network profile, either public testnet or a running AlgoKit LocalNet (Go test framework)
+4. **Integration Tests**: End-to-end tests against an explicitly selected Algorand network profile: public TestNet, native-PQ FNet, or a running AlgoKit LocalNet (Go test framework)
 5. **Docker Install Smoke Tests**: Local and Systemd installer/uninstaller checks
 6. **REPL Tests**: Interactive command-line testing for user workflows (manual)
 
@@ -270,7 +270,8 @@ explicit network profile. `make integration-test` is the normal entry point and
 invokes `test/setup-test-env.sh` before running Go tests. The setup script
 creates everything from scratch.
 
-Testnet mode requires a funded testnet mnemonic:
+Testnet mode requires a funded native Falcon mnemonic and a v42-capable
+TestNet:
 
 ```bash
 export APLANE_INTEGRATION_NETWORK=testnet
@@ -283,16 +284,29 @@ make integration-test
 ./test/setup-test-env.sh
 ```
 
-LocalNet mode requires an already running AlgoKit LocalNet with algod and KMD
-reachable. It does not require a user-provided funding mnemonic; setup exports a
-funded KMD account as `TEST_FUNDING_MNEMONIC` and `TEST_FUNDING_ACCOUNT` in the
-generated `.env.test`:
+LocalNet mode requires an already running v42-capable AlgoKit LocalNet with
+algod and KMD reachable. It does not require a user-provided funding mnemonic;
+setup creates a disposable native Falcon account, funds it from KMD, and
+exports it as `TEST_FUNDING_MNEMONIC` and `TEST_FUNDING_ACCOUNT`:
 
 ```bash
 APLANE_INTEGRATION_NETWORK=localnet make integration-test
 
 # Or run only setup
 APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
+```
+
+FNet has both a focused native Falcon-1024 authorization target and a full-suite
+profile. Both use the native Falcon `TEST_FUNDING_MNEMONIC` contract:
+
+```bash
+TEST_FUNDING_MNEMONIC="your native Falcon mnemonic funded on FNet" \
+make native-falcon-fnet-test
+
+# Run the same general integration suite used on TestNet, plus the FNet-native
+# tests. TEST_FUNDING_MNEMONIC must identify a native Falcon account funded on
+# FNet.
+TEST_FUNDING_MNEMONIC="your funded native Falcon mnemonic" make integration-test-fnet
 ```
 
 This creates `/tmp/aplane-test-env/` containing:
@@ -342,7 +356,7 @@ The script also writes `.env.test` in the project root, which the Makefile sourc
 9. Pre-populates client `known_hosts` with the signer's SSH host key (avoids TOFU prompts)
 10. Writes identity-scoped authorized keys and permissive test policy
 11. Copies the top-level `library/templates/` YAML files into the signer data library
-12. In localnet mode, exports a funded KMD account as `TEST_FUNDING_MNEMONIC`, writes the current localnet genesis hash into signer config, and seeds the integration burn address
+12. In localnet mode, creates a disposable native Falcon account, funds it from KMD, exports it as `TEST_FUNDING_MNEMONIC`, writes the current localnet genesis hash into signer config, and seeds the integration burn address
 13. Writes `.env.test` with all required environment variables
 
 #### Test environment ports
@@ -363,15 +377,17 @@ All per-test temp directories (binary builds, apshell work dirs) use Go's `t.Tem
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `APLANE_INTEGRATION_NETWORK` | Integration profile: `testnet` or `localnet` | Always, before setup |
-| `TEST_FUNDING_MNEMONIC` | 25-word funding mnemonic. In testnet mode, provide a funded testnet account. In localnet mode, setup exports one from KMD. | Testnet input; localnet auto |
-| `TEST_FUNDING_ACCOUNT` | Funding account address. Optional in testnet mode; setup writes the exported KMD account in localnet mode. | Optional before setup |
+| `APLANE_INTEGRATION_NETWORK` | Integration profile: `testnet`, `localnet`, or `fnet` | Always, before setup |
+| `TEST_FUNDING_MNEMONIC` | 25-word native Falcon-1024 funding mnemonic. Provided by the operator on TestNet/FNet; generated and funded from KMD on LocalNet. | TestNet/FNet input; LocalNet auto |
+| `TEST_FUNDING_ACCOUNT` | Native Falcon funding address derived by setup. | Optional before setup |
 | `ALGOD_URL` | Algod endpoint. Defaults by profile. | Optional |
 | `ALGOD_TOKEN` | Algod token. Defaults empty for testnet and the AlgoKit token for localnet. | Optional |
+| `APLANE_FNET_ALGOD_URL` | FNet algod override; defaults to the Nodely FNet endpoint. | Optional |
+| `APLANE_FNET_INDEXER_URL` | FNet indexer override; defaults to the Nodely FNet endpoint. | Optional |
 | `APLANE_LOCALNET_ALGOD_URL` | LocalNet algod endpoint fallback when `ALGOD_URL` is unset. | Optional localnet |
 | `APLANE_LOCALNET_KMD_URL` | LocalNet KMD endpoint. | Optional localnet |
 | `APLANE_LOCALNET_TOKEN` | LocalNet algod/KMD token fallback when `ALGOD_TOKEN` is unset. | Optional localnet |
-| `APLANE_LOCALNET_WALLET` | KMD wallet used to select/export the funding account. | Optional localnet |
+| `APLANE_LOCALNET_WALLET` | KMD wallet used to bootstrap the native Falcon funding account. | Optional localnet |
 | `APLANE_LOCALNET_WALLET_PASSWORD` | Password for the selected KMD wallet. | Optional localnet |
 | `TEST_PASSPHRASE` | Keystore passphrase (set by setup script) | Auto |
 | `APSIGNER_DATA` | Signer data directory (set by setup script) | Auto |
@@ -385,6 +401,11 @@ the only required user-provided variable is
 defaults and a funded account in the default KMD wallet. Override the secondary
 localnet variables only when your LocalNet uses nonstandard endpoints, token, or
 wallet settings.
+
+For either FNet target, set `TEST_FUNDING_MNEMONIC` to a native Falcon account
+funded on FNet. The same native address may be used on another v42 ledger, but
+it must hold funds independently there. Never use the mnemonic for production
+funds.
 
 `APSIGNER_PASSPHRASE` is a general-purpose environment variable for non-interactive `apstore` usage (not test-specific). When set, all `apstore` passphrase prompts are answered with its value. The setup script does not export it; instead, it pipes the generated test passphrase into `apstore initialize`. It is not written to `.env.test` and is not needed at test runtime.
 
@@ -400,6 +421,10 @@ make integration-test
 
 # LocalNet prerequisite: AlgoKit LocalNet already running
 APLANE_INTEGRATION_NETWORK=localnet make integration-test
+
+# Full FNet suite, including native Falcon/v42 acceptance
+TEST_FUNDING_MNEMONIC="your native Falcon mnemonic funded on FNet" \
+make integration-test-fnet
 
 # Show live test progress during a full run
 APLANE_INTEGRATION_NETWORK=testnet make integration-test INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v'
@@ -462,8 +487,8 @@ plain `go test ./...` does not accidentally run live integration tests.
 `make soak-test-localnet` regenerates the integration fixture with
 `APLANE_INTEGRATION_NETWORK=localnet`, sources `.env.test`, and runs only the
 opt-in endurance loop with `APLANE_SOAK=1`. The loop starts `apsigner` once,
-repeatedly generates signer keys, funds them from the LocalNet KMD funding
-account, sends a small payment to the integration burn address, closes the
+repeatedly generates signer keys, funds them from the bootstrapped native
+Falcon funding account, sends a small payment to the integration burn address, closes the
 account back to the funder, and deletes the generated key. It keeps `apsigner`
 running for the duration unless `APLANE_SOAK_RESTART_EVERY` is set to a
 positive value.
@@ -619,9 +644,10 @@ output, err := apshell.RunWithInput("accounts\nquit\n")
 
 #### **FundTestAccount** (`harness/fund.go`)
 SDK-based funding (signs directly, no signer needed):
-- Reads `TEST_FUNDING_MNEMONIC` from environment. Testnet users provide this
-  mnemonic; localnet setup exports it from KMD.
-- Creates and signs transactions with go-algorand-sdk
+- Reads `TEST_FUNDING_MNEMONIC` as native Falcon recovery entropy on every
+  network; localnet setup generates it and funds the derived account from KMD.
+- Adds the native-PQ fee contribution before grouping and signs structured
+  `PQsig` envelopes directly
 - Submits directly to algod
 
 ```go
@@ -752,6 +778,9 @@ installer gate with comparable metadata.
 # Four-node local build using rootless APlane installs
 make docker-local-test
 
+# Three APlane containers using public FNet and host-side native Falcon funding
+TEST_FUNDING_MNEMONIC="your funded native Falcon mnemonic" make docker-fnet-test
+
 # Four-node test using published APlane and SDK packages
 make docker-local-release-test
 
@@ -766,6 +795,15 @@ LocalNet reachability, SSH token provisioning for signer and sentry endpoints,
 sentry enrollment and discovery, guarded signing, Corridor allowlist and
 external-admin behavior, and guarded preparation/signing through a local Python
 SDK checkout.
+
+`make docker-fnet-test` selects the FNet profile of the same script. It starts
+only the signer, sentry, and client/admin containers, validates the configured
+FNet genesis and `fnet5` consensus through the public algod, and authorizes
+fixture funding on the host with `TEST_FUNDING_MNEMONIC`. The mnemonic is not
+copied into a container or written to generated configuration. Override the
+default endpoint with `APLANE_FNET_ALGOD_URL` and
+`APLANE_FNET_ALGOD_TOKEN`. Each run creates three ephemeral accounts and funds
+each with 0.15 ALGO; those test funds are not automatically recovered.
 
 `make docker-local-release-test` runs the same topology and product assertions,
 but installs APlane from GitHub release assets, Python from PyPI, and TypeScript
@@ -1016,8 +1054,8 @@ CI runs automatically on all pushes and PRs to master/main branches via GitHub A
 
 **Integration tests** are excluded from CI for these reasons:
 
-1. **Funding / service requirement**: Testnet runs need a funded testnet
-   mnemonic; localnet runs need an algod/KMD service with exportable funded keys.
+1. **Funding / service requirement**: Testnet runs need a funded native Falcon
+   mnemonic; localnet runs need a v42 algod/KMD service with a funded bootstrap key.
 2. **Network dependency**: Tests require stable live algod behavior.
 3. **Cost**: Testnet runs consume testnet ALGO.
 4. **Flakiness**: Live network tests can fail due to congestion, rate limits, or
@@ -1104,8 +1142,8 @@ make security-analysis # All local security analyzers, including seed phrase det
 - Run locally by developers
 - Run before releases
 - Require `APLANE_INTEGRATION_NETWORK`
-- Testnet profile requires `TEST_FUNDING_MNEMONIC`
-- LocalNet profile requires running algod/KMD; setup exports the funding mnemonic from KMD
+- Testnet profile requires a funded native Falcon `TEST_FUNDING_MNEMONIC` and v42
+- LocalNet profile requires v42 algod/KMD; setup bootstraps a native Falcon funder from KMD
 
 **REPL Tests**:
 - Manual execution before releases
@@ -1133,16 +1171,16 @@ make security-analysis # All local security analyzers, including seed phrase det
 **Integration Tests**
 
 1. **"APLANE_INTEGRATION_NETWORK must be set"**
-   - Set `APLANE_INTEGRATION_NETWORK=testnet` or `APLANE_INTEGRATION_NETWORK=localnet`
+   - Set `APLANE_INTEGRATION_NETWORK=testnet` or `APLANE_INTEGRATION_NETWORK=localnet`, or use `make integration-test-fnet`
    - The setup script intentionally has no implicit default.
 
 2. **"TEST_FUNDING_MNEMONIC not set"**
-   - For testnet, set the environment variable with your funded testnet account mnemonic
+   - For testnet, set the environment variable with your funded native Falcon testnet account mnemonic after v42 activation
    - Get testnet ALGO from: https://dispenser.testnet.aws.algodev.network/
-   - For localnet, do not set this manually; run setup with `APLANE_INTEGRATION_NETWORK=localnet` so KMD export populates it.
+   - For localnet, do not set this manually; run setup with `APLANE_INTEGRATION_NETWORK=localnet` so KMD bootstraps it.
 
 3. **"Keystore not initialized"**
-   - Run `APLANE_INTEGRATION_NETWORK=<testnet|localnet> make integration-test` to regenerate the test environment and run the suite
+   - Run `APLANE_INTEGRATION_NETWORK=<testnet|localnet> make integration-test` or `make integration-test-fnet` to regenerate the test environment and run the suite
    - The script initializes the keystore by piping the generated test passphrase to `apstore initialize`
 
 4. **"failed to connect to algod"**
@@ -1160,7 +1198,7 @@ make security-analysis # All local security analyzers, including seed phrase det
 
 7. **"host key rejected by user"**
    - The test environment pre-populates `known_hosts`, but if keys were regenerated
-     without re-running setup, delete `/tmp/aplane-test-env` and re-run `APLANE_INTEGRATION_NETWORK=<testnet|localnet> make integration-test`
+     without re-running setup, delete `/tmp/aplane-test-env` and rerun the selected integration target
 
 8. **"transaction not confirmed"**
    - Testnet may be congested, or localnet may have stopped.
@@ -1214,6 +1252,7 @@ Day-to-day shortcuts:
 | Staged release binaries | `make store-release-drill STORE_RELEASE_BIN_DIR=/path/to/bin` |
 | Integration on testnet | `APLANE_INTEGRATION_NETWORK=testnet TEST_FUNDING_MNEMONIC=... make integration-test` |
 | Integration on LocalNet | `APLANE_INTEGRATION_NETWORK=localnet make integration-test` |
+| Integration on FNet | `TEST_FUNDING_MNEMONIC=... make integration-test-fnet` |
 | Focused integration run | add `INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run TestX'` |
 | Reuse existing fixture | `make integration-test-reuse` |
 | Coverage HTML | `go test -coverprofile=coverage.out $PKGS && go tool cover -html=coverage.out` |

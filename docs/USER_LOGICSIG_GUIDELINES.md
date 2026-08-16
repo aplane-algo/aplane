@@ -313,8 +313,8 @@ controlled unless TEAL fully validates it.
 - Does substitution yield TEAL literals of the intended type for addresses,
   byte strings, integers, and lists?
 - Does the template TEAL avoid raw `bytecblock`/`intcblock`, numeric `bytec N`
-  or `intc N`, and short forms such as `bytec_0` or `intc_0` so APlane can own
-  the generated off-curve salt slot?
+  or `intc N`, and short forms such as `bytec_0` or `intc_0` so compiler-owned
+  TEAL v13 auto-salting can safely manage generated constant blocks?
 
 Template substitution mistakes can silently change the policy being deployed.
 
@@ -325,13 +325,41 @@ concrete salt style is chosen by APlane as part of the versioned
 provider/template derivation contract, not by user YAML. Templates with omitted
 `derivation_version` are unsalted and compile exactly as written, succeeding
 only if the unmodified bytecode already derives an off-curve LogicSig address.
-New template-derived key types use `derivation_version: 2`, which appends a
-trailing dead-code `bytecblock 0x00` after the program's terminating
-instruction. User-authored template TEAL must not hand-write raw `bytecblock`
+Templates use `derivation_version: 3` and TEAL v13 compiler auto-salting;
+APlane persists and validates the compiler's final bytecode rather than patching
+it. The retired `derivation_version: 1` and `derivation_version: 2` contracts
+are rejected; republish such a template with `derivation_version: 3`. User-authored template TEAL must not hand-write raw `bytecblock`
 or `intcblock` declarations, numeric `bytec` or
 `intc` references, or short forms such as `bytec_0` or `intc_0`. Use declared
 template variables, symbolic `$name` references, and generated-mode list
 expansion instead.
+
+### Final-Bytecode Resource Review
+
+Resource metadata must describe the final compiler-returned bytecode, after
+auto-salting. For every reachable authorization path, review and pin:
+
+- exact `program_bytes` from the persisted final program;
+- the maximum permitted `argument_bytes`, including variable-length signature
+  ceilings (1,423 bytes for deterministic compressed Falcon-1024); and
+- a `max_opcode_cost` ceiling demonstrated at the worst permitted runtime
+  argument/value sizes, including dynamic opcode costs.
+
+Declare a reviewed ceiling as top-level `max_opcode_cost` when an accepted path
+can exceed one transaction's opcode budget or when an absolute bound should be
+recorded explicitly. If the field is omitted, APlane uses the numeric
+one-transaction ceiling shared by every consensus version it currently
+supports: 20,000. An explicit zero is rejected.
+
+Omission is a practical authoring default, not proof of a maximum. APlane-owned
+templates retain explicit declarations and maximum-input simulation vectors;
+third-party authors should review loops and dynamically priced operations and
+use an explicit override when a path may exceed 20,000.
+
+Do not publish one combined `program + args` size. On v42, argument and opcode
+capacity may require resource dummies while excess program bytes are paid by a
+group fee surcharge. The signer must finish resource planning and fee mutation
+before assigning the group ID or requesting any signature.
 
 ### 15. Signature Binding
 

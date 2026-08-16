@@ -3,7 +3,11 @@
 
 package apshellapp
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/aplane-algo/aplane/internal/algorithm"
+)
 
 func TestDecorateRekeyResultForSignableLsigTarget(t *testing.T) {
 	result := &RekeyCommandResult{
@@ -40,6 +44,21 @@ func TestDecorateRekeyResultForExternalTarget(t *testing.T) {
 	}
 	if got, want := result.PendingLines[0], "Target is an address you cannot sign for - you'll need the new auth address's private key to sign."; got != want {
 		t.Fatalf("PendingLines[0] = %q, want %q", got, want)
+	}
+}
+
+func TestDecorateRekeyResultForSignableNativePQTarget(t *testing.T) {
+	result := &RekeyCommandResult{
+		From:                    "FROM",
+		To:                      "TO",
+		CanSignForTarget:        true,
+		TargetAuthorizationKind: algorithm.AuthorizationNativePQ,
+	}
+
+	decorateRekeyResult(result)
+
+	if got, want := result.ConfirmedLines[0], "Account {from} is now rekeyed to native post-quantum address {to}"; got != want {
+		t.Fatalf("ConfirmedLines[0] = %q, want %q", got, want)
 	}
 }
 

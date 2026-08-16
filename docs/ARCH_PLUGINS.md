@@ -427,11 +427,12 @@ available for direct command-line use.
 Plugins communicate with APlane Shell using JSON-RPC 2.0 over stdin/stdout.
 The JSON-RPC envelope version (`jsonrpc: "2.0"`), the plugin manifest schema
 version (`manifest_format`), and the APlane plugin protocol version are
-separate contracts. The host sends the current APlane plugin protocol version
-in `initialize.params.version`; the plugin must echo the same value in
-`initialize.result.version`, or startup fails closed. A plugin's semantic
-package version lives in its manifest `version` field and in `getInfo`, not in
-the initialize handshake.
+separate contracts. The host does not send the accepted plugin protocol token.
+Each plugin must independently return the hard-coded declaration
+`"aplane-plugin/2"` in `initialize.result.protocol`, or startup fails closed.
+This one-way declaration cannot be satisfied by echoing host input. A plugin's
+semantic package version lives in its manifest `version` field and in
+`getInfo`, not in the initialize handshake.
 
 #### initialize
 
@@ -447,8 +448,7 @@ Called once after the plugin starts.
     "network": "testnet",
     "algodUrl": "https://testnet-api.4160.nodely.dev",
     "algodToken": "",
-    "indexerUrl": "https://testnet-idx.4160.nodely.dev",
-    "version": "1.0"
+    "indexerUrl": "https://testnet-idx.4160.nodely.dev"
   }
 }
 ```
@@ -461,7 +461,7 @@ Called once after the plugin starts.
   "result": {
     "success": true,
     "message": "Plugin initialized",
-    "version": "1.0"
+    "protocol": "aplane-plugin/2"
   }
 }
 ```
@@ -847,14 +847,20 @@ also the only path to algod.
 Only apsigner can produce a signature for an apsigner-held account, so atomically combining
 the plugin's own signatures with apsigner's — under apsigner's policy and approval — is the
 single thing a plugin cannot do on its own. The plugin returns an *unsigned*
-draft (every intent `type: "raw"`) plus a `pluginSigners` list declaring the slots it
-will sign itself — each with an address, an opaque `signerRef`, and the byte size
-(`lsigSize`) of the LogicSig it will attach. APlane canonicalizes the group: it pools
-fees, recomputes the group ID, and adds LogicSig opcode-budget transactions **sized from
-the declared `lsigSize` values**, while a guard asserts every original slot's
+draft (every intent `type: "raw"`) plus a `pluginSigners` list declaring the
+slots it will sign itself — each with an address, an opaque `signerRef`, and
+either structured `lsigResources` for the LogicSig path it will attach or a
+`pqScheme` for native-PQ authorization. APlane
+canonicalizes the group: it adds resource dummies from the declared argument
+and opcode ceilings, prices program bytes, fixes the aggregate fee, and
+recomputes the group ID, while a guard asserts every original slot's
 transaction fields are preserved (only the group ID and fee may change). APlane then
 calls the plugin's `signTransactions` method to sign its owned slots over the *canonical*
-bytes, and apsigner signs the APlane-managed slots under its normal policy and approval.
+bytes. APlane verifies that each returned signed envelope preserves the planned
+transaction and matches its declared authorization class. For LogicSig slots,
+the observable program and argument byte counts must match `lsigResources`,
+and the same declaration is retained on the final passthrough `/sign` request.
+Apsigner then signs the APlane-managed slots under its normal policy and approval.
 **The plugin's signing keys are never exported** — it signs by reference, via the
 callback.
 
@@ -876,7 +882,11 @@ result, alongside the unsigned `raw` intents:
       "address": "PLUGIN_OWNED_ADDR...",
       "kind": "plugin-callback",
       "signerRef": "opaque-plugin-key-id",
-      "lsigSize": 2048
+      "lsigResources": {
+        "programBytes": 2048,
+        "argumentBytes": 1423,
+        "maxOpcodeCost": 20000
+      }
     }
   ]
 }
@@ -889,7 +899,8 @@ result, alongside the unsigned `raw` intents:
 | `address` | string | Sender of the slot the plugin signs |
 | `kind` | string | Signer kind; `plugin-callback` |
 | `signerRef` | string | Opaque plugin-owned identifier echoed back in the `signTransactions` request so the plugin can locate its key |
-| `lsigSize` | int | Byte size of the LogicSig (program + args) the plugin attaches to this slot. APlane counts it toward the group's pooled LogicSig budget. Omit or `0` when the slot carries no LogicSig |
+| `lsigResources` | object | Selected-path LogicSig resource declaration: `programBytes`, `argumentBytes`, and reviewed worst-case `maxOpcodeCost`. Omit only when the slot carries no LogicSig. |
+| `pqScheme` | string | Native-PQ authorization scheme attached by the plugin; currently `f1` for Falcon-1024. Mutually exclusive with `lsigResources`. |
 
 The `groupMode` field is the top-level selector for the flow; `presign-plan` requires a
 `pluginSigners` entry for every plugin-owned slot, and `pregrouped-signed` uses no
@@ -903,7 +914,9 @@ accounts pay.
 **Trust boundary.** In `presign-plan`, apsigner still owns its slots — it applies its
 full policy and approval to the managed transactions, exactly as for a direct `/sign`.
 A plugin can *add* signers to a group; it cannot bypass apsigner's authority over
-apsigner's keys.
+apsigner's keys. APlane validates the live client algod as v42-compatible before
+invoking a `presign-plan` callback. It performs the same check before broadcasting
+or simulating a `pregrouped-signed` group verbatim.
 
 #### What these flows enable
 
@@ -919,16 +932,18 @@ classes of plugin:
 | Plugin class | Examples | Mode used |
 |---|---|---|
 | **External / non-exportable custody** | HSM/KMS bridge, MPC or threshold-signature coordinator, hardware-wallet bridge | `presign-plan` (plugin signs its slot via the callback) |
-| **Smart-signature / composed-LogicSig auth** | multisig, allowlist, hashlock/HTLC escrows, atomic swaps, fee sponsors (paymaster: managed account pays, plugin LogicSig authorizes) | `presign-plan` (budget sized from `lsigSize`) |
+| **Smart-signature / composed-LogicSig auth** | multisig, allowlist, hashlock/HTLC escrows, atomic swaps, fee sponsors (paymaster: managed account pays, plugin LogicSig authorizes) | `presign-plan` (budget and surcharge planned from `lsigResources`) |
 | **Counterparty / relayer flows** | RFQ or order-book fills (maker pre-signs, taker submits), gasless meta-transactions, signed-voucher redemption | `pregrouped-signed` (submit the counterparty-signed group verbatim) |
 | **Privacy / shielded pools** | mixers, confidential transfers, private voting | `presign-plan` (fund a shielded deposit) + `pregrouped-signed` (self-authorizing spend) |
 
 The common thread is a plugin that **brings its own cryptography or signing material and
 composes it into transaction groups**, with apsigner retaining authority over its own
-slots. Notably, the `presign-plan` budget mechanism keys on each slot's *LogicSig size*,
-not on any key-type label — so it serves the entire composed-LogicSig family uniformly,
-including schemes that already exist as APlane key types (Falcon multisig, allowlist,
-guarded, composed DSAs), with no per-scheme code. If a plain key type later gains a
+slots. Notably, the `presign-plan` budget mechanism keys on each slot's
+structured *LogicSig resources* (`programBytes`, `argumentBytes`, and
+`maxOpcodeCost`), not on any key-type label. It therefore serves the entire
+composed-LogicSig family uniformly, including schemes that already exist as
+APlane key types (Falcon multisig, allowlist, guarded, composed DSAs), with no
+per-scheme code. If a plain key type later gains a
 native on-chain signature (so it no longer needs a LogicSig), it simply drops out of the
 budget-sizing path automatically; the flow does not change.
 

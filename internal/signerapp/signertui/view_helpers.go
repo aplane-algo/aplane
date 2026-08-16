@@ -132,6 +132,14 @@ func getKeyTypeSelectionLabel(keyType string) string {
 	return displayKeyType(keyType)
 }
 
+func keyTypeGenerationNotice(keyType string) string {
+	info, ok := findServerKeyType(keyType)
+	if !ok || info.AuthorizationKind != "native_pq" {
+		return ""
+	}
+	return "Requires consensus v42 or later. Its 25-word Algorand recovery phrase is not interchangeable with the 24-word aplane.falcon1024.v1 phrase."
+}
+
 type paramSpec struct {
 	DisplayName string
 	Description string

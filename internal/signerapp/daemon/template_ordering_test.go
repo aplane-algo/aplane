@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -43,6 +44,7 @@ family: %s
 version: 1
 display_name: "Ordering Template"
 description: "ordering check"
+max_opcode_cost: 20000
 runtime_args:
   - name: preimage
     label: "Preimage"
@@ -64,6 +66,9 @@ teal: |
 			ByteLength: 32,
 		}}
 		payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "#pragma version 6\nint 1", signingArgs, "")
+		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
+			return profileErr
+		}
 		result, saveErr := keys.SavePayload(server.keyPaths, auth.DefaultIdentityID, payload, masterKey)
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
@@ -80,7 +85,7 @@ teal: |
 	if err := ks.Scan(nil); err != nil {
 		t.Fatalf("keyStore.Scan(nil) error = %v", err)
 	}
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes(), ks.GetLsigSizes())
+	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
 
 	preReloadInfo, ok := findKeyInfoResponse(server.restService().BuildKeyInfoList(ir), address)
 	if !ok {

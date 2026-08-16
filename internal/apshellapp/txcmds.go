@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
@@ -450,22 +452,23 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 	prep := preparedTxnFromEngine(prepResult)
 	check := rekeyCheckDetailsFromEngine(checkResult)
 
-	canSignForTarget, isLsig := a.eng.CanSignForAddress(toAddress)
+	canSignForTarget, authorizationKind := a.eng.CanSignForAddressWithKind(toAddress)
 	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("rekey transaction failed: %w", err)
 	}
 
 	result := &RekeyCommandResult{
-		From:             fromAddress,
-		To:               toAddress,
-		IsUnrekey:        check.IsUnrekey,
-		CanSignForTarget: canSignForTarget,
-		TargetIsLsig:     isLsig,
-		TxID:             submit.TxID,
-		Confirmed:        submit.Confirmed,
-		Output:           submit.Output,
-		Warnings:         warningsFromTransactionWriteNotices(submit.WriteNotices),
+		From:                    fromAddress,
+		To:                      toAddress,
+		IsUnrekey:               check.IsUnrekey,
+		CanSignForTarget:        canSignForTarget,
+		TargetIsLsig:            authorizationKind == algorithm.AuthorizationLogicSig,
+		TargetAuthorizationKind: authorizationKind,
+		TxID:                    submit.TxID,
+		Confirmed:               submit.Confirmed,
+		Output:                  submit.Output,
+		Warnings:                warningsFromTransactionWriteNotices(submit.WriteNotices),
 	}
 	// The auth-cache refresh after a confirmed rekey happens in the engine submit
 	// path (SignAndSubmit -> refreshRekeyedSenders), so every caller — REPL, JS,
@@ -545,21 +548,36 @@ func decorateRekeyResult(result *RekeyCommandResult) {
 
 	if result.CanSignForTarget {
 		targetKind := "Ed25519"
-		if result.TargetIsLsig {
+		switch result.TargetAuthorizationKind {
+		case algorithm.AuthorizationNativePQ:
+			targetKind = "native post-quantum"
+		case algorithm.AuthorizationLogicSig:
 			targetKind = "lsig"
+		default:
+			if result.TargetIsLsig {
+				targetKind = "lsig"
+			}
 		}
 		result.PreSubmitLines = []string{
 			fmt.Sprintf("Rekeying account {from} to %s address {to}...", targetKind),
 			"WARNING: After this transaction, you must use the new auth address to sign!",
 		}
-		if result.TargetIsLsig {
+		switch targetKind {
+		case "lsig":
 			result.ConfirmedLines = []string{
 				"Account {from} is now rekeyed to lsig {to}",
 			}
 			result.PendingLines = []string{
 				"When confirmed, {from} will be rekeyed to lsig {to}",
 			}
-		} else {
+		case "native post-quantum":
+			result.ConfirmedLines = []string{
+				"Account {from} is now rekeyed to native post-quantum address {to}",
+			}
+			result.PendingLines = []string{
+				"When confirmed, {from} will be rekeyed to native post-quantum address {to}",
+			}
+		default:
 			result.ConfirmedLines = []string{
 				"Account {from} is now rekeyed to Ed25519 address {to}",
 			}
@@ -754,8 +772,18 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			}
 		}
 
-		dummyReserve := a.eng.DummyFeeReserve(fromAddress, signing.DefaultMinFee)
-		sendAmount, feeReserve, ok := sweepSendAmount(balance, leavingAmount.Raw, assetMeta.AssetID, req.Fee, req.UseFlatFee, dummyReserve)
+		authorizationReserve, err := authorizationFeeReserveForSweep(
+			assetMeta.AssetID,
+			fromAddress,
+			a.eng.AuthorizationFeeReserve,
+		)
+		if err != nil {
+			item.Error = fmt.Sprintf("failed to plan authorization fee reserve: %v", err)
+			result.FailureCount++
+			result.Items = append(result.Items, item)
+			continue
+		}
+		sendAmount, feeReserve, ok := sweepSendAmount(balance, leavingAmount.Raw, assetMeta.AssetID, req.Fee, req.UseFlatFee, authorizationReserve)
 		if !ok {
 			item.SkippedReason = fmt.Sprintf("balance %d <= leaving amount %d", balance, leavingAmount.Raw)
 			if assetMeta.AssetID == 0 && balance > leavingAmount.Raw {
@@ -831,13 +859,27 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	return result, nil
 }
 
+func authorizationFeeReserveForSweep(
+	assetID uint64,
+	sender string,
+	reserve func(string) (uint64, error),
+) (uint64, error) {
+	// The reserve affects only the amount of ALGO that can be swept. An ASA
+	// sweep sends asset units, so querying authorization resources cannot alter
+	// its amount and must not introduce an unrelated algod/profile failure.
+	if assetID != 0 {
+		return 0, nil
+	}
+	return reserve(sender)
+}
+
 // sweepSendAmount computes how much to send so the account is left with exactly
 // `leaving`. For ALGO sweeps the fee reserve is the base transaction fee plus
-// dummyFeeReserve — the dummy-transaction fees the signer pools onto a LogicSig
-// sender — so sweeping from a Falcon/large-LogicSig account no longer overspends
-// and fails. ASA sweeps pay their fee from the ALGO balance, not the swept
-// asset, so dummyFeeReserve does not apply there.
-func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, dummyFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
+// authorizationFeeReserve — LogicSig dummy/program fees or the native-PQ fee
+// contribution — so sweeping from a non-Ed25519 account does not overspend.
+// ASA sweeps pay their fee from the ALGO balance, not the swept asset, so the
+// authorization reserve does not apply there.
+func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, authorizationFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
 	if balance <= leaving {
 		return 0, 0, false
 	}
@@ -851,7 +893,10 @@ func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, dum
 	if useFlatFee {
 		baseFee = fee
 	}
-	feeReserve = baseFee + dummyFeeReserve
+	if authorizationFeeReserve > math.MaxUint64-baseFee {
+		return 0, math.MaxUint64, false
+	}
+	feeReserve = baseFee + authorizationFeeReserve
 	if available <= feeReserve {
 		return 0, feeReserve, false
 	}

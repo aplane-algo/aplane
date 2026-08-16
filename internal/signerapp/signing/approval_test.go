@@ -15,6 +15,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/appspec"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -277,6 +278,12 @@ func TestBuildApprovalDescriptionTreatsSingleRequestedTxnWithDummiesAsSingle(t *
 	if strings.Contains(desc, "TRANSACTION GROUP") {
 		t.Fatalf("description = %q, did not expect group header", desc)
 	}
+	if !strings.Contains(desc, "[MODIFIED BY SERVER]") || !strings.Contains(desc, "Added 1 dummy transaction") {
+		t.Fatalf("description = %q, want explicit dummy disclosure", desc)
+	}
+	if !strings.Contains(desc, "Group ID recomputed") {
+		t.Fatalf("description = %q, want group ID disclosure", desc)
+	}
 	if firstValid != 100 || lastValid != 200 {
 		t.Fatalf("approval window = (%d, %d), want (100, 200)", firstValid, lastValid)
 	}
@@ -316,6 +323,39 @@ func TestBuildApprovalDescriptionOmitsDummyEntriesFromGroupApproval(t *testing.T
 	}
 	if firstValid != 140 || lastValid != 220 {
 		t.Fatalf("approval window = (%d, %d), want (140, 220)", firstValid, lastValid)
+	}
+}
+
+func TestBuildApprovalDescriptionDistinguishesCoveredAuthorizationFeeRequirement(t *testing.T) {
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}}}
+	plan := &PlanResult{
+		FeeInfo:              DummyFeeInfo{ProgramFeeContribution: 300},
+		LogicSigResourcePlan: lsigresource.Plan{ChargedProgramBytes: 3},
+		PassthroughIndices:   map[int]bool{},
+		ForeignIndices:       map[int]bool{},
+	}
+	txns := []types.Transaction{{Type: types.PaymentTx}}
+	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	if strings.Contains(description, "[MODIFIED BY SERVER]") {
+		t.Fatalf("description incorrectly reports a fee mutation:\n%s", description)
+	}
+	if !strings.Contains(description, "[FEE REQUIREMENT COVERED BY EXISTING FEES]") ||
+		!strings.Contains(description, "Required LogicSig program contribution: 300 microAlgos") {
+		t.Fatalf("description does not explain the covered fee requirement:\n%s", description)
+	}
+}
+
+func TestBuildApprovalDescriptionUsesOneBasedFeeTransactionNumbers(t *testing.T) {
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{}, {}, {}}}
+	plan := &PlanResult{
+		FeeInfo:            DummyFeeInfo{TotalFees: 2_000, FeeIndices: []int{0, 2}},
+		PassthroughIndices: map[int]bool{},
+		ForeignIndices:     map[int]bool{},
+	}
+	txns := []types.Transaction{{Type: types.PaymentTx}, {Type: types.PaymentTx}, {Type: types.PaymentTx}}
+	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn" })
+	if !strings.Contains(description, "across transaction(s) [1 3]") {
+		t.Fatalf("description does not use one-based transaction numbers:\n%s", description)
 	}
 }
 

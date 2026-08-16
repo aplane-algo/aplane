@@ -25,7 +25,7 @@ func TestGuardedFingerprintShapeExcludesIdentity(t *testing.T) {
 
 	want := lsigprovider.HashCompatibilitySpec(expectedSpec{
 		BasePrimitive: "falcon1024-v1",
-		SaltStyle:     string(lsigsalt.StylePushbytes),
+		SaltStyle:     string(lsigsalt.StyleAlgodAutoSalt),
 		Arg0:          "user_falcon1024_component_signature",
 		Arg1:          "sentry_falcon1024_component_signature",
 	})

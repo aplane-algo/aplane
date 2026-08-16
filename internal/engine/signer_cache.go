@@ -4,9 +4,16 @@
 package engine
 
 import (
+	"fmt"
+	"math"
+	"math/bits"
+
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 )
 
 func (e *Core) signerCacheCount() int {
@@ -35,10 +42,10 @@ func (e *Core) resetSignerCache(locked bool) {
 	e.SignerCache.BindStore(e.CacheStore)
 }
 
-func (e *Core) populateSignerCache(keys []signerapi.KeyInfo) {
+func (e *Core) populateSignerCache(keys []signerapi.KeyInfo) error {
 	e.signerCacheMu.Lock()
 	defer e.signerCacheMu.Unlock()
-	e.PopulateSignerCache(keys)
+	return e.PopulateSignerCache(keys)
 }
 
 // populateAndSaveSignerCacheUnderClientLock refreshes the in-memory signer
@@ -46,7 +53,9 @@ func (e *Core) populateSignerCache(keys []signerapi.KeyInfo) {
 func (e *Core) populateAndSaveSignerCacheUnderClientLock(keys []signerapi.KeyInfo) error {
 	e.signerCacheMu.Lock()
 	defer e.signerCacheMu.Unlock()
-	e.PopulateSignerCache(keys)
+	if err := e.PopulateSignerCache(keys); err != nil {
+		return err
+	}
 	return e.SaveSignerCacheLocked()
 }
 
@@ -62,27 +71,116 @@ func (e *Core) signerCacheKeyType(address string) string {
 	return e.SignerCache.GetKeyType(address)
 }
 
-func (e *Core) signerCacheLsigSize(address string) int {
+func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.GetLsigSize(address)
+	return e.SignerCache.LogicSigResourceProfile(address)
 }
 
-// DummyFeeReserve returns the additional microAlgo fee a single standalone
-// transaction from sender will accrue from server-side dummy transactions
-// added for LogicSig budget. It is 0 for ed25519 and for LogicSigs small
-// enough to need no dummies. "Spend everything" flows (sweep) must reserve
-// this on top of the base transaction fee, because the signer pools the dummy
-// fees onto the LogicSig transaction and the account pays them.
-func (e *Core) DummyFeeReserve(sender string, minFee uint64) uint64 {
-	effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
-	lsigSize := e.signerCacheLsigSize(effectiveSigner)
-	if lsigSize <= signing.TxLsigBudget {
-		return 0
+// signerCacheAuthorizationKind classifies an address from one consistent
+// signer-cache snapshot. The boolean reports whether the address is present;
+// a present address with an empty kind has invalid or unknown key metadata.
+func (e *Core) signerCacheAuthorizationKind(address string) (algorithm.AuthorizationKind, bool) {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	if !e.SignerCache.HasAddress(address) {
+		return "", false
 	}
-	extra := lsigSize - signing.TxLsigBudget
-	dummies := (extra + signing.TxLsigBudget - 1) / signing.TxLsigBudget
-	return uint64(dummies) * minFee
+	if e.SignerCache.IsGenericLsig(address) {
+		return algorithm.AuthorizationLogicSig, true
+	}
+	if _, ok := e.SignerCache.LogicSigResourceProfile(address); ok {
+		return algorithm.AuthorizationLogicSig, true
+	}
+	keyType := e.SignerCache.GetKeyType(address)
+	if keyType == "ed25519" {
+		return algorithm.AuthorizationEd25519, true
+	}
+	metadata, err := algorithm.GetMetadata(keyType)
+	if err != nil {
+		return "", true
+	}
+	return metadata.AuthorizationKind(), true
+}
+
+// AuthorizationFeeReserve returns the additional microAlgo fee a standalone
+// transaction from sender needs beyond its ordinary base fee. It covers
+// LogicSig resource dummies and priced program bytes, plus the native-PQ fee
+// contribution. Sweep flows reserve it before choosing a spend-everything
+// amount. The calculation is local and deterministic because this release
+// implements one compiled v42 consensus contract.
+func (e *Core) AuthorizationFeeReserve(sender string) (uint64, error) {
+	effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
+	profile, ok := e.signerCacheLogicSigResourceProfile(effectiveSigner)
+	isNativeFalcon := e.signerCacheKeyType(effectiveSigner) == nativefalcon.KeyType
+	if !ok && !isNativeFalcon {
+		return 0, nil
+	}
+	if ok && isNativeFalcon {
+		return 0, fmt.Errorf("signer cache classifies %s as both LogicSig and native Falcon", effectiveSigner)
+	}
+	consensus, err := lsigresource.CurrentConsensus()
+	if err != nil {
+		return 0, fmt.Errorf("load compiled v42 authorization contract: %w", err)
+	}
+	minFee := consensus.MinTxnFee
+	if isNativeFalcon {
+		reserve, overflow := scaleFeeFactor(minFee, nativefalcon.PQFeeContribution)
+		if overflow {
+			return 0, fmt.Errorf("native Falcon fee reserve overflowed")
+		}
+		return reserve, nil
+	}
+	usage, err := profile.UsageForPath(lsigresource.PathSpend)
+	if err != nil {
+		usage, err = profile.UsageForPath(lsigresource.PathDefault)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("resolve LogicSig spend resources: %w", err)
+	}
+	plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
+		TransactionCount: 1,
+		LogicSigs:        []lsigresource.Usage{usage},
+		Dummy: lsigresource.Usage{
+			ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
+			MaxOpcodeCost: 1,
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("plan LogicSig fee reserve: %w", err)
+	}
+	dummyFees, overflow := multiplyReserve(plan.DummyCount, minFee)
+	if overflow {
+		return 0, fmt.Errorf("LogicSig dummy fee reserve overflowed")
+	}
+	programFee, overflow := scaleFeeFactor(minFee, plan.ProgramFeeFactorUsage)
+	if overflow || programFee > math.MaxUint64-dummyFees {
+		return 0, fmt.Errorf("LogicSig program fee reserve overflowed")
+	}
+	return dummyFees + programFee, nil
+}
+
+func multiplyReserve(a, b uint64) (uint64, bool) {
+	if a != 0 && b > math.MaxUint64/a {
+		return 0, true
+	}
+	return a * b, false
+}
+
+func scaleFeeFactor(base, usage uint64) (uint64, bool) {
+	const factorScale = uint64(1_000_000)
+	hi, lo := bits.Mul64(base, usage)
+	if hi >= factorScale {
+		return 0, true
+	}
+	quotient, remainder := bits.Div64(hi, lo, factorScale)
+	if remainder != 0 {
+		if quotient == math.MaxUint64 {
+			return 0, true
+		}
+		quotient++
+	}
+	return quotient, false
 }
 
 func (e *Core) signerCacheSentryPublicKey(address string) (string, bool) {

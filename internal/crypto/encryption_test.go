@@ -143,7 +143,7 @@ func TestStandaloneEncryptionEnvelopeVersion(t *testing.T) {
 	}
 }
 
-func TestDecryptStandaloneAcceptsLegacyEnvelopeWithoutKDFParams(t *testing.T) {
+func TestDecryptStandaloneRejectsEnvelopeWithoutKDFParams(t *testing.T) {
 	passphrase := []byte("test-standalone-passphrase")
 	plaintext := []byte("legacy standalone envelope")
 
@@ -163,12 +163,9 @@ func TestDecryptStandaloneAcceptsLegacyEnvelopeWithoutKDFParams(t *testing.T) {
 		t.Fatalf("Failed to marshal legacy envelope: %v", err)
 	}
 
-	decrypted, err := DecryptStandalone(legacy, passphrase)
-	if err != nil {
-		t.Fatalf("DecryptStandalone legacy envelope failed: %v", err)
-	}
-	if !bytes.Equal(plaintext, decrypted) {
-		t.Fatalf("DecryptStandalone legacy plaintext = %q, want %q", decrypted, plaintext)
+	_, err = DecryptStandalone(legacy, passphrase)
+	if err == nil || !strings.Contains(err.Error(), "do not match envelope version 2") {
+		t.Fatalf("DecryptStandalone legacy envelope error = %v, want exact KDF tuple rejection", err)
 	}
 }
 
@@ -191,8 +188,36 @@ func TestDecryptStandaloneRejectsIncompleteKDFParams(t *testing.T) {
 	if err == nil {
 		t.Fatal("DecryptStandalone should reject incomplete KDF parameters")
 	}
-	if !strings.Contains(err.Error(), "incomplete KDF parameters") {
-		t.Errorf("Expected incomplete KDF error, got: %v", err)
+	if !strings.Contains(err.Error(), "do not match envelope version 2") {
+		t.Errorf("Expected exact KDF tuple error, got: %v", err)
+	}
+}
+
+func TestDecryptStandaloneRejectsModifiedKDFParamsBeforeDerivation(t *testing.T) {
+	encrypted, err := EncryptStandalone([]byte("data"), []byte("pass"))
+	if err != nil {
+		t.Fatalf("EncryptStandalone() error = %v", err)
+	}
+	var envelope EncryptedDataStandalone
+	if err := json.Unmarshal(encrypted, &envelope); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	envelope.KDFMemory++
+	modified, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	_, err = DecryptStandalone(modified, []byte("pass"))
+	if err == nil || !strings.Contains(err.Error(), "do not match envelope version 2") {
+		t.Fatalf("DecryptStandalone() error = %v, want exact KDF tuple rejection", err)
+	}
+}
+
+func TestDecryptStandaloneRejectsOversizedEnvelope(t *testing.T) {
+	data := bytes.Repeat([]byte{'x'}, MaxStandaloneEnvelopeBytes+1)
+	_, err := DecryptStandalone(data, []byte("pass"))
+	if err == nil || !strings.Contains(err.Error(), "maximum") {
+		t.Fatalf("DecryptStandalone() error = %v, want size rejection", err)
 	}
 }
 
@@ -263,9 +288,12 @@ func TestDecryptWithTermKeyRejectsInvalidNonceLength(t *testing.T) {
 func TestDecryptStandaloneRejectsInvalidNonceLength(t *testing.T) {
 	payload := EncryptedDataStandalone{
 		EnvelopeVersion: 2,
-		Salt:            base64.StdEncoding.EncodeToString([]byte("salt")),
+		Salt:            base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, masterSaltLen)),
 		Nonce:           base64.StdEncoding.EncodeToString([]byte("short")),
 		Ciphertext:      base64.StdEncoding.EncodeToString([]byte("ciphertext")),
+		KDFTime:         argon2Time,
+		KDFMemory:       argon2Memory,
+		KDFThreads:      argon2Threads,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {

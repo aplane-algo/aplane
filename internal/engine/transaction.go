@@ -14,6 +14,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
@@ -98,6 +99,9 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	}
 	if e.AlgodClient == nil {
 		return nil, nil, ErrNoAlgodClient
+	}
+	if err := e.validateAlgodConsensus(opts.Ctx); err != nil {
+		return nil, nil, fmt.Errorf("validate algod consensus before signing: %w", err)
 	}
 	if err := e.refreshSubmitSigningState(opts.Ctx, txns); err != nil {
 		return nil, nil, err
@@ -265,19 +269,18 @@ func (e *Engine) WaitForConfirmationResult(ctx context.Context, txid string, rou
 }
 
 // CanSignForAddress checks if we can sign for the given address.
-// Returns (canSign, isLsig).
+// Returns (canSign, isLsig). New callers that need to distinguish native
+// authorization kinds should use CanSignForAddressWithKind.
 func (e *Engine) CanSignForAddress(address string) (bool, bool) {
-	// Check if we have this address in the signer cache
-	hasRemoteSigner := e.signerCacheHasAddress(address)
-	if !hasRemoteSigner {
-		return false, false
-	}
+	canSign, kind := e.CanSignForAddressWithKind(address)
+	return canSign, kind == algorithm.AuthorizationLogicSig
+}
 
-	// Check if it's an LSig type by key type
-	keyType := e.signerCacheKeyType(address)
-	isLsig := e.signerCacheIsGenericLsig(address) || (keyType != "" && keyType != "ed25519")
-
-	return true, isLsig
+// CanSignForAddressWithKind checks whether the signer owns an address and
+// returns the authorization envelope its key type produces.
+func (e *Engine) CanSignForAddressWithKind(address string) (bool, algorithm.AuthorizationKind) {
+	kind, present := e.signerCacheAuthorizationKind(address)
+	return present && kind != "", kind
 }
 
 func (e *Engine) SignAndSubmitGroup(ctx context.Context, txns []types.Transaction, lsigArgs []map[string][]byte) (*SignTransactionsResult, error) {

@@ -24,13 +24,16 @@ import (
 var ErrCacheTampered = errors.New("cache integrity check failed")
 
 const (
-	signedCacheEnvelopeVersion = 1
-	cachePayloadSchemaVersion  = 1
+	signedCacheEnvelopeVersion      = 1
+	legacyCachePayloadSchemaVersion = 1
+	cachePayloadSchemaVersion       = 1
+	signerCachePayloadSchemaVersion = 2
 )
 
 type cachePayloadVersioner interface {
 	cachePayloadSchemaVersion() int
 	setCachePayloadSchemaVersion(version int)
+	supportedCachePayloadSchemaVersion() int
 }
 
 func storePath(store *Store, filename string) string {
@@ -280,11 +283,12 @@ func ensureCachePayloadSchemaVersion(data interface{}) {
 	if !ok || payload.cachePayloadSchemaVersion() != 0 {
 		return
 	}
-	payload.setCachePayloadSchemaVersion(cachePayloadSchemaVersion)
+	payload.setCachePayloadSchemaVersion(payload.supportedCachePayloadSchemaVersion())
 }
 
 func validateCachePayloadSchemaVersion(dataBytes []byte, target interface{}) error {
-	if _, ok := target.(cachePayloadVersioner); !ok {
+	payload, ok := target.(cachePayloadVersioner)
+	if !ok {
 		return nil
 	}
 
@@ -294,11 +298,13 @@ func validateCachePayloadSchemaVersion(dataBytes []byte, target interface{}) err
 	if err := json.Unmarshal(dataBytes, &header); err != nil {
 		return fmt.Errorf("failed to inspect cache payload schema_version: %w", err)
 	}
-	if header.SchemaVersion == 0 {
-		return nil
+	version := header.SchemaVersion
+	if version == 0 {
+		version = legacyCachePayloadSchemaVersion
 	}
-	if header.SchemaVersion != cachePayloadSchemaVersion {
-		return fmt.Errorf("unsupported cache payload schema_version %d (supported %d)", header.SchemaVersion, cachePayloadSchemaVersion)
+	supported := payload.supportedCachePayloadSchemaVersion()
+	if version != supported {
+		return fmt.Errorf("unsupported cache payload schema_version %d (supported %d)", version, supported)
 	}
 	return nil
 }

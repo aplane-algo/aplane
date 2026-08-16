@@ -368,10 +368,6 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 		return metadata, err
 	}
 	profile := c.bounded
-	metadata.PostSigningLogicSigSize = len(bytecode)
-	for _, slot := range metadata.ArgumentLayout {
-		metadata.PostSigningLogicSigSize += slot.MaxSize
-	}
 	var sentryPublicKey []byte
 	if profile.Sentry != nil {
 		sentryPublicKey, err = decodeHexParameter(params[BoundedSentryPublicKeyParameter], BoundedSentryPublicKeyParameter, boundedmeta.SentryPublicKeySizeV1)

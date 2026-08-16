@@ -119,8 +119,8 @@ planning and signing. Concretely it exposes:
   key file that authorizes signing for it,
 - `KeyType(address) -> key_type | NotFound` - the stored key type used by
   signing dispatch and fail-closed signability checks,
-- `LSigSize(address) -> bytes | NotFound` - LogicSig budget contribution for
-  planning.
+- `LogicSigResources(address) -> profile | NotFound` - final program bytes and
+  selected-path argument/opcode ceilings used for planning.
 
 The runtime index is a cache of valid key-file authority. It is not an
 independent source of durable signing authority.
@@ -349,7 +349,7 @@ invariant constrains the relationship at scan-converged points, not at
 arbitrary wall-clock instants.
 
 Multi-field atomicity is enforced for planning by materializing a
-per-request key-index snapshot. `Resolve`, `KeyType`, `LSigSize`, and the
+per-request key-index snapshot. `Resolve`, `KeyType`, `LogicSigResources`, and the
 signer-local known-address set used by request policy are derived from that
 one copied snapshot rather than from separate live runtime reads. A reload
 that completes after the snapshot is captured applies only to later

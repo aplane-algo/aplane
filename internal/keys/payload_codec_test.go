@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -49,7 +50,7 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 		},
 		{
 			name: "dsa_lsig",
-			payload: NewDSALSigPayload(
+			payload: payloadWithOpcodeProfile(t, NewDSALSigPayload(
 				"test.dsa.v1",
 				"test.base.v1",
 				[]byte{0x01, 0x02},
@@ -60,16 +61,17 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 				"#pragma version 8\nint 1",
 				[]StoredSigningArg{{Name: "proof", Type: "bytes", Required: true}},
 				"1:test",
-			),
+			), false),
 			fields: []string{
 				"base_key_type", "category", "created_at", "format_version", "key_type",
-				"lsig_bytecode", "parameters", "private_key", "public_key", "salt_counter",
-				"signing_args", "signing_metadata_version", "teal_source", "template_fingerprint",
+				"lsig_bytecode", "lsig_opcode_profile", "parameters", "private_key", "public_key",
+				"salt_counter", "signing_args", "signing_metadata_version", "teal_source",
+				"template_fingerprint",
 			},
 		},
 		{
 			name: "generic_lsig",
-			payload: NewGenericLSigPayload(
+			payload: payloadWithOpcodeProfile(t, NewGenericLSigPayload(
 				"test.generic.v1",
 				map[string]string{"recipient": "ALICE"},
 				bytecode,
@@ -77,11 +79,11 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 				"#pragma version 8\nint 1",
 				nil,
 				"1:test",
-			),
+			), false),
 			fields: []string{
 				"category", "created_at", "format_version", "key_type", "lsig_bytecode",
-				"parameters", "salt_counter", "signing_metadata_version", "teal_source",
-				"template_fingerprint",
+				"lsig_opcode_profile", "parameters", "salt_counter", "signing_metadata_version",
+				"teal_source", "template_fingerprint",
 			},
 		},
 	}
@@ -133,6 +135,22 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 	}
 }
 
+func payloadWithOpcodeProfile(t *testing.T, payload *Payload, bounded bool) *Payload {
+	t.Helper()
+	profile := lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
+	if bounded {
+		profile = lsigresource.BoundedOpcodeProfile(
+			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
+		)
+	}
+	if err := payload.SetLogicSigOpcodeProfile(profile, bounded); err != nil {
+		t.Fatal(err)
+	}
+	return payload
+}
+
 func TestCanonicalPayloadRejectsStandaloneWitnessBundle(t *testing.T) {
 	data := []byte(`{"schema":"aplane.witness-key-bundle.v1","key_type":"aplane.witness-falcon1024.v1","witness_key_id":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","public_key_hex":"00","encryption":{}}`)
 	if _, err := ParsePayload(data); err == nil || !errors.Is(err, ErrIncompatibleKeyFormat) {
@@ -148,17 +166,17 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 	)
 	defer payload.ZeroSecrets()
 	payload.CreatedAt = canonicalTestTime
+	payloadWithOpcodeProfile(t, payload, true)
 	metadata := &boundedmeta.Metadata{
 		Contract: boundedmeta.ContractV1,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{
 			Count: 1, MaxSizes: []int{4},
 		},
-		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}, false),
-		SpendEffects:            []string{"pay", "axfer"},
-		MaxFee:                  1_000,
-		AdminOperations:         []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateNone}},
-		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
-		PostSigningLogicSigSize: len(bytecode) + 4,
+		ArgumentLayout:  boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}, false),
+		SpendEffects:    []string{"pay", "axfer"},
+		MaxFee:          1_000,
+		AdminOperations: []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateNone}},
+		Layer3Policy:    boundedmeta.Layer3PolicyCustom,
 	}
 	if err := payload.SetBoundedAuthorization(metadata); err != nil {
 		t.Fatalf("SetBoundedAuthorization() error = %v", err)
@@ -180,7 +198,7 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 	if parsed.SigningMetadataVersion != BoundedSigningMetadataVersion {
 		t.Fatalf("SigningMetadataVersion = %d, want %d", parsed.SigningMetadataVersion, BoundedSigningMetadataVersion)
 	}
-	if got := parsed.BoundedAuthorization; got == nil || got.Contract != boundedmeta.ContractV1 || got.PostSigningLogicSigSize != len(bytecode)+4 {
+	if got := parsed.BoundedAuthorization; got == nil || got.Contract != boundedmeta.ContractV1 || got.ArgumentBytesForPath(boundedmeta.PathSpend) != 4 {
 		t.Fatalf("BoundedAuthorization = %#v", got)
 	}
 
@@ -204,6 +222,7 @@ func TestBoundedSentryPayloadMetadataRoundTrip(t *testing.T) {
 	)
 	defer payload.ZeroSecrets()
 	payload.CreatedAt = canonicalTestTime
+	payloadWithOpcodeProfile(t, payload, true)
 	metadata := &boundedmeta.Metadata{
 		Contract: boundedmeta.ContractV1, BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
 		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: 1_000, Layer3Policy: boundedmeta.Layer3PolicyCustom,
@@ -216,7 +235,6 @@ func TestBoundedSentryPayloadMetadataRoundTrip(t *testing.T) {
 			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired}},
 			{Index: 1, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry, MaxSize: boundedmeta.SentrySignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
 		},
-		PostSigningLogicSigSize: len(bytecode) + 4 + boundedmeta.SentrySignatureMaxSizeV1,
 	}
 	if err := payload.SetBoundedAuthorization(metadata); err != nil {
 		t.Fatal(err)
@@ -244,13 +262,13 @@ func TestBoundedSentryPayloadMetadataRoundTrip(t *testing.T) {
 func TestParsePayloadRejectsInvalidBoundedMetadata(t *testing.T) {
 	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
 	base := `{"format_version":1}`
-	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded1","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"admin_operations":[],"runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","admin_rekey":"required"}}],"layer3_policy":"custom","post_signing_lsig_size":9999},"created_at":"2026-07-10T12:34:56Z"}`
+	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded1","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"admin_operations":[],"runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","admin_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
 	tests := []struct {
 		name string
 		data string
 		want string
 	}{
-		{name: "size mismatch", data: base, want: "does not match derived size"},
+		{name: "obsolete combined size", data: strings.Replace(base, `"contract":"bounded1"`, `"contract":"bounded1","post_signing_lsig_size":9999`, 1), want: "unknown field"},
 		{name: "unknown nested field", data: strings.Replace(base, `"contract":"bounded1"`, `"contract":"bounded1","future":true`, 1), want: "unknown field"},
 		{name: "duplicate nested field", data: strings.Replace(base, `"contract":"bounded1"`, `"contract":"bounded1","contract":"bounded1"`, 1), want: `duplicate object member "contract"`},
 		{name: "wrong metadata version", data: strings.Replace(base, `"signing_metadata_version":2`, `"signing_metadata_version":1`, 1), want: "requires signing_metadata_version 2"},
@@ -367,6 +385,51 @@ func TestPayloadCategoryValidation(t *testing.T) {
 				t.Fatalf("Validate() error = %v, want substring %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestAutoSaltedLogicSigPayloadContract(t *testing.T) {
+	bytecode := canonicalOffCurveBytecodeForVersion(t, 13)
+	payload := NewAutoSaltedGenericLSigPayload(
+		"test.generic.v1", nil, bytecode, "#pragma version 13\nint 1", nil, "",
+	)
+	payloadWithOpcodeProfile(t, payload, false)
+	payload.CreatedAt = canonicalTestTime
+	if err := payload.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	encoded, err := MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload() error = %v", err)
+	}
+	if strings.Contains(string(encoded), `"salt_counter"`) ||
+		!strings.Contains(string(encoded), `"lsig_derivation": "algod_v13_auto_salt"`) ||
+		!strings.Contains(string(encoded), `"lsig_opcode_profile"`) {
+		t.Fatalf("auto-salted payload JSON = %s", encoded)
+	}
+	decoded, err := ParsePayload(encoded)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
+	}
+	defer decoded.ZeroSecrets()
+	if decoded.LogicSigDerivation != LogicSigDerivationAlgodV13AutoSalt || decoded.SaltCounter != nil {
+		t.Fatalf("decoded derivation = %q salt=%v", decoded.LogicSigDerivation, decoded.SaltCounter)
+	}
+
+	withCounter := *payload
+	withCounter.SaltCounter = SaltCounterPtr(0)
+	if err := withCounter.Validate(); err == nil || !strings.Contains(err.Error(), "forbids salt_counter") {
+		t.Fatalf("Validate(auto-salted with counter) error = %v", err)
+	}
+	oldVersion := *payload
+	oldVersion.LogicSigBytecode = canonicalOffCurveBytecodeForVersion(t, 12)
+	if err := oldVersion.Validate(); err == nil || !strings.Contains(err.Error(), "requires final TEAL v13+") {
+		t.Fatalf("Validate(auto-salted v12) error = %v", err)
+	}
+	unknown := *payload
+	unknown.LogicSigDerivation = "future"
+	if err := unknown.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported lsig_derivation") {
+		t.Fatalf("Validate(unknown derivation) error = %v", err)
 	}
 }
 
@@ -506,9 +569,13 @@ func canonicalFalconComponentPair(t *testing.T, fill byte) ([]byte, []byte) {
 var registerFalconComponentTestValidator sync.Once
 
 func canonicalOffCurveBytecode(t *testing.T) []byte {
+	return canonicalOffCurveBytecodeForVersion(t, 6)
+}
+
+func canonicalOffCurveBytecodeForVersion(t *testing.T, version byte) []byte {
 	t.Helper()
 	for counter := 0; counter < 256; counter++ {
-		bytecode := []byte{0x06, 0x81, 0x01, byte(counter)}
+		bytecode := []byte{version, 0x81, 0x01, byte(counter)}
 		address, err := logicSigAddressBytes(bytecode)
 		if err != nil {
 			t.Fatalf("logicSigAddressBytes() error = %v", err)

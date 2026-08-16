@@ -6,6 +6,7 @@ package jsonrpc
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -18,10 +19,12 @@ const (
 	MethodShutdown   = "shutdown"
 )
 
-// PluginProtocolVersion is the APlane plugin protocol version used in the
-// initialize handshake. It is distinct from the JSON-RPC envelope version and
-// from the plugin package's semantic version in its manifest/getInfo response.
-const PluginProtocolVersion = "1.0"
+// PluginProtocol identifies the APlane plugin protocol declared by a plugin
+// during initialization. The host does not send this value to the plugin: the
+// declaration must come from plugin-owned code rather than echoing host input.
+// It is distinct from the JSON-RPC envelope version and the plugin package's
+// semantic version in its manifest/getInfo response.
+const PluginProtocol = "aplane-plugin/2"
 
 // Optional methods a plugin may implement.
 const (
@@ -38,14 +41,13 @@ type InitializeParams struct {
 	AlgodURL   string `json:"algodUrl"`   // Algorand node API URL
 	AlgodToken string `json:"algodToken"` // Algod API token (empty for public nodes)
 	IndexerURL string `json:"indexerUrl"` // Indexer URL if available
-	Version    string `json:"version"`    // APlane plugin protocol version
 }
 
 // InitializeResult returned from plugin initialization
 type InitializeResult struct {
-	Success bool   `json:"success"`
-	Message string `json:"message,omitempty"`
-	Version string `json:"version"` // APlane plugin protocol version echoed by plugin
+	Success  bool   `json:"success"`
+	Message  string `json:"message,omitempty"`
+	Protocol string `json:"protocol"` // Plugin-owned APlane protocol declaration
 }
 
 // ExecuteParams sent when executing a command
@@ -196,13 +198,44 @@ type PluginSigner struct {
 	Address   string `json:"address"`
 	Kind      string `json:"kind"`      // e.g. "plugin-callback"
 	SignerRef string `json:"signerRef"` // opaque plugin-owned identifier
-	// LsigSize is the byte size of the LogicSig (program + args) the plugin will
-	// attach to this slot during the signTransactions callback. APlane can't know
-	// it (the slot is unsigned at /plan time and the program is plugin-private), so
-	// the plugin declares it; the signer counts it toward the group's pooled
-	// LogicSig byte budget and adds budget dummies accordingly. 0 (omitted) means
-	// the slot carries no LogicSig or the plugin doesn't report a size.
-	LsigSize int `json:"lsigSize,omitempty"`
+	// LsigResources declares the selected authorization path the plugin will
+	// attach during signTransactions. APlane cannot derive these values while the
+	// slot is unsigned and the program remains plugin-private. Omit it only when
+	// the slot carries no LogicSig.
+	LsigResources *PluginLogicSigResources `json:"lsigResources,omitempty"`
+	// PQScheme declares the native-PQ authorization the plugin will attach.
+	// It is mutually exclusive with LsigResources; "f1" is Falcon-1024.
+	PQScheme string `json:"pqScheme,omitempty"`
+}
+
+// UnmarshalJSON rejects the retired scalar LogicSig size declaration. Protocol
+// 1.0 plugins could otherwise echo the host-provided handshake version and have
+// encoding/json silently discard lsigSize, producing an under-budgeted group.
+func (s *PluginSigner) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if _, retired := fields["lsigSize"]; retired {
+		return fmt.Errorf("plugin signer field %q is unsupported by plugin protocol %s; use %q", "lsigSize", PluginProtocol, "lsigResources")
+	}
+
+	type wire PluginSigner
+	var decoded wire
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*s = PluginSigner(decoded)
+	return nil
+}
+
+// PluginLogicSigResources keeps the three v42 consensus resources separate.
+// MaxOpcodeCost is a reviewed worst-case ceiling for the selected path, not a
+// value sampled from one execution.
+type PluginLogicSigResources struct {
+	ProgramBytes  uint64 `json:"programBytes"`
+	ArgumentBytes uint64 `json:"argumentBytes"`
+	MaxOpcodeCost uint64 `json:"maxOpcodeCost"`
 }
 
 // PluginSignerKind values.

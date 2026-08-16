@@ -14,7 +14,7 @@ and registered after unlock/reload.
 
 ```yaml
 schema_version: 1
-derivation_version: 2     # 1 = legacy pushbytes/pop, 2 = trailing bytecblock
+derivation_version: 3     # TEAL v13 compiler-owned auto-salting
 template_type: generic
 template_mode: strict      # strict | generated
 family: timelock           # Template family name
@@ -113,14 +113,16 @@ construct plus scalar `@name` substitution.
   salting; generation succeeds only when the unmodified bytecode is already
   off-curve. `derivation_version: 1` preserves the legacy pushbytes/pop salt
   marker; `derivation_version: 2` uses a trailing dead-code `bytecblock` and
-  requires the template TEAL to end with `return` or `err`
+  requires the template TEAL to end with `return` or `err`;
+  `derivation_version: 3` requires TEAL v13 and delegates auto-salting to the
+  configured algod compiler
 
 ## Adding a New Template
 
 ```yaml
 # library/templates/mytemplate-v1.yaml
 schema_version: 1
-derivation_version: 2
+derivation_version: 3
 template_type: generic
 template_mode: strict
 family: mytemplate

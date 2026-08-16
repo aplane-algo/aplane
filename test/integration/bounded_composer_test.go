@@ -11,7 +11,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txeffects"
@@ -22,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -41,19 +44,25 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 	}
 
 	tests := []struct {
-		name      string
-		profile   *composeddsa.BoundedAuthorizationProfile
-		bytecode  int
-		spendSize int
-		adminSize int
-		groupSize int
-		address   string
+		name       string
+		profile    *composeddsa.BoundedAuthorizationProfile
+		bytecode   int
+		spendArgs  int
+		adminArgs  int
+		spendGroup int
+		adminGroup int
+		spendFee   uint64
+		adminFee   uint64
+		address    string
 	}{
 		{
-			name:     "rekey-disabled-pay",
-			profile:  boundedIntegrationProfile([]txeffects.SpendEffect{txeffects.SpendEffectPay}),
-			bytecode: 1909, spendSize: 3189, adminSize: 0, groupSize: 4,
-			address: "MMISSIHSHIWXOLHSH6KAGRFGUITWWW6YZELKTFG6VJKS66UDO4DUVWMFZA",
+			name:       "rekey-disabled-pay",
+			profile:    boundedIntegrationProfile([]txeffects.SpendEffect{txeffects.SpendEffectPay}),
+			bytecode:   1906,
+			spendArgs:  1423,
+			spendGroup: 2,
+			spendFee:   2000,
+			address:    "NDW4G7KSXADVZSLN4XKRYFEOQ5SVVZK2T3BQGLZIHFMRVDPDXSGPA4Z74E",
 		},
 		{
 			name: "spending-key-rekey-pay-axfer",
@@ -61,8 +70,8 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 				[]txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer},
 				composeddsa.AdminOperationSpec{Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationSpendingKey, PolicyGate: composeddsa.AdminPolicyGateNone},
 			),
-			bytecode: 1955, spendSize: 3235, adminSize: 0, groupSize: 4,
-			address: "QJLGVZHR7N4IXTBYVAEKHCZ4MRJ44UASVPLKPFGVTXFD7ET3IVKPPCLX6I",
+			bytecode: 1950, spendArgs: 1423, spendGroup: 2, spendFee: 2000,
+			address: "UNXBYLJQS3WTPIR63PKNDHZHXLMGAHPBCWIRRZXXQ3SGEEYEMG7NH2BB74",
 		},
 		{
 			name: "admin-key-rekey-pay-axfer",
@@ -70,9 +79,14 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 				[]txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer},
 				composeddsa.AdminOperationSpec{Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationAdminKey, PolicyGate: composeddsa.AdminPolicyGateNone},
 			),
-			bytecode: 3854, spendSize: 5134, adminSize: 6414, groupSize: 7,
-			address: "A3R7NECDSYRQFPNJP4EO4GMDCDGC2AOCI7RS55JGZ3UHNKZZPPFPSQUJCI",
+			bytecode: 3848, spendArgs: 1423, adminArgs: 2846,
+			spendGroup: 2, adminGroup: 3, spendFee: 2186, adminFee: 3086,
+			address: "N4HFY5R724WD6UUEOLLULPIS33D7LSHVPJNAN6IZV3E4ESSHXPO7R44CKE",
 		},
+	}
+	consensus, err := lsigresource.ResolveConsensus(network.ConsensusVersion)
+	if err != nil {
+		t.Fatal(err)
 	}
 	spendingPublicKey := bytes.Repeat([]byte{0x21}, family.PublicKeySize)
 	adminPublicKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
@@ -85,22 +99,66 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			spendSize := len(result.Bytecode) + family.MaxSignatureSize
-			adminSize := 0
-			maxSize := spendSize
+			metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingPublicKey, params, result.Bytecode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			spendArgs := metadata.ArgumentBytesForPath(boundedmeta.PathSpend)
+			spendPlan := solveV42IntegrationPath(t, consensus, len(result.Bytecode), spendArgs)
+			adminArgs := 0
+			var adminPlan lsigresource.Plan
 			if boundedProfileUsesAdminKey(test.profile) {
-				adminSize = spendSize + composeddsa.BoundedAdminSignatureMaxSize
-				maxSize = adminSize
+				adminArgs = metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey)
+				adminPlan = solveV42IntegrationPath(t, consensus, len(result.Bytecode), adminArgs)
 			}
-			groupSize := (maxSize + signing.TxLsigBudget - 1) / signing.TxLsigBudget
-			if len(result.Bytecode) != test.bytecode || spendSize != test.spendSize || adminSize != test.adminSize || groupSize != test.groupSize || result.Address.String() != test.address {
-				t.Fatalf("compiled matrix = bytecode=%d spend=%d admin=%d group=%d address=%s; want %d/%d/%d/%d/%s", len(result.Bytecode), spendSize, adminSize, groupSize, result.Address.String(), test.bytecode, test.spendSize, test.adminSize, test.groupSize, test.address)
+			spendFee := v42IntegrationPathFee(spendPlan)
+			adminFee := v42IntegrationPathFee(adminPlan)
+			if len(result.Bytecode) != test.bytecode || spendArgs != test.spendArgs || adminArgs != test.adminArgs ||
+				int(spendPlan.GroupSize) != test.spendGroup || int(adminPlan.GroupSize) != test.adminGroup ||
+				spendFee != test.spendFee || adminFee != test.adminFee || result.Address.String() != test.address {
+				t.Fatalf(
+					"v42 compiled matrix = bytecode=%d spend args=%d/group=%d/fee=%d admin args=%d/group=%d/fee=%d address=%s; want %d/%d/%d/%d/%d/%d/%d/%s",
+					len(result.Bytecode), spendArgs, spendPlan.GroupSize, spendFee,
+					adminArgs, adminPlan.GroupSize, adminFee, result.Address.String(),
+					test.bytecode, test.spendArgs, test.spendGroup, test.spendFee,
+					test.adminArgs, test.adminGroup, test.adminFee, test.address,
+				)
 			}
-			if fee := uint64(groupSize) * 1_000; fee > test.profile.MaxFee {
-				t.Fatalf("required pooled fee %d exceeds compiled max_fee %d", fee, test.profile.MaxFee)
+			if spendFee > test.profile.MaxFee || adminFee > test.profile.MaxFee {
+				t.Fatalf("required v42 fee exceeds compiled max_fee %d: spend=%d admin=%d", test.profile.MaxFee, spendFee, adminFee)
 			}
 		})
 	}
+}
+
+func solveV42IntegrationPath(t *testing.T, profile lsigresource.ConsensusProfile, programBytes, argumentBytes int) lsigresource.Plan {
+	t.Helper()
+	plan, err := lsigresource.Solve(profile, lsigresource.PlanInput{
+		TransactionCount: 1,
+		LogicSigs: []lsigresource.Usage{{
+			ProgramBytes:  uint64(programBytes),
+			ArgumentBytes: uint64(argumentBytes),
+			MaxOpcodeCost: lsigresource.SingleTransactionOpcodeCeiling,
+		}},
+		Dummy: lsigresource.Usage{
+			ProgramBytes:  uint64(len(signing.EmbeddedDummyTealTok)),
+			MaxOpcodeCost: 1,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan
+}
+
+func v42IntegrationPathFee(plan lsigresource.Plan) uint64 {
+	if plan.GroupSize == 0 {
+		return 0
+	}
+	const minFee = uint64(1_000)
+	const factorScale = uint64(1_000_000)
+	usage := plan.GroupSize*factorScale + plan.ProgramFeeFactorUsage
+	return (minFee*usage + factorScale - 1) / factorScale
 }
 
 func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
@@ -324,9 +382,8 @@ type boundedExecutionAccount struct {
 	spendingPrivateKey []byte
 	adminPublicKey     []byte
 	adminPrivateKey    []byte
-	profile            *composeddsa.BoundedAuthorizationProfile
 	provider           *composeddsa.ComposedDSA
-	params             map[string]string
+	metadata           *boundedmeta.Metadata
 }
 
 func newBoundedExecutionAccount(t *testing.T, network *harness.TestnetConfig, recipient string) boundedExecutionAccount {
@@ -352,16 +409,29 @@ func newBoundedExecutionAccount(t *testing.T, network *harness.TestnetConfig, re
 	if err != nil {
 		t.Fatalf("derive bounded LogicSig: %v", err)
 	}
+	metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingPublicKey, params, derived.Bytecode)
+	if err != nil {
+		t.Fatalf("build bounded authorization metadata: %v", err)
+	}
 	return boundedExecutionAccount{
 		address: derived.Address.String(), bytecode: append([]byte(nil), derived.Bytecode...),
 		spendingPublicKey: append([]byte(nil), spendingPublicKey...), spendingPrivateKey: append([]byte(nil), spendingPrivateKey...),
 		adminPublicKey: append([]byte(nil), adminPublicKey...), adminPrivateKey: append([]byte(nil), adminPrivateKey...),
-		profile: profile, provider: provider,
-		params: params,
+		provider: provider, metadata: metadata,
 	}
 }
 
 func (account boundedExecutionAccount) signGroup(t *testing.T, targetTxn types.Transaction, includeAdmin bool) ([]byte, string) {
+	t.Helper()
+	signed, txid := account.signedGroup(t, targetTxn, includeAdmin)
+	rawGroup := make([]byte, 0)
+	for _, stxn := range signed {
+		rawGroup = append(rawGroup, msgpack.Encode(stxn)...)
+	}
+	return rawGroup, txid
+}
+
+func (account boundedExecutionAccount) signedGroup(t *testing.T, targetTxn types.Transaction, includeAdmin bool) ([]types.SignedTxn, string) {
 	t.Helper()
 	minFee := uint64(1_000)
 	if targetTxn.Fee > 0 && uint64(targetTxn.Fee) < composeddsa.BoundedMaxFeeV1+1 {
@@ -399,15 +469,15 @@ func (account boundedExecutionAccount) signGroup(t *testing.T, targetTxn types.T
 		t.Fatalf("build bounded base args: %v", err)
 	}
 	if includeAdmin {
-		profileEncoding, err := composeddsa.CanonicalBoundedProfile(account.profile, account.provider.BoundedAuthorizationMetadata())
+		encodedBinding, err := hex.DecodeString(account.metadata.ProgramBindingHex)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("decode bounded program binding: %v", err)
 		}
-		behaviorEncoding, err := composeddsa.CanonicalBoundedBehaviorParameters(account.params, account.provider.CreationParams())
-		if err != nil {
-			t.Fatal(err)
+		if len(encodedBinding) != 32 {
+			t.Fatalf("bounded program binding is %d bytes, want 32", len(encodedBinding))
 		}
-		binding := composeddsa.BoundedProgramBinding(boundedIntegrationKeyType, "aplane.falcon1024.v1", 12, account.spendingPublicKey, account.adminPublicKey, profileEncoding, behaviorEncoding)
+		var binding [32]byte
+		copy(binding[:], encodedBinding)
 		message, err := composeddsa.BoundedAdminMessage(composeddsa.AdminOperationRekey, binding, txID)
 		if err != nil {
 			t.Fatal(err)
@@ -427,11 +497,20 @@ func (account boundedExecutionAccount) signGroup(t *testing.T, targetTxn types.T
 	if err != nil {
 		t.Fatalf("sign bounded dummies: %v", err)
 	}
-	rawGroup := append([]byte(nil), signedTarget...)
-	for _, signedDummy := range signedDummies {
-		rawGroup = append(rawGroup, signedDummy...)
+	group := make([]types.SignedTxn, 0, 1+len(signedDummies))
+	var target types.SignedTxn
+	if err := msgpack.Decode(signedTarget, &target); err != nil {
+		t.Fatalf("decode signed bounded target: %v", err)
 	}
-	return rawGroup, algocrypto.GetTxID(targetTxn)
+	group = append(group, target)
+	for _, signedDummy := range signedDummies {
+		var dummy types.SignedTxn
+		if err := msgpack.Decode(signedDummy, &dummy); err != nil {
+			t.Fatalf("decode signed bounded dummy: %v", err)
+		}
+		group = append(group, dummy)
+	}
+	return group, algocrypto.GetTxID(targetTxn)
 }
 
 func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {

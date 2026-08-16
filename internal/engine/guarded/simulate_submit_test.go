@@ -24,6 +24,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -80,6 +81,18 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 				IsWitnessKey: true,
 			}},
 		})
+	})
+	mux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+		var req signerapi.GroupSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		transactions := make([]string, len(req.Requests))
+		for i, request := range req.Requests {
+			transactions[i] = request.TxnBytesHex
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: transactions})
 	})
 	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, r *http.Request) {
 		var req signerapi.ComponentSignRequest
@@ -308,7 +321,12 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 		c.SetSentryComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 		c.SetSentryPublicKeyForAddress(account, sentryHex)
 		c.SetBoundedMaxFeeForAddress(account, 10_000)
-		c.SetLsigSize(account, 4000)
+		c.SetLogicSigResourceProfile(account, lsigresource.Profile{
+			ProgramBytes:  4_000,
+			Spend:         &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
+			SpendingRekey: &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
+			AdminRekey:    &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
+		})
 	})
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
 	s.algod = algodClient

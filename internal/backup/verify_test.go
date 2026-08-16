@@ -88,6 +88,27 @@ func TestDeepVerifyBackupRejectsAddressMismatch(t *testing.T) {
 	}
 }
 
+func TestVerifyFileDeepRejectsOversizedEnvelopeBeforeReadingIt(t *testing.T) {
+	keysDir := t.TempDir()
+	path := filepath.Join(keysDir, "ADDR.apb")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(apcrypto.MaxStandaloneEnvelopeBytes + 1); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	result := verifyFileDeep(keysDir, "ADDR", []byte("passphrase"), noderole.RoleSigner)
+	if result.Valid || !strings.Contains(result.Error, "size limit") {
+		t.Fatalf("verifyFileDeep() result = %+v, want bounded-read rejection", result)
+	}
+}
+
 func newVerifyArchive(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()

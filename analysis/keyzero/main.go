@@ -49,11 +49,13 @@ var skipPatterns = []string{
 // Functions that are exempt from zeroing requirements.
 // These follow ownership patterns where the caller is responsible for zeroing:
 // - SignMessage: receives key material as parameter, caller calls ZeroKey when done
+// - AuthorizeTransaction: receives the same caller-owned KeyMaterial lifecycle
 // - GenerateKeypair/GenerateKey: returns key material to caller, caller must zero
 // - PrivateKeySize/etc: size constants, not actual key material
 // - Sign (wrapper): delegates to implementation that handles zeroing
 var exemptFunctions = map[string]string{
 	"SignMessage":            "key passed as parameter - caller owns lifecycle via ZeroKey()",
+	"AuthorizeTransaction":   "key passed as parameter - caller owns lifecycle via ZeroKey()",
 	"GenerateKeypair":        "returns keys to caller - caller responsible for zeroing",
 	"GenerateKey":            "returns keys to caller - caller responsible for zeroing",
 	"LoadKeyMaterial":        "returns keys to caller - caller responsible for zeroing via ZeroKey()",

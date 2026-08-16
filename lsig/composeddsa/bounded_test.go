@@ -28,7 +28,7 @@ func (boundedTestOps) CryptoSignatureSize() int { return 4 }
 func (boundedTestOps) MnemonicScheme() string   { return "" }
 func (boundedTestOps) MnemonicWordCount() int   { return 0 }
 func (boundedTestOps) DisplayColor() string     { return "" }
-func (boundedTestOps) TEALVersion() int         { return 12 }
+func (boundedTestOps) TEALVersion() int         { return 13 }
 func (boundedTestOps) BuildVerifyTEAL([]byte) (string, error) {
 	return "// BOUNDED_TEST_VERIFIER\nint 1\n", nil
 }
@@ -63,7 +63,7 @@ func TestBoundedGoldenVector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalBoundedProfile() error = %v", err)
 	}
-	const wantProfile = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e6465643100000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000010000000572656b65790000000961646d696e5f6b6579000000046e6f6e650000000000000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e617475726500000004000000087265717569726564000000087265717569726564000000087265717569726564000000010000000f61646d696e5f7369676e61747572650000000561646d696e0000050000000009666f7262696464656e00000009666f7262696464656e000000087265717569726564"
+	const wantProfile = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e6465643100000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000010000000572656b65790000000961646d696e5f6b6579000000046e6f6e650000000000000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e617475726500000004000000087265717569726564000000087265717569726564000000087265717569726564000000010000000f61646d696e5f7369676e61747572650000000561646d696e0000058f00000009666f7262696464656e00000009666f7262696464656e000000087265717569726564"
 	if got := hex.EncodeToString(profileEncoding); got != wantProfile {
 		t.Fatalf("canonical profile = %s, want %s", got, wantProfile)
 	}
@@ -103,7 +103,7 @@ func TestBoundedGoldenVector(t *testing.T) {
 		profileEncoding,
 		behaviorEncoding,
 	)
-	const wantBinding = "23aebf3166f64d6a0e6467d0fde647191094907f733c60fb946129d7cc828509"
+	const wantBinding = "bddc0ee16bac8ebad4519c1f138bbfc87e94817fc1d68119f310567fb98e5001"
 	if got := hex.EncodeToString(binding[:]); got != wantBinding {
 		t.Fatalf("program binding = %s, want %s", got, wantBinding)
 	}
@@ -111,7 +111,7 @@ func TestBoundedGoldenVector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BoundedAdminMessage() error = %v", err)
 	}
-	const wantMessage = "324dfa8eee495b7f4ddaa67f640c906184beb49abfd304d1336be233e84998b6"
+	const wantMessage = "dc6c476953d76d3fcea7ace82ef90624b170fa6aed699988d381ce790a613ce1"
 	if got := hex.EncodeToString(message[:]); got != wantMessage {
 		t.Fatalf("admin message = %s, want %s", got, wantMessage)
 	}
@@ -203,7 +203,7 @@ func TestCanonicalBoundedSentryProfileGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalBoundedProfile() error = %v", err)
 	}
-	const want = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e64656431000000010000000370617900000000000003e800000000000000010000000773656e747279310000001c61706c616e652e7769746e6573732d66616c636f6e313032342e76310000050000000001000000057370656e6400000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e617475726500000004000000087265717569726564000000087265717569726564000000087265717569726564000000010000001073656e7472795f7369676e61747572650000000673656e7472790000050000000008726571756972656400000009666f7262696464656e00000009666f7262696464656e"
+	const want = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e64656431000000010000000370617900000000000003e800000000000000010000000773656e747279310000001c61706c616e652e7769746e6573732d66616c636f6e313032342e76310000058f00000001000000057370656e6400000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e617475726500000004000000087265717569726564000000087265717569726564000000087265717569726564000000010000001073656e7472795f7369676e61747572650000000673656e7472790000058f00000008726571756972656400000009666f7262696464656e00000009666f7262696464656e"
 	if got := hex.EncodeToString(encoded); got != want {
 		t.Fatalf("canonical sentry profile = %s, want %s", got, want)
 	}
@@ -257,8 +257,8 @@ func TestBoundedAuthorizationMetadataSnapshotsSentryContract(t *testing.T) {
 	if metadata.Sentry == nil || metadata.Sentry.ComponentKeyID != wantID || metadata.Sentry.PublicKeyHex != hex.EncodeToString(sentryPublicKey) {
 		t.Fatalf("Sentry = %#v", metadata.Sentry)
 	}
-	if got, want := metadata.PostSigningLogicSigSize, 100+4+boundedmeta.SentrySignatureMaxSizeV1; got != want {
-		t.Fatalf("PostSigningLogicSigSize = %d, want %d", got, want)
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 4+boundedmeta.SentrySignatureMaxSizeV1; got != want {
+		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
 	if _, err := provider.BuildBoundedAuthorizationMetadata(
 		sentryPublicKey,
@@ -490,7 +490,7 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 			name: "base without static layout",
 			make: func() *ComposedDSA {
 				provider := newBoundedTestProvider(valid)
-				provider.ops = suffixTestOps{}
+				provider.ops = noLayoutV13Ops{}
 				return provider
 			},
 			want: "does not expose a static bounded signature argument layout",
@@ -594,8 +594,8 @@ func TestBoundedAuthorizationMetadataSnapshotsAdminContract(t *testing.T) {
 	if metadata.AdminKeyID == "" || len(metadata.ProgramBindingHex) != 64 {
 		t.Fatalf("admin metadata = %#v", metadata)
 	}
-	if want := 100 + 4 + BoundedAdminSignatureMaxSize; metadata.PostSigningLogicSigSize != want {
-		t.Fatalf("PostSigningLogicSigSize = %d, want %d", metadata.PostSigningLogicSigSize, want)
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey), 4+BoundedAdminSignatureMaxSize; got != want {
+		t.Fatalf("admin argument bytes = %d, want %d", got, want)
 	}
 	if got := len(metadata.ArgumentLayout); got != 2 || metadata.ArgumentLayout[1].Source != boundedmeta.ArgSourceAdmin {
 		t.Fatalf("ArgumentLayout = %#v", metadata.ArgumentLayout)
@@ -664,7 +664,7 @@ func TestNilBoundedPreservesLegacyTEAL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
-	const want = "#pragma version 12\n\n// BOUNDED_TEST_VERIFIER\nint 1\nassert\n\n// LEGACY_POLICY\nint 1\nassert\n\nint 1\nreturn\n"
+	const want = "#pragma version 13\n\n// BOUNDED_TEST_VERIFIER\nint 1\nassert\n\n// LEGACY_POLICY\nint 1\nassert\n\nint 1\nreturn\n"
 	if teal != want {
 		t.Fatalf("nil-profile TEAL changed:\n%s\nwant:\n%s", teal, want)
 	}

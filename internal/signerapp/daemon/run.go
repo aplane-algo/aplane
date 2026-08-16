@@ -307,7 +307,7 @@ func Run(dataDir string) int {
 	printSecurityAudit(passphraseTimeout, &config, config.IPCPath, runtime.CoreDumpsDisabled, runtime.MemoryLocked, lockOnDisconnect, passphraseSource)
 
 	// Log server start
-	keysSnapshot, _, _ := ir.KeySnapshot()
+	keysSnapshot, _ := ir.KeySnapshot()
 	keyCount := len(keysSnapshot)
 
 	if auditLog != nil {

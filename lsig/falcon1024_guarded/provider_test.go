@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
@@ -56,8 +55,7 @@ func TestGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 	}
 
 	checks := []string{
-		"#pragma version 12",
-		"byte 0x" + lsigsalt.PushbytesSaltMarkerHex(0),
+		"#pragma version 13",
 		"sha512_256",
 		"arg 0",
 		"falcon_verify",
@@ -73,6 +71,9 @@ func TestGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 		if !strings.Contains(teal, want) {
 			t.Fatalf("GenerateTEAL() missing %q:\n%s", want, teal)
 		}
+	}
+	if strings.Contains(teal, "APLANE_LSIG_SALT") || strings.Contains(teal, "Counter marker") {
+		t.Fatalf("GenerateTEAL() contains a manual salt anchor:\n%s", teal)
 	}
 
 	if strings.Index(teal, "arg 0") > strings.Index(teal, "arg 1") {
@@ -110,6 +111,32 @@ func TestBuildArgsUnpacksComponentSignatures(t *testing.T) {
 	}
 	if !bytes.Equal(args[0], userSig) || !bytes.Equal(args[1], sentrySig) {
 		t.Fatalf("BuildArgs() = %x/%x, want %x/%x", args[0], args[1], userSig, sentrySig)
+	}
+}
+
+func TestComponentSignaturePackingUsesCompressedMaximum(t *testing.T) {
+	for _, size := range []int{1281, family.MaxSignatureSize} {
+		userSig := bytes.Repeat([]byte{0x11}, size)
+		sentrySig := bytes.Repeat([]byte{0x22}, size)
+		packed, err := PackComponentSignatures(userSig, sentrySig)
+		if err != nil {
+			t.Fatalf("PackComponentSignatures(%d) error = %v", size, err)
+		}
+		gotUser, gotSentry, err := UnpackComponentSignaturesForKeyType(KeyTypeV1, packed)
+		if err != nil {
+			t.Fatalf("UnpackComponentSignaturesForKeyType(%d) error = %v", size, err)
+		}
+		if !bytes.Equal(gotUser, userSig) || !bytes.Equal(gotSentry, sentrySig) {
+			t.Fatalf("signature round trip at %d bytes did not preserve components", size)
+		}
+	}
+
+	tooLarge := bytes.Repeat([]byte{0x33}, family.MaxSignatureSize+1)
+	if _, err := PackComponentSignatures(tooLarge, []byte{1}); err == nil {
+		t.Fatalf("PackComponentSignatures accepted %d-byte user signature", len(tooLarge))
+	}
+	if _, err := PackComponentSignatures([]byte{1}, tooLarge); err == nil {
+		t.Fatalf("PackComponentSignatures accepted %d-byte sentry signature", len(tooLarge))
 	}
 }
 

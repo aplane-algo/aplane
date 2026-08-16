@@ -4,18 +4,20 @@
 package apshellapp
 
 import (
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
 // SigningContextDetails is the app-owned signer context view.
 type SigningContextDetails struct {
-	Address        string
-	SigningAddress string
-	KeyType        string
-	SigSize        int
-	IsLogicSig     bool
-	DisplayKeyType string
+	Address           string
+	SigningAddress    string
+	KeyType           string
+	SigSize           int
+	IsLogicSig        bool
+	AuthorizationKind algorithm.AuthorizationKind
+	DisplayKeyType    string
 }
 
 // PreparedTxn is the app-owned prepared transaction summary plus its internal engine handle.

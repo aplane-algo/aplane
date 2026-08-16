@@ -5,6 +5,7 @@ import { AlgorandClient, populateAppCallResources } from '@algorandfoundation/al
 import { AlgoAmount } from '@algorandfoundation/algokit-utils/types/amount';
 import { StakingPoolClient } from './contracts/StakingPoolClient.js';
 import { ValidatorRegistryClient } from './contracts/ValidatorRegistryClient.js';
+const PLUGIN_PROTOCOL = 'aplane-plugin/2';
 const GATING_TYPE_NONE = 0;
 const GATING_TYPE_ASSETS_CREATED_BY = 1;
 const GATING_TYPE_ASSET_ID = 2;
@@ -190,7 +191,7 @@ async function handleInitialize(params) {
     return {
         success: true,
         message: `Reti plugin initialized on ${pluginState.network} (${appIdMessage})`,
-        version: params.version,
+        protocol: PLUGIN_PROTOCOL,
     };
 }
 async function ensureContextNetwork(context) {

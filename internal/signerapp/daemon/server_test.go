@@ -71,7 +71,6 @@ func TestSignerPlannerDepsSnapshotIncludesKeyIndex(t *testing.T) {
 			"ALICE": "ed25519",
 			"BOB":   "ed25519",
 		},
-		map[string]int{},
 	)
 
 	deps := signerPlannerDeps{signer: signer}

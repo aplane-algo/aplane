@@ -40,6 +40,7 @@ import (
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 )
 
 // testPassphrase is a fixed passphrase for test keystore creation.
@@ -174,6 +175,15 @@ func configureMockAlgod(t *testing.T, server *Signer) (cleanup func()) {
 	}
 
 	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/v2/transactions/params" {
+			body := fmt.Sprintf(`{"consensus-version":%q,"fee":0,"genesis-hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","genesis-id":"testnet-v1.0","last-round":100,"min-fee":1000}`, protocol.ConsensusV41)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    req,
+			}, nil
+		}
 		if req.URL.Path != "/v2/teal/compile" {
 			return &http.Response{
 				StatusCode: http.StatusNotFound,
@@ -187,23 +197,41 @@ func configureMockAlgod(t *testing.T, server *Signer) (cleanup func()) {
 			return nil, err
 		}
 		bytecode := compiledPushbytesSaltBytecode(0)
-		isTrailingBytecblockSalt := strings.HasSuffix(strings.TrimSpace(string(source)), "bytecblock 0x00")
-		if isTrailingBytecblockSalt {
-			bytecode = []byte{0x0c, 0x81, 0x01, 0x43, 0x26, 0x01, 0x01, 0x00}
-		} else if bytes.Contains(source, []byte("bytecblock 0x00")) {
-			bytecode = []byte{
-				0x0c,
-				0x26, 0x01, 0x01, 0x00,
-				0x31, 0x17,
-				0x2d,
-				0x81, 0x01,
+		hash := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+		if bytes.Contains(source, []byte("#pragma version 13")) &&
+			!bytes.Contains(source, []byte("APLANE_LSIG_SALT")) &&
+			!bytes.Contains(source, []byte("bytecblock 0x00")) {
+			bytecode = append([]byte{13, 0x81, 0}, make([]byte, 32)...)
+			for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
+				bytecode[2] = byte(counter)
+				candidate, candidateErr := lsigsalt.UseUnmodifiedOffCurve(bytecode)
+				if candidateErr == nil {
+					hash = candidate.Address.String()
+					break
+				}
+			}
+			if hash == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ" {
+				t.Fatal("failed to construct compiler-auto-salted mock bytecode")
+			}
+		} else {
+			isTrailingBytecblockSalt := strings.HasSuffix(strings.TrimSpace(string(source)), "bytecblock 0x00")
+			if isTrailingBytecblockSalt {
+				bytecode = []byte{0x0c, 0x81, 0x01, 0x43, 0x26, 0x01, 0x01, 0x00}
+			} else if bytes.Contains(source, []byte("bytecblock 0x00")) {
+				bytecode = []byte{
+					0x0c,
+					0x26, 0x01, 0x01, 0x00,
+					0x31, 0x17,
+					0x2d,
+					0x81, 0x01,
+				}
+			}
+			if !isTrailingBytecblockSalt {
+				bytecode = append(bytecode, make([]byte, 32)...)
 			}
 		}
-		if !isTrailingBytecblockSalt {
-			bytecode = append(bytecode, make([]byte, 32)...)
-		}
 		body, err := json.Marshal(map[string]interface{}{
-			"hash":   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"hash":   hash,
 			"result": base64.StdEncoding.EncodeToString(bytecode),
 		})
 		if err != nil {
@@ -1088,6 +1116,6 @@ func reloadKeysForTest(server *Signer) error {
 		return fmt.Errorf("scan failed: %w", err)
 	}
 
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes(), ks.GetLsigSizes())
+	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
 	return nil
 }

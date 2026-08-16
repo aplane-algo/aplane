@@ -9,14 +9,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	algoCrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/dop251/goja"
 
@@ -440,7 +443,7 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		})}})
 	})
 
-	t.Run("oversized lsig size", func(t *testing.T) {
+	t.Run("invalid LogicSig resource", func(t *testing.T) {
 		_, _, api := newTestAPI(t)
 
 		defer func() {
@@ -448,21 +451,58 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			if r == nil {
 				t.Fatal("expected panic")
 			}
-			if got := r.(goja.Value).String(); !strings.Contains(got, "invalid lsigSize") || !strings.Contains(got, "too large") {
-				t.Fatalf("panic = %q, want lsigSize too-large error", got)
+			if got := r.(goja.Value).String(); !strings.Contains(got, "invalid lsigResources.programBytes") {
+				t.Fatalf("panic = %q, want LogicSig resource error", got)
 			}
 		}()
 
 		api.jsPlan(goja.FunctionCall{Arguments: []goja.Value{api.runtime.ToValue([]interface{}{
 			map[string]interface{}{
 				"txnBytesHex": "5458",
-				"lsigSize":    float64(math.MaxInt) + 1,
+				"lsigResources": map[string]interface{}{
+					"programBytes":  -1,
+					"argumentBytes": 0,
+					"maxOpcodeCost": 1,
+				},
 			},
+		})}})
+	})
+
+	t.Run("invalid pq scheme type", func(t *testing.T) {
+		_, _, api := newTestAPI(t)
+
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("expected panic")
+			}
+			if got := r.(goja.Value).String(); !strings.Contains(got, "pqScheme must be a non-empty string") {
+				t.Fatalf("panic = %q, want pqScheme validation error", got)
+			}
+		}()
+
+		api.jsPlan(goja.FunctionCall{Arguments: []goja.Value{api.runtime.ToValue([]interface{}{
+			map[string]interface{}{"txnBytesHex": "5458", "pqScheme": float64(1)},
 		})}})
 	})
 
 	t.Run("maps request and response", func(t *testing.T) {
 		eng, _, api := newTestAPI(t)
+		algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v2/transactions/params" {
+				http.NotFound(w, r)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
+				ConsensusVersion: string(protocol.ConsensusV42),
+			})
+		}))
+		defer algodServer.Close()
+		algodClient, err := algod.MakeClient(algodServer.URL, "")
+		if err != nil {
+			t.Fatalf("algod.MakeClient() error = %v", err)
+		}
+		eng.AlgodClient = algodClient
 
 		var gotReq signerapi.GroupSignRequest
 		signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
@@ -477,16 +517,16 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 				t.Fatalf("decode request: %v", err)
 			}
 			return jsonResponse(r, http.StatusOK, signerapi.GroupPlanResponse{
-				Transactions: []string{"TXabc", "TXdef"},
+				Transactions: []string{"TXabc", "TXdef", "TXghi"},
 				Mutations: &signerapi.MutationReport{
 					DummiesAdded:     1,
 					GroupIDChanged:   true,
 					FeesModified:     []int{0, 2},
 					TotalFeesDelta:   3000,
-					OriginalCount:    2,
-					FinalCount:       3,
+					OriginalCount:    3,
+					FinalCount:       4,
 					PassthroughCount: 0,
-					ForeignCount:     1,
+					ForeignCount:     2,
 					Reason:           "lsig_budget",
 				},
 			})
@@ -506,7 +546,15 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			},
 			map[string]interface{}{
 				"txnBytesHex": "5458beef",
-				"lsigSize":    float64(123),
+				"lsigResources": map[string]interface{}{
+					"programBytes":  float64(123),
+					"argumentBytes": float64(45),
+					"maxOpcodeCost": float64(6_789),
+				},
+			},
+			map[string]interface{}{
+				"txnBytesHex": "5458cafe",
+				"pqScheme":    signerapi.PQSchemeFalcon1024,
 			},
 		})}})
 
@@ -523,13 +571,19 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			},
 			{
 				TxnBytesHex: "5458beef",
-				LsigSize:    123,
+				LsigResources: &signerapi.LogicSigResourceUsage{
+					ProgramBytes: 123, ArgumentBytes: 45, MaxOpcodeCost: 6_789,
+				},
+			},
+			{
+				TxnBytesHex: "5458cafe",
+				PQScheme:    signerapi.PQSchemeFalcon1024,
 			},
 		}) {
 			t.Fatalf("request = %#v, want mapped sign requests", gotReq.Requests)
 		}
 
-		if !reflect.DeepEqual(toStringArrayValue(got["transactions"]), []string{"TXabc", "TXdef"}) {
+		if !reflect.DeepEqual(toStringArrayValue(got["transactions"]), []string{"TXabc", "TXdef", "TXghi"}) {
 			t.Fatalf("transactions = %#v, want planned transactions", got["transactions"])
 		}
 
@@ -568,6 +622,7 @@ func TestKeyTypesMapsFullMetadata(t *testing.T) {
 					Family:            "logic",
 					DisplayName:       "Generic LSig",
 					Description:       "scripted signer",
+					AuthorizationKind: "logic_sig",
 					RequiresLogicSig:  true,
 					MnemonicWordCount: 25,
 					MnemonicImport:    true,
@@ -621,7 +676,7 @@ func TestKeyTypesMapsFullMetadata(t *testing.T) {
 	default:
 		t.Fatalf("keyTypes() = %#v, want slice", result)
 	}
-	if entry["keyType"] != "generic-lsig" || entry["family"] != "logic" || entry["requiresLogicSig"] != true || entry["mnemonicImport"] != true {
+	if entry["keyType"] != "generic-lsig" || entry["family"] != "logic" || entry["authorizationKind"] != "logic_sig" || entry["requiresLogicSig"] != true || entry["mnemonicImport"] != true {
 		t.Fatalf("keyTypes()[0] = %#v, want top-level metadata", entry)
 	}
 

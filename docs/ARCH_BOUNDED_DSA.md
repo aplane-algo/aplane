@@ -60,14 +60,14 @@ is a complete value-spending policy.
 |---|---|
 | Contract identifier | `bounded1` |
 | Composed YAML schema | `schema_version: 2` |
-| TEAL version | 12 |
+| TEAL version | 13 |
 | Spend effects | non-empty closed subset of `pay`, `axfer`, `asset_opt_in` |
 | Admin operations | `rekey` only |
 | Admin authorization | `spending_key` or `admin_key` |
 | Admin policy gate | `none` or `layer3`; admin-key authorization requires `none` |
 | Contract admin primitive | Falcon-1024 only |
 | Contract admin public key | exactly 1,793 bytes |
-| Contract admin signature | non-empty, at most 1,280 bytes |
+| Contract admin signature | non-empty, at most 1,423 bytes |
 | Maximum compiled `max_fee` | 10,000 microAlgos |
 | Layer-3 arguments | declared static runtime and signer-derived slots |
 | Signer-derived primitive | fixed-depth Merkle allowlist proof (512 bytes) |
@@ -83,53 +83,25 @@ always means the profile's single Falcon-1024 contract admin key. Supporting
 another admin primitive requires a new bounded-authorization contract.
 
 The 10,000 microAlgo ceiling supports the currently measured Falcon/Falcon
-fixed-list shape at a 1,000 microAlgo network minimum fee, including its
-eight-transaction worst-case path. It is an absolute v1 profile ceiling, not a
-promise of viability on networks with a higher minimum fee. Group size and
-network-fee viability are path-specific. The planner must reject a transaction
-path whose required pooled fee exceeds the compiled ceiling; a profile is
-fully viable on a network only when every enabled path fits.
+fixed-list shape at a 1,000 microAlgo network minimum fee. It is an absolute
+v1 profile ceiling, not a promise of viability on networks with a higher
+minimum fee. Group size and network-fee viability are path-specific. The
+planner resolves argument/opcode dummies and priced program bytes for the
+active consensus profile, then rejects a transaction path whose finalized fee
+exceeds the compiled ceiling.
 
-The composer baseline uses a real Falcon spending verifier and a
-controlled trivially true Layer-3 predicate. At a 1,000-byte LogicSig budget
-contribution per group transaction, LocalNet compilation freezes:
+The composer baseline uses a real Falcon spending verifier and a controlled
+trivially true Layer-3 predicate. Every shipped Layer-3 policy adds its own
+final-bytecode and selected-path resource cells before the key type can be
+enabled. `TestBundledBoundedCompiledBudgetMatrix` compiles the shipped
+templates with the pinned TEAL v13 toolchain, derives argument layouts from
+durable bounded metadata, applies the conservative reviewed opcode ceiling,
+and runs the production v42 resource solver.
 
-| Profile | Bytecode | Spend bytes | Admin-rekey bytes | Largest group |
-|---|---:|---:|---:|---:|
-| pay, rekey disabled | 1,882 | 3,162 | n/a | 4 |
-| pay/axfer, spending-key rekey | 1,931 | 3,211 | n/a | 4 |
-| pay/axfer, Falcon-admin rekey | 3,828 | 5,108 | 6,388 | 7 |
-
-These are compiler/address regression cells, not final product-allowlist
-budgets. Every shipped Layer-3 policy adds its own worst-case cells before the
-key type can be enabled. The baseline proves that the contract-admin envelope
-itself fits under the v1 fee ceiling with three group slots of headroom.
-
-The shipped `aplane.falcon1024-allowlist-alock.v1` worst-case cell compiles
-30 recipients, 30 asset IDs, both amount ceilings, a Falcon spending key, and
-a Falcon contract admin key:
-
-| Policy cell | Bytecode | Spend bytes | Admin-rekey bytes | Largest group |
-|---|---:|---:|---:|---:|
-| fixed allowlist, audited maximum | 5,312 | 6,592 | 7,872 | 8 |
-| Corridor Merkle+sentry | 5,940 | 9,012 | 8,500 | 10 |
-
-For one protected LogicSig transaction, the required group size is
-`ceil(path_lsig_bytes / 1000)` and the finalized protected-transaction fee is
-`required_group * min_fee`. The compiled 10,000 microAlgo `max_fee` applies to
-every path:
-
-| Policy path | LogicSig bytes | Required group | Highest viable `min_fee` |
-|---|---:|---:|---:|
-| Fixed allowlist spend | 6,592 | 7 | 1,428 |
-| Fixed allowlist admin rekey | 7,872 | 8 | 1,250 |
-| Corridor spend | 9,012 | 10 | 1,000 |
-| Corridor admin rekey | 8,500 | 9 | 1,111 |
-
-The fixed-allowlist profile is therefore fully viable through a 1,250
-microAlgo network minimum fee. Corridor is fully viable through 1,000
-microAlgos because its spend path is limiting; its admin-rekey path remains
-viable through 1,111 microAlgos.
+The resulting fee includes transaction bases and priced program bytes. The
+compiled 10,000 microAlgo `max_fee` applies to every path. A higher network
+minimum fee is evaluated through the same unified fee calculation rather than
+through a legacy `ceil(program + args)` projection.
 
 Schema-v1 custom DSA policy is expert mode. Schema-v2 bounded templates may
 also use custom Layer 3 TEAL, but the framework still owns the effect envelope,
@@ -158,26 +130,27 @@ requires the spending key.
 Compiler-backed maximum-path measurements are frozen by
 `TestBundledBoundedCompiledBudgetMatrix`:
 
-| Key type | Bytecode | Spend path | Admin path | Largest group |
-|---|---:|---:|---:|---:|
-| Falcon inline allowlist | 3,159 | 4,439 | n/a | 5 |
-| Falcon Merkle allowlist | 2,188 | 3,980 | n/a | 4 |
-| Falcon timelock | 1,947 | 3,227 | n/a | 4 |
-| Falcon rekey-locked allowlist | 5,312 | 6,592 | 7,872 | 8 |
-| Corridor | 5,940 | 9,012 | 8,500 | 10 |
+| Key type | Final bytecode | Spend args / v42 group / fee | Admin args / v42 group / fee |
+|---|---:|---:|---:|
+| Falcon inline allowlist | 3,155 | 1,423 / 2 / 2,117 | n/a |
+| Falcon Merkle allowlist | 2,184 | 1,935 / 2 / 2,019 | n/a |
+| Falcon timelock | 1,943 | 1,423 / 2 / 2,000 | n/a |
+| Falcon rekey-locked allowlist | 5,308 | 1,423 / 2 / 2,332 | 2,846 / 3 / 3,232 |
+| Corridor | 5,936 | 3,358 / 4 / 4,196 | 2,846 / 3 / 3,295 |
 
-At the 10,000 microAlgo ceiling, Corridor's ten-transaction spend group is
-viable at the current 1,000 microAlgo network minimum fee. The nine-transaction
-admin-rekey path is independently viable through 1,111 microAlgos. The planner
-uses the selected path's LogicSig size and rejects that path before releasing a
-signature when its finalized fee would exceed the profile ceiling.
+Fees are microAlgos at a 1,000-microAlgo minimum fee and include v42 program
+pricing. The table uses the conservative 20,000-opcode per-path ceiling; its
+group count includes the resource dummies and their own program/opcode use.
+The planner rejects a selected path before releasing a signature when its
+finalized fee would exceed the profile ceiling.
 
 ## Effect Model
 
 The independent machine-readable inventory is
 [`BOUNDED1_PROTOCOL_INVENTORY.json`](BOUNDED1_PROTOCOL_INVENTORY.json). It is
 maintained independently of renderer/classifier code and pinned to
-go-algorand-sdk v2.11.0, go-algorand reference `589c761a1cfc`, and AVM v12.
+go-algorand-sdk v2.11.2 pseudo-version `967fcacfacdf`, go-algorand reference
+`68e036affd9e`, and AVM v13.
 It separately freezes the flattened SDK transaction-field surface and parses
 the pinned SDK source in tests to detect newly introduced transaction types.
 
@@ -255,7 +228,7 @@ canonical_bounded_profile =
     field(operation_0.policy_gate) || ... ||
   u32(sentry_present) ||
     if present: field("sentry1") ||
-      field("aplane.witness-falcon1024.v1") || u32(1280) ||
+      field("aplane.witness-falcon1024.v1") || u32(1423) ||
       u32(1) || field("spend") ||
   field(layer3_policy) ||
   u32(base_signature_arg_count) || u32(base_arg_0_max) || ... ||
@@ -345,6 +318,16 @@ the current authorization address. The helper structurally validates every
 composer-owned gate and verification site rather than searching for byte
 substrings.
 
+During the pre-release FNet transition, TEAL v13 bounded programs can contain
+either FNet's historical fixed-width branch offsets or the finalized signed
+varint encoding. The offline helper does not accept a program merely because
+one interpretation satisfies the bounded contract. It decodes both forms and
+accepts the sole syntactically valid instruction stream, or two streams whose
+complete instruction boundaries, operands, and normalized control-flow targets
+are identical. Divergent dual parses are rejected before bounded-contract
+validation. The fixed-width compatibility path is transitional and should be
+removed after FNet no longer produces or requires that pre-release encoding.
+
 ### Golden vector 1
 
 The first implementation must freeze and test a vector using:
@@ -365,7 +348,7 @@ runtime_args: []
 argument_layout:
   - {index: 0, name: base_signature_0, source: base_signature, max_size: 4,
      paths: {spend: required, spending_rekey: required, admin_rekey: required}}
-  - {index: 1, name: admin_signature, source: admin, max_size: 1280,
+  - {index: 1, name: admin_signature, source: admin, max_size: 1423,
      paths: {spend: forbidden, spending_rekey: forbidden, admin_rekey: required}}
 behavior parameter recipients (address[]): one 32-byte value of 0x33
 transaction_id: 32 bytes of 0x44
@@ -384,7 +367,7 @@ canonical_bounded_profile_hex:
   10626173655f7369676e61747572655f300000000e626173655f7369676e6174
   7572650000000400000008726571756972656400000008726571756972656400
   0000087265717569726564000000010000000f61646d696e5f7369676e617475
-  72650000000561646d696e0000050000000009666f7262696464656e00000009
+  72650000000561646d696e0000058f00000009666f7262696464656e00000009
   666f7262696464656e000000087265717569726564
 
 canonical_behavior_parameters_length: 116
@@ -398,10 +381,10 @@ contract_admin_key_id:
   MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
-  23aebf3166f64d6a0e6467d0fde647191094907f733c60fb946129d7cc828509
+  bddc0ee16bac8ebad4519c1f138bbfc87e94817fc1d68119f310567fb98e5001
 
 admin_message:
-  324dfa8eee495b7f4ddaa67f640c906184beb49abfd304d1336be233e84998b6
+  dc6c476953d76d3fcea7ace82ef90624b170fa6aed699988d381ce790a613ce1
 ```
 
 Whitespace and line wrapping above are presentation only. Code tests decode
@@ -437,10 +420,10 @@ frozen argument layout is:
 
 | Index | Name | Source | Max bytes | Spend | Spending rekey | Admin rekey |
 |---:|---|---|---:|---|---|---|
-| 0 | `base_signature_0` | `base_signature` | 1280 | `required` | `required` | `required` |
+| 0 | `base_signature_0` | `base_signature` | 1423 | `required` | `required` | `required` |
 | 1 | `merkle_proof` | `derived` | 512 | `optional` | `forbidden` | `forbidden` |
-| 2 | `sentry_signature` | `sentry` | 1280 | `required` | `forbidden` | `forbidden` |
-| 3 | `admin_signature` | `admin` | 1280 | `forbidden` | `forbidden` | `required` |
+| 2 | `sentry_signature` | `sentry` | 1423 | `required` | `forbidden` | `forbidden` |
+| 3 | `admin_signature` | `admin` | 1423 | `forbidden` | `forbidden` | `required` |
 
 Expected canonical encodings:
 
@@ -452,19 +435,19 @@ corridor_canonical_bounded_profile_hex:
   0c61737365745f6f70745f696e0000000000002710000000010000000572656b
   65790000000961646d696e5f6b6579000000046e6f6e65000000010000000773
   656e747279310000001c61706c616e652e7769746e6573732d66616c636f6e31
-  3032342e76310000050000000001000000057370656e64000000106d65726b6c
-  655f616c6c6f776c6973740000000100000500000000010000000c6d65726b6c
+  3032342e76310000058f00000001000000057370656e64000000106d65726b6c
+  655f616c6c6f776c697374000000010000058f000000010000000c6d65726b6c
   655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f70726f6f
   660000000a726563697069656e74730000020000000000000000040000000000
   000010626173655f7369676e61747572655f300000000e626173655f7369676e
-  6174757265000005000000000872657175697265640000000872657175697265
+  61747572650000058f0000000872657175697265640000000872657175697265
   64000000087265717569726564000000010000000c6d65726b6c655f70726f6f
   66000000076465726976656400000200000000086f7074696f6e616c00000009
   666f7262696464656e00000009666f7262696464656e00000002000000107365
-  6e7472795f7369676e61747572650000000673656e7472790000050000000008
+  6e7472795f7369676e61747572650000000673656e7472790000058f00000008
   726571756972656400000009666f7262696464656e00000009666f7262696464
   656e000000030000000f61646d696e5f7369676e61747572650000000561646d
-  696e0000050000000009666f7262696464656e00000009666f7262696464656e
+  696e0000058f00000009666f7262696464656e00000009666f7262696464656e
   000000087265717569726564
 
 corridor_canonical_behavior_parameters_length: 1979
@@ -567,10 +550,10 @@ corridor_merkle_proof_hex:
   48c12a8dd675e9dcd3c63141fbfde6d11056c392b4379c3bbdc79a8511d0e65b
 
 corridor_bounded_program_binding:
-  4da9e512e48629601b5065850ef7514023251363d4664cfe9b941a108c6dd837
+  fea0a4e58434a64714bcde9762f19d674e98808192e1280b1fb85b6acd76eb0c
 
 corridor_admin_message:
-  f4ff0b4c08ca085cea41db660f91952225428f474f169ad2cf3ebfcdbf14073e
+  076546841ec805465aa8bf90a201014b157be5775288b6958688267af2174a8f
 ```
 
 Whitespace and line wrapping are presentation only.
@@ -587,7 +570,7 @@ known-field and duplicate-key rejection at every nested level.
 
 ```yaml
 schema_version: 2
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 template_mode: generated
 base_key_type: aplane.falcon1024.v1
@@ -715,7 +698,8 @@ Existing key signing is driven by durable key metadata, not an installed YAML
 definition. The metadata contract includes the bounded contract, base layout,
 profile, admin operation modes, `layer3_policy`, runtime and derived argument
 declarations, static argument layout, Falcon admin public metadata and binding,
-and maximum post-signing LogicSig size.
+and the selected-path LogicSig argument and opcode ceilings. Program bytes come
+from the final stored bytecode.
 
 Non-bounded LogicSig keys use `signing_metadata_version: 1`. Bounded keys use
 `signing_metadata_version: 2` and require the canonical
@@ -732,8 +716,8 @@ a sentry and `signing_flow: bounded-sentry1` for profiles whose durable
 metadata contains `sentry.contract: sentry1`. Both expose the same typed
 `bounded_authorization` object. `/keytypes` exposes definition-level
 profile and base-layout capabilities. `/keys` additionally exposes the
-instance Contract Admin Key ID, program binding, and maximum post-signing
-LogicSig size. Clients route:
+instance Contract Admin Key ID, program binding, and structured selected-path
+LogicSig resource profile. Clients route:
 
 - non-sentry pure spend to ordinary `/sign`;
 - sentry-gated pure spend through the first-party client's user-first

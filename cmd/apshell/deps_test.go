@@ -53,6 +53,8 @@ func TestClientDoesNotLinkSignerRegistration(t *testing.T) {
 		"github.com/aplane-algo/aplane/internal/keygen",
 		"github.com/aplane-algo/aplane/internal/mnemonic",
 		"github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg",
+		"github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg",
+		"github.com/aplane-algo/aplane/internal/signing/falcon1024/signerops",
 		"github.com/aplane-algo/aplane/lsig/dsafamily/signerreg",
 		"github.com/aplane-algo/aplane/lsig/signerreg",
 	}

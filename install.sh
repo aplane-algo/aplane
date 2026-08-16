@@ -1067,6 +1067,11 @@ networks:
     algod:
       server: https://mainnet-api.4160.nodely.dev
       token: ""
+  fnet:
+    algod:
+      server: https://fnet-api.4160.nodely.dev
+      token: ""
+    genesis_hash: "kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA="
   localnet:
     algod:
       server: http://localhost:4001
@@ -1089,6 +1094,7 @@ network: testnet
 networks_allowed:
   - mainnet
   - testnet
+  - fnet
 
 signer_status_poll_interval: "10s"
 
@@ -1100,6 +1106,10 @@ networks:
   mainnet:
     algod:
       server: https://mainnet-api.4160.nodely.dev
+      token: ""
+  fnet:
+    algod:
+      server: https://fnet-api.4160.nodely.dev
       token: ""
   localnet:
     algod:
@@ -1945,6 +1955,7 @@ network: testnet
 networks_allowed:
   - mainnet
   - testnet
+  - fnet
 
 signer_status_poll_interval: "10s"
 
@@ -1956,6 +1967,10 @@ networks:
   mainnet:
     algod:
       server: https://mainnet-api.4160.nodely.dev
+      token: ""
+  fnet:
+    algod:
+      server: https://fnet-api.4160.nodely.dev
       token: ""
   localnet:
     algod:
@@ -2127,6 +2142,11 @@ if [ "$LOCAL_MODE" = "1" ]; then
 
     # Resolve/build bundled plugin payloads before replacing binaries.
     prepare_builtin_plugin_payloads
+
+    # The local admin socket lives below the install root. Keep every
+    # installer-owned ancestor private so ipcbind's directory-chain validation
+    # cannot be defeated by a permissive umask (for example, 002 -> 0775).
+    chmod 700 "$LOCAL_PATH"
 
     # Create directories
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"

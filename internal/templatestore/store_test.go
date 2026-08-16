@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -378,6 +379,7 @@ func markTemplateState(t *testing.T, paths utilkeys.Paths, keyType string, templ
 func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
 	derivationVersion1 := DerivationVersionPushbytes
 	derivationVersion2 := DerivationVersionTrailingBytecblock
+	derivationVersion3 := DerivationVersionAlgodAutoSalt
 	derivationVersion99 := 99
 	tests := []struct {
 		name    string
@@ -397,7 +399,7 @@ func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "explicit derivation version 1",
+			name: "retired derivation version 1",
 			spec: BaseTemplateSpec{
 				SchemaVersion:     1,
 				DerivationVersion: &derivationVersion1,
@@ -406,13 +408,27 @@ func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
 				Version:           1,
 				DisplayName:       "Test",
 			},
-			wantErr: false,
+			wantErr: true,
+			errMsg:  "derivation_version 1 is retired",
 		},
 		{
-			name: "explicit derivation version 2",
+			name: "retired derivation version 2",
 			spec: BaseTemplateSpec{
 				SchemaVersion:     1,
 				DerivationVersion: &derivationVersion2,
+				Publisher:         "test",
+				Family:            "test",
+				Version:           1,
+				DisplayName:       "Test",
+			},
+			wantErr: true,
+			errMsg:  "derivation_version 2 is retired",
+		},
+		{
+			name: "supported derivation version 3",
+			spec: BaseTemplateSpec{
+				SchemaVersion:     1,
+				DerivationVersion: &derivationVersion3,
 				Publisher:         "test",
 				Family:            "test",
 				Version:           1,
@@ -432,6 +448,19 @@ func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "derivation_version 99 is not supported",
+		},
+		{
+			name: "opcode ceiling above group maximum",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 1,
+				Publisher:     "test",
+				Family:        "test",
+				Version:       1,
+				DisplayName:   "Test",
+				MaxOpcodeCost: testUint64Ptr(lsigresource.MaximumDeclaredOpcodeCost + 1),
+			},
+			wantErr: true,
+			errMsg:  "max_opcode_cost",
 		},
 		{
 			name: "missing family",
@@ -554,6 +583,39 @@ func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLogicSigOpcodeProfileDefaultsAndOverrides(t *testing.T) {
+	t.Run("omitted uses one member", func(t *testing.T) {
+		spec := BaseTemplateSpec{}
+		if got := spec.LogicSigOpcodeProfile(false); got != lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling) {
+			t.Fatalf("LogicSigOpcodeProfile() = %#v, want one-member default", got)
+		}
+	})
+
+	t.Run("explicit override is preserved", func(t *testing.T) {
+		value := uint64(45_000)
+		spec := BaseTemplateSpec{MaxOpcodeCost: &value}
+		if got := spec.LogicSigOpcodeProfile(false); got != lsigresource.DefaultOpcodeProfile(value) {
+			t.Fatalf("LogicSigOpcodeProfile() = %#v, want absolute override %d", got, value)
+		}
+	})
+
+	t.Run("bounded omission applies to every path", func(t *testing.T) {
+		spec := BaseTemplateSpec{}
+		want := lsigresource.BoundedOpcodeProfile(
+			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
+		)
+		if got := spec.LogicSigOpcodeProfile(true); got != want {
+			t.Fatalf("LogicSigOpcodeProfile() = %#v, want %#v", got, want)
+		}
+	})
+}
+
+func testUint64Ptr(value uint64) *uint64 {
+	return &value
 }
 
 func mustActiveTS(t *testing.T, paths utilkeys.Paths) utilkeys.ActivePaths {

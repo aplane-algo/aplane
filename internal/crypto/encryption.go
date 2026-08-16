@@ -4,12 +4,14 @@
 package crypto
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -66,6 +68,12 @@ const (
 	argon2Threads = 4         // parallelism
 	argon2KeyLen  = 32        // AES-256
 )
+
+// MaxStandaloneEnvelopeBytes is the maximum encoded size accepted for one
+// standalone passphrase envelope. Standalone envelopes hold one canonical
+// credential or the sealed backup manifest; either is far smaller than this
+// bound. Callers reading files should apply the same limit before allocation.
+const MaxStandaloneEnvelopeBytes = 1 << 20
 
 // EncryptedData stores the encrypted content with metadata
 type EncryptedData struct {
@@ -192,18 +200,42 @@ func EncryptStandalone(plaintext, passphrase []byte) ([]byte, error) {
 // DecryptStandalone decrypts ciphertext using a passphrase.
 // Only supports envelope_version 2 (standalone encryption with embedded salt).
 func DecryptStandalone(encryptedJSON, passphrase []byte) ([]byte, error) {
-	if err := checkEnvelopeVersion(encryptedJSON, 2, "standalone decryption"); err != nil {
-		return nil, err
+	if len(encryptedJSON) == 0 || len(encryptedJSON) > MaxStandaloneEnvelopeBytes {
+		return nil, fmt.Errorf(
+			"standalone envelope size %d is invalid (maximum %d)",
+			len(encryptedJSON), MaxStandaloneEnvelopeBytes,
+		)
 	}
 
 	var encrypted EncryptedDataStandalone
-	if err := json.Unmarshal(encryptedJSON, &encrypted); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(encryptedJSON))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&encrypted); err != nil {
 		return nil, fmt.Errorf("failed to parse encrypted data: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("failed to parse encrypted data: trailing JSON value")
+		}
+		return nil, fmt.Errorf("failed to parse encrypted data: %w", err)
+	}
+	if encrypted.EnvelopeVersion != 2 {
+		return nil, fmt.Errorf(
+			"envelope_version %d not supported by standalone decryption (expected 2)",
+			encrypted.EnvelopeVersion,
+		)
+	}
+	if err := encrypted.validateKDFParams(); err != nil {
+		return nil, err
 	}
 
 	salt, err := base64.StdEncoding.DecodeString(encrypted.Salt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode salt: %w", err)
+	}
+	if len(salt) != masterSaltLen {
+		return nil, fmt.Errorf("invalid salt length %d (want %d)", len(salt), masterSaltLen)
 	}
 
 	nonce, err := base64.StdEncoding.DecodeString(encrypted.Nonce)
@@ -216,12 +248,7 @@ func DecryptStandalone(encryptedJSON, passphrase []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to decode ciphertext: %w", err)
 	}
 
-	kdfTime, kdfMemory, kdfThreads, err := encrypted.kdfParams()
-	if err != nil {
-		return nil, err
-	}
-
-	key := deriveMasterKeyParams(passphrase, salt, kdfTime, kdfMemory, kdfThreads)
+	key := deriveMasterKeyParams(passphrase, salt, argon2Time, argon2Memory, argon2Threads)
 	defer ZeroBytes(key)
 
 	gcm, err := newGCM(key)
@@ -240,12 +267,13 @@ func DecryptStandalone(encryptedJSON, passphrase []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (e EncryptedDataStandalone) kdfParams() (time, memory uint32, threads uint8, err error) {
-	if e.KDFTime == 0 && e.KDFMemory == 0 && e.KDFThreads == 0 {
-		return argon2Time, argon2Memory, argon2Threads, nil
+func (e EncryptedDataStandalone) validateKDFParams() error {
+	if e.KDFTime != argon2Time || e.KDFMemory != argon2Memory || e.KDFThreads != argon2Threads {
+		return fmt.Errorf(
+			"standalone envelope KDF parameters (%d, %d, %d) do not match envelope version 2 (%d, %d, %d)",
+			e.KDFTime, e.KDFMemory, e.KDFThreads,
+			argon2Time, argon2Memory, argon2Threads,
+		)
 	}
-	if e.KDFTime == 0 || e.KDFMemory == 0 || e.KDFThreads == 0 {
-		return 0, 0, 0, fmt.Errorf("standalone envelope has incomplete KDF parameters")
-	}
-	return e.KDFTime, e.KDFMemory, e.KDFThreads, nil
+	return nil
 }

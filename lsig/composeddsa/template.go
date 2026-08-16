@@ -90,7 +90,10 @@ func ValidateTemplateSpec(spec *TemplateSpec) error {
 			return err
 		}
 	}
-	return generictemplate.ValidateTemplateSpecMode(spec)
+	if err := generictemplate.ValidateTemplateSpecMode(spec); err != nil {
+		return err
+	}
+	return spec.ValidateOpcodeCostDeclaration()
 }
 
 // NewProviderFromTemplateSpec creates a composed provider from a parsed spec.
@@ -129,6 +132,7 @@ func NewProviderFromTemplateSpec(spec *TemplateSpec) (*ComposedDSA, error) {
 		DerivedArgs:        boundedDerivedArgsFromTemplate(spec.Bounded),
 		Bounded:            bounded,
 		Layer3:             layer3,
+		OpcodeProfile:      spec.LogicSigOpcodeProfile(bounded != nil),
 	}), nil
 }
 

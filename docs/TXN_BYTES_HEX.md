@@ -38,8 +38,9 @@ The canonical `SignRequest` and `AppCallInfo` definitions live in
 - `txn_bytes_hex` — TX-prefixed msgpack-encoded unsigned transaction, hex
   encoded. Required for sign mode and foreign mode.
 - `lsig_args` — name-keyed runtime arguments for generic LogicSigs.
-- `lsig_size` — optional LogicSig size hint in bytes, used in foreign mode so
-  the server can reserve LogicSig budget for the foreign party's key type.
+- `lsig_resources` — optional structured LogicSig resource hint used in
+  foreign mode. It carries `program_bytes`, `argument_bytes`, and
+  `max_opcode_cost` for the selected authorization path.
 - `app_call_info` — optional approval metadata for app-call transactions; the
   `mode` is `"raw"` or `"abi"` and `method` carries the ABI method signature
   when available.
@@ -51,7 +52,8 @@ Foreign-mode semantics:
 - on `/plan`, the transaction participates in planning and is returned in the planned unsigned group
 - on `/sign`, the transaction still participates in planning and approval context, but it is not signed and its position in `signed[]` is returned as `""`
 - foreign mode is for unsigned non-local transactions
-- optional `lsig_size` reserves LogicSig budget for a foreign party's key type
+- optional `lsig_resources` reserves program, argument, and opcode resources
+  for a foreign party's selected LogicSig path
 - already-signed non-local transactions must use passthrough mode (`signed_txn_hex`) instead
 - passthrough and foreign entries cannot appear in the same request because
   passthrough supplies already-signed bytes whose group shape is accepted as

@@ -269,7 +269,7 @@ locked/unlocked/recovery-state interlocks.
 > transport entry is `protocol.AdminKeyInfo` (thin: address, key type, name,
 > template provenance), projected from the admin service DTO `adminproto.KeyInfo`.
 > It is deliberately *not* `pkg/signerapi.KeyInfo`, the richer HTTP `/keys` shape
-> that also carries `signing_flow`, `lsig_size`, `signing_args`, and capability
+> that also carries `signing_flow`, `logic_sig_resources`, `signing_args`, and capability
 > flags for SDK clients. The two are distinct wire surfaces that happen to share a
 > concept; do not add HTTP-only fields to the admin type, and do not assume a
 > client-facing field exists on the admin list. Extend the HTTP `KeyInfo` for

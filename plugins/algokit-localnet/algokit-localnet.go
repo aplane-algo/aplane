@@ -26,10 +26,9 @@ import (
 const (
 	pluginName    = "algokit-localnet"
 	pluginVersion = "0.1.0"
-	// protocolVersion is the APlane plugin JSON-RPC protocol version this
-	// plugin speaks. It must match the host's jsonrpc.PluginProtocolVersion
-	// and is distinct from pluginVersion (this plugin's own release version).
-	protocolVersion   = "1.0"
+	// pluginProtocol is declared independently during initialization. It is
+	// distinct from the JSON-RPC envelope and this plugin's release version.
+	pluginProtocol    = "aplane-plugin/2"
 	defaultAlgodURL   = "http://localhost:4001"
 	defaultKMDURL     = "http://localhost:4002"
 	defaultToken      = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -62,13 +61,12 @@ type InitializeParams struct {
 	Network    string `json:"network"`
 	AlgodURL   string `json:"algodUrl"`
 	AlgodToken string `json:"algodToken"`
-	Version    string `json:"version"`
 }
 
 type InitializeResult struct {
-	Success bool   `json:"success"`
-	Message string `json:"message,omitempty"`
-	Version string `json:"version"`
+	Success  bool   `json:"success"`
+	Message  string `json:"message,omitempty"`
+	Protocol string `json:"protocol"`
 }
 
 type ExecuteParams struct {
@@ -229,9 +227,9 @@ func handleInitialize(req *Request) *Response {
 		cfg.network, cfg.algodURL, cfg.kmdURL, cfg.walletName)
 
 	return successResponse(req.ID, InitializeResult{
-		Success: true,
-		Message: fmt.Sprintf("%s initialized on %s", pluginName, cfg.network),
-		Version: protocolVersion,
+		Success:  true,
+		Message:  fmt.Sprintf("%s initialized on %s", pluginName, cfg.network),
+		Protocol: pluginProtocol,
 	})
 }
 

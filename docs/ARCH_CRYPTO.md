@@ -10,12 +10,16 @@ contracts, see [`ARCH_CONTRACTS.md`](ARCH_CONTRACTS.md).
 APlane supports three authorization categories:
 
 1. `ed25519` native signing keys
-2. DSA-backed LogicSig providers such as `aplane.falcon1024.v1`
-3. Generic LogicSig template instances such as `aplane.htlc.v1`
+2. `falcon1024` protocol-native post-quantum signing keys
+3. LogicSig authorization, including DSA-backed providers such as
+   `aplane.falcon1024.v1` and generic templates such as `aplane.htlc.v1`
 
 These share storage and runtime plumbing, but not the signing behavior:
 
 - native Ed25519 signs directly into `SignedTxn.Sig`
+- native Falcon signs directly into top-level `SignedTxn.PQsig` with scheme
+  `f1`; it requires consensus v42 or an explicitly recognized compatible
+  protocol and carries a two-base-fee PQ contribution
 - DSA-backed LogicSig providers derive LogicSig bytecode and place a
   cryptographic signature in `LogicSig.Args`
 - generic LogicSig templates authorize by TEAL only and use runtime args
@@ -27,7 +31,7 @@ The cryptographic subsystem is split across these packages:
 
 | Area | Primary packages |
 |---|---|
-| Native signing | `internal/signing`, `internal/signing/ed25519` |
+| Native signing | `internal/signing`, `internal/signing/ed25519`, `internal/signing/falcon1024` |
 | LogicSig provider interfaces, registry, and salting | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
 | Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/composeddsa`, `lsig/generictemplate` |
 | Algorithm metadata, keygen, mnemonics | `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
@@ -42,7 +46,8 @@ Provider registration is explicit and idempotent:
 - binary entrypoints call `RegisterProviders()`,
 - `lsig.RegisterClient()` aggregates client-safe LogicSig metadata and derivation,
 - `lsig/signerreg.RegisterSigner()` adds signer-side LogicSig signing/keygen/mnemonic handlers,
-- native Ed25519 and the Ed25519 LogicSig provider are registered separately,
+- native Ed25519, native Falcon, and the Ed25519 LogicSig provider are
+  registered separately,
 - registries are queried dynamically.
 
 The provider boundary is two-tiered. Client-visible registries describe what
@@ -56,8 +61,9 @@ private-key behavior: `internal/signing`, `internal/keygen`,
 This split is a hard dependency boundary, not only a startup preference:
 
 - `cmd/apshell` calls `lsig.RegisterClient()` and
-  `internal/signing/ed25519.RegisterClient()` and must not populate signer-side
-  signing, keygen, mnemonic, or key-processor registries.
+  the client registration for native Ed25519 and Falcon. It must not populate
+  signer-side signing, keygen, mnemonic, or key-processor registries or link
+  `github.com/algorand/falcon`.
 - `cmd/apsigner`, `cmd/apadmin`, and `cmd/apstore` call
   `lsig/signerreg.RegisterSigner()` plus Ed25519 signer registration.
 - `internal/logicsigdsa.LogicSigDSA` is metadata and derivation only; it does
@@ -92,7 +98,7 @@ of the same template definition is idempotent; conflicting same-`key_type`
 definitions are reported/rejected.
 
 Key type strings are canonical compatibility identifiers, not display labels.
-Except for the native `ed25519` key type, APlane-defined LogicSig/template and
+Except for the native `ed25519` and `falcon1024` key types, APlane-defined LogicSig/template and
 compiled-provider key types use `publisher.family.vN`, such as
 `aplane.falcon1024.v1`, `aplane.htlc.v1`, or
 `aplane.falcon1024-allowlist.v1`. Human CLI/TUI surfaces, storage, protocol,
@@ -108,6 +114,7 @@ their canonical `key_type`.
 Built-in and bundled key types include:
 
 - native `ed25519`
+- native `falcon1024` (top-level protocol `PQsig`, 25-word recovery)
 - plain DSA LogicSigs `aplane.falcon1024.v1` and `aplane.ed25519.v1`
 - the Falcon-only dedicated sentry account `aplane.falcon1024-sentry1024.v1`
 - the Falcon witness key `aplane.witness-falcon1024.v1`, used under separate
@@ -137,6 +144,16 @@ they may be called outside the admin service path.
 `ed25519` is the native Algorand signing path. Its provider and mnemonic/keygen
 components live under `internal/signing/ed25519`, and registration is wired
 from binary entrypoints rather than hidden `init()` side effects.
+
+### Native Falcon-1024
+
+`falcon1024` is Algorand protocol-native post-quantum authorization. Its
+client-safe metadata and address derivation live in
+`internal/signing/falcon1024`; signer-only generation, payload validation, and
+transaction signing live below that package and link `github.com/algorand/falcon`.
+Recovery uses a 25-word Algorand mnemonic encoding 32 bytes of entropy. It is
+not compatible with the 24-word BIP-39 mnemonic or key material used by the
+LogicSig key type `aplane.falcon1024.v1`.
 
 ### DSA-backed LogicSig providers
 
@@ -401,6 +418,11 @@ than treating the library YAML as active state.
   `{envelope_version, term, nonce, ciphertext}`
 - standalone passphrase-based encryption used for backup/export is
   `envelope_version: 2`
+
+Standalone version 2 accepts exactly Argon2id time 2, memory 65,536 KiB, and
+parallelism 4. The complete encoded envelope is limited to 1 MiB. Missing or
+different KDF values require a new envelope version and are rejected before
+Argon2id runs.
 
 The term envelope's additional authenticated data binds the term and the
 object's logical identity: a class and a canonical selector.

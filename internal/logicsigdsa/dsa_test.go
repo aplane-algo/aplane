@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 
@@ -36,8 +37,8 @@ func TestFalcon1024V1Registration(t *testing.T) {
 		t.Errorf("KeyType = %q, want %q", dsa.KeyType(), "aplane.falcon1024.v1")
 	}
 
-	if dsa.CryptoSignatureSize() != 1280 {
-		t.Errorf("CryptoSignatureSize = %d, want %d", dsa.CryptoSignatureSize(), 1280)
+	if dsa.CryptoSignatureSize() != family.MaxSignatureSize {
+		t.Errorf("CryptoSignatureSize = %d, want %d", dsa.CryptoSignatureSize(), family.MaxSignatureSize)
 	}
 
 	if dsa.MnemonicScheme() != "bip39" {
@@ -173,8 +174,9 @@ func TestFalcon1024V1Sign(t *testing.T) {
 		t.Error("signature is empty")
 	}
 
-	// Falcon signatures are variable length, typically around 600-1280 bytes
-	if len(sig) > 1280 {
+	// Falcon signatures are variable length and bounded by the deterministic
+	// compressed representation rather than the 1,280-byte padded format.
+	if len(sig) > family.MaxSignatureSize {
 		t.Errorf("signature too large: %d bytes", len(sig))
 	}
 
@@ -240,8 +242,8 @@ func TestConfigureAlgodClient(t *testing.T) {
 		t.Fatalf("DeriveLsig() error: %v", err)
 	}
 
-	if len(bytecode) != 1805 {
-		t.Errorf("Bytecode length = %d, want 1805", len(bytecode))
+	if len(bytecode) != 1801 {
+		t.Errorf("Bytecode length = %d, want 1801", len(bytecode))
 	}
 
 	if addr == "" {

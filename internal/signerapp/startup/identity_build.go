@@ -266,7 +266,7 @@ func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ide
 			}
 			return nil
 		},
-		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
+		BeforePublish: func(_ map[string]string, keyTypes map[string]string) error {
 			if err := keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes); err != nil {
 				if errors.Is(err, keyclass.ErrNodeRoleConflict) && hooks.NodeFailClosed != nil {
 					hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict for identity %q: %w", identityID, err))

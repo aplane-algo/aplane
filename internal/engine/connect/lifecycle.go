@@ -41,7 +41,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 	identityFile string,
 	knownHostsPath string,
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
-	onKeys func([]signerapi.KeyInfo),
+	onKeys func([]signerapi.KeyInfo) error,
 	onDisconnect func(),
 ) (*Result, error) {
 	alreadyConnected, currentTarget, inProgress := s.beginConnect(target)
@@ -119,6 +119,13 @@ func (s *ConnectionState) ConnectWithTunnel(
 		result.ErrorMessage = err.Error()
 		return result, fmt.Errorf("failed to verify connection: %w", err)
 	}
+	if onKeys != nil {
+		if err := onKeys(keysResp.Keys); err != nil {
+			_ = client.Close()
+			result.ErrorMessage = err.Error()
+			return result, fmt.Errorf("invalid signer key inventory: %w", err)
+		}
+	}
 
 	s.Mu.Lock()
 	s.SignerClient = signerClient
@@ -128,10 +135,6 @@ func (s *ConnectionState) ConnectWithTunnel(
 	s.TunnelCtx, s.TunnelCancel = context.WithCancel(context.Background())
 	s.connectingTarget = ""
 	s.Mu.Unlock()
-
-	if onKeys != nil {
-		onKeys(keysResp.Keys)
-	}
 
 	result.Connected = true
 	result.Port = localPort

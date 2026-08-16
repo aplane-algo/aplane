@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -46,6 +47,7 @@ type SigningSummary struct {
 	BoundedAuthorization   *boundedmeta.Metadata
 	SigningMetadataVersion int
 	TemplateFingerprint    string
+	LogicSigResources      *lsigresource.Profile
 }
 
 // NewFileKeyStoreForPaths creates a new file-based key store rooted at the provided keystore paths.
@@ -276,6 +278,11 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	// unconditionally from the validated payload, so providers only supply
 	// Type and the cryptographic Value.
 	km.Category = signingMeta.Category
+	km.PQScheme = signingMeta.PQScheme
+	if signingMeta.PQAddressSalt != nil {
+		salt := *signingMeta.PQAddressSalt
+		km.PQAddressSalt = &salt
+	}
 	km.BaseKeyType = signingMeta.BaseKeyType
 	km.Bytecode = bytes.Clone(payload.LogicSigBytecode)
 	km.PublicKey = bytes.Clone(payload.PublicKey)
@@ -466,24 +473,14 @@ func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 			BoundedAuthorization:   boundedmeta.Clone(v.BoundedAuthorization),
 			TemplateFingerprint:    v.TemplateFingerprint,
 		}
+		if v.LogicSigResources != nil {
+			cloned := v.LogicSigResources.Clone()
+			summary.LogicSigResources = &cloned
+		}
 		if v.SigningMetadataVersion > 0 && len(v.SigningArgs) > 0 {
 			summary.SigningArgs = keys.SigningArgDefs(v.SigningArgs)
 		}
 		result[k] = summary
-	}
-	return result
-}
-
-// GetLsigSizes returns a copy of the address -> lsigSize cache.
-// LsigSize is the total LogicSig size in bytes (bytecode + signature).
-// Returns 0 for Ed25519 keys (no LogicSig).
-func (f *FileKeyStore) GetLsigSizes() map[string]int {
-	f.cacheLock.RLock()
-	defer f.cacheLock.RUnlock()
-
-	result := make(map[string]int, len(f.cache))
-	for k, v := range f.cache {
-		result[k] = v.LsigSize
 	}
 	return result
 }

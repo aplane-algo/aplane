@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1/reference"
 
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
@@ -25,7 +26,7 @@ type testFalcon1024V1 struct{}
 func (f *testFalcon1024V1) KeyType() string          { return "aplane.falcon1024.v1" }
 func (f *testFalcon1024V1) RoutingFamily() string    { return "falcon1024" }
 func (f *testFalcon1024V1) Version() int             { return 1 }
-func (f *testFalcon1024V1) CryptoSignatureSize() int { return 1280 }
+func (f *testFalcon1024V1) CryptoSignatureSize() int { return family.MaxSignatureSize }
 func (f *testFalcon1024V1) MnemonicScheme() string   { return "bip39" }
 func (f *testFalcon1024V1) MnemonicWordCount() int   { return 24 }
 func (f *testFalcon1024V1) DisplayColor() string     { return "33" }

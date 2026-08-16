@@ -10,6 +10,8 @@ package signerapi
 import pub "github.com/aplane-algo/aplane/pkg/signerapi"
 
 type SignRequest = pub.SignRequest
+type LogicSigResourceUsage = pub.LogicSigResourceUsage
+type LogicSigResourceProfile = pub.LogicSigResourceProfile
 type AppCallInfo = pub.AppCallInfo
 type SignResponse = pub.SignResponse
 type GroupSignRequest = pub.GroupSignRequest
@@ -82,6 +84,7 @@ const (
 	RequestModeSign             = pub.RequestModeSign
 	RequestModePassthrough      = pub.RequestModePassthrough
 	RequestModeForeign          = pub.RequestModeForeign
+	PQSchemeFalcon1024          = pub.PQSchemeFalcon1024
 	SignCancelStateCanceled     = pub.SignCancelStateCanceled
 	SignCancelStateNotFound     = pub.SignCancelStateNotFound
 	ComponentSignRoleUser       = pub.ComponentSignRoleUser

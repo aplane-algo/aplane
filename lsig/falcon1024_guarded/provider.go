@@ -16,6 +16,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
@@ -112,6 +113,12 @@ func (p *Provider) RuntimeArgs() []lsigprovider.RuntimeArgDef {
 	return nil
 }
 
+// LogicSigOpcodeProfile is the reviewed worst-case ceiling for the fixed
+// guarded Falcon program, including both verification paths.
+func (p *Provider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
+}
+
 // BuildArgs assembles LogicSig args as:
 //
 //	arg 0: Falcon user component signature
@@ -158,9 +165,9 @@ func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, par
 	if err != nil {
 		return lsigsalt.FindResult{}, fmt.Errorf("failed to decode compiled bytecode: %w", err)
 	}
-	salted, err := lsigsalt.FindOffCurve(bytecode, lsigsalt.PushbytesMarkerLocator)
+	salted, err := lsigsalt.UseCompilerAutoSalted(bytecode, result.Hash)
 	if err != nil {
-		return lsigsalt.FindResult{}, fmt.Errorf("failed to derive off-curve LogicSig address: %w", err)
+		return lsigsalt.FindResult{}, fmt.Errorf("failed to validate compiler-auto-salted LogicSig: %w", err)
 	}
 	return salted, nil
 }
@@ -182,11 +189,7 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 	}
 	sentryVerifier := p.sentryVerifyTEAL(sentryPublicKey)
 
-	return fmt.Sprintf(`#pragma version 12
-
-// Counter marker (varied 0-255 to avoid ed25519 curve addresses)
-byte 0x%s
-pop
+	return fmt.Sprintf(`#pragma version 13
 
 // === User Falcon-1024 component signature ===
 pushbytes 0x%s
@@ -201,8 +204,7 @@ falcon_verify
 assert
 
 %s
-`, lsigsalt.PushbytesSaltMarkerHex(0),
-		hex.EncodeToString([]byte(message.DomainTagV1)),
+`, hex.EncodeToString([]byte(message.DomainTagV1)),
 		byte(message.RoleUser),
 		hex.EncodeToString(publicKey),
 		sentryVerifier), nil
@@ -237,7 +239,7 @@ func (p *Provider) CompatibilityFingerprint() string {
 	}
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
 		BasePrimitive: lsigprovider.FingerprintBasePrimitive(p.BaseKeyType()),
-		SaltStyle:     string(lsigsalt.StylePushbytes),
+		SaltStyle:     string(lsigsalt.StyleAlgodAutoSalt),
 		Arg0:          "user_falcon1024_component_signature",
 		Arg1:          p.sentrySignatureArg,
 	})

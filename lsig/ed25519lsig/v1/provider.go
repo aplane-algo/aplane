@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig/family"
@@ -25,14 +26,15 @@ func NewProvider() *Ed25519LsigV1 {
 
 func newComposed() *composeddsa.ComposedDSA {
 	return composeddsa.NewComposedDSA(composeddsa.Config{
-		KeyType:     family.KeyTypeV1,
-		BaseKeyType: family.KeyTypeV1,
-		FamilyName:  family.Name,
-		Version:     1,
-		DisplayName: "Ed25519 LogicSig",
-		Description: "Ed25519 signature scheme verified inside a LogicSig",
-		Ops:         NewOps(),
-		SaltStyle:   lsigsalt.StyleBytecblock,
+		KeyType:       family.KeyTypeV1,
+		BaseKeyType:   family.KeyTypeV1,
+		FamilyName:    family.Name,
+		Version:       1,
+		DisplayName:   "Ed25519 LogicSig",
+		Description:   "Ed25519 signature scheme verified inside a LogicSig",
+		Ops:           NewOps(),
+		SaltStyle:     lsigsalt.StyleAlgodAutoSalt,
+		OpcodeProfile: lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling),
 	})
 }
 
@@ -69,6 +71,10 @@ func (p *Ed25519LsigV1) ValidateCreationParams(map[string]string) error {
 }
 func (p *Ed25519LsigV1) RuntimeArgs() []lsigprovider.RuntimeArgDef { return nil }
 
+func (p *Ed25519LsigV1) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return p.ensureInner().LogicSigOpcodeProfile()
+}
+
 func (p *Ed25519LsigV1) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
 	return p.ensureInner().BuildArgs(signature, runtimeArgs)
 }
@@ -86,11 +92,12 @@ func (p *Ed25519LsigV1) DeriveLsigWithSalt(ctx context.Context, publicKey []byte
 }
 
 var (
-	_ logicsigdsa.LogicSigDSA        = (*Ed25519LsigV1)(nil)
-	_ logicsigdsa.TEALGenerator      = (*Ed25519LsigV1)(nil)
-	_ logicsigdsa.SaltedDeriver      = (*Ed25519LsigV1)(nil)
-	_ lsigprovider.LSigProvider      = (*Ed25519LsigV1)(nil)
-	_ lsigprovider.SigningProvider   = (*Ed25519LsigV1)(nil)
-	_ lsigprovider.MnemonicProvider  = (*Ed25519LsigV1)(nil)
-	_ lsigprovider.AlgodConfigurable = (*Ed25519LsigV1)(nil)
+	_ logicsigdsa.LogicSigDSA            = (*Ed25519LsigV1)(nil)
+	_ logicsigdsa.TEALGenerator          = (*Ed25519LsigV1)(nil)
+	_ logicsigdsa.SaltedDeriver          = (*Ed25519LsigV1)(nil)
+	_ lsigprovider.LSigProvider          = (*Ed25519LsigV1)(nil)
+	_ lsigprovider.SigningProvider       = (*Ed25519LsigV1)(nil)
+	_ lsigprovider.MnemonicProvider      = (*Ed25519LsigV1)(nil)
+	_ lsigprovider.AlgodConfigurable     = (*Ed25519LsigV1)(nil)
+	_ lsigprovider.OpcodeProfileProvider = (*Ed25519LsigV1)(nil)
 )

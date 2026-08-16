@@ -164,7 +164,7 @@ persisted alias or set names.
 | `signers(addresses)` | Filtered array containing only addresses that are signer keys |
 | `keys()` | `[{ address, keyType }]` from the connected signer |
 | `signableAddresses()` | Address array |
-| `canSignFor(addressOrAlias)` | `{ canSign, isLsig }` |
+| `canSignFor(addressOrAlias)` | `{ canSign, isLsig, authorizationKind }` where the kind is `ed25519`, `native_pq`, or `logic_sig` |
 | `keyTypes()` | Available key type metadata from the signer |
 | `generateKey(keyType, params = {})` | `{ address, keyType }` |
 | `deleteKey(addressOrAlias)` | `{ address, deleted: true }` |
@@ -173,14 +173,15 @@ persisted alias or set names.
 
 ```javascript
 {
-  keyType: "aplane.falcon1024.v1",
-  family: "aplane.falcon1024",
-  displayName: "Falcon-1024",
+  keyType: "falcon1024",
+  family: "falcon1024",
+  displayName: "falcon1024",
   description: "...",
-  requiresLogicSig: true,
-  mnemonicWordCount: 24,
+  authorizationKind: "native_pq",
+  requiresLogicSig: false,
+  mnemonicWordCount: 25,
   mnemonicImport: true,
-  mnemonicScheme: "bip39",
+  mnemonicScheme: "algorand",
   creationParams: [
     { name, label, description, type, required, example, placeholder, default }
   ],
@@ -406,7 +407,8 @@ Online `keyreg` options:
 | `sign(filepath, { wait = true } = {})` | `{ txids, confirmed }` |
 | `plan(signRequests)` | `{ transactions, mutations? }` |
 
-`sign()` reads an external transaction file, signs, submits, and optionally waits.
+`sign()` reads an external transaction file, verifies the live algod is
+v42-compatible, signs, submits, and optionally waits.
 
 `plan()` sends transaction sign requests to the signer group planner without
 signing or triggering approval. Request fields:
@@ -417,10 +419,33 @@ signing or triggering approval. Request fields:
   txnSender,
   txnBytesHex,
   signedTxnHex,
-  lsigSize,
   lsigArgs: { name: "hex-string" }
 }
 ```
+
+An unsigned foreign slot may declare exactly one authorization hint:
+
+```javascript
+{ txnBytesHex, pqScheme: "f1" }
+
+// or
+{
+  txnBytesHex,
+  lsigResources: {
+    programBytes,
+    argumentBytes,
+    maxOpcodeCost
+  }
+}
+```
+
+`pqScheme` declares native-PQ authorization for an unsigned foreign slot and
+currently accepts `"f1"` (Falcon-1024). It is mutually exclusive with
+`lsigResources`, which declares LogicSig authorization. A passthrough request
+whose `signedTxnHex` carries a LogicSig must also include `lsigResources`; the
+signer checks the program and argument byte counts against the signed envelope
+and uses the declared reviewed opcode ceiling. `plan()` validates that the live
+client algod is v42-compatible before contacting apsigner.
 
 ## Application Interaction
 

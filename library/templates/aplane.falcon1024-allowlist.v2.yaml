@@ -1,5 +1,5 @@
 schema_version: 2
-derivation_version: 2
+derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
@@ -8,6 +8,7 @@ family: falcon1024-allowlist
 version: 2
 display_name: "Falcon-1024 Allowlist v2"
 description: "Allowlist implementation based on a fixed-depth Merkle root with signer-generated 512-byte proofs."
+max_opcode_cost: 20000
 
 bounded:
   contract: bounded1

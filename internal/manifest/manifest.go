@@ -63,6 +63,7 @@ type AlgorithmMetadataInfo struct {
 	SignatureSize         int    `json:"signature_size"`
 	MnemonicWordCount     int    `json:"mnemonic_word_count"`
 	MnemonicScheme        string `json:"mnemonic_scheme"`
+	AuthorizationKind     string `json:"authorization_kind"`
 	RequiresLogicSig      bool   `json:"requires_logicsig"`
 	CurrentLsigVersion    int    `json:"current_lsig_version,omitempty"`
 	SupportedLsigVersions []int  `json:"supported_lsig_versions,omitempty"`
@@ -121,6 +122,7 @@ func Generate() *ProviderManifest {
 			SignatureSize:     meta.CryptoSignatureSize(),
 			MnemonicWordCount: meta.MnemonicWordCount(),
 			MnemonicScheme:    meta.MnemonicScheme(),
+			AuthorizationKind: string(meta.AuthorizationKind()),
 			RequiresLogicSig:  meta.RequiresLogicSig(),
 			DefaultDerivation: meta.DefaultDerivation(),
 			DisplayColor:      meta.DisplayColor(),

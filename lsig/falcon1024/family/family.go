@@ -6,6 +6,8 @@
 // dsa/falcon1024 and its sub-packages.
 package family
 
+import "github.com/aplane-algo/aplane/internal/falconparams"
+
 // Family identity. This is the qualified registry family ("publisher.family"),
 // used as the key in the keygen/mnemonic/metadata/signing registries. It is
 // intentionally distinct from any future native "falcon1024" key type.
@@ -13,12 +15,12 @@ const Name = "aplane.falcon1024"
 
 // Key sizes (from the falcongo library)
 const (
-	PublicKeySize  = 1793
-	PrivateKeySize = 2305
+	PublicKeySize  = falconparams.PublicKeySize
+	PrivateKeySize = falconparams.PrivateKeySize
 )
 
 // Signature properties
-const MaxSignatureSize = 1280 // Falcon-1024 max signature size in bytes
+const MaxSignatureSize = falconparams.CompressedSignatureMaxSize
 
 // Mnemonic properties
 const (

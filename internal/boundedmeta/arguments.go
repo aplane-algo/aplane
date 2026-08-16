@@ -68,19 +68,16 @@ func BaseArgumentLayout(layout SignatureArgLayout, requiresAdmin bool) []Argumen
 	return slots
 }
 
-// LogicSigSizeForPath returns the worst-case signed LogicSig size for one
-// path, excluding slots forbidden on that path.
-func (metadata *Metadata) LogicSigSizeForPath(path string) int {
-	if metadata == nil {
+// ArgumentBytesForPath returns the maximum aggregate LogicSig argument bytes
+// for one bounded authorization path. Program bytes are deliberately excluded.
+func (metadata *Metadata) ArgumentBytesForPath(path string) int {
+	if metadata == nil || (path != PathSpend && path != PathSpendingRekey && path != PathAdminRekey) {
 		return 0
 	}
-	if path != PathSpend && path != PathSpendingRekey && path != PathAdminRekey {
-		return 0
-	}
-	size := metadata.PostSigningLogicSigSize
+	size := 0
 	for _, slot := range metadata.ArgumentLayout {
-		if slotRequirement(slot.Paths, path) == ArgForbidden {
-			size -= slot.MaxSize
+		if slotRequirement(slot.Paths, path) != ArgForbidden {
+			size += slot.MaxSize
 		}
 	}
 	return size

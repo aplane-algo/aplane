@@ -166,7 +166,7 @@ func TestSignAndSubmitViaGroupSimulateSignsThenUsesClientAlgod(t *testing.T) {
 	}
 
 	authCache := cache.NewAuthAddressCache()
-	txns := []types.Transaction{{Header: types.Header{Sender: types.Address{1}}}}
+	txns := []types.Transaction{simulatedTxn}
 	var out bytes.Buffer
 	txIDs, submitted, err := SignAndSubmitViaGroup(txns, &authCache, signerClient, algodClient, SubmitOptions{
 		Out:      &out,
@@ -315,6 +315,12 @@ func TestSignAndSubmitViaGroupWritesSubmittedTransactions(t *testing.T) {
 		}
 		return jsonResponse(r, http.StatusOK, signerapi.GroupSignResponse{
 			Signed: []string{signedTxnHex(submitted)},
+			Mutations: &signerapi.MutationReport{
+				OriginalCount:  1,
+				FinalCount:     1,
+				FeesModified:   []int{0},
+				TotalFeesDelta: 4000,
+			},
 		})
 	})}
 

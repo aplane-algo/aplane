@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -120,10 +121,12 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	defer crypto.ZeroBytes(priv)
 
 	// Derive LogicSig, off-curve salt metadata, and address.
-	lsigBytecode, address, saltCounter, err := deriveSaltedLogicSig(ctx, dsa, pub, params)
+	derived, err := deriveSaltedLogicSig(ctx, dsa, pub, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive LogicSig: %w", err)
 	}
+	lsigBytecode := derived.Bytecode
+	address := derived.Address.String()
 
 	// Capture TEAL source if DSA supports it
 	var tealSource string
@@ -135,28 +138,36 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	if provider != nil {
 		signingArgs = keys.StoreSigningArgs(provider.RuntimeArgs())
 	}
-	payload := keys.NewDSALSigPayload(
-		keyType,
-		baseKeyType,
-		pub,
-		priv,
-		params,
-		lsigBytecode,
-		saltCounter,
-		tealSource,
-		signingArgs,
-		keys.TemplateFingerprintForKeyType(keyType),
-	)
-	defer payload.ZeroSecrets()
+	var boundedMetadata *boundedmeta.Metadata
 	if boundedProvider, ok := dsa.(boundedAuthorizationMetadataProvider); ok {
-		metadata, err := boundedProvider.BuildBoundedAuthorizationMetadata(pub, params, lsigBytecode)
+		boundedMetadata, err = boundedProvider.BuildBoundedAuthorizationMetadata(pub, params, lsigBytecode)
 		if err != nil {
 			return nil, fmt.Errorf("failed to capture bounded authorization metadata: %w", err)
 		}
-		if metadata != nil {
-			if err := payload.SetBoundedAuthorization(metadata); err != nil {
-				return nil, err
-			}
+	}
+	opcodeProfile, err := lsigprovider.ResolveOpcodeProfile(dsa, boundedMetadata != nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve LogicSig opcode profile: %w", err)
+	}
+	var payload *keys.Payload
+	if derived.CompilerAutoSalted {
+		payload = keys.NewAutoSaltedDSALSigPayload(
+			keyType, baseKeyType, pub, priv, params, lsigBytecode, tealSource,
+			signingArgs, keys.TemplateFingerprintForKeyType(keyType),
+		)
+	} else {
+		payload = keys.NewDSALSigPayload(
+			keyType, baseKeyType, pub, priv, params, lsigBytecode, derived.Counter,
+			tealSource, signingArgs, keys.TemplateFingerprintForKeyType(keyType),
+		)
+	}
+	defer payload.ZeroSecrets()
+	if err := payload.SetLogicSigOpcodeProfile(opcodeProfile, boundedMetadata != nil); err != nil {
+		return nil, err
+	}
+	if boundedMetadata != nil {
+		if err := payload.SetBoundedAuthorization(boundedMetadata); err != nil {
+			return nil, err
 		}
 	}
 
@@ -190,16 +201,16 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	return result, nil
 }
 
-func deriveSaltedLogicSig(ctx context.Context, dsa logicsigdsa.LogicSigDSA, publicKey []byte, params map[string]string) ([]byte, string, byte, error) {
+func deriveSaltedLogicSig(ctx context.Context, dsa logicsigdsa.LogicSigDSA, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error) {
 	if salted, ok := dsa.(logicsigdsa.SaltedDeriver); ok {
 		result, err := salted.DeriveLsigWithSalt(ctx, publicKey, params)
 		if err != nil {
-			return nil, "", 0, err
+			return lsigsalt.FindResult{}, err
 		}
-		return result.Bytecode, result.Address.String(), result.Counter, nil
+		return result, nil
 	}
 
-	return nil, "", 0, fmt.Errorf("%s does not implement salted LogicSig derivation", dsa.KeyType())
+	return lsigsalt.FindResult{}, fmt.Errorf("%s does not implement salted LogicSig derivation", dsa.KeyType())
 }
 
 // GenerateFromSeed generates a Falcon key from a deterministic seed.

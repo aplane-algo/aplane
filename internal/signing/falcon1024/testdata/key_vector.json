@@ -1,0 +1,11 @@
+{
+  "source": "go-algorand 68e036affd9e62d0a64dcdb3f252eb0ee2e052d3 protocol with github.com/algorand/falcon v0.1.0",
+  "entropy_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "mnemonic_word_count": 25,
+  "mnemonic_sha512_256": "7f69f032b7f5293558e348a889e4dfc1523a402f2dc3a7305b3fe4ff8e9978a6",
+  "working_seed_hex": "b9e18a3672b95c8d33e0bc6674d4b817343a713dffa7caae569c9deab8c971f3",
+  "public_key_sha512_256": "de1ec439c5a40c7126b746c69a75f86332d4609edcfe37ccf81dc49c1a022cf3",
+  "private_key_sha512_256": "0c6103df44ca49eaf9088b4cfd56f320211745bd1628eb90c9c89c61b886dcaa",
+  "salt": 0,
+  "address": "XUCZPHDELTE5A76VAMSXKVISTYMWRBSPMRFLKWQCVYKWKMSVRVQUHGV2AA"
+}

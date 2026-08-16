@@ -130,7 +130,6 @@ func TestSendStatusEmitsCurrentStateAndKeyCount(t *testing.T) {
 	ir.PublishSnapshot(
 		map[string]string{"ADDR": "identities/default/keys/ADDR.key"},
 		map[string]string{"ADDR": "ed25519"},
-		map[string]int{},
 	)
 
 	recorder := &ipcJSONRecorderConn{}

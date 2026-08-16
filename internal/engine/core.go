@@ -32,6 +32,7 @@ type Core struct {
 	signerStatusMu            sync.Mutex
 	signerStatusRevisionSeen  bool
 	signerStatusKeysetRevSeen uint64
+	consensusValidation       consensusValidationCache
 
 	// Remote Signing
 	// Configuration

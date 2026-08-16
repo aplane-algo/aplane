@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// localnet-funding exports a funded AlgoKit LocalNet KMD account as the
-// TEST_FUNDING_* environment contract consumed by integration tests.
+// localnet-funding uses an AlgoKit LocalNet KMD account to bootstrap a
+// disposable protocol-native Falcon-1024 TEST_FUNDING_* account.
 package main
 
 import (
 	"context"
-	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"net"
@@ -19,9 +19,12 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/kmd"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/mnemonic"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
+	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
+	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
 const (
@@ -36,6 +39,7 @@ const (
 
 	integrationBurnAddress = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 	minBurnBalance         = uint64(100_000)
+	nativeFundingBalance   = uint64(100_000_000)
 )
 
 type candidate struct {
@@ -99,29 +103,69 @@ func main() {
 		fatalf("%v", err)
 	}
 
-	exported, err := kmdClient.ExportKey(handle.WalletHandleToken, walletPassword, selected.address)
+	entropy := make([]byte, 32)
+	if _, err := rand.Read(entropy); err != nil {
+		fatalf("generate native Falcon funding entropy: %v", err)
+	}
+	defer securecrypto.ZeroBytes(entropy)
+	mn, err := mnemonic.FromKey(entropy)
 	if err != nil {
-		fatalf("export KMD key for %s: %v", selected.address, err)
+		fatalf("encode native Falcon funding mnemonic: %v", err)
 	}
-	if len(exported.PrivateKey) != ed25519.PrivateKeySize {
-		fatalf("exported private key length = %d, want %d", len(exported.PrivateKey), ed25519.PrivateKeySize)
-	}
-	account, err := crypto.AccountFromPrivateKey(exported.PrivateKey)
+	nativeAddress, err := harness.NativeFundingAddressFromMnemonic(mn)
 	if err != nil {
-		fatalf("derive account from exported private key: %v", err)
+		fatalf("derive native Falcon funding address: %v", err)
 	}
-	if account.Address.String() != selected.address {
-		fatalf("exported key derives %s, want %s", account.Address.String(), selected.address)
-	}
-	mn, err := mnemonic.FromPrivateKey(exported.PrivateKey)
-	if err != nil {
-		fatalf("convert exported private key to mnemonic: %v", err)
+	if err := fundNativeAccount(ctx, algodClient, kmdClient, handle.WalletHandleToken, walletPassword, selected.address, nativeAddress); err != nil {
+		fatalf("%v", err)
 	}
 
-	fmt.Printf("TEST_FUNDING_ACCOUNT=%s\n", selected.address)
+	fmt.Printf("TEST_FUNDING_ACCOUNT=%s\n", nativeAddress)
 	fmt.Printf("TEST_FUNDING_MNEMONIC=%s\n", mn)
 	fmt.Printf("LOCALNET_GENESIS_ID=%s\n", version.GenesisID)
 	fmt.Printf("LOCALNET_GENESIS_HASH=%s\n", genesisHash)
+}
+
+func fundNativeAccount(
+	ctx context.Context,
+	client *algod.Client,
+	kmdClient kmd.Client,
+	walletHandle string,
+	walletPassword string,
+	bootstrapAddress string,
+	nativeAddress string,
+) error {
+	sp, err := client.SuggestedParams().Do(ctx)
+	if err != nil {
+		return fmt.Errorf("read suggested params for native funding: %w", err)
+	}
+	params, ok := sdkconfig.Consensus[protocol.ConsensusVersion(sp.ConsensusVersion)]
+	if !ok || !params.EnablePQSchemeFalcon1024 {
+		return fmt.Errorf("localnet consensus %q does not support native Falcon-1024 authorization", sp.ConsensusVersion)
+	}
+	txn, err := transaction.MakePaymentTxn(
+		bootstrapAddress,
+		nativeAddress,
+		nativeFundingBalance,
+		[]byte("aplane localnet native Falcon test funder"),
+		"",
+		sp,
+	)
+	if err != nil {
+		return fmt.Errorf("build native funding transaction: %w", err)
+	}
+	signed, err := kmdClient.SignTransaction(walletHandle, walletPassword, txn)
+	if err != nil {
+		return fmt.Errorf("sign native funding transaction with KMD: %w", err)
+	}
+	txid, err := client.SendRawTransaction(signed.SignedTransaction).Do(ctx)
+	if err != nil {
+		return fmt.Errorf("submit native funding transaction: %w", err)
+	}
+	if _, err := transaction.WaitForConfirmation(client, txid, 4, ctx); err != nil {
+		return fmt.Errorf("wait for native funding transaction %s: %w", txid, err)
+	}
+	return nil
 }
 
 func findWalletID(client kmd.Client, walletName string) (string, error) {

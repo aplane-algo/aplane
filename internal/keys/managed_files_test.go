@@ -23,6 +23,7 @@ func TestManagedCredentialClassForCategory(t *testing.T) {
 		ext      string
 	}{
 		{CategoryEd25519, ManagedCredentialAccount, AccountKeyExtension},
+		{CategoryNativePQ, ManagedCredentialAccount, AccountKeyExtension},
 		{CategoryDSALsig, ManagedCredentialAccount, AccountKeyExtension},
 		{CategoryGenericLsig, ManagedCredentialAccount, AccountKeyExtension},
 		{CategoryWitness, ManagedCredentialSentry, SentryCredentialExtension},

@@ -124,8 +124,24 @@ from `pkg/signerapi/types.go` (re-exported internally via `internal/signerapi/ty
 - top-level fields: optional `request_id`, `requests[]`
 - each entry is one of:
   - sign: `auth_address`, optional `txn_sender`, `txn_bytes_hex`, optional `lsig_args`, optional `app_call_info`
-  - passthrough: `signed_txn_hex`
-  - foreign: `txn_bytes_hex` without `auth_address`, optional `lsig_size`
+  - passthrough: `signed_txn_hex`; if the signed envelope uses LogicSig,
+    `lsig_resources` is required
+  - foreign: `txn_bytes_hex` without `auth_address`, with at most one
+    authorization-resource hint: optional `lsig_resources` or native-PQ
+    `pq_scheme` (`f1`)
+
+The signer derives authorization shape for locally held keys. An unsigned
+foreign native-PQ slot must declare `pq_scheme:"f1"` so pooled protocol fees
+are correct. A foreign LogicSig slot declares `lsig_resources` with
+`program_bytes`, `argument_bytes`, and `max_opcode_cost`.
+
+A passthrough LogicSig also requires `lsig_resources`. The signer verifies
+`program_bytes` and `argument_bytes` against the signed envelope and uses the
+declared reviewed `max_opcode_cost`; it never substitutes a guessed minimum for
+immutable foreign bytecode. Supplying `lsig_resources` for a non-LogicSig
+passthrough is rejected. The retired combined `lsig_size` field is rejected
+explicitly rather than ignored, because silently dropping it would understate
+LogicSig resources.
 
 `txn_sender` is an advisory display hint for clients. Signer authority,
 policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
@@ -149,7 +165,13 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 
 - Both endpoints accept the same per-entry modes; mixing passthrough and foreign in one request is invalid, and all-foreign requests are rejected on both endpoints.
 - `/plan` performs canonical group building only. It never touches keys and returns canonical unsigned transactions in `transactions[]`.
-- `/sign` performs canonical group building plus approval/signing. Transaction-level hard policy is applied only to signer-controlled slots; passthrough and foreign entries contribute to group consistency, approval context, warning analysis, and audit visibility.
+- `/sign` performs canonical group building plus approval/signing.
+  Signer-controlled guarded account keys are rejected before approval because
+  they require the guarded component/assembly endpoints; `/plan` may admit
+  them to freeze those guarded workflows. Transaction-level hard policy is
+  applied only to signer-controlled slots; passthrough and foreign entries
+  contribute to group consistency, approval context, warning analysis, and
+  audit visibility.
 - `/sign/bounded-admin` performs the same planning, policy, forced review, group
   finalization, and spending-key signing for one admin-key-authorized pure
   rekey, then returns a typed partial for external contract-admin completion.
@@ -171,6 +193,12 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
   obtain every managed signature through ordinary signing, preserve plugin
   passthrough signatures, and send the exact final group from the client to
   algod simulation.
+- First-party client workflows validate the live algod consensus identifier
+  before asking apsigner to plan, requesting or releasing signatures, invoking
+  plugin signers, or broadcasting/simulating a pregrouped signed group. This is
+  an apshell/engine boundary; apsigner's `/plan` endpoint remains
+  network-independent and uses its compiled v42 contract without querying
+  algod.
 
 `/sign` response (`signerapi.GroupSignResponse`):
 
@@ -188,6 +216,14 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 - passthrough entries contain the original signed transaction bytes, returned unchanged.
 - foreign entries contain the empty string `""`.
 - server-added dummy slots appear as appended signed dummy transactions.
+- The ordinary client `/sign` path treats `mutations` as an authorization to
+  transform transaction bodies, not merely as display metadata. Before
+  simulation or submission it verifies the report counts and fee delta,
+  permits only reported fee increases and group-ID assignment on original
+  positions, recomputes the canonical final group ID, and reconstructs every
+  appended dummy transaction and its embedded LogicSig authorization. Any
+  unreported field change, malformed report, or non-canonical dummy fails
+  closed on the client.
 - Admin-key bounded operations are rejected with `code:"bounded_admin_required"`;
   pure spends and explicitly spending-key-authorized rekeys return complete
   base-argument LogicSigs from `/sign` only when no sentry is required.
@@ -392,10 +428,11 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
   `spend_effects`, `max_fee`, `admin_operations` (including each operation's
   `policy_gate`), `runtime_args`, `derived_args`, the path-specific
   `argument_layout`, and `layer3_policy`. `/keys` also includes instance-only
-  `admin_key_id`, `program_binding`, and `post_signing_lsig_size` when
+  `admin_key_id` and `program_binding` when
   applicable. This is routing and assembly metadata, not permission; signer
   classification and stored bytecode remain authoritative.
-- optional `lsig_size`
+- optional `logic_sig_resources`, containing final compiled program bytes and
+  path-specific argument-byte and maximum-opcode-cost ceilings
 - optional `is_generic_lsig`
 - optional `is_witness_key` and `is_spending_account`: sentry-key rows use
   `address` as the Witness Key ID, not as an Algorand spending address.
@@ -458,7 +495,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/keytypes` response:
 
-- `key_types[]` with `key_type`, `family`, `display_name`, `description`, `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `sentry_component_key_type`, optional definition-level `bounded_authorization`, `creation_params[]`, `runtime_args[]`
+- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), compatibility field `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `sentry_component_key_type`, optional definition-level `bounded_authorization`, `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
 - each `runtime_args` entry includes `name`, `label`, `description`, `type`, `required`, and optional `byte_length`
@@ -555,6 +592,9 @@ Additional compatibility-sensitive request failures:
 
 - missing `txn_bytes_hex` for sign mode: `400`
 - passthrough entries without an existing group ID: `400`
+- passthrough LogicSig entries without `lsig_resources`, with declarations
+  whose program/argument sizes differ from the signed envelope, or with
+  `lsig_resources` on a non-LogicSig passthrough: `400`
 - immutable pre-grouped transactions that would require extra dummies: `400`
 - requests whose required dummies would push the group above 16 transactions: `400`
 - invalid runtime args or generic LogicSig arg decoding: `400`

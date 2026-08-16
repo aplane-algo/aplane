@@ -17,6 +17,7 @@ version: 1
 display_name: "Synthetic Generic"
 description: "behavior fingerprint base"
 display_color: "35"
+max_opcode_cost: 20000
 parameters:
   - name: owner
     type: address
@@ -58,6 +59,14 @@ func TestGenericFingerprintCarriesVersionPrefix(t *testing.T) {
 	}
 }
 
+func TestGenericFingerprintCollapsesOmittedAndExplicitDefaultOpcodeCeiling(t *testing.T) {
+	explicit := mustGenericFingerprint(t, fingerprintBaseYAML)
+	omittedYAML := strings.Replace(fingerprintBaseYAML, "max_opcode_cost: 20000\n", "", 1)
+	if omitted := mustGenericFingerprint(t, omittedYAML); omitted != explicit {
+		t.Fatalf("omitted/default fingerprints differ: %q != %q", omitted, explicit)
+	}
+}
+
 // TestGenericFingerprintIdentityRenameStable proves identity/display metadata is
 // excluded: changing publisher/family/version/display_name/description/color
 // does not change the fingerprint.
@@ -88,6 +97,13 @@ func TestGenericFingerprintBehaviorSensitive(t *testing.T) {
 		yaml string
 	}{
 		{
+			name: "opcode ceiling",
+			yaml: strings.Replace(fingerprintBaseYAML,
+				"max_opcode_cost: 20000",
+				"max_opcode_cost: 12345",
+				1),
+		},
+		{
 			name: "teal",
 			yaml: strings.Replace(fingerprintBaseYAML, "int 32", "int 64", 1),
 		},
@@ -106,10 +122,12 @@ func TestGenericFingerprintBehaviorSensitive(t *testing.T) {
 				1),
 		},
 		{
+			// The base YAML omits derivation_version; adding the one supported
+			// contract must still move the fingerprint.
 			name: "derivation_version",
 			yaml: strings.Replace(fingerprintBaseYAML,
 				"schema_version: 1",
-				"schema_version: 1\nderivation_version: 1",
+				"schema_version: 1\nderivation_version: 3",
 				1),
 		},
 	}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -80,7 +81,7 @@ func verifyFileDeep(backupDir, address string, passphrase []byte, role noderole.
 		return result
 	}
 	result.Size = info.Size()
-	data, err := os.ReadFile(filePath)
+	data, _, err := fsutil.ReadRegularFileLimited(filePath, crypto.MaxStandaloneEnvelopeBytes)
 	if err != nil {
 		result.Error = fmt.Sprintf("failed to read file: %v", err)
 		return result

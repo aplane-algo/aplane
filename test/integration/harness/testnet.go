@@ -22,12 +22,17 @@ const (
 
 	IntegrationNetworkTestnet  = "testnet"
 	IntegrationNetworkLocalnet = "localnet"
+	IntegrationNetworkFNet     = "fnet"
 
 	TestnetGenesisID = "testnet-v1.0"
 	MainnetGenesisID = "mainnet-v1.0"
 	BetanetGenesisID = "betanet-v1.0"
+	FNetGenesisID    = "fnet-v1"
+	FNetGenesisHash  = "kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA="
+	FNetConsensus    = "fnet5"
 
 	defaultTestnetAlgodURL  = "https://testnet-api.4160.nodely.dev"
+	defaultFNetAlgodURL     = "https://fnet-api.4160.nodely.dev"
 	defaultLocalnetAlgodURL = "http://localhost:4001"
 	defaultLocalnetToken    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 )
@@ -35,15 +40,16 @@ const (
 // TestnetConfig holds integration network connection configuration.
 //
 // The name is kept for compatibility with existing integration tests. New
-// callers should treat it as the selected integration network, which defaults
-// to testnet and can be set to localnet with APLANE_INTEGRATION_NETWORK.
+// callers should treat it as the explicitly selected TestNet, LocalNet, or
+// FNet integration profile.
 type TestnetConfig struct {
-	Network     string
-	AlgodURL    string
-	AlgodToken  string
-	GenesisID   string
-	GenesisHash string
-	Client      *algod.Client
+	Network          string
+	AlgodURL         string
+	AlgodToken       string
+	GenesisID        string
+	GenesisHash      string
+	ConsensusVersion string
+	Client           *algod.Client
 }
 
 // IntegrationNetwork returns the explicitly selected integration network.
@@ -66,7 +72,7 @@ func NewTestnetConfig() (*TestnetConfig, error) {
 	}
 
 	// Test connection
-	_, err = client.Status().Do(context.Background())
+	status, err := client.Status().Do(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to algod: %w", err)
 	}
@@ -78,17 +84,19 @@ func NewTestnetConfig() (*TestnetConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read versions from algod: %w", err)
 	}
-	if err := validateIntegrationGenesis(network, algodURL, sp.GenesisID); err != nil {
+	genesisHash := base64.StdEncoding.EncodeToString(version.GenesisHash)
+	if err := validateIntegrationNetwork(network, algodURL, sp.GenesisID, genesisHash, sp.ConsensusVersion, status.LastVersion); err != nil {
 		return nil, err
 	}
 
 	return &TestnetConfig{
-		Network:     network,
-		AlgodURL:    algodURL,
-		AlgodToken:  algodToken,
-		GenesisID:   sp.GenesisID,
-		GenesisHash: base64.StdEncoding.EncodeToString(version.GenesisHash),
-		Client:      client,
+		Network:          network,
+		AlgodURL:         algodURL,
+		AlgodToken:       algodToken,
+		GenesisID:        sp.GenesisID,
+		GenesisHash:      genesisHash,
+		ConsensusVersion: sp.ConsensusVersion,
+		Client:           client,
 	}, nil
 }
 
@@ -116,15 +124,28 @@ func integrationAlgodEndpoint(network string) (string, string, error) {
 			algodToken = defaultLocalnetToken
 		}
 		return algodURL, algodToken, nil
+	case IntegrationNetworkFNet:
+		algodURL := strings.TrimSpace(os.Getenv("ALGOD_URL"))
+		if algodURL == "" {
+			algodURL = strings.TrimSpace(os.Getenv("APLANE_FNET_ALGOD_URL"))
+		}
+		if algodURL == "" {
+			algodURL = defaultFNetAlgodURL
+		}
+		algodToken := strings.TrimSpace(os.Getenv("ALGOD_TOKEN"))
+		if algodToken == "" {
+			algodToken = strings.TrimSpace(os.Getenv("APLANE_FNET_ALGOD_TOKEN"))
+		}
+		return algodURL, algodToken, nil
 	default:
 		if network == "" {
-			return "", "", fmt.Errorf("%s must be set to %q or %q", IntegrationNetworkEnv, IntegrationNetworkTestnet, IntegrationNetworkLocalnet)
+			return "", "", fmt.Errorf("%s must be set to %q, %q, or %q", IntegrationNetworkEnv, IntegrationNetworkTestnet, IntegrationNetworkLocalnet, IntegrationNetworkFNet)
 		}
-		return "", "", fmt.Errorf("%s must be %q or %q, got %q", IntegrationNetworkEnv, IntegrationNetworkTestnet, IntegrationNetworkLocalnet, network)
+		return "", "", fmt.Errorf("%s must be %q, %q, or %q, got %q", IntegrationNetworkEnv, IntegrationNetworkTestnet, IntegrationNetworkLocalnet, IntegrationNetworkFNet, network)
 	}
 }
 
-func validateIntegrationGenesis(network, algodURL, genesisID string) error {
+func validateIntegrationNetwork(network, algodURL, genesisID, genesisHash, suggestedConsensus, statusConsensus string) error {
 	switch network {
 	case IntegrationNetworkTestnet:
 		if genesisID != TestnetGenesisID {
@@ -140,6 +161,13 @@ func validateIntegrationGenesis(network, algodURL, genesisID string) error {
 		}
 		if !isLocalIntegrationEndpoint(algodURL) {
 			return fmt.Errorf("localnet integration algod URL must be localhost, private, or single-label Docker DNS; got %s", algodURL)
+		}
+	case IntegrationNetworkFNet:
+		if genesisID != FNetGenesisID || genesisHash != FNetGenesisHash {
+			return fmt.Errorf("FNet integration requires genesis %s/%s, but ALGOD_URL %s reports %s/%s", FNetGenesisID, FNetGenesisHash, algodURL, genesisID, genesisHash)
+		}
+		if suggestedConsensus != FNetConsensus || statusConsensus != FNetConsensus {
+			return fmt.Errorf("FNet native Falcon integration requires consensus %s, but ALGOD_URL %s reports suggested=%q status=%q", FNetConsensus, algodURL, suggestedConsensus, statusConsensus)
 		}
 	}
 	return nil

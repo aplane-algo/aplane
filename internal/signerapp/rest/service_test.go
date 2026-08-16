@@ -28,6 +28,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
@@ -37,6 +38,8 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	nativefalconsignerreg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/txeffects"
@@ -80,6 +83,7 @@ func writeTemplateStateForRestTest(t *testing.T, paths storepaths.Paths, identit
 func init() {
 	lsigsignerreg.RegisterSigner()
 	ed25519signerreg.RegisterSigner()
+	nativefalconsignerreg.RegisterSigner()
 }
 
 type stubSigningService struct {
@@ -194,7 +198,7 @@ func reloadKeysForTest(ir *identity.Runtime, _ storepaths.Paths) error {
 	if err := ks.Scan(nil); err != nil {
 		return err
 	}
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes(), ks.GetLsigSizes())
+	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
 	return nil
 }
 
@@ -615,19 +619,18 @@ func TestBuildKeyTypesServesBoundedSentryMetadata(t *testing.T) {
 
 func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 	metadata := &boundedmeta.Metadata{
-		Contract:                boundedmeta.ContractV1,
-		BaseSignatureArgLayout:  boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, true),
-		SpendEffects:            []string{"pay"},
-		MaxFee:                  1_000,
-		AdminOperations:         []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone}},
-		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
-		AdminKeyID:              "ADMIN",
-		ProgramBindingHex:       strings.Repeat("ab", 32),
-		PostSigningLogicSigSize: 4_096,
+		Contract:               boundedmeta.ContractV1,
+		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, true),
+		SpendEffects:           []string{"pay"},
+		MaxFee:                 1_000,
+		AdminOperations:        []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone}},
+		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
+		AdminKeyID:             "ADMIN",
+		ProgramBindingHex:      strings.Repeat("ab", 32),
 	}
 	info := boundedInfo(metadata)
-	if info.AdminKeyID != "ADMIN" || info.ProgramBindingHex != metadata.ProgramBindingHex || info.PostSigningLogicSigSize != 4_096 || info.Layer3Policy != boundedmeta.Layer3PolicyCustom {
+	if info.AdminKeyID != "ADMIN" || info.ProgramBindingHex != metadata.ProgramBindingHex || info.Layer3Policy != boundedmeta.Layer3PolicyCustom {
 		t.Fatalf("boundedInfo() = %#v", info)
 	}
 }
@@ -686,10 +689,22 @@ func TestServiceKeyTypesIncludesNativeAndFalconSentry(t *testing.T) {
 	}
 
 	foundEd25519 := false
+	foundNativeFalcon := false
 	foundFalconComponent := false
 	for _, keyType := range keyTypes {
 		if keyType.KeyType == "ed25519" {
 			foundEd25519 = true
+			if keyType.AuthorizationKind != "ed25519" {
+				t.Fatalf("Ed25519 authorization kind = %q", keyType.AuthorizationKind)
+			}
+		}
+		if keyType.KeyType == nativefalcon.KeyType {
+			foundNativeFalcon = true
+			if keyType.DisplayName != nativefalcon.KeyType ||
+				keyType.AuthorizationKind != "native_pq" || keyType.RequiresLogicSig ||
+				keyType.MnemonicWordCount != nativefalcon.MnemonicWordCount {
+				t.Fatalf("native Falcon key type info = %#v", keyType)
+			}
 		}
 		if keyType.KeyType == witness.Falcon1024V1 {
 			foundFalconComponent = true
@@ -700,6 +715,9 @@ func TestServiceKeyTypesIncludesNativeAndFalconSentry(t *testing.T) {
 	}
 	if !foundEd25519 {
 		t.Fatal("KeyTypes() did not include ed25519")
+	}
+	if !foundNativeFalcon {
+		t.Fatalf("KeyTypes() did not include %s", nativefalcon.KeyType)
 	}
 	if !foundFalconComponent {
 		t.Fatalf("KeyTypes() did not include %s", witness.Falcon1024V1)
@@ -937,6 +955,7 @@ family: generic-rest-disabled
 version: 1
 display_name: Generic Rest Disabled
 description: Test disabled template
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -988,6 +1007,7 @@ family: generic-rest-identity-scoped
 version: 1
 display_name: Generic Rest Identity Scoped
 description: Test identity-scoped template
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -1216,6 +1236,7 @@ family: ` + family + `
 version: 1
 display_name: ` + displayName + `
 description: Test generic template
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |
@@ -1252,6 +1273,16 @@ func (p restTestDSAProvider) ValidateCreationParams(map[string]string) error {
 	return nil
 }
 func (p restTestDSAProvider) RuntimeArgs() []lsigprovider.RuntimeArgDef { return nil }
+func (p restTestDSAProvider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	if p.bounded != nil {
+		return lsigresource.BoundedOpcodeProfile(
+			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
+		)
+	}
+	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
+}
 func (p restTestDSAProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, error) {
 	return nil, nil
 }
@@ -1457,6 +1488,7 @@ family: generic-rest-error
 version: 1
 display_name: Generic Rest Error
 description: Test generic rest template
+max_opcode_cost: 20000
 parameters: []
 runtime_args: []
 teal: |

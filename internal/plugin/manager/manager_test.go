@@ -206,9 +206,9 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 					"jsonrpc": jsonrpc.Version,
 					"id":      id,
 					"result": map[string]interface{}{
-						"success": true,
-						"message": "ok",
-						"version": jsonrpc.PluginProtocolVersion,
+						"success":  true,
+						"message":  "ok",
+						"protocol": jsonrpc.PluginProtocol,
 					},
 				}
 			})
@@ -244,30 +244,40 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 	}
 }
 
-func TestInitializePluginRequiresProtocolVersionEcho(t *testing.T) {
+func TestInitializePluginRequiresPluginOwnedProtocolDeclaration(t *testing.T) {
 	tests := []struct {
-		name        string
-		echoVersion string
-		wantErr     string
+		name          string
+		protocol      string
+		legacyVersion string
+		wantErr       string
 	}{
-		{name: "supported", echoVersion: jsonrpc.PluginProtocolVersion},
-		{name: "missing", echoVersion: "", wantErr: `unsupported plugin protocol version ""`},
-		{name: "mismatch", echoVersion: "2.0", wantErr: `unsupported plugin protocol version "2.0"`},
+		{name: "supported", protocol: jsonrpc.PluginProtocol},
+		{name: "missing", wantErr: `unsupported plugin protocol ""`},
+		{name: "mismatch", protocol: "aplane-plugin/1", wantErr: `unsupported plugin protocol "aplane-plugin/1"`},
+		{
+			name:          "legacy version response is not a declaration",
+			legacyVersion: jsonrpc.PluginProtocol,
+			wantErr:       `unsupported plugin protocol ""`,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			seenVersion := make(chan string, 1)
+			seenHostProtocol := make(chan bool, 1)
 			inst := newResponsivePluginInstance(t, func(req map[string]interface{}) map[string]interface{} {
 				params, _ := req["params"].(map[string]interface{})
-				version, _ := params["version"].(string)
-				seenVersion <- version
+				_, hasVersion := params["version"]
+				_, hasProtocol := params["protocol"]
+				seenHostProtocol <- hasVersion || hasProtocol
 				result := map[string]interface{}{
 					"success": true,
 					"message": "ok",
 				}
-				if tt.echoVersion != "" {
-					result["version"] = tt.echoVersion
+				if tt.protocol != "" {
+					result["protocol"] = tt.protocol
+				}
+				if tt.legacyVersion != "" {
+					result["version"] = tt.legacyVersion
 				}
 				return map[string]interface{}{
 					"jsonrpc": jsonrpc.Version,
@@ -278,8 +288,8 @@ func TestInitializePluginRequiresProtocolVersionEcho(t *testing.T) {
 			defer inst.Stop()
 
 			err := NewManager().initializePlugin(inst, runtimeConfig{network: "testnet"})
-			if got := <-seenVersion; got != jsonrpc.PluginProtocolVersion {
-				t.Fatalf("initialize version = %q, want %q", got, jsonrpc.PluginProtocolVersion)
+			if got := <-seenHostProtocol; got {
+				t.Fatal("initialize request exposed a protocol token that legacy plugins could echo")
 			}
 			if tt.wantErr == "" {
 				if err != nil {

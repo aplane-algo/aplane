@@ -38,7 +38,7 @@ func TestPolicyIntegrityDirectEditRejectsAndReallowsAlgoPayment(t *testing.T) {
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 	t.Cleanup(apadmin.Cleanup)
 
-	fundingAddr, err := apadmin.ImportKey(os.Getenv("TEST_FUNDING_MNEMONIC"))
+	fundingAddr, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC"))
 	if err != nil {
 		t.Fatalf("failed to import funding account into signer: %v", err)
 	}

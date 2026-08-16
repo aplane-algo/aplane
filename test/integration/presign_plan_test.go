@@ -23,10 +23,11 @@ import (
 
 // TestPresignPlanPreservesPluginSlotFields validates the load-bearing premise of
 // the pre-sign planning flow against a real apsigner: when /plan canonicalizes a
-// mixed group (a Falcon-managed slot + a foreign/plugin slot), it (a) adds budget
-// dummies for the Falcon key and (b) preserves the plugin slot's artifact-bound
-// fields (sender, validity window, lease, amount, genesis) — changing only group id
-// and fee. A violation would silently break a plugin's HPKE envelope / proof.
+// mixed group (a Falcon-managed slot + a foreign/plugin slot), it (a) recognizes
+// that the second real slot satisfies Falcon's v42 argument pool and (b)
+// preserves the plugin slot's artifact-bound fields (sender, validity window,
+// lease, amount, genesis) — changing only group ID and fee. A violation would
+// silently break a plugin's HPKE envelope / proof.
 func TestPresignPlanPreservesPluginSlotFields(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -125,9 +126,9 @@ func TestPresignPlanPreservesPluginSlotFields(t *testing.T) {
 		canonical[i] = txn
 	}
 
-	// (a) Budget dummies were added for the Falcon key.
-	if len(canonical) <= 2 {
-		t.Fatalf("expected budget dummies for the Falcon key; got %d canonical txns", len(canonical))
+	// (a) The two real slots satisfy v42 resource sizing without a dummy.
+	if len(canonical) != 2 {
+		t.Fatalf("expected two canonical v42 transactions with no dummy; got %d", len(canonical))
 	}
 
 	// (b) The plugin slot's artifact-bound fields are preserved.
@@ -151,10 +152,8 @@ func TestPresignPlanPreservesPluginSlotFields(t *testing.T) {
 	}
 
 	// (c) The MANAGED Falcon slot's artifact-bound fields are preserved too. The
-	// original slots keep their indices [0, originalCount); dummies are appended, so
-	// the managed slot is canonical[0]. (Searching by sender would also match the
-	// Falcon budget dummies, which share the funder's address.) Its fee changes from
-	// budget pooling, so allow only fee + group to differ.
+	// original slots keep their indices, so the managed slot is canonical[0]. Its
+	// fee changes from resource pooling, so allow only fee + group to differ.
 	if canonical[0].Sender.String() != falconAddr {
 		t.Fatalf("expected the managed Falcon slot at canonical index 0, got sender %s", canonical[0].Sender)
 	}

@@ -25,6 +25,26 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
+	if harness.IntegrationNetwork() == harness.IntegrationNetworkFNet {
+		if _, err := harness.NewTestnetConfig(); err != nil {
+			panic("failed to validate FNet integration profile: " + err.Error())
+		}
+		if os.Getenv("APLANE_FNET_FULL_SUITE") == "1" {
+			fundingAccount, err := harness.NewFundingAccount()
+			if err != nil {
+				panic("failed to load FNet native Falcon funding account: " + err.Error())
+			}
+			network, err := harness.NewTestnetConfig()
+			if err != nil {
+				panic("failed to reconnect to FNet: " + err.Error())
+			}
+			if err := fundingAccount.EnsureFunded(network.Client); err != nil {
+				panic("FNet native Falcon funding account check failed: " + err.Error())
+			}
+		}
+		os.Exit(m.Run())
+	}
+
 	// Check for funding account
 	fundingAccount, err := harness.NewFundingAccount()
 	if err != nil {
@@ -71,14 +91,14 @@ func TestBasicFalconTransaction(t *testing.T) {
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 	defer apadmin.Cleanup() // Clean up keys created during test
 
-	// Import the funded ed25519 account into Signer
+	// Import the funded native Falcon account into Signer
 	fundingMnemonic := os.Getenv("TEST_FUNDING_MNEMONIC")
 	if fundingMnemonic == "" {
 		t.Skip("TEST_FUNDING_MNEMONIC not set")
 	}
 
 	t.Log("Importing funded account into Signer...")
-	fundingAddr, err := apadmin.ImportKey(fundingMnemonic)
+	fundingAddr, err := apadmin.ImportFundingKey(fundingMnemonic)
 	if err != nil {
 		t.Fatalf("Failed to import funding account: %v", err)
 	}
@@ -106,7 +126,7 @@ func TestBasicFalconTransaction(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	// Fund the Falcon account using apshell (ed25519 → Falcon)
+	// Fund the Falcon account using apshell (native Falcon → LogicSig Falcon)
 	t.Logf("Funding Falcon account %s with 0.25 ALGO from %s...", falconAddr, fundingAddr)
 	fundTxid, err := apshell.SendTransaction(fundingAddr, falconAddr, 0.25)
 	if err != nil {
@@ -123,7 +143,10 @@ func TestBasicFalconTransaction(t *testing.T) {
 
 	// Send a Falcon-signed transaction
 	t.Log("Sending Falcon-signed transaction...")
-	recipient := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ" // burn address
+	// Return a small payment to the already-funded source. A sub-minimum
+	// payment to an empty burn address is rejected client-side on public
+	// networks before it can exercise Falcon signing.
+	recipient := fundingAddr
 	txid, err := apshell.SendTransaction(falconAddr, recipient, 0.01)
 	if err != nil {
 		t.Fatalf("Failed to send Falcon transaction: %v", err)

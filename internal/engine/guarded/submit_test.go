@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
@@ -171,9 +172,9 @@ func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
 		c.SetSentryComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
 		c.SetSentryPublicKeyForAddress(bounded, sentryHex)
 		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
-		c.SetLsigSize(bounded, 4000)
+		setTestLogicSigResources(c, bounded, 4000)
 		c.AddAddress(plain, "aplane.falcon1024.v1")
-		c.SetLsigSize(plain, 1700)
+		setTestLogicSigResources(c, plain, 1700)
 	})
 	txns := []types.Transaction{
 		testPaymentTxn(t, testAddress(1), testAddress(3), "bounded"),
@@ -186,17 +187,47 @@ func TestBoundedSentryTargetsAndComponentRequestShape(t *testing.T) {
 	if targets[0].BoundedMaxFee != 10_000 {
 		t.Fatalf("bounded max fee = %d, want 10000", targets[0].BoundedMaxFee)
 	}
-	requests := s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{
+	requests, err := s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{
 		LsigArgsMap: []map[string][]byte{{"preimage": {0xaa}}, nil},
 	})
+	if err != nil {
+		t.Fatalf("buildBoundedComponentRequests() error = %v", err)
+	}
 	if mode, _ := requests[0].Mode(); mode != signerapi.RequestModeSign || requests[0].AuthAddress != bounded || requests[0].LsigArgs["preimage"] != "aa" {
 		t.Fatalf("bounded request = %#v", requests[0])
 	}
-	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign || requests[1].LsigSize != 1700 {
+	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign || requests[1].LsigResources == nil || requests[1].LsigResources.ProgramBytes != 1700 {
 		t.Fatalf("plain context request = %#v", requests[1])
 	}
 	if sc.SigningFlowForAddress(bounded) != signerapi.SigningFlowBoundedSentry1 || !s.HasGuardedEffectiveSigner(txns) {
 		t.Fatal("bounded-sentry flow did not enter guarded orchestration")
+	}
+}
+
+func TestBuildBoundedComponentRequestsRejectsKnownLogicSigWithoutResources(t *testing.T) {
+	bounded := testAddress(1).String()
+	foreign := testAddress(2).String()
+	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
+		c.AddAddress(bounded, "test.bounded-sentry.v1")
+		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowBoundedSentry1)
+		c.SetSentryComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
+		c.SetSentryPublicKeyForAddress(bounded, testSentryPublicKeyHex(0xd6))
+		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
+		setTestLogicSigResources(c, bounded, 4_000)
+		c.AddAddress(foreign, "test.generic.v1")
+		c.SetGenericLsig(foreign, true)
+	})
+	txns := []types.Transaction{
+		testPaymentTxn(t, testAddress(1), testAddress(3), "bounded"),
+		testPaymentTxn(t, testAddress(2), testAddress(3), "foreign"),
+	}
+	targets, err := s.guardedTargets(txns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{})
+	if err == nil || !strings.Contains(err.Error(), "LogicSig resource profile") {
+		t.Fatalf("buildBoundedComponentRequests() error = %v, want missing LogicSig resource profile", err)
 	}
 }
 
@@ -210,50 +241,6 @@ func TestGuardedTargetsRequireSentryComponentKeyTypeMetadata(t *testing.T) {
 	_, err := s.guardedTargets([]types.Transaction{txn})
 	if err == nil || !strings.Contains(err.Error(), "missing sentry_component_key_type") {
 		t.Fatalf("guardedTargets() error = %v, want missing sentry_component_key_type", err)
-	}
-}
-
-func TestPlanGuardedGroupReturnsGroupedDummies(t *testing.T) {
-	sender := testAddress(1).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
-	s, _ := newGuardedTestSigner(t, sender, 2500, sentryHex)
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
-	targets := []guardedTarget{{
-		Index:                  0,
-		Sender:                 sender,
-		Account:                sender,
-		SentryComponentKeyType: witness.Falcon1024V1,
-		SentryPublicKey:        sentryHex,
-	}}
-
-	planned, dummies, err := s.planGuardedGroup([]types.Transaction{txn}, targets, nil)
-	if err != nil {
-		t.Fatalf("planGuardedGroup() error = %v", err)
-	}
-	if len(planned) != 3 {
-		t.Fatalf("len(planned) = %d, want 3", len(planned))
-	}
-	if len(dummies) != 2 {
-		t.Fatalf("len(dummies) = %d, want 2", len(dummies))
-	}
-	if planned[0].Group == (types.Digest{}) {
-		t.Fatal("planned group ID is empty")
-	}
-	for i := range planned {
-		if planned[i].Group != planned[0].Group {
-			t.Fatalf("planned[%d].Group = %x, want %x", i, planned[i].Group, planned[0].Group)
-		}
-	}
-	for i := range dummies {
-		if dummies[i].Group != planned[1+i].Group {
-			t.Fatalf("dummy[%d].Group = %x, want grouped canonical dummy %x", i, dummies[i].Group, planned[1+i].Group)
-		}
-		if dummies[i].Fee != 0 {
-			t.Fatalf("dummy[%d].Fee = %d, want 0", i, dummies[i].Fee)
-		}
-	}
-	if planned[0].Fee != types.MicroAlgos(3000) {
-		t.Fatalf("planned[0].Fee = %d, want 3000 after two dummy fees", planned[0].Fee)
 	}
 }
 
@@ -487,6 +474,26 @@ func TestDecodeGuardedSignedGroupReturnsSignedObjects(t *testing.T) {
 // testCacheView adapts a cache.SignerCache to SignerCacheView for tests.
 type testCacheView struct{ c *cache.SignerCache }
 
+func (v testCacheView) AuthorizationKind(address string) (string, bool) {
+	if !v.c.HasAddress(address) {
+		return "", false
+	}
+	if v.c.IsGenericLsig(address) {
+		return authorizationLogicSig, true
+	}
+	if _, ok := v.c.LogicSigResourceProfile(address); ok {
+		return authorizationLogicSig, true
+	}
+	keyType := v.c.GetKeyType(address)
+	if keyType == "ed25519" {
+		return "ed25519", true
+	}
+	if keyType == "falcon1024" {
+		return authorizationNativePQ, true
+	}
+	return "", true
+}
+
 func (v testCacheView) SigningFlow(address string) string { return v.c.SigningFlowForAddress(address) }
 func (v testCacheView) SentryComponentKeyType(address string) (string, bool) {
 	return v.c.SentryComponentKeyTypeForAddress(address)
@@ -497,7 +504,9 @@ func (v testCacheView) SentryPublicKey(address string) (string, bool) {
 func (v testCacheView) BoundedMaxFee(address string) (uint64, bool) {
 	return v.c.BoundedMaxFeeForAddress(address)
 }
-func (v testCacheView) LsigSize(address string) int { return v.c.GetLsigSize(address) }
+func (v testCacheView) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
+	return v.c.LogicSigResourceProfile(address)
+}
 
 // newTestSigner builds a Signer over a populated signer cache, a fresh
 // in-memory auth cache, and an unconnected connection state. Tests reach the
@@ -519,12 +528,12 @@ func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *ca
 	return s, &signerCache
 }
 
-func newGuardedTestSigner(t *testing.T, sender string, lsigSize int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
+func newGuardedTestSigner(t *testing.T, sender string, programBytes int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
 	t.Helper()
-	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Sentry1024V1, lsigSize, sentryPublicKey)
+	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Sentry1024V1, programBytes, sentryPublicKey)
 }
 
-func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, lsigSize int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
+func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, programBytes int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
 	t.Helper()
 	return newTestSigner(t, func(signerCache *cache.SignerCache) {
 		signerCache.AddAddress(sender, keyType)
@@ -533,12 +542,19 @@ func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, lsigSi
 			signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowSentry1)
 			signerCache.SetSentryComponentKeyTypeForAddress(sender, componentType)
 		}
-		if lsigSize > 0 {
-			signerCache.SetLsigSize(sender, lsigSize)
+		if programBytes > 0 {
+			setTestLogicSigResources(signerCache, sender, programBytes)
 		}
 		if sentryPublicKey != "" {
 			signerCache.SetSentryPublicKeyForAddress(sender, sentryPublicKey)
 		}
+	})
+}
+
+func setTestLogicSigResources(signerCache *cache.SignerCache, address string, programBytes int) {
+	signerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
+		ProgramBytes: uint64(programBytes),
+		Default:      &lsigresource.PathProfile{MaxOpcodeCost: 1},
 	})
 }
 
