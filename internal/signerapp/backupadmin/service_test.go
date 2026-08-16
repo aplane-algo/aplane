@@ -164,7 +164,7 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 		Authenticator: auth.NewTokenAuthenticator("token"), NodeRole: noderole.RoleSigner,
 		UserAutoApprove: &autoApprove,
 	})
-	ir.SetReloadFunc(func(string, []byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		reloads.Add(1)
 		return &signertemplates.ReloadReport{}, nil
 	})

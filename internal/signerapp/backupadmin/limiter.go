@@ -15,9 +15,9 @@ const (
 )
 
 type RestoreLimiter interface {
-	RetryAfter(identityID, archivePath string) time.Duration
-	RecordFailure(identityID, archivePath string)
-	RecordSuccess(identityID, archivePath string)
+	RetryAfter(archivePath string) time.Duration
+	RecordFailure(archivePath string)
+	RecordSuccess(archivePath string)
 }
 
 type RestoreAttemptLimiter struct {
@@ -41,14 +41,14 @@ func NewRestoreAttemptLimiter(now func() time.Time) *RestoreAttemptLimiter {
 	}
 }
 
-func (l *RestoreAttemptLimiter) RetryAfter(identityID, archivePath string) time.Duration {
+func (l *RestoreAttemptLimiter) RetryAfter(archivePath string) time.Duration {
 	if l == nil {
 		return 0
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	state := l.attempts[restoreAttemptKey(identityID, archivePath)]
+	state := l.attempts[archivePath]
 	now := l.now()
 	if state.nextAllowed.After(now) {
 		return state.nextAllowed.Sub(now)
@@ -56,15 +56,14 @@ func (l *RestoreAttemptLimiter) RetryAfter(identityID, archivePath string) time.
 	return 0
 }
 
-func (l *RestoreAttemptLimiter) RecordFailure(identityID, archivePath string) {
+func (l *RestoreAttemptLimiter) RecordFailure(archivePath string) {
 	if l == nil {
 		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	key := restoreAttemptKey(identityID, archivePath)
-	state := l.attempts[key]
+	state := l.attempts[archivePath]
 	state.failures++
 	delay := restoreAttemptInitialDelay
 	for i := 1; i < state.failures; i++ {
@@ -75,20 +74,16 @@ func (l *RestoreAttemptLimiter) RecordFailure(identityID, archivePath string) {
 		}
 	}
 	state.nextAllowed = l.now().Add(delay)
-	l.attempts[key] = state
+	l.attempts[archivePath] = state
 }
 
-func (l *RestoreAttemptLimiter) RecordSuccess(identityID, archivePath string) {
+func (l *RestoreAttemptLimiter) RecordSuccess(archivePath string) {
 	if l == nil {
 		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	delete(l.attempts, restoreAttemptKey(identityID, archivePath))
-}
-
-func restoreAttemptKey(identityID, archivePath string) string {
-	return identityID + "\x00" + archivePath
+	delete(l.attempts, archivePath)
 }
 
 func RestoreRateLimitedError(retryAfter time.Duration) string {

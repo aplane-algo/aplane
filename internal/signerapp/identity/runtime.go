@@ -43,7 +43,7 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 // Lock ordering (acquire outer first; nested order is left to right):
 //
 //	reloadLock() ->  passphraseLock  ->  keysLock
-//	reloadLock() ->  templateProviderOwners.mu  ->  lsigprovider.registerMu
+//	reloadLock() ->  lsigprovider.registerMu
 //
 // Per-lock scope:
 //
@@ -57,18 +57,14 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	policyMu        guards policyCfg/storedPolicyCfg and
 //	                sentryPolicyCfg/storedSentryPolicyCfg. Held alone.
 //	sshKeysMu       guards sshKeys. Held alone.
-//	templateProviderOwners.mu guards identity ownership counts for process-global
-//	                installed-template LogicSig providers. It is acquired only
-//	                after the identity mutation lock in production paths and may
-//	                call into lsigprovider.registerMu.
 //
 // Atomics:
 //
 //	approval        coordinator pointer; swapped without a mutex.
 //	keysetRev       last-published key snapshot revision.
 //
-// reloadLock is supplied by the process root (Signer.storeMutationLocks[id])
-// and is the same per-identity mutation lock that admin paths hold while
+// reloadLock is supplied by the process root (Signer.storeMutationLock)
+// and is the same process-wide mutation lock that admin paths hold while
 // mutating keys/templates/config/policy. Watcher-driven reloads acquire it
 // themselves; admin paths that already hold it call Reload directly (see
 // reloadFromWatcher).
@@ -113,7 +109,7 @@ type Runtime struct {
 	// Injected by the process root after construction.
 	// The session parameter is the current keySession; callers already hold
 	// passphraseLock so the reload function must not re-acquire it.
-	reloadFn func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error)
+	reloadFn func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error)
 
 	// onLocked is called after lock cleanup completes (for IPC notification, etc).
 	onLocked func()
@@ -200,13 +196,13 @@ func New(cfg Config) *Runtime {
 // The function receives the keySession directly because callers of
 // reloadLocked already hold passphraseLock; the function must not
 // re-acquire it.
-func (ir *Runtime) SetReloadFunc(fn func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error)) {
+func (ir *Runtime) SetReloadFunc(fn func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error)) {
 	ir.passphraseLock.Lock()
 	ir.reloadFn = fn
 	ir.passphraseLock.Unlock()
 }
 
-// SetReloadMutationLock sets the identity-scoped lock watcher-triggered reloads
+// SetReloadMutationLock sets the process-wide lock watcher-triggered reloads
 // acquire before scanning disk. Admin mutations that already hold this lock call
 // Reload directly and must not re-enter it.
 func (ir *Runtime) SetReloadMutationLock(fn func() sync.Locker) {
@@ -807,7 +803,7 @@ func (ir *Runtime) reloadLocked(passphrase []byte) (*signertemplates.ReloadRepor
 		return nil, fmt.Errorf("reload function not configured")
 	}
 	// Pass keySession directly — caller holds passphraseLock.
-	return ir.reloadFn(ir.id, passphrase, ir.keySession)
+	return ir.reloadFn(passphrase, ir.keySession)
 }
 
 // --- Watcher ---

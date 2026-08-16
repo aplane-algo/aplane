@@ -101,9 +101,9 @@ current generation in place (§4).
   `KeyTypeTemplate`. Legacy active-namespace path methods are not used for
   generation-qualified consumers, preventing stale-path resolution.
 
-**Lifetime rule: resolve once per operation, under the identity mutation
+**Lifetime rule: resolve once per operation, under the product store mutation
 lock, and pass `GenPaths` down. Never re-resolve mid-operation.** The lock
-tables stay as they are: `Signer.storeMutationLocks[identityID]` guards
+table is defined in ARCH_SPEC: `Signer.storeMutationLock` guards
 resolution+mutation; `genstore.Resolve` without the lock is permitted only
 for read-only display surfaces that tolerate staleness (key list rendering),
 never for anything that writes or that feeds a write.
@@ -289,8 +289,8 @@ reference safety has soaked.
 
 ## 10. Concurrency and watchers
 
-- All resolution+mutation under `storeMutationLocks[identityID]` (unchanged
-  hierarchy, documented in ARCH_SPEC).
+- All resolution+mutation under `Signer.storeMutationLock` (documented in
+  ARCH_SPEC).
 - `identity.Runtime.EnsureKeyWatcher` watches the identity directory for a
   `CURRENT` replacement and binds `keys/`/`keytypes/` watches to the resolved
   current generation. Pointer changes trigger a coordinated reload under the

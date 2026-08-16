@@ -823,10 +823,8 @@ The key indexes are authoritative runtime indexes of what the server believes is
 |------|----------|
 | `Signer.configMu` | Mutable process-global `ServerConfig` fields exposed through admin settings, including theme, SSH listen address, and endpoint advertise URL |
 | `Signer.configMutationMu` | Process-owned `config.yaml` write serialization |
-| `Signer.storeMutationMu` | Map of per-identity mutation locks |
-| `Signer.storeMutationLocks[identityID]` | Identity-owned key/template/config/policy mutation serialization |
-| `signerapp/templates.templateProviderOwners.mu` | Identity ownership counts for process-global installed-template LogicSig providers |
-| `Signer.restoreAttemptMu` | Lazy initialization of the per-identity/archive restore backoff limiter |
+| `Signer.storeMutationLock` | Product key/template/config/policy mutation serialization |
+| `Signer.restoreAttemptMu` | Lazy initialization of the per-archive restore backoff limiter |
 | `identity.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
 | `identity.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
 | `identity.Runtime.watcherMu` | Watcher lifecycle, dirty state |
@@ -835,7 +833,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Coordinator.pendingRequestsLock` | Pending sign approvals |
 | `Coordinator.pendingTokenRequestsLock` | Pending token provisioning approvals |
 | `IPCServer.writeMu` | Serializes outbound IPC JSON writes |
-| `adminserver.SessionManager.mu` | Per-identity admin session registration/displacement |
+| `adminserver.SessionManager.mu` | Process-wide admin session registration/displacement |
 | `AuditLogger.mu` | Audit file writes |
 | SSH server locks | Authorized keys, token callbacks, identity-scoped connections, listener |
 
@@ -881,16 +879,15 @@ The watcher model is identity-owned but not tied to every lock transition:
 - the next unlock reconciles dirty state by reloading,
 - watchers are stopped on runtime shutdown, not on every ordinary lock.
 
-Watcher-triggered reloads acquire the same per-identity mutation lock used by
+Watcher-triggered reloads acquire the same process-wide mutation lock used by
 admin template/key/config mutations. Admin mutation paths that already hold the
 lock call `Reload` directly; watcher paths use the watcher reload entrypoint so
 they do not re-enter the same lock.
 
-Installed-template provider reconciliation follows
-`Signer.storeMutationLocks[identityID]` -> `signerapp/templates.templateProviderOwners.mu`
--> `internal/lsigprovider.registerMu`. The provider-owner lock never acquires
-identity mutation locks and only mutates in-memory owner counts plus the
-process-global provider registry.
+Installed-template provider reconciliation follows `Signer.storeMutationLock`
+to `internal/lsigprovider.registerMu`. The one product activation set directly
+registers or unregisters its process-global provider; there are no identity
+owner counts.
 
 The runtime has no live decommission transition or operation lease. Server
 shutdown stops accepting and drains HTTP work before destroying runtime key

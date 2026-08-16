@@ -64,7 +64,7 @@ func (s *Service) gateUserComponentSigning(ctx context.Context, identityID strin
 		ForeignIndices: foreignIndices,
 		IsGroup:        len(allTxns) > 1,
 		AuthKeys:       authKeys,
-		KnownAddresses: s.knownAddresses(identityID, nil),
+		KnownAddresses: s.knownAddresses(nil),
 		LogRejection: func(reason string) {
 			s.logUserComponentRejections(identityID, plan, "policy_engine_rejected: "+reason)
 		},
@@ -135,7 +135,7 @@ func (s *ApprovalService) requestComponentApprovalWithContext(ctx context.Contex
 		console.Sync()
 	}
 
-	if s.HasClient == nil || !s.HasClient(identityID) {
+	if s.HasClient == nil || !s.HasClient() {
 		return unavailable("no apadmin connected - cannot approve guarded component request")
 	}
 
@@ -159,7 +159,7 @@ func (s *ApprovalService) requestComponentApprovalWithContext(ctx context.Contex
 
 	var knownAddresses map[string]bool
 	if s.KnownAddresses != nil {
-		knownAddresses = s.KnownAddresses(identityID)
+		knownAddresses = s.KnownAddresses()
 	}
 	violations := approvalpolicy.CheckGroupWarnings(allTxns, knownAddresses)
 	approved, err := s.requestSigningApproval(

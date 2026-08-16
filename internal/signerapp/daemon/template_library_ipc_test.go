@@ -486,7 +486,7 @@ func TestInstallLibraryTemplateReloadFailureRollsBackEncryptedFile(t *testing.T)
 	writeLibraryTemplateForTest(t, server, "reload-fail.yaml", renderGenericTemplateYAML(family, 1, "Reload Failure", "forces reload failure"))
 
 	ir := server.productIdentityRuntime()
-	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, errors.New("forced reload failure")
 	})
 
@@ -524,7 +524,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 		t.Fatalf("initial installed template stat: %v", err)
 	}
 
-	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, errors.New("forced reload failure")
 	})
 	again := server.adminServices().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
@@ -548,7 +548,7 @@ func TestInstallLibraryTemplateActivationFailureRollsBackEncryptedFile(t *testin
 	writeLibraryTemplateForTest(t, server, "activation-fail.yaml", renderGenericTemplateYAML(family, 1, "Activation Failure", "reload does not activate provider"))
 
 	ir := server.productIdentityRuntime()
-	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, nil
 	})
 
@@ -595,7 +595,7 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 		t.Fatalf("template %q already registered", keyType)
 	}
 
-	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return &signertemplates.ReloadReport{}, nil
 	})
 	result := server.adminServices().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{

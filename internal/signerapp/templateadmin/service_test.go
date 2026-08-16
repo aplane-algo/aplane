@@ -70,7 +70,7 @@ func setupServiceWithReloadCounter(t *testing.T) (Service, *identity.Runtime, *a
 		KeyPaths:      keyPaths,
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
-	ir.SetReloadFunc(func(string, []byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		reloadCount.Add(1)
 		return &signertemplates.ReloadReport{}, nil
 	})

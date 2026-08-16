@@ -21,6 +21,8 @@ func TestSingleIdentityBoundaryShapesDoNotRegrow(t *testing.T) {
 		"targetAnyIdentity",
 		"subjectGroupPrefix",
 		"type Grant struct",
+		"storeMutationLocks",
+		"templateProviderOwners",
 	}
 	err := filepath.WalkDir(filepath.Join(root, "internal"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {

@@ -275,7 +275,7 @@ func TestWatcherReloadUsesMutationLock(t *testing.T) {
 	ir.SetUnlocked()
 
 	reloaded := make(chan struct{}, 1)
-	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		reloaded <- struct{}{}
 		return nil, nil
 	})

@@ -87,7 +87,7 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 			provisioning.AuditProvisioned(auth.CurrentProductIdentityID(), sshFingerprint, remoteAddr)
 		},
 		OperatorConnected: func() bool {
-			return server.hasClientForIdentity(auth.CurrentProductIdentityID())
+			return server.hasAdminClient()
 		},
 	})
 

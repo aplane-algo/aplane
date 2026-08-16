@@ -45,9 +45,9 @@ type IdentityBuildHooks struct {
 	NotifyKeysChanged            func(keyCount int)
 	ReloadAuditLog               signertemplates.AuditLogger
 	NodeFailClosed               func(error)
-	// ReloadMutationLock returns the identity-scoped store mutation lock that
+	// ReloadMutationLock returns the process-wide store mutation lock that
 	// watcher-triggered reloads must hold while scanning disk.
-	ReloadMutationLock func(identityID string) sync.Locker
+	ReloadMutationLock func() sync.Locker
 	Info               func(string)
 	Warn               func(string)
 }
@@ -225,13 +225,13 @@ func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ide
 // WireReloadFunc configures the reload function and the watcher reload
 // mutation lock on an identity runtime.
 func WireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks IdentityBuildHooks) {
-	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		svc := NewReloadService(ir, opts, hooks, session)
-		return svc.Reload(identityID, passphrase)
+		return svc.Reload(ir.ID(), passphrase)
 	})
 	if hooks.ReloadMutationLock != nil {
 		ir.SetReloadMutationLock(func() sync.Locker {
-			return hooks.ReloadMutationLock(ir.ID())
+			return hooks.ReloadMutationLock()
 		})
 	}
 }

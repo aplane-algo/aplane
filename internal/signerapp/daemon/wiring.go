@@ -78,8 +78,8 @@ func (fs *Signer) identityBuildHooks() signerstartup.IdentityBuildHooks {
 				fs.nodeFailState.Fail(err)
 			}
 		},
-		ReloadMutationLock: func(identityID string) sync.Locker {
-			return fs.storeMutationLock(identityID)
+		ReloadMutationLock: func() sync.Locker {
+			return &fs.storeMutationLock
 		},
 		Info: func(msg string) {
 			logInfof("%s", msg)

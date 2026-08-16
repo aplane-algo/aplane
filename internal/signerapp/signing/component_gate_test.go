@@ -60,9 +60,9 @@ type componentGatePrompt struct {
 func (p *componentGatePrompt) approvalService(audit *testAuditLogger) *ApprovalService {
 	return &ApprovalService{
 		AuditLog:       audit,
-		HasClient:      func(string) bool { return true },
-		KnownAddresses: func(string) map[string]bool { return nil },
-		RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+		HasClient:      func() bool { return true },
+		KnownAddresses: func() map[string]bool { return nil },
+		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			p.calls++
 			p.address = address
 			p.description = description
@@ -314,7 +314,7 @@ func TestSignComponentUserRoleWithoutAdminClientFailsClosed(t *testing.T) {
 	audit := &testAuditLogger{}
 	prompt := &componentGatePrompt{approve: true}
 	approval := prompt.approvalService(audit)
-	approval.HasClient = func(string) bool { return false }
+	approval.HasClient = func() bool { return false }
 	svc := newComponentGateService(audit, approval, nil, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial("test.component-gate-no-client.v1")}
 

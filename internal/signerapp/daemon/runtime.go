@@ -15,8 +15,7 @@ const (
 	SignerStateRecovery = signerruntime.SignerStateRecovery
 )
 
-func (fs *Signer) hasClientForIdentity(identityID string) bool {
-	_ = identityID
+func (fs *Signer) hasAdminClient() bool {
 	hub := fs.adminHub()
 	if hub == nil {
 		return false

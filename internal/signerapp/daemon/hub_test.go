@@ -135,7 +135,7 @@ func TestRequestSigningApprovalTimeoutCleansPendingRequest(t *testing.T) {
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
 
-	approved, err := signer.requestSigningApproval(auth.DefaultIdentityID, "req-timeout", "ADDR", "SENDER", "desc", 1, 2, nil, 10*time.Millisecond)
+	approved, err := ir.RequestSigningApproval("req-timeout", "ADDR", "SENDER", "desc", 1, 2, nil, 10*time.Millisecond)
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
@@ -157,12 +157,12 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            "alice",
+		ID:            auth.DefaultIdentityID,
 	})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 
-	approved, err := signer.requestSigningApproval("alice", "req-sign", "ADDR", "SENDER", "desc", 1, 2, nil, time.Second)
+	approved, err := ir.RequestSigningApproval("req-sign", "ADDR", "SENDER", "desc", 1, 2, nil, time.Second)
 	if err == nil {
 		t.Fatal("expected send failure, got nil")
 	}
@@ -177,7 +177,7 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 	}
 
 	hub.reset()
-	approved, err = signer.requestTokenProvisioning("req-token", "alice", "fingerprint", "remote", time.Second)
+	approved, err = signer.requestTokenProvisioning("req-token", auth.DefaultIdentityID, "fingerprint", "remote", time.Second)
 	if err == nil {
 		t.Fatal("expected send failure, got nil")
 	}
@@ -245,10 +245,10 @@ func TestApprovalServiceChecksProductAdminClient(t *testing.T) {
 
 	svc := signer.newApprovalServiceForIdentity(ir)
 	if svc.HasClient == nil {
-		t.Fatal("ApprovalService.HasClient = nil, want identity-aware callback")
+		t.Fatal("ApprovalService.HasClient = nil, want product callback")
 	}
-	if !svc.HasClient("alice") {
-		t.Fatal("ApprovalService.HasClient(alice) = false, want true")
+	if !svc.HasClient() {
+		t.Fatal("ApprovalService.HasClient() = false, want true")
 	}
 	if !hub.hasClientCalled {
 		t.Fatal("HasClient was not called")
@@ -271,7 +271,7 @@ func TestRequestSigningApprovalDisconnectCleansPendingRequest(t *testing.T) {
 	var err error
 	go func() {
 		defer close(done)
-		approved, err = signer.requestSigningApproval(auth.DefaultIdentityID, "req-disconnect", "ADDR", "SENDER", "desc", 1, 2, nil, time.Second)
+		approved, err = ir.RequestSigningApproval("req-disconnect", "ADDR", "SENDER", "desc", 1, 2, nil, time.Second)
 	}()
 
 	deadline := time.Now().Add(200 * time.Millisecond)

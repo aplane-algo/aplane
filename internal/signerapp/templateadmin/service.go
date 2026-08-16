@@ -399,7 +399,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 			return err
 		}
 		if removeResult.Removed {
-			signertemplates.ReleaseProviderOwner(ir.ID(), removeResult.KeyType)
+			signertemplates.UnregisterProductProvider(removeResult.KeyType)
 			if _, err := ir.Reload(); err != nil {
 				out = adminproto.RemoveInstalledTemplateResult{
 					Success:      false,
@@ -563,7 +563,7 @@ func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.Deactiva
 			return err
 		}
 		if disabledTemplate && removeResult.Removed {
-			signertemplates.ReleaseProviderOwner(ir.ID(), removeResult.KeyType)
+			signertemplates.UnregisterProductProvider(removeResult.KeyType)
 		}
 		if _, err := ir.Reload(); err != nil {
 			out = adminproto.DeactivateKeyTypeResult{
@@ -648,7 +648,7 @@ func rollbackFailedTemplateInstall(paths storepaths.Paths, identityID string, re
 	var rollbackErr error
 	if !result.AlreadyExists {
 		rollbackErr = templatelibrary.RollbackInstalledTemplateFile(paths, identityID, result.KeyType, result.TemplateType)
-		signertemplates.ReleaseProviderOwner(identityID, result.KeyType)
+		signertemplates.UnregisterProductProvider(result.KeyType)
 	}
 	if result.StateChanged {
 		if err := templatelibrary.RollbackTemplateStateChange(paths, identityID, result); err != nil {

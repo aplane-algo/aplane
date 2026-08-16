@@ -7,41 +7,7 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 )
-
-// Signer-level wrappers that route through the product identity runtime.
-// These exist for call sites (IPC handlers, SSH callbacks) that don't yet
-// resolve identity themselves.
-
-func (fs *Signer) requestSigningApproval(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
-	response, err := fs.requestSigningApprovalResponseContext(context.Background(), identityID, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-	if err != nil {
-		return false, err
-	}
-	return response.Approved, nil
-}
-
-func (fs *Signer) requestSigningApprovalResponse(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
-	return fs.requestSigningApprovalResponseContext(context.Background(), identityID, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-}
-
-func (fs *Signer) requestSigningApprovalContext(ctx context.Context, identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
-	response, err := fs.requestSigningApprovalResponseContext(ctx, identityID, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-	if err != nil {
-		return false, err
-	}
-	return response.Approved, nil
-}
-
-func (fs *Signer) requestSigningApprovalResponseContext(ctx context.Context, identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
-	ir := fs.runtime
-	if ir == nil || identityID != ir.ID() {
-		return signerapproval.SignResponse{}, fmt.Errorf("identity not found: %s", identityID)
-	}
-	return ir.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-}
 
 func (fs *Signer) requestTokenProvisioning(requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
 	return fs.requestTokenProvisioningContext(context.Background(), requestID, identityID, sshFingerprint, remoteAddr, timeout)

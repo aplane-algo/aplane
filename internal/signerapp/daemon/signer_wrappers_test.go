@@ -7,7 +7,6 @@ import (
 	"net"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
@@ -40,7 +39,7 @@ func (fs *Signer) lock() {
 // hasClient is a product-mode compatibility helper. Identity-aware code should
 // call AdminHub.HasClient with the target runtime identity directly.
 func (fs *Signer) hasClient() bool {
-	return fs.hasClientForIdentity(auth.CurrentProductIdentityID())
+	return fs.hasAdminClient()
 }
 
 func (fs *Signer) pendingSignCount() int {

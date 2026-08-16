@@ -4,8 +4,10 @@
 package daemon
 
 import (
+	"context"
 	"time"
 
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
@@ -20,17 +22,24 @@ func (fs *Signer) newApprovalServiceForIdentityWithAudit(ir *identity.Runtime, a
 		AuditLog:                      auditLog,
 		Console:                       signerConsole{},
 		GenerateTxnDescriptionFromTxn: fs.generateTransactionDescriptionFromTxn,
-		KnownAddresses: func(identityID string) map[string]bool {
-			if fs.runtime == nil || identityID != fs.runtime.ID() {
-				return nil
-			}
-			return fs.runtime.KnownAddresses()
+		KnownAddresses: func() map[string]bool {
+			return ir.KnownAddresses()
 		},
-		HasClient:                             fs.hasClientForIdentity,
-		RequestSigningApproval:                fs.requestSigningApproval,
-		RequestSigningApprovalResponse:        fs.requestSigningApprovalResponse,
-		RequestSigningApprovalContext:         fs.requestSigningApprovalContext,
-		RequestSigningApprovalResponseContext: fs.requestSigningApprovalResponseContext,
-		EncodeTxnToHex:                        encodeTxnToHex,
+		HasClient: func() bool {
+			return fs.hasAdminClient()
+		},
+		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			return ir.RequestSigningApproval(requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
+		},
+		RequestSigningApprovalResponse: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
+			return ir.RequestSigningApprovalResponse(requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
+		},
+		RequestSigningApprovalContext: func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			return ir.RequestSigningApprovalContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
+		},
+		RequestSigningApprovalResponseContext: func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
+			return ir.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
+		},
+		EncodeTxnToHex: encodeTxnToHex,
 	}
 }

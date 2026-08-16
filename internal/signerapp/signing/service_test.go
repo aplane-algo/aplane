@@ -573,11 +573,11 @@ func TestOrdinarySignRejectsGuardedKeyBeforeApproval(t *testing.T) {
 	approvalCalled := false
 	service := &Service{
 		Approval: &ApprovalService{
-			HasClient: func(string) bool {
+			HasClient: func() bool {
 				approvalCalled = true
 				return true
 			},
-			RequestSigningApproval: func(string, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
+			RequestSigningApproval: func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 				approvalCalled = true
 				return true, nil
 			},
@@ -612,8 +612,8 @@ func TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation(t *testing.
 		Approval: &ApprovalService{
 			UserAutoApprove:               userAutoApproveDefault(true),
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-			HasClient:                     func(identityID string) bool { return true },
-			RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			HasClient:                     func() bool { return true },
+			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				return true, nil
 			},
@@ -706,11 +706,11 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 			beforeExecuteCalled := false
 			service := &Service{
 				Approval: &ApprovalService{
-					HasClient: func(identityID string) bool {
+					HasClient: func() bool {
 						manualApprovalCalled = true
 						return false
 					},
-					RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+					RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 						manualApprovalCalled = true
 						return false, nil
 					},
@@ -769,11 +769,11 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferSkipsManualReview(t *testin
 	addr := types.Address{1}
 	service := &Service{
 		Approval: &ApprovalService{
-			HasClient: func(identityID string) bool {
+			HasClient: func() bool {
 				approvalPathCalled = true
 				return false
 			},
-			RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalPathCalled = true
 				return false, nil
 			},
@@ -834,14 +834,14 @@ func TestSignGroupWithPlanAlwaysReviewWarningsOverridesUserAutoApprove(t *testin
 		Approval: &ApprovalService{
 			UserAutoApprove:               userAutoApproveDefault(true),
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-			HasClient:                     func(identityID string) bool { return true },
-			KnownAddresses: func(identityID string) map[string]bool {
+			HasClient:                     func() bool { return true },
+			KnownAddresses: func() map[string]bool {
 				return nil
 			},
 			EncodeTxnToHex: func(txn types.Transaction) string {
 				return hex.EncodeToString(msgpack.Encode(txn))
 			},
-			RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				gotViolations = violations
 				return true, nil
@@ -902,12 +902,12 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 	service = &Service{
 		Approval: &ApprovalService{
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-			HasClient:                     func(identityID string) bool { return true },
-			KnownAddresses:                func(identityID string) map[string]bool { return nil },
+			HasClient:                     func() bool { return true },
+			KnownAddresses:                func() map[string]bool { return nil },
 			EncodeTxnToHex: func(txn types.Transaction) string {
 				return hex.EncodeToString(msgpack.Encode(txn))
 			},
-			RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				service.Policy = &policy.Config{RejectForeignRekey: true}
 				return true, nil
@@ -983,12 +983,12 @@ transfer_policy:
 		Approval: &ApprovalService{
 			UserAutoApprove:               userAutoApproveDefault(true),
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-			HasClient:                     func(identityID string) bool { return true },
-			KnownAddresses:                func(identityID string) map[string]bool { return nil },
+			HasClient:                     func() bool { return true },
+			KnownAddresses:                func() map[string]bool { return nil },
 			EncodeTxnToHex: func(txn types.Transaction) string {
 				return hex.EncodeToString(msgpack.Encode(txn))
 			},
-			RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				gotViolations = violations
 				return true, nil
@@ -1057,11 +1057,11 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferAllowsSignerDummies(t *test
 
 	service := &Service{
 		Approval: &ApprovalService{
-			HasClient: func(identityID string) bool {
+			HasClient: func() bool {
 				approvalPathCalled = true
 				return false
 			},
-			RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalPathCalled = true
 				return false, nil
 			},
@@ -1170,11 +1170,11 @@ func TestSignGroupWithPlanAutoApproveASAZeroSelfTransferSkipsManualReview(t *tes
 	addr := types.Address{1}
 	service := &Service{
 		Approval: &ApprovalService{
-			HasClient: func(identityID string) bool {
+			HasClient: func() bool {
 				approvalPathCalled = true
 				return false
 			},
-			RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalPathCalled = true
 				return false, nil
 			},
@@ -1237,7 +1237,7 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackForUnexpectedDummy(t *test
 	}
 	service := &Service{
 		Approval: &ApprovalService{
-			HasClient: func(identityID string) bool { return false },
+			HasClient: func() bool { return false },
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
@@ -1303,7 +1303,7 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackWhenPredicateFails(t *test
 	addr := types.Address{1}
 	service := &Service{
 		Approval: &ApprovalService{
-			HasClient: func(identityID string) bool { return false },
+			HasClient: func() bool { return false },
 		},
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
@@ -1380,8 +1380,8 @@ func TestSignGroupWithPlanRejectsNetworkScopedAlgoLimit(t *testing.T) {
 	approvalCalled := false
 	service := &Service{
 		Approval: &ApprovalService{
-			HasClient: func(identityID string) bool { return true },
-			RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			HasClient: func() bool { return true },
+			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				return true, nil
 			},
@@ -1624,11 +1624,11 @@ func TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies(t *testing.
 
 	service := &Service{
 		Approval: &ApprovalService{
-			HasClient:                     func(identityID string) bool { return true },
-			KnownAddresses:                func(identityID string) map[string]bool { return nil },
+			HasClient:                     func() bool { return true },
+			KnownAddresses:                func() map[string]bool { return nil },
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 			EncodeTxnToHex:                func(txn types.Transaction) string { return "deadbeef" },
-			RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				gotDescription = description
 				gotFirstValid = firstValid
 				gotLastValid = lastValid
@@ -1691,9 +1691,9 @@ func TestSignGroupWithPlanUsesIntersectedValidityWindowForGroups(t *testing.T) {
 
 	service := &Service{
 		Approval: &ApprovalService{
-			HasClient:      func(identityID string) bool { return true },
-			KnownAddresses: func(identityID string) map[string]bool { return nil },
-			RequestSigningApproval: func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+			HasClient:      func() bool { return true },
+			KnownAddresses: func() map[string]bool { return nil },
+			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				gotTxnSender = txnSender
 				gotDescription = description
 				gotFirstValid = firstValid

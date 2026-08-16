@@ -132,7 +132,7 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 		}
 	}
 	limiter := s.Deps.RestoreLimiter()
-	if retryAfter := limiter.RetryAfter(ir.ID(), archivePath); retryAfter > 0 {
+	if retryAfter := limiter.RetryAfter(archivePath); retryAfter > 0 {
 		return adminproto.RestorePreviewResult{
 			ArchivePath: archivePath,
 			Code:        protocol.ResultCodeRestoreRateLimited,
@@ -143,9 +143,9 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 	preview, err := backup.PreviewRestoreWithNodeRole(s.Deps.KeyPaths(), ir.ID(), archivePath, passphraseBytes, ir.NodeRole())
 	if err != nil {
 		if backup.ArchiveAuthenticated(err) {
-			limiter.RecordSuccess(ir.ID(), archivePath)
+			limiter.RecordSuccess(archivePath)
 		} else {
-			limiter.RecordFailure(ir.ID(), archivePath)
+			limiter.RecordFailure(archivePath)
 		}
 		return adminproto.RestorePreviewResult{
 			Code:  protocol.ResultCodeRestorePreviewFailed,
@@ -154,7 +154,7 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 	}
 	// Per-credential validation errors occur after manifest authentication;
 	// they are not failed export-passphrase guesses.
-	limiter.RecordSuccess(ir.ID(), archivePath)
+	limiter.RecordSuccess(archivePath)
 	return adminproto.RestorePreviewResult{
 		ArchivePath: preview.ArchivePath,
 		Keys:        projectRestoreKeyInfos(preview.Keys),

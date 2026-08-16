@@ -49,40 +49,25 @@ func encodeTxnToHex(txn types.Transaction) string {
 // Returns hex-encoded msgpack of the signed transaction, or error.
 
 type Signer struct {
-	runtime            *identity.Runtime                  // The one product identity runtime
-	nodeFailState      *identity.NodeFailState            // Process-wide first-error-sticky failure state
-	httpAuth           auth.Authenticator                 // Product token authenticator; never selects a runtime
-	authorizer         auth.Authorizer                    // Pluggable authorization
-	auditLog           *AuditLogger                       // Audit logger for security events
-	ipcServer          *IPCServer                         // IPC server for local Unix socket connections
-	hub                adminserver.AdminHub               // Process-root admin facade for non-transport code
-	sshServer          *sshtunnel.Server                  // SSH tunnel server (nil if SSH disabled)
-	sshRuntime         *sshRuntime                        // SSH runtime holder for live listener restarts
-	sshRuntimeMu       sync.RWMutex                       // Protects sshRuntime and sshServer swaps
-	config             *serverconfig.ServerConfig         // Server configuration (includes policy settings)
-	configMu           sync.RWMutex                       // Protects live-mutable ServerConfig fields.
-	configMutationMu   sync.Mutex                         // Serializes process-owned config.yaml mutations
-	storeMutationMu    sync.Mutex                         // Protects storeMutationLocks map
-	storeMutationLocks map[string]*sync.Mutex             // Per-identity key/template mutation serialization
-	restoreAttemptMu   sync.Mutex                         // Protects restoreAttempts lazy initialization
-	restoreAttempts    *backupadmin.RestoreAttemptLimiter // Per-identity/archive restore backoff state
-	keyPaths           storepaths.Paths                   // Explicit keystore path owner
-	dataDir            string                             // Data directory path (for saving config)
-	makeAlgod          func(string, string) (*algod.Client, error)
-}
-
-func (fs *Signer) storeMutationLock(identityID string) *sync.Mutex {
-	fs.storeMutationMu.Lock()
-	defer fs.storeMutationMu.Unlock()
-	if fs.storeMutationLocks == nil {
-		fs.storeMutationLocks = make(map[string]*sync.Mutex)
-	}
-	lock := fs.storeMutationLocks[identityID]
-	if lock == nil {
-		lock = &sync.Mutex{}
-		fs.storeMutationLocks[identityID] = lock
-	}
-	return lock
+	runtime           *identity.Runtime                  // The one product identity runtime
+	nodeFailState     *identity.NodeFailState            // Process-wide first-error-sticky failure state
+	httpAuth          auth.Authenticator                 // Product token authenticator; never selects a runtime
+	authorizer        auth.Authorizer                    // Pluggable authorization
+	auditLog          *AuditLogger                       // Audit logger for security events
+	ipcServer         *IPCServer                         // IPC server for local Unix socket connections
+	hub               adminserver.AdminHub               // Process-root admin facade for non-transport code
+	sshServer         *sshtunnel.Server                  // SSH tunnel server (nil if SSH disabled)
+	sshRuntime        *sshRuntime                        // SSH runtime holder for live listener restarts
+	sshRuntimeMu      sync.RWMutex                       // Protects sshRuntime and sshServer swaps
+	config            *serverconfig.ServerConfig         // Server configuration (includes policy settings)
+	configMu          sync.RWMutex                       // Protects live-mutable ServerConfig fields.
+	configMutationMu  sync.Mutex                         // Serializes process-owned config.yaml mutations
+	storeMutationLock sync.Mutex                         // Product key/template/config/policy mutation serialization
+	restoreAttemptMu  sync.Mutex                         // Protects restoreAttempts lazy initialization
+	restoreAttempts   *backupadmin.RestoreAttemptLimiter // Per-archive restore backoff state
+	keyPaths          storepaths.Paths                   // Explicit keystore path owner
+	dataDir           string                             // Data directory path (for saving config)
+	makeAlgod         func(string, string) (*algod.Client, error)
 }
 
 // Theme returns the current theme setting. Safe for concurrent use.
@@ -115,19 +100,17 @@ func (fs *Signer) withProcessConfigMutation(fn func() error) error {
 	return fn()
 }
 
-func (fs *Signer) withIdentityMutation(identityID string, fn func() error) error {
-	lock := fs.storeMutationLock(identityID)
-	lock.Lock()
-	defer lock.Unlock()
+func (fs *Signer) withIdentityMutation(_ string, fn func() error) error {
+	fs.storeMutationLock.Lock()
+	defer fs.storeMutationLock.Unlock()
 	return fn()
 }
 
-func (fs *Signer) tryWithIdentityInspection(identityID string, fn func() error) error {
-	lock := fs.storeMutationLock(identityID)
-	if !lock.TryLock() {
+func (fs *Signer) tryWithIdentityInspection(_ string, fn func() error) error {
+	if !fs.storeMutationLock.TryLock() {
 		return errIdentityStoreBusy
 	}
-	defer lock.Unlock()
+	defer fs.storeMutationLock.Unlock()
 	return fn()
 }
 

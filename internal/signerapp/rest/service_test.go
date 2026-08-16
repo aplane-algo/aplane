@@ -186,7 +186,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Rol
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		NodeRole:      role,
 	})
-	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, reloadKeysForTest(ir, keyPaths)
 	})
 	if unlocked {
