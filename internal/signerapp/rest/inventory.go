@@ -50,10 +50,11 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 		isComponent := keys.IsWitnessKey(category)
 
 		keyInfo := signerapi.KeyInfo{
-			Address:       address,
-			PublicKeyHex:  publicKeyHexMap[address],
-			KeyType:       keyType,
-			IsGenericLsig: isGeneric,
+			Address:           address,
+			PublicKeyHex:      publicKeyHexMap[address],
+			KeyType:           keyType,
+			AuthorizationKind: authorizationKindForCategory(category),
+			IsGenericLsig:     isGeneric,
 		}
 		keyInfo.LogicSigResources = publicLogicSigResourceProfile(summary.LogicSigResources)
 		if isComponent {
@@ -84,6 +85,21 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 	}
 
 	return keyList
+}
+
+func authorizationKindForCategory(category string) string {
+	switch category {
+	case keys.CategoryEd25519:
+		return string(algorithm.AuthorizationEd25519)
+	case keys.CategoryNativePQ:
+		return string(algorithm.AuthorizationNativePQ)
+	case keys.CategoryDSALsig, keys.CategoryGenericLsig:
+		return string(algorithm.AuthorizationLogicSig)
+	default:
+		// Witness credentials are not transaction authorizers. Unknown durable
+		// categories likewise must not be projected as an account envelope.
+		return ""
+	}
 }
 
 func publicLogicSigResourceProfile(profile *lsigresource.Profile) *signerapi.LogicSigResourceProfile {

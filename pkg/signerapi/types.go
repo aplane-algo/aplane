@@ -589,6 +589,7 @@ type KeyInfo struct {
 	Address                  string                    `json:"address"`
 	PublicKeyHex             string                    `json:"public_key_hex"`
 	KeyType                  string                    `json:"key_type"`
+	AuthorizationKind        string                    `json:"authorization_kind,omitempty"`
 	SigningFlow              string                    `json:"signing_flow,omitempty"`              // signing choreography label (for example "sentry1" or "bounded-sentry1"); empty = plain /sign
 	SentryComponentKeyType   string                    `json:"sentry_component_key_type,omitempty"` // sentry component key type for sentry-backed signing flows
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
