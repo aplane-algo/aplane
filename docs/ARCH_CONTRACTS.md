@@ -32,6 +32,32 @@
 
 ## Current Release Compatibility Scope
 
+### Single-Identity Product Boundary
+
+An `apsigner` process owns exactly one signing identity and one
+`identity.Runtime`, fixed to `default`. The durable path remains
+`identities/default/`; this is a storage namespace and future-migration seam,
+not a supported identity-routing surface.
+
+Startup performs a no-follow check of direct `identities/` entries before it
+loads tokens, keys, policy, or watchers. A directory, ordinary file, hidden
+entry, or symlink with any name other than `default` is rejected. An existing
+`default` entry must be a real directory and not a symlink. A missing
+`identities/` tree or missing `default` retains the explicit blank-store
+initialization behavior.
+
+HTTP authentication verifies the product token and produces
+`system:product-admin`; it cannot choose a runtime. Normal SSH usernames must be
+exactly `default`, and token enrollment must be exactly
+`request-token:default`. Product HTTP, admin, CLI, and SDK request inputs expose
+no identity selector. Output and audit fields may still attribute operations to
+`default`.
+
+This deliberately removes a working internal multi-identity capability,
+including identity-local template activation and the former `alice`
+integration path. No compatibility is promised for non-default stores or
+selectors in this pre-release change.
+
 Until APlane reaches a stable `v1.0` compatibility contract, in-place
 installer upgrades are intentionally narrow:
 

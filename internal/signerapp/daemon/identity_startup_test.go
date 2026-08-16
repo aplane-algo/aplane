@@ -57,6 +57,21 @@ func TestStartupIdentityIDsIncludesProductIdentity(t *testing.T) {
 	}
 }
 
+// Characterizes the supported product layout before multi-identity startup is
+// removed: a blank identities tree still constructs exactly the default
+// product runtime candidate.
+func TestStartupIdentityIDsDefaultOnlyHappyPath(t *testing.T) {
+	root := t.TempDir()
+
+	ids, err := signerstartup.StartupIdentityIDs(root, auth.CurrentProductIdentityID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0] != auth.DefaultIdentityID {
+		t.Fatalf("StartupIdentityIDs() = %v, want [%s]", ids, auth.DefaultIdentityID)
+	}
+}
+
 func TestBuildIdentityRuntimeAppliesStoredConfig(t *testing.T) {
 	root := t.TempDir()
 	server := &Signer{
