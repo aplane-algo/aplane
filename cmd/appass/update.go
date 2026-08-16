@@ -198,14 +198,13 @@ func (m Model) handleResultKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.viewState = ViewHome
 	m.resultMessage = ""
 	m.resultError = ""
-	return m, loadStatusCmd(m.dataDir, m.identityID, m.svcInfo, m.isLocal)
+	return m, loadStatusCmd(m.dataDir, m.svcInfo, m.isLocal)
 }
 
 // dispatchAction runs the current action directly in-process.
 func (m Model) dispatchAction(passphrase []byte) (tea.Model, tea.Cmd) {
 	action := m.currentAction
 	dataDir := m.dataDir
-	identityID := m.identityID
 	svcInfo := m.svcInfo
 	isLocal := m.isLocal
 	return m, func() tea.Msg {
@@ -215,11 +214,11 @@ func (m Model) dispatchAction(passphrase []byte) (tea.Model, tea.Cmd) {
 		)
 		switch action {
 		case "set-passfile":
-			warning, err = executeSetPassfile(dataDir, identityID, passphrase, svcInfo, isLocal)
+			warning, err = executeSetPassfile(dataDir, productIdentityID(), passphrase, svcInfo, isLocal)
 		case "set-systemd-creds":
-			warning, err = executeSetSystemcreds(dataDir, identityID, passphrase, svcInfo)
+			warning, err = executeSetSystemcreds(dataDir, productIdentityID(), passphrase, svcInfo)
 		case "set-none":
-			warning, err = executeClear(dataDir, identityID)
+			warning, err = executeClear(dataDir, productIdentityID())
 		}
 		return ActionDoneMsg{err: err, warning: warning}
 	}

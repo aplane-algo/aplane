@@ -22,6 +22,10 @@ var currentEUID = os.Geteuid
 
 func main() {
 	args := os.Args[1:]
+	if err := rejectRemovedIdentityFlag(args); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(2)
+	}
 
 	// Handle --version early
 	for _, arg := range args {
@@ -44,17 +48,11 @@ func main() {
 
 	// Parse flags manually.
 	var dataDir string
-	var identityID string
 	for i := 0; i < len(args)-1; i++ {
 		switch args[i] {
 		case "-d":
 			dataDir = args[i+1]
-		case "-identity":
-			identityID = args[i+1]
 		}
-	}
-	if identityID == "" {
-		identityID = "default"
 	}
 
 	resolvedDataDir, err := bootstrap.ResolveDataDir(dataDir)
@@ -70,7 +68,7 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	if err := enforceAppassExecutionMode(dataDir, identityID, prodManaged); err != nil {
+	if err := enforceAppassExecutionMode(dataDir, prodManaged); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -91,7 +89,7 @@ func main() {
 	} else {
 		svc = localServiceInfo()
 	}
-	if err := enforceModeOwnershipPolicy(dataDir, identityID, isLocal, svc); err != nil {
+	if err := enforceModeOwnershipPolicy(dataDir, productIdentityID(), isLocal, svc); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -114,7 +112,7 @@ func main() {
 	theme.Init("auto")
 
 	// Launch TUI
-	model := NewModel(dataDir, identityID, svc, isLocal)
+	model := NewModel(dataDir, svc, isLocal)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
@@ -123,30 +121,27 @@ func main() {
 	}
 }
 
-func enforceAppassExecutionMode(dataDir, identityID string, prodManaged bool) error {
+func enforceAppassExecutionMode(dataDir string, prodManaged bool) error {
 	switch {
 	case prodManaged && currentEUID() != 0:
 		return fmt.Errorf(
 			"systemd-managed data directory %s requires root for appass; run:\n  %s",
 			dataDir,
-			appassInvocation(true, dataDir, identityID),
+			appassInvocation(true, dataDir),
 		)
 	case !prodManaged && currentEUID() == 0:
 		return fmt.Errorf(
 			"local signer data directory %s must not be managed as root; rerun without sudo:\n  %s",
 			dataDir,
-			appassInvocation(false, dataDir, identityID),
+			appassInvocation(false, dataDir),
 		)
 	default:
 		return nil
 	}
 }
 
-func appassInvocation(useSudo bool, dataDir, identityID string) string {
+func appassInvocation(useSudo bool, dataDir string) string {
 	parts := []string{"appass", "-d", dataDir}
-	if identityID != "" && identityID != "default" {
-		parts = append(parts, "-identity", identityID)
-	}
 	if useSudo {
 		parts = append([]string{"sudo"}, parts...)
 	}
@@ -154,6 +149,15 @@ func appassInvocation(useSudo bool, dataDir, identityID string) string {
 		parts[i] = shellQuoteArg(parts[i])
 	}
 	return strings.Join(parts, " ")
+}
+
+func rejectRemovedIdentityFlag(args []string) error {
+	for _, arg := range args {
+		if arg == "-identity" || arg == "--identity" || strings.HasPrefix(arg, "-identity=") || strings.HasPrefix(arg, "--identity=") {
+			return fmt.Errorf("-identity is no longer supported; appass manages the product identity")
+		}
+	}
+	return nil
 }
 
 func isShellSafeRune(r rune) bool {

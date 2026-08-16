@@ -196,8 +196,8 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 |---|---|---|---|---|---|
 | Authorization action | source-defined authority | `internal/auth/authorizer.go` constants | authorizer known-action vocabulary | `internal/auth`, `internal/authz` | Unknown actions fail closed before grant matching. |
 | Authorization resource | request-scoped model | `auth.Resource` | target type/id/identity | `internal/auth`, HTTP/admin adapters | Empty identity is resolved at boundary or rejected. |
-| Product bootstrap grants | source-defined authority | `internal/authz` bootstrap setup | in-memory authorizer grants | `internal/authz` | No durable grant YAML in product mode. |
-| Authenticated HTTP identity | runtime-only | token authenticator match | `auth.Identity` | `internal/auth`, `internal/signerapp/daemon/http_auth.go` | Token authenticates exactly one identity; cross-identity target rejects. |
+| Product action allowlist | source-defined authority | `internal/authz` explicit product action set | in-memory authorization decision | `internal/authz` | Known actions are not granted automatically; non-default resource identities fail closed. |
+| Authenticated HTTP principal | runtime-only | product token authenticator | `auth.Identity` | `internal/auth`, `internal/signerapp/daemon/http_auth.go` | Token authenticates `system:product-admin`; runtime binding is independently fixed to `default`. |
 | Admin session context | runtime-only | admin transport auth result | `adminserver.SessionContext` | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` | Bound to target identity; approvals carry approver principal. |
 | Token provisioning request | runtime wire model | SSH key-only request plus admin approval | admin `token_provisioning_request` | `internal/sshtunnel`, `internal/signerapp/sshprovision` | No token issued until admin approval and SSH key enrollment succeed. |
 

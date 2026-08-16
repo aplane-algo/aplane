@@ -39,7 +39,7 @@ func TestStatusHelperInfoLabelsIdentityScopedPassphraseFile(t *testing.T) {
 		t.Fatalf("save unlock config: %v", err)
 	}
 
-	m := Model{dataDir: dataDir, identityID: "default", method: "passfile"}
+	m := Model{dataDir: dataDir, method: "passfile"}
 	_, _, filePath, fileLabel, _ := m.statusHelperInfo()
 	if fileLabel != "Passphrase file" {
 		t.Fatalf("fileLabel = %q, want identity-scoped label", fileLabel)

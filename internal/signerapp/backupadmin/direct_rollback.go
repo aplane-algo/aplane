@@ -37,6 +37,11 @@ func (s Service) RollbackRestore(
 	req adminproto.RollbackRestoreRequest,
 ) adminproto.RollbackRestoreResult {
 	result := adminproto.RollbackRestoreResult{OperationID: req.OperationID}
+	if err := requireProductRuntime(ir); err != nil {
+		result.Code = protocol.ResultCodeRestoreRollbackRefused
+		result.Error = err.Error()
+		return result
+	}
 	if req.OperationID == "" {
 		result.Code = protocol.ResultCodeRestoreRollbackRefused
 		result.Error = "restore rollback requires an operation ID"

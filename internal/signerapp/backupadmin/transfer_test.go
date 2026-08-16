@@ -25,6 +25,26 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
+func TestProductBackupAdaptersRejectNonDefaultRuntimeBeforeCreatingPaths(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	ir := identity.New(identity.Config{ID: "other", Authenticator: auth.NewTokenAuthenticator("token")})
+
+	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "imported.tar.gz"})
+	if begin.Success || !strings.Contains(begin.Error, "unsupported identity") {
+		t.Fatalf("BeginBackupImport(non-default) = %#v", begin)
+	}
+	restore := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+		OperationID: "restore-other", ArchivePath: "missing.tar.gz", ExportPassphrase: []byte("passphrase"),
+	})
+	if restore.Success || !strings.Contains(restore.Error, "unsupported identity") {
+		t.Fatalf("RestoreBackup(non-default) = %#v", restore)
+	}
+	if _, err := os.Lstat(paths.IdentityDir("other")); !os.IsNotExist(err) {
+		t.Fatalf("non-default identity path was created: %v", err)
+	}
+}
+
 func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}

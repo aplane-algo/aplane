@@ -44,12 +44,6 @@ func TestSingleIdentityBoundaryShapesDoNotRegrow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// These are the two pre-existing selector adapters scheduled for removal in
-	// Slice 7. Any additional product selector is forbidden now.
-	allowedSelectorFiles := map[string]bool{
-		filepath.Clean(filepath.Join(root, "cmd", "appass", "main.go")):   true,
-		filepath.Clean(filepath.Join(root, "cmd", "appolicy", "main.go")): true,
-	}
 	err = filepath.WalkDir(filepath.Join(root, "cmd"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -62,7 +56,14 @@ func TestSingleIdentityBoundaryShapesDoNotRegrow(t *testing.T) {
 			return readErr
 		}
 		text := string(data)
-		if (strings.Contains(text, `"-identity"`) || strings.Contains(text, `"identity"`)) && !allowedSelectorFiles[filepath.Clean(path)] {
+		if filepath.Clean(path) == filepath.Clean(filepath.Join(root, "cmd", "appass", "main.go")) {
+			// appass manually parses its small flag set. Keep exact stale-input
+			// rejection literals without treating them as a live selector.
+			for _, removed := range []string{`"-identity"`, `"--identity"`, `"-identity="`, `"--identity="`} {
+				text = strings.ReplaceAll(text, removed, "")
+			}
+		}
+		if strings.Contains(text, `"-identity"`) || strings.Contains(text, `"identity"`) {
 			t.Errorf("%s adds a product-facing identity selector", path)
 		}
 		return nil

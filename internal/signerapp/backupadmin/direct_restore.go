@@ -30,6 +30,11 @@ func (s Service) RestoreBackup(
 	result := adminproto.RestoreBackupResult{OperationID: req.OperationID}
 	passphrase := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphrase)
+	if err := requireProductRuntime(ir); err != nil {
+		result.Code = protocol.ResultCodeRestoreFailed
+		result.Error = err.Error()
+		return result
+	}
 
 	if req.OperationID == "" {
 		result.Code = protocol.ResultCodeRestoreFailed

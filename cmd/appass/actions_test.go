@@ -28,7 +28,7 @@ func TestEnforceAppassExecutionModeRejectsRootForLocalDataDir(t *testing.T) {
 	dataDir := t.TempDir()
 	currentEUID = func() int { return 0 }
 
-	err := enforceAppassExecutionMode(dataDir, "default", false)
+	err := enforceAppassExecutionMode(dataDir, false)
 	if err == nil {
 		t.Fatal("enforceAppassExecutionMode() error = nil, want local root refusal")
 	}
@@ -52,7 +52,7 @@ func TestEnforceAppassExecutionModeRejectsNonRootForProductionDataDir(t *testing
 	dataDir := t.TempDir()
 	currentEUID = func() int { return 1000 }
 
-	err := enforceAppassExecutionMode(dataDir, "default", true)
+	err := enforceAppassExecutionMode(dataDir, true)
 	if err == nil {
 		t.Fatal("enforceAppassExecutionMode() error = nil, want production non-root refusal")
 	}
@@ -64,6 +64,22 @@ func TestEnforceAppassExecutionModeRejectsNonRootForProductionDataDir(t *testing
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want substring %q", err.Error(), want)
 		}
+	}
+}
+
+func TestRejectRemovedIdentityFlag(t *testing.T) {
+	for _, args := range [][]string{
+		{"-identity", "other"},
+		{"--identity", "other"},
+		{"-identity=other"},
+		{"--identity=other"},
+	} {
+		if err := rejectRemovedIdentityFlag(args); err == nil {
+			t.Fatalf("rejectRemovedIdentityFlag(%q) error = nil", args)
+		}
+	}
+	if err := rejectRemovedIdentityFlag([]string{"-d", "/tmp/signer"}); err != nil {
+		t.Fatalf("rejectRemovedIdentityFlag(default args) error = %v", err)
 	}
 }
 

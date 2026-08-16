@@ -352,19 +352,20 @@ process is systemd-managed through `APLANE_SYSTEMD_MANAGED=1` or parent PID 1.
 
 **Startup flow:**
 
-1. Discover all identity directories under `identities/` via `identity.DiscoverIdentities`
-2. Filter out identities whose stored config marks them `decommissioned:true`
-3. Ensure the current product identity is always present
-4. For each discovered identity, `startup.BuildIdentityRuntime` loads the per-identity config overlay, API token, keystore, and wires the approval coordinator and reload function
-5. In headless mode, the product identity is unlocked immediately; in locked mode, unlock happens later via apadmin IPC
+1. Validate that `identities/` is blank or contains only a real `default/`
+   directory, with no extra files, directories, or symlinks.
+2. `startup.BuildProductRuntime` constructs the one product runtime from the
+   default config overlay, API token, and keystore.
+3. In headless mode, the product identity is unlocked immediately; in locked
+   mode, unlock happens later via admin IPC.
 
 Both modes use the identity reload path after unlock:
 `identity.Runtime.Reload` or `ReloadWithPassphrase` delegates through
 `reloadLocked` to `templates.ReloadService.Reload`, wired by
 `startup.WireReloadFunc`. The reload verifies the node role and authenticated
 policy before registering enabled installed templates, scanning keys,
-validating key classes against the node role, and publishing the per-identity
-key indexes. Identity key type activation and disabled records are consulted by
+validating key classes against the node role, and publishing the product
+identity's key indexes. Key type activation and disabled records are consulted by
 inventory and admin key operations when deciding whether an optional key type
 can be discovered, generated, or imported.
 

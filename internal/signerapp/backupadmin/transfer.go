@@ -30,6 +30,9 @@ var (
 )
 
 func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
+	if err := requireProductRuntime(ir); err != nil {
+		return beginImportError(err, s.Deps.KeyPaths().Root())
+	}
 	fileName, err := validBackupFileName(req.FileName)
 	if err != nil {
 		return beginImportError(err, s.Deps.KeyPaths().Root())
@@ -79,6 +82,9 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 }
 
 func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
+	if err := requireProductRuntime(ir); err != nil {
+		return appendImportError(err, s.Deps.KeyPaths().Root())
+	}
 	if req.Offset < 0 || len(req.Data) == 0 || len(req.Data) > adminproto.BackupTransferChunkBytes {
 		return appendImportError(fmt.Errorf("invalid backup import chunk"), s.Deps.KeyPaths().Root())
 	}
@@ -131,6 +137,9 @@ func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendB
 
 func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
 	defer crypto.ZeroBytes(req.ExportPassphrase)
+	if err := requireProductRuntime(ir); err != nil {
+		return commitImportError(err, s.Deps.KeyPaths().Root())
+	}
 	fileName, err := validBackupFileName(req.FileName)
 	if err != nil || req.ExpectedSize <= 0 || req.ExpectedSize > adminproto.MaxBackupImportBytes || len(req.ExpectedSHA256) != 64 || len(req.ExportPassphrase) == 0 {
 		if err == nil {
@@ -262,6 +271,9 @@ func (s Service) claimBackupImport(identityID, dir, uploadID, fileName string, e
 }
 
 func (s Service) AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
+	if err := requireProductRuntime(ir); err != nil {
+		return adminproto.AbortBackupImportResult{Code: "backup_import_abort_failed", Error: backupTransferErrorText(err, s.Deps.KeyPaths().Root())}
+	}
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		path, err := backupUploadPath(s.Deps.KeyPaths().IdentityBackupsDir(ir.ID()), req.UploadID)
 		if err != nil {
@@ -276,6 +288,9 @@ func (s Service) AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBac
 }
 
 func (s Service) ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
+	if err := requireProductRuntime(ir); err != nil {
+		return readChunkError(err, s.Deps.KeyPaths().Root())
+	}
 	if req.Offset < 0 {
 		return readChunkError(fmt.Errorf("invalid backup offset"), s.Deps.KeyPaths().Root())
 	}

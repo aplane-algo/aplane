@@ -622,7 +622,9 @@ prompt to no and applying only to the client and/or signer data roots being
 installed. The compatibility details are documented in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
-`apsigner` startup resolves unlock config per identity: identity-scoped `unlock.yaml` takes precedence over the process-global `config.yaml` passphrase command. `appass` accepts `-identity <id>` to target a specific identity and defaults to `"default"`.
+`apsigner` startup resolves the product identity's `unlock.yaml` before the
+process-global `config.yaml` passphrase command. `appass` has no identity
+selector and always manages `identities/default/unlock.yaml`.
 
 Configuration behavior and validation rules are compatibility-bearing and are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). The network context model and genesis-hash mapping rules are explained in [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
 

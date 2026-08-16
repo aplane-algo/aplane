@@ -375,7 +375,7 @@ export APSIGNER_DATA=~/aplane/apsigner
 
 # apsigner must be stopped for offline auto-unlock edits
 bin/appass
-bin/appass -d ~/aplane/apsigner -identity default
+bin/appass -d ~/aplane/apsigner
 ```
 
 ## Plugin System
