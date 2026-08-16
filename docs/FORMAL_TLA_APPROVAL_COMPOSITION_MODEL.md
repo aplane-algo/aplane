@@ -23,7 +23,7 @@ The spec lives at [formal/approval_composition.tla](formal/approval_composition.
 | `approval` derived from coordinator outcome | `ApprovalDerivedFromCoordinator` | derivation |
 | Review-class signs only if coordinator approved | `CoordinatorApproveRequiredToSign` | seam (AP2) |
 | Every non-approve coordinator outcome rejects | `NonApproveCoordinatorRejects` | seam (refinement) |
-| Fail-all yields no signed output (L8 end to end) | `FailAllProducesNoSignedOutput` | seam (L8) |
+| Fail-all yields no signed output | `FailAllProducesNoSignedOutput` | seam (AP6) |
 | Hard deny dominates the coordinator | `HardDenyDominatesCoordinator` | seam (I9) |
 | Policy outcome binds signing output | `PolicyOutcomeBindsOutput` | bridge (carried) |
 
@@ -32,8 +32,8 @@ outcomes (Approved, Rejected, TimedOut, Canceled, Failed, NotConsulted) are
 mapped to the policy `approval` value, and the module checks that only `Approved`
 yields a signed output for a review-class verdict, that every non-approve outcome
 rejects, and — most importantly — that a `Failed` outcome (the fail-all
-mechanism: operator-client disconnect or successful decommission) produces no
-signed output anywhere in the pipeline. This lifts lifecycle L8 and AP2 from the
+mechanism used for disconnect, displacement, lock, or shutdown) produces no
+signed output anywhere in the pipeline. This lifts AP6 and AP2 from the
 coordinator into an end-to-end claim and demonstrates the soundness of the
 coarser four-valued `approval` oracle that `policy_precedence.tla` uses.
 
@@ -46,7 +46,7 @@ fail-all'd review-class request signs. The restored spec passes.
 ### One-shot, consuming the coordinator's outcome
 
 `approval_coordinator.tla` is the temporal model that proves *how* the
-coordinator reaches each terminal outcome (AP1–AP6, L8). This module consumes
+coordinator reaches each terminal outcome (AP1–AP7). This module consumes
 only that *outcome*, so it stays one-shot like `composition.tla`: `Init`
 enumerates the inputs and derives the rest, with `Next == UNCHANGED vars`. The
 split keeps each concern in its place — the temporal mechanics in
@@ -88,7 +88,7 @@ states, depth 1.
 It proves that, with both the policy verdict and the operator approval derived
 (not free), a hard deny always suppresses output, only an operator approval
 through the coordinator signs a review-class request, and a fail-all
-(disconnect/decommission) never yields a signed output. It does not re-prove the
+(regardless of reason) never yields a signed output. It does not re-prove the
 coordinator's temporal invariants (those are in `approval_coordinator.tla`) or
 the per-slot output rules (in `sign_boundary.tla` / `composition.tla`). As with
 the other composed modules, operator-copy drift is checked before TLC by

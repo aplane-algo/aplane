@@ -21,8 +21,8 @@ Normative inputs:
   `GenesisHash`.
 - [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): authentication and
   authorization separation from signing policy.
-- [FORMAL_LIFECYCLE_MODEL.md](FORMAL_LIFECYCLE_MODEL.md): lifecycle behavior
-  while a request waits for approval or reaches final signing.
+- [FORMAL_APPROVAL_COORDINATOR_MODEL.md](FORMAL_APPROVAL_COORDINATOR_MODEL.md):
+  cancellation, timeout, fail-all, and operator-delivery behavior.
 
 This model does not replace [ARCH_POLICY.md](ARCH_POLICY.md). It extracts the
 decision procedure and invariants that should remain stable as implementation
@@ -428,7 +428,7 @@ This model does not prove:
 - transfer-route schema validation in full detail,
 - manual operator decision quality,
 - cancellation and timeout behavior,
-- runtime decommission behavior.
+- server shutdown and runtime destruction ordering.
 
 ## Code and Test Anchors
 

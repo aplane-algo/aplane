@@ -545,11 +545,10 @@ Identity-sensitive runtime settings are owned separately by `internal/signerapp/
 
 Those values are persisted per identity at
 `identities/<identity>/config.yaml` via
-`internal/signerapp/identity.StoredConfig`. The same file also carries
-lifecycle state such as `decommissioned:true` for disabled identities. On
-startup, stored runtime values overlay process-global defaults (nil/empty means
-inherit), while `decommissioned:true` is treated as an explicit disable marker
-rather than an inherited setting. Runtime reads resolve through the bound
+`internal/signerapp/identity.StoredConfig`. Unknown fields, including the
+removed `decommissioned` setting, fail strict parsing. On startup, stored
+runtime values overlay process-global defaults (nil/empty means inherit).
+Runtime reads resolve through the bound
 identity runtime rather than directly from `ServerConfig`.
 
 Key-class role is process/data-root scoped, not identity scoped. An initialized
@@ -750,7 +749,8 @@ sends explicit cancellation.
 
 ### Server Startup
 
-`apsigner` discovers identity directories under `identities/`, filters out `decommissioned:true`, constructs an `identity.Runtime` per surviving identity.
+`apsigner` validates that `identities/` is absent/empty or contains only a real
+`default/` directory, then constructs the one product `identity.Runtime`.
 
 Before normal startup option loading, `apsigner` rejects manual startup from a
 signer data directory containing `.prod` unless the process is systemd-managed.
@@ -813,8 +813,7 @@ Sensitive per-identity state lives under `internal/signerapp/identity.Runtime`, 
 - approval coordinator,
 - watcher lifecycle,
 - identity-scoped config,
-- token authority and SSH enrollment state,
-- lifecycle/decommission state.
+- token authority and SSH enrollment state.
 
 The key indexes are authoritative runtime indexes of what the server believes is signable.
 
@@ -831,8 +830,6 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `identity.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
 | `identity.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
 | `identity.Runtime.watcherMu` | Watcher lifecycle, dirty state |
-| `identity.Runtime.lifecycleMu` | Decommission vs in-flight operation leases |
-| `identity.Runtime.decommissioned` | `atomic.Bool` — lifecycle disable |
 | `identity.Runtime.approval` | `atomic.Pointer` — approval coordinator |
 | `Runtime.stateMu` | Signer locked/unlocked state |
 | `Coordinator.pendingRequestsLock` | Pending sign approvals |
@@ -882,7 +879,7 @@ The watcher model is identity-owned but not tied to every lock transition:
 - when an identity is unlocked, the watcher reloads immediately on qualifying filesystem changes,
 - when an identity is locked, the watcher remains active and marks the identity dirty,
 - the next unlock reconciles dirty state by reloading,
-- watchers are stopped on runtime shutdown and decommission, not on every ordinary lock.
+- watchers are stopped on runtime shutdown, not on every ordinary lock.
 
 Watcher-triggered reloads acquire the same per-identity mutation lock used by
 admin template/key/config mutations. Admin mutation paths that already hold the
@@ -895,12 +892,9 @@ Installed-template provider reconciliation follows
 identity mutation locks and only mutates in-memory owner counts plus the
 process-global provider registry.
 
-Runtime decommission is logical disablement, not data deletion. `Registry.Remove`
-prevents future lookup only; an in-flight request may still hold a runtime
-pointer. The runtime's `BeginOperation`/`Decommission` lease is the final
-signing stop signal: if final execution has not acquired the lease,
-decommission wins and signing fails; if execution already holds the lease,
-decommission waits for release before completing.
+The runtime has no live decommission transition or operation lease. Server
+shutdown stops accepting and drains HTTP work before destroying runtime key
+state; key-session locks continue to protect signing authority access.
 
 ### Server-Side Application Boundary
 
@@ -1671,12 +1665,11 @@ The repo uses:
   `make formal-test` and in CI by the Formal Models job. The authoritative
   `(spec, cfg)` run list and expected outcomes/metrics live in
   `docs/formal/metrics.json`. It covers `sign_boundary`,
-  `policy_precedence`, `composition`, `lifecycle`, `approval_coordinator`,
-  `approval_composition`, `lifecycle_composition`, `session_ownership`,
+  `policy_precedence`, `composition`, `approval_coordinator`,
+  `approval_composition`, `session_ownership`,
   `guarded_assembly`, `bounded_sentry`, `plugin_signing`, and
   `generation_commit`, and `rotation_transition`, plus liveness
-  configurations for `approval_coordinator`, `lifecycle`, and
-  `lifecycle_composition` and an expected-failure R5 negative control for
+  configurations for `approval_coordinator` and an expected-failure R5 negative control for
   `rotation_transition`.
   `make formal-test-deep` uses `docs/formal/metrics_deep.json` for larger
   pre-release or scheduled bounds. Both targets run

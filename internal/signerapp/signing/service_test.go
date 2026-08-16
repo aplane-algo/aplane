@@ -13,14 +13,12 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signingutil "github.com/aplane-algo/aplane/internal/signing"
 )
 
@@ -1450,7 +1448,7 @@ func TestSignGroupWithPlanStopsBeforeExecute(t *testing.T) {
 		IsUnlocked: func() bool { return true },
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
-			return nil, forbidden("identity is decommissioned")
+			return nil, forbidden("final execution refused")
 		},
 	}
 
@@ -1477,15 +1475,15 @@ func TestSignGroupWithPlanStopsBeforeExecute(t *testing.T) {
 		t.Fatal("signGroupWithPlan() error = nil, want before-execute failure")
 		return
 	}
-	if err.Kind != ErrorForbidden || !strings.Contains(err.Message, "identity is decommissioned") {
-		t.Fatalf("error = %#v, want decommissioned forbidden", err)
+	if err.Kind != ErrorForbidden || !strings.Contains(err.Message, "final execution refused") {
+		t.Fatalf("error = %#v, want before-execute refusal", err)
 	}
 	if !beforeExecuteCalled {
 		t.Fatal("BeforeExecute was not called")
 	}
 }
 
-func TestSignGroupWithPlanReleasesBeforeExecuteLeaseAfterExecution(t *testing.T) {
+func TestSignGroupWithPlanReleasesBeforeExecuteGateAfterExecution(t *testing.T) {
 	beforeExecuteCalled := false
 	releaseCalled := false
 	service := &Service{
@@ -1532,89 +1530,6 @@ func TestSignGroupWithPlanReleasesBeforeExecuteLeaseAfterExecution(t *testing.T)
 	}
 	if !releaseCalled {
 		t.Fatal("BeforeExecute release was not called after execution")
-	}
-}
-
-func TestSignGroupWithPlanUserAutoApproveDecommissionBeforeExecute(t *testing.T) {
-	ir := identity.New(identity.Config{
-		ID:            "default",
-		Authenticator: auth.NewTokenAuthenticator("tok"),
-	})
-	ir.SetUnlocked()
-
-	beforeExecuteStarted := make(chan struct{})
-	proceed := make(chan struct{})
-	service := &Service{
-		Approval: &ApprovalService{
-			UserAutoApprove: userAutoApproveDefault(true),
-		},
-		Executor: &Executor{},
-		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string {
-			return "txn"
-		},
-		IsUnlocked: func() bool {
-			return ir.IsUnlocked() && !ir.IsDecommissioned()
-		},
-		BeforeExecute: func() (func(), *ServiceError) {
-			close(beforeExecuteStarted)
-			<-proceed
-			release, err := ir.BeginOperation()
-			if err != nil {
-				return nil, forbidden(err.Error())
-			}
-			return release, nil
-		},
-	}
-
-	req := signerapi.GroupSignRequest{
-		Requests: []signerapi.SignRequest{{
-			SignedTxnHex: "cafe",
-		}},
-	}
-	plan := &PlanResult{
-		AllTxns: []types.Transaction{
-			{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}},
-		},
-		PassthroughIndices:    map[int]bool{0: true},
-		PassthroughSignedTxns: map[int][]byte{0: {0xca, 0xfe}},
-		ForeignIndices:        map[int]bool{},
-		HasPassthrough:        true,
-	}
-
-	type signResult struct {
-		result *SignGroupResult
-		err    *ServiceError
-	}
-	done := make(chan signResult, 1)
-	go func() {
-		result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
-		done <- signResult{result: result, err: err}
-	}()
-
-	select {
-	case <-beforeExecuteStarted:
-	case <-time.After(time.Second):
-		t.Fatal("BeforeExecute was not reached")
-	}
-
-	if err := ir.Decommission(); err != nil {
-		t.Fatalf("Decommission() error = %v", err)
-	}
-	close(proceed)
-
-	select {
-	case got := <-done:
-		if got.result != nil {
-			t.Fatalf("signGroupWithPlan() result = %#v, want nil", got.result)
-		}
-		if got.err == nil {
-			t.Fatal("signGroupWithPlan() error = nil, want decommissioned failure")
-		}
-		if got.err.Kind != ErrorForbidden || !strings.Contains(got.err.Message, "identity is decommissioned") {
-			t.Fatalf("error = %#v, want decommissioned forbidden", got.err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("signGroupWithPlan() did not return after decommission")
 	}
 }
 

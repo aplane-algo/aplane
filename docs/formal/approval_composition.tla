@@ -13,8 +13,8 @@ approval value and fed end to end into the planned-group signing output.
 
 The coordinator is consulted only when the verdict is review-class (Review
 or DefaultReview); for every other verdict it is NotConsulted. The
-coordinator's own temporal invariants (AP1-AP6 and lifecycle L8 -- single
-delivery, single resolution, fail-all, no-approval-after-decommission) are
+coordinator's own temporal invariants (AP1-AP7 -- single delivery, single
+resolution, fail-all, and displacement safety) are
 machine-checked in approval_coordinator.tla; this module consumes only the
 terminal outcome, so it stays one-shot like composition.tla. The new claims
 live at the seam between that outcome and the signing pipeline.
@@ -26,9 +26,9 @@ New seam invariants:
     (Rejected, TimedOut, Canceled, Failed) yields a rejected policy outcome
     -- the refinement that makes policy_precedence's coarser four-valued
     oracle sound.
-  - FailAllProducesNoSignedOutput : a fail-all outcome (the L8 mechanism:
-    operator-client disconnect or successful decommission) yields no signed
-    output end to end.
+  - FailAllProducesNoSignedOutput : a fail-all outcome (disconnect,
+    displacement, lock, or shutdown in production) yields no signed output
+    end to end.
   - HardDenyDominatesCoordinator : an AlwaysDeny match yields no output,
     regardless of the coordinator outcome (I9 with the coordinator in the
     loop).
@@ -127,7 +127,7 @@ ConsultedOutcomes == {"Approved", "Rejected", "TimedOut", "Canceled", "Failed"}
 
 \* Map a coordinator terminal outcome to the policy approval value. Every
 \* non-approve outcome -- operator reject, timeout, /sign/cancel, and fail-all
-\* (operator-client disconnect or successful decommission) -- maps to a
+\* (disconnect, displacement, lock, or shutdown) -- maps to a
 \* not-approved value; only Approved maps to "approve". This mapping is the
 \* refinement that makes policy_precedence's four-valued oracle sound.
 CoordToApproval(co) ==
@@ -222,8 +222,8 @@ NonApproveCoordinatorRejects ==
     coordOutcome \in {"Rejected", "TimedOut", "Canceled", "Failed"} =>
         policy_outcome = "rejected"
 
-\* L8 at the seam: a fail-all outcome (operator-client disconnect or
-\* successful decommission) yields no signed output end to end.
+\* A fail-all outcome yields no signed output end to end, independent of the
+\* production reason.
 FailAllProducesNoSignedOutput ==
     coordOutcome = "Failed" => output = <<>>
 

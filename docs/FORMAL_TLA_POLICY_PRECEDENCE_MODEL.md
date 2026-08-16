@@ -51,8 +51,8 @@ ladder and I9:
   `sign_boundary.tla` via slot classes; abstracted away here.
 - **Approval coordinator state machine.** The approval channel is a
   coarse four-valued input (`approve | reject | timeout | none`).
-  Timeouts, cancellations, and mid-flight decommission belong to the
-  deferred M3 approval-coordinator companion model.
+  Timeouts, cancellations, and fail-all belong to the approval-coordinator
+  companion model.
 - **Planned request shape.** Rule matches are an abstract function of
   "whatever the planned group looks like."
 - **Snapshot stability (P1, P2).** Requires modeling reload as a
@@ -194,18 +194,15 @@ Already shipped:
 
 Already shipped (continued):
 
-- **Lifecycle lease.** [formal/lifecycle.tla](formal/lifecycle.tla)
-  models `BeginOperation` / `Decommission` as real transitions and
-  verifies L4-L6 plus the writer-priority RWMutex ordering. See
-  [FORMAL_TLA_LIFECYCLE_MODEL.md](FORMAL_TLA_LIFECYCLE_MODEL.md).
+- **Approval coordinator.**
+  [formal/approval_coordinator.tla](formal/approval_coordinator.tla) models
+  serialized delivery, cancellation, timeout, fail-all, and displacement.
 
 Next likely modules, in order of value:
 
-1. **Lifecycle-aware composition** — *shipped* as
-   [formal/lifecycle_composition.tla](formal/lifecycle_composition.tla)
-   ([FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md](FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md)):
-   it checks end to end that lifecycle unavailability admits no new signer
-   output.
+1. **Approval-aware composition** — *shipped* as
+   [formal/approval_composition.tla](formal/approval_composition.tla): it
+   checks end to end that a failed approval admits no signer output.
 2. **Approval coordinator (M3 prerequisite).** State machine for
    pending approvals, including timeout and cancellation. Would refine
    the four-valued `approval` input into a proper transition system.

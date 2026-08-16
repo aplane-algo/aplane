@@ -110,15 +110,16 @@ func TestBuildIdentityRuntimeAppliesStoredConfig(t *testing.T) {
 	}
 }
 
-func TestBuildProductRuntimeRejectsDecommissionedIdentity(t *testing.T) {
+func TestBuildProductRuntimeRejectsStaleDecommissionedConfig(t *testing.T) {
 	root := t.TempDir()
 	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 	identityID := auth.CurrentProductIdentityID()
-	if err := identity.SaveStoredSetting(root, identityID, "decommissioned", true); err != nil {
+	configPath := identity.ConfigPath(root, identityID)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := util.LoadAPlaneToken(root, identityID); err != nil {
+	if err := os.WriteFile(configPath, []byte("decommissioned: true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -129,8 +130,8 @@ func TestBuildProductRuntimeRejectsDecommissionedIdentity(t *testing.T) {
 		DefaultSessionTimeout: 15 * time.Minute,
 		ProductIdentityID:     identityID,
 	}, signerstartup.IdentityBuildHooks{})
-	if err == nil || !strings.Contains(err.Error(), "is decommissioned") {
-		t.Fatalf("BuildProductRuntime() error = %v, want decommissioned rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "decommissioned") {
+		t.Fatalf("BuildProductRuntime() error = %v, want stale decommissioned-field rejection", err)
 	}
 }
 

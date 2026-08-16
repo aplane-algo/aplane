@@ -148,18 +148,17 @@ Used by apadmin for interactive key management and signer control over either:
        │  2. MsgTypeAuthRequired                     │
        │<────────────────────────────────────────────│
        │                                             │
-       │  3. AuthMessage { passphrase, identity_id } │
+       │  3. AuthMessage { passphrase, version }     │
        │────────────────────────────────────────────>│
        │                                             │
-       │  4. Resolve identity (default if omitted)   │
-       │     Reject if decommissioned                │
-       │     Open identity keyring.enc               │
+       │  4. Bind product runtime (default)          │
+       │     Open product keyring.enc                │
        │     (Argon2id KEK + AES-256-GCM unwrap)     │
        │                                             │
        │  5. AuthResultMessage { success: true }     │
        │<────────────────────────────────────────────│
        │                                             │
-       │     Session bound to resolved identity      │
+       │     Session bound to product runtime        │
        │     (Session.bound = identity.Runtime)      │
        │                                             │
        │  ══════ SESSION AUTHENTICATED ══════════════│

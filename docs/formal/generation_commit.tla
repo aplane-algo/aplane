@@ -81,7 +81,7 @@ The module intentionally omits:
     ordering constraint in the protocol; a longer chain adds states
     without adding reachable shapes.
   - Concurrent minting. The identity mutation lock serializes it, and
-    that lock is modeled in lifecycle.tla.
+    that lock is outside this model.
 
 If those concerns become security-critical for a particular check, add a
 separate module rather than extending this one.

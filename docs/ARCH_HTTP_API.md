@@ -114,7 +114,7 @@ Identity routing:
 - if an endpoint does carry a target resource identity, the authenticated
   identity and target resource identity must match.
 - missing credentials return `401`; authenticated identities with no registered
-  or live runtime return `403`; decommissioned identities return `403`.
+  or live runtime return `403`.
 
 ## Request/Response Shapes
 
@@ -575,7 +575,7 @@ rather than creating key material.
 | Oversized body | 413 |
 | Wrong method | 405 |
 | Missing/invalid credentials | 401 |
-| Authenticated identity unavailable or decommissioned | 403 |
+| Product runtime unavailable or locked | 403 |
 | Authenticated identity does not match target resource identity | 403 |
 | Authorization denied by `auth.Authorizer` | 403 |
 | Locked signer (handler entry) | 403 |

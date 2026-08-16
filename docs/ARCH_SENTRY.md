@@ -174,7 +174,7 @@ The guarded key is validated against signer inventory metadata — no key
 decryption — before the gates run, so a rejected request or an operator prompt
 never triggers a private-key operation and approval never precedes a
 key-not-found rejection. The key is decrypted only after the gates pass, under
-the runtime operation lease (`BeginOperation`), so decommission cannot
+the final execution gate, so shutdown or lock transitions cannot
 complete while component key material is in use. In a mixed group the
 operator may be prompted twice — once for the guarded component request and
 once for the ordinary `/sign` legs; both prompts render the full group

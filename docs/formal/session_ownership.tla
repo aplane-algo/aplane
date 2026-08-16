@@ -77,7 +77,7 @@ Mutations (documented; the shipped spec passes both restored):
 
 The module intentionally omits: multiple product runtimes (the implementation
 has one process-wide runtime and owner slot), the operator unlock/lock IPC
-commands and passphrase retry (lifecycle.tla's territory -- here unlock
+commands and passphrase retry (outside this model -- here unlock
 is only the auth side effect under scrutiny), pending-slot contention
 detail (BindPreAuthPending losers simply Exit while Authed), and the
 approval-prompt consequences of cleanup (approval_coordinator.tla's AP7).

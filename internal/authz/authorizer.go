@@ -51,7 +51,6 @@ func ProductAllowedActions() []auth.Action {
 		auth.ActionIdentityRestore,
 		auth.ActionIdentityLock,
 		auth.ActionIdentityPassphrase,
-		auth.ActionIdentityDecommission,
 		auth.ActionSignRequest,
 		auth.ActionSignApprove,
 		auth.ActionSignComponent,

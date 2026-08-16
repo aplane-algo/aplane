@@ -11,8 +11,8 @@ import (
 )
 
 // ensureSignable runs the preconditions shared by every signing-family
-// endpoint: a usable identity runtime that is neither decommissioned nor
-// locked. It also defaults a nil context for endpoints that thread one
+// endpoint: a usable, unlocked identity runtime. It also defaults a nil
+// context for endpoints that thread one
 // through. Role gates and dependency checks remain per-endpoint.
 func ensureSignable(ctx context.Context, ir *identity.Runtime) (context.Context, *signersigning.ServiceError) {
 	if ctx == nil {
@@ -20,9 +20,6 @@ func ensureSignable(ctx context.Context, ir *identity.Runtime) (context.Context,
 	}
 	if ir == nil {
 		return ctx, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "identity runtime is nil"}
-	}
-	if ir.IsDecommissioned() {
-		return ctx, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: identity.ErrDecommissioned.Error()}
 	}
 	if !ir.IsUnlocked() {
 		return ctx, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}

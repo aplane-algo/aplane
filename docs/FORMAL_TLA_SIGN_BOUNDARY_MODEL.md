@@ -43,7 +43,7 @@ strictly needed for the covered predicates above:
 - Post-signing client routing to algod submission or simulation.
 - Approval coordinator: always-review tier, operator decisions,
   timeouts.
-- Lifecycle leases, decommission, identity routing.
+- Server shutdown ordering and runtime destruction.
 - Filesystem reload, key scan, snapshot consistency.
 - HTTP authentication, principal authorization.
 - Network selection from `GenesisHash` (modeled as out-of-band).
@@ -145,18 +145,15 @@ Already shipped:
 
 Already shipped (continued):
 
-- **Lifecycle lease.** [formal/lifecycle.tla](formal/lifecycle.tla)
-  models `BeginOperation` / `Decommission` as real transitions and
-  verifies L4-L6 plus the writer-priority RWMutex ordering. See
-  [FORMAL_TLA_LIFECYCLE_MODEL.md](FORMAL_TLA_LIFECYCLE_MODEL.md).
+- **Approval coordinator.**
+  [formal/approval_coordinator.tla](formal/approval_coordinator.tla) models
+  serialized delivery, cancellation, timeout, fail-all, and displacement.
 
 Next likely modules, in order of value:
 
-1. **Lifecycle-aware composition** — *shipped* as
-   [formal/lifecycle_composition.tla](formal/lifecycle_composition.tla)
-   ([FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md](FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md)):
-   it checks end to end that lifecycle unavailability admits no new signer
-   output.
+1. **Approval-aware composition** — *shipped* as
+   [formal/approval_composition.tla](formal/approval_composition.tla): it
+   checks end to end that a failed approval admits no signer output.
 2. **Approval coordinator (M3 prerequisite).** State machine for
    pending approvals, including timeout and cancellation. Would refine
    the four-valued `approval` input in `policy_precedence.tla` (and

@@ -73,10 +73,6 @@ func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, i
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config for identity %q: %w", identityID, err)
 	}
-	if storedCfg.IsDecommissioned() {
-		return nil, fmt.Errorf("identity %q is decommissioned", identityID)
-	}
-
 	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(opts.KeyPaths.Root(), identityID)
 	token, err := tokenfile.ReadToken(tokenPath)
 	if err != nil {
@@ -130,9 +126,6 @@ func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, i
 		UserAutoApprove:  &userAutoApprove,
 		LockOnDisconnect: lockOnDisconnect,
 		NodeRole:         nodeDoc.Role,
-		PersistDecommission: func(id string) error {
-			return identity.SaveStoredSetting(opts.DataDir, id, "decommissioned", true)
-		},
 		OnLocked: func() {
 			if hooks.NotifyLocked != nil {
 				hooks.NotifyLocked()
@@ -148,15 +141,12 @@ func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, i
 // WireApprovalCoordinator creates and installs an approval coordinator on the
 // identity runtime using the process hooks.
 func WireApprovalCoordinator(ir *identity.Runtime, hooks IdentityBuildHooks) {
-	coordinator := approval.NewWithDecommission(
+	coordinator := approval.New(
 		func() bool {
 			if hooks.HasAdminClient == nil {
 				return false
 			}
 			return hooks.HasAdminClient()
-		},
-		func() bool {
-			return ir.IsDecommissioned()
 		},
 		func(msg *approval.SignRequest) bool {
 			if hooks.SendSignRequest == nil {

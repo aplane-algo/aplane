@@ -285,7 +285,7 @@ generation and commits it with the normal durable `CURRENT` flip.
 - effective identity config,
 - effective node-role policy: client-signing policy on signer nodes or sentry
   component policy on sentry nodes,
-- watcher and decommission lifecycle.
+- watcher and shutdown lifecycle.
 
 Product mode exposes only `default`, but the runtime model is internally
 identity-scoped.
@@ -765,7 +765,7 @@ projections of shell application results, not a separate backend model.
 1. Load server config.
 2. Load root node role from `node.yaml`.
 3. Discover identity directories.
-4. Skip decommissioned identities.
+4. Reject any non-default identity entry before runtime construction.
 5. Build an `identity.Runtime` per live identity.
 6. Start locked, unlock headlessly, or unlock through admin depending on
    passphrase startup configuration.

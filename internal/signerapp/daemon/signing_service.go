@@ -24,18 +24,13 @@ func (fs *Signer) newSigningServiceForIdentityWithAudit(ir *identity.Runtime, au
 		Console:                       signerConsole{},
 		GenerateTxnDescriptionFromTxn: fs.generateTransactionDescriptionFromTxn,
 		IsUnlocked: func() bool {
-			return ir.IsUnlocked() && !ir.IsDecommissioned()
+			return ir.IsUnlocked()
 		},
 		BeforeExecute: func() (func(), *signersigning.ServiceError) {
-			release, err := ir.BeginOperation()
-			if err != nil {
-				return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: err.Error()}
-			}
 			if !ir.IsUnlocked() {
-				release()
 				return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
 			}
-			return release, nil
+			return func() {}, nil
 		},
 		Policy:       ir.Policy(),
 		SentryPolicy: ir.SentryPolicy(),

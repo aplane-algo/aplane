@@ -36,7 +36,7 @@ The model intentionally omits:
   - passthrough/foreign slot exclusion (P8): checked in
     sign_boundary.tla via slot classes.
   - approval coordinator state machine (timeout transitions,
-    cancellations, mid-flight decommission). The approval channel is a
+    cancellations, and fail-all). The approval channel is a
     coarse four-valued input here.
   - planned request shape: rule matches are an abstract function of
     "whatever the planned group looks like."

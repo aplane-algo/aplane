@@ -12,15 +12,13 @@ import (
 )
 
 var (
-	ErrApprovalTimeout        = errors.New("approval timeout")
-	ErrApprovalCanceled       = errors.New("approval canceled")
-	ErrApprovalDecommissioned = errors.New("identity decommissioned")
+	ErrApprovalTimeout  = errors.New("approval timeout")
+	ErrApprovalCanceled = errors.New("approval canceled")
 )
 
 const maxRememberedCanceledSignRequests = 1024
 
 type HasClientFunc func() bool
-type IsDecommissionedFunc func() bool
 type SendSignRequestFunc func(*SignRequest) bool
 type SendSignRequestCanceledFunc func(*SignRequestCanceled) bool
 type SendTokenProvisioningRequestFunc func(*TokenProvisioningRequest) bool
@@ -38,7 +36,6 @@ type deliveryWaiter struct {
 // Coordinator owns pending approval queues for signing and token provisioning.
 type Coordinator struct {
 	hasClient                    HasClientFunc
-	isDecommissioned             IsDecommissionedFunc
 	sendSignRequest              SendSignRequestFunc
 	sendSignRequestCanceled      SendSignRequestCanceledFunc
 	sendTokenProvisioningRequest SendTokenProvisioningRequestFunc
@@ -80,13 +77,8 @@ func trySendTokenResponse(ch chan TokenProvisioningResponse, msg TokenProvisioni
 }
 
 func New(hasClient HasClientFunc, sendSignRequest SendSignRequestFunc, sendSignRequestCanceled SendSignRequestCanceledFunc, sendTokenProvisioningRequest SendTokenProvisioningRequestFunc) *Coordinator {
-	return NewWithDecommission(hasClient, nil, sendSignRequest, sendSignRequestCanceled, sendTokenProvisioningRequest)
-}
-
-func NewWithDecommission(hasClient HasClientFunc, isDecommissioned IsDecommissionedFunc, sendSignRequest SendSignRequestFunc, sendSignRequestCanceled SendSignRequestCanceledFunc, sendTokenProvisioningRequest SendTokenProvisioningRequestFunc) *Coordinator {
 	c := &Coordinator{
 		hasClient:                    hasClient,
-		isDecommissioned:             isDecommissioned,
 		sendSignRequest:              sendSignRequest,
 		sendSignRequestCanceled:      sendSignRequestCanceled,
 		sendTokenProvisioningRequest: sendTokenProvisioningRequest,
@@ -345,9 +337,6 @@ func (c *Coordinator) RequestSigningApprovalResponseContext(ctx context.Context,
 	if reason, canceled := c.consumeCanceledSignRequest(requestID); canceled {
 		return SignResponse{}, fmt.Errorf("%w: %s", ErrApprovalCanceled, reason)
 	}
-	if c.isDecommissioned != nil && c.isDecommissioned() {
-		return SignResponse{}, ErrApprovalDecommissioned
-	}
 	if c.hasClient == nil || !c.hasClient() {
 		return SignResponse{}, fmt.Errorf("no apadmin client connected")
 	}
@@ -362,10 +351,6 @@ func (c *Coordinator) RequestSigningApprovalResponseContext(ctx context.Context,
 	if reason, canceled := c.consumeCanceledSignRequest(requestID); canceled {
 		return SignResponse{}, fmt.Errorf("%w: %s", ErrApprovalCanceled, reason)
 	}
-	if c.isDecommissioned != nil && c.isDecommissioned() {
-		return SignResponse{}, ErrApprovalDecommissioned
-	}
-
 	if c.hasClient == nil || !c.hasClient() {
 		return SignResponse{}, fmt.Errorf("no apadmin client connected")
 	}
@@ -473,9 +458,6 @@ func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, reque
 	if requestID == "" {
 		return false, fmt.Errorf("request ID is required")
 	}
-	if c.isDecommissioned != nil && c.isDecommissioned() {
-		return false, ErrApprovalDecommissioned
-	}
 	if c.hasClient == nil || !c.hasClient() {
 		return false, fmt.Errorf("no apadmin client connected")
 	}
@@ -485,9 +467,6 @@ func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, reque
 	}
 	defer c.releaseDeliveryTurn()
 
-	if c.isDecommissioned != nil && c.isDecommissioned() {
-		return false, ErrApprovalDecommissioned
-	}
 	if c.hasClient == nil || !c.hasClient() {
 		return false, fmt.Errorf("no apadmin client connected")
 	}

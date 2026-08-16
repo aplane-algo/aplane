@@ -64,7 +64,7 @@ This separation is deliberate:
 | Contract-admin public reference | Operator-controlled `<witness_key_id>.wit.json` | Disposable canonical public witness reference used during bounded account generation. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | `identities/<identity>/node.yaml.hmac` | Per-identity HMAC over the exact root `node.yaml` bytes. |
-| Identity config | `identities/<identity>/config.yaml` | Identity-local runtime settings such as approval/lock timeouts and decommission state; it does not carry key-class role. |
+| Identity config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected. |
 | Key type state record | `identities/<identity>/keytypes/<key_type>.json` | Identity-local discovery/generation state. |
 | Installed YAML template | `identities/<identity>/keytypes/<key_type>.template` | Encrypted generation source for that identity after reload. |
 | Deleted key archive | `identities/<identity>/deleted/keys/` | Removed key files; outside active scans. |

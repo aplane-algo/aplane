@@ -68,22 +68,20 @@ Source: [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md)
 | P9 | implemented | P9 | `internal/policy/transfer_routing_eval.go` returns `Reject`/`Review`/no-verdict only | `internal/policy/transfer_routing_eval_test.go`; `internal/policy/ruleids_test.go` | |
 | P10 | implemented | Effective Policy Selection; P10 | `internal/policy/config.go::ForKey`; `internal/signerapp/signing/service.go::authPolicyKeysFromRequest` passes auth addresses to policy evaluators | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesUsesKeyOverride`; `service_test.go::TestEvaluateAutoRejectionRulesAppliesKeyOverrides` | |
 
-## Lifecycle Model
+## Retired Lifecycle Claims and Retained Reload Order
 
-Source: [FORMAL_LIFECYCLE_MODEL.md](FORMAL_LIFECYCLE_MODEL.md)
+The single-product refactor removed the per-identity decommission state, transition, and operation lease. The former claims have these explicit dispositions:
 
-| ID | Status | Source § | Code anchor | Test anchor | Notes |
-|---|---|---|---|---|---|
-| L1 | implemented | Decommission Transition; L1 | `internal/signerapp/identity/runtime.go::Decommission` writes config only | `internal/signerapp/identity/identity_test.go::TestDecommission` | |
-| L2 | implemented | L2 | `Decommission` in `internal/signerapp/identity/runtime.go` persists before marking | `internal/signerapp/identity/identity_test.go::TestDecommission`; `::TestDecommissionPersistErrorLeavesRuntimeActive` injects a failing `PersistDecommission` and asserts the runtime remains active and pending approvals are untouched. | |
-| L3 | implemented | Runtime Rejection Rules | `internal/signerapp/identity/runtime.go` decommission checks across unlock/reload/approval/key access | `internal/signerapp/identity/identity_test.go::TestDecommission` | Runtime routing is fixed to the product identity; startup rejection is tracked separately by L10. |
-| L4 | implemented | Lifecycle Lease; L4 | `internal/signerapp/identity/runtime.go::BeginOperation` | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanStopsBeforeExecute`; `::TestSignGroupWithPlanReleasesBeforeExecuteLeaseAfterExecution` | Machine-checked via `lifecycle.tla::L4_LeaseGatesSigning`. |
-| L5 | implemented | L5 | RWMutex write side; documented in `runtime.go` lock-ordering comment | `internal/signerapp/identity/identity_test.go::TestDecommissionWaitsForActiveOperation`; `::TestDecommissionWaitingBlocksNewOperation` | Machine-checked via `lifecycle.tla::L5_DecommissionWaitsForHeldLease` (validated by mutation test). The second test pins the writer-pending behavior the TLA model assumes from Go's `sync.RWMutex`. |
-| L6 | implemented | L6 | `BeginOperation` returns ErrDecommissioned when lifecycle flag set | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanUserAutoApproveDecommissionBeforeExecute` | Machine-checked via `lifecycle.tla::L6_NoAcquireAfterDecommission`. |
-| L8 | implemented | L8 | `Decommission` step 6: fail pending approvals; approval coordinator decommission predicate rechecks before and after the delivery queue | `internal/signerapp/identity/identity_test.go::TestDecommissionFailsPendingApprovals`; `internal/signerapp/approval/coordinator_test.go::TestCoordinatorQueuedSigningApprovalFailsAfterDecommission` | Mechanism and its own invariants are modeled in the Approval Coordinator Model (AP6) and machine-checked in `approval_coordinator.tla` (`L8_NoApproveAfterDecommission`). The lifecycle lease gate remains a downstream defense in depth. |
-| L9 | implemented | L9 | `Decommission` calls `StopKeyWatcher` (step 8), which clears `watcherCancel` at `internal/signerapp/identity/runtime.go:1049-1057` | `internal/signerapp/identity/identity_test.go::TestDecommissionStopsKeyWatcher` observes the watcher context cancellation and asserts it cannot restart after decommission. | |
-| L10 | implemented | Startup Rules; L10 | `internal/signerapp/startup/identity_build.go::BuildIdentityRuntime` consults stored config | `internal/signerapp/daemon/identity_startup_test.go::TestBuildProductRuntimeRejectsDecommissionedIdentity` | The sole product runtime fails startup rather than skipping to another identity. |
-| L11 | implemented | Watcher and Reload Rules; L11 | `Reload` step ordering in `internal/signerapp/identity/runtime.go` and `internal/signerapp/templates/reload.go` | `internal/signerapp/templates/reload_test.go::TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan` (direct sequence assertion); mutation-lock leg via `identity_test.go::TestWatcherReloadUsesMutationLock` | |
+| ID | Disposition | Retained evidence |
+|---|---|---|
+| L1-L3 | retired: decommission persistence, transition, and rejection state were removed | strict identity config rejects the stale `decommissioned:` field |
+| L4 | lease-specific claim retired | `TestSignGroupWithPlanStopsBeforeExecute` remains a general no-output regression for a failed final-execution gate |
+| L5-L6 | retired: the decommission writer and lease race were removed | graceful server shutdown and key-session locks remain separate runtime contracts |
+| L7 | retired with runtime-registry removal | the process directly owns one runtime |
+| L8-L10 | retired: decommission approval, watcher, and startup states were removed | AP6 retains reason-independent fail-all queue draining |
+| L11 | retained: reload order is independent of decommission | `internal/signerapp/templates/reload_test.go::TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan`; `internal/signerapp/identity/identity_test.go::TestWatcherReloadUsesMutationLock` |
+
+L11 is owned here now: reload runs the configured pre-scan hook, reloads durable template and key-type state, then scans keys while holding the process store-mutation exclusion contract.
 
 ## Signing Authority Model
 
@@ -152,7 +150,7 @@ Source: [FORMAL_APPROVAL_COORDINATOR_MODEL.md](FORMAL_APPROVAL_COORDINATOR_MODEL
 | AP3 | implemented | AP3 | `internal/signerapp/approval/coordinator.go::HandleSignResponse` (keyed by `msg.ID`) | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorMismatchedResponseIDDoesNotSatisfyActiveRequest` | A response satisfies a request only on exact ID match. |
 | AP4 | implemented | AP4 | `internal/signerapp/approval/coordinator.go::acquireDeliveryTurnContext`; `::releaseDeliveryTurn` (`deliveryInFlight`, `deliveryQueue`) | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorSerializesSigningRequests`; `::TestCoordinatorSerializesAcrossApprovalTypes` | One request delivered at a time; FIFO across signing and token-provisioning requests. |
 | AP5 | implemented | AP5 | `internal/signerapp/approval/coordinator.go::CancelSignRequest`; `::BeginSignRequest`; `::consumeCanceledSignRequest` | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorCancelSignRequestBeforeApprovalIsPending`; `::TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn`; `::TestCoordinatorCancelSignRequestCancelsConcurrentSameIDRequests`; `::TestCoordinatorCancelSignRequestUnknownIsNotFound` | Cancellation reaches queued, delivered, and not-yet-waiting requests; unknown ID is `not_found`. |
-| AP6 | implemented | AP6 | `internal/signerapp/approval/coordinator.go::NewWithDecommission`; `::RequestSigningApprovalResponseContext` and `::RequestTokenProvisioningContext` decommission rechecks; `::FailAllPendingRequests`; raised by `internal/signerapp/identity/runtime.go::Decommission` (`FailAllPendingApprovals`, `runtime.go:623`) and `internal/signerapp/daemon/ipc.go:166` (operator-client disconnect) | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorFailAllClearsPendingMaps`; `::TestCoordinatorFailAllUnblocksPendingRequest`; `::TestCoordinatorQueuedSigningApprovalFailsAfterDecommission`; `internal/signerapp/daemon/hub_test.go::TestFailAllPendingRequests`; `internal/signerapp/identity/identity_test.go::TestDecommissionFailsPendingApprovals` | Fail-all terminates every then-pending request not-approved; coordinator decommission rechecks prevent queued requests from being delivered after the mark; mechanism behind lifecycle L8. |
+| AP6 | implemented | AP6 | `internal/signerapp/approval/coordinator.go::FailAllPendingRequests`; production callers cover disconnect, displacement, lock, and shutdown | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorFailAllClearsPendingMaps`; `::TestCoordinatorFailAllUnblocksPendingRequest`; `internal/signerapp/daemon/hub_test.go::TestFailAllPendingRequests` | Fail-all terminates every then-pending request not-approved. Machine-checked by `AP6_FailAllLeavesNoPending`; end-to-end no-output is checked by `approval_composition.tla::FailAllProducesNoSignedOutput`. |
 | AP7 | implemented | AP7 | `internal/signerapp/daemon/ipc.go` displacement path (`FailAllPendingApprovals("apadmin displaced")` before `adminserver.DisplaceSession`); `internal/signerapp/adminserver/displacement.go::OfferDisplacement` / `::DisplaceSession` (old session remains owner until the replacement is promoted) | `internal/signerapp/daemon/ipc_displacement_test.go::TestDisplacementFailsDeliveredApprovalPrompt`; `::TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted`; `::TestDisplacementReplacementAuthFailureKeepsOldOwner` | A delivered prompt was shown to the old client only, so it is failed in the same step the client is replaced; otherwise the orphaned prompt holds the delivery turn and head-of-line-blocks every later approval until the `ApprovalWait` timer frees it. Machine-checked in `approval_coordinator.tla` (`AP7_NoOrphanedDelivery` history flag on the `Displace` action); the coordinator liveness check (`Progress` under `LiveSpec`) documents that the timer is the only guaranteed exit from Delivered, which is why the orphan mattered. |
 
 ## Plugin Signing Model
@@ -298,73 +296,13 @@ operator copies in `composition.tla` are kept in sync with the
 component modules by code review, not by TLC; see the prose
 companion for the deliberate trade.
 
-### Lifecycle module
+### Retired lifecycle modules
 
-[formal/lifecycle.tla](formal/lifecycle.tla) (see
-[FORMAL_TLA_LIFECYCLE_MODEL.md](FORMAL_TLA_LIFECYCLE_MODEL.md))
-models the lock-ordering race between `BeginOperation` and
-`Decommission`. Unlike the previous three modules (one-shot Init-only),
-this module has real transitions in `Next`: two signer processes and
-one admin process race over a writer-priority RWMutex. TLC checked
-under `SignerProcs = {s1, s2}`, `admin = a`, `NONE = none`, with
-symmetry over signers; the recorded run generated 24 distinct
-reachable states, reached depth 9, and found no counterexamples for
-`Safety`. A separate liveness run (`lifecycle_liveness.cfg`, no symmetry —
-unsound for TLC liveness) adds `SignerRestart` (recurring signing
-operations) and verifies `Progress` under `LiveSpec`: writer-priority
-starvation freedom (a queued decommission finishes; every held lease
-releases), 75 distinct states, depth 13. Mutation: removing
-`~WriterPending` from `SignerAcquire` yields a starvation lasso.
-
-| Invariant | TLA+ predicate |
-|---|---|
-| L4 (Final signing uses runtime lease) | `L4_LeaseGatesSigning` |
-| L5 (Decommission waits for held lease) | `L5_DecommissionWaitsForHeldLease` |
-| L6 (Decommission wins race before lease) | `L6_NoAcquireAfterDecommission` |
-| RWMutex exclusion + state consistency | `TypeOK` |
-
-L4 and L6 are pinned by history variables (`heldEver`,
-`badAcquireAfterDecommission`). L5 is a direct state predicate
-validated by mutation test (removing the `readers = {}` guard from
-`AdminAcquireWrite` produces a counterexample).
-
-L1, L2, L3, L9-L11 are not modeled here. They are sequential
-properties already covered by Go tests; not concurrency claims. L8
-(Pending Approvals Fail On Successful Decommission) is machine-checked
-in the approval coordinator module below, which supplies the
-pending-approval state machine that L8 needs.
+The two per-identity decommission/lease modules were deleted when their production state and transitions were removed. L1-L10 have the dispositions recorded above; L11 remains a Go-level reload-order contract.
 
 ### Approval coordinator module
 
-[formal/approval_coordinator.tla](formal/approval_coordinator.tla) (see
-[FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md](FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md))
-models the per-request approval state machine. Like `lifecycle.tla` it has real
-transitions in `Next`: requests interleave over a shared single-delivery turn
-with operator decisions, timeout, cancellation, operator-client disconnect,
-client displacement, and decommission. TLC checked under
-`Requests = {r1, r2, r3}`: the safety run (with symmetry) generated 196
-distinct states at depth 11 with no counterexamples for `Safety`; the liveness
-run (`approval_coordinator_liveness.cfg`, no symmetry — TLC liveness checking
-is unsound under symmetry) generated 833 distinct states and verified
-`Progress` under `LiveSpec`.
-
-| Invariant | TLA+ predicate |
-|---|---|
-| AP4 (Single Delivery In Flight) | `AP4_SingleDelivery` |
-| AP5 (Cancellation Always Enabled) | `AP5_CancelAlwaysEnabled` |
-| AP6 (Decommission Leaves No Pending) | `AP6_DecommissionLeavesNoPending` |
-| AP7 (No Orphaned Delivery On Displacement) | `AP7_NoOrphanedDelivery` |
-| L8 (No Approval After Decommission) | `L8_NoApproveAfterDecommission` |
-| Progress (queued/delivered requests terminate; liveness) | `Progress` under `LiveSpec` |
-| turn/state consistency | `TypeOK` |
-
-L8 is the headline: it was the only `deferred` invariant, held back because it
-crosses the lifecycle/approval boundary. It is checked via the
-`badApproveAfterDecommission` history flag and validated by mutation test
-(removing the `~decommissioned` guard from `Deliver` produces a counterexample).
-AP1 (single resolution), AP2 (only approve permits a signature), and AP3
-(response ID binding) are modeled by construction — absorbing terminal states and
-per-request action identity — not as separate predicates.
+[formal/approval_coordinator.tla](formal/approval_coordinator.tla) models requests interleaving over one delivery turn with operator decisions, timeout, cancellation, disconnect, and client displacement. `Safety` checks AP4, AP5, AP6, and AP7. AP6 is `AP6_FailAllLeavesNoPending`, backed by the sticky `badPendingAfterFailAll` flag updated by both modeled fail-all actions. AP7 separately prevents a displaced client from orphaning a delivered prompt. AP1-AP3 hold by construction. `LiveSpec` retains weak fairness for delivery and timeout and checks `Progress`.
 
 ### Approval composition module
 
@@ -390,31 +328,9 @@ These are cross-module seam claims rather than new numbered invariants.
 Validated by mutation test: mapping the `Failed` (fail-all) outcome to `approve`
 produces a counterexample where a fail-all'd review-class request signs.
 
-### Lifecycle composition module
+### Retired lifecycle composition module
 
-[formal/lifecycle_composition.tla](formal/lifecycle_composition.tla) (see
-[FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md](FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md))
-joins the temporal lifecycle lock race with a lease-gated signing step, checking
-end to end that a signer produces output only while holding a lease acquired before
-decommission. Like `lifecycle.tla` it is a temporal-transition spec; TLC checked
-under `SignerProcs = {s1, s2}` with symmetry, generating 113 distinct states, depth
-11, no counterexamples. A separate liveness run
-(`lifecycle_composition_liveness.cfg`, no symmetry) verifies `Progress` under
-`LiveSpec`: every held lease eventually completes (no request left forever
-neither signed nor rejected) and a queued decommission finishes — 196 distinct
-states, depth 11; mutation: dropping the `SignerSign` fairness conjunct yields
-a lasso. It re-checks lifecycle L4-L6 under the extended model and
-adds two seam claims; the policy decision is consumed as the boolean `policySigned`
-(its derivation is in `composition.tla` / `approval_composition.tla`).
-
-| Claim | TLA+ predicate |
-|---|---|
-| L4-L6 (carried) | `L4_LeaseGatesSigning`, `L5_DecommissionWaitsForHeldLease`, `L6_NoAcquireAfterDecommission` |
-| Output requires a held lease + signing policy | `LifecycleGatesOutput` |
-| Rejected (post-decommission) signer produces no output | `RejectedProducesNoOutput` |
-
-Validated by mutation test: making the signing step ignore `policySigned` (always
-producing output) yields a counterexample.
+The lifecycle/output composition was retired with the operation lease. The reason-independent retained seam is `approval_composition.tla::FailAllProducesNoSignedOutput`: any coordinator `Failed` outcome produces no signer output.
 
 ### Session ownership module
 
@@ -535,10 +451,8 @@ The following invariants have no TLA+ representation yet:
   machine-checked in `guarded_assembly.tla`. The separate bounded-sentry
   planning and assembly path is machine-checked in `bounded_sentry.tla`.
 - AP1-AP3 (approval coordinator) are modeled by construction rather than as
-  predicates; AP4-AP7 and L8 are machine-checked in `approval_coordinator.tla`.
+  predicates; AP4-AP7 are machine-checked in `approval_coordinator.tla`.
 
-Lifecycle-aware composition has shipped as
-[formal/lifecycle_composition.tla](formal/lifecycle_composition.tla) (above).
 With the signing-authority surface resolved by decision, the remaining
 candidates are the M3 backlog English models (LogicSig budget and
 template/bytecode generation) and a legacy guarded sentry

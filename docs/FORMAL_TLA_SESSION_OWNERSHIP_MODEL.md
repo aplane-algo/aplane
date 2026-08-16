@@ -78,9 +78,8 @@ The restored spec passes.
 - **One product runtime.** The implementation now has one process-wide owner
   slot, matching the model directly.
 - **Unlock is only the auth side effect.** The operator's explicit
-  unlock/lock IPC commands, passphrase retries, and the keystore state
-  machine live in [formal/lifecycle.tla](formal/lifecycle.tla). Here
-  `unlocked` exists solely to express SO2.
+  unlock/lock IPC commands, passphrase retries, and keystore state machine are
+  outside this model. Here `unlocked` exists solely to express SO2.
 - **One uniform `Exit` action.** Failed auth, pending-slot loss, displacement
   rejection, promotion failure, displaced close, and plain disconnect all
   leave through the same code path (the `handleRegisteredClient` defer), so

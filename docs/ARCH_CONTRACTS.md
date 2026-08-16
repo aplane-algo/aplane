@@ -20,7 +20,7 @@
 - [On-Disk Formats](#on-disk-formats)
 - [Authentication, SSH, and Token Provisioning](#authentication-ssh-and-token-provisioning)
 - [Approval and Policy Contracts](#approval-and-policy-contracts)
-- [Runtime Lifecycle and Decommission](#runtime-lifecycle-and-decommission)
+- [Runtime Ownership and Shutdown](#runtime-ownership-and-shutdown)
 - [Key Watching and Reload](#key-watching-and-reload)
 - [Template Reload Contract](#template-reload-contract)
 - [Plugin Contract](#plugin-contract)
@@ -695,7 +695,9 @@ pointed at a supported in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader with guidance that the file
 may have been written by a newer version or may contain a typo.
 
-Process-global settings live in `config.yaml`. Identity-scoped settings live in `identities/<identity>/config.yaml` and nil means inherit from process defaults. `decommissioned:true` disables the identity.
+Process-global settings live in `config.yaml`. Identity-scoped settings live in
+`identities/default/config.yaml`; nil means inherit from process defaults.
+Unknown fields, including the removed `decommissioned` setting, fail parsing.
 
 Signer policy participates in the ordered approval engine.
 The active node-role policy is identity-scoped and stored in
@@ -2300,13 +2302,13 @@ Unavailable or invalid client token proofs incur a 5-second delay.
 
 Token provisioning flow:
 
-1. client connects as `request-token:<identity>`
-2. server rejects unknown or decommissioned identities before SSH auth succeeds
-3. key-only SSH auth succeeds for supported identities
-4. the `provision` exec request re-checks that the identity is supported
-5. server verifies an admin client is connected for the requested identity
+1. client connects as `request-token:default`
+2. server rejects every other username before SSH auth succeeds
+3. key-only SSH auth succeeds for the product identity
+4. the `provision` exec request remains bound to `default`
+5. server verifies the product admin client is connected
 6. admin approves via TUI
-7. server enrolls the public key for that identity
+7. server enrolls the public key for `default`
 8. server generates or loads token
 9. token is sent over SSH exec channel
 10. audit log is written after confirmed delivery
@@ -2449,20 +2451,13 @@ was never known to the authenticated identity.
 
 Broader group-level or structural policy constraints are not part of this compatibility surface.
 
-## Runtime Lifecycle and Decommission
+## Runtime Ownership and Shutdown
 
-Identity lifecycle is logical, not destructive.
-
-- `identities/<identity>/config.yaml` with `decommissioned:true` disables the identity at startup.
-- live decommission persists `decommissioned:true`, then marks the runtime decommissioned.
-- if persistence fails, the runtime remains active and pending approvals are not failed.
-- decommission fails pending signing and token-provisioning approvals with an identity-decommissioned reason.
-- decommission locks the runtime if it is unlocked and stops the identity watcher.
-- decommissioned identities reject unlock, reload, token provisioning, HTTP routing, SSH token auth, SSH key checks, and SSH key enrollment.
-
-The signer owns one product `*identity.Runtime` directly. Final signing uses
-that runtime's lifecycle lease to decide whether it may execute.
-- if decommission wins before final execution obtains the lease, signing fails cleanly; if execution already holds the lease, decommission waits for release.
+The signer owns one product `*identity.Runtime` directly. There is no live
+identity-decommission state or operation lease. Graceful shutdown stops and
+drains request servers before destroying runtime key state. Lock, disconnect,
+displacement, and shutdown continue to fail pending approvals through the
+reason-independent coordinator fail-all contract.
 
 ## Key Watching and Reload
 
@@ -2497,7 +2492,7 @@ Lifecycle:
 
 - starts when the identity runtime is unlocked or initialized
 - remains running across lock/unlock transitions
-- stops on runtime shutdown or decommission
+- stops on runtime shutdown
 
 ## Template Reload Contract
 

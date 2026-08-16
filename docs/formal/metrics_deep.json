@@ -12,28 +12,16 @@
     "depth": 1
   },
   {
-    "spec": "lifecycle",
-    "cfg": "lifecycle_deep",
-    "distinct_states": 38,
-    "depth": 11
-  },
-  {
     "spec": "approval_coordinator",
     "cfg": "approval_coordinator_deep",
-    "distinct_states": 504,
-    "depth": 14
+    "distinct_states": 294,
+    "depth": 13
   },
   {
     "spec": "approval_composition",
     "cfg": "approval_composition_deep",
     "distinct_states": 412992,
     "depth": 1
-  },
-  {
-    "spec": "lifecycle_composition",
-    "cfg": "lifecycle_composition_deep",
-    "distinct_states": 336,
-    "depth": 14
   },
   {
     "spec": "session_ownership",
@@ -50,19 +38,7 @@
   {
     "spec": "approval_coordinator",
     "cfg": "approval_coordinator_liveness_deep",
-    "distinct_states": 6174,
-    "depth": 14
-  },
-  {
-    "spec": "lifecycle",
-    "cfg": "lifecycle_liveness_deep",
-    "distinct_states": 307,
-    "depth": 17
-  },
-  {
-    "spec": "lifecycle_composition",
-    "cfg": "lifecycle_composition_liveness_deep",
-    "distinct_states": 1368,
-    "depth": 14
+    "distinct_states": 3773,
+    "depth": 13
   }
 ]
