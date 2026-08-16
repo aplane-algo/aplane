@@ -156,7 +156,7 @@ func (fs *Signer) RevokeTokenForIdentity(ir *identity.Runtime) error {
 		tokenGeneration = ta.Generation()
 	}
 	if sshServer := fs.currentSSHServer(); sshServer != nil {
-		sshServer.CloseIdentityConnections(ir.ID(), tokenGeneration, "token revoked")
+		sshServer.CloseProductConnections(tokenGeneration, "token revoked")
 	}
 	logInfof("api token revoked and regenerated: %s", tokenPath)
 	return nil

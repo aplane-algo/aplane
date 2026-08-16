@@ -65,7 +65,7 @@ func testServer(t *testing.T) (*Server, string) {
 
 func setTokenProvisioningHooks(srv *Server, hooks TokenProvisioningHooks) {
 	if hooks.OperatorConnected == nil {
-		hooks.OperatorConnected = func(identityID string) bool { return true }
+		hooks.OperatorConnected = func() bool { return true }
 	}
 	srv.SetTokenProvisioningHooks(hooks)
 }
@@ -173,15 +173,15 @@ func TestTokenProvisioning_FullSuccess(t *testing.T) {
 	var approvalCalled, issuanceCalled, auditCalled bool
 
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		Approve: func(identityID, sshFingerprint, remoteAddr string) (bool, error) {
+		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
 			approvalCalled = true
 			return true, nil
 		},
-		Issue: func(identityID string) (string, error) {
+		Issue: func() (string, error) {
 			issuanceCalled = true
 			return "test-token-value", nil
 		},
-		AuditProvisioned: func(identityID, sshFingerprint, remoteAddr string) {
+		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
 			auditCalled = true
 		},
 	})
@@ -288,13 +288,13 @@ func TestTokenProvisioningApprovalCanceledOnClientDisconnect(t *testing.T) {
 	approvalStarted := make(chan struct{})
 	approvalDone := make(chan error, 1)
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		ApproveContext: func(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (bool, error) {
+		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
 			close(approvalStarted)
 			<-ctx.Done()
 			approvalDone <- ctx.Err()
 			return false, ctx.Err()
 		},
-		Issue: func(identityID string) (string, error) {
+		Issue: func() (string, error) {
 			t.Fatal("issuance callback should not be called after client disconnect")
 			return "", nil
 		},
@@ -387,13 +387,13 @@ func TestClientRequestTokenContextCancelClosesProvisioning(t *testing.T) {
 	approvalStarted := make(chan struct{})
 	approvalDone := make(chan error, 1)
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		ApproveContext: func(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (bool, error) {
+		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
 			close(approvalStarted)
 			<-ctx.Done()
 			approvalDone <- ctx.Err()
 			return false, ctx.Err()
 		},
-		Issue: func(identityID string) (string, error) {
+		Issue: func() (string, error) {
 			t.Fatal("issuance callback should not be called after client cancellation")
 			return "", nil
 		},
@@ -418,7 +418,7 @@ func TestClientRequestTokenContextCancelClosesProvisioning(t *testing.T) {
 	reqCtx, cancelReq := context.WithCancel(context.Background())
 	resultCh := make(chan error, 1)
 	go func() {
-		token, err := client.RequestToken(reqCtx, "default")
+		token, err := client.RequestToken(reqCtx)
 		if token != "" {
 			resultCh <- fmt.Errorf("token = %q, want empty", token)
 			return
@@ -459,7 +459,7 @@ func TestTokenProvisioningIgnoresClientStdinEOF(t *testing.T) {
 	allowApproval := make(chan struct{})
 	approvalCanceled := make(chan error, 1)
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		ApproveContext: func(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (bool, error) {
+		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
 			close(approvalStarted)
 			select {
 			case <-allowApproval:
@@ -469,10 +469,10 @@ func TestTokenProvisioningIgnoresClientStdinEOF(t *testing.T) {
 				return false, ctx.Err()
 			}
 		},
-		Issue: func(identityID string) (string, error) {
+		Issue: func() (string, error) {
 			return "token-after-stdin-eof", nil
 		},
-		AuditProvisioned: func(identityID, sshFingerprint, remoteAddr string) {},
+		AuditProvisioned: func(sshFingerprint, remoteAddr string) {},
 	})
 
 	ln, listenErr := net.Listen("tcp", "127.0.0.1:0")
@@ -591,15 +591,15 @@ func TestTokenProvisioningDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *t
 	allowIssue := make(chan struct{})
 	var auditCalled bool
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		ApproveContext: func(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (bool, error) {
+		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
 			return true, nil
 		},
-		Issue: func(identityID string) (string, error) {
+		Issue: func() (string, error) {
 			close(issueStarted)
 			<-allowIssue
 			return "token-after-client-disconnect", nil
 		},
-		AuditProvisioned: func(identityID, sshFingerprint, remoteAddr string) {
+		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
 			auditCalled = true
 		},
 	})
@@ -715,73 +715,23 @@ func TestTokenProvisioningDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *t
 	}
 }
 
-func TestTokenProvisioning_AllowsNonProductIdentity(t *testing.T) {
+func TestTokenProvisioningRejectsNonProductUsernameBeforeCallbacks(t *testing.T) {
 	srv, _ := testServer(t)
 	_, pub := generateClientKey(t)
 
-	_, err := srv.handleTokenProvisioningAuth(nil, pub, "request-token:other-identity", "127.0.0.1:1", "fp")
-	if err != nil {
-		t.Fatalf("handleTokenProvisioningAuth(non-product) error = %v", err)
-	}
-}
-
-func TestTokenProvisioningRejectsUnsupportedIdentity(t *testing.T) {
-	srv, _ := testServer(t)
-	_, pub := generateClientKey(t)
-
-	var gotIdentityID string
+	called := false
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		IdentityProvisioning: func(identityID string) bool {
-			gotIdentityID = identityID
-			return false
+		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
+			called = true
+			return true, nil
 		},
 	})
-
 	_, err := srv.handleTokenProvisioningAuth(nil, pub, "request-token:other-identity", "127.0.0.1:1", "fp")
 	if err == nil {
-		t.Fatal("handleTokenProvisioningAuth() error = nil, want unsupported identity")
+		t.Fatal("handleTokenProvisioningAuth() error = nil, want unsupported username")
 	}
-	if !strings.Contains(err.Error(), "unsupported identity") {
-		t.Fatalf("handleTokenProvisioningAuth() error = %v, want unsupported identity", err)
-	}
-	if gotIdentityID != "other-identity" {
-		t.Fatalf("identity check got %q, want other-identity", gotIdentityID)
-	}
-}
-
-func TestTokenProvisioningRechecksUnsupportedIdentityOnExec(t *testing.T) {
-	srv, _ := testServer(t)
-	clientSigner, _ := generateClientKey(t)
-
-	var checks int
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		IdentityProvisioning: func(identityID string) bool {
-			checks++
-			return checks == 1
-		},
-		Approve: func(identityID, sshFingerprint, remoteAddr string) (bool, error) {
-			t.Fatal("approval callback should not be called after exec-time identity rejection")
-			return false, nil
-		},
-		Issue: func(identityID string) (string, error) {
-			t.Fatal("issuance callback should not be called after exec-time identity rejection")
-			return "", nil
-		},
-		AuditProvisioned: func(identityID, sshFingerprint, remoteAddr string) {},
-	})
-
-	output, exitCode, err := runProvisioningSessionForIdentity(t, srv, clientSigner, "other-identity")
-	if err != nil {
-		t.Fatalf("session error: %v", err)
-	}
-	if exitCode == 0 {
-		t.Fatalf("expected non-zero exit for exec-time unsupported identity, got output:\n%s", output)
-	}
-	if !strings.Contains(output, "unsupported identity") {
-		t.Fatalf("expected unsupported identity output, got:\n%s", output)
-	}
-	if checks != 2 {
-		t.Fatalf("identity checks = %d, want 2", checks)
+	if called {
+		t.Fatal("non-product username reached provisioning callback")
 	}
 }
 
@@ -791,14 +741,14 @@ func TestTokenProvisioning_Rejected(t *testing.T) {
 	var issuanceCalled, auditCalled bool
 
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		Approve: func(identityID, sshFingerprint, remoteAddr string) (bool, error) {
+		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
 			return false, nil // Operator rejects
 		},
-		Issue: func(identityID string) (string, error) {
+		Issue: func() (string, error) {
 			issuanceCalled = true
 			return "should-not-be-issued", nil
 		},
-		AuditProvisioned: func(identityID, sshFingerprint, remoteAddr string) {
+		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
 			auditCalled = true
 		},
 	})
@@ -839,14 +789,14 @@ func TestTokenProvisioning_EnrollmentFailure(t *testing.T) {
 	var issuanceCalled, auditCalled bool
 
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		Approve: func(identityID, sshFingerprint, remoteAddr string) (bool, error) {
+		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
 			return true, nil // Operator approves
 		},
-		Issue: func(identityID string) (string, error) {
+		Issue: func() (string, error) {
 			issuanceCalled = true
 			return "should-not-be-issued", nil
 		},
-		AuditProvisioned: func(identityID, sshFingerprint, remoteAddr string) {
+		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
 			auditCalled = true
 		},
 	})
@@ -874,13 +824,13 @@ func TestTokenProvisioning_IssuanceFailure(t *testing.T) {
 	var auditCalled bool
 
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		Approve: func(identityID, sshFingerprint, remoteAddr string) (bool, error) {
+		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
 			return true, nil
 		},
-		Issue: func(identityID string) (string, error) {
+		Issue: func() (string, error) {
 			return "", fmt.Errorf("disk full")
 		},
-		AuditProvisioned: func(identityID, sshFingerprint, remoteAddr string) {
+		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
 			auditCalled = true
 		},
 	})
@@ -914,12 +864,12 @@ func TestTokenProvisioning_NoOperator(t *testing.T) {
 	var approvalCalled bool
 
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		OperatorConnected: func(identityID string) bool { return false },
-		Approve: func(identityID, sshFingerprint, remoteAddr string) (bool, error) {
+		OperatorConnected: func() bool { return false },
+		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
 			approvalCalled = true
 			return true, nil
 		},
-		Issue: func(identityID string) (string, error) {
+		Issue: func() (string, error) {
 			return "nope", nil
 		},
 	})
@@ -938,26 +888,26 @@ func TestTokenProvisioning_NoOperator(t *testing.T) {
 	}
 }
 
-func TestTokenProvisioningOperatorCheckReceivesIdentity(t *testing.T) {
+func TestTokenProvisioningChecksProductOperator(t *testing.T) {
 	srv, _ := testServer(t)
 
-	var gotIdentityID string
+	called := false
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		OperatorConnected: func(identityID string) bool {
-			gotIdentityID = identityID
+		OperatorConnected: func() bool {
+			called = true
 			return false
 		},
 	})
 
 	clientSigner, _ := generateClientKey(t)
-	output, exitCode, err := runProvisioningSessionForIdentity(t, srv, clientSigner, "alice")
+	output, exitCode, err := runProvisioningSession(t, srv, clientSigner)
 	if err != nil {
 		t.Fatalf("session error: %v", err)
 	}
 	if exitCode == 0 {
 		t.Errorf("expected non-zero exit when no operator, got 0; output: %s", output)
 	}
-	if gotIdentityID != "alice" {
-		t.Fatalf("operator check identityID = %q, want alice", gotIdentityID)
+	if !called {
+		t.Fatal("product operator callback was not called")
 	}
 }

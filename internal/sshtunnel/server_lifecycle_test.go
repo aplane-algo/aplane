@@ -17,27 +17,25 @@ import (
 func TestServerCallbackSettersBeforeStart(t *testing.T) {
 	srv, _ := testServer(t)
 
-	srv.SetSessionCallback(func(remoteAddr, user string, connected bool) {})
+	srv.SetSessionCallback(func(remoteAddr string, connected bool) {})
 	srv.SetTokenProvisioningHooks(TokenProvisioningHooks{
-		Approve:              func(identityID, sshFingerprint, remoteAddr string) (bool, error) { return true, nil },
-		Issue:                func(identityID string) (string, error) { return "token", nil },
-		AuditProvisioned:     func(identityID, sshFingerprint, remoteAddr string) {},
-		OperatorConnected:    func(identityID string) bool { return true },
-		IdentityProvisioning: func(identityID string) bool { return true },
+		Approve:           func(sshFingerprint, remoteAddr string) (bool, error) { return true, nil },
+		Issue:             func() (string, error) { return "token", nil },
+		AuditProvisioned:  func(sshFingerprint, remoteAddr string) {},
+		OperatorConnected: func() bool { return true },
 	})
-	srv.SetIdentityHooks(IdentityHooks{
+	srv.SetProductHooks(ProductHooks{
 		ComputeTokenMACs: testTokenMACs,
-		CheckKey:         func(identityID string, key ssh.PublicKey) bool { return true },
-		EnrollKey:        func(identityID string, key ssh.PublicKey) error { return nil },
+		CheckKey:         func(key ssh.PublicKey) bool { return true },
+		EnrollKey:        func(key ssh.PublicKey) error { return nil },
 	})
-	srv.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr, identityID string) {})
+	srv.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr string) {})
 
 	if srv.sessionCallback == nil ||
 		srv.tokenApprovalCallback == nil ||
 		srv.tokenIssuanceCallback == nil ||
 		srv.tokenAuditCallback == nil ||
 		srv.operatorCheckCallback == nil ||
-		srv.provisioningIdentityCheck == nil ||
 		srv.tokenMAC == nil ||
 		srv.keyChecker == nil ||
 		srv.keyEnroller == nil ||
@@ -57,28 +55,28 @@ func TestSSHAuthLogOmitsUsernameAndErrorDetails(t *testing.T) {
 	}
 }
 
-func TestSetIdentityHooksRejectsPartialConfiguration(t *testing.T) {
+func TestSetProductHooksRejectsPartialConfiguration(t *testing.T) {
 	tests := []struct {
 		name  string
-		hooks IdentityHooks
+		hooks ProductHooks
 	}{
 		{
 			name: "token MAC only",
-			hooks: IdentityHooks{
+			hooks: ProductHooks{
 				ComputeTokenMACs: testTokenMACs,
 			},
 		},
 		{
 			name: "missing enroller",
-			hooks: IdentityHooks{
+			hooks: ProductHooks{
 				ComputeTokenMACs: testTokenMACs,
-				CheckKey:         func(identityID string, key ssh.PublicKey) bool { return true },
+				CheckKey:         func(key ssh.PublicKey) bool { return true },
 			},
 		},
 		{
 			name: "enroller only",
-			hooks: IdentityHooks{
-				EnrollKey: func(identityID string, key ssh.PublicKey) error { return nil },
+			hooks: ProductHooks{
+				EnrollKey: func(key ssh.PublicKey) error { return nil },
 			},
 		},
 	}
@@ -89,19 +87,19 @@ func TestSetIdentityHooksRejectsPartialConfiguration(t *testing.T) {
 			defer func() {
 				r := recover()
 				if r == nil {
-					t.Fatal("SetIdentityHooks did not panic for partial hooks")
+					t.Fatal("SetProductHooks did not panic for partial hooks")
 				}
 				msg, ok := r.(string)
 				if !ok || !strings.Contains(msg, "require ComputeTokenMACs, CheckKey, and EnrollKey together") {
 					t.Fatalf("panic = %#v, want partial identity hook assertion", r)
 				}
 			}()
-			srv.SetIdentityHooks(tt.hooks)
+			srv.SetProductHooks(tt.hooks)
 		})
 	}
 }
 
-func TestIdentityAwareAuthRejectsPartialHooksWithoutGlobalKeyFallback(t *testing.T) {
+func TestProductAuthRejectsPartialHooksWithoutGlobalKeyFallback(t *testing.T) {
 	srv, _ := testServer(t)
 	_, pub := generateClientKey(t)
 	srv.authKeysMu.Lock()
@@ -109,7 +107,7 @@ func TestIdentityAwareAuthRejectsPartialHooksWithoutGlobalKeyFallback(t *testing
 	srv.authKeysMu.Unlock()
 	srv.tokenMAC = testTokenMACs
 
-	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "alice"}, pub)
+	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "default"}, pub)
 	if perms != nil {
 		t.Fatalf("handlePublicKeyAuth() permissions = %#v, want nil", perms)
 	}
@@ -118,23 +116,23 @@ func TestIdentityAwareAuthRejectsPartialHooksWithoutGlobalKeyFallback(t *testing
 	}
 }
 
-func TestIdentityAwareAuthBindsUsernameIdentityToKeyCheck(t *testing.T) {
+func TestProductAuthChecksKeyAfterFixedUsernameValidation(t *testing.T) {
 	srv, _ := testServer(t)
 	_, pub := generateClientKey(t)
 	srv.tokenMAC = testTokenMACs
-	var checkedIdentity string
-	srv.keyChecker = func(identityID string, key ssh.PublicKey) bool {
-		checkedIdentity = identityID
+	checked := false
+	srv.keyChecker = func(key ssh.PublicKey) bool {
+		checked = true
 		return true
 	}
-	srv.keyEnroller = func(identityID string, key ssh.PublicKey) error { return nil }
+	srv.keyEnroller = func(key ssh.PublicKey) error { return nil }
 
-	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "alice"}, pub)
+	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "default"}, pub)
 	if err != nil {
 		t.Fatalf("handlePublicKeyAuth() error = %v", err)
 	}
-	if checkedIdentity != "alice" || perms.Extensions["identity_id"] != "alice" {
-		t.Fatalf("identity binding = checked %q permissions %#v, want alice", checkedIdentity, perms)
+	if !checked || perms.Extensions["identity_id"] != "default" {
+		t.Fatalf("product binding = checked %v permissions %#v", checked, perms)
 	}
 }
 
@@ -191,33 +189,32 @@ func TestServerCallbackSettersPanicAfterStart(t *testing.T) {
 	}{
 		{
 			name: "SetSessionCallback",
-			call: func() { srv.SetSessionCallback(func(remoteAddr, user string, connected bool) {}) },
+			call: func() { srv.SetSessionCallback(func(remoteAddr string, connected bool) {}) },
 		},
 		{
 			name: "SetTokenProvisioningHooks",
 			call: func() {
 				srv.SetTokenProvisioningHooks(TokenProvisioningHooks{
-					Approve:              func(identityID, sshFingerprint, remoteAddr string) (bool, error) { return true, nil },
-					Issue:                func(identityID string) (string, error) { return "token", nil },
-					AuditProvisioned:     func(identityID, sshFingerprint, remoteAddr string) {},
-					OperatorConnected:    func(identityID string) bool { return true },
-					IdentityProvisioning: func(identityID string) bool { return true },
+					Approve:           func(sshFingerprint, remoteAddr string) (bool, error) { return true, nil },
+					Issue:             func() (string, error) { return "token", nil },
+					AuditProvisioned:  func(sshFingerprint, remoteAddr string) {},
+					OperatorConnected: func() bool { return true },
 				})
 			},
 		},
 		{
-			name: "SetIdentityHooks",
+			name: "SetProductHooks",
 			call: func() {
-				srv.SetIdentityHooks(IdentityHooks{
+				srv.SetProductHooks(ProductHooks{
 					ComputeTokenMACs: testTokenMACs,
-					CheckKey:         func(identityID string, key ssh.PublicKey) bool { return true },
-					EnrollKey:        func(identityID string, key ssh.PublicKey) error { return nil },
+					CheckKey:         func(key ssh.PublicKey) bool { return true },
+					EnrollKey:        func(key ssh.PublicKey) error { return nil },
 				})
 			},
 		},
 		{
 			name: "SetAdminChannelCallback",
-			call: func() { srv.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr, identityID string) {}) },
+			call: func() { srv.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr string) {}) },
 		},
 	}
 
@@ -242,8 +239,8 @@ type testConnMetadata struct {
 	user string
 }
 
-func testTokenMACs(identityID string, serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
-	return make([]byte, tokenProofMACSize), make([]byte, tokenProofMACSize), 1, identityID != ""
+func testTokenMACs(serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
+	return make([]byte, tokenProofMACSize), make([]byte, tokenProofMACSize), 1, true
 }
 
 func (m testConnMetadata) User() string {

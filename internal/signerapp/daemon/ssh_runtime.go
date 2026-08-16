@@ -5,7 +5,6 @@ package daemon
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -42,77 +41,53 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 		return nil, err
 	}
 
-	for _, rt := range server.registry.All() {
-		if loadErr := rt.LoadAuthorizedKeys(); loadErr != nil {
-			logWarnf("failed to load identity authorized keys for %s: %v", rt.ID(), loadErr)
-		}
+	productRuntime := server.productIdentityRuntime()
+	if loadErr := productRuntime.LoadAuthorizedKeys(); loadErr != nil {
+		logWarnf("failed to load product authorized keys: %v", loadErr)
 	}
 
-	sshServer.SetIdentityHooks(sshtunnel.IdentityHooks{
-		ComputeTokenMACs: func(identityID string, serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
-			rt := server.registry.Get(identityID)
-			if rt == nil || rt.IsDecommissioned() {
-				return nil, nil, 0, false
-			}
-			ta, ok := rt.Authenticator().(*auth.TokenAuthenticator)
+	sshServer.SetProductHooks(sshtunnel.ProductHooks{
+		ComputeTokenMACs: func(serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
+			ta, ok := productRuntime.Authenticator().(*auth.TokenAuthenticator)
 			if !ok {
 				return nil, nil, 0, false
 			}
 			return ta.ComputeHMACPair(serverInput, clientInput)
 		},
-		CheckKey: func(identityID string, key gossh.PublicKey) bool {
-			rt := server.registry.Get(identityID)
-			if rt == nil || rt.IsDecommissioned() {
-				return false
-			}
-			return rt.HasAuthorizedKey(key)
+		CheckKey: func(key gossh.PublicKey) bool {
+			return productRuntime.HasAuthorizedKey(key)
 		},
-		EnrollKey: func(identityID string, key gossh.PublicKey) error {
-			enrollIR := server.registry.Get(identityID)
-			if enrollIR == nil {
-				return fmt.Errorf("identity not found: %s", identityID)
-			}
-			if enrollIR.IsDecommissioned() {
-				return fmt.Errorf("identity decommissioned: %s", identityID)
-			}
-			return enrollIR.EnrollAuthorizedKey(key)
+		EnrollKey: func(key gossh.PublicKey) error {
+			return productRuntime.EnrollAuthorizedKey(key)
 		},
 	})
 
 	if auditLog != nil {
-		sshServer.SetSessionCallback(func(remoteAddr, identityID string, connected bool) {
+		sshServer.SetSessionCallback(func(remoteAddr string, connected bool) {
 			if connected {
-				auditLog.LogSessionConnected(identityID, remoteAddr, identityID)
+				auditLog.LogSessionConnected(auth.CurrentProductIdentityID(), remoteAddr, auth.CurrentProductIdentityID())
 			} else {
-				auditLog.LogSessionDisconnected(identityID, remoteAddr, identityID)
+				auditLog.LogSessionDisconnected(auth.CurrentProductIdentityID(), remoteAddr, auth.CurrentProductIdentityID())
 			}
 		})
 	}
 
-	sshServer.SetAdminChannelCallback(func(channel gossh.Channel, remoteAddr, identityID string) {
-		if identityID == "" {
-			logInfof("apadmin client connected via SSH from %s", remoteAddr)
-		} else {
-			logInfof("apadmin client connected via SSH from %s for identity %q", remoteAddr, identityID)
-		}
-		server.ipcServer.acceptAdminSession(adminproto.NewStreamAdminConn(channel, remoteAddr), "ssh", "ssh-passphrase", identityID)
+	sshServer.SetAdminChannelCallback(func(channel gossh.Channel, remoteAddr string) {
+		logInfof("apadmin client connected via SSH from %s", remoteAddr)
+		server.ipcServer.acceptAdminSession(adminproto.NewStreamAdminConn(channel, remoteAddr), "ssh", "ssh-passphrase", auth.CurrentProductIdentityID())
 	})
 	sshServer.SetTokenProvisioningHooks(sshtunnel.TokenProvisioningHooks{
-		ApproveContext: func(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (bool, error) {
-			return provisioning.ApproveContext(ctx, identityID, sshFingerprint, remoteAddr)
+		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
+			return provisioning.ApproveContext(ctx, auth.CurrentProductIdentityID(), sshFingerprint, remoteAddr)
 		},
-		Issue: func(identityID string) (string, error) {
-			return provisioning.Issue(identityID)
+		Issue: func() (string, error) {
+			return provisioning.Issue(auth.CurrentProductIdentityID())
 		},
-		AuditProvisioned: func(identityID, sshFingerprint, remoteAddr string) {
-			provisioning.AuditProvisioned(identityID, sshFingerprint, remoteAddr)
+		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
+			provisioning.AuditProvisioned(auth.CurrentProductIdentityID(), sshFingerprint, remoteAddr)
 		},
-		OperatorConnected: func(identityID string) bool {
-			return server.hasClientForIdentity(identityID)
-		},
-		IdentityProvisioning: func(identityID string) bool {
-			rt := server.registry.Get(identityID)
-			return rt != nil && !rt.IsDecommissioned()
+		OperatorConnected: func() bool {
+			return server.hasClientForIdentity(auth.CurrentProductIdentityID())
 		},
 	})
 

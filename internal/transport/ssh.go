@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
@@ -20,7 +19,6 @@ import (
 type SSHAdminClient struct {
 	host           string
 	port           int
-	identityID     string
 	token          string
 	identityFile   string
 	knownHostsPath string
@@ -36,17 +34,9 @@ type SSHAdminClient struct {
 
 // NewSSHAdmin creates a new SSH admin transport.
 func NewSSHAdmin(host string, port int, token, identityFile, knownHostsPath string) *SSHAdminClient {
-	return NewSSHAdminForIdentity(host, port, auth.CurrentProductIdentityID(), token, identityFile, knownHostsPath)
-}
-
-// NewSSHAdminForIdentity creates an identity-scoped SSH admin transport.
-// Product-facing callers should use NewSSHAdmin, which remains pinned to the
-// current product identity.
-func NewSSHAdminForIdentity(host string, port int, identityID, token, identityFile, knownHostsPath string) *SSHAdminClient {
 	return &SSHAdminClient{
 		host:           host,
 		port:           port,
-		identityID:     identityID,
 		token:          token,
 		identityFile:   identityFile,
 		knownHostsPath: knownHostsPath,
@@ -62,7 +52,6 @@ func (c *SSHAdminClient) Dial() error {
 // subsystem using the caller's context for the SSH handshake.
 func (c *SSHAdminClient) DialWithContext(ctx context.Context) error {
 	client := sshtunnel.NewClient(c.host, c.port, 0, 0, c.identityFile, c.knownHostsPath)
-	client.SetIdentityID(c.identityID)
 	client.SetAPIToken(c.token)
 	if err := client.ConnectWithKey(ctx); err != nil {
 		return fmt.Errorf("SSH connection failed: %w", err)

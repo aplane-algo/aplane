@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -175,9 +176,12 @@ func createIntegrationIdentityWithTemplate(t *testing.T, env *harness.TestEnvClo
 
 func unlockIdentityOverSSHAdmin(t *testing.T, identityID, token string) *transport.SSHAdminClient {
 	t.Helper()
+	if identityID != auth.CurrentProductIdentityID() {
+		t.Fatalf("SSH admin only supports product identity %q, got %q", auth.CurrentProductIdentityID(), identityID)
+	}
 
 	sshCfg := mustLoadClientSSHConfig(t)
-	client := transport.NewSSHAdminForIdentity(sshCfg.Host, sshCfg.Port, identityID, token, sshCfg.IdentityFile, sshCfg.KnownHostsPath)
+	client := transport.NewSSHAdmin(sshCfg.Host, sshCfg.Port, token, sshCfg.IdentityFile, sshCfg.KnownHostsPath)
 	if err := client.Dial(); err != nil {
 		t.Fatalf("failed to connect SSH admin session: %v", err)
 	}

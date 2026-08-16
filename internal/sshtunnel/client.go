@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/auth"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -124,8 +125,7 @@ type Client struct {
 	hostKeyApproval     HostKeyApprovalHandler // Callback for TOFU host key approval
 	onProvisioningStart func()
 
-	identityID string
-	apiToken   string
+	apiToken string
 
 	mu        sync.Mutex
 	connected bool
@@ -181,13 +181,6 @@ func (c *Client) SetProvisioningStartCallback(callback func()) {
 	c.onProvisioningStart = callback
 }
 
-// SetIdentityID sets the non-secret product identity used as the SSH username.
-func (c *Client) SetIdentityID(identityID string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.identityID = identityID
-}
-
 // SetAPIToken sets the API token used for mutual token proof.
 func (c *Client) SetAPIToken(token string) {
 	c.mu.Lock()
@@ -205,16 +198,11 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	}
 	c.resetCloseSignalLocked()
 	token := c.apiToken
-	identityID := c.identityID
 	c.mu.Unlock()
 
 	if token == "" {
 		return fmt.Errorf("API token required (call SetAPIToken first)")
 	}
-	if identityID == "" {
-		return fmt.Errorf("identity ID required (call SetIdentityID first)")
-	}
-
 	authMethod, agentConn, err := c.authMethod()
 	if err != nil {
 		return err
@@ -227,7 +215,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 		}
 		return err
 	}
-	authState := newTokenProofClientAuth(identityID, token)
+	authState := newTokenProofClientAuth(auth.CurrentProductIdentityID(), token)
 	defer authState.clear()
 	verifiedHostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		if err := hostKeyCallback(hostname, remote, key); err != nil {
@@ -237,7 +225,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	}
 
 	config := &ssh.ClientConfig{
-		User: identityID,
+		User: auth.CurrentProductIdentityID(),
 		Auth: []ssh.AuthMethod{
 			authMethod,
 			ssh.KeyboardInteractive(authState.challenge),
@@ -748,8 +736,7 @@ func (c *Client) OpenSubsystem(subsystem string) (io.ReadWriteCloser, error) {
 
 // RequestToken connects to the SSH server and requests a token via the exec channel.
 // This is a one-shot operation: connect, request, receive token, disconnect.
-// The identityID is typically the current product identity.
-func (c *Client) RequestToken(ctx context.Context, identityID string) (string, error) {
+func (c *Client) RequestToken(ctx context.Context) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -767,7 +754,7 @@ func (c *Client) RequestToken(ctx context.Context, identityID string) (string, e
 	}
 
 	// Use special username for token provisioning
-	username := "request-token:" + identityID
+	username := "request-token:" + auth.CurrentProductIdentityID()
 
 	config := &ssh.ClientConfig{
 		User:            username,

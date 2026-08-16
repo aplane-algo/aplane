@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
@@ -42,7 +41,6 @@ type SSHAdminConnector struct {
 
 func (c SSHAdminConnector) Connect() (io.ReadWriteCloser, error) {
 	client := sshtunnel.NewClient(c.Host, c.Port, 0, 0, c.IdentityFile, c.KnownHostsPath)
-	client.SetIdentityID(auth.CurrentProductIdentityID())
 	client.SetAPIToken(c.Token)
 	if c.HostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(c.HostKeyApproval)
