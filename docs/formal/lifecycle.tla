@@ -7,23 +7,19 @@ FORMAL_LIFECYCLE_MODEL.md: the race between a signer holding the
 read side of the lifecycle lock via BeginOperation, and an admin
 acquiring the write side via Decommission.
 
-It covers four invariants:
+It covers three invariants:
 
   - L4 : Final signing uses the runtime lease.
   - L5 : Decommission waits for held lease.
   - L6 : Decommission wins the race before lease.
-  - L7 : Registry removal does not prevent completion of held work.
 
 L4 and L6 are checked directly via history variables (heldEver,
-badAcquireAfterDecommission). L5 is a direct state predicate. L7
-uses ENABLED-style reasoning over the SignerCompleteAndRelease
-action.
+badAcquireAfterDecommission). L5 is a direct state predicate.
 
 Unlike sign_boundary, policy_precedence, and composition (all
 one-shot Init-only specs), this module has real transitions in
 Next. Two signer processes and one admin process race over a
-writer-priority RWMutex. The state space is small (TLC reports 48
-distinct reachable states under symmetry reduction) but the
+writer-priority RWMutex. The state space is small, but the
 temporal-transition structure is the key novelty.
 
 The module intentionally omits:
@@ -71,12 +67,11 @@ VARIABLES
     readers,                       \* SUBSET of signer process IDs holding the read side
     writer,                        \* admin or NONE
     decommissioned,                \* BOOLEAN
-    registry_member,               \* BOOLEAN; FALSE after AdminRegistryRemove
     procState,                     \* function: SignerProcs \cup {admin} -> SignerState \cup AdminState
     heldEver,                      \* function: SignerProcs -> BOOLEAN; L4 history flag
     badAcquireAfterDecommission    \* BOOLEAN; L6 regression-guard flag
 
-vars == <<readers, writer, decommissioned, registry_member, procState,
+vars == <<readers, writer, decommissioned, procState,
           heldEver, badAcquireAfterDecommission>>
 
 ----------------------------------------------------------------------------
@@ -96,7 +91,6 @@ Init ==
     /\ readers = {}
     /\ writer = NONE
     /\ decommissioned = FALSE
-    /\ registry_member = TRUE
     /\ procState = [p \in SignerProcs \cup {admin} |-> "Idle"]
     /\ heldEver = [s \in SignerProcs |-> FALSE]
     /\ badAcquireAfterDecommission = FALSE
@@ -116,8 +110,7 @@ SignerAcquire(s) ==
     /\ ~WriterPending
     /\ \/ /\ decommissioned                              \* L6 path
           /\ procState' = [procState EXCEPT ![s] = "Rejected"]
-          /\ UNCHANGED <<readers, writer, decommissioned, registry_member,
-                         heldEver, badAcquireAfterDecommission>>
+          /\ UNCHANGED <<readers, writer, decommissioned,                         heldEver, badAcquireAfterDecommission>>
        \/ /\ ~decommissioned                             \* normal path: take read side
           /\ readers' = readers \cup {s}
           /\ procState' = [procState EXCEPT ![s] = "Holding"]
@@ -129,20 +122,16 @@ SignerAcquire(s) ==
           \* fires.
           /\ badAcquireAfterDecommission' =
                  badAcquireAfterDecommission \/ decommissioned
-          /\ UNCHANGED <<writer, decommissioned, registry_member>>
+          /\ UNCHANGED <<writer, decommissioned>>
 
 \* SignerCompleteAndRelease models the signer completing its
-\* in-flight signing work and releasing the read side. The action is
-\* named for completion, not just cleanup, to make the L7 invariant
-\* about "registry removal does not prevent completion of held work"
-\* rather than just "release is enabled."
+\* in-flight signing work and releasing the read side.
 SignerCompleteAndRelease(s) ==
     /\ s \in SignerProcs
     /\ procState[s] = "Holding"
     /\ readers' = readers \ {s}
     /\ procState' = [procState EXCEPT ![s] = "Done"]
-    /\ UNCHANGED <<writer, decommissioned, registry_member,
-                   heldEver, badAcquireAfterDecommission>>
+    /\ UNCHANGED <<writer, decommissioned,                   heldEver, badAcquireAfterDecommission>>
 
 ----------------------------------------------------------------------------
 (* Admin actions *)
@@ -154,8 +143,7 @@ SignerCompleteAndRelease(s) ==
 AdminBeginDecommission ==
     /\ procState[admin] = "Idle"
     /\ procState' = [procState EXCEPT ![admin] = "Waiting"]
-    /\ UNCHANGED <<readers, writer, decommissioned, registry_member,
-                   heldEver, badAcquireAfterDecommission>>
+    /\ UNCHANGED <<readers, writer, decommissioned,                   heldEver, badAcquireAfterDecommission>>
 
 \* AdminAcquireWrite waits for all readers to drain before taking the
 \* write side. This is the L5 guard: the admin cannot proceed past
@@ -166,8 +154,7 @@ AdminAcquireWrite ==
     /\ writer = NONE
     /\ writer' = admin
     /\ procState' = [procState EXCEPT ![admin] = "WriteHeld"]
-    /\ UNCHANGED <<readers, decommissioned, registry_member,
-                   heldEver, badAcquireAfterDecommission>>
+    /\ UNCHANGED <<readers, decommissioned,                   heldEver, badAcquireAfterDecommission>>
 
 \* AdminMarkDecommissioned sets the decommissioned flag while holding
 \* the write side. New signers arriving after this point will observe
@@ -176,8 +163,7 @@ AdminMarkDecommissioned ==
     /\ procState[admin] = "WriteHeld"
     /\ decommissioned' = TRUE
     /\ procState' = [procState EXCEPT ![admin] = "Marked"]
-    /\ UNCHANGED <<readers, writer, registry_member,
-                   heldEver, badAcquireAfterDecommission>>
+    /\ UNCHANGED <<readers, writer,                   heldEver, badAcquireAfterDecommission>>
 
 \* AdminReleaseWrite releases the write side. After this point, the
 \* admin is Finished and the lifecycle sequence is complete. New
@@ -187,17 +173,7 @@ AdminReleaseWrite ==
     /\ procState[admin] = "Marked"
     /\ writer' = NONE
     /\ procState' = [procState EXCEPT ![admin] = "Finished"]
-    /\ UNCHANGED <<readers, decommissioned, registry_member,
-                   heldEver, badAcquireAfterDecommission>>
-
-\* AdminRegistryRemove can fire at any time and is independent of the
-\* lifecycle sequence. It flips registry_member to FALSE. L7 says
-\* this must not prevent a holding signer from completing.
-AdminRegistryRemove ==
-    /\ registry_member
-    /\ registry_member' = FALSE
-    /\ UNCHANGED <<readers, writer, decommissioned, procState,
-                   heldEver, badAcquireAfterDecommission>>
+    /\ UNCHANGED <<readers, decommissioned,                   heldEver, badAcquireAfterDecommission>>
 
 ----------------------------------------------------------------------------
 (* Next and Spec *)
@@ -209,7 +185,6 @@ Next ==
     \/ AdminAcquireWrite
     \/ AdminMarkDecommissioned
     \/ AdminReleaseWrite
-    \/ AdminRegistryRemove
 
 Spec == Init /\ [][Next]_vars
 
@@ -230,7 +205,6 @@ TypeOK ==
     /\ readers \subseteq SignerProcs
     /\ writer \in {NONE, admin}
     /\ decommissioned \in BOOLEAN
-    /\ registry_member \in BOOLEAN
     /\ \A s \in SignerProcs : procState[s] \in SignerState
     /\ procState[admin] \in AdminState
     /\ heldEver \in [SignerProcs -> BOOLEAN]
@@ -261,19 +235,11 @@ L5_DecommissionWaitsForHeldLease ==
 L6_NoAcquireAfterDecommission ==
     ~badAcquireAfterDecommission
 
-\* L7: Registry removal does not prevent completion of held work. A
-\* signer in Holding can always transition to Done via
-\* SignerCompleteAndRelease, regardless of registry_member.
-L7_RegistryRemoveDoesNotPreventCompletion ==
-    \A s \in SignerProcs :
-        procState[s] = "Holding" => ENABLED SignerCompleteAndRelease(s)
-
 Safety ==
     /\ TypeOK
     /\ L4_LeaseGatesSigning
     /\ L5_DecommissionWaitsForHeldLease
     /\ L6_NoAcquireAfterDecommission
-    /\ L7_RegistryRemoveDoesNotPreventCompletion
 
 ----------------------------------------------------------------------------
 (* Liveness (checked by lifecycle_liveness.cfg under LiveSpec) *)
@@ -292,8 +258,7 @@ SignerRestart(s) ==
     /\ s \in SignerProcs
     /\ procState[s] = "Done"
     /\ procState' = [procState EXCEPT ![s] = "Idle"]
-    /\ UNCHANGED <<readers, writer, decommissioned, registry_member,
-                   heldEver, badAcquireAfterDecommission>>
+    /\ UNCHANGED <<readers, writer, decommissioned,                   heldEver, badAcquireAfterDecommission>>
 
 LiveNext ==
     \/ Next

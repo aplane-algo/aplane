@@ -21,7 +21,7 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -88,7 +88,7 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -139,7 +139,7 @@ func TestIPCRestorePreviewRateLimitsFailures(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}

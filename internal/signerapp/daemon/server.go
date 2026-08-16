@@ -49,7 +49,8 @@ func encodeTxnToHex(txn types.Transaction) string {
 // Returns hex-encoded msgpack of the signed transaction, or error.
 
 type Signer struct {
-	registry           *identity.Registry                 // Temporary single-runtime startup adapter
+	runtime            *identity.Runtime                  // The one product identity runtime
+	nodeFailState      *identity.NodeFailState            // Process-wide first-error-sticky failure state
 	httpAuth           auth.Authenticator                 // Product token authenticator; never selects a runtime
 	authorizer         auth.Authorizer                    // Pluggable authorization
 	auditLog           *AuditLogger                       // Audit logger for security events
@@ -130,11 +131,16 @@ func (fs *Signer) tryWithIdentityInspection(identityID string, fn func() error) 
 	return fn()
 }
 
-// productIdentityRuntime returns the identity runtime for the current product identity.
-// This is a product-boundary compatibility helper for single-user surfaces.
-// Internal identity-aware paths should pass an explicit identity ID instead.
+// productIdentityRuntime returns the process-owned product runtime.
 func (fs *Signer) productIdentityRuntime() *identity.Runtime {
-	return fs.registry.MustGet(auth.CurrentProductIdentityID())
+	return fs.runtime
+}
+
+func (fs *Signer) nodeFailure() error {
+	if fs.nodeFailState == nil {
+		return nil
+	}
+	return fs.nodeFailState.Err()
 }
 
 // RevokeTokenForIdentity generates a new API token for the given identity.

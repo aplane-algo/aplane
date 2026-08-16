@@ -71,14 +71,14 @@ func hasAuthenticatedPrincipal(r *http.Request) (int, string) {
 // identityFromRequest returns the fixed product runtime for an authenticated
 // principal. The principal never participates in runtime selection.
 func (fs *Signer) identityFromRequest(r *http.Request) (*identity.Runtime, int, string) {
-	if err := fs.registry.CloseError(); err != nil {
+	if err := fs.nodeFailure(); err != nil {
 		return nil, http.StatusServiceUnavailable, err.Error()
 	}
 	status, errMsg := hasAuthenticatedPrincipal(r)
 	if errMsg != "" {
 		return nil, status, errMsg
 	}
-	ir := fs.registry.Get(auth.CurrentProductIdentityID())
+	ir := fs.runtime
 	if ir == nil {
 		return nil, http.StatusServiceUnavailable, "product runtime unavailable"
 	}

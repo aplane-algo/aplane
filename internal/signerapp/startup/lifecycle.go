@@ -28,7 +28,6 @@ type ServerAuditLogger interface {
 // configuration and identity assembly are complete.
 type LifecyclePlan struct {
 	Services        []LifecycleService
-	Registry        *identity.Registry
 	ProductRuntime  *identity.Runtime
 	StartWatcher    func(*identity.Runtime)
 	ShutdownTimeout time.Duration
@@ -101,13 +100,11 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		_ = plan.AuditLog.Close()
 	}
 
-	if plan.Registry != nil {
+	if plan.ProductRuntime != nil {
 		if plan.Info != nil {
 			plan.Info("zeroing cached keys and the keyring")
 		}
-		for _, rt := range plan.Registry.All() {
-			rt.Destroy()
-		}
+		plan.ProductRuntime.Destroy()
 	}
 
 	if plan.Info != nil {

@@ -191,17 +191,16 @@ func Run(dataDir string) int {
 	authorizer := authz.NewProductSingleAuthorizer()
 
 	// Create the process root server (shared infrastructure only)
-	reg := identity.NewRegistry()
 	server := &Signer{
-		registry:   reg,
-		authorizer: authorizer,
-		auditLog:   auditLog,
-		config:     &config,
-		keyPaths:   startupOpts.Paths,
-		dataDir:    resolvedDataDir,
+		nodeFailState: &identity.NodeFailState{},
+		authorizer:    authorizer,
+		auditLog:      auditLog,
+		config:        &config,
+		keyPaths:      startupOpts.Paths,
+		dataDir:       resolvedDataDir,
 	}
 
-	ir, err := signerstartup.BuildRegistry(server.registry, signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildProductRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               resolvedDataDir,
 		KeyPaths:              startupOpts.Paths,
 		Config:                &config,
@@ -212,7 +211,8 @@ func Run(dataDir string) int {
 		logErrorf("%v", err)
 		return 1
 	}
-	server.httpAuth = newProductAuthenticator(server.registry, ir)
+	server.runtime = ir
+	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
 	logInfof("product identity runtime initialized")
 	removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths, identityID)
 	if cleanupErr != nil {
@@ -325,7 +325,6 @@ func Run(dataDir string) int {
 	defer stopSignals()
 
 	signerstartup.RunLifecycle(runCtx, signerstartup.LifecyclePlan{
-		Registry:        server.registry,
 		ProductRuntime:  ir,
 		ShutdownTimeout: 5 * time.Second,
 		AuditLog:        auditLog,

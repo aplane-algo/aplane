@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -27,7 +26,7 @@ func TestIPCImportKeyBecomesVisibleAfterReload(t *testing.T) {
 	server.ipcServer = ipcServer
 
 	recorder := &recordingIPCConn{}
-	session := newBoundTestSession(ipcServer, recorder, server.registry.Get(auth.DefaultIdentityID))
+	session := newBoundTestSession(ipcServer, recorder, server.productIdentityRuntime())
 
 	msg := &protocol.ImportKeyMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -55,7 +54,7 @@ func TestIPCImportKeyBecomesVisibleAfterReload(t *testing.T) {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	keyFile, err := ir.FindKeyFile(result.Address)
 	if err != nil {
 		t.Fatalf("imported address %s not present in key cache after reload: %v", result.Address, err)
@@ -87,7 +86,7 @@ func TestIPCGenerateKeyBecomesVisibleImmediatelyAndAdminMutationsAreAudited(t *t
 	server.ipcServer = ipcServer
 
 	recorder := &recordingIPCConn{}
-	session := newBoundTestSession(ipcServer, recorder, server.registry.Get(auth.DefaultIdentityID))
+	session := newBoundTestSession(ipcServer, recorder, server.productIdentityRuntime())
 
 	genMsg := &protocol.GenerateKeyMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -109,7 +108,7 @@ func TestIPCGenerateKeyBecomesVisibleImmediatelyAndAdminMutationsAreAudited(t *t
 		t.Fatal("expected generated address")
 	}
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	keyFile, err := ir.FindKeyFile(genResult.Address)
 	if err != nil {
 		t.Fatalf("generated address %s not present in key cache without manual reload: %v", genResult.Address, err)

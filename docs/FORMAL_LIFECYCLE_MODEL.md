@@ -69,12 +69,6 @@ identities/<identity>/config.yaml
 `decommissioned:true` is an explicit disable marker. It is not inherited from
 process-global defaults.
 
-### Registry
-
-`Registry` maps identity IDs to live runtimes for new lookup. Registry removal
-prevents new lookup only. It is not the authority for in-flight runtime
-lifecycle.
-
 ### Lifecycle Lease
 
 `LifecycleLease` is the runtime operation lease acquired by final signing or
@@ -159,18 +153,6 @@ A decommissioned identity rejects:
 
 HTTP requests targeting unavailable or decommissioned authenticated identities
 map to forbidden behavior according to the HTTP API contract.
-
-## Registry Separation
-
-`Registry.Remove(identityID)` and runtime decommission are separate contracts:
-
-1. Registry removal prevents new registry lookup.
-2. In-flight requests may already hold a `Runtime` pointer after registry
-   removal.
-3. Final signing must ask the runtime lifecycle lease, not the registry, whether
-   execution may proceed.
-4. Registry absence is not a final signing stop signal for an already-held
-   runtime.
 
 ## Watcher and Reload Rules
 
@@ -262,15 +244,6 @@ signing fails cleanly.
 ```text
 runtime.decommissioned = true before BeginOperation =>
   BeginOperation = ErrDecommissioned
-```
-
-### L7: Registry Is Not Lifecycle Authority
-
-Registry removal cannot decide final signing for an already-held runtime.
-
-```text
-HeldRuntime(request) =>
-  FinalSigningDecision = BeginOperation(HeldRuntime)
 ```
 
 ### L8: Pending Approvals Fail On Successful Decommission

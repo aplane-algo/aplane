@@ -196,7 +196,7 @@ Already shipped (continued):
 
 - **Lifecycle lease.** [formal/lifecycle.tla](formal/lifecycle.tla)
   models `BeginOperation` / `Decommission` as real transitions and
-  verifies L4-L7 plus the writer-priority RWMutex ordering. See
+  verifies L4-L6 plus the writer-priority RWMutex ordering. See
   [FORMAL_TLA_LIFECYCLE_MODEL.md](FORMAL_TLA_LIFECYCLE_MODEL.md).
 
 Next likely modules, in order of value:

@@ -103,7 +103,7 @@ func startPendingTestRotation(
 func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -153,7 +153,7 @@ func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T)
 func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -216,7 +216,7 @@ func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 func TestUnlockEntersRecoveryWhenPendingRotationCannotComplete(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -256,7 +256,7 @@ func TestUnlockEntersRecoveryWhenPendingRotationCannotComplete(t *testing.T) {
 func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -297,7 +297,7 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -334,7 +334,7 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}

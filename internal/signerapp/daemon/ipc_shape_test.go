@@ -126,7 +126,7 @@ func TestSendStatusEmitsCurrentStateAndKeyCount(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.CurrentProductIdentityID())
+	ir := server.productIdentityRuntime()
 	ir.PublishSnapshot(
 		map[string]string{"ADDR": "identities/default/keys/ADDR.key"},
 		map[string]string{"ADDR": "ed25519"},
@@ -211,7 +211,7 @@ func TestHandleUpdateAdminSettingPersistsIdentityScopedConfigSeparately(t *testi
 	}
 
 	recorder := &ipcJSONRecorderConn{}
-	ir := server.registry.Get(auth.CurrentProductIdentityID())
+	ir := server.productIdentityRuntime()
 	ipcServer := &IPCServer{signer: server}
 	session := newBoundTestSession(ipcServer, recorder, ir)
 	session.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{

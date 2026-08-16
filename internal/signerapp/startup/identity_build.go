@@ -52,18 +52,18 @@ type IdentityBuildHooks struct {
 	Warn               func(string)
 }
 
-// BuildRegistry validates the product layout and constructs only the fixed
-// product identity runtime. The registry remains temporarily as a startup
-// adapter until the single runtime is owned directly by the daemon.
-func BuildRegistry(reg *identity.Registry, opts IdentityBuildOptions, hooks IdentityBuildHooks) (*identity.Runtime, error) {
+// BuildProductRuntime validates the product layout and constructs the one
+// process-owned identity runtime.
+func BuildProductRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks) (*identity.Runtime, error) {
 	if err := identity.ValidateProductIdentityLayout(opts.DataDir, opts.ProductIdentityID); err != nil {
 		return nil, err
 	}
-	return BuildIdentityRuntime(reg, opts, hooks, opts.ProductIdentityID)
+	return BuildIdentityRuntime(opts, hooks, opts.ProductIdentityID)
 }
 
-// BuildIdentityRuntime constructs and registers one identity runtime.
-func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hooks IdentityBuildHooks, identityID string) (*identity.Runtime, error) {
+// BuildIdentityRuntime constructs one identity runtime. Product startup should
+// use BuildProductRuntime so layout validation cannot be skipped.
+func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, identityID string) (*identity.Runtime, error) {
 	nodeDoc, _, err := noderole.Load(opts.KeyPaths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load node role for identity %q: %w", identityID, err)
@@ -139,10 +139,6 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 			}
 		},
 	})
-
-	if err := reg.Register(ir); err != nil {
-		return nil, err
-	}
 
 	WireReloadFunc(ir, opts, hooks)
 	WireApprovalCoordinator(ir, hooks)

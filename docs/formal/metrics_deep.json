@@ -14,8 +14,8 @@
   {
     "spec": "lifecycle",
     "cfg": "lifecycle_deep",
-    "distinct_states": 76,
-    "depth": 12
+    "distinct_states": 38,
+    "depth": 11
   },
   {
     "spec": "approval_coordinator",
@@ -32,8 +32,8 @@
   {
     "spec": "lifecycle_composition",
     "cfg": "lifecycle_composition_deep",
-    "distinct_states": 672,
-    "depth": 15
+    "distinct_states": 336,
+    "depth": 14
   },
   {
     "spec": "session_ownership",
@@ -56,13 +56,13 @@
   {
     "spec": "lifecycle",
     "cfg": "lifecycle_liveness_deep",
-    "distinct_states": 614,
-    "depth": 18
+    "distinct_states": 307,
+    "depth": 17
   },
   {
     "spec": "lifecycle_composition",
     "cfg": "lifecycle_composition_liveness_deep",
-    "distinct_states": 2736,
-    "depth": 15
+    "distinct_states": 1368,
+    "depth": 14
   }
 ]

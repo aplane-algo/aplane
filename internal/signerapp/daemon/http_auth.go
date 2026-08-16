@@ -40,7 +40,7 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 			if fs.auditLog != nil {
 				fs.auditLog.LogAuthFailed("", r.RemoteAddr, authFailureReason(err))
 			}
-			if errors.Is(err, identity.ErrRegistryClosed) {
+			if errors.Is(err, identity.ErrNodeFailClosed) {
 				writeErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 				return
 			}

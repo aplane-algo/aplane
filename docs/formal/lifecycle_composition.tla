@@ -7,7 +7,7 @@ produces signing output only while holding a lifecycle lease it acquired
 before decommission -- "lifecycle unavailability implies no new signer
 output."
 
-lifecycle.tla proved the lock-ordering race (L4-L7) but stopped at the
+lifecycle.tla proved the lock-ordering race (L4-L6) but stopped at the
 lease; it did not model what the signer does with it. composition.tla and
 approval_composition.tla proved the policy/approval -> output pipeline but
 treated the runtime as always available. This module composes the two: it
@@ -31,7 +31,7 @@ New seam invariants:
     the decommission mark) produces no output. With L6 this is the end-to-end
     "lifecycle unavailability implies no new signer output."
 
-It also re-checks the carried lifecycle invariants L4-L7 under the extended
+It also re-checks the carried lifecycle invariants L4-L6 under the extended
 model. As with the other composed modules, copy drift for operators copied from
 lifecycle.tla is checked by scripts/check-formal-copied-operators.py (`make
 formal-copy-sync-check`, also run by `make formal-test`).
@@ -65,14 +65,13 @@ VARIABLES
     readers,                       \* SUBSET of signer IDs holding the read side
     writer,                        \* admin or NONE
     decommissioned,                \* BOOLEAN
-    registry_member,               \* BOOLEAN
     procState,                     \* SignerProcs \cup {admin} -> states
     heldEver,                      \* SignerProcs -> BOOLEAN: held a lease
     badAcquireAfterDecommission,   \* BOOLEAN: L6 regression guard
     policySigned,                  \* SignerProcs -> BOOLEAN: policy decision (input)
     signerOutput                   \* SignerProcs -> SignOut
 
-vars == <<readers, writer, decommissioned, registry_member, procState,
+vars == <<readers, writer, decommissioned, procState,
           heldEver, badAcquireAfterDecommission, policySigned, signerOutput>>
 
 WriterPending == procState[admin] \in {"Waiting", "WriteHeld", "Marked"}
@@ -87,7 +86,6 @@ Init ==
     /\ readers = {}
     /\ writer = NONE
     /\ decommissioned = FALSE
-    /\ registry_member = TRUE
     /\ procState = [p \in SignerProcs \cup {admin} |-> "Idle"]
     /\ heldEver = [s \in SignerProcs |-> FALSE]
     /\ badAcquireAfterDecommission = FALSE
@@ -108,8 +106,7 @@ SignerAcquire(s) ==
     /\ ~WriterPending
     /\ \/ /\ decommissioned
           /\ procState' = [procState EXCEPT ![s] = "Rejected"]
-          /\ UNCHANGED <<readers, writer, decommissioned, registry_member,
-                         heldEver, badAcquireAfterDecommission, policySigned,
+          /\ UNCHANGED <<readers, writer, decommissioned,                         heldEver, badAcquireAfterDecommission, policySigned,
                          signerOutput>>
        \/ /\ ~decommissioned
           /\ readers' = readers \cup {s}
@@ -117,8 +114,7 @@ SignerAcquire(s) ==
           /\ heldEver' = [heldEver EXCEPT ![s] = TRUE]
           /\ badAcquireAfterDecommission' =
                  badAcquireAfterDecommission \/ decommissioned
-          /\ UNCHANGED <<writer, decommissioned, registry_member,
-                         policySigned, signerOutput>>
+          /\ UNCHANGED <<writer, decommissioned,                         policySigned, signerOutput>>
 
 \* SignerSign models final signing while the lease is held. Output is produced
 \* from the policy decision: a signing decision yields "signed", a rejecting
@@ -129,8 +125,7 @@ SignerSign(s) ==
     /\ procState' = [procState EXCEPT ![s] = "Signed"]
     /\ signerOutput' = [signerOutput EXCEPT ![s] =
                             IF policySigned[s] THEN "signed" ELSE "empty"]
-    /\ UNCHANGED <<readers, writer, decommissioned, registry_member,
-                   heldEver, badAcquireAfterDecommission, policySigned>>
+    /\ UNCHANGED <<readers, writer, decommissioned,                   heldEver, badAcquireAfterDecommission, policySigned>>
 
 \* SignerRelease releases the read lease after signing completes.
 SignerRelease(s) ==
@@ -138,7 +133,7 @@ SignerRelease(s) ==
     /\ procState[s] = "Signed"
     /\ readers' = readers \ {s}
     /\ procState' = [procState EXCEPT ![s] = "Done"]
-    /\ UNCHANGED <<writer, decommissioned, registry_member, heldEver,
+    /\ UNCHANGED <<writer, decommissioned,heldEver,
                    badAcquireAfterDecommission, policySigned, signerOutput>>
 
 ----------------------------------------------------------------------------
@@ -147,7 +142,7 @@ SignerRelease(s) ==
 AdminBeginDecommission ==
     /\ procState[admin] = "Idle"
     /\ procState' = [procState EXCEPT ![admin] = "Waiting"]
-    /\ UNCHANGED <<readers, writer, decommissioned, registry_member, heldEver,
+    /\ UNCHANGED <<readers, writer, decommissioned,heldEver,
                    badAcquireAfterDecommission, policySigned, signerOutput>>
 
 AdminAcquireWrite ==
@@ -156,27 +151,21 @@ AdminAcquireWrite ==
     /\ writer = NONE
     /\ writer' = admin
     /\ procState' = [procState EXCEPT ![admin] = "WriteHeld"]
-    /\ UNCHANGED <<readers, decommissioned, registry_member, heldEver,
+    /\ UNCHANGED <<readers, decommissioned,heldEver,
                    badAcquireAfterDecommission, policySigned, signerOutput>>
 
 AdminMarkDecommissioned ==
     /\ procState[admin] = "WriteHeld"
     /\ decommissioned' = TRUE
     /\ procState' = [procState EXCEPT ![admin] = "Marked"]
-    /\ UNCHANGED <<readers, writer, registry_member, heldEver,
+    /\ UNCHANGED <<readers, writer,heldEver,
                    badAcquireAfterDecommission, policySigned, signerOutput>>
 
 AdminReleaseWrite ==
     /\ procState[admin] = "Marked"
     /\ writer' = NONE
     /\ procState' = [procState EXCEPT ![admin] = "Finished"]
-    /\ UNCHANGED <<readers, decommissioned, registry_member, heldEver,
-                   badAcquireAfterDecommission, policySigned, signerOutput>>
-
-AdminRegistryRemove ==
-    /\ registry_member
-    /\ registry_member' = FALSE
-    /\ UNCHANGED <<readers, writer, decommissioned, procState, heldEver,
+    /\ UNCHANGED <<readers, decommissioned,heldEver,
                    badAcquireAfterDecommission, policySigned, signerOutput>>
 
 ----------------------------------------------------------------------------
@@ -190,7 +179,6 @@ Next ==
     \/ AdminAcquireWrite
     \/ AdminMarkDecommissioned
     \/ AdminReleaseWrite
-    \/ AdminRegistryRemove
 
 Spec == Init /\ [][Next]_vars
 
@@ -203,7 +191,6 @@ TypeOK ==
     /\ readers \subseteq SignerProcs
     /\ writer \in {NONE, admin}
     /\ decommissioned \in BOOLEAN
-    /\ registry_member \in BOOLEAN
     /\ \A s \in SignerProcs : procState[s] \in SignerState
     /\ procState[admin] \in AdminState
     /\ heldEver \in [SignerProcs -> BOOLEAN]
@@ -232,12 +219,6 @@ L5_DecommissionWaitsForHeldLease ==
 L6_NoAcquireAfterDecommission ==
     ~badAcquireAfterDecommission
 
-\* L7: a holding signer can always make progress (sign, then release),
-\* regardless of registry membership or a decommission in progress.
-L7_RegistryRemoveDoesNotPreventCompletion ==
-    \A s \in SignerProcs :
-        procState[s] = "Holding" => ENABLED SignerSign(s)
-
 \* Seam: signing output exists only for a signer that held a lease and whose
 \* policy decision was to sign. Composes the lifecycle lease gate with the
 \* policy gate (the latter machine-checked in composition.tla).
@@ -257,7 +238,6 @@ Safety ==
     /\ L4_LeaseGatesSigning
     /\ L5_DecommissionWaitsForHeldLease
     /\ L6_NoAcquireAfterDecommission
-    /\ L7_RegistryRemoveDoesNotPreventCompletion
     /\ LifecycleGatesOutput
     /\ RejectedProducesNoOutput
 

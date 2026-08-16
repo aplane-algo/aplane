@@ -23,7 +23,7 @@ func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -54,7 +54,7 @@ func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 func TestChangeStorePassphraseCompletesRotationAndRepublishesRuntime(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -95,7 +95,7 @@ func TestChangeStorePassphraseCompletesRotationAndRepublishesRuntime(t *testing.
 func TestChangeStorePassphraseFailureLeavesRuntimeLocked(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -127,7 +127,7 @@ func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -178,7 +178,7 @@ func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -224,7 +224,7 @@ func TestUpdateAdminSetting_RejectsPassphraseTimeoutInHeadlessMode(t *testing.T)
 		t.Fatal(err)
 	}
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -270,7 +270,7 @@ func TestUpdateAdminSettingModeIsReadOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -296,7 +296,7 @@ func TestConcurrentProcessConfigUpdatesAreSerialized(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -347,7 +347,7 @@ func TestConcurrentProcessConfigUpdatesAreSerialized(t *testing.T) {
 	}
 }
 
-func TestConcurrentIdentityConfigUpdatesAreIdentityScoped(t *testing.T) {
+func TestConcurrentProductConfigUpdatesAreSerialized(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -356,22 +356,21 @@ func TestConcurrentIdentityConfigUpdatesAreIdentityScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	defaultIR := server.registry.Get(auth.DefaultIdentityID)
-	if defaultIR == nil {
-		t.Fatal("expected default identity runtime")
+	productRuntime := server.productIdentityRuntime()
+	if productRuntime == nil {
+		t.Fatal("expected product runtime")
 	}
-	aliceIR := registerAdditionalAdminTestIdentity(t, server, "alice")
 	svc := signerAdminServices{signer: server}
 
 	start := make(chan struct{})
 	errs := make(chan error, 2)
 	var wg sync.WaitGroup
 	for _, tc := range []struct {
-		ir        *identity.Runtime
-		finalWant bool
+		key   string
+		value string
 	}{
-		{ir: defaultIR, finalWant: true},
-		{ir: aliceIR, finalWant: false},
+		{key: adminproto.AdminSettingUserAutoApprove, value: "true"},
+		{key: adminproto.AdminSettingLockOnDisconnect, value: "false"},
 	} {
 		tc := tc
 		wg.Add(1)
@@ -379,13 +378,9 @@ func TestConcurrentIdentityConfigUpdatesAreIdentityScoped(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for i := 0; i < 20; i++ {
-				value := !tc.finalWant
-				if i == 19 {
-					value = tc.finalWant
-				}
-				if err := svc.UpdateAdminSetting(tc.ir, adminproto.UpdateAdminSettingRequest{
-					Key:   adminproto.AdminSettingUserAutoApprove,
-					Value: boolString(value),
+				if err := svc.UpdateAdminSetting(productRuntime, adminproto.UpdateAdminSettingRequest{
+					Key:   tc.key,
+					Value: tc.value,
 				}); err != nil {
 					errs <- err
 					return
@@ -403,40 +398,26 @@ func TestConcurrentIdentityConfigUpdatesAreIdentityScoped(t *testing.T) {
 		}
 	}
 
-	defaultStored, err := identity.LoadStoredConfig(server.dataDir, defaultIR.ID())
+	stored, err := identity.LoadStoredConfig(server.dataDir, productRuntime.ID())
 	if err != nil {
-		t.Fatalf("LoadStoredConfig(default) error = %v", err)
+		t.Fatalf("LoadStoredConfig(product) error = %v", err)
 	}
-	aliceStored, err := identity.LoadStoredConfig(server.dataDir, aliceIR.ID())
-	if err != nil {
-		t.Fatalf("LoadStoredConfig(alice) error = %v", err)
+	if stored.UserAutoApprove == nil || !*stored.UserAutoApprove {
+		t.Fatalf("product UserAutoApprove = %+v, want true", stored.UserAutoApprove)
 	}
-	if defaultStored.UserAutoApprove == nil || *defaultStored.UserAutoApprove != true {
-		t.Fatalf("default UserAutoApprove = %+v, want true", defaultStored.UserAutoApprove)
+	if stored.LockOnDisconnect == nil || *stored.LockOnDisconnect {
+		t.Fatalf("product LockOnDisconnect = %+v, want false", stored.LockOnDisconnect)
 	}
-	if aliceStored.UserAutoApprove == nil || *aliceStored.UserAutoApprove != false {
-		t.Fatalf("alice UserAutoApprove = %+v, want false", aliceStored.UserAutoApprove)
+	if !productRuntime.Config().UserAutoApprove() || productRuntime.Config().LockOnDisconnect() {
+		t.Fatal("runtime did not retain both concurrent product settings")
 	}
-	if !defaultIR.Config().UserAutoApprove() {
-		t.Fatal("default runtime UserAutoApprove = false, want true")
-	}
-	if aliceIR.Config().UserAutoApprove() {
-		t.Fatal("alice runtime UserAutoApprove = true, want false")
-	}
-}
-
-func boolString(v bool) string {
-	if v {
-		return "true"
-	}
-	return "false"
 }
 
 func TestReplacePolicy_PersistsUploadedBytesAndApplies(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -484,7 +465,7 @@ func TestReplacePolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -520,7 +501,7 @@ func TestReplacePolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -557,7 +538,7 @@ func TestReplacePolicyFailsWhenLocked(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}

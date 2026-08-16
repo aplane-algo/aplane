@@ -28,7 +28,7 @@ func TestPlanAndSignProduceMatchingCanonicalTransactionForEd25519(t *testing.T) 
 	defer cleanup()
 
 	server.config.UserAutoApprove = true
-	server.registry.Get(auth.DefaultIdentityID).Config().SetUserAutoApprove(true)
+	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
 
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	genW := httptest.NewRecorder()
@@ -43,7 +43,7 @@ func TestPlanAndSignProduceMatchingCanonicalTransactionForEd25519(t *testing.T) 
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	sp := types.SuggestedParams{
@@ -127,7 +127,7 @@ func TestPlanAndSignPreserveCanonicalTransactionsForMixedSignAndPassthroughGroup
 	defer cleanup()
 
 	server.config.UserAutoApprove = true
-	server.registry.Get(auth.DefaultIdentityID).Config().SetUserAutoApprove(true)
+	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
 
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	genW := httptest.NewRecorder()
@@ -142,7 +142,7 @@ func TestPlanAndSignPreserveCanonicalTransactionsForMixedSignAndPassthroughGroup
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	sp := types.SuggestedParams{
@@ -272,7 +272,7 @@ func TestPlanAllowsMixedSignAndForeignGroupAndPreservesCanonicalTransactions(t *
 	defer cleanup()
 
 	server.config.UserAutoApprove = true
-	server.registry.Get(auth.DefaultIdentityID).Config().SetUserAutoApprove(true)
+	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
 
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	genW := httptest.NewRecorder()
@@ -287,7 +287,7 @@ func TestPlanAllowsMixedSignAndForeignGroupAndPreservesCanonicalTransactions(t *
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	sp := types.SuggestedParams{
@@ -421,7 +421,7 @@ func TestPlanAndSignAgreeOnDummyAndFeeMutationsForSingleFalconGroup(t *testing.T
 	defer algodCleanup()
 
 	server.config.UserAutoApprove = true
-	server.registry.Get(auth.DefaultIdentityID).Config().SetUserAutoApprove(true)
+	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
 
 	receiver := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 	falconBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "aplane.falcon1024.v1"})
@@ -436,7 +436,7 @@ func TestPlanAndSignAgreeOnDummyAndFeeMutationsForSingleFalconGroup(t *testing.T
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	sp := types.SuggestedParams{
@@ -568,7 +568,7 @@ func TestSignReplansAgainstCurrentSnapshotAfterKeyRemoval(t *testing.T) {
 	defer cleanup()
 
 	server.config.UserAutoApprove = true
-	server.registry.Get(auth.DefaultIdentityID).Config().SetUserAutoApprove(true)
+	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
 
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	genW := httptest.NewRecorder()
@@ -582,7 +582,7 @@ func TestSignReplansAgainstCurrentSnapshotAfterKeyRemoval(t *testing.T) {
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	sp := types.SuggestedParams{

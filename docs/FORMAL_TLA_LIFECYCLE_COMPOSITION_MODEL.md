@@ -1,10 +1,10 @@
 # Lifecycle-Aware Composition Machine-Checkable Model
 
 > Status: TLC checked with `SignerProcs = {s1, s2}`, `admin = a`, `NONE = none`,
-> and symmetry over the signers; the recorded run generated 226 distinct states,
-> reached depth 12, and found no counterexamples for `Safety`. The liveness run
+> and symmetry over the signers; the recorded run generated 113 distinct states,
+> reached depth 11, and found no counterexamples for `Safety`. The liveness run
 > (`lifecycle_composition_liveness.cfg`, no symmetry — TLC liveness checking is
-> unsound under symmetry reduction) generated 392 distinct states at depth 12
+> unsound under symmetry reduction) generated 196 distinct states at depth 11
 > and verified the `Progress` temporal property under `LiveSpec` (weak fairness
 > per signer on `SignerSign` and `SignerRelease` and on the admin decommission
 > steps): every held lease eventually completes — no accepted request is left
@@ -29,12 +29,11 @@ The spec lives at [formal/lifecycle_composition.tla](formal/lifecycle_compositio
 | L4: Final signing uses runtime lease | FORMAL_LIFECYCLE_MODEL.md | `L4_LeaseGatesSigning` |
 | L5: Decommission waits for held lease | FORMAL_LIFECYCLE_MODEL.md | `L5_DecommissionWaitsForHeldLease` |
 | L6: Decommission wins race before lease | FORMAL_LIFECYCLE_MODEL.md | `L6_NoAcquireAfterDecommission` |
-| L7: Registry removal doesn't prevent completion | FORMAL_LIFECYCLE_MODEL.md | `L7_RegistryRemoveDoesNotPreventCompletion` |
 | Output requires a held lease + signing policy | (seam) | `LifecycleGatesOutput` |
 | A rejected (post-decommission) signer produces no output | (seam) | `RejectedProducesNoOutput` |
 
 The headline is the **end-to-end lifecycle gate**: `lifecycle.tla` proved the
-lock-ordering race (L4–L7) but stopped at the lease; this module adds a per-signer
+lock-ordering race (L4–L6) but stopped at the lease; this module adds a per-signer
 `Sign` step, gated on holding the lease, and checks that signing output exists only
 for a signer that (a) held a lease it acquired while not decommissioned, and (b)
 had a signing policy decision. Combined with L6 (no acquire after decommission), a
@@ -88,13 +87,13 @@ java -jar tla2tools.jar -config docs/formal/lifecycle_composition.cfg \
     docs/formal/lifecycle_composition.tla
 ```
 
-Expected: `Model checking completed. No error has been found.`, 226 distinct
-states, depth 12.
+Expected: `Model checking completed. No error has been found.`, 113 distinct
+states, depth 11.
 
 ## What this proves vs. doesn't
 
 It proves, over every interleaving of two signers and an admin, that the lifecycle
-invariants L4–L7 still hold when signing is modeled, and that signing output is
+invariants L4–L6 still hold when signing is modeled, and that signing output is
 gated on both a validly-acquired lease and a signing policy decision — so a
 decommissioned runtime admits no new signer output. It does not re-prove the
 policy/approval derivation (that is `composition.tla` / `approval_composition.tla`,

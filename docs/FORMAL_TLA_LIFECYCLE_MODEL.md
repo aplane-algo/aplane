@@ -2,11 +2,11 @@
 
 > Status: TLC checked with `SignerProcs = {s1, s2}`, `admin = a`,
 > `NONE = none`, and symmetry over the signer set; the recorded run
-> generated 48 distinct reachable states, reached depth 10, and found
+> generated 24 distinct reachable states, reached depth 9, and found
 > no counterexamples for `Safety`. The liveness run
 > (`lifecycle_liveness.cfg`, no symmetry — TLC liveness checking is
-> unsound under symmetry reduction) generated 150 distinct states at
-> depth 14 and verified the `Progress` temporal property under
+> unsound under symmetry reduction) generated 75 distinct states at
+> depth 13 and verified the `Progress` temporal property under
 > `LiveSpec`.
 >
 > **Liveness world (`LiveSpec`).** The safety model's signers are
@@ -41,13 +41,10 @@ The spec lives at [formal/lifecycle.tla](formal/lifecycle.tla).
 | L4: Final Signing Uses Runtime Lease | FORMAL_LIFECYCLE_MODEL.md | `L4_LeaseGatesSigning` |
 | L5: Decommission Waits For Held Lease | FORMAL_LIFECYCLE_MODEL.md | `L5_DecommissionWaitsForHeldLease` |
 | L6: Decommission Wins Race Before Lease | FORMAL_LIFECYCLE_MODEL.md | `L6_NoAcquireAfterDecommission` |
-| L7: Registry Removal Doesn't Prevent Completion | FORMAL_LIFECYCLE_MODEL.md | `L7_RegistryRemoveDoesNotPreventCompletion` |
 | RWMutex exclusion + state consistency | (TypeOK) | `TypeOK` |
 
 L4 and L6 are checked via history variables (`heldEver` and
-`badAcquireAfterDecommission`). L5 is a direct state predicate. L7
-uses `ENABLED`-style reasoning over the
-`SignerCompleteAndRelease` action.
+`badAcquireAfterDecommission`). L5 is a direct state predicate.
 
 The L5 invariant has been validated by mutation testing: removing the
 `readers = {}` guard from `AdminAcquireWrite` produces a 4-step TLC
@@ -96,7 +93,7 @@ Unlike the first three TLA+ modules (sign_boundary, policy_precedence,
 composition) which are one-shot Init-only specs, this module has a
 real `Next` relation. Two signer processes and one admin process race
 over a writer-priority RWMutex. The state space is small thanks to
-symmetry reduction (48 reachable states), but the temporal-transition
+symmetry reduction (24 reachable states), but the temporal-transition
 structure is the key novelty.
 
 ### Process abstraction
@@ -107,13 +104,8 @@ Two signer processes (`s1`, `s2`) and one admin process (`a`).
   another tries to acquire" interleaving.
 - One admin is enough because the admin's sequence is the same
   regardless of how many admins exist serially.
-- Signer processes are assumed to already hold a Runtime pointer
-  before calling `BeginOperation`. This matches the production code:
-  an in-flight HTTP request has already resolved its identity through
-  the registry. The `registry_member` flag and `AdminRegistryRemove`
-  action exist to verify L7's claim that already-resolved runtime
-  pointers remain useful even after registry removal. The model
-  deliberately does not represent the registry-lookup step itself.
+- Signer processes operate on the one process-owned Runtime pointer before
+  calling `BeginOperation`, matching direct runtime ownership in production.
 
 ### Writer-priority RWMutex
 
@@ -166,13 +158,13 @@ symmetry cleanly.
 The cfg declares `SYMMETRY SignerSymmetry`, with `SignerSymmetry`
 defined in the spec as `Permutations(SignerProcs)`. TLC treats any
 swap of `s1 <-> s2` as the same state, halving the reachable state
-count. The 48-state result reflects this reduction.
+count. The 24-state result reflects this reduction.
 
 ### Deadlock checking disabled
 
 The lifecycle workflow naturally terminates: admin reaches
-`"Finished"`, both signers reach `"Done"` or `"Rejected"`,
-`registry_member` is `FALSE`. With no actions enabled in the terminal
+`"Finished"` and both signers reach `"Done"` or `"Rejected"`.
+With no actions enabled in the terminal
 state, TLC's default deadlock check would flag this as an error. The
 cfg sets `CHECK_DEADLOCK FALSE` because this is a workflow-completion
 model, not a continuously-running system. Safety is what we care
@@ -194,10 +186,8 @@ The spec is standard TLA+. To check it manually:
    java -cp tla2tools.jar tlc2.TLC -config docs/formal/lifecycle.cfg docs/formal/lifecycle.tla
    ```
 
-The recorded TLC run generated 48 distinct reachable states, reached
-depth 10, and found no counterexamples for `Safety`. The depth
-matches the longest interleaving sequence (admin's 5-step lifecycle
-+ a few signer interleavings + the registry-remove step).
+The recorded TLC run generated 24 distinct reachable states, reached
+depth 9, and found no counterexamples for `Safety`.
 
 ## What this proves vs. doesn't
 
@@ -210,16 +200,13 @@ matches the longest interleaving sequence (admin's 5-step lifecycle
 - L6: No signer transitions `Idle -> Holding` while `decommissioned`
   is `TRUE`. Currently structural (guarded by the action) but pinned
   by the regression-guard flag.
-- L7: A signer holding the read side can always complete its work,
-  regardless of `registry_member` state. TLC verifies this stays true
-  after `AdminRegistryRemove` has fired in arbitrary interleavings.
 - RWMutex exclusion: a writer and any reader cannot hold the lock
   simultaneously.
 
 **Does not prove:**
 
 - The Go implementation matches this spec. That is the test suite's
-  job; the L4–L7 row anchors in
+  job; the L4–L6 row anchors in
   [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) name the relevant
   tests.
 - Liveness: `Decommission` *eventually* completes when admins are
@@ -235,9 +222,9 @@ matches the longest interleaving sequence (admin's 5-step lifecycle
 
 - [FORMAL_LIFECYCLE_MODEL.md](FORMAL_LIFECYCLE_MODEL.md) is the
   English source for L1–L11. This module is a precision layer over
-  L4–L7 specifically.
+  L4–L6 specifically.
 - [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) Machine-Checkable
-  Coverage section records the L4–L7 anchors.
+  Coverage section records the L4–L6 anchors.
 - [FORMAL_TLA_SIGN_BOUNDARY_MODEL.md](FORMAL_TLA_SIGN_BOUNDARY_MODEL.md),
   [FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md](FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md),
   and [FORMAL_TLA_COMPOSITION_MODEL.md](FORMAL_TLA_COMPOSITION_MODEL.md)

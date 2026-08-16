@@ -66,6 +66,9 @@ func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
 }
 
 func (s signerAdminServices) ProductIdentityRuntime() *identity.Runtime {
+	if s.signer.nodeFailure() != nil {
+		return nil
+	}
 	return s.signer.productIdentityRuntime()
 }
 

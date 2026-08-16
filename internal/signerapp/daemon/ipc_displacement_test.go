@@ -109,7 +109,7 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 	signer, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := signer.registry.Get(auth.DefaultIdentityID)
+	ir := signer.productIdentityRuntime()
 	ir.Config().SetLockOnDisconnect(true)
 
 	ipcServer := &IPCServer{
@@ -183,7 +183,7 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 	signer, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := signer.registry.Get(auth.DefaultIdentityID)
+	ir := signer.productIdentityRuntime()
 	ipcServer := &IPCServer{
 		signer:  signer,
 		manager: adminserver.NewSessionManager(),

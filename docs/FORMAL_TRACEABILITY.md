@@ -76,14 +76,13 @@ Source: [FORMAL_LIFECYCLE_MODEL.md](FORMAL_LIFECYCLE_MODEL.md)
 |---|---|---|---|---|---|
 | L1 | implemented | Decommission Transition; L1 | `internal/signerapp/identity/runtime.go::Decommission` writes config only | `internal/signerapp/identity/identity_test.go::TestDecommission` | |
 | L2 | implemented | L2 | `Decommission` in `internal/signerapp/identity/runtime.go` persists before marking | `internal/signerapp/identity/identity_test.go::TestDecommission`; `::TestDecommissionPersistErrorLeavesRuntimeActive` injects a failing `PersistDecommission` and asserts the runtime remains active and pending approvals are untouched. | |
-| L3 | implemented | Runtime Rejection Rules | `internal/signerapp/identity/runtime.go` decommission checks across unlock/reload/route/etc | `internal/signerapp/identity/identity_test.go::TestRegistryAuthenticatorSkipsDecommissionedIdentity`; `internal/signerapp/daemon/http_auth_test.go` (decommissioned-identity paths) | |
+| L3 | implemented | Runtime Rejection Rules | `internal/signerapp/identity/runtime.go` decommission checks across unlock/reload/approval/key access | `internal/signerapp/identity/identity_test.go::TestDecommission` | Runtime routing is fixed to the product identity; startup rejection is tracked separately by L10. |
 | L4 | implemented | Lifecycle Lease; L4 | `internal/signerapp/identity/runtime.go::BeginOperation` | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanStopsBeforeExecute`; `::TestSignGroupWithPlanReleasesBeforeExecuteLeaseAfterExecution` | Machine-checked via `lifecycle.tla::L4_LeaseGatesSigning`. |
 | L5 | implemented | L5 | RWMutex write side; documented in `runtime.go` lock-ordering comment | `internal/signerapp/identity/identity_test.go::TestDecommissionWaitsForActiveOperation`; `::TestDecommissionWaitingBlocksNewOperation` | Machine-checked via `lifecycle.tla::L5_DecommissionWaitsForHeldLease` (validated by mutation test). The second test pins the writer-pending behavior the TLA model assumes from Go's `sync.RWMutex`. |
 | L6 | implemented | L6 | `BeginOperation` returns ErrDecommissioned when lifecycle flag set | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanUserAutoApproveDecommissionBeforeExecute` | Machine-checked via `lifecycle.tla::L6_NoAcquireAfterDecommission`. |
-| L7 | implemented | Registry Separation; L7 | Registry vs runtime lifecycle separation in `identity/runtime.go` | `internal/signerapp/identity/identity_test.go::TestRegistryRemoveDoesNotDecommissionHeldRuntime` | Machine-checked via `lifecycle.tla::L7_RegistryRemoveDoesNotPreventCompletion`. |
 | L8 | implemented | L8 | `Decommission` step 6: fail pending approvals; approval coordinator decommission predicate rechecks before and after the delivery queue | `internal/signerapp/identity/identity_test.go::TestDecommissionFailsPendingApprovals`; `internal/signerapp/approval/coordinator_test.go::TestCoordinatorQueuedSigningApprovalFailsAfterDecommission` | Mechanism and its own invariants are modeled in the Approval Coordinator Model (AP6) and machine-checked in `approval_coordinator.tla` (`L8_NoApproveAfterDecommission`). The lifecycle lease gate remains a downstream defense in depth. |
 | L9 | implemented | L9 | `Decommission` calls `StopKeyWatcher` (step 8), which clears `watcherCancel` at `internal/signerapp/identity/runtime.go:1049-1057` | `internal/signerapp/identity/identity_test.go::TestDecommissionStopsKeyWatcher` observes the watcher context cancellation and asserts it cannot restart after decommission. | |
-| L10 | implemented | Startup Rules; L10 | `internal/signerapp/startup` consults stored config | `internal/signerapp/daemon/identity_startup_test.go::TestStartupIdentityIDsSkipsDecommissionedIdentities` | |
+| L10 | implemented | Startup Rules; L10 | `internal/signerapp/startup/identity_build.go::BuildIdentityRuntime` consults stored config | `internal/signerapp/daemon/identity_startup_test.go::TestBuildProductRuntimeRejectsDecommissionedIdentity` | The sole product runtime fails startup rather than skipping to another identity. |
 | L11 | implemented | Watcher and Reload Rules; L11 | `Reload` step ordering in `internal/signerapp/identity/runtime.go` and `internal/signerapp/templates/reload.go` | `internal/signerapp/templates/reload_test.go::TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan` (direct sequence assertion); mutation-lock leg via `identity_test.go::TestWatcherReloadUsesMutationLock` | |
 
 ## Signing Authority Model
@@ -308,13 +307,13 @@ models the lock-ordering race between `BeginOperation` and
 this module has real transitions in `Next`: two signer processes and
 one admin process race over a writer-priority RWMutex. TLC checked
 under `SignerProcs = {s1, s2}`, `admin = a`, `NONE = none`, with
-symmetry over signers; the recorded run generated 48 distinct
-reachable states, reached depth 10, and found no counterexamples for
+symmetry over signers; the recorded run generated 24 distinct
+reachable states, reached depth 9, and found no counterexamples for
 `Safety`. A separate liveness run (`lifecycle_liveness.cfg`, no symmetry —
 unsound for TLC liveness) adds `SignerRestart` (recurring signing
 operations) and verifies `Progress` under `LiveSpec`: writer-priority
 starvation freedom (a queued decommission finishes; every held lease
-releases), 150 distinct states, depth 14. Mutation: removing
+releases), 75 distinct states, depth 13. Mutation: removing
 `~WriterPending` from `SignerAcquire` yields a starvation lasso.
 
 | Invariant | TLA+ predicate |
@@ -322,14 +321,12 @@ releases), 150 distinct states, depth 14. Mutation: removing
 | L4 (Final signing uses runtime lease) | `L4_LeaseGatesSigning` |
 | L5 (Decommission waits for held lease) | `L5_DecommissionWaitsForHeldLease` |
 | L6 (Decommission wins race before lease) | `L6_NoAcquireAfterDecommission` |
-| L7 (Registry removal doesn't prevent completion) | `L7_RegistryRemoveDoesNotPreventCompletion` |
 | RWMutex exclusion + state consistency | `TypeOK` |
 
 L4 and L6 are pinned by history variables (`heldEver`,
 `badAcquireAfterDecommission`). L5 is a direct state predicate
 validated by mutation test (removing the `readers = {}` guard from
-`AdminAcquireWrite` produces a counterexample). L7 uses `ENABLED`
-reasoning over `SignerCompleteAndRelease`.
+`AdminAcquireWrite` produces a counterexample).
 
 L1, L2, L3, L9-L11 are not modeled here. They are sequential
 properties already covered by Go tests; not concurrency claims. L8
@@ -400,19 +397,19 @@ produces a counterexample where a fail-all'd review-class request signs.
 joins the temporal lifecycle lock race with a lease-gated signing step, checking
 end to end that a signer produces output only while holding a lease acquired before
 decommission. Like `lifecycle.tla` it is a temporal-transition spec; TLC checked
-under `SignerProcs = {s1, s2}` with symmetry, generating 226 distinct states, depth
-12, no counterexamples. A separate liveness run
+under `SignerProcs = {s1, s2}` with symmetry, generating 113 distinct states, depth
+11, no counterexamples. A separate liveness run
 (`lifecycle_composition_liveness.cfg`, no symmetry) verifies `Progress` under
 `LiveSpec`: every held lease eventually completes (no request left forever
-neither signed nor rejected) and a queued decommission finishes — 392 distinct
-states, depth 12; mutation: dropping the `SignerSign` fairness conjunct yields
-a lasso. It re-checks lifecycle L4-L7 under the extended model and
+neither signed nor rejected) and a queued decommission finishes — 196 distinct
+states, depth 11; mutation: dropping the `SignerSign` fairness conjunct yields
+a lasso. It re-checks lifecycle L4-L6 under the extended model and
 adds two seam claims; the policy decision is consumed as the boolean `policySigned`
 (its derivation is in `composition.tla` / `approval_composition.tla`).
 
 | Claim | TLA+ predicate |
 |---|---|
-| L4-L7 (carried) | `L4_LeaseGatesSigning` .. `L7_RegistryRemoveDoesNotPreventCompletion` |
+| L4-L6 (carried) | `L4_LeaseGatesSigning`, `L5_DecommissionWaitsForHeldLease`, `L6_NoAcquireAfterDecommission` |
 | Output requires a held lease + signing policy | `LifecycleGatesOutput` |
 | Rejected (post-decommission) signer produces no output | `RejectedProducesNoOutput` |
 

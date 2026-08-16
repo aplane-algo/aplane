@@ -187,7 +187,6 @@ LIFECYCLE_LOCK_COPIES = [
     "AdminAcquireWrite",
     "AdminMarkDecommissioned",
     "AdminReleaseWrite",
-    "AdminRegistryRemove",
 ]
 
 

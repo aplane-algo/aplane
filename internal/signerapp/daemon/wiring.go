@@ -74,8 +74,8 @@ func (fs *Signer) identityBuildHooks() signerstartup.IdentityBuildHooks {
 		},
 		ReloadAuditLog: lazyReloadAuditLogger{fs: fs},
 		NodeFailClosed: func(err error) {
-			if fs.registry != nil {
-				fs.registry.CloseFailClosed(err)
+			if fs.nodeFailState != nil {
+				fs.nodeFailState.Fail(err)
 			}
 		},
 		ReloadMutationLock: func(identityID string) sync.Locker {

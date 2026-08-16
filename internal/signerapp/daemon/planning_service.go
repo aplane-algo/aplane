@@ -42,8 +42,8 @@ type signerPlannerDeps struct {
 }
 
 func (d signerPlannerDeps) Snapshot(identityID string) signersigning.PlannerIdentitySnapshot {
-	ir := d.signer.registry.Get(identityID)
-	if ir == nil {
+	ir := d.signer.runtime
+	if ir == nil || identityID != ir.ID() {
 		return signersigning.PlannerIdentitySnapshot{}
 	}
 	// KeyIndexSnapshot deep-clones per call, so the snapshot (including its

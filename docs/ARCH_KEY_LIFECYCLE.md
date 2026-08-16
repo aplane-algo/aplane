@@ -127,16 +127,16 @@ Rules:
 - service endpoints reject role/use mismatches even if a forbidden key file is
   present on disk.
 
-A node may host multiple identities, but all identities inherit the same root
-node role. Role-conflicting key inventory anywhere in the data directory is a
-node-level store contradiction: startup/reload fails closed for the node rather
-than silently quarantining only one identity. This is a deliberate
+A node hosts one product identity. Role-conflicting key inventory anywhere in
+the data directory is a node-level store contradiction: startup/reload fails
+closed for the node rather than allowing that identity runtime to continue.
+This is a deliberate
 safety/availability tradeoff. A hand-placed role-conflicting `.key` or `.sen` can make the
 node unavailable until the operator removes it, while supported restore/import
 paths should preflight role before writing so this fail-closed path remains a
-backstop. After a reload detects a role inventory conflict, the process marks
-the identity registry closed so HTTP and admin identity resolution refuse all
-identities until operator cleanup and restart.
+backstop. After a reload detects a role inventory conflict, the process records
+a sticky node failure so HTTP and admin operations refuse the product runtime
+until operator cleanup and restart.
 
 Local development that needs both roles uses two complete data roots and two
 apsigner processes, for example `~/aplane-signer/` and `~/aplane-sentry/`.

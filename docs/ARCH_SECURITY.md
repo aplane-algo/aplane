@@ -621,13 +621,14 @@ All sensitive handlers run through both authentication and authorization:
 
 ```go
 // cmd/apsigner/main.go composes the Signer; internal/signerapp/daemon/http_runtime.go
-// registers handlers.
-registryAuth := identity.NewRegistryAuthenticator(reg)
+// registers handlers. Product authentication is bound directly to the one runtime.
+productAuth := daemon.NewProductAuthenticator(nodeFailState, productRuntime)
 authorizer := authz.NewProductSingleAuthorizer()
 
 server := &Signer{
-    registryAuth: registryAuth,
-    authorizer:   authorizer,
+    authenticator: productAuth,
+    runtime:       productRuntime,
+    authorizer:    authorizer,
 }
 
 // Handler registration with action and resource (internal/signerapp/daemon/http_runtime.go)
@@ -647,10 +648,8 @@ mux.HandleFunc("/admin/sentries/sync", server.requireAuth(auth.ActionSentriesSyn
 mux.HandleFunc("/admin/keys", server.requireAuth(auth.ActionKeysDelete, auth.Resource{Type: "key"}, server.handleAdminDelete))
 ```
 
-HTTP token authentication scans all registered identity token authorities via
-`RegistryAuthenticator.Authenticate`, skipping decommissioned identities. A
-request must match exactly one identity token; duplicate token matches across
-identities fail closed instead of routing nondeterministically.
+HTTP token authentication validates against the token authority bound to the
+one product identity runtime. Node failure is checked first and fails closed.
 
 ```go
 // internal/signerapp/daemon/http_auth.go
@@ -659,7 +658,7 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
         ctx := r.Context()
 
         // Step 1: Authentication - who is this?
-        identity, err := fs.registryAuth.Authenticate(ctx, r)
+        identity, err := fs.authenticator.Authenticate(ctx, r)
         if err != nil {
             // Return 401 Unauthorized
             return

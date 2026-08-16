@@ -181,16 +181,15 @@ Client data dir
 
 Signer data dir
   -> process config
-  -> identity registry
-      -> identity runtime
-          -> keyring.enc -> unsealed term keys -> key session
-          -> key files -> runtime key indexes -> /keys and signing
-          -> sentries public references -> /keytypes generation options
-          -> key type state + installed templates -> /keytypes and generation
-          -> policy.yaml + HMAC -> signer approval verdicts or sentry component-sign authorization by node role
-          -> API token + SSH keys -> authn
-          -> approval coordinator -> sign/token prompts
-          -> admin sessions -> admin mutations and approvals
+  -> product identity runtime
+      -> keyring.enc -> unsealed term keys -> key session
+      -> key files -> runtime key indexes -> /keys and signing
+      -> sentries public references -> /keytypes generation options
+      -> key type state + installed templates -> /keytypes and generation
+      -> policy.yaml + HMAC -> signer approval verdicts or sentry component-sign authorization by node role
+      -> API token + SSH keys -> authn
+      -> approval coordinator -> sign/token prompts
+      -> process-wide admin session -> admin mutations and approvals
 ```
 
 The strongest authority chain is:

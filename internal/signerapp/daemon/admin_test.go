@@ -104,11 +104,11 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	}
 	t.Cleanup(func() { _ = auditLog.Close() })
 	server := &Signer{
-		registry: identity.NewRegistry(),
-		config:   serverConfigForTest(),
-		keyPaths: keyPaths,
-		dataDir:  tmpDir,
-		auditLog: auditLog,
+		nodeFailState: &identity.NodeFailState{},
+		config:        serverConfigForTest(),
+		keyPaths:      keyPaths,
+		dataDir:       tmpDir,
+		auditLog:      auditLog,
 	}
 
 	ir := identity.New(identity.Config{
@@ -118,8 +118,8 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		KeyPaths:      keyPaths,
 		NodeRole:      noderole.RoleSigner,
 	})
-	_ = server.registry.Register(ir)
-	server.httpAuth = newProductAuthenticator(server.registry, ir)
+	server.runtime = ir
+	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
 	// All stores are generational in this release: mint the first
 	// generation the way initialize does before any test writes keys.
 	convertTestSignerToGenerational(t, server)
@@ -444,7 +444,7 @@ func TestAdminGenerateEd25519IsImmediatelyVisibleInKeyCache(t *testing.T) {
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	keyFile, err := ir.FindKeyFile(resp.Address)
 	if err != nil {
 		t.Fatalf("generated address %s not present in key cache immediately after generate: %v", resp.Address, err)
@@ -480,7 +480,7 @@ func TestAdminGenerateFalconAllowlistIsImmediatelyVisibleInKeyCache(t *testing.T
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	keyFile, err := ir.FindKeyFile(resp.Address)
 	if err != nil {
 		t.Fatalf("generated address %s not present in key cache immediately after generate: %v", resp.Address, err)
@@ -1070,7 +1070,7 @@ func TestAdminGenerateThenDeleteEd25519(t *testing.T) {
 	}
 
 	// Verify key is gone
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	_, err := ir.FindKeyFile(address)
 	if err == nil {
 		t.Error("Key should not exist after deletion")
@@ -1107,7 +1107,7 @@ func TestAdminGenerateMultipleEd25519(t *testing.T) {
 // reloadKeysForTest rescans the keys directory to update in-memory maps.
 // This simulates what the file watcher does in production.
 func reloadKeysForTest(server *Signer) error {
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		return fmt.Errorf("identity not found")
 	}

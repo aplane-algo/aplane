@@ -213,13 +213,11 @@ func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 
-	productRuntime := server.registry.Get(auth.DefaultIdentityID)
-	additional := registerAdditionalAdminTestIdentity(t, server, "alice")
-	_ = additional
+	productRuntime := server.productIdentityRuntime()
 
 	invalid := httptest.NewRecorder()
 	invalidRequest := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	invalidRequest.Header.Set("Authorization", "aplane alice-token")
+	invalidRequest.Header.Set("Authorization", "aplane non-product-token")
 	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("additional runtime token must not authenticate")
 	})(invalid, invalidRequest)
@@ -287,13 +285,13 @@ func TestIdentityFromRequestIgnoresPrincipalIDAndPreservesNodeFailClosed(t *test
 		}))
 
 		ir, status, errMsg := server.identityFromRequest(r)
-		if ir != server.registry.Get(auth.DefaultIdentityID) || status != 0 || errMsg != "" {
+		if ir != server.productIdentityRuntime() || status != 0 || errMsg != "" {
 			t.Fatalf("identityFromRequest() = (%v, %d, %q), want fixed product runtime", ir, status, errMsg)
 		}
 	})
 
 	t.Run("node fail closed", func(t *testing.T) {
-		server.registry.CloseFailClosed(context.Canceled)
+		server.nodeFailState.Fail(context.Canceled)
 		r := httptest.NewRequest(http.MethodGet, "/keys", nil)
 		ir, status, errMsg := server.identityFromRequest(r)
 		if ir != nil || status != http.StatusServiceUnavailable || errMsg == "" {

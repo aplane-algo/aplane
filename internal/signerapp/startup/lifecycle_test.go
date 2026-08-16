@@ -16,11 +16,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntimes(t *testing.T) {
+func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntime(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	reg := identity.NewRegistry()
 	ir := identity.New(identity.Config{
 		ID:            auth.DefaultIdentityID,
 		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root), auth.DefaultIdentityID),
@@ -28,9 +27,6 @@ func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntimes(t *testing.T
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	ir.SetUnlocked()
-	if err := reg.Register(ir); err != nil {
-		t.Fatalf("Register() error = %v", err)
-	}
 
 	var mu sync.Mutex
 	var events []string
@@ -42,7 +38,6 @@ func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntimes(t *testing.T
 
 	ctx, cancel := context.WithCancel(context.Background())
 	plan := LifecyclePlan{
-		Registry:       reg,
 		ProductRuntime: ir,
 		StartWatcher: func(*identity.Runtime) {
 			record("watcher")

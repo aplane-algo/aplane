@@ -42,18 +42,16 @@ func TestSignerStateString(t *testing.T) {
 }
 
 func TestRegistryInitializesSignerRuntime(t *testing.T) {
-	signer := &Signer{
-		registry: identity.NewRegistry(),
-	}
+	signer := &Signer{}
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		ID:            auth.DefaultIdentityID,
 	})
-	_ = signer.registry.Register(ir)
+	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 
-	if signer.registry.Get(auth.DefaultIdentityID) == nil {
+	if signer.productIdentityRuntime() == nil {
 		t.Fatal("registry did not store identity runtime")
 	}
 
@@ -71,15 +69,13 @@ func TestRegistryInitializesSignerRuntime(t *testing.T) {
 }
 
 func TestSignerIsUnlocked(t *testing.T) {
-	signer := &Signer{
-		registry: identity.NewRegistry(),
-	}
+	signer := &Signer{}
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		ID:            auth.DefaultIdentityID,
 	})
-	_ = signer.registry.Register(ir)
+	signer.runtime = ir
 
 	// Initially locked
 	if signer.isUnlocked() {
@@ -109,15 +105,13 @@ func TestSignerHasClient(t *testing.T) {
 
 // TestFailAllPendingRequests verifies pending requests are failed on disconnect
 func TestFailAllPendingRequests(t *testing.T) {
-	signer := &Signer{
-		registry: identity.NewRegistry(),
-	}
+	signer := &Signer{}
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		ID:            auth.DefaultIdentityID,
 	})
-	_ = signer.registry.Register(ir)
+	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 
 	// Verify that failing with no pending requests doesn't panic
@@ -131,15 +125,13 @@ func TestFailAllPendingRequests(t *testing.T) {
 }
 
 func TestRequestSigningApprovalTimeoutCleansPendingRequest(t *testing.T) {
-	signer := &Signer{
-		registry: identity.NewRegistry(),
-	}
+	signer := &Signer{}
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		ID:            auth.DefaultIdentityID,
 	})
-	_ = signer.registry.Register(ir)
+	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
 
@@ -160,15 +152,14 @@ func TestRequestSigningApprovalTimeoutCleansPendingRequest(t *testing.T) {
 func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 	hub := &recordingAdminHub{}
 	signer := &Signer{
-		registry: identity.NewRegistry(),
-		hub:      hub,
+		hub: hub,
 	}
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		ID:            "alice",
 	})
-	_ = signer.registry.Register(ir)
+	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 
 	approved, err := signer.requestSigningApproval("alice", "req-sign", "ADDR", "SENDER", "desc", 1, 2, nil, time.Second)
@@ -220,9 +211,9 @@ func TestReloadServiceNotifiesProductAdminHub(t *testing.T) {
 	}
 }
 
-func TestReloadServiceClosesRegistryOnNodeRoleConflict(t *testing.T) {
-	reg := identity.NewRegistry()
-	signer := &Signer{registry: reg}
+func TestReloadServiceFailsNodeClosedOnNodeRoleConflict(t *testing.T) {
+	nodeState := &identity.NodeFailState{}
+	signer := &Signer{nodeFailState: nodeState}
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		ID:            "alice",
@@ -236,22 +227,21 @@ func TestReloadServiceClosesRegistryOnNodeRoleConflict(t *testing.T) {
 	if err == nil {
 		t.Fatal("BeforePublish() error = nil, want node role conflict")
 	}
-	if closeErr := reg.CloseError(); !errors.Is(closeErr, identity.ErrRegistryClosed) {
-		t.Fatalf("registry CloseError() = %v, want ErrRegistryClosed", closeErr)
+	if closeErr := nodeState.Err(); !errors.Is(closeErr, identity.ErrNodeFailClosed) {
+		t.Fatalf("node failure = %v, want ErrNodeFailClosed", closeErr)
 	}
 }
 
 func TestApprovalServiceChecksProductAdminClient(t *testing.T) {
 	hub := &recordingAdminHub{}
 	signer := &Signer{
-		registry: identity.NewRegistry(),
-		hub:      hub,
+		hub: hub,
 	}
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		ID:            "alice",
 	})
-	_ = signer.registry.Register(ir)
+	signer.runtime = ir
 
 	svc := signer.newApprovalServiceForIdentity(ir)
 	if svc.HasClient == nil {
@@ -266,15 +256,13 @@ func TestApprovalServiceChecksProductAdminClient(t *testing.T) {
 }
 
 func TestRequestSigningApprovalDisconnectCleansPendingRequest(t *testing.T) {
-	signer := &Signer{
-		registry: identity.NewRegistry(),
-	}
+	signer := &Signer{}
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		ID:            auth.DefaultIdentityID,
 	})
-	_ = signer.registry.Register(ir)
+	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
 
@@ -320,7 +308,7 @@ func TestTryUnlockInvalidPassphraseLeavesSignerLocked(t *testing.T) {
 
 	server.lock()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	success, keyCount, errMsg := ir.TryUnlock([]byte("wrong-passphrase"), nil)
 	if success {
 		t.Fatal("success = true, want false")

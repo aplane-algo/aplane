@@ -16,8 +16,8 @@
   },
   {
     "spec": "lifecycle",
-    "distinct_states": 48,
-    "depth": 10
+    "distinct_states": 24,
+    "depth": 9
   },
   {
     "spec": "approval_coordinator",
@@ -31,8 +31,8 @@
   },
   {
     "spec": "lifecycle_composition",
-    "distinct_states": 226,
-    "depth": 12
+    "distinct_states": 113,
+    "depth": 11
   },
   {
     "spec": "session_ownership",
@@ -63,14 +63,14 @@
   {
     "spec": "lifecycle",
     "cfg": "lifecycle_liveness",
-    "distinct_states": 150,
-    "depth": 14
+    "distinct_states": 75,
+    "depth": 13
   },
   {
     "spec": "lifecycle_composition",
     "cfg": "lifecycle_composition_liveness",
-    "distinct_states": 392,
-    "depth": 12
+    "distinct_states": 196,
+    "depth": 11
   },
   {
     "spec": "generation_commit",

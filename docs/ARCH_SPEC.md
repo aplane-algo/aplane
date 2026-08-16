@@ -796,7 +796,7 @@ bytecode must derive an off-curve LogicSig address.
 
 The main server struct is `Signer`, which owns:
 
-- identity registry / process root composition,
+- the one product identity runtime and node-level fail-closed state,
 - authn/authz components,
 - signer-side planning/approval/execution service adapters,
 - IPC server,

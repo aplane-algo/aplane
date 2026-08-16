@@ -16,17 +16,17 @@ import (
 // credential to the reserved product-admin principal. Token authentication is
 // deliberately independent from runtime selection.
 type productAuthenticator struct {
-	registry *identity.Registry
-	runtime  *identity.Runtime
+	nodeFailState *identity.NodeFailState
+	runtime       *identity.Runtime
 }
 
-func newProductAuthenticator(registry *identity.Registry, runtime *identity.Runtime) *productAuthenticator {
-	return &productAuthenticator{registry: registry, runtime: runtime}
+func newProductAuthenticator(nodeFailState *identity.NodeFailState, runtime *identity.Runtime) *productAuthenticator {
+	return &productAuthenticator{nodeFailState: nodeFailState, runtime: runtime}
 }
 
 func (a *productAuthenticator) Authenticate(ctx context.Context, r *http.Request) (*auth.Identity, error) {
-	if a.registry != nil {
-		if err := a.registry.CloseError(); err != nil {
+	if a.nodeFailState != nil {
+		if err := a.nodeFailState.Err(); err != nil {
 			return nil, err
 		}
 	}

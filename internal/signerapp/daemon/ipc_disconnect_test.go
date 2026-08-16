@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
@@ -43,7 +42,7 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 			signer, cleanup := setupTestSigner(t)
 			defer cleanup()
 
-			ir := signer.registry.Get(auth.DefaultIdentityID)
+			ir := signer.productIdentityRuntime()
 			ir.SetUnlocked()
 			ir.Config().SetLockOnDisconnect(tc.lockOnDisconnect)
 
@@ -105,7 +104,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 	signer, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := signer.registry.Get(auth.DefaultIdentityID)
+	ir := signer.productIdentityRuntime()
 	ir.Lock()
 	ir.Config().SetLockOnDisconnect(true)
 

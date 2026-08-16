@@ -124,7 +124,7 @@ existing store-mutation lock with client-side retry in
 work, so it adds no actor and no fairness obligation to `lifecycle.tla`.
 
 Otherwise, no actionable test gaps remain. Per-invariant status lives in
-[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The lifecycle L4-L7
+[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The lifecycle L4-L6
 audit is closed by the explicit lease-release and writer-pending tests
 named in the L4 and L5 rows.
 

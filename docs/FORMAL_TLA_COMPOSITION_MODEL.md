@@ -191,7 +191,7 @@ Already shipped:
 
 - **Lifecycle lease.** [formal/lifecycle.tla](formal/lifecycle.tla)
   models `BeginOperation` / `Decommission` as real transitions and
-  verifies L4-L7 plus the writer-priority RWMutex ordering. It is
+  verifies L4-L6 plus the writer-priority RWMutex ordering. It is
   the first temporal-transition spec; composing it with this
   one-shot composition module is a separate, harder slice. See
   [FORMAL_TLA_LIFECYCLE_MODEL.md](FORMAL_TLA_LIFECYCLE_MODEL.md).

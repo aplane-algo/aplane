@@ -9,7 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -97,79 +96,6 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 			t.Fatalf("ValidateProductIdentityLayout() error = %v, want real-directory rejection", err)
 		}
 	})
-}
-
-func TestRegistryRemove(t *testing.T) {
-	reg := NewRegistry()
-	ir := New(Config{
-		ID:            "test",
-		Authenticator: auth.NewTokenAuthenticator("tok"),
-	})
-	_ = reg.Register(ir)
-
-	if reg.Count() != 1 {
-		t.Fatalf("count = %d, want 1", reg.Count())
-	}
-
-	removed, err := reg.Remove("test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if removed != ir {
-		t.Fatal("removed wrong runtime")
-	}
-	if reg.Count() != 0 {
-		t.Fatalf("count = %d, want 0", reg.Count())
-	}
-
-	_, err = reg.Remove("test")
-	if err == nil {
-		t.Fatal("expected error removing non-existent identity")
-	}
-}
-
-func TestRegistryRemoveDoesNotDecommissionHeldRuntime(t *testing.T) {
-	reg := NewRegistry()
-	ir := New(Config{
-		ID:            "test",
-		Authenticator: auth.NewTokenAuthenticator("tok"),
-	})
-	if err := reg.Register(ir); err != nil {
-		t.Fatal(err)
-	}
-
-	removed, err := reg.Remove("test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reg.Get("test") != nil {
-		t.Fatal("removed identity is still discoverable through registry")
-	}
-	if removed.IsDecommissioned() {
-		t.Fatal("Registry.Remove decommissioned the held runtime")
-	}
-
-	release, err := removed.BeginOperation()
-	if err != nil {
-		t.Fatalf("BeginOperation() after registry removal error = %v", err)
-	}
-	release()
-}
-
-func TestRegistryIDs(t *testing.T) {
-	reg := NewRegistry()
-	for _, id := range []string{"a", "b", "c"} {
-		_ = reg.Register(New(Config{
-			ID:            id,
-			Authenticator: auth.NewTokenAuthenticator("tok-" + id),
-		}))
-	}
-
-	ids := reg.IDs()
-	sort.Strings(ids)
-	if len(ids) != 3 || ids[0] != "a" || ids[1] != "b" || ids[2] != "c" {
-		t.Fatalf("expected [a b c], got %v", ids)
-	}
 }
 
 func TestRuntimePolicySnapshotStoresDefensiveCopies(t *testing.T) {
@@ -875,31 +801,23 @@ func TestStoredConfigApplyRejectsMode(t *testing.T) {
 	}
 }
 
-func TestRegistryCloseFailClosedIsSticky(t *testing.T) {
-	reg := NewRegistry()
+func TestNodeFailStateIsFirstErrorSticky(t *testing.T) {
+	state := &NodeFailState{}
 	first := errors.New("first role conflict")
 	second := errors.New("second role conflict")
 
-	reg.CloseFailClosed(first)
-	reg.CloseFailClosed(second)
+	state.Fail(first)
+	state.Fail(second)
 
-	err := reg.CloseError()
-	if !errors.Is(err, ErrRegistryClosed) {
-		t.Fatalf("CloseError() = %v, want ErrRegistryClosed", err)
+	err := state.Err()
+	if !errors.Is(err, ErrNodeFailClosed) {
+		t.Fatalf("Err() = %v, want ErrNodeFailClosed", err)
 	}
 	if !errors.Is(err, first) {
-		t.Fatalf("CloseError() = %v, want first cause", err)
+		t.Fatalf("Err() = %v, want first cause", err)
 	}
 	if errors.Is(err, second) {
-		t.Fatalf("CloseError() = %v, should keep first close cause", err)
-	}
-
-	registerErr := reg.Register(New(Config{
-		ID:            "alice",
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	}))
-	if !errors.Is(registerErr, ErrRegistryClosed) {
-		t.Fatalf("Register(after close) error = %v, want ErrRegistryClosed", registerErr)
+		t.Fatalf("Err() = %v, should keep first cause", err)
 	}
 }
 

@@ -212,12 +212,12 @@ described in
 [FORMAL_TLA_LIFECYCLE_MODEL.md](FORMAL_TLA_LIFECYCLE_MODEL.md). It is
 the first module with real `Next`-relation transitions rather than a
 one-shot `Init`: two signer processes and one admin process race over
-a writer-priority RWMutex. It covers L4-L7 (lease gates signing,
+a writer-priority RWMutex. It covers L4-L6 (lease gates signing,
 decommission waits for held lease, decommission wins race before
-lease, registry removal does not prevent completion). TLC checked
+lease). TLC checked
 under `SignerProcs = {s1, s2}`, `admin = a`, `NONE = none`, with
-symmetry over signers; the recorded run generated 48 distinct
-reachable states, reached depth 10, and found no counterexamples for
+symmetry over signers; the recorded run generated 24 distinct
+reachable states, reached depth 9, and found no counterexamples for
 `Safety`. L5 was validated by a mutation test (removing the
 `readers = {}` guard from `AdminAcquireWrite` produces a
 counterexample).
@@ -327,7 +327,7 @@ from the relevant formalization commit to see what changed.
 **Drift review (2026-06-29, HEAD `0568e343`).** A re-sync confirmed the models
 still track the code after ~360 commits of movement: all seven TLA+ modules
 re-check green under TLC at the recorded state counts (2,628 / 64 / 84,096 /
-48 / 196 / 47,304 / 226); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
+24 / 196 / 47,304 / 113); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
 re-validated across all 65 invariants (six stale code/line anchors corrected,
 no invariant lost its test); and two code changes since the snapshot were
 reconciled — the then-guarded account key type `aplane.corridor.v1` (since
@@ -554,10 +554,10 @@ Machine-checked invariants by module:
 | `sign_boundary.tla` | I1, I2, I3, I7, I8, output alignment, M4 target | 2,628 | 1 |
 | `policy_precedence.tla` | P4, P5, P6, P7, I9, ApprovalResolution | 64 | 1 |
 | `composition.tla` | 3 seam claims + 2 sign-boundary rechecks under derived verdict | 84,096 | 1 |
-| `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency; Progress (liveness, no-symmetry config with SignerRestart: 150 states) | 48 | 10 |
+| `lifecycle.tla` | L4, L5, L6, RWMutex exclusion, state consistency; Progress (liveness, no-symmetry config with SignerRestart: 75 states) | 24 | 9 |
 | `approval_coordinator.tla` | AP4, AP5, AP6, AP7, L8, turn/state consistency; Progress (liveness, separate no-symmetry config: 833 states) | 196 | 11 |
 | `approval_composition.tla` | approval-seam claims (AP2 / L8 / I9 end to end) | 47,304 | 1 |
-| `lifecycle_composition.tla` | L4-L7 + lifecycle-output seam (decommission => no output); Progress (liveness, no-symmetry config: 392 states) | 226 | 12 |
+| `lifecycle_composition.tla` | L4-L6 + lifecycle-output seam (decommission => no output); Progress (liveness, no-symmetry config: 196 states) | 113 | 11 |
 | `session_ownership.tla` | SO1, SO2 (admin unlock ownership: no stranded unlock), state consistency | 90 | 8 |
 | `guarded_assembly.tla` | A1, A6, A7, A8, A14, no-partial-output (component assembly verification) | 270,920 | 1 |
 | `bounded_sentry.tla` | BS1-BS7 (user-first ordering, authority/source/byte checks, atomic output, admin sentry bypass) | 99,584 | 4 |

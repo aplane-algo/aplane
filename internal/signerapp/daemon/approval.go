@@ -36,8 +36,8 @@ func (fs *Signer) requestSigningApprovalContext(ctx context.Context, identityID,
 }
 
 func (fs *Signer) requestSigningApprovalResponseContext(ctx context.Context, identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
-	ir := fs.registry.Get(identityID)
-	if ir == nil {
+	ir := fs.runtime
+	if ir == nil || identityID != ir.ID() {
 		return signerapproval.SignResponse{}, fmt.Errorf("identity not found: %s", identityID)
 	}
 	return ir.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
@@ -48,8 +48,8 @@ func (fs *Signer) requestTokenProvisioning(requestID, identityID, sshFingerprint
 }
 
 func (fs *Signer) requestTokenProvisioningContext(ctx context.Context, requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
-	ir := fs.registry.Get(identityID)
-	if ir == nil {
+	ir := fs.runtime
+	if ir == nil || identityID != ir.ID() {
 		return false, fmt.Errorf("identity not found: %s", identityID)
 	}
 	return ir.RequestTokenProvisioningContext(ctx, requestID, identityID, sshFingerprint, remoteAddr, timeout)

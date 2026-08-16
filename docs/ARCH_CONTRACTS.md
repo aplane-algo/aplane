@@ -2460,11 +2460,8 @@ Identity lifecycle is logical, not destructive.
 - decommission locks the runtime if it is unlocked and stops the identity watcher.
 - decommissioned identities reject unlock, reload, token provisioning, HTTP routing, SSH token auth, SSH key checks, and SSH key enrollment.
 
-Registry removal and runtime decommission are separate contracts:
-
-- `Registry.Remove(identityID)` prevents new registry lookup only.
-- in-flight requests may retain a `*identity.Runtime` after registry removal.
-- final signing uses the runtime lifecycle lease, not a registry lookup, to decide whether it may execute.
+The signer owns one product `*identity.Runtime` directly. Final signing uses
+that runtime's lifecycle lease to decide whether it may execute.
 - if decommission wins before final execution obtains the lease, signing fails cleanly; if execution already holds the lease, decommission waits for release.
 
 ## Key Watching and Reload

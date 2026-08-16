@@ -21,11 +21,10 @@ func (fs *Signer) newApprovalServiceForIdentityWithAudit(ir *identity.Runtime, a
 		Console:                       signerConsole{},
 		GenerateTxnDescriptionFromTxn: fs.generateTransactionDescriptionFromTxn,
 		KnownAddresses: func(identityID string) map[string]bool {
-			target := fs.registry.Get(identityID)
-			if target == nil {
+			if fs.runtime == nil || identityID != fs.runtime.ID() {
 				return nil
 			}
-			return target.KnownAddresses()
+			return fs.runtime.KnownAddresses()
 		},
 		HasClient:                             fs.hasClientForIdentity,
 		RequestSigningApproval:                fs.requestSigningApproval,
