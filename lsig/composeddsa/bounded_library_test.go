@@ -278,8 +278,8 @@ func TestBundledFalconAdminAllowlistV1MaximumBudget(t *testing.T) {
 	}
 	argumentBytes := metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey)
 	groupSize := (len(bytecode) + argumentBytes + 999) / 1000
-	if len(bytecode) != 5308 || argumentBytes != 2846 || groupSize != 9 {
-		t.Fatalf("maximum legacy budget = bytecode %d, arguments %d, group %d; want 5308/2846/9", len(bytecode), argumentBytes, groupSize)
+	if len(bytecode) != 5285 || argumentBytes != 2846 || groupSize != 9 {
+		t.Fatalf("maximum legacy budget = bytecode %d, arguments %d, group %d; want 5285/2846/9", len(bytecode), argumentBytes, groupSize)
 	}
 	feeTests := []struct {
 		minFee uint64

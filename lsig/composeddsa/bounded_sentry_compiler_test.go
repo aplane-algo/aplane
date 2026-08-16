@@ -107,9 +107,9 @@ teal: |
 	if got, want := hex.EncodeToString(hash[:]), "b747f4a983896901af9ac8229263407e4790516e38a7cae00afa7d5877c2ba0b"; got != want {
 		t.Fatalf("TEAL SHA-256 = %s, want %s", got, want)
 	}
-	// 4 bytes smaller than the retired v2 golden: bytecblock opcode, element
-	// count, element length, and the single salt byte.
-	if got, want := len(bytecode), 5_669; got != want {
+	// Pin the configured FNet compiler output separately from the source hash so
+	// compiler-toolchain drift remains visible even when the TEAL is unchanged.
+	if got, want := len(bytecode), 5_663; got != want {
 		t.Fatalf("compiled bytecode size = %d, want %d; TEAL SHA-256 %x", got, want, hash)
 	}
 	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 2_846; got != want {
