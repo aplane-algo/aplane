@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -19,6 +20,51 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 )
+
+func TestFrozenComponentReconstructionMatchesCanonicalPlan(t *testing.T) {
+	service, authorizer, txn := frozenBoundedTestService(t, 4_500)
+	requestForPlan := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
+	}}}
+	planned, planErr := service.Planner.PlanGroup("default", requestForPlan)
+	if planErr != nil {
+		t.Fatal(planErr)
+	}
+	groupHex := make([]string, len(planned.AllTxns))
+	componentRequest := signerapi.ComponentRequest{
+		Targets: []signerapi.ComponentTarget{{
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+		}},
+	}
+	for i, plannedTxn := range planned.AllTxns {
+		groupHex[i] = txnutil.EncodeWithPrefixHex(plannedTxn)
+		if i > 0 {
+			componentRequest.DummyPositions = append(componentRequest.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
+		}
+	}
+	componentRequest.GroupBytesHex = groupHex
+
+	reconstructed, groupRequest, serviceErr := service.ValidateFrozenComponentContext("default", componentRequest)
+	if serviceErr != nil {
+		t.Fatalf("ValidateFrozenComponentContext() error = %v", serviceErr)
+	}
+	if want := componentRequest.GroupSignRequest(); !reflect.DeepEqual(groupRequest, want) {
+		t.Fatalf("reconstructed request = %#v, want frozen request %#v", groupRequest, want)
+	}
+	for i := range planned.AllTxns {
+		if !bytes.Equal(txnutil.EncodeWithPrefix(planned.AllTxns[i]), txnutil.EncodeWithPrefix(reconstructed.AllTxns[i])) {
+			t.Fatalf("reconstructed transaction %d differs from canonical plan", i)
+		}
+	}
+	if planned.DummiesNeeded != reconstructed.DummiesNeeded ||
+		!reflect.DeepEqual(planned.LsigIndices, reconstructed.LsigIndices) ||
+		!reflect.DeepEqual(planned.LogicSigResourcePlan, reconstructed.LogicSigResourcePlan) ||
+		!reflect.DeepEqual(planned.AuthKeyTypes, reconstructed.AuthKeyTypes) ||
+		!reflect.DeepEqual(planned.KnownAddresses, reconstructed.KnownAddresses) ||
+		!reflect.DeepEqual(planned.BoundedItems, reconstructed.BoundedItems) {
+		t.Fatalf("frozen gate inputs drifted from canonical plan:\nplanned=%#v\nreconstructed=%#v", planned, reconstructed)
+	}
+}
 
 func frozenBoundedTestService(t *testing.T, programBytes uint64) (*Service, string, types.Transaction) {
 	t.Helper()
@@ -186,5 +232,70 @@ func TestFrozenComponentDummyPartitionIsSemanticForEveryKind(t *testing.T) {
 				t.Fatalf("declared canonical dummies rejected: %v", err)
 			}
 		})
+	}
+}
+
+func TestValidateFrozenComponentContextPrefersConcurrentLock(t *testing.T) {
+	service, authorizer, txn := frozenBoundedTestService(t, 1)
+	planned, planErr := service.Planner.PlanGroup("default", signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
+	}}})
+	if planErr != nil {
+		t.Fatal(planErr)
+	}
+	request := signerapi.ComponentRequest{
+		Targets: []signerapi.ComponentTarget{{
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+		}},
+	}
+	for i, plannedTxn := range planned.AllTxns {
+		request.GroupBytesHex = append(request.GroupBytesHex, txnutil.EncodeWithPrefixHex(plannedTxn))
+		if i > 0 {
+			request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
+		}
+	}
+	service.Planner.VerifySignableKeys = func(PlannerIdentitySnapshot, string, []signerapi.SignRequest, map[int]bool, map[int]bool) (int, *ServiceError) {
+		return 0, badRequest("key not found")
+	}
+	service.IsUnlocked = func() bool { return false }
+
+	_, _, serviceErr := service.ValidateFrozenComponentContext("default", request)
+	if serviceErr == nil || serviceErr.Kind != ErrorLocked {
+		t.Fatalf("ValidateFrozenComponentContext() error = %#v, want locked", serviceErr)
+	}
+}
+
+func TestValidateFrozenComponentContextAuditsEveryOriginalPosition(t *testing.T) {
+	service, authorizer, txn := frozenBoundedTestService(t, 1)
+	planned, planErr := service.Planner.PlanGroup("default", signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
+	}}})
+	if planErr != nil {
+		t.Fatal(planErr)
+	}
+	audit := &captureAuditLog{}
+	service.Planner.AuditLog = audit
+	service.Planner.GenerateTxnDescription = func(string) string { return "frozen bounded transaction" }
+	request := signerapi.ComponentRequest{
+		Targets: []signerapi.ComponentTarget{{
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+		}},
+	}
+	for i, plannedTxn := range planned.AllTxns {
+		request.GroupBytesHex = append(request.GroupBytesHex, txnutil.EncodeWithPrefixHex(plannedTxn))
+		if i > 0 {
+			request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
+		}
+	}
+
+	if _, _, serviceErr := service.ValidateFrozenComponentContext("default", request); serviceErr != nil {
+		t.Fatalf("ValidateFrozenComponentContext() error = %v", serviceErr)
+	}
+	if len(audit.entries) != 1 {
+		t.Fatalf("sign-request audit entries = %#v, want one per original position", audit.entries)
+	}
+	entry := audit.entries[0]
+	if entry.identityID != "default" || entry.authAddress != authorizer || entry.txnSender != txn.Sender.String() || entry.details != "frozen bounded transaction" {
+		t.Fatalf("sign-request audit entry = %#v, want frozen request attribution", entry)
 	}
 }

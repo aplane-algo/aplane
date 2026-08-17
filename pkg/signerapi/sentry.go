@@ -34,12 +34,14 @@ type ComponentTarget struct {
 	AuthAddress  string              `json:"auth_address,omitempty"`
 	ComponentKey string              `json:"component_key,omitempty"`
 	LsigArgs     map[string]string   `json:"lsig_args,omitempty"`
+	AppCallInfo  *AppCallInfo        `json:"app_call_info,omitempty"`
 }
 
 type ComponentContextPosition struct {
 	TargetIndex   int                    `json:"target_index"`
 	LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"`
 	PQScheme      string                 `json:"pq_scheme,omitempty"`
+	AppCallInfo   *AppCallInfo           `json:"app_call_info,omitempty"`
 }
 
 type ComponentDummyPosition struct {
@@ -159,12 +161,14 @@ func (r ComponentRequest) GroupSignRequest() GroupSignRequest {
 		if target.TargetIndex >= 0 && target.TargetIndex < originalCount {
 			requests[target.TargetIndex].AuthAddress = target.AuthAddress
 			requests[target.TargetIndex].LsigArgs = target.LsigArgs
+			requests[target.TargetIndex].AppCallInfo = target.AppCallInfo
 		}
 	}
 	for _, position := range r.ContextualPositions {
 		if position.TargetIndex >= 0 && position.TargetIndex < originalCount {
 			requests[position.TargetIndex].LsigResources = position.LsigResources
 			requests[position.TargetIndex].PQScheme = position.PQScheme
+			requests[position.TargetIndex].AppCallInfo = position.AppCallInfo
 		}
 	}
 	return GroupSignRequest{RequestID: r.RequestID, Requests: requests}

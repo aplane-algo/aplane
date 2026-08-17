@@ -336,7 +336,9 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	signatures, requestIDs, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
+		len(groupBytesHex),
 		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("requestSentryComponentSignatures() error = %v", err)
@@ -346,6 +348,32 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	}
 	if requestIDs[sentryRequestKey{ComponentKeyType: witness.Falcon1024V1, PublicKey: sentryHex}] == "" {
 		t.Fatal("request ID for sentry is empty")
+	}
+}
+
+func TestComponentRequestForIndicesDeclaresPlannerDummySuffix(t *testing.T) {
+	request := componentRequestForIndices(
+		[]string{"TX00", "TX11", "TX22"},
+		2,
+		[]int{0},
+		signerapi.ComponentTargetKindUser,
+		"AUTH",
+		[]*signerapi.AppCallInfo{{Mode: "abi", Method: "do(uint64)void"}, {Mode: "raw"}},
+	)
+	if len(request.Targets) != 1 || request.Targets[0].TargetIndex != 0 {
+		t.Fatalf("targets = %#v, want target 0", request.Targets)
+	}
+	if len(request.ContextualPositions) != 1 || request.ContextualPositions[0].TargetIndex != 1 {
+		t.Fatalf("contextual positions = %#v, want original position 1", request.ContextualPositions)
+	}
+	if len(request.DummyPositions) != 1 || request.DummyPositions[0].TargetIndex != 2 {
+		t.Fatalf("dummy positions = %#v, want planner-appended position 2", request.DummyPositions)
+	}
+	if request.Targets[0].AppCallInfo == nil || request.Targets[0].AppCallInfo.Method != "do(uint64)void" {
+		t.Fatalf("target app-call metadata = %#v, want ABI method", request.Targets[0].AppCallInfo)
+	}
+	if request.ContextualPositions[0].AppCallInfo == nil || request.ContextualPositions[0].AppCallInfo.Mode != "raw" {
+		t.Fatalf("context app-call metadata = %#v, want raw", request.ContextualPositions[0].AppCallInfo)
 	}
 }
 
@@ -373,7 +401,9 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 	_, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
+		len(groupBytesHex),
 		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
+		nil,
 	)
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want explicit endpoint mismatch")
@@ -416,7 +446,9 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	_, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
+		len(groupBytesHex),
 		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
+		nil,
 	)
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want locked endpoint")
@@ -445,7 +477,9 @@ func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) 
 	signatures, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
+		len(groupBytesHex),
 		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("requestSentryComponentSignatures() error = %v", err)

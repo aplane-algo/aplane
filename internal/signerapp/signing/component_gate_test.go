@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/appspec"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -21,6 +22,71 @@ import (
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
+
+func TestBuildComponentApprovalDescriptionPreservesABIMethod(t *testing.T) {
+	selector, err := appspec.SignatureSelector("increment(uint64)void")
+	if err != nil {
+		t.Fatal(err)
+	}
+	txn := types.Transaction{
+		Type: types.ApplicationCallTx,
+		ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{
+			ApplicationID: 123, OnCompletion: types.NoOpOC,
+			ApplicationArgs: [][]byte{selector},
+		}},
+	}
+	plan := &ComponentSignPlan{Requests: []signerapi.SignRequest{{
+		AppCallInfo: &signerapi.AppCallInfo{Mode: "abi", Method: "increment(uint64)void"},
+	}}}
+	description, _, _ := buildComponentApprovalDescription(
+		plan,
+		[]types.Transaction{txn},
+		map[int]bool{0: true},
+		func(types.Transaction) string { return "App Call: #123 (NoOp)" },
+	)
+	if !strings.Contains(description, "Method: increment(uint64)void") {
+		t.Fatalf("component approval description lost ABI method:\n%s", description)
+	}
+}
+
+func TestGateUserComponentSigningExcludesFrozenDummySuffix(t *testing.T) {
+	sender := types.Address{19}.String()
+	receiver := types.Address{20}.String()
+	txns := groupedPaymentTransactions(t, sender, receiver)
+	// A rekey on the suffix would force manual review if the gate accidentally
+	// counted signer-added dummies as caller-supplied originals.
+	txns[1].RekeyTo = types.Address{21}
+	for i := range txns {
+		txns[i].Group = types.Digest{}
+	}
+	groupID, err := algocrypto.ComputeGroupID(txns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range txns {
+		txns[i].Group = groupID
+	}
+	request := userComponentGateRequest(t, sender, txns, []int{0})
+	request.Requests = []signerapi.SignRequest{{
+		AuthAddress: sender, TxnBytesHex: request.GroupBytesHex[0],
+	}}
+	plan, prepErr := prepareComponentSigning(request)
+	if prepErr != nil {
+		t.Fatal(prepErr)
+	}
+
+	audit := &testAuditLogger{}
+	prompt := &componentGatePrompt{approve: true}
+	approval := prompt.approvalService(audit)
+	approval.UserAutoApprove = userAutoApproveDefault(true)
+	svc := newComponentGateService(audit, approval, &policy.Config{}, sender)
+	if _, gateErr := svc.gateUserComponentSigning(t.Context(), "default", plan); gateErr != nil {
+		t.Fatalf("gateUserComponentSigning() error = %v", gateErr)
+	}
+	if prompt.calls != 0 {
+		t.Fatalf("operator prompts = %d, want 0: frozen dummy suffix entered the policy gate", prompt.calls)
+	}
+}
 
 // cloningComponentSession returns a fresh key-material copy per load, matching
 // the real keystore contract that each caller owns (and zeroes) its copy.

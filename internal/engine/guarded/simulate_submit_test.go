@@ -344,6 +344,59 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 	}
 }
 
+func TestBoundedSentryRejectsPlannedFeeBeforeReleasingComponents(t *testing.T) {
+	publicKey, _ := testFalconSentryKeypair(t, 0x73)
+	sentryHex := hex.EncodeToString(publicKey)
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded-sentry")
+	var componentCalls atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+		var req signerapi.GroupSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		transactions := make([]string, len(req.Requests))
+		for i, request := range req.Requests {
+			transactions[i] = request.TxnBytesHex
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: transactions})
+	})
+	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, _ *http.Request) {
+		componentCalls.Add(1)
+		http.Error(w, "component signing must not run", http.StatusInternalServerError)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
+		account := txn.Sender.String()
+		c.AddAddress(account, "test.bounded-sentry.v1")
+		c.SetSigningFlowForAddress(account, signerapi.SigningFlowBoundedSentry1)
+		c.SetSentryComponentKeyTypeForAddress(account, witness.Falcon1024V1)
+		c.SetSentryPublicKeyForAddress(account, sentryHex)
+		c.SetBoundedMaxFeeForAddress(account, uint64(txn.Fee)-1)
+		c.SetLogicSigResourceProfile(account, lsigresource.Profile{
+			ProgramBytes: 1,
+			Spend:        &lsigresource.PathProfile{MaxOpcodeCost: 1},
+		})
+	})
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	var simulateReq models.SimulateRequest
+	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "", &simulateReq)
+	defer closeAlgod()
+	s.algod = algodClient
+
+	_, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "exceeds advertised max_fee") {
+		t.Fatalf("SignAndSubmitGroup() error = %v, want max_fee rejection", err)
+	}
+	if got := componentCalls.Load(); got != 0 {
+		t.Fatalf("component calls = %d, want 0 before fee rejection", got)
+	}
+}
+
 func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
 	publicKey, _ := testFalconSentryKeypair(t, 0x72)
 	sentryHex := hex.EncodeToString(publicKey)

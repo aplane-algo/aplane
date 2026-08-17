@@ -4,6 +4,9 @@
 package arch_test
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,6 +82,8 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 			"TestAssembleDecodedGuardedRejectsMismatchedPassthrough",
 		},
 		"../../internal/signerapp/signing/component_gate_test.go": {
+			"TestBuildComponentApprovalDescriptionPreservesABIMethod",
+			"TestGateUserComponentSigningExcludesFrozenDummySuffix",
 			"TestSignComponentUserRoleRejectedBySignerPolicy",
 			"TestSignComponentUserRoleOperatorApproves",
 			"TestSignComponentUserRoleUserAutoApproveSkipsPrompt",
@@ -88,6 +93,11 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 			"TestValidateBoundedComponentPlanRequiresSentrySpend",
 			"TestBoundedAssemblyReceiptBindsRuntimeAndMetadata",
 			"TestAssembleBoundedTargetVerifiesBothAuthorities",
+		},
+		"../../internal/signerapp/signing/frozen_component_test.go": {
+			"TestFrozenComponentReconstructionMatchesCanonicalPlan",
+			"TestValidateFrozenComponentContextPrefersConcurrentLock",
+			"TestValidateFrozenComponentContextAuditsEveryOriginalPosition",
 		},
 	}
 	for path, names := range testsByFile {
@@ -122,14 +132,50 @@ func TestUnifiedSigningRoutesRemainSingular(t *testing.T) {
 }
 
 func TestFrozenComponentValidatorNeverCanonicalizes(t *testing.T) {
-	content, err := os.ReadFile("../../internal/signerapp/signing/frozen_component.go")
+	const path = "../../internal/signerapp/signing/frozen_component.go"
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := string(content)
-	for _, forbidden := range []string{".PlanGroup(", "planGroupWhileSignable("} {
-		if strings.Contains(source, forbidden) {
-			t.Errorf("frozen component validator contains canonicalizing call %q", forbidden)
-		}
+	forbidden := map[string]bool{
+		"PlanGroup": true, "planGroupWhileSignable": true,
+		"BuildFinalGroup": true, "CreateDummyTransactions": true,
+		"ComputeGroupID": true,
 	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		name := ""
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			name = fun.Name
+		case *ast.SelectorExpr:
+			name = fun.Sel.Name
+		}
+		if forbidden[name] {
+			t.Errorf("frozen component validator calls canonicalizing function %s", name)
+		}
+		if name == "applyGroupFees" {
+			if len(call.Args) == 0 {
+				t.Error("applyGroupFees call has no immutable-mode argument")
+				return true
+			}
+			immutable, ok := call.Args[len(call.Args)-1].(*ast.Ident)
+			if !ok || immutable.Name != "true" {
+				t.Error("frozen component fee validation must use immutable mode")
+			}
+			copyCall, ok := call.Args[0].(*ast.CallExpr)
+			if !ok {
+				t.Error("frozen component fee validation must operate on a defensive copy")
+				return true
+			}
+			copyName, copyOK := copyCall.Fun.(*ast.Ident)
+			if !copyOK || copyName.Name != "append" {
+				t.Error("frozen component fee validation must operate on a defensive copy")
+			}
+		}
+		return true
+	})
 }

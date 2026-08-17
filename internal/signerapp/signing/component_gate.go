@@ -31,8 +31,18 @@ func (s *Service) gateUserComponentSigning(ctx context.Context, identityID strin
 		return "", internal("signing service approval is not configured")
 	}
 
-	allTxns := make([]types.Transaction, len(plan.Group.Entries))
+	evalCount := len(plan.Requests)
+	if evalCount == 0 {
+		evalCount = len(plan.Group.Entries)
+	}
+	if evalCount > len(plan.Group.Entries) {
+		return "", internal("component sign plan request count exceeds frozen group")
+	}
+	allTxns := make([]types.Transaction, evalCount)
 	for i, entry := range plan.Group.Entries {
+		if i >= evalCount {
+			break
+		}
 		allTxns[i] = entry.Txn
 	}
 	targetIndices := make(map[int]bool, len(plan.Targets))
@@ -60,7 +70,7 @@ func (s *Service) gateUserComponentSigning(ctx context.Context, identityID strin
 
 	return s.runApprovalGates(ctx, gateInput{
 		AllTxns:        allTxns,
-		EvalCount:      len(allTxns),
+		EvalCount:      evalCount,
 		ForeignIndices: foreignIndices,
 		IsGroup:        len(allTxns) > 1,
 		AuthKeys:       authKeys,
@@ -115,7 +125,11 @@ func buildComponentApprovalDescription(plan *ComponentSignPlan, allTxns []types.
 				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [FOREIGN - not signing] ---\n", i+1, total))
 			}
 		}
-		b.WriteString(describeTxnForApproval(txn, signerapi.SignRequest{}, generateTxnDescriptionFromTxn))
+		txnRequest := signerapi.SignRequest{}
+		if i < len(plan.Requests) {
+			txnRequest = plan.Requests[i]
+		}
+		b.WriteString(describeTxnForApproval(txn, txnRequest, generateTxnDescriptionFromTxn))
 		b.WriteString("\n")
 	}
 

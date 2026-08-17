@@ -57,15 +57,15 @@ func (s *Service) ValidateFrozenComponentContext(identityID string, request sign
 		snapshot = s.Planner.Snapshot(identityID)
 	}
 	if _, err := s.Planner.VerifySignableKeys(snapshot, identityID, req.Requests, map[int]bool{}, foreign); err != nil {
-		return nil, signerapi.GroupSignRequest{}, err
+		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
 	boundedItems, err := resolveBoundedPlanItems(snapshot, req.Requests, originals, map[int]bool{}, foreign)
 	if err != nil {
-		return nil, signerapi.GroupSignRequest{}, err
+		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
 	resourcePlan, lsigIndices, err := s.Planner.CalculateDummies(snapshot, identityID, req.Requests, originals, boundedItems, map[int]bool{}, foreign, nil, false, false)
 	if err != nil {
-		return nil, signerapi.GroupSignRequest{}, err
+		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
 	expectedDummies := int(resourcePlan.DummyCount)
 	if expectedDummies != len(request.DummyPositions) {
@@ -75,18 +75,13 @@ func (s *Service) ValidateFrozenComponentContext(identityID string, request sign
 
 	budgets, budgetErr := authorizationBudgets(req.Requests, snapshot, boundedItems, map[int]bool{}, foreign, nil)
 	if budgetErr != nil {
-		return nil, signerapi.GroupSignRequest{}, budgetErr
+		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(budgetErr)
 	}
 	feeInfo, feeErr := applyGroupFees(append([]types.Transaction(nil), allTxns...), budgets, resourcePlan, expectedDummies, lsigIndices, true)
 	if feeErr != nil {
-		return nil, signerapi.GroupSignRequest{}, feeErr
+		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(feeErr)
 	}
-	// Re-resolve after fee and group validation so bounded max-fee and path
-	// checks apply to the exact bytes that will be signed.
-	boundedItems, err = resolveBoundedPlanItems(snapshot, req.Requests, originals, map[int]bool{}, foreign)
-	if err != nil {
-		return nil, signerapi.GroupSignRequest{}, err
-	}
+	s.Planner.logSignRequests(identityID, req, originals, map[int]bool{}, foreign)
 	authKeyTypes := make([]string, evalCount)
 	for i, txReq := range req.Requests {
 		if !foreign[i] {
@@ -103,6 +98,13 @@ func (s *Service) ValidateFrozenComponentContext(identityID string, request sign
 		AuthKeyTypes: authKeyTypes, KnownAddresses: knownAddressesFromSnapshot(snapshot),
 		BoundedItems: boundedItems,
 	}, req, nil
+}
+
+func (s *Service) frozenComponentPlannerError(err *ServiceError) *ServiceError {
+	if err != nil && s.IsUnlocked != nil && !s.IsUnlocked() {
+		return lockedError()
+	}
+	return err
 }
 
 // validateFrozenComponentDummyPartition makes the request's position labels

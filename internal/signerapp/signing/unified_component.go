@@ -27,7 +27,10 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, identityID stri
 	}
 	switch req.TargetKind() {
 	case signerapi.ComponentTargetKindUser, signerapi.ComponentTargetKindSentry:
-		planReq := componentPlanRequest{RequestID: req.RequestID, GroupBytesHex: req.GroupBytesHex}
+		planReq := componentPlanRequest{
+			RequestID: req.RequestID, GroupBytesHex: req.GroupBytesHex,
+			Requests: req.GroupSignRequest().Requests,
+		}
 		for _, target := range req.Targets {
 			planReq.TargetIndices = append(planReq.TargetIndices, target.TargetIndex)
 			if target.Kind == signerapi.ComponentTargetKindUser {

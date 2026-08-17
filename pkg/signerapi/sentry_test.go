@@ -66,3 +66,25 @@ func TestComponentRequestValidateKindsAndClosedPartition(t *testing.T) {
 		})
 	}
 }
+
+func TestComponentRequestGroupSignRequestPreservesApprovalMetadata(t *testing.T) {
+	targetInfo := &AppCallInfo{Mode: "abi", Method: "increment(uint64)void"}
+	contextInfo := &AppCallInfo{Mode: "raw"}
+	request := ComponentRequest{
+		GroupBytesHex: []string{"5458aa", "5458bb", "5458cc"},
+		Targets: []ComponentTarget{{
+			TargetIndex: 0, Kind: ComponentTargetKindBoundedBase,
+			AuthAddress: "BOUNDED", AppCallInfo: targetInfo,
+		}},
+		ContextualPositions: []ComponentContextPosition{{TargetIndex: 1, AppCallInfo: contextInfo}},
+		DummyPositions:      []ComponentDummyPosition{{TargetIndex: 2}},
+	}
+
+	group := request.GroupSignRequest()
+	if len(group.Requests) != 2 {
+		t.Fatalf("group request length = %d, want original prefix length 2", len(group.Requests))
+	}
+	if group.Requests[0].AppCallInfo != targetInfo || group.Requests[1].AppCallInfo != contextInfo {
+		t.Fatalf("app-call metadata = %#v/%#v, want target/context metadata", group.Requests[0].AppCallInfo, group.Requests[1].AppCallInfo)
+	}
+}
