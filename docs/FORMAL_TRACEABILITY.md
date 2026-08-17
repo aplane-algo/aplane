@@ -321,7 +321,7 @@ These are cross-module seam claims rather than new numbered invariants.
 | Coordinator consulted iff review-class verdict | `ConsultedIffReview` |
 | Review-class signs only if coordinator approved (AP2) | `CoordinatorApproveRequiredToSign` |
 | Every non-approve coordinator outcome rejects | `NonApproveCoordinatorRejects` |
-| Fail-all yields no signed output, end to end (L8) | `FailAllProducesNoSignedOutput` |
+| Fail-all yields no signed output, end to end | `FailAllProducesNoSignedOutput` |
 | Hard deny dominates the coordinator (I9) | `HardDenyDominatesCoordinator` |
 | Policy outcome binds signing output | `PolicyOutcomeBindsOutput` |
 
@@ -435,8 +435,11 @@ The following invariants have no TLA+ representation yet:
 - Most of I4-I6 and CS1-CS4 (planning details and client simulation composition).
 - P1, P2, P3, P8, P9, P10 (snapshot semantics, slot scope, routing,
   key overrides).
-- L1, L2, L3, L9-L11 (lifecycle non-concurrency claims). L8 is now
-  machine-checked in `approval_coordinator.tla`.
+- L11 (reload order) remains a Go-level contract without a TLA+
+  representation. L1-L10 were retired with the per-identity decommission
+  state and operation lease; the reason-independent fail-all property is
+  machine-checked as AP6 in `approval_coordinator.tla` and through
+  `FailAllProducesNoSignedOutput` in `approval_composition.tla`.
 - All of S1-S13 (signing authority) — **by decision, not omission** (2026-07-03
   review): S1/S3-S5/S8/S11/S12 are structural or definitional (a module would
   verify its own encoding), S2/S6/S7/S9 are single-guard checks whose only

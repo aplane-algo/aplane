@@ -4,8 +4,8 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,7 +14,9 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signing"
 
@@ -348,10 +350,15 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
-	r := requestWithIdentity(http.MethodPost, "/sign", reqJSON)
+	r := httptest.NewRequest(http.MethodPost, "/sign", bytes.NewReader(reqJSON))
+	r.Header.Set("Authorization", "aplane test-token")
 	r.RemoteAddr = "203.0.113.12:5000"
 	w := httptest.NewRecorder()
-	server.handleSign(w, r)
+	server.requireAuth(
+		auth.ActionSignRequest,
+		auth.Resource{Type: "transaction"},
+		server.handleSign,
+	)(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("/sign failed: %d: %s", w.Code, w.Body.String())
 	}
@@ -364,7 +371,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 		t.Fatalf("audit events = %q/%q, want request/approved", entries[0].Event, entries[1].Event)
 	}
 	for _, entry := range entries {
-		if entry.TargetIdentityID != auth.DefaultIdentityID || entry.RequesterPrincipal != auth.DefaultIdentityID {
+		if entry.TargetIdentityID != auth.DefaultIdentityID || entry.RequesterPrincipal != authz.SystemProductAdminPrincipalID {
 			t.Fatalf("HTTP signing identity attribution = %#v", entry)
 		}
 		if entry.Transport != auditTransportHTTP || entry.RemoteAddr != "203.0.113.12:5000" {

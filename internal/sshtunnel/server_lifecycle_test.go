@@ -136,6 +136,29 @@ func TestProductAuthChecksKeyAfterFixedUsernameValidation(t *testing.T) {
 	}
 }
 
+func TestProductAuthRejectsNonProductUsernameBeforeKeyCheck(t *testing.T) {
+	srv, _ := testServer(t)
+	_, pub := generateClientKey(t)
+	srv.tokenMAC = testTokenMACs
+	checked := false
+	srv.keyChecker = func(key ssh.PublicKey) bool {
+		checked = true
+		return true
+	}
+	srv.keyEnroller = func(key ssh.PublicKey) error { return nil }
+
+	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "other-identity"}, pub)
+	if perms != nil {
+		t.Fatalf("handlePublicKeyAuth() permissions = %#v, want nil", perms)
+	}
+	if err == nil || !strings.Contains(err.Error(), "unsupported SSH username") {
+		t.Fatalf("handlePublicKeyAuth() error = %v, want unsupported username", err)
+	}
+	if checked {
+		t.Fatal("non-product username reached product key check")
+	}
+}
+
 func TestNextAcceptErrorBackoff(t *testing.T) {
 	tests := []struct {
 		name    string
