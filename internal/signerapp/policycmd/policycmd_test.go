@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storelock"
@@ -32,45 +33,66 @@ type fakeOnlineSession struct {
 	authPassphrase   string
 	unlockPassphrase string
 	replaceRequest   protocol.ReplacePolicyMessage
+	nodeRole         string
+	snapshotTarget   string
+	authErr          error
+	unlockResult     *protocol.UnlockResultMessage
+	replaceCalls     int
 }
 
 func (f *fakeOnlineSession) Dial() error { f.dialCalls++; return nil }
 func (f *fakeOnlineSession) Close()      { f.closeCalls++ }
 func (f *fakeOnlineSession) Authenticate(passphrase string, _ time.Duration) error {
 	f.authPassphrase = passphrase
-	return nil
+	return f.authErr
 }
 func (f *fakeOnlineSession) WaitForStatus(time.Duration) (*protocol.StatusMessage, error) {
 	return &protocol.StatusMessage{State: f.status}, nil
 }
 func (f *fakeOnlineSession) Unlock(passphrase string, _ time.Duration) (*protocol.UnlockResultMessage, error) {
 	f.unlockPassphrase = passphrase
+	if f.unlockResult != nil {
+		return f.unlockResult, nil
+	}
 	return &protocol.UnlockResultMessage{Success: true}, nil
 }
 func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration) ([]byte, error) {
+	role := f.nodeRole
+	if role == "" {
+		role = "signer"
+	}
+	target := f.snapshotTarget
+	if target == "" {
+		target = role
+	}
+	policyYAML := "reject_foreign_rekey: true\n"
+	if target == "sentry" {
+		policyYAML = "reject_rekey: true\n"
+	}
 	switch request := message.(type) {
 	case protocol.GetAdminSettingsMessage:
 		return marshalTestMessage(protocol.AdminSettingsMessage{
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAdminSettings, ID: request.ID},
-			NodeRole:    "signer",
+			NodeRole:    role,
 		})
 	case protocol.GetPolicySnapshotMessage:
 		return marshalTestMessage(protocol.PolicySnapshotMessage{
 			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicySnapshot, ID: request.ID},
 			Success:      true,
-			Target:       "signer",
+			Target:       target,
 			IdentityID:   "default",
-			PolicyYAML:   "reject_foreign_rekey: true\n",
+			PolicyYAML:   policyYAML,
 			PolicySHA256: "active-sha",
 		})
 	case protocol.ValidatePolicyMessage:
 		return marshalTestMessage(protocol.ValidatePolicyResultMessage{
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeValidatePolicyResult, ID: request.ID},
 			Success:     true,
-			Target:      "signer",
+			Target:      target,
 			IdentityID:  "default",
 		})
 	case protocol.ReplacePolicyMessage:
+		f.replaceCalls++
 		f.replaceRequest = request
 		return marshalTestMessage(protocol.ReplacePolicyResultMessage{
 			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeReplacePolicyResult, ID: request.ID},
@@ -82,6 +104,40 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 		})
 	default:
 		return nil, errors.New("unexpected request")
+	}
+}
+
+func TestOnlineReadOnlyAutoTargetsSentryWithoutReplacement(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "secret")
+	session := &fakeOnlineSession{status: "unlocked", nodeRole: "sentry"}
+	var stdout bytes.Buffer
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
+		Verb: VerbCheck, Target: policyeditor.TargetAuto,
+	}, Streams{Stdout: &stdout})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.unlockPassphrase != "" || session.replaceCalls != 0 {
+		t.Fatalf("read-only command unlocked or replaced: unlock=%q replacements=%d", session.unlockPassphrase, session.replaceCalls)
+	}
+	if !strings.Contains(stdout.String(), "sentry policy OK online") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestOnlineAuthenticationFailureClosesSession(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "secret")
+	session := &fakeOnlineSession{authErr: errors.New("denied")}
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
+		Verb: VerbCheck, Target: policyeditor.TargetSigner,
+	}, Streams{})
+	if err == nil || !strings.Contains(err.Error(), "authentication failed") {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if session.dialCalls != 1 || session.closeCalls != 1 {
+		t.Fatalf("session lifecycle = dial %d close %d", session.dialCalls, session.closeCalls)
 	}
 }
 
@@ -311,6 +367,68 @@ func TestRescueDraftEditWritesOnlyDraftWithoutSidecar(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".hmac"); !os.IsNotExist(err) {
 		t.Fatalf("standalone draft created sidecar: %v", err)
+	}
+}
+
+func TestRescueProductionEditHoldsLockThroughEditorAndNormalizesOnlyOnSuccess(t *testing.T) {
+	root, passphrase := initializedPolicyStore(t)
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, passphrase)
+
+	oldEUID, oldManaged := EffectiveUID, IsManagedStore
+	oldOwner, oldLoad := ManagedStoreOwner, LoadServerConfig
+	oldSocket, oldNormalize := ResolveLegacySocket, NormalizeStore
+	t.Cleanup(func() {
+		EffectiveUID, IsManagedStore = oldEUID, oldManaged
+		ManagedStoreOwner, LoadServerConfig = oldOwner, oldLoad
+		ResolveLegacySocket, NormalizeStore = oldSocket, oldNormalize
+	})
+	EffectiveUID = func() int { return 0 }
+	IsManagedStore = func(string) (bool, error) { return true, nil }
+	ManagedStoreOwner = func(string) (int, int, error) { return 12, 34, nil }
+	LoadServerConfig = func(string) (serverconfig.ServerConfig, error) {
+		cfg := serverconfig.DefaultServerConfig()
+		return cfg, nil
+	}
+	ResolveLegacySocket = func(string, string) (string, error) { return "socket", nil }
+	normalizeCalls := 0
+	NormalizeStore = func(root string, uid, gid int, socket string) error {
+		normalizeCalls++
+		if uid != 12 || gid != 34 || socket != "socket" {
+			t.Fatalf("normalization inputs = %d:%d %q", uid, gid, socket)
+		}
+		return nil
+	}
+
+	editor := func(policyeditor.Store, *policy.StoredConfig, string, string, policyeditor.Target) error {
+		guard, err := storelock.AcquireShared(root)
+		if err == nil {
+			_ = guard.Close()
+			t.Fatal("editor did not retain the exclusive mutation lock")
+		}
+		if !errors.Is(err, storelock.ErrBusy) {
+			t.Fatalf("AcquireShared() error = %v", err)
+		}
+		return nil
+	}
+	err := (RescueRunner{Editor: editor}).Run(context.Background(), Command{
+		Verb: VerbEdit, Target: policyeditor.TargetSigner, DataDir: root,
+	}, Streams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalizeCalls != 1 {
+		t.Fatalf("normalize calls = %d, want 1", normalizeCalls)
+	}
+
+	normalizeCalls = 0
+	err = (RescueRunner{Editor: func(policyeditor.Store, *policy.StoredConfig, string, string, policyeditor.Target) error {
+		return errors.New("cancelled")
+	}}).Run(context.Background(), Command{
+		Verb: VerbEdit, Target: policyeditor.TargetSigner, DataDir: root,
+	}, Streams{})
+	if err == nil || normalizeCalls != 0 {
+		t.Fatalf("failed edit error=%v normalize calls=%d", err, normalizeCalls)
 	}
 }
 
