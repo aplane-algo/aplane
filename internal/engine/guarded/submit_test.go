@@ -493,7 +493,7 @@ func TestRequestSentryComponentSignaturesUsesExplicitSelfEndpoint(t *testing.T) 
 func sentryEndpointRegistry(alias string, endpoint config.ClientEndpointConfig) config.ClientEndpointRegistry {
 	endpoint.Role = config.ClientEndpointRoleSentry
 	return config.ClientEndpointRegistry{
-		SchemaVersion: 1,
+		SchemaVersion: config.ClientEndpointSchemaVersion,
 		Endpoints:     map[string]config.ClientEndpointConfig{alias: endpoint},
 	}
 }

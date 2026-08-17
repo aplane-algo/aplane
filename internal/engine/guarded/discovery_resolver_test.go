@@ -243,7 +243,10 @@ func TestLiveSentryResolverRemovesImplicitPrimarySignerFallback(t *testing.T) {
 }
 
 func resolverTestRegistry(aliases ...string) config.ClientEndpointRegistry {
-	registry := config.ClientEndpointRegistry{SchemaVersion: 1, Endpoints: make(map[string]config.ClientEndpointConfig, len(aliases))}
+	registry := config.ClientEndpointRegistry{
+		SchemaVersion: config.ClientEndpointSchemaVersion,
+		Endpoints:     make(map[string]config.ClientEndpointConfig, len(aliases)),
+	}
 	for _, alias := range aliases {
 		registry.Endpoints[alias] = config.ClientEndpointConfig{Role: config.ClientEndpointRoleSentry, URL: "https://" + alias + ".example"}
 	}
