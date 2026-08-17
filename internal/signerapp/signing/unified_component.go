@@ -19,7 +19,18 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, identityID stri
 	}
 	switch req.TargetKind() {
 	case signerapi.ComponentTargetKindUser, signerapi.ComponentTargetKindSentry:
-		result, err := s.SignComponentWithContext(ctx, identityID, req.LegacySignRequest(), session)
+		planReq := componentPlanRequest{RequestID: req.RequestID, GroupBytesHex: req.GroupBytesHex}
+		for _, target := range req.Targets {
+			planReq.TargetIndices = append(planReq.TargetIndices, target.TargetIndex)
+			if target.Kind == signerapi.ComponentTargetKindUser {
+				planReq.Role = signerapi.ComponentSignRoleUser
+				planReq.ComponentKey = target.AuthAddress
+			} else {
+				planReq.Role = signerapi.ComponentSignRoleSentry
+				planReq.ComponentKey = target.ComponentKey
+			}
+		}
+		result, err := s.signComponentWithContext(ctx, identityID, planReq, session)
 		if err != nil {
 			return nil, err
 		}

@@ -247,7 +247,7 @@ func TestGuardedTargetsRequireSentryComponentKeyTypeMetadata(t *testing.T) {
 func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 	tests := []struct {
 		name        string
-		resp        *signerapi.ComponentSignResponse
+		resp        *signerapi.ComponentResponse
 		wantMessage string
 	}{
 		{
@@ -257,7 +257,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 		},
 		{
 			name: "unexpected target index",
-			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+			resp: &signerapi.ComponentResponse{Components: []signerapi.Component{{
 				TargetIndex:     9,
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "aa",
@@ -266,7 +266,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 		},
 		{
 			name: "duplicate target index",
-			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+			resp: &signerapi.ComponentResponse{Components: []signerapi.Component{{
 				TargetIndex:     0,
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "aa",
@@ -279,7 +279,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 		},
 		{
 			name: "wrong scheme",
-			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+			resp: &signerapi.ComponentResponse{Components: []signerapi.Component{{
 				TargetIndex:     0,
 				SignatureScheme: "aplane.sentry-unknown.v1",
 				Signature:       "aa",
@@ -292,7 +292,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 		},
 		{
 			name: "missing target index",
-			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+			resp: &signerapi.ComponentResponse{Components: []signerapi.Component{{
 				TargetIndex:     0,
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "aa",

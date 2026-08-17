@@ -98,13 +98,13 @@ func countOperationLease(svc *Service) (acquired, released *int) {
 	return acquired, released
 }
 
-func userComponentGateRequest(t *testing.T, sender string, txns []types.Transaction, targetIndices []int) signerapi.ComponentSignRequest {
+func userComponentGateRequest(t *testing.T, sender string, txns []types.Transaction, targetIndices []int) componentPlanRequest {
 	t.Helper()
 	groupBytesHex := make([]string, len(txns))
 	for i, txn := range txns {
 		groupBytesHex[i] = txnutil.EncodeWithPrefixHex(txn)
 	}
-	return signerapi.ComponentSignRequest{
+	return componentPlanRequest{
 		RequestID:     "cmp-gate-test",
 		Role:          signerapi.ComponentSignRoleUser,
 		ComponentKey:  sender,
@@ -126,7 +126,7 @@ func TestSignComponentUserRoleRejectedBySignerPolicy(t *testing.T) {
 	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{MaxFeeMicroAlgos: 1}, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
-	_, err := svc.SignComponentWithContext(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), nil)
+	_, err := svc.signComponentWithContext(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), nil)
 	if err == nil {
 		t.Fatal("SignComponentWithContext() error = nil, want session required")
 	}

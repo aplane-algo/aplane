@@ -152,25 +152,3 @@ func (s *ConnectionState) RequestAssembleWithContext(ctx context.Context, req si
 	}
 	return client.RequestAssembleWithContext(ctx, req)
 }
-
-// RequestComponentSign sends a component-signing request to Signer.
-func (s *ConnectionState) RequestComponentSign(req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
-	return s.RequestComponentSignWithContext(context.Background(), req)
-}
-
-func (s *ConnectionState) RequestComponentSignWithContext(ctx context.Context, req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
-	client, err := s.signerClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.RequestComponentSignWithContext(ctx, req)
-}
-
-// RequestGuardedAssemble sends a guarded assembly request to Signer.
-func (s *ConnectionState) RequestGuardedAssemble(req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	return s.RequestAssembleWithContext(context.Background(), req.AssemblyRequest())
-}
-
-func (s *ConnectionState) RequestGuardedAssembleWithContext(ctx context.Context, req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	return s.RequestAssembleWithContext(ctx, req.AssemblyRequest())
-}

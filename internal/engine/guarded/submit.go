@@ -874,12 +874,7 @@ func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesH
 	signatures := make(map[int]string, len(targets))
 	requestIDs := make(map[string]string, len(byAccount))
 	for account, indices := range byAccount {
-		resp, err := s.conn.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
-			Role:          signerapi.ComponentSignRoleUser,
-			ComponentKey:  account,
-			GroupBytesHex: groupBytesHex,
-			TargetIndices: indices,
-		})
+		resp, err := s.conn.RequestComponentsWithContext(ctx, componentRequestForIndices(groupBytesHex, indices, signerapi.ComponentTargetKindUser, account))
 		if err != nil {
 			return nil, nil, fmt.Errorf("user component signing failed for %s: %w", account, err)
 		}
@@ -927,12 +922,7 @@ func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, grou
 	}
 	componentLabel := fmt.Sprintf("Witness Key ID %s (%s)", componentSelector, sentryKey.ComponentKeyType)
 
-	resp, err := endpoint.client.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  componentSelector,
-		GroupBytesHex: groupBytesHex,
-		TargetIndices: indices,
-	})
+	resp, err := endpoint.client.RequestComponentsWithContext(ctx, componentRequestForIndices(groupBytesHex, indices, signerapi.ComponentTargetKindSentry, componentSelector))
 	if err != nil {
 		return "", fmt.Errorf("sentry component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
 	}
@@ -942,7 +932,28 @@ func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, grou
 	return resp.RequestID, nil
 }
 
-func collectComponentSignatures(resp *signerapi.ComponentSignResponse, expected []int, expectedScheme string, dst map[int]string) error {
+func componentRequestForIndices(groupBytesHex []string, indices []int, kind signerapi.ComponentTargetKind, key string) signerapi.ComponentRequest {
+	targetSet := make(map[int]bool, len(indices))
+	request := signerapi.ComponentRequest{GroupBytesHex: groupBytesHex}
+	for _, index := range indices {
+		targetSet[index] = true
+		target := signerapi.ComponentTarget{TargetIndex: index, Kind: kind}
+		if kind == signerapi.ComponentTargetKindUser {
+			target.AuthAddress = key
+		} else {
+			target.ComponentKey = key
+		}
+		request.Targets = append(request.Targets, target)
+	}
+	for index := range groupBytesHex {
+		if !targetSet[index] {
+			request.ContextualPositions = append(request.ContextualPositions, signerapi.ComponentContextPosition{TargetIndex: index})
+		}
+	}
+	return request
+}
+
+func collectComponentSignatures(resp *signerapi.ComponentResponse, expected []int, expectedScheme string, dst map[int]string) error {
 	if resp == nil {
 		return fmt.Errorf("empty component sign response")
 	}
@@ -950,19 +961,19 @@ func collectComponentSignatures(resp *signerapi.ComponentSignResponse, expected 
 	for _, index := range expected {
 		expectedSet[index] = true
 	}
-	seen := make(map[int]bool, len(resp.Signatures))
-	for _, sig := range resp.Signatures {
-		if !expectedSet[sig.TargetIndex] {
-			return fmt.Errorf("unexpected signature for target index %d", sig.TargetIndex)
+	seen := make(map[int]bool, len(resp.Components))
+	for _, component := range resp.Components {
+		if !expectedSet[component.TargetIndex] {
+			return fmt.Errorf("unexpected signature for target index %d", component.TargetIndex)
 		}
-		if seen[sig.TargetIndex] {
-			return fmt.Errorf("duplicate signature for target index %d", sig.TargetIndex)
+		if seen[component.TargetIndex] {
+			return fmt.Errorf("duplicate signature for target index %d", component.TargetIndex)
 		}
-		if expectedScheme != "" && sig.SignatureScheme != expectedScheme {
-			return fmt.Errorf("signature for target index %d used scheme %s, want %s", sig.TargetIndex, sig.SignatureScheme, expectedScheme)
+		if expectedScheme != "" && component.SignatureScheme != expectedScheme {
+			return fmt.Errorf("signature for target index %d used scheme %s, want %s", component.TargetIndex, component.SignatureScheme, expectedScheme)
 		}
-		seen[sig.TargetIndex] = true
-		dst[sig.TargetIndex] = sig.Signature
+		seen[component.TargetIndex] = true
+		dst[component.TargetIndex] = component.Signature
 	}
 	for _, index := range expected {
 		if !seen[index] {

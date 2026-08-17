@@ -260,12 +260,12 @@ func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token s
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		var req signerapi.ComponentSignRequest
+		var req signerapi.ComponentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.Role != signerapi.ComponentSignRoleSentry || req.ComponentKey != componentSelector {
+		if req.TargetKind() != signerapi.ComponentTargetKindSentry || len(req.Targets) == 0 || req.Targets[0].ComponentKey != componentSelector {
 			http.Error(w, "wrong Witness Key ID", http.StatusBadRequest)
 			return
 		}
@@ -274,12 +274,12 @@ func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token s
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		resp := signerapi.ComponentSignResponse{
-			RequestID:    req.RequestID,
-			ComponentKey: req.ComponentKey,
-			Signatures:   make([]signerapi.ComponentSignature, 0, len(req.TargetIndices)),
+		resp := signerapi.ComponentResponse{
+			RequestID:  req.RequestID,
+			Components: make([]signerapi.Component, 0, len(req.Targets)),
 		}
-		for _, index := range req.TargetIndices {
+		for _, target := range req.Targets {
+			index := target.TargetIndex
 			if index < 0 || index >= len(group.Entries) {
 				http.Error(w, "target index out of range", http.StatusBadRequest)
 				return
@@ -290,8 +290,9 @@ func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token s
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
+			resp.Components = append(resp.Components, signerapi.Component{
 				TargetIndex:     index,
+				Kind:            signerapi.ComponentTargetKindSentry,
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       hex.EncodeToString(signature),
 			})

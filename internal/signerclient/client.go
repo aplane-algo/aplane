@@ -532,35 +532,6 @@ func (c *Client) RequestAssembleWithContext(ctx context.Context, reqBody signera
 	return result, nil
 }
 
-// RequestComponentSign sends a role-specific component-signing request to
-// /sign/component.
-//
-// Unlike RequestGroupSign, the component and guarded-assembly endpoints do
-// not run the cancel-on-ctx-done watcher: they never park on the signer's
-// manual-approval coordinator (sentry policy is pass/reject only), so there
-// is no pending prompt for /sign/cancel to clear. Context cancellation
-// aborts the HTTP request and the server honors r.Context() directly.
-func (c *Client) RequestComponentSign(req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
-	return c.RequestComponentSignWithContext(context.Background(), req)
-}
-
-func (c *Client) RequestComponentSignWithContext(ctx context.Context, reqBody signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
-	if err := reqBody.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid component sign request: %w", err)
-	}
-	componentResp, err := c.RequestComponentsWithContext(ctx, reqBody.ComponentRequest())
-	if err != nil {
-		return nil, err
-	}
-	result := &signerapi.ComponentSignResponse{RequestID: componentResp.RequestID, ComponentKey: reqBody.ComponentKey}
-	for _, component := range componentResp.Components {
-		result.Signatures = append(result.Signatures, signerapi.ComponentSignature{
-			TargetIndex: component.TargetIndex, Signature: component.Signature, SignatureScheme: component.SignatureScheme,
-		})
-	}
-	return result, nil
-}
-
 func (c *Client) RequestComponents(req signerapi.ComponentRequest) (*signerapi.ComponentResponse, error) {
 	return c.RequestComponentsWithContext(context.Background(), req)
 }
@@ -601,17 +572,19 @@ func (c *Client) RequestComponentsWithContext(ctx context.Context, reqBody signe
 	if result.RequestID != reqBody.RequestID {
 		return nil, fmt.Errorf("component response request_id does not match request")
 	}
+	expected := make(map[int]signerapi.ComponentTargetKind, len(reqBody.Targets))
+	for _, target := range reqBody.Targets {
+		expected[target.TargetIndex] = target.Kind
+	}
+	if len(result.Components) != len(expected) {
+		return nil, fmt.Errorf("component response target indices or kinds do not match request")
+	}
+	for _, component := range result.Components {
+		if expected[component.TargetIndex] != component.Kind {
+			return nil, fmt.Errorf("component response target indices or kinds do not match request")
+		}
+	}
 	return &result, nil
-}
-
-// RequestGuardedAssemble sends a verified guarded transaction assembly
-// request to /sign/assemble.
-func (c *Client) RequestGuardedAssemble(req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	return c.RequestAssemble(req.AssemblyRequest())
-}
-
-func (c *Client) RequestGuardedAssembleWithContext(ctx context.Context, reqBody signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	return c.RequestAssembleWithContext(ctx, reqBody.AssemblyRequest())
 }
 
 // CancelSignRequestWithContext asks apsigner to cancel a pending manual
