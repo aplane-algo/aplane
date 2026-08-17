@@ -24,6 +24,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -224,6 +225,7 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
+	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{URL: "self"})
 	s.algod = algodClient
 
 	var out bytes.Buffer
@@ -354,6 +356,7 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 		})
 	})
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{URL: "self"})
 	s.algod = algodClient
 	if _, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard}); err != nil {
 		t.Fatalf("SignAndSubmitGroup() error = %v", err)
@@ -432,6 +435,7 @@ func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
 
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
+	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{URL: "self"})
 	s.algod = algodClient
 
 	var out bytes.Buffer

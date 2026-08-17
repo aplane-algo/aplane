@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -154,6 +155,68 @@ func TestHostKeyApprovalIsPerCallback(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("approval calls = %d, want 2 across separate connection attempts", calls)
 	}
+}
+
+func TestHostKeyCallbackReturnsTypedTrustErrors(t *testing.T) {
+	_, firstPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstSigner, err := ssh.NewSignerFromKey(firstPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, secondPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondSigner, err := ssh.NewSignerFromKey(secondPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 22}
+
+	t.Run("unknown", func(t *testing.T) {
+		client := NewClient("unknown.example", 22, 0, 0, "", filepath.Join(t.TempDir(), "known_hosts"))
+		callback, err := client.hostKeyCallback()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := callback("unknown.example:22", remote, firstSigner.PublicKey()); !errors.Is(err, ErrUnknownHostKey) {
+			t.Fatalf("host callback error = %v, want ErrUnknownHostKey", err)
+		}
+	})
+
+	t.Run("mismatch", func(t *testing.T) {
+		client := NewClient("pinned.example", 22, 0, 0, "", filepath.Join(t.TempDir(), "known_hosts"))
+		client.SetHostKeyApprovalHandler(func(string, string) (bool, error) { return true, nil })
+		callback, err := client.hostKeyCallback()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := callback("pinned.example:22", remote, firstSigner.PublicKey()); err != nil {
+			t.Fatal(err)
+		}
+		callback, err = client.hostKeyCallback()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := callback("pinned.example:22", remote, secondSigner.PublicKey()); !errors.Is(err, ErrHostKeyMismatch) {
+			t.Fatalf("host callback error = %v, want ErrHostKeyMismatch", err)
+		}
+	})
+
+	t.Run("malformed known hosts", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "known_hosts")
+		if err := os.WriteFile(path, []byte("not a known-hosts record\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		client := NewClient("bad.example", 22, 0, 0, "", path)
+		_, err := client.hostKeyCallback()
+		if !errors.Is(err, ErrKnownHostsFile) {
+			t.Fatalf("hostKeyCallback() error = %v, want ErrKnownHostsFile", err)
+		}
+	})
 }
 
 func TestForwardInterceptedGlobalRequestDoesNotBlockWhenFull(t *testing.T) {

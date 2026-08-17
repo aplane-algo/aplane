@@ -140,6 +140,7 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
 			a.Config = cfg
+			a.eng.EndpointRegistry = cfg.Endpoints.Clone()
 		}
 	}
 	result.RenderLines = endpointImportRenderLines(result)
@@ -185,6 +186,7 @@ func (a *App) EndpointCreateSentry(_ context.Context, req EndpointCreateSentryRe
 		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
 			a.Config = cfg
+			a.eng.EndpointRegistry = cfg.Endpoints.Clone()
 		}
 	}
 	result.RenderLines = endpointCreateSentryRenderLines(result)
@@ -277,6 +279,7 @@ func (a *App) discoverEndpointSentries(ctx context.Context, dryRun bool) (*Endpo
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
 			a.Config = cfg
 			a.eng.SentryEndpoints = cfg.SentryEndpoints.Clone()
+			a.eng.EndpointRegistry = cfg.Endpoints.Clone()
 		}
 	}
 	return result, plan.Registry, nil
@@ -410,6 +413,7 @@ func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefault
 	}
 	if cfg, err := config.LoadConfig(a.DataDir); err == nil {
 		a.Config = cfg
+		a.eng.EndpointRegistry = cfg.Endpoints.Clone()
 	}
 	return &EndpointDefaultResult{
 		Alias:         alias,
@@ -438,6 +442,7 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	}
 	if cfg, err := config.LoadConfig(a.DataDir); err == nil {
 		a.Config = cfg
+		a.eng.EndpointRegistry = cfg.Endpoints.Clone()
 	}
 	return &EndpointDeleteResult{
 		Alias:       alias,

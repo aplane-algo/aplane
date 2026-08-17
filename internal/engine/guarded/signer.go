@@ -54,30 +54,31 @@ type SignerCacheView interface {
 
 // Deps are the collaborators guarded orchestration needs from the client.
 type Deps struct {
-	Conn            *connect.ConnectionState
-	Algod           *algod.Client
-	AuthCache       *cache.AuthAddressCache
-	SentryEndpoints config.SentryEndpointConfigs
-	Cache           SignerCacheView
+	Conn             *connect.ConnectionState
+	Algod            *algod.Client
+	AuthCache        *cache.AuthAddressCache
+	EndpointRegistry config.ClientEndpointRegistry
+	Cache            SignerCacheView
 }
 
 // Signer orchestrates the client side of guarded signing. Construct one per
 // operation with New; it holds no mutable state of its own.
 type Signer struct {
-	conn            *connect.ConnectionState
-	algod           *algod.Client
-	authCache       *cache.AuthAddressCache
-	sentryEndpoints config.SentryEndpointConfigs
-	cache           SignerCacheView
+	conn             *connect.ConnectionState
+	algod            *algod.Client
+	authCache        *cache.AuthAddressCache
+	endpointRegistry config.ClientEndpointRegistry
+	cache            SignerCacheView
+	probeEndpoint    sentryEndpointProbe
 }
 
 // New builds a Signer from the given dependencies.
 func New(d Deps) *Signer {
 	return &Signer{
-		conn:            d.Conn,
-		algod:           d.Algod,
-		authCache:       d.AuthCache,
-		sentryEndpoints: d.SentryEndpoints,
-		cache:           d.Cache,
+		conn:             d.Conn,
+		algod:            d.Algod,
+		authCache:        d.AuthCache,
+		endpointRegistry: d.EndpointRegistry.Clone(),
+		cache:            d.Cache,
 	}
 }

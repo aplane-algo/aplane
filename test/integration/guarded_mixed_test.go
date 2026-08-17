@@ -134,8 +134,11 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
 	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
-	eng.SentryEndpoints = config.SentryEndpointConfigs{
-		sentryPubHex: {URL: sentry.URL, TokenFile: sentryTokenFile},
+	eng.EndpointRegistry = config.ClientEndpointRegistry{
+		SchemaVersion: 1,
+		Endpoints: map[string]config.ClientEndpointConfig{
+			"integration-sentry": {Role: config.ClientEndpointRoleSentry, URL: sentry.URL, TokenFile: sentryTokenFile},
+		},
 	}
 	if err := eng.EnsureSignerCache(context.Background()); err != nil {
 		t.Fatalf("Failed to populate signer cache from signer /keys: %v", err)

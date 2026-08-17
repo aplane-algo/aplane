@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
@@ -50,8 +52,20 @@ var (
 	// incompatible with sentry discovery.
 	ErrSentryDiscoveryConfig = errors.New("sentry endpoint configuration invalid")
 
+	// errSentryDiscoveryHostKeyMismatch marks an SSH endpoint whose host key
+	// differs from the client's existing pin. Discovery aborts globally when
+	// this error is observed.
+	errSentryDiscoveryHostKeyMismatch = errors.New("sentry endpoint SSH host key mismatch")
+
 	errSentryEndpointAuth   = errors.New("sentry endpoint auth")
 	errSentryEndpointConfig = errors.New("sentry endpoint config")
+)
+
+const (
+	sentryDiscoveryTotalTimeout    = 30 * time.Second
+	sentryDiscoveryEndpointTimeout = 10 * time.Second
+	sentryDiscoveryWorkers         = 4
+	maxSentryDiscoveryEndpoints    = 12
 )
 
 type resolvedSentryEndpoint struct {
@@ -60,16 +74,28 @@ type resolvedSentryEndpoint struct {
 	cleanup func()
 }
 
-type sentryEndpointLockedError struct {
-	source string
+type sentryEndpointProbe func(context.Context, string, config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error)
+
+type sentryEndpointProbeResult struct {
+	index    int
+	alias    string
+	endpoint *resolvedSentryEndpoint
+	keys     []DiscoveredSentryComponentKey
+	err      error
 }
 
-func (e sentryEndpointLockedError) Error() string {
-	return e.source + " is locked"
+type sentryEndpointSnapshot struct {
+	routes    map[sentryRequestKey]*resolvedSentryEndpoint
+	endpoints []*resolvedSentryEndpoint
 }
 
-func (e sentryEndpointLockedError) Unwrap() error {
-	return ErrSentryDiscoveryLocked
+func (s *sentryEndpointSnapshot) close() {
+	if s == nil {
+		return
+	}
+	for _, endpoint := range s.endpoints {
+		endpoint.close()
+	}
 }
 
 // DiscoveredSentryComponentKey is public sentry-key metadata
@@ -86,33 +112,112 @@ func (r *resolvedSentryEndpoint) close() {
 	}
 }
 
-func (s *Signer) resolveSentryEndpoint(ctx context.Context, sentryKey sentryRequestKey) (*resolvedSentryEndpoint, error) {
-	if endpoint, ok := s.sentryEndpoints[sentryKey.PublicKey]; ok {
-		if endpoint.URL == "self" {
-			if err := verifySentryEndpointAdvertises(ctx, s.conn, sentryKey, "configured self sentry endpoint"); err != nil {
-				return nil, err
-			}
-			return &resolvedSentryEndpoint{client: s.conn, source: "self"}, nil
+func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRequestKey) (*sentryEndpointSnapshot, error) {
+	required = distinctSortedSentryRequestKeys(required)
+	if len(required) == 0 {
+		return &sentryEndpointSnapshot{routes: map[sentryRequestKey]*resolvedSentryEndpoint{}}, nil
+	}
+	aliases := make([]string, 0, len(s.endpointRegistry.Endpoints))
+	for alias, endpoint := range s.endpointRegistry.Endpoints {
+		if endpoint.Role == config.ClientEndpointRoleSentry {
+			aliases = append(aliases, alias)
 		}
-		client, cleanup, source, err := s.connectConfiguredSentryEndpoint(ctx, endpoint)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect sentry endpoint for %s: %w", sentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
-		}
-		resolved := &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
-		if err := verifySentryEndpointAdvertises(ctx, client, sentryKey, source); err != nil {
-			resolved.close()
-			return nil, err
-		}
-		return resolved, nil
+	}
+	sort.Strings(aliases)
+	if len(aliases) > maxSentryDiscoveryEndpoints {
+		return nil, fmt.Errorf("%w: configured %d sentry endpoints; maximum is %d; remove or consolidate endpoint profiles", ErrSentryDiscoveryConfig, len(aliases), maxSentryDiscoveryEndpoints)
+	}
+	if len(aliases) == 0 {
+		return nil, fmt.Errorf("%w: no sentry endpoints configured; add a role %q endpoint (use url: self for a co-located sentry)", ErrSentryDiscoveryConfig, config.ClientEndpointRoleSentry)
 	}
 
-	if err := verifySentryEndpointAdvertises(ctx, s.conn, sentryKey, "current signer"); err != nil {
-		return nil, fmt.Errorf("no sentry endpoint configured for %s and current signer does not advertise a matching sentry component: %w", sentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
+	discoveryCtx, cancel := context.WithTimeout(ctx, sentryDiscoveryTotalTimeout)
+	defer cancel()
+	jobs := make(chan int)
+	results := make(chan sentryEndpointProbeResult, len(aliases))
+	probe := s.probeEndpoint
+	if probe == nil {
+		probe = s.probeConfiguredSentryEndpoint
 	}
-	return &resolvedSentryEndpoint{client: s.conn, source: "current signer"}, nil
+
+	var workers sync.WaitGroup
+	workerCount := min(sentryDiscoveryWorkers, len(aliases))
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				alias := aliases[index]
+				endpointCtx, endpointCancel := context.WithTimeout(discoveryCtx, sentryDiscoveryEndpointTimeout)
+				resolved, keys, err := probe(endpointCtx, alias, s.endpointRegistry.Endpoints[alias])
+				endpointCancel()
+				results <- sentryEndpointProbeResult{index: index, alias: alias, endpoint: resolved, keys: keys, err: err}
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for index := range aliases {
+			select {
+			case jobs <- index:
+			case <-discoveryCtx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+
+	states := make([]*sentryEndpointProbeResult, len(aliases))
+	selected := map[sentryRequestKey]int{}
+	resolvedAll := false
+	var hostKeyMismatch error
+	for result := range results {
+		result := result
+		states[result.index] = &result
+		if errors.Is(result.err, connect.ErrSSHHostKeyMismatch) {
+			hostKeyMismatch = fmt.Errorf("%w at endpoint %q", errSentryDiscoveryHostKeyMismatch, result.alias)
+			cancel()
+		}
+		if hostKeyMismatch == nil && !resolvedAll {
+			selected, resolvedAll = deterministicSentrySelections(required, states)
+			if resolvedAll {
+				cancel()
+			}
+		}
+	}
+
+	if hostKeyMismatch != nil {
+		closeProbeResults(states, nil)
+		return nil, hostKeyMismatch
+	}
+	if !resolvedAll {
+		closeProbeResults(states, nil)
+		return nil, unresolvedSentryDiscoveryError(required, selected, aliases, states, discoveryCtx.Err())
+	}
+
+	keep := map[*resolvedSentryEndpoint]bool{}
+	snapshot := &sentryEndpointSnapshot{routes: make(map[sentryRequestKey]*resolvedSentryEndpoint, len(selected))}
+	maxSelected := -1
+	for key, index := range selected {
+		endpoint := states[index].endpoint
+		snapshot.routes[key] = endpoint
+		if !keep[endpoint] {
+			keep[endpoint] = true
+			snapshot.endpoints = append(snapshot.endpoints, endpoint)
+		}
+		if index > maxSelected {
+			maxSelected = index
+		}
+	}
+	closeProbeResults(states, keep)
+	s.warnSkippedSentryEndpoints(states, maxSelected)
+	return snapshot, nil
 }
 
-func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint config.SentryEndpointConfig) (*signerclient.Client, func(), string, error) {
+func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint config.ClientEndpointConfig) (*signerclient.Client, func(), string, error) {
 	token, err := readSentryEndpointToken(endpoint.TokenFile)
 	if err != nil {
 		return nil, nil, "", err
@@ -158,41 +263,175 @@ func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 	}
 }
 
+func (s *Signer) probeConfiguredSentryEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
+	var resolved *resolvedSentryEndpoint
+	if endpoint.URL == "self" {
+		resolved = &resolvedSentryEndpoint{client: s.conn, source: alias + " (self)"}
+	} else {
+		client, cleanup, source, err := s.connectConfiguredSentryEndpoint(ctx, endpoint)
+		if err != nil {
+			return nil, nil, classifySentryDiscoveryConnectError(err)
+		}
+		resolved = &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
+	}
+	keys, err := resolved.client.GetKeysWithContext(ctx)
+	if err != nil {
+		resolved.close()
+		return nil, nil, classifySentryDiscoveryQueryError(err)
+	}
+	if keys.Locked {
+		resolved.close()
+		return nil, nil, fmt.Errorf("%w", ErrSentryDiscoveryLocked)
+	}
+	discovered, err := discoverSentryComponentKeys(keys.Keys)
+	if err != nil {
+		resolved.close()
+		return nil, nil, err
+	}
+	return resolved, discovered, nil
+}
+
 // DiscoverSentryComponentKeys queries one endpoint and returns
 // sentry component public keys that can be mapped for guarded signing.
 func (s *Signer) DiscoverSentryComponentKeys(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredSentryComponentKey, error) {
-	var client sentryComponentClient
-	var cleanup func()
-	if endpoint.URL == "self" {
-		client = s.conn
-	} else {
-		resolved := config.SentryEndpointConfig{
-			URL:            endpoint.URL,
-			TokenFile:      endpoint.TokenFile,
-			SignerPort:     endpoint.SignerPort,
-			LocalPort:      endpoint.LocalPort,
-			IdentityFile:   endpoint.IdentityFile,
-			KnownHostsPath: endpoint.KnownHostsPath,
-		}
-		c, closeFn, _, err := s.connectConfiguredSentryEndpoint(ctx, resolved)
-		if err != nil {
-			return nil, classifySentryDiscoveryConnectError(err)
-		}
-		client = c
-		cleanup = closeFn
+	resolved, keys, err := s.probeConfiguredSentryEndpoint(ctx, "requested endpoint", endpoint)
+	if resolved != nil {
+		defer resolved.close()
 	}
-	if cleanup != nil {
-		defer cleanup()
-	}
+	return keys, err
+}
 
-	keys, err := client.GetKeysWithContext(ctx)
-	if err != nil {
-		return nil, classifySentryDiscoveryQueryError(err)
+func distinctSortedSentryRequestKeys(required []sentryRequestKey) []sentryRequestKey {
+	seen := make(map[sentryRequestKey]bool, len(required))
+	out := make([]sentryRequestKey, 0, len(required))
+	for _, key := range required {
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, key)
+		}
 	}
-	if keys.Locked {
-		return nil, fmt.Errorf("%w", ErrSentryDiscoveryLocked)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ComponentKeyType != out[j].ComponentKeyType {
+			return out[i].ComponentKeyType < out[j].ComponentKeyType
+		}
+		return out[i].PublicKey < out[j].PublicKey
+	})
+	return out
+}
+
+func deterministicSentrySelections(required []sentryRequestKey, states []*sentryEndpointProbeResult) (map[sentryRequestKey]int, bool) {
+	selected := make(map[sentryRequestKey]int, len(required))
+	for _, key := range required {
+		found := false
+		for index, state := range states {
+			if state == nil {
+				break
+			}
+			if state.err == nil && discoveredSentryKeysContain(state.keys, key) {
+				selected[key] = index
+				found = true
+				break
+			}
+		}
+		if !found {
+			return selected, false
+		}
 	}
-	return discoverSentryComponentKeys(keys.Keys)
+	return selected, true
+}
+
+func discoveredSentryKeysContain(keys []DiscoveredSentryComponentKey, required sentryRequestKey) bool {
+	for _, key := range keys {
+		if key.PublicKey == required.PublicKey && key.KeyType == required.ComponentKeyType {
+			return true
+		}
+	}
+	return false
+}
+
+func closeProbeResults(states []*sentryEndpointProbeResult, keep map[*resolvedSentryEndpoint]bool) {
+	closed := map[*resolvedSentryEndpoint]bool{}
+	for _, state := range states {
+		if state == nil || state.endpoint == nil || keep[state.endpoint] || closed[state.endpoint] {
+			continue
+		}
+		state.endpoint.close()
+		closed[state.endpoint] = true
+	}
+}
+
+func unresolvedSentryDiscoveryError(required []sentryRequestKey, selected map[sentryRequestKey]int, aliases []string, states []*sentryEndpointProbeResult, cause error) error {
+	missing := make([]string, 0, len(required))
+	for _, key := range required {
+		if _, ok := selected[key]; ok {
+			continue
+		}
+		selector, err := sentryComponentSelector(key.ComponentKeyType, key.PublicKey)
+		if err != nil {
+			selector = "invalid"
+		}
+		missing = append(missing, fmt.Sprintf("Witness Key ID %s (%s)", selector, key.ComponentKeyType))
+	}
+	summary := make([]string, 0, len(aliases))
+	causes := make([]error, 0, len(aliases)+1)
+	if cause != nil {
+		causes = append(causes, cause)
+	}
+	for index, alias := range aliases {
+		state := states[index]
+		switch {
+		case state == nil:
+			summary = append(summary, alias+": not probed")
+		case state.err != nil:
+			summary = append(summary, alias+": "+sentryDiscoveryFailureLabel(state.err))
+			causes = append(causes, state.err)
+		default:
+			summary = append(summary, alias+": no matching key")
+		}
+	}
+	message := fmt.Sprintf("no live sentry route for %s; endpoint results: %s; configure a role %q endpoint that advertises the required Witness Key ID (use url: self for a co-located sentry)", strings.Join(missing, ", "), strings.Join(summary, "; "), config.ClientEndpointRoleSentry)
+	if len(causes) > 0 {
+		return fmt.Errorf("%s: %w", message, errors.Join(causes...))
+	}
+	return errors.New(message)
+}
+
+func sentryDiscoveryFailureLabel(err error) string {
+	switch {
+	case errors.Is(err, connect.ErrSSHHostKeyMismatch):
+		return "SSH host-key mismatch"
+	case errors.Is(err, connect.ErrSSHUnknownHostKey):
+		return "SSH host is not enrolled"
+	case errors.Is(err, connect.ErrSSHKnownHostsFile):
+		return "invalid known_hosts configuration"
+	case errors.Is(err, ErrSentryDiscoveryLocked):
+		return "signer locked"
+	case errors.Is(err, ErrSentryDiscoveryAuth):
+		return "authentication failed"
+	case errors.Is(err, ErrSentryDiscoveryInvalidMetadata):
+		return "invalid /keys metadata"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timed out"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, ErrSentryDiscoveryUnavailable):
+		return "unavailable"
+	default:
+		return "invalid endpoint configuration"
+	}
+}
+
+func (s *Signer) warnSkippedSentryEndpoints(states []*sentryEndpointProbeResult, maxSelected int) {
+	w := s.signerProgressWriter()
+	if w == nil {
+		return
+	}
+	for index, state := range states {
+		if index > maxSelected || state == nil || state.err == nil || errors.Is(state.err, context.Canceled) {
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "[sentry discovery] skipped endpoint %s: %s\n", state.alias, sentryDiscoveryFailureLabel(state.err))
+	}
 }
 
 func readSentryEndpointToken(path string) (string, error) {
@@ -332,44 +571,4 @@ func (s *Signer) signerProgressWriter() io.Writer {
 	s.conn.Mu.Lock()
 	defer s.conn.Mu.Unlock()
 	return s.conn.SignerProgressOut
-}
-
-func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentClient, sentryKey sentryRequestKey, source string) error {
-	expectedPublicKey, err := normalizeSentryPublicKeyHex(sentryKey.PublicKey)
-	if err != nil {
-		return fmt.Errorf("invalid expected sentry public key: %w", err)
-	}
-	expectedSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, expectedPublicKey)
-	if err != nil {
-		return fmt.Errorf("failed to derive expected Witness Key ID: %w", err)
-	}
-	expectedLabel := fmt.Sprintf("Witness Key ID %s (%s)", expectedSelector, sentryKey.ComponentKeyType)
-	keys, err := client.GetKeysWithContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to inspect %s sentry keys: %w", source, err)
-	}
-	if keys.Locked {
-		return sentryEndpointLockedError{source: source}
-	}
-	for _, key := range keys.Keys {
-		if key.KeyType != sentryKey.ComponentKeyType || !key.IsWitnessKey {
-			continue
-		}
-		publicKey, err := normalizeSentryPublicKeyHex(key.PublicKeyHex)
-		if err != nil {
-			continue
-		}
-		if publicKey != expectedPublicKey {
-			continue
-		}
-		selector, err := witness.NormalizeID(key.Address)
-		if err != nil {
-			return fmt.Errorf("%s advertised %s with invalid Witness Key ID %q: %w", source, expectedLabel, key.Address, err)
-		}
-		if selector != expectedSelector {
-			return fmt.Errorf("%s advertised %s with Witness Key ID %s, want %s", source, expectedLabel, selector, expectedSelector)
-		}
-		return nil
-	}
-	return fmt.Errorf("%s did not advertise %s", source, expectedLabel)
 }

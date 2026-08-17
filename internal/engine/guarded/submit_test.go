@@ -329,9 +329,9 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	defer server.Close()
 	tokenFile := writeSentryTokenFile(t, "sentry-token")
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
-	s.sentryEndpoints = config.SentryEndpointConfigs{
-		sentryHex: {URL: server.URL, TokenFile: tokenFile},
-	}
+	s.endpointRegistry = sentryEndpointRegistry("sentry-http", config.ClientEndpointConfig{
+		URL: server.URL, TokenFile: tokenFile,
+	})
 
 	signatures, requestIDs, err := s.requestSentryComponentSignatures(
 		context.Background(),
@@ -394,9 +394,9 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(selfServer.URL, "")
-	s.sentryEndpoints = config.SentryEndpointConfigs{
-		sentryHex: {URL: wrongServer.URL, TokenFile: tokenFile},
-	}
+	s.endpointRegistry = sentryEndpointRegistry("sentry-wrong", config.ClientEndpointConfig{
+		URL: wrongServer.URL, TokenFile: tokenFile,
+	})
 
 	_, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
@@ -413,7 +413,7 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 		t.Fatalf("sentryComponentSelector() error = %v", selectorErr)
 	}
 	errText := err.Error()
-	if !strings.Contains(errText, "did not advertise Witness Key ID") || !strings.Contains(errText, componentSelector) {
+	if !strings.Contains(errText, "no live sentry route for Witness Key ID") || !strings.Contains(errText, componentSelector) {
 		t.Fatalf("requestSentryComponentSignatures() error = %q, want endpoint mismatch with Witness Key ID %s", err, componentSelector)
 	}
 	if strings.Contains(errText, sentryHex) {
@@ -439,9 +439,9 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	tokenFile := writeSentryTokenFile(t, "sentry-token")
 
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
-	s.sentryEndpoints = config.SentryEndpointConfigs{
-		sentryHex: {URL: server.URL, TokenFile: tokenFile},
-	}
+	s.endpointRegistry = sentryEndpointRegistry("sentry-locked", config.ClientEndpointConfig{
+		URL: server.URL, TokenFile: tokenFile,
+	})
 
 	_, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
@@ -456,15 +456,15 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	if !errors.Is(err, ErrSentryDiscoveryLocked) {
 		t.Fatalf("requestSentryComponentSignatures() error = %q, want ErrSentryDiscoveryLocked", err)
 	}
-	if err.Error() != server.URL+" is locked" {
-		t.Fatalf("requestSentryComponentSignatures() error = %q, want locked endpoint", err)
+	if !strings.Contains(err.Error(), "sentry-locked: signer locked") {
+		t.Fatalf("requestSentryComponentSignatures() error = %q, want locked endpoint summary", err)
 	}
 	if strings.Contains(err.Error(), "did not advertise sentry") {
 		t.Fatalf("requestSentryComponentSignatures() error = %q, should not report missing sentry", err)
 	}
 }
 
-func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) {
+func TestRequestSentryComponentSignaturesUsesExplicitSelfEndpoint(t *testing.T) {
 	publicKey, privateKey := testFalconSentryKeypair(t, 0x65)
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
@@ -473,6 +473,7 @@ func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) 
 	defer server.Close()
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{URL: "self"})
 
 	signatures, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
@@ -486,6 +487,14 @@ func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) 
 	}
 	if signatures[0] == "" {
 		t.Fatal("signature for target 0 is empty")
+	}
+}
+
+func sentryEndpointRegistry(alias string, endpoint config.ClientEndpointConfig) config.ClientEndpointRegistry {
+	endpoint.Role = config.ClientEndpointRoleSentry
+	return config.ClientEndpointRegistry{
+		SchemaVersion: 1,
+		Endpoints:     map[string]config.ClientEndpointConfig{alias: endpoint},
 	}
 }
 

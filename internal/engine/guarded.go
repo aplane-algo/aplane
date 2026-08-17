@@ -68,11 +68,11 @@ func (v guardedSignerCacheView) LogicSigResourceProfile(address string) (lsigres
 // one per operation; it holds no independent state.
 func (e *Engine) guardedSigner() *guarded.Signer {
 	return guarded.New(guarded.Deps{
-		Conn:            e.Connection,
-		Algod:           e.AlgodClient,
-		AuthCache:       &e.AuthCache,
-		SentryEndpoints: e.SentryEndpoints,
-		Cache:           guardedSignerCacheView{e.Core},
+		Conn:             e.Connection,
+		Algod:            e.AlgodClient,
+		AuthCache:        &e.AuthCache,
+		EndpointRegistry: e.EndpointRegistry,
+		Cache:            guardedSignerCacheView{e.Core},
 	})
 }
 

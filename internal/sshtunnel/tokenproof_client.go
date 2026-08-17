@@ -35,7 +35,7 @@ func (a *tokenProofClientAuth) captureHostKey(key ssh.PublicKey) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if len(a.hostHash) != 0 && !bytes.Equal(a.hostHash, hash) {
-		return fmt.Errorf("SSH host key changed during authentication")
+		return fmt.Errorf("%w during authentication", ErrHostKeyMismatch)
 	}
 	a.hostHash = hash
 	return nil

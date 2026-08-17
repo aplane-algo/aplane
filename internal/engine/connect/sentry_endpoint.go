@@ -13,6 +13,15 @@ import (
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
+// SSH trust errors are re-exported at the engine transport boundary so
+// guarded orchestration can classify tunnel failures without depending on the
+// SSH implementation package directly.
+var (
+	ErrSSHHostKeyMismatch = sshtunnel.ErrHostKeyMismatch
+	ErrSSHUnknownHostKey  = sshtunnel.ErrUnknownHostKey
+	ErrSSHKnownHostsFile  = sshtunnel.ErrKnownHostsFile
+)
+
 // SentryTunnelConfig describes a one-shot SSH tunnel used for sentry
 // component signing. It does not mutate the primary signer connection.
 type SentryTunnelConfig struct {

@@ -73,6 +73,15 @@ func WithSentryEndpoints(endpoints config.SentryEndpointConfigs) EngineOption {
 	}
 }
 
+// WithEndpointRegistry sets the client-local signer and sentry connection
+// profiles used by live endpoint discovery.
+func WithEndpointRegistry(registry config.ClientEndpointRegistry) EngineOption {
+	return func(e *Engine) error {
+		e.EndpointRegistry = registry.Clone()
+		return nil
+	}
+}
+
 // WithAlgodClient sets the algod client for blockchain queries
 func WithAlgodClient(client *algod.Client) EngineOption {
 	return func(e *Engine) error {

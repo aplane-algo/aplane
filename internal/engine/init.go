@@ -36,6 +36,7 @@ func NewInitializedEngine(network string, config *config.Config, dataDir string)
 	eng, err := NewEngine(network,
 		WithAlgodClient(algodClient),
 		WithDataDir(state.DataDir),
+		WithEndpointRegistry(configuredEndpointRegistry(config)),
 		WithSentryEndpoints(configuredSentryEndpoints(config)),
 		WithCacheStore(state.CacheStore),
 		WithASACache(state.AsaCache),
@@ -49,6 +50,13 @@ func NewInitializedEngine(network string, config *config.Config, dataDir string)
 	}
 
 	return eng, nil
+}
+
+func configuredEndpointRegistry(cfg *config.Config) config.ClientEndpointRegistry {
+	if cfg == nil {
+		return config.ClientEndpointRegistry{}
+	}
+	return cfg.Endpoints
 }
 
 func configuredSentryEndpoints(cfg *config.Config) config.SentryEndpointConfigs {
