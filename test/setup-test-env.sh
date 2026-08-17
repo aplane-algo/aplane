@@ -259,7 +259,7 @@ echo "  Wrote client config.yaml"
 
 cat > "$CLIENT_DATA/endpoints.yaml" << YAML
 # Test environment endpoint registry
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:

@@ -90,7 +90,7 @@ func TestEndpointsUsageListsDiscoverSentries(t *testing.T) {
 	if !ok {
 		t.Fatal("endpoints command is not registered")
 	}
-	if !strings.Contains(cmd.Usage, "endpoints discover-sentries [--dry-run]") {
+	if !strings.Contains(cmd.Usage, "endpoints discover-sentries") || strings.Contains(cmd.Usage, "discover-sentries [--dry-run]") {
 		t.Fatalf("endpoints registry usage = %q, want discover-sentries", cmd.Usage)
 	}
 
@@ -98,7 +98,7 @@ func TestEndpointsUsageListsDiscoverSentries(t *testing.T) {
 	if err == nil {
 		t.Fatal("cmdEndpoints() error = nil, want usage")
 	}
-	if !strings.Contains(err.Error(), "endpoints discover-sentries [--dry-run]") {
+	if !strings.Contains(err.Error(), "endpoints discover-sentries") {
 		t.Fatalf("cmdEndpoints() error = %q, want discover-sentries", err)
 	}
 }
@@ -172,90 +172,37 @@ func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	}
 }
 
-func TestRenderEndpointSentriesOmitsLastSeen(t *testing.T) {
+func TestRenderEndpointShowContainsConnectionStateOnly(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
-
-	publicKeyHex := strings.Repeat("ab", witness.Falcon1024PublicKeySize)
-	componentKey := endpointCLITestComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
-	state.renderEndpointSentries(&apshellapp.EndpointSentriesResult{
-		Sentries: []apshellapp.EndpointSentryEntry{{
-			EndpointAlias: "sentry-local",
-			ComponentKey:  componentKey,
-			KeyType:       witness.Falcon1024V1,
-			LastSeenAt:    "2026-06-04T00:00:00Z",
-		}},
-	})
-
-	rendered := out.String()
-	if strings.Contains(rendered, "LAST SEEN") || strings.Contains(rendered, "2026-06-04T00:00:00Z") {
-		t.Fatalf("rendered sentries = %q, want no last-seen column or timestamp", rendered)
-	}
-	if !strings.Contains(rendered, "SENTRY KEY") || strings.Contains(rendered, "COMPONENT") || strings.Contains(rendered, "ATTESTORS") {
-		t.Fatalf("rendered sentries header = %q, want SENTRY KEY without legacy labels", rendered)
-	}
-	if !strings.Contains(rendered, componentKey) {
-		t.Fatalf("rendered sentries = %q, want Witness Key ID", rendered)
-	}
-	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
-		t.Fatalf("rendered sentries leaked raw sentry public key: %q", rendered)
-	}
-}
-
-func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
-	var out bytes.Buffer
-	state := &REPLState{Out: &out}
-
-	publicKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
-	componentKey := endpointCLITestComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	state.renderEndpointShow(&apshellapp.EndpointShowResult{
 		Endpoint: apshellapp.EndpointEntry{
 			Alias: "sentry-local",
 			Role:  config.ClientEndpointRoleSentry,
 			URL:   "ssh://127.0.0.1:2223",
-			PublishedSentryComponents: []string{
-				componentKey,
-			},
-			PublishedSentries: []apshellapp.EndpointSentryEntry{{
-				EndpointAlias: "sentry-local",
-				ComponentKey:  componentKey,
-				KeyType:       witness.Falcon1024V1,
-				LastSeenAt:    "2026-06-04T00:00:00Z",
-			}},
 		},
 	})
-
 	rendered := out.String()
-	if !strings.Contains(rendered, "LAST SEEN") || !strings.Contains(rendered, "2026-06-04T00:00:00Z") {
-		t.Fatalf("rendered endpoint show = %q, want last-seen detail", rendered)
-	}
-	if !strings.Contains(rendered, "SENTRY KEY") || strings.Contains(rendered, "COMPONENT") || strings.Contains(rendered, "ATTESTORS") {
-		t.Fatalf("rendered endpoint show header = %q, want SENTRY KEY without legacy labels", rendered)
-	}
-	if !strings.Contains(rendered, componentKey) {
-		t.Fatalf("rendered endpoint show = %q, want Witness Key ID", rendered)
-	}
-	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
-		t.Fatalf("rendered endpoint show leaked raw sentry public key: %q", rendered)
+	if strings.Contains(rendered, "Published sentries") || strings.Contains(rendered, "SENTRY KEY") || strings.Contains(rendered, "LAST SEEN") {
+		t.Fatalf("rendered endpoint show = %q, want connection state only", rendered)
 	}
 }
 
-func TestRenderEndpointsListUsesSentryKeyHeader(t *testing.T) {
+func TestRenderEndpointsListOmitsCachedSentryInventory(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
 	state.renderEndpointsList(&apshellapp.EndpointsListResult{
 		Endpoints: []apshellapp.EndpointEntry{{
-			Alias:                     "sentry-local",
-			Role:                      config.ClientEndpointRoleSentry,
-			URL:                       "ssh://127.0.0.1:2223",
-			PublishedSentryComponents: []string{"SENTRYKEY"},
+			Alias: "sentry-local",
+			Role:  config.ClientEndpointRoleSentry,
+			URL:   "ssh://127.0.0.1:2223",
 		}},
 	})
 
 	rendered := out.String()
-	if !strings.Contains(rendered, "SENTRY KEYS") || strings.Contains(rendered, "ATTESTORS") || strings.Contains(rendered, "COMPONENT") {
-		t.Fatalf("rendered endpoint list header = %q, want SENTRY KEYS without legacy labels", rendered)
+	if strings.Contains(rendered, "SENTRY KEYS") || strings.Contains(rendered, "ATTESTORS") || strings.Contains(rendered, "COMPONENT") {
+		t.Fatalf("rendered endpoint list header = %q, want no cached inventory columns", rendered)
 	}
 }
 

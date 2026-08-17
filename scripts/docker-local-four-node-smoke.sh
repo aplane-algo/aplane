@@ -840,7 +840,7 @@ configure_client_endpoints() {
     [ -n "$signer_ssh_port" ] && [ -n "$signer_port" ] || die "could not read signer endpoint ports"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "mkdir -p /home/$TEST_USER/aplane/apclient/tokens && cat > /home/$TEST_USER/aplane/apclient/endpoints.yaml <<YAML
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -1050,7 +1050,7 @@ write_sdk_data_dir() {
 schema_version: 1
 YAML
         cat > '$data_dir/endpoints.yaml' <<YAML
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:

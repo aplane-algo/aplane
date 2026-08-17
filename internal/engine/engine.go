@@ -65,14 +65,6 @@ func WithDataDir(dataDir string) EngineOption {
 	}
 }
 
-// WithSentryEndpoints sets explicit sentry endpoint routing.
-func WithSentryEndpoints(endpoints config.SentryEndpointConfigs) EngineOption {
-	return func(e *Engine) error {
-		e.SentryEndpoints = endpoints.Clone()
-		return nil
-	}
-}
-
 // WithEndpointRegistry sets the client-local signer and sentry connection
 // profiles used by live endpoint discovery.
 func WithEndpointRegistry(registry config.ClientEndpointRegistry) EngineOption {

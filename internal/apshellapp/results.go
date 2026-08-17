@@ -698,20 +698,17 @@ type RequestTokenResult struct {
 
 // EndpointEntry describes one client-local signer endpoint profile.
 type EndpointEntry struct {
-	Alias                     string
-	Role                      string
-	URL                       string
-	SignerPort                int
-	LocalPort                 int
-	IdentityFile              string
-	KnownHostsPath            string
-	TokenFile                 string
-	TokenPresent              bool
-	TokenError                string
-	IsDefault                 bool
-	PublishedSentryPublicKeys []string
-	PublishedSentryComponents []string
-	PublishedSentries         []EndpointSentryEntry
+	Alias          string
+	Role           string
+	URL            string
+	SignerPort     int
+	LocalPort      int
+	IdentityFile   string
+	KnownHostsPath string
+	TokenFile      string
+	TokenPresent   bool
+	TokenError     string
+	IsDefault      bool
 }
 
 // EndpointsListResult describes the endpoint registry entries visible to apshell.
@@ -766,21 +763,6 @@ type EndpointDeleteResult struct {
 	RenderLines []string
 }
 
-// EndpointSentryEntry describes one sentry component advertised by a
-// client-local sentry endpoint.
-type EndpointSentryEntry struct {
-	EndpointAlias string
-	ComponentKey  string
-	KeyType       string
-	LastSeenAt    string
-}
-
-// EndpointSentriesResult describes the client-local sentry inventory.
-type EndpointSentriesResult struct {
-	Sentries    []EndpointSentryEntry
-	RenderLines []string
-}
-
 // DiscoveredEndpointSentryKey describes one sentry key advertised by an
 // endpoint during discovery.
 type DiscoveredEndpointSentryKey struct {
@@ -791,21 +773,17 @@ type DiscoveredEndpointSentryKey struct {
 
 // EndpointSentryDiscovery describes discovered sentry keys for one endpoint.
 type EndpointSentryDiscovery struct {
-	Alias          string
-	Keys           []DiscoveredEndpointSentryKey
-	Skipped        bool
-	PreservedCount int
-	Error          string
+	Alias   string
+	Keys    []DiscoveredEndpointSentryKey
+	Skipped bool
+	Error   string
 }
 
-// EndpointDiscoverSentriesResult describes a full sentry endpoint mapping
-// rebuild from endpoint /keys inventories.
+// EndpointDiscoverSentriesResult describes a read-only sentry endpoint sweep.
 type EndpointDiscoverSentriesResult struct {
-	DryRun                 bool
-	Endpoints              []EndpointSentryDiscovery
-	PublicKeyCount         int
-	PreviousPublishedCount int
-	RenderLines            []string
+	Endpoints      []EndpointSentryDiscovery
+	PublicKeyCount int
+	RenderLines    []string
 }
 
 // SyncedEndpointSentryReference describes one endpoint-discovered sentry

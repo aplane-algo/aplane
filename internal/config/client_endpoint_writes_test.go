@@ -4,16 +4,12 @@
 package config
 
 import (
-	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/aplane-algo/aplane/internal/witness"
 )
-
-const endpointPublishedTestSeenAt = "2026-06-04T00:00:00Z"
 
 func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	dataDir := t.TempDir()
@@ -151,76 +147,95 @@ func TestUpsertStoredClientEndpointAllowsDuplicateURLAcrossRoles(t *testing.T) {
 	}
 }
 
-func TestRebuildStoredClientEndpointPublishedSentriesReplacesInventory(t *testing.T) {
+func TestStoredClientEndpointV1ReadDropsPublishedInventoryAndWritesV2(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
-		Role: ClientEndpointRoleSentry,
-		URL:  "ssh://127.0.0.1:2223",
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
+	path := GetClientEndpointsPath(dataDir)
+	legacy := `schema_version: 1
+endpoints:
+  sentry-local:
+    role: sentry
+    url: ssh://127.0.0.1:2223
+    published_sentries:
+      deadbeef:
+        component_key: LEGACY
+        key_type: legacy
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	staleKey := sentryEndpointTestHex("a1")
-	if _, err := RebuildStoredClientEndpointPublishedSentries(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
-		"sentry-local": {
-			staleKey: endpointPublishedTestSentry(t, staleKey),
-		},
-	}); err != nil {
-		t.Fatalf("RebuildStoredClientEndpointPublishedSentries(stale) error = %v", err)
-	}
-
-	newKey := sentryEndpointTestHex("b2")
-	plan, err := RebuildStoredClientEndpointPublishedSentries(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
-		"sentry-local": {
-			newKey: endpointPublishedTestSentry(t, newKey),
-		},
-	})
+	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
-		t.Fatalf("RebuildStoredClientEndpointPublishedSentries(new) error = %v", err)
+		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
 	}
-	if plan.PublicKeyCount != 1 || plan.PreviousPublishedCount != 1 {
-		t.Fatalf("plan counts = public:%d previous:%d, want 1/1", plan.PublicKeyCount, plan.PreviousPublishedCount)
+	if registry.SchemaVersion != ClientEndpointSchemaVersion {
+		t.Fatalf("schema version = %d, want %d", registry.SchemaVersion, ClientEndpointSchemaVersion)
 	}
-
-	cfg, err := LoadConfig(dataDir)
+	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
+		t.Fatal(err)
 	}
-	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries
-	if _, ok := published[staleKey]; ok {
-		t.Fatalf("stale published sentry %s remained in %#v", staleKey, published)
-	}
-	if got := published[newKey]; got.ComponentKey == "" || got.KeyType != witness.Falcon1024V1 {
-		t.Fatalf("new published sentry = %#v, want Ed25519 component metadata", got)
-	}
-	if route := cfg.SentryEndpoints[newKey]; route.Endpoint != "sentry-local" {
-		t.Fatalf("derived route = %#v, want sentry-local", route)
+	if strings.Contains(string(written), "published_sentries") || !strings.Contains(string(written), "schema_version: 2") {
+		t.Fatalf("rewritten endpoints.yaml = %q, want v2 without retired inventory", written)
 	}
 }
 
-func TestRebuildStoredClientEndpointPublishedSentriesRejectsDuplicatePublicKey(t *testing.T) {
+func TestStoredClientEndpointV2RejectsPublishedInventory(t *testing.T) {
 	dataDir := t.TempDir()
-	for _, alias := range []string{"sentry-a", "sentry-b"} {
-		if _, err := UpsertStoredClientEndpoint(dataDir, alias, ClientEndpointConfig{
-			Role: ClientEndpointRoleSentry,
-			URL:  "ssh://" + alias + ":2223",
-		}, true); err != nil {
-			t.Fatalf("UpsertStoredClientEndpoint(%s) error = %v", alias, err)
-		}
+	data := `schema_version: 2
+endpoints:
+  sentry-local:
+    role: sentry
+    url: self
+    published_sentries: {}
+`
+	if err := os.WriteFile(GetClientEndpointsPath(dataDir), []byte(data), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	publicKey := sentryEndpointTestHex("c3")
-	_, err := PlanStoredClientEndpointPublishedSentryRebuild(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
-		"sentry-a": {
-			publicKey: endpointPublishedTestSentry(t, publicKey),
-		},
-		"sentry-b": {
-			publicKey: endpointPublishedTestSentry(t, publicKey),
-		},
-	})
-	if err == nil {
-		t.Fatal("PlanStoredClientEndpointPublishedSentryRebuild() error = nil, want duplicate rejection")
+	_, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	if err == nil || !strings.Contains(err.Error(), "field published_sentries not found") {
+		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v, want strict v2 rejection", err)
 	}
-	if !strings.Contains(err.Error(), "advertised by both endpoint aliases") {
-		t.Fatalf("duplicate error = %v", err)
+}
+
+func TestStoredClientEndpointSentryLimit(t *testing.T) {
+	registry := emptyClientEndpointRegistry()
+	for i := 0; i < MaxClientSentryEndpoints; i++ {
+		alias := fmt.Sprintf("sentry-%02d", i)
+		registry.Endpoints[alias] = ClientEndpointConfig{Role: ClientEndpointRoleSentry, URL: "self"}
+	}
+	if err := SaveStoredClientEndpointRegistry(t.TempDir(), registry); err != nil {
+		t.Fatalf("SaveStoredClientEndpointRegistry(12) error = %v", err)
+	}
+	registry.Endpoints["sentry-overflow"] = ClientEndpointConfig{Role: ClientEndpointRoleSentry, URL: "self"}
+	err := SaveStoredClientEndpointRegistry(t.TempDir(), registry)
+	if err == nil || !strings.Contains(err.Error(), "configures 13 sentry endpoints; maximum is 12") {
+		t.Fatalf("SaveStoredClientEndpointRegistry(13) error = %v, want explicit limit", err)
+	}
+}
+
+func TestLoadClientEndpointRegistrySentryLimit(t *testing.T) {
+	for count := MaxClientSentryEndpoints; count <= MaxClientSentryEndpoints+1; count++ {
+		t.Run(fmt.Sprintf("count-%d", count), func(t *testing.T) {
+			dataDir := t.TempDir()
+			var contents strings.Builder
+			contents.WriteString("schema_version: 2\nendpoints:\n")
+			for i := 0; i < count; i++ {
+				fmt.Fprintf(&contents, "  sentry-%02d:\n    role: sentry\n    url: self\n", i)
+			}
+			if err := os.WriteFile(GetClientEndpointsPath(dataDir), []byte(contents.String()), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadClientEndpointRegistry(dataDir)
+			if count == MaxClientSentryEndpoints && err != nil {
+				t.Fatalf("LoadClientEndpointRegistry(%d) error = %v", count, err)
+			}
+			if count > MaxClientSentryEndpoints && (err == nil || !strings.Contains(err.Error(), "configures 13 sentry endpoints; maximum is 12")) {
+				t.Fatalf("LoadClientEndpointRegistry(%d) error = %v, want explicit limit", count, err)
+			}
+		})
 	}
 }
 
@@ -308,28 +323,6 @@ signer_port: 12270
 	if !strings.Contains(err.Error(), "top-level signer_port") {
 		t.Fatalf("error = %v, want top-level signer_port guidance", err)
 	}
-}
-
-func endpointPublishedTestSentry(t *testing.T, publicKeyHex string) ClientEndpointPublishedSentry {
-	t.Helper()
-	return ClientEndpointPublishedSentry{
-		ComponentKey: sentryEndpointTestComponentKey(t, witness.Falcon1024V1, publicKeyHex),
-		KeyType:      witness.Falcon1024V1,
-		LastSeenAt:   endpointPublishedTestSeenAt,
-	}
-}
-
-func sentryEndpointTestComponentKey(t *testing.T, keyType, publicKeyHex string) string {
-	t.Helper()
-	publicKey, err := hex.DecodeString(publicKeyHex)
-	if err != nil {
-		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
-	}
-	componentKey, err := witness.ID(keyType, publicKey)
-	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
-	}
-	return componentKey
 }
 
 func writeLegacyClientEndpointConfig(t *testing.T, dataDir string) {

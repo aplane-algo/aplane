@@ -4,19 +4,16 @@
 package config
 
 import (
-	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/aplane-algo/aplane/internal/tokenfile"
-	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const (
@@ -25,6 +22,9 @@ const (
 
 	ClientEndpointRoleSigner = "signer"
 	ClientEndpointRoleSentry = "sentry"
+
+	ClientEndpointSchemaVersion = 2
+	MaxClientSentryEndpoints    = 12
 )
 
 // ClientEndpointRegistry stores client-local signer endpoint profiles loaded
@@ -46,11 +46,6 @@ type ClientEndpointConfig struct {
 	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path for ssh:// endpoints"`
 	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// endpoints"`
 	TokenFile      string `yaml:"token_file,omitempty" description:"Path to this endpoint's API token file"`
-
-	// PublishedSentries is endpoint-local live inventory learned from
-	// authenticated /keys discovery. It is routing metadata, not proof of
-	// ownership.
-	PublishedSentries map[string]ClientEndpointPublishedSentry `yaml:"published_sentries,omitempty"`
 }
 
 // ClientEndpointSSH contains runtime SSH transport settings resolved from one
@@ -62,14 +57,6 @@ type ClientEndpointSSH struct {
 	IdentityFile   string
 	KnownHostsPath string
 	TokenFile      string
-}
-
-// ClientEndpointPublishedSentry records one sentry key advertised by an
-// endpoint.
-type ClientEndpointPublishedSentry struct {
-	ComponentKey string `yaml:"component_key"`
-	KeyType      string `yaml:"key_type"`
-	LastSeenAt   string `yaml:"last_seen_at,omitempty"`
 }
 
 func GetClientEndpointsPath(dataDir string) string {
@@ -94,15 +81,9 @@ func LoadClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, error) 
 		return ClientEndpointRegistry{}, fmt.Errorf("failed to read %s: %w", path, err)
 	}
 
-	var stored ClientEndpointRegistry
-	if err := UnmarshalKnownFields(data, &stored); err != nil {
+	stored, err := decodeClientEndpointRegistry(data)
+	if err != nil {
 		return ClientEndpointRegistry{}, fmt.Errorf("failed to parse %s: %w", path, err)
-	}
-	if stored.SchemaVersion == 0 {
-		stored.SchemaVersion = 1
-	}
-	if stored.SchemaVersion != 1 {
-		return ClientEndpointRegistry{}, fmt.Errorf("%s schema_version = %d, want 1", ClientEndpointsFile, stored.SchemaVersion)
 	}
 	if stored.Endpoints == nil {
 		stored.Endpoints = map[string]ClientEndpointConfig{}
@@ -125,7 +106,7 @@ func LoadClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, error) 
 
 func emptyClientEndpointRegistry() ClientEndpointRegistry {
 	return ClientEndpointRegistry{
-		SchemaVersion: 1,
+		SchemaVersion: ClientEndpointSchemaVersion,
 		Endpoints:     map[string]ClientEndpointConfig{},
 	}
 }
@@ -192,14 +173,6 @@ func normalizeClientEndpointConfig(dataDir, alias string, endpoint ClientEndpoin
 		}
 		endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
 		endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
-	}
-	published, err := normalizeClientEndpointPublishedSentries(endpoint.PublishedSentries)
-	if err != nil {
-		return endpoint, err
-	}
-	endpoint.PublishedSentries = published
-	if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedSentries) > 0 {
-		return endpoint, fmt.Errorf("published_sentries are only valid on %q endpoints", ClientEndpointRoleSentry)
 	}
 	return endpoint, nil
 }
@@ -322,22 +295,7 @@ func (r ClientEndpointRegistry) Endpoint(alias string) (ClientEndpointConfig, bo
 }
 
 func cloneClientEndpointConfig(endpoint ClientEndpointConfig) ClientEndpointConfig {
-	if len(endpoint.PublishedSentries) == 0 {
-		return endpoint
-	}
-	endpoint.PublishedSentries = cloneClientEndpointPublishedSentries(endpoint.PublishedSentries)
 	return endpoint
-}
-
-func cloneClientEndpointPublishedSentries(in map[string]ClientEndpointPublishedSentry) map[string]ClientEndpointPublishedSentry {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]ClientEndpointPublishedSentry, len(in))
-	for publicKey, published := range in {
-		out[publicKey] = published
-	}
-	return out
 }
 
 func (c Config) ClientEndpointsOrDefault() ClientEndpointRegistry {
@@ -356,12 +314,13 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 	}
 
 	signerAlias := ""
+	sentryCount := 0
 	for alias, endpoint := range registry.Endpoints {
 		if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
 			return fmt.Errorf("endpoint %q: %w", alias, err)
 		}
-		if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedSentries) > 0 {
-			return fmt.Errorf("endpoint %q: published_sentries are only valid on %q endpoints", alias, ClientEndpointRoleSentry)
+		if endpoint.Role == ClientEndpointRoleSentry {
+			sentryCount++
 		}
 		if endpoint.Role != ClientEndpointRoleSigner {
 			continue
@@ -370,6 +329,9 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 			return fmt.Errorf("%s may contain at most one %q endpoint (found %q and %q)", ClientEndpointsFile, ClientEndpointRoleSigner, signerAlias, alias)
 		}
 		signerAlias = alias
+	}
+	if sentryCount > MaxClientSentryEndpoints {
+		return fmt.Errorf("%s configures %d sentry endpoints; maximum is %d; remove or consolidate endpoint profiles", ClientEndpointsFile, sentryCount, MaxClientSentryEndpoints)
 	}
 	if signerAlias == "" {
 		if registry.Default != "" {
@@ -382,122 +344,4 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 	}
 	registry.Default = signerAlias
 	return nil
-}
-
-// PublishedSentryEndpointConfigs derives sentry public-key routing from
-// endpoint-local published_sentries inventory.
-func (r ClientEndpointRegistry) PublishedSentryEndpointConfigs() (SentryEndpointConfigs, error) {
-	resolved := SentryEndpointConfigs{}
-	aliases := make([]string, 0, len(r.Endpoints))
-	for alias := range r.Endpoints {
-		aliases = append(aliases, alias)
-	}
-	sort.Strings(aliases)
-	for _, alias := range aliases {
-		endpoint := r.Endpoints[alias]
-		if endpoint.Role != ClientEndpointRoleSentry {
-			continue
-		}
-		publicKeys := make([]string, 0, len(endpoint.PublishedSentries))
-		for publicKey := range endpoint.PublishedSentries {
-			publicKeys = append(publicKeys, publicKey)
-		}
-		sort.Strings(publicKeys)
-		for _, publicKey := range publicKeys {
-			if _, exists := resolved[publicKey]; exists {
-				return nil, fmt.Errorf("sentry public key %s is published by multiple endpoint aliases", publicKey)
-			}
-			resolved[publicKey] = SentryEndpointConfig{
-				Endpoint:       alias,
-				URL:            endpoint.URL,
-				TokenFile:      endpoint.TokenFile,
-				SignerPort:     endpoint.SignerPort,
-				LocalPort:      endpoint.LocalPort,
-				IdentityFile:   endpoint.IdentityFile,
-				KnownHostsPath: endpoint.KnownHostsPath,
-			}
-		}
-	}
-	if len(resolved) == 0 {
-		return nil, nil
-	}
-	return resolved, nil
-}
-
-// PublishedSentryPublicKeysByAlias returns the public-key inventory currently
-// stored under each endpoint alias.
-func (r ClientEndpointRegistry) PublishedSentryPublicKeysByAlias() map[string][]string {
-	out := map[string][]string{}
-	for alias, endpoint := range r.Endpoints {
-		if endpoint.Role != ClientEndpointRoleSentry {
-			continue
-		}
-		for publicKey := range endpoint.PublishedSentries {
-			out[alias] = append(out[alias], publicKey)
-		}
-	}
-	for alias := range out {
-		sort.Strings(out[alias])
-	}
-	return out
-}
-
-func normalizeClientEndpointPublishedSentries(in map[string]ClientEndpointPublishedSentry) (map[string]ClientEndpointPublishedSentry, error) {
-	if len(in) == 0 {
-		return nil, nil
-	}
-	out := make(map[string]ClientEndpointPublishedSentry, len(in))
-	for rawPublicKey, published := range in {
-		publicKey, err := normalizePublishedSentryPublicKey(rawPublicKey, published.KeyType)
-		if err != nil {
-			return nil, err
-		}
-		if _, exists := out[publicKey]; exists {
-			return nil, fmt.Errorf("duplicate published sentry public key %s", publicKey)
-		}
-		if !witness.IsKeyType(published.KeyType) {
-			return nil, fmt.Errorf("published sentry %s has invalid key_type %q", publicKey, published.KeyType)
-		}
-		selector, err := witness.NormalizeID(published.ComponentKey)
-		if err != nil {
-			return nil, fmt.Errorf("published sentry %s has invalid component_key: %w", publicKey, err)
-		}
-		publicKeyBytes, err := hex.DecodeString(publicKey)
-		if err != nil {
-			return nil, err
-		}
-		expectedSelector, err := witness.ID(published.KeyType, publicKeyBytes)
-		if err != nil {
-			return nil, err
-		}
-		if selector != expectedSelector {
-			return nil, fmt.Errorf("published sentry %s component_key %s does not match public key-derived selector %s", publicKey, selector, expectedSelector)
-		}
-		out[publicKey] = ClientEndpointPublishedSentry{
-			ComponentKey: selector,
-			KeyType:      published.KeyType,
-			LastSeenAt:   strings.TrimSpace(published.LastSeenAt),
-		}
-	}
-	return out, nil
-}
-
-func normalizePublishedSentryPublicKey(raw, keyType string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	trimmed = strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
-	if trimmed == "" {
-		return "", fmt.Errorf("published sentry public key is required")
-	}
-	publicKey, err := hex.DecodeString(trimmed)
-	if err != nil {
-		return "", fmt.Errorf("published sentry public key must be hex: %w", err)
-	}
-	wantSize, ok := witness.PublicKeySize(keyType)
-	if !ok {
-		return "", fmt.Errorf("published sentry key_type %q is not a sentry key type", keyType)
-	}
-	if len(publicKey) != wantSize {
-		return "", fmt.Errorf("published sentry public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
-	}
-	return hex.EncodeToString(publicKey), nil
 }
