@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -16,6 +17,13 @@ import (
 func (s *Service) SignComponentsWithContext(ctx context.Context, identityID string, req signerapi.ComponentRequest, session *keystore.KeySession) (*signerapi.ComponentResponse, *ServiceError) {
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
+	}
+	group, decodeErr := canonical.DecodeGroupHex(req.GroupBytesHex)
+	if decodeErr != nil {
+		return nil, badRequest(decodeErr.Error())
+	}
+	if err := validateFrozenComponentDummyPartition(req, makeTxnSlice(group)); err != nil {
+		return nil, err
 	}
 	switch req.TargetKind() {
 	case signerapi.ComponentTargetKindUser, signerapi.ComponentTargetKindSentry:

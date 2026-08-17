@@ -5,6 +5,7 @@ package signing
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"strings"
 	"testing"
@@ -127,5 +128,63 @@ func TestValidateFrozenComponentContextRejectsFabricatedDummy(t *testing.T) {
 	_, _, serviceErr := service.ValidateFrozenComponentContext("default", request)
 	if serviceErr == nil || !strings.Contains(serviceErr.Error(), "not the canonical signer-added dummy") {
 		t.Fatalf("ValidateFrozenComponentContext() error = %v, want fabricated dummy rejection", serviceErr)
+	}
+}
+
+func TestFrozenComponentDummyPartitionIsSemanticForEveryKind(t *testing.T) {
+	service, authorizer, txn := frozenBoundedTestService(t, 4_500)
+	planned, planErr := service.Planner.PlanGroup("default", signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
+	}}})
+	if planErr != nil {
+		t.Fatal(planErr)
+	}
+	if len(planned.DummyTxns) == 0 {
+		t.Fatal("plan did not create a dummy")
+	}
+	groupHex := make([]string, len(planned.AllTxns))
+	for i := range planned.AllTxns {
+		groupHex[i] = txnutil.EncodeWithPrefixHex(planned.AllTxns[i])
+	}
+
+	for _, kind := range []signerapi.ComponentTargetKind{
+		signerapi.ComponentTargetKindUser,
+		signerapi.ComponentTargetKindSentry,
+		signerapi.ComponentTargetKindBoundedBase,
+	} {
+		t.Run(string(kind), func(t *testing.T) {
+			target := signerapi.ComponentTarget{TargetIndex: 0, Kind: kind}
+			switch kind {
+			case signerapi.ComponentTargetKindSentry:
+				target.ComponentKey = "sentry-component"
+			default:
+				target.AuthAddress = authorizer
+			}
+			request := signerapi.ComponentRequest{
+				GroupBytesHex: groupHex,
+				Targets:       []signerapi.ComponentTarget{target},
+			}
+			for index := 1; index < len(groupHex); index++ {
+				request.ContextualPositions = append(request.ContextualPositions, signerapi.ComponentContextPosition{TargetIndex: index})
+			}
+			if err := request.Validate(); err != nil {
+				t.Fatalf("structural request validation failed: %v", err)
+			}
+			if _, err := service.SignComponentsWithContext(context.Background(), "default", request, nil); err == nil ||
+				!strings.Contains(err.Error(), "must be declared as dummy_positions") {
+				t.Fatalf("SignComponentsWithContext() error = %v, want undeclared dummy rejection", err)
+			}
+
+			request.ContextualPositions = nil
+			for index := 1; index < len(groupHex); index++ {
+				request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: index})
+			}
+			if err := request.Validate(); err != nil {
+				t.Fatalf("declared request validation failed: %v", err)
+			}
+			if err := validateFrozenComponentDummyPartition(request, planned.AllTxns); err != nil {
+				t.Fatalf("declared canonical dummies rejected: %v", err)
+			}
+		})
 	}
 }

@@ -191,6 +191,11 @@ assert provenance from `/plan`: an independently constructed group is valid
 when it is canonical and satisfies the same policy, resource, fee, and
 signer-owned authorization checks.
 
+The position partition is semantic as well as structural. Every declared
+dummy must match the canonical signer-added suffix form, and a canonical dummy
+suffix cannot be relabeled as caller-supplied original positions to change the
+policy or approval input.
+
 For every component call, policy evaluation, operator rendering, and component
 message derivation use the same decoded frozen group. In particular, the
 bounded-sentry migration replaces the legacy plan-and-approve-together call

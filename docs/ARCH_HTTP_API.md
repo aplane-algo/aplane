@@ -252,6 +252,9 @@ frozen TX-prefixed `group_bytes_hex[]`, discriminated `targets[]`, foreign-only
 `contextual_positions[]`, and a contiguous `dummy_positions[]` suffix. The
 three position sets form a closed partition. Target `kind` is `user`, `sentry`,
 or `bounded-base`; kind-specific fields are rejected on other kinds.
+Dummy classification is semantic in both directions: every declared dummy must
+match the canonical signer-added suffix form, and a canonical dummy suffix may
+not be relabeled as caller-supplied original positions.
 
 The endpoint never plans or mutates a group. User and bounded-base targets are
 policy- and operator-gated and use the live `/sign/cancel` lifecycle. Sentry

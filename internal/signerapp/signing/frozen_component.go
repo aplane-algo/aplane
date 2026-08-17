@@ -25,6 +25,9 @@ func (s *Service) ValidateFrozenComponentContext(identityID string, request sign
 		return nil, signerapi.GroupSignRequest{}, badRequest(decodeErr.Error())
 	}
 	allTxns := makeTxnSlice(group)
+	if err := validateFrozenComponentDummyPartition(request, allTxns); err != nil {
+		return nil, signerapi.GroupSignRequest{}, err
+	}
 	isPreGrouped, groupErr := validateGroupConsistency(allTxns, false, s.Console)
 	if groupErr != nil {
 		return nil, signerapi.GroupSignRequest{}, groupErr
@@ -69,11 +72,6 @@ func (s *Service) ValidateFrozenComponentContext(identityID string, request sign
 		return nil, signerapi.GroupSignRequest{}, badRequest(fmt.Sprintf("frozen group declares %d dummy position(s), authorization resources require %d", len(request.DummyPositions), expectedDummies))
 	}
 	dummyTxns := allTxns[evalCount:]
-	for i, dummy := range dummyTxns {
-		if !matchesSignerAddedDummyForSelfNoOp(dummy, originals[0], i) {
-			return nil, signerapi.GroupSignRequest{}, badRequest(fmt.Sprintf("dummy position %d is not the canonical signer-added dummy", evalCount+i))
-		}
-	}
 
 	budgets, budgetErr := authorizationBudgets(req.Requests, snapshot, boundedItems, map[int]bool{}, foreign, nil)
 	if budgetErr != nil {
@@ -105,6 +103,36 @@ func (s *Service) ValidateFrozenComponentContext(identityID string, request sign
 		AuthKeyTypes: authKeyTypes, KnownAddresses: knownAddressesFromSnapshot(snapshot),
 		BoundedItems: boundedItems,
 	}, req, nil
+}
+
+// validateFrozenComponentDummyPartition makes the request's position labels
+// semantic rather than merely structural. Canonical signer-added dummies are
+// reserved for the declared contiguous suffix: callers may neither fabricate a
+// declared dummy nor relabel a real dummy as an original policy input.
+func validateFrozenComponentDummyPartition(request signerapi.ComponentRequest, allTxns []types.Transaction) *ServiceError {
+	originalCount := len(allTxns) - len(request.DummyPositions)
+	if originalCount <= 0 || originalCount > len(allTxns) {
+		return badRequest("frozen component original prefix is empty or invalid")
+	}
+	original := allTxns[0]
+	for offset, dummy := range allTxns[originalCount:] {
+		if !matchesSignerAddedDummyForSelfNoOp(dummy, original, offset) {
+			return badRequest(fmt.Sprintf("dummy position %d is not the canonical signer-added dummy", originalCount+offset))
+		}
+	}
+	for start := 1; start < originalCount; start++ {
+		canonicalSuffix := true
+		for offset, candidate := range allTxns[start:] {
+			if !matchesSignerAddedDummyForSelfNoOp(candidate, original, offset) {
+				canonicalSuffix = false
+				break
+			}
+		}
+		if canonicalSuffix {
+			return badRequest(fmt.Sprintf("canonical signer-added dummy suffix beginning at position %d must be declared as dummy_positions", start))
+		}
+	}
+	return nil
 }
 
 func makeTxnSlice(group *canonical.Group) []types.Transaction {

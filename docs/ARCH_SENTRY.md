@@ -152,6 +152,12 @@ moves from approving a plan constructed inside the signing call to approving
 the supplied frozen group after the signer re-derives and validates its bounded
 authorization envelope.
 
+For every component kind, the declared dummy suffix is checked against the
+canonical signer-added dummy form before policy evaluation or key access. The
+classification is bidirectional: a declared dummy must be canonical, and a
+canonical signer-added dummy suffix cannot be relabeled as caller-supplied
+original positions to alter policy or approval semantics.
+
 Assembly authorization remains flow-specific behind the shared request:
 guarded targets carry user and sentry signatures; bounded-sentry targets carry
 base signatures, a sentry signature, and an assembly receipt. No shared route

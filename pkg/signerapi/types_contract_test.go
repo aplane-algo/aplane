@@ -182,6 +182,14 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSignerAPIComponentRequestFixtureValidates(t *testing.T) {
+	var request ComponentRequest
+	readContractMetadata(t, "component_request.json", &request)
+	if err := request.Validate(); err != nil {
+		t.Fatalf("component_request.json does not satisfy its wire validator: %v", err)
+	}
+}
+
 func TestSignerAPIContractFixtureManifest(t *testing.T) {
 	expected := expectedContractFixtureNames(t)
 	if got := committedContractFixtureNames(t); !reflect.DeepEqual(got, expected) {
