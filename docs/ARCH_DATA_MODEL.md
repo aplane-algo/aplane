@@ -340,8 +340,8 @@ guarded flow: user `/sign/component`, sentry `/sign/component`, user
 
 Bounded keys with durable `bounded_authorization.sentry` use the distinct
 `bounded-sentry1` flow. Corridor v1 is the first such template. Their spend
-path uses `/sign/bounded-component`, sentry-role `/sign/component`, and
-`/sign/bounded-assemble`; their admin path remains `/sign/bounded-admin`.
+path uses `/plan`, kind-tagged `/sign/component`, and `/sign/assemble`; their
+admin path remains `/sign/bounded-admin`.
 
 Decrypted key payloads are parsed through `internal/keys.ParsePayload` and
 written through `internal/keys.MarshalPayload`. The v1 payload vocabulary is
@@ -688,10 +688,10 @@ Primary projections:
 - `GroupSignRequest`,
 - `SignRequest`,
 - `BoundedAdminRequest`, `BoundedAdminPartialResponse`, `BoundedAdminMetadata`,
-- `ComponentSignRequest`,
-- `ComponentSignResponse`,
-- `GuardedAssemblyRequest`,
-- `GuardedAssemblyResponse`,
+- `ComponentRequest`,
+- `ComponentResponse`,
+- `AssemblyRequest`,
+- `AssemblyResponse`,
 - `GroupPlanResponse`,
 - `GroupSignResponse`,
 - `MutationReport`,

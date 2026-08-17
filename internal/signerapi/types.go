@@ -28,20 +28,22 @@ type BoundedAdminPartialResponse = pub.BoundedAdminPartialResponse
 type GroupPlanResponse = pub.GroupPlanResponse
 type ErrorResponse = pub.ErrorResponse
 type ProtocolVersion = pub.ProtocolVersion
-type ComponentSignRole = pub.ComponentSignRole
-type ComponentSignRequest = pub.ComponentSignRequest
-type ComponentSignature = pub.ComponentSignature
-type ComponentSignResponse = pub.ComponentSignResponse
-type GuardedAssemblyRequest = pub.GuardedAssemblyRequest
-type GuardedAssemblyTarget = pub.GuardedAssemblyTarget
-type GuardedPassthroughItem = pub.GuardedPassthroughItem
-type GuardedAssemblyResponse = pub.GuardedAssemblyResponse
-type BoundedComponentRequest = pub.BoundedComponentRequest
-type BoundedBaseComponent = pub.BoundedBaseComponent
-type BoundedComponentResponse = pub.BoundedComponentResponse
-type BoundedAssemblyRequest = pub.BoundedAssemblyRequest
-type BoundedAssemblyTarget = pub.BoundedAssemblyTarget
-type BoundedAssemblyResponse = pub.BoundedAssemblyResponse
+
+// ComponentSignRole is an internal gate/message role derived from the public
+// component target kind. It is not part of the HTTP request surface.
+type ComponentSignRole string
+type ComponentTargetKind = pub.ComponentTargetKind
+type ComponentRequest = pub.ComponentRequest
+type ComponentTarget = pub.ComponentTarget
+type Component = pub.Component
+type ComponentResponse = pub.ComponentResponse
+type AssemblyTargetKind = pub.AssemblyTargetKind
+type AssemblyRequest = pub.AssemblyRequest
+type AssemblyTarget = pub.AssemblyTarget
+type AssemblyPassthroughItem = pub.AssemblyPassthroughItem
+type AssemblyResponse = pub.AssemblyResponse
+type ComponentContextPosition = pub.ComponentContextPosition
+type ComponentDummyPosition = pub.ComponentDummyPosition
 type HealthResponse = pub.HealthResponse
 type StatusResponse = pub.StatusResponse
 type KeyTypeInfo = pub.KeyTypeInfo
@@ -81,21 +83,26 @@ func CurrentProtocolVersion() ProtocolVersion {
 }
 
 const (
-	RequestModeSign             = pub.RequestModeSign
-	RequestModePassthrough      = pub.RequestModePassthrough
-	RequestModeForeign          = pub.RequestModeForeign
-	PQSchemeFalcon1024          = pub.PQSchemeFalcon1024
-	SignCancelStateCanceled     = pub.SignCancelStateCanceled
-	SignCancelStateNotFound     = pub.SignCancelStateNotFound
-	ComponentSignRoleUser       = pub.ComponentSignRoleUser
-	ComponentSignRoleSentry     = pub.ComponentSignRoleSentry
-	SigningFlowSentry1          = pub.SigningFlowSentry1
-	SigningFlowBounded1         = pub.SigningFlowBounded1
-	SigningFlowBoundedSentry1   = pub.SigningFlowBoundedSentry1
-	ProtocolVersionMajor        = pub.ProtocolVersionMajor
-	ProtocolVersionMinor        = pub.ProtocolVersionMinor
-	BoundedAdminOperationRekey  = pub.BoundedAdminOperationRekey
-	BoundedAdminPartialSchemaV1 = pub.BoundedAdminPartialSchemaV1
+	RequestModeSign                                   = pub.RequestModeSign
+	RequestModePassthrough                            = pub.RequestModePassthrough
+	RequestModeForeign                                = pub.RequestModeForeign
+	PQSchemeFalcon1024                                = pub.PQSchemeFalcon1024
+	SignCancelStateCanceled                           = pub.SignCancelStateCanceled
+	SignCancelStateNotFound                           = pub.SignCancelStateNotFound
+	ComponentSignRoleUser           ComponentSignRole = "user"
+	ComponentSignRoleSentry         ComponentSignRole = "sentry"
+	ComponentTargetKindUser                           = pub.ComponentTargetKindUser
+	ComponentTargetKindSentry                         = pub.ComponentTargetKindSentry
+	ComponentTargetKindBoundedBase                    = pub.ComponentTargetKindBoundedBase
+	AssemblyTargetKindGuarded                         = pub.AssemblyTargetKindGuarded
+	AssemblyTargetKindBoundedSentry                   = pub.AssemblyTargetKindBoundedSentry
+	SigningFlowSentry1                                = pub.SigningFlowSentry1
+	SigningFlowBounded1                               = pub.SigningFlowBounded1
+	SigningFlowBoundedSentry1                         = pub.SigningFlowBoundedSentry1
+	ProtocolVersionMajor                              = pub.ProtocolVersionMajor
+	ProtocolVersionMinor                              = pub.ProtocolVersionMinor
+	BoundedAdminOperationRekey                        = pub.BoundedAdminOperationRekey
+	BoundedAdminPartialSchemaV1                       = pub.BoundedAdminPartialSchemaV1
 
 	ErrCodeBadRequest            = pub.ErrCodeBadRequest
 	ErrCodeUnauthorized          = pub.ErrCodeUnauthorized

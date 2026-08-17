@@ -4,6 +4,9 @@
 package arch_test
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,4 +66,116 @@ func TestClientPackagesRouteOnSigningFlow(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestSigningFlowCharacterizationInventory keeps the behavioral tests that
+// define the pre-unification baseline visible while the component and assembly
+// transports are collapsed. A listed test may be renamed only when its
+// replacement pins the same gate or byte-level boundary.
+func TestSigningFlowCharacterizationInventory(t *testing.T) {
+	testsByFile := map[string][]string{
+		"../../internal/signerapp/signing/component_test.go": {
+			"TestPrepareComponentSigningCanonicalizesTargetsAndMessages",
+			"TestSignComponentSentryRequiresPolicyBeforeKeyLoad",
+			"TestSignComponentSentryPolicyAllowsSigning",
+			"TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup",
+			"TestAssembleDecodedGuardedRejectsMismatchedPassthrough",
+		},
+		"../../internal/signerapp/signing/component_gate_test.go": {
+			"TestBuildComponentApprovalDescriptionPreservesABIMethod",
+			"TestGateUserComponentSigningExcludesFrozenDummySuffix",
+			"TestSignComponentUserRoleRejectedBySignerPolicy",
+			"TestSignComponentUserRoleOperatorApproves",
+			"TestSignComponentUserRoleUserAutoApproveSkipsPrompt",
+			"TestSignComponentUserRoleForeignRekeyLegForcesReview",
+		},
+		"../../internal/signerapp/signing/bounded_sentry_test.go": {
+			"TestValidateBoundedComponentPlanRequiresSentrySpend",
+			"TestBoundedAssemblyReceiptBindsRuntimeAndMetadata",
+			"TestAssembleBoundedTargetVerifiesBothAuthorities",
+		},
+		"../../internal/signerapp/signing/frozen_component_test.go": {
+			"TestFrozenComponentReconstructionMatchesCanonicalPlan",
+			"TestValidateFrozenComponentContextPrefersConcurrentLock",
+			"TestValidateFrozenComponentContextAuditsEveryOriginalPosition",
+		},
+	}
+	for path, names := range testsByFile {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, name := range names {
+			if !strings.Contains(string(content), "func "+name+"(") {
+				t.Errorf("%s no longer contains %s; add an equivalent characterization before removing it", path, name)
+			}
+		}
+	}
+}
+
+func TestUnifiedSigningRoutesRemainSingular(t *testing.T) {
+	content, err := os.ReadFile("../../internal/signerapp/daemon/http_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := string(content)
+	for _, retired := range []string{"/sign/bounded-component", "/sign/bounded-assemble"} {
+		if strings.Contains(routes, retired) {
+			t.Errorf("retired flow-specific route %q was reintroduced", retired)
+		}
+	}
+	for _, shared := range []string{"/sign/component", "/sign/assemble"} {
+		if count := strings.Count(routes, `mux.HandleFunc("`+shared+`"`); count != 1 {
+			t.Errorf("shared route %q registration count = %d, want 1", shared, count)
+		}
+	}
+}
+
+func TestFrozenComponentValidatorNeverCanonicalizes(t *testing.T) {
+	const path = "../../internal/signerapp/signing/frozen_component.go"
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forbidden := map[string]bool{
+		"PlanGroup": true, "planGroupWhileSignable": true,
+		"BuildFinalGroup": true, "CreateDummyTransactions": true,
+		"ComputeGroupID": true,
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		name := ""
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			name = fun.Name
+		case *ast.SelectorExpr:
+			name = fun.Sel.Name
+		}
+		if forbidden[name] {
+			t.Errorf("frozen component validator calls canonicalizing function %s", name)
+		}
+		if name == "applyGroupFees" {
+			if len(call.Args) == 0 {
+				t.Error("applyGroupFees call has no immutable-mode argument")
+				return true
+			}
+			immutable, ok := call.Args[len(call.Args)-1].(*ast.Ident)
+			if !ok || immutable.Name != "true" {
+				t.Error("frozen component fee validation must use immutable mode")
+			}
+			copyCall, ok := call.Args[0].(*ast.CallExpr)
+			if !ok {
+				t.Error("frozen component fee validation must operate on a defensive copy")
+				return true
+			}
+			copyName, copyOK := copyCall.Fun.(*ast.Ident)
+			if !copyOK || copyName.Name != "append" {
+				t.Error("frozen component fee validation must operate on a defensive copy")
+			}
+		}
+		return true
+	})
 }

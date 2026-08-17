@@ -18,6 +18,7 @@ type ComponentSignPlan struct {
 	MessageRole  message.Role
 	ComponentKey string
 	Group        *canonical.Group
+	Requests     []signerapi.SignRequest
 	Targets      []ComponentSignTarget
 }
 
@@ -28,8 +29,17 @@ type ComponentSignTarget struct {
 	Message     [32]byte
 }
 
-func PrepareComponentSigning(req signerapi.ComponentSignRequest) (*ComponentSignPlan, *ServiceError) {
-	if err := req.Validate(); err != nil {
+type componentPlanRequest struct {
+	RequestID     string
+	Role          signerapi.ComponentSignRole
+	ComponentKey  string
+	GroupBytesHex []string
+	TargetIndices []int
+	Requests      []signerapi.SignRequest
+}
+
+func prepareComponentSigning(req componentPlanRequest) (*ComponentSignPlan, *ServiceError) {
+	if err := req.validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
 
@@ -63,8 +73,38 @@ func PrepareComponentSigning(req signerapi.ComponentSignRequest) (*ComponentSign
 		MessageRole:  role,
 		ComponentKey: req.ComponentKey,
 		Group:        group,
+		Requests:     append([]signerapi.SignRequest(nil), req.Requests...),
 		Targets:      targets,
 	}, nil
+}
+
+func (r componentPlanRequest) validate() error {
+	switch r.Role {
+	case signerapi.ComponentSignRoleUser:
+		if r.ComponentKey == "" {
+			return fmt.Errorf("component_key is required for user role")
+		}
+	case signerapi.ComponentSignRoleSentry:
+	default:
+		return fmt.Errorf("role must be %q or %q", signerapi.ComponentSignRoleUser, signerapi.ComponentSignRoleSentry)
+	}
+	if len(r.GroupBytesHex) == 0 {
+		return fmt.Errorf("group_bytes_hex is empty")
+	}
+	if len(r.TargetIndices) == 0 {
+		return fmt.Errorf("target_indices is empty")
+	}
+	seen := make(map[int]bool, len(r.TargetIndices))
+	for _, index := range r.TargetIndices {
+		if index < 0 || index >= len(r.GroupBytesHex) {
+			return fmt.Errorf("target_indices %d out of range", index)
+		}
+		if seen[index] {
+			return fmt.Errorf("target_indices contains duplicate %d", index)
+		}
+		seen[index] = true
+	}
+	return nil
 }
 
 func componentMessageRole(role signerapi.ComponentSignRole) (message.Role, error) {

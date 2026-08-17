@@ -35,25 +35,24 @@ func TestRequestGroupPlanRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	}
 }
 
-func TestRequestComponentSignRejectsInvalidRequestBeforeHTTP(t *testing.T) {
+func TestRequestComponentsRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	client := NewSignerClientWithToken("http://127.0.0.1:1", "test-token")
-	_, err := client.RequestComponentSign(signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleUser,
+	_, err := client.RequestComponents(signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
-		TargetIndices: []int{0},
+		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindUser}},
 	})
-	if err == nil || !strings.Contains(err.Error(), "invalid component sign request") {
-		t.Fatalf("RequestComponentSign() error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "invalid component request") {
+		t.Fatalf("RequestComponents() error = %v", err)
 	}
 }
 
-func TestRequestGuardedAssembleRejectsInvalidRequestBeforeHTTP(t *testing.T) {
+func TestRequestAssembleRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	client := NewSignerClientWithToken("http://127.0.0.1:1", "test-token")
-	_, err := client.RequestGuardedAssemble(signerapi.GuardedAssemblyRequest{
+	_, err := client.RequestAssemble(signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "invalid guarded assembly request") {
-		t.Fatalf("RequestGuardedAssemble() error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "invalid assembly request") {
+		t.Fatalf("RequestAssemble() error = %v", err)
 	}
 }
 
@@ -612,41 +611,93 @@ func TestRequestBoundedAdmin_Success(t *testing.T) {
 	}
 }
 
-func TestRequestBoundedSentryEndpoints(t *testing.T) {
+func TestRequestUnifiedBoundedSentryEndpoints(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
-		case "/sign/bounded-component":
-			var got signerapi.BoundedComponentRequest
+		case "/sign/component":
+			var got signerapi.ComponentRequest
 			if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 				t.Fatal(err)
 			}
-			return mockResponse(http.StatusOK, jsonBody(t, signerapi.BoundedComponentResponse{
-				RequestID: got.RequestID, Transactions: []string{"5458aa"},
-				Components: []signerapi.BoundedBaseComponent{{TargetIndex: 0, BoundedAccount: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
+			return mockResponse(http.StatusOK, jsonBody(t, signerapi.ComponentResponse{
+				RequestID:  got.RequestID,
+				Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
 			})), nil
-		case "/sign/bounded-assemble":
-			var got signerapi.BoundedAssemblyRequest
+		case "/sign/assemble":
+			var got signerapi.AssemblyRequest
 			if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 				t.Fatal(err)
 			}
-			return mockResponse(http.StatusOK, jsonBody(t, signerapi.BoundedAssemblyResponse{RequestID: got.RequestID, SignedGroup: []string{"ccdd"}})), nil
+			return mockResponse(http.StatusOK, jsonBody(t, signerapi.AssemblyResponse{RequestID: got.RequestID, SignedGroup: []string{"ccdd"}})), nil
 		default:
 			t.Fatalf("unexpected request path %q", req.URL.Path)
 			return nil, nil
 		}
 	})
 	c.cacheApprovalWaitSeconds(60)
-	component, err := c.RequestBoundedComponentWithContext(t.Context(), signerapi.BoundedComponentRequest{Requests: []signerapi.SignRequest{{AuthAddress: "ADDR1", TxnBytesHex: "5458aa"}}})
+	component, err := c.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR1"}}})
 	if err != nil || len(component.Components) != 1 {
-		t.Fatalf("RequestBoundedComponentWithContext() = %#v, %v", component, err)
+		t.Fatalf("RequestComponentsWithContext() = %#v, %v", component, err)
 	}
-	assembly, err := c.RequestBoundedAssembleWithContext(t.Context(), signerapi.BoundedAssemblyRequest{
-		GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.BoundedAssemblyTarget{{
-			TargetIndex: 0, BoundedAccount: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SentrySignature: "cc",
+	assembly, err := c.RequestAssembleWithContext(t.Context(), signerapi.AssemblyRequest{
+		GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.AssemblyTarget{{
+			TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedSentry, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SentrySignature: "cc",
 		}},
 	})
 	if err != nil || len(assembly.SignedGroup) != 1 {
-		t.Fatalf("RequestBoundedAssembleWithContext() = %#v, %v", assembly, err)
+		t.Fatalf("RequestAssembleWithContext() = %#v, %v", assembly, err)
+	}
+}
+
+func TestRequestComponentsRejectsUnrequestedTargetKind(t *testing.T) {
+	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
+		var got signerapi.ComponentRequest
+		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+		return mockResponse(http.StatusOK, jsonBody(t, signerapi.ComponentResponse{
+			RequestID: got.RequestID,
+			Components: []signerapi.Component{{
+				TargetIndex: 0, Kind: signerapi.ComponentTargetKindUser,
+				Signature: "aa", SignatureScheme: "aplane.falcon1024.v1",
+			}},
+		})), nil
+	})
+
+	_, err := c.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{
+		GroupBytesHex: []string{"5458aa"},
+		Targets: []signerapi.ComponentTarget{{
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry, ComponentKey: "SENTRY",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "indices or kinds do not match") {
+		t.Fatalf("expected mismatched target error, got %v", err)
+	}
+}
+
+func TestRequestComponentsRejectsOutOfGroupTargetIndex(t *testing.T) {
+	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
+		var got signerapi.ComponentRequest
+		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+		return mockResponse(http.StatusOK, jsonBody(t, signerapi.ComponentResponse{
+			RequestID: got.RequestID,
+			Components: []signerapi.Component{{
+				TargetIndex: 1, Kind: signerapi.ComponentTargetKindSentry,
+				Signature: "aa", SignatureScheme: "aplane.falcon1024.v1",
+			}},
+		})), nil
+	})
+
+	_, err := c.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{
+		GroupBytesHex: []string{"5458aa"},
+		Targets: []signerapi.ComponentTarget{{
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry, ComponentKey: "SENTRY",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "indices or kinds do not match") {
+		t.Fatalf("expected out-of-group target error, got %v", err)
 	}
 }
 
@@ -765,7 +816,7 @@ func TestRequestGroupSignCancelsApprovalWhenContextCanceled(t *testing.T) {
 	}
 }
 
-func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
+func TestRequestComponentsPostsToComponentEndpoint(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path != "/sign/component" || req.Method != http.MethodPost {
 			t.Fatalf("request = %s %s, want POST /sign/component", req.Method, req.URL.Path)
@@ -773,20 +824,21 @@ func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
 		if got := req.Header.Get("Authorization"); got != "aplane test-token" {
 			t.Fatalf("authorization header = %q", got)
 		}
-		var got signerapi.ComponentSignRequest
+		var got signerapi.ComponentRequest
 		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 			t.Fatalf("Decode(request body) error = %v", err)
 		}
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if got.Role != signerapi.ComponentSignRoleSentry || got.ComponentKey != "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA" {
+		if got.TargetKind() != signerapi.ComponentTargetKindSentry || got.Targets[0].ComponentKey != "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA" {
 			t.Fatalf("component request = %+v, want sentry component_key 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA", got)
 		}
-		resp := signerapi.ComponentSignResponse{
+		resp := signerapi.ComponentResponse{
 			RequestID: got.RequestID,
-			Signatures: []signerapi.ComponentSignature{{
+			Components: []signerapi.Component{{
 				TargetIndex:     0,
+				Kind:            signerapi.ComponentTargetKindSentry,
 				Signature:       "aabb",
 				SignatureScheme: "aplane.witness-falcon1024.v1",
 			}},
@@ -794,55 +846,57 @@ func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
 		return mockResponse(http.StatusOK, jsonBody(t, resp)), nil
 	})
 
-	got, err := c.RequestComponentSign(signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
+	got, err := c.RequestComponents(signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
-		TargetIndices: []int{0},
+		Targets: []signerapi.ComponentTarget{{
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry,
+			ComponentKey: "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
+		}},
 	})
 	if err != nil {
-		t.Fatalf("RequestComponentSign() error = %v", err)
+		t.Fatalf("RequestComponents() error = %v", err)
 	}
-	if len(got.Signatures) != 1 || got.Signatures[0].Signature != "aabb" {
-		t.Fatalf("RequestComponentSign() = %+v, want one signature aabb", got)
+	if len(got.Components) != 1 || got.Components[0].Signature != "aabb" {
+		t.Fatalf("RequestComponents() = %+v, want one signature aabb", got)
 	}
 }
 
-func TestRequestGuardedAssemblePostsToAssembleEndpoint(t *testing.T) {
+func TestRequestAssemblePostsToAssembleEndpoint(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path != "/sign/assemble" || req.Method != http.MethodPost {
 			t.Fatalf("request = %s %s, want POST /sign/assemble", req.Method, req.URL.Path)
 		}
-		var got signerapi.GuardedAssemblyRequest
+		var got signerapi.AssemblyRequest
 		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 			t.Fatalf("Decode(request body) error = %v", err)
 		}
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if len(got.Targets) != 1 || got.Targets[0].GuardedAccount != "ADDR1" {
+		if len(got.Targets) != 1 || got.Targets[0].Kind != signerapi.AssemblyTargetKindGuarded || got.Targets[0].AuthAddress != "ADDR1" {
 			t.Fatalf("assembly request targets = %+v, want ADDR1 target", got.Targets)
 		}
-		return mockResponse(http.StatusOK, jsonBody(t, signerapi.GuardedAssemblyResponse{
+		return mockResponse(http.StatusOK, jsonBody(t, signerapi.AssemblyResponse{
 			RequestID:   got.RequestID,
 			SignedGroup: []string{"ccdd"},
 		})), nil
 	})
 
-	got, err := c.RequestGuardedAssemble(signerapi.GuardedAssemblyRequest{
+	got, err := c.RequestAssemble(signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
-		Targets: []signerapi.GuardedAssemblyTarget{{
+		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:     0,
-			GuardedAccount:  "ADDR1",
+			Kind:            signerapi.AssemblyTargetKindGuarded,
+			AuthAddress:     "ADDR1",
 			UserSignature:   "aabb",
 			SentrySignature: "bbcc",
 		}},
 	})
 	if err != nil {
-		t.Fatalf("RequestGuardedAssemble() error = %v", err)
+		t.Fatalf("RequestAssemble() error = %v", err)
 	}
 	if len(got.SignedGroup) != 1 || got.SignedGroup[0] != "ccdd" {
-		t.Fatalf("RequestGuardedAssemble() = %+v, want signed group ccdd", got)
+		t.Fatalf("RequestAssemble() = %+v, want signed group ccdd", got)
 	}
 }
 

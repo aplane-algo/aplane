@@ -37,22 +37,6 @@ func TestHandlerMethodCompatibilitySurface(t *testing.T) {
 			wantBody:   "Method not allowed",
 		},
 		{
-			name: "bounded component requires POST",
-			call: func(w *httptest.ResponseRecorder) {
-				server.handleBoundedComponent(w, requestWithIdentity(http.MethodGet, "/sign/bounded-component", nil))
-			},
-			wantStatus: http.StatusMethodNotAllowed,
-			wantBody:   "Method not allowed",
-		},
-		{
-			name: "bounded assemble requires POST",
-			call: func(w *httptest.ResponseRecorder) {
-				server.handleBoundedAssemble(w, requestWithIdentity(http.MethodGet, "/sign/bounded-assemble", nil))
-			},
-			wantStatus: http.StatusMethodNotAllowed,
-			wantBody:   "Method not allowed",
-		},
-		{
 			name: "sign assemble requires POST",
 			call: func(w *httptest.ResponseRecorder) {
 				server.handleSignAssemble(w, requestWithIdentity(http.MethodGet, "/sign/assemble", nil))

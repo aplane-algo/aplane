@@ -504,136 +504,75 @@ func (c *Client) RequestBoundedAdminWithContext(ctx context.Context, operation s
 	return &partial, nil
 }
 
-func (c *Client) RequestBoundedComponentWithContext(ctx context.Context, reqBody signerapi.BoundedComponentRequest) (*signerapi.BoundedComponentResponse, error) {
-	if reqBody.RequestID == "" {
-		requestID, err := newSignRequestID()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create bounded component request ID: %w", err)
-		}
-		reqBody.RequestID = requestID
-	}
-	if err := reqBody.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid bounded component request: %w", err)
-	}
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal bounded component request: %w", err)
-	}
-	var result signerapi.BoundedComponentResponse
-	err = c.postSignApprovalRequest(ctx, "/sign/bounded-component", reqBody.RequestID, body, func(resp *http.Response) error {
-		if err := json.NewDecoder(io.LimitReader(resp.Body, 2*1024*1024)).Decode(&result); err != nil {
-			return fmt.Errorf("failed to decode bounded component response: %w", err)
-		}
-		if err := result.Validate(); err != nil {
-			return fmt.Errorf("invalid bounded component response: %w", err)
-		}
-		if result.RequestID != reqBody.RequestID {
-			return fmt.Errorf("bounded component response request_id does not match request")
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &result, nil
+func (c *Client) RequestAssemble(req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {
+	return c.RequestAssembleWithContext(context.Background(), req)
 }
 
-func (c *Client) RequestBoundedAssembleWithContext(ctx context.Context, reqBody signerapi.BoundedAssemblyRequest) (*signerapi.BoundedAssemblyResponse, error) {
+func (c *Client) RequestAssembleWithContext(ctx context.Context, reqBody signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {
 	if reqBody.RequestID == "" {
 		requestID, err := newSignRequestID()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create bounded assembly request ID: %w", err)
+			return nil, fmt.Errorf("failed to create assembly request ID: %w", err)
 		}
 		reqBody.RequestID = requestID
 	}
 	if err := reqBody.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid bounded assembly request: %w", err)
+		return nil, fmt.Errorf("invalid assembly request: %w", err)
 	}
-	result, err := doJSON[signerapi.BoundedAssemblyResponse](c, ctx, "POST", "/sign/bounded-assemble", reqBody, guardedAssemblyTimeout, "failed to make request to Signer")
+	result, err := doJSON[signerapi.AssemblyResponse](c, ctx, "POST", "/sign/assemble", reqBody, guardedAssemblyTimeout, "failed to make request to Signer")
 	if err != nil {
 		return nil, err
 	}
 	if err := result.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid bounded assembly response: %w", err)
+		return nil, fmt.Errorf("invalid assembly response: %w", err)
 	}
 	if result.RequestID != reqBody.RequestID {
-		return nil, fmt.Errorf("bounded assembly response request_id does not match request")
+		return nil, fmt.Errorf("assembly response request_id does not match request")
 	}
 	return result, nil
 }
 
-// RequestComponentSign sends a role-specific component-signing request to
-// /sign/component.
-//
-// Unlike RequestGroupSign, the component and guarded-assembly endpoints do
-// not run the cancel-on-ctx-done watcher: they never park on the signer's
-// manual-approval coordinator (sentry policy is pass/reject only), so there
-// is no pending prompt for /sign/cancel to clear. Context cancellation
-// aborts the HTTP request and the server honors r.Context() directly.
-func (c *Client) RequestComponentSign(req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
-	return c.RequestComponentSignWithContext(context.Background(), req)
+func (c *Client) RequestComponents(req signerapi.ComponentRequest) (*signerapi.ComponentResponse, error) {
+	return c.RequestComponentsWithContext(context.Background(), req)
 }
 
-func (c *Client) RequestComponentSignWithContext(ctx context.Context, reqBody signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
+func (c *Client) RequestComponentsWithContext(ctx context.Context, reqBody signerapi.ComponentRequest) (*signerapi.ComponentResponse, error) {
 	if reqBody.RequestID == "" {
 		requestID, err := newSignRequestID()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create component sign request ID: %w", err)
+			return nil, fmt.Errorf("failed to create component request ID: %w", err)
 		}
 		reqBody.RequestID = requestID
 	}
 	if err := reqBody.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid component sign request: %w", err)
+		return nil, fmt.Errorf("invalid component request: %w", err)
 	}
-
-	// User-role component signing runs the signer-domain approval gates and can
-	// block on a manual approval decision, so it needs the same approval-aware
-	// deadline as /sign. Sentry-role requests are deterministic and keep the
-	// short component deadline.
-	timeout := componentSignTimeout
-	if reqBody.Role == signerapi.ComponentSignRoleUser {
-		c.discoverApprovalWait(ctx)
-		if signTimeout := c.signRequestTimeout(); signTimeout > timeout {
-			timeout = signTimeout
-		}
-	}
-
-	componentResp, err := doJSON[signerapi.ComponentSignResponse](c, ctx, "POST", "/sign/component", reqBody, timeout, "failed to make request to Signer")
-	if err != nil {
-		return nil, err
-	}
-	if err := componentResp.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid component sign response: %w", err)
-	}
-	return componentResp, nil
-}
-
-// RequestGuardedAssemble sends a verified guarded transaction assembly
-// request to /sign/assemble.
-func (c *Client) RequestGuardedAssemble(req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	return c.RequestGuardedAssembleWithContext(context.Background(), req)
-}
-
-func (c *Client) RequestGuardedAssembleWithContext(ctx context.Context, reqBody signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	if reqBody.RequestID == "" {
-		requestID, err := newSignRequestID()
+	var result signerapi.ComponentResponse
+	if reqBody.TargetKind() == signerapi.ComponentTargetKindSentry {
+		response, err := doJSON[signerapi.ComponentResponse](c, ctx, "POST", "/sign/component", reqBody, componentSignTimeout, "failed to make request to Signer")
 		if err != nil {
-			return nil, fmt.Errorf("failed to create guarded assembly request ID: %w", err)
+			return nil, err
 		}
-		reqBody.RequestID = requestID
+		result = *response
+	} else {
+		body, err := json.Marshal(reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal component request: %w", err)
+		}
+		err = c.postSignApprovalRequest(ctx, "/sign/component", reqBody.RequestID, body, func(resp *http.Response) error {
+			return json.NewDecoder(io.LimitReader(resp.Body, 2*1024*1024)).Decode(&result)
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
-	if err := reqBody.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid guarded assembly request: %w", err)
+	if err := result.ValidateForRequest(reqBody); err != nil {
+		return nil, fmt.Errorf("invalid component response: %w", err)
 	}
-
-	assemblyResp, err := doJSON[signerapi.GuardedAssemblyResponse](c, ctx, "POST", "/sign/assemble", reqBody, guardedAssemblyTimeout, "failed to make request to Signer")
-	if err != nil {
-		return nil, err
+	if result.RequestID != reqBody.RequestID {
+		return nil, fmt.Errorf("component response request_id does not match request")
 	}
-	if err := assemblyResp.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid guarded assembly response: %w", err)
-	}
-	return assemblyResp, nil
+	return &result, nil
 }
 
 // CancelSignRequestWithContext asks apsigner to cancel a pending manual

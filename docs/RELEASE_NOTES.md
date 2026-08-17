@@ -1,5 +1,21 @@
 # Release Notes
 
+## Unified guarded and bounded-sentry signing flow
+
+Guarded and bounded-sentry signing now share `/plan`, `/sign/component`, and
+`/sign/assemble`. Component requests use explicit `user`, `sentry`, or
+`bounded-base` targets over one frozen group; assembly uses discriminated
+`guarded` or `bounded-sentry` targets. `/plan` is the sole canonicalizer, and
+bounded authorization is reconstructed from signer-held metadata before the
+operator approves the exact frozen bytes.
+
+The pre-release `/sign/bounded-component` and `/sign/bounded-assemble` routes
+were removed and return 404. SDK callers must use `requestComponents` and
+`requestAssemble` (with language-appropriate naming). Mixed `sentry1` and
+`bounded-sentry1` targets remain rejected pending an atomic multi-gate signing
+implementation. Contract-admin `bounded1` remains separate through `aprekey`
+and `/sign/bounded-admin`.
+
 ## Single-identity product boundary
 
 APlane now ships as a single-operator, single-signing-identity product. Every

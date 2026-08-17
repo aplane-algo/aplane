@@ -247,7 +247,7 @@ func TestGuardedTargetsRequireSentryComponentKeyTypeMetadata(t *testing.T) {
 func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 	tests := []struct {
 		name        string
-		resp        *signerapi.ComponentSignResponse
+		resp        *signerapi.ComponentResponse
 		wantMessage string
 	}{
 		{
@@ -257,7 +257,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 		},
 		{
 			name: "unexpected target index",
-			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+			resp: &signerapi.ComponentResponse{Components: []signerapi.Component{{
 				TargetIndex:     9,
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "aa",
@@ -266,7 +266,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 		},
 		{
 			name: "duplicate target index",
-			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+			resp: &signerapi.ComponentResponse{Components: []signerapi.Component{{
 				TargetIndex:     0,
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "aa",
@@ -279,7 +279,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 		},
 		{
 			name: "wrong scheme",
-			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+			resp: &signerapi.ComponentResponse{Components: []signerapi.Component{{
 				TargetIndex:     0,
 				SignatureScheme: "aplane.sentry-unknown.v1",
 				Signature:       "aa",
@@ -292,7 +292,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 		},
 		{
 			name: "missing target index",
-			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+			resp: &signerapi.ComponentResponse{Components: []signerapi.Component{{
 				TargetIndex:     0,
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "aa",
@@ -336,7 +336,9 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	signatures, requestIDs, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
+		len(groupBytesHex),
 		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("requestSentryComponentSignatures() error = %v", err)
@@ -346,6 +348,32 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	}
 	if requestIDs[sentryRequestKey{ComponentKeyType: witness.Falcon1024V1, PublicKey: sentryHex}] == "" {
 		t.Fatal("request ID for sentry is empty")
+	}
+}
+
+func TestComponentRequestForIndicesDeclaresPlannerDummySuffix(t *testing.T) {
+	request := componentRequestForIndices(
+		[]string{"TX00", "TX11", "TX22"},
+		2,
+		[]int{0},
+		signerapi.ComponentTargetKindUser,
+		"AUTH",
+		[]*signerapi.AppCallInfo{{Mode: "abi", Method: "do(uint64)void"}, {Mode: "raw"}},
+	)
+	if len(request.Targets) != 1 || request.Targets[0].TargetIndex != 0 {
+		t.Fatalf("targets = %#v, want target 0", request.Targets)
+	}
+	if len(request.ContextualPositions) != 1 || request.ContextualPositions[0].TargetIndex != 1 {
+		t.Fatalf("contextual positions = %#v, want original position 1", request.ContextualPositions)
+	}
+	if len(request.DummyPositions) != 1 || request.DummyPositions[0].TargetIndex != 2 {
+		t.Fatalf("dummy positions = %#v, want planner-appended position 2", request.DummyPositions)
+	}
+	if request.Targets[0].AppCallInfo == nil || request.Targets[0].AppCallInfo.Method != "do(uint64)void" {
+		t.Fatalf("target app-call metadata = %#v, want ABI method", request.Targets[0].AppCallInfo)
+	}
+	if request.ContextualPositions[0].AppCallInfo == nil || request.ContextualPositions[0].AppCallInfo.Mode != "raw" {
+		t.Fatalf("context app-call metadata = %#v, want raw", request.ContextualPositions[0].AppCallInfo)
 	}
 }
 
@@ -373,7 +401,9 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 	_, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
+		len(groupBytesHex),
 		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
+		nil,
 	)
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want explicit endpoint mismatch")
@@ -416,7 +446,9 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	_, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
+		len(groupBytesHex),
 		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
+		nil,
 	)
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want locked endpoint")
@@ -445,7 +477,9 @@ func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) 
 	signatures, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
+		len(groupBytesHex),
 		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("requestSentryComponentSignatures() error = %v", err)
@@ -656,12 +690,12 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey [
 		if signCalls != nil {
 			signCalls.Add(1)
 		}
-		var req signerapi.ComponentSignRequest
+		var req signerapi.ComponentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.Role != signerapi.ComponentSignRoleSentry || req.ComponentKey != componentSelector {
+		if req.TargetKind() != signerapi.ComponentTargetKindSentry || req.Targets[0].ComponentKey != componentSelector {
 			http.Error(w, "wrong Witness Key ID", http.StatusBadRequest)
 			return
 		}
@@ -670,20 +704,20 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey [
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		resp := signerapi.ComponentSignResponse{
-			RequestID:    req.RequestID,
-			ComponentKey: req.ComponentKey,
-			Signatures:   make([]signerapi.ComponentSignature, 0, len(req.TargetIndices)),
+		resp := signerapi.ComponentResponse{
+			RequestID:  req.RequestID,
+			Components: make([]signerapi.Component, 0, len(req.Targets)),
 		}
-		for _, index := range req.TargetIndices {
-			msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
+		for _, target := range req.Targets {
+			msg := message.ComponentMessage(message.RoleSentry, group.Entries[target.TargetIndex].TxID)
 			signature, err := signerops.New(nil).Sign(privateKey, msg[:])
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
-				TargetIndex:     index,
+			resp.Components = append(resp.Components, signerapi.Component{
+				TargetIndex:     target.TargetIndex,
+				Kind:            signerapi.ComponentTargetKindSentry,
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       hex.EncodeToString(signature),
 			})

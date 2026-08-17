@@ -45,41 +45,14 @@ func (fs *Signer) handleBoundedAdmin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (fs *Signer) handleBoundedComponent(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.BoundedComponentRequest](fs, w, r, http.MethodPost)
-	if !ok {
-		return
-	}
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).PrepareBoundedComponent(r.Context(), ir, req)
-	if err != nil {
-		writeServiceErrorJSON(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (fs *Signer) handleBoundedAssemble(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.BoundedAssemblyRequest](fs, w, r, http.MethodPost)
-	if !ok {
-		return
-	}
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).AssembleBounded(r.Context(), ir, req)
-	if err != nil {
-		writeServiceErrorJSON(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-// handleSignComponent handles the /sign/component endpoint for sentry MVP
-// role-separated component signatures.
+// handleSignComponent handles all discriminated frozen-group component kinds.
 func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.ComponentSignRequest](fs, w, r, http.MethodPost)
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.ComponentRequest](fs, w, r, http.MethodPost)
 	if !ok {
 		return
 	}
 
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).SignComponent(r.Context(), ir, req)
+	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).SignComponents(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return
@@ -91,12 +64,12 @@ func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
 // handleSignAssemble handles the /sign/assemble endpoint for guarded-account
 // LogicSig assembly.
 func (fs *Signer) handleSignAssemble(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GuardedAssemblyRequest](fs, w, r, http.MethodPost)
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.AssemblyRequest](fs, w, r, http.MethodPost)
 	if !ok {
 		return
 	}
 
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).AssembleGuarded(r.Context(), ir, req)
+	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).Assemble(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return

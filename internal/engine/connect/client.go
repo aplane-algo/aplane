@@ -137,44 +137,18 @@ func (s *ConnectionState) RequestBoundedAdminWithContext(ctx context.Context, op
 	return client.RequestBoundedAdminWithContext(ctx, operation, requests)
 }
 
-func (s *ConnectionState) RequestBoundedComponentWithContext(ctx context.Context, req signerapi.BoundedComponentRequest) (*signerapi.BoundedComponentResponse, error) {
+func (s *ConnectionState) RequestComponentsWithContext(ctx context.Context, req signerapi.ComponentRequest) (*signerapi.ComponentResponse, error) {
 	client, err := s.signerClient()
 	if err != nil {
 		return nil, err
 	}
-	return client.RequestBoundedComponentWithContext(ctx, req)
+	return client.RequestComponentsWithContext(ctx, req)
 }
 
-func (s *ConnectionState) RequestBoundedAssembleWithContext(ctx context.Context, req signerapi.BoundedAssemblyRequest) (*signerapi.BoundedAssemblyResponse, error) {
+func (s *ConnectionState) RequestAssembleWithContext(ctx context.Context, req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {
 	client, err := s.signerClient()
 	if err != nil {
 		return nil, err
 	}
-	return client.RequestBoundedAssembleWithContext(ctx, req)
-}
-
-// RequestComponentSign sends a component-signing request to Signer.
-func (s *ConnectionState) RequestComponentSign(req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
-	return s.RequestComponentSignWithContext(context.Background(), req)
-}
-
-func (s *ConnectionState) RequestComponentSignWithContext(ctx context.Context, req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
-	client, err := s.signerClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.RequestComponentSignWithContext(ctx, req)
-}
-
-// RequestGuardedAssemble sends a guarded assembly request to Signer.
-func (s *ConnectionState) RequestGuardedAssemble(req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	return s.RequestGuardedAssembleWithContext(context.Background(), req)
-}
-
-func (s *ConnectionState) RequestGuardedAssembleWithContext(ctx context.Context, req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	client, err := s.signerClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.RequestGuardedAssembleWithContext(ctx, req)
+	return client.RequestAssembleWithContext(ctx, req)
 }

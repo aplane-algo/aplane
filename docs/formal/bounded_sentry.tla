@@ -90,7 +90,7 @@ Init ==
 ----------------------------------------------------------------------------
 (* Choreography *)
 
-(* POST /sign/bounded-component for spend, or /sign/bounded-admin for admin.
+(* POST /sign/component (bounded-base) for spend, or /sign/bounded-admin for admin.
    An invalid shape and every failed signer-domain gate reject before release. *)
 BaseStep ==
     /\ stage = "planned"
@@ -113,7 +113,7 @@ SentryStep ==
     /\ stage' = IF input.sentryPolicy THEN "sentry_released" ELSE "rejected"
     /\ UNCHANGED <<input, baseReleased, output>>
 
-(* POST /sign/bounded-assemble revalidates metadata, exact target coverage,
+(* POST /sign/assemble revalidates metadata, exact target coverage,
    both signatures, source/path masks, derived arguments, passthrough binding,
    and canonical transaction bytes before returning one atomic group. *)
 AssembleStep ==

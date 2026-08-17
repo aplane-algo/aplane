@@ -39,11 +39,11 @@ func TestConnectionStateSignerClientErrorsWhenDisconnected(t *testing.T) {
 	if _, err := state.AdminGenerate("ed25519", nil); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
 		t.Fatalf("AdminGenerate() error = %v, want not connected", err)
 	}
-	if _, err := state.RequestComponentSign(signerapi.ComponentSignRequest{}); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
-		t.Fatalf("RequestComponentSign() error = %v, want not connected", err)
+	if _, err := state.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{}); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
+		t.Fatalf("RequestComponentsWithContext() error = %v, want not connected", err)
 	}
-	if _, err := state.RequestGuardedAssemble(signerapi.GuardedAssemblyRequest{}); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
-		t.Fatalf("RequestGuardedAssemble() error = %v, want not connected", err)
+	if _, err := state.RequestAssembleWithContext(t.Context(), signerapi.AssemblyRequest{}); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
+		t.Fatalf("RequestAssembleWithContext() error = %v, want not connected", err)
 	}
 }
 
@@ -91,17 +91,26 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 		case req.Method == http.MethodDelete && req.URL.Path == "/admin/keys":
 			return connectJSONResponse(t, http.StatusOK, signerapi.AdminDeleteResponse{Success: true}, req), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/sign/component":
-			return connectJSONResponse(t, http.StatusOK, signerapi.ComponentSignResponse{
-				RequestID: "req-component",
-				Signatures: []signerapi.ComponentSignature{{
+			var componentReq signerapi.ComponentRequest
+			if err := json.NewDecoder(req.Body).Decode(&componentReq); err != nil {
+				t.Fatal(err)
+			}
+			return connectJSONResponse(t, http.StatusOK, signerapi.ComponentResponse{
+				RequestID: componentReq.RequestID,
+				Components: []signerapi.Component{{
 					TargetIndex:     0,
+					Kind:            signerapi.ComponentTargetKindSentry,
 					Signature:       "aabb",
 					SignatureScheme: "aplane.witness-falcon1024.v1",
 				}},
 			}, req), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/sign/assemble":
-			return connectJSONResponse(t, http.StatusOK, signerapi.GuardedAssemblyResponse{
-				RequestID:   "req-assemble",
+			var assemblyReq signerapi.AssemblyRequest
+			if err := json.NewDecoder(req.Body).Decode(&assemblyReq); err != nil {
+				t.Fatal(err)
+			}
+			return connectJSONResponse(t, http.StatusOK, signerapi.AssemblyResponse{
+				RequestID:   assemblyReq.RequestID,
 				SignedGroup: []string{"ccdd"},
 			}, req), nil
 		default:
@@ -132,26 +141,28 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 	if err != nil || !del.Success {
 		t.Fatalf("AdminDeleteKey() = (%+v, %v), want success nil", del, err)
 	}
-	component, err := state.RequestComponentSign(signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
+	component, err := state.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
-		TargetIndices: []int{0},
+		Targets: []signerapi.ComponentTarget{{
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry,
+			ComponentKey: "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
+		}},
 	})
-	if err != nil || len(component.Signatures) != 1 {
-		t.Fatalf("RequestComponentSign() = (%+v, %v), want one signature nil", component, err)
+	if err != nil || len(component.Components) != 1 {
+		t.Fatalf("RequestComponentsWithContext() = (%+v, %v), want one signature nil", component, err)
 	}
-	assembly, err := state.RequestGuardedAssemble(signerapi.GuardedAssemblyRequest{
+	assembly, err := state.RequestAssembleWithContext(t.Context(), signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
-		Targets: []signerapi.GuardedAssemblyTarget{{
+		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:     0,
-			GuardedAccount:  "ADDR1",
+			Kind:            signerapi.AssemblyTargetKindGuarded,
+			AuthAddress:     "ADDR1",
 			UserSignature:   "aabb",
 			SentrySignature: "bbcc",
 		}},
 	})
 	if err != nil || len(assembly.SignedGroup) != 1 {
-		t.Fatalf("RequestGuardedAssemble() = (%+v, %v), want one signed txn nil", assembly, err)
+		t.Fatalf("RequestAssembleWithContext() = (%+v, %v), want one signed txn nil", assembly, err)
 	}
 }
 

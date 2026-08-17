@@ -29,7 +29,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -40,18 +39,18 @@ type guardedSimulationCapture struct {
 	signerSimulateHit atomic.Int32
 
 	mu             sync.Mutex
-	assembly       signerapi.GuardedAssemblyRequest
+	assembly       signerapi.AssemblyRequest
 	assembledGroup []string
 }
 
-func (c *guardedSimulationCapture) setAssembly(req signerapi.GuardedAssemblyRequest, signed []string) {
+func (c *guardedSimulationCapture) setAssembly(req signerapi.AssemblyRequest, signed []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.assembly = req
 	c.assembledGroup = append([]string(nil), signed...)
 }
 
-func (c *guardedSimulationCapture) snapshot() (signerapi.GuardedAssemblyRequest, []string) {
+func (c *guardedSimulationCapture) snapshot() (signerapi.AssemblyRequest, []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.assembly, append([]string(nil), c.assembledGroup...)
@@ -95,37 +94,37 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: transactions})
 	})
 	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, r *http.Request) {
-		var req signerapi.ComponentSignRequest
+		var req signerapi.ComponentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		switch req.Role {
-		case signerapi.ComponentSignRoleUser:
+		switch req.TargetKind() {
+		case signerapi.ComponentTargetKindUser:
 			capture.userRoleCalls.Add(1)
-		case signerapi.ComponentSignRoleSentry:
+		case signerapi.ComponentTargetKindSentry:
 			capture.sentryRoleCalls.Add(1)
 		default:
 			http.Error(w, "unexpected component role", http.StatusBadRequest)
 			return
 		}
-		resp := signerapi.ComponentSignResponse{
-			RequestID:    req.RequestID,
-			ComponentKey: req.ComponentKey,
-			Signatures:   make([]signerapi.ComponentSignature, 0, len(req.TargetIndices)),
+		resp := signerapi.ComponentResponse{
+			RequestID:  req.RequestID,
+			Components: make([]signerapi.Component, 0, len(req.Targets)),
 		}
-		for _, index := range req.TargetIndices {
-			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
-				TargetIndex:     index,
+		for _, target := range req.Targets {
+			resp.Components = append(resp.Components, signerapi.Component{
+				TargetIndex:     target.TargetIndex,
+				Kind:            target.Kind,
 				SignatureScheme: witness.Falcon1024V1,
-				Signature:       hex.EncodeToString([]byte{byte(index + 1)}),
+				Signature:       hex.EncodeToString([]byte{byte(target.TargetIndex + 1)}),
 			})
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	})
 	mux.HandleFunc("/sign/assemble", func(w http.ResponseWriter, r *http.Request) {
 		capture.assembleCalls.Add(1)
-		var req signerapi.GuardedAssemblyRequest
+		var req signerapi.AssemblyRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -144,7 +143,7 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 			signed[i] = hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: entry.Txn}))
 		}
 		capture.setAssembly(req, signed)
-		_ = json.NewEncoder(w).Encode(signerapi.GuardedAssemblyResponse{
+		_ = json.NewEncoder(w).Encode(signerapi.AssemblyResponse{
 			RequestID:   req.RequestID,
 			SignedGroup: signed,
 		})
@@ -278,36 +277,41 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: componentSelector, PublicKeyHex: sentryHex, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}})
 	})
-	mux.HandleFunc("/sign/bounded-component", func(w http.ResponseWriter, r *http.Request) {
-		appendEvent("base")
-		var req signerapi.BoundedComponentRequest
+	mux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+		var req signerapi.GroupSignRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(signerapi.BoundedComponentResponse{
-			RequestID: req.RequestID, Transactions: []string{txnutil.EncodeWithPrefixHex(txn)},
-			Components: []signerapi.BoundedBaseComponent{{TargetIndex: 0, BoundedAccount: txn.Sender.String(), BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
-		})
+		transactions := make([]string, len(req.Requests))
+		for i, request := range req.Requests {
+			transactions[i] = request.TxnBytesHex
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: transactions})
 	})
 	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, r *http.Request) {
-		appendEvent("sentry")
-		var req signerapi.ComponentSignRequest
+		var req signerapi.ComponentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(signerapi.ComponentSignResponse{RequestID: req.RequestID, ComponentKey: req.ComponentKey, Signatures: []signerapi.ComponentSignature{{TargetIndex: 0, Signature: "cc", SignatureScheme: witness.Falcon1024V1}}})
+		if req.TargetKind() == signerapi.ComponentTargetKindBoundedBase {
+			appendEvent("base")
+			_ = json.NewEncoder(w).Encode(signerapi.ComponentResponse{RequestID: req.RequestID, Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: txn.Sender.String(), BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}}})
+			return
+		}
+		appendEvent("sentry")
+		_ = json.NewEncoder(w).Encode(signerapi.ComponentResponse{RequestID: req.RequestID, Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry, Signature: "cc", SignatureScheme: witness.Falcon1024V1}}})
 	})
-	mux.HandleFunc("/sign/bounded-assemble", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/sign/assemble", func(w http.ResponseWriter, r *http.Request) {
 		appendEvent("assemble")
-		var req signerapi.BoundedAssemblyRequest
+		var req signerapi.AssemblyRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))
-		_ = json.NewEncoder(w).Encode(signerapi.BoundedAssemblyResponse{RequestID: req.RequestID, SignedGroup: []string{signed}})
+		_ = json.NewEncoder(w).Encode(signerapi.AssemblyResponse{RequestID: req.RequestID, SignedGroup: []string{signed}})
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -337,6 +341,59 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 	defer mu.Unlock()
 	if strings.Join(events, ",") != "base,sentry,assemble" {
 		t.Fatalf("bounded-sentry event order = %v, want base, sentry, assemble", events)
+	}
+}
+
+func TestBoundedSentryRejectsPlannedFeeBeforeReleasingComponents(t *testing.T) {
+	publicKey, _ := testFalconSentryKeypair(t, 0x73)
+	sentryHex := hex.EncodeToString(publicKey)
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded-sentry")
+	var componentCalls atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+		var req signerapi.GroupSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		transactions := make([]string, len(req.Requests))
+		for i, request := range req.Requests {
+			transactions[i] = request.TxnBytesHex
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: transactions})
+	})
+	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, _ *http.Request) {
+		componentCalls.Add(1)
+		http.Error(w, "component signing must not run", http.StatusInternalServerError)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
+		account := txn.Sender.String()
+		c.AddAddress(account, "test.bounded-sentry.v1")
+		c.SetSigningFlowForAddress(account, signerapi.SigningFlowBoundedSentry1)
+		c.SetSentryComponentKeyTypeForAddress(account, witness.Falcon1024V1)
+		c.SetSentryPublicKeyForAddress(account, sentryHex)
+		c.SetBoundedMaxFeeForAddress(account, uint64(txn.Fee)-1)
+		c.SetLogicSigResourceProfile(account, lsigresource.Profile{
+			ProgramBytes: 1,
+			Spend:        &lsigresource.PathProfile{MaxOpcodeCost: 1},
+		})
+	})
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	var simulateReq models.SimulateRequest
+	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "", &simulateReq)
+	defer closeAlgod()
+	s.algod = algodClient
+
+	_, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "exceeds advertised max_fee") {
+		t.Fatalf("SignAndSubmitGroup() error = %v, want max_fee rejection", err)
+	}
+	if got := componentCalls.Load(); got != 0 {
+		t.Fatalf("component calls = %d, want 0 before fee rejection", got)
 	}
 }
 

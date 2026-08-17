@@ -27,39 +27,20 @@ import (
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
 const boundedAssemblyReceiptDomain = "APLANE_BOUNDED_SENTRY_ASSEMBLY_V1"
 
-type BoundedComponentResult struct {
-	RequestID    string
-	Transactions []string
-	Components   []signerapi.BoundedBaseComponent
-	Mutations    *signerapi.MutationReport
-}
-
-type BoundedAssemblyResult struct {
-	RequestID   string
-	SignedGroup []string
-}
-
-func validateBoundedComponentPlan(req signerapi.BoundedComponentRequest, plan *PlanResult) ([]int, *ServiceError) {
-	if plan == nil || len(plan.BoundedItems) < len(req.Requests) {
+func validateBoundedComponentPlan(req signerapi.ComponentRequest, plan *PlanResult) ([]int, *ServiceError) {
+	if plan == nil || len(plan.BoundedItems) < len(req.GroupSignRequest().Requests) {
 		return nil, internal("bounded component plan is incomplete")
 	}
 	if plan.HasPassthrough {
-		return nil, badRequest("bounded-component does not accept signed passthrough entries")
+		return nil, badRequest("bounded-base component signing does not accept signed passthrough entries")
 	}
 	targets := make([]int, 0)
-	for i, request := range req.Requests {
-		mode, err := request.Mode()
-		if err != nil {
-			return nil, badRequest(err.Error())
-		}
-		if mode == signerapi.RequestModeForeign {
-			continue
-		}
+	for _, target := range req.Targets {
+		i := target.TargetIndex
 		item := plan.BoundedItems[i]
 		if item == nil || item.Metadata == nil || item.Metadata.Sentry == nil {
 			return nil, badRequest(fmt.Sprintf("transaction %d is not a sentry-enabled bounded account", i+1))
@@ -70,12 +51,12 @@ func validateBoundedComponentPlan(req signerapi.BoundedComponentRequest, plan *P
 		targets = append(targets, i)
 	}
 	if len(targets) == 0 {
-		return nil, badRequest("bounded-component requires at least one sentry-enabled bounded target")
+		return nil, badRequest("bounded-base component signing requires at least one sentry-enabled bounded target")
 	}
 	return targets, nil
 }
 
-func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identityID string, req signerapi.BoundedComponentRequest, session *keystore.KeySession) (*BoundedComponentResult, *ServiceError) {
+func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentRequest, session *keystore.KeySession) (*signerapi.ComponentResponse, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -85,7 +66,7 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	if session == nil {
 		return nil, internal("key session is nil")
 	}
-	plan, err := s.planGroupWhileSignable(identityID, req.GroupSignRequest())
+	plan, groupReq, err := s.ValidateFrozenComponentContext(identityID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -93,15 +74,15 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	if validationErr != nil {
 		return nil, validationErr
 	}
-	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, req.GroupSignRequest(), plan)
+	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, groupReq, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
 	defer release()
 	req.RequestID = guardedRequestID("bcmp", req.RequestID)
-	components := make([]signerapi.BoundedBaseComponent, 0, len(targets))
+	components := make([]signerapi.Component, 0, len(targets))
 	for _, targetIndex := range targets {
-		component, signErr := signBoundedBaseComponent(ctx, req, plan, targetIndex, session)
+		component, signErr := signBoundedBaseComponent(ctx, groupReq, plan, targetIndex, session)
 		if signErr != nil {
 			return nil, signErr
 		}
@@ -109,25 +90,19 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	}
 	s.logBoundedComponentsApproved(identityID, req, plan, targets, policyRuleID)
 	consoleOf(s.Console).Printf("[GROUP] Prepared %d bounded-sentry base component(s)\n", len(components))
-	transactions := make([]string, len(plan.AllTxns))
-	for i, txn := range plan.AllTxns {
-		transactions[i] = txnutil.EncodeWithPrefixHex(txn)
-	}
-	return &BoundedComponentResult{
-		RequestID: req.RequestID, Transactions: transactions, Components: components,
-		Mutations: BuildMutationReport(plan, len(req.Requests)),
-	}, nil
+	return &signerapi.ComponentResponse{RequestID: req.RequestID, Components: components}, nil
 }
 
-func (s *Service) logBoundedComponentsApproved(identityID string, req signerapi.BoundedComponentRequest, plan *PlanResult, targets []int, policyRuleID string) {
+func (s *Service) logBoundedComponentsApproved(identityID string, req signerapi.ComponentRequest, plan *PlanResult, targets []int, policyRuleID string) {
 	if s.AuditLog == nil || plan == nil {
 		return
 	}
+	groupReq := req.GroupSignRequest()
 	for _, index := range targets {
-		if index < 0 || index >= len(req.Requests) || index >= len(plan.AllTxns) {
+		if index < 0 || index >= len(groupReq.Requests) || index >= len(plan.AllTxns) {
 			continue
 		}
-		txReq := req.Requests[index]
+		txReq := groupReq.Requests[index]
 		const details = "bounded-sentry base component released after policy and operator approval"
 		if policyRuleID != "" {
 			if logger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && logger != nil {
@@ -139,50 +114,51 @@ func (s *Service) logBoundedComponentsApproved(identityID string, req signerapi.
 	}
 }
 
-func signBoundedBaseComponent(ctx context.Context, req signerapi.BoundedComponentRequest, plan *PlanResult, targetIndex int, session componentKeyGetter) (signerapi.BoundedBaseComponent, *ServiceError) {
+func signBoundedBaseComponent(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, targetIndex int, session componentKeyGetter) (signerapi.Component, *ServiceError) {
 	item := plan.BoundedItems[targetIndex]
 	account := req.Requests[targetIndex].AuthAddress
 	keyMaterial, loadErr := loadBoundedKeyMaterial(ctx, session, account, "bounded spending key")
 	if loadErr != nil {
-		return signerapi.BoundedBaseComponent{}, loadErr
+		return signerapi.Component{}, loadErr
 	}
 	defer zeroLoadedKeyMaterial(keyMaterial)
 	if integrityErr := verifyBoundedPlanIntegrity(item, keyMaterial); integrityErr != nil {
-		return signerapi.BoundedBaseComponent{}, integrityErr
+		return signerapi.Component{}, integrityErr
 	}
 	if keyMaterial.BoundedAuthorization == nil || keyMaterial.BoundedAuthorization.Sentry == nil || item.Path != boundedPathPureSpend {
-		return signerapi.BoundedBaseComponent{}, badRequest("loaded key does not authorize bounded-sentry component signing")
+		return signerapi.Component{}, badRequest("loaded key does not authorize bounded-sentry component signing")
 	}
 	provider := coresigning.GetProviderForKey(keyMaterial.Type, keyMaterial.BaseKeyType)
 	baseProvider := lsigprovider.Get(keyMaterial.BaseKeyType)
 	if provider == nil || baseProvider == nil {
-		return signerapi.BoundedBaseComponent{}, internal("bounded base signing provider is unavailable")
+		return signerapi.Component{}, internal("bounded base signing provider is unavailable")
 	}
 	txID := algocrypto.TransactionID(plan.AllTxns[targetIndex])
 	signature, signErr := provider.SignMessage(keyMaterial, txID[:])
 	if signErr != nil {
-		return signerapi.BoundedBaseComponent{}, internal(fmt.Sprintf("failed to sign bounded base component: %v", signErr))
+		return signerapi.Component{}, internal(fmt.Sprintf("failed to sign bounded base component: %v", signErr))
 	}
 	defer crypto.ZeroBytes(signature)
 	baseArgs, packErr := baseProvider.BuildArgs(signature, nil)
 	if packErr != nil {
-		return signerapi.BoundedBaseComponent{}, internal(fmt.Sprintf("pack bounded base component: %v", packErr))
+		return signerapi.Component{}, internal(fmt.Sprintf("pack bounded base component: %v", packErr))
 	}
 	defer zeroGeneratedArgs(baseArgs)
 	if err := validateBoundedBaseArgs(keyMaterial, txID[:], baseArgs); err != nil {
-		return signerapi.BoundedBaseComponent{}, err
+		return signerapi.Component{}, err
 	}
 	receiptMessage, receiptErr := boundedAssemblyReceiptMessage(account, txID[:], item.Metadata, item.RuntimeArgs)
 	if receiptErr != nil {
-		return signerapi.BoundedBaseComponent{}, internal(fmt.Sprintf("build bounded assembly receipt: %v", receiptErr))
+		return signerapi.Component{}, internal(fmt.Sprintf("build bounded assembly receipt: %v", receiptErr))
 	}
 	receipt, receiptSignErr := provider.SignMessage(keyMaterial, receiptMessage[:])
 	if receiptSignErr != nil {
-		return signerapi.BoundedBaseComponent{}, internal(fmt.Sprintf("sign bounded assembly receipt: %v", receiptSignErr))
+		return signerapi.Component{}, internal(fmt.Sprintf("sign bounded assembly receipt: %v", receiptSignErr))
 	}
 	defer crypto.ZeroBytes(receipt)
-	component := signerapi.BoundedBaseComponent{
-		TargetIndex: targetIndex, BoundedAccount: account, RuntimeArgs: encodeRuntimeArgs(item.RuntimeArgs),
+	component := signerapi.Component{
+		TargetIndex: targetIndex, Kind: signerapi.ComponentTargetKindBoundedBase,
+		AuthAddress: account, RuntimeArgs: encodeRuntimeArgs(item.RuntimeArgs),
 		AssemblyReceipt: hex.EncodeToString(receipt), SignatureScheme: keyMaterial.BaseKeyType,
 	}
 	for _, arg := range baseArgs {
@@ -207,51 +183,6 @@ func validateBoundedBaseArgs(keyMaterial *coresigning.KeyMaterial, messageBytes 
 	return nil
 }
 
-func (s *Service) AssembleBoundedWithContext(ctx context.Context, identityID string, req signerapi.BoundedAssemblyRequest, session *keystore.KeySession) (*BoundedAssemblyResult, *ServiceError) {
-	_ = identityID
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, canceledSignRequest(err)
-	}
-	if err := req.Validate(); err != nil {
-		return nil, badRequest(err.Error())
-	}
-	group, err := canonical.DecodeGroupHex(req.GroupBytesHex)
-	if err != nil {
-		return nil, badRequest(err.Error())
-	}
-	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return nil, lockedError()
-	}
-	if session == nil {
-		return nil, internal("key session is nil")
-	}
-	release, leaseErr := s.beforeExecute()
-	if leaseErr != nil {
-		return nil, leaseErr
-	}
-	defer release()
-	req.RequestID = guardedRequestID("basm", req.RequestID)
-	signedGroup := make([]string, len(group.Entries))
-	for _, target := range req.Targets {
-		signed, assemblyErr := assembleBoundedTarget(ctx, target, group.Entries[target.TargetIndex], session)
-		if assemblyErr != nil {
-			return nil, assemblyErr
-		}
-		signedGroup[target.TargetIndex] = signed
-	}
-	for _, passthrough := range req.Passthrough {
-		signed, passthroughErr := validateGuardedPassthrough(ctx, passthrough, group.Entries[passthrough.TargetIndex], session)
-		if passthroughErr != nil {
-			return nil, passthroughErr
-		}
-		signedGroup[passthrough.TargetIndex] = signed
-	}
-	return &BoundedAssemblyResult{RequestID: req.RequestID, SignedGroup: signedGroup}, nil
-}
-
 func loadBoundedKeyMaterial(ctx context.Context, session componentKeyGetter, account, label string) (*coresigning.KeyMaterial, *ServiceError) {
 	keyMaterial, err := session.GetKeyWithContext(ctx, account)
 	if err != nil {
@@ -270,8 +201,8 @@ func loadBoundedKeyMaterial(ctx context.Context, session componentKeyGetter, acc
 	return keyMaterial, nil
 }
 
-func assembleBoundedTarget(ctx context.Context, target signerapi.BoundedAssemblyTarget, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
-	keyMaterial, loadErr := loadBoundedKeyMaterial(ctx, session, target.BoundedAccount, "bounded account key")
+func assembleBoundedTarget(ctx context.Context, target signerapi.AssemblyTarget, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
+	keyMaterial, loadErr := loadBoundedKeyMaterial(ctx, session, target.AuthAddress, "bounded account key")
 	if loadErr != nil {
 		return "", loadErr
 	}
@@ -287,7 +218,7 @@ func assembleBoundedTarget(ctx context.Context, target signerapi.BoundedAssembly
 	if path != boundedPathPureSpend {
 		return "", badRequest(fmt.Sprintf("target index %d is not an admitted bounded spend", target.TargetIndex))
 	}
-	runtimeArgs, runtimeErr := validateBoundedRuntimeArgs(target.RuntimeArgs, metadata, path)
+	runtimeArgs, runtimeErr := validateBoundedRuntimeArgs(target.BoundedRuntimeArgs, metadata, path)
 	if runtimeErr != nil {
 		return "", withTransactionIndex(target.TargetIndex, runtimeErr)
 	}
@@ -304,7 +235,7 @@ func assembleBoundedTarget(ctx context.Context, target signerapi.BoundedAssembly
 		return "", decodeReceiptErr
 	}
 	defer crypto.ZeroBytes(receipt)
-	receiptMessage, receiptErr := boundedAssemblyReceiptMessage(target.BoundedAccount, entry.TxID[:], metadata, runtimeArgs)
+	receiptMessage, receiptErr := boundedAssemblyReceiptMessage(target.AuthAddress, entry.TxID[:], metadata, runtimeArgs)
 	if receiptErr != nil || sentryverify.VerifyFalcon1024(keyMaterial.PublicKey, receiptMessage[:], receipt) != nil {
 		return "", badRequest(fmt.Sprintf("target index %d assembly receipt is invalid or stale", target.TargetIndex))
 	}
@@ -333,8 +264,8 @@ func assembleBoundedTarget(ctx context.Context, target signerapi.BoundedAssembly
 	}
 	lsigAccount := algocrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: keyMaterial.Bytecode, Args: args}}
 	address, addressErr := lsigAccount.Address()
-	if addressErr != nil || address.String() != target.BoundedAccount {
-		return "", internal(fmt.Sprintf("loaded bounded program does not match account %s", target.BoundedAccount))
+	if addressErr != nil || address.String() != target.AuthAddress {
+		return "", internal(fmt.Sprintf("loaded bounded program does not match account %s", target.AuthAddress))
 	}
 	_, signedBytes, signErr := algocrypto.SignLogicSigAccountTransaction(lsigAccount, entry.Txn)
 	if signErr != nil {
@@ -346,7 +277,7 @@ func assembleBoundedTarget(ctx context.Context, target signerapi.BoundedAssembly
 	return hex.EncodeToString(signedBytes), nil
 }
 
-func decodeBoundedBaseArgs(target signerapi.BoundedAssemblyTarget, metadata *boundedmeta.Metadata) ([][]byte, *ServiceError) {
+func decodeBoundedBaseArgs(target signerapi.AssemblyTarget, metadata *boundedmeta.Metadata) ([][]byte, *ServiceError) {
 	if len(target.BaseSignatures) != metadata.BaseSignatureArgLayout.Count {
 		return nil, badRequest(fmt.Sprintf("target index %d base signature count does not match stored layout", target.TargetIndex))
 	}
@@ -362,7 +293,7 @@ func decodeBoundedBaseArgs(target signerapi.BoundedAssemblyTarget, metadata *bou
 	return args, nil
 }
 
-func validateAssembledBoundedTarget(target signerapi.BoundedAssemblyTarget, entry canonical.Txn, signedBytes []byte) *ServiceError {
+func validateAssembledBoundedTarget(target signerapi.AssemblyTarget, entry canonical.Txn, signedBytes []byte) *ServiceError {
 	var signed types.SignedTxn
 	if err := msgpack.Decode(signedBytes, &signed); err != nil {
 		return internal(fmt.Sprintf("failed to decode assembled bounded transaction: %v", err))
@@ -370,8 +301,8 @@ func validateAssembledBoundedTarget(target signerapi.BoundedAssemblyTarget, entr
 	if !bytes.Equal(algocrypto.TransactionID(signed.Txn), entry.TxID[:]) {
 		return internal(fmt.Sprintf("assembled bounded transaction at index %d does not match canonical transaction", target.TargetIndex))
 	}
-	if entry.Txn.Sender.String() != target.BoundedAccount && signed.AuthAddr.String() != target.BoundedAccount {
-		return internal(fmt.Sprintf("assembled bounded transaction at index %d does not bind bounded account %s", target.TargetIndex, target.BoundedAccount))
+	if entry.Txn.Sender.String() != target.AuthAddress && signed.AuthAddr.String() != target.AuthAddress {
+		return internal(fmt.Sprintf("assembled bounded transaction at index %d does not bind bounded account %s", target.TargetIndex, target.AuthAddress))
 	}
 	return nil
 }

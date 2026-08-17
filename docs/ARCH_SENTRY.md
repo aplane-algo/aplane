@@ -119,15 +119,14 @@ assembly.
 Dedicated guarded accounts and sentry keys are never signed through raw
 `/sign`:
 
-- guarded account keys use `/sign/component` with role `user`, then
+- guarded account keys use `/sign/component` with `kind:"user"`, then
   `/sign/assemble`,
-- sentry keys use `/sign/component` with role `sentry`,
+- sentry keys use `/sign/component` with `kind:"sentry"`,
 - ordinary `/sign` rejects all guarded account key types and sentry key types.
 
 Sentry-enabled bounded spends are also rejected by ordinary `/sign`. They use
-`/sign/bounded-component` for the approved base component,
-sentry-role `/sign/component` for the witness signature, and
-`/sign/bounded-assemble` for source-aware final assembly. Their external-admin
+`/plan`, `/sign/component` with bounded-base and sentry targets, and
+`/sign/assemble` for source-aware final assembly. Their external-admin
 rekey path remains `/sign/bounded-admin` and never contacts the sentry.
 
 This preserves the two-party invariant: a guarded account requires both a user
@@ -135,6 +134,34 @@ component signature and a sentry component signature. The endpoint split is
 also a contract statement: `/sign` returns only submittable signed
 transactions produced by keys this signer can complete alone, while the
 component/assembly surface handles partial, multi-party authorization.
+
+## Component-Flow Unification Invariants
+
+The component-flow migration unifies transport and orchestration, not the
+underlying authorization models. `/plan` is the only endpoint that
+canonicalizes a group. Component and assembly endpoints accept frozen group
+bytes and validate them without mutation; they never add resource dummies,
+pool fees, regroup, or otherwise repair the request.
+
+The signer intentionally does not prove that frozen bytes came from `/plan`.
+It independently reconstructs signer-owned facts and may accept any canonical,
+envelope-valid group. For a component call, the bytes evaluated by policy, the
+bytes rendered for operator approval, and the bytes used to derive component
+messages are one and the same. Bounded-sentry component signing therefore
+moves from approving a plan constructed inside the signing call to approving
+the supplied frozen group after the signer re-derives and validates its bounded
+authorization envelope.
+
+For every component kind, the declared dummy suffix is checked against the
+canonical signer-added dummy form before policy evaluation or key access. The
+classification is bidirectional: a declared dummy must be canonical, and a
+canonical signer-added dummy suffix cannot be relabeled as caller-supplied
+original positions to alter policy or approval semantics.
+
+Assembly authorization remains flow-specific behind the shared request:
+guarded targets carry user and sentry signatures; bounded-sentry targets carry
+base signatures, a sentry signature, and an assembly receipt. No shared route
+may allow either target kind to use the other's weaker material.
 
 ## Signer-Domain Gating Of User Components
 
@@ -317,21 +344,28 @@ For `bounded-sentry1`, the first-party client uses a distinct user-first
 choreography:
 
 1. Resolve the bounded target from `signing_flow` and durable inventory.
-2. Send the group to `/sign/bounded-component`. The signer finalizes grouping
-   and fees, runs bounded classification, policy, and operator approval, then
-   returns frozen transactions, base signature args, runtime args, and an
-   assembly receipt.
+2. Send the draft group to `/plan`, then pass the exact frozen group plus its
+   closed target/context/dummy position partition to `/sign/component` with
+   `kind:"bounded-base"`.
+   The signer independently reconstructs the durable bounded authorization and
+   validates grouping, resources, fees, policy, and operator approval without
+   changing the bytes. It returns base signature args, runtime args, and an
+   assembly receipt bound to those bytes.
 3. Route those exact frozen transactions to the sentry endpoint and request a
    sentry-role `/sign/component` signature.
 4. Return the base component, receipt, sentry signature, and exact group to the
-   user signer through `/sign/bounded-assemble`.
+   user signer through `/sign/assemble` with `kind:"bounded-sentry"`.
 5. The signer verifies all sources, derives declared Merkle proofs, constructs
    the metadata-declared argument layout, and returns the executable group.
 
-The first-party client does not ask the sentry first. It also rejects a group
-that mixes `sentry1` and `bounded-sentry1` targets because those flows have
-distinct component and assembly contracts. These are client orchestration
-constraints, not sentry-endpoint or signer-side whole-group security checks.
+The first-party client does not ask the sentry first. It still rejects a group
+that mixes `sentry1` and `bounded-sentry1` targets. The wire contracts are now
+shared, but the account signer does not yet implement the required multi-gate,
+all-target preflight that releases no component unless both guarded-user and
+bounded-base authorization complete. The guard remains fail-closed until that
+atomicity rule is implemented and tested end to end. This is a client
+orchestration constraint, not a sentry-endpoint or signer-side whole-group
+security check.
 Signer endpoints validate the targets they sign or assemble; they do not infer
 the flow of foreign group positions. Non-target positions are carried as exact
 passthrough signed bytes in the final assembly request.
@@ -510,13 +544,13 @@ Primary packages and files:
 - `internal/sentry/verify`: component signature verification (signer-side
   only).
 - `internal/sentry/sentryrefs`: public sentry reference catalog.
-- `internal/signerapp/signing`: component and bounded-component planning, sentry policy
+- `internal/signerapp/signing`: frozen component validation, bounded
+  authorization reconstruction, sentry policy
   evaluation, signer-domain approval gates for user components (`gate.go`,
   `component_gate.go`), user/sentry component signing, assembly, and `/sign`
   rejection gates.
 - `internal/signerapp/rest`: REST service methods backing `/sign/component`,
-  `/sign/assemble`, `/sign/bounded-component`, `/sign/bounded-assemble`,
-  `/keys`, `/keytypes`, and
+  `/sign/assemble`, `/keys`, `/keytypes`, and
   `/admin/sentries/sync`.
 - `internal/signerapp/daemon`: HTTP runtime (`http_runtime.go`) that registers
   these routes on the signer mux and dispatches them to the `rest` service

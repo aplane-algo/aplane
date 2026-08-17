@@ -104,17 +104,7 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		return nil, err
 	}
 
-	if p.AuditLog != nil && p.GenerateTxnDescription != nil {
-		for i, txReq := range req.Requests {
-			if passthroughIndices[i] {
-				p.AuditLog.LogSignRequest(identityID, "", txns[i].Sender.String(), "passthrough", "pre-signed transaction")
-			} else if foreignIndices[i] {
-				p.AuditLog.LogSignRequest(identityID, "", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txReq.TxnBytesHex))
-			} else {
-				p.AuditLog.LogSignRequest(identityID, txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txReq.TxnBytesHex))
-			}
-		}
-	}
+	p.logSignRequests(identityID, req, txns, passthroughIndices, foreignIndices)
 
 	isPreGrouped, err := validateGroupConsistency(txns, hasPassthrough, console)
 	if err != nil {
@@ -231,6 +221,21 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		KnownAddresses:        knownAddresses,
 		BoundedItems:          boundedItems,
 	}, nil
+}
+
+func (p *Planner) logSignRequests(identityID string, req signerapi.GroupSignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool) {
+	if p.AuditLog == nil || p.GenerateTxnDescription == nil {
+		return
+	}
+	for i, txReq := range req.Requests {
+		if passthroughIndices[i] {
+			p.AuditLog.LogSignRequest(identityID, "", txns[i].Sender.String(), "passthrough", "pre-signed transaction")
+		} else if foreignIndices[i] {
+			p.AuditLog.LogSignRequest(identityID, "", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txReq.TxnBytesHex))
+		} else {
+			p.AuditLog.LogSignRequest(identityID, txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txReq.TxnBytesHex))
+		}
+	}
 }
 
 func knownAddressesFromSnapshot(snapshot PlannerIdentitySnapshot) map[string]bool {

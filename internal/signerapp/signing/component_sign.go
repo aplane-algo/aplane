@@ -14,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -53,13 +52,13 @@ func signPreparedSentryComponents(ctx context.Context, plan *ComponentSignPlan, 
 	}
 	defer zeroLoadedKeyMaterial(keyMaterial)
 
-	signatures := make([]signerapi.ComponentSignature, len(plan.Targets))
+	signatures := make([]ComponentSignature, len(plan.Targets))
 	for i, target := range plan.Targets {
 		signature, signErr := signSentryComponentMessage(keyMaterial.Type, componentKey.PrivateKey, target.Message[:])
 		if signErr != nil {
 			return nil, signErr
 		}
-		signatures[i] = signerapi.ComponentSignature{
+		signatures[i] = ComponentSignature{
 			TargetIndex:     target.TargetIndex,
 			Signature:       hex.EncodeToString(signature),
 			SignatureScheme: keyMaterial.Type,
@@ -99,13 +98,13 @@ func signPreparedUserComponents(ctx context.Context, plan *ComponentSignPlan, se
 	}
 	defer zeroLoadedKeyMaterial(keyMaterial)
 
-	signatures := make([]signerapi.ComponentSignature, len(plan.Targets))
+	signatures := make([]ComponentSignature, len(plan.Targets))
 	for i, target := range plan.Targets {
 		signature, signErr := provider.SignMessage(keyMaterial, target.Message[:])
 		if signErr != nil {
 			return nil, internal(fmt.Sprintf("failed to sign user component message: %v", signErr))
 		}
-		signatures[i] = signerapi.ComponentSignature{
+		signatures[i] = ComponentSignature{
 			TargetIndex:     target.TargetIndex,
 			Signature:       hex.EncodeToString(signature),
 			SignatureScheme: signatureScheme,

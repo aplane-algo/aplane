@@ -150,10 +150,8 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"group_sign_response_mutated.json", assertContractRoundTrip[GroupSignResponse]},
 		{"bounded_admin_request.json", assertContractRoundTrip[BoundedAdminRequest]},
 		{"bounded_admin_partial_response.json", assertContractRoundTrip[BoundedAdminPartialResponse]},
-		{"bounded_component_request.json", assertContractRoundTrip[BoundedComponentRequest]},
-		{"bounded_component_response.json", assertContractRoundTrip[BoundedComponentResponse]},
-		{"bounded_assembly_request.json", assertContractRoundTrip[BoundedAssemblyRequest]},
-		{"bounded_assembly_response.json", assertContractRoundTrip[BoundedAssemblyResponse]},
+		{"assembly_request_mixed.json", assertContractRoundTrip[AssemblyRequest]},
+		{"assembly_response.json", assertContractRoundTrip[AssemblyResponse]},
 		{"group_plan_response_mutated.json", assertContractRoundTrip[GroupPlanResponse]},
 		{"error_response.json", assertContractRoundTrip[ErrorResponse]},
 		{"keys_response_guarded.json", assertContractRoundTrip[KeysResponse]},
@@ -171,10 +169,8 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"cancel_sign_request.json", assertContractRoundTrip[CancelSignRequest]},
 		{"cancel_sign_response_not_found.json", assertContractRoundTrip[CancelSignResponse]},
 		{"cancel_sign_response_success.json", assertContractRoundTrip[CancelSignResponse]},
-		{"component_sign_request_sentry.json", assertContractRoundTrip[ComponentSignRequest]},
-		{"component_sign_response_sentry.json", assertContractRoundTrip[ComponentSignResponse]},
-		{"guarded_assembly_request_mixed.json", assertContractRoundTrip[GuardedAssemblyRequest]},
-		{"guarded_assembly_response.json", assertContractRoundTrip[GuardedAssemblyResponse]},
+		{"component_request.json", assertContractRoundTrip[ComponentRequest]},
+		{"component_response.json", assertContractRoundTrip[ComponentResponse]},
 		{"health_response_ready.json", assertContractRoundTrip[HealthResponse]},
 		{"status_response_ready.json", assertContractRoundTrip[StatusResponse]},
 	}
@@ -183,6 +179,14 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.run(t, tt.name)
 		})
+	}
+}
+
+func TestSignerAPIComponentRequestFixtureValidates(t *testing.T) {
+	var request ComponentRequest
+	readContractMetadata(t, "component_request.json", &request)
+	if err := request.Validate(); err != nil {
+		t.Fatalf("component_request.json does not satisfy its wire validator: %v", err)
 	}
 }
 

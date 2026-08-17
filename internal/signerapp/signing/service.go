@@ -48,10 +48,16 @@ type SignGroupResult struct {
 type ComponentSignResult struct {
 	RequestID    string
 	ComponentKey string
-	Signatures   []signerapi.ComponentSignature
+	Signatures   []ComponentSignature
 }
 
-type GuardedAssemblyResult struct {
+type ComponentSignature struct {
+	TargetIndex     int
+	Signature       string
+	SignatureScheme string
+}
+
+type AssemblyResult struct {
 	RequestID   string
 	SignedGroup []string
 }
@@ -135,7 +141,7 @@ func (s *Service) planGroupWhileSignable(identityID string, req signerapi.GroupS
 	return plan, err
 }
 
-func (s *Service) SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*ComponentSignResult, *ServiceError) {
+func (s *Service) signComponentWithContext(ctx context.Context, identityID string, req componentPlanRequest, session *keystore.KeySession) (*ComponentSignResult, *ServiceError) {
 	var getter componentKeyGetter
 	if session != nil {
 		getter = session
@@ -143,7 +149,7 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 	return s.signComponentWithSession(ctx, identityID, req, getter)
 }
 
-func (s *Service) signComponentWithSession(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session componentKeyGetter) (*ComponentSignResult, *ServiceError) {
+func (s *Service) signComponentWithSession(ctx context.Context, identityID string, req componentPlanRequest, session componentKeyGetter) (*ComponentSignResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -151,7 +157,7 @@ func (s *Service) signComponentWithSession(ctx context.Context, identityID strin
 		return nil, canceledSignRequest(err)
 	}
 
-	plan, err := PrepareComponentSigning(req)
+	plan, err := prepareComponentSigning(req)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +210,7 @@ func (s *Service) signComponentWithSession(ctx context.Context, identityID strin
 	}
 }
 
-func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID string, req signerapi.GuardedAssemblyRequest, session *keystore.KeySession) (*GuardedAssemblyResult, *ServiceError) {
+func (s *Service) AssembleWithContext(ctx context.Context, identityID string, req signerapi.AssemblyRequest, session *keystore.KeySession) (*AssemblyResult, *ServiceError) {
 	_ = identityID
 	if ctx == nil {
 		ctx = context.Background()
@@ -230,7 +236,7 @@ func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID str
 		return nil, leaseErr
 	}
 	defer release()
-	return assembleDecodedGuarded(ctx, req, group, session)
+	return assembleDecoded(ctx, req, group, session)
 }
 
 func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession, plan *PlanResult) (*SignGroupResult, *ServiceError) {

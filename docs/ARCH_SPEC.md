@@ -1307,6 +1307,29 @@ against the sentry public key embedded in the local guarded-account key.
 
 ### Runtime Flow
 
+### Unified Component-Flow Migration Contract
+
+The component-flow unification keeps `/plan` as the sole canonicalizing
+endpoint. Component and assembly endpoints consume frozen canonical group
+bytes; they do not append dummies, pool fees, regroup transactions, or repair
+invalid input. The signer does not assert that those bytes originated at its
+own `/plan` endpoint. Independently constructed canonical bytes may succeed
+when they satisfy the same signer-owned authorization and policy checks.
+
+This changed the bounded-sentry component boundary deliberately. The retired
+bounded-specific route planned and approved in one call. The unified component
+route instead reconstructs the
+bounded authorization envelope from frozen bytes, typed position context, and
+the signer's durable key metadata, then applies policy and operator approval to
+those exact bytes. Every released signature or receipt is derived from the
+same decoded group that policy evaluated and the operator saw. Assembly keeps
+the authorization models distinct: guarded targets require user and sentry
+component signatures, while bounded-sentry targets require the bounded
+assembly receipt as well as their base and sentry signatures.
+
+The old bounded-specific component and assembly routes are retired and return
+404. This section owns the invariants that survive that migration.
+
 The current guarded choreography is named `sentry1`. Signer `/keys` and
 `/keytypes` inventory label guarded keys with `signing_flow: sentry1` and
 `sentry_component_key_type`; clients route on the flow label, treat key-type
@@ -1335,8 +1358,8 @@ fixed before any downstream component or non-guarded signature is produced.
 
 For guarded targets, the client obtains component signatures:
 
-1. user signer `/sign/component` with role `user`,
-2. sentry signer `/sign/component` with role `sentry`.
+1. user signer `/sign/component` with `kind:"user"`,
+2. sentry signer `/sign/component` with `kind:"sentry"`.
 
 The user-role component request proves the user signer controls the
 guarded effective signer and runs the signer-domain approval gates (hard

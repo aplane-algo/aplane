@@ -8,108 +8,103 @@ import (
 	"testing"
 )
 
-func TestComponentSignRequestValidate(t *testing.T) {
-	valid := ComponentSignRequest{
-		RequestID:     "cli.abc_123:test",
-		Role:          ComponentSignRoleSentry,
-		ComponentKey:  "I5T6BSFAT7TXWGKF4TQLDR6U6PTAZJDLN54XTY7JLFSQETEJW3JA",
+func TestComponentRequestValidateKindsAndClosedPartition(t *testing.T) {
+	validBounded := ComponentRequest{
+		GroupBytesHex: []string{"5458aa", "5458bb", "5458cc"},
+		Targets: []ComponentTarget{{
+			TargetIndex: 0, Kind: ComponentTargetKindBoundedBase,
+			AuthAddress: "BOUNDED", LsigArgs: map[string]string{"preimage": "aa"},
+		}},
+		ContextualPositions: []ComponentContextPosition{{TargetIndex: 1}},
+		DummyPositions:      []ComponentDummyPosition{{TargetIndex: 2}},
+	}
+	tests := []struct {
+		name    string
+		request ComponentRequest
+		wantErr string
+	}{
+		{name: "bounded base", request: validBounded},
+		{name: "user", request: ComponentRequest{
+			GroupBytesHex: []string{"5458aa"},
+			Targets:       []ComponentTarget{{TargetIndex: 0, Kind: ComponentTargetKindUser, AuthAddress: "USER"}},
+		}},
+		{name: "sentry", request: ComponentRequest{
+			GroupBytesHex: []string{"5458aa"},
+			Targets:       []ComponentTarget{{TargetIndex: 0, Kind: ComponentTargetKindSentry, ComponentKey: "SENTRY"}},
+		}},
+		{name: "mixed kinds fail closed", request: ComponentRequest{
+			GroupBytesHex: []string{"5458aa", "5458bb"},
+			Targets: []ComponentTarget{
+				{TargetIndex: 0, Kind: ComponentTargetKindUser, AuthAddress: "USER"},
+				{TargetIndex: 1, Kind: ComponentTargetKindBoundedBase, AuthAddress: "BOUNDED"},
+			},
+		}, wantErr: "mixed component target kinds"},
+		{name: "bounded discriminator forbids sentry key", request: ComponentRequest{
+			GroupBytesHex: []string{"5458aa"},
+			Targets: []ComponentTarget{{
+				TargetIndex: 0, Kind: ComponentTargetKindBoundedBase,
+				AuthAddress: "BOUNDED", ComponentKey: "SENTRY",
+			}},
+		}, wantErr: "forbids component_key"},
+		{name: "sentry discriminator forbids authorizer", request: ComponentRequest{
+			GroupBytesHex: []string{"5458aa"},
+			Targets: []ComponentTarget{{
+				TargetIndex: 0, Kind: ComponentTargetKindSentry,
+				ComponentKey: "SENTRY", AuthAddress: "USER",
+			}},
+		}, wantErr: "forbids auth_address"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.request.Validate()
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestComponentRequestGroupSignRequestPreservesApprovalMetadata(t *testing.T) {
+	targetInfo := &AppCallInfo{Mode: "abi", Method: "increment(uint64)void"}
+	contextInfo := &AppCallInfo{Mode: "raw"}
+	request := ComponentRequest{
+		GroupBytesHex: []string{"5458aa", "5458bb", "5458cc"},
+		Targets: []ComponentTarget{{
+			TargetIndex: 0, Kind: ComponentTargetKindBoundedBase,
+			AuthAddress: "BOUNDED", AppCallInfo: targetInfo,
+		}},
+		ContextualPositions: []ComponentContextPosition{{TargetIndex: 1, AppCallInfo: contextInfo}},
+		DummyPositions:      []ComponentDummyPosition{{TargetIndex: 2}},
+	}
+
+	group := request.GroupSignRequest()
+	if len(group.Requests) != 2 {
+		t.Fatalf("group request length = %d, want original prefix length 2", len(group.Requests))
+	}
+	if group.Requests[0].AppCallInfo != targetInfo || group.Requests[1].AppCallInfo != contextInfo {
+		t.Fatalf("app-call metadata = %#v/%#v, want target/context metadata", group.Requests[0].AppCallInfo, group.Requests[1].AppCallInfo)
+	}
+}
+
+func TestComponentResponseValidateForRequestRejectsOutOfGroupIndex(t *testing.T) {
+	request := ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
-		TargetIndices: []int{0},
-	}
-
-	tests := []struct {
-		name    string
-		request ComponentSignRequest
-		wantErr string
-	}{
-		{name: "valid sentry", request: valid},
-		{name: "valid user", request: ComponentSignRequest{Role: ComponentSignRoleUser, ComponentKey: "ADDR", GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
-		{name: "sentry may omit Witness Key ID", request: ComponentSignRequest{Role: ComponentSignRoleSentry, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
-		{name: "invalid request ID", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.RequestID = "bad id" }), wantErr: "request_id contains invalid character"},
-		{name: "missing role", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.Role = "" }), wantErr: "role must be"},
-		{name: "user missing key", request: ComponentSignRequest{Role: ComponentSignRoleUser, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}, wantErr: "component_key is required"},
-		{name: "empty group", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.GroupBytesHex = nil }), wantErr: "group_bytes_hex is empty"},
-		{name: "empty targets", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.TargetIndices = nil }), wantErr: "target_indices is empty"},
-		{name: "duplicate target", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.TargetIndices = []int{0, 0} }), wantErr: "duplicate"},
-		{name: "out of range target", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.TargetIndices = []int{1} }), wantErr: "out of range"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.request.Validate()
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Validate() error = %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestGuardedAssemblyRequestValidate(t *testing.T) {
-	valid := GuardedAssemblyRequest{
-		RequestID:     "asm-001",
-		GroupBytesHex: []string{"5458aa", "5458bb"},
-		Targets: []GuardedAssemblyTarget{{
-			TargetIndex:     0,
-			GuardedAccount:  "ADDR",
-			UserSignature:   "aa",
-			SentrySignature: "bb",
+		Targets: []ComponentTarget{{
+			TargetIndex: 0, Kind: ComponentTargetKindSentry, ComponentKey: "SENTRY",
 		}},
-		Passthrough: []GuardedPassthroughItem{{
-			TargetIndex:  1,
-			SignedTxnHex: "cc",
+	}
+	response := ComponentResponse{
+		RequestID: "request-1",
+		Components: []Component{{
+			TargetIndex: 1, Kind: ComponentTargetKindSentry,
+			Signature: "aa", SignatureScheme: "aplane.falcon1024.v1",
 		}},
 	}
 
-	tests := []struct {
-		name    string
-		request GuardedAssemblyRequest
-		wantErr string
-	}{
-		{name: "valid", request: valid},
-		{name: "invalid request ID", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.RequestID = "bad id" }), wantErr: "request_id contains invalid character"},
-		{name: "missing coverage", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Passthrough = nil }), wantErr: "not covered"},
-		{name: "duplicate coverage", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Passthrough[0].TargetIndex = 0 }), wantErr: "duplicate"},
-		{name: "missing target account", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Targets[0].GuardedAccount = "" }), wantErr: "guarded_account is required"},
-		{name: "missing user signature", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Targets[0].UserSignature = "" }), wantErr: "user_signature is required"},
-		{name: "missing sentry signature", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Targets[0].SentrySignature = "" }), wantErr: "sentry_signature is required"},
-		{name: "bad claimed source ID", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Targets[0].UserSourceRequestID = "bad id" }), wantErr: "user_source_request_id"},
+	if err := response.ValidateForRequest(request); err == nil || !strings.Contains(err.Error(), "indices or kinds") {
+		t.Fatalf("ValidateForRequest() error = %v, want out-of-group rejection", err)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.request.Validate()
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Validate() error = %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func withComponentRequest(base ComponentSignRequest, mutate func(*ComponentSignRequest)) ComponentSignRequest {
-	cp := base
-	cp.GroupBytesHex = append([]string(nil), base.GroupBytesHex...)
-	cp.TargetIndices = append([]int(nil), base.TargetIndices...)
-	mutate(&cp)
-	return cp
-}
-
-func withAssemblyRequest(base GuardedAssemblyRequest, mutate func(*GuardedAssemblyRequest)) GuardedAssemblyRequest {
-	cp := base
-	cp.GroupBytesHex = append([]string(nil), base.GroupBytesHex...)
-	cp.Targets = append([]GuardedAssemblyTarget(nil), base.Targets...)
-	cp.Passthrough = append([]GuardedPassthroughItem(nil), base.Passthrough...)
-	mutate(&cp)
-	return cp
 }

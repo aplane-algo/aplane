@@ -34,7 +34,7 @@ type ComponentPacker interface {
 	PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error)
 }
 
-func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRequest, group *canonical.Group, session componentKeyGetter) (*GuardedAssemblyResult, *ServiceError) {
+func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *canonical.Group, session componentKeyGetter) (*AssemblyResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -57,7 +57,16 @@ func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRe
 
 	signedGroup := make([]string, len(group.Entries))
 	for _, target := range req.Targets {
-		signedTxnHex, err := assembleGuardedTarget(ctx, target, group.Entries[target.TargetIndex], session)
+		var signedTxnHex string
+		var err *ServiceError
+		switch target.Kind {
+		case signerapi.AssemblyTargetKindGuarded:
+			signedTxnHex, err = assembleGuardedTarget(ctx, target, group.Entries[target.TargetIndex], session)
+		case signerapi.AssemblyTargetKindBoundedSentry:
+			signedTxnHex, err = assembleBoundedTarget(ctx, target, group.Entries[target.TargetIndex], session)
+		default:
+			return nil, badRequest("unsupported assembly target kind")
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -71,14 +80,14 @@ func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRe
 		signedGroup[passthrough.TargetIndex] = signedTxnHex
 	}
 
-	return &GuardedAssemblyResult{
+	return &AssemblyResult{
 		RequestID:   req.RequestID,
 		SignedGroup: signedGroup,
 	}, nil
 }
 
-func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssemblyTarget, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
-	keyMaterial, err := loadGuardedAccountKeyMaterial(ctx, session, target.GuardedAccount)
+func assembleGuardedTarget(ctx context.Context, target signerapi.AssemblyTarget, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
+	keyMaterial, err := loadGuardedAccountKeyMaterial(ctx, session, target.AuthAddress)
 	if err != nil {
 		return "", err
 	}
@@ -158,8 +167,8 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 	if addressErr != nil {
 		return "", internal(fmt.Sprintf("failed to derive guarded LogicSig address: %v", addressErr))
 	}
-	if lsigAddress.String() != target.GuardedAccount {
-		return "", internal(fmt.Sprintf("loaded guarded account bytecode address %s does not match key %s", lsigAddress.String(), target.GuardedAccount))
+	if lsigAddress.String() != target.AuthAddress {
+		return "", internal(fmt.Sprintf("loaded guarded account bytecode address %s does not match key %s", lsigAddress.String(), target.AuthAddress))
 	}
 
 	_, signedTxnBytes, signErr := algocrypto.SignLogicSigAccountTransaction(lsigAcct, entry.Txn)
@@ -172,7 +181,7 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 	return hex.EncodeToString(signedTxnBytes), nil
 }
 
-func validateAssembledGuardedTarget(target signerapi.GuardedAssemblyTarget, entry canonical.Txn, signedTxnBytes []byte) *ServiceError {
+func validateAssembledGuardedTarget(target signerapi.AssemblyTarget, entry canonical.Txn, signedTxnBytes []byte) *ServiceError {
 	var stxn types.SignedTxn
 	if err := msgpack.Decode(signedTxnBytes, &stxn); err != nil {
 		return internal(fmt.Sprintf("failed to decode assembled guarded transaction: %v", err))
@@ -181,18 +190,18 @@ func validateAssembledGuardedTarget(target signerapi.GuardedAssemblyTarget, entr
 	if !bytes.Equal(txID, entry.TxID[:]) {
 		return internal(fmt.Sprintf("assembled guarded transaction at index %d does not match canonical transaction", target.TargetIndex))
 	}
-	if entry.Txn.Sender.String() != target.GuardedAccount && stxn.AuthAddr.String() != target.GuardedAccount {
+	if entry.Txn.Sender.String() != target.AuthAddress && stxn.AuthAddr.String() != target.AuthAddress {
 		return internal(fmt.Sprintf(
 			"assembled guarded transaction at index %d auth address %q does not match guarded_account %q",
 			target.TargetIndex,
 			stxn.AuthAddr.String(),
-			target.GuardedAccount,
+			target.AuthAddress,
 		))
 	}
 	return nil
 }
 
-func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.GuardedPassthroughItem, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
+func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.AssemblyPassthroughItem, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
 	signedTxnBytes, err := decodeAssemblySignatureHex(passthrough.SignedTxnHex, "signed_txn_hex")
 	if err != nil {
 		return "", err
@@ -317,12 +326,12 @@ func guardedAccountSentryPublicKey(parameters map[string]string, componentKeyTyp
 	return publicKey, nil
 }
 
-func orderedAssemblyRuntimeArgs(target signerapi.GuardedAssemblyTarget, signingArgs []lsigprovider.RuntimeArgDef) ([][]byte, *ServiceError) {
-	if len(target.RuntimeArgs) != len(signingArgs) {
+func orderedAssemblyRuntimeArgs(target signerapi.AssemblyTarget, signingArgs []lsigprovider.RuntimeArgDef) ([][]byte, *ServiceError) {
+	if len(target.GuardedRuntimeArgs) != len(signingArgs) {
 		return nil, badRequest(fmt.Sprintf(
 			"target index %d runtime_args length %d does not match stored signing arg count %d",
 			target.TargetIndex,
-			len(target.RuntimeArgs),
+			len(target.GuardedRuntimeArgs),
 			len(signingArgs),
 		))
 	}
@@ -331,7 +340,7 @@ func orderedAssemblyRuntimeArgs(target signerapi.GuardedAssemblyTarget, signingA
 	}
 
 	decodedArgs := make(map[string][]byte, len(signingArgs))
-	for i, hexValue := range target.RuntimeArgs {
+	for i, hexValue := range target.GuardedRuntimeArgs {
 		value, err := decodeHexBytes(hexValue, -1, fmt.Sprintf("runtime_args[%d]", i))
 		if err != nil {
 			return nil, badRequest(fmt.Sprintf("target index %d %v", target.TargetIndex, err))

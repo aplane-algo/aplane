@@ -26,7 +26,7 @@ import (
 
 type sentryComponentClient interface {
 	GetKeysWithContext(context.Context) (*signerapi.KeysResult, error)
-	RequestComponentSignWithContext(context.Context, signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error)
+	RequestComponentsWithContext(context.Context, signerapi.ComponentRequest) (*signerapi.ComponentResponse, error)
 }
 
 var (

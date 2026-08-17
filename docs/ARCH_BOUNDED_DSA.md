@@ -74,9 +74,14 @@ is a complete value-spending policy.
 | Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist` |
 | Inline recipient/asset maximum | 30 entries per list |
 | Flow labels | `bounded1` without a sentry; `bounded-sentry1` with a spend sentry |
-| Online sentry endpoints | `POST /sign/bounded-component`, `POST /sign/component`, `POST /sign/bounded-assemble` |
+| Online sentry endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
 | Admin endpoint | `POST /sign/bounded-admin` |
 | Bundled composed templates | five schema-v2 profiles listed below |
+
+`bounded1` is an administrative custody operation, not a send-flow variant.
+It is intentionally packaged through the separate `aprekey` binary and the
+typed `/sign/bounded-admin` partial-signing endpoint. Apshell's ordinary send
+path does not select or complete contract-admin operations.
 
 `bounded1` has no admin-key algorithm selector. `authorization: admin_key`
 always means the profile's single Falcon-1024 contract admin key. Supporting
@@ -721,8 +726,8 @@ LogicSig resource profile. Clients route:
 
 - non-sentry pure spend to ordinary `/sign`;
 - sentry-gated pure spend through the first-party client's user-first
-  `/sign/bounded-component`, sentry `/sign/component`, then signer
-  `/sign/bounded-assemble` choreography;
+  `/plan`, kind-tagged signer and sentry `/sign/component`, then signer
+  `/sign/assemble` choreography;
 - spending-key rekey to ordinary `/sign` with forced review;
 - Falcon-admin rekey to `POST /sign/bounded-admin` and external completion; and
 - malformed, hybrid, disabled, or unknown effects to local rejection.

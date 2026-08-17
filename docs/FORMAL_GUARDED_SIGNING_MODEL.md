@@ -176,7 +176,7 @@ For each distinct embedded sentry public key, the client resolves a sentry
 endpoint and calls:
 
 ```text
-POST /sign/component role=sentry component_key=<component_selector>
+POST /sign/component kind=sentry component_key=<component_selector>
 ```
 
 The sentry signer evaluates the sentry-domain `policy.yaml` transfer policy for every

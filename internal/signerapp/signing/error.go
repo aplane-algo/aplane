@@ -41,7 +41,7 @@ func boundedAdminRequired() *ServiceError {
 func boundedSentryRequired() *ServiceError {
 	return &ServiceError{
 		Kind:    ErrorBoundedSentryRequired,
-		Message: "bounded-sentry operation requires POST /sign/bounded-component then POST /sign/bounded-assemble",
+		Message: "bounded-sentry operation requires POST /plan, POST /sign/component, then POST /sign/assemble",
 	}
 }
 

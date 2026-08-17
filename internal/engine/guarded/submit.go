@@ -140,11 +140,11 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		return nil, nil, err
 	}
 
-	userSignatures, userRequestIDs, err := s.requestUserComponentSignatures(opts.Ctx, groupBytesHex, targets)
+	userSignatures, userRequestIDs, err := s.requestUserComponentSignatures(opts.Ctx, groupBytesHex, len(txns), targets, opts.AppCallInfo)
 	if err != nil {
 		return nil, nil, err
 	}
-	sentrySignatures, sentryRequestIDs, err := s.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, targets)
+	sentrySignatures, sentryRequestIDs, err := s.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, len(txns), targets, opts.AppCallInfo)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -157,10 +157,10 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		return nil, nil, err
 	}
 
-	assemblyReq := signerapi.GuardedAssemblyRequest{
+	assemblyReq := signerapi.AssemblyRequest{
 		GroupBytesHex: groupBytesHex,
-		Targets:       make([]signerapi.GuardedAssemblyTarget, 0, len(targets)),
-		Passthrough:   make([]signerapi.GuardedPassthroughItem, 0, len(signedDummyHex)+len(nonGuardedSignedHex)),
+		Targets:       make([]signerapi.AssemblyTarget, 0, len(targets)),
+		Passthrough:   make([]signerapi.AssemblyPassthroughItem, 0, len(signedDummyHex)+len(nonGuardedSignedHex)),
 	}
 	for _, target := range targets {
 		userSig, ok := userSignatures[target.Index]
@@ -171,9 +171,10 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		if !ok {
 			return nil, nil, fmt.Errorf("sentry endpoint returned no signature for target index %d", target.Index)
 		}
-		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.GuardedAssemblyTarget{
+		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.AssemblyTarget{
 			TargetIndex:           target.Index,
-			GuardedAccount:        target.Account,
+			Kind:                  signerapi.AssemblyTargetKindGuarded,
+			AuthAddress:           target.Account,
 			UserSignature:         userSig,
 			UserSourceRequestID:   userRequestIDs[target.Account],
 			SentrySignature:       sentrySig,
@@ -181,19 +182,19 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		})
 	}
 	for index, signedHex := range nonGuardedSignedHex {
-		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.AssemblyPassthroughItem{
 			TargetIndex:  index,
 			SignedTxnHex: signedHex,
 		})
 	}
 	for i, signedHex := range signedDummyHex {
-		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.AssemblyPassthroughItem{
 			TargetIndex:  len(txns) + i,
 			SignedTxnHex: signedHex,
 		})
 	}
 
-	assemblyResp, err := s.conn.RequestGuardedAssembleWithContext(opts.Ctx, assemblyReq)
+	assemblyResp, err := s.conn.RequestAssembleWithContext(opts.Ctx, assemblyReq)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -281,32 +282,49 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	if err != nil {
 		return nil, nil, err
 	}
-	componentResp, err := s.conn.RequestBoundedComponentWithContext(opts.Ctx, signerapi.BoundedComponentRequest{Requests: requests})
+	planResp, err := s.conn.RequestGroupPlanWithContext(opts.Ctx, requests)
 	if err != nil {
-		return nil, nil, fmt.Errorf("bounded base component signing failed: %w", err)
+		return nil, nil, fmt.Errorf("bounded group planning failed: %w", err)
 	}
-	group, err := canonical.DecodeGroupHex(componentResp.Transactions)
+	group, err := canonical.DecodeGroupHex(planResp.Transactions)
 	if err != nil {
 		return nil, nil, fmt.Errorf("signer returned invalid bounded canonical group: %w", err)
-	}
-	if len(group.Entries) < len(txns) {
-		return nil, nil, fmt.Errorf("signer returned %d bounded group positions, want at least %d", len(group.Entries), len(txns))
 	}
 	plannedTxns := make([]types.Transaction, len(group.Entries))
 	for i, entry := range group.Entries {
 		plannedTxns[i] = entry.Txn
 	}
-	if err := validateBoundedComponentPlan(txns, plannedTxns, componentResp.Mutations); err != nil {
+	if err := validateBoundedComponentPlan(txns, plannedTxns, planResp.Mutations); err != nil {
 		return nil, nil, err
 	}
 	if err := validateBoundedTargetFees(plannedTxns, targets); err != nil {
 		return nil, nil, err
 	}
-	groupBytesHex := append([]string(nil), componentResp.Transactions...)
-	components := make(map[int]signerapi.BoundedBaseComponent, len(componentResp.Components))
+	componentReq := signerapi.ComponentRequest{GroupBytesHex: append([]string(nil), planResp.Transactions...)}
+	for i, request := range requests {
+		if _, ok := targetsByIndex[i]; ok {
+			componentReq.Targets = append(componentReq.Targets, signerapi.ComponentTarget{
+				TargetIndex: i, Kind: signerapi.ComponentTargetKindBoundedBase,
+				AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs, AppCallInfo: request.AppCallInfo,
+			})
+		} else {
+			componentReq.ContextualPositions = append(componentReq.ContextualPositions, signerapi.ComponentContextPosition{
+				TargetIndex: i, LsigResources: request.LsigResources, PQScheme: request.PQScheme, AppCallInfo: request.AppCallInfo,
+			})
+		}
+	}
+	for i := len(txns); i < len(planResp.Transactions); i++ {
+		componentReq.DummyPositions = append(componentReq.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
+	}
+	componentResp, err := s.conn.RequestComponentsWithContext(opts.Ctx, componentReq)
+	if err != nil {
+		return nil, nil, fmt.Errorf("bounded base component signing failed: %w", err)
+	}
+	groupBytesHex := append([]string(nil), planResp.Transactions...)
+	components := make(map[int]signerapi.Component, len(componentResp.Components))
 	for _, component := range componentResp.Components {
 		target, ok := targetsByIndex[component.TargetIndex]
-		if !ok || component.BoundedAccount != target.Account {
+		if !ok || component.Kind != signerapi.ComponentTargetKindBoundedBase || component.AuthAddress != target.Account {
 			return nil, nil, fmt.Errorf("signer returned unexpected bounded component target %d", component.TargetIndex)
 		}
 		if _, duplicate := components[component.TargetIndex]; duplicate {
@@ -322,7 +340,7 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 
 	// User policy and operator approval completed before this point. Only now
 	// may the client disclose the frozen group to the sentry endpoint.
-	sentrySignatures, sentryRequestIDs, err := s.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, targets)
+	sentrySignatures, sentryRequestIDs, err := s.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, len(txns), targets, opts.AppCallInfo)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -334,10 +352,10 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	if err != nil {
 		return nil, nil, err
 	}
-	assemblyReq := signerapi.BoundedAssemblyRequest{
+	assemblyReq := signerapi.AssemblyRequest{
 		GroupBytesHex: groupBytesHex,
-		Targets:       make([]signerapi.BoundedAssemblyTarget, 0, len(targets)),
-		Passthrough:   make([]signerapi.GuardedPassthroughItem, 0, len(nonGuardedSignedHex)+len(signedDummyHex)),
+		Targets:       make([]signerapi.AssemblyTarget, 0, len(targets)),
+		Passthrough:   make([]signerapi.AssemblyPassthroughItem, 0, len(nonGuardedSignedHex)+len(signedDummyHex)),
 	}
 	for _, target := range targets {
 		component := components[target.Index]
@@ -345,20 +363,20 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 		if !ok {
 			return nil, nil, fmt.Errorf("sentry endpoint returned no signature for target index %d", target.Index)
 		}
-		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.BoundedAssemblyTarget{
-			TargetIndex: target.Index, BoundedAccount: target.Account,
-			BaseSignatures: component.BaseSignatures, RuntimeArgs: component.RuntimeArgs,
+		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.AssemblyTarget{
+			TargetIndex: target.Index, Kind: signerapi.AssemblyTargetKindBoundedSentry, AuthAddress: target.Account,
+			BaseSignatures: component.BaseSignatures, BoundedRuntimeArgs: component.RuntimeArgs,
 			AssemblyReceipt: component.AssemblyReceipt, BaseSourceRequestID: componentResp.RequestID,
 			SentrySignature: sentrySignature, SentrySourceRequestID: sentryRequestIDs[target.requestKey()],
 		})
 	}
 	for index, signedHex := range nonGuardedSignedHex {
-		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{TargetIndex: index, SignedTxnHex: signedHex})
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.AssemblyPassthroughItem{TargetIndex: index, SignedTxnHex: signedHex})
 	}
 	for i, signedHex := range signedDummyHex {
-		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{TargetIndex: len(txns) + i, SignedTxnHex: signedHex})
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.AssemblyPassthroughItem{TargetIndex: len(txns) + i, SignedTxnHex: signedHex})
 	}
-	assemblyResp, err := s.conn.RequestBoundedAssembleWithContext(opts.Ctx, assemblyReq)
+	assemblyResp, err := s.conn.RequestAssembleWithContext(opts.Ctx, assemblyReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("bounded-sentry assembly failed: %w", err)
 	}
@@ -848,7 +866,7 @@ func validateGuardedDummies(dummyTxns []types.Transaction) error {
 	return nil
 }
 
-func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesHex []string, targets []guardedTarget) (map[int]string, map[string]string, error) {
+func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []guardedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[string]string, error) {
 	byAccount := make(map[string][]int)
 	for _, target := range targets {
 		byAccount[target.Account] = append(byAccount[target.Account], target.Index)
@@ -856,12 +874,7 @@ func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesH
 	signatures := make(map[int]string, len(targets))
 	requestIDs := make(map[string]string, len(byAccount))
 	for account, indices := range byAccount {
-		resp, err := s.conn.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
-			Role:          signerapi.ComponentSignRoleUser,
-			ComponentKey:  account,
-			GroupBytesHex: groupBytesHex,
-			TargetIndices: indices,
-		})
+		resp, err := s.conn.RequestComponentsWithContext(ctx, componentRequestForIndices(groupBytesHex, originalCount, indices, signerapi.ComponentTargetKindUser, account, appCallInfo))
 		if err != nil {
 			return nil, nil, fmt.Errorf("user component signing failed for %s: %w", account, err)
 		}
@@ -873,7 +886,7 @@ func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesH
 	return signatures, requestIDs, nil
 }
 
-func (s *Signer) requestSentryComponentSignatures(ctx context.Context, groupBytesHex []string, targets []guardedTarget) (map[int]string, map[sentryRequestKey]string, error) {
+func (s *Signer) requestSentryComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []guardedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[sentryRequestKey]string, error) {
 	bySentry := make(map[sentryRequestKey][]int)
 	for _, target := range targets {
 		key := target.requestKey()
@@ -882,7 +895,7 @@ func (s *Signer) requestSentryComponentSignatures(ctx context.Context, groupByte
 	signatures := make(map[int]string, len(targets))
 	requestIDs := make(map[sentryRequestKey]string, len(bySentry))
 	for sentryKey, indices := range bySentry {
-		requestID, err := s.requestOneSentryComponentSignatureSet(ctx, groupBytesHex, sentryKey, indices, signatures)
+		requestID, err := s.requestOneSentryComponentSignatureSet(ctx, groupBytesHex, originalCount, sentryKey, indices, signatures, appCallInfo)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -896,7 +909,7 @@ func (s *Signer) requestSentryComponentSignatures(ctx context.Context, groupByte
 // component signatures as opaque material. Invalid signatures are rejected by
 // the signer during guarded assembly and, authoritatively, by the guarded
 // LogicSig on-chain.
-func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, groupBytesHex []string, sentryKey sentryRequestKey, indices []int, signatures map[int]string) (string, error) {
+func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, groupBytesHex []string, originalCount int, sentryKey sentryRequestKey, indices []int, signatures map[int]string, appCallInfo []*signerapi.AppCallInfo) (string, error) {
 	endpoint, err := s.resolveSentryEndpoint(ctx, sentryKey)
 	if err != nil {
 		return "", err
@@ -909,12 +922,7 @@ func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, grou
 	}
 	componentLabel := fmt.Sprintf("Witness Key ID %s (%s)", componentSelector, sentryKey.ComponentKeyType)
 
-	resp, err := endpoint.client.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  componentSelector,
-		GroupBytesHex: groupBytesHex,
-		TargetIndices: indices,
-	})
+	resp, err := endpoint.client.RequestComponentsWithContext(ctx, componentRequestForIndices(groupBytesHex, originalCount, indices, signerapi.ComponentTargetKindSentry, componentSelector, appCallInfo))
 	if err != nil {
 		return "", fmt.Errorf("sentry component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
 	}
@@ -924,7 +932,38 @@ func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, grou
 	return resp.RequestID, nil
 }
 
-func collectComponentSignatures(resp *signerapi.ComponentSignResponse, expected []int, expectedScheme string, dst map[int]string) error {
+func componentRequestForIndices(groupBytesHex []string, originalCount int, indices []int, kind signerapi.ComponentTargetKind, key string, appCallInfo []*signerapi.AppCallInfo) signerapi.ComponentRequest {
+	targetSet := make(map[int]bool, len(indices))
+	request := signerapi.ComponentRequest{GroupBytesHex: groupBytesHex}
+	for _, index := range indices {
+		targetSet[index] = true
+		target := signerapi.ComponentTarget{TargetIndex: index, Kind: kind}
+		if kind == signerapi.ComponentTargetKindUser {
+			target.AuthAddress = key
+		} else {
+			target.ComponentKey = key
+		}
+		if index < len(appCallInfo) {
+			target.AppCallInfo = appCallInfo[index]
+		}
+		request.Targets = append(request.Targets, target)
+	}
+	for index := 0; index < originalCount; index++ {
+		if !targetSet[index] {
+			position := signerapi.ComponentContextPosition{TargetIndex: index}
+			if index < len(appCallInfo) {
+				position.AppCallInfo = appCallInfo[index]
+			}
+			request.ContextualPositions = append(request.ContextualPositions, position)
+		}
+	}
+	for index := originalCount; index < len(groupBytesHex); index++ {
+		request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: index})
+	}
+	return request
+}
+
+func collectComponentSignatures(resp *signerapi.ComponentResponse, expected []int, expectedScheme string, dst map[int]string) error {
 	if resp == nil {
 		return fmt.Errorf("empty component sign response")
 	}
@@ -932,19 +971,19 @@ func collectComponentSignatures(resp *signerapi.ComponentSignResponse, expected 
 	for _, index := range expected {
 		expectedSet[index] = true
 	}
-	seen := make(map[int]bool, len(resp.Signatures))
-	for _, sig := range resp.Signatures {
-		if !expectedSet[sig.TargetIndex] {
-			return fmt.Errorf("unexpected signature for target index %d", sig.TargetIndex)
+	seen := make(map[int]bool, len(resp.Components))
+	for _, component := range resp.Components {
+		if !expectedSet[component.TargetIndex] {
+			return fmt.Errorf("unexpected signature for target index %d", component.TargetIndex)
 		}
-		if seen[sig.TargetIndex] {
-			return fmt.Errorf("duplicate signature for target index %d", sig.TargetIndex)
+		if seen[component.TargetIndex] {
+			return fmt.Errorf("duplicate signature for target index %d", component.TargetIndex)
 		}
-		if expectedScheme != "" && sig.SignatureScheme != expectedScheme {
-			return fmt.Errorf("signature for target index %d used scheme %s, want %s", sig.TargetIndex, sig.SignatureScheme, expectedScheme)
+		if expectedScheme != "" && component.SignatureScheme != expectedScheme {
+			return fmt.Errorf("signature for target index %d used scheme %s, want %s", component.TargetIndex, component.SignatureScheme, expectedScheme)
 		}
-		seen[sig.TargetIndex] = true
-		dst[sig.TargetIndex] = sig.Signature
+		seen[component.TargetIndex] = true
+		dst[component.TargetIndex] = component.Signature
 	}
 	for _, index := range expected {
 		if !seen[index] {
