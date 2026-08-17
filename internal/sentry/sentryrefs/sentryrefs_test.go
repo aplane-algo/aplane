@@ -89,6 +89,60 @@ func TestImportIsIdempotentAndRejectsNameReplacement(t *testing.T) {
 	}
 }
 
+func TestImportRejectsMismatchedWitnessIdentity(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	publicKey := bytesOfLen(falconfamily.PublicKeySize, 0xab)
+	otherPublicKey := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
+	otherID, err := witness.ID(witness.Falcon1024V1, otherPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+		want   string
+	}{
+		{
+			name: "public key does not match Witness Key ID",
+			mutate: func(envelope map[string]any) {
+				envelope["witness_key_id"] = otherID
+			},
+			want: "does not match",
+		},
+		{
+			name: "unsupported key type",
+			mutate: func(envelope map[string]any) {
+				const unsupported = "aplane.witness-unknown.v1"
+				envelope["key_type"] = unsupported
+				envelope["witness_key_id"] = witness.DeriveID(unsupported, publicKey)
+			},
+			want: "is not a witness key type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var envelope map[string]any
+			if err := json.Unmarshal(testExportJSON(t, witness.Falcon1024V1, publicKey), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			tt.mutate(envelope)
+			data, err := json.Marshal(envelope)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := Import(paths, "default", "invalid", data); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Import() error = %v, want %q", err, tt.want)
+			}
+			if _, found, err := Get(paths, "default", "invalid"); err != nil || found {
+				t.Fatalf("invalid reference persisted: found=%v err=%v", found, err)
+			}
+		})
+	}
+}
+
 func TestImportReservesEndpointDiscoveryNamespace(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	export := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
