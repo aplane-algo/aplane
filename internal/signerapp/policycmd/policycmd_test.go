@@ -37,6 +37,7 @@ type fakeOnlineSession struct {
 	snapshotTarget   string
 	authErr          error
 	unlockResult     *protocol.UnlockResultMessage
+	replaceResult    *protocol.ReplacePolicyResultMessage
 	replaceCalls     int
 }
 
@@ -94,6 +95,11 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 	case protocol.ReplacePolicyMessage:
 		f.replaceCalls++
 		f.replaceRequest = request
+		if f.replaceResult != nil {
+			result := *f.replaceResult
+			result.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypeReplacePolicyResult, ID: request.ID}
+			return marshalTestMessage(result)
+		}
 		return marshalTestMessage(protocol.ReplacePolicyResultMessage{
 			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeReplacePolicyResult, ID: request.ID},
 			Success:      true,
@@ -169,6 +175,58 @@ func TestOnlineApplyUsesActiveSnapshotSHAAndExactBytes(t *testing.T) {
 	}
 	if session.replaceRequest.PolicyYAML != string(want) {
 		t.Fatalf("replacement changed exact bytes:\n%s", session.replaceRequest.PolicyYAML)
+	}
+}
+
+func TestOnlineApplyRejectsConcurrentSnapshotChange(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "secret")
+	path := filepath.Join(t.TempDir(), "draft.yaml")
+	if err := os.WriteFile(path, []byte("reject_foreign_rekey: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	session := &fakeOnlineSession{replaceResult: &protocol.ReplacePolicyResultMessage{
+		Success: false,
+		Target:  "signer",
+		Code:    "policy_snapshot_changed",
+		Error:   "active policy changed",
+	}}
+	var stdout bytes.Buffer
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
+		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: path,
+	}, Streams{Stdout: &stdout, Stderr: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "active policy changed") {
+		t.Fatalf("Run(concurrent apply) error = %v", err)
+	}
+	if session.replaceCalls != 1 || session.replaceRequest.ExpectedCurrentSHA256 != "active-sha" {
+		t.Fatalf("replacement calls=%d expected SHA=%q", session.replaceCalls, session.replaceRequest.ExpectedCurrentSHA256)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("failed concurrent apply reported success: %q", stdout.String())
+	}
+}
+
+func TestOnlineToSentryReportsUnrepresentablePolicy(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "secret")
+	path := filepath.Join(t.TempDir(), "policy.yaml")
+	data := []byte("transfer_policy:\n  schema_version: 1\n  enabled: true\n  on_no_route: review\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	session := &fakeOnlineSession{}
+	var stdout bytes.Buffer
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
+		Verb: VerbToSentry, Target: policyeditor.TargetSigner, Source: path,
+	}, Streams{Stdout: &stdout, Stderr: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "cannot be converted to deterministic sentry policy") {
+		t.Fatalf("Run(to-sentry) error = %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("failed conversion emitted partial YAML: %q", stdout.String())
+	}
+	if session.replaceCalls != 0 {
+		t.Fatalf("failed conversion replaced policy %d times", session.replaceCalls)
 	}
 }
 
