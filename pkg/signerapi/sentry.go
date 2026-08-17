@@ -174,6 +174,8 @@ func (r ComponentRequest) GroupSignRequest() GroupSignRequest {
 	return GroupSignRequest{RequestID: r.RequestID, Requests: requests}
 }
 
+// Validate checks response-intrinsic fields only. Call ValidateForRequest to
+// validate component indices and kinds against the originating request.
 func (r ComponentResponse) Validate() error {
 	if r.RequestID == "" {
 		return fmt.Errorf("request_id is required")
