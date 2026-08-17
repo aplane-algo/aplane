@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -31,7 +30,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -534,41 +532,6 @@ func TestAdminGenerateHTLCV1(t *testing.T) {
 	// Verify parameters are echoed back
 	if resp.Parameters["timeout_round"] == "" {
 		t.Error("Expected parameters to include timeout_round")
-	}
-}
-
-func TestAdminSyncSentriesNotifiesAdminKeyTypesChanged(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-	hub := &recordingAdminHub{}
-	server.hub = hub
-
-	publicKeyBytes := bytes.Repeat([]byte{0xab}, witness.Falcon1024PublicKeySize)
-	componentKey, err := witness.ID(witness.Falcon1024V1, publicKeyBytes)
-	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
-	}
-	reqBody, _ := json.Marshal(signerapi.AdminSyncSentryReferencesRequest{
-		Candidates: []signerapi.SentryReferenceCandidate{{
-			EndpointAlias: "sentry-local",
-			ComponentKey:  componentKey,
-			KeyType:       witness.Falcon1024V1,
-			PublicKeyHex:  strings.Repeat("ab", witness.Falcon1024PublicKeySize),
-		}},
-	})
-
-	w := httptest.NewRecorder()
-	server.handleAdminSyncSentries(w, requestWithIdentity(http.MethodPost, "/admin/sentries/sync", reqBody))
-	if w.Code != http.StatusOK {
-		t.Fatalf("handleAdminSyncSentries status = %d: %s", w.Code, w.Body.String())
-	}
-	var resp signerapi.AdminSyncSentryReferencesResponse
-	decodeResponse(t, w, &resp)
-	if resp.Added != 1 {
-		t.Fatalf("Added = %d, want 1", resp.Added)
-	}
-	if !hub.keysCalled {
-		t.Fatal("NotifyKeysChanged was not called")
 	}
 }
 

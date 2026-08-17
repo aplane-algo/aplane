@@ -24,6 +24,15 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
+// ErrHostKeyMismatch marks a remote SSH host key that differs from an
+// existing known_hosts pin. Callers must treat this as possible interception,
+// not as an ordinary unreachable or unenrolled endpoint.
+var (
+	ErrHostKeyMismatch = errors.New("SSH host key mismatch")
+	ErrUnknownHostKey  = errors.New("unknown SSH host key")
+	ErrKnownHostsFile  = errors.New("invalid SSH known_hosts file")
+)
+
 // statusWriter is the destination for SSH client status/error messages emitted
 // from background goroutines (keepalive monitors, connection-closed handlers,
 // host-key prompts, identity-key generation). Defaults to os.Stdout so the
@@ -370,7 +379,7 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 	if _, err := os.Stat(knownHostsPath); err == nil {
 		callback, err := knownhosts.New(knownHostsPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load known_hosts %s: %w", knownHostsPath, err)
+			return nil, fmt.Errorf("%w %s: %v", ErrKnownHostsFile, knownHostsPath, err)
 		}
 		existingCallback = callback
 	}
@@ -388,7 +397,7 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 			if keyErr, ok := err.(*knownhosts.KeyError); ok {
 				if len(keyErr.Want) > 0 {
 					// Key mismatch - this is a security issue, don't allow TOFU
-					return fmt.Errorf("SSH host key mismatch for %s (possible MITM attack)", hostname)
+					return fmt.Errorf("%w for %s (possible MITM attack)", ErrHostKeyMismatch, hostname)
 				}
 				// Host not in known_hosts - fall through to TOFU
 			} else {
@@ -402,7 +411,7 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 		c.mu.Unlock()
 
 		if handler == nil {
-			return fmt.Errorf("unknown SSH host %s (key %s); add it to %s or set approval handler", hostname, fingerprint, knownHostsPath)
+			return fmt.Errorf("%w %s (key %s); add it to %s or set approval handler", ErrUnknownHostKey, hostname, fingerprint, knownHostsPath)
 		}
 
 		// Prompt user for approval (only once per connection attempt)

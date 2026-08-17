@@ -4,7 +4,6 @@
 package apshellapp
 
 import (
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -17,700 +16,185 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestEndpointImportDryRunDoesNotWriteFiles(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	envelopePath := writeEndpointEnvelope(t, dataDir)
-
-	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias:  "sentry-local",
-		Role:   config.ClientEndpointRoleSentry,
-		Path:   envelopePath,
-		DryRun: true,
+	result, err := app.EndpointImport(t.Context(), EndpointImportRequest{
+		Alias: "sentry-local", Role: config.ClientEndpointRoleSentry,
+		Path: writeEndpointEnvelope(t, dataDir), DryRun: true,
 	})
 	if err != nil {
-		t.Fatalf("EndpointImport(dry-run) error = %v", err)
+		t.Fatal(err)
 	}
-	if !result.DryRun {
-		t.Fatal("DryRun = false, want true")
+	if !result.DryRun || !result.Created {
+		t.Fatalf("result = %#v, want dry-run create", result)
 	}
-	if _, err := os.Stat(filepath.Join(dataDir, config.ClientEndpointsFile)); !os.IsNotExist(err) {
-		t.Fatalf("endpoints.yaml stat error = %v, want not exist", err)
-	}
-	if _, err := os.Stat(filepath.Join(dataDir, "config.yaml")); !os.IsNotExist(err) {
-		t.Fatalf("config.yaml stat error = %v, want not exist", err)
+	if _, err := os.Stat(config.GetClientEndpointsPath(dataDir)); !os.IsNotExist(err) {
+		t.Fatalf("endpoints.yaml stat error = %v, want absent", err)
 	}
 }
 
-func TestEndpointImportWritesEndpointOnly(t *testing.T) {
+func TestEndpointImportWritesV2ConnectionProfileOnly(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	envelopePath := writeEndpointEnvelope(t, dataDir)
-
-	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "sentry-local",
-		Role:  config.ClientEndpointRoleSentry,
-		Path:  envelopePath,
+	_, err := app.EndpointImport(t.Context(), EndpointImportRequest{
+		Alias: "sentry-local", Role: config.ClientEndpointRoleSentry,
+		Path: writeEndpointEnvelope(t, dataDir),
 	})
 	if err != nil {
-		t.Fatalf("EndpointImport() error = %v", err)
+		t.Fatal(err)
 	}
-	if !result.Created {
-		t.Fatal("Created = false, want true")
-	}
-	if result.DefaultChanged {
-		t.Fatal("DefaultChanged = true, want false for sentry endpoint")
-	}
-
-	cfg, err := config.LoadConfig(dataDir)
+	data, err := os.ReadFile(config.GetClientEndpointsPath(dataDir))
 	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
+		t.Fatal(err)
 	}
-	endpoint, ok := cfg.Endpoints.Endpoint("sentry-local")
-	if !ok {
-		t.Fatal("sentry-local endpoint missing")
+	if !strings.Contains(string(data), "schema_version: 2") || strings.Contains(string(data), "published_sentries") {
+		t.Fatalf("endpoints.yaml = %q, want v2 connection profile only", data)
 	}
-	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "sentry-local.token") {
-		t.Fatalf("TokenFile = %q, want resolved endpoint token path", endpoint.TokenFile)
-	}
-	if len(cfg.SentryEndpoints) != 0 {
-		t.Fatalf("SentryEndpoints = %#v, want none from endpoint import", cfg.SentryEndpoints)
+	if _, ok := app.eng.EndpointRegistry.Endpoint("sentry-local"); !ok {
+		t.Fatal("live engine endpoint registry was not refreshed")
 	}
 }
 
-func TestEndpointCreateSentryWritesEndpointOnly(t *testing.T) {
+func TestEndpointCreateSentryAndListContainNoCachedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-
-	result, err := app.EndpointCreateSentry(context.Background(), EndpointCreateSentryRequest{
-		Alias:      "sentry-local",
-		URL:        "ssh://127.0.0.1:2223",
-		SentryPort: 12270,
+	_, err := app.EndpointCreateSentry(t.Context(), EndpointCreateSentryRequest{
+		Alias: "sentry-local", URL: "ssh://127.0.0.1:2223", SentryPort: 11270,
 	})
 	if err != nil {
-		t.Fatalf("EndpointCreateSentry() error = %v", err)
+		t.Fatal(err)
 	}
-	if !result.Created || result.Updated {
-		t.Fatalf("Created/Updated = %v/%v, want true/false", result.Created, result.Updated)
-	}
-	if result.SentryPort != 12270 {
-		t.Fatalf("SentryPort = %d, want 12270", result.SentryPort)
-	}
-
-	cfg, err := config.LoadConfig(dataDir)
+	list, err := app.EndpointsList(t.Context())
 	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
+		t.Fatal(err)
 	}
-	endpoint, ok := cfg.Endpoints.Endpoint("sentry-local")
-	if !ok {
-		t.Fatal("sentry-local endpoint missing")
+	if len(list.Endpoints) != 1 || list.Endpoints[0].Alias != "sentry-local" || list.Endpoints[0].Role != config.ClientEndpointRoleSentry {
+		t.Fatalf("endpoints = %#v", list.Endpoints)
 	}
-	if endpoint.Role != config.ClientEndpointRoleSentry || endpoint.URL != "ssh://127.0.0.1:2223" || endpoint.SignerPort != 12270 {
-		t.Fatalf("endpoint = %#v, want sentry ssh endpoint with signer_port 12270", endpoint)
-	}
-	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "sentry-local.token") {
-		t.Fatalf("TokenFile = %q, want resolved endpoint token path", endpoint.TokenFile)
-	}
-	if len(cfg.SentryEndpoints) != 0 {
-		t.Fatalf("SentryEndpoints = %#v, want none from manual endpoint create", cfg.SentryEndpoints)
+	show, err := app.EndpointShow(t.Context(), "sentry-local")
+	if err != nil || show.Endpoint.URL != "ssh://127.0.0.1:2223" {
+		t.Fatalf("EndpointShow() = %#v, %v", show, err)
 	}
 }
 
-func TestEndpointCreateSentryDryRunDoesNotWriteFiles(t *testing.T) {
+func TestEndpointDiscoverSentriesIsReadOnly(t *testing.T) {
 	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-
-	result, err := app.EndpointCreateSentry(context.Background(), EndpointCreateSentryRequest{
-		Alias:      "sentry-local",
-		URL:        "ssh://127.0.0.1:2223",
-		SentryPort: 12270,
-		DryRun:     true,
-	})
-	if err != nil {
-		t.Fatalf("EndpointCreateSentry(dry-run) error = %v", err)
-	}
-	if !result.DryRun {
-		t.Fatal("DryRun = false, want true")
-	}
-	if _, err := os.Stat(filepath.Join(dataDir, config.ClientEndpointsFile)); !os.IsNotExist(err) {
-		t.Fatalf("endpoints.yaml stat error = %v, want not exist", err)
-	}
-}
-
-func TestEndpointImportReplacesSameAlias(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "sentry-local", "ssh://127.0.0.1:2223", 11270)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "sentry-local",
-		Role:  config.ClientEndpointRoleSentry,
-		Path:  firstPath,
-	}); err != nil {
-		t.Fatalf("EndpointImport(first) error = %v", err)
-	}
-
-	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "sentry-local-updated", "ssh://127.0.0.1:2224", 12270)
-	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "sentry-local",
-		Role:  config.ClientEndpointRoleSentry,
-		Path:  secondPath,
-	})
-	if err != nil {
-		t.Fatalf("EndpointImport(replace) error = %v", err)
-	}
-	if !result.Updated || result.Created {
-		t.Fatalf("replace result Created/Updated = %v/%v, want false/true", result.Created, result.Updated)
-	}
-
-	cfg, err := config.LoadConfig(dataDir)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	endpoint, ok := cfg.Endpoints.Endpoint("sentry-local")
-	if !ok {
-		t.Fatal("sentry-local endpoint missing")
-	}
-	if endpoint.URL != "ssh://127.0.0.1:2224" || endpoint.SignerPort != 12270 {
-		t.Fatalf("endpoint after replace = %#v, want updated url/signer_port", endpoint)
-	}
-}
-
-func TestEndpointImportRejectsExistingURLWithDifferentAlias(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "sentry-local", "ssh://127.0.0.1:2223/", 11270)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "sentry-local",
-		Role:  config.ClientEndpointRoleSentry,
-		Path:  firstPath,
-	}); err != nil {
-		t.Fatalf("EndpointImport(first) error = %v", err)
-	}
-
-	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "sentry-copy", "ssh://127.0.0.1:2223", 11270)
-	_, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "sentry-copy",
-		Role:  config.ClientEndpointRoleSentry,
-		Path:  secondPath,
-	})
-	if err == nil {
-		t.Fatal("EndpointImport(duplicate URL) error = nil, want conflict")
-	}
-	if !strings.Contains(err.Error(), "already belongs to alias") {
-		t.Fatalf("EndpointImport(duplicate URL) error = %v, want duplicate URL conflict", err)
-	}
-
-	cfg, err := config.LoadConfig(dataDir)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	if _, ok := cfg.Endpoints.Endpoint("sentry-copy"); ok {
-		t.Fatal("sentry-copy endpoint was written despite duplicate URL conflict")
-	}
-}
-
-func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	envelopePath := writeEndpointEnvelope(t, dataDir)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "sentry-local",
-		Role:  config.ClientEndpointRoleSentry,
-		Path:  envelopePath,
-	}); err != nil {
-		t.Fatalf("EndpointImport() error = %v", err)
-	}
-	publicKeyHex := testSentryPublicKeyHex()
-	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
-	tokenPath := filepath.Join(dataDir, "tokens", "sentry-local.token")
-	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
-		t.Fatalf("MkdirAll(tokens) error = %v", err)
-	}
-	if err := tokenfile.WriteToken(tokenPath, "token-value"); err != nil {
-		t.Fatalf("WriteToken() error = %v", err)
-	}
-
-	list, err := app.EndpointsList(context.Background())
-	if err != nil {
-		t.Fatalf("EndpointsList() error = %v", err)
-	}
-	if len(list.Endpoints) != 1 {
-		t.Fatalf("EndpointsList entries = %d, want 1", len(list.Endpoints))
-	}
-	entry := list.Endpoints[0]
-	if entry.Alias != "sentry-local" || !entry.TokenPresent {
-		t.Fatalf("list entry = %#v, want sentry-local with token present", entry)
-	}
-	if got := entry.PublishedSentryPublicKeys; len(got) != 1 || got[0] != publicKeyHex {
-		t.Fatalf("PublishedSentryPublicKeys = %#v, want %s", got, publicKeyHex)
-	}
-	componentID := testComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
-	if got := entry.PublishedSentryComponents; len(got) != 1 || got[0] != componentID {
-		t.Fatalf("PublishedSentryComponents = %#v, want %s", got, componentID)
-	}
-
-	show, err := app.EndpointShow(context.Background(), "sentry-local")
-	if err != nil {
-		t.Fatalf("EndpointShow() error = %v", err)
-	}
-	if show.Endpoint.IdentityFile != filepath.Join(dataDir, ".ssh", "id_ed25519") {
-		t.Fatalf("IdentityFile = %q, want local default", show.Endpoint.IdentityFile)
-	}
-	if show.Endpoint.KnownHostsPath != filepath.Join(dataDir, ".ssh", "known_hosts") {
-		t.Fatalf("KnownHostsPath = %q, want local default", show.Endpoint.KnownHostsPath)
-	}
-}
-
-func TestEndpointSentriesRenderComponentSelectorsOnly(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	envelopePath := writeEndpointEnvelope(t, dataDir)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "sentry-local",
-		Role:  config.ClientEndpointRoleSentry,
-		Path:  envelopePath,
-	}); err != nil {
-		t.Fatalf("EndpointImport() error = %v", err)
-	}
-	publicKeyHex := testSentryPublicKeyHex()
-	componentID := testComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
-	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
-
-	sentries, err := app.EndpointSentries(context.Background())
-	if err != nil {
-		t.Fatalf("EndpointSentries() error = %v", err)
-	}
-	assertHumanEndpointOutputUsesComponentOnly(t, sentries.RenderLines, publicKeyHex, componentID)
-}
-
-func TestEndpointDiscoverSentriesRebuildsMappingsFromAllEndpoints(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-
-	publicKeyHex := testSentryPublicKeyHex()
-	componentSelector := testComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
-	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:      componentSelector,
-		PublicKeyHex: strings.ToUpper(publicKeyHex),
-		KeyType:      witness.Falcon1024V1,
-		IsWitnessKey: true,
+	publicKey := testSentryPublicKeyHex()
+	componentKey := testComponentSelector(t, witness.Falcon1024V1, publicKey)
+	server := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
+		Address: componentKey, PublicKeyHex: publicKey, KeyType: witness.Falcon1024V1, IsWitnessKey: true,
 	}})
-	signerServer := newEndpointKeysServer(t, "sign-token", []signerapi.KeyInfo{{
-		Address: "ADDR",
-		KeyType: keytypes.GuardedFalcon1024Sentry1024V1,
-	}})
-
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "signer-local", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSigner,
-		URL:  signerServer.URL,
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(signer-local) error = %v", err)
-	}
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry,
-		URL:  sentryServer.URL,
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
-	}
-	writeEndpointToken(t, dataDir, "signer-local", "sign-token")
-	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
-	staleKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
-	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
-
-	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
+	writeLiveSentryEndpoint(t, dataDir, "sentry-local", server.URL, "sentry-token")
+	before, err := os.ReadFile(config.GetClientEndpointsPath(dataDir))
 	if err != nil {
-		t.Fatalf("EndpointDiscoverSentries() error = %v", err)
+		t.Fatal(err)
 	}
-	if result.PublicKeyCount != 1 || result.PreviousPublishedCount != 1 {
-		t.Fatalf("discovery counts = public:%d previous:%d, want 1/1", result.PublicKeyCount, result.PreviousPublishedCount)
-	}
-	if len(result.Endpoints) != 1 {
-		t.Fatalf("discovered endpoints = %d, want 1", len(result.Endpoints))
-	}
-	assertHumanEndpointOutputUsesComponentOnly(t, result.RenderLines, publicKeyHex, componentSelector)
-
-	cfg, err := config.LoadConfig(dataDir)
+	app := newEndpointTestApp(t, dataDir)
+	result, err := app.EndpointDiscoverSentries(t.Context(), EndpointDiscoverSentriesRequest{})
 	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
+		t.Fatal(err)
 	}
-	route, ok := cfg.SentryEndpoints[publicKeyHex]
-	if !ok {
-		t.Fatalf("sentry endpoint route for %s missing from %#v", publicKeyHex, cfg.SentryEndpoints)
+	after, err := os.ReadFile(config.GetClientEndpointsPath(dataDir))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if route.Endpoint != "sentry-local" {
-		t.Fatalf("route endpoint = %q, want sentry-local", route.Endpoint)
+	if string(after) != string(before) {
+		t.Fatalf("read-only discovery changed endpoints.yaml\nbefore: %s\nafter: %s", before, after)
 	}
-	if _, ok := cfg.SentryEndpoints[staleKeyHex]; ok {
-		t.Fatalf("stale sentry endpoint route %s remained after discovery", staleKeyHex)
+	if result.PublicKeyCount != 1 || len(result.Endpoints) != 1 || len(result.Endpoints[0].Keys) != 1 {
+		t.Fatalf("discovery result = %#v", result)
 	}
-	if _, ok := app.eng.SentryEndpoints[publicKeyHex]; !ok {
-		t.Fatalf("engine sentry routing was not refreshed for %s", publicKeyHex)
+	assertHumanEndpointOutputUsesComponentOnly(t, result.RenderLines, publicKey, componentKey)
+}
+
+func TestEndpointDiscoverSentriesRejectsDuplicatePublication(t *testing.T) {
+	dataDir := t.TempDir()
+	publicKey := testSentryPublicKeyHex()
+	componentKey := testComponentSelector(t, witness.Falcon1024V1, publicKey)
+	keys := []signerapi.KeyInfo{{Address: componentKey, PublicKeyHex: publicKey, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}
+	first := newEndpointKeysServer(t, "token-a", keys)
+	second := newEndpointKeysServer(t, "token-b", keys)
+	writeLiveSentryEndpoint(t, dataDir, "sentry-a", first.URL, "token-a")
+	writeLiveSentryEndpoint(t, dataDir, "sentry-b", second.URL, "token-b")
+	app := newEndpointTestApp(t, dataDir)
+	_, err := app.EndpointDiscoverSentries(t.Context(), EndpointDiscoverSentriesRequest{})
+	if err == nil || !strings.Contains(err.Error(), "advertised by both endpoint aliases") {
+		t.Fatalf("EndpointDiscoverSentries() error = %v, want duplicate rejection", err)
 	}
 }
 
-func TestEndpointDiscoverSentriesPreservesUnreachableEndpointInventory(t *testing.T) {
+func TestEndpointDiscoverSentriesReportsUnavailableEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
+	writeLiveSentryEndpoint(t, dataDir, "sentry-offline", "http://127.0.0.1:1", "token")
 	app := newEndpointTestApp(t, dataDir)
-
-	newOnlineKey := strings.Repeat("ab", witness.Falcon1024PublicKeySize)
-	oldOnlineKey := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
-	offlineKey := strings.Repeat("ef", witness.Falcon1024PublicKeySize)
-	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:      testComponentSelector(t, witness.Falcon1024V1, newOnlineKey),
-		PublicKeyHex: newOnlineKey,
-		KeyType:      witness.Falcon1024V1,
-		IsWitnessKey: true,
-	}})
-
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-online", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry,
-		URL:  sentryServer.URL,
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry-online) error = %v", err)
+	result, err := app.EndpointDiscoverSentries(t.Context(), EndpointDiscoverSentriesRequest{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-offline", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry,
-		URL:  "http://127.0.0.1:1",
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry-offline) error = %v", err)
+	if len(result.Endpoints) != 1 || !result.Endpoints[0].Skipped || result.Endpoints[0].Error == "" {
+		t.Fatalf("discovery result = %#v, want skipped unavailable endpoint", result)
 	}
-	writeEndpointToken(t, dataDir, "sentry-online", "sentry-token")
-	writeEndpointToken(t, dataDir, "sentry-offline", "sentry-token")
-	writePublishedSentries(t, dataDir, map[string]map[string]config.ClientEndpointPublishedSentry{
-		"sentry-online": {
-			oldOnlineKey: endpointPublishedSentryForTest(t, oldOnlineKey),
+}
+
+func TestEndpointDiscoverSentriesRejectsAuthenticationAndMalformedMetadata(t *testing.T) {
+	tests := []struct {
+		name    string
+		server  func(*testing.T) *httptest.Server
+		wantErr string
+	}{
+		{
+			name: "authentication",
+			server: func(t *testing.T) *httptest.Server {
+				return newEndpointKeysStatusServer(t, "different-token", http.StatusUnauthorized, `{"error":"unauthorized"}`)
+			},
+			wantErr: "authentication",
 		},
-		"sentry-offline": {
-			offlineKey: endpointPublishedSentryForTest(t, offlineKey),
+		{
+			name: "metadata",
+			server: func(t *testing.T) *httptest.Server {
+				return newEndpointKeysServer(t, "token", []signerapi.KeyInfo{{
+					Address: "INVALID", PublicKeyHex: "zz", KeyType: witness.Falcon1024V1, IsWitnessKey: true,
+				}})
+			},
+			wantErr: "invalid sentry discovery metadata",
 		},
-	})
-
-	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
-	if err != nil {
-		t.Fatalf("EndpointDiscoverSentries() error = %v", err)
 	}
-	if result.PublicKeyCount != 2 || result.PreviousPublishedCount != 2 {
-		t.Fatalf("discovery counts = public:%d previous:%d, want 2/2", result.PublicKeyCount, result.PreviousPublishedCount)
-	}
-	var skipped EndpointSentryDiscovery
-	for _, endpoint := range result.Endpoints {
-		if endpoint.Alias == "sentry-offline" {
-			skipped = endpoint
-			break
-		}
-	}
-	if !skipped.Skipped || skipped.PreservedCount != 1 {
-		t.Fatalf("offline discovery = %#v, want skipped with one preserved key", skipped)
-	}
-
-	cfg, err := config.LoadConfig(dataDir)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	publishedOnline := cfg.Endpoints.Endpoints["sentry-online"].PublishedSentries
-	if _, ok := publishedOnline[newOnlineKey]; !ok {
-		t.Fatalf("new online sentry %s missing from %#v", newOnlineKey, publishedOnline)
-	}
-	if _, ok := publishedOnline[oldOnlineKey]; ok {
-		t.Fatalf("old online sentry %s was not cleared from %#v", oldOnlineKey, publishedOnline)
-	}
-	publishedOffline := cfg.Endpoints.Endpoints["sentry-offline"].PublishedSentries
-	if _, ok := publishedOffline[offlineKey]; !ok {
-		t.Fatalf("offline sentry %s was not preserved in %#v", offlineKey, publishedOffline)
-	}
-	if route := cfg.SentryEndpoints[offlineKey]; route.Endpoint != "sentry-offline" {
-		t.Fatalf("offline route = %#v, want sentry-offline", route)
-	}
-	if _, ok := app.eng.SentryEndpoints[offlineKey]; !ok {
-		t.Fatalf("engine route for preserved offline key %s missing", offlineKey)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			server := tt.server(t)
+			writeLiveSentryEndpoint(t, dataDir, "sentry-local", server.URL, "token")
+			app := newEndpointTestApp(t, dataDir)
+			_, err := app.EndpointDiscoverSentries(t.Context(), EndpointDiscoverSentriesRequest{})
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("EndpointDiscoverSentries() error = %v, want %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 
-func TestEndpointDiscoverSentriesPreservesLockedEndpointInventory(t *testing.T) {
+func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
 	dataDir := t.TempDir()
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "self"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "secondary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSentry, URL: "self"}, true); err != nil {
+		t.Fatal(err)
+	}
 	app := newEndpointTestApp(t, dataDir)
-
-	staleKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
-	sentryServer := newEndpointKeysStatusServer(t, "sentry-token", http.StatusForbidden, `{"error":"signer is locked"}`)
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry,
-		URL:  sentryServer.URL,
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
+	if _, err := app.EndpointDefault(t.Context(), "primary"); err != nil {
+		t.Fatal(err)
 	}
-	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
-	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
-
-	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
-	if err != nil {
-		t.Fatalf("EndpointDiscoverSentries(locked) error = %v", err)
+	if _, err := app.EndpointDelete(t.Context(), "secondary"); err != nil {
+		t.Fatal(err)
 	}
-	if result.PublicKeyCount != 1 {
-		t.Fatalf("PublicKeyCount = %d, want preserved stale key", result.PublicKeyCount)
-	}
-	if len(result.Endpoints) != 1 || !result.Endpoints[0].Skipped || result.Endpoints[0].PreservedCount != 1 {
-		t.Fatalf("endpoint discovery = %#v, want one skipped endpoint with preserved key", result.Endpoints)
-	}
-}
-
-func TestEndpointDiscoverSentriesPreservesServerErrorEndpointInventory(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-
-	staleKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
-	sentryServer := newEndpointKeysStatusServer(t, "sentry-token", http.StatusServiceUnavailable, `service unavailable`)
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry,
-		URL:  sentryServer.URL,
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
-	}
-	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
-	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
-
-	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
-	if err != nil {
-		t.Fatalf("EndpointDiscoverSentries(5xx) error = %v", err)
-	}
-	if len(result.Endpoints) != 1 || !result.Endpoints[0].Skipped || result.Endpoints[0].PreservedCount != 1 {
-		t.Fatalf("endpoint discovery = %#v, want one skipped endpoint with preserved key", result.Endpoints)
-	}
-}
-
-func TestEndpointDiscoverSentriesRejectsAuthFailure(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-
-	staleKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
-	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{})
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry,
-		URL:  sentryServer.URL,
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
-	}
-	writeEndpointToken(t, dataDir, "sentry-local", "wrong-token")
-	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
-
-	_, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
-	if err == nil {
-		t.Fatal("EndpointDiscoverSentries(auth failure) error = nil, want rejection")
-	}
-	if !strings.Contains(err.Error(), "sentry endpoint authentication failed") {
-		t.Fatalf("EndpointDiscoverSentries(auth failure) error = %v, want auth rejection", err)
-	}
-
-	cfg, err := config.LoadConfig(dataDir)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries
-	if _, ok := published[staleKeyHex]; !ok {
-		t.Fatalf("stale sentry %s was not preserved after failed auth in %#v", staleKeyHex, published)
-	}
-}
-
-func TestEndpointDiscoverSentriesRejectsInvalidEndpointMetadata(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-
-	publicKeyHex := testSentryPublicKeyHex()
-	staleKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
-	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:      "bad-component-selector",
-		PublicKeyHex: publicKeyHex,
-		KeyType:      witness.Falcon1024V1,
-		IsWitnessKey: true,
-	}})
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry,
-		URL:  sentryServer.URL,
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
-	}
-	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
-	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
-
-	_, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
-	if err == nil {
-		t.Fatal("EndpointDiscoverSentries(invalid metadata) error = nil, want rejection")
-	}
-	if !strings.Contains(err.Error(), "invalid sentry discovery metadata") {
-		t.Fatalf("EndpointDiscoverSentries(invalid metadata) error = %v, want metadata rejection", err)
-	}
-
-	cfg, err := config.LoadConfig(dataDir)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries
-	if _, ok := published[staleKeyHex]; !ok {
-		t.Fatalf("stale sentry %s was not preserved after failed discovery in %#v", staleKeyHex, published)
-	}
-	if _, ok := published[publicKeyHex]; ok {
-		t.Fatalf("invalid sentry %s was written despite metadata failure", publicKeyHex)
-	}
-}
-
-func TestEndpointDiscoverSentriesDryRunDoesNotWriteMappings(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	publicKeyHex := testSentryPublicKeyHex()
-	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:      testComponentSelector(t, witness.Falcon1024V1, publicKeyHex),
-		PublicKeyHex: publicKeyHex,
-		KeyType:      witness.Falcon1024V1,
-		IsWitnessKey: true,
-	}})
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry,
-		URL:  sentryServer.URL,
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
-	}
-	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
-
-	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{DryRun: true})
-	if err != nil {
-		t.Fatalf("EndpointDiscoverSentries(dry-run) error = %v", err)
-	}
-	if !result.DryRun || result.PublicKeyCount != 1 {
-		t.Fatalf("dry-run result = dry:%v public:%d, want true/1", result.DryRun, result.PublicKeyCount)
-	}
-	cfg, err := config.LoadConfig(dataDir)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	if len(cfg.SentryEndpoints) != 0 {
-		t.Fatalf("SentryEndpoints = %#v, want none after dry-run", cfg.SentryEndpoints)
-	}
-}
-
-func TestEndpointSyncSentriesDryRunUsesPublishedInventory(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	publicKeyHex := testSentryPublicKeyHex()
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry,
-		URL:  "http://127.0.0.1:12345",
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint() error = %v", err)
-	}
-	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
-	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
-
-	result, err := app.EndpointSyncSentries(context.Background(), EndpointSyncSentriesRequest{DryRun: true})
-	if err != nil {
-		t.Fatalf("EndpointSyncSentries(dry-run) error = %v", err)
-	}
-	if !result.DryRun || result.CandidateCount != 1 {
-		t.Fatalf("dry-run result = dry:%v count:%d, want true/1", result.DryRun, result.CandidateCount)
-	}
-	if len(result.Records) != 1 {
-		t.Fatalf("records = %d, want 1", len(result.Records))
-	}
-	rec := result.Records[0]
-	if rec.EndpointAlias != "sentry-local" || rec.PublicKey != publicKeyHex {
-		t.Fatalf("record = %#v, want sentry-local %s", rec, publicKeyHex)
-	}
-	componentID := testComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
-	wantName := "endpoint-sentry-local-" + strings.ToLower(componentID)
-	if rec.Name != wantName {
-		t.Fatalf("record name = %q, want %q", rec.Name, wantName)
-	}
-	assertHumanEndpointOutputUsesComponentOnly(t, result.RenderLines, publicKeyHex, componentID)
-}
-
-func TestEndpointDefaultSetsSigningEndpoint(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	envelopePath := writeEndpointEnvelopeWithName(t, dataDir, "signer-local")
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "signer-local",
-		Role:  config.ClientEndpointRoleSigner,
-		Path:  envelopePath,
-	}); err != nil {
-		t.Fatalf("EndpointImport() error = %v", err)
-	}
-
-	result, err := app.EndpointDefault(context.Background(), "signer-local")
-	if err != nil {
-		t.Fatalf("EndpointDefault() error = %v", err)
-	}
-	if result.Alias != "signer-local" {
-		t.Fatalf("Alias = %q, want signer-local", result.Alias)
-	}
-	cfg, err := config.LoadConfig(dataDir)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	alias, _, ok := cfg.Endpoints.DefaultEndpoint()
-	if !ok || alias != "signer-local" {
-		t.Fatalf("DefaultEndpoint() = %q/%v, want signer-local/true", alias, ok)
-	}
-}
-
-func TestEndpointDeleteRejectsMappedSentryEndpoint(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	envelopePath := writeEndpointEnvelope(t, dataDir)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "sentry-local",
-		Role:  config.ClientEndpointRoleSentry,
-		Path:  envelopePath,
-	}); err != nil {
-		t.Fatalf("EndpointImport() error = %v", err)
-	}
-	publicKeyHex := testSentryPublicKeyHex()
-	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
-
-	_, err := app.EndpointDelete(context.Background(), "sentry-local")
-	if err == nil {
-		t.Fatal("EndpointDelete(mapped) error = nil, want rejection")
-	}
-	if strings.Contains(err.Error(), publicKeyHex) || !strings.Contains(err.Error(), "1 sentry mapping") {
-		t.Fatalf("EndpointDelete(mapped) error = %v, want count-only blocking message", err)
-	}
-}
-
-func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	primaryPath := writeEndpointEnvelopeWithName(t, dataDir, "primary")
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "primary",
-		Role:  config.ClientEndpointRoleSigner,
-		Path:  primaryPath,
-	}); err != nil {
-		t.Fatalf("EndpointImport(primary) error = %v", err)
-	}
-	secondaryPath := writeEndpointEnvelopeWithOptions(t, dataDir, "secondary", "ssh://127.0.0.1:2224", 11270)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "secondary",
-		Role:  config.ClientEndpointRoleSentry,
-		Path:  secondaryPath,
-	}); err != nil {
-		t.Fatalf("EndpointImport(secondary) error = %v", err)
-	}
-
-	if _, err := app.EndpointDelete(context.Background(), "secondary"); err != nil {
-		t.Fatalf("EndpointDelete(secondary) error = %v", err)
-	}
-	cfg, err := config.LoadConfig(dataDir)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	if _, ok := cfg.Endpoints.Endpoint("secondary"); ok {
-		t.Fatal("secondary endpoint still present after delete")
-	}
-	if alias, _, ok := cfg.Endpoints.DefaultEndpoint(); !ok || alias != "primary" {
-		t.Fatalf("DefaultEndpoint() = %q/%v, want primary after deleting sentry endpoint", alias, ok)
+	if _, ok := app.eng.EndpointRegistry.Endpoint("secondary"); ok {
+		t.Fatal("deleted endpoint remained in live registry")
 	}
 }
 
@@ -718,59 +202,37 @@ func newEndpointTestApp(t *testing.T, dataDir string) *App {
 	t.Helper()
 	eng, err := engine.NewEngine("testnet")
 	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
+		t.Fatal(err)
 	}
 	return New(eng, config.DefaultConfig(), dataDir)
 }
 
 func writeEndpointEnvelope(t *testing.T, dir string) string {
 	t.Helper()
-	return writeEndpointEnvelopeWithName(t, dir, "sentry-local")
-}
-
-func writeEndpointEnvelopeWithName(t *testing.T, dir, name string) string {
-	t.Helper()
-	return writeEndpointEnvelopeWithOptions(t, dir, name, "ssh://127.0.0.1:2223", 11270)
-}
-
-func writeEndpointEnvelopeWithOptions(t *testing.T, dir, name, rawURL string, signerPort int) string {
-	t.Helper()
-	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
-		Schema:     endpointrefs.Schema,
-		URL:        rawURL,
-		SignerPort: signerPort,
-	})
+	data, err := endpointrefs.Marshal(endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 11270})
 	if err != nil {
-		t.Fatalf("endpointrefs.Marshal() error = %v", err)
+		t.Fatal(err)
 	}
-	path := filepath.Join(dir, name+".endpoint.json")
+	path := filepath.Join(dir, "sentry-local.endpoint.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("WriteFile(endpoint) error = %v", err)
+		t.Fatal(err)
 	}
 	return path
 }
 
-func writePublishedSentry(t *testing.T, dir, alias, publicKeyHex string) {
+func writeLiveSentryEndpoint(t *testing.T, dir, alias, rawURL, token string) {
 	t.Helper()
-	writePublishedSentries(t, dir, map[string]map[string]config.ClientEndpointPublishedSentry{
-		alias: {publicKeyHex: endpointPublishedSentryForTest(t, publicKeyHex)},
-	})
-}
-
-func writePublishedSentries(t *testing.T, dir string, publications map[string]map[string]config.ClientEndpointPublishedSentry) {
-	t.Helper()
-	_, err := config.RebuildStoredClientEndpointPublishedSentries(dir, publications)
-	if err != nil {
-		t.Fatalf("RebuildStoredClientEndpointPublishedSentries() error = %v", err)
+	if _, err := config.UpsertStoredClientEndpoint(dir, alias, config.ClientEndpointConfig{
+		Role: config.ClientEndpointRoleSentry, URL: rawURL,
+	}, true); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func endpointPublishedSentryForTest(t *testing.T, publicKeyHex string) config.ClientEndpointPublishedSentry {
-	t.Helper()
-	return config.ClientEndpointPublishedSentry{
-		ComponentKey: testComponentSelector(t, witness.Falcon1024V1, publicKeyHex),
-		KeyType:      witness.Falcon1024V1,
-		LastSeenAt:   "2026-06-04T00:00:00Z",
+	path := filepath.Join(dir, "tokens", alias+".token")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -778,26 +240,15 @@ func testSentryPublicKeyHex() string {
 	return strings.Repeat("ab", witness.Falcon1024PublicKeySize)
 }
 
-func writeEndpointToken(t *testing.T, dir, alias, token string) {
-	t.Helper()
-	path := filepath.Join(dir, "tokens", alias+".token")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("MkdirAll(tokens) error = %v", err)
-	}
-	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile(token) error = %v", err)
-	}
-}
-
 func testComponentSelector(t *testing.T, keyType, publicKeyHex string) string {
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
-		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
+		t.Fatal(err)
 	}
 	selector, err := witness.ID(keyType, publicKey)
 	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
+		t.Fatal(err)
 	}
 	return selector
 }
@@ -825,10 +276,7 @@ func newEndpointKeysServer(t *testing.T, token string, keys []signerapi.KeyInfo)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
-			Count: len(keys),
-			Keys:  keys,
-		})
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
 	}))
 	t.Cleanup(server.Close)
 	return server
@@ -837,10 +285,6 @@ func newEndpointKeysServer(t *testing.T, token string, keys []signerapi.KeyInfo)
 func newEndpointKeysStatusServer(t *testing.T, token string, status int, body string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/keys" {
-			http.NotFound(w, r)
-			return
-		}
 		if got := r.Header.Get("Authorization"); got != "aplane "+token {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

@@ -4,7 +4,6 @@
 package config
 
 import (
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -12,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestLoadConfigSignerStatusPollInterval(t *testing.T) {
@@ -304,49 +301,6 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(out)
 }
 
-func TestLoadConfigEndpointRegistryDerivesSentryRoutesFromPublishedInventory(t *testing.T) {
-	dataDir := t.TempDir()
-	publicKey := sentryEndpointTestHex("d6")
-	componentKey := sentryEndpointConfigTestComponentKey(t, witness.Falcon1024V1, publicKey)
-	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
-network: testnet
-`), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(fmt.Sprintf(`
-schema_version: 1
-endpoints:
-  sentry-local:
-    role: sentry
-    url: ssh://127.0.0.1:2223
-    signer_port: 12271
-    published_sentries:
-      ? %q
-      :
-        component_key: %s
-        key_type: %s
-        last_seen_at: "2026-06-04T00:00:00Z"
-`, publicKey, componentKey, witness.Falcon1024V1)), 0o600); err != nil {
-		t.Fatalf("write endpoints: %v", err)
-	}
-
-	cfg, err := LoadConfig(dataDir)
-	if err != nil {
-		t.Fatalf("LoadConfig: %v", err)
-	}
-	route, ok := cfg.SentryEndpoints[publicKey]
-	if !ok {
-		t.Fatalf("derived sentry route for %s missing from %#v", publicKey, cfg.SentryEndpoints)
-	}
-	if route.Endpoint != "sentry-local" || route.URL != "ssh://127.0.0.1:2223" {
-		t.Fatalf("derived route = %#v, want sentry-local ssh endpoint", route)
-	}
-	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries[publicKey]
-	if published.ComponentKey != componentKey || published.KeyType != witness.Falcon1024V1 {
-		t.Fatalf("published sentry = %#v, want component/key type", published)
-	}
-}
-
 func TestClientConfigExamplesUseKnownFields(t *testing.T) {
 	repoRoot := filepath.Clean(filepath.Join("..", ".."))
 	installer, err := os.ReadFile(filepath.Join(repoRoot, "install.sh"))
@@ -486,30 +440,13 @@ func decodeClientConfigKnownFields(data []byte) error {
 }
 
 func decodeClientEndpointRegistryKnownFields(data []byte) error {
-	var registry ClientEndpointRegistry
-	if err := UnmarshalKnownFields(data, &registry); err != nil {
+	registry, err := decodeClientEndpointRegistry(data)
+	if err != nil {
 		return err
 	}
 	return normalizeStoredClientEndpointRegistry(&registry)
 }
 
 func sentryEndpointTestHex(prefix string) string {
-	return sentryEndpointTestHexN(prefix, witness.Falcon1024PublicKeySize)
-}
-
-func sentryEndpointTestHexN(prefix string, size int) string {
-	return prefix + strings.Repeat("00", size-1)
-}
-
-func sentryEndpointConfigTestComponentKey(t *testing.T, keyType, publicKeyHex string) string {
-	t.Helper()
-	publicKey, err := hex.DecodeString(publicKeyHex)
-	if err != nil {
-		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
-	}
-	componentKey, err := witness.ID(keyType, publicKey)
-	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
-	}
-	return componentKey
+	return prefix + strings.Repeat("00", 32-1)
 }

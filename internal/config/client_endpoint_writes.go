@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -29,8 +28,8 @@ func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, b
 		}
 		return ClientEndpointRegistry{}, false, fmt.Errorf("failed to read %s: %w", path, err)
 	}
-	var registry ClientEndpointRegistry
-	if err := UnmarshalKnownFields(data, &registry); err != nil {
+	registry, err := decodeClientEndpointRegistry(data)
+	if err != nil {
 		return ClientEndpointRegistry{}, false, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
@@ -204,108 +203,12 @@ func DeleteStoredClientEndpoint(dataDir, alias string) (ClientEndpointRegistry, 
 	return registry, nil
 }
 
-// ClientEndpointPublishedSentryRebuildPlan describes an endpoints.yaml
-// rewrite that refreshes endpoint-published sentry inventory.
-type ClientEndpointPublishedSentryRebuildPlan struct {
-	Registry               ClientEndpointRegistry
-	PublicKeyCount         int
-	PreviousPublishedCount int
-}
-
-// PlanStoredClientEndpointPublishedSentryRebuild validates and plans a full
-// refresh of endpoint-local published_sentries inventory in endpoints.yaml.
-func PlanStoredClientEndpointPublishedSentryRebuild(dataDir string, publications map[string]map[string]ClientEndpointPublishedSentry) (ClientEndpointPublishedSentryRebuildPlan, error) {
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
-	if err != nil {
-		return ClientEndpointPublishedSentryRebuildPlan{}, err
-	}
-	previousCount := 0
-	for alias, endpoint := range registry.Endpoints {
-		if endpoint.Role != ClientEndpointRoleSentry {
-			continue
-		}
-		previousCount += len(endpoint.PublishedSentries)
-		endpoint.PublishedSentries = nil
-		registry.Endpoints[alias] = endpoint
-	}
-
-	aliases := make([]string, 0, len(publications))
-	for alias := range publications {
-		aliases = append(aliases, alias)
-	}
-	sort.Strings(aliases)
-
-	keyToAlias := map[string]string{}
-	publicKeyCount := 0
-	for _, alias := range aliases {
-		if err := ValidateClientEndpointAlias(alias); err != nil {
-			return ClientEndpointPublishedSentryRebuildPlan{}, err
-		}
-		normalizedPublished, err := normalizeClientEndpointPublishedSentries(publications[alias])
-		if err != nil {
-			return ClientEndpointPublishedSentryRebuildPlan{}, fmt.Errorf("endpoint %q: %w", alias, err)
-		}
-
-		endpoint, ok := registry.Endpoints[alias]
-		if !ok {
-			if len(normalizedPublished) == 0 {
-				continue
-			}
-			return ClientEndpointPublishedSentryRebuildPlan{}, fmt.Errorf("endpoint alias %q is not defined", alias)
-		}
-		if endpoint.Role != ClientEndpointRoleSentry {
-			return ClientEndpointPublishedSentryRebuildPlan{}, fmt.Errorf("endpoint alias %q has role %q; published_sentries require role %q", alias, endpoint.Role, ClientEndpointRoleSentry)
-		}
-
-		for publicKey := range normalizedPublished {
-			if existingAlias, exists := keyToAlias[publicKey]; exists && existingAlias != alias {
-				return ClientEndpointPublishedSentryRebuildPlan{}, fmt.Errorf("sentry public key %s advertised by both endpoint aliases %q and %q", publicKey, existingAlias, alias)
-			}
-			keyToAlias[publicKey] = alias
-		}
-		if len(normalizedPublished) > 0 {
-			publicKeyCount += len(normalizedPublished)
-			endpoint.PublishedSentries = normalizedPublished
-			registry.Endpoints[alias] = endpoint
-		} else if _, exists := registry.Endpoints[alias]; exists {
-			endpoint.PublishedSentries = nil
-			registry.Endpoints[alias] = endpoint
-		}
-	}
-
-	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
-		return ClientEndpointPublishedSentryRebuildPlan{}, err
-	}
-	return ClientEndpointPublishedSentryRebuildPlan{
-		Registry:               registry,
-		PublicKeyCount:         publicKeyCount,
-		PreviousPublishedCount: previousCount,
-	}, nil
-}
-
-// ApplyStoredClientEndpointPublishedSentryRebuild writes a previously
-// planned published_sentries refresh.
-func ApplyStoredClientEndpointPublishedSentryRebuild(dataDir string, plan ClientEndpointPublishedSentryRebuildPlan) error {
-	return SaveStoredClientEndpointRegistry(dataDir, plan.Registry)
-}
-
-func RebuildStoredClientEndpointPublishedSentries(dataDir string, publications map[string]map[string]ClientEndpointPublishedSentry) (ClientEndpointPublishedSentryRebuildPlan, error) {
-	plan, err := PlanStoredClientEndpointPublishedSentryRebuild(dataDir, publications)
-	if err != nil {
-		return ClientEndpointPublishedSentryRebuildPlan{}, err
-	}
-	if err := ApplyStoredClientEndpointPublishedSentryRebuild(dataDir, plan); err != nil {
-		return ClientEndpointPublishedSentryRebuildPlan{}, err
-	}
-	return plan, nil
-}
-
 func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) error {
 	if registry.SchemaVersion == 0 {
-		registry.SchemaVersion = 1
+		registry.SchemaVersion = ClientEndpointSchemaVersion
 	}
-	if registry.SchemaVersion != 1 {
-		return fmt.Errorf("%s schema_version = %d, want 1", ClientEndpointsFile, registry.SchemaVersion)
+	if registry.SchemaVersion != ClientEndpointSchemaVersion {
+		return fmt.Errorf("%s schema_version = %d, want %d", ClientEndpointsFile, registry.SchemaVersion, ClientEndpointSchemaVersion)
 	}
 	registry.Default = strings.TrimSpace(registry.Default)
 	if registry.Default != "" {
@@ -341,14 +244,6 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 	if err := validateClientEndpointURL(alias, endpoint); err != nil {
 		return ClientEndpointConfig{}, err
 	}
-	published, err := normalizeClientEndpointPublishedSentries(endpoint.PublishedSentries)
-	if err != nil {
-		return ClientEndpointConfig{}, err
-	}
-	endpoint.PublishedSentries = published
-	if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedSentries) > 0 {
-		return ClientEndpointConfig{}, fmt.Errorf("published_sentries are only valid on %q endpoints", ClientEndpointRoleSentry)
-	}
 	if endpoint.TokenFile == "" && endpoint.URL != "self" {
 		if alias == DefaultClientEndpointName {
 			endpoint.TokenFile = "aplane.token"
@@ -368,14 +263,6 @@ func storedClientEndpointsEqual(a, b ClientEndpointConfig) bool {
 		a.KnownHostsPath != b.KnownHostsPath ||
 		a.TokenFile != b.TokenFile {
 		return false
-	}
-	if len(a.PublishedSentries) != len(b.PublishedSentries) {
-		return false
-	}
-	for publicKey, aPublished := range a.PublishedSentries {
-		if bPublished, ok := b.PublishedSentries[publicKey]; !ok || bPublished != aPublished {
-			return false
-		}
 	}
 	return true
 }

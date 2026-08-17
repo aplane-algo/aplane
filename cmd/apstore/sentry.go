@@ -10,7 +10,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -144,19 +143,10 @@ func cmdSentryList() error {
 }
 
 func sentryReferenceListLabel(rec protocol.SentryReferenceInfo) string {
-	if rec.Source == sentryrefs.SourceClientDiscovery {
-		if rec.EndpointAlias != "" {
-			return "endpoint: " + rec.EndpointAlias
-		}
-		return "source: " + rec.Source
-	}
 	if rec.Name != "" {
 		return "name: " + rec.Name
 	}
-	if rec.Source != "" {
-		return "source: " + rec.Source
-	}
-	return "source: unknown"
+	return "name: unknown"
 }
 
 func cmdSentryShow(name string) error {

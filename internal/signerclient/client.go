@@ -706,24 +706,6 @@ func (c *Client) AdminDeleteKeyWithContext(ctx context.Context, address string) 
 	return delResp, nil
 }
 
-// AdminSyncSentryReferences syncs public sentry reference candidates into
-// the connected signer identity.
-func (c *Client) AdminSyncSentryReferences(candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
-	return c.AdminSyncSentryReferencesWithContext(context.Background(), candidates)
-}
-
-func (c *Client) AdminSyncSentryReferencesWithContext(ctx context.Context, candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
-	reqBody := signerapi.AdminSyncSentryReferencesRequest{Candidates: candidates}
-	syncResp, err := doJSON[signerapi.AdminSyncSentryReferencesResponse](c, ctx, "POST", "/admin/sentries/sync", reqBody, mutationTimeout, "failed to sync sentry references")
-	if err != nil {
-		return nil, err
-	}
-	if syncResp.Error != "" {
-		return nil, fmt.Errorf("sentry reference sync failed: %s", syncResp.Error)
-	}
-	return syncResp, nil
-}
-
 // GetKeyTypes fetches available key types from Signer.
 func (c *Client) GetKeyTypes() (*signerapi.KeyTypesResponse, error) {
 	return c.GetKeyTypesWithContext(context.Background())

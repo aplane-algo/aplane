@@ -73,10 +73,6 @@ type KeysResult struct {
 type AdminGenerateRequest = pub.AdminGenerateRequest
 type AdminGenerateResponse = pub.AdminGenerateResponse
 type AdminDeleteResponse = pub.AdminDeleteResponse
-type SentryReferenceCandidate = pub.SentryReferenceCandidate
-type AdminSyncSentryReferencesRequest = pub.AdminSyncSentryReferencesRequest
-type SyncedSentryReferenceInfo = pub.SyncedSentryReferenceInfo
-type AdminSyncSentryReferencesResponse = pub.AdminSyncSentryReferencesResponse
 
 func CurrentProtocolVersion() ProtocolVersion {
 	return pub.CurrentProtocolVersion()

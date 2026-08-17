@@ -153,11 +153,11 @@ func TestRequireAuthForbidden(t *testing.T) {
 	}
 }
 
-func TestHTTPRouteAdminSentrySyncUsesDedicatedAction(t *testing.T) {
+func TestHTTPRouteAdminSentrySyncIsNotRegistered(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 
-	authz := &stubAuthorizer{err: auth.ErrForbidden}
+	authz := &stubAuthorizer{}
 	server.authorizer = authz
 
 	w := httptest.NewRecorder()
@@ -165,14 +165,11 @@ func TestHTTPRouteAdminSentrySyncUsesDedicatedAction(t *testing.T) {
 	r.Header.Set("Authorization", "aplane test-token")
 	buildHTTPServer(server, 0).Handler.ServeHTTP(w, r)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403", w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
 	}
-	if authz.got.action != auth.ActionSentriesSync {
-		t.Fatalf("action = %q, want %q", authz.got.action, auth.ActionSentriesSync)
-	}
-	if authz.got.resource.Type != "sentries" || authz.got.resource.IdentityID != auth.DefaultIdentityID {
-		t.Fatalf("resource = %#v", authz.got.resource)
+	if authz.got.action != "" {
+		t.Fatalf("retired route reached authorization with action %q", authz.got.action)
 	}
 }
 

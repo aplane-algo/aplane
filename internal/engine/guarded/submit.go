@@ -892,10 +892,20 @@ func (s *Signer) requestSentryComponentSignatures(ctx context.Context, groupByte
 		key := target.requestKey()
 		bySentry[key] = append(bySentry[key], target.Index)
 	}
+	required := make([]sentryRequestKey, 0, len(bySentry))
+	for key := range bySentry {
+		required = append(required, key)
+	}
+	snapshot, err := s.resolveSentryEndpoints(ctx, required)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer snapshot.close()
+	required = distinctSortedSentryRequestKeys(required)
 	signatures := make(map[int]string, len(targets))
 	requestIDs := make(map[sentryRequestKey]string, len(bySentry))
-	for sentryKey, indices := range bySentry {
-		requestID, err := s.requestOneSentryComponentSignatureSet(ctx, groupBytesHex, originalCount, sentryKey, indices, signatures, appCallInfo)
+	for _, sentryKey := range required {
+		requestID, err := s.requestOneSentryComponentSignatureSet(ctx, snapshot.routes[sentryKey], groupBytesHex, originalCount, sentryKey, bySentry[sentryKey], signatures, appCallInfo)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -909,13 +919,7 @@ func (s *Signer) requestSentryComponentSignatures(ctx context.Context, groupByte
 // component signatures as opaque material. Invalid signatures are rejected by
 // the signer during guarded assembly and, authoritatively, by the guarded
 // LogicSig on-chain.
-func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, groupBytesHex []string, originalCount int, sentryKey sentryRequestKey, indices []int, signatures map[int]string, appCallInfo []*signerapi.AppCallInfo) (string, error) {
-	endpoint, err := s.resolveSentryEndpoint(ctx, sentryKey)
-	if err != nil {
-		return "", err
-	}
-	defer endpoint.close()
-
+func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, endpoint *resolvedSentryEndpoint, groupBytesHex []string, originalCount int, sentryKey sentryRequestKey, indices []int, signatures map[int]string, appCallInfo []*signerapi.AppCallInfo) (string, error) {
 	componentSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, sentryKey.PublicKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to derive Witness Key ID for sentry public key %s: %w", shortSentryPublicKeyHex(sentryKey.PublicKey), err)

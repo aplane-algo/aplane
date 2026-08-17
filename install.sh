@@ -1127,7 +1127,7 @@ write_apshell_endpoint_registry() {
 # apshell endpoint registry
 # See docs/USER_CONFIG.md for full documentation.
 
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -1149,7 +1149,7 @@ write_apshell_sentry_endpoint_registry() {
 # apshell endpoint registry
 # See docs/USER_CONFIG.md for full documentation.
 
-schema_version: 1
+schema_version: 2
 endpoints:
   local-sentry:
     role: sentry

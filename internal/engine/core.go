@@ -36,8 +36,8 @@ type Core struct {
 
 	// Remote Signing
 	// Configuration
-	WriteMode       bool
-	Verbose         bool // Controls detailed signing output (default: false)
-	Simulate        bool // Simulate mode: transactions are simulated instead of submitted (default: false)
-	SentryEndpoints config.SentryEndpointConfigs
+	WriteMode        bool
+	Verbose          bool // Controls detailed signing output (default: false)
+	Simulate         bool // Simulate mode: transactions are simulated instead of submitted (default: false)
+	EndpointRegistry config.ClientEndpointRegistry
 }

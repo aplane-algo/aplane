@@ -60,7 +60,6 @@ func ProductAllowedActions() []auth.Action {
 		auth.ActionKeysImport,
 		auth.ActionKeysExport,
 		auth.ActionKeysDelete,
-		auth.ActionSentriesSync,
 		auth.ActionSentriesView,
 		auth.ActionSentriesManage,
 		auth.ActionGenerationsView,

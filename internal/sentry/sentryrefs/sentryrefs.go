@@ -6,10 +6,12 @@
 package sentryrefs
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,10 +26,10 @@ import (
 )
 
 const (
-	ExportSchema          = witness.PublicReferenceSchema
-	RecordSchema          = "aplane.sentry-public-key-ref.v1"
-	SourceManual          = "manual"
-	SourceClientDiscovery = "client_discovery"
+	ExportSchema = witness.PublicReferenceSchema
+	RecordSchema = "aplane.sentry-public-key-ref.v2"
+
+	MigrationOriginV1ClientDiscovery = "v1_client_discovery"
 
 	// ParamSentryName is the generation parameter that selects an imported
 	// sentry reference by name.
@@ -47,29 +49,8 @@ type Record struct {
 	PublicKeyHex      string `json:"public_key_hex"`
 	PublicKeySize     int    `json:"public_key_size"`
 	PublicKeySHA256   string `json:"public_key_sha256"`
-	Source            string `json:"source,omitempty"`
-	EndpointAlias     string `json:"endpoint_alias,omitempty"`
-	LastSeenAt        string `json:"last_seen_at,omitempty"`
-	SyncedAt          string `json:"synced_at,omitempty"`
 	ImportedAt        string `json:"imported_at"`
-}
-
-// DiscoveredRecord is a public sentry reference learned by a client endpoint
-// discovery pass and synced into a signer identity for key-generation UX.
-type DiscoveredRecord struct {
-	EndpointAlias string
-	ComponentKey  string
-	KeyType       string
-	PublicKeyHex  string
-	LastSeenAt    string
-}
-
-// SyncResult summarizes one client-discovered sentry reference sync.
-type SyncResult struct {
-	Added   int
-	Updated int
-	Removed int
-	Records []Record
+	MigrationOrigin   string `json:"migration_origin,omitempty"`
 }
 
 func NormalizeName(name string) (string, error) {
@@ -84,15 +65,6 @@ func NormalizeName(name string) (string, error) {
 		return "", fmt.Errorf("invalid sentry reference name %q: must not contain '..'", name)
 	}
 	return normalized, nil
-}
-
-func SyncedReferenceName(endpointAlias, componentKey string) (string, error) {
-	componentKey, err := witness.NormalizeID(componentKey)
-	if err != nil {
-		return "", err
-	}
-	alias := sanitizeEndpointAlias(endpointAlias)
-	return NormalizeName("endpoint-" + alias + "-" + componentKey)
 }
 
 func NewExportEnvelope(componentKey, keyType, publicKeyHex string) (*ExportEnvelope, error) {
@@ -114,35 +86,17 @@ func Import(paths storepaths.Paths, identityID, name string, data []byte) (*Reco
 	}
 	if found {
 		if sameReferenceAuthority(existing, *record) {
-			if existing.Source == SourceManual {
-				return &existing, nil
-			}
-			// An explicit import pins a previously discovered authority. Publish
-			// the manual record so a later discovery sync cannot reap it merely
-			// because its endpoint is no longer present.
-			if record.ImportedAt == "" {
-				record.ImportedAt = time.Now().UTC().Format(time.RFC3339)
-			}
-			if err := Put(paths, identityID, *record); err != nil {
-				return nil, err
-			}
-			return record, nil
+			return &existing, nil
 		}
 		return nil, fmt.Errorf(
 			"sentry reference %q already exists with Witness Key ID %s; remove it explicitly before importing Witness Key ID %s",
 			record.Name, existing.ComponentKey, record.ComponentKey,
 		)
 	}
-	if strings.HasPrefix(record.Name, "endpoint-") {
-		return nil, fmt.Errorf(
-			"sentry reference name %q is reserved for endpoint discovery; choose a manual name or sync the endpoint first and import the identical authority to pin it",
-			record.Name,
-		)
-	}
 	if record.ImportedAt == "" {
 		record.ImportedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	if err := Put(paths, identityID, *record); err != nil {
+	if err := putRecord(paths, identityID, *record); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -155,80 +109,6 @@ func sameReferenceAuthority(a, b Record) bool {
 		a.PublicKeyHex == b.PublicKeyHex &&
 		a.PublicKeySize == b.PublicKeySize &&
 		a.PublicKeySHA256 == b.PublicKeySHA256
-}
-
-func SyncDiscovered(paths storepaths.Paths, identityID string, discovered []DiscoveredRecord) (*SyncResult, error) {
-	syncedAt := time.Now().UTC().Format(time.RFC3339)
-	desired := make(map[string]Record, len(discovered))
-	seenPublicKeys := map[string]string{}
-	for _, item := range discovered {
-		rec, err := recordFromDiscovered(item, syncedAt)
-		if err != nil {
-			return nil, err
-		}
-		if previous, ok := seenPublicKeys[rec.PublicKeyHex]; ok && previous != rec.EndpointAlias {
-			return nil, fmt.Errorf("sentry public key %s appears under multiple endpoint aliases (%s and %s)", rec.PublicKeyHex, previous, rec.EndpointAlias)
-		}
-		seenPublicKeys[rec.PublicKeyHex] = rec.EndpointAlias
-		if existing, ok := desired[rec.Name]; ok && !sameSyncedRecord(existing, rec) {
-			return nil, fmt.Errorf("multiple discovered sentries resolve to reference name %q", rec.Name)
-		}
-		desired[rec.Name] = rec
-	}
-
-	existing, err := List(paths, identityID)
-	if err != nil {
-		return nil, err
-	}
-	existingByName := make(map[string]Record, len(existing))
-	for _, rec := range existing {
-		existingByName[rec.Name] = rec
-	}
-
-	result := &SyncResult{Records: make([]Record, 0, len(desired))}
-	for name, rec := range desired {
-		if current, ok := existingByName[name]; ok && current.Source != SourceClientDiscovery {
-			return nil, fmt.Errorf("synced sentry reference %q collides with existing %s reference", name, current.Source)
-		}
-		if current, ok := existingByName[name]; ok {
-			if !sameSyncedRecord(current, rec) {
-				result.Updated++
-				if err := Put(paths, identityID, rec); err != nil {
-					return nil, err
-				}
-			} else {
-				rec.SyncedAt = current.SyncedAt
-				desired[name] = rec
-			}
-		} else {
-			result.Added++
-			if err := Put(paths, identityID, rec); err != nil {
-				return nil, err
-			}
-		}
-		result.Records = append(result.Records, rec)
-	}
-
-	for _, current := range existing {
-		if current.Source != SourceClientDiscovery {
-			continue
-		}
-		if _, keep := desired[current.Name]; keep {
-			continue
-		}
-		removed, err := Delete(paths, identityID, current.Name)
-		if err != nil {
-			return nil, err
-		}
-		if removed {
-			result.Removed++
-		}
-	}
-
-	sort.Slice(result.Records, func(i, j int) bool {
-		return result.Records[i].Name < result.Records[j].Name
-	})
-	return result, nil
 }
 
 func ParseImport(name string, data []byte) (*Record, error) {
@@ -253,11 +133,10 @@ func ParseImport(name string, data []byte) (*Record, error) {
 		PublicKeyHex:      env.PublicKeyHex,
 		PublicKeySize:     len(publicKeyBytes),
 		PublicKeySHA256:   publicKeySHA256,
-		Source:            SourceManual,
 	}, nil
 }
 
-func Put(paths storepaths.Paths, identityID string, rec Record) error {
+func putRecord(paths storepaths.Paths, identityID string, rec Record) error {
 	normalized, err := normalizeRecord(rec)
 	if err != nil {
 		return err
@@ -297,6 +176,9 @@ func Get(paths storepaths.Paths, identityID, name string) (Record, bool, error) 
 	return rec, true, nil
 }
 
+// List returns every independently valid sentry reference. A malformed record
+// is omitted rather than hiding unrelated generation choices; direct Get of
+// that record still returns its validation error.
 func List(paths storepaths.Paths, identityID string) ([]Record, error) {
 	dir := paths.SentryRefsDir(identityID)
 	entries, err := os.ReadDir(dir)
@@ -312,11 +194,15 @@ func List(paths storepaths.Paths, identityID string) ([]Record, error) {
 			continue
 		}
 		name := strings.TrimSuffix(entry.Name(), ".json")
-		rec, ok, err := Get(paths, identityID, name)
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
 		if err != nil {
-			return nil, err
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("failed to read sentry reference %s: %w", name, err)
 		}
-		if !ok {
+		rec, err := parseRecord(data, name)
+		if err != nil {
 			continue
 		}
 		records = append(records, rec)
@@ -403,12 +289,29 @@ func resolveByNameOrComponentKey(paths storepaths.Paths, identityID, value strin
 }
 
 func parseRecord(data []byte, expectedName string) (Record, error) {
-	var rec Record
-	if err := json.Unmarshal(data, &rec); err != nil {
+	var header struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
 		return Record{}, fmt.Errorf("failed to parse record: %w", err)
 	}
-	if rec.Schema != RecordSchema {
-		return Record{}, fmt.Errorf("unsupported schema %q", rec.Schema)
+	var rec Record
+	switch header.Schema {
+	case recordSchemaV1:
+		legacy, err := decodeRecordV1(data)
+		if err != nil {
+			return Record{}, err
+		}
+		rec, err = recordFromV1(legacy)
+		if err != nil {
+			return Record{}, err
+		}
+	case RecordSchema:
+		if err := decodeRecordStrict(data, &rec); err != nil {
+			return Record{}, err
+		}
+	default:
+		return Record{}, fmt.Errorf("unsupported schema %q", header.Schema)
 	}
 	rec, err := normalizeRecord(rec)
 	if err != nil {
@@ -418,6 +321,21 @@ func parseRecord(data []byte, expectedName string) (Record, error) {
 		return Record{}, fmt.Errorf("record name %q does not match filename %q", rec.Name, expectedName)
 	}
 	return rec, nil
+}
+
+func decodeRecordStrict(data []byte, destination any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return fmt.Errorf("failed to parse record: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("failed to parse record: multiple JSON values")
+		}
+		return fmt.Errorf("failed to parse record: %w", err)
+	}
+	return nil
 }
 
 func normalizeRecord(rec Record) (Record, error) {
@@ -442,21 +360,9 @@ func normalizeRecord(rec Record) (Record, error) {
 	if rec.PublicKeySHA256 != "" && strings.ToLower(rec.PublicKeySHA256) != publicKeySHA256 {
 		return Record{}, fmt.Errorf("public_key_sha256 does not match public_key_hex")
 	}
-	source := strings.TrimSpace(rec.Source)
-	if source == "" {
-		source = SourceManual
-	}
-	switch source {
-	case SourceManual:
-		rec.EndpointAlias = ""
-		rec.LastSeenAt = ""
-		rec.SyncedAt = ""
-	case SourceClientDiscovery:
-		if strings.TrimSpace(rec.EndpointAlias) == "" {
-			return Record{}, fmt.Errorf("endpoint_alias is required for %s sentry reference", SourceClientDiscovery)
-		}
-	default:
-		return Record{}, fmt.Errorf("unsupported sentry reference source %q", source)
+	migrationOrigin := strings.TrimSpace(rec.MigrationOrigin)
+	if migrationOrigin != "" && migrationOrigin != MigrationOriginV1ClientDiscovery {
+		return Record{}, fmt.Errorf("unsupported sentry reference migration_origin %q", migrationOrigin)
 	}
 	return Record{
 		Schema:            RecordSchema,
@@ -467,78 +373,9 @@ func normalizeRecord(rec Record) (Record, error) {
 		PublicKeyHex:      env.PublicKeyHex,
 		PublicKeySize:     len(publicKeyBytes),
 		PublicKeySHA256:   publicKeySHA256,
-		Source:            source,
-		EndpointAlias:     strings.TrimSpace(rec.EndpointAlias),
-		LastSeenAt:        strings.TrimSpace(rec.LastSeenAt),
-		SyncedAt:          strings.TrimSpace(rec.SyncedAt),
 		ImportedAt:        strings.TrimSpace(rec.ImportedAt),
+		MigrationOrigin:   migrationOrigin,
 	}, nil
-}
-
-func recordFromDiscovered(item DiscoveredRecord, syncedAt string) (Record, error) {
-	endpointAlias := strings.TrimSpace(item.EndpointAlias)
-	if endpointAlias == "" {
-		return Record{}, fmt.Errorf("endpoint alias is required for discovered sentry")
-	}
-	componentKey, err := witness.NormalizeID(item.ComponentKey)
-	if err != nil {
-		return Record{}, fmt.Errorf("invalid discovered Witness Key ID: %w", err)
-	}
-	name, err := SyncedReferenceName(endpointAlias, componentKey)
-	if err != nil {
-		return Record{}, err
-	}
-	env, err := NewExportEnvelope(componentKey, item.KeyType, item.PublicKeyHex)
-	if err != nil {
-		return Record{}, err
-	}
-	return normalizeRecord(Record{
-		Schema:            RecordSchema,
-		Name:              name,
-		ComponentKey:      env.WitnessKeyID,
-		KeyType:           env.KeyType,
-		PublicKeyEncoding: "hex",
-		PublicKeyHex:      env.PublicKeyHex,
-		Source:            SourceClientDiscovery,
-		EndpointAlias:     endpointAlias,
-		LastSeenAt:        item.LastSeenAt,
-		SyncedAt:          syncedAt,
-	})
-}
-
-func sameSyncedRecord(a, b Record) bool {
-	return a.Name == b.Name &&
-		a.ComponentKey == b.ComponentKey &&
-		a.KeyType == b.KeyType &&
-		a.PublicKeyEncoding == b.PublicKeyEncoding &&
-		a.PublicKeyHex == b.PublicKeyHex &&
-		a.PublicKeySize == b.PublicKeySize &&
-		a.PublicKeySHA256 == b.PublicKeySHA256 &&
-		a.Source == b.Source &&
-		a.EndpointAlias == b.EndpointAlias &&
-		a.LastSeenAt == b.LastSeenAt
-}
-
-func sanitizeEndpointAlias(alias string) string {
-	alias = strings.ToLower(strings.TrimSpace(alias))
-	var b strings.Builder
-	for _, r := range alias {
-		switch {
-		case r >= 'a' && r <= 'z':
-			b.WriteRune(r)
-		case r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '_' || r == '-':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('-')
-		}
-	}
-	out := strings.Trim(b.String(), "-_")
-	if out == "" {
-		return "endpoint"
-	}
-	return out
 }
 
 func validatePublicKey(keyType, componentKey, publicKeyHex string) ([]byte, string, error) {

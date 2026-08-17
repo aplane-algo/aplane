@@ -8,9 +8,19 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
+)
+
+// SSH trust errors are re-exported at the engine transport boundary so
+// guarded orchestration can classify tunnel failures without depending on the
+// SSH implementation package directly.
+var (
+	ErrSSHHostKeyMismatch = sshtunnel.ErrHostKeyMismatch
+	ErrSSHUnknownHostKey  = sshtunnel.ErrUnknownHostKey
+	ErrSSHKnownHostsFile  = sshtunnel.ErrKnownHostsFile
 )
 
 // SentryTunnelConfig describes a one-shot SSH tunnel used for sentry
@@ -55,17 +65,57 @@ func ConnectSentryWithTunnel(ctx context.Context, cfg SentryTunnelConfig) (*sign
 		cfg.LocalPort = port
 	}
 
+	// The caller's context bounds connection setup, but a successful tunnel is
+	// owned by the returned cleanup callback. Discovery callers intentionally
+	// cancel their short per-endpoint probe context after /keys; binding the
+	// retained tunnel to that context would make the subsequent component call
+	// fail on an already-canceled connection.
+	tunnelCtx, cancelTunnel, detachSetup := newSentryTunnelLifetime(ctx)
 	tunnel := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, cfg.LocalPort, cfg.SignerPort, cfg.IdentityFile, cfg.KnownHostsPath)
 	tunnel.SetAPIToken(cfg.Token)
-	if err := tunnel.ConnectWithKey(ctx); err != nil {
+	if err := tunnel.ConnectWithKey(tunnelCtx); err != nil {
+		_ = detachSetup()
+		cancelTunnel()
 		return nil, nil, fmt.Errorf("SSH auth failed: %w", err)
 	}
-	if err := tunnel.StartPortForwarding(ctx); err != nil {
+	if err := tunnel.StartPortForwarding(tunnelCtx); err != nil {
+		_ = detachSetup()
+		cancelTunnel()
 		_ = tunnel.Close()
 		return nil, nil, fmt.Errorf("failed to start port forwarding: %w", err)
+	}
+	if err := detachSetup(); err != nil {
+		cancelTunnel()
+		_ = tunnel.Close()
+		return nil, nil, fmt.Errorf("SSH setup canceled: %w", err)
 	}
 
 	client := signerclient.NewSignerClientWithToken(fmt.Sprintf("http://localhost:%d", cfg.LocalPort), cfg.Token)
 	client.ProgressOut = cfg.ProgressOut
-	return client, func() { _ = tunnel.Close() }, nil
+	var closeOnce sync.Once
+	return client, func() {
+		closeOnce.Do(func() {
+			cancelTunnel()
+			_ = tunnel.Close()
+		})
+	}, nil
+}
+
+func newSentryTunnelLifetime(setupCtx context.Context) (context.Context, context.CancelFunc, func() error) {
+	lifetimeCtx, cancel := context.WithCancel(context.Background())
+	stopSetupCancellation := context.AfterFunc(setupCtx, cancel)
+	detach := func() error {
+		if stopSetupCancellation() {
+			if err := setupCtx.Err(); err != nil {
+				cancel()
+				return err
+			}
+			return nil
+		}
+		if err := setupCtx.Err(); err != nil {
+			return err
+		}
+		return context.Canceled
+	}
+	return lifetimeCtx, cancel, detach
 }

@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,24 @@ func TestHashSSHHostKey(t *testing.T) {
 	}
 	if _, err := hashSSHHostKey(nil); err == nil {
 		t.Fatal("hashSSHHostKey(nil) succeeded, want error")
+	}
+}
+
+func TestTokenProofHostKeyChangeReturnsTypedMismatch(t *testing.T) {
+	first, err := ssh.NewPublicKey(ed25519.PublicKey(bytes.Repeat([]byte{0x42}, ed25519.PublicKeySize)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ssh.NewPublicKey(ed25519.PublicKey(bytes.Repeat([]byte{0x43}, ed25519.PublicKeySize)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := newTokenProofClientAuth("default", "token")
+	if err := auth.captureHostKey(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.captureHostKey(second); !errors.Is(err, ErrHostKeyMismatch) {
+		t.Fatalf("captureHostKey() error = %v, want ErrHostKeyMismatch", err)
 	}
 }
 

@@ -33,15 +33,13 @@ coverage.
 | `POST` | `/sign/cancel` | yes | no |
 | `POST` | `/plan` | yes | yes |
 | `POST` | `/admin/generate` | yes | yes |
-| `POST` | `/admin/sentries/sync` | yes | no |
 | `DELETE` | `/admin/keys` | yes | yes |
 
 Method enforcement:
 
 - `/sign`, `/sign/bounded-admin`, `/sign/component`, `/sign/assemble`,
   `/sign/cancel`, `/plan`,
-  `/status`, `/admin/generate`,
-  `/admin/sentries/sync`, and `/admin/keys` enforce their HTTP method.
+  `/status`, `/admin/generate`, and `/admin/keys` enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
 
 Transport behavior:
@@ -87,7 +85,7 @@ Timeout behavior:
   the server write deadline.
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
-  mutations including `/admin/sentries/sync` 60 seconds, `/plan` 60 seconds,
+  mutations 60 seconds, `/plan` 60 seconds,
   `/sign/component` 2 minutes for sentry targets, `/sign/assemble` 2 minutes,
   and `/sign` or approval-bearing `/sign/component` based on approval wait.
   User and bounded-base `/sign/component` requests can
@@ -469,23 +467,6 @@ neither is accepted as a separate creation input.
 - response has `address`, optional `public_key_hex`, `key_type`, optional
   `is_witness_key`, optional `is_spending_account`, and optional `parameters`
 - no mnemonic in REST response
-
-`/admin/sentries/sync`:
-
-- request has `candidates[]`
-- each candidate has `endpoint_alias`, `component_key`, `key_type`,
-  `public_key_hex`, and optional `last_seen_at`
-- response has `added`, `updated`, `removed`, `count`, optional `records[]`,
-  and optional `error`
-- each record has `name`, `source`, `component_key`, `key_type`,
-  `public_key_hex`, and optional `endpoint_alias`, `last_seen_at`, `synced_at`
-
-This endpoint writes public sentry reference records for generation UX only.
-It does not require the identity to be unlocked and never carries tokens, SSH
-trust, or private key material. It is authorized with stable action
-`sentries.sync` and resource type `sentries`; it is intentionally separate
-from `keys.generate` because it mutates public generation reference metadata
-rather than creating key material.
 
 `/admin/keys`:
 

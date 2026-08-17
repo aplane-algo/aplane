@@ -52,6 +52,7 @@ FNET_FUNDING_HELPER=""
 FNET_FUNDING_ADDRESS=""
 FALCON_ADDRESS=""
 SENTRY_COMPONENT_KEY=""
+SENTRY_REFERENCE_NAME="docker-sentry"
 GUARDED_ADDRESS=""
 CORRIDOR_ADDRESS=""
 CORRIDOR_ALLOWED_ADDRESS=""
@@ -90,7 +91,8 @@ mnemonic remains on the host and is not copied into any container.
 The client runs a client-only install plus apadmin, points endpoints.yaml at the
 signer container DNS name, adds the sentry endpoint through apshell, requests
 API tokens for both nodes, generates a sentry key through the sentry
-endpoint, syncs the sentry key to the signer, enables guarded Falcon/Falcon,
+endpoint, imports its public reference into the signer generation catalog,
+enables guarded Falcon/Falcon,
 imports the optional Corridor template, and verifies apshell can create, fund,
 and validate guarded, Corridor, and plain Falcon accounts against the selected
 network. It then
@@ -840,7 +842,7 @@ configure_client_endpoints() {
     [ -n "$signer_ssh_port" ] && [ -n "$signer_port" ] || die "could not read signer endpoint ports"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "mkdir -p /home/$TEST_USER/aplane/apclient/tokens && cat > /home/$TEST_USER/aplane/apclient/endpoints.yaml <<YAML
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -951,6 +953,7 @@ EXPECT_SCRIPT
     rm -f "$exp_file"
     docker_exec "$container" chmod 755 /tmp/apapprover.exp
     docker_exec "$container" chown "$TEST_USER:$TEST_USER" /tmp/apapprover.exp
+    docker_exec_as_tester "$container" "rm -f '$log_path'"
 
     docker exec -d --user "$TEST_USER" "$container" bash -lc \
         ". /home/$TEST_USER/aplane/apenv.sh && exec expect /tmp/apapprover.exp > $log_path 2>&1"
@@ -1050,7 +1053,7 @@ write_sdk_data_dir() {
 schema_version: 1
 YAML
         cat > '$data_dir/endpoints.yaml' <<YAML
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -1420,21 +1423,32 @@ generate_sentry_component_key() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "could not parse generated Witness Key ID"
 }
 
-sync_sentry_key_to_signer() {
+import_sentry_reference_to_signer() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints sync-sentries --yes\nendpoints sentries\n' > /tmp/sync-sentry.script"
-    local out
-    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/sync-sentry.script 2>&1")"; then
+    local public_file out
+    public_file="$(mktemp)"
+    if ! out="$(docker_exec_as_tester "$SENTRY_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore sentry export \
+        '$SENTRY_COMPONENT_KEY' /tmp/sentry-public.json 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to sync sentry key to signer"
+        rm -f "$public_file"
+        die "failed to export sentry public reference"
     fi
     printf '%s\n' "$out"
-    grep -Fq 'Synced 1 endpoint-discovered sentry reference(s) to signer' <<<"$out" \
-        || die "sentry sync output did not include signer sync success marker"
-    grep -Fq "$SENTRY_COMPONENT_KEY" <<<"$out" \
-        || die "sentry sync output did not include generated Witness Key ID"
+    docker cp "$SENTRY_CONTAINER:/tmp/sentry-public.json" "$public_file"
+    docker cp "$public_file" "$SIGNER_CONTAINER:/tmp/sentry-public.json"
+    rm -f "$public_file"
+    docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sentry-public.json
+    if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore sentry import \
+        /tmp/sentry-public.json '$SENTRY_REFERENCE_NAME' 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to import sentry public reference into signer"
+    fi
+    printf '%s\n' "$out"
+    grep -Fq "sentry reference $SENTRY_REFERENCE_NAME imported" <<<"$out" \
+        || die "sentry reference import output did not include success marker"
 }
 
 enable_guarded_keytype() {
@@ -1502,7 +1516,7 @@ EXPECT_SCRIPT
 generate_guarded_key() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-sentry1024.v1 sentry=%s\n' '$SENTRY_COMPONENT_KEY' > /tmp/generate-guarded.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-sentry1024.v1 sentry=%s\n' '$SENTRY_REFERENCE_NAME' > /tmp/generate-guarded.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-guarded.script 2>&1")"; then
@@ -1529,7 +1543,7 @@ generate_corridor_key() {
     [ "$CORRIDOR_ALLOWED_ADDRESS" != "$CORRIDOR_BLOCKED_ADDRESS" ] || die "corridor allowed and blocked addresses resolved to the same account"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.corridor.v1 sentry=%s bounded_admin_public_key=%s recipients=%s\n' \
-        '$SENTRY_COMPONENT_KEY' '$CORRIDOR_ADMIN_PUBLIC_KEY' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/generate-corridor.script"
+        '$SENTRY_REFERENCE_NAME' '$CORRIDOR_ADMIN_PUBLIC_KEY' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/generate-corridor.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-corridor.script 2>&1")"; then
@@ -1725,7 +1739,7 @@ validate_corridor_send_after_sentry_delete_fails() {
     if grep -Fq 'Transaction submitted:' <<<"$out"; then
         die "Corridor send unexpectedly submitted after sentry key deletion"
     fi
-    grep -Fq 'did not advertise Witness Key ID' <<<"$out" \
+    grep -Fq 'no live sentry route for Witness Key ID' <<<"$out" \
         || die "Corridor send failure did not report the missing sentry key"
 }
 
@@ -1804,7 +1818,7 @@ validate_guarded_self_send_after_sentry_delete_fails() {
     fi
     grep -Fq 'Failed:' <<<"$out" \
         || die "guarded validation did not report a failed transaction after sentry key deletion"
-    grep -Fq 'did not advertise Witness Key ID' <<<"$out" \
+    grep -Fq 'no live sentry route for Witness Key ID' <<<"$out" \
         || die "guarded validation failure did not report missing sentry key"
 }
 
@@ -1946,8 +1960,16 @@ main() {
     log "Generating sentry key through client/sentry flow"
     generate_sentry_component_key
 
-    log "Syncing sentry key to signer"
-    sync_sentry_key_to_signer
+    log "Importing sentry public reference into signer generation catalog"
+    import_sentry_reference_to_signer
+
+    # Local IPC admits one active admin session. The export and import commands
+    # deliberately displace the approval sessions that held each runtime
+    # unlocked, then relinquish their own leases on exit. Re-establish the
+    # approval sessions before HTTP generation and component signing.
+    log "Re-establishing signer and sentry approval sessions after public-reference handoff"
+    start_signer_apapprover
+    start_sentry_apapprover
 
     log "Generating external Corridor admin key on client"
     generate_corridor_admin_key

@@ -16,22 +16,6 @@ const (
 	MinSignerStatusPollInterval           = 1 * time.Second
 )
 
-// SentryEndpointConfig maps an embedded sentry public key to the signer
-// endpoint that can produce sentry-role component signatures for that key.
-type SentryEndpointConfig struct {
-	Endpoint       string `yaml:"endpoint,omitempty" description:"Endpoint alias from endpoints.yaml"`
-	URL            string `yaml:"url" description:"Sentry endpoint URL: self, https://..., loopback http://..., or ssh://host[:port]"`
-	TokenFile      string `yaml:"token_file,omitempty" description:"Path to the sentry endpoint API token file"`
-	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// sentry endpoints"`
-	LocalPort      int    `yaml:"local_port,omitempty" description:"Local tunnel port for ssh:// sentry endpoints (0 = choose automatically)"`
-	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path for ssh:// sentry endpoints"`
-	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// sentry endpoints"`
-}
-
-// SentryEndpointConfigs is keyed by canonical lower-case embedded sentry
-// public-key hex.
-type SentryEndpointConfigs map[string]SentryEndpointConfig
-
 // Config holds apshell configuration settings
 type Config struct {
 	SchemaVersion   int      `yaml:"schema_version,omitempty" description:"Client config schema version" default:"1"`
@@ -41,12 +25,6 @@ type Config struct {
 	// SignerStatusPollInterval controls how often interactive apshell sessions
 	// poll /status for keyset revision changes. "0" disables background polling.
 	SignerStatusPollInterval string `yaml:"signer_status_poll_interval" description:"Background /status polling interval for signer keyset refresh (0=disabled)" default:"10s"`
-
-	// SentryEndpoints maps guarded-account embedded sentry public keys to
-	// signer endpoints for sentry-role component signing. It is derived
-	// runtime state from endpoints.yaml published_sentries and is not part of
-	// config.yaml.
-	SentryEndpoints SentryEndpointConfigs `yaml:"-"`
 
 	// Endpoints is loaded from endpoints.yaml and is not part of config.yaml.
 	Endpoints ClientEndpointRegistry `yaml:"-"`
@@ -105,10 +83,6 @@ func LoadConfig(dataDir string) (Config, error) {
 		return Config{}, err
 	}
 	config.Endpoints = endpoints
-	config.SentryEndpoints, err = endpoints.PublishedSentryEndpointConfigs()
-	if err != nil {
-		return Config{}, err
-	}
 
 	return config, nil
 }
@@ -182,18 +156,6 @@ func LoadConfigFromPath(path string) (Config, error) {
 	}
 
 	return config, nil
-}
-
-// Clone returns a shallow copy of endpoint configs.
-func (c SentryEndpointConfigs) Clone() SentryEndpointConfigs {
-	if len(c) == 0 {
-		return nil
-	}
-	clone := make(SentryEndpointConfigs, len(c))
-	for k, v := range c {
-		clone[k] = v
-	}
-	return clone
 }
 
 // ParseSignerStatusPollInterval parses the apshell background /status polling interval.

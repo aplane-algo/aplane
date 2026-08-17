@@ -24,6 +24,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -41,6 +42,13 @@ type guardedSimulationCapture struct {
 	mu             sync.Mutex
 	assembly       signerapi.AssemblyRequest
 	assembledGroup []string
+	events         []string
+}
+
+func (c *guardedSimulationCapture) record(event string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.events = append(c.events, event)
 }
 
 func (c *guardedSimulationCapture) setAssembly(req signerapi.AssemblyRequest, signed []string) {
@@ -54,6 +62,12 @@ func (c *guardedSimulationCapture) snapshot() (signerapi.AssemblyRequest, []stri
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.assembly, append([]string(nil), c.assembledGroup...)
+}
+
+func (c *guardedSimulationCapture) eventSnapshot() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.events...)
 }
 
 // newGuardedExecutableTestServer serves the normal guarded signing surface.
@@ -71,6 +85,7 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
+		capture.record("keys")
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
 			Count: 1,
 			Keys: []signerapi.KeyInfo{{
@@ -102,8 +117,10 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 		switch req.TargetKind() {
 		case signerapi.ComponentTargetKindUser:
 			capture.userRoleCalls.Add(1)
+			capture.record("user")
 		case signerapi.ComponentTargetKindSentry:
 			capture.sentryRoleCalls.Add(1)
+			capture.record("sentry")
 		default:
 			http.Error(w, "unexpected component role", http.StatusBadRequest)
 			return
@@ -124,6 +141,7 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 	})
 	mux.HandleFunc("/sign/assemble", func(w http.ResponseWriter, r *http.Request) {
 		capture.assembleCalls.Add(1)
+		capture.record("assemble")
 		var req signerapi.AssemblyRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -207,6 +225,7 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
+	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{URL: "self"})
 	s.algod = algodClient
 
 	var out bytes.Buffer
@@ -220,6 +239,9 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 	}
 	if capture.userRoleCalls.Load() != 1 || capture.sentryRoleCalls.Load() != 1 {
 		t.Fatalf("component calls user/sentry = %d/%d, want 1/1", capture.userRoleCalls.Load(), capture.sentryRoleCalls.Load())
+	}
+	if got := strings.Join(capture.eventSnapshot(), ","); got != "user,keys,sentry,assemble" {
+		t.Fatalf("guarded event order = %s, want user,keys,sentry,assemble", got)
 	}
 	if capture.assembleCalls.Load() != 1 {
 		t.Fatalf("/sign/assemble calls = %d, want 1", capture.assembleCalls.Load())
@@ -275,6 +297,7 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
+		appendEvent("keys")
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: componentSelector, PublicKeyHex: sentryHex, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}})
 	})
 	mux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
@@ -333,14 +356,15 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 		})
 	})
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{URL: "self"})
 	s.algod = algodClient
 	if _, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard}); err != nil {
 		t.Fatalf("SignAndSubmitGroup() error = %v", err)
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if strings.Join(events, ",") != "base,sentry,assemble" {
-		t.Fatalf("bounded-sentry event order = %v, want base, sentry, assemble", events)
+	if strings.Join(events, ",") != "base,keys,sentry,assemble" {
+		t.Fatalf("bounded-sentry event order = %v, want base, keys, sentry, assemble", events)
 	}
 }
 
@@ -411,6 +435,7 @@ func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
 
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
+	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{URL: "self"})
 	s.algod = algodClient
 
 	var out bytes.Buffer

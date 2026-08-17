@@ -522,38 +522,6 @@ func TestAdminDeleteKey_ErrorResponse(t *testing.T) {
 	}
 }
 
-// --- AdminSyncSentryReferences ---
-
-func TestAdminSyncSentryReferences_Success(t *testing.T) {
-	resp := signerapi.AdminSyncSentryReferencesResponse{Added: 1, Count: 1}
-	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
-		if req.URL.Path != "/admin/sentries/sync" || req.Method != "POST" {
-			t.Errorf("request = %s %s, want POST /admin/sentries/sync", req.Method, req.URL.Path)
-		}
-		var body signerapi.AdminSyncSentryReferencesRequest
-		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-			t.Fatalf("Decode(request body) error = %v", err)
-		}
-		if len(body.Candidates) != 1 || body.Candidates[0].EndpointAlias != "sentry-local" {
-			t.Fatalf("request body = %#v, want one sentry-local candidate", body)
-		}
-		return mockResponse(200, jsonBody(t, resp)), nil
-	})
-
-	got, err := c.AdminSyncSentryReferences([]signerapi.SentryReferenceCandidate{{
-		EndpointAlias: "sentry-local",
-		ComponentKey:  "I5T6BSFAT7TXWGKF4TQLDR6U6PTAZJDLN54XTY7JLFSQETEJW3JA",
-		KeyType:       "aplane.witness-falcon1024.v1",
-		PublicKeyHex:  strings.Repeat("ab", 32),
-	}})
-	if err != nil {
-		t.Fatalf("AdminSyncSentryReferences() error = %v", err)
-	}
-	if got.Added != 1 || got.Count != 1 {
-		t.Fatalf("sync response = %#v, want Added/Count 1", got)
-	}
-}
-
 // --- RequestGroupSign ---
 
 func TestRequestGroupSign_Success(t *testing.T) {

@@ -164,8 +164,6 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"admin_generate_response_generic.json", assertContractRoundTrip[AdminGenerateResponse]},
 		{"admin_generate_response_component.json", assertContractRoundTrip[AdminGenerateResponse]},
 		{"admin_delete_response_success.json", assertContractRoundTrip[AdminDeleteResponse]},
-		{"admin_sync_sentries_request.json", assertContractRoundTrip[AdminSyncSentryReferencesRequest]},
-		{"admin_sync_sentries_response.json", assertContractRoundTrip[AdminSyncSentryReferencesResponse]},
 		{"cancel_sign_request.json", assertContractRoundTrip[CancelSignRequest]},
 		{"cancel_sign_response_not_found.json", assertContractRoundTrip[CancelSignResponse]},
 		{"cancel_sign_response_success.json", assertContractRoundTrip[CancelSignResponse]},
