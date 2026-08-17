@@ -137,16 +137,12 @@ func (s *ConnectionState) RequestBoundedAdminWithContext(ctx context.Context, op
 	return client.RequestBoundedAdminWithContext(ctx, operation, requests)
 }
 
-func (s *ConnectionState) RequestBoundedComponentWithContext(ctx context.Context, req signerapi.BoundedComponentRequest) (*signerapi.BoundedComponentResponse, error) {
+func (s *ConnectionState) RequestComponentsWithContext(ctx context.Context, req signerapi.ComponentRequest) (*signerapi.ComponentResponse, error) {
 	client, err := s.signerClient()
 	if err != nil {
 		return nil, err
 	}
-	return client.RequestBoundedComponentWithContext(ctx, req)
-}
-
-func (s *ConnectionState) RequestBoundedAssembleWithContext(ctx context.Context, req signerapi.BoundedAssemblyRequest) (*signerapi.BoundedAssemblyResponse, error) {
-	return s.RequestAssembleWithContext(ctx, req.AssemblyRequest())
+	return client.RequestComponentsWithContext(ctx, req)
 }
 
 func (s *ConnectionState) RequestAssembleWithContext(ctx context.Context, req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {

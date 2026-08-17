@@ -36,6 +36,16 @@ type ComponentTarget struct {
 	LsigArgs     map[string]string   `json:"lsig_args,omitempty"`
 }
 
+type ComponentContextPosition struct {
+	TargetIndex   int                    `json:"target_index"`
+	LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"`
+	PQScheme      string                 `json:"pq_scheme,omitempty"`
+}
+
+type ComponentDummyPosition struct {
+	TargetIndex int `json:"target_index"`
+}
+
 type Component struct {
 	TargetIndex     int                 `json:"target_index"`
 	Kind            ComponentTargetKind `json:"kind"`
@@ -223,17 +233,28 @@ func (r ComponentRequest) LegacySignRequest() ComponentSignRequest {
 	return legacy
 }
 
-func (r ComponentRequest) BoundedRequest() BoundedComponentRequest {
-	targets := make([]BoundedComponentTarget, 0, len(r.Targets))
+func (r ComponentRequest) GroupSignRequest() GroupSignRequest {
+	originalCount := len(r.GroupBytesHex) - len(r.DummyPositions)
+	if originalCount < 0 {
+		originalCount = 0
+	}
+	requests := make([]SignRequest, originalCount)
+	for i := range requests {
+		requests[i].TxnBytesHex = r.GroupBytesHex[i]
+	}
 	for _, target := range r.Targets {
-		targets = append(targets, BoundedComponentTarget{
-			TargetIndex: target.TargetIndex, AuthAddress: target.AuthAddress, LsigArgs: target.LsigArgs,
-		})
+		if target.TargetIndex >= 0 && target.TargetIndex < originalCount {
+			requests[target.TargetIndex].AuthAddress = target.AuthAddress
+			requests[target.TargetIndex].LsigArgs = target.LsigArgs
+		}
 	}
-	return BoundedComponentRequest{
-		RequestID: r.RequestID, GroupBytesHex: r.GroupBytesHex, Targets: targets,
-		ContextualPositions: r.ContextualPositions, DummyPositions: r.DummyPositions,
+	for _, position := range r.ContextualPositions {
+		if position.TargetIndex >= 0 && position.TargetIndex < originalCount {
+			requests[position.TargetIndex].LsigResources = position.LsigResources
+			requests[position.TargetIndex].PQScheme = position.PQScheme
+		}
 	}
+	return GroupSignRequest{RequestID: r.RequestID, Requests: requests}
 }
 
 func (r ComponentSignRequest) ComponentRequest() ComponentRequest {

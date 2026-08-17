@@ -68,12 +68,7 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 				RuntimeArgs: target.GuardedRuntimeArgs,
 			}, group.Entries[target.TargetIndex], session)
 		case signerapi.AssemblyTargetKindBoundedSentry:
-			signedTxnHex, err = assembleBoundedTarget(ctx, signerapi.BoundedAssemblyTarget{
-				TargetIndex: target.TargetIndex, BoundedAccount: target.AuthAddress,
-				BaseSignatures: target.BaseSignatures, RuntimeArgs: target.BoundedRuntimeArgs,
-				AssemblyReceipt: target.AssemblyReceipt, BaseSourceRequestID: target.BaseSourceRequestID,
-				SentrySignature: target.SentrySignature, SentrySourceRequestID: target.SentrySourceRequestID,
-			}, group.Entries[target.TargetIndex], session)
+			signedTxnHex, err = assembleBoundedTarget(ctx, target, group.Entries[target.TargetIndex], session)
 		default:
 			return nil, badRequest("unsupported assembly target kind")
 		}

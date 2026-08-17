@@ -45,32 +45,6 @@ func (fs *Signer) handleBoundedAdmin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (fs *Signer) handleBoundedComponent(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.BoundedComponentRequest](fs, w, r, http.MethodPost)
-	if !ok {
-		return
-	}
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).PrepareBoundedComponent(r.Context(), ir, req)
-	if err != nil {
-		writeServiceErrorJSON(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (fs *Signer) handleBoundedAssemble(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.BoundedAssemblyRequest](fs, w, r, http.MethodPost)
-	if !ok {
-		return
-	}
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).AssembleBounded(r.Context(), ir, req)
-	if err != nil {
-		writeServiceErrorJSON(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
 // handleSignComponent handles all discriminated frozen-group component kinds.
 func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
 	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.ComponentRequest](fs, w, r, http.MethodPost)

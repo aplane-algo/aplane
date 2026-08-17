@@ -26,9 +26,9 @@ import (
 
 func TestValidateBoundedComponentPlanRequiresSentrySpend(t *testing.T) {
 	metadata := boundedSentryTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.SentryPublicKeySizeV1))
-	request := signerapi.BoundedComponentRequest{
+	request := signerapi.ComponentRequest{
 		GroupBytesHex: []string{"TX00"},
-		Targets:       []signerapi.BoundedComponentTarget{{TargetIndex: 0, AuthAddress: "ACCOUNT"}},
+		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ACCOUNT"}},
 	}
 	plan := &PlanResult{BoundedItems: []*boundedPlanItem{{Path: boundedPathPureSpend, Metadata: metadata}}}
 	indices, err := validateBoundedComponentPlan(request, plan)
@@ -50,7 +50,7 @@ func TestPrepareBoundedComponentRejectsNilSessionBeforePlanning(t *testing.T) {
 	_, err := svc.PrepareBoundedComponentWithContext(
 		t.Context(),
 		"default",
-		signerapi.BoundedComponentRequest{},
+		signerapi.ComponentRequest{},
 		nil,
 	)
 	if err == nil || err.Kind != ErrorInternal || err.Message != "key session is nil" {
@@ -77,12 +77,12 @@ func TestLoadBoundedKeyMaterialMapsExpectedErrors(t *testing.T) {
 	}
 }
 
-func TestAssembleBoundedRejectsCanceledContext(t *testing.T) {
+func TestUnifiedAssemblyRejectsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := (&Service{}).AssembleBoundedWithContext(ctx, "default", signerapi.BoundedAssemblyRequest{}, nil)
+	_, err := (&Service{}).AssembleWithContext(ctx, "default", signerapi.AssemblyRequest{}, nil)
 	if err == nil || err.Kind != ErrorUnavailable {
-		t.Fatalf("AssembleBoundedWithContext() error = %#v, want canceled request", err)
+		t.Fatalf("AssembleWithContext() error = %#v, want canceled request", err)
 	}
 }
 
@@ -142,8 +142,8 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 			SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
 		}
 	}
-	target := signerapi.BoundedAssemblyTarget{
-		TargetIndex: 0, BoundedAccount: account,
+	target := signerapi.AssemblyTarget{
+		TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedSentry, AuthAddress: account,
 		BaseSignatures:  []string{hex.EncodeToString(baseSignature)},
 		AssemblyReceipt: hex.EncodeToString(receipt), SentrySignature: hex.EncodeToString(sentrySignature),
 	}

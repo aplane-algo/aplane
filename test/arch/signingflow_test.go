@@ -102,3 +102,34 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 		}
 	}
 }
+
+func TestUnifiedSigningRoutesRemainSingular(t *testing.T) {
+	content, err := os.ReadFile("../../internal/signerapp/daemon/http_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := string(content)
+	for _, retired := range []string{"/sign/bounded-component", "/sign/bounded-assemble"} {
+		if strings.Contains(routes, retired) {
+			t.Errorf("retired flow-specific route %q was reintroduced", retired)
+		}
+	}
+	for _, shared := range []string{"/sign/component", "/sign/assemble"} {
+		if count := strings.Count(routes, `mux.HandleFunc("`+shared+`"`); count != 1 {
+			t.Errorf("shared route %q registration count = %d, want 1", shared, count)
+		}
+	}
+}
+
+func TestFrozenComponentValidatorNeverCanonicalizes(t *testing.T) {
+	content, err := os.ReadFile("../../internal/signerapp/signing/frozen_component.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(content)
+	for _, forbidden := range []string{".PlanGroup(", "planGroupWhileSignable("} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("frozen component validator contains canonicalizing call %q", forbidden)
+		}
+	}
+}

@@ -504,29 +504,6 @@ func (c *Client) RequestBoundedAdminWithContext(ctx context.Context, operation s
 	return &partial, nil
 }
 
-func (c *Client) RequestBoundedComponentWithContext(ctx context.Context, reqBody signerapi.BoundedComponentRequest) (*signerapi.BoundedComponentResponse, error) {
-	if err := reqBody.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid bounded component request: %w", err)
-	}
-	componentResp, err := c.RequestComponentsWithContext(ctx, reqBody.ComponentRequest())
-	if err != nil {
-		return nil, err
-	}
-	result := &signerapi.BoundedComponentResponse{RequestID: componentResp.RequestID, Transactions: append([]string(nil), reqBody.GroupBytesHex...)}
-	for _, component := range componentResp.Components {
-		result.Components = append(result.Components, signerapi.BoundedBaseComponent{
-			TargetIndex: component.TargetIndex, BoundedAccount: component.AuthAddress,
-			BaseSignatures: component.BaseSignatures, RuntimeArgs: component.RuntimeArgs,
-			AssemblyReceipt: component.AssemblyReceipt, SignatureScheme: component.SignatureScheme,
-		})
-	}
-	return result, nil
-}
-
-func (c *Client) RequestBoundedAssembleWithContext(ctx context.Context, reqBody signerapi.BoundedAssemblyRequest) (*signerapi.BoundedAssemblyResponse, error) {
-	return c.RequestAssembleWithContext(ctx, reqBody.AssemblyRequest())
-}
-
 func (c *Client) RequestAssemble(req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {
 	return c.RequestAssembleWithContext(context.Background(), req)
 }

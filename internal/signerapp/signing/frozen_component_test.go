@@ -75,9 +75,9 @@ func TestValidateFrozenComponentContextAcceptsRekeyedAuthorizer(t *testing.T) {
 			dummyPositions[i-1] = signerapi.ComponentDummyPosition{TargetIndex: i}
 		}
 	}
-	request := signerapi.BoundedComponentRequest{
+	request := signerapi.ComponentRequest{
 		GroupBytesHex:  groupHex,
-		Targets:        []signerapi.BoundedComponentTarget{{TargetIndex: 0, AuthAddress: authorizer}},
+		Targets:        []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer}},
 		DummyPositions: dummyPositions,
 	}
 	plan, groupRequest, serviceErr := service.ValidateFrozenComponentContext("default", request)
@@ -117,9 +117,9 @@ func TestValidateFrozenComponentContextRejectsFabricatedDummy(t *testing.T) {
 		fabricated[i].Group = groupID
 		groupHex[i] = txnutil.EncodeWithPrefixHex(fabricated[i])
 	}
-	request := signerapi.BoundedComponentRequest{
+	request := signerapi.ComponentRequest{
 		GroupBytesHex: groupHex,
-		Targets:       []signerapi.BoundedComponentTarget{{TargetIndex: 0, AuthAddress: authorizer}},
+		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer}},
 	}
 	for index := 1; index < len(groupHex); index++ {
 		request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: index})

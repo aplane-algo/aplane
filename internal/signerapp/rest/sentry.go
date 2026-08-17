@@ -85,30 +85,3 @@ func (s Service) Assemble(ctx context.Context, ir *identity.Runtime, req signera
 		SignedGroup: result.SignedGroup,
 	}, nil
 }
-
-func (s Service) PrepareBoundedComponent(ctx context.Context, ir *identity.Runtime, req signerapi.BoundedComponentRequest) (*signerapi.BoundedComponentResponse, *signersigning.ServiceError) {
-	ctx, preErr := ensureSignable(ctx, ir)
-	if preErr != nil {
-		return nil, preErr
-	}
-	if roleErr := requireAccountSigningRole(ir, "bounded component signing"); roleErr != nil {
-		return nil, roleErr
-	}
-	if s.Deps.NewSigningService == nil {
-		return nil, notConfigured("signing service")
-	}
-	ctx, finish := ir.BeginSigningRequest(ctx, req.RequestID)
-	defer finish()
-	result, err := s.Deps.NewSigningService(ir).PrepareBoundedComponentWithContext(ctx, ir.ID(), req, ir.SnapshotKeySession())
-	if err != nil {
-		return nil, err
-	}
-	return &signerapi.BoundedComponentResponse{
-		RequestID: result.RequestID, Transactions: result.Transactions,
-		Components: result.Components, Mutations: result.Mutations,
-	}, nil
-}
-
-func (s Service) AssembleBounded(ctx context.Context, ir *identity.Runtime, req signerapi.BoundedAssemblyRequest) (*signerapi.BoundedAssemblyResponse, *signersigning.ServiceError) {
-	return s.Assemble(ctx, ir, req.AssemblyRequest())
-}

@@ -16,7 +16,7 @@ import (
 // from typed position declarations and signer-owned metadata. It validates the
 // supplied bytes in place and never invokes the canonical planner or mutates,
 // appends, regroups, fee-pools, or repairs the group.
-func (s *Service) ValidateFrozenComponentContext(identityID string, request signerapi.BoundedComponentRequest) (*PlanResult, signerapi.GroupSignRequest, *ServiceError) {
+func (s *Service) ValidateFrozenComponentContext(identityID string, request signerapi.ComponentRequest) (*PlanResult, signerapi.GroupSignRequest, *ServiceError) {
 	if err := request.Validate(); err != nil {
 		return nil, signerapi.GroupSignRequest{}, badRequest(err.Error())
 	}

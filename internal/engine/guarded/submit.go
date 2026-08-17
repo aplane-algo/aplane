@@ -297,11 +297,12 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	if err := validateBoundedComponentPlan(txns, plannedTxns, planResp.Mutations); err != nil {
 		return nil, nil, err
 	}
-	componentReq := signerapi.BoundedComponentRequest{GroupBytesHex: append([]string(nil), planResp.Transactions...)}
+	componentReq := signerapi.ComponentRequest{GroupBytesHex: append([]string(nil), planResp.Transactions...)}
 	for i, request := range requests {
 		if _, ok := targetsByIndex[i]; ok {
-			componentReq.Targets = append(componentReq.Targets, signerapi.BoundedComponentTarget{
-				TargetIndex: i, AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs,
+			componentReq.Targets = append(componentReq.Targets, signerapi.ComponentTarget{
+				TargetIndex: i, Kind: signerapi.ComponentTargetKindBoundedBase,
+				AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs,
 			})
 		} else {
 			componentReq.ContextualPositions = append(componentReq.ContextualPositions, signerapi.ComponentContextPosition{
@@ -312,26 +313,18 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	for i := len(txns); i < len(planResp.Transactions); i++ {
 		componentReq.DummyPositions = append(componentReq.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
 	}
-	componentResp, err := s.conn.RequestBoundedComponentWithContext(opts.Ctx, componentReq)
+	componentResp, err := s.conn.RequestComponentsWithContext(opts.Ctx, componentReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("bounded base component signing failed: %w", err)
-	}
-	if len(componentResp.Transactions) != len(planResp.Transactions) {
-		return nil, nil, fmt.Errorf("bounded component response group length changed")
-	}
-	for i := range planResp.Transactions {
-		if componentResp.Transactions[i] != planResp.Transactions[i] {
-			return nil, nil, fmt.Errorf("bounded component response changed frozen transaction %d", i)
-		}
 	}
 	if err := validateBoundedTargetFees(plannedTxns, targets); err != nil {
 		return nil, nil, err
 	}
 	groupBytesHex := append([]string(nil), planResp.Transactions...)
-	components := make(map[int]signerapi.BoundedBaseComponent, len(componentResp.Components))
+	components := make(map[int]signerapi.Component, len(componentResp.Components))
 	for _, component := range componentResp.Components {
 		target, ok := targetsByIndex[component.TargetIndex]
-		if !ok || component.BoundedAccount != target.Account {
+		if !ok || component.Kind != signerapi.ComponentTargetKindBoundedBase || component.AuthAddress != target.Account {
 			return nil, nil, fmt.Errorf("signer returned unexpected bounded component target %d", component.TargetIndex)
 		}
 		if _, duplicate := components[component.TargetIndex]; duplicate {

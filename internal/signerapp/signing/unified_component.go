@@ -32,20 +32,11 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, identityID stri
 		}
 		return &signerapi.ComponentResponse{RequestID: result.RequestID, Components: components}, nil
 	case signerapi.ComponentTargetKindBoundedBase:
-		result, err := s.PrepareBoundedComponentWithContext(ctx, identityID, req.BoundedRequest(), session)
+		result, err := s.PrepareBoundedComponentWithContext(ctx, identityID, req, session)
 		if err != nil {
 			return nil, err
 		}
-		components := make([]signerapi.Component, 0, len(result.Components))
-		for _, component := range result.Components {
-			components = append(components, signerapi.Component{
-				TargetIndex: component.TargetIndex, Kind: signerapi.ComponentTargetKindBoundedBase,
-				AuthAddress: component.BoundedAccount, BaseSignatures: component.BaseSignatures,
-				RuntimeArgs: component.RuntimeArgs, AssemblyReceipt: component.AssemblyReceipt,
-				SignatureScheme: component.SignatureScheme,
-			})
-		}
-		return &signerapi.ComponentResponse{RequestID: result.RequestID, Components: components}, nil
+		return result, nil
 	default:
 		return nil, badRequest("unsupported component target kind")
 	}

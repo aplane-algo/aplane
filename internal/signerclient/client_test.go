@@ -612,7 +612,7 @@ func TestRequestBoundedAdmin_Success(t *testing.T) {
 	}
 }
 
-func TestRequestBoundedSentryEndpoints(t *testing.T) {
+func TestRequestUnifiedBoundedSentryEndpoints(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/sign/component":
@@ -636,17 +636,17 @@ func TestRequestBoundedSentryEndpoints(t *testing.T) {
 		}
 	})
 	c.cacheApprovalWaitSeconds(60)
-	component, err := c.RequestBoundedComponentWithContext(t.Context(), signerapi.BoundedComponentRequest{GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.BoundedComponentTarget{{TargetIndex: 0, AuthAddress: "ADDR1"}}})
+	component, err := c.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR1"}}})
 	if err != nil || len(component.Components) != 1 {
-		t.Fatalf("RequestBoundedComponentWithContext() = %#v, %v", component, err)
+		t.Fatalf("RequestComponentsWithContext() = %#v, %v", component, err)
 	}
-	assembly, err := c.RequestBoundedAssembleWithContext(t.Context(), signerapi.BoundedAssemblyRequest{
-		GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.BoundedAssemblyTarget{{
-			TargetIndex: 0, BoundedAccount: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SentrySignature: "cc",
+	assembly, err := c.RequestAssembleWithContext(t.Context(), signerapi.AssemblyRequest{
+		GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.AssemblyTarget{{
+			TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedSentry, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SentrySignature: "cc",
 		}},
 	})
 	if err != nil || len(assembly.SignedGroup) != 1 {
-		t.Fatalf("RequestBoundedAssembleWithContext() = %#v, %v", assembly, err)
+		t.Fatalf("RequestAssembleWithContext() = %#v, %v", assembly, err)
 	}
 }
 

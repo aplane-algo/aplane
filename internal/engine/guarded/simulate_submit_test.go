@@ -289,18 +289,6 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: transactions})
 	})
-	mux.HandleFunc("/sign/bounded-component", func(w http.ResponseWriter, r *http.Request) {
-		appendEvent("base")
-		var req signerapi.BoundedComponentRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(signerapi.BoundedComponentResponse{
-			RequestID: req.RequestID, Transactions: req.GroupBytesHex,
-			Components: []signerapi.BoundedBaseComponent{{TargetIndex: 0, BoundedAccount: txn.Sender.String(), BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
-		})
-	})
 	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, r *http.Request) {
 		var req signerapi.ComponentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
