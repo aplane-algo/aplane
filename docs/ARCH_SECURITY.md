@@ -826,11 +826,15 @@ key is ever handed out, there is nothing to outlive the lock.
 
 | Operation | Lock | Can overlap with |
 |-----------|------|------------------|
-| Sign, export, scan, store | `RLock` | Other `RLock` holders |
+| Keyring-backed decrypt, export, scan, store | `RLock` | Other `RLock` holders |
 | `ClearKeys()` | `WLock` | Nothing — blocks until all `RLock` holders finish |
 | `Unlock()` (open the keyring) | `WLock` | Nothing |
 
-Multiple signing or export requests proceed concurrently under `RLock`. When the signer locks, `ClearKeys()` requests the exclusive `WLock` and blocks until every in-flight reader finishes. This guarantees no use-after-zero.
+Multiple keyring-backed operations proceed concurrently under `RLock`. When
+the signer locks, `ClearKeys()` requests the exclusive `WLock` and blocks until
+every in-flight keyring reader finishes. This prevents term-key use after
+zeroing. Decrypted request-owned `KeyMaterial` can continue beyond key
+retrieval and is separately zeroed by the signing executor.
 
 #### Lock Path
 
@@ -839,7 +843,8 @@ Multiple signing or export requests proceed concurrently under `RLock`. When the
 1. Set the lock runtime state to `Locked`; if it was already locked, return without side effects.
 2. Run the identity lock callback (`performLock`). The key watcher stays running; while locked it marks the identity dirty instead of reloading keys.
 3. Acquire `passphraseLock.WLock`:
-   - `keySession.Destroy()` — blocks until all in-flight signing goroutines exit.
+   - `keySession.Destroy()` — blocks until in-flight `GetKey` calls release the
+     session; request-wide draining is owned by the request server lifecycle.
    - Reinitialize the key session with the same `keyStore`.
    - `keyStore.ClearKeys()` — zeros every term key under `cacheLock.WLock`.
 4. Release `passphraseLock`.
@@ -856,20 +861,22 @@ applies `lock_on_disconnect` in the normal disconnect cleanup path.
 #### Shutdown Path
 
 On `SIGINT` / `SIGTERM`, `internal/signerapp/startup.RunLifecycle` stops
-started services in reverse start order, then closes audit logging and destroys
-all identity runtimes:
+started services in reverse start order. It closes audit logging and destroys
+the one product runtime only after every service reports a clean stop:
 
 1. `httpServer.Shutdown(ctx)` — drain in-flight HTTP requests (5 s timeout).
 2. Cancel and stop the SSH server.
 3. `ipcServer.Stop()` — stop accepting new IPC connections and close active sessions.
 4. Write `SERVER_STOP` and close the audit log.
-5. For each identity runtime, call `Destroy()`:
+5. Call `Destroy()` on the product runtime:
    - `StopKeyWatcher()` — prevents new reloads.
-   - `keySession.Destroy()` — drain in-flight signing operations.
+   - `keySession.Destroy()` — drain in-flight key retrieval operations.
    - `keyStore.ClearKeys()` — zero every term key.
 
-The shutdown destroy path stops watcher dispatch before draining key operations
-and zeroing the keyring.
+If any service stop fails or times out, the lifecycle retains the audit logger
+and runtime state until process exit instead of tearing them down underneath a
+handler that may still be executing. The clean shutdown destroy path stops
+watcher dispatch before draining key operations and zeroing the keyring.
 
 #### Passphrase Zeroing Discipline
 

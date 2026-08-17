@@ -891,7 +891,10 @@ owner counts.
 
 The runtime has no live decommission transition or operation lease. Server
 shutdown stops accepting and drains HTTP work before destroying runtime key
-state; key-session locks continue to protect signing authority access.
+state; key-session locks continue to protect signing authority access. If a
+service cannot drain before its shutdown deadline, lifecycle teardown retains
+the audit logger and runtime state until process exit rather than destroying
+them underneath a live handler.
 
 ### Server-Side Application Boundary
 

@@ -2457,6 +2457,10 @@ identity-decommission state or operation lease. Graceful shutdown stops and
 drains request servers before destroying runtime key state. Lock, disconnect,
 displacement, and shutdown continue to fail pending approvals through the
 reason-independent coordinator fail-all contract.
+If a request server fails to stop or exceeds the shutdown deadline, lifecycle
+teardown does not close the audit logger or destroy runtime key state
+in-process; the signer returns for process exit without zeroing state beneath a
+still-running handler.
 
 ## Key Watching and Reload
 

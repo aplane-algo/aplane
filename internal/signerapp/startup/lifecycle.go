@@ -82,6 +82,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	stoppedCleanly := true
 	for i := len(started) - 1; i >= 0; i-- {
 		svc := started[i]
 		if svc.Stop == nil {
@@ -90,9 +91,24 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		if plan.Info != nil && svc.Name != "" {
 			plan.Info("shutting down " + svc.Name)
 		}
-		if err := svc.Stop(shutdownCtx); err != nil && plan.Warn != nil {
-			plan.Warn(svc.Name + " shutdown error: " + err.Error())
+		if err := svc.Stop(shutdownCtx); err != nil {
+			stoppedCleanly = false
+			if plan.Warn != nil {
+				plan.Warn(svc.Name + " shutdown error: " + err.Error())
+			}
 		}
+	}
+
+	// A timed-out server may still have handlers using the audit logger and
+	// runtime-owned key material. Do not tear either dependency down underneath
+	// those handlers. The signer process returns immediately after this path, so
+	// the operating system performs the final process-memory and descriptor
+	// cleanup without creating an in-process use-after-destroy window.
+	if !stoppedCleanly {
+		if plan.Warn != nil {
+			plan.Warn("service shutdown incomplete; retaining audit and runtime state until process exit")
+		}
+		return
 	}
 
 	if plan.AuditLog != nil {
