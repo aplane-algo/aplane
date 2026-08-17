@@ -347,8 +347,8 @@ sends those exact bytes to the client-configured algod simulation endpoint.
 The signer cannot tell whether released signatures will be simulated or
 submitted. Guarded simulation similarly completes ordinary component signing
 and `/sign/assemble` before the client routes the assembled group to algod.
-Bounded-sentry simulation completes `/sign/bounded-component`, sentry-role
-`/sign/component`, and `/sign/bounded-assemble` over the same frozen group.
+Bounded-sentry simulation completes bounded-base and sentry
+`/sign/component` calls and `/sign/assemble` over the same frozen group.
 
 ---
 
@@ -905,12 +905,12 @@ This design achieves **true client key-type agnosticism**: clients never need to
 
 For inventory rows with `signing_flow: bounded-sentry1`, the client must:
 
-1. call `POST /sign/bounded-component` on the user signer, which finalizes the
+1. call `POST /sign/component` with `kind:"bounded-base"` on the user signer, which validates the
    group and applies signer policy/operator approval before returning base args
    and the assembly receipt;
 2. request the sentry-role signature over those exact finalized bytes with
    `POST /sign/component`;
-3. call `POST /sign/bounded-assemble` on the user signer with both components;
+3. call `POST /sign/assemble` on the user signer with both components;
 4. submit or simulate the exact returned signed group.
 
 Ordinary `/sign` rejects these spends. Contract-admin rekey remains a separate
@@ -922,8 +922,10 @@ An admin-key bounded profile keeps pure spending on `/sign`, but routes a pure
 rekey through a typed partial flow:
 
 1. The client constructs a pure zero-amount self-payment rekey.
-2. `POST /sign/bounded-admin` performs canonical planning, policy, forced review,
-   approval, dummy/fee/group finalization, and Falcon spending signing.
+2. The separate `aprekey` administrative client calls
+   `POST /sign/bounded-admin`, which performs canonical planning, policy,
+   forced review, approval, dummy/fee/group finalization, and Falcon spending
+   signing.
 3. Apsigner verifies the spending signature and returns finalized unsigned
    transactions plus one aligned partial LogicSig. It never returns the partial
    in `signed[]` and never handles contract-admin private material.
