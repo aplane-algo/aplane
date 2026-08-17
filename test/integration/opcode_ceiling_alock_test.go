@@ -32,7 +32,7 @@ func TestALockDeclaredOpcodeCeilings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load funding account: %v", err)
 	}
-	assetID := createCorridorTestAsset(t, network, funder)
+	assetID := corridorTestAssetID(t, network, funder)
 	account := newALockOpcodeAccount(t, compileAlgod, funder.GetAddress(), assetID)
 	if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
 		t.Fatalf("fund ALock opcode-validation account: %v", err)

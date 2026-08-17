@@ -181,7 +181,7 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 
 	target := algocrypto.GenerateAccount()
 	other := algocrypto.GenerateAccount()
-	assetID := createCorridorTestAsset(t, network, funder)
+	assetID := corridorTestAssetID(t, network, funder)
 	baseTxn := func(note string) types.Transaction {
 		return boundedPaymentTxn(t, mustSuggestedParams(t, network), account.address, funder.GetAddress(), 1_000, note)
 	}
