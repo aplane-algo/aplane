@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -89,7 +90,8 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	}
 	sentryPubHex := hex.EncodeToString(sentryPub)
 	const sentryToken = "mixed-guarded-sentry-token"
-	sentry := startMockSentryEndpoint(t, sentryPub, sentryPriv, sentryToken)
+	var sentryDiscoveryCalls atomic.Int32
+	sentry := startMockSentryEndpoint(t, sentryPub, sentryPriv, sentryToken, &sentryDiscoveryCalls)
 	t.Cleanup(sentry.Close)
 	sentryTokenFile := writeGuardedSentryTokenFile(t, sentryToken)
 
@@ -135,7 +137,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	}
 	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
 	eng.EndpointRegistry = config.ClientEndpointRegistry{
-		SchemaVersion: 1,
+		SchemaVersion: config.ClientEndpointSchemaVersion,
 		Endpoints: map[string]config.ClientEndpointConfig{
 			"integration-sentry": {Role: config.ClientEndpointRoleSentry, URL: sentry.URL, TokenFile: sentryTokenFile},
 		},
@@ -191,6 +193,9 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	if !result.Confirmed {
 		t.Fatalf("Mixed guarded group was not confirmed: %s", result.Output)
 	}
+	if calls := sentryDiscoveryCalls.Load(); calls == 0 {
+		t.Fatal("guarded routing did not discover the sentry key from the configured endpoint")
+	}
 	if _, err := testnet.WaitForConfirmation(result.TxIDs[0], 10); err != nil {
 		t.Fatalf("Mixed guarded group failed to confirm on-chain: %v", err)
 	}
@@ -230,7 +235,12 @@ func bestEffortCloseAccount(t *testing.T, eng *engine.Engine, testnet *harness.T
 // node for one sentry key: it advertises the Witness Key ID on /keys (so the
 // client's endpoint-advertisement check passes) and produces real sentry-role
 // component signatures on /sign/component using the test-held private key.
-func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token string) *httptest.Server {
+func startMockSentryEndpoint(
+	t *testing.T,
+	publicKey, privateKey []byte,
+	token string,
+	discoveryCalls *atomic.Int32,
+) *httptest.Server {
 	t.Helper()
 	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
@@ -248,6 +258,7 @@ func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token s
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		discoveryCalls.Add(1)
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
 			Count: 1,
 			Keys: []signerapi.KeyInfo{{

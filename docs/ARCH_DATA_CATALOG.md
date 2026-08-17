@@ -97,7 +97,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Policy sidecar | authoritative integrity metadata | `policy.yaml.hmac` JSON | HMAC verification result | `internal/policy`, `cmd/appolicy`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
 | Key type state record | authoritative generation state | `keytypes/<key_type>.json` | enabled/disabled identity key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | encrypted `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Sealed under the identity's current term key and bound to its key type; disabled state skips registration. |
-| Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` | Public metadata only; source is `manual` or `client_discovery`; not endpoint ownership proof. |
+| Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` | Explicitly imported public metadata only; not endpoint ownership proof. |
 
 ## Key Material And Key Metadata
 
@@ -144,8 +144,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Endpoint registry | authoritative routing config | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry` | `internal/config`, `internal/apshellapp` | `schema_version:1`; role is `signer` or `sentry`; at most one signer endpoint. |
 | Endpoint alias | local identifier | map key under `endpoints` | endpoint lookup by alias | `internal/config`, `internal/apshellapp` | ASCII letters, digits, `.`, `_`, `-`; aliases are local, not exported. |
 | Endpoint record | authoritative routing record | `endpoints.<alias>` | endpoint connection profile | `internal/config`, `internal/engine/connect` | URL, signer/local ports, token file, identity file, known hosts resolve relative to `APCLIENT_DATA`. |
-| Published sentry inventory | routing metadata | `endpoints.<alias>.published_sentries` | derived sentry endpoint map | `internal/config`, `internal/apshellapp`, `internal/engine` | Keyed by embedded public key hex; route metadata, not ownership proof. |
-| Derived sentry endpoint map | derived runtime | built from `published_sentries` | `Config.SentryEndpoints` | `internal/config`, `internal/engine/guarded/discovery.go` | Not written to `config.yaml`; conflicts/malformed records fail closed. |
+| Live sentry inventory | routing metadata | authenticated `/keys` responses | operation-scoped route snapshot | `internal/engine/guarded` | Keyed by embedded public key hex; never persisted and not ownership proof. |
 | Endpoint token file | bearer secret | default `aplane.token` or `tokens/<alias>.token` | HTTP auth header and SSH mutual-proof key | `internal/tokenfile`, `internal/engine/connect` | Mode `0600`; request-token writes endpoint-scoped token. |
 | Client SSH identity | client secret | `.ssh/id_ed25519` | SSH tunnel private key | `internal/sshtunnel`, `internal/engine/connect` | Generated/enrolled separately from tokens. |
 | Known hosts | trust store | `.ssh/known_hosts` or endpoint override | SSH host-key verification | `internal/sshtunnel`, `internal/clientenroll`, `cmd/apconsole` | Host trust is not imported through endpoint envelope. |
@@ -224,7 +223,6 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Component response | wire projection | kind-tagged per-target authorization material | `signerapi.ComponentResponse` | `internal/signerapp/signing` | Guarded components carry one signature; bounded-base components carry base signatures, validated runtime args, and an assembly receipt. |
 | Assembly request | wire request | group bytes plus discriminated guarded or bounded-sentry targets | `signerapi.AssemblyRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Guarded targets carry user/sentry signatures; bounded targets also carry base authorization and a receipt. Mixed guarded/bounded groups remain rejected. |
 | Assembly response | wire projection | assembled signed group bytes | `signerapi.AssemblyResponse` | `internal/signerapp/signing` | Assembly revalidates each target against signer-owned metadata and does not trust endpoint-advertised public keys. |
-| Admin sentry sync DTOs | wire request/projection | public candidate list | `signerapi.AdminSyncSentryReferences*` | `internal/signerapp/rest`, `internal/sentry/sentryrefs` | Writes public signer-side reference catalog only; HTTP authorizes as `sentries.sync`; no tokens or private keys. |
 
 ## Admin IPC Wire Models
 
@@ -281,7 +279,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 |---|---|---|---|---|---|
 | Endpoint export envelope | public handoff | JSON `schema:"aplane.endpoint.v1"` | `apshell endpoints import` input | `cmd/apstore`, `internal/config`, `internal/apshellapp` | No alias, role, token, known hosts, private key, or sentry inventory; URL comes from `--url`, `--host`, or signer `endpoint.advertise_url`. |
 | Witness public reference | public handoff | JSON `schema:"aplane.witness-key-public.v1"` | manual sentry reference import or contract-admin enrollment | `internal/witness`, `cmd/apstore`, `internal/sentry/sentryrefs` | Contains `key_type`, `witness_key_id`, and full `public_key_hex`; no custody, role, endpoint, or trust claim. |
-| Public sentry reference record | public signer catalog | JSON `schema:"aplane.sentry-public-key-ref.v1"` | generation select option | `internal/sentry/sentryrefs` | Stored under `sentries/`; manual and client-discovery sources share schema. |
+| Public sentry reference record | public signer catalog | JSON `schema:"aplane.sentry-public-key-ref.v2"` | generation select option | `internal/sentry/sentryrefs` | Stored under `sentries/`; populated by explicit operator import. A v1 read adapter preserves closed migration provenance. |
 | Bounded admin ceremony request | short-lived handoff | `*.apbounded-admin-request` schema `aplane.bounded-admin-request.v2` | offline `aprekey sign` input | `internal/boundedadmin/protocol`, `internal/apboundedadminapp`, `cmd/aprekey` | Strict JSON; size-bounded; request-hash binds partial, optional sentry authorization, and network context; mode `0600`, no overwrite. |
 | Bounded admin ceremony signature | short-lived handoff | `*.apbounded-admin-signature` schema `aplane.bounded-admin-signature.v1` | networked `aprekey complete` input | `internal/boundedadmin/protocol`, `internal/apboundedadminapp`, `cmd/aprekey` | Binds `request_hash_hex`, contract admin key ID, and signature; mode `0600`, no overwrite. |
 
@@ -316,7 +314,7 @@ These decisions are part of the current data model and contract surface:
 | `endpoints.yaml` is the client routing authority. | Client `config.yaml` owns network/theme/polling, not signer or sentry endpoint routes. |
 | `CURRENT` is the active key/keytype namespace authority. | Normal readers and writers resolve `storepaths.ActivePaths` through `genstore.ResolveActive`; explicitly named `LegacyKeysDir` / `LegacyKeyType*` paths are recovery probes for pre-generation root locations, not an alternate active layout. |
 | Endpoint import and `/keys` discovery are routing metadata. | The trust anchor is the sentry public key embedded in the guarded account key, then `/sign/assemble` verification and on-chain LogicSig verification. |
-| `Config.SentryEndpoints` is derived runtime state. | Durable sentry endpoint inventory lives under endpoint records in `endpoints.yaml`. |
+| Sentry routing is operation-scoped runtime state. | Clients query authenticated `/keys` for each guarded or bounded-sentry operation; no sentry-key inventory is persisted in `endpoints.yaml`. |
 | `sentries/<name>.json` records are public generation references. | They help the TUI select a sentry public key but do not prove endpoint ownership or signer custody. |
 | Guarded account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
 | External `.wit` bundles are not signer-managed credentials. | Contract-admin private material stays in standalone custody (`aprekey`); signer and `apstore` never treat `.wit` as `.key`/`.sen`. |

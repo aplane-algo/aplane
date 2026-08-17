@@ -397,9 +397,9 @@ it never holds keys:
 - Guarded/sentry keys are **never** signed via plain `/sign` (it rejects them).
   They go through `/sign/component` (roles `user` and `sentry`) and
   `/sign/assemble`.
-- Sentry endpoints live in `endpoints.yaml` (`role: sentry`, with
-  `published_sentries`). The client routes to the endpoint advertising the
-  required key and re-verifies it before requesting the component signature.
+- Sentry endpoints live in `endpoints.yaml` with `role: sentry`. For each
+  operation, the client queries authenticated `/keys` and routes to the one
+  endpoint advertising the required embedded public key.
 - Sentry policy has only two outcomes — **reject or sign** (no human, no
   Operator Default). A locked, unreachable, stale, or wrong sentry endpoint
   fails **closed** before submission.
@@ -437,7 +437,7 @@ bytes even though apshell does not submit them.
   not available via MCP**; run real `apshell` in a terminal once to enroll. MCP
   refuses to start without an existing enrollment (token + trusted host).
 - **`endpoints`** manages signer/sentry routing profiles (`list`, `show`,
-  `create`, `import`, `sync-sentries`, `default`, `delete`). Routing lives in
+  `create`, `import`, `discover-sentries`, `default`, `delete`). Routing lives in
   `endpoints.yaml`, not `config.yaml`. There is exactly one `role: signer`
   endpoint; the rest are `role: sentry`.
 

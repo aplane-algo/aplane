@@ -108,7 +108,7 @@ intent and receive finalized signed transaction bytes, not key material.
 - endpoint-scoped bearer token files copied from signer enrollment,
 - SSH client keys and known-hosts trust,
 - aliases, sets, signer inventory cache, auth cache, ASA cache,
-- endpoint-published sentry inventory,
+- operation-scoped live sentry routing,
 - plugins and plugin activation,
 - saved JavaScript scripts,
 - local swap proposal state.
@@ -129,7 +129,7 @@ DTOs and contract fixtures.
 | Client config | Client data dir | `APCLIENT_DATA/config.yaml` | `internal/config.Config` network/theme/polling state | SDK config loaders, shell runtime | `internal/config`, `internal/bootstrap/shell` |
 | Release metadata | Release archive and install root | `release.json`, copied to install metadata directory when present | installer/version provenance for diagnostics and future upgrade checks; archive filenames are packaging labels only | installer output, support tooling | release workflow, `make release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` |
 | Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and sentry connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
-| Endpoint-published sentries | Client data dir | `endpoints.yaml` `published_sentries` | derived `Config.SentryEndpoints` map keyed by embedded public key hex | guarded send orchestration | `internal/config`, `internal/apshellapp`, `internal/engine` |
+| Live sentry discovery | Signing operation | authenticated `/keys` responses from configured sentry endpoints | operation-scoped map keyed by embedded public key hex | guarded and bounded-sentry orchestration | `internal/engine/guarded` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/serverconfig.ServerConfig` snapshot | Admin settings subset | `internal/serverconfig`, `internal/bootstrap/signer` |
 | Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/<identity>/node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | `internal/noderole`, `internal/keyclass`, signer startup, identity load, keyadmin, restore, signing dispatch |
 | Signing identity | Product signer | `identities/default/` | one `identity.Runtime` | fixed status/audit attribution | `internal/signerapp/identity` |
@@ -175,7 +175,7 @@ Client data dir
   -> endpoints.yaml
       -> default signer endpoint
       -> zero or more sentry endpoints
-      -> endpoint-published sentries -> derived runtime sentry routing
+      -> live /keys discovery -> operation-scoped sentry routing
   -> endpoint tokens + SSH trust
   -> signer HTTP/admin connection
 
@@ -540,10 +540,12 @@ signer endpoint alias, and endpoint records with `role: signer` or
 `role: sentry`. Endpoint records own connection details such as URL,
 signer/local ports, token file, SSH identity file, and known-hosts path.
 
-Sentry endpoint records may also contain `published_sentries`, keyed by the
-embedded sentry `public_key_hex`. That inventory is routing metadata derived
-from authenticated `/keys` discovery. It is not proof that the endpoint owns the
-key; assembly and on-chain LogicSig verification remain the trust checks.
+Sentry endpoint records do not contain key inventory. Guarded and
+bounded-sentry operations query authenticated `/keys` and retain routing only
+for the lifetime of that operation. The signer reference catalog is a
+generation trust-input inventory, while live endpoint discovery is routing
+only. Neither proves endpoint ownership; the embedded public key and verified
+component signature remain authoritative.
 
 ### Client Caches
 
@@ -702,7 +704,6 @@ Primary projections:
 - `HealthResponse`,
 - `CancelSignRequest`, `CancelSignResponse`,
 - admin generate/delete DTOs,
-- admin sentry reference sync DTOs,
 - `ErrorResponse`.
 
 HTTP token authentication resolves exactly one identity, and handlers route to

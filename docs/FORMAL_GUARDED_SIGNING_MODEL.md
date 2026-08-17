@@ -41,7 +41,7 @@ This model covers the current MVP:
 - `/sign/component` for user-role and sentry-role component signatures,
 - `/sign/assemble` verification and LogicSig argument packing,
 - `apshell send` orchestration for guarded account senders,
-- client endpoint discovery and sync for sentry routing,
+- operation-scoped live endpoint discovery for sentry routing,
 - node role gates for signer nodes and sentry nodes.
 
 It does not model:
@@ -220,14 +220,14 @@ For each target, the primary signer loads its local guarded account key and:
 The assembling signer trusts values it stored at generation time. It does not
 trust endpoint metadata supplied during the transaction flow.
 
-### Discover And Sync Sentries
+### Live Sentry Discovery
 
-`endpoints sync-sentries` queries reachable sentry endpoints with valid
-tokens, refreshes their published inventory in `endpoints.yaml`, and then, with
-operator confirmation, syncs the published public sentry references into the
-primary signer's local generation library. Unavailable or locked endpoints keep
-their previous inventory. Authentication, malformed metadata, and duplicate
-public-key routing errors fail without writing partial updates.
+Each guarded or bounded-sentry operation queries reachable configured sentry
+endpoints with valid tokens and constructs an operation-scoped route snapshot.
+Every required embedded public key must resolve to exactly one live endpoint.
+Discovery does not write `endpoints.yaml` or the signer generation catalog;
+authentication, malformed metadata, duplicate public-key routing, and pinned
+SSH host-key mismatch errors fail closed.
 
 ## Invariants
 
@@ -454,7 +454,7 @@ High-value test anchors:
 - explicit endpoint mismatch rejection without self fallback,
 - client binaries excluding signature verification primitives,
 - malformed component response rejection,
-- endpoint sync preserve/abort behavior,
+- live discovery deadline, duplicate, and failure behavior,
 - node role generation/import/reload/service-dispatch gates.
 
 ## Open Questions
@@ -463,7 +463,7 @@ These should be answered before a machine-checkable model:
 
 1. Decide whether the first TLA+ guarded model should abstract cryptographic
    verification as booleans or model signature roles as uninterpreted tokens.
-2. Decide whether endpoint discovery belongs in the first guarded module or
-   should be a separate routing-state model joined later.
+2. Decide whether operation-scoped endpoint discovery belongs in the first
+   guarded module or should be a separate routing-state model joined later.
 3. Decide whether to model node role in the guarded module or in a separate
    durable-inventory/role model.

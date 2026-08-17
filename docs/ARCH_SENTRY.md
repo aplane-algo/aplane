@@ -243,26 +243,16 @@ verification path.
 Signer nodes need public sentry metadata to generate guarded accounts, but they
 do not need sentry private keys.
 
-There are two ways to populate a signer-side sentry reference catalog:
-
-- manual import with `apstore sentry export` on the sentry node and
-  `apstore sentry import` on the signer node,
-- endpoint discovery with `apshell endpoints sync-sentries`, which reads
-  authenticated `/keys` inventories from configured sentry endpoints and syncs
-  public candidates into the connected signer identity.
+The signer-side sentry reference catalog is populated by explicit operator
+handoff: `apstore sentry export` on the sentry node followed by `apstore sentry
+import` on the signer node.
 
 Reference aliases are security-bearing generation inputs: resolving
 `sentry=<name>` selects the witness public key embedded into a newly generated
 guarded account. Manual import and removal therefore require an unlocked
 identity in addition to `sentries.manage`. Re-importing the identical authority
-is idempotent. If the identical authority was created by endpoint discovery,
-explicit import promotes it to a manual record so later discovery sync cannot
-remove it. Rebinding an existing name to another Witness Key ID is rejected;
-replacement requires an explicit audited remove followed by import. Names
-beginning with `endpoint-` are reserved for discovery. A manual import cannot
-create a new record in that namespace, but importing the identical authority
-over an existing discovered record remains the explicit pinning operation
-described above.
+is idempotent. Rebinding an existing name to another Witness Key ID is rejected;
+replacement requires an explicit audited remove followed by import.
 
 Public reference records are stored under:
 
@@ -271,7 +261,7 @@ identities/<identity>/sentries/
 ```
 
 They contain public metadata only: Witness Key ID, key type, sentry public key
-hex, source, and timestamps. They are not endpoint ownership proofs and do not
+hex, and import time. They are not endpoint ownership proofs and do not
 authorize a future transaction. The guarded account's embedded public key is
 the trust input that matters after generation.
 
@@ -283,10 +273,8 @@ Client endpoint routing lives in:
 $APCLIENT_DATA/endpoints.yaml
 ```
 
-The registry may contain one signer endpoint and any number of sentry
-endpoints. Sentry endpoint records carry connection metadata plus
-`published_sentries`, an endpoint-local inventory keyed by raw sentry public key
-hex.
+The registry may contain one signer endpoint and at most 12 sentry endpoints.
+Sentry endpoint records carry connection metadata only.
 
 Runtime guarded-send routing works like this:
 
@@ -296,10 +284,12 @@ Runtime guarded-send routing works like this:
    `sentry_component_key_type` and required sentry public key. The client routes
    on the flow label (key-type strings are opaque to the client) and fails fast
    on flow labels it does not implement.
-2. The client builds an in-memory map from endpoint `published_sentries`.
-3. The client selects the sentry endpoint that advertises that public key.
-4. Before requesting a sentry component signature, the client verifies the
-   endpoint still advertises the expected Witness Key ID.
+2. The client queries authenticated `/keys` on the configured sentry endpoints
+   with bounded parallelism and validates each advertised Witness Key ID.
+3. The client builds an operation-scoped route snapshot and requires exactly
+   one endpoint for every required embedded public key.
+4. Component signing reuses the already-verified endpoint connection from that
+   snapshot.
 
 Endpoint import and `/keys` discovery are routing metadata. They do not prove
 ownership. If an endpoint is wrong or stale, assembly or on-chain LogicSig
@@ -503,7 +493,7 @@ Sentry failures are fail-closed:
   follows the ordinary approval path,
 - locked or unreachable sentry endpoints cannot produce component signatures,
 - endpoint authentication or host-trust failures block routing,
-- malformed or duplicate sentry inventory leaves endpoint files unchanged,
+- malformed or duplicate live sentry inventory fails the operation,
 - deleted sentry keys stop being advertised by `/keys` and guarded signing
   fails before sentry signing,
 - missing sentry signatures fail assembly,
@@ -512,10 +502,10 @@ Sentry failures are fail-closed:
   without the embedded sentry private key,
 - unsupported sentry policy outcomes fail closed.
 
-`apshell endpoints sync-sentries` preserves existing local
-`published_sentries` only for temporarily unreachable or locked endpoints.
-Authentication failures, malformed records, duplicate public keys, and Sentry
-Key ID validation failures are hard errors.
+Unavailable or locked endpoints may be skipped only when the remaining live
+results resolve every required key. Authentication failures, malformed
+records, duplicate public keys, configuration errors, and SSH host-key
+mismatches fail closed.
 
 ## Audit
 
@@ -533,8 +523,7 @@ separate audit event family for component signing.
 
 Primary packages and files:
 
-- `pkg/signerapi`: HTTP DTOs for component signing, assembly, sentry sync, and
-  key inventory.
+- `pkg/signerapi`: HTTP DTOs for component signing, assembly, and key inventory.
 - `internal/witness`: witness key-type identifiers, Witness Key ID derivation,
   public identity validation, keypair validation, and custodian capabilities.
 - `internal/sentry/keytypes`: guarded-account key-type mapping and sentry
@@ -550,15 +539,14 @@ Primary packages and files:
   `component_gate.go`), user/sentry component signing, assembly, and `/sign`
   rejection gates.
 - `internal/signerapp/rest`: REST service methods backing `/sign/component`,
-  `/sign/assemble`, `/keys`, `/keytypes`, and
-  `/admin/sentries/sync`.
+  `/sign/assemble`, `/keys`, and `/keytypes`.
 - `internal/signerapp/daemon`: HTTP runtime (`http_runtime.go`) that registers
   these routes on the signer mux and dispatches them to the `rest` service
   methods.
 - `internal/engine`: guarded and bounded-sentry transaction orchestration and
   sentry endpoint resolution.
-- `internal/config`: endpoint registry parsing and derived sentry endpoint map.
-- `internal/apshellapp`: endpoint commands and sentry discovery workflows.
+- `internal/config`: endpoint registry parsing and bounded v1 read migration.
+- `internal/apshellapp`: endpoint commands and read-only sentry discovery.
 - `lsig/falcon1024_guarded`: guarded LogicSig provider and template behavior.
 - `lsig/composeddsa`: optional bounded sentry composition and framework-owned
   fixed/Merkle Layer-3 policies.

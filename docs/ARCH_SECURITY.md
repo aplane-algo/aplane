@@ -104,13 +104,12 @@ Clients receiving the token should:
 - `GET /keys` - List available signing keys
 - `GET /keytypes` - List available key types and creation parameters
 - `POST /admin/generate` - Generate new keys
-- `POST /admin/sentries/sync` - Sync public sentry reference metadata
 - `DELETE /admin/keys` - Delete keys
 
 **Request Size Limits:**
 - JSON POST endpoints (`/sign`, `/sign/bounded-admin`, `/sign/component`,
-  `/sign/assemble`, `/sign/cancel`, `/plan`, `/admin/generate`, and
-  `/admin/sentries/sync`) enforce a 5 MB request body limit
+  `/sign/assemble`, `/sign/cancel`, `/plan`, and `/admin/generate`) enforce a
+  5 MB request body limit
 - Oversized requests receive HTTP 413 (Payload Too Large)
 - All authentication error responses use JSON format (not text/plain)
 
@@ -638,7 +637,6 @@ mux.HandleFunc("/status", server.requireAuth(auth.ActionIdentityView, auth.Resou
 mux.HandleFunc("/keys", server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, server.handleKeys))
 mux.HandleFunc("/keytypes", server.requireAuth(auth.ActionKeyTypesView, auth.Resource{Type: "keytypes"}, server.handleKeyTypes))
 mux.HandleFunc("/admin/generate", server.requireAuth(auth.ActionKeysGenerate, auth.Resource{Type: "key"}, server.handleAdminGenerate))
-mux.HandleFunc("/admin/sentries/sync", server.requireAuth(auth.ActionSentriesSync, auth.Resource{Type: "sentries"}, server.handleAdminSyncSentries))
 mux.HandleFunc("/admin/keys", server.requireAuth(auth.ActionKeysDelete, auth.Resource{Type: "key"}, server.handleAdminDelete))
 ```
 
@@ -1160,10 +1158,8 @@ The multi-channel design separates concerns:
 
 **Admin endpoint separation:** `/admin/generate` and `/admin/keys` use
 separate stable actions (`keys.generate`, `keys.delete`) from signing
-(`sign.request`). `/admin/sentries/sync` uses `sentries.sync` because it
-mutates public sentry reference metadata, not private key material. Key
-management operations can be granted only to elevated principals or groups so
-signing-only clients cannot generate or delete keys.
+(`sign.request`). Key management operations can be granted only to elevated
+principals or groups so signing-only clients cannot generate or delete keys.
 
 Authorization behavior is documented in
 [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).

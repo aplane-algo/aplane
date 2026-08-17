@@ -681,11 +681,9 @@ Manage client-local signer and sentry endpoint profiles.
 ```
 endpoints list
 endpoints show <alias>
-endpoints sentries
 endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]
 endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>
 endpoints discover-sentries [--dry-run]
-endpoints sync-sentries [--dry-run] [--yes]
 endpoints default <alias>
 endpoints delete <alias>
 ```
@@ -708,19 +706,11 @@ behind that endpoint. It writes routing only. Tokens are still obtained with
 `request-token --endpoint <alias>`, and SSH host trust still uses the known-hosts
 flow.
 
-`endpoints discover-sentries` queries configured sentry endpoints using their
-endpoint token files and refreshes local endpoint-published sentry inventory.
-It is local-only and does not require or update a connected primary signer.
-Temporarily unavailable sentry endpoints are skipped and keep their previous
-local inventory; authentication failures and malformed endpoint metadata fail
-closed.
-
-`endpoints sync-sentries` performs the same discovery, prints Witness Key IDs
-for confirmation, and then syncs the public sentry references into the connected
-signer identity.
-
-`endpoints sentries` lists the local endpoint-discovered sentry inventory by
-endpoint alias, Witness Key ID, and key type without calling remote endpoints.
+`endpoints discover-sentries` is a read-only diagnostic. It queries configured
+sentry endpoints using their endpoint token files, validates the advertised
+Witness Key IDs, and prints live results. It does not update `endpoints.yaml`
+or the connected signer's generation catalog. Guarded and bounded-sentry
+operations perform this discovery automatically for the keys they require.
 
 **Examples:**
 ```
@@ -732,16 +722,14 @@ request-token --endpoint main
 request-token --endpoint local-sentry
 connect main
 endpoints discover-sentries
-endpoints sync-sentries
-endpoints sentries
 endpoints list
 endpoints show main
 endpoints default main
 endpoints delete old-signer
 ```
 
-`endpoints delete` refuses to remove the signer endpoint or an endpoint with
-published sentries still referenced by derived runtime routing.
+`endpoints delete` refuses to remove the signer endpoint. Sentry routing has no
+persisted key inventory to retain.
 
 ---
 

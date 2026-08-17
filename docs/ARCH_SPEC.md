@@ -507,8 +507,9 @@ Signer and sentry routing is not stored as active top-level `config.yaml`
 state. Normal client routing lives in `endpoints.yaml` through
 `internal/config.ClientEndpointRegistry`: at most one `signer` endpoint and zero
 or more `sentry` endpoints. Endpoint records carry URL, SSH tunnel ports,
-identity file, `known_hosts`, token file, and endpoint-published sentry
-inventory. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
+identity file, `known_hosts`, and token file. Live sentry-key discovery is
+operation-scoped and is not stored in the registry. `internal/endpointrefs`
+owns the public `aplane.endpoint.v1` JSON
 handoff envelope used by `apstore endpoint export` and
 `apshell endpoints import`.
 
@@ -1422,8 +1423,8 @@ forward signatures to assembly as opaque material.
 Client routing lives in `$APCLIENT_DATA/endpoints.yaml`. The registry contains
 at most one `signer` endpoint and zero or more `sentry` endpoints. Endpoint
 records contain connection profile data, endpoint role, token-file path,
-known-hosts path, SSH identity path, and endpoint-local
-`published_sentries`.
+known-hosts path, and SSH identity path. They do not persist sentry-key
+inventory.
 
 Operator handoff and manual endpoint setup use two paths:
 
@@ -1440,23 +1441,20 @@ Operator handoff and manual endpoint setup use two paths:
 - bearer tokens are obtained separately with `request-token --endpoint`.
 - SSH host trust remains owned by the existing known-hosts flow.
 
-Sentry inventory is discovered explicitly with
-`apshell endpoints discover-sentries`. It queries authenticated `/keys` on
-configured sentry endpoints, validates Witness Key ID metadata, and rebuilds
-reachable endpoints' local `published_sentries` inventory without requiring a
-connected primary signer. Temporarily unavailable or locked endpoints preserve
-their prior local inventory; authentication failures, malformed responses,
-duplicate public keys across endpoints, and Witness Key ID validation errors
-are hard failures that leave files unchanged. `apshell endpoints
-sync-sentries` performs the same discovery, then prints Witness Key IDs and
-asks before syncing the public inventory into the connected signer identity's
-sentry reference library for generation-time selection.
+`apshell endpoints discover-sentries` is a read-only diagnostic. It queries
+authenticated `/keys` on configured sentry endpoints, validates Witness Key ID
+metadata, and prints the live results without changing client or signer state.
 
-Runtime guarded-send routing maps the embedded sentry public key to the
-endpoint whose `published_sentries` contains that key. If no explicit mapping
-exists, local self-discovery may resolve to the currently connected signer only
-when that endpoint advertises the matching Witness Key ID; this is
-development ergonomics, not a production independence claim.
+Runtime guarded and bounded-sentry routing performs the same live discovery at
+the start of each signing operation and keeps an operation-scoped route
+snapshot. It probes the deterministic configured endpoint order with bounded
+parallelism and stops only after every required embedded public key has one
+unambiguous route. `url: self` is an explicit co-location profile; there is no
+implicit fallback to the primary signer.
+
+The signer reference catalog is a generation trust-input inventory, while
+live endpoint discovery is routing only. Neither proves endpoint ownership;
+the embedded public key and verified component signature remain authoritative.
 
 ### Policy And Audit
 

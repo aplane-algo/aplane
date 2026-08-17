@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestGeneratedReferenceHidesLegacyApshellRouting(t *testing.T) {
+func TestGeneratedReferenceUsesConnectionOnlyEndpointRegistry(t *testing.T) {
 	cmd := exec.Command("go", "run", ".")
 	out, err := cmd.Output()
 	if err != nil {
@@ -25,13 +25,16 @@ func TestGeneratedReferenceHidesLegacyApshellRouting(t *testing.T) {
 	}
 	for _, want := range []string{
 		"## apshell Endpoint Registry",
+		"| `schema_version` | int | `2` |",
 		"`endpoints.<alias>.role`",
 		"`endpoints.<alias>.token_file`",
-		"routing metadata, not trust proof",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Fatalf("generated reference missing %q", want)
 		}
+	}
+	if strings.Contains(doc, "published_sentries") {
+		t.Fatal("generated reference contains retired sentry inventory field")
 	}
 }
 

@@ -235,8 +235,14 @@ endpoints create --alias local-sentry \
   --endpoint ssh://sentry.example.com:1127 \
   --sentryport 11270
 request-token --endpoint local-sentry
-endpoints sync-sentries
+endpoints discover-sentries
 ```
+
+Discovery is a read-only connectivity diagnostic. To make the sentry key
+available when generating guarded accounts, export it on the sentry node with
+`apstore sentry export` and explicitly import it on the signer node with
+`apstore sentry import`. Signing operations resolve the matching endpoint from
+live authenticated `/keys` responses.
 
 If the signer operator sets a client-reachable advertised URL in
 `$APSIGNER_DATA/config.yaml`, `apstore endpoint export` can omit `--host`:
@@ -1123,7 +1129,6 @@ Use this when a token may be compromised or to rotate credentials.
 | `GET /keys` | Required |
 | `GET /keytypes` | Required |
 | `POST /admin/generate` | Required |
-| `POST /admin/sentries/sync` | Required |
 | `DELETE /admin/keys` | Required |
 | `GET /health` | Not required (public health check) |
 

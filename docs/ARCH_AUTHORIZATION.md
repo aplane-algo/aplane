@@ -232,7 +232,6 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `keys.import` | Import a key | `key` | Yes |
 | `keys.export` | Export a key mnemonic (disabled) | `key` | Yes |
 | `keys.delete` | Delete a key | `key` | Yes |
-| `sentries.sync` | Sync public sentry reference metadata into the signer generation catalog | `sentries` | No |
 | `sentries.view` | List/show public sentry references and export public witness metadata | `sentry_references`, `sentry_reference`, `sentry_public` | No |
 | `sentries.manage` | Import or remove signer-owned public sentry references | `sentry_reference` | Yes |
 | `generations.view` | Inspect current and retained generation inventory | `generations` | No |
@@ -286,10 +285,8 @@ Enforced callsites:
 
 - `internal/signerapp/daemon/http_runtime.go` wraps HTTP `/sign`,
   `/sign/component`, `/sign/assemble`, `/sign/bounded-admin`, `/plan`, `/status`,
-  `/keys`, `/keytypes`, `/admin/generate`, `/admin/sentries/sync`, and
-  `/admin/keys` with
-  `requireAuth`. `/admin/sentries/sync` uses `sentries.sync` because it
-  mutates public sentry reference metadata, not private key material.
+  `/keys`, `/keytypes`, `/admin/generate`, and `/admin/keys` with
+  `requireAuth`.
 - `internal/signerapp/daemon/http_auth.go` calls `Authorizer.Authorize` after
   authentication and before the handler executes.
 - `internal/signerapp/adminserver/session.go` gates auth-time unlock through

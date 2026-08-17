@@ -28,7 +28,7 @@ Signer and sentry endpoint routing lives here, not in `config.yaml`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `schema_version` | int | `1` | Endpoint registry schema version |
+| `schema_version` | int | `2` | Endpoint registry schema version |
 | `default` | string | `(operator-chosen)` | Default signer endpoint alias |
 | `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `sentry` |
 | `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported |
@@ -37,7 +37,6 @@ Signer and sentry endpoint routing lives here, not in `config.yaml`.
 | `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path, resolved relative to `APCLIENT_DATA` |
 | `endpoints.<alias>.known_hosts_path` | string | `.ssh/known_hosts` | SSH known-hosts path, resolved relative to `APCLIENT_DATA` |
 | `endpoints.<alias>.token_file` | string | `aplane.token` or `tokens/<alias>.token` | Endpoint API token file, resolved relative to `APCLIENT_DATA` |
-| `endpoints.<alias>.published_sentries` | map | `(none)` | Sentry endpoint inventory learned from authenticated `/keys` discovery; routing metadata, not trust proof |
 
 ## apsigner Configuration
 
@@ -56,7 +55,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `endpoint.ssh.authorized_keys_path` | string | `.ssh/authorized_keys` | Process-global authorized client public keys file |
 | `passphrase_timeout` | string | `15m` | Admin idle disconnect timeout (0=never) |
 | `approval_wait` | string | `60s` | Maximum time to wait for operator approval of a signing request |
-| `ipc_path` | string | `systemd: /run/apsigner/aplane.sock; same-UID: $APSIGNER_DATA/aplane.sock` | Unix socket path for admin IPC; systemd uses the protected runtime path unless this is a custom path |
+| `ipc_path` | string | `systemd: /run/apsigner/aplane.sock; same-UID: $APSIGNER_DATA/aplane.sock` | Unix socket path for admin IPC; systemd custom paths must be outside signer data in a service-owned protected runtime directory |
 | `lock_on_disconnect` | *bool | `true` | Lock signer when admin disconnects |
 | `passphrase_command_argv` | []string | `[]` | Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1]) |
 | `passphrase_command_env` | map | (none) | Environment variables to pass to the passphrase command; the process env is not inherited except for the systemd CREDENTIALS_DIRECTORY passthrough |
@@ -70,7 +69,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `user_auto_approve` | bool | `false` | User default to sign non-rejected requests without operator approval unless policy forces review |
 | `theme` | string | `auto` | Signer-admin UI theme: auto, dark, or light (auto detects terminal) |
 
-Product-scoped `identities/default/config.yaml` contains settings
+Identity-scoped `identities/<identity>/config.yaml` contains settings
 only. Node role is stored separately in root `node.yaml`.
 
 ## Environment Variables
