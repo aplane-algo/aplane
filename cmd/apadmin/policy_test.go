@@ -68,6 +68,21 @@ func TestProductionAndTestmodeCommandCatalogsAreDisjoint(t *testing.T) {
 	}
 }
 
+func TestPolicyHelpDocumentsSecurityBoundaries(t *testing.T) {
+	var stderr bytes.Buffer
+	code := runPolicyCommand(context.Background(), []string{"--help"}, policyGlobalOptions{}, policyStreams{
+		stdin: strings.NewReader(""), stdout: io.Discard, stderr: &stderr,
+	})
+	if code != 0 {
+		t.Fatalf("runPolicyCommand() code = %d", code)
+	}
+	for _, want := range []string{"Online commands authenticate and unlock", "APSIGNER_PASSPHRASE", "--remote requires the controlling terminal", "rescue commands"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("help missing %q:\n%s", want, stderr.String())
+		}
+	}
+}
+
 func TestPolicyRescueRejectsOnlineTransportFlagsBeforeWork(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", "")
 	var stderr bytes.Buffer

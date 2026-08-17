@@ -7,14 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 )
@@ -88,74 +85,35 @@ func (r OnlineRunner) Run(ctx context.Context, command Command, streams Streams)
 	if err != nil {
 		return err
 	}
-	switch command.Verb {
-	case VerbEdit:
-		if r.Editor == nil {
-			return fmt.Errorf("policy editor is unavailable")
-		}
-		return r.Editor(store, stored, "apsigner admin protocol", identityOrDefault(store.IdentityID()), target)
-	case VerbCheck:
-		_, _ = fmt.Fprintf(streams.Stdout, "%s OK online\n", target.StatusNoun())
-	case VerbExport:
-		_, _ = io.WriteString(streams.Stdout, store.PolicyYAML())
-	case VerbDigest:
-		_, _ = fmt.Fprintln(streams.Stdout, store.LastSHA256())
-	case VerbToSentry:
-		converted, err := policy.ConvertSigningPolicyToSentryYAML([]byte(store.PolicyYAML()))
-		if err != nil {
-			return fmt.Errorf("failed to convert policy: %w", err)
-		}
-		_, _ = streams.Stdout.Write(converted)
-	default:
-		return fmt.Errorf("unsupported policy command %q", command.Verb)
-	}
-	return nil
+	return (loadedDocument{
+		command: command, streams: streams, store: store, stored: stored,
+		exactYAML: []byte(store.PolicyYAML()), target: target,
+		status:  fmt.Sprintf("%s OK online", target.StatusNoun()),
+		dataDir: "apsigner admin protocol", identityID: store.IdentityID(), editor: r.Editor,
+	}).run()
 }
 
 func (r OnlineRunner) runDraft(ctx context.Context, command Command, streams Streams, store *policyeditor.AdminStore, target policyeditor.Target) error {
-	data, err := readSource(command.Source, streams.Stdin)
-	if err != nil {
-		return err
-	}
 	parseTarget := target
 	if command.Verb == VerbToSentry {
 		parseTarget = policyeditor.TargetSigner
 	}
-	stored, err := parseTarget.Parse(data)
-	if err != nil {
-		return fmt.Errorf("failed to parse %s: %w", parseTarget.DocumentName(), err)
-	}
 	validator := &policyeditor.AdminStore{Client: store.Client, Target: parseTarget}
-	if err := validator.Validate(ctx, stored); err != nil {
+	data, stored, err := loadDraft(ctx, command, parseTarget, validator, streams.Stdin)
+	if err != nil {
 		return err
 	}
-
-	switch command.Verb {
-	case VerbEdit:
+	if command.Verb == VerbEdit {
 		if _, err := store.Load(ctx); err != nil {
 			return fmt.Errorf("load active %s before editing draft: %w", target.StatusNoun(), err)
 		}
-		if r.Editor == nil {
-			return fmt.Errorf("policy editor is unavailable")
-		}
-		_, _ = fmt.Fprintf(streams.Stdout, "%s OK: %s\n", target.StatusNoun(), command.Source)
-		return r.Editor(store, stored, "apsigner admin protocol", identityOrDefault(store.IdentityID()), target)
-	case VerbCheck:
-		_, _ = fmt.Fprintf(streams.Stdout, "%s OK: %s\n", target.StatusNoun(), command.Source)
-	case VerbExport:
-		_, _ = streams.Stdout.Write(data)
-	case VerbDigest:
-		_, _ = fmt.Fprintln(streams.Stdout, policy.PolicySHA256(data))
-	case VerbToSentry:
-		converted, err := policy.ConvertSigningPolicyToSentryYAML(data)
-		if err != nil {
-			return fmt.Errorf("failed to convert policy: %w", err)
-		}
-		_, _ = streams.Stdout.Write(converted)
-	default:
-		return fmt.Errorf("unsupported policy command %q", command.Verb)
 	}
-	return nil
+	return (loadedDocument{
+		command: command, streams: streams, store: store, stored: stored,
+		exactYAML: data, target: parseTarget,
+		status:  fmt.Sprintf("%s OK: %s", parseTarget.StatusNoun(), command.Source),
+		dataDir: "apsigner admin protocol", identityID: store.IdentityID(), editor: r.Editor,
+	}).run()
 }
 
 func authenticateAndUnlock(session OnlineSession, passphrase []byte) error {
@@ -219,28 +177,6 @@ func onlineTarget(requester interface {
 		return policyeditor.TargetSentry, nil
 	}
 	return policyeditor.TargetSigner, nil
-}
-
-func readSource(source string, stdin io.Reader) ([]byte, error) {
-	var (
-		data []byte
-		err  error
-	)
-	if source == "-" {
-		data, err = io.ReadAll(stdin)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read policy YAML from stdin: %w", err)
-		}
-	} else {
-		data, err = os.ReadFile(source)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read policy YAML file: %w", err)
-		}
-	}
-	if strings.TrimSpace(string(data)) == "" {
-		return nil, fmt.Errorf("policy YAML input is empty")
-	}
-	return data, nil
 }
 
 func identityOrDefault(identityID string) string {

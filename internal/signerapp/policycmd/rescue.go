@@ -11,7 +11,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 )
 
@@ -44,45 +43,21 @@ func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams)
 }
 
 func (r RescueRunner) runDraft(ctx context.Context, command Command, streams Streams, target policyeditor.Target) error {
-	data, err := readSource(command.Source, streams.Stdin)
-	if err != nil {
-		return err
-	}
 	parseTarget := target
 	if command.Verb == VerbToSentry {
 		parseTarget = policyeditor.TargetSigner
 	}
-	stored, err := parseTarget.Parse(data)
-	if err != nil {
-		return fmt.Errorf("failed to parse %s: %w", parseTarget.DocumentName(), err)
-	}
 	fileStore := &policyeditor.FileStore{Path: command.Source, Target: parseTarget, DataDir: command.DataDir}
-	if err := fileStore.Validate(ctx, stored); err != nil {
+	data, stored, err := loadDraft(ctx, command, parseTarget, fileStore, streams.Stdin)
+	if err != nil {
 		return err
 	}
-	switch command.Verb {
-	case VerbEdit:
-		if r.Editor == nil {
-			return fmt.Errorf("policy editor is unavailable")
-		}
-		_, _ = fmt.Fprintf(streams.Stdout, "%s OK: %s\n", parseTarget.StatusNoun(), command.Source)
-		return r.Editor(fileStore, stored, command.Source, auth.CurrentProductIdentityID(), parseTarget)
-	case VerbCheck:
-		_, _ = fmt.Fprintf(streams.Stdout, "%s OK: %s\n", parseTarget.StatusNoun(), command.Source)
-	case VerbExport:
-		_, _ = streams.Stdout.Write(data)
-	case VerbDigest:
-		_, _ = fmt.Fprintln(streams.Stdout, policy.PolicySHA256(data))
-	case VerbToSentry:
-		converted, err := policy.ConvertSigningPolicyToSentryYAML(data)
-		if err != nil {
-			return fmt.Errorf("failed to convert policy to sentry policy: %w", err)
-		}
-		_, _ = streams.Stdout.Write(converted)
-	default:
-		return fmt.Errorf("unsupported standalone policy command %q", command.Verb)
-	}
-	return nil
+	return (loadedDocument{
+		command: command, streams: streams, store: fileStore, stored: stored,
+		exactYAML: data, target: parseTarget,
+		status:  fmt.Sprintf("%s OK: %s", parseTarget.StatusNoun(), command.Source),
+		dataDir: command.Source, editor: r.Editor,
+	}).run()
 }
 
 func (r RescueRunner) runProduction(ctx context.Context, command Command, streams Streams, target policyeditor.Target) error {
@@ -145,47 +120,25 @@ func (r RescueRunner) runProduction(ctx context.Context, command Command, stream
 		store.SetPassphrase(passphrase)
 		crypto.ZeroBytes(passphrase)
 	}
-	path := target.Path(command.DataDir, auth.CurrentProductIdentityID())
-	switch command.Verb {
-	case VerbEdit:
-		if r.Editor == nil {
-			return fmt.Errorf("policy editor is unavailable")
-		}
-		_, _ = fmt.Fprintf(streams.Stdout, "%s OK: %s\n", target.StatusNoun(), path)
-		if err := r.Editor(store, stored, command.DataDir, auth.CurrentProductIdentityID(), target); err != nil {
-			return err
-		}
-		if err := guard.Normalize(); err != nil {
-			return fmt.Errorf("managed store ownership normalization failed: %w", err)
-		}
-	case VerbCheck:
-		_, _ = fmt.Fprintf(streams.Stdout, "%s OK: %s\n", target.StatusNoun(), path)
-	case VerbExport:
-		data, err := os.ReadFile(path)
+	identityID := auth.CurrentProductIdentityID()
+	path := target.Path(command.DataDir, identityID)
+	var data []byte
+	if command.Verb == VerbExport || command.Verb == VerbDigest || command.Verb == VerbToSentry {
+		data, err = os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("failed to read %s: %w", target.DocumentName(), err)
 		}
-		_, _ = streams.Stdout.Write(data)
-	case VerbDigest:
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("failed to read %s: %w", target.DocumentName(), err)
-		}
-		_, _ = fmt.Fprintln(streams.Stdout, policy.PolicySHA256(data))
-	case VerbToSentry:
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("failed to read policy YAML: %w", err)
-		}
-		converted, err := policy.ConvertSigningPolicyToSentryYAML(data)
-		if err != nil {
-			return fmt.Errorf("failed to convert policy to sentry policy: %w", err)
-		}
-		_, _ = streams.Stdout.Write(converted)
-	default:
-		return fmt.Errorf("unsupported production policy command %q", command.Verb)
 	}
-	return nil
+	err = (loadedDocument{
+		command: command, streams: streams, store: store, stored: stored,
+		exactYAML: data, target: target,
+		status:  fmt.Sprintf("%s OK: %s", target.StatusNoun(), path),
+		dataDir: command.DataDir, identityID: identityID, editor: r.Editor,
+	}).run()
+	if err == nil && command.Verb == VerbEdit {
+		err = guard.Normalize()
+	}
+	return err
 }
 
 func rescueTarget(command Command) (policyeditor.Target, error) {

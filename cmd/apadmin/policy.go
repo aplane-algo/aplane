@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -41,6 +42,9 @@ type policyStreams struct {
 func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOptions, streams policyStreams) int {
 	command, rescue, err := parsePolicyCommand(args, streams.stderr)
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		writePolicyError(streams.stderr, err)
 		return 2
 	}
@@ -131,6 +135,27 @@ func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, boo
 	}
 	fs := flag.NewFlagSet("apadmin policy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	mode := ""
+	if rescue {
+		mode = " rescue"
+	}
+	fs.Usage = func() {
+		_, _ = fmt.Fprintf(stderr, `Usage: apadmin [GLOBAL FLAGS] policy%s [VERB] [--target auto|signer|sentry] [FILE|-]
+
+Verbs:
+  edit [FILE]       open the guided editor (default)
+  check [FILE]      validate policy
+  export [FILE]     write exact validated YAML
+  digest [FILE]     write the exact YAML SHA-256 digest
+  apply FILE|-      validate and replace production policy
+  to-sentry [FILE]  convert signer policy to sentry policy
+
+Online commands authenticate and unlock before policy access; local IPC may use
+APSIGNER_PASSPHRASE, while --remote requires the controlling terminal. Policy
+rescue commands access the store directly, require a stopped daemon for
+production edits, and reject --remote, --client-data, and --ipc-path.
+`, mode)
+	}
 	targetRaw := fs.String("target", "auto", "policy target: auto, signer, or sentry")
 	if err := fs.Parse(args); err != nil {
 		return command, rescue, err
