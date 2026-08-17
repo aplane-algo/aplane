@@ -143,15 +143,15 @@ func TestImportRejectsMismatchedWitnessIdentity(t *testing.T) {
 	}
 }
 
-func TestImportReservesEndpointDiscoveryNamespace(t *testing.T) {
+func TestImportAllowsFormerEndpointDiscoveryNamespace(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	export := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
-	_, err := Import(paths, "default", "endpoint-manual-planted", export)
-	if err == nil || !strings.Contains(err.Error(), "reserved for endpoint discovery") {
-		t.Fatalf("Import(endpoint-* name) error = %v, want reserved namespace rejection", err)
+	record, err := Import(paths, "default", "endpoint-manual-planted", export)
+	if err != nil {
+		t.Fatalf("Import(endpoint-* name) error = %v", err)
 	}
-	if _, found, getErr := Get(paths, "default", "endpoint-manual-planted"); getErr != nil || found {
-		t.Fatalf("reserved manual reference was stored: found=%v err=%v", found, getErr)
+	if record.Name != "endpoint-manual-planted" {
+		t.Fatalf("record name = %q", record.Name)
 	}
 }
 
@@ -245,189 +245,146 @@ func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 	}
 }
 
-func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
+func TestGetMigratesV1ManualRecordToV2(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
-	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
-	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
-	}
+	writeV1Record(t, paths, "default", "manual-v1", recordSourceManualV1)
 
-	result, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
-		EndpointAlias: "Sentry.Local",
-		ComponentKey:  componentKey,
-		KeyType:       witness.Falcon1024V1,
-		PublicKeyHex:  strings.ToUpper(hex.EncodeToString(pub)),
-		LastSeenAt:    "2026-06-04T00:00:00Z",
-	}})
+	record, found, err := Get(paths, "default", "manual-v1")
+	if err != nil || !found {
+		t.Fatalf("Get() = (%#v, %v, %v)", record, found, err)
+	}
+	if record.Schema != RecordSchema || record.MigrationOrigin != "" {
+		t.Fatalf("migrated record = %#v", record)
+	}
+	assertStoredV2Record(t, paths, "default", "manual-v1", "")
+}
+
+func TestGetMigratesV1DiscoveryRecordToPinnedV2(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	writeV1Record(t, paths, "default", "endpoint-old", recordSourceDiscoveryV1)
+
+	record, found, err := Get(paths, "default", "endpoint-old")
+	if err != nil || !found {
+		t.Fatalf("Get() = (%#v, %v, %v)", record, found, err)
+	}
+	if record.Schema != RecordSchema || record.Name != "endpoint-old" || record.MigrationOrigin != MigrationOriginV1ClientDiscovery {
+		t.Fatalf("migrated record = %#v", record)
+	}
+	assertStoredV2Record(t, paths, "default", "endpoint-old", MigrationOriginV1ClientDiscovery)
+
+	identical, err := Import(paths, "default", "endpoint-old", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
 	if err != nil {
-		t.Fatalf("SyncDiscovered() error = %v", err)
+		t.Fatalf("identical Import() error = %v", err)
 	}
-	if result.Added != 1 || result.Updated != 0 || result.Removed != 0 {
-		t.Fatalf("sync counts = %#v, want one added", result)
-	}
-	wantName, err := SyncedReferenceName("Sentry.Local", componentKey)
-	if err != nil {
-		t.Fatalf("SyncedReferenceName() error = %v", err)
-	}
-	rec, ok, err := Get(paths, "default", wantName)
-	if err != nil || !ok {
-		t.Fatalf("Get(%s) = (%#v, %v, %v), want synced record", wantName, rec, ok, err)
-	}
-	if rec.Source != SourceClientDiscovery || rec.EndpointAlias != "Sentry.Local" {
-		t.Fatalf("record source/endpoint = %q/%q, want client discovery Sentry.Local", rec.Source, rec.EndpointAlias)
-	}
-	if rec.PublicKeyHex != strings.Repeat("ab", falconfamily.PublicKeySize) {
-		t.Fatalf("PublicKeyHex = %q, want lower-case ab", rec.PublicKeyHex)
-	}
-	if rec.SyncedAt == "" || rec.LastSeenAt == "" {
-		t.Fatalf("SyncedAt/LastSeenAt = %q/%q, want populated", rec.SyncedAt, rec.LastSeenAt)
+	if identical.MigrationOrigin != MigrationOriginV1ClientDiscovery {
+		t.Fatalf("identical import erased migration marker: %#v", identical)
 	}
 }
 
-func TestImportPromotesDiscoveredReferenceToManual(t *testing.T) {
+func TestV2RejectsRetiredDiscoveryFieldsAndUnknownMigrationOrigin(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
-	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
+	record, err := ParseImport("strict", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	name, err := SyncedReferenceName("sentry-local", componentKey)
+	record.ImportedAt = "2026-08-17T00:00:00Z"
+	data, err := json.Marshal(record)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
-		EndpointAlias: "sentry-local",
-		ComponentKey:  componentKey,
-		KeyType:       witness.Falcon1024V1,
-		PublicKeyHex:  hex.EncodeToString(pub),
-	}}); err != nil {
-		t.Fatalf("SyncDiscovered() error = %v", err)
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["source"] = recordSourceDiscoveryV1
+	writeRawRecord(t, paths, "default", "strict", raw)
+	if _, _, err := Get(paths, "default", "strict"); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("Get(v2 source) error = %v, want unknown-field rejection", err)
 	}
 
-	record, err := Import(paths, "default", name, testExportJSON(t, witness.Falcon1024V1, pub))
-	if err != nil {
-		t.Fatalf("Import() error = %v", err)
-	}
-	if record.Source != SourceManual || record.ImportedAt == "" {
-		t.Fatalf("promoted record source/imported_at = %q/%q, want manual timestamp", record.Source, record.ImportedAt)
-	}
-	if record.EndpointAlias != "" || record.SyncedAt != "" || record.LastSeenAt != "" {
-		t.Fatalf("promoted record retained discovery provenance: %#v", record)
-	}
-
-	result, err := SyncDiscovered(paths, "default", nil)
-	if err != nil {
-		t.Fatalf("SyncDiscovered(empty) error = %v", err)
-	}
-	if result.Removed != 0 {
-		t.Fatalf("SyncDiscovered(empty) removed = %d, want pinned manual reference retained", result.Removed)
-	}
-	stored, found, err := Get(paths, "default", name)
-	if err != nil || !found || stored.Source != SourceManual {
-		t.Fatalf("Get(promoted) = (%#v, %v, %v), want retained manual reference", stored, found, err)
+	delete(raw, "source")
+	raw["migration_origin"] = "future"
+	writeRawRecord(t, paths, "default", "strict", raw)
+	if _, _, err := Get(paths, "default", "strict"); err == nil || !strings.Contains(err.Error(), "unsupported sentry reference migration_origin") {
+		t.Fatalf("Get(unknown migration origin) error = %v", err)
 	}
 }
 
-func TestSyncDiscoveredRejectsMismatchedComponentSelector(t *testing.T) {
+func TestV2PreservesClosedMigrationMarker(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
-	otherPub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
-	componentKey, err := witness.ID(witness.Falcon1024V1, otherPub)
+	record, err := ParseImport("preserved", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
 	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
+		t.Fatal(err)
 	}
-
-	_, err = SyncDiscovered(paths, "default", []DiscoveredRecord{{
-		EndpointAlias: "sentry-local",
-		ComponentKey:  componentKey,
-		KeyType:       witness.Falcon1024V1,
-		PublicKeyHex:  hex.EncodeToString(pub),
-	}})
-	if err == nil {
-		t.Fatal("SyncDiscovered() error = nil, want selector/public-key mismatch rejection")
+	record.MigrationOrigin = MigrationOriginV1ClientDiscovery
+	if err := putRecord(paths, "default", *record); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "does not match") {
-		t.Fatalf("SyncDiscovered() error = %v, want Witness Key ID mismatch", err)
+	got, found, err := Get(paths, "default", "preserved")
+	if err != nil || !found || got.MigrationOrigin != MigrationOriginV1ClientDiscovery {
+		t.Fatalf("Get() = (%#v, %v, %v)", got, found, err)
 	}
 }
 
-func TestSyncDiscoveredRejectsSamePublicKeyFromMultipleEndpoints(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
-	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
+func writeV1Record(t *testing.T, paths storepaths.Paths, identityID, name, source string) {
+	t.Helper()
+	record, err := ParseImport(name, testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
 	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
+		t.Fatal(err)
 	}
+	legacy := recordV1{
+		Schema:            recordSchemaV1,
+		Name:              record.Name,
+		ComponentKey:      record.ComponentKey,
+		KeyType:           record.KeyType,
+		PublicKeyEncoding: record.PublicKeyEncoding,
+		PublicKeyHex:      record.PublicKeyHex,
+		PublicKeySize:     record.PublicKeySize,
+		PublicKeySHA256:   record.PublicKeySHA256,
+		Source:            source,
+		EndpointAlias:     "sentry-old",
+		LastSeenAt:        "2026-06-04T00:00:00Z",
+		SyncedAt:          "2026-06-04T00:01:00Z",
+		ImportedAt:        record.ImportedAt,
+	}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRawRecordBytes(t, paths, identityID, name, data)
+}
 
-	_, err = SyncDiscovered(paths, "default", []DiscoveredRecord{
-		{
-			EndpointAlias: "sentry-a",
-			ComponentKey:  componentKey,
-			KeyType:       witness.Falcon1024V1,
-			PublicKeyHex:  hex.EncodeToString(pub),
-		},
-		{
-			EndpointAlias: "sentry-b",
-			ComponentKey:  componentKey,
-			KeyType:       witness.Falcon1024V1,
-			PublicKeyHex:  strings.ToUpper(hex.EncodeToString(pub)),
-		},
-	})
-	if err == nil {
-		t.Fatal("SyncDiscovered() error = nil, want duplicate public-key route rejection")
+func assertStoredV2Record(t *testing.T, paths storepaths.Paths, identityID, name, migrationOrigin string) {
+	t.Helper()
+	data, err := os.ReadFile(paths.SentryRefPath(identityID, name))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "appears under multiple endpoint aliases") {
-		t.Fatalf("SyncDiscovered() error = %v, want duplicate endpoint rejection", err)
+	text := string(data)
+	if !strings.Contains(text, `"schema": "`+RecordSchema+`"`) || strings.Contains(text, `"source"`) || strings.Contains(text, `"endpoint_alias"`) {
+		t.Fatalf("stored migration = %s", text)
+	}
+	if migrationOrigin != "" && !strings.Contains(text, `"migration_origin": "`+migrationOrigin+`"`) {
+		t.Fatalf("stored migration lacks marker: %s", text)
 	}
 }
 
-func TestSyncDiscoveredReplacesOnlyClientDiscoveryReferences(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	manualPub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
-	if _, err := Import(paths, "default", "manual-sentry", testExportJSON(t, witness.Falcon1024V1, manualPub)); err != nil {
-		t.Fatalf("Import() error = %v", err)
-	}
-	stalePub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
-	staleComponent, err := witness.ID(witness.Falcon1024V1, stalePub)
+func writeRawRecord(t *testing.T, paths storepaths.Paths, identityID, name string, raw map[string]any) {
+	t.Helper()
+	data, err := json.Marshal(raw)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector(stale) error = %v", err)
+		t.Fatal(err)
 	}
-	if _, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
-		EndpointAlias: "stale",
-		ComponentKey:  staleComponent,
-		KeyType:       witness.Falcon1024V1,
-		PublicKeyHex:  hex.EncodeToString(stalePub),
-	}}); err != nil {
-		t.Fatalf("SyncDiscovered(stale) error = %v", err)
-	}
+	writeRawRecordBytes(t, paths, identityID, name, data)
+}
 
-	freshPub := bytesOfLen(falconfamily.PublicKeySize, 0xef)
-	freshComponent, err := witness.ID(witness.Falcon1024V1, freshPub)
-	if err != nil {
-		t.Fatalf("ComponentKeySelector(fresh) error = %v", err)
+func writeRawRecordBytes(t *testing.T, paths storepaths.Paths, identityID, name string, data []byte) {
+	t.Helper()
+	if err := os.MkdirAll(paths.SentryRefsDir(identityID), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	result, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
-		EndpointAlias: "fresh",
-		ComponentKey:  freshComponent,
-		KeyType:       witness.Falcon1024V1,
-		PublicKeyHex:  hex.EncodeToString(freshPub),
-	}})
-	if err != nil {
-		t.Fatalf("SyncDiscovered(fresh) error = %v", err)
-	}
-	if result.Added != 1 || result.Removed != 1 {
-		t.Fatalf("sync counts = %#v, want one added and one stale removed", result)
-	}
-	if _, ok, err := Get(paths, "default", "manual-sentry"); err != nil || !ok {
-		t.Fatalf("manual reference removed or unreadable: ok=%v err=%v", ok, err)
-	}
-	staleName, err := SyncedReferenceName("stale", staleComponent)
-	if err != nil {
-		t.Fatalf("SyncedReferenceName(stale) error = %v", err)
-	}
-	if _, ok, err := Get(paths, "default", staleName); err != nil || ok {
-		t.Fatalf("stale reference Get = ok:%v err:%v, want absent", ok, err)
+	if err := os.WriteFile(paths.SentryRefPath(identityID, name), data, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 

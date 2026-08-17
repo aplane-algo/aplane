@@ -96,10 +96,6 @@ func (e *Core) AdminDeleteKeyWithContext(ctx context.Context, address string) (*
 	return e.Connection.AdminDeleteKeyWithContext(ctx, address)
 }
 
-func (e *Core) AdminSyncSentryReferencesWithContext(ctx context.Context, candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
-	return e.Connection.AdminSyncSentryReferencesWithContext(ctx, candidates)
-}
-
 func (e *Core) RequestGroupPlanWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
 	if err := e.validateAlgodConsensus(ctx); err != nil {
 		return nil, fmt.Errorf("validate algod consensus before group planning: %w", err)

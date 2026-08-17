@@ -618,8 +618,7 @@ func adminSentryReference(record sentryrefs.Record) adminproto.SentryReferenceIn
 		Schema: record.Schema, Name: record.Name, ComponentKey: record.ComponentKey, KeyType: record.KeyType,
 		PublicKeyEncoding: record.PublicKeyEncoding, PublicKeyHex: record.PublicKeyHex,
 		PublicKeySize: record.PublicKeySize, PublicKeySHA256: record.PublicKeySHA256,
-		Source: record.Source, EndpointAlias: record.EndpointAlias, LastSeenAt: record.LastSeenAt,
-		SyncedAt: record.SyncedAt, ImportedAt: record.ImportedAt,
+		ImportedAt: record.ImportedAt, MigrationOrigin: record.MigrationOrigin,
 	}
 }
 

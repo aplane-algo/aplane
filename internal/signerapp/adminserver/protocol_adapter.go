@@ -458,8 +458,7 @@ func protocolSentryReference(item adminproto.SentryReferenceInfo) protocol.Sentr
 		Schema: item.Schema, Name: item.Name, ComponentKey: item.ComponentKey, KeyType: item.KeyType,
 		PublicKeyEncoding: item.PublicKeyEncoding, PublicKeyHex: item.PublicKeyHex,
 		PublicKeySize: item.PublicKeySize, PublicKeySHA256: item.PublicKeySHA256,
-		Source: item.Source, EndpointAlias: item.EndpointAlias, LastSeenAt: item.LastSeenAt,
-		SyncedAt: item.SyncedAt, ImportedAt: item.ImportedAt,
+		ImportedAt: item.ImportedAt, MigrationOrigin: item.MigrationOrigin,
 	}
 }
 

@@ -6,21 +6,12 @@ package apshellcli
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
-	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
@@ -93,6 +84,9 @@ func TestEndpointsUsageListsDiscoverSentries(t *testing.T) {
 	if !strings.Contains(cmd.Usage, "endpoints discover-sentries") || strings.Contains(cmd.Usage, "discover-sentries [--dry-run]") {
 		t.Fatalf("endpoints registry usage = %q, want discover-sentries", cmd.Usage)
 	}
+	if strings.Contains(cmd.Usage, "sync-sentries") {
+		t.Fatalf("endpoints registry usage = %q, contains retired sync-sentries", cmd.Usage)
+	}
 
 	err := state.cmdEndpoints(nil, nil)
 	if err == nil {
@@ -100,75 +94,6 @@ func TestEndpointsUsageListsDiscoverSentries(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "endpoints discover-sentries") {
 		t.Fatalf("cmdEndpoints() error = %q, want discover-sentries", err)
-	}
-}
-
-func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
-	dataDir := t.TempDir()
-	publicKeyHex := strings.Repeat("ab", witness.Falcon1024PublicKeySize)
-	componentKey := endpointCLITestComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
-	server := newEndpointCLIKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:      componentKey,
-		PublicKeyHex: publicKeyHex,
-		KeyType:      witness.Falcon1024V1,
-		IsWitnessKey: true,
-	}})
-
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry,
-		URL:  server.URL,
-	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint() error = %v", err)
-	}
-	tokenPath := filepath.Join(dataDir, "tokens", "sentry-local.token")
-	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
-		t.Fatalf("MkdirAll(tokens) error = %v", err)
-	}
-	if err := tokenfile.WriteToken(tokenPath, "sentry-token"); err != nil {
-		t.Fatalf("WriteToken() error = %v", err)
-	}
-
-	cfg, err := config.LoadConfig(dataDir)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-	var out bytes.Buffer
-	var progress []string
-	state := &REPLState{
-		Out:     &out,
-		App:     apshellapp.New(eng, cfg, dataDir),
-		DataDir: dataDir,
-		Config:  cfg,
-		LineReader: func() (string, error) {
-			t.Fatal("sync-sentries should fail before prompting when signer is not connected")
-			return "", nil
-		},
-		ProgressLine: func(line string) {
-			progress = append(progress, line)
-		},
-		currentCommandCtx: context.Background(),
-	}
-
-	err = state.cmdEndpoints([]string{"sync-sentries"}, nil)
-	if err == nil {
-		t.Fatal("cmdEndpoints(sync-sentries) error = nil, want not connected")
-	}
-	if !strings.Contains(err.Error(), "not connected to Signer") {
-		t.Fatalf("cmdEndpoints(sync-sentries) error = %v, want not connected", err)
-	}
-	joined := strings.Join(progress, "\n")
-	if !strings.Contains(joined, componentKey) {
-		t.Fatalf("progress output = %q, want Witness Key ID %s", joined, componentKey)
-	}
-	if strings.Contains(joined, publicKeyHex) || strings.Contains(joined, strings.ToUpper(publicKeyHex)) {
-		t.Fatalf("progress output leaked raw sentry public key: %q", joined)
-	}
-	if strings.Contains(out.String(), componentKey) {
-		t.Fatalf("captured output = %q, Witness Key ID should be live progress before prompt", out.String())
 	}
 }
 
@@ -204,38 +129,4 @@ func TestRenderEndpointsListOmitsCachedSentryInventory(t *testing.T) {
 	if strings.Contains(rendered, "SENTRY KEYS") || strings.Contains(rendered, "ATTESTORS") || strings.Contains(rendered, "COMPONENT") {
 		t.Fatalf("rendered endpoint list header = %q, want no cached inventory columns", rendered)
 	}
-}
-
-func endpointCLITestComponentSelector(t *testing.T, keyType, publicKeyHex string) string {
-	t.Helper()
-	publicKey, err := hex.DecodeString(publicKeyHex)
-	if err != nil {
-		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
-	}
-	selector, err := witness.ID(keyType, publicKey)
-	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
-	}
-	return selector
-}
-
-func newEndpointCLIKeysServer(t *testing.T, token string, keys []signerapi.KeyInfo) *httptest.Server {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/keys" {
-			http.NotFound(w, r)
-			return
-		}
-		if got := r.Header.Get("Authorization"); got != "aplane "+token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
-			Count: len(keys),
-			Keys:  keys,
-		})
-	}))
-	t.Cleanup(server.Close)
-	return server
 }

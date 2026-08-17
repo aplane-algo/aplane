@@ -6,7 +6,6 @@ package rest
 import (
 	"context"
 
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
@@ -54,46 +53,6 @@ func (s Service) AdminDelete(ir *identity.Runtime, address string) (signerapi.Ad
 	}
 
 	return signerapi.AdminDeleteResponse{Success: true}, nil
-}
-
-func (s Service) AdminSyncSentryReferences(ir *identity.Runtime, req signerapi.AdminSyncSentryReferencesRequest) (signerapi.AdminSyncSentryReferencesResponse, *svcerr.Error) {
-	if ir == nil {
-		return signerapi.AdminSyncSentryReferencesResponse{}, &svcerr.Error{Kind: svcerr.KindInternal, Message: "identity runtime is nil"}
-	}
-	discovered := make([]sentryrefs.DiscoveredRecord, 0, len(req.Candidates))
-	for _, candidate := range req.Candidates {
-		discovered = append(discovered, sentryrefs.DiscoveredRecord{
-			EndpointAlias: candidate.EndpointAlias,
-			ComponentKey:  candidate.ComponentKey,
-			KeyType:       candidate.KeyType,
-			PublicKeyHex:  candidate.PublicKeyHex,
-			LastSeenAt:    candidate.LastSeenAt,
-		})
-	}
-	result, err := s.Deps.KeyAdmin.SyncSentryReferences(ir, discovered)
-	if err != nil {
-		return signerapi.AdminSyncSentryReferencesResponse{}, sanitizeKeyAdminError(err, "sentry reference sync failed")
-	}
-	records := make([]signerapi.SyncedSentryReferenceInfo, 0, len(result.Records))
-	for _, rec := range result.Records {
-		records = append(records, signerapi.SyncedSentryReferenceInfo{
-			Name:          rec.Name,
-			Source:        rec.Source,
-			EndpointAlias: rec.EndpointAlias,
-			ComponentKey:  rec.ComponentKey,
-			KeyType:       rec.KeyType,
-			PublicKeyHex:  rec.PublicKeyHex,
-			LastSeenAt:    rec.LastSeenAt,
-			SyncedAt:      rec.SyncedAt,
-		})
-	}
-	return signerapi.AdminSyncSentryReferencesResponse{
-		Added:   result.Added,
-		Updated: result.Updated,
-		Removed: result.Removed,
-		Count:   len(result.Records),
-		Records: records,
-	}, nil
 }
 
 // sanitizeKeyAdminError passes kinded errors through to the wire and hides

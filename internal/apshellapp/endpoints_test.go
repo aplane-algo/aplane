@@ -178,25 +178,6 @@ func TestEndpointDiscoverSentriesRejectsAuthenticationAndMalformedMetadata(t *te
 	}
 }
 
-func TestEndpointSyncSentriesDryRunUsesLiveDiscovery(t *testing.T) {
-	dataDir := t.TempDir()
-	publicKey := testSentryPublicKeyHex()
-	componentKey := testComponentSelector(t, witness.Falcon1024V1, publicKey)
-	server := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address: componentKey, PublicKeyHex: publicKey, KeyType: witness.Falcon1024V1, IsWitnessKey: true,
-	}})
-	writeLiveSentryEndpoint(t, dataDir, "sentry-local", server.URL, "sentry-token")
-	app := newEndpointTestApp(t, dataDir)
-	result, err := app.EndpointSyncSentries(t.Context(), EndpointSyncSentriesRequest{DryRun: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.CandidateCount != 1 || len(result.Records) != 1 || result.Records[0].ComponentKey != componentKey {
-		t.Fatalf("sync result = %#v", result)
-	}
-	assertHumanEndpointOutputUsesComponentOnly(t, result.RenderLines, publicKey, componentKey)
-}
-
 func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
 	dataDir := t.TempDir()
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "self"}, true); err != nil {

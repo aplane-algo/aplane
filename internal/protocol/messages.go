@@ -1033,11 +1033,8 @@ type SentryReferenceInfo struct {
 	PublicKeyHex      string `json:"public_key_hex"`
 	PublicKeySize     int    `json:"public_key_size"`
 	PublicKeySHA256   string `json:"public_key_sha256"`
-	Source            string `json:"source,omitempty"`
-	EndpointAlias     string `json:"endpoint_alias,omitempty"`
-	LastSeenAt        string `json:"last_seen_at,omitempty"`
-	SyncedAt          string `json:"synced_at,omitempty"`
 	ImportedAt        string `json:"imported_at,omitempty"`
+	MigrationOrigin   string `json:"migration_origin,omitempty"`
 }
 
 type ListSentryReferencesMessage struct{ BaseMessage }

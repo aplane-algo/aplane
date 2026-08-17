@@ -13,8 +13,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
@@ -38,13 +36,6 @@ type EndpointCreateSentryRequest struct {
 // EndpointDiscoverSentriesRequest requests a read-only sweep of configured
 // sentry endpoint inventories.
 type EndpointDiscoverSentriesRequest struct{}
-
-// EndpointSyncSentriesRequest syncs endpoint-published sentry inventory into
-// the connected signer identity's public sentry reference catalog.
-type EndpointSyncSentriesRequest struct {
-	DryRun            bool
-	ApproveSignerSync bool
-}
 
 // EndpointsList returns the resolved client endpoint registry.
 func (a *App) EndpointsList(_ context.Context) (*EndpointsListResult, error) {
@@ -192,7 +183,7 @@ func (a *App) EndpointCreateSentry(_ context.Context, req EndpointCreateSentryRe
 // EndpointDiscoverSentries performs a read-only diagnostic sweep of configured
 // endpoint /keys inventories.
 func (a *App) EndpointDiscoverSentries(ctx context.Context, _ EndpointDiscoverSentriesRequest) (*EndpointDiscoverSentriesResult, error) {
-	result, _, err := a.discoverEndpointSentries(ctx)
+	result, err := a.discoverEndpointSentries(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -200,10 +191,10 @@ func (a *App) EndpointDiscoverSentries(ctx context.Context, _ EndpointDiscoverSe
 	return result, nil
 }
 
-func (a *App) discoverEndpointSentries(ctx context.Context) (*EndpointDiscoverSentriesResult, []signerapi.SentryReferenceCandidate, error) {
+func (a *App) discoverEndpointSentries(ctx context.Context) (*EndpointDiscoverSentriesResult, error) {
 	cfg, err := config.LoadConfig(a.DataDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	a.Config = cfg
 
@@ -215,19 +206,19 @@ func (a *App) discoverEndpointSentries(ctx context.Context) (*EndpointDiscoverSe
 	}
 	sort.Strings(aliases)
 	if len(aliases) == 0 {
-		return nil, nil, fmt.Errorf("no sentry endpoints configured")
+		return nil, fmt.Errorf("no sentry endpoints configured")
 	}
 
 	discoveries := make([]EndpointSentryDiscovery, 0, len(aliases))
-	candidates := make([]signerapi.SentryReferenceCandidate, 0)
 	seenPublicKeys := map[string]string{}
+	publicKeyCount := 0
 	for _, alias := range aliases {
 		endpoint := cfg.Endpoints.Endpoints[alias]
 		keys, err := a.eng.DiscoverSentryComponentKeys(ctx, endpoint)
 		if err != nil {
 			if !errors.Is(err, engine.ErrSentryDiscoveryUnavailable) &&
 				!errors.Is(err, engine.ErrSentryDiscoveryLocked) {
-				return nil, nil, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
+				return nil, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
 			}
 			discoveries = append(discoveries, EndpointSentryDiscovery{
 				Alias:   alias,
@@ -239,7 +230,7 @@ func (a *App) discoverEndpointSentries(ctx context.Context) (*EndpointDiscoverSe
 		discovery := EndpointSentryDiscovery{Alias: alias}
 		for _, key := range keys {
 			if previousAlias, exists := seenPublicKeys[key.PublicKey]; exists {
-				return nil, nil, fmt.Errorf("sentry public key advertised by both endpoint aliases %q and %q", previousAlias, alias)
+				return nil, fmt.Errorf("sentry public key advertised by both endpoint aliases %q and %q", previousAlias, alias)
 			}
 			seenPublicKeys[key.PublicKey] = alias
 			discovery.Keys = append(discovery.Keys, DiscoveredEndpointSentryKey{
@@ -247,102 +238,14 @@ func (a *App) discoverEndpointSentries(ctx context.Context) (*EndpointDiscoverSe
 				ComponentKey: key.ComponentKey,
 				KeyType:      key.KeyType,
 			})
-			candidates = append(candidates, signerapi.SentryReferenceCandidate{
-				EndpointAlias: alias,
-				ComponentKey:  key.ComponentKey,
-				KeyType:       key.KeyType,
-				PublicKeyHex:  key.PublicKey,
-			})
+			publicKeyCount++
 		}
 		discoveries = append(discoveries, discovery)
 	}
 	result := &EndpointDiscoverSentriesResult{
 		Endpoints:      discoveries,
-		PublicKeyCount: len(candidates),
+		PublicKeyCount: publicKeyCount,
 	}
-	return result, candidates, nil
-}
-
-// EndpointSyncSentries publishes endpoint-discovered sentry metadata into
-// the connected signer identity so signer-side key generation can select those
-// sentries by name.
-func (a *App) EndpointSyncSentries(ctx context.Context, req EndpointSyncSentriesRequest) (*EndpointSyncSentriesResult, error) {
-	discovery, candidates, err := a.discoverEndpointSentries(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &EndpointSyncSentriesResult{
-		DryRun:         req.DryRun,
-		Discovery:      discovery,
-		CandidateCount: len(candidates),
-	}
-	for _, candidate := range candidates {
-		name, err := sentryrefs.SyncedReferenceName(candidate.EndpointAlias, candidate.ComponentKey)
-		if err != nil {
-			return nil, err
-		}
-		result.Records = append(result.Records, SyncedEndpointSentryReference{
-			Name:          name,
-			EndpointAlias: candidate.EndpointAlias,
-			PublicKey:     candidate.PublicKeyHex,
-			ComponentKey:  candidate.ComponentKey,
-			KeyType:       candidate.KeyType,
-		})
-	}
-	if req.DryRun {
-		result.RenderLines = endpointSyncSentriesRenderLines(result)
-		return result, nil
-	}
-	if !req.ApproveSignerSync {
-		result.NeedsConfirmation = true
-		result.RenderLines = endpointSyncSentriesRenderLines(result)
-		return result, nil
-	}
-	if err := a.syncEndpointSentriesToSigner(ctx, result, candidates); err != nil {
-		return nil, err
-	}
-	result.RenderLines = endpointSyncSentriesRenderLines(result)
-	return result, nil
-}
-
-func (a *App) syncEndpointSentriesToSigner(ctx context.Context, result *EndpointSyncSentriesResult, candidates []signerapi.SentryReferenceCandidate) error {
-	if !a.eng.IsConnected() {
-		return fmt.Errorf("not connected to Signer")
-	}
-	resp, err := a.eng.AdminSyncSentryReferencesWithContext(ctx, candidates)
-	if err != nil {
-		return err
-	}
-	result.CandidateCount = len(candidates)
-	result.Added = resp.Added
-	result.Updated = resp.Updated
-	result.Removed = resp.Removed
-	result.Records = nil
-	for _, rec := range resp.Records {
-		result.Records = append(result.Records, SyncedEndpointSentryReference{
-			Name:          rec.Name,
-			EndpointAlias: rec.EndpointAlias,
-			PublicKey:     rec.PublicKeyHex,
-			ComponentKey:  rec.ComponentKey,
-			KeyType:       rec.KeyType,
-		})
-	}
-	return nil
-}
-
-// EndpointConfirmSyncSentries publishes the current endpoint-discovered
-// sentry inventory to the connected signer identity after user confirmation.
-func (a *App) EndpointConfirmSyncSentries(ctx context.Context) (*EndpointSyncSentriesResult, error) {
-	discovery, candidates, err := a.discoverEndpointSentries(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result := &EndpointSyncSentriesResult{Discovery: discovery}
-	if err := a.syncEndpointSentriesToSigner(ctx, result, candidates); err != nil {
-		return nil, err
-	}
-	result.RenderLines = endpointSyncSentriesRenderLines(result)
 	return result, nil
 }
 
@@ -472,31 +375,6 @@ func endpointCreateSentryRenderLines(result *EndpointCreateSentryResult) []strin
 	}
 }
 
-func endpointSyncSentriesRenderLines(result *EndpointSyncSentriesResult) []string {
-	action := "Synced"
-	if result.DryRun {
-		action = "Would sync"
-	}
-	lines := []string{
-		fmt.Sprintf("%s %d endpoint-discovered sentry reference(s) to signer", action, result.CandidateCount),
-	}
-	if result.Discovery != nil {
-		lines = append(lines, endpointDiscoverSentriesRenderLines(result.Discovery)...)
-	}
-	if result.NeedsConfirmation {
-		lines = append(lines, "Confirm before syncing these sentries to the signer library.")
-	}
-	if !result.DryRun && !result.NeedsConfirmation {
-		lines = append(lines,
-			fmt.Sprintf("  added: %d", result.Added),
-			fmt.Sprintf("  updated: %d", result.Updated),
-			fmt.Sprintf("  removed stale: %d", result.Removed),
-		)
-	}
-	lines = append(lines, endpointSyncSentrySummaryLines(result.Records)...)
-	return lines
-}
-
 func endpointDiscoverSentriesRenderLines(result *EndpointDiscoverSentriesResult) []string {
 	lines := []string{
 		fmt.Sprintf("Discovered sentry inventory from %d endpoint(s): %d key(s)", len(result.Endpoints), result.PublicKeyCount),
@@ -512,39 +390,6 @@ func endpointDiscoverSentriesRenderLines(result *EndpointDiscoverSentriesResult)
 		}
 		lines = append(lines, fmt.Sprintf("  %s: %d key(s)", endpoint.Alias, len(endpoint.Keys)))
 		lines = append(lines, endpointDiscoveredComponentLines(endpoint.Keys)...)
-	}
-	return lines
-}
-
-func endpointSyncSentrySummaryLines(records []SyncedEndpointSentryReference) []string {
-	if len(records) == 0 {
-		return nil
-	}
-	counts := map[string]map[string]int{}
-	for _, rec := range records {
-		if counts[rec.EndpointAlias] == nil {
-			counts[rec.EndpointAlias] = map[string]int{}
-		}
-		counts[rec.EndpointAlias][rec.KeyType]++
-	}
-	aliases := make([]string, 0, len(counts))
-	for alias := range counts {
-		aliases = append(aliases, alias)
-	}
-	sort.Strings(aliases)
-
-	lines := make([]string, 0, len(records)+len(aliases))
-	for _, alias := range aliases {
-		total := 0
-		for _, count := range counts[alias] {
-			total += count
-		}
-		lines = append(lines, fmt.Sprintf("  %s: %d key(s)", alias, total))
-		for _, rec := range records {
-			if rec.EndpointAlias == alias {
-				lines = append(lines, fmt.Sprintf("    %s (%s)", rec.ComponentKey, rec.KeyType))
-			}
-		}
 	}
 	return lines
 }

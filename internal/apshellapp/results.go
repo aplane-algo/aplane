@@ -786,30 +786,6 @@ type EndpointDiscoverSentriesResult struct {
 	RenderLines    []string
 }
 
-// SyncedEndpointSentryReference describes one endpoint-discovered sentry
-// candidate synced into the connected signer identity.
-type SyncedEndpointSentryReference struct {
-	Name          string
-	EndpointAlias string
-	PublicKey     string
-	ComponentKey  string
-	KeyType       string
-}
-
-// EndpointSyncSentriesResult describes syncing endpoint-published sentries
-// into signer-side key-generation reference options.
-type EndpointSyncSentriesResult struct {
-	DryRun            bool
-	NeedsConfirmation bool
-	Discovery         *EndpointDiscoverSentriesResult
-	CandidateCount    int
-	Added             int
-	Updated           int
-	Removed           int
-	Records           []SyncedEndpointSentryReference
-	RenderLines       []string
-}
-
 // StartupConnectDecision describes what apshell should do at startup about signer connectivity.
 type StartupConnectDecision struct {
 	EndpointName  string

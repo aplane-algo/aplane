@@ -133,9 +133,9 @@ func (s *Session) HandleImportSentryReference(msg *protocol.ImportSentryReferenc
 	}
 	result := s.inspectionServices.ImportSentryReference(ir, adminproto.ImportSentryReferenceRequest{Name: msg.Name, EnvelopeJSON: msg.EnvelopeJSON})
 	if audit, ok := s.audit.(interface {
-		LogSentryReferenceChangedContext(SessionContext, string, string, string, bool)
+		LogSentryReferenceChangedContext(SessionContext, string, string, string, string, bool)
 	}); ok {
-		audit.LogSentryReferenceChangedContext(s.SessionContext(), "import", msg.Name, result.Reference.ComponentKey, result.Success)
+		audit.LogSentryReferenceChangedContext(s.SessionContext(), "import", msg.Name, result.Reference.ComponentKey, result.Reference.MigrationOrigin, result.Success)
 	}
 	_ = s.WriteJSON(ProtocolSentryReferenceMessage(
 		msg.ID,
@@ -158,9 +158,9 @@ func (s *Session) HandleRemoveSentryReference(msg *protocol.RemoveSentryReferenc
 	}
 	result := s.inspectionServices.RemoveSentryReference(ir, adminproto.RemoveSentryReferenceRequest{Name: msg.Name})
 	if audit, ok := s.audit.(interface {
-		LogSentryReferenceChangedContext(SessionContext, string, string, string, bool)
+		LogSentryReferenceChangedContext(SessionContext, string, string, string, string, bool)
 	}); ok {
-		audit.LogSentryReferenceChangedContext(s.SessionContext(), "remove", msg.Name, result.ComponentKey, result.Success)
+		audit.LogSentryReferenceChangedContext(s.SessionContext(), "remove", msg.Name, result.ComponentKey, "", result.Success)
 	}
 	_ = s.WriteJSON(ProtocolRemoveSentryReferenceResultMessage(msg.ID, result))
 }

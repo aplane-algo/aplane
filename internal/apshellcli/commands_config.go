@@ -21,7 +21,6 @@ const endpointsUsage = "endpoints list | " +
 	"endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run] | " +
 	"endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json> | " +
 	"endpoints discover-sentries | " +
-	"endpoints sync-sentries [--dry-run] [--yes] | " +
 	"endpoints default <alias> | " +
 	"endpoints delete <alias>"
 
@@ -134,48 +133,6 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 		}
 		for _, line := range result.RenderLines {
 			r.println(line)
-		}
-		return nil
-	case "sync-sentries":
-		req, err := parseEndpointSyncSentriesArgs(args[1:])
-		if err != nil {
-			return err
-		}
-		result, err := r.app().EndpointSyncSentries(r.commandContext(), req)
-		if err != nil {
-			return err
-		}
-		if result.NeedsConfirmation {
-			for _, line := range result.RenderLines {
-				r.progressPrintln(line)
-			}
-		} else {
-			for _, line := range result.RenderLines {
-				r.println(line)
-			}
-		}
-		if result.NeedsConfirmation {
-			if !r.app().IsConnected() {
-				return fmt.Errorf("not connected to Signer; run connect before syncing sentries to the signer library")
-			}
-			if r.AutoConfirm {
-				return fmt.Errorf("endpoints sync-sentries requires --yes to update the signer library in non-interactive mode")
-			}
-			response, err := r.readPromptResponse("Sync these sentries to the signer library? [y/N]: ")
-			if err != nil {
-				return err
-			}
-			if response != "y" && response != "yes" {
-				r.println("Sync cancelled")
-				return nil
-			}
-			confirmed, err := r.app().EndpointConfirmSyncSentries(r.commandContext())
-			if err != nil {
-				return err
-			}
-			for _, line := range confirmed.RenderLines {
-				r.println(line)
-			}
 		}
 		return nil
 	case "default":
@@ -324,31 +281,6 @@ func parseEndpointDiscoverSentriesArgs(args []string) (apshellapp.EndpointDiscov
 	var req apshellapp.EndpointDiscoverSentriesRequest
 	if len(args) != 0 {
 		return req, errors.New("usage: endpoints discover-sentries")
-	}
-	return req, nil
-}
-
-func parseEndpointSyncSentriesArgs(args []string) (apshellapp.EndpointSyncSentriesRequest, error) {
-	var req apshellapp.EndpointSyncSentriesRequest
-	const usage = "usage: endpoints sync-sentries [--dry-run] [--yes]"
-	for _, arg := range args {
-		switch arg {
-		case "--dry-run":
-			if req.DryRun {
-				return req, errors.New(usage)
-			}
-			req.DryRun = true
-		case "--yes", "-y":
-			if req.ApproveSignerSync {
-				return req, errors.New(usage)
-			}
-			req.ApproveSignerSync = true
-		default:
-			return req, errors.New(usage)
-		}
-	}
-	if req.DryRun && req.ApproveSignerSync {
-		return req, errors.New(usage)
 	}
 	return req, nil
 }

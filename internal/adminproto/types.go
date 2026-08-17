@@ -311,11 +311,8 @@ type SentryReferenceInfo struct {
 	PublicKeyHex      string
 	PublicKeySize     int
 	PublicKeySHA256   string
-	Source            string
-	EndpointAlias     string
-	LastSeenAt        string
-	SyncedAt          string
 	ImportedAt        string
+	MigrationOrigin   string
 }
 
 type ListSentryReferencesResult struct {

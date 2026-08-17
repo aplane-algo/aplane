@@ -79,6 +79,7 @@ type AuditEntry struct {
 	Reason             string         `json:"reason,omitempty"`              // Rejection/failure reason
 	PolicyRuleID       string         `json:"policy_rule_id,omitempty"`      // Policy rule that forced manual review
 	WitnessKeyID       string         `json:"witness_key_id,omitempty"`      // Public witness authority affected by a sentry-reference mutation
+	MigrationOrigin    string         `json:"migration_origin,omitempty"`    // Closed historical origin for migrated sentry references
 	KeyCount           int            `json:"key_count,omitempty"`           // For key reload events
 	ArchiveSHA256      string         `json:"archive_sha256,omitempty"`
 	ReplaceExisting    bool           `json:"replace_existing,omitempty"`
@@ -752,7 +753,7 @@ func (a *AuditLogger) LogPassphraseChangeFailed(identityID, reason string) {
 // LogSentryReferenceChangedContext records authenticated online sentry
 // reference mutations by stable Witness Key ID without placing public-key
 // material in the audit log.
-func (a *AuditLogger) LogSentryReferenceChangedContext(ctx adminserver.SessionContext, action, name, componentKey string, success bool) {
+func (a *AuditLogger) LogSentryReferenceChangedContext(ctx adminserver.SessionContext, action, name, componentKey, migrationOrigin string, success bool) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditSentryReferenceChanged
 	entry.Outcome = action
@@ -761,5 +762,6 @@ func (a *AuditLogger) LogSentryReferenceChangedContext(ctx adminserver.SessionCo
 	}
 	entry.Reason = fmt.Sprintf("action=%s name=%s", action, name)
 	entry.WitnessKeyID = componentKey
+	entry.MigrationOrigin = migrationOrigin
 	a.Log(entry)
 }

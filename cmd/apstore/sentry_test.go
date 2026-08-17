@@ -73,47 +73,6 @@ func TestCmdSentryImportListShowRemove(t *testing.T) {
 	})
 }
 
-func TestCmdSentryListHidesEndpointSyncedRecordName(t *testing.T) {
-	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		withLocalSentryAdminClient(t)
-		pub := make([]byte, testSentryPublicKeySize(t))
-		for i := range pub {
-			pub[i] = 0xab
-		}
-		componentKey, err := witness.ID(witness.Falcon1024V1, pub)
-		if err != nil {
-			t.Fatalf("witness.ID() error = %v", err)
-		}
-		if _, err := sentryrefs.SyncDiscovered(keystorePaths(), productIdentityID(), []sentryrefs.DiscoveredRecord{{
-			EndpointAlias: "foo",
-			ComponentKey:  componentKey,
-			KeyType:       witness.Falcon1024V1,
-			PublicKeyHex:  strings.Repeat("ab", testSentryPublicKeySize(t)),
-		}}); err != nil {
-			t.Fatalf("SyncDiscovered() error = %v", err)
-		}
-		generatedName, err := sentryrefs.SyncedReferenceName("foo", componentKey)
-		if err != nil {
-			t.Fatalf("SyncedReferenceName() error = %v", err)
-		}
-
-		listOut, err := withCapturedStdout(func() error {
-			return cmdSentry([]string{"list"})
-		})
-		if err != nil {
-			t.Fatalf("cmdSentry(list) error = %v", err)
-		}
-		if strings.Contains(listOut, generatedName) {
-			t.Fatalf("list output exposed generated record name %q:\n%s", generatedName, listOut)
-		}
-		if !strings.Contains(listOut, componentKey) ||
-			!strings.Contains(listOut, witness.Falcon1024V1) ||
-			!strings.Contains(listOut, "endpoint: foo") {
-			t.Fatalf("list output = %q, want Witness Key ID, key type, and endpoint alias", listOut)
-		}
-	})
-}
-
 func withLocalSentryAdminClient(t *testing.T) {
 	t.Helper()
 	fake := &fakeApstoreAdminRequester{}
@@ -184,8 +143,7 @@ func protocolSentryReferenceForTest(record sentryrefs.Record) protocol.SentryRef
 		Schema: record.Schema, Name: record.Name, ComponentKey: record.ComponentKey, KeyType: record.KeyType,
 		PublicKeyEncoding: record.PublicKeyEncoding, PublicKeyHex: record.PublicKeyHex,
 		PublicKeySize: record.PublicKeySize, PublicKeySHA256: record.PublicKeySHA256,
-		Source: record.Source, EndpointAlias: record.EndpointAlias, LastSeenAt: record.LastSeenAt,
-		SyncedAt: record.SyncedAt, ImportedAt: record.ImportedAt,
+		ImportedAt: record.ImportedAt, MigrationOrigin: record.MigrationOrigin,
 	}
 }
 

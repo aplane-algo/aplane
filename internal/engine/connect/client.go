@@ -88,20 +88,6 @@ func (s *ConnectionState) AdminDeleteKeyWithContext(ctx context.Context, address
 	return client.AdminDeleteKeyWithContext(ctx, address)
 }
 
-// AdminSyncSentryReferences syncs public sentry reference candidates into
-// the connected signer identity.
-func (s *ConnectionState) AdminSyncSentryReferences(candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
-	return s.AdminSyncSentryReferencesWithContext(context.Background(), candidates)
-}
-
-func (s *ConnectionState) AdminSyncSentryReferencesWithContext(ctx context.Context, candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
-	client, err := s.signerClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.AdminSyncSentryReferencesWithContext(ctx, candidates)
-}
-
 // RequestGroupPlan sends group planning requests to Signer.
 func (s *ConnectionState) RequestGroupPlan(requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
 	return s.RequestGroupPlanWithContext(context.Background(), requests)

@@ -6,7 +6,6 @@ package daemon
 import (
 	"net/http"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -21,27 +20,6 @@ func (fs *Signer) handleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return
-	}
-	writeJSON(w, http.StatusOK, response)
-}
-
-// handleAdminSyncSentries handles POST /admin/sentries/sync for public
-// sentry reference catalog sync via REST.
-func (fs *Signer) handleAdminSyncSentries(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.AdminSyncSentryReferencesRequest](fs, w, r, http.MethodPost)
-	if !ok {
-		return
-	}
-
-	response, err := fs.restService().AdminSyncSentryReferences(ir, req)
-	if err != nil {
-		writeServiceErrorJSON(w, err)
-		return
-	}
-	if response.Added > 0 || response.Updated > 0 || response.Removed > 0 {
-		if hub := fs.adminHub(); hub != nil {
-			hub.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: ir.KeyCount()})
-		}
 	}
 	writeJSON(w, http.StatusOK, response)
 }
