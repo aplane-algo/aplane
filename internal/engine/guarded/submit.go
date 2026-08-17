@@ -157,10 +157,10 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		return nil, nil, err
 	}
 
-	assemblyReq := signerapi.GuardedAssemblyRequest{
+	assemblyReq := signerapi.AssemblyRequest{
 		GroupBytesHex: groupBytesHex,
-		Targets:       make([]signerapi.GuardedAssemblyTarget, 0, len(targets)),
-		Passthrough:   make([]signerapi.GuardedPassthroughItem, 0, len(signedDummyHex)+len(nonGuardedSignedHex)),
+		Targets:       make([]signerapi.AssemblyTarget, 0, len(targets)),
+		Passthrough:   make([]signerapi.AssemblyPassthroughItem, 0, len(signedDummyHex)+len(nonGuardedSignedHex)),
 	}
 	for _, target := range targets {
 		userSig, ok := userSignatures[target.Index]
@@ -171,9 +171,10 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		if !ok {
 			return nil, nil, fmt.Errorf("sentry endpoint returned no signature for target index %d", target.Index)
 		}
-		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.GuardedAssemblyTarget{
+		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.AssemblyTarget{
 			TargetIndex:           target.Index,
-			GuardedAccount:        target.Account,
+			Kind:                  signerapi.AssemblyTargetKindGuarded,
+			AuthAddress:           target.Account,
 			UserSignature:         userSig,
 			UserSourceRequestID:   userRequestIDs[target.Account],
 			SentrySignature:       sentrySig,
@@ -181,19 +182,19 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		})
 	}
 	for index, signedHex := range nonGuardedSignedHex {
-		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.AssemblyPassthroughItem{
 			TargetIndex:  index,
 			SignedTxnHex: signedHex,
 		})
 	}
 	for i, signedHex := range signedDummyHex {
-		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.AssemblyPassthroughItem{
 			TargetIndex:  len(txns) + i,
 			SignedTxnHex: signedHex,
 		})
 	}
 
-	assemblyResp, err := s.conn.RequestGuardedAssembleWithContext(opts.Ctx, assemblyReq)
+	assemblyResp, err := s.conn.RequestAssembleWithContext(opts.Ctx, assemblyReq)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -334,10 +335,10 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	if err != nil {
 		return nil, nil, err
 	}
-	assemblyReq := signerapi.BoundedAssemblyRequest{
+	assemblyReq := signerapi.AssemblyRequest{
 		GroupBytesHex: groupBytesHex,
-		Targets:       make([]signerapi.BoundedAssemblyTarget, 0, len(targets)),
-		Passthrough:   make([]signerapi.GuardedPassthroughItem, 0, len(nonGuardedSignedHex)+len(signedDummyHex)),
+		Targets:       make([]signerapi.AssemblyTarget, 0, len(targets)),
+		Passthrough:   make([]signerapi.AssemblyPassthroughItem, 0, len(nonGuardedSignedHex)+len(signedDummyHex)),
 	}
 	for _, target := range targets {
 		component := components[target.Index]
@@ -345,20 +346,20 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 		if !ok {
 			return nil, nil, fmt.Errorf("sentry endpoint returned no signature for target index %d", target.Index)
 		}
-		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.BoundedAssemblyTarget{
-			TargetIndex: target.Index, BoundedAccount: target.Account,
-			BaseSignatures: component.BaseSignatures, RuntimeArgs: component.RuntimeArgs,
+		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.AssemblyTarget{
+			TargetIndex: target.Index, Kind: signerapi.AssemblyTargetKindBoundedSentry, AuthAddress: target.Account,
+			BaseSignatures: component.BaseSignatures, BoundedRuntimeArgs: component.RuntimeArgs,
 			AssemblyReceipt: component.AssemblyReceipt, BaseSourceRequestID: componentResp.RequestID,
 			SentrySignature: sentrySignature, SentrySourceRequestID: sentryRequestIDs[target.requestKey()],
 		})
 	}
 	for index, signedHex := range nonGuardedSignedHex {
-		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{TargetIndex: index, SignedTxnHex: signedHex})
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.AssemblyPassthroughItem{TargetIndex: index, SignedTxnHex: signedHex})
 	}
 	for i, signedHex := range signedDummyHex {
-		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{TargetIndex: len(txns) + i, SignedTxnHex: signedHex})
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.AssemblyPassthroughItem{TargetIndex: len(txns) + i, SignedTxnHex: signedHex})
 	}
-	assemblyResp, err := s.conn.RequestBoundedAssembleWithContext(opts.Ctx, assemblyReq)
+	assemblyResp, err := s.conn.RequestAssembleWithContext(opts.Ctx, assemblyReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("bounded-sentry assembly failed: %w", err)
 	}

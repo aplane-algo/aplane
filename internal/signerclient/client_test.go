@@ -52,7 +52,7 @@ func TestRequestGuardedAssembleRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	_, err := client.RequestGuardedAssemble(signerapi.GuardedAssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "invalid guarded assembly request") {
+	if err == nil || !strings.Contains(err.Error(), "invalid assembly request") {
 		t.Fatalf("RequestGuardedAssemble() error = %v", err)
 	}
 }
@@ -624,12 +624,12 @@ func TestRequestBoundedSentryEndpoints(t *testing.T) {
 				RequestID: got.RequestID, Transactions: []string{"5458aa"},
 				Components: []signerapi.BoundedBaseComponent{{TargetIndex: 0, BoundedAccount: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
 			})), nil
-		case "/sign/bounded-assemble":
-			var got signerapi.BoundedAssemblyRequest
+		case "/sign/assemble":
+			var got signerapi.AssemblyRequest
 			if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 				t.Fatal(err)
 			}
-			return mockResponse(http.StatusOK, jsonBody(t, signerapi.BoundedAssemblyResponse{RequestID: got.RequestID, SignedGroup: []string{"ccdd"}})), nil
+			return mockResponse(http.StatusOK, jsonBody(t, signerapi.AssemblyResponse{RequestID: got.RequestID, SignedGroup: []string{"ccdd"}})), nil
 		default:
 			t.Fatalf("unexpected request path %q", req.URL.Path)
 			return nil, nil
@@ -813,17 +813,17 @@ func TestRequestGuardedAssemblePostsToAssembleEndpoint(t *testing.T) {
 		if req.URL.Path != "/sign/assemble" || req.Method != http.MethodPost {
 			t.Fatalf("request = %s %s, want POST /sign/assemble", req.Method, req.URL.Path)
 		}
-		var got signerapi.GuardedAssemblyRequest
+		var got signerapi.AssemblyRequest
 		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 			t.Fatalf("Decode(request body) error = %v", err)
 		}
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if len(got.Targets) != 1 || got.Targets[0].GuardedAccount != "ADDR1" {
+		if len(got.Targets) != 1 || got.Targets[0].Kind != signerapi.AssemblyTargetKindGuarded || got.Targets[0].AuthAddress != "ADDR1" {
 			t.Fatalf("assembly request targets = %+v, want ADDR1 target", got.Targets)
 		}
-		return mockResponse(http.StatusOK, jsonBody(t, signerapi.GuardedAssemblyResponse{
+		return mockResponse(http.StatusOK, jsonBody(t, signerapi.AssemblyResponse{
 			RequestID:   got.RequestID,
 			SignedGroup: []string{"ccdd"},
 		})), nil

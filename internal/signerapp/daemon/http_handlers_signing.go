@@ -91,12 +91,12 @@ func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
 // handleSignAssemble handles the /sign/assemble endpoint for guarded-account
 // LogicSig assembly.
 func (fs *Signer) handleSignAssemble(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GuardedAssemblyRequest](fs, w, r, http.MethodPost)
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.AssemblyRequest](fs, w, r, http.MethodPost)
 	if !ok {
 		return
 	}
 
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).AssembleGuarded(r.Context(), ir, req)
+	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).Assemble(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return

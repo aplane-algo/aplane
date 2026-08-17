@@ -93,6 +93,7 @@ type stubSigningService struct {
 	gotReq              signerapi.GroupSignRequest
 	gotBoundedAdmin     signerapi.BoundedAdminRequest
 	gotComponent        signerapi.ComponentSignRequest
+	gotUnifiedAssembly  signerapi.AssemblyRequest
 	gotAssembly         signerapi.GuardedAssemblyRequest
 	gotBoundedComponent signerapi.BoundedComponentRequest
 	gotBoundedAssembly  signerapi.BoundedAssemblyRequest
@@ -107,6 +108,14 @@ type stubSigningService struct {
 	err                 *signersigning.ServiceError
 	componentErr        *signersigning.ServiceError
 	assemblyErr         *signersigning.ServiceError
+}
+
+func (s *stubSigningService) AssembleWithContext(ctx context.Context, identityID string, req signerapi.AssemblyRequest, session *keystore.KeySession) (*signersigning.AssemblyResult, *signersigning.ServiceError) {
+	s.gotCtx, s.gotIdentityID, s.gotUnifiedAssembly, s.gotSession = ctx, identityID, req, session
+	if s.assembly != nil {
+		return s.assembly, s.assemblyErr
+	}
+	return s.boundedAssembly, s.assemblyErr
 }
 
 func (s *stubSigningService) PrepareBoundedComponentWithContext(ctx context.Context, identityID string, req signerapi.BoundedComponentRequest, session *keystore.KeySession) (*signersigning.BoundedComponentResult, *signersigning.ServiceError) {
@@ -369,8 +378,8 @@ func TestServiceAssembleGuardedDelegates(t *testing.T) {
 	if stub.gotIdentityID != ir.ID() {
 		t.Fatalf("identityID = %q, want %q", stub.gotIdentityID, ir.ID())
 	}
-	if stub.gotAssembly.RequestID != req.RequestID || len(stub.gotAssembly.Targets) != 1 {
-		t.Fatalf("got assembly request = %#v, want %#v", stub.gotAssembly, req)
+	if stub.gotUnifiedAssembly.RequestID != req.RequestID || len(stub.gotUnifiedAssembly.Targets) != 1 {
+		t.Fatalf("got assembly request = %#v, want %#v", stub.gotUnifiedAssembly, req.AssemblyRequest())
 	}
 	if stub.gotSession == nil {
 		t.Fatal("AssembleGuarded() passed nil session")
@@ -406,8 +415,8 @@ func TestServiceBoundedSentryEndpointsDelegate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AssembleBounded() error = %v", err)
 	}
-	if stub.gotBoundedAssembly.RequestID != assemblyReq.RequestID || stub.gotSession == nil || assemblyResp.SignedGroup[0] != "signed" {
-		t.Fatalf("bounded assembly delegation = %#v / %#v", stub.gotBoundedAssembly, assemblyResp)
+	if stub.gotUnifiedAssembly.RequestID != assemblyReq.RequestID || stub.gotSession == nil || assemblyResp.SignedGroup[0] != "signed" {
+		t.Fatalf("bounded assembly delegation = %#v / %#v", stub.gotUnifiedAssembly, assemblyResp)
 	}
 }
 

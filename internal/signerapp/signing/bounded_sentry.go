@@ -39,10 +39,7 @@ type BoundedComponentResult struct {
 	Mutations    *signerapi.MutationReport
 }
 
-type BoundedAssemblyResult struct {
-	RequestID   string
-	SignedGroup []string
-}
+type BoundedAssemblyResult = AssemblyResult
 
 func validateBoundedComponentPlan(req signerapi.BoundedComponentRequest, plan *PlanResult) ([]int, *ServiceError) {
 	if plan == nil || len(plan.BoundedItems) < len(req.Requests) {
@@ -208,48 +205,7 @@ func validateBoundedBaseArgs(keyMaterial *coresigning.KeyMaterial, messageBytes 
 }
 
 func (s *Service) AssembleBoundedWithContext(ctx context.Context, identityID string, req signerapi.BoundedAssemblyRequest, session *keystore.KeySession) (*BoundedAssemblyResult, *ServiceError) {
-	_ = identityID
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, canceledSignRequest(err)
-	}
-	if err := req.Validate(); err != nil {
-		return nil, badRequest(err.Error())
-	}
-	group, err := canonical.DecodeGroupHex(req.GroupBytesHex)
-	if err != nil {
-		return nil, badRequest(err.Error())
-	}
-	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return nil, lockedError()
-	}
-	if session == nil {
-		return nil, internal("key session is nil")
-	}
-	release, leaseErr := s.beforeExecute()
-	if leaseErr != nil {
-		return nil, leaseErr
-	}
-	defer release()
-	req.RequestID = guardedRequestID("basm", req.RequestID)
-	signedGroup := make([]string, len(group.Entries))
-	for _, target := range req.Targets {
-		signed, assemblyErr := assembleBoundedTarget(ctx, target, group.Entries[target.TargetIndex], session)
-		if assemblyErr != nil {
-			return nil, assemblyErr
-		}
-		signedGroup[target.TargetIndex] = signed
-	}
-	for _, passthrough := range req.Passthrough {
-		signed, passthroughErr := validateGuardedPassthrough(ctx, passthrough, group.Entries[passthrough.TargetIndex], session)
-		if passthroughErr != nil {
-			return nil, passthroughErr
-		}
-		signedGroup[passthrough.TargetIndex] = signed
-	}
-	return &BoundedAssemblyResult{RequestID: req.RequestID, SignedGroup: signedGroup}, nil
+	return s.AssembleWithContext(ctx, identityID, req.AssemblyRequest(), session)
 }
 
 func loadBoundedKeyMaterial(ctx context.Context, session componentKeyGetter, account, label string) (*coresigning.KeyMaterial, *ServiceError) {

@@ -34,7 +34,7 @@ type ComponentPacker interface {
 	PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error)
 }
 
-func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRequest, group *canonical.Group, session componentKeyGetter) (*GuardedAssemblyResult, *ServiceError) {
+func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *canonical.Group, session componentKeyGetter) (*AssemblyResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -57,7 +57,26 @@ func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRe
 
 	signedGroup := make([]string, len(group.Entries))
 	for _, target := range req.Targets {
-		signedTxnHex, err := assembleGuardedTarget(ctx, target, group.Entries[target.TargetIndex], session)
+		var signedTxnHex string
+		var err *ServiceError
+		switch target.Kind {
+		case signerapi.AssemblyTargetKindGuarded:
+			signedTxnHex, err = assembleGuardedTarget(ctx, signerapi.GuardedAssemblyTarget{
+				TargetIndex: target.TargetIndex, GuardedAccount: target.AuthAddress,
+				UserSignature: target.UserSignature, UserSourceRequestID: target.UserSourceRequestID,
+				SentrySignature: target.SentrySignature, SentrySourceRequestID: target.SentrySourceRequestID,
+				RuntimeArgs: target.GuardedRuntimeArgs,
+			}, group.Entries[target.TargetIndex], session)
+		case signerapi.AssemblyTargetKindBoundedSentry:
+			signedTxnHex, err = assembleBoundedTarget(ctx, signerapi.BoundedAssemblyTarget{
+				TargetIndex: target.TargetIndex, BoundedAccount: target.AuthAddress,
+				BaseSignatures: target.BaseSignatures, RuntimeArgs: target.BoundedRuntimeArgs,
+				AssemblyReceipt: target.AssemblyReceipt, BaseSourceRequestID: target.BaseSourceRequestID,
+				SentrySignature: target.SentrySignature, SentrySourceRequestID: target.SentrySourceRequestID,
+			}, group.Entries[target.TargetIndex], session)
+		default:
+			return nil, badRequest("unsupported assembly target kind")
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -71,10 +90,14 @@ func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRe
 		signedGroup[passthrough.TargetIndex] = signedTxnHex
 	}
 
-	return &GuardedAssemblyResult{
+	return &AssemblyResult{
 		RequestID:   req.RequestID,
 		SignedGroup: signedGroup,
 	}, nil
+}
+
+func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRequest, group *canonical.Group, session componentKeyGetter) (*GuardedAssemblyResult, *ServiceError) {
+	return assembleDecoded(ctx, req.AssemblyRequest(), group, session)
 }
 
 func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssemblyTarget, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {

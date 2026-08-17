@@ -146,11 +146,15 @@ func (s *ConnectionState) RequestBoundedComponentWithContext(ctx context.Context
 }
 
 func (s *ConnectionState) RequestBoundedAssembleWithContext(ctx context.Context, req signerapi.BoundedAssemblyRequest) (*signerapi.BoundedAssemblyResponse, error) {
+	return s.RequestAssembleWithContext(ctx, req.AssemblyRequest())
+}
+
+func (s *ConnectionState) RequestAssembleWithContext(ctx context.Context, req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {
 	client, err := s.signerClient()
 	if err != nil {
 		return nil, err
 	}
-	return client.RequestBoundedAssembleWithContext(ctx, req)
+	return client.RequestAssembleWithContext(ctx, req)
 }
 
 // RequestComponentSign sends a component-signing request to Signer.
@@ -168,13 +172,9 @@ func (s *ConnectionState) RequestComponentSignWithContext(ctx context.Context, r
 
 // RequestGuardedAssemble sends a guarded assembly request to Signer.
 func (s *ConnectionState) RequestGuardedAssemble(req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	return s.RequestGuardedAssembleWithContext(context.Background(), req)
+	return s.RequestAssembleWithContext(context.Background(), req.AssemblyRequest())
 }
 
 func (s *ConnectionState) RequestGuardedAssembleWithContext(ctx context.Context, req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	client, err := s.signerClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.RequestGuardedAssembleWithContext(ctx, req)
+	return s.RequestAssembleWithContext(ctx, req.AssemblyRequest())
 }

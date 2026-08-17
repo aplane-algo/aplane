@@ -154,6 +154,8 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"bounded_component_response.json", assertContractRoundTrip[BoundedComponentResponse]},
 		{"bounded_assembly_request.json", assertContractRoundTrip[BoundedAssemblyRequest]},
 		{"bounded_assembly_response.json", assertContractRoundTrip[BoundedAssemblyResponse]},
+		{"assembly_request_mixed.json", assertContractRoundTrip[AssemblyRequest]},
+		{"assembly_response.json", assertContractRoundTrip[AssemblyResponse]},
 		{"group_plan_response_mutated.json", assertContractRoundTrip[GroupPlanResponse]},
 		{"error_response.json", assertContractRoundTrip[ErrorResponse]},
 		{"keys_response_guarded.json", assertContractRoundTrip[KeysResponse]},

@@ -77,57 +77,25 @@ type BoundedAssemblyTarget struct {
 	SentrySourceRequestID string `json:"sentry_source_request_id,omitempty"`
 }
 
-type BoundedAssemblyResponse struct {
-	RequestID   string   `json:"request_id"`
-	SignedGroup []string `json:"signed_group"`
-}
-
-func (r BoundedAssemblyResponse) Validate() error {
-	if err := validateSignRequestID(r.RequestID); err != nil || r.RequestID == "" {
-		return fmt.Errorf("request_id is invalid or empty")
-	}
-	if len(r.SignedGroup) == 0 {
-		return fmt.Errorf("signed_group is empty")
-	}
-	for i, signed := range r.SignedGroup {
-		if signed == "" {
-			return fmt.Errorf("signed_group[%d] is empty", i)
-		}
-	}
-	return nil
-}
+type BoundedAssemblyResponse = AssemblyResponse
 
 func (r BoundedAssemblyRequest) Validate() error {
-	if err := validateSignRequestID(r.RequestID); err != nil {
-		return err
+	return r.AssemblyRequest().Validate()
+}
+
+// AssemblyRequest converts the legacy bounded-only shape to the shared
+// discriminated assembly contract. It exists only while the unreleased route
+// migration is staged.
+func (r BoundedAssemblyRequest) AssemblyRequest() AssemblyRequest {
+	targets := make([]AssemblyTarget, 0, len(r.Targets))
+	for _, target := range r.Targets {
+		targets = append(targets, AssemblyTarget{
+			TargetIndex: target.TargetIndex, Kind: AssemblyTargetKindBoundedSentry,
+			AuthAddress: target.BoundedAccount, BaseSignatures: target.BaseSignatures,
+			BoundedRuntimeArgs: target.RuntimeArgs, AssemblyReceipt: target.AssemblyReceipt,
+			BaseSourceRequestID: target.BaseSourceRequestID, SentrySignature: target.SentrySignature,
+			SentrySourceRequestID: target.SentrySourceRequestID,
+		})
 	}
-	if err := validateGroupBytesHex(r.GroupBytesHex); err != nil {
-		return err
-	}
-	if len(r.Targets) == 0 {
-		return fmt.Errorf("targets array is empty")
-	}
-	covered := make([]bool, len(r.GroupBytesHex))
-	for i, target := range r.Targets {
-		if err := validateAssemblyIndex(target.TargetIndex, len(r.GroupBytesHex), covered); err != nil {
-			return fmt.Errorf("target %d: %w", i+1, err)
-		}
-		if target.BoundedAccount == "" || len(target.BaseSignatures) == 0 || target.AssemblyReceipt == "" || target.SentrySignature == "" {
-			return fmt.Errorf("target %d: bounded_account, base_signatures, assembly_receipt, and sentry_signature are required", i+1)
-		}
-	}
-	for i, item := range r.Passthrough {
-		if err := validateAssemblyIndex(item.TargetIndex, len(r.GroupBytesHex), covered); err != nil {
-			return fmt.Errorf("passthrough %d: %w", i+1, err)
-		}
-		if item.SignedTxnHex == "" {
-			return fmt.Errorf("passthrough %d: signed_txn_hex is required", i+1)
-		}
-	}
-	for i, ok := range covered {
-		if !ok {
-			return fmt.Errorf("group index %d is not covered by a target or passthrough", i)
-		}
-	}
-	return nil
+	return AssemblyRequest{RequestID: r.RequestID, GroupBytesHex: r.GroupBytesHex, Targets: targets, Passthrough: r.Passthrough}
 }

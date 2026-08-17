@@ -37,6 +37,10 @@ func (s Service) SignComponent(ctx context.Context, ir *identity.Runtime, req si
 }
 
 func (s Service) AssembleGuarded(ctx context.Context, ir *identity.Runtime, req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, *signersigning.ServiceError) {
+	return s.Assemble(ctx, ir, req.AssemblyRequest())
+}
+
+func (s Service) Assemble(ctx context.Context, ir *identity.Runtime, req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, *signersigning.ServiceError) {
 	ctx, preErr := ensureSignable(ctx, ir)
 	if preErr != nil {
 		return nil, preErr
@@ -49,12 +53,12 @@ func (s Service) AssembleGuarded(ctx context.Context, ir *identity.Runtime, req 
 	}
 
 	session := ir.SnapshotKeySession()
-	result, err := s.Deps.NewSigningService(ir).AssembleGuardedWithContext(ctx, ir.ID(), req, session)
+	result, err := s.Deps.NewSigningService(ir).AssembleWithContext(ctx, ir.ID(), req, session)
 	if err != nil {
 		return nil, err
 	}
 
-	return &signerapi.GuardedAssemblyResponse{
+	return &signerapi.AssemblyResponse{
 		RequestID:   result.RequestID,
 		SignedGroup: result.SignedGroup,
 	}, nil
@@ -84,19 +88,5 @@ func (s Service) PrepareBoundedComponent(ctx context.Context, ir *identity.Runti
 }
 
 func (s Service) AssembleBounded(ctx context.Context, ir *identity.Runtime, req signerapi.BoundedAssemblyRequest) (*signerapi.BoundedAssemblyResponse, *signersigning.ServiceError) {
-	ctx, preErr := ensureSignable(ctx, ir)
-	if preErr != nil {
-		return nil, preErr
-	}
-	if roleErr := requireAccountSigningRole(ir, "bounded assembly"); roleErr != nil {
-		return nil, roleErr
-	}
-	if s.Deps.NewSigningService == nil {
-		return nil, notConfigured("signing service")
-	}
-	result, err := s.Deps.NewSigningService(ir).AssembleBoundedWithContext(ctx, ir.ID(), req, ir.SnapshotKeySession())
-	if err != nil {
-		return nil, err
-	}
-	return &signerapi.BoundedAssemblyResponse{RequestID: result.RequestID, SignedGroup: result.SignedGroup}, nil
+	return s.Assemble(ctx, ir, req.AssemblyRequest())
 }

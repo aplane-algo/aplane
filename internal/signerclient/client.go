@@ -539,25 +539,33 @@ func (c *Client) RequestBoundedComponentWithContext(ctx context.Context, reqBody
 }
 
 func (c *Client) RequestBoundedAssembleWithContext(ctx context.Context, reqBody signerapi.BoundedAssemblyRequest) (*signerapi.BoundedAssemblyResponse, error) {
+	return c.RequestAssembleWithContext(ctx, reqBody.AssemblyRequest())
+}
+
+func (c *Client) RequestAssemble(req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {
+	return c.RequestAssembleWithContext(context.Background(), req)
+}
+
+func (c *Client) RequestAssembleWithContext(ctx context.Context, reqBody signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {
 	if reqBody.RequestID == "" {
 		requestID, err := newSignRequestID()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create bounded assembly request ID: %w", err)
+			return nil, fmt.Errorf("failed to create assembly request ID: %w", err)
 		}
 		reqBody.RequestID = requestID
 	}
 	if err := reqBody.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid bounded assembly request: %w", err)
+		return nil, fmt.Errorf("invalid assembly request: %w", err)
 	}
-	result, err := doJSON[signerapi.BoundedAssemblyResponse](c, ctx, "POST", "/sign/bounded-assemble", reqBody, guardedAssemblyTimeout, "failed to make request to Signer")
+	result, err := doJSON[signerapi.AssemblyResponse](c, ctx, "POST", "/sign/assemble", reqBody, guardedAssemblyTimeout, "failed to make request to Signer")
 	if err != nil {
 		return nil, err
 	}
 	if err := result.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid bounded assembly response: %w", err)
+		return nil, fmt.Errorf("invalid assembly response: %w", err)
 	}
 	if result.RequestID != reqBody.RequestID {
-		return nil, fmt.Errorf("bounded assembly response request_id does not match request")
+		return nil, fmt.Errorf("assembly response request_id does not match request")
 	}
 	return result, nil
 }
@@ -611,29 +619,11 @@ func (c *Client) RequestComponentSignWithContext(ctx context.Context, reqBody si
 // RequestGuardedAssemble sends a verified guarded transaction assembly
 // request to /sign/assemble.
 func (c *Client) RequestGuardedAssemble(req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	return c.RequestGuardedAssembleWithContext(context.Background(), req)
+	return c.RequestAssemble(req.AssemblyRequest())
 }
 
 func (c *Client) RequestGuardedAssembleWithContext(ctx context.Context, reqBody signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
-	if reqBody.RequestID == "" {
-		requestID, err := newSignRequestID()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create guarded assembly request ID: %w", err)
-		}
-		reqBody.RequestID = requestID
-	}
-	if err := reqBody.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid guarded assembly request: %w", err)
-	}
-
-	assemblyResp, err := doJSON[signerapi.GuardedAssemblyResponse](c, ctx, "POST", "/sign/assemble", reqBody, guardedAssemblyTimeout, "failed to make request to Signer")
-	if err != nil {
-		return nil, err
-	}
-	if err := assemblyResp.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid guarded assembly response: %w", err)
-	}
-	return assemblyResp, nil
+	return c.RequestAssembleWithContext(ctx, reqBody.AssemblyRequest())
 }
 
 // CancelSignRequestWithContext asks apsigner to cancel a pending manual

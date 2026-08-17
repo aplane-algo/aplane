@@ -69,16 +69,10 @@ type GuardedAssemblyTarget struct {
 
 // GuardedPassthroughItem carries an already-signed group position to preserve
 // unchanged during assembly.
-type GuardedPassthroughItem struct {
-	TargetIndex  int    `json:"target_index"`
-	SignedTxnHex string `json:"signed_txn_hex"`
-}
+type GuardedPassthroughItem = AssemblyPassthroughItem
 
 // GuardedAssemblyResponse is the response payload from POST /sign/assemble.
-type GuardedAssemblyResponse struct {
-	RequestID   string   `json:"request_id"`
-	SignedGroup []string `json:"signed_group"`
-}
+type GuardedAssemblyResponse = AssemblyResponse
 
 // Validate checks the request shape that can be validated without signer state.
 func (r ComponentSignRequest) Validate() error {
@@ -132,70 +126,23 @@ func (r ComponentSignResponse) Validate() error {
 
 // Validate checks the request shape that can be validated without signer state.
 func (r GuardedAssemblyRequest) Validate() error {
-	if err := validateSignRequestID(r.RequestID); err != nil {
-		return err
-	}
-	if err := validateGroupBytesHex(r.GroupBytesHex); err != nil {
-		return err
-	}
-	if len(r.Targets) == 0 && len(r.Passthrough) == 0 {
-		return fmt.Errorf("targets or passthrough is required")
-	}
-
-	covered := make([]bool, len(r.GroupBytesHex))
-	for i, target := range r.Targets {
-		if err := validateAssemblyIndex(target.TargetIndex, len(r.GroupBytesHex), covered); err != nil {
-			return fmt.Errorf("target %d: %w", i+1, err)
-		}
-		if target.GuardedAccount == "" {
-			return fmt.Errorf("target %d: guarded_account is required", i+1)
-		}
-		if target.UserSignature == "" {
-			return fmt.Errorf("target %d: user_signature is required", i+1)
-		}
-		if target.SentrySignature == "" {
-			return fmt.Errorf("target %d: sentry_signature is required", i+1)
-		}
-		if err := validateOptionalSourceRequestID(target.UserSourceRequestID); err != nil {
-			return fmt.Errorf("target %d: user_source_request_id: %w", i+1, err)
-		}
-		if err := validateOptionalSourceRequestID(target.SentrySourceRequestID); err != nil {
-			return fmt.Errorf("target %d: sentry_source_request_id: %w", i+1, err)
-		}
-	}
-	for i, passthrough := range r.Passthrough {
-		if err := validateAssemblyIndex(passthrough.TargetIndex, len(r.GroupBytesHex), covered); err != nil {
-			return fmt.Errorf("passthrough %d: %w", i+1, err)
-		}
-		if passthrough.SignedTxnHex == "" {
-			return fmt.Errorf("passthrough %d: signed_txn_hex is required", i+1)
-		}
-	}
-	for i, ok := range covered {
-		if !ok {
-			return fmt.Errorf("group position %d is not covered by targets or passthrough", i)
-		}
-	}
-	return nil
+	return r.AssemblyRequest().Validate()
 }
 
-// Validate checks the response shape.
-func (r GuardedAssemblyResponse) Validate() error {
-	if r.RequestID == "" {
-		return fmt.Errorf("request_id is required")
+// AssemblyRequest converts the legacy guarded-only shape to the shared
+// discriminated assembly contract. It exists only while the unreleased route
+// migration is staged.
+func (r GuardedAssemblyRequest) AssemblyRequest() AssemblyRequest {
+	targets := make([]AssemblyTarget, 0, len(r.Targets))
+	for _, target := range r.Targets {
+		targets = append(targets, AssemblyTarget{
+			TargetIndex: target.TargetIndex, Kind: AssemblyTargetKindGuarded,
+			AuthAddress: target.GuardedAccount, UserSignature: target.UserSignature,
+			UserSourceRequestID: target.UserSourceRequestID, GuardedRuntimeArgs: target.RuntimeArgs,
+			SentrySignature: target.SentrySignature, SentrySourceRequestID: target.SentrySourceRequestID,
+		})
 	}
-	if err := validateSignRequestID(r.RequestID); err != nil {
-		return err
-	}
-	if len(r.SignedGroup) == 0 {
-		return fmt.Errorf("signed_group is empty")
-	}
-	for i, signed := range r.SignedGroup {
-		if signed == "" {
-			return fmt.Errorf("signed_group %d is empty", i)
-		}
-	}
-	return nil
+	return AssemblyRequest{RequestID: r.RequestID, GroupBytesHex: r.GroupBytesHex, Targets: targets, Passthrough: r.Passthrough}
 }
 
 func validateGroupBytesHex(items []string) error {

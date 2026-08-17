@@ -40,18 +40,18 @@ type guardedSimulationCapture struct {
 	signerSimulateHit atomic.Int32
 
 	mu             sync.Mutex
-	assembly       signerapi.GuardedAssemblyRequest
+	assembly       signerapi.AssemblyRequest
 	assembledGroup []string
 }
 
-func (c *guardedSimulationCapture) setAssembly(req signerapi.GuardedAssemblyRequest, signed []string) {
+func (c *guardedSimulationCapture) setAssembly(req signerapi.AssemblyRequest, signed []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.assembly = req
 	c.assembledGroup = append([]string(nil), signed...)
 }
 
-func (c *guardedSimulationCapture) snapshot() (signerapi.GuardedAssemblyRequest, []string) {
+func (c *guardedSimulationCapture) snapshot() (signerapi.AssemblyRequest, []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.assembly, append([]string(nil), c.assembledGroup...)
@@ -125,7 +125,7 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 	})
 	mux.HandleFunc("/sign/assemble", func(w http.ResponseWriter, r *http.Request) {
 		capture.assembleCalls.Add(1)
-		var req signerapi.GuardedAssemblyRequest
+		var req signerapi.AssemblyRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -144,7 +144,7 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 			signed[i] = hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: entry.Txn}))
 		}
 		capture.setAssembly(req, signed)
-		_ = json.NewEncoder(w).Encode(signerapi.GuardedAssemblyResponse{
+		_ = json.NewEncoder(w).Encode(signerapi.AssemblyResponse{
 			RequestID:   req.RequestID,
 			SignedGroup: signed,
 		})
@@ -299,15 +299,15 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(signerapi.ComponentSignResponse{RequestID: req.RequestID, ComponentKey: req.ComponentKey, Signatures: []signerapi.ComponentSignature{{TargetIndex: 0, Signature: "cc", SignatureScheme: witness.Falcon1024V1}}})
 	})
-	mux.HandleFunc("/sign/bounded-assemble", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/sign/assemble", func(w http.ResponseWriter, r *http.Request) {
 		appendEvent("assemble")
-		var req signerapi.BoundedAssemblyRequest
+		var req signerapi.AssemblyRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))
-		_ = json.NewEncoder(w).Encode(signerapi.BoundedAssemblyResponse{RequestID: req.RequestID, SignedGroup: []string{signed}})
+		_ = json.NewEncoder(w).Encode(signerapi.AssemblyResponse{RequestID: req.RequestID, SignedGroup: []string{signed}})
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()

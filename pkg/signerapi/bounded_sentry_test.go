@@ -21,7 +21,7 @@ func TestBoundedAssemblyRequestValidate(t *testing.T) {
 		name string
 		edit func(*BoundedAssemblyRequest)
 	}{
-		{"empty targets", func(r *BoundedAssemblyRequest) { r.Targets = nil }},
+		{"empty coverage", func(r *BoundedAssemblyRequest) { r.Targets = nil; r.Passthrough = nil }},
 		{"missing receipt", func(r *BoundedAssemblyRequest) { r.Targets[0].AssemblyReceipt = "" }},
 		{"duplicate coverage", func(r *BoundedAssemblyRequest) { r.Passthrough[0].TargetIndex = 0 }},
 		{"uncovered", func(r *BoundedAssemblyRequest) { r.Passthrough = nil }},

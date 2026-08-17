@@ -51,10 +51,12 @@ type ComponentSignResult struct {
 	Signatures   []signerapi.ComponentSignature
 }
 
-type GuardedAssemblyResult struct {
+type AssemblyResult struct {
 	RequestID   string
 	SignedGroup []string
 }
+
+type GuardedAssemblyResult = AssemblyResult
 
 type policyAuditLogger interface {
 	LogSignRejected(identityID, authAddress, txnSender, reason string)
@@ -204,7 +206,7 @@ func (s *Service) signComponentWithSession(ctx context.Context, identityID strin
 	}
 }
 
-func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID string, req signerapi.GuardedAssemblyRequest, session *keystore.KeySession) (*GuardedAssemblyResult, *ServiceError) {
+func (s *Service) AssembleWithContext(ctx context.Context, identityID string, req signerapi.AssemblyRequest, session *keystore.KeySession) (*AssemblyResult, *ServiceError) {
 	_ = identityID
 	if ctx == nil {
 		ctx = context.Background()
@@ -230,7 +232,11 @@ func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID str
 		return nil, leaseErr
 	}
 	defer release()
-	return assembleDecodedGuarded(ctx, req, group, session)
+	return assembleDecoded(ctx, req, group, session)
+}
+
+func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID string, req signerapi.GuardedAssemblyRequest, session *keystore.KeySession) (*GuardedAssemblyResult, *ServiceError) {
+	return s.AssembleWithContext(ctx, identityID, req.AssemblyRequest(), session)
 }
 
 func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession, plan *PlanResult) (*SignGroupResult, *ServiceError) {

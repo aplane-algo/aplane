@@ -100,8 +100,12 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 				}},
 			}, req), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/sign/assemble":
-			return connectJSONResponse(t, http.StatusOK, signerapi.GuardedAssemblyResponse{
-				RequestID:   "req-assemble",
+			var assemblyReq signerapi.AssemblyRequest
+			if err := json.NewDecoder(req.Body).Decode(&assemblyReq); err != nil {
+				t.Fatal(err)
+			}
+			return connectJSONResponse(t, http.StatusOK, signerapi.AssemblyResponse{
+				RequestID:   assemblyReq.RequestID,
 				SignedGroup: []string{"ccdd"},
 			}, req), nil
 		default:

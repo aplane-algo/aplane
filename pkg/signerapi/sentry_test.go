@@ -75,7 +75,7 @@ func TestGuardedAssemblyRequestValidate(t *testing.T) {
 		{name: "invalid request ID", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.RequestID = "bad id" }), wantErr: "request_id contains invalid character"},
 		{name: "missing coverage", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Passthrough = nil }), wantErr: "not covered"},
 		{name: "duplicate coverage", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Passthrough[0].TargetIndex = 0 }), wantErr: "duplicate"},
-		{name: "missing target account", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Targets[0].GuardedAccount = "" }), wantErr: "guarded_account is required"},
+		{name: "missing target account", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Targets[0].GuardedAccount = "" }), wantErr: "auth_address is required"},
 		{name: "missing user signature", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Targets[0].UserSignature = "" }), wantErr: "user_signature is required"},
 		{name: "missing sentry signature", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Targets[0].SentrySignature = "" }), wantErr: "sentry_signature is required"},
 		{name: "bad claimed source ID", request: withAssemblyRequest(valid, func(r *GuardedAssemblyRequest) { r.Targets[0].UserSourceRequestID = "bad id" }), wantErr: "user_source_request_id"},
