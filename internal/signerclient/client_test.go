@@ -675,6 +675,32 @@ func TestRequestComponentsRejectsUnrequestedTargetKind(t *testing.T) {
 	}
 }
 
+func TestRequestComponentsRejectsOutOfGroupTargetIndex(t *testing.T) {
+	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
+		var got signerapi.ComponentRequest
+		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+		return mockResponse(http.StatusOK, jsonBody(t, signerapi.ComponentResponse{
+			RequestID: got.RequestID,
+			Components: []signerapi.Component{{
+				TargetIndex: 1, Kind: signerapi.ComponentTargetKindSentry,
+				Signature: "aa", SignatureScheme: "aplane.falcon1024.v1",
+			}},
+		})), nil
+	})
+
+	_, err := c.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{
+		GroupBytesHex: []string{"5458aa"},
+		Targets: []signerapi.ComponentTarget{{
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry, ComponentKey: "SENTRY",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "indices or kinds do not match") {
+		t.Fatalf("expected out-of-group target error, got %v", err)
+	}
+}
+
 func TestRequestGroupSign_ErrorField(t *testing.T) {
 	resp := signerapi.GroupSignResponse{Error: "rejected by policy"}
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {

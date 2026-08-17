@@ -88,3 +88,23 @@ func TestComponentRequestGroupSignRequestPreservesApprovalMetadata(t *testing.T)
 		t.Fatalf("app-call metadata = %#v/%#v, want target/context metadata", group.Requests[0].AppCallInfo, group.Requests[1].AppCallInfo)
 	}
 }
+
+func TestComponentResponseValidateForRequestRejectsOutOfGroupIndex(t *testing.T) {
+	request := ComponentRequest{
+		GroupBytesHex: []string{"5458aa"},
+		Targets: []ComponentTarget{{
+			TargetIndex: 0, Kind: ComponentTargetKindSentry, ComponentKey: "SENTRY",
+		}},
+	}
+	response := ComponentResponse{
+		RequestID: "request-1",
+		Components: []Component{{
+			TargetIndex: 1, Kind: ComponentTargetKindSentry,
+			Signature: "aa", SignatureScheme: "aplane.falcon1024.v1",
+		}},
+	}
+
+	if err := response.ValidateForRequest(request); err == nil || !strings.Contains(err.Error(), "indices or kinds") {
+		t.Fatalf("ValidateForRequest() error = %v, want out-of-group rejection", err)
+	}
+}

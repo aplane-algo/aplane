@@ -97,8 +97,8 @@ func (s *Service) logBoundedComponentsApproved(identityID string, req signerapi.
 	if s.AuditLog == nil || plan == nil {
 		return
 	}
+	groupReq := req.GroupSignRequest()
 	for _, index := range targets {
-		groupReq := req.GroupSignRequest()
 		if index < 0 || index >= len(groupReq.Requests) || index >= len(plan.AllTxns) {
 			continue
 		}
