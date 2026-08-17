@@ -19,9 +19,14 @@ import (
 
 type sshRuntime struct {
 	server     *sshtunnel.Server
+	stopper    sshRuntimeStopper
 	ctx        context.Context
 	cancel     context.CancelFunc
 	listenAddr string
+}
+
+type sshRuntimeStopper interface {
+	StopContext(context.Context) error
 }
 
 func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath, authorizedKeysPath string, auditLog *AuditLogger) (*sshRuntime, error) {
@@ -101,6 +106,7 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 
 	return &sshRuntime{
 		server:     sshServer,
+		stopper:    sshServer,
 		ctx:        sshCtx,
 		cancel:     sshCancel,
 		listenAddr: listenAddr,
@@ -144,6 +150,11 @@ func stopSSHRuntimeInstance(ctx context.Context, rt *sshRuntime) error {
 	if rt.cancel != nil {
 		rt.cancel()
 	}
+	if rt.stopper != nil {
+		return rt.stopper.StopContext(ctx)
+	}
+	// Preserve safe teardown for zero-value and older runtime holders that do
+	// not have the stopper seam populated.
 	if rt.server != nil {
 		return rt.server.StopContext(ctx)
 	}

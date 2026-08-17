@@ -8,6 +8,7 @@ import (
 	stded25519 "crypto/ed25519"
 	cryptorand "crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -592,12 +593,13 @@ func corridorTestAssetID(t *testing.T, testnet *harness.TestnetConfig, funder *h
 	if err != nil {
 		t.Fatalf("failed to inspect funding account for reusable corridor test asset: %v", err)
 	}
-	if assetID, ok := selectReusableCorridorTestAsset(account); ok {
+	assetID, needsCreation, err := resolveCorridorTestAsset(testnet.Network, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !needsCreation {
 		t.Logf("reusing corridor test asset %d", assetID)
 		return assetID
-	}
-	if !corridorTestAssetCreationAllowed(testnet.Network) {
-		t.Fatalf("funding account has no clean reusable %q asset; persistent-network tests refuse to create one", corridorTestAssetName)
 	}
 
 	txn, err := transaction.MakeAssetCreateTxn(
@@ -632,6 +634,16 @@ func corridorTestAssetID(t *testing.T, testnet *harness.TestnetConfig, funder *h
 
 func corridorTestAssetCreationAllowed(network string) bool {
 	return network == harness.IntegrationNetworkLocalnet
+}
+
+func resolveCorridorTestAsset(network string, account models.Account) (assetID uint64, needsCreation bool, err error) {
+	if assetID, ok := selectReusableCorridorTestAsset(account); ok {
+		return assetID, false, nil
+	}
+	if !corridorTestAssetCreationAllowed(network) {
+		return 0, false, fmt.Errorf("funding account has no clean reusable %q asset; persistent-network tests refuse to create one", corridorTestAssetName)
+	}
+	return 0, true, nil
 }
 
 func selectReusableCorridorTestAsset(account models.Account) (uint64, bool) {
@@ -700,6 +712,36 @@ func TestCorridorTestAssetCreationAllowedOnlyOnLocalNet(t *testing.T) {
 	}
 	if !corridorTestAssetCreationAllowed(harness.IntegrationNetworkLocalnet) {
 		t.Fatal("corridorTestAssetCreationAllowed(localnet) = false")
+	}
+}
+
+func TestResolveCorridorTestAssetNeverCreatesOnPersistentNetwork(t *testing.T) {
+	matching := models.Asset{
+		Index: 52,
+		Params: models.AssetParams{
+			Name: corridorTestAssetName, UnitName: corridorTestAssetUnit,
+			Total: corridorTestAssetTotal,
+		},
+	}
+	account := models.Account{
+		CreatedAssets: []models.Asset{matching},
+		Assets:        []models.AssetHolding{{AssetId: matching.Index, Amount: corridorTestAssetTotal}},
+	}
+
+	for _, network := range []string{harness.IntegrationNetworkFNet, harness.IntegrationNetworkTestnet} {
+		assetID, needsCreation, err := resolveCorridorTestAsset(network, account)
+		if err != nil || needsCreation || assetID != matching.Index {
+			t.Fatalf("resolveCorridorTestAsset(%q, reusable) = (%d, %v, %v), want (%d, false, nil)", network, assetID, needsCreation, err, matching.Index)
+		}
+
+		assetID, needsCreation, err = resolveCorridorTestAsset(network, models.Account{})
+		if err == nil || needsCreation || assetID != 0 {
+			t.Fatalf("resolveCorridorTestAsset(%q, empty) = (%d, %v, %v), want refusal without creation", network, assetID, needsCreation, err)
+		}
+	}
+
+	if assetID, needsCreation, err := resolveCorridorTestAsset(harness.IntegrationNetworkLocalnet, models.Account{}); err != nil || !needsCreation || assetID != 0 {
+		t.Fatalf("resolveCorridorTestAsset(localnet, empty) = (%d, %v, %v), want (0, true, nil)", assetID, needsCreation, err)
 	}
 }
 

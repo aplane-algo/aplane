@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -117,6 +118,88 @@ func TestBuildUnlockPlanUsesTestPassphrase(t *testing.T) {
 		t.Fatalf("BuildUnlockPlan() passphrase = %q, want %q", string(plan.Passphrase), string(passphrase))
 	}
 	crypto.ZeroBytes(plan.Passphrase)
+}
+
+func TestBuildUnlockPlanUsesPassphraseCommand(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	passphrase := []byte("command-passphrase")
+	paths := storepaths.NewPaths(root)
+	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir("default"), passphrase); err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	helper, marker := writePassphraseHelper(t, root, string(passphrase))
+
+	cfg := serverconfig.DefaultServerConfig()
+	cfg.PassphraseCommandArgv = []string{helper, marker}
+	opts := &Options{
+		DataDir:    root,
+		Config:     cfg,
+		Paths:      paths,
+		IdentityID: "default",
+	}
+
+	plan, err := BuildUnlockPlan(opts, true, "")
+	if err != nil {
+		t.Fatalf("BuildUnlockPlan() error = %v", err)
+	}
+	defer crypto.ZeroBytes(plan.Passphrase)
+	if plan.StartLocked {
+		t.Fatal("BuildUnlockPlan() StartLocked = true, want false")
+	}
+	if plan.Source != UnlockSourcePassphraseCommand {
+		t.Fatalf("BuildUnlockPlan() source = %q, want %q", plan.Source, UnlockSourcePassphraseCommand)
+	}
+	if string(plan.Passphrase) != string(passphrase) {
+		t.Fatalf("BuildUnlockPlan() passphrase = %q, want configured command output", string(plan.Passphrase))
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("passphrase helper marker: %v", err)
+	}
+}
+
+func TestValidateAndBuildUnlockPlanRejectsExtraIdentityBeforePassphraseCommand(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	passphrase := []byte("command-passphrase")
+	paths := storepaths.NewPaths(root)
+	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir("default"), passphrase); err != nil {
+		t.Fatalf("CreateKeyringStore() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "identities", "other-identity"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	helper, marker := writePassphraseHelper(t, root, string(passphrase))
+	cfg := serverconfig.DefaultServerConfig()
+	cfg.PassphraseCommandArgv = []string{helper, marker}
+	opts := &Options{
+		DataDir:    root,
+		Config:     cfg,
+		Paths:      paths,
+		IdentityID: "default",
+	}
+
+	_, _, err := ValidateAndBuildUnlockPlan(opts, &RuntimeState{}, "")
+	if err == nil || !strings.Contains(err.Error(), "invalid product identity layout") {
+		t.Fatalf("ValidateAndBuildUnlockPlan() error = %v, want product layout refusal", err)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("passphrase helper ran before layout rejection; marker stat error = %v", statErr)
+	}
+}
+
+func writePassphraseHelper(t *testing.T, root, passphrase string) (string, string) {
+	t.Helper()
+
+	helper := filepath.Join(root, "passphrase-helper")
+	marker := filepath.Join(root, "passphrase-helper-invoked")
+	script := "#!/bin/sh\nset -eu\nprintf invoked > \"$2\"\nprintf '%s\\n' '" + passphrase + "'\n"
+	if err := os.WriteFile(helper, []byte(script), 0o700); err != nil {
+		t.Fatalf("write passphrase helper: %v", err)
+	}
+	return helper, marker
 }
 
 func TestLoadOptionsResolvesBootstrapState(t *testing.T) {

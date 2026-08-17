@@ -5,11 +5,11 @@ package startup
 
 import (
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"time"
 
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -54,6 +54,23 @@ type UnlockPlan struct {
 	StartLocked bool
 	Passphrase  []byte
 	Source      UnlockSource
+}
+
+// ValidateAndBuildUnlockPlan validates every startup precondition, including
+// the single-product identity layout, before resolving a passphrase source.
+// Keeping that order in one operation prevents an invalid store layout from
+// invoking an operator-configured passphrase helper.
+func ValidateAndBuildUnlockPlan(opts *Options, runtime *RuntimeState, testPassphrase string) (*ValidationInfo, *UnlockPlan, error) {
+	info, err := Validate(&opts.Config, runtime, opts.Paths, opts.IdentityID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("startup validation failed: %w", err)
+	}
+
+	plan, err := BuildUnlockPlan(opts, info.KeystoreExists, testPassphrase)
+	if err != nil {
+		return nil, nil, err
+	}
+	return info, plan, nil
 }
 
 // ResolveUnlockConfig returns the passphrase command config for an identity.
