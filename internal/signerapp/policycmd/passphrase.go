@@ -30,9 +30,9 @@ func RejectRetiredEnvironment() error {
 }
 
 // ReadPassphrase reads the policy command's authentication secret. The
-// APSIGNER_PASSPHRASE automation source is deliberately local-only; remote
-// sessions must use a controlling terminal so a local signer secret cannot be
-// offered accidentally to another host.
+// APSIGNER_PASSPHRASE automation source is deliberately local-only. An
+// explicit stdin line is accepted locally or remotely when stdin is not the
+// policy document stream.
 func ReadPassphrase(stdin io.Reader, stderr io.Writer, remote, stdinReserved bool) ([]byte, error) {
 	if !remote {
 		if value := os.Getenv(passphraseEnv); value != "" {
@@ -44,27 +44,27 @@ func ReadPassphrase(stdin io.Reader, stderr io.Writer, remote, stdinReserved boo
 		return readTerminalPassphrase(file, stderr)
 	}
 
+	if !stdinReserved {
+		line, err := bufio.NewReader(stdin).ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("failed to read passphrase: %w", err)
+		}
+		passphrase := []byte(strings.TrimSpace(line))
+		if len(passphrase) == 0 {
+			return nil, fmt.Errorf("passphrase cannot be empty")
+		}
+		return passphrase, nil
+	}
+
 	if tty, err := OpenTTY(); err == nil {
 		defer func() { _ = tty.Close() }()
 		return readTerminalPassphrase(tty, tty)
 	}
 
 	if remote {
-		return nil, fmt.Errorf("remote policy authentication requires a controlling terminal; %s is intentionally local-only", passphraseEnv)
+		return nil, fmt.Errorf("remote policy authentication requires a controlling terminal when policy YAML is read from stdin; %s is intentionally local-only; for scripted remote use, pass the policy as a file argument and pipe the passphrase on stdin", passphraseEnv)
 	}
-	if stdinReserved {
-		return nil, fmt.Errorf("passphrase must come from %s or a controlling terminal when policy YAML is read from stdin", passphraseEnv)
-	}
-
-	line, err := bufio.NewReader(stdin).ReadString('\n')
-	if err != nil {
-		return nil, fmt.Errorf("failed to read passphrase: %w", err)
-	}
-	passphrase := []byte(strings.TrimSpace(line))
-	if len(passphrase) == 0 {
-		return nil, fmt.Errorf("passphrase cannot be empty")
-	}
-	return passphrase, nil
+	return nil, fmt.Errorf("passphrase must come from %s or a controlling terminal when policy YAML is read from stdin", passphraseEnv)
 }
 
 func readTerminalPassphrase(terminal *os.File, prompt io.Writer) ([]byte, error) {

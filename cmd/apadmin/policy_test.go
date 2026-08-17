@@ -76,7 +76,7 @@ func TestPolicyHelpDocumentsSecurityBoundaries(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("runPolicyCommand() code = %d", code)
 	}
-	for _, want := range []string{"Online commands authenticate and unlock", "APSIGNER_PASSPHRASE", "--remote requires the controlling terminal", "rescue commands"} {
+	for _, want := range []string{"Online commands authenticate and unlock", "APSIGNER_PASSPHRASE", "Local and remote commands may read", "Remote apply - requires a controlling", "headless remote use", "rescue commands"} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("help missing %q:\n%s", want, stderr.String())
 		}

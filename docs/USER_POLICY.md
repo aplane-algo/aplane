@@ -92,17 +92,20 @@ There is no wrapper or automatic online-to-rescue fallback.
 store-backed rescue as root only while `apsigner` is stopped. A positional
 standalone draft does not read the signer store or sidecar.
 
-Inside the TUI, `a` applies the current draft to production by writing
-the selected policy document plus a fresh sidecar. `w` writes the current
-in-memory policy draft to a YAML file you choose. This is an export only: it
-does not update production policy, does not write a sidecar, and does not clear
-the modified state.
+Inside the online TUI, or rescue mode opened without a positional file, `a`
+applies the current draft to production by writing the selected policy document
+plus a fresh sidecar. In `apadmin policy rescue edit FILE`, `a` instead saves
+only that standalone draft file; it does not update production policy, request
+a store passphrase, or create a sidecar. The editor labels these two actions
+differently. In either mode, `w` writes the current in-memory policy draft to a
+separate YAML file. This is an export only and does not clear the modified
+state.
 
 When `apadmin policy rescue` opens production policy from `APSIGNER_DATA` or
-`-d`, it needs the store passphrase to verify the sidecar. When it opens a standalone YAML
-file, it validates that file without unlocking the store. If that file-backed
-draft is later applied to production with `a`, `apadmin policy rescue` asks for the store
-passphrase at apply time.
+`-d`, it needs the store passphrase to verify the sidecar. When it opens a
+standalone YAML file, it validates and saves that file without unlocking the
+store. To publish a standalone draft later, run `apadmin policy rescue apply
+FILE` explicitly while the signer is stopped.
 
 For byte-preserving offline rescue edits:
 
@@ -117,9 +120,24 @@ SHA-256 digest of the trusted selected document bytes.
 trusted bytes. `apadmin policy rescue apply -` reads replacement YAML
 from stdin, validates it in the selected policy domain, writes the selected
 document, and writes a fresh sidecar. Use `--target signer` or
-`--target sentry` to override auto-selection. Because stdin is the
-document stream for save modes, provide the passphrase through the environment
-or an interactive terminal.
+`--target sentry` to override auto-selection. Because stdin is the document
+stream for `apply -`, provide its passphrase through the local-only environment
+source or an interactive terminal.
+
+`APSIGNER_PASSPHRASE` is accepted only for explicit local IPC and rescue policy
+commands. Remote policy commands ignore it so an ambient secret for a local
+signer cannot be offered silently to another host. A local or remote command
+whose policy comes from the active document or a named file may read one
+passphrase line from nonterminal stdin. For example, scripted remote apply uses
+a named policy file so stdin remains available for authentication:
+
+```bash
+printf '%s\n' "$remote_passphrase" | apadmin --remote policy apply selected-policy.yaml
+```
+
+Remote `apply -` reserves stdin for policy YAML and therefore requires a
+controlling terminal for the passphrase. Without one, it fails before consuming
+the YAML and directs the operator to the named-file form above.
 
 With a positional YAML file, `apadmin policy rescue check draft.yaml`,
 `apadmin policy rescue export draft.yaml`, and
@@ -181,7 +199,7 @@ threshold maps remain accepted compatibility fields.
 Clawback controls are YAML-only in the guided policy editor. `reject_clawback`,
 `transfer_policy.clawback_on_no_route`, and clawback routes using
 `asset_sources` / `clawback.allow` remain valid in `policy.yaml`, but the
-The shared `apadmin` policy TUI does not expose controls to change them. Existing
+shared `apadmin` policy TUI does not expose controls to change them. Existing
 YAML-authored clawback settings are preserved by unrelated guided edits.
 
 Sentry rekey authorization is YAML-only. Set `reject_rekey: true` for a coarse

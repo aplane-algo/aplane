@@ -159,8 +159,10 @@ Verbs:
   to-sentry [FILE]  convert signer policy to sentry policy
 
 Online commands authenticate and unlock before policy access; local IPC may use
-APSIGNER_PASSPHRASE, while --remote requires the controlling terminal. Policy
-rescue commands access the store directly, require a stopped daemon for
+APSIGNER_PASSPHRASE. Local and remote commands may read one passphrase line from
+stdin when stdin is not policy YAML. Remote apply - requires a controlling
+terminal; for headless remote use, apply a named file and pipe the passphrase.
+Policy rescue commands access the store directly, require a stopped daemon for
 production edits, and reject --remote, --client-data, and --ipc-path.
 `, mode)
 	}

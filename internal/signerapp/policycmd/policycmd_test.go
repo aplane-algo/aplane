@@ -177,16 +177,89 @@ func TestRemotePolicyNeverConsumesLocalPassphraseEnvironment(t *testing.T) {
 	t.Setenv(passphraseEnv, "local-only-secret")
 	originalOpenTTY := OpenTTY
 	t.Cleanup(func() { OpenTTY = originalOpenTTY })
-	OpenTTY = func() (*os.File, error) { return nil, errors.New("no tty") }
+	ttyCalls := 0
+	OpenTTY = func() (*os.File, error) {
+		ttyCalls++
+		return nil, errors.New("no tty")
+	}
 	session := &fakeOnlineSession{}
 	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
 		Verb: VerbCheck, Target: policyeditor.TargetSigner, Remote: true,
-	}, Streams{Stdin: strings.NewReader(""), Stderr: io.Discard})
-	if err == nil || !strings.Contains(err.Error(), "intentionally local-only") {
-		t.Fatalf("Run(remote) error = %v", err)
+	}, Streams{Stdin: strings.NewReader("explicit-remote-secret\n"), Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if session.dialCalls != 0 || session.authPassphrase != "" {
-		t.Fatalf("remote session used local environment: dial=%d passphrase=%q", session.dialCalls, session.authPassphrase)
+	if session.authPassphrase != "explicit-remote-secret" {
+		t.Fatalf("remote authentication passphrase = %q", session.authPassphrase)
+	}
+	if ttyCalls != 0 {
+		t.Fatalf("remote command opened /dev/tty %d times instead of consuming explicit stdin", ttyCalls)
+	}
+}
+
+func TestLocalNonterminalPassphrasePreservesStdinAutomation(t *testing.T) {
+	t.Setenv(passphraseEnv, "")
+	originalOpenTTY := OpenTTY
+	t.Cleanup(func() { OpenTTY = originalOpenTTY })
+	ttyCalls := 0
+	OpenTTY = func() (*os.File, error) {
+		ttyCalls++
+		return nil, errors.New("unexpected tty open")
+	}
+	passphrase, err := ReadPassphrase(strings.NewReader("piped-secret\n"), io.Discard, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(passphrase) != "piped-secret" {
+		t.Fatalf("passphrase = %q", passphrase)
+	}
+	if ttyCalls != 0 {
+		t.Fatalf("ReadPassphrase opened /dev/tty %d times", ttyCalls)
+	}
+}
+
+func TestHeadlessRemoteApplyStdinFailsBeforeYAMLAndNamesFileAlternative(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "local-only-secret")
+	originalOpenTTY := OpenTTY
+	t.Cleanup(func() { OpenTTY = originalOpenTTY })
+	OpenTTY = func() (*os.File, error) { return nil, errors.New("no tty") }
+	stdin := &countingReader{}
+	session := &fakeOnlineSession{}
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
+		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: "-", Remote: true,
+	}, Streams{Stdin: stdin, Stderr: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "file argument") || !strings.Contains(err.Error(), "pipe the passphrase") {
+		t.Fatalf("Run(remote apply -) error = %v", err)
+	}
+	if stdin.calls != 0 {
+		t.Fatalf("remote apply read YAML stdin %d times before authentication", stdin.calls)
+	}
+	if session.dialCalls != 0 {
+		t.Fatalf("remote apply dialed %d times before authentication input was available", session.dialCalls)
+	}
+}
+
+func TestHeadlessRemoteApplyFileAcceptsPipedPassphrase(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "local-only-secret")
+	path := filepath.Join(t.TempDir(), "draft.yaml")
+	want := []byte("reject_foreign_rekey: false\n")
+	if err := os.WriteFile(path, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	session := &fakeOnlineSession{status: "locked"}
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
+		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: path, Remote: true,
+	}, Streams{Stdin: strings.NewReader("explicit-remote-secret\n"), Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.authPassphrase != "explicit-remote-secret" || session.unlockPassphrase != "explicit-remote-secret" {
+		t.Fatalf("remote authentication/unlock = %q/%q", session.authPassphrase, session.unlockPassphrase)
+	}
+	if session.replaceRequest.PolicyYAML != string(want) {
+		t.Fatalf("remote replacement changed exact bytes:\n%s", session.replaceRequest.PolicyYAML)
 	}
 }
 
