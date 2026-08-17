@@ -11,6 +11,28 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
+func (s Service) SignComponents(ctx context.Context, ir *identity.Runtime, req signerapi.ComponentRequest) (*signerapi.ComponentResponse, *signersigning.ServiceError) {
+	ctx, preErr := ensureSignable(ctx, ir)
+	if preErr != nil {
+		return nil, preErr
+	}
+	if err := req.Validate(); err != nil {
+		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorBadRequest, Message: err.Error()}
+	}
+	if roleErr := requireComponentTargetNodeRole(ir, req.TargetKind()); roleErr != nil {
+		return nil, roleErr
+	}
+	if s.Deps.NewSigningService == nil {
+		return nil, notConfigured("signing service")
+	}
+	if req.TargetKind() != signerapi.ComponentTargetKindSentry {
+		var finish func()
+		ctx, finish = ir.BeginSigningRequest(ctx, req.RequestID)
+		defer finish()
+	}
+	return s.Deps.NewSigningService(ir).SignComponentsWithContext(ctx, ir.ID(), req, ir.SnapshotKeySession())
+}
+
 func (s Service) SignComponent(ctx context.Context, ir *identity.Runtime, req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, *signersigning.ServiceError) {
 	ctx, preErr := ensureSignable(ctx, ir)
 	if preErr != nil {

@@ -93,6 +93,7 @@ type stubSigningService struct {
 	gotReq              signerapi.GroupSignRequest
 	gotBoundedAdmin     signerapi.BoundedAdminRequest
 	gotComponent        signerapi.ComponentSignRequest
+	gotComponents       signerapi.ComponentRequest
 	gotUnifiedAssembly  signerapi.AssemblyRequest
 	gotAssembly         signerapi.GuardedAssemblyRequest
 	gotBoundedComponent signerapi.BoundedComponentRequest
@@ -102,12 +103,18 @@ type stubSigningService struct {
 	result              *signersigning.SignGroupResult
 	boundedAdmin        *signersigning.BoundedAdminResult
 	component           *signersigning.ComponentSignResult
+	components          *signerapi.ComponentResponse
 	assembly            *signersigning.GuardedAssemblyResult
 	boundedComponent    *signersigning.BoundedComponentResult
 	boundedAssembly     *signersigning.BoundedAssemblyResult
 	err                 *signersigning.ServiceError
 	componentErr        *signersigning.ServiceError
 	assemblyErr         *signersigning.ServiceError
+}
+
+func (s *stubSigningService) SignComponentsWithContext(ctx context.Context, identityID string, req signerapi.ComponentRequest, session *keystore.KeySession) (*signerapi.ComponentResponse, *signersigning.ServiceError) {
+	s.gotCtx, s.gotIdentityID, s.gotComponents, s.gotSession = ctx, identityID, req, session
+	return s.components, s.componentErr
 }
 
 func (s *stubSigningService) AssembleWithContext(ctx context.Context, identityID string, req signerapi.AssemblyRequest, session *keystore.KeySession) (*signersigning.AssemblyResult, *signersigning.ServiceError) {

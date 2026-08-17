@@ -91,10 +91,15 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 		case req.Method == http.MethodDelete && req.URL.Path == "/admin/keys":
 			return connectJSONResponse(t, http.StatusOK, signerapi.AdminDeleteResponse{Success: true}, req), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/sign/component":
-			return connectJSONResponse(t, http.StatusOK, signerapi.ComponentSignResponse{
-				RequestID: "req-component",
-				Signatures: []signerapi.ComponentSignature{{
+			var componentReq signerapi.ComponentRequest
+			if err := json.NewDecoder(req.Body).Decode(&componentReq); err != nil {
+				t.Fatal(err)
+			}
+			return connectJSONResponse(t, http.StatusOK, signerapi.ComponentResponse{
+				RequestID: componentReq.RequestID,
+				Components: []signerapi.Component{{
 					TargetIndex:     0,
+					Kind:            signerapi.ComponentTargetKindSentry,
 					Signature:       "aabb",
 					SignatureScheme: "aplane.witness-falcon1024.v1",
 				}},

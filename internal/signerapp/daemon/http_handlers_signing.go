@@ -71,15 +71,14 @@ func (fs *Signer) handleBoundedAssemble(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, result)
 }
 
-// handleSignComponent handles the /sign/component endpoint for sentry MVP
-// role-separated component signatures.
+// handleSignComponent handles all discriminated frozen-group component kinds.
 func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.ComponentSignRequest](fs, w, r, http.MethodPost)
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.ComponentRequest](fs, w, r, http.MethodPost)
 	if !ok {
 		return
 	}
 
-	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).SignComponent(r.Context(), ir, req)
+	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).SignComponents(r.Context(), ir, req)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return

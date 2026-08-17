@@ -656,12 +656,12 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey [
 		if signCalls != nil {
 			signCalls.Add(1)
 		}
-		var req signerapi.ComponentSignRequest
+		var req signerapi.ComponentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.Role != signerapi.ComponentSignRoleSentry || req.ComponentKey != componentSelector {
+		if req.TargetKind() != signerapi.ComponentTargetKindSentry || req.Targets[0].ComponentKey != componentSelector {
 			http.Error(w, "wrong Witness Key ID", http.StatusBadRequest)
 			return
 		}
@@ -670,20 +670,20 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey [
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		resp := signerapi.ComponentSignResponse{
-			RequestID:    req.RequestID,
-			ComponentKey: req.ComponentKey,
-			Signatures:   make([]signerapi.ComponentSignature, 0, len(req.TargetIndices)),
+		resp := signerapi.ComponentResponse{
+			RequestID:  req.RequestID,
+			Components: make([]signerapi.Component, 0, len(req.Targets)),
 		}
-		for _, index := range req.TargetIndices {
-			msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
+		for _, target := range req.Targets {
+			msg := message.ComponentMessage(message.RoleSentry, group.Entries[target.TargetIndex].TxID)
 			signature, err := signerops.New(nil).Sign(privateKey, msg[:])
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
-				TargetIndex:     index,
+			resp.Components = append(resp.Components, signerapi.Component{
+				TargetIndex:     target.TargetIndex,
+				Kind:            signerapi.ComponentTargetKindSentry,
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       hex.EncodeToString(signature),
 			})

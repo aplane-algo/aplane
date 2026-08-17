@@ -615,14 +615,14 @@ func TestRequestBoundedAdmin_Success(t *testing.T) {
 func TestRequestBoundedSentryEndpoints(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
-		case "/sign/bounded-component":
-			var got signerapi.BoundedComponentRequest
+		case "/sign/component":
+			var got signerapi.ComponentRequest
 			if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 				t.Fatal(err)
 			}
-			return mockResponse(http.StatusOK, jsonBody(t, signerapi.BoundedComponentResponse{
-				RequestID: got.RequestID, Transactions: []string{"5458aa"},
-				Components: []signerapi.BoundedBaseComponent{{TargetIndex: 0, BoundedAccount: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
+			return mockResponse(http.StatusOK, jsonBody(t, signerapi.ComponentResponse{
+				RequestID:  got.RequestID,
+				Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
 			})), nil
 		case "/sign/assemble":
 			var got signerapi.AssemblyRequest
@@ -773,20 +773,21 @@ func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
 		if got := req.Header.Get("Authorization"); got != "aplane test-token" {
 			t.Fatalf("authorization header = %q", got)
 		}
-		var got signerapi.ComponentSignRequest
+		var got signerapi.ComponentRequest
 		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 			t.Fatalf("Decode(request body) error = %v", err)
 		}
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if got.Role != signerapi.ComponentSignRoleSentry || got.ComponentKey != "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA" {
+		if got.TargetKind() != signerapi.ComponentTargetKindSentry || got.Targets[0].ComponentKey != "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA" {
 			t.Fatalf("component request = %+v, want sentry component_key 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA", got)
 		}
-		resp := signerapi.ComponentSignResponse{
+		resp := signerapi.ComponentResponse{
 			RequestID: got.RequestID,
-			Signatures: []signerapi.ComponentSignature{{
+			Components: []signerapi.Component{{
 				TargetIndex:     0,
+				Kind:            signerapi.ComponentTargetKindSentry,
 				Signature:       "aabb",
 				SignatureScheme: "aplane.witness-falcon1024.v1",
 			}},

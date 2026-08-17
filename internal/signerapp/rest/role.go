@@ -70,3 +70,13 @@ func requireComponentNodeRole(ir *identity.Runtime, role signerapi.ComponentSign
 		}
 	}
 }
+
+func requireComponentTargetNodeRole(ir *identity.Runtime, kind signerapi.ComponentTargetKind) *signersigning.ServiceError {
+	if kind == signerapi.ComponentTargetKindSentry {
+		return requireComponentNodeRole(ir, signerapi.ComponentSignRoleSentry)
+	}
+	if kind == signerapi.ComponentTargetKindUser || kind == signerapi.ComponentTargetKindBoundedBase {
+		return requireAccountSigningRole(ir, "account component signing")
+	}
+	return &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: fmt.Sprintf("unsupported component target kind %q", kind)}
+}
