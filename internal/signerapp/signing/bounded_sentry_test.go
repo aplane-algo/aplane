@@ -26,7 +26,10 @@ import (
 
 func TestValidateBoundedComponentPlanRequiresSentrySpend(t *testing.T) {
 	metadata := boundedSentryTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.SentryPublicKeySizeV1))
-	request := signerapi.BoundedComponentRequest{Requests: []signerapi.SignRequest{{AuthAddress: "ACCOUNT", TxnBytesHex: "TX00"}}}
+	request := signerapi.BoundedComponentRequest{
+		GroupBytesHex: []string{"TX00"},
+		Targets:       []signerapi.BoundedComponentTarget{{TargetIndex: 0, AuthAddress: "ACCOUNT"}},
+	}
 	plan := &PlanResult{BoundedItems: []*boundedPlanItem{{Path: boundedPathPureSpend, Metadata: metadata}}}
 	indices, err := validateBoundedComponentPlan(request, plan)
 	if err != nil || len(indices) != 1 || indices[0] != 0 {

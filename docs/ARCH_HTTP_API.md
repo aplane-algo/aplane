@@ -252,11 +252,16 @@ authorization field must be recomputed by the completing helper from the
 finalized transaction, durable metadata, and program contract.
 
 `/sign/bounded-component` request (`signerapi.BoundedComponentRequest`) carries
-optional `request_id` and the shared `requests[]`. It plans and finalizes one
-bounded-sentry group, applies signer policy and operator approval, and releases
-base signature arguments only for sentry-enabled pure spends. The response
-contains `request_id`, finalized TX-prefixed `transactions[]`, optional
-`mutations`, and `components[]`. Each component carries `target_index`,
+optional `request_id`, frozen TX-prefixed `group_bytes_hex[]`, bounded
+`targets[]`, foreign-only `contextual_positions[]`, and the contiguous
+signer-added `dummy_positions[]` suffix. Targets and contextual positions form
+a closed partition of the original prefix. The signer re-derives bounded paths,
+resource and fee requirements, and durable authorization metadata from those
+exact bytes; this endpoint never plans, mutates, appends, or regroups. It then
+applies signer policy and operator approval and releases base signature
+arguments only for sentry-enabled pure spends. The response contains
+`request_id`, the unchanged TX-prefixed `transactions[]`, and `components[]`.
+Each component carries `target_index`,
 `bounded_account`, `base_signatures[]`, canonical `runtime_args`, an
 `assembly_receipt`, and `signature_scheme`.
 

@@ -42,21 +42,15 @@ type BoundedComponentResult struct {
 type BoundedAssemblyResult = AssemblyResult
 
 func validateBoundedComponentPlan(req signerapi.BoundedComponentRequest, plan *PlanResult) ([]int, *ServiceError) {
-	if plan == nil || len(plan.BoundedItems) < len(req.Requests) {
+	if plan == nil || len(plan.BoundedItems) < len(req.GroupSignRequest().Requests) {
 		return nil, internal("bounded component plan is incomplete")
 	}
 	if plan.HasPassthrough {
 		return nil, badRequest("bounded-component does not accept signed passthrough entries")
 	}
 	targets := make([]int, 0)
-	for i, request := range req.Requests {
-		mode, err := request.Mode()
-		if err != nil {
-			return nil, badRequest(err.Error())
-		}
-		if mode == signerapi.RequestModeForeign {
-			continue
-		}
+	for _, target := range req.Targets {
+		i := target.TargetIndex
 		item := plan.BoundedItems[i]
 		if item == nil || item.Metadata == nil || item.Metadata.Sentry == nil {
 			return nil, badRequest(fmt.Sprintf("transaction %d is not a sentry-enabled bounded account", i+1))
@@ -82,7 +76,7 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	if session == nil {
 		return nil, internal("key session is nil")
 	}
-	plan, err := s.planGroupWhileSignable(identityID, req.GroupSignRequest())
+	plan, groupReq, err := s.ValidateFrozenComponentContext(identityID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +84,7 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	if validationErr != nil {
 		return nil, validationErr
 	}
-	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, req.GroupSignRequest(), plan)
+	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, groupReq, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
@@ -98,7 +92,7 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	req.RequestID = guardedRequestID("bcmp", req.RequestID)
 	components := make([]signerapi.BoundedBaseComponent, 0, len(targets))
 	for _, targetIndex := range targets {
-		component, signErr := signBoundedBaseComponent(ctx, req, plan, targetIndex, session)
+		component, signErr := signBoundedBaseComponent(ctx, groupReq, plan, targetIndex, session)
 		if signErr != nil {
 			return nil, signErr
 		}
@@ -112,7 +106,7 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	}
 	return &BoundedComponentResult{
 		RequestID: req.RequestID, Transactions: transactions, Components: components,
-		Mutations: BuildMutationReport(plan, len(req.Requests)),
+		Mutations: nil,
 	}, nil
 }
 
@@ -121,10 +115,11 @@ func (s *Service) logBoundedComponentsApproved(identityID string, req signerapi.
 		return
 	}
 	for _, index := range targets {
-		if index < 0 || index >= len(req.Requests) || index >= len(plan.AllTxns) {
+		groupReq := req.GroupSignRequest()
+		if index < 0 || index >= len(groupReq.Requests) || index >= len(plan.AllTxns) {
 			continue
 		}
-		txReq := req.Requests[index]
+		txReq := groupReq.Requests[index]
 		const details = "bounded-sentry base component released after policy and operator approval"
 		if policyRuleID != "" {
 			if logger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && logger != nil {
@@ -136,7 +131,7 @@ func (s *Service) logBoundedComponentsApproved(identityID string, req signerapi.
 	}
 }
 
-func signBoundedBaseComponent(ctx context.Context, req signerapi.BoundedComponentRequest, plan *PlanResult, targetIndex int, session componentKeyGetter) (signerapi.BoundedBaseComponent, *ServiceError) {
+func signBoundedBaseComponent(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, targetIndex int, session componentKeyGetter) (signerapi.BoundedBaseComponent, *ServiceError) {
 	item := plan.BoundedItems[targetIndex]
 	account := req.Requests[targetIndex].AuthAddress
 	keyMaterial, loadErr := loadBoundedKeyMaterial(ctx, session, account, "bounded spending key")

@@ -636,7 +636,7 @@ func TestRequestBoundedSentryEndpoints(t *testing.T) {
 		}
 	})
 	c.cacheApprovalWaitSeconds(60)
-	component, err := c.RequestBoundedComponentWithContext(t.Context(), signerapi.BoundedComponentRequest{Requests: []signerapi.SignRequest{{AuthAddress: "ADDR1", TxnBytesHex: "5458aa"}}})
+	component, err := c.RequestBoundedComponentWithContext(t.Context(), signerapi.BoundedComponentRequest{GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.BoundedComponentTarget{{TargetIndex: 0, AuthAddress: "ADDR1"}}})
 	if err != nil || len(component.Components) != 1 {
 		t.Fatalf("RequestBoundedComponentWithContext() = %#v, %v", component, err)
 	}

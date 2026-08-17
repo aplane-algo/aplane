@@ -5,6 +5,41 @@ package signerapi
 
 import "testing"
 
+func TestBoundedComponentRequestValidatesClosedPositionPartition(t *testing.T) {
+	valid := BoundedComponentRequest{
+		GroupBytesHex: []string{"5458aa", "5458bb", "5458cc"},
+		Targets:       []BoundedComponentTarget{{TargetIndex: 0, AuthAddress: "ACCOUNT"}},
+		ContextualPositions: []ComponentContextPosition{{
+			TargetIndex: 1, PQScheme: PQSchemeFalcon1024,
+		}},
+		DummyPositions: []ComponentDummyPosition{{TargetIndex: 2}},
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	tests := []struct {
+		name string
+		edit func(*BoundedComponentRequest)
+	}{
+		{"duplicate index", func(r *BoundedComponentRequest) { r.ContextualPositions[0].TargetIndex = 0 }},
+		{"missing index", func(r *BoundedComponentRequest) { r.ContextualPositions = nil }},
+		{"non-contiguous dummy suffix", func(r *BoundedComponentRequest) { r.DummyPositions[0].TargetIndex = 1 }},
+		{"target in dummy suffix", func(r *BoundedComponentRequest) { r.Targets[0].TargetIndex = 2 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := valid
+			request.Targets = append([]BoundedComponentTarget(nil), valid.Targets...)
+			request.ContextualPositions = append([]ComponentContextPosition(nil), valid.ContextualPositions...)
+			request.DummyPositions = append([]ComponentDummyPosition(nil), valid.DummyPositions...)
+			test.edit(&request)
+			if err := request.Validate(); err == nil {
+				t.Fatal("Validate() error = nil")
+			}
+		})
+	}
+}
+
 func TestBoundedAssemblyRequestValidate(t *testing.T) {
 	valid := BoundedAssemblyRequest{
 		RequestID: "basm-1", GroupBytesHex: []string{"5458aa", "5458bb"},

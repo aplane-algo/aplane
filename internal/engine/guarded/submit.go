@@ -282,28 +282,52 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	if err != nil {
 		return nil, nil, err
 	}
-	componentResp, err := s.conn.RequestBoundedComponentWithContext(opts.Ctx, signerapi.BoundedComponentRequest{Requests: requests})
+	planResp, err := s.conn.RequestGroupPlanWithContext(opts.Ctx, requests)
 	if err != nil {
-		return nil, nil, fmt.Errorf("bounded base component signing failed: %w", err)
+		return nil, nil, fmt.Errorf("bounded group planning failed: %w", err)
 	}
-	group, err := canonical.DecodeGroupHex(componentResp.Transactions)
+	group, err := canonical.DecodeGroupHex(planResp.Transactions)
 	if err != nil {
 		return nil, nil, fmt.Errorf("signer returned invalid bounded canonical group: %w", err)
-	}
-	if len(group.Entries) < len(txns) {
-		return nil, nil, fmt.Errorf("signer returned %d bounded group positions, want at least %d", len(group.Entries), len(txns))
 	}
 	plannedTxns := make([]types.Transaction, len(group.Entries))
 	for i, entry := range group.Entries {
 		plannedTxns[i] = entry.Txn
 	}
-	if err := validateBoundedComponentPlan(txns, plannedTxns, componentResp.Mutations); err != nil {
+	if err := validateBoundedComponentPlan(txns, plannedTxns, planResp.Mutations); err != nil {
 		return nil, nil, err
+	}
+	componentReq := signerapi.BoundedComponentRequest{GroupBytesHex: append([]string(nil), planResp.Transactions...)}
+	for i, request := range requests {
+		if _, ok := targetsByIndex[i]; ok {
+			componentReq.Targets = append(componentReq.Targets, signerapi.BoundedComponentTarget{
+				TargetIndex: i, AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs,
+			})
+		} else {
+			componentReq.ContextualPositions = append(componentReq.ContextualPositions, signerapi.ComponentContextPosition{
+				TargetIndex: i, LsigResources: request.LsigResources, PQScheme: request.PQScheme,
+			})
+		}
+	}
+	for i := len(txns); i < len(planResp.Transactions); i++ {
+		componentReq.DummyPositions = append(componentReq.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
+	}
+	componentResp, err := s.conn.RequestBoundedComponentWithContext(opts.Ctx, componentReq)
+	if err != nil {
+		return nil, nil, fmt.Errorf("bounded base component signing failed: %w", err)
+	}
+	if len(componentResp.Transactions) != len(planResp.Transactions) {
+		return nil, nil, fmt.Errorf("bounded component response group length changed")
+	}
+	for i := range planResp.Transactions {
+		if componentResp.Transactions[i] != planResp.Transactions[i] {
+			return nil, nil, fmt.Errorf("bounded component response changed frozen transaction %d", i)
+		}
 	}
 	if err := validateBoundedTargetFees(plannedTxns, targets); err != nil {
 		return nil, nil, err
 	}
-	groupBytesHex := append([]string(nil), componentResp.Transactions...)
+	groupBytesHex := append([]string(nil), planResp.Transactions...)
 	components := make(map[int]signerapi.BoundedBaseComponent, len(componentResp.Components))
 	for _, component := range componentResp.Components {
 		target, ok := targetsByIndex[component.TargetIndex]

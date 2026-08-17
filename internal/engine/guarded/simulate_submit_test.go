@@ -29,7 +29,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -278,6 +277,18 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: componentSelector, PublicKeyHex: sentryHex, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}})
 	})
+	mux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
+		var req signerapi.GroupSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		transactions := make([]string, len(req.Requests))
+		for i, request := range req.Requests {
+			transactions[i] = request.TxnBytesHex
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: transactions})
+	})
 	mux.HandleFunc("/sign/bounded-component", func(w http.ResponseWriter, r *http.Request) {
 		appendEvent("base")
 		var req signerapi.BoundedComponentRequest
@@ -286,7 +297,7 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(signerapi.BoundedComponentResponse{
-			RequestID: req.RequestID, Transactions: []string{txnutil.EncodeWithPrefixHex(txn)},
+			RequestID: req.RequestID, Transactions: req.GroupBytesHex,
 			Components: []signerapi.BoundedBaseComponent{{TargetIndex: 0, BoundedAccount: txn.Sender.String(), BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
 		})
 	})

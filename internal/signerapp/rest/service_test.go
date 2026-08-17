@@ -402,7 +402,7 @@ func TestServiceBoundedSentryEndpointsDelegate(t *testing.T) {
 		boundedAssembly: &signersigning.BoundedAssemblyResult{RequestID: "basm-1", SignedGroup: []string{"signed"}},
 	}
 	svc := Service{Deps: Dependencies{NewSigningService: func(*identity.Runtime) SigningService { return stub }}}
-	componentReq := signerapi.BoundedComponentRequest{RequestID: "bcmp-1", Requests: []signerapi.SignRequest{{AuthAddress: "ACCOUNT", TxnBytesHex: "TXaa"}}}
+	componentReq := signerapi.BoundedComponentRequest{RequestID: "bcmp-1", GroupBytesHex: []string{"TXaa"}, Targets: []signerapi.BoundedComponentTarget{{TargetIndex: 0, AuthAddress: "ACCOUNT"}}}
 	componentResp, err := svc.PrepareBoundedComponent(t.Context(), ir, componentReq)
 	if err != nil {
 		t.Fatalf("PrepareBoundedComponent() error = %v", err)

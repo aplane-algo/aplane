@@ -339,10 +339,12 @@ For `bounded-sentry1`, the first-party client uses a distinct user-first
 choreography:
 
 1. Resolve the bounded target from `signing_flow` and durable inventory.
-2. Send the group to `/sign/bounded-component`. The signer finalizes grouping
-   and fees, runs bounded classification, policy, and operator approval, then
-   returns frozen transactions, base signature args, runtime args, and an
-   assembly receipt.
+2. Send the draft group to `/plan`, then pass the exact frozen group plus its
+   closed target/context/dummy position partition to `/sign/bounded-component`.
+   The signer independently reconstructs the durable bounded authorization and
+   validates grouping, resources, fees, policy, and operator approval without
+   changing the bytes. It returns those same transactions, base signature args,
+   runtime args, and an assembly receipt.
 3. Route those exact frozen transactions to the sentry endpoint and request a
    sentry-role `/sign/component` signature.
 4. Return the base component, receipt, sentry signature, and exact group to the
