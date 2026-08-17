@@ -64,3 +64,41 @@ func TestClientPackagesRouteOnSigningFlow(t *testing.T) {
 		}
 	}
 }
+
+// TestSigningFlowCharacterizationInventory keeps the behavioral tests that
+// define the pre-unification baseline visible while the component and assembly
+// transports are collapsed. A listed test may be renamed only when its
+// replacement pins the same gate or byte-level boundary.
+func TestSigningFlowCharacterizationInventory(t *testing.T) {
+	testsByFile := map[string][]string{
+		"../../internal/signerapp/signing/component_test.go": {
+			"TestPrepareComponentSigningCanonicalizesTargetsAndMessages",
+			"TestSignComponentSentryRequiresPolicyBeforeKeyLoad",
+			"TestSignComponentSentryPolicyAllowsSigning",
+			"TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup",
+			"TestAssembleDecodedGuardedRejectsMismatchedPassthrough",
+		},
+		"../../internal/signerapp/signing/component_gate_test.go": {
+			"TestSignComponentUserRoleRejectedBySignerPolicy",
+			"TestSignComponentUserRoleOperatorApproves",
+			"TestSignComponentUserRoleUserAutoApproveSkipsPrompt",
+			"TestSignComponentUserRoleForeignRekeyLegForcesReview",
+		},
+		"../../internal/signerapp/signing/bounded_sentry_test.go": {
+			"TestValidateBoundedComponentPlanRequiresSentrySpend",
+			"TestBoundedAssemblyReceiptBindsRuntimeAndMetadata",
+			"TestAssembleBoundedTargetVerifiesBothAuthorities",
+		},
+	}
+	for path, names := range testsByFile {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, name := range names {
+			if !strings.Contains(string(content), "func "+name+"(") {
+				t.Errorf("%s no longer contains %s; add an equivalent characterization before removing it", path, name)
+			}
+		}
+	}
+}

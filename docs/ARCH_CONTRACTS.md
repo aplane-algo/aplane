@@ -181,6 +181,26 @@ transaction bytes and verified during assembly by requiring the guarded
 LogicSig address, and `AuthAddr` when needed, to equal the requested guarded
 account.
 
+### Component Canonicalization And Byte-Binding Contract
+
+`POST /plan` is the sole canonicalizing endpoint in the supported component
+choreography. Component-signing and assembly requests carry frozen canonical
+group bytes and must never plan, regroup, append dummies, pool fees, or repair
+those bytes. They validate or reject the supplied group. The contract does not
+assert provenance from `/plan`: an independently constructed group is valid
+when it is canonical and satisfies the same policy, resource, fee, and
+signer-owned authorization checks.
+
+For every component call, policy evaluation, operator rendering, and component
+message derivation use the same decoded frozen group. In particular, the
+bounded-sentry migration replaces the legacy plan-and-approve-together call
+with approval of frozen bytes. The signer reconstructs bounded authorization
+from its durable metadata and validates client-supplied runtime arguments; the
+client cannot supply or weaken the durable envelope. Guarded assembly remains
+authorized by user and sentry signatures. Bounded-sentry assembly remains
+authorized by its base signature, sentry signature, and assembly receipt. A
+shared transport does not make these authorization materials interchangeable.
+
 ### Bounded Authorization Contract V1
 
 `bounded1` is the only bounded-authorization contract. It has no protocol

@@ -136,6 +136,28 @@ also a contract statement: `/sign` returns only submittable signed
 transactions produced by keys this signer can complete alone, while the
 component/assembly surface handles partial, multi-party authorization.
 
+## Component-Flow Unification Invariants
+
+The component-flow migration unifies transport and orchestration, not the
+underlying authorization models. `/plan` is the only endpoint that
+canonicalizes a group. Component and assembly endpoints accept frozen group
+bytes and validate them without mutation; they never add resource dummies,
+pool fees, regroup, or otherwise repair the request.
+
+The signer intentionally does not prove that frozen bytes came from `/plan`.
+It independently reconstructs signer-owned facts and may accept any canonical,
+envelope-valid group. For a component call, the bytes evaluated by policy, the
+bytes rendered for operator approval, and the bytes used to derive component
+messages are one and the same. Bounded-sentry component signing therefore
+moves from approving a plan constructed inside the signing call to approving
+the supplied frozen group after the signer re-derives and validates its bounded
+authorization envelope.
+
+Assembly authorization remains flow-specific behind the shared request:
+guarded targets carry user and sentry signatures; bounded-sentry targets carry
+base signatures, a sentry signature, and an assembly receipt. No shared route
+may allow either target kind to use the other's weaker material.
+
 ## Signer-Domain Gating Of User Components
 
 Guarded signing has two independent authorization gates, one per party:
