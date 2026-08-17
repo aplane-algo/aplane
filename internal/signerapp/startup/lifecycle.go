@@ -5,6 +5,7 @@ package startup
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -85,6 +86,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 	defer cancel()
 
 	var shutdownErrors []string
+	handlersMayBeRunning := false
 	for i := len(started) - 1; i >= 0; i-- {
 		svc := started[i]
 		if svc.Stop == nil {
@@ -95,6 +97,9 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		}
 		if err := svc.Stop(shutdownCtx); err != nil {
 			shutdownErrors = append(shutdownErrors, svc.Name+": "+err.Error())
+			if errors.Is(err, context.DeadlineExceeded) {
+				handlersMayBeRunning = true
+			}
 			if plan.Warn != nil {
 				plan.Warn(svc.Name + " shutdown error: " + err.Error())
 			}
@@ -110,6 +115,8 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		if plan.AuditLog != nil {
 			plan.AuditLog.LogServerStopIncomplete(strings.Join(shutdownErrors, "; "))
 		}
+	}
+	if handlersMayBeRunning {
 		if plan.Warn != nil {
 			plan.Warn("service shutdown incomplete; retaining audit and runtime state until process exit")
 		}
@@ -117,7 +124,9 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 	}
 
 	if plan.AuditLog != nil {
-		plan.AuditLog.LogServerStop()
+		if len(shutdownErrors) == 0 {
+			plan.AuditLog.LogServerStop()
+		}
 		_ = plan.AuditLog.Close()
 	}
 

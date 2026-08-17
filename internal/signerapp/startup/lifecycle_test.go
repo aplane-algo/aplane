@@ -182,3 +182,35 @@ func TestShutdownLifecycleDoesNotDestroyRuntimeWhileHandlerOutlivesStopTimeout(t
 	close(handlerRelease)
 	<-handlerDone
 }
+
+func TestShutdownLifecycleDestroysRuntimeAfterNonDeadlineStopError(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	ir := identity.New(identity.Config{
+		ID:            auth.DefaultIdentityID,
+		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root), auth.DefaultIdentityID),
+		KeyPaths:      storepaths.NewPaths(root),
+		Authenticator: auth.NewTokenAuthenticator("token"),
+	})
+	ir.SetUnlocked()
+	ir.SnapshotKeySession().InitializeSession()
+	audit := &lifecycleAuditRecorder{}
+
+	shutdownLifecycle([]LifecycleService{{
+		Name: "SSH server",
+		Stop: func(context.Context) error {
+			return errors.New("listener close failed after handlers drained")
+		},
+	}}, LifecyclePlan{
+		ProductRuntime: ir,
+		AuditLog:       audit,
+	})
+
+	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after safe teardown", err)
+	}
+	if stopped, incompleteReason, closed := audit.snapshot(); stopped || incompleteReason == "" || !closed {
+		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v, want incomplete record and closed logger", stopped, incompleteReason, closed)
+	}
+}

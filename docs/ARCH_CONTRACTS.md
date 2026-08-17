@@ -2459,12 +2459,14 @@ identity-decommission state or operation lease. Graceful shutdown stops and
 drains request servers before destroying runtime key state. Lock, disconnect,
 displacement, and shutdown continue to fail pending approvals through the
 reason-independent coordinator fail-all contract.
-If a request server fails to stop or exceeds the shutdown deadline, lifecycle
-records `SERVER_STOP_INCOMPLETE` with `outcome:"failed"` and the service error,
-then does not close the audit logger or destroy runtime key state in-process;
-the signer returns for process exit without zeroing state beneath a
-still-running handler. SSH stop uses the same lifecycle deadline and reports a
-deadline error until its accept loop and all connection handlers have exited.
+If a request server fails to stop, lifecycle records
+`SERVER_STOP_INCOMPLETE` with `outcome:"failed"` and the service error. A
+deadline error means a handler may still be running, so lifecycle leaves the
+audit logger and runtime key state intact for process exit. A non-deadline stop
+error occurs only after handlers have drained; lifecycle closes the audit log
+and destroys runtime state normally. SSH stop uses the same lifecycle deadline
+and reports a deadline error until its accept loop and all connection handlers
+have exited.
 
 ## Key Watching and Reload
 

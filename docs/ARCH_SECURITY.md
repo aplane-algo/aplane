@@ -873,11 +873,13 @@ the one product runtime only after every service reports a clean stop:
    - `keySession.Destroy()` — drain in-flight key retrieval operations.
    - `keyStore.ClearKeys()` — zero every term key.
 
-If any service stop fails or times out, the lifecycle retains the audit logger
-and runtime state until process exit instead of tearing them down underneath a
-handler that may still be executing. It writes a synced
-`SERVER_STOP_INCOMPLETE` record with the service error but leaves the logger
-open for any final handler records. The SSH server applies the lifecycle
+If any service stop fails, lifecycle writes a synced
+`SERVER_STOP_INCOMPLETE` record with the service error. A deadline error means
+a handler may still be executing, so lifecycle retains the audit logger and
+runtime state until process exit; this avoids tearing dependencies down under
+that handler and leaves the logger open for its final records. A non-deadline
+error is reported only after handlers have drained, so the logger is closed and
+runtime key state is destroyed normally. The SSH server applies the lifecycle
 deadline to its accept loop and connection handlers and returns the deadline
 error rather than treating an incomplete drain as success. The clean shutdown
 destroy path stops watcher dispatch before draining key operations and zeroing
