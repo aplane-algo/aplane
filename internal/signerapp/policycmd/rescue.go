@@ -56,7 +56,7 @@ func (r RescueRunner) runDraft(ctx context.Context, command Command, streams Str
 		command: command, streams: streams, store: fileStore, stored: stored,
 		exactYAML: data, target: parseTarget,
 		status:  fmt.Sprintf("%s OK: %s", parseTarget.StatusNoun(), command.Source),
-		dataDir: command.Source, editor: r.Editor,
+		dataDir: command.DataDir, editor: r.Editor,
 	}).run()
 }
 

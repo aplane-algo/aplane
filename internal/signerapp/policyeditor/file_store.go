@@ -23,6 +23,19 @@ type FileStore struct {
 	Config  *serverconfig.ServerConfig
 }
 
+// Persistence reports that Save replaces only this standalone draft.
+func (s *FileStore) Persistence() Persistence {
+	if s == nil {
+		return Persistence{Kind: PersistenceDraft}
+	}
+	return Persistence{Kind: PersistenceDraft, Path: s.Path}
+}
+
+// ModeLabel identifies this backend in policytui headers.
+func (s *FileStore) ModeLabel() string {
+	return "standalone draft"
+}
+
 func (s *FileStore) Load(ctx context.Context) (*policy.StoredConfig, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

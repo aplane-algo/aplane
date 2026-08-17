@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policycmd"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytui"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/transport"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -38,6 +39,8 @@ type policyStreams struct {
 	stdout io.Writer
 	stderr io.Writer
 }
+
+var setPolicySSHStatusWriter = sshtunnel.SetStatusWriter
 
 func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOptions, streams policyStreams) int {
 	command, rescue, err := parsePolicyCommand(args, streams.stderr)
@@ -79,6 +82,11 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 
 	var session policycmd.OnlineSession
 	if globals.remote {
+		// The SSH client emits lifecycle and identity-key status outside the
+		// admin protocol. Keep machine-readable policy stdout and the editor's
+		// alternate screen isolated for the complete remote command lifetime.
+		setPolicySSHStatusWriter(io.Discard)
+		defer setPolicySSHStatusWriter(nil)
 		remoteCfg, err := loadRemoteAdminConfig(globals.clientDataDir)
 		if err != nil {
 			writePolicyError(streams.stderr, err)

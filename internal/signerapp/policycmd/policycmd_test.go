@@ -345,7 +345,9 @@ func TestRescueDraftEditWritesOnlyDraftWithoutSidecar(t *testing.T) {
 	if err := os.WriteFile(path, []byte("reject_foreign_rekey: true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	editor := func(store policyeditor.Store, _ *policy.StoredConfig, _, _ string, _ policyeditor.Target) error {
+	var editorDataDir string
+	editor := func(store policyeditor.Store, _ *policy.StoredConfig, dataDir, _ string, _ policyeditor.Target) error {
+		editorDataDir = dataDir
 		replacement, err := policy.ParseStoredConfig([]byte("reject_foreign_rekey: false\n"))
 		if err != nil {
 			return err
@@ -357,6 +359,9 @@ func TestRescueDraftEditWritesOnlyDraftWithoutSidecar(t *testing.T) {
 	}, Streams{Stdout: io.Discard, Stderr: io.Discard})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if editorDataDir != "" {
+		t.Fatalf("standalone editor data directory = %q, want empty", editorDataDir)
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {

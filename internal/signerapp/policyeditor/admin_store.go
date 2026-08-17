@@ -54,6 +54,11 @@ type AdminStore struct {
 	policyYAML string
 }
 
+// Persistence reports that Save replaces the daemon-owned production policy.
+func (s *AdminStore) Persistence() Persistence {
+	return Persistence{Kind: PersistenceProduction}
+}
+
 func (s *AdminStore) Load(ctx context.Context) (*policy.StoredConfig, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

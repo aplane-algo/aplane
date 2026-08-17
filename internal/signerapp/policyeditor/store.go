@@ -28,6 +28,24 @@ type Store interface {
 	Load(context.Context) (*policy.StoredConfig, error)
 	Save(context.Context, *policy.StoredConfig) error
 	Validate(context.Context, *policy.StoredConfig) error
+	Persistence() Persistence
+}
+
+// PersistenceKind identifies whether an editor save publishes a managed
+// production document or only replaces a standalone draft.
+type PersistenceKind string
+
+const (
+	PersistenceProduction PersistenceKind = "production"
+	PersistenceDraft      PersistenceKind = "draft"
+)
+
+// Persistence describes the destination and security effect of Store.Save.
+// The editor uses this contract for truthful operator-facing prompts and
+// status; it must not infer persistence semantics from concrete store types.
+type Persistence struct {
+	Kind PersistenceKind
+	Path string
 }
 
 // PassphraseProvider supplies the signer store passphrase only when an
@@ -47,6 +65,12 @@ type OfflineStore struct {
 	// Config overrides the runtime signer config used for validation. When nil,
 	// the config is loaded from DataDir.
 	Config *serverconfig.ServerConfig
+}
+
+// Persistence reports that Save publishes the managed policy document and its
+// integrity sidecar.
+func (s *OfflineStore) Persistence() Persistence {
+	return Persistence{Kind: PersistenceProduction}
 }
 
 // UseExclusiveMutationLock supplies an already-held lock for Save and

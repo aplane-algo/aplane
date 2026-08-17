@@ -104,3 +104,28 @@ func TestPolicyCommandRejectsRetiredPassphraseEnvironment(t *testing.T) {
 		t.Fatalf("runPolicyCommand() code=%d stderr=%q", code, stderr.String())
 	}
 }
+
+func TestRemotePolicyCommandSuppressesSSHStatusForWholeSession(t *testing.T) {
+	t.Setenv("APPOLICY_PASSPHRASE", "")
+	original := setPolicySSHStatusWriter
+	t.Cleanup(func() { setPolicySSHStatusWriter = original })
+	var writers []io.Writer
+	setPolicySSHStatusWriter = func(writer io.Writer) {
+		writers = append(writers, writer)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runPolicyCommand(context.Background(), []string{"export"}, policyGlobalOptions{
+		remote:        true,
+		clientDataDir: t.TempDir(),
+	}, policyStreams{stdin: strings.NewReader("secret\n"), stdout: &stdout, stderr: &stderr})
+	if code != 1 {
+		t.Fatalf("runPolicyCommand() code=%d stderr=%q", code, stderr.String())
+	}
+	if len(writers) != 2 || writers[0] != io.Discard || writers[1] != nil {
+		t.Fatalf("SSH status writer sequence = %#v, want [io.Discard nil]", writers)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("failed remote export contaminated stdout: %q", stdout.String())
+	}
+}
