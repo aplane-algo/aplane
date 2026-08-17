@@ -64,6 +64,8 @@ Note: endpoint SSH paths are relative to the data directory (installer default:
 `~/aplane/apclient`). The `.ssh/` subdirectory is created automatically when
 needed. SSH authentication uses an enrolled public key plus a programmatic,
 host-key-bound proof of the API token; the token is not sent as the SSH username.
+APlane does not read or write the operating-system user's personal SSH
+directory; client keys and host trust are isolated under `$APCLIENT_DATA/.ssh/`.
 
 `signer_status_poll_interval` controls interactive apshell's background
 authenticated `/status` checks. The default is `"10s"`. Use a larger duration
@@ -1084,9 +1086,9 @@ The operator sees the client's SSH fingerprint in apadmin and can verify identit
 If the client's SSH key is already in `authorized_keys` (e.g. added manually by the operator), you can copy the token directly:
 
 ```bash
-# 1. Add the client's public key to authorized_keys
+# 1. Add the APlane client's public key to authorized_keys
 mkdir -p $APSIGNER_DATA/identities/default/.ssh
-cat ~/.ssh/id_ed25519.pub >> $APSIGNER_DATA/identities/default/.ssh/authorized_keys
+cat $APCLIENT_DATA/.ssh/id_ed25519.pub >> $APSIGNER_DATA/identities/default/.ssh/authorized_keys
 
 # 2. Copy token from signer to client
 cp $APSIGNER_DATA/identities/default/aplane.token $APCLIENT_DATA/
