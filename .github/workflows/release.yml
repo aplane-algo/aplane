@@ -228,7 +228,7 @@ jobs:
             mkdir -p dist/staging/aplane/{bin,installer/scripts,library/templates,plugins.available}
             cp bin/${arch}/apshell bin/${arch}/aprekey bin/${arch}/apsigner bin/${arch}/apadmin \
                bin/${arch}/apconsole \
-               bin/${arch}/apapprover bin/${arch}/apstore bin/${arch}/appolicy bin/${arch}/appass \
+               bin/${arch}/apapprover bin/${arch}/apstore bin/${arch}/appass \
                bin/${arch}/aplocalnet \
                bin/${arch}/appass-file \
                bin/${arch}/appass-systemd-creds \
@@ -270,7 +270,7 @@ jobs:
             cp bin/darwin-${arch}/apshell bin/darwin-${arch}/aprekey bin/darwin-${arch}/apsigner \
                bin/darwin-${arch}/apadmin bin/darwin-${arch}/apconsole \
                bin/darwin-${arch}/apapprover \
-               bin/darwin-${arch}/apstore bin/darwin-${arch}/appolicy bin/darwin-${arch}/appass \
+               bin/darwin-${arch}/apstore bin/darwin-${arch}/appass \
                bin/darwin-${arch}/aplocalnet \
                bin/darwin-${arch}/appass-file \
                bin/darwin-${arch}/approbe \

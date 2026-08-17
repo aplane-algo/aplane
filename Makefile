@@ -1,4 +1,4 @@
-.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-fnet native-falcon-fnet-test integration-test-reuse integration-test-cleanup store-lifecycle-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-fnet-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-fnet native-falcon-fnet-test integration-test-reuse integration-test-cleanup store-lifecycle-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-fnet-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -84,7 +84,7 @@ internal/signing/dummy.teal.tok: resources/dummy.teal.tok
 	@echo "✓ Updated internal/signing/dummy.teal.tok"
 
 # Default: Build all first-party binaries and official bundled plugins.
-all: compile-teal apshell aprekey apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe bundled-plugins
+all: compile-teal apshell aprekey apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe bundled-plugins
 
 # Build apshell
 apshell: compile-teal compile-docassets
@@ -107,9 +107,6 @@ apapprover:
 
 apstore: compile-teal
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/apstore ./cmd/apstore
-
-appolicy:
-	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/appolicy ./cmd/appolicy
 
 # appass-file is a dev-only plaintext file passphrase helper (pure Go)
 appass-file:
@@ -162,9 +159,6 @@ apstore-arm64: compile-teal
 	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC="$(ARM64_CC)" go build $(ARM64_LD_FLAGS) -o apstore-arm64 ./cmd/apstore
 
 # apapprover, aplocalnet, approbe, and applugin-checksum are pure Go, so cross-compilation is simple
-appolicy-arm64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o appolicy-arm64 ./cmd/appolicy
-
 apapprover-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o apapprover-arm64 ./cmd/apapprover
 
@@ -189,7 +183,7 @@ applugin-checksum-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o applugin-checksum-arm64 ./cmd/applugin-checksum
 
 # Build all binaries for arm64 into bin/arm64/
-bin-arm64: apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64
+bin-arm64: apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64
 	@mkdir -p bin/arm64
 	@mv apshell-arm64 bin/arm64/apshell
 	@mv aprekey-arm64 bin/arm64/aprekey
@@ -197,7 +191,6 @@ bin-arm64: apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-ar
 	@mv apadmin-arm64 bin/arm64/apadmin
 	@mv apconsole-arm64 bin/arm64/apconsole
 	@mv apstore-arm64 bin/arm64/apstore
-	@mv appolicy-arm64 bin/arm64/appolicy
 	@mv apapprover-arm64 bin/arm64/apapprover
 	@mv appass-arm64 bin/arm64/appass
 	@mv aplocalnet-arm64 bin/arm64/aplocalnet
@@ -218,7 +211,6 @@ bin-amd64: compile-teal compile-docassets
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apadmin ./cmd/apadmin
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apconsole ./cmd/apconsole
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apstore ./cmd/apstore
-	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/appolicy ./cmd/appolicy
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/apapprover ./cmd/apapprover
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/appass-file ./cmd/appass-file
 	@chmod 700 bin/amd64/appass-file
@@ -242,7 +234,6 @@ bin-darwin-arm64: compile-teal compile-docassets
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apadmin ./cmd/apadmin
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apconsole ./cmd/apconsole
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apstore ./cmd/apstore
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/appolicy ./cmd/appolicy
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apapprover ./cmd/apapprover
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/appass-file ./cmd/appass-file
 	@chmod 700 bin/darwin-arm64/appass-file
@@ -266,7 +257,6 @@ bin-darwin-amd64: compile-teal compile-docassets
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apadmin ./cmd/apadmin
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apconsole ./cmd/apconsole
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apstore ./cmd/apstore
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/appolicy ./cmd/appolicy
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apapprover ./cmd/apapprover
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/appass-file ./cmd/appass-file
 	@chmod 700 bin/darwin-amd64/appass-file
@@ -292,8 +282,8 @@ bin-windows-amd64: compile-teal compile-docassets
 clean:
 	find bin -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
 	rm -rf internal/docassets/generated
-	rm -f apshell aprekey apbounded-admin apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe migrate-config-v1 applugin-checksum
-	rm -f apshell-arm64 aprekey-arm64 apbounded-admin-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apapprover-arm64 apstore-arm64 appolicy-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 migrate-config-v1-arm64 applugin-checksum-arm64
+	rm -f apshell aprekey apbounded-admin apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe migrate-config-v1 applugin-checksum
+	rm -f apshell-arm64 aprekey-arm64 apbounded-admin-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apapprover-arm64 apstore-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 migrate-config-v1-arm64 applugin-checksum-arm64
 
 # Local release dry-run (builds archives without publishing)
 # On macOS: also builds darwin archives. On Linux: linux only.
@@ -315,7 +305,7 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 		mkdir -p dist/staging/aplane/bin dist/staging/aplane/installer/scripts dist/staging/aplane/library/templates dist/staging/aplane/plugins.available; \
 		cp bin/$${arch}/apshell bin/$${arch}/aprekey bin/$${arch}/apsigner bin/$${arch}/apadmin \
 		   bin/$${arch}/apconsole \
-		   bin/$${arch}/apapprover bin/$${arch}/apstore bin/$${arch}/appolicy bin/$${arch}/appass \
+		   bin/$${arch}/apapprover bin/$${arch}/apstore bin/$${arch}/appass \
 		   bin/$${arch}/aplocalnet \
 		   bin/$${arch}/appass-file \
 		   bin/$${arch}/appass-systemd-creds \
@@ -341,7 +331,7 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 		mkdir -p dist/staging/aplane/bin dist/staging/aplane/installer/scripts dist/staging/aplane/library/templates dist/staging/aplane/plugins.available; \
 		cp $${darwindir}apshell $${darwindir}aprekey $${darwindir}apsigner $${darwindir}apadmin \
 		   $${darwindir}apconsole \
-		   $${darwindir}apapprover $${darwindir}apstore $${darwindir}appolicy $${darwindir}appass \
+		   $${darwindir}apapprover $${darwindir}apstore $${darwindir}appass \
 		   $${darwindir}aplocalnet \
 		   $${darwindir}appass-file \
 		   $${darwindir}approbe \
@@ -517,7 +507,7 @@ docker-local-release-test:
 # Requires bin-amd64 to have been built first.
 smoke-test:
 	@echo "Smoke-testing built binaries..."
-	@for b in apshell apsigner apadmin apconsole apstore appolicy appass aplocalnet approbe; do \
+	@for b in apshell apsigner apadmin apconsole apstore appass aplocalnet approbe; do \
 		if [ ! -x bin/amd64/$$b ]; then \
 			echo "✗ bin/amd64/$$b missing (run 'make bin-amd64' first)"; exit 1; \
 		fi; \
@@ -972,7 +962,6 @@ help:
 	@echo "  make apconsole    - Build apconsole"
 	@echo "  make apapprover  - Build apapprover"
 	@echo "  make apstore     - Build apstore (init, backup, restore, changepass)"
-	@echo "  make appolicy    - Build appolicy (offline policy editor/checker)"
 	@echo "  make aplocalnet  - Build aplocalnet (LocalNet setup TUI)"
 	@echo "  make approbe     - Build approbe (installer liveness probe)"
 	@echo "  make applugin-checksum - Build applugin-checksum (generate checksums.sha256)"
@@ -990,7 +979,6 @@ help:
 	@echo "  make apadmin-arm64 - Cross-compile apadmin for ARM64"
 	@echo "  make apconsole-arm64 - Cross-compile apconsole for ARM64"
 	@echo "  make apstore-arm64 - Cross-compile apstore for ARM64"
-	@echo "  make appolicy-arm64 - Cross-compile appolicy for ARM64"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test            - Run unit tests (excludes integration tests)"
