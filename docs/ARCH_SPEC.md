@@ -607,7 +607,7 @@ Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
 
-ASA amount-threshold editing in display units uses signer-wide ASA metadata under `cache/<network>_asa_cache.json` in the signer data directory. Signer code reaches this cache through `internal/signerapp/asametadata.Store`, not by treating it as APCLIENT_DATA cache state. This metadata is shared by all identities because ASA metadata is public chain state, not identity-private state. Built-in ASA metadata is starter data for the same effective cache model; successful live algod lookups for numeric ASA IDs are persisted to the signed cache. Enforcement remains raw-unit and numeric-ASA-ID based, so the metadata cache is not authoritative for requiring review, accepting, or rejecting transactions.
+ASA amount-threshold editing in display units uses signer-wide ASA metadata under `cache/<network>_asa_cache.json` in the signer data directory. Signer code reaches this cache through `internal/signerapp/asametadata.Store`, not by treating it as APCLIENT_DATA cache state. This metadata is process-wide because ASA metadata is public chain state, not signing authority. Built-in ASA metadata is starter data for the same effective cache model; successful live algod lookups for numeric ASA IDs are persisted to the signed cache. Enforcement remains raw-unit and numeric-ASA-ID based, so the metadata cache is not authoritative for requiring review, accepting, or rejecting transactions.
 
 LocalNet setup is owned by `aplocalnet` (`cmd/aplocalnet` plus
 `internal/aplocalnet`). It is an operator-run setup utility, not a long-running
@@ -835,7 +835,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `IPCServer.writeMu` | Serializes outbound IPC JSON writes |
 | `adminserver.SessionManager.mu` | Process-wide admin session registration/displacement |
 | `AuditLogger.mu` | Audit file writes |
-| SSH server locks | Authorized keys, token callbacks, identity-scoped connections, listener |
+| SSH server locks | Authorized keys, product-token callbacks, product connections, listener |
 
 Goroutines:
 

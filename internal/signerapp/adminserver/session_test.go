@@ -164,7 +164,7 @@ func (s *stubServices) NewSessionIdentity(method string) *auth.Identity {
 	}
 	return auth.NewDefaultIdentity(method)
 }
-func (s *stubServices) RevokeTokenForIdentity(ir *identity.Runtime) error { return nil }
+func (s *stubServices) RevokeProductToken(ir *identity.Runtime) error { return nil }
 func (s *stubServices) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettings {
 	return adminproto.AdminSettings{}
 }

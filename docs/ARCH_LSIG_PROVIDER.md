@@ -48,11 +48,11 @@ under identity key type state via `internal/templatestore/` and loaded by the
 signer template reload coordinator.
 
 **Scoping invariant:** compiled providers are shared product capabilities, while
-runtime-added `.template` files are identity-scoped signer state. In practice:
+runtime-added `.template` files belong to the one durable `default` activation set. In practice:
 
 - default-enabled built-in key types are available wherever their providers are registered
 - library-visible built-in key types require an enabled identity state record before generation surfaces expose them
-- runtime-added `.template` files live under `identities/<identity>/keytypes/` with adjacent state records and affect only that identity runtime when enabled; disabled installed templates remain stored but are skipped during reload
+- runtime-added `.template` files live under `identities/default/keytypes/` with adjacent state records and affect the product runtime when enabled; disabled installed templates remain stored but are skipped during reload
 
 **Schema invariant:** source-tree `.yaml` templates and runtime `.template`
 files use the same logical template schema. The difference is representation,
@@ -71,7 +71,7 @@ the other's shape.
 
 **Restore invariant:** credential backups do not carry template YAML. Restored
 keys retain their durable signing metadata, while any required provider or
-identity-local template must already be available on the destination under the
+installed product template must already be available on the destination under the
 normal registry and template precedence rules.
 The key file remains the signing authority: generic v1 signing-metadata keys can
 sign from stored bytecode/runtime args, and DSA v1 signing-metadata keys require

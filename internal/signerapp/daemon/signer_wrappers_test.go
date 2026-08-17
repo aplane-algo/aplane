@@ -12,9 +12,6 @@ import (
 )
 
 // Product-mode Signer/IPCServer wrappers kept only for test convenience.
-// Production code resolves identities explicitly and calls the
-// identity-aware variants; these one-line shims keep the daemon test suite
-// readable without compiling into the binary.
 
 // These Signer-level wrappers exist for test convenience and legacy
 // call sites. They route through productIdentityRuntime() which is the
@@ -36,8 +33,7 @@ func (fs *Signer) lock() {
 	fs.productIdentityRuntime().Lock()
 }
 
-// hasClient is a product-mode compatibility helper. Identity-aware code should
-// call AdminHub.HasClient with the target runtime identity directly.
+// hasClient is a product-mode test helper.
 func (fs *Signer) hasClient() bool {
 	return fs.hasAdminClient()
 }

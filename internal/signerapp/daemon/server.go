@@ -126,11 +126,11 @@ func (fs *Signer) nodeFailure() error {
 	return fs.nodeFailState.Err()
 }
 
-// RevokeTokenForIdentity generates a new API token for the given identity.
+// RevokeProductToken generates a new API token for the product runtime.
 // The token authenticator is updated before active SSH connections for the
-// identity are closed, so connections authenticated with the old token are
-// invalidated after rotation. Other identities' SSH connections remain active.
-func (fs *Signer) RevokeTokenForIdentity(ir *identity.Runtime) error {
+// product are closed, so connections authenticated with the old token are
+// invalidated after rotation.
+func (fs *Signer) RevokeProductToken(ir *identity.Runtime) error {
 	var httpUpdater storemut.TokenUpdater
 	var tokenGeneration uint64
 	if ta, ok := ir.Authenticator().(*auth.TokenAuthenticator); ok {

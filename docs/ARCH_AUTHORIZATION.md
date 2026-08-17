@@ -37,7 +37,7 @@ A credential is proof presented at an authentication boundary.
 
 Credential types include:
 
-- HTTP API token from `identities/<identity>/aplane.token`
+- HTTP API token from `identities/default/aplane.token`
 - admin passphrase over local IPC
 - SSH public key plus token for tunnel access
 - SSH public key plus token plus passphrase for the `aplane-admin` subsystem

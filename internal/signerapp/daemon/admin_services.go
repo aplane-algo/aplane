@@ -235,8 +235,8 @@ func (s signerAdminServices) LogAuthorizationDenied(ctx adminserver.SessionConte
 	s.signer.auditLog.LogAuthorizationDenied(ctx, action, resource, reason)
 }
 
-func (s signerAdminServices) RevokeTokenForIdentity(ir *identity.Runtime) error {
-	return s.signer.RevokeTokenForIdentity(ir)
+func (s signerAdminServices) RevokeProductToken(ir *identity.Runtime) error {
+	return s.signer.RevokeProductToken(ir)
 }
 
 func (s signerAdminServices) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettings {

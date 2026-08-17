@@ -14,7 +14,7 @@ editing workflow, top-level fields, and key override overview, start with
 Routing is configured in the identity policy file:
 
 ```text
-identities/<identity>/policy.yaml
+identities/default/policy.yaml
 ```
 
 Use `apadmin` for online guided routing edits while `apsigner` is running: open

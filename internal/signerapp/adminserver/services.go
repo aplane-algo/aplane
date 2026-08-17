@@ -18,7 +18,7 @@ type IdentityServices interface {
 	InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult
 	ChangeStorePassphrase(ir *identity.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult
 	NewSessionIdentity(method string) *auth.Identity
-	RevokeTokenForIdentity(ir *identity.Runtime) error
+	RevokeProductToken(ir *identity.Runtime) error
 }
 
 type SettingsServices interface {

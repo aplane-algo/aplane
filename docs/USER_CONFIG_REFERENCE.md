@@ -70,7 +70,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `user_auto_approve` | bool | `false` | User default to sign non-rejected requests without operator approval unless policy forces review |
 | `theme` | string | `auto` | Signer-admin UI theme: auto, dark, or light (auto detects terminal) |
 
-Identity-scoped `identities/<identity>/config.yaml` contains settings
+Product-scoped `identities/default/config.yaml` contains settings
 only. Node role is stored separately in root `node.yaml`.
 
 ## Environment Variables

@@ -993,7 +993,7 @@ Additional signer-state notes:
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
 - signer ASA metadata is loaded per operation from disk with `internal/asa/registry` built-in metadata as seed data; there is no separate long-lived in-memory signer ASA metadata cache to reconcile
 - built-in ASA metadata and convenience aliases live in `internal/asa/registry`; cache-backed current-network metadata is preferred for symbolic resolution, and registry aliases are the fallback used by shell and JavaScript helpers
-- `ssh.authorized_keys_path` remains a validated/resolved server setting for the underlying SSH server wiring, but product-mode identity auth and token enrollment use `identities/<identity>/.ssh/authorized_keys`
+- `ssh.authorized_keys_path` remains a validated/resolved server setting for the underlying SSH server wiring, but product auth and token enrollment use `identities/default/.ssh/authorized_keys`
 - `passphrase` and `passphrase.cred` are sensitive identity-scoped helper files referenced by `unlock.yaml`
 
 ### Client Data Directory Layout
@@ -2255,10 +2255,10 @@ SSH server uses Ed25519 host keys, auto-generated at `.ssh/ssh_host_key`.
 
 Authentication requires both factors in one handshake:
 
-- public key enrolled for the bound identity in `identities/<identity>/.ssh/authorized_keys`
-- mutual proof of the identity-scoped API token
+- public key enrolled for the product in `identities/default/.ssh/authorized_keys`
+- mutual proof of the product API token
 
-Normal clients send the non-secret identity ID as the SSH username. After SSH
+Normal clients send the fixed non-secret username `default`. After SSH
 verifies possession of an enrolled public key, the server returns partial
 success and requires keyboard-interactive authentication. That exchange is
 programmatic and has two rounds:
@@ -2296,7 +2296,9 @@ the authentication attempt succeeds or fails; garbage-collected runtimes provide
 best-effort reference release rather than guaranteed memory zeroization. The
 client retains its separate bearer-token state for subsequent HTTP requests.
 
-`ssh.authorized_keys_path` is part of the server config surface; in product mode identity-scoped SSH authorization and enrollment are sourced from `identities/<identity>/.ssh/authorized_keys`.
+`ssh.authorized_keys_path` is part of the server config surface; product SSH
+authorization and enrollment are sourced from
+`identities/default/.ssh/authorized_keys`.
 
 Unavailable or invalid client token proofs incur a 5-second delay.
 
@@ -2315,31 +2317,28 @@ Token provisioning flow:
 
 The callbacks are separated as approval, key enrollment, issuance, then audit.
 
-Product-facing clients request tokens for the product identity. The identity
-parameter exists in the wire shape because the backend provisioning path is
-identity-scoped.
+Product-facing clients request tokens with the fixed `request-token:default`
+username. There is no client-selected provisioning identity.
 
-Token revocation behavior in identity-aware mode:
+Token revocation behavior:
 
-- rotate the target identity's token file and in-memory authenticator,
+- rotate the product token file and in-memory authenticator,
 - record the new token generation,
-- send `token-revoked@aplane` to active SSH connections authenticated for that identity with older generations,
-- close those target-identity SSH connections,
-- leave other identities' SSH connections open.
+- send `token-revoked@aplane` to active SSH connections authenticated with an older generation,
+- close every stale product connection.
 
 `sshtunnel.Server.UpdateToken()` is the global updater. Signer
-identity-aware revocation uses `CloseIdentityConnections(identityID,
-minTokenGeneration, reason)` instead. If SSH authentication races token
-rotation, authentication may complete against the old token, but connection
-tracking closes the stale target-identity connection after the authenticator is
+product revocation uses `CloseProductConnections(minTokenGeneration, reason)`.
+If SSH authentication races token rotation, authentication may complete
+against the old token, but connection tracking closes the stale connection after the authenticator is
 updated.
 
 SSH server callbacks are startup-only. Token validation, key checking,
-key enrollment, token provisioning, operator checks, provisioning identity
-checks, session notifications, and admin channel callbacks must be configured
+key enrollment, token provisioning, operator checks, session notifications,
+and admin channel callbacks must be configured
 before `Start`; setters fail fast after the server has started.
 
-Token provisioning reads the target identity's existing token. It never
+Token provisioning reads the product's existing token. It never
 creates or rotates a token at request time: store initialization owns token
 creation, and the authenticated revocation flow owns rotation. If the token
 file is absent or unreadable, provisioning fails after key enrollment instead

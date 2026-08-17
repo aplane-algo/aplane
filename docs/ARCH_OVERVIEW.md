@@ -90,7 +90,7 @@ principal `system:product-admin` to the one product runtime. Normal SSH accepts
 only `default`; enrollment accepts only `request-token:default`; product request
 and admin inputs expose no runtime selector.
 
-Signer transaction policy is identity-scoped and uses the current verdict model
+Signer transaction policy is product-scoped under `identities/default/` and uses the current verdict model
 documented in [ARCH_POLICY.md](ARCH_POLICY.md): Always Deny, Always Review,
 Always Approve, then Operator Default.
 
@@ -148,7 +148,7 @@ authenticated admin protocol.
 - Generate and recover keys from mnemonics
 - Register explicitly from binary entrypoints
 - Track default-enabled and library-visible key types through the key type catalog
-- Apply identity-scoped key type activation before generation surfaces expose library-visible providers
+- Apply the product key type activation set before generation surfaces expose library-visible providers
 
 ## Directory Structure
 
@@ -280,15 +280,15 @@ endpoint-routed client model.
 
 apsigner also reads per-identity configuration overlays:
 - `identities/default/config.yaml` — product runtime settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`) that override process-global defaults; unknown fields are rejected and node role is configured only in root `node.yaml`
-- `identities/<identity>/unlock.yaml` — identity-scoped passphrase helper configuration
-- `identities/<identity>/policy.yaml` — identity-scoped node-role policy
-- `identities/<identity>/keytypes/<key_type>.json` — identity-scoped state records for optional key types
-- `identities/<identity>/keytypes/<key_type>.template` — encrypted installed YAML templates
+- `identities/default/unlock.yaml` — product passphrase helper configuration
+- `identities/default/policy.yaml` — product node-role policy
+- `identities/default/keytypes/<key_type>.json` — product state records for optional key types
+- `identities/default/keytypes/<key_type>.template` — encrypted installed YAML templates
 
 The signer data root may also contain `library/templates/*.yaml`, a plaintext
 KeyType Library source copied from release or installer artifacts. Files there
 are reference material until an authenticated admin installs a YAML template or
-enables a library-visible compiled provider for an identity.
+enables a library-visible compiled provider for the product runtime.
 
 See [USER_CONFIG.md](USER_CONFIG.md) for full reference.
 
@@ -378,7 +378,7 @@ Each identity owns an `identity.Runtime` containing:
 - effective policy config
 - lock state
 - file watcher lifecycle
-- identity-scoped config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`)
+- product runtime config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`)
 
 The on-disk layout is identity-scoped: keys under
 `identities/<identityID>/keys/`, encrypted templates and state records under

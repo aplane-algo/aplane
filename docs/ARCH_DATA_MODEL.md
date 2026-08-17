@@ -132,11 +132,11 @@ DTOs and contract fixtures.
 | Endpoint-published sentries | Client data dir | `endpoints.yaml` `published_sentries` | derived `Config.SentryEndpoints` map keyed by embedded public key hex | guarded send orchestration | `internal/config`, `internal/apshellapp`, `internal/engine` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/serverconfig.ServerConfig` snapshot | Admin settings subset | `internal/serverconfig`, `internal/bootstrap/signer` |
 | Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/<identity>/node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | `internal/noderole`, `internal/keyclass`, signer startup, identity load, keyadmin, restore, signing dispatch |
-| Signing identity | Signer identity | `identities/<identity>/` | `identity.Runtime` | HTTP identity routing, admin session target | `internal/signerapp/identity` |
-| Identity config | Signer identity | `identities/<identity>/config.yaml` (parsed as `identity.StoredConfig`) | `identity.EffectiveConfig` (resolved, excluding key-class role) | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
-| Unlock config | Signer identity | `identities/<identity>/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/unlockconfig` (identity re-exports helpers), `cmd/appass` |
-| Keyring root | Signer identity | `identities/<identity>/keyring.enc` (`aplane.keyring.v2`) | term keys after unlock | none | `internal/crypto`, `internal/keystore` |
-| Keystore marker | Signer identity | `identities/<identity>/.keystore` | store format gate only | none | `internal/crypto` |
+| Signing identity | Product signer | `identities/default/` | one `identity.Runtime` | fixed status/audit attribution | `internal/signerapp/identity` |
+| Identity config | Product signer | `identities/default/config.yaml` (parsed as `identity.StoredConfig`) | `identity.EffectiveConfig` (resolved, excluding key-class role) | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
+| Unlock config | Product signer | `identities/default/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/unlockconfig` (identity re-exports helpers), `cmd/appass` |
+| Keyring root | Product signer | `identities/default/keyring.enc` (`aplane.keyring.v2`) | term keys after unlock | none | `internal/crypto`, `internal/keystore` |
+| Keystore marker | Product signer | `identities/default/.keystore` | store format gate only | none | `internal/crypto` |
 | Term keys/session | Signer identity runtime | unsealed from `keyring.enc`, resident only while unlocked | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Account authority | Signer identity | `identities/<identity>/keys/<address>.key` | address -> key file/type/LogicSig resource-profile indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
 | Sentry witness authority | Sentry identity | `identities/<identity>/keys/<witness_key_id>.sen` | Witness Key ID -> witness credential index | `/keys`, sentry component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
@@ -148,9 +148,9 @@ DTOs and contract fixtures.
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
 | Node-role policy | Signer identity | `policy.yaml` plus `policy.yaml.hmac` | client-signing or sentry component `policy.Config`, selected by node role | admin/appolicy policy editor flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/admin`, `cmd/appolicy` |
 | Authorization principal/group/grant | Product bootstrap model | source-defined bootstrap records | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
-| API token | Signer identity and client | signer `identities/<identity>/aplane.token`, client `aplane.token` | token authenticator | HTTP auth, SSH mutual proof | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` |
-| SSH enrollment | Signer identity | `identities/<identity>/.ssh/authorized_keys` | identity SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
-| Admin session | Signer identity | none | `adminserver.SessionContext`, session manager | admin IPC/SSH JSON envelope | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` |
+| API token | Product signer and client | signer `identities/default/aplane.token`, client `aplane.token` | product token authenticator | HTTP auth, SSH mutual proof | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` |
+| SSH enrollment | Product signer | `identities/default/.ssh/authorized_keys` | product SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
+| Admin session | Signer process | none | scalar `adminserver.SessionContext` ownership | admin IPC/SSH JSON envelope | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` |
 | Sign request | Live signer runtime | none durable | approval coordinator pending request | `/sign`, `/sign/cancel`, admin `sign_request` | `internal/signerapp/approval`, `internal/signerapp/signing` |
 | Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign` | `internal/signerapp/signing`, `pkg/signerapi` |
 | Component signing request | Request-scoped | canonical group bytes and target indices | per-target user or sentry component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
@@ -471,22 +471,22 @@ identity config.
 
 API tokens are bearer credentials:
 
-- signer authority: `identities/<identity>/aplane.token`,
+- signer authority: `identities/default/aplane.token`,
 - client copy: endpoint-scoped files such as `APCLIENT_DATA/aplane.token` or
   `APCLIENT_DATA/tokens/<alias>.token`.
 
-SSH enrollment is identity-scoped:
+SSH enrollment is product-scoped:
 
 ```text
-identities/<identity>/.ssh/authorized_keys
+identities/default/.ssh/authorized_keys
 ```
 
 Remote clients authenticate with SSH public key plus token. Admin protocol
-sessions then authenticate with passphrase and bind to a target identity.
+sessions then authenticate with the product passphrase.
 
-Admin sessions are runtime-only. They are represented by session context,
-transport, principal, and target identity attribution, not by durable session
-records.
+The one admin session is runtime-only. It is represented by session context,
+transport, principal, and fixed `default` attribution, not by a durable session
+record.
 
 ### Audit
 
@@ -764,10 +764,9 @@ projections of shell application results, not a separate backend model.
 
 1. Load server config.
 2. Load root node role from `node.yaml`.
-3. Discover identity directories.
-4. Reject any non-default identity entry before runtime construction.
-5. Build an `identity.Runtime` per live identity.
-6. Start locked, unlock headlessly, or unlock through admin depending on
+3. Validate that `identities/` has no entry other than a real `default/` directory.
+4. Build the one product `identity.Runtime` for `default`.
+5. Start locked, unlock headlessly, or unlock through admin depending on
    passphrase startup configuration.
 
 ### Unlock And Reload
@@ -846,12 +845,12 @@ can only return a signature that assembly or the on-chain LogicSig rejects.
 
 ### Token Provisioning Lifecycle
 
-1. Client connects over SSH as `request-token:<identity>`.
-2. Server verifies supported identity and SSH key-only bootstrap path.
+1. Client connects over SSH as `request-token:default`.
+2. Server verifies the fixed product username and SSH key-only bootstrap path.
 3. Server asks connected admin for approval.
 4. Admin approves.
-5. Server enrolls SSH public key for the identity.
-6. Server creates or loads identity API token.
+5. Server enrolls the SSH public key for `default`.
+6. Server creates or loads the product API token.
 7. Token is delivered over the SSH channel.
 8. Audit records confirmed delivery.
 

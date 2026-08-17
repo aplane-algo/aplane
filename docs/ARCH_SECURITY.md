@@ -63,7 +63,7 @@ Used by apshell and other HTTP clients for signing requests.
 
 **Characteristics:**
 - **Stateless**: Each request authenticated independently
-- **No login step**: Token read from `identities/<identity>/aplane.token` file at startup
+- **No login step**: Product token read from `identities/default/aplane.token` at startup
 - **Security boundary**: Filesystem permissions on token file (mode 0600)
 - **Trust model**: If you can read the token file, you can make API calls
 
@@ -80,7 +80,7 @@ product identity token, so all clients for that identity share the same credenti
 
 | Aspect | Behavior |
 |--------|----------|
-| Scope | One identity-scoped token serves HTTP API and SSH tunnel authentication for that identity |
+| Scope | One product token serves HTTP API and SSH tunnel authentication for `default` |
 | Revocation | Operator can revoke/regenerate the identity token from `apadmin`; clients must re-run `request-token` or otherwise receive the new token |
 | Per-client differentiation | None within an identity; all clients for that identity share the same credential |
 | Compromise impact | Bearer access to HTTP wherever the signer API is reachable; normal SSH tunnel access also requires an enrolled SSH key |
@@ -354,7 +354,7 @@ fields are omitted, apsigner fills in defaults and still starts the SSH server.
 | `endpoint.ssh.listen_address` | `127.0.0.1` | SSH listener bind address |
 | `endpoint.ssh.port` | `1127` | SSH listener port |
 | `endpoint.ssh.host_key_path` | `.ssh/ssh_host_key` | Server host key (auto-generated if missing) |
-| `endpoint.ssh.authorized_keys_path` | `.ssh/authorized_keys` | Validated/resolved server setting for underlying SSH wiring; product-mode client authorization and enrollment use `identities/<identity>/.ssh/authorized_keys` |
+| `endpoint.ssh.authorized_keys_path` | `.ssh/authorized_keys` | Validated/resolved server setting for underlying SSH wiring; product client authorization and enrollment use `identities/default/.ssh/authorized_keys` |
 
 **Example config.yaml with SSH:**
 ```yaml
@@ -379,7 +379,7 @@ New clients without a token can request one through the SSH tunnel using the `re
 │  apshell │                                          │  apsigner │
 └────┬─────┘                                          └─────┬──────┘
      │                                                      │
-     │  1. SSH connect (username=request-token:<identity>,  │
+     │  1. SSH connect (username=request-token:default,     │
      │     pubkey only)                                     │
      │─────────────────────────────────────────────────────>│
      │                                                      │
@@ -401,7 +401,7 @@ New clients without a token can request one through the SSH tunnel using the `re
 - Token provisioning requires operator approval (human in the loop)
 - SSH public key identifies the requesting client
 - Operator approval gates both key enrollment and token issuance: after approval, the SSH key is enrolled first, then the token is loaded/generated, then delivered to the client
-- Key enrollment is identity-scoped under `identities/<identity>/.ssh/authorized_keys`
+- Key enrollment is product-scoped under `identities/default/.ssh/authorized_keys`
 - No token is created or audited before both approval and enrollment succeed
 - If token delivery to the client fails, no success audit is recorded
 - Token is transmitted over the encrypted SSH channel
@@ -437,10 +437,10 @@ to re-authenticate.
 ```
 
 **What happens on revocation:**
-1. A new random token is generated and written to the target identity's `aplane.token` on disk
-2. The identity's HTTP token authenticator is updated in-memory (new requests require the new token)
-3. The SSH server records the new token generation; SSH connections authenticated for that identity with older generations are sent `token-revoked@aplane` and closed via `CloseIdentityConnections`. SSH connections for other identities are left open.
-4. Connected clients for the target identity see an immediate disconnect ("SSH tunnel disconnected")
+1. A new random token is generated and written to `identities/default/aplane.token`
+2. The product HTTP token authenticator is updated in-memory
+3. The SSH server records the new generation and closes every connection authenticated with an older product token
+4. Connected clients see an immediate disconnect ("SSH tunnel disconnected")
 
 **Client re-authorization:**
 - Clients must run `request-token` to obtain a new token (same flow as initial provisioning)
@@ -591,7 +591,7 @@ object per line, syncs each write, and rotates around the current 10 MB limit.
 
 Audit entries carry attribution fields:
 
-- `identity_id`: owning or target identity
+- `identity_id`: fixed `default` attribution for product identity work
 - `target_identity_id`: signing identity targeted by the action
 - `principal`: principal field
 - `requester_principal`: principal requesting the action
@@ -608,7 +608,7 @@ Denial behavior:
 
 - HTTP authentication failures and HTTP authorization denials are recorded as
   `AUTH_FAILED` with a reason such as `missing_credentials`,
-  `invalid_credentials`, `cross_identity_forbidden:<identity>`, or
+  `invalid_credentials`, `unsupported_identity:<identity>`, or
   `unauthorized:<action>`.
 - Admin protocol authorization denials are recorded as
   `AUTHORIZATION_DENIED` with the admin session context, action/resource details,

@@ -122,7 +122,7 @@ type Server struct {
 	tokenMu       sync.RWMutex
 	expectedToken string // API token used when tokenMAC is nil
 
-	// Optional identity-aware callbacks (override built-in single-token/single-keyfile behavior)
+	// Optional product callbacks (override built-in single-token/single-keyfile behavior)
 	tokenMAC    TokenMACFunc    // If set, computes identity-scoped token proof MACs
 	keyChecker  KeyCheckerFunc  // If set, replaces authKeys lookup
 	keyEnroller KeyEnrollerFunc // If set, replaces registerAuthorizedKey
@@ -444,7 +444,7 @@ func loadAuthorizedKeys(path string) ([]ssh.PublicKey, error) {
 // remains incomplete until handleVerifiedPublicKeyAuth transitions to mutual
 // token proof after SSH verifies possession of the private key.
 //
-// Special mode: If username is "request-token:<identity>", this is a token provisioning
+// Special mode: If username is "request-token:default", this is a token provisioning
 // request. Only key authentication is required (no token). Fails fast if no operator connected.
 func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 	remoteAddr := conn.RemoteAddr().String()
@@ -630,7 +630,7 @@ func (s *Server) handleTokenProvisioningAuth(conn ssh.ConnMetadata, key ssh.Publ
 	}, nil
 }
 
-// enrollKey enrolls a public key, using the identity-aware callback if set,
+// enrollKey enrolls a public key, using the product callback if set,
 // otherwise falling back to the built-in single-file registration.
 func (s *Server) enrollKey(key ssh.PublicKey) error {
 	if productHooksConfigured(s.tokenMAC, s.keyChecker, s.keyEnroller) {

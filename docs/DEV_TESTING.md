@@ -253,7 +253,7 @@ test/
 │   ├── generic_template_test.go   # YAML template install and spend flows
 │   ├── js_test.go                 # Live JavaScript helper flows
 │   ├── key_derivation_regression_test.go # Deterministic derivation pins
-│   ├── multitenant_test.go        # Multi-identity signer routing tests
+│   ├── single_identity_boundary_test.go # Extra identity startup rejection
 │   ├── signer_test.go             # Signer policy, lock, approval, restart tests
 │   ├── app_test.go                # Application deploy/read/call flow tests
 │   ├── apstore_initialize_test.go # apstore initialize bootstrap tests

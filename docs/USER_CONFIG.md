@@ -338,7 +338,7 @@ The top-level `config.yaml` provides defaults for `user_auto_approve`,
 `lock_on_disconnect`, `passphrase_timeout`, and `approval_wait`. When you
 change `user_auto_approve`, `lock_on_disconnect`, or `passphrase_timeout`
 through admin IPC, the signer writes it as an identity-scoped override at
-`identities/<identity>/config.yaml`. `approval_wait` is process/YAML-only; it is
+`identities/default/config.yaml`. `approval_wait` is process/YAML-only; it is
 not part of the admin settings payload and cannot be changed through admin IPC.
 
 Node role is stored separately in the signer data root `node.yaml`. Standard
@@ -350,7 +350,7 @@ In `apadmin`, the operator-default shortcut is shown as `User Auto-Approve`:
 
 `passphrase_command_argv` and `passphrase_command_env` are accepted in the
 top-level `config.yaml`. `appass` writes its configuration to
-`identities/<identity>/unlock.yaml`, which takes precedence.
+`identities/default/unlock.yaml`, which takes precedence.
 
 ### Genesis Hash Network Mapping
 
@@ -568,7 +568,7 @@ For the full current policy model and phase ordering, see
 Signer safety policy is identity-scoped and stored at:
 
 ```text
-$APSIGNER_DATA/identities/<identity>/policy.yaml
+$APSIGNER_DATA/identities/default/policy.yaml
 ```
 
 The file has a sibling `.hmac` sidecar that authenticates the exact YAML bytes.
@@ -1298,7 +1298,7 @@ user_auto_approve: true
 ```
 
 This can be a process-global default in `config.yaml` or an identity-scoped
-override in `identities/<identity>/config.yaml`.
+override in `identities/default/config.yaml`.
 
 ### Complete Example
 
