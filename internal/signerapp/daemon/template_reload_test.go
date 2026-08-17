@@ -113,7 +113,7 @@ func TestWatcherReloadWaitsForAdminIdentityMutation(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
@@ -194,7 +194,7 @@ func findKeyTypeInfo(keyTypes []signerapi.KeyTypeInfo, keyType string) (signerap
 func saveGenericTemplateForTest(t *testing.T, server *Signer, keyType string, yamlData []byte) {
 	t.Helper()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		_, err := templatestore.SaveTemplateForPaths(server.keyPaths, auth.DefaultIdentityID, yamlData, keyType, templatestore.TemplateTypeGeneric, masterKey)
 		return err
@@ -227,7 +227,7 @@ func registerGenericTemplateProviderForTest(t *testing.T, yamlData []byte) {
 }
 
 func reloadKeysWithTemplatesForTest(server *Signer) error {
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		return fmt.Errorf("identity not found")
 	}

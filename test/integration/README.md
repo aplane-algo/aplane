@@ -41,6 +41,13 @@ account. It is never interpreted as Ed25519. Public-network runs therefore
 require v42; this branch is not intended to merge until TestNet and MainNet
 have activated native Falcon authorization.
 
+Corridor/ALock asset vectors never create assets on persistent networks.
+They reuse the oldest `Corridor Test Asset` created by the funding account for
+which the account still holds the complete 10-unit supply. If no clean fixture
+exists, the test fails before submitting an asset-creation transaction.
+LocalNet creates one fixture on its disposable ledger when necessary and
+reuses it for the rest of that test run.
+
 This creates configs, SSH keys, token, and keystore, then writes `.env.test`
 in the project root with all required environment variables.
 

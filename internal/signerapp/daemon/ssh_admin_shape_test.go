@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"golang.org/x/crypto/ssh"
@@ -64,7 +63,7 @@ func TestSSHAdminSessionRejectsMissingKindDuringAuth(t *testing.T) {
 		t.Fatalf("first message kind = %q, want %q", authRequired.Kind, protocol.MessageKindNotification)
 	}
 
-	if _, err := stream.Write([]byte(`{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n")); err != nil {
+	if _, err := stream.Write([]byte(`{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n")); err != nil {
 		t.Fatalf("stream.Write() error = %v", err)
 	}
 
@@ -255,13 +254,12 @@ func setupSSHAdminTestPair(t *testing.T, server *Signer) (*sshtunnel.Server, *ss
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
-	sshServer.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr, identityID string) {
+	sshServer.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr string) {
 		serverIPC := &IPCServer{signer: server}
-		serverIPC.acceptAdminSession(adminproto.NewStreamAdminConn(channel, remoteAddr), "ssh", "ssh-passphrase", identityID)
+		serverIPC.acceptAdminSession(adminproto.NewStreamAdminConn(channel, remoteAddr), "ssh", "ssh-passphrase")
 	})
 
 	client := sshtunnel.NewClient("127.0.0.1", port, 0, 0, identityPath, filepath.Join(tmpDir, "known_hosts"))
-	client.SetIdentityID(auth.CurrentProductIdentityID())
 	client.SetAPIToken("test-token")
 	client.SetHostKeyApprovalHandler(func(host, fingerprint string) (bool, error) {
 		return true, nil

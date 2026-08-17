@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"sort"
 	"sync"
 	"time"
 
@@ -38,83 +37,33 @@ type IdentityBuildOptions struct {
 // IdentityBuildHooks provides the non-owning process callbacks needed by
 // identity runtime assembly.
 type IdentityBuildHooks struct {
-	HasAdminClient               func(identityID string) bool
-	SendSignRequest              func(identityID string, req *approval.SignRequest) bool
-	SendSignRequestCanceled      func(identityID string, msg *approval.SignRequestCanceled) bool
-	SendTokenProvisioningRequest func(identityID string, req *approval.TokenProvisioningRequest) bool
-	NotifyLocked                 func(identityID string)
-	NotifyKeysChanged            func(identityID string, keyCount int)
+	HasAdminClient               func() bool
+	SendSignRequest              func(req *approval.SignRequest) bool
+	SendSignRequestCanceled      func(msg *approval.SignRequestCanceled) bool
+	SendTokenProvisioningRequest func(req *approval.TokenProvisioningRequest) bool
+	NotifyLocked                 func()
+	NotifyKeysChanged            func(keyCount int)
 	ReloadAuditLog               signertemplates.AuditLogger
 	NodeFailClosed               func(error)
-	// ReloadMutationLock returns the identity-scoped store mutation lock that
+	// ReloadMutationLock returns the process-wide store mutation lock that
 	// watcher-triggered reloads must hold while scanning disk.
-	ReloadMutationLock func(identityID string) sync.Locker
+	ReloadMutationLock func() sync.Locker
 	Info               func(string)
 	Warn               func(string)
 }
 
-// BuildRegistry discovers and constructs all startup identity runtimes,
-// registering them into the provided registry and returning the product
-// identity runtime.
-func BuildRegistry(reg *identity.Registry, opts IdentityBuildOptions, hooks IdentityBuildHooks) (*identity.Runtime, error) {
-	ids, err := StartupIdentityIDs(opts.DataDir, opts.ProductIdentityID)
-	if err != nil {
+// BuildProductRuntime validates the product layout and constructs the one
+// process-owned identity runtime.
+func BuildProductRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks) (*identity.Runtime, error) {
+	if err := identity.ValidateProductIdentityLayout(opts.DataDir, opts.ProductIdentityID); err != nil {
 		return nil, err
 	}
-
-	var product *identity.Runtime
-	for _, identityID := range ids {
-		ir, err := BuildIdentityRuntime(reg, opts, hooks, identityID)
-		if err != nil {
-			return nil, err
-		}
-		if identityID == opts.ProductIdentityID {
-			product = ir
-		}
-	}
-	if product == nil {
-		return nil, fmt.Errorf("product identity runtime missing: %s", opts.ProductIdentityID)
-	}
-	return product, nil
+	return BuildIdentityRuntime(opts, hooks, opts.ProductIdentityID)
 }
 
-// StartupIdentityIDs returns the discovered, non-decommissioned identities
-// present at startup, always including the product identity.
-func StartupIdentityIDs(dataDir string, productID string) ([]string, error) {
-	discovered, err := identity.DiscoverIdentities(dataDir)
-	if err != nil {
-		return nil, err
-	}
-
-	seen := make(map[string]bool, len(discovered)+1)
-	ids := make([]string, 0, len(discovered)+1)
-	for _, id := range discovered {
-		storedCfg, cfgErr := identity.LoadStoredConfig(dataDir, id)
-		if cfgErr != nil {
-			return nil, fmt.Errorf("load config for identity %q: %w", id, cfgErr)
-		}
-		if storedCfg.IsDecommissioned() {
-			if id == productID {
-				return nil, fmt.Errorf("product identity %q is decommissioned", id)
-			}
-			continue
-		}
-		if !seen[id] {
-			ids = append(ids, id)
-			seen[id] = true
-		}
-	}
-
-	if !seen[productID] {
-		ids = append(ids, productID)
-	}
-
-	sort.Strings(ids)
-	return ids, nil
-}
-
-// BuildIdentityRuntime constructs and registers one identity runtime.
-func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hooks IdentityBuildHooks, identityID string) (*identity.Runtime, error) {
+// BuildIdentityRuntime constructs one identity runtime. Product startup should
+// use BuildProductRuntime so layout validation cannot be skipped.
+func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, identityID string) (*identity.Runtime, error) {
 	nodeDoc, _, err := noderole.Load(opts.KeyPaths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load node role for identity %q: %w", identityID, err)
@@ -124,10 +73,6 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config for identity %q: %w", identityID, err)
 	}
-	if storedCfg.IsDecommissioned() {
-		return nil, fmt.Errorf("identity %q is decommissioned", identityID)
-	}
-
 	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(opts.KeyPaths.Root(), identityID)
 	token, err := tokenfile.ReadToken(tokenPath)
 	if err != nil {
@@ -181,19 +126,12 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 		UserAutoApprove:  &userAutoApprove,
 		LockOnDisconnect: lockOnDisconnect,
 		NodeRole:         nodeDoc.Role,
-		PersistDecommission: func(id string) error {
-			return identity.SaveStoredSetting(opts.DataDir, id, "decommissioned", true)
-		},
 		OnLocked: func() {
 			if hooks.NotifyLocked != nil {
-				hooks.NotifyLocked(identityID)
+				hooks.NotifyLocked()
 			}
 		},
 	})
-
-	if err := reg.Register(ir); err != nil {
-		return nil, err
-	}
 
 	WireReloadFunc(ir, opts, hooks)
 	WireApprovalCoordinator(ir, hooks)
@@ -203,34 +141,30 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 // WireApprovalCoordinator creates and installs an approval coordinator on the
 // identity runtime using the process hooks.
 func WireApprovalCoordinator(ir *identity.Runtime, hooks IdentityBuildHooks) {
-	identityID := ir.ID()
-	coordinator := approval.NewWithDecommission(
+	coordinator := approval.New(
 		func() bool {
 			if hooks.HasAdminClient == nil {
 				return false
 			}
-			return hooks.HasAdminClient(identityID)
-		},
-		func() bool {
-			return ir.IsDecommissioned()
+			return hooks.HasAdminClient()
 		},
 		func(msg *approval.SignRequest) bool {
 			if hooks.SendSignRequest == nil {
 				return false
 			}
-			return hooks.SendSignRequest(identityID, msg)
+			return hooks.SendSignRequest(msg)
 		},
 		func(msg *approval.SignRequestCanceled) bool {
 			if hooks.SendSignRequestCanceled == nil {
 				return false
 			}
-			return hooks.SendSignRequestCanceled(identityID, msg)
+			return hooks.SendSignRequestCanceled(msg)
 		},
 		func(msg *approval.TokenProvisioningRequest) bool {
 			if hooks.SendTokenProvisioningRequest == nil {
 				return false
 			}
-			return hooks.SendTokenProvisioningRequest(identityID, msg)
+			return hooks.SendTokenProvisioningRequest(msg)
 		},
 	)
 	ir.SetApprovalCoordinator(coordinator)
@@ -282,7 +216,7 @@ func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ide
 	}
 	if hooks.NotifyKeysChanged != nil {
 		svc.NotifyKeysChanged = func(notification signertemplates.KeysChangedNotification) {
-			hooks.NotifyKeysChanged(identityID, notification.KeyCount)
+			hooks.NotifyKeysChanged(notification.KeyCount)
 		}
 	}
 	return svc
@@ -291,13 +225,13 @@ func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ide
 // WireReloadFunc configures the reload function and the watcher reload
 // mutation lock on an identity runtime.
 func WireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks IdentityBuildHooks) {
-	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		svc := NewReloadService(ir, opts, hooks, session)
-		return svc.Reload(identityID, passphrase)
+		return svc.Reload(ir.ID(), passphrase)
 	})
 	if hooks.ReloadMutationLock != nil {
 		ir.SetReloadMutationLock(func() sync.Locker {
-			return hooks.ReloadMutationLock(ir.ID())
+			return hooks.ReloadMutationLock()
 		})
 	}
 }

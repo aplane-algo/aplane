@@ -4,8 +4,8 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,7 +14,9 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signing"
 
@@ -271,7 +273,7 @@ func TestHTTPSigningAuditAttributionUsesRequestIdentity(t *testing.T) {
 		t.Fatalf("entry count = %d, want 2", len(entries))
 	}
 	for _, entry := range entries {
-		if entry.TargetIdentityID != "alice" || entry.RequesterPrincipal != "alice" {
+		if entry.TargetIdentityID != auth.DefaultIdentityID || entry.RequesterPrincipal != "alice" {
 			t.Fatalf("HTTP signing attribution = %#v", entry)
 		}
 		if entry.Transport != auditTransportHTTP || entry.RemoteAddr != "203.0.113.10:4000" {
@@ -294,7 +296,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 	defer cleanup()
 
 	server.config.UserAutoApprove = true
-	server.registry.Get(auth.DefaultIdentityID).Config().SetUserAutoApprove(true)
+	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
 
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	genW := httptest.NewRecorder()
@@ -309,7 +311,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	path := filepath.Join(t.TempDir(), "audit.log")
@@ -348,10 +350,15 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
-	r := requestWithIdentity(http.MethodPost, "/sign", reqJSON)
+	r := httptest.NewRequest(http.MethodPost, "/sign", bytes.NewReader(reqJSON))
+	r.Header.Set("Authorization", "aplane test-token")
 	r.RemoteAddr = "203.0.113.12:5000"
 	w := httptest.NewRecorder()
-	server.handleSign(w, r)
+	server.requireAuth(
+		auth.ActionSignRequest,
+		auth.Resource{Type: "transaction"},
+		server.handleSign,
+	)(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("/sign failed: %d: %s", w.Code, w.Body.String())
 	}
@@ -364,7 +371,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 		t.Fatalf("audit events = %q/%q, want request/approved", entries[0].Event, entries[1].Event)
 	}
 	for _, entry := range entries {
-		if entry.TargetIdentityID != auth.DefaultIdentityID || entry.RequesterPrincipal != auth.DefaultIdentityID {
+		if entry.TargetIdentityID != auth.DefaultIdentityID || entry.RequesterPrincipal != authz.SystemProductAdminPrincipalID {
 			t.Fatalf("HTTP signing identity attribution = %#v", entry)
 		}
 		if entry.Transport != auditTransportHTTP || entry.RemoteAddr != "203.0.113.12:5000" {
@@ -383,6 +390,7 @@ func TestAuditProcessLevelEventsOmitIdentityID(t *testing.T) {
 
 	logger.LogServerStart(3)
 	logger.LogServerStop()
+	logger.LogServerStopIncomplete("SSH server: deadline exceeded")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -390,8 +398,8 @@ func TestAuditProcessLevelEventsOmitIdentityID(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 audit entries, got %d", len(lines))
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 audit entries, got %d", len(lines))
 	}
 
 	for i, line := range lines {
@@ -401,6 +409,9 @@ func TestAuditProcessLevelEventsOmitIdentityID(t *testing.T) {
 		}
 		if entry.IdentityID != "" {
 			t.Errorf("line %d (%s): identity_id = %q, want empty", i, entry.Event, entry.IdentityID)
+		}
+		if entry.Event == AuditServerStopIncomplete && (entry.Outcome != "failed" || entry.Reason == "") {
+			t.Errorf("incomplete shutdown entry = %#v, want failed outcome and reason", entry)
 		}
 	}
 }

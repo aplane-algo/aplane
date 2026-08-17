@@ -29,12 +29,12 @@ type AuditRejectPolicyRuleLogger interface {
 }
 
 type GenerateTxnDescriptionFromTxnFunc func(txn types.Transaction) string
-type KnownAddressesFunc func(identityID string) map[string]bool
-type HasClientFunc func(identityID string) bool
-type RequestSigningApprovalFunc func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)
-type RequestSigningApprovalResponseFunc func(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error)
-type RequestSigningApprovalContextFunc func(ctx context.Context, identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)
-type RequestSigningApprovalResponseContextFunc func(ctx context.Context, identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error)
+type KnownAddressesFunc func() map[string]bool
+type HasClientFunc func() bool
+type RequestSigningApprovalFunc func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)
+type RequestSigningApprovalResponseFunc func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error)
+type RequestSigningApprovalContextFunc func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error)
+type RequestSigningApprovalResponseContextFunc func(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error)
 
 const defaultApprovalWait = 60 * time.Second
 
@@ -68,16 +68,16 @@ func (s *ApprovalService) requestSigningApproval(ctx context.Context, identityID
 	var response signerapproval.SignResponse
 	var err error
 	if s.RequestSigningApprovalResponseContext != nil {
-		response, err = s.RequestSigningApprovalResponseContext(ctx, identityID, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
+		response, err = s.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 	} else if s.RequestSigningApprovalContext != nil {
 		var approved bool
-		approved, err = s.RequestSigningApprovalContext(ctx, identityID, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
+		approved, err = s.RequestSigningApprovalContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 		response = signerapproval.SignResponse{ID: requestID, Approved: approved}
 	} else if s.RequestSigningApprovalResponse != nil {
-		response, err = s.RequestSigningApprovalResponse(identityID, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
+		response, err = s.RequestSigningApprovalResponse(requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 	} else if s.RequestSigningApproval != nil {
 		var approved bool
-		approved, err = s.RequestSigningApproval(identityID, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
+		approved, err = s.RequestSigningApproval(requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 		response = signerapproval.SignResponse{ID: requestID, Approved: approved}
 	} else {
 		return false, fmt.Errorf("signing approval callback not configured")
@@ -466,7 +466,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, i
 		console.Sync()
 	}
 
-	if s.HasClient == nil || !s.HasClient(identityID) {
+	if s.HasClient == nil || !s.HasClient() {
 		return unavailable("no apadmin connected - cannot approve group request")
 	}
 
@@ -492,7 +492,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, i
 	displaySender := fmt.Sprintf("GROUP(%d txns)", len(txns))
 	groupAuthAddr := groupApprovalAddress(req)
 
-	violations := approvalpolicy.CheckGroupWarnings(txns, s.KnownAddresses(identityID))
+	violations := approvalpolicy.CheckGroupWarnings(txns, s.KnownAddresses())
 	approved, err := s.requestSigningApproval(
 		ctx,
 		identityID,
@@ -560,7 +560,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		console.Sync()
 	}
 
-	if s.HasClient == nil || !s.HasClient(identityID) {
+	if s.HasClient == nil || !s.HasClient() {
 		return unavailable("no apadmin connected - cannot approve transaction")
 	}
 	if reason := reviewabilityReason(allTxns[0]); reason != "" {
@@ -581,7 +581,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	txnDesc += describeTxnForApproval(allTxns[0], txReq, s.GenerateTxnDescriptionFromTxn)
 
 	modifiedTxnHex := s.EncodeTxnToHex(allTxns[0])
-	violations := approvalpolicy.CheckTxnWarnings(modifiedTxnHex, s.KnownAddresses(identityID))
+	violations := approvalpolicy.CheckTxnWarnings(modifiedTxnHex, s.KnownAddresses())
 	txnDesc = appendViolationHighlights(txnDesc, violations)
 
 	approved, err := s.requestSigningApproval(

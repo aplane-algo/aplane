@@ -16,8 +16,8 @@ const (
 )
 
 const (
-	AdminProtocolVersionMajor = 4
-	AdminProtocolVersionMinor = 5
+	AdminProtocolVersionMajor = 5
+	AdminProtocolVersionMinor = 0
 )
 
 // ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
@@ -173,11 +173,10 @@ type AuthRequiredMessage struct {
 }
 
 // AuthMessage is sent by an admin client to authenticate the IPC/SSH session.
-// IdentityID is optional; ProtocolVersion is required by the server.
+// ProtocolVersion is required by the server.
 type AuthMessage struct {
 	BaseMessage
 	Passphrase      SensitiveBytes   `json:"passphrase"`
-	IdentityID      string           `json:"identity_id,omitempty"`
 	ProtocolVersion *ProtocolVersion `json:"protocol_version,omitempty"`
 }
 

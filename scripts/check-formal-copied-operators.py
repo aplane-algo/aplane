@@ -179,18 +179,6 @@ POLICY_PRECEDENCE_COPIES = [
     ("ApplyApproval", None),
 ]
 
-LIFECYCLE_LOCK_COPIES = [
-    "AdminState",
-    "WriterPending",
-    "SignerAcquire",
-    "AdminBeginDecommission",
-    "AdminAcquireWrite",
-    "AdminMarkDecommissioned",
-    "AdminReleaseWrite",
-    "AdminRegistryRemove",
-]
-
-
 def main() -> int:
     try:
         for target_module in ("composition", "approval_composition"):
@@ -203,14 +191,6 @@ def main() -> int:
                     target_module,
                     target_name=target_name,
                 )
-
-        for operator in LIFECYCLE_LOCK_COPIES:
-            compare_operator(
-                "lifecycle",
-                operator,
-                "lifecycle_composition",
-                allow_unchanged_extras={"policySigned", "signerOutput"},
-            )
     except CheckFailure as exc:
         print(f"formal copied-operator sync check failed: {exc}", file=sys.stderr)
         return 1

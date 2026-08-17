@@ -104,11 +104,11 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	}
 	t.Cleanup(func() { _ = auditLog.Close() })
 	server := &Signer{
-		registry: identity.NewRegistry(),
-		config:   serverConfigForTest(),
-		keyPaths: keyPaths,
-		dataDir:  tmpDir,
-		auditLog: auditLog,
+		nodeFailState: &identity.NodeFailState{},
+		config:        serverConfigForTest(),
+		keyPaths:      keyPaths,
+		dataDir:       tmpDir,
+		auditLog:      auditLog,
 	}
 
 	ir := identity.New(identity.Config{
@@ -118,7 +118,8 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		KeyPaths:      keyPaths,
 		NodeRole:      noderole.RoleSigner,
 	})
-	_ = server.registry.Register(ir)
+	server.runtime = ir
+	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
 	// All stores are generational in this release: mint the first
 	// generation the way initialize does before any test writes keys.
 	convertTestSignerToGenerational(t, server)
@@ -443,7 +444,7 @@ func TestAdminGenerateEd25519IsImmediatelyVisibleInKeyCache(t *testing.T) {
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	keyFile, err := ir.FindKeyFile(resp.Address)
 	if err != nil {
 		t.Fatalf("generated address %s not present in key cache immediately after generate: %v", resp.Address, err)
@@ -479,7 +480,7 @@ func TestAdminGenerateFalconAllowlistIsImmediatelyVisibleInKeyCache(t *testing.T
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	keyFile, err := ir.FindKeyFile(resp.Address)
 	if err != nil {
 		t.Fatalf("generated address %s not present in key cache immediately after generate: %v", resp.Address, err)
@@ -566,8 +567,8 @@ func TestAdminSyncSentriesNotifiesAdminKeyTypesChanged(t *testing.T) {
 	if resp.Added != 1 {
 		t.Fatalf("Added = %d, want 1", resp.Added)
 	}
-	if hub.keysIdentity != auth.CurrentProductIdentityID() {
-		t.Fatalf("NotifyKeysChanged identity = %q, want %q", hub.keysIdentity, auth.CurrentProductIdentityID())
+	if !hub.keysCalled {
+		t.Fatal("NotifyKeysChanged was not called")
 	}
 }
 
@@ -821,7 +822,7 @@ func TestAdminGenerateRejectsGloballyRegisteredGenericTemplateNotInstalledForIde
 	}
 }
 
-func TestAdminGenerateRejectsUnavailableAuthenticatedIdentity(t *testing.T) {
+func TestAdminGenerateDoesNotUsePrincipalAsRuntimeSelector(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -830,14 +831,14 @@ func TestAdminGenerateRejectsUnavailableAuthenticatedIdentity(t *testing.T) {
 	r := requestWithIdentityID(http.MethodPost, "/admin/generate", reqBody, "other-identity")
 	server.handleAdminGenerate(w, r)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("Expected 403, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200 from fixed product runtime, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
-	if !strings.Contains(resp.Error, "identity not available: other-identity") {
-		t.Fatalf("Expected identity not available error, got %q", resp.Error)
+	if resp.Address == "" || resp.Error != "" {
+		t.Fatalf("product runtime generation response = %#v", resp)
 	}
 }
 
@@ -1069,7 +1070,7 @@ func TestAdminGenerateThenDeleteEd25519(t *testing.T) {
 	}
 
 	// Verify key is gone
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	_, err := ir.FindKeyFile(address)
 	if err == nil {
 		t.Error("Key should not exist after deletion")
@@ -1106,7 +1107,7 @@ func TestAdminGenerateMultipleEd25519(t *testing.T) {
 // reloadKeysForTest rescans the keys directory to update in-memory maps.
 // This simulates what the file watcher does in production.
 func reloadKeysForTest(server *Signer) error {
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	if ir == nil {
 		return fmt.Errorf("identity not found")
 	}

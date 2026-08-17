@@ -1,7 +1,8 @@
 # Authorization Architecture
 
-This document defines APlane's authorization model: principals, groups, grants,
-actions, resources, and the enforcement points that protect signer operations.
+This document defines APlane's product authorization model: the reserved admin
+principal, explicit allowed actions, resources, and the enforcement points that
+protect signer operations.
 
 Identity model: see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model). The
 product surface does not expose tenant management, principal management, group
@@ -36,7 +37,7 @@ A credential is proof presented at an authentication boundary.
 
 Credential types include:
 
-- HTTP API token from `identities/<identity>/aplane.token`
+- HTTP API token from `identities/default/aplane.token`
 - admin passphrase over local IPC
 - SSH public key plus token for tunnel access
 - SSH public key plus token plus passphrase for the `aplane-admin` subsystem
@@ -56,28 +57,6 @@ system:product-admin
 
 A signing identity such as `default` is not inherently a principal. It is the
 key-owning identity being acted on.
-
-### Group
-
-A group is a collection of principals. Group membership alone grants nothing.
-Authorization still requires a grant.
-
-The reserved system group is:
-
-```text
-system:product-admins
-```
-
-### Grant
-
-A grant binds a subject to actions on a target identity.
-
-Grant subjects are encoded as:
-
-```text
-principal:<principal-id>
-group:<group-id>
-```
 
 ### Signing Identity
 
@@ -140,34 +119,30 @@ The product mode is:
 
 ```text
 mode: product_single
-exposed signing identity: default
+signing identity: default
 admin principal: system:product-admin
-admin group: system:product-admins
-grant source: bootstrap records
-grant-management UI: none
-principal-management UI: none
-tenant-management UI: none
+authorization source: closed product action allowlist
+identity/principal/group/grant management UI: none
 ```
 
 The authorization path is:
 
 ```text
 credential
-  -> authenticated identity/session
+  -> authenticated product session
   -> system:product-admin
-  -> group:system:product-admins
-  -> bootstrap grants
-  -> target signing identity/resource
+  -> explicit ProductAllowedActions membership
+  -> empty-or-default target identity/resource
 ```
 
 Important implications:
 
-- Logging in with `apadmin` authenticates against the selected or bound signing
-  identity, but the admin session authorizes as `system:product-admin`.
+- Logging in with `apadmin` authenticates the one product store, and the admin
+  session authorizes as `system:product-admin`.
 - `default` is the product signing identity. It is not the
   authorization principal.
-- The grant-backed authorizer is used in product mode. Product
-  compatibility is represented by bootstrap grants, not an allow-all bypass.
+- A known action is not automatically allowed. It must also appear in the
+  explicit product action allowlist.
 
 ## Authorization Flow
 
@@ -177,36 +152,35 @@ HTTP requests use token authentication followed by authorization:
 
 ```text
 Authorization: aplane <token>
-  -> RegistryAuthenticator
-  -> auth.Identity
-  -> principal resolver
-  -> auth.Authorizer
+  -> product TokenAuthenticator
+  -> system:product-admin
+  -> ProductAuthorizer
+  -> default runtime
   -> handler
 ```
 
-HTTP authentication maps authenticated identity-token credentials to the
-bootstrap product principal for authorization. Request routing scopes work
-to the authenticated signing identity and rejects cross-identity resource targets
-unless explicitly supported by the boundary.
+HTTP authentication maps the one product token to the product principal.
+Authentication never selects a runtime. Product authorization rejects any
+resource whose identity is neither empty nor `default`.
 
 ### Admin IPC
 
-Local admin sessions use the admin passphrase and bind to a target identity:
+Local admin sessions use the product passphrase and bind to the product runtime:
 
 ```text
 admin auth message
   -> passphrase verification
   -> system:product-admin principal
-  -> target identity binding
-  -> auth.Authorizer
+  -> default runtime binding
+  -> ProductAuthorizer
   -> admin operation
 ```
 
 Membership in the operating-system `aplane` group grants only the ability to
 traverse `/run/apsigner` and connect to `aplane.sock`. It grants no access to
-the private signer store and is distinct from the authorization-model group
-`system:product-admins`. The admin passphrase, principal mapping, identity
-binding, and action grant are still required after socket connection.
+the private signer store. The admin passphrase, principal mapping, product
+runtime binding, and explicit action authorization are still required after
+socket connection.
 
 Auth-time unlock is authorization-gated before the runtime is unlocked.
 Explicit admin lock requests use `identity.lock` for the bound identity.
@@ -220,15 +194,15 @@ Remote admin sessions add SSH transport authentication before the same admin
 protocol:
 
 ```text
-SSH key + token
-  -> identity pre-binding
+SSH key + token for default
+  -> product runtime binding
   -> admin passphrase
   -> system:product-admin principal
   -> auth.Authorizer
   -> admin operation
 ```
 
-The SSH layer authenticates transport and identity binding. The admin protocol
+The SSH layer authenticates the transport. The admin protocol
 authorizes the operation before sensitive work.
 
 Recovery-material operations are narrower than normal admin
@@ -239,8 +213,7 @@ returns generated recovery material over the admin protocol.
 ## Action Vocabulary
 
 Stable action names live in `internal/auth/authorizer.go`. A known-action guard
-makes action typos such as `keys.veiw` fail before grant matching even if a
-grant accidentally contains the same typo.
+makes action typos such as `keys.veiw` fail before allowlist matching.
 
 | Action | Meaning | Typical Resource | Unlock Required |
 |--------|---------|------------------|-----------------|
@@ -250,7 +223,6 @@ grant accidentally contains the same typo.
 | `identity.backup` | Create, export/read back, and delete signer-managed encrypted backup archives for the bound identity | `identity` | Yes for create/delete; export/read is available in unlocked or recovery state |
 | `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile recovery state for the bound identity | `identity` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
-| `identity.decommission` | Decommission identity | `identity` | No |
 | `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
 | `sign.component` | Request user-role or sentry-role component signatures for the guarded signing flow | `transaction` | Yes |
 | `sign.assemble` | Assemble verified user and sentry component signatures into signed guarded transactions | `transaction` | Yes |
@@ -281,72 +253,27 @@ grant accidentally contains the same typo.
 New sensitive operations must either use an existing action with the same
 meaning or define a new stable action before implementation.
 
-## Grant Model
+## Product Action Allowlist
 
-The runtime authorizer is populated in memory at startup. There is no
-YAML grant loader and no on-disk grant file. The following YAML is
-illustrative of a durable format; it is not a storage contract:
+`ProductAllowedActions` is a closed, explicit set populated in code. The
+product authorizer grants an operation only when all of these conditions hold:
 
-```yaml
-principals:
-  - id: system:product-admin
-    type: system
-    disabled: false
+- the principal is exactly `system:product-admin`;
+- the action is in the closed known-action vocabulary;
+- the action is independently present in `ProductAllowedActions`; and
+- the resource identity is empty or exactly `default`.
 
-groups:
-  - id: system:product-admins
-    members:
-      - system:product-admin
-    disabled: false
-
-grants:
-  - subject: group:system:product-admins
-    identity_id: "*"
-    actions:
-      - identity.view
-      - identity.unlock
-      - identity.lock
-      - identity.backup
-      - identity.restore
-      - identity.passphrase
-      - identity.decommission
-      - sign.request
-      - sign.component
-      - sign.assemble
-      - sign.approve
-      - keys.view
-      - keys.generate
-      - keys.import
-      - keys.export
-      - keys.delete
-      - sentries.sync
-      - sentries.view
-      - sentries.manage
-      - generations.view
-      - keytypes.view
-      - keytypes.activate
-      - keytypes.deactivate
-      - templates.view
-      - templates.install
-      - templates.remove
-      - policy.view
-      - policy.update
-      - settings.view
-      - settings.update
-      - token.provision
-      - token.revoke
-```
-
-The `identity_id: "*"` bootstrap grant exists to preserve compatibility
-while the backend is identity-scoped. It is not a general MT grant-management
-policy.
+Adding a known action does not add it to the product allowlist. This preserves
+a deliberate review point for new sensitive operations. There is no runtime
+principal, group, grant, wildcard-target, membership, or disabled-node graph in
+the single-product authorizer.
 
 ## Principal Resolution
 
 Principal resolution maps authenticated credentials to authorization principals:
 
 ```text
-admin passphrase / SSH admin auth / compatibility identity token
+admin passphrase / SSH admin auth / product token
   -> system:product-admin
 ```
 
@@ -384,15 +311,10 @@ unauthenticated health endpoint in [ARCH_HTTP_API.md](ARCH_HTTP_API.md);
 
 Authorization is fail-closed:
 
-- nil or missing identity is unauthorized
-- unknown principal is forbidden
-- disabled principal is forbidden
-- disabled group is ignored
-- disabled grant is ignored
-- missing grant is forbidden
-- unknown action is forbidden before grant matching
-- mismatched target identity is forbidden unless the boundary explicitly supports
-  cross-identity authorization
+- nil or unknown principal is forbidden
+- unknown action is forbidden before allowlist matching
+- known but unlisted action is forbidden
+- a resource identity other than empty or `default` is forbidden
 
 Wire behavior:
 
@@ -435,26 +357,24 @@ boundary.
 ## Security Invariants
 
 - Runtime code must not use an allow-all authorizer.
-- Product compatibility must be represented by bootstrap grants.
+- Product authorization must use an explicit action allowlist.
 - Every private-key operation must have an authorization check.
 - Every key, policy, settings, template, token, identity, or lifecycle mutation
   must have an authorization check.
 - Auth-time unlock must be authorization-gated.
 - Approval responses must be authorization-gated.
-- Cross-identity access must be explicit.
+- Non-default resource identity must fail closed.
 - Unknown actions must fail closed.
-- Unknown actions must fail before grant matching so callsite or grant typos do
+- Unknown actions must fail before allowlist matching so callsite typos do
   not create ad hoc permissions.
-- Unknown or disabled principals must fail closed.
-- Disabled groups and grants must not authorize.
-- Group membership alone must not authorize.
-- `system:product-admin` and `system:product-admins` are reserved names.
+- Unknown principals must fail closed.
+- `system:product-admin` is reserved.
 
 ## Implementation
 
 - stable action vocabulary
-- in-memory grant-backed authorizer
-- bootstrap product principal/group/grant
+- closed product action allowlist
+- reserved product-admin principal
 - admin session principal separation from target signing identity
 - HTTP and admin operation gates
 

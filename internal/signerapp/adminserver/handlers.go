@@ -28,7 +28,7 @@ func (s *Session) handleRevokeToken(msg *protocol.RevokeTokenMessage) {
 	if !s.authorize(msg.ID, auth.ActionTokenRevoke, auth.Resource{Type: "token", IdentityID: ir.ID()}) {
 		return
 	}
-	err := s.identityServices.RevokeTokenForIdentity(ir)
+	err := s.identityServices.RevokeProductToken(ir)
 
 	_ = s.WriteJSON(ProtocolRevokeTokenResultMessage(msg.ID, err))
 }

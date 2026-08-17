@@ -364,10 +364,10 @@ Always Deny  >  Always Review  >  Always Approve  >  Operator Default
 | **Always Approve** | Signed without a prompt. |
 | **Operator Default** | Falls to `user_auto_approve`: `true` signs, `false` requires review. |
 
-The policy document is identity-scoped at `identities/<identity>/policy.yaml`
+The policy document is identity-scoped at `identities/default/policy.yaml`
 (with an HMAC sidecar; a missing/mismatched sidecar **fails closed**). Runtime
 settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`) live
-in `identities/<identity>/config.yaml`.
+in `identities/default/config.yaml`.
 
 ### Things that surprise clients
 

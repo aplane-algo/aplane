@@ -4,7 +4,10 @@
 package identity
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -52,7 +55,6 @@ type StoredConfig struct {
 	PassphraseTimeout string `yaml:"passphrase_timeout,omitempty"`
 	ApprovalWait      string `yaml:"approval_wait,omitempty"`
 	Mode              string `yaml:"mode,omitempty"`
-	Decommissioned    *bool  `yaml:"decommissioned,omitempty"`
 }
 
 // NewIdentityConfig creates an identity config with values from the process config.
@@ -140,9 +142,14 @@ func LoadStoredConfig(dataRoot, identityID string) (*StoredConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read identity config: %w", err)
 	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return &StoredConfig{}, nil
+	}
 
 	var cfg StoredConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("failed to parse identity config: %w", err)
 	}
 	return &cfg, nil
@@ -214,9 +221,4 @@ func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 	}
 
 	return effective, nil
-}
-
-// IsDecommissioned reports whether the stored config marks the identity as disabled.
-func (c *StoredConfig) IsDecommissioned() bool {
-	return c != nil && c.Decommissioned != nil && *c.Decommissioned
 }

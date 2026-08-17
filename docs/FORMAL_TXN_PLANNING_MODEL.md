@@ -24,8 +24,8 @@ Normative inputs:
   applied after planning.
 - [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md):
   sign-mode authority requirements.
-- [FORMAL_LIFECYCLE_MODEL.md](FORMAL_LIFECYCLE_MODEL.md): final signing
-  lifecycle lease semantics.
+- [FORMAL_APPROVAL_COORDINATOR_MODEL.md](FORMAL_APPROVAL_COORDINATOR_MODEL.md):
+  approval termination and fail-all semantics.
 
 This model intentionally stays below the full daemon and above concrete Go code.
 It describes what must be true of accepted transaction-planning and signing
@@ -493,7 +493,7 @@ This model does not prove:
 - HTTP authentication or authorization,
 - request cancellation behavior,
 - filesystem reload ordering,
-- decommission lifecycle races,
+- server shutdown and runtime destruction ordering,
 - backup/restore behavior,
 - future witness or compliance-sentry semantics.
 

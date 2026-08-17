@@ -5,21 +5,20 @@ package adminserver
 
 import (
 	"context"
-	"github.com/aplane-algo/aplane/internal/adminproto"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
 
 type IdentityServices interface {
 	ProductIdentityRuntime() *identity.Runtime
-	ResolveIdentity(identityID string) (*identity.Runtime, error)
 	VerifyPassphrase(ir *identity.Runtime, passphrase []byte) error
 	UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string)
 	InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult
 	ChangeStorePassphrase(ir *identity.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult
 	NewSessionIdentity(method string) *auth.Identity
-	RevokeTokenForIdentity(ir *identity.Runtime) error
+	RevokeProductToken(ir *identity.Runtime) error
 }
 
 type SettingsServices interface {
@@ -80,12 +79,13 @@ type AuthorizationAudit interface {
 }
 
 type SessionDeps struct {
-	Identity   IdentityServices
-	Settings   SettingsServices
-	Keys       KeyServices
-	Backups    BackupServices
-	Templates  TemplateServices
-	Inspection StoreInspectionServices
-	Authorizer auth.Authorizer
-	Audit      AuthorizationAudit
+	Identity    IdentityServices
+	Settings    SettingsServices
+	Keys        KeyServices
+	Backups     BackupServices
+	Templates   TemplateServices
+	Inspection  StoreInspectionServices
+	Authorizer  auth.Authorizer
+	Audit       AuthorizationAudit
+	NodeFailure func() error
 }

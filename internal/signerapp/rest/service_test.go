@@ -186,7 +186,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Rol
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		NodeRole:      role,
 	})
-	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, reloadKeysForTest(ir, keyPaths)
 	})
 	if unlocked {
@@ -1402,23 +1402,6 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 	}
 	if _, err := (Service{}).Keys(locked); err == nil || err.HTTPStatus() != 403 {
 		t.Fatalf("Keys(locked) error = %#v, want forbidden", err)
-	}
-
-	decommissioned := setupIdentityRuntime(t, true)
-	if err := decommissioned.Decommission(); err != nil {
-		t.Fatalf("Decommission() error = %v", err)
-	}
-	if _, err := (Service{}).SignGroup(context.Background(), decommissioned, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 {
-		t.Fatalf("SignGroup(decommissioned) error = %#v, want forbidden", err)
-	}
-	if _, err := (Service{}).SignComponent(context.Background(), decommissioned, signerapi.ComponentSignRequest{}); err == nil || err.HTTPStatus() != 403 {
-		t.Fatalf("SignComponent(decommissioned) error = %#v, want forbidden", err)
-	}
-	if _, err := (Service{}).AssembleGuarded(context.Background(), decommissioned, signerapi.GuardedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 {
-		t.Fatalf("AssembleGuarded(decommissioned) error = %#v, want forbidden", err)
-	}
-	if _, err := (Service{}).Plan(decommissioned, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 {
-		t.Fatalf("Plan(decommissioned) error = %#v, want forbidden", err)
 	}
 
 	ir := setupIdentityRuntime(t, true)

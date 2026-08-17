@@ -121,7 +121,7 @@ func TestWatcherDirtyWhileLocked(t *testing.T) {
 
 // Verifies the per-plan watcher discrimination: `.template` and `.key` events
 // trigger reload; `.json` record events MUST NOT, because state records are
-// admin-mutated under the per-identity mutation lock and a watcher-driven
+// admin-mutated under the process store mutation lock and a watcher-driven
 // reload would race the admin handler that wrote the record.
 func TestWatcherIgnoresJSONRecordEvents(t *testing.T) {
 	base := t.TempDir()

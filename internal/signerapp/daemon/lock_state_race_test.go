@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
@@ -21,7 +20,7 @@ func TestHandleSignReturnsForbiddenWhenKeySessionLocksMidRequest(t *testing.T) {
 	defer cleanup()
 
 	server.config.UserAutoApprove = true
-	server.registry.Get(auth.DefaultIdentityID).Config().SetUserAutoApprove(true)
+	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
 
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	genW := httptest.NewRecorder()
@@ -36,7 +35,7 @@ func TestHandleSignReturnsForbiddenWhenKeySessionLocksMidRequest(t *testing.T) {
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 	ir.SnapshotKeySession().Destroy()
 
@@ -86,7 +85,7 @@ func TestHandleAdminGenerateReturnsForbiddenWhenMasterKeyClearedMidRequest(t *te
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	ir.KeyStore().ClearKeys()
 
 	reqBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})

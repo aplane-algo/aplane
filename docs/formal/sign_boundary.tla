@@ -29,7 +29,7 @@ The model intentionally omits:
   - msgpack decode and Algorand transaction layout,
   - post-signing client routing to algod submission or simulation,
   - approval coordinator state (always-review, operator decision),
-  - lifecycle leases and decommission,
+  - server shutdown ordering and runtime destruction,
   - LogicSig budget, fee adjustment, group-id recomputation,
   - HTTP authentication, identity routing,
   - filesystem reload ordering.

@@ -466,13 +466,23 @@ Identity model: see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model).
 
 Identity plumbing rules specific to this spec:
 
-- identity is a real cross-cutting dimension in the type model,
-- code does not collapse identity scoping away, and the system does not claim strong tenant isolation beyond what is implemented,
-- product-facing code routes single-operator assumptions through the product-identity helpers rather than scattering raw `"default"` assumptions,
-- local IPC admin auth is product-identity scoped unless the transport has a pre-authenticated identity,
-- SSH admin sessions can bind a non-product identity only when the SSH layer already authenticated that identity,
-- HTTP request routing uses the token-authenticated identity and rejects missing or decommissioned runtimes,
-- `auth.CurrentProductIdentityID()` is used at process boundaries only, not as a shortcut inside runtime-owned behavior.
+- every signer process owns exactly one runtime, fixed to
+  `auth.CurrentProductIdentityID()` (`default`),
+- preserving `identities/default/` preserves the storage namespace, not a
+  multi-identity runtime model,
+- reusable storage code may retain an identity locator parameter; product
+  request, authentication, SSH, admin-session, and runtime code has no identity
+  selector,
+- startup validates the direct `identities/` entries without following
+  symlinks and rejects every entry other than a real `default` directory before
+  loading identity secrets or starting watchers,
+- HTTP authentication verifies one product token and produces the reserved
+  `system:product-admin` principal; runtime binding is independently fixed to
+  the product runtime,
+- SSH accepts only `default` and `request-token:default`; the token proof keeps
+  `default` as its fixed domain-separated transcript value,
+- output and audit identity fields may retain `default` attribution even where
+  corresponding input selectors are removed.
 
 ## Runtime Configuration Model
 
@@ -535,11 +545,10 @@ Identity-sensitive runtime settings are owned separately by `internal/signerapp/
 
 Those values are persisted per identity at
 `identities/<identity>/config.yaml` via
-`internal/signerapp/identity.StoredConfig`. The same file also carries
-lifecycle state such as `decommissioned:true` for disabled identities. On
-startup, stored runtime values overlay process-global defaults (nil/empty means
-inherit), while `decommissioned:true` is treated as an explicit disable marker
-rather than an inherited setting. Runtime reads resolve through the bound
+`internal/signerapp/identity.StoredConfig`. Unknown fields, including the
+removed `decommissioned` setting, fail strict parsing. On startup, stored
+runtime values overlay process-global defaults (nil/empty means inherit).
+Runtime reads resolve through the bound
 identity runtime rather than directly from `ServerConfig`.
 
 Key-class role is process/data-root scoped, not identity scoped. An initialized
@@ -598,7 +607,7 @@ Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
 
-ASA amount-threshold editing in display units uses signer-wide ASA metadata under `cache/<network>_asa_cache.json` in the signer data directory. Signer code reaches this cache through `internal/signerapp/asametadata.Store`, not by treating it as APCLIENT_DATA cache state. This metadata is shared by all identities because ASA metadata is public chain state, not identity-private state. Built-in ASA metadata is starter data for the same effective cache model; successful live algod lookups for numeric ASA IDs are persisted to the signed cache. Enforcement remains raw-unit and numeric-ASA-ID based, so the metadata cache is not authoritative for requiring review, accepting, or rejecting transactions.
+ASA amount-threshold editing in display units uses signer-wide ASA metadata under `cache/<network>_asa_cache.json` in the signer data directory. Signer code reaches this cache through `internal/signerapp/asametadata.Store`, not by treating it as APCLIENT_DATA cache state. This metadata is process-wide because ASA metadata is public chain state, not signing authority. Built-in ASA metadata is starter data for the same effective cache model; successful live algod lookups for numeric ASA IDs are persisted to the signed cache. Enforcement remains raw-unit and numeric-ASA-ID based, so the metadata cache is not authoritative for requiring review, accepting, or rejecting transactions.
 
 LocalNet setup is owned by `aplocalnet` (`cmd/aplocalnet` plus
 `internal/aplocalnet`). It is an operator-run setup utility, not a long-running
@@ -612,7 +621,9 @@ prompt to no and applying only to the client and/or signer data roots being
 installed. The compatibility details are documented in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
-`apsigner` startup resolves unlock config per identity: identity-scoped `unlock.yaml` takes precedence over the process-global `config.yaml` passphrase command. `appass` accepts `-identity <id>` to target a specific identity and defaults to `"default"`.
+`apsigner` startup resolves the product identity's `unlock.yaml` before the
+process-global `config.yaml` passphrase command. `appass` has no identity
+selector and always manages `identities/default/unlock.yaml`.
 
 Configuration behavior and validation rules are compatibility-bearing and are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). The network context model and genesis-hash mapping rules are explained in [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
 
@@ -643,17 +654,12 @@ The system has two main auth channels:
 
 Optional SSH provides transport-level authentication for remote shell access, but HTTP requests require the API token.
 
-Identity disable state is enforced at the transport boundary:
-
-- decommissioned identities are skipped during HTTP token resolution,
-- HTTP request routing rejects decommissioned runtimes before business logic executes,
-- SSH token validation, authorized-key checks, and key enrollment all reject decommissioned identities.
-
 Authorization is a separate concern through `auth.Authorizer`. Runtime code uses
-the grant-backed authorization path documented in
+the explicit product action allowlist documented in
 [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md). In product mode,
 credentials map to the reserved `system:product-admin` principal
-and bootstrap grants; authentication does not bypass authorization.
+and the fixed `default` resource boundary; authentication does not bypass
+authorization.
 
 ### Secret Handling
 
@@ -685,13 +691,11 @@ Admin authorization denials are audited with the session context, action,
 resource, and denial reason before returning `authorization_denied` to the
 admin client.
 
-`adminserver.SessionManager` stores active and pending sessions per identity.
-Local IPC sessions start in a pre-auth pending slot and move to the product
-identity after auth. SSH admin sessions may be pre-bound to the SSH-authenticated
-identity before the admin protocol passphrase exchange. Displacement, pending
-cleanup, lock-on-disconnect, approval delivery, and notification delivery are
-identity-scoped internally. Product-mode clients operate against the
-single exposed product identity.
+`adminserver.SessionManager` owns one pre-auth pending slot, one authenticated
+pending slot during displacement, and one active slot for the process. Local
+IPC and SSH admin sessions contend for those same slots. Displacement, pending
+cleanup, lock-on-disconnect, approval delivery, and notification delivery all
+address the active product session.
 
 Locking zeroes every term key and deactivates the key session. Local
 admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
@@ -745,7 +749,8 @@ sends explicit cancellation.
 
 ### Server Startup
 
-`apsigner` discovers identity directories under `identities/`, filters out `decommissioned:true`, constructs an `identity.Runtime` per surviving identity.
+`apsigner` validates that `identities/` is absent/empty or contains only a real
+`default/` directory, then constructs the one product `identity.Runtime`.
 
 Before normal startup option loading, `apsigner` rejects manual startup from a
 signer data directory containing `.prod` unless the process is systemd-managed.
@@ -793,7 +798,7 @@ bytecode must derive an off-curve LogicSig address.
 
 The main server struct is `Signer`, which owns:
 
-- identity registry / process root composition,
+- the one product identity runtime and node-level fail-closed state,
 - authn/authz components,
 - signer-side planning/approval/execution service adapters,
 - IPC server,
@@ -808,8 +813,7 @@ Sensitive per-identity state lives under `internal/signerapp/identity.Runtime`, 
 - approval coordinator,
 - watcher lifecycle,
 - identity-scoped config,
-- token authority and SSH enrollment state,
-- lifecycle/decommission state.
+- token authority and SSH enrollment state.
 
 The key indexes are authoritative runtime indexes of what the server believes is signable.
 
@@ -819,23 +823,19 @@ The key indexes are authoritative runtime indexes of what the server believes is
 |------|----------|
 | `Signer.configMu` | Mutable process-global `ServerConfig` fields exposed through admin settings, including theme, SSH listen address, and endpoint advertise URL |
 | `Signer.configMutationMu` | Process-owned `config.yaml` write serialization |
-| `Signer.storeMutationMu` | Map of per-identity mutation locks |
-| `Signer.storeMutationLocks[identityID]` | Identity-owned key/template/config/policy mutation serialization |
-| `signerapp/templates.templateProviderOwners.mu` | Identity ownership counts for process-global installed-template LogicSig providers |
-| `Signer.restoreAttemptMu` | Lazy initialization of the per-identity/archive restore backoff limiter |
+| `Signer.storeMutationLock` | Product key/template/config/policy mutation serialization |
+| `Signer.restoreAttemptMu` | Lazy initialization of the per-archive restore backoff limiter |
 | `identity.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
 | `identity.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
 | `identity.Runtime.watcherMu` | Watcher lifecycle, dirty state |
-| `identity.Runtime.lifecycleMu` | Decommission vs in-flight operation leases |
-| `identity.Runtime.decommissioned` | `atomic.Bool` — lifecycle disable |
 | `identity.Runtime.approval` | `atomic.Pointer` — approval coordinator |
 | `Runtime.stateMu` | Signer locked/unlocked state |
 | `Coordinator.pendingRequestsLock` | Pending sign approvals |
 | `Coordinator.pendingTokenRequestsLock` | Pending token provisioning approvals |
 | `IPCServer.writeMu` | Serializes outbound IPC JSON writes |
-| `adminserver.SessionManager.mu` | Per-identity admin session registration/displacement |
+| `adminserver.SessionManager.mu` | Process-wide admin session registration/displacement |
 | `AuditLogger.mu` | Audit file writes |
-| SSH server locks | Authorized keys, token callbacks, identity-scoped connections, listener |
+| SSH server locks | Authorized keys, product-token callbacks, product connections, listener |
 
 Goroutines:
 
@@ -877,25 +877,24 @@ The watcher model is identity-owned but not tied to every lock transition:
 - when an identity is unlocked, the watcher reloads immediately on qualifying filesystem changes,
 - when an identity is locked, the watcher remains active and marks the identity dirty,
 - the next unlock reconciles dirty state by reloading,
-- watchers are stopped on runtime shutdown and decommission, not on every ordinary lock.
+- watchers are stopped on runtime shutdown, not on every ordinary lock.
 
-Watcher-triggered reloads acquire the same per-identity mutation lock used by
+Watcher-triggered reloads acquire the same process-wide mutation lock used by
 admin template/key/config mutations. Admin mutation paths that already hold the
 lock call `Reload` directly; watcher paths use the watcher reload entrypoint so
 they do not re-enter the same lock.
 
-Installed-template provider reconciliation follows
-`Signer.storeMutationLocks[identityID]` -> `signerapp/templates.templateProviderOwners.mu`
--> `internal/lsigprovider.registerMu`. The provider-owner lock never acquires
-identity mutation locks and only mutates in-memory owner counts plus the
-process-global provider registry.
+Installed-template provider reconciliation follows `Signer.storeMutationLock`
+to `internal/lsigprovider.registerMu`. The one product activation set directly
+registers or unregisters its process-global provider; there are no identity
+owner counts.
 
-Runtime decommission is logical disablement, not data deletion. `Registry.Remove`
-prevents future lookup only; an in-flight request may still hold a runtime
-pointer. The runtime's `BeginOperation`/`Decommission` lease is the final
-signing stop signal: if final execution has not acquired the lease,
-decommission wins and signing fails; if execution already holds the lease,
-decommission waits for release before completing.
+The runtime has no live decommission transition or operation lease. Server
+shutdown stops accepting and drains HTTP work before destroying runtime key
+state; key-session locks continue to protect signing authority access. If a
+service cannot drain before its shutdown deadline, lifecycle teardown retains
+the audit logger and runtime state until process exit rather than destroying
+them underneath a live handler.
 
 ### Server-Side Application Boundary
 
@@ -1666,12 +1665,11 @@ The repo uses:
   `make formal-test` and in CI by the Formal Models job. The authoritative
   `(spec, cfg)` run list and expected outcomes/metrics live in
   `docs/formal/metrics.json`. It covers `sign_boundary`,
-  `policy_precedence`, `composition`, `lifecycle`, `approval_coordinator`,
-  `approval_composition`, `lifecycle_composition`, `session_ownership`,
+  `policy_precedence`, `composition`, `approval_coordinator`,
+  `approval_composition`, `session_ownership`,
   `guarded_assembly`, `bounded_sentry`, `plugin_signing`, and
   `generation_commit`, and `rotation_transition`, plus liveness
-  configurations for `approval_coordinator`, `lifecycle`, and
-  `lifecycle_composition` and an expected-failure R5 negative control for
+  configurations for `approval_coordinator` and an expected-failure R5 negative control for
   `rotation_transition`.
   `make formal-test-deep` uses `docs/formal/metrics_deep.json` for larger
   pre-release or scheduled bounds. Both targets run
@@ -1770,18 +1768,15 @@ Verification expectations remain:
 
 ## Authentication
 
-- HTTP: token auth (`Authorization: aplane <token>`). The token resolves the
-  authenticated identity and HTTP handlers route to that identity's runtime.
-- IPC: passphrase auth. Product-mode local IPC binds to the product identity;
-  explicit non-product identity selection is rejected unless the transport was
-  pre-bound to that identity.
+- HTTP: token auth (`Authorization: aplane <token>`). The one product token
+  authenticates `system:product-admin`; handlers use the one product runtime.
+- IPC: passphrase auth. The admin protocol has no target-identity selector and
+  binds to the product runtime after passphrase verification.
 - SSH: dual-factor for tunnel/admin connections. The non-secret identity ID is
-  the SSH username. An enrolled public key is verified first, followed by a
+  fixed SSH username `default`. An enrolled public key is verified first, followed by a
   programmatic mutual HMAC proof of the identity token bound to the accepted
   SSH host key and fresh client/server nonces. Token provisioning remains a
-  key-only, operator-approved exception for new client enrollment.
-
-Decommissioned identities are rejected at all transport boundaries.
+  key-only, operator-approved exception using `request-token:default`.
 
 ## Approval Model
 
@@ -1799,16 +1794,16 @@ Watcher, template reload, audit logging, token provisioning, token revocation, a
 
 Architecturally:
 
-- watcher ownership is per identity runtime,
+- one watcher is owned by the product runtime,
 - template registration precedes key scan for generation/discovery,
 - signer-data library templates are authoritative install sources when present,
   and same-`key_type` template mutation is rejected rather than applied on
   reload/unlock,
 - audit logging is a signer-side operational subsystem, not a UI concern,
 - token provisioning is an approval-mediated enrollment path, not just SSH auth,
-- token provisioning and SSH token revocation are identity-scoped internally:
-  provisioning requires an admin session for the requested identity, and token
-  rotation closes only SSH connections authenticated for that identity.
+- token provisioning requires the active product admin session, and product
+  token rotation closes every SSH connection authenticated with an older token
+  generation.
 
 ## Architectural Invariants
 
@@ -1824,10 +1819,12 @@ Architecturally:
 7. `/sign` and `/plan` share canonical group-shaping rules.
 8. Plugins are process-isolated with no direct keystore access.
 9. Offline keystore mutations (`apstore`) are guarded by the store lock, not transport-specific liveness probes.
-10. Identity scoping is present in storage and request models.
-11. Product UI/docs are single-operator.
-12. Registry lookup does not own runtime lifecycle; runtime decommission is the stop signal for in-flight work.
-13. File mutations and watcher reloads for one identity share the same per-identity mutation lock.
+10. Durable signer state remains rooted at `identities/default/`; request and
+    runtime models do not expose an identity selector.
+11. Product UI/docs are single-operator and single-signing-identity.
+12. Exactly one product runtime is constructed, and an extra direct entry under
+    `identities/` fails startup before identity secrets are consumed.
+13. File mutations and watcher reloads share the product store mutation lock.
 14. Pure shell binaries register only client-safe providers; binaries that own
     admin, store mutation, or local signer composition (`apsigner`, `apconsole`,
     `apadmin`, `apstore`) additionally register signer-side keygen, sign, and

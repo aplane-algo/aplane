@@ -7,7 +7,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -31,36 +30,37 @@ func writeTestNodeRole(t *testing.T, root string, role noderole.Role) {
 	}
 }
 
-func TestStartupIdentityIDsIncludesProductIdentity(t *testing.T) {
+func TestBuildProductRuntimeRejectsExtraIdentityBeforeLoadingSecrets(t *testing.T) {
 	root := t.TempDir()
-	for _, id := range []string{"alice", "bob"} {
-		if err := os.MkdirAll(filepath.Join(root, "identities", id), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	ids, err := signerstartup.StartupIdentityIDs(root, auth.CurrentProductIdentityID())
-	if err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "identities", "alice"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(ids)
-
-	want := []string{"alice", "bob", auth.CurrentProductIdentityID()}
-	sort.Strings(want)
-	if len(ids) != len(want) {
-		t.Fatalf("ids len = %d, want %d (%v)", len(ids), len(want), ids)
+	cfg := serverconfig.DefaultServerConfig()
+	_, err := signerstartup.BuildProductRuntime(signerstartup.IdentityBuildOptions{
+		DataDir:               root,
+		KeyPaths:              utilkeys.NewPaths(root),
+		Config:                &cfg,
+		DefaultSessionTimeout: 15 * time.Minute,
+		ProductIdentityID:     auth.CurrentProductIdentityID(),
+	}, signerstartup.IdentityBuildHooks{})
+	if err == nil {
+		t.Fatal("BuildProductRuntime() error = nil")
 	}
-	for i := range want {
-		if ids[i] != want[i] {
-			t.Fatalf("ids[%d] = %q, want %q (all=%v)", i, ids[i], want[i], ids)
-		}
+	if !strings.Contains(err.Error(), "alice") || strings.Contains(err.Error(), "node role") || strings.Contains(err.Error(), "token") {
+		t.Fatalf("BuildProductRuntime() error = %q, want layout rejection before secret loading", err)
+	}
+}
+
+func TestValidateProductIdentityLayoutBlankStore(t *testing.T) {
+	root := t.TempDir()
+	if err := identity.ValidateProductIdentityLayout(root, auth.CurrentProductIdentityID()); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestBuildIdentityRuntimeAppliesStoredConfig(t *testing.T) {
 	root := t.TempDir()
 	server := &Signer{
-		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
 	cfg := serverconfig.DefaultServerConfig()
@@ -82,7 +82,7 @@ func TestBuildIdentityRuntimeAppliesStoredConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ir, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildIdentityRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               root,
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
@@ -110,10 +110,34 @@ func TestBuildIdentityRuntimeAppliesStoredConfig(t *testing.T) {
 	}
 }
 
+func TestBuildProductRuntimeRejectsStaleDecommissionedConfig(t *testing.T) {
+	root := t.TempDir()
+	cfg := serverconfig.DefaultServerConfig()
+	writeTestNodeRole(t, root, noderole.RoleSigner)
+	identityID := auth.CurrentProductIdentityID()
+	configPath := identity.ConfigPath(root, identityID)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("decommissioned: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := signerstartup.BuildProductRuntime(signerstartup.IdentityBuildOptions{
+		DataDir:               root,
+		KeyPaths:              utilkeys.NewPaths(root),
+		Config:                &cfg,
+		DefaultSessionTimeout: 15 * time.Minute,
+		ProductIdentityID:     identityID,
+	}, signerstartup.IdentityBuildHooks{})
+	if err == nil || !strings.Contains(err.Error(), "decommissioned") {
+		t.Fatalf("BuildProductRuntime() error = %v, want stale decommissioned-field rejection", err)
+	}
+}
+
 func TestBuildIdentityRuntimeRejectsStoredMode(t *testing.T) {
 	root := t.TempDir()
 	server := &Signer{
-		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
 	cfg := serverconfig.DefaultServerConfig()
@@ -126,7 +150,7 @@ func TestBuildIdentityRuntimeRejectsStoredMode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+	_, err := signerstartup.BuildIdentityRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               root,
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
@@ -141,39 +165,9 @@ func TestBuildIdentityRuntimeRejectsStoredMode(t *testing.T) {
 	}
 }
 
-func TestStartupIdentityIDsSkipsDecommissionedIdentities(t *testing.T) {
-	root := t.TempDir()
-	for _, id := range []string{"alice", "bob"} {
-		if err := os.MkdirAll(filepath.Join(root, "identities", id), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := identity.SaveStoredSetting(root, "bob", "decommissioned", true); err != nil {
-		t.Fatal(err)
-	}
-
-	ids, err := signerstartup.StartupIdentityIDs(root, auth.CurrentProductIdentityID())
-	if err != nil {
-		t.Fatal(err)
-	}
-	sort.Strings(ids)
-
-	want := []string{"alice", auth.CurrentProductIdentityID()}
-	sort.Strings(want)
-	if len(ids) != len(want) {
-		t.Fatalf("ids len = %d, want %d (%v)", len(ids), len(want), ids)
-	}
-	for i := range want {
-		if ids[i] != want[i] {
-			t.Fatalf("ids[%d] = %q, want %q (all=%v)", i, ids[i], want[i], ids)
-		}
-	}
-}
-
 func TestBuildIdentityRuntimeForcesHeadlessOverrides_IdentityScopedPassfile(t *testing.T) {
 	root := t.TempDir()
 	server := &Signer{
-		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 		dataDir:  root,
 	}
@@ -202,7 +196,7 @@ func TestBuildIdentityRuntimeForcesHeadlessOverrides_IdentityScopedPassfile(t *t
 		t.Fatal(err)
 	}
 
-	ir, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildIdentityRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               root,
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
@@ -224,7 +218,6 @@ func TestBuildIdentityRuntimeForcesHeadlessOverrides_IdentityScopedPassfile(t *t
 func TestBuildIdentityRuntimeForcesHeadlessOverrides_GlobalPassfile(t *testing.T) {
 	root := t.TempDir()
 	server := &Signer{
-		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 		dataDir:  root,
 	}
@@ -244,7 +237,7 @@ func TestBuildIdentityRuntimeForcesHeadlessOverrides_GlobalPassfile(t *testing.T
 		t.Fatal(err)
 	}
 
-	ir, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildIdentityRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               root,
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
@@ -266,7 +259,6 @@ func TestBuildIdentityRuntimeForcesHeadlessOverrides_GlobalPassfile(t *testing.T
 func TestBuildIdentityRuntimeRoutesLockedNotificationByIdentity(t *testing.T) {
 	root := t.TempDir()
 	server := &Signer{
-		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 		dataDir:  root,
 	}
@@ -278,15 +270,15 @@ func TestBuildIdentityRuntimeRoutesLockedNotificationByIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ir, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildIdentityRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               root,
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
 		DefaultSessionTimeout: 15 * time.Minute,
 		ProductIdentityID:     auth.CurrentProductIdentityID(),
 	}, signerstartup.IdentityBuildHooks{
-		NotifyLocked: func(identityID string) {
-			hub.NotifyLocked(identityID, adminproto.SignerLockedNotification{Reason: "locked"})
+		NotifyLocked: func() {
+			hub.NotifyLocked(adminproto.SignerLockedNotification{Reason: "locked"})
 		},
 	}, "alice")
 	if err != nil {
@@ -296,21 +288,20 @@ func TestBuildIdentityRuntimeRoutesLockedNotificationByIdentity(t *testing.T) {
 	ir.SetUnlocked()
 	ir.Lock()
 
-	if hub.lockedIdentity != "alice" {
-		t.Fatalf("NotifyLocked identity = %q, want alice", hub.lockedIdentity)
+	if !hub.lockedCalled {
+		t.Fatal("NotifyLocked was not called")
 	}
 }
 
 func TestBuildIdentityRuntimeRejectsSecondaryIdentityWithoutToken(t *testing.T) {
 	root := t.TempDir()
 	server := &Signer{
-		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
 	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 
-	_, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+	_, err := signerstartup.BuildIdentityRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               root,
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
@@ -330,7 +321,6 @@ func TestBuildIdentityRuntimeLoadsStoredPolicy(t *testing.T) {
 
 	root := t.TempDir()
 	server := &Signer{
-		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
 	cfg := serverconfig.DefaultServerConfig()
@@ -355,7 +345,7 @@ func TestBuildIdentityRuntimeLoadsStoredPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ir, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildIdentityRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               root,
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
@@ -392,7 +382,6 @@ func TestBuildIdentityRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 
 	root := t.TempDir()
 	server := &Signer{
-		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
 	cfg := serverconfig.DefaultServerConfig()
@@ -409,7 +398,7 @@ func TestBuildIdentityRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ir, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildIdentityRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               root,
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
@@ -436,7 +425,6 @@ func TestBuildIdentityRuntimeRejectsTamperedNodeRoleOnUnlock(t *testing.T) {
 
 	root := t.TempDir()
 	server := &Signer{
-		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
 	cfg := serverconfig.DefaultServerConfig()
@@ -450,7 +438,7 @@ func TestBuildIdentityRuntimeRejectsTamperedNodeRoleOnUnlock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ir, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildIdentityRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               root,
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,
@@ -478,7 +466,6 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 
 	root := t.TempDir()
 	server := &Signer{
-		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
 	cfg := serverconfig.DefaultServerConfig()
@@ -498,7 +485,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ir, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildIdentityRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               root,
 		KeyPaths:              server.keyPaths,
 		Config:                &cfg,

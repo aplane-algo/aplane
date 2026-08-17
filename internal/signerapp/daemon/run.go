@@ -94,6 +94,7 @@ func Run(dataDir string) int {
 		return 1
 	}
 	config.IPCPath = resolvedIPCPath
+	startupOpts.Config = config
 	passphraseTimeout := startupOpts.PassphraseTimeout
 	identityID := startupOpts.IdentityID
 	if _, err := serverconfig.ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {
@@ -131,13 +132,7 @@ func Run(dataDir string) int {
 
 	// Comprehensive startup validation (config + runtime)
 	// This handles required vs optional checks and prints warnings
-	startupInfo, err := signerstartup.Validate(&config, runtime, startupOpts.Paths, identityID)
-	if err != nil {
-		logErrorf("startup validation failed: %v", err)
-		return 1
-	}
-
-	unlockPlan, err := signerstartup.BuildUnlockPlan(startupOpts, startupInfo.KeystoreExists, os.Getenv("TEST_PASSPHRASE"))
+	startupInfo, unlockPlan, err := signerstartup.ValidateAndBuildUnlockPlan(startupOpts, runtime, os.Getenv("TEST_PASSPHRASE"))
 	if err != nil {
 		logErrorf("%v", err)
 		if strings.Contains(err.Error(), "passphrase from passphrase command does not match existing keystore") {
@@ -191,18 +186,16 @@ func Run(dataDir string) int {
 	authorizer := authz.NewProductSingleAuthorizer()
 
 	// Create the process root server (shared infrastructure only)
-	reg := identity.NewRegistry()
 	server := &Signer{
-		registry:     reg,
-		registryAuth: identity.NewRegistryAuthenticator(reg),
-		authorizer:   authorizer,
-		auditLog:     auditLog,
-		config:       &config,
-		keyPaths:     startupOpts.Paths,
-		dataDir:      resolvedDataDir,
+		nodeFailState: &identity.NodeFailState{},
+		authorizer:    authorizer,
+		auditLog:      auditLog,
+		config:        &config,
+		keyPaths:      startupOpts.Paths,
+		dataDir:       resolvedDataDir,
 	}
 
-	ir, err := signerstartup.BuildRegistry(server.registry, signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildProductRuntime(signerstartup.IdentityBuildOptions{
 		DataDir:               resolvedDataDir,
 		KeyPaths:              startupOpts.Paths,
 		Config:                &config,
@@ -213,16 +206,16 @@ func Run(dataDir string) int {
 		logErrorf("%v", err)
 		return 1
 	}
-	logInfof("identity runtimes initialized: %d", server.registry.Count())
-	for _, id := range server.registry.IDs() {
-		removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths, id)
-		if cleanupErr != nil {
-			logErrorf("failed to clean incomplete backup imports for identity %s: %v", id, cleanupErr)
-			return 1
-		}
-		if removed != 0 {
-			logInfof("removed %d incomplete backup import(s) for identity %s", removed, id)
-		}
+	server.runtime = ir
+	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
+	logInfof("product identity runtime initialized")
+	removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths, identityID)
+	if cleanupErr != nil {
+		logErrorf("failed to clean incomplete backup imports: %v", cleanupErr)
+		return 1
+	}
+	if removed != 0 {
+		logInfof("removed %d incomplete backup import(s)", removed)
 	}
 	logInfof("API token loaded from %s", tokenfile.GetAPlaneTokenPathForRoot(startupOpts.Paths.Root(), identityID))
 
@@ -327,7 +320,6 @@ func Run(dataDir string) int {
 	defer stopSignals()
 
 	signerstartup.RunLifecycle(runCtx, signerstartup.LifecyclePlan{
-		Registry:        server.registry,
 		ProductRuntime:  ir,
 		ShutdownTimeout: 5 * time.Second,
 		AuditLog:        auditLog,
@@ -353,7 +345,7 @@ func Run(dataDir string) int {
 					return nil
 				},
 				Stop: func(ctx context.Context) error {
-					return server.stopSSHRuntime()
+					return server.stopSSHRuntime(ctx)
 				},
 			},
 			{

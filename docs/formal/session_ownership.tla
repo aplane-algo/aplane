@@ -34,16 +34,17 @@ The code's mechanism, modeled here exactly:
   - The disconnect defer runs owner cleanup iff the session
     authenticated AND (it was the active client OR no active client
     remains): ipc.go "authenticated && (wasActiveClient ||
-    !HasClient(identityID))". The second disjunct is the fix: a session
+    !HasClient())". The second disjunct is the fix: a session
     that unlocked but never became owner still re-locks on its way out
     unless someone else took over.
 
-Scope note (admin protocol 4.4, `auth_only`): AuthSucceed models the `auth`
+Scope note (`auth_only`, introduced in admin protocol 4.4 and retained in
+protocol 5): AuthSucceed models the `auth`
 message, which unlocks. The later `auth_only` message (session.go
 AuthenticateOutcome, transport authenticateOnly) verifies the passphrase and
 binds the session runtime WITHOUT authorizing or invoking identity.unlock, then
 returns the same AuthOutcomeAuthenticated and runs the identical ownership path
-(MovePendingToIdentity, displacement offer, PromoteToActive) and the identical
+(BindPreAuthPending, displacement offer, PromoteToActive) and the identical
 disconnect defer. The ownership machinery modeled here therefore covers it
 unchanged, and an "authenticate without unlock" action would differ from
 AuthSucceed only in leaving `unlocked` untouched. Such an action cannot violate
@@ -74,11 +75,11 @@ Mutations (documented; the shipped spec passes both restored):
     identity out from under the incoming replacement -- which is why the
     fix changed both the condition and the ordering.
 
-The module intentionally omits: multiple identities (ownership is
-per-identity; one identity loses nothing), the operator unlock/lock IPC
-commands and passphrase retry (lifecycle.tla's territory -- here unlock
+The module intentionally omits: multiple product runtimes (the implementation
+has one process-wide runtime and owner slot), the operator unlock/lock IPC
+commands and passphrase retry (outside this model -- here unlock
 is only the auth side effect under scrutiny), pending-slot contention
-detail (MovePendingToIdentity losers simply Exit while Authed), and the
+detail (BindPreAuthPending losers simply Exit while Authed), and the
 approval-prompt consequences of cleanup (approval_coordinator.tla's AP7).
 
 lock_on_disconnect is chosen nondeterministically at Init and never

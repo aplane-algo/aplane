@@ -121,7 +121,7 @@ read-only and do not take the mutation lock.
 `apstore backup create` asks the daemon to create a managed archive under:
 
 ```text
-<signer-data>/backups/<identity>/aplane-backup-YYYYMMDD-HHMMSS.tar.gz
+<signer-data>/backups/default/aplane-backup-YYYYMMDD-HHMMSS.tar.gz
 ```
 
 The daemon verifies the archive before reporting success.
@@ -142,7 +142,7 @@ payloads, then streams bounded chunks over authenticated IPC. Imports are
 limited to 1 GiB and starting a new import replaces an incomplete prior
 transfer for the same identity. The daemon
 verifies size, checksum, and archive structure and publishes the archive under
-`<signer-data>/backups/<identity>/` only after the sealed inventory and every
+`<signer-data>/backups/default/` only after the sealed inventory and every
 complete credential record validate.
 LogicSig bytecode, argument contracts, and other durable signing metadata are
 carried by the credential itself, while templates are outside the backup
@@ -203,7 +203,7 @@ In the TUI:
 The signer writes the backup archive on the signer host under:
 
 ```text
-<signer-data>/backups/<identity>/aplane-backup-YYYYMMDD-HHMMSS.tar.gz
+<signer-data>/backups/default/aplane-backup-YYYYMMDD-HHMMSS.tar.gz
 ```
 
 Notes:
@@ -240,8 +240,8 @@ exist. Normal clients should use the operator-approved `request-token`
 flow to receive a client-side copy of that token.
 
 `apstore initialize` also creates the initial signed policy baseline:
-`identities/<identity>/policy.yaml`,
-`identities/<identity>/policy.yaml.hmac`.
+`identities/default/policy.yaml`,
+`identities/default/policy.yaml.hmac`.
 
 It also creates the signer data root role file `node.yaml`. Standard
 initialization creates a signer node. `--role sentry` creates a dedicated
@@ -381,7 +381,7 @@ originated from Lute or Pera:
 Use `apadmin` when `apsigner` is running and unlocked:
 
 1. From the key list, press `r` to open managed backups.
-2. Select an archive under `<signer-data>/backups/<identity>/`.
+2. Select an archive under `<signer-data>/backups/default/`.
 3. Enter the export passphrase.
 4. Review the credential addresses, key types, and destination conflicts.
 5. Select credentials and confirm restore. Enable replacement only when you
@@ -450,7 +450,7 @@ may differ from the destination store passphrase.
 ### Generation-Based Storage and Migration
 
 New and rebuilt stores keep their active credentials in generation-based
-storage: `identities/<identity>/CURRENT` names the active generation under
+storage: `identities/default/CURRENT` names the active generation under
 `generations/`, and every credential restore commits as a complete new
 generation with one durable pointer flip. Restore cannot be left half-applied:
 a failure before the flip publishes nothing, and `restore rollback`
@@ -750,7 +750,7 @@ compiled-provider enablement and YAML-template import/enable, see
 ### "Template/provider unavailable" Error
 
 **Problem**: A restored template-backed key requires a provider or
-identity-local template that is not installed on the destination. Credential
+installed product template that is not present on the destination. Credential
 backups do not carry template YAML.
 
 **Solution**:

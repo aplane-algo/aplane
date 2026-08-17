@@ -64,6 +64,8 @@ Note: endpoint SSH paths are relative to the data directory (installer default:
 `~/aplane/apclient`). The `.ssh/` subdirectory is created automatically when
 needed. SSH authentication uses an enrolled public key plus a programmatic,
 host-key-bound proof of the API token; the token is not sent as the SSH username.
+APlane does not read or write the operating-system user's personal SSH
+directory; client keys and host trust are isolated under `$APCLIENT_DATA/.ssh/`.
 
 `signer_status_poll_interval` controls interactive apshell's background
 authenticated `/status` checks. The default is `"10s"`. Use a larger duration
@@ -338,7 +340,7 @@ The top-level `config.yaml` provides defaults for `user_auto_approve`,
 `lock_on_disconnect`, `passphrase_timeout`, and `approval_wait`. When you
 change `user_auto_approve`, `lock_on_disconnect`, or `passphrase_timeout`
 through admin IPC, the signer writes it as an identity-scoped override at
-`identities/<identity>/config.yaml`. `approval_wait` is process/YAML-only; it is
+`identities/default/config.yaml`. `approval_wait` is process/YAML-only; it is
 not part of the admin settings payload and cannot be changed through admin IPC.
 
 Node role is stored separately in the signer data root `node.yaml`. Standard
@@ -350,7 +352,7 @@ In `apadmin`, the operator-default shortcut is shown as `User Auto-Approve`:
 
 `passphrase_command_argv` and `passphrase_command_env` are accepted in the
 top-level `config.yaml`. `appass` writes its configuration to
-`identities/<identity>/unlock.yaml`, which takes precedence.
+`identities/default/unlock.yaml`, which takes precedence.
 
 ### Genesis Hash Network Mapping
 
@@ -568,7 +570,7 @@ For the full current policy model and phase ordering, see
 Signer safety policy is identity-scoped and stored at:
 
 ```text
-$APSIGNER_DATA/identities/<identity>/policy.yaml
+$APSIGNER_DATA/identities/default/policy.yaml
 ```
 
 The file has a sibling `.hmac` sidecar that authenticates the exact YAML bytes.
@@ -1084,9 +1086,9 @@ The operator sees the client's SSH fingerprint in apadmin and can verify identit
 If the client's SSH key is already in `authorized_keys` (e.g. added manually by the operator), you can copy the token directly:
 
 ```bash
-# 1. Add the client's public key to authorized_keys
+# 1. Add the APlane client's public key to authorized_keys
 mkdir -p $APSIGNER_DATA/identities/default/.ssh
-cat ~/.ssh/id_ed25519.pub >> $APSIGNER_DATA/identities/default/.ssh/authorized_keys
+cat $APCLIENT_DATA/.ssh/id_ed25519.pub >> $APSIGNER_DATA/identities/default/.ssh/authorized_keys
 
 # 2. Copy token from signer to client
 cp $APSIGNER_DATA/identities/default/aplane.token $APCLIENT_DATA/
@@ -1180,9 +1182,9 @@ Headless mode is intentionally long-lived: `passphrase_timeout` must be `0`, `lo
 
 ### Required Configuration
 
-Use `appass` to configure headless unlock for the target identity. It writes
-`identities/<identity>/unlock.yaml` and removes process-global passphrase
-helper compatibility settings so they do not conflict.
+Use `appass` to configure headless unlock for the product identity. It writes
+`identities/default/unlock.yaml` and removes process-global passphrase helper
+compatibility settings so they do not conflict.
 
 Three effective settings work together to enable headless operation:
 
@@ -1298,7 +1300,7 @@ user_auto_approve: true
 ```
 
 This can be a process-global default in `config.yaml` or an identity-scoped
-override in `identities/<identity>/config.yaml`.
+override in `identities/default/config.yaml`.
 
 ### Complete Example
 

@@ -28,7 +28,7 @@ func TestAdminSubsystemCarriesBytes(t *testing.T) {
 	srv.authKeys = append(srv.authKeys, clientPub)
 	srv.authKeysMu.Unlock()
 
-	srv.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr, identityID string) {
+	srv.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr string) {
 		defer func() { _ = channel.Close() }()
 		reader := bufio.NewReader(channel)
 		line, err := reader.ReadString('\n')
@@ -52,7 +52,6 @@ func TestAdminSubsystemCarriesBytes(t *testing.T) {
 	}
 
 	client := NewClient(host, port, 0, 0, identityPath, knownHostsPath)
-	client.SetIdentityID("default")
 	client.SetAPIToken("test-token")
 	if err := client.ConnectWithKey(context.Background()); err != nil {
 		t.Fatalf("ConnectWithKey() error = %v", err)

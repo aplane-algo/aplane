@@ -12,7 +12,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -26,7 +25,7 @@ func TestPlanAndSignSuccessResponseShapes(t *testing.T) {
 	defer cleanup()
 
 	server.config.UserAutoApprove = true
-	server.registry.Get(auth.DefaultIdentityID).Config().SetUserAutoApprove(true)
+	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
 
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	genW := httptest.NewRecorder()
@@ -41,7 +40,7 @@ func TestPlanAndSignSuccessResponseShapes(t *testing.T) {
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	sp := types.SuggestedParams{
@@ -121,7 +120,7 @@ func TestSignRejectsForeignModeWithStableErrorShape(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	sp := types.SuggestedParams{

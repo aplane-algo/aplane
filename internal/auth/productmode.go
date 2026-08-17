@@ -15,9 +15,8 @@ const ProductModeSingleOperator = "single-operator"
 // the currently supported single-operator product mode.
 var ErrUnsupportedProductIdentity = errors.New("unsupported identity")
 
-// CurrentProductIdentityID returns the effective identity for the current product mode.
-// The storage and request model remains identity-aware even though the supported product
-// deployment is still effectively single-operator today.
+// CurrentProductIdentityID returns the fixed identity for the single-operator,
+// single-signing-identity product. Reusable storage APIs remain parameterized.
 func CurrentProductIdentityID() string {
 	return DefaultIdentityID
 }

@@ -20,7 +20,7 @@
 - [On-Disk Formats](#on-disk-formats)
 - [Authentication, SSH, and Token Provisioning](#authentication-ssh-and-token-provisioning)
 - [Approval and Policy Contracts](#approval-and-policy-contracts)
-- [Runtime Lifecycle and Decommission](#runtime-lifecycle-and-decommission)
+- [Runtime Ownership and Shutdown](#runtime-ownership-and-shutdown)
 - [Key Watching and Reload](#key-watching-and-reload)
 - [Template Reload Contract](#template-reload-contract)
 - [Plugin Contract](#plugin-contract)
@@ -31,6 +31,32 @@
 - [Swap Contract](#swap-contract)
 
 ## Current Release Compatibility Scope
+
+### Single-Identity Product Boundary
+
+An `apsigner` process owns exactly one signing identity and one
+`identity.Runtime`, fixed to `default`. The durable path remains
+`identities/default/`; this is a storage namespace and future-migration seam,
+not a supported identity-routing surface.
+
+Startup performs a no-follow check of direct `identities/` entries before it
+loads tokens, keys, policy, or watchers. A directory, ordinary file, hidden
+entry, or symlink with any name other than `default` is rejected. An existing
+`default` entry must be a real directory and not a symlink. A missing
+`identities/` tree or missing `default` retains the explicit blank-store
+initialization behavior.
+
+HTTP authentication verifies the product token and produces
+`system:product-admin`; it cannot choose a runtime. Normal SSH usernames must be
+exactly `default`, and token enrollment must be exactly
+`request-token:default`. Product HTTP, admin, CLI, and SDK request inputs expose
+no identity selector. Output and audit fields may still attribute operations to
+`default`.
+
+This deliberately removes a working internal multi-identity capability,
+including identity-local template activation and the former `alice`
+integration path. No compatibility is promised for non-default stores or
+selectors in this pre-release change.
 
 Until APlane reaches a stable `v1.0` compatibility contract, in-place
 installer upgrades are intentionally narrow:
@@ -545,6 +571,7 @@ error-message codes:
 - `invalid_request`
 - `unknown_message_type`
 - `key_not_found`
+- `node_fail_closed`
 - `internal_error`
 
 Consumers should branch on message `type` and `code` first, and use `error` for display or fallback handling.
@@ -669,7 +696,9 @@ pointed at a supported in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader with guidance that the file
 may have been written by a newer version or may contain a typo.
 
-Process-global settings live in `config.yaml`. Identity-scoped settings live in `identities/<identity>/config.yaml` and nil means inherit from process defaults. `decommissioned:true` disables the identity.
+Process-global settings live in `config.yaml`. Identity-scoped settings live in
+`identities/default/config.yaml`; nil means inherit from process defaults.
+Unknown fields, including the removed `decommissioned` setting, fail parsing.
 
 Signer policy participates in the ordered approval engine.
 The active node-role policy is identity-scoped and stored in
@@ -965,7 +994,7 @@ Additional signer-state notes:
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
 - signer ASA metadata is loaded per operation from disk with `internal/asa/registry` built-in metadata as seed data; there is no separate long-lived in-memory signer ASA metadata cache to reconcile
 - built-in ASA metadata and convenience aliases live in `internal/asa/registry`; cache-backed current-network metadata is preferred for symbolic resolution, and registry aliases are the fallback used by shell and JavaScript helpers
-- `ssh.authorized_keys_path` remains a validated/resolved server setting for the underlying SSH server wiring, but product-mode identity auth and token enrollment use `identities/<identity>/.ssh/authorized_keys`
+- `ssh.authorized_keys_path` remains a validated/resolved server setting for the underlying SSH server wiring, but product auth and token enrollment use `identities/default/.ssh/authorized_keys`
 - `passphrase` and `passphrase.cred` are sensitive identity-scoped helper files referenced by `unlock.yaml`
 
 ### Client Data Directory Layout
@@ -2134,6 +2163,7 @@ Events:
 
 - `SERVER_START`
 - `SERVER_STOP`
+- `SERVER_STOP_INCOMPLETE`
 - `SIGN_REQUEST`
 - `SIGN_APPROVED`
 - `SIGN_REJECTED`
@@ -2227,10 +2257,10 @@ SSH server uses Ed25519 host keys, auto-generated at `.ssh/ssh_host_key`.
 
 Authentication requires both factors in one handshake:
 
-- public key enrolled for the bound identity in `identities/<identity>/.ssh/authorized_keys`
-- mutual proof of the identity-scoped API token
+- public key enrolled for the product in `identities/default/.ssh/authorized_keys`
+- mutual proof of the product API token
 
-Normal clients send the non-secret identity ID as the SSH username. After SSH
+Normal clients send the fixed non-secret username `default`. After SSH
 verifies possession of an enrolled public key, the server returns partial
 success and requires keyboard-interactive authentication. That exchange is
 programmatic and has two rounds:
@@ -2268,50 +2298,49 @@ the authentication attempt succeeds or fails; garbage-collected runtimes provide
 best-effort reference release rather than guaranteed memory zeroization. The
 client retains its separate bearer-token state for subsequent HTTP requests.
 
-`ssh.authorized_keys_path` is part of the server config surface; in product mode identity-scoped SSH authorization and enrollment are sourced from `identities/<identity>/.ssh/authorized_keys`.
+`ssh.authorized_keys_path` is part of the server config surface; product SSH
+authorization and enrollment are sourced from
+`identities/default/.ssh/authorized_keys`.
 
 Unavailable or invalid client token proofs incur a 5-second delay.
 
 Token provisioning flow:
 
-1. client connects as `request-token:<identity>`
-2. server rejects unknown or decommissioned identities before SSH auth succeeds
-3. key-only SSH auth succeeds for supported identities
-4. the `provision` exec request re-checks that the identity is supported
-5. server verifies an admin client is connected for the requested identity
+1. client connects as `request-token:default`
+2. server rejects every other username before SSH auth succeeds
+3. key-only SSH auth succeeds for the product identity
+4. the `provision` exec request remains bound to `default`
+5. server verifies the product admin client is connected
 6. admin approves via TUI
-7. server enrolls the public key for that identity
+7. server enrolls the public key for `default`
 8. server generates or loads token
 9. token is sent over SSH exec channel
 10. audit log is written after confirmed delivery
 
 The callbacks are separated as approval, key enrollment, issuance, then audit.
 
-Product-facing clients request tokens for the product identity. The identity
-parameter exists in the wire shape because the backend provisioning path is
-identity-scoped.
+Product-facing clients request tokens with the fixed `request-token:default`
+username. There is no client-selected provisioning identity.
 
-Token revocation behavior in identity-aware mode:
+Token revocation behavior:
 
-- rotate the target identity's token file and in-memory authenticator,
+- rotate the product token file and in-memory authenticator,
 - record the new token generation,
-- send `token-revoked@aplane` to active SSH connections authenticated for that identity with older generations,
-- close those target-identity SSH connections,
-- leave other identities' SSH connections open.
+- send `token-revoked@aplane` to active SSH connections authenticated with an older generation,
+- close every stale product connection.
 
 `sshtunnel.Server.UpdateToken()` is the global updater. Signer
-identity-aware revocation uses `CloseIdentityConnections(identityID,
-minTokenGeneration, reason)` instead. If SSH authentication races token
-rotation, authentication may complete against the old token, but connection
-tracking closes the stale target-identity connection after the authenticator is
+product revocation uses `CloseProductConnections(minTokenGeneration, reason)`.
+If SSH authentication races token rotation, authentication may complete
+against the old token, but connection tracking closes the stale connection after the authenticator is
 updated.
 
 SSH server callbacks are startup-only. Token validation, key checking,
-key enrollment, token provisioning, operator checks, provisioning identity
-checks, session notifications, and admin channel callbacks must be configured
+key enrollment, token provisioning, operator checks, session notifications,
+and admin channel callbacks must be configured
 before `Start`; setters fail fast after the server has started.
 
-Token provisioning reads the target identity's existing token. It never
+Token provisioning reads the product's existing token. It never
 creates or rotates a token at request time: store initialization owns token
 creation, and the authenticated revocation flow owns rotation. If the token
 file is absent or unreadable, provisioning fails after key enrollment instead
@@ -2423,23 +2452,21 @@ was never known to the authenticated identity.
 
 Broader group-level or structural policy constraints are not part of this compatibility surface.
 
-## Runtime Lifecycle and Decommission
+## Runtime Ownership and Shutdown
 
-Identity lifecycle is logical, not destructive.
-
-- `identities/<identity>/config.yaml` with `decommissioned:true` disables the identity at startup.
-- live decommission persists `decommissioned:true`, then marks the runtime decommissioned.
-- if persistence fails, the runtime remains active and pending approvals are not failed.
-- decommission fails pending signing and token-provisioning approvals with an identity-decommissioned reason.
-- decommission locks the runtime if it is unlocked and stops the identity watcher.
-- decommissioned identities reject unlock, reload, token provisioning, HTTP routing, SSH token auth, SSH key checks, and SSH key enrollment.
-
-Registry removal and runtime decommission are separate contracts:
-
-- `Registry.Remove(identityID)` prevents new registry lookup only.
-- in-flight requests may retain a `*identity.Runtime` after registry removal.
-- final signing uses the runtime lifecycle lease, not a registry lookup, to decide whether it may execute.
-- if decommission wins before final execution obtains the lease, signing fails cleanly; if execution already holds the lease, decommission waits for release.
+The signer owns one product `*identity.Runtime` directly. There is no live
+identity-decommission state or operation lease. Graceful shutdown stops and
+drains request servers before destroying runtime key state. Lock, disconnect,
+displacement, and shutdown continue to fail pending approvals through the
+reason-independent coordinator fail-all contract.
+If a request server fails to stop, lifecycle records
+`SERVER_STOP_INCOMPLETE` with `outcome:"failed"` and the service error. A
+deadline error means a handler may still be running, so lifecycle leaves the
+audit logger and runtime key state intact for process exit. A non-deadline stop
+error occurs only after handlers have drained; lifecycle closes the audit log
+and destroys runtime state normally. SSH stop uses the same lifecycle deadline
+and reports a deadline error until its accept loop and all connection handlers
+have exited.
 
 ## Key Watching and Reload
 
@@ -2474,7 +2501,7 @@ Lifecycle:
 
 - starts when the identity runtime is unlocked or initialized
 - remains running across lock/unlock transitions
-- stops on runtime shutdown or decommission
+- stops on runtime shutdown
 
 ## Template Reload Contract
 

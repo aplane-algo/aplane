@@ -54,14 +54,13 @@ func TestSignerConfigSnapshotIsIndependent(t *testing.T) {
 // TestSignerPlannerDepsSnapshotIncludesKeyIndex tests planner key snapshot lookup.
 func TestSignerPlannerDepsSnapshotIncludesKeyIndex(t *testing.T) {
 	signer := &Signer{
-		registry: identity.NewRegistry(),
+		runtime: identity.New(identity.Config{
+			Authenticator: auth.NewTokenAuthenticator("test-token"),
+			ID:            auth.DefaultIdentityID,
+		}),
 	}
 
-	ir := identity.New(identity.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            auth.DefaultIdentityID,
-	})
-	_ = signer.registry.Register(ir)
+	ir := signer.runtime
 	ir.PublishSnapshot(
 		map[string]string{
 			"ALICE": "identities/default/keys/ALICE.key",
@@ -93,14 +92,13 @@ func TestSignerPlannerDepsSnapshotIncludesKeyIndex(t *testing.T) {
 // TestBuildKeyInfoListEmpty tests empty key list
 func TestBuildKeyInfoListEmpty(t *testing.T) {
 	signer := &Signer{
-		registry: identity.NewRegistry(),
+		runtime: identity.New(identity.Config{
+			Authenticator: auth.NewTokenAuthenticator("test-token"),
+			ID:            auth.DefaultIdentityID,
+		}),
 	}
 
-	ir := identity.New(identity.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            auth.DefaultIdentityID,
-	})
-	_ = signer.registry.Register(ir)
+	ir := signer.runtime
 
 	keyList := signer.restService().BuildKeyInfoList(ir)
 	if len(keyList) != 0 {

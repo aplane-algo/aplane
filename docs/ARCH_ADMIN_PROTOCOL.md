@@ -26,18 +26,14 @@ The `apadmin` TUI may see `client_exists` before auth for displacement
 negotiation. `client_exists`, `displace_confirm`, and `displaced` are not part
 of the generic transport contract.
 
-Admin sessions bind to one identity runtime. Product-mode clients normally omit
-`identity_id`, which defaults to the product identity. Local IPC remains
-product-scoped: an explicit non-product `identity_id` is rejected unless the
-transport was already pre-bound to that identity. SSH admin sessions may be
-pre-bound by the SSH-authenticated identity; in that case an omitted
-admin-protocol `identity_id` defaults to the SSH identity and an explicit
-mismatched `identity_id` is rejected before runtime unlock or admin work.
+Admin sessions bind directly to the one product runtime. The v5 auth shape has
+no identity selector. A stale `identity_id` field is rejected by strict
+known-field decoding before passphrase verification or runtime work; it is not
+silently ignored.
 
-The UI presents one product admin workflow. Internally, active
-and pending admin sessions are stored per identity so approval routing,
-notifications, displacement, disconnect cleanup, and lock-on-disconnect affect
-only the bound identity.
+IPC and SSH share one process-wide authenticated-pending slot and one active
+admin slot. Local IPC additionally has one pre-auth pending slot until its
+passphrase has been verified.
 
 Transport notes:
 
@@ -51,7 +47,7 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 4.5; `auth_required` carries it as
+- the current admin protocol version is 5.0; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -61,7 +57,7 @@ Transport notes:
 - the generic client helpers in `internal/transport` expect `auth_required` for
   a normal handshake and preserve pre-auth protocol `error` messages as
   formatted server rejections,
-- displacement negotiation is handled only by the `apadmin` TUI path and is identity-scoped internally,
+- displacement negotiation is handled only by the `apadmin` TUI path and is process-wide,
 - generic clients observe some auth/displacement failures as formatted protocol errors rather than stable typed transport errors.
 - admin frames are bounded to 4 MiB before JSON decoding on both transports.
 
@@ -215,7 +211,8 @@ Server to Client:
 
 ### Session and Identity
 
-- `auth` / `auth_only`: `passphrase`, optional `identity_id`, required `protocol_version`
+- `auth` / `auth_only`: `passphrase`, required `protocol_version`; unknown
+  fields are rejected after the protocol major is validated
 - `auth_result`: `success`, optional `code`, optional `error`
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
@@ -278,7 +275,7 @@ locked/unlocked/recovery-state interlocks.
 ### Key Type Templates
 
 - `list_library_templates` -> `library_templates`: `templates[]`, optional `code`, `error`; each template has optional `key_type`, `template_type`, `display_name`, `description`, `source_path`, `file_name`, `parameters[]`, `runtime_args[]`, plus `installed`, optional `enabled`, optional `conflict`, optional `invalid`. In this catalog response, `runtime_args[]` is live template metadata for keys created in the future; key-file and `/keys` `signing_args[]` is the durable signing-argument schema captured when an existing key was created.
-- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; accepted over IPC and SSH because it returns plaintext reference library YAML, not decrypted identity-local template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
+- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; accepted over IPC and SSH because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
 - `install_library_template`: `key_type`, `template_type` -> `install_library_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`
 - `list_installed_templates` -> `installed_templates`: `templates[]`, optional `code`, `error`; each template has `key_type`, `template_type`, optional `size`, and `enabled`
 - `show_installed_template`: `key_type` -> `show_installed_template_result`: `success`, optional `key_type`, `template_type`, sensitive `template_yaml`, `code`, `error`; local IPC only because it returns decrypted template source
@@ -469,10 +466,15 @@ Whole-policy replacement:
   installed state against the encrypted template store.
 - `show_library_template` requires the identity runtime to be unlocked for the same identity-bound
   template administration surface, even though the returned library YAML is plaintext reference material.
-- `install_library_template` requires the identity runtime to be unlocked because it writes into the encrypted identity-scoped template store and immediately reloads that identity.
+- `install_library_template` requires the product runtime to be unlocked because it writes into the encrypted `default` template store and immediately reloads that runtime.
 
 ## Error Codes and Semantics
 
 Central protocol error-message codes are defined in
 `internal/protocol/error_codes.go`. Result payloads may also define
 message-specific stable codes.
+
+`node_fail_closed` rejects both new authentication and every request from an
+already-authenticated admin session after a process-wide invariant failure.
+The operator must repair the underlying store/role conflict and restart the
+signer; the session cannot resume administrative work in-process.

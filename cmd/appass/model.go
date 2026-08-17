@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
 
@@ -33,12 +34,11 @@ type menuItem struct {
 
 // Model is the Bubbletea model for appass.
 type Model struct {
-	viewState  ViewState
-	dataDir    string
-	identityID string
-	width      int
-	height     int
-	quitting   bool
+	viewState ViewState
+	dataDir   string
+	width     int
+	height    int
+	quitting  bool
 
 	// Status info (loaded on init and after actions)
 	method  string       // "none", "passfile", "systemd-creds", "custom"
@@ -78,11 +78,10 @@ type ActionDoneMsg struct {
 }
 
 // NewModel creates a new appass TUI model.
-func NewModel(dataDir, identityID string, svc *serviceInfo, isLocal bool) Model {
+func NewModel(dataDir string, svc *serviceInfo, isLocal bool) Model {
 	return Model{
 		viewState:        ViewHome,
 		dataDir:          dataDir,
-		identityID:       identityID,
 		passphraseMasked: true,
 		isRoot:           os.Getuid() == 0,
 		isLocal:          isLocal,
@@ -92,11 +91,11 @@ func NewModel(dataDir, identityID string, svc *serviceInfo, isLocal bool) Model 
 
 // Init returns the initial command to load status.
 func (m Model) Init() tea.Cmd {
-	return loadStatusCmd(m.dataDir, m.identityID, m.svcInfo, m.isLocal)
+	return loadStatusCmd(m.dataDir, m.svcInfo, m.isLocal)
 }
 
 // loadStatusCmd loads the current identity-scoped auto-unlock configuration.
-func loadStatusCmd(dataDir, identityID string, svc *serviceInfo, isLocal bool) tea.Cmd {
+func loadStatusCmd(dataDir string, svc *serviceInfo, isLocal bool) tea.Cmd {
 	return func() tea.Msg {
 		// Refresh mutable unit details (notably LoadCredentialEncrypted) after
 		// each action, while retaining the already-validated startup snapshot if
@@ -111,7 +110,7 @@ func loadStatusCmd(dataDir, identityID string, svc *serviceInfo, isLocal bool) t
 		}
 		method := "none"
 
-		unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir, identityID)
+		unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir, productIdentityID())
 		if err == nil && unlockCfg.HasPassphraseCommand() {
 			method = detectMethod(unlockCfg.PassphraseCommandArgv)
 		}
@@ -179,7 +178,7 @@ func (m Model) buildMenu() []menuItem {
 // statusHelperInfo returns display info about the helper binary and associated file.
 func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel, fileStatus string) {
 	var argv []string
-	if unlockCfg, err := unlockconfig.LoadUnlockConfig(m.dataDir, m.identityID); err == nil && unlockCfg.HasPassphraseCommand() {
+	if unlockCfg, err := unlockconfig.LoadUnlockConfig(m.dataDir, productIdentityID()); err == nil && unlockCfg.HasPassphraseCommand() {
 		argv = unlockCfg.PassphraseCommandArgv
 	}
 
@@ -196,7 +195,7 @@ func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel
 
 	switch m.method {
 	case "passfile":
-		filePath = filepath.Join(m.dataDir, "identities", m.identityID, "passphrase")
+		filePath = filepath.Join(m.dataDir, "identities", productIdentityID(), "passphrase")
 		if len(argv) > 1 {
 			filePath = argv[1]
 		}
@@ -208,7 +207,7 @@ func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel
 		}
 
 	case "systemd-creds":
-		filePath = filepath.Join(m.dataDir, "identities", m.identityID, "passphrase.cred")
+		filePath = filepath.Join(m.dataDir, "identities", productIdentityID(), "passphrase.cred")
 		if len(argv) > 1 {
 			filePath = argv[1]
 		}
@@ -221,4 +220,8 @@ func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel
 	}
 
 	return
+}
+
+func productIdentityID() string {
+	return auth.CurrentProductIdentityID()
 }

@@ -9,18 +9,17 @@ package policyeditor
 import (
 	"context"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/auth"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
-
-const DefaultIdentityID = "default"
 
 // Store is the persistence boundary used by appolicy. Future online backends
 // should implement this interface without changing editor state/UI code.
@@ -38,7 +37,6 @@ type PassphraseProvider func(context.Context) ([]byte, error)
 // directory.
 type OfflineStore struct {
 	DataDir            string
-	IdentityID         string
 	Target             Target
 	Passphrase         []byte
 	PassphraseProvider PassphraseProvider
@@ -316,10 +314,7 @@ func (s OfflineStore) validateOptionsWithoutPassphrase() error {
 }
 
 func (s OfflineStore) identityID() string {
-	if s.IdentityID != "" {
-		return s.IdentityID
-	}
-	return DefaultIdentityID
+	return auth.CurrentProductIdentityID()
 }
 
 func (s OfflineStore) target() Target {

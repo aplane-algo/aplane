@@ -189,21 +189,15 @@ stutters.
 
 Already shipped:
 
-- **Lifecycle lease.** [formal/lifecycle.tla](formal/lifecycle.tla)
-  models `BeginOperation` / `Decommission` as real transitions and
-  verifies L4-L7 plus the writer-priority RWMutex ordering. It is
-  the first temporal-transition spec; composing it with this
-  one-shot composition module is a separate, harder slice. See
-  [FORMAL_TLA_LIFECYCLE_MODEL.md](FORMAL_TLA_LIFECYCLE_MODEL.md).
+- **Approval coordinator.**
+  [formal/approval_coordinator.tla](formal/approval_coordinator.tla) models
+  serialized delivery, cancellation, timeout, fail-all, and displacement.
 
 Next likely TLA+ modules, in order of value:
 
-1. **Lifecycle-aware composition** — *shipped* as
-   [formal/lifecycle_composition.tla](formal/lifecycle_composition.tla)
-   ([FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md](FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md)):
-   a lease-gated signing step on the lifecycle race that checks lifecycle
-   unavailability admits no new signer output, consuming the policy decision
-   as a boolean rather than merging the one-shot pipeline.
+1. **Approval-aware composition** — *shipped* as
+   [formal/approval_composition.tla](formal/approval_composition.tla): a
+   coordinator failure from any fail-all reason admits no signer output.
 2. **Approval coordinator state machine (M3 prerequisite).** State
    machine for pending approvals, including timeout and cancellation.
    Would refine the four-valued `approval` input here into a proper

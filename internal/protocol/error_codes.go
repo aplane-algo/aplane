@@ -65,6 +65,7 @@ const (
 	ErrCodeAuthorizationDenied  = "authorization_denied"
 	ErrCodeSignerLocked         = "signer_locked"
 	ErrCodeKeyNotFound          = "key_not_found"
+	ErrCodeNodeFailClosed       = "node_fail_closed"
 	ErrCodeInternal             = "internal_error"
 )
 

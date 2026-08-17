@@ -7,15 +7,11 @@ import (
 	"net"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
 // Product-mode Signer/IPCServer wrappers kept only for test convenience.
-// Production code resolves identities explicitly and calls the
-// identity-aware variants; these one-line shims keep the daemon test suite
-// readable without compiling into the binary.
 
 // These Signer-level wrappers exist for test convenience and legacy
 // call sites. They route through productIdentityRuntime() which is the
@@ -37,10 +33,9 @@ func (fs *Signer) lock() {
 	fs.productIdentityRuntime().Lock()
 }
 
-// hasClient is a product-mode compatibility helper. Identity-aware code should
-// call AdminHub.HasClient with the target runtime identity directly.
+// hasClient is a product-mode test helper.
 func (fs *Signer) hasClient() bool {
-	return fs.hasClientForIdentity(auth.CurrentProductIdentityID())
+	return fs.hasAdminClient()
 }
 
 func (fs *Signer) pendingSignCount() int {
@@ -58,14 +53,11 @@ func (fs *Signer) newApprovalServiceForIdentity(ir *identity.Runtime) *signersig
 // offerDisplacement sends a client_exists message to the new connection and waits
 // for a displace_confirm response. If confirmed, it displaces the old client.
 // Returns the bufio.Reader (to avoid data loss from buffering) and true on success.
-// This legacy IPC helper is product-mode scoped; identity-aware paths should
-// call offerDisplacementSession with an explicit identity.
 func (s *IPCServer) offerDisplacement(newConn net.Conn) bool {
-	identityID := auth.CurrentProductIdentityID()
-	return s.offerDisplacementSession(s.activeIdentitySession(identityID), adminproto.NewUnixAdminConn(newConn, nil))
+	return s.offerDisplacementSession(s.activeSession(), adminproto.NewUnixAdminConn(newConn, nil))
 }
 
 // handleClient handles a single IPC client connection.
 func (s *IPCServer) handleClient(conn net.Conn) {
-	s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase", "")
+	s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase")
 }

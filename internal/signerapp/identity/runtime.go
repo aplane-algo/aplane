@@ -33,9 +33,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ErrDecommissioned is returned when an operation is attempted on a decommissioned identity.
-var ErrDecommissioned = fmt.Errorf("identity is decommissioned")
-
 // WatcherStartFunc starts a filesystem watcher for the given directories.
 // The watcher should call reloadFn when qualifying changes are detected.
 // It runs until ctx is cancelled.
@@ -45,11 +42,8 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //
 // Lock ordering (acquire outer first; nested order is left to right):
 //
-//	lifecycleMu  ->  passphraseLock
-//	lifecycleMu  ->  keysLock
-//	lifecycleMu  ->  watcherMu
 //	reloadLock() ->  passphraseLock  ->  keysLock
-//	reloadLock() ->  templateProviderOwners.mu  ->  lsigprovider.registerMu
+//	reloadLock() ->  lsigprovider.registerMu
 //
 // Per-lock scope:
 //
@@ -63,23 +57,14 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	policyMu        guards policyCfg/storedPolicyCfg and
 //	                sentryPolicyCfg/storedSentryPolicyCfg. Held alone.
 //	sshKeysMu       guards sshKeys. Held alone.
-//	lifecycleMu     guards the decommission lease. BeginOperation takes RLock
-//	                and returns the RUnlock as the release; Decommission takes
-//	                the write Lock and so waits for all in-flight leases. It is
-//	                the outer lock when Decommission calls Lock and StopKeyWatcher.
-//	templateProviderOwners.mu guards identity ownership counts for process-global
-//	                installed-template LogicSig providers. It is acquired only
-//	                after the identity mutation lock in production paths and may
-//	                call into lsigprovider.registerMu.
 //
 // Atomics:
 //
-//	decommissioned  fast-path lifecycle check before lock acquisition.
 //	approval        coordinator pointer; swapped without a mutex.
 //	keysetRev       last-published key snapshot revision.
 //
-// reloadLock is supplied by the process root (Signer.storeMutationLocks[id])
-// and is the same per-identity mutation lock that admin paths hold while
+// reloadLock is supplied by the process root (Signer.storeMutationLock)
+// and is the same process-wide mutation lock that admin paths hold while
 // mutating keys/templates/config/policy. Watcher-driven reloads acquire it
 // themselves; admin paths that already hold it call Reload directly (see
 // reloadFromWatcher).
@@ -124,18 +109,10 @@ type Runtime struct {
 	// Injected by the process root after construction.
 	// The session parameter is the current keySession; callers already hold
 	// passphraseLock so the reload function must not re-acquire it.
-	reloadFn func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error)
-
-	// Lifecycle state
-	lifecycleMu    sync.RWMutex
-	decommissioned atomic.Bool // If true, identity is disabled and should not accept new operations
+	reloadFn func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error)
 
 	// onLocked is called after lock cleanup completes (for IPC notification, etc).
 	onLocked func()
-
-	// persistDecommission stores lifecycle state so disabled identities stay
-	// disabled across restarts.
-	persistDecommission func(identityID string) error
 }
 
 // StoreMaintenanceToken is an opaque authorization to republish an identity
@@ -165,17 +142,16 @@ type KeyPublicMetadata struct {
 
 // Config is the construction parameters for an identity Runtime.
 type Config struct {
-	ID                  string
-	KeyStore            *keystore.FileKeyStore
-	KeyPaths            storepaths.Paths
-	Authenticator       auth.Authenticator // Required. Token authority for this identity.
-	SessionTimeout      time.Duration
-	ApprovalWait        time.Duration
-	UserAutoApprove     *bool
-	LockOnDisconnect    bool
-	NodeRole            noderole.Role
-	OnLocked            func() // Called after lock transition completes.
-	PersistDecommission func(identityID string) error
+	ID               string
+	KeyStore         *keystore.FileKeyStore
+	KeyPaths         storepaths.Paths
+	Authenticator    auth.Authenticator // Required. Token authority for this identity.
+	SessionTimeout   time.Duration
+	ApprovalWait     time.Duration
+	UserAutoApprove  *bool
+	LockOnDisconnect bool
+	NodeRole         noderole.Role
+	OnLocked         func() // Called after lock transition completes.
 }
 
 // New creates an identity Runtime in the locked state.
@@ -197,19 +173,18 @@ func New(cfg Config) *Runtime {
 	}
 
 	ir := &Runtime{
-		id:                  cfg.ID,
-		keyStore:            cfg.KeyStore,
-		keyPaths:            cfg.KeyPaths,
-		lockRuntime:         rt,
-		keySession:          session,
-		authenticator:       cfg.Authenticator,
-		identityCfg:         NewIdentityConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
-		nodeRole:            nodeRole,
-		keys:                make(map[string]string),
-		keyTypes:            make(map[string]string),
-		keyMetadata:         make(map[string]KeyPublicMetadata),
-		onLocked:            cfg.OnLocked,
-		persistDecommission: cfg.PersistDecommission,
+		id:            cfg.ID,
+		keyStore:      cfg.KeyStore,
+		keyPaths:      cfg.KeyPaths,
+		lockRuntime:   rt,
+		keySession:    session,
+		authenticator: cfg.Authenticator,
+		identityCfg:   NewIdentityConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
+		nodeRole:      nodeRole,
+		keys:          make(map[string]string),
+		keyTypes:      make(map[string]string),
+		keyMetadata:   make(map[string]KeyPublicMetadata),
+		onLocked:      cfg.OnLocked,
 	}
 
 	rt.SetOnLock(ir.performLockCleanup)
@@ -221,13 +196,13 @@ func New(cfg Config) *Runtime {
 // The function receives the keySession directly because callers of
 // reloadLocked already hold passphraseLock; the function must not
 // re-acquire it.
-func (ir *Runtime) SetReloadFunc(fn func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error)) {
+func (ir *Runtime) SetReloadFunc(fn func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error)) {
 	ir.passphraseLock.Lock()
 	ir.reloadFn = fn
 	ir.passphraseLock.Unlock()
 }
 
-// SetReloadMutationLock sets the identity-scoped lock watcher-triggered reloads
+// SetReloadMutationLock sets the process-wide lock watcher-triggered reloads
 // acquire before scanning disk. Admin mutations that already hold this lock call
 // Reload directly and must not re-enter it.
 func (ir *Runtime) SetReloadMutationLock(fn func() sync.Locker) {
@@ -411,9 +386,6 @@ func (ir *Runtime) SetRecovery() {
 // TryRecoveryUnlock opens the keyring without scanning or publishing
 // active credentials, then enters recovery state.
 func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
-	if ir.decommissioned.Load() {
-		return false, ErrDecommissioned.Error()
-	}
 	return ir.lockRuntime.TryRecovery(func() error {
 		ir.passphraseLock.Lock()
 		defer ir.passphraseLock.Unlock()
@@ -455,11 +427,7 @@ func (ir *Runtime) FinishStoreMaintenance(
 // TryUnlock attempts to unlock with the given passphrase.
 // Returns (success, keyCount, errorMessage).
 // The passphrase bytes are NOT zeroed by this function.
-// Fails if the identity has been decommissioned.
 func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, string) {
-	if ir.decommissioned.Load() {
-		return false, 0, ErrDecommissioned.Error()
-	}
 	ok, keyCount, errMsg := ir.lockRuntime.TryUnlock(ir.performUnlock(passphrase), onUnlocked)
 	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
 		ir.notifyLocked()
@@ -539,9 +507,6 @@ func (ir *Runtime) RequestSigningApprovalContext(ctx context.Context, requestID,
 }
 
 func (ir *Runtime) RequestSigningApprovalResponseContext(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
-	if ir.decommissioned.Load() {
-		return signerapproval.SignResponse{}, ErrDecommissioned
-	}
 	c := ir.approval.Load()
 	if c == nil {
 		return signerapproval.SignResponse{}, fmt.Errorf("approval coordinator not initialized")
@@ -569,67 +534,11 @@ func (ir *Runtime) RequestTokenProvisioning(requestID, identityID, sshFingerprin
 }
 
 func (ir *Runtime) RequestTokenProvisioningContext(ctx context.Context, requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
-	if ir.decommissioned.Load() {
-		return false, ErrDecommissioned
-	}
 	c := ir.approval.Load()
 	if c == nil {
 		return false, fmt.Errorf("approval coordinator not initialized")
 	}
 	return c.RequestTokenProvisioningContext(ctx, requestID, identityID, sshFingerprint, remoteAddr, timeout)
-}
-
-// --- Lifecycle ---
-
-// IsDecommissioned returns whether this identity has been decommissioned.
-// A decommissioned identity should not accept new operations.
-func (ir *Runtime) IsDecommissioned() bool {
-	return ir.decommissioned.Load()
-}
-
-// BeginOperation acquires a runtime activity lease for a caller that is about
-// to perform non-interruptible identity work, such as final signing. If
-// decommission wins the race first, BeginOperation fails. If the caller wins,
-// Decommission waits for the returned release function before completing.
-func (ir *Runtime) BeginOperation() (func(), error) {
-	ir.lifecycleMu.RLock()
-	if ir.decommissioned.Load() {
-		ir.lifecycleMu.RUnlock()
-		return nil, ErrDecommissioned
-	}
-	return ir.lifecycleMu.RUnlock, nil
-}
-
-// Decommission marks the identity as disabled. Locks the identity if unlocked,
-// stops the watcher, and prevents future unlock attempts.
-// Does not delete any data — decommissioning is logical, not physical.
-// If persisting decommission state fails, the runtime remains active and
-// pending approvals are left untouched.
-func (ir *Runtime) Decommission() error {
-	ir.lifecycleMu.Lock()
-
-	if ir.decommissioned.Load() {
-		ir.lifecycleMu.Unlock()
-		return nil
-	}
-	if ir.persistDecommission != nil {
-		if err := ir.persistDecommission(ir.id); err != nil {
-			ir.lifecycleMu.Unlock()
-			return err
-		}
-	}
-	ir.decommissioned.Store(true)
-	ir.FailAllPendingApprovals("identity decommissioned")
-	notifyLocked := false
-	if ir.IsUnlocked() {
-		notifyLocked = ir.lockRuntime.Lock()
-	}
-	ir.StopKeyWatcher()
-	ir.lifecycleMu.Unlock()
-	if notifyLocked {
-		ir.notifyLocked()
-	}
-	return nil
 }
 
 // --- Identity config ---
@@ -774,11 +683,8 @@ func (ir *Runtime) KeysetRevision() uint64 {
 }
 
 // KeyIndexSnapshot returns copies of the key maps from one published revision.
-// Safe for concurrent use. Returns zero values if the identity is decommissioned.
+// Safe for concurrent use.
 func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
-	if ir.decommissioned.Load() {
-		return KeyIndexSnapshot{}
-	}
 	ir.keysLock.RLock()
 	defer ir.keysLock.RUnlock()
 
@@ -808,12 +714,8 @@ func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
 
 // KeySnapshot returns copies of the three key index maps only — callers that
 // need per-key metadata use KeyIndexSnapshot, which additionally deep-clones
-// it. Safe for concurrent use. Returns nil maps if the identity is
-// decommissioned.
+// it. Safe for concurrent use.
 func (ir *Runtime) KeySnapshot() (keys, keyTypes map[string]string) {
-	if ir.decommissioned.Load() {
-		return nil, nil
-	}
 	ir.keysLock.RLock()
 	defer ir.keysLock.RUnlock()
 	keys = maps.Clone(ir.keys)
@@ -829,9 +731,6 @@ func (ir *Runtime) KeySnapshot() (keys, keyTypes map[string]string) {
 
 // PublishSnapshot replaces the key maps with new data from a reload.
 func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string) {
-	if ir.decommissioned.Load() {
-		return
-	}
 	metadata := make(map[string]KeyPublicMetadata)
 	if ir.keyStore != nil {
 		// GetSigningSummary builds a fresh caller-owned copy per call, so its
@@ -868,20 +767,12 @@ func (ir *Runtime) KeyPaths() storepaths.Paths {
 }
 
 // WithKeyring runs fn with the identity's open keyring.
-// Returns ErrDecommissioned if the identity has been decommissioned.
 func (ir *Runtime) WithKeyring(fn func(*crypto.Keyring) error) error {
-	if ir.decommissioned.Load() {
-		return ErrDecommissioned
-	}
 	return ir.keyStore.WithKeyring(fn)
 }
 
 // SnapshotKeySession returns the current key session under the passphrase lock.
-// Returns nil if the identity is decommissioned.
 func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
-	if ir.decommissioned.Load() {
-		return nil
-	}
 	ir.passphraseLock.RLock()
 	session := ir.keySession
 	ir.passphraseLock.RUnlock()
@@ -894,9 +785,6 @@ func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
 // Admin mutation paths call this directly while holding the identity mutation lock;
 // watcher paths must use reloadFromWatcher so they acquire that lock themselves.
 func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
-	if ir.decommissioned.Load() {
-		return nil, ErrDecommissioned
-	}
 	ir.passphraseLock.RLock()
 	defer ir.passphraseLock.RUnlock()
 	return ir.reloadLocked(nil)
@@ -905,9 +793,6 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 // ReloadWithPassphrase opens the keyring with the passphrase and scans keys.
 // Caller must NOT hold passphraseLock.
 func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.ReloadReport, error) {
-	if ir.decommissioned.Load() {
-		return nil, ErrDecommissioned
-	}
 	ir.passphraseLock.Lock()
 	defer ir.passphraseLock.Unlock()
 	return ir.reloadLocked(passphrase)
@@ -918,7 +803,7 @@ func (ir *Runtime) reloadLocked(passphrase []byte) (*signertemplates.ReloadRepor
 		return nil, fmt.Errorf("reload function not configured")
 	}
 	// Pass keySession directly — caller holds passphraseLock.
-	return ir.reloadFn(ir.id, passphrase, ir.keySession)
+	return ir.reloadFn(passphrase, ir.keySession)
 }
 
 // --- Watcher ---
@@ -930,9 +815,6 @@ func (ir *Runtime) reloadLocked(passphrase []byte) (*signertemplates.ReloadRepor
 // reconciliation on the next unlock.
 // If the identity was marked dirty while locked, triggers an immediate reload.
 func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
-	if ir.decommissioned.Load() {
-		return
-	}
 	ir.watcherMu.Lock()
 	wasDirty := ir.dirty
 	ir.dirty = false
@@ -998,12 +880,6 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 
 	ir.watcherMu.Lock()
 	ir.watcherStarting = false
-	if ir.decommissioned.Load() {
-		// Decommissioned while starting; do not leave a watcher running.
-		ir.watcherMu.Unlock()
-		cancel()
-		return
-	}
 	ir.watcherCancel = cancel
 	ir.watcherMu.Unlock()
 }

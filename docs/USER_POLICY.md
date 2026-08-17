@@ -7,8 +7,8 @@ approved, or left to the operator default.
 Policy is stored beside the identity keys:
 
 ```text
-identities/<identity>/policy.yaml
-identities/<identity>/policy.yaml.hmac
+identities/default/policy.yaml
+identities/default/policy.yaml.hmac
 ```
 
 `policy.yaml` controls account signing on signer nodes and sentry component

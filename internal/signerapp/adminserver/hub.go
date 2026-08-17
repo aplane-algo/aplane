@@ -9,13 +9,13 @@ import (
 )
 
 // AdminHub is the process-root facade for server-originated admin protocol
-// traffic and identity-targeted session presence checks.
+// traffic and process-wide session presence checks.
 type AdminHub interface {
-	HasClient(identityID string) bool
-	SendSignRequest(identityID string, req *signerapproval.SignRequest) bool
-	SendSignRequestCanceled(identityID string, msg *signerapproval.SignRequestCanceled) bool
-	SendTokenProvisioningRequest(identityID string, req *signerapproval.TokenProvisioningRequest) bool
-	NotifyLocked(identityID string, notification adminproto.SignerLockedNotification)
-	NotifyKeysChanged(identityID string, notification adminproto.KeysChangedNotification)
-	NotifyStatus(identityID, state string, keyCount int)
+	HasClient() bool
+	SendSignRequest(req *signerapproval.SignRequest) bool
+	SendSignRequestCanceled(msg *signerapproval.SignRequestCanceled) bool
+	SendTokenProvisioningRequest(req *signerapproval.TokenProvisioningRequest) bool
+	NotifyLocked(notification adminproto.SignerLockedNotification)
+	NotifyKeysChanged(notification adminproto.KeysChangedNotification)
+	NotifyStatus(state string, keyCount int)
 }

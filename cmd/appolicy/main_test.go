@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -34,6 +35,16 @@ type fakeOnlinePolicyAuthenticator struct {
 	statusCalls int
 	unlockCalls int
 	passphrase  string
+}
+
+func TestRunRejectsRemovedIdentityFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"-identity", "other"}, strings.NewReader(""), &stdout, &stderr); code != 2 {
+		t.Fatalf("run(-identity) = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "flag provided but not defined") {
+		t.Fatalf("stderr = %q, want unknown flag error", stderr.String())
+	}
 }
 
 func (f *fakeOnlinePolicyAuthenticator) Authenticate(passphrase string, _ time.Duration) error {
@@ -113,7 +124,7 @@ func (f *fakeOnlinePolicyClient) GetPolicySnapshot(context.Context, policyeditor
 	return policyeditor.AdminPolicySnapshot{
 		Success:      true,
 		Target:       policyeditor.TargetSigner,
-		IdentityID:   policyeditor.DefaultIdentityID,
+		IdentityID:   auth.CurrentProductIdentityID(),
 		PolicyYAML:   "reject_foreign_rekey: false\n",
 		PolicySHA256: "active-sha",
 	}, nil
@@ -182,7 +193,7 @@ func TestRunSHA256PrintsVerifiedPolicyDigestOnly(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
 	var stdout, stderr bytes.Buffer
 
-	policyBytes, err := os.ReadFile(policy.PolicyPath(dataDir, policyeditor.DefaultIdentityID))
+	policyBytes, err := os.ReadFile(policy.PolicyPath(dataDir, auth.CurrentProductIdentityID()))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
@@ -210,7 +221,7 @@ func TestRunSaveReadsPolicyFromStdin(t *testing.T) {
 	if !strings.Contains(stdout.String(), "policy saved:") {
 		t.Fatalf("--save stdout = %q, want saved status", stdout.String())
 	}
-	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, policyeditor.DefaultIdentityID))
+	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, auth.CurrentProductIdentityID()))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
@@ -243,7 +254,7 @@ transfer_policy:
 	if !strings.Contains(stdout.String(), "sentry policy saved:") {
 		t.Fatalf("--target sentry --save stdout = %q, want saved status", stdout.String())
 	}
-	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, policyeditor.DefaultIdentityID))
+	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, auth.CurrentProductIdentityID()))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
@@ -377,7 +388,7 @@ func TestRunSaveAutoTargetsSentryOnSentryNode(t *testing.T) {
 	if !strings.Contains(stdout.String(), "sentry policy saved:") {
 		t.Fatalf("sentry --save stdout = %q, want sentry saved status", stdout.String())
 	}
-	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, policyeditor.DefaultIdentityID))
+	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, auth.CurrentProductIdentityID()))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
@@ -541,7 +552,7 @@ func TestOfflinePolicyMutationRefusesConcurrentDaemonBeforeNormalization(t *test
 func TestRunSaveRefusesBusyManagedStoreBeforeWrite(t *testing.T) {
 	root, passphrase := initializedAppolicyStore(t)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
-	policyPath := policy.PolicyPath(root, policyeditor.DefaultIdentityID)
+	policyPath := policy.PolicyPath(root, auth.CurrentProductIdentityID())
 	before, err := os.ReadFile(policyPath)
 	if err != nil {
 		t.Fatal(err)
@@ -689,7 +700,7 @@ func initializedAppolicyStoreWithRole(t *testing.T, role noderole.Role) (string,
 	_, err := storeinit.Initialize([]byte(passphrase), storeinit.Options{
 		DataDir:    dataDir,
 		Paths:      storepaths.NewPaths(dataDir),
-		IdentityID: policyeditor.DefaultIdentityID,
+		IdentityID: auth.CurrentProductIdentityID(),
 		Role:       role,
 	})
 	if err != nil {

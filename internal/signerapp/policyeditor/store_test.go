@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -23,7 +24,6 @@ func TestOfflineStoreLoadVerifiesPolicy(t *testing.T) {
 
 	stored, err := OfflineStore{
 		DataDir:    dataDir,
-		IdentityID: DefaultIdentityID,
 		Passphrase: passphrase,
 	}.Load(context.Background())
 	if err != nil {
@@ -38,7 +38,6 @@ func TestOfflineStoreLoadVerifiesSentryTarget(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
 	store := OfflineStore{
 		DataDir:    dataDir,
-		IdentityID: DefaultIdentityID,
 		Target:     TargetSentry,
 		Passphrase: passphrase,
 	}
@@ -70,14 +69,13 @@ func TestResolveTargetUsesNodeRole(t *testing.T) {
 
 func TestOfflineStoreLoadRejectsTamperedPolicy(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStore(t)
-	path := policy.PolicyPath(dataDir, DefaultIdentityID)
+	path := policy.PolicyPath(dataDir, auth.CurrentProductIdentityID())
 	if err := os.WriteFile(path, []byte("reject_foreign_rekey: false\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
 	_, err := OfflineStore{
 		DataDir:    dataDir,
-		IdentityID: DefaultIdentityID,
 		Passphrase: passphrase,
 	}.Load(context.Background())
 	if err == nil {
@@ -91,7 +89,6 @@ func TestOfflineStoreSaveWritesVerifiedPolicy(t *testing.T) {
 	when := time.Unix(1700000000, 0)
 	store := OfflineStore{
 		DataDir:    dataDir,
-		IdentityID: DefaultIdentityID,
 		Passphrase: passphrase,
 		Now:        func() time.Time { return when },
 	}
@@ -111,7 +108,6 @@ func TestOfflineStoreSaveWritesVerifiedPolicy(t *testing.T) {
 func TestOfflineStoreValidateDoesNotUsePassphraseProvider(t *testing.T) {
 	calls := 0
 	store := OfflineStore{
-		IdentityID: DefaultIdentityID,
 		PassphraseProvider: func(context.Context) ([]byte, error) {
 			calls++
 			return []byte("unused"), nil
@@ -131,8 +127,7 @@ func TestOfflineStoreSaveUsesPassphraseProvider(t *testing.T) {
 	maxFee := uint64(1234)
 	calls := 0
 	store := OfflineStore{
-		DataDir:    dataDir,
-		IdentityID: DefaultIdentityID,
+		DataDir: dataDir,
 		PassphraseProvider: func(context.Context) ([]byte, error) {
 			calls++
 			return append([]byte(nil), passphrase...), nil
@@ -152,14 +147,13 @@ func TestOfflineStoreSaveYAMLPreservesPolicyBytes(t *testing.T) {
 	policyBytes := []byte("# replacement policy\nreject_foreign_rekey: false\n")
 	store := OfflineStore{
 		DataDir:    dataDir,
-		IdentityID: DefaultIdentityID,
 		Passphrase: passphrase,
 	}
 
 	if err := store.SaveYAML(context.Background(), policyBytes); err != nil {
 		t.Fatalf("SaveYAML() error = %v", err)
 	}
-	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, DefaultIdentityID))
+	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, auth.CurrentProductIdentityID()))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
@@ -191,14 +185,13 @@ transfer_policy:
 `)
 	store := OfflineStore{
 		DataDir:    dataDir,
-		IdentityID: DefaultIdentityID,
 		Passphrase: passphrase,
 	}
 
 	if err := store.SaveSentryYAML(context.Background(), sentryBytes); err != nil {
 		t.Fatalf("SaveSentryYAML() error = %v", err)
 	}
-	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, DefaultIdentityID))
+	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, auth.CurrentProductIdentityID()))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
@@ -210,7 +203,7 @@ transfer_policy:
 		t.Fatalf("unlock() error = %v", err)
 	}
 	defer clear()
-	stored, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, DefaultIdentityID, masterKey)
+	stored, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, auth.CurrentProductIdentityID(), masterKey)
 	if err != nil {
 		t.Fatalf("LoadVerifiedSentryConfigWithKeyring() after SaveSentryYAML() error = %v", err)
 	}
@@ -221,7 +214,7 @@ transfer_policy:
 
 func TestOfflineStoreSaveRejectsInvalidPolicyWithoutWriting(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStore(t)
-	path := policy.PolicyPath(dataDir, DefaultIdentityID)
+	path := policy.PolicyPath(dataDir, auth.CurrentProductIdentityID())
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
@@ -229,7 +222,6 @@ func TestOfflineStoreSaveRejectsInvalidPolicyWithoutWriting(t *testing.T) {
 	enabled := true
 	store := OfflineStore{
 		DataDir:    dataDir,
-		IdentityID: DefaultIdentityID,
 		Passphrase: passphrase,
 	}
 
@@ -260,7 +252,6 @@ func TestOfflineStoreSaveLockedStoreErrorHasOperatorHint(t *testing.T) {
 
 	err = OfflineStore{
 		DataDir:    dataDir,
-		IdentityID: DefaultIdentityID,
 		Passphrase: passphrase,
 	}.Save(context.Background(), &policy.StoredConfig{})
 	if err == nil {
@@ -292,7 +283,7 @@ func initializedPolicyStoreWithRole(t *testing.T, role noderole.Role) (string, [
 	_, err := storeinit.Initialize(passphrase, storeinit.Options{
 		DataDir:    dataDir,
 		Paths:      storepaths.NewPaths(dataDir),
-		IdentityID: DefaultIdentityID,
+		IdentityID: auth.CurrentProductIdentityID(),
 		Role:       role,
 	})
 	if err != nil {

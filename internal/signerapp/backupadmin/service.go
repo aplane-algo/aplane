@@ -29,6 +29,9 @@ type Service struct {
 func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
 	passphraseBytes := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphraseBytes)
+	if err := requireProductRuntime(ir); err != nil {
+		return adminproto.BackupIdentityResult{Code: protocol.ResultCodeBackupFailed, Error: err.Error()}
+	}
 
 	timestamp := managedBackupTimestamp(time.Now())
 	archivePath := backup.BuildManagedArchivePath(s.Deps.KeyPaths(), ir.ID(), timestamp)
@@ -73,6 +76,9 @@ func managedBackupTimestamp(t time.Time) string {
 }
 
 func (s Service) ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult {
+	if err := requireProductRuntime(ir); err != nil {
+		return adminproto.ListBackupsResult{Code: protocol.ResultCodeListBackupsFailed, Error: err.Error()}
+	}
 	items, err := backup.ListManagedBackups(s.Deps.KeyPaths(), ir.ID())
 	if err != nil {
 		return adminproto.ListBackupsResult{
@@ -94,6 +100,9 @@ func (s Service) ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult 
 }
 
 func (s Service) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult {
+	if err := requireProductRuntime(ir); err != nil {
+		return adminproto.DeleteBackupResult{Code: protocol.ResultCodeDeleteBackupFailed, Error: err.Error()}
+	}
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		return backup.DeleteManagedBackup(s.Deps.KeyPaths(), ir.ID(), req.ArchivePath)
 	})
@@ -111,6 +120,9 @@ func (s Service) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupR
 func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
 	passphraseBytes := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphraseBytes)
+	if err := requireProductRuntime(ir); err != nil {
+		return adminproto.RestorePreviewResult{Code: protocol.ResultCodeRestorePreviewFailed, Error: err.Error()}
+	}
 
 	archivePath, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), req.ArchivePath)
 	if err != nil {
@@ -120,7 +132,7 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 		}
 	}
 	limiter := s.Deps.RestoreLimiter()
-	if retryAfter := limiter.RetryAfter(ir.ID(), archivePath); retryAfter > 0 {
+	if retryAfter := limiter.RetryAfter(archivePath); retryAfter > 0 {
 		return adminproto.RestorePreviewResult{
 			ArchivePath: archivePath,
 			Code:        protocol.ResultCodeRestoreRateLimited,
@@ -131,9 +143,9 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 	preview, err := backup.PreviewRestoreWithNodeRole(s.Deps.KeyPaths(), ir.ID(), archivePath, passphraseBytes, ir.NodeRole())
 	if err != nil {
 		if backup.ArchiveAuthenticated(err) {
-			limiter.RecordSuccess(ir.ID(), archivePath)
+			limiter.RecordSuccess(archivePath)
 		} else {
-			limiter.RecordFailure(ir.ID(), archivePath)
+			limiter.RecordFailure(archivePath)
 		}
 		return adminproto.RestorePreviewResult{
 			Code:  protocol.ResultCodeRestorePreviewFailed,
@@ -142,7 +154,7 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 	}
 	// Per-credential validation errors occur after manifest authentication;
 	// they are not failed export-passphrase guesses.
-	limiter.RecordSuccess(ir.ID(), archivePath)
+	limiter.RecordSuccess(archivePath)
 	return adminproto.RestorePreviewResult{
 		ArchivePath: preview.ArchivePath,
 		Keys:        projectRestoreKeyInfos(preview.Keys),

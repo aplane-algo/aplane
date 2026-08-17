@@ -293,12 +293,12 @@ gofmt -s -w .         # Format code
 
 ### Key Files
 - `aplane.token`: API token for HTTP authentication (mode 0600)
-- `identities/<identity>/keys/*.key`: Encrypted account-authority records (mode 0600)
-- `identities/<identity>/keys/*.sen`: Encrypted sentry witness credentials (mode 0600)
-- `identities/<identity>/.keystore`: Keystore metadata (master salt, passphrase verification)
+- `identities/default/keys/*.key`: Encrypted account-authority records (mode 0600)
+- `identities/default/keys/*.sen`: Encrypted sentry witness credentials (mode 0600)
+- `identities/default/.keystore`: Keystore metadata (master salt, passphrase verification)
 - `config.yaml`: Process-global server configuration
-- `identities/<identity>/config.yaml`: Identity-scoped runtime settings
-- `identities/<identity>/unlock.yaml`: Identity-scoped passphrase-helper configuration
+- `identities/default/config.yaml`: Product runtime settings
+- `identities/default/unlock.yaml`: Product passphrase-helper configuration
 
 See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility details.
 

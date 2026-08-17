@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n"
+	authLine := `{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine))),
@@ -73,7 +74,7 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine))),
@@ -122,11 +123,36 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	}
 }
 
+func TestAuthenticateClientRejectsNewAdminAfterNodeFailure(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	server.nodeFailState.Fail(errors.New("identity role conflict"))
+
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
+	recorder := &ipcJSONRecorderConn{}
+	session := adminserver.NewSession(
+		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine))),
+		server.adminSessionDeps(),
+	)
+	if ok := session.Authenticate(); ok {
+		t.Fatal("Authenticate() = true after node failure")
+	}
+	msgs := recorder.messages(t)
+	if len(msgs) != 2 || !reflectJSONSubset(msgs[1], map[string]any{
+		"kind":    string(protocol.MessageKindResponse),
+		"type":    protocol.MsgTypeAuthResult,
+		"success": false,
+		"code":    protocol.ErrCodeNodeFailClosed,
+	}) {
+		t.Fatalf("node-fail auth result mismatch: %#v", msgs)
+	}
+}
+
 func TestSendStatusEmitsCurrentStateAndKeyCount(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.registry.Get(auth.CurrentProductIdentityID())
+	ir := server.productIdentityRuntime()
 	ir.PublishSnapshot(
 		map[string]string{"ADDR": "identities/default/keys/ADDR.key"},
 		map[string]string{"ADDR": "ed25519"},
@@ -157,7 +183,7 @@ func TestNotifyKeysChangedEmitsNotificationShape(t *testing.T) {
 	recorder := &ipcJSONRecorderConn{}
 	ipcServer := newIPCServerWithActiveConn(recorder)
 
-	ipcServer.NotifyKeysChanged(auth.CurrentProductIdentityID(), adminproto.KeysChangedNotification{KeyCount: 7})
+	ipcServer.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: 7})
 
 	msgs := recorder.messages(t)
 	if len(msgs) != 1 {
@@ -211,7 +237,7 @@ func TestHandleUpdateAdminSettingPersistsIdentityScopedConfigSeparately(t *testi
 	}
 
 	recorder := &ipcJSONRecorderConn{}
-	ir := server.registry.Get(auth.CurrentProductIdentityID())
+	ir := server.productIdentityRuntime()
 	ipcServer := &IPCServer{signer: server}
 	session := newBoundTestSession(ipcServer, recorder, ir)
 	session.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
@@ -263,7 +289,7 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 	server.auditLog = logger
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
 	conn := newIPCMockConn(authLine, "unix:/tmp/test-ipc.sock")
 
 	ipcServer := &IPCServer{signer: server}
@@ -323,7 +349,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":4,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
 	unknownLine := `{"kind":"request","type":"definitely_unknown","id":"req-1"}` + "\n"
 	conn := newIPCMockConn(authLine+unknownLine, "unix:/tmp/test-ipc.sock")
 
@@ -334,7 +360,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 		t.Fatal("RegisterPreAuthPending() = false, want true")
 	}
 
-	ipcServer.handleRegisteredClient(session, "ipc", "", nil)
+	ipcServer.handleRegisteredClient(session, "ipc", nil)
 
 	msgs := parseJSONLines(t, conn.writes.Bytes())
 	if len(msgs) < 4 {

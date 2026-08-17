@@ -18,6 +18,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
+	"github.com/aplane-algo/aplane/internal/auth"
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -33,17 +34,16 @@ import (
 )
 
 type options struct {
-	dataDir    string
-	identityID string
-	target     string
-	check      bool
-	yaml       bool
-	sha256     bool
-	save       bool
-	toSentry   bool
-	online     bool
-	ipcPath    string
-	version    bool
+	dataDir  string
+	target   string
+	check    bool
+	yaml     bool
+	sha256   bool
+	save     bool
+	toSentry bool
+	online   bool
+	ipcPath  string
+	version  bool
 }
 
 func main() {
@@ -55,7 +55,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	fs := flag.NewFlagSet("appolicy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&opts.dataDir, "d", "", "signer data directory (or APSIGNER_DATA)")
-	fs.StringVar(&opts.identityID, "identity", policyeditor.DefaultIdentityID, "identity ID")
 	fs.StringVar(&opts.target, "target", "auto", "policy target: auto, signer, or sentry")
 	fs.BoolVar(&opts.check, "check", false, "verify and validate the selected policy document or a policy file, then exit")
 	fs.BoolVar(&opts.yaml, "yaml", false, "verify the selected policy document or a policy file and print it to stdout")
@@ -107,10 +106,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			return 2
 		}
 	}
-	identityID := opts.identityID
-	if identityID == "" {
-		identityID = policyeditor.DefaultIdentityID
-	}
+	identityID := auth.CurrentProductIdentityID()
 	target, err := resolveRunTarget(dataDir, policyFile, requestedTarget, opts.toSentry)
 	if err != nil {
 		writef(stderr, "appolicy: %v\n", err)
@@ -138,9 +134,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	defer passphrases.Clear()
 
 	store := &policyeditor.OfflineStore{
-		DataDir:    dataDir,
-		IdentityID: identityID,
-		Target:     target,
+		DataDir: dataDir,
+		Target:  target,
 	}
 	defer store.ClearPassphrase()
 	if policyFile == "" || opts.save {
@@ -250,10 +245,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 const onlinePolicyTimeout = 10 * time.Second
 
 func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyeditor.Target, policyFile string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if opts.identityID != "" && opts.identityID != policyeditor.DefaultIdentityID {
-		writeLine(stderr, "appolicy: local online mode is bound to the product identity")
-		return 2
-	}
 	dataDir := serverconfig.GetSignerDataDir(opts.dataDir)
 	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
 		DataDir: dataDir, IPCPath: opts.ipcPath, DataDirExplicit: opts.dataDir != "",
@@ -380,7 +371,7 @@ func runOnlinePolicy(ctx context.Context, opts options, requestedTarget policyed
 	if opts.check {
 		return 0
 	}
-	if err := launchPolicyEditor(store, stored, "", policyeditor.DefaultIdentityID, target); err != nil {
+	if err := launchPolicyEditor(store, stored, "", auth.CurrentProductIdentityID(), target); err != nil {
 		writef(stderr, "appolicy: TUI failed: %v\n", err)
 		return 1
 	}
@@ -645,7 +636,7 @@ func editOnlinePolicyFile(ctx context.Context, store *policyeditor.AdminStore, s
 		return fmt.Errorf("failed to load active %s before editing draft: %w", target.StatusNoun(), err)
 	}
 	writef(stdout, "%s OK: %s\n", target.StatusNoun(), policyFile)
-	if err := launchPolicyEditor(store, stored, "", policyeditor.DefaultIdentityID, target); err != nil {
+	if err := launchPolicyEditor(store, stored, "", auth.CurrentProductIdentityID(), target); err != nil {
 		return fmt.Errorf("TUI failed: %w", err)
 	}
 	return nil

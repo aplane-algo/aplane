@@ -93,7 +93,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	preimage := bytes.Repeat([]byte("k"), 32)
 	preimageHash := sha256.Sum256(preimage)
 	timelockRound := baseRound
-	htlcAssetID := createCorridorTestAsset(t, testnet, funder)
+	htlcAssetID := corridorTestAssetID(t, testnet, funder)
 
 	cases := []includedKeyTypeCase{
 		{

@@ -37,6 +37,23 @@ func TestValidateRejectsInvalidSSHConfig(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsAdditionalIdentityBeforeUnlockPlanning(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "identities", "default"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "identities", "other-identity"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := serverconfig.DefaultServerConfig()
+	_, err := Validate(&cfg, &RuntimeState{}, utilkeys.NewPaths(root), "default")
+	if err == nil || !strings.Contains(err.Error(), "invalid product identity layout") {
+		t.Fatalf("Validate() error = %v, want product layout refusal", err)
+	}
+}
+
 func TestBlockManualProdStart(t *testing.T) {
 	t.Run("allows local instance without marker", func(t *testing.T) {
 		dataDir := t.TempDir()

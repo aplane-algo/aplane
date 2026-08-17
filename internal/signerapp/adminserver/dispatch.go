@@ -106,6 +106,10 @@ func (s *Session) Dispatch(raw []byte) bool {
 	if !ok {
 		return false
 	}
+	if s.nodeFailure != nil && s.nodeFailure() != nil {
+		_ = s.SendError(base.ID, protocol.ErrCodeNodeFailClosed, "signer node is fail-closed; restart required")
+		return true
+	}
 	handle(s, raw, base.ID)
 	return true
 }

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
@@ -43,7 +42,7 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 			signer, cleanup := setupTestSigner(t)
 			defer cleanup()
 
-			ir := signer.registry.Get(auth.DefaultIdentityID)
+			ir := signer.productIdentityRuntime()
 			ir.SetUnlocked()
 			ir.Config().SetLockOnDisconnect(tc.lockOnDisconnect)
 
@@ -63,7 +62,6 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 					adminproto.NewUnixAdminConn(serverConn, nil),
 					adminserver.TransportIPC,
 					"ipc-passphrase",
-					"",
 				)
 			}()
 
@@ -106,7 +104,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 	signer, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := signer.registry.Get(auth.DefaultIdentityID)
+	ir := signer.productIdentityRuntime()
 	ir.Lock()
 	ir.Config().SetLockOnDisconnect(true)
 
@@ -117,7 +115,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 	signer.ipcServer = ipcServer
 
 	blocker := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
-	if !ipcServer.manager.RegisterPending(auth.DefaultIdentityID, blocker) {
+	if !ipcServer.manager.RegisterPending(blocker) {
 		t.Fatal("RegisterPending(blocker) = false, want true")
 	}
 
@@ -131,7 +129,6 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 			adminproto.NewUnixAdminConn(serverConn, nil),
 			adminserver.TransportIPC,
 			"ipc-passphrase",
-			"",
 		)
 	}()
 
@@ -164,7 +161,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 	if ir.IsUnlocked() {
 		t.Fatal("identity remained unlocked after authenticated session failed promotion")
 	}
-	if ipcServer.sessionManager().HasClient(auth.DefaultIdentityID) {
+	if ipcServer.sessionManager().HasClient() {
 		t.Fatal("identity unexpectedly has an active admin client")
 	}
 }

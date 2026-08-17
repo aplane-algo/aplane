@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -18,7 +17,7 @@ import (
 func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 	svc := server.adminServices()
 
 	publicKey := strings.Repeat("ab", witnessPublicKeySizeForTest(t))
@@ -60,7 +59,7 @@ func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 func TestSignerAdminServicesListsGenerationInventoryReadOnly(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 
 	result := server.adminServices().ListGenerations(ir)
 	if result.Error != "" || result.Current == "" {
@@ -71,7 +70,7 @@ func TestSignerAdminServicesListsGenerationInventoryReadOnly(t *testing.T) {
 func TestSignerAdminServicesInspectionReturnsBusyDuringMutation(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.registry.Get(auth.DefaultIdentityID)
+	ir := server.productIdentityRuntime()
 
 	started := make(chan struct{})
 	release := make(chan struct{})

@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
@@ -57,7 +56,6 @@ func ConnectSentryWithTunnel(ctx context.Context, cfg SentryTunnelConfig) (*sign
 	}
 
 	tunnel := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, cfg.LocalPort, cfg.SignerPort, cfg.IdentityFile, cfg.KnownHostsPath)
-	tunnel.SetIdentityID(auth.CurrentProductIdentityID())
 	tunnel.SetAPIToken(cfg.Token)
 	if err := tunnel.ConnectWithKey(ctx); err != nil {
 		return nil, nil, fmt.Errorf("SSH auth failed: %w", err)

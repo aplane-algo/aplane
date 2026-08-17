@@ -21,7 +21,8 @@ The spec lives at [formal/session_ownership.tla](formal/session_ownership.tla).
 Admin authentication unlocks the identity as a side effect of verifying the
 passphrase (`adminserver/session.go` `AuthenticateOutcome`), *before* the
 session becomes the active owner. Ownership is only established afterwards
-(`MovePendingToIdentity`, optional displacement offer, `PromoteToActive`).
+(`BindPreAuthPending` for IPC, optional displacement offer,
+`PromoteToActive`).
 Any failure in that window — pending-slot contention, displacement rejection,
 promotion failure, connection drop — must not strand the identity unlocked
 with no session left whose exit re-locks it. That is exactly the hole the
@@ -42,7 +43,7 @@ both modeled exactly:
 
 1. **The cleanup condition.** The disconnect defer runs owner cleanup (fail
    pending approvals, lock under `lock_on_disconnect`) iff
-   `authenticated && (wasActiveClient || !HasClient(identityID))`. The second
+   `authenticated && (wasActiveClient || !HasClient())`. The second
    disjunct is the load-bearing half: a session that unlocked but never became
    owner still re-locks on its way out, unless another session already owns
    the identity.
@@ -74,12 +75,11 @@ The restored spec passes.
 
 ## Modeling choices
 
-- **One identity.** Ownership is per-identity; a second identity adds states
-  without adding behavior.
+- **One product runtime.** The implementation now has one process-wide owner
+  slot, matching the model directly.
 - **Unlock is only the auth side effect.** The operator's explicit
-  unlock/lock IPC commands, passphrase retries, and the keystore state
-  machine live in [formal/lifecycle.tla](formal/lifecycle.tla). Here
-  `unlocked` exists solely to express SO2.
+  unlock/lock IPC commands, passphrase retries, and keystore state machine are
+  outside this model. Here `unlocked` exists solely to express SO2.
 - **One uniform `Exit` action.** Failed auth, pending-slot loss, displacement
   rejection, promotion failure, displaced close, and plain disconnect all
   leave through the same code path (the `handleRegisteredClient` defer), so

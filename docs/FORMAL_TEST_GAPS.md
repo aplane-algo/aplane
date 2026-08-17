@@ -58,10 +58,9 @@ this two-stage boundary rather than the former token-in-username assumption.
 The runtime lock state machine gained a lock-generation counter: `TryUnlock`
 detects a `Lock()` that raced the unlock sequence, re-runs lock cleanup, and
 fails with `LockedDuringUnlockMessage` (`internal/signerapp/runtime/runtime.go`).
-The lifecycle models deliberately omit the lock/unlock state machine (only
-decommission's lock-interacting steps are modeled), so no modeled invariant is
-affected; a future lock-state model must include this generation-counter
-transition.
+The current formal inventory deliberately omits the lock/unlock state machine,
+so no modeled invariant is affected; a future lock-state model must include
+this generation-counter transition.
 
 **Model drift: recovery state and the store-maintenance fence.**
 The same lock state machine has since grown from a boolean to three states
@@ -91,9 +90,9 @@ load-bearing rather than incidental:
   stopped counting as active in `Lock()`, SO2's argument would break even
   though the spec text would still read as satisfied.
 
-The maintenance fence adds no new concurrency actor to `lifecycle.tla`, because
-its only caller brackets it inside `WithIdentityMutation` — the writer critical
-section the lifecycle model already represents.
+The maintenance fence adds no new concurrency actor because its only caller
+brackets it inside `WithIdentityMutation`, the process-wide writer critical
+section.
 
 **Model extension candidate: authenticate-without-unlock (`auth_only`).**
 Admin protocol 4.4 added a second pre-auth message. `auth_only`
@@ -107,7 +106,7 @@ message only.
 
 No modeled invariant diverged. The new path returns the same
 `AuthOutcomeAuthenticated` and runs the identical ownership sequence
-(`MovePendingToIdentity`, displacement offer, `PromoteToActive`) and the
+(`BindPreAuthPending`, displacement offer, `PromoteToActive`) and the
 identical disconnect defer, so SO1 is unaffected by construction; and SO2's
 antecedent requires `unlocked`, which an authenticate-only session never sets,
 while the `Exit` cleanup that re-locks is unchanged. Splitting `AuthSucceed`
@@ -121,12 +120,13 @@ The related non-blocking `identity_busy` result
 (`daemon/server.go` `tryWithIdentityInspection`) is a plain `TryLock` on the
 existing store-mutation lock with client-side retry in
 `cmd/apstore/inspection_retry.go`. A failed acquire never becomes in-flight
-work, so it adds no actor and no fairness obligation to `lifecycle.tla`.
+work, so it adds no actor and no new fairness obligation.
 
-Otherwise, no actionable test gaps remain. Per-invariant status lives in
-[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The lifecycle L4-L7
-audit is closed by the explicit lease-release and writer-pending tests
-named in the L4 and L5 rows.
+Otherwise, no actionable formal test gaps remain. Per-invariant status lives
+in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The former L1-L10
+decommission/lease model was retired with that production state; retained
+shutdown, key-session, approval fail-all, and session-ownership contracts are
+covered by their current Go race tests and AP/SO formal invariants.
 
 The former bounded DSA planning/argument-assembly drift entry is closed by
 [formal/bounded_sentry.tla](formal/bounded_sentry.tla): its BS1-BS7 transition

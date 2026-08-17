@@ -64,7 +64,7 @@ This separation is deliberate:
 | Contract-admin public reference | Operator-controlled `<witness_key_id>.wit.json` | Disposable canonical public witness reference used during bounded account generation. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | `identities/<identity>/node.yaml.hmac` | Per-identity HMAC over the exact root `node.yaml` bytes. |
-| Identity config | `identities/<identity>/config.yaml` | Identity-local runtime settings such as approval/lock timeouts and decommission state; it does not carry key-class role. |
+| Identity config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected. |
 | Key type state record | `identities/<identity>/keytypes/<key_type>.json` | Identity-local discovery/generation state. |
 | Installed YAML template | `identities/<identity>/keytypes/<key_type>.template` | Encrypted generation source for that identity after reload. |
 | Deleted key archive | `identities/<identity>/deleted/keys/` | Removed key files; outside active scans. |
@@ -127,16 +127,16 @@ Rules:
 - service endpoints reject role/use mismatches even if a forbidden key file is
   present on disk.
 
-A node may host multiple identities, but all identities inherit the same root
-node role. Role-conflicting key inventory anywhere in the data directory is a
-node-level store contradiction: startup/reload fails closed for the node rather
-than silently quarantining only one identity. This is a deliberate
+A node hosts one product identity. Role-conflicting key inventory anywhere in
+the data directory is a node-level store contradiction: startup/reload fails
+closed for the node rather than allowing that identity runtime to continue.
+This is a deliberate
 safety/availability tradeoff. A hand-placed role-conflicting `.key` or `.sen` can make the
 node unavailable until the operator removes it, while supported restore/import
 paths should preflight role before writing so this fail-closed path remains a
-backstop. After a reload detects a role inventory conflict, the process marks
-the identity registry closed so HTTP and admin identity resolution refuse all
-identities until operator cleanup and restart.
+backstop. After a reload detects a role inventory conflict, the process records
+a sticky node failure so HTTP and admin operations refuse the product runtime
+until operator cleanup and restart.
 
 Local development that needs both roles uses two complete data roots and two
 apsigner processes, for example `~/aplane-signer/` and `~/aplane-sentry/`.

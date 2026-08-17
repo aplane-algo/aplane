@@ -11,99 +11,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 )
 
-func TestAuthorizerGrantDecisions(t *testing.T) {
-	authorizer := NewAuthorizer(Config{
-		Principals: []Principal{
-			{ID: "alice", Type: "human"},
-			{ID: "disabled", Type: "human", Disabled: true},
-		},
-		Groups: []Group{
-			{ID: "operators", Members: []string{"alice"}},
-			{ID: "disabled-group", Members: []string{"alice"}, Disabled: true},
-		},
-		Grants: []Grant{
-			{Subject: GroupSubject("operators"), IdentityID: "default", Actions: []auth.Action{auth.ActionKeysView}},
-			{Subject: GroupSubject("disabled-group"), IdentityID: "default", Actions: []auth.Action{auth.ActionKeysDelete}},
-			{Subject: PrincipalSubject("alice"), IdentityID: "other", Actions: []auth.Action{auth.ActionSignRequest}, Disabled: true},
-		},
-	})
-
-	tests := []struct {
-		name     string
-		identity *auth.Identity
-		action   auth.Action
-		resource auth.Resource
-		wantErr  error
-	}{
-		{
-			name:     "granted by group",
-			identity: &auth.Identity{ID: "alice"},
-			action:   auth.ActionKeysView,
-			resource: auth.Resource{Type: "keys", IdentityID: "default"},
-		},
-		{
-			name:     "wrong action fails closed",
-			identity: &auth.Identity{ID: "alice"},
-			action:   auth.ActionKeysGenerate,
-			resource: auth.Resource{Type: "key", IdentityID: "default"},
-			wantErr:  auth.ErrForbidden,
-		},
-		{
-			name:     "wrong identity fails closed",
-			identity: &auth.Identity{ID: "alice"},
-			action:   auth.ActionKeysView,
-			resource: auth.Resource{Type: "keys", IdentityID: "other"},
-			wantErr:  auth.ErrForbidden,
-		},
-		{
-			name:     "disabled principal fails closed",
-			identity: &auth.Identity{ID: "disabled"},
-			action:   auth.ActionKeysView,
-			resource: auth.Resource{Type: "keys", IdentityID: "default"},
-			wantErr:  auth.ErrForbidden,
-		},
-		{
-			name:     "unknown principal fails closed",
-			identity: &auth.Identity{ID: "unknown"},
-			action:   auth.ActionKeysView,
-			resource: auth.Resource{Type: "keys", IdentityID: "default"},
-			wantErr:  auth.ErrForbidden,
-		},
-		{
-			name:     "nil identity unauthorized",
-			identity: nil,
-			action:   auth.ActionKeysView,
-			resource: auth.Resource{Type: "keys", IdentityID: "default"},
-			wantErr:  auth.ErrUnauthorized,
-		},
-		{
-			name:     "disabled grant fails closed",
-			identity: &auth.Identity{ID: "alice"},
-			action:   auth.ActionSignRequest,
-			resource: auth.Resource{Type: "transaction", IdentityID: "other"},
-			wantErr:  auth.ErrForbidden,
-		},
-		{
-			name:     "disabled group fails closed",
-			identity: &auth.Identity{ID: "alice"},
-			action:   auth.ActionKeysDelete,
-			resource: auth.Resource{Type: "key", IdentityID: "default"},
-			wantErr:  auth.ErrForbidden,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := authorizer.Authorize(context.Background(), tt.identity, tt.action, tt.resource)
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("Authorize() error = %v, want %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestProductSingleAuthorizerUsesBootstrapGrant(t *testing.T) {
+func TestProductAuthorizer(t *testing.T) {
 	authorizer := NewProductSingleAuthorizer()
+	product := NewProductPrincipalIdentity("ipc-passphrase")
 
 	for _, tc := range []struct {
 		name     string
@@ -112,57 +22,14 @@ func TestProductSingleAuthorizerUsesBootstrapGrant(t *testing.T) {
 		resource auth.Resource
 		wantErr  error
 	}{
-		{
-			name:     "product principal allowed by explicit action",
-			identity: NewProductPrincipalIdentity("ipc-passphrase"),
-			action:   auth.ActionKeysGenerate,
-			resource: auth.Resource{Type: "key", IdentityID: auth.DefaultIdentityID},
-		},
-		{
-			name:     "compat identity maps to bootstrap principal",
-			identity: &auth.Identity{ID: "alice", Type: "service", Method: "aplane-token"},
-			action:   auth.ActionSignRequest,
-			resource: auth.Resource{Type: "transaction", IdentityID: "alice"},
-		},
-		{
-			name:     "product principal can rotate passphrase",
-			identity: NewProductPrincipalIdentity("ipc-passphrase"),
-			action:   auth.ActionIdentityPassphrase,
-			resource: auth.Resource{Type: "identity", IdentityID: auth.DefaultIdentityID},
-		},
-		{
-			name:     "product principal can remove templates",
-			identity: NewProductPrincipalIdentity("ipc-passphrase"),
-			action:   auth.ActionTemplatesRemove,
-			resource: auth.Resource{Type: "template", IdentityID: auth.DefaultIdentityID},
-		},
-		{
-			name:     "product principal can sync public sentries",
-			identity: NewProductPrincipalIdentity("ipc-passphrase"),
-			action:   auth.ActionSentriesSync,
-			resource: auth.Resource{Type: "sentries", IdentityID: auth.DefaultIdentityID},
-		},
-		{
-			name:     "unknown action denied before grant matching",
-			identity: NewProductPrincipalIdentity("ipc-passphrase"),
-			action:   auth.Action("unknown.action"),
-			resource: auth.Resource{Type: "system", IdentityID: auth.DefaultIdentityID},
-			wantErr:  auth.ErrForbidden,
-		},
-		{
-			name:     "reserved ungranted health action denied",
-			identity: NewProductPrincipalIdentity("ipc-passphrase"),
-			action:   auth.ActionHealthGet,
-			resource: auth.Resource{Type: "system", IdentityID: auth.DefaultIdentityID},
-			wantErr:  auth.ErrForbidden,
-		},
-		{
-			name:     "missing identity denied",
-			identity: &auth.Identity{},
-			action:   auth.ActionKeysView,
-			resource: auth.Resource{Type: "keys", IdentityID: auth.DefaultIdentityID},
-			wantErr:  auth.ErrUnauthorized,
-		},
+		{name: "explicit action and default resource", identity: product, action: auth.ActionKeysGenerate, resource: auth.Resource{Type: "key", IdentityID: auth.DefaultIdentityID}},
+		{name: "empty resource identity", identity: product, action: auth.ActionKeysView, resource: auth.Resource{Type: "keys"}},
+		{name: "nil principal", action: auth.ActionKeysView, wantErr: auth.ErrUnauthorized},
+		{name: "empty principal", identity: &auth.Identity{}, action: auth.ActionKeysView, wantErr: auth.ErrUnauthorized},
+		{name: "unknown principal", identity: &auth.Identity{ID: "default"}, action: auth.ActionKeysView, wantErr: auth.ErrForbidden},
+		{name: "unknown action", identity: product, action: auth.Action("unknown.action"), wantErr: auth.ErrForbidden},
+		{name: "known but ungranted health", identity: product, action: auth.ActionHealthGet, wantErr: auth.ErrForbidden},
+		{name: "non-default resource", identity: product, action: auth.ActionKeysView, resource: auth.Resource{Type: "keys", IdentityID: "alice"}, wantErr: auth.ErrForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := authorizer.Authorize(context.Background(), tc.identity, tc.action, tc.resource)
@@ -173,22 +40,74 @@ func TestProductSingleAuthorizerUsesBootstrapGrant(t *testing.T) {
 	}
 }
 
-func TestAuthorizerRejectsUnknownActionEvenIfGrantContainsIt(t *testing.T) {
-	typoAction := auth.Action("keys.veiw")
-	authorizer := NewAuthorizer(Config{
-		Principals: []Principal{{ID: "alice", Type: "human"}},
-		Grants: []Grant{{
-			Subject:    PrincipalSubject("alice"),
-			IdentityID: auth.DefaultIdentityID,
-			Actions:    []auth.Action{typoAction},
-		}},
-	})
+func TestProductAllowedActionsAreKnownUniqueAndExplicit(t *testing.T) {
+	seen := make(map[auth.Action]bool)
+	for _, action := range ProductAllowedActions() {
+		if !auth.IsKnownAction(action) {
+			t.Errorf("product action %q is not registered", action)
+		}
+		if seen[action] {
+			t.Errorf("duplicate product action %q", action)
+		}
+		seen[action] = true
+	}
+	if seen[auth.ActionHealthGet] {
+		t.Fatal("health.get must remain known but ungranted")
+	}
+}
 
-	err := authorizer.Authorize(context.Background(), &auth.Identity{ID: "alice"}, typoAction, auth.Resource{
-		Type:       "keys",
-		IdentityID: auth.DefaultIdentityID,
-	})
+func TestProductAllowedActionsReturnsDefensiveSlice(t *testing.T) {
+	actions := ProductAllowedActions()
+	actions[0] = auth.ActionHealthGet
+
+	authorizer := NewProductSingleAuthorizer()
+	err := authorizer.Authorize(context.Background(), NewProductPrincipalIdentity("test"), auth.ActionHealthGet, auth.Resource{})
 	if !errors.Is(err, auth.ErrForbidden) {
-		t.Fatalf("Authorize() error = %v, want %v", err, auth.ErrForbidden)
+		t.Fatalf("Authorize(health.get) error = %v, want forbidden", err)
+	}
+}
+
+func TestProductAllowedActionsCoverAuthenticatedHandlerActions(t *testing.T) {
+	allowed := make(map[auth.Action]bool)
+	for _, action := range ProductAllowedActions() {
+		allowed[action] = true
+	}
+	handlerActions := []auth.Action{
+		auth.ActionGenerationsView,
+		auth.ActionIdentityBackup,
+		auth.ActionIdentityLock,
+		auth.ActionIdentityPassphrase,
+		auth.ActionIdentityRestore,
+		auth.ActionIdentityUnlock,
+		auth.ActionIdentityView,
+		auth.ActionKeyTypesActivate,
+		auth.ActionKeyTypesDeactivate,
+		auth.ActionKeyTypesView,
+		auth.ActionKeysDelete,
+		auth.ActionKeysExport,
+		auth.ActionKeysGenerate,
+		auth.ActionKeysImport,
+		auth.ActionKeysView,
+		auth.ActionPolicyUpdate,
+		auth.ActionPolicyView,
+		auth.ActionSentriesManage,
+		auth.ActionSentriesSync,
+		auth.ActionSentriesView,
+		auth.ActionSettingsUpdate,
+		auth.ActionSettingsView,
+		auth.ActionSignApprove,
+		auth.ActionSignAssemble,
+		auth.ActionSignComponent,
+		auth.ActionSignRequest,
+		auth.ActionTemplatesInstall,
+		auth.ActionTemplatesRemove,
+		auth.ActionTemplatesView,
+		auth.ActionTokenProvision,
+		auth.ActionTokenRevoke,
+	}
+	for _, action := range handlerActions {
+		if !allowed[action] {
+			t.Errorf("authenticated handler action %q is absent from ProductAllowedActions", action)
+		}
 	}
 }

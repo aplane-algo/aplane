@@ -1,5 +1,21 @@
 # Release Notes
 
+## Single-identity product boundary
+
+APlane now ships as a single-operator, single-signing-identity product. Every
+signer or sentry process owns exactly one runtime at `identities/default/`.
+Any additional direct entry under `identities/` fails startup before token,
+key, policy, template, or watcher loading. HTTP and SSH bind the fixed product
+runtime; admin protocol v5 and product CLIs expose no identity selector.
+
+This deliberately removes a working but unsupported pre-release
+multi-identity backend, including token-based runtime routing, identity-keyed
+admin sessions, wildcard product grants, live identity decommission, and
+multi-owner template-provider accounting. Existing normal `default` stores do
+not move. A stale `decommissioned:` identity-config field is rejected rather
+than ignored. SDK token enrollment now always uses `request-token:default`;
+status and audit output retain `identity_id: "default"` attribution.
+
 ## Native Falcon-1024
 
 APlane now supports Algorand protocol-native Falcon-1024 accounts under the

@@ -62,7 +62,6 @@ func TestClientRejectsServerThatSkipsMutualTokenProof(t *testing.T) {
 	}
 
 	client := NewClient(host, port, 0, 0, identityPath, knownHostsPath)
-	client.SetIdentityID("default")
 	client.SetAPIToken("test-token")
 	err = client.ConnectWithKey(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "did not complete mutual token proof") {
@@ -102,7 +101,6 @@ func TestClientRejectsInvalidServerTokenProof(t *testing.T) {
 	}
 
 	client := NewClient(host, port, 0, 0, identityPath, knownHostsPath)
-	client.SetIdentityID("default")
 	client.SetAPIToken("wrong-token")
 	if err := client.ConnectWithKey(context.Background()); err == nil {
 		t.Fatal("ConnectWithKey() succeeded with a wrong token")
@@ -163,12 +161,13 @@ func TestClientRejectsServerProofBoundToAnotherHostKey(t *testing.T) {
 	}
 }
 
-func TestClientRequiresIdentityBeforeDial(t *testing.T) {
-	client := NewClient("127.0.0.1", 1, 0, 0, "unused", "unused")
+func TestClientUsesProductIdentityBeforeDial(t *testing.T) {
+	_, _, identityPath := generateClientIdentityFile(t, t.TempDir())
+	client := NewClient("127.0.0.1", 1, 0, 0, identityPath, filepath.Join(t.TempDir(), "known_hosts"))
 	client.SetAPIToken("test-token")
 	err := client.ConnectWithKey(context.Background())
-	if err == nil || err.Error() != "identity ID required (call SetIdentityID first)" {
-		t.Fatalf("ConnectWithKey() error = %v, want identity requirement", err)
+	if err == nil || strings.Contains(err.Error(), "identity ID required") {
+		t.Fatalf("ConnectWithKey() error = %v, want a dial failure after selecting the product identity", err)
 	}
 }
 

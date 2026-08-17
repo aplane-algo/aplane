@@ -52,7 +52,7 @@ func TestUpdateTokenRevokesActiveConnections(t *testing.T) {
 		}()
 
 		srv.sshConnsMu.Lock()
-		srv.sshConns[sshServerConn] = sshConnInfo{identityID: "default"}
+		srv.sshConns[sshServerConn] = sshConnInfo{}
 		srv.sshConnsMu.Unlock()
 		close(serverReady) // Signal that connection is registered
 		defer func() {
@@ -129,74 +129,78 @@ func TestUpdateTokenRevokesActiveConnections(t *testing.T) {
 	<-serverDone
 }
 
-func TestCloseIdentityConnectionsOnlyRevokesTargetIdentity(t *testing.T) {
+func TestCloseProductConnectionsRevokesEveryConnection(t *testing.T) {
 	srv, _ := testServer(t)
 
-	alice := newActiveSSHTestConn(t, srv, "alice")
-	defer alice.close()
-	bob := newActiveSSHTestConn(t, srv, "bob")
-	defer bob.close()
+	first := newActiveSSHTestConn(t, srv)
+	defer first.close()
+	second := newActiveSSHTestConn(t, srv)
+	defer second.close()
 
-	srv.CloseIdentityConnections("alice", 0, "token revoked")
+	srv.CloseProductConnections(0, "token revoked")
 
 	select {
-	case req := <-alice.reqs:
+	case req := <-first.reqs:
 		switch {
 		case req == nil:
-			t.Fatal("expected alice token revocation request, got nil")
+			t.Fatal("expected first token revocation request, got nil")
 		case req.Type != "token-revoked@aplane":
-			t.Fatalf("alice global request type = %q, want token-revoked@aplane", req.Type)
+			t.Fatalf("first global request type = %q, want token-revoked@aplane", req.Type)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for alice token revocation request")
+		t.Fatal("timed out waiting for first token revocation request")
 	}
 
 	select {
-	case req := <-bob.reqs:
-		if req != nil {
-			t.Fatalf("bob received unexpected global request: %s", req.Type)
+	case req := <-second.reqs:
+		switch {
+		case req == nil:
+			t.Fatal("expected second token revocation request, got nil")
+		case req.Type != "token-revoked@aplane":
+			t.Fatalf("second global request type = %q, want token-revoked@aplane", req.Type)
 		}
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for second token revocation request")
 	}
 
-	aliceWait := make(chan error, 1)
+	firstWait := make(chan error, 1)
 	go func() {
-		aliceWait <- alice.clientConn.Wait()
+		firstWait <- first.clientConn.Wait()
 	}()
 	select {
-	case err := <-aliceWait:
+	case err := <-firstWait:
 		if err == nil {
-			t.Fatal("expected alice connection to close after identity revocation")
+			t.Fatal("expected first connection to close after product revocation")
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for alice connection close")
+		t.Fatal("timed out waiting for first connection close")
 	}
 
-	bobWait := make(chan error, 1)
+	secondWait := make(chan error, 1)
 	go func() {
-		bobWait <- bob.clientConn.Wait()
+		secondWait <- second.clientConn.Wait()
 	}()
 	select {
-	case err := <-bobWait:
-		t.Fatalf("bob connection closed unexpectedly: %v", err)
-	case <-time.After(100 * time.Millisecond):
+	case err := <-secondWait:
+		if err == nil {
+			t.Fatal("expected second connection to close after product revocation")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for second connection close")
 	}
 }
 
 func TestTokenRotationDuringSSHAuthClosesOldGenerationAfterTrack(t *testing.T) {
 	srv, _ := testServer(t)
 	tokenAuth := auth.NewTokenAuthenticator("old-token")
-	srv.SetIdentityHooks(IdentityHooks{
-		ComputeTokenMACs: func(identityID string, serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
-			if identityID != "alice" {
-				return nil, nil, 0, false
-			}
+	srv.SetProductHooks(ProductHooks{
+		ComputeTokenMACs: func(serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
 			return tokenAuth.ComputeHMACPair(serverInput, clientInput)
 		},
-		CheckKey: func(identityID string, key ssh.PublicKey) bool {
-			return identityID == "alice"
+		CheckKey: func(key ssh.PublicKey) bool {
+			return true
 		},
-		EnrollKey: func(identityID string, key ssh.PublicKey) error { return nil },
+		EnrollKey: func(key ssh.PublicKey) error { return nil },
 	})
 
 	authComplete := make(chan struct{})
@@ -227,7 +231,7 @@ func TestTokenRotationDuringSSHAuthClosesOldGenerationAfterTrack(t *testing.T) {
 	}()
 
 	clientSigner, _ := generateClientKey(t)
-	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, "alice", "old-token")
+	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, auth.CurrentProductIdentityID(), "old-token")
 	clientConfig.Timeout = 5 * time.Second
 
 	clientNetConn, err := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)
@@ -252,7 +256,7 @@ func TestTokenRotationDuringSSHAuthClosesOldGenerationAfterTrack(t *testing.T) {
 	}
 
 	tokenAuth.UpdateToken("new-token")
-	srv.CloseIdentityConnections("alice", tokenAuth.Generation(), "token revoked")
+	srv.CloseProductConnections(tokenAuth.Generation(), "token revoked")
 	releaseOnce.Do(func() { close(releaseTrack) })
 
 	select {
@@ -289,7 +293,7 @@ type activeSSHTestConn struct {
 	close      func()
 }
 
-func newActiveSSHTestConn(t *testing.T, srv *Server, identityID string) activeSSHTestConn {
+func newActiveSSHTestConn(t *testing.T, srv *Server) activeSSHTestConn {
 	t.Helper()
 
 	clientSigner, clientPub := generateClientKey(t)
@@ -331,7 +335,7 @@ func newActiveSSHTestConn(t *testing.T, srv *Server, identityID string) activeSS
 		}()
 
 		srv.sshConnsMu.Lock()
-		srv.sshConns[sshServerConn] = sshConnInfo{identityID: identityID}
+		srv.sshConns[sshServerConn] = sshConnInfo{}
 		srv.sshConnsMu.Unlock()
 		close(serverReady)
 		defer func() {
@@ -343,7 +347,7 @@ func newActiveSSHTestConn(t *testing.T, srv *Server, identityID string) activeSS
 		<-releaseServer
 	}()
 
-	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, identityID, "test-token")
+	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, auth.CurrentProductIdentityID(), "test-token")
 	clientConfig.Timeout = 5 * time.Second
 
 	clientNetConn, err := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)

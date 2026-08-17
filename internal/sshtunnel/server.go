@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/auth"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -41,50 +42,43 @@ func isClosedConnError(err error) bool {
 }
 
 // SessionCallback is called when SSH sessions connect or disconnect
-type SessionCallback func(remoteAddr, user string, connected bool)
+type SessionCallback func(remoteAddr string, connected bool)
 
 // TokenApprovalCallback is called to request operator approval for token provisioning.
 // Returns true if the operator approved, false if rejected.
-type TokenApprovalCallback func(identityID, sshFingerprint, remoteAddr string) (approved bool, err error)
+type TokenApprovalCallback func(sshFingerprint, remoteAddr string) (approved bool, err error)
 
 // TokenApprovalContextCallback is called to request operator approval for token
 // provisioning and is canceled when the SSH client disconnects.
-type TokenApprovalContextCallback func(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (approved bool, err error)
+type TokenApprovalContextCallback func(ctx context.Context, sshFingerprint, remoteAddr string) (approved bool, err error)
 
 // TokenIssuanceCallback is called after approval and key enrollment to load or generate the token.
 // It must not log success or audit — the caller handles that after confirming delivery.
-type TokenIssuanceCallback func(identityID string) (token string, err error)
+type TokenIssuanceCallback func() (token string, err error)
 
 // TokenAuditCallback is called after the token has been successfully delivered to the client.
-type TokenAuditCallback func(identityID, sshFingerprint, remoteAddr string)
+type TokenAuditCallback func(sshFingerprint, remoteAddr string)
 
-// OperatorCheckCallback is called to check if an operator (apadmin) is connected
-// for the requested identity. Used to fail fast on token provisioning requests
-// when no one can approve for that identity.
-type OperatorCheckCallback func(identityID string) bool
-
-// ProvisioningIdentityCheckCallback reports whether token provisioning is allowed
-// for the requested identity before SSH authentication succeeds.
-type ProvisioningIdentityCheckCallback func(identityID string) bool
+// OperatorCheckCallback is called to check if the product operator is connected.
+type OperatorCheckCallback func() bool
 
 // TokenMACFunc computes the server and expected client token-proof MACs from
 // one identity token-generation snapshot. The raw token remains with the
 // identity authenticator.
-type TokenMACFunc func(identityID string, serverInput, clientInput []byte) (serverMAC, clientMAC []byte, tokenGeneration uint64, valid bool)
+type TokenMACFunc func(serverInput, clientInput []byte) (serverMAC, clientMAC []byte, tokenGeneration uint64, valid bool)
 
 // KeyCheckerFunc checks whether a public key is authorized for the given identity.
-type KeyCheckerFunc func(identityID string, key ssh.PublicKey) bool
+type KeyCheckerFunc func(key ssh.PublicKey) bool
 
 // KeyEnrollerFunc enrolls a public key for the given identity.
-type KeyEnrollerFunc func(identityID string, key ssh.PublicKey) error
+type KeyEnrollerFunc func(key ssh.PublicKey) error
 
 // AdminChannelCallback handles an accepted admin subsystem channel.
 // The channel is already authenticated at the SSH layer.
-type AdminChannelCallback func(channel ssh.Channel, remoteAddr, identityID string)
+type AdminChannelCallback func(channel ssh.Channel, remoteAddr string)
 
-// IdentityHooks configures identity-aware token validation and SSH key storage.
-// When set, these hooks replace the built-in single-token/single-keyfile behavior.
-type IdentityHooks struct {
+// ProductHooks configures product token validation and SSH key storage.
+type ProductHooks struct {
 	ComputeTokenMACs TokenMACFunc
 	CheckKey         KeyCheckerFunc
 	EnrollKey        KeyEnrollerFunc
@@ -94,12 +88,11 @@ type IdentityHooks struct {
 // The sshtunnel layer interleaves key enrollment between approval and issuance,
 // and calls AuditProvisioned only after confirming token delivery to the client.
 type TokenProvisioningHooks struct {
-	Approve              TokenApprovalCallback
-	ApproveContext       TokenApprovalContextCallback
-	Issue                TokenIssuanceCallback
-	AuditProvisioned     TokenAuditCallback
-	OperatorConnected    OperatorCheckCallback
-	IdentityProvisioning ProvisioningIdentityCheckCallback
+	Approve           TokenApprovalCallback
+	ApproveContext    TokenApprovalContextCallback
+	Issue             TokenIssuanceCallback
+	AuditProvisioned  TokenAuditCallback
+	OperatorConnected OperatorCheckCallback
 }
 
 const (
@@ -129,7 +122,7 @@ type Server struct {
 	tokenMu       sync.RWMutex
 	expectedToken string // API token used when tokenMAC is nil
 
-	// Optional identity-aware callbacks (override built-in single-token/single-keyfile behavior)
+	// Optional product callbacks (override built-in single-token/single-keyfile behavior)
 	tokenMAC    TokenMACFunc    // If set, computes identity-scoped token proof MACs
 	keyChecker  KeyCheckerFunc  // If set, replaces authKeys lookup
 	keyEnroller KeyEnrollerFunc // If set, replaces registerAuthorizedKey
@@ -137,11 +130,10 @@ type Server struct {
 	adminChannelCallback AdminChannelCallback
 
 	// Token provisioning callbacks
-	tokenApprovalCallback     TokenApprovalContextCallback      // Called to request operator approval
-	tokenIssuanceCallback     TokenIssuanceCallback             // Called to load/generate the token
-	tokenAuditCallback        TokenAuditCallback                // Called after confirmed delivery
-	operatorCheckCallback     OperatorCheckCallback             // Called to check if operator is connected
-	provisioningIdentityCheck ProvisioningIdentityCheckCallback // Called during token provisioning auth
+	tokenApprovalCallback TokenApprovalContextCallback // Called to request operator approval
+	tokenIssuanceCallback TokenIssuanceCallback        // Called to load/generate the token
+	tokenAuditCallback    TokenAuditCallback           // Called after confirmed delivery
+	operatorCheckCallback OperatorCheckCallback        // Called to check if operator is connected
 
 	mu        sync.Mutex
 	started   bool
@@ -151,14 +143,13 @@ type Server struct {
 	// Connection tracking for graceful shutdown
 	activeConns              sync.WaitGroup                  // Tracks active connection handlers
 	sshConns                 map[*ssh.ServerConn]sshConnInfo // Active SSH connections for explicit close
-	revokedTokenGenerations  map[string]uint64               // Identity -> minimum accepted token generation
-	sshConnsMu               sync.Mutex                      // Protects sshConns and revokedTokenGenerations
+	minimumTokenGeneration   uint64                          // Minimum accepted product token generation
+	sshConnsMu               sync.Mutex                      // Protects sshConns and minimumTokenGeneration
 	testAfterAuthBeforeTrack func()                          // Test hook for auth/revocation race coverage
 	invalidTokenDelay        time.Duration                   // Tests may set this to zero to avoid the production rejection delay
 }
 
 type sshConnInfo struct {
-	identityID      string
 	tokenGeneration uint64
 }
 
@@ -179,20 +170,18 @@ func (s *Server) SetTokenProvisioningHooks(hooks TokenProvisioningHooks) {
 	s.assertNotStartedLocked("SetTokenProvisioningHooks")
 	s.tokenApprovalCallback = hooks.ApproveContext
 	if s.tokenApprovalCallback == nil && hooks.Approve != nil {
-		s.tokenApprovalCallback = func(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (bool, error) {
+		s.tokenApprovalCallback = func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
 			_ = ctx
-			return hooks.Approve(identityID, sshFingerprint, remoteAddr)
+			return hooks.Approve(sshFingerprint, remoteAddr)
 		}
 	}
 	s.tokenIssuanceCallback = hooks.Issue
 	s.tokenAuditCallback = hooks.AuditProvisioned
 	s.operatorCheckCallback = hooks.OperatorConnected
-	s.provisioningIdentityCheck = hooks.IdentityProvisioning
 }
 
 // UpdateToken replaces the expected token and closes all active SSH connections.
 // Existing connections were authenticated with the old token and must reconnect.
-// Identity-aware revocation should call CloseIdentityConnections instead.
 func (s *Server) UpdateToken(newToken string) {
 	s.tokenMu.Lock()
 	s.expectedToken = newToken
@@ -213,23 +202,19 @@ func (s *Server) UpdateToken(newToken string) {
 	}
 }
 
-// CloseIdentityConnections closes active SSH connections authenticated for the
-// given identity. The token authenticator should already have been updated
-// before this is called; a connection authenticated before revocation is closed
-// after the fact.
-func (s *Server) CloseIdentityConnections(identityID string, minTokenGeneration uint64, reason string) {
+// CloseProductConnections closes active SSH connections authenticated with an
+// older product token generation. The authenticator is updated before this is
+// called, and the minimum generation closes the auth-before-track race.
+func (s *Server) CloseProductConnections(minTokenGeneration uint64, reason string) {
 	s.sshConnsMu.Lock()
 	conns := make([]*ssh.ServerConn, 0, len(s.sshConns))
 	if minTokenGeneration > 0 {
-		if s.revokedTokenGenerations == nil {
-			s.revokedTokenGenerations = make(map[string]uint64)
-		}
-		if minTokenGeneration > s.revokedTokenGenerations[identityID] {
-			s.revokedTokenGenerations[identityID] = minTokenGeneration
+		if minTokenGeneration > s.minimumTokenGeneration {
+			s.minimumTokenGeneration = minTokenGeneration
 		}
 	}
 	for conn, info := range s.sshConns {
-		if info.identityID == identityID && (minTokenGeneration == 0 || info.tokenGeneration < minTokenGeneration) {
+		if minTokenGeneration == 0 || info.tokenGeneration < minTokenGeneration {
 			conns = append(conns, conn)
 		}
 	}
@@ -250,13 +235,13 @@ func (s *Server) ActiveConnectionCount() int {
 	return n
 }
 
-// SetIdentityHooks configures identity-aware token validation and SSH key storage.
+// SetProductHooks configures product token validation and SSH key storage.
 // Hooks are immutable after Start.
-func (s *Server) SetIdentityHooks(hooks IdentityHooks) {
+func (s *Server) SetProductHooks(hooks ProductHooks) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.assertNotStartedLocked("SetIdentityHooks")
-	if err := validateIdentityHooks(hooks); err != nil {
+	s.assertNotStartedLocked("SetProductHooks")
+	if err := validateProductHooks(hooks); err != nil {
 		panic(err.Error())
 	}
 	s.tokenMAC = hooks.ComputeTokenMACs
@@ -264,21 +249,21 @@ func (s *Server) SetIdentityHooks(hooks IdentityHooks) {
 	s.keyEnroller = hooks.EnrollKey
 }
 
-func validateIdentityHooks(hooks IdentityHooks) error {
-	if !identityHooksConfigured(hooks.ComputeTokenMACs, hooks.CheckKey, hooks.EnrollKey) {
+func validateProductHooks(hooks ProductHooks) error {
+	if !productHooksConfigured(hooks.ComputeTokenMACs, hooks.CheckKey, hooks.EnrollKey) {
 		return nil
 	}
-	if !identityHooksComplete(hooks.ComputeTokenMACs, hooks.CheckKey, hooks.EnrollKey) {
-		return fmt.Errorf("identity SSH hooks require ComputeTokenMACs, CheckKey, and EnrollKey together")
+	if !productHooksComplete(hooks.ComputeTokenMACs, hooks.CheckKey, hooks.EnrollKey) {
+		return fmt.Errorf("product SSH hooks require ComputeTokenMACs, CheckKey, and EnrollKey together")
 	}
 	return nil
 }
 
-func identityHooksConfigured(tokenMAC TokenMACFunc, keyChecker KeyCheckerFunc, keyEnroller KeyEnrollerFunc) bool {
+func productHooksConfigured(tokenMAC TokenMACFunc, keyChecker KeyCheckerFunc, keyEnroller KeyEnrollerFunc) bool {
 	return tokenMAC != nil || keyChecker != nil || keyEnroller != nil
 }
 
-func identityHooksComplete(tokenMAC TokenMACFunc, keyChecker KeyCheckerFunc, keyEnroller KeyEnrollerFunc) bool {
+func productHooksComplete(tokenMAC TokenMACFunc, keyChecker KeyCheckerFunc, keyEnroller KeyEnrollerFunc) bool {
 	return tokenMAC != nil && keyChecker != nil && keyEnroller != nil
 }
 
@@ -315,16 +300,15 @@ func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expected
 	}
 
 	server := &Server{
-		listenAddr:              listenAddr,
-		targetAddr:              targetAddr,
-		hostKey:                 hostKey,
-		authKeys:                authKeys,
-		authorizedKeysPath:      authorizedKeysPath,
-		expectedToken:           expectedToken,
-		closeChan:               make(chan struct{}),
-		sshConns:                make(map[*ssh.ServerConn]sshConnInfo),
-		revokedTokenGenerations: make(map[string]uint64),
-		invalidTokenDelay:       invalidTokenProofDelay,
+		listenAddr:         listenAddr,
+		targetAddr:         targetAddr,
+		hostKey:            hostKey,
+		authKeys:           authKeys,
+		authorizedKeysPath: authorizedKeysPath,
+		expectedToken:      expectedToken,
+		closeChan:          make(chan struct{}),
+		sshConns:           make(map[*ssh.ServerConn]sshConnInfo),
+		invalidTokenDelay:  invalidTokenProofDelay,
 	}
 
 	server.sshConfig = &ssh.ServerConfig{
@@ -460,30 +444,27 @@ func loadAuthorizedKeys(path string) ([]ssh.PublicKey, error) {
 // remains incomplete until handleVerifiedPublicKeyAuth transitions to mutual
 // token proof after SSH verifies possession of the private key.
 //
-// Special mode: If username is "request-token:<identity>", this is a token provisioning
+// Special mode: If username is "request-token:default", this is a token provisioning
 // request. Only key authentication is required (no token). Fails fast if no operator connected.
 func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 	remoteAddr := conn.RemoteAddr().String()
 	keyFingerprint := ssh.FingerprintSHA256(key)
 	username := conn.User()
 
-	// Check for token provisioning mode: "request-token:<identity>"
-	if strings.HasPrefix(username, "request-token:") {
+	if username == "request-token:"+auth.CurrentProductIdentityID() {
 		return s.handleTokenProvisioningAuth(conn, key, username, remoteAddr, keyFingerprint)
 	}
-
-	identityID := username
-	if identityID == "" || len(identityID) > tokenProofMaxIdentity {
-		return nil, fmt.Errorf("invalid SSH identity")
+	if username != auth.CurrentProductIdentityID() {
+		return nil, fmt.Errorf("unsupported SSH username: only %q is accepted", auth.CurrentProductIdentityID())
 	}
 
 	var authorized bool
-	if identityHooksConfigured(s.tokenMAC, s.keyChecker, s.keyEnroller) {
-		if !identityHooksComplete(s.tokenMAC, s.keyChecker, s.keyEnroller) {
-			fmt.Printf("[SSH] Identity-aware auth is not fully configured for %s (key: %s)\n", remoteAddr, keyFingerprint)
-			return nil, fmt.Errorf("identity-aware SSH authentication is not fully configured")
+	if productHooksConfigured(s.tokenMAC, s.keyChecker, s.keyEnroller) {
+		if !productHooksComplete(s.tokenMAC, s.keyChecker, s.keyEnroller) {
+			fmt.Printf("[SSH] Product auth is not fully configured for %s (key: %s)\n", remoteAddr, keyFingerprint)
+			return nil, fmt.Errorf("product SSH authentication is not fully configured")
 		}
-		authorized = s.keyChecker(identityID, key)
+		authorized = s.keyChecker(key)
 	} else {
 		s.authKeysMu.RLock()
 		for _, allowedKey := range s.authKeys {
@@ -503,7 +484,7 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 	return &ssh.Permissions{Extensions: map[string]string{
 		"auth_method":     "publickey_pending_token_proof",
 		"key_fingerprint": keyFingerprint,
-		"identity_id":     identityID,
+		"identity_id":     auth.CurrentProductIdentityID(),
 	}}, nil
 }
 
@@ -515,9 +496,8 @@ func (s *Server) handleVerifiedPublicKeyAuth(conn ssh.ConnMetadata, key ssh.Publ
 		return permissions, nil
 	}
 
-	identityID := permissions.Extensions["identity_id"]
 	keyFingerprint := permissions.Extensions["key_fingerprint"]
-	if identityID == "" || keyFingerprint == "" {
+	if keyFingerprint == "" {
 		return nil, fmt.Errorf("SSH public-key identity binding is incomplete")
 	}
 	fmt.Printf("[SSH] Verified enrolled key from %s: %s\n", conn.RemoteAddr(), keyFingerprint)
@@ -525,13 +505,13 @@ func (s *Server) handleVerifiedPublicKeyAuth(conn ssh.ConnMetadata, key ssh.Publ
 	return permissions, &ssh.PartialSuccessError{
 		Next: ssh.ServerAuthCallbacks{
 			KeyboardInteractiveCallback: func(nextConn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
-				return s.handleTokenProofAuth(nextConn, challenge, identityID, keyFingerprint)
+				return s.handleTokenProofAuth(nextConn, challenge, keyFingerprint)
 			},
 		},
 	}
 }
 
-func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge, identityID, keyFingerprint string) (*ssh.Permissions, error) {
+func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge, keyFingerprint string) (*ssh.Permissions, error) {
 	clientNonceQuestion, err := marshalClientNonceQuestion()
 	if err != nil {
 		return nil, err
@@ -557,7 +537,7 @@ func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.Keybo
 		return nil, err
 	}
 	transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
-		Identity:    identityID,
+		Identity:    auth.CurrentProductIdentityID(),
 		HostKeyHash: hostKeyHash,
 		ClientNonce: clientNonce,
 		ServerNonce: serverNonce,
@@ -574,7 +554,7 @@ func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.Keybo
 		return nil, err
 	}
 
-	serverProof, expectedClientProof, tokenGeneration, valid := s.computeTokenMACs(identityID, serverInput, clientInput)
+	serverProof, expectedClientProof, tokenGeneration, valid := s.computeTokenMACs(serverInput, clientInput)
 	if !valid || len(serverProof) != tokenProofMACSize || len(expectedClientProof) != tokenProofMACSize {
 		return s.rejectTokenProof(conn, keyFingerprint, "token proof unavailable")
 	}
@@ -596,7 +576,7 @@ func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.Keybo
 
 	extensions := map[string]string{
 		"auth_method":     "publickey+token-proof",
-		"identity_id":     identityID,
+		"identity_id":     auth.CurrentProductIdentityID(),
 		"key_fingerprint": keyFingerprint,
 	}
 	if tokenGeneration > 0 {
@@ -605,9 +585,9 @@ func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.Keybo
 	return &ssh.Permissions{Extensions: extensions}, nil
 }
 
-func (s *Server) computeTokenMACs(identityID string, serverInput, clientInput []byte) (serverMAC, clientMAC []byte, generation uint64, valid bool) {
+func (s *Server) computeTokenMACs(serverInput, clientInput []byte) (serverMAC, clientMAC []byte, generation uint64, valid bool) {
 	if s.tokenMAC != nil {
-		return s.tokenMAC(identityID, serverInput, clientInput)
+		return s.tokenMAC(serverInput, clientInput)
 	}
 
 	s.tokenMu.RLock()
@@ -627,42 +607,37 @@ func (s *Server) rejectTokenProof(conn ssh.ConnMetadata, keyFingerprint, reason 
 }
 
 // handleTokenProvisioningAuth handles SSH auth for token provisioning requests.
-// Username format: "request-token:<identity>".
+// Username is exactly "request-token:default".
 // Only requires valid SSH key - no token needed (that's what we're requesting!).
 // Fails fast if no operator is connected to approve the request.
 func (s *Server) handleTokenProvisioningAuth(conn ssh.ConnMetadata, key ssh.PublicKey, username, remoteAddr, keyFingerprint string) (*ssh.Permissions, error) {
-	// Extract identity from username
-	identityID := strings.TrimPrefix(username, "request-token:")
-	if identityID == "" {
-		return nil, fmt.Errorf("invalid token request format: missing identity")
-	}
-	if s.provisioningIdentityCheck != nil && !s.provisioningIdentityCheck(identityID) {
-		return nil, fmt.Errorf("unsupported identity: %s", identityID)
+	if username != "request-token:"+auth.CurrentProductIdentityID() {
+		return nil, fmt.Errorf("unsupported token provisioning username")
 	}
 
 	// Note: Operator and callback checks moved to session handler so error messages
 	// can be sent through the channel (SSH auth errors don't preserve the message)
 
-	fmt.Printf("[SSH] Token provisioning request from %s (key: %s) for identity '%s'\n", remoteAddr, keyFingerprint, identityID)
+	fmt.Printf("[SSH] Token provisioning request from %s (key: %s)\n", remoteAddr, keyFingerprint)
 
 	return &ssh.Permissions{
 		Extensions: map[string]string{
 			"auth_method":     "token_provisioning",
 			"key_fingerprint": keyFingerprint,
-			"identity_id":     identityID,
+			"identity_id":     auth.CurrentProductIdentityID(),
 			"public_key":      string(ssh.MarshalAuthorizedKey(key)),
 		},
 	}, nil
 }
 
-// enrollKey enrolls a public key, using the identity-aware callback if set,
+// enrollKey enrolls a public key, using the product callback if set,
 // otherwise falling back to the built-in single-file registration.
-func (s *Server) enrollKey(identityID string, key ssh.PublicKey) error {
-	if identityHooksConfigured(s.tokenMAC, s.keyChecker, s.keyEnroller) {
-		if !identityHooksComplete(s.tokenMAC, s.keyChecker, s.keyEnroller) {
-			return fmt.Errorf("identity-aware SSH key enrollment is not fully configured")
+func (s *Server) enrollKey(key ssh.PublicKey) error {
+	if productHooksConfigured(s.tokenMAC, s.keyChecker, s.keyEnroller) {
+		if !productHooksComplete(s.tokenMAC, s.keyChecker, s.keyEnroller) {
+			return fmt.Errorf("product SSH key enrollment is not fully configured")
 		}
-		return s.keyEnroller(identityID, key)
+		return s.keyEnroller(key)
 	}
 	return s.registerAuthorizedKey(key)
 }
@@ -772,7 +747,11 @@ func (s *Server) Start(ctx context.Context) error {
 	fmt.Printf("SSH server listening on %s (forwarding to %s)\n", s.listenAddr, s.targetAddr)
 
 	// Accept connections in background
-	go s.acceptConnections(ctx, listener)
+	s.activeConns.Add(1)
+	go func() {
+		defer s.activeConns.Done()
+		s.acceptConnections(ctx, listener)
+	}()
 
 	return nil
 }
@@ -841,7 +820,6 @@ func (s *Server) handleConnection(netConn net.Conn) {
 
 	info := sshConnInfo{}
 	if sshConn.Permissions != nil {
-		info.identityID = sshConn.Permissions.Extensions["identity_id"]
 		if generationText := sshConn.Permissions.Extensions["token_generation"]; generationText != "" {
 			if generation, parseErr := strconv.ParseUint(generationText, 10, 64); parseErr == nil {
 				info.tokenGeneration = generation
@@ -880,7 +858,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		// Log session disconnect with resolved identity
 		fmt.Printf("[SSH] Client disconnected: %s\n", remoteAddr)
 		if connectedLogged && s.sessionCallback != nil {
-			s.sessionCallback(remoteAddr, info.identityID, false)
+			s.sessionCallback(remoteAddr, false)
 		}
 	}()
 
@@ -892,7 +870,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	// Log successful SSH connection with resolved identity
 	fmt.Printf("[SSH] Client connected from %s\n", remoteAddr)
 	if s.sessionCallback != nil {
-		s.sessionCallback(remoteAddr, info.identityID, true)
+		s.sessionCallback(remoteAddr, true)
 	}
 	connectedLogged = true
 
@@ -957,11 +935,6 @@ func (s *Server) handleSessionChannel(sshConn *ssh.ServerConn, newChannel ssh.Ne
 	}
 
 	remoteAddr := sshConn.RemoteAddr().String()
-	identityID := ""
-	if sshConn.Permissions != nil {
-		identityID = sshConn.Permissions.Extensions["identity_id"]
-	}
-
 	for req := range requests {
 		switch req.Type {
 		case "subsystem":
@@ -985,7 +958,7 @@ func (s *Server) handleSessionChannel(sshConn *ssh.ServerConn, newChannel ssh.Ne
 			if req.WantReply {
 				_ = req.Reply(true, nil)
 			}
-			s.adminChannelCallback(channel, remoteAddr, identityID)
+			s.adminChannelCallback(channel, remoteAddr)
 			return
 		default:
 			if req.WantReply {
@@ -1073,10 +1046,8 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 	defer cancelApproval()
 
 	// Get provisioning info from connection permissions
-	identityID := ""
 	fingerprint := ""
 	if sshConn.Permissions != nil && sshConn.Permissions.Extensions != nil {
-		identityID = sshConn.Permissions.Extensions["identity_id"]
 		fingerprint = sshConn.Permissions.Extensions["key_fingerprint"]
 	}
 	remoteAddr := sshConn.RemoteAddr().String()
@@ -1109,15 +1080,8 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 			}
 			go cancelOnProvisioningChannelClosed(requests, cancelApproval)
 
-			if s.provisioningIdentityCheck != nil && !s.provisioningIdentityCheck(identityID) {
-				fmt.Printf("[SSH] Token provisioning rejected from %s: unsupported identity %q\n", remoteAddr, identityID)
-				_, _ = channel.Write([]byte("unsupported identity\n"))
-				_ = s.sendExitStatus(channel, 1)
-				return
-			}
-
 			// Check if operator is connected (moved here from auth so error message reaches client)
-			if s.operatorCheckCallback == nil || !s.operatorCheckCallback(identityID) {
+			if s.operatorCheckCallback == nil || !s.operatorCheckCallback() {
 				fmt.Printf("[SSH] Token provisioning rejected from %s: no operator connected\n", remoteAddr)
 				_, _ = channel.Write([]byte("no operator (apadmin) connected to approve token request\n"))
 				_ = s.sendExitStatus(channel, 1)
@@ -1131,11 +1095,11 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 				return
 			}
 
-			fmt.Printf("[SSH] Processing token provisioning for identity '%s' from %s\n", identityID, remoteAddr)
+			fmt.Printf("[SSH] Processing product token provisioning from %s\n", remoteAddr)
 			fmt.Printf("[SSH] Waiting for operator approval in apadmin for token provisioning request from %s\n", remoteAddr)
 
 			// Step 1: Request operator approval (blocking — waits for apadmin response)
-			approved, err := s.tokenApprovalCallback(approvalCtx, identityID, fingerprint, remoteAddr)
+			approved, err := s.tokenApprovalCallback(approvalCtx, fingerprint, remoteAddr)
 			if err != nil {
 				errMsg := fmt.Sprintf("ERROR: %s\n", err.Error())
 				_, _ = channel.Write([]byte(errMsg))
@@ -1167,9 +1131,9 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 				_ = s.sendExitStatus(channel, 1)
 				return
 			}
-			enrollErr := s.enrollKey(identityID, pubKey)
+			enrollErr := s.enrollKey(pubKey)
 			if enrollErr != nil {
-				fmt.Printf("[SSH] Failed to enroll SSH key for identity '%s': %v\n", identityID, enrollErr)
+				fmt.Printf("[SSH] Failed to enroll product SSH key: %v\n", enrollErr)
 				_, _ = channel.Write([]byte("ERROR: failed to enroll SSH key\n"))
 				_ = s.sendExitStatus(channel, 1)
 				return
@@ -1177,7 +1141,7 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 
 			// Step 3: Load or generate the token (persists to disk).
 			// If this fails, the key is enrolled but harmless without a token.
-			token, err := s.tokenIssuanceCallback(identityID)
+			token, err := s.tokenIssuanceCallback()
 			if err != nil {
 				errMsg := fmt.Sprintf("ERROR: %s\n", err.Error())
 				_, _ = channel.Write([]byte(errMsg))
@@ -1188,24 +1152,24 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 			// Step 4: Send the token. If disconnect or write completion fails,
 			// do not audit the request as successful.
 			if approvalCtx.Err() != nil {
-				fmt.Printf("[SSH] Token provisioning client disconnected before token delivery for identity '%s': %v\n", identityID, approvalCtx.Err())
+				fmt.Printf("[SSH] Token provisioning client disconnected before token delivery: %v\n", approvalCtx.Err())
 				return
 			}
 			if _, writeErr := channel.Write([]byte(token + "\n")); writeErr != nil {
-				fmt.Printf("[SSH] Failed to send token to client for identity '%s': %v\n", identityID, writeErr)
+				fmt.Printf("[SSH] Failed to send product token to client: %v\n", writeErr)
 				_ = s.sendExitStatus(channel, 1)
 				return
 			}
 			if err := s.sendExitStatus(channel, 0); err != nil {
-				fmt.Printf("[SSH] Failed to send token provisioning success status for identity '%s': %v\n", identityID, err)
+				fmt.Printf("[SSH] Failed to send token provisioning success status: %v\n", err)
 				return
 			}
 
 			// Step 5: Audit and log success only after the send path completes.
 			if s.tokenAuditCallback != nil {
-				s.tokenAuditCallback(identityID, fingerprint, remoteAddr)
+				s.tokenAuditCallback(fingerprint, remoteAddr)
 			}
-			fmt.Printf("[SSH] Token provisioned and SSH key enrolled for identity '%s' to %s\n", identityID, remoteAddr)
+			fmt.Printf("[SSH] Product token provisioned and SSH key enrolled to %s\n", remoteAddr)
 			return
 
 		default:
@@ -1340,6 +1304,17 @@ func (s *Server) handleChannel(newChannel ssh.NewChannel) {
 
 // Stop stops the SSH server gracefully, waiting for active connections to close.
 func (s *Server) Stop() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.StopContext(ctx)
+}
+
+// StopContext stops the SSH server and reports when the caller's shutdown
+// deadline expires before every accept/connection handler has returned.
+func (s *Server) StopContext(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s.mu.Lock()
 	if !s.running {
 		s.mu.Unlock()
@@ -1348,16 +1323,17 @@ func (s *Server) Stop() error {
 
 	close(s.closeChan)
 
-	if s.listener != nil {
-		if err := s.listener.Close(); err != nil {
-			s.mu.Unlock()
-			return fmt.Errorf("failed to close listener: %w", err)
-		}
-		s.listener = nil
-	}
-
+	listener := s.listener
+	s.listener = nil
 	s.running = false
 	s.mu.Unlock()
+
+	var listenerErr error
+	if listener != nil {
+		if err := listener.Close(); err != nil && !isClosedConnError(err) {
+			listenerErr = fmt.Errorf("failed to close listener: %w", err)
+		}
+	}
 
 	// Copy active connections (avoid holding lock during close)
 	s.sshConnsMu.Lock()
@@ -1383,20 +1359,18 @@ func (s *Server) Stop() error {
 
 	select {
 	case <-done:
-		// Clean shutdown
-	case <-time.After(5 * time.Second):
-		fmt.Printf("Timeout waiting for %d SSH connections to close\n", len(conns))
+		return listenerErr
+	case <-ctx.Done():
+		waitErr := fmt.Errorf("waiting for SSH handlers to close: %w", ctx.Err())
+		return errors.Join(listenerErr, waitErr)
 	}
-
-	return nil
 }
 
 func (s *Server) connectionStaleLocked(info sshConnInfo) bool {
-	if info.identityID == "" || info.tokenGeneration == 0 {
+	if info.tokenGeneration == 0 {
 		return false
 	}
-	minGeneration := s.revokedTokenGenerations[info.identityID]
-	return minGeneration > 0 && info.tokenGeneration < minGeneration
+	return s.minimumTokenGeneration > 0 && info.tokenGeneration < s.minimumTokenGeneration
 }
 
 // GetHostKeyFingerprint returns the SSH host key fingerprint for verification

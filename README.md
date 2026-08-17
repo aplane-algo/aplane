@@ -183,13 +183,13 @@ All documentation is in the [`docs/`](docs/) directory.
 - [FORMAL_TXN_PLANNING_MODEL.md](docs/FORMAL_TXN_PLANNING_MODEL.md) - Precise transaction-planning model and invariants
 - [FORMAL_POLICY_MODEL.md](docs/FORMAL_POLICY_MODEL.md) - Precise policy precedence model and invariants
 - [FORMAL_SIGNING_AUTHORITY_MODEL.md](docs/FORMAL_SIGNING_AUTHORITY_MODEL.md) - Precise existing-key signing authority model
-- [FORMAL_LIFECYCLE_MODEL.md](docs/FORMAL_LIFECYCLE_MODEL.md) - Precise identity lifecycle and decommission model
+- [FORMAL_APPROVAL_COORDINATOR_MODEL.md](docs/FORMAL_APPROVAL_COORDINATOR_MODEL.md) - Approval delivery, cancellation, fail-all, and progress model
 - [FORMAL_TRACEABILITY.md](docs/FORMAL_TRACEABILITY.md) - Invariant status, code anchors, test coverage, and open gaps
 - [FORMAL_TEST_GAPS.md](docs/FORMAL_TEST_GAPS.md) - Concrete sketches for each missing test, in recommended write order
 - [FORMAL_TLA_SIGN_BOUNDARY_MODEL.md](docs/FORMAL_TLA_SIGN_BOUNDARY_MODEL.md) - First machine-checkable TLA+ artifact (sign boundary)
 - [FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md](docs/FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md) - Second machine-checkable TLA+ artifact (policy precedence, including real I9)
 - [FORMAL_TLA_COMPOSITION_MODEL.md](docs/FORMAL_TLA_COMPOSITION_MODEL.md) - Third machine-checkable TLA+ artifact (joins sign boundary + policy precedence)
-- [FORMAL_TLA_LIFECYCLE_MODEL.md](docs/FORMAL_TLA_LIFECYCLE_MODEL.md) - Fourth machine-checkable TLA+ artifact (lifecycle lock-ordering, first temporal-transition spec)
+- [FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md](docs/FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md) - Machine-checked single-admin ownership and displacement model
 
 ### User Guides
 - [USER_INSTALL.md](docs/USER_INSTALL.md) - Installation guide

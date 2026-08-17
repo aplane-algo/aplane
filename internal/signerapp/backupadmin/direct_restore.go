@@ -30,6 +30,11 @@ func (s Service) RestoreBackup(
 	result := adminproto.RestoreBackupResult{OperationID: req.OperationID}
 	passphrase := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphrase)
+	if err := requireProductRuntime(ir); err != nil {
+		result.Code = protocol.ResultCodeRestoreFailed
+		result.Error = err.Error()
+		return result
+	}
 
 	if req.OperationID == "" {
 		result.Code = protocol.ResultCodeRestoreFailed
@@ -45,7 +50,7 @@ func (s Service) RestoreBackup(
 		return result
 	}
 	limiter := s.Deps.RestoreLimiter()
-	if retryAfter := limiter.RetryAfter(ir.ID(), archivePath); retryAfter > 0 {
+	if retryAfter := limiter.RetryAfter(archivePath); retryAfter > 0 {
 		result.Code = protocol.ResultCodeRestoreRateLimited
 		result.Error = RestoreRateLimitedError(retryAfter)
 		return result
@@ -238,7 +243,7 @@ func (s Service) RestoreBackup(
 	})
 	if err != nil {
 		if !archiveAuthenticated {
-			limiter.RecordFailure(ir.ID(), archivePath)
+			limiter.RecordFailure(archivePath)
 		}
 		var restoreErr *restoreRollbackError
 		if errors.As(err, &restoreErr) {
@@ -249,7 +254,7 @@ func (s Service) RestoreBackup(
 		result.Error = err.Error()
 		return result
 	}
-	limiter.RecordSuccess(ir.ID(), archivePath)
+	limiter.RecordSuccess(archivePath)
 	result.Success = true
 	s.Deps.Logf(
 		"restored %d credential(s) from archive %s as generation %s",

@@ -111,7 +111,7 @@ func GetActive(active storepaths.ActivePaths, keyType string) (Record, bool, err
 
 // Put atomically writes a state record.
 //
-// CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
+// CONTRACT: product callers MUST hold Signer.storeMutationLock.
 func Put(paths storepaths.Paths, identityID string, rec Record) error {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
@@ -122,7 +122,7 @@ func Put(paths storepaths.Paths, identityID string, rec Record) error {
 
 // PutActive is Put against resolved active-store paths.
 //
-// CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
+// CONTRACT: product callers MUST hold Signer.storeMutationLock.
 func PutActive(active storepaths.ActivePaths, rec Record) error {
 	normalized, err := normalizeRecord(rec)
 	if err != nil {
@@ -150,7 +150,7 @@ func PutActive(active storepaths.ActivePaths, rec Record) error {
 // SetState performs a read-modify-write on the state field, preserving all
 // other fields. Returns an error if no record exists for keyType.
 //
-// CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
+// CONTRACT: product callers MUST hold Signer.storeMutationLock.
 func SetState(paths storepaths.Paths, identityID, keyType string, state State) error {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
@@ -161,7 +161,7 @@ func SetState(paths storepaths.Paths, identityID, keyType string, state State) e
 
 // SetStateActive is SetState against resolved active-store paths.
 //
-// CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
+// CONTRACT: product callers MUST hold Signer.storeMutationLock.
 func SetStateActive(active storepaths.ActivePaths, keyType string, state State) error {
 	if err := validateState(state); err != nil {
 		return err
@@ -180,7 +180,7 @@ func SetStateActive(active storepaths.ActivePaths, keyType string, state State) 
 // Delete removes a state record. It is idempotent when the record is already
 // absent.
 //
-// CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
+// CONTRACT: product callers MUST hold Signer.storeMutationLock.
 func Delete(paths storepaths.Paths, identityID, keyType string) error {
 	active, err := genstore.ResolveActive(paths, identityID)
 	if err != nil {
@@ -191,7 +191,7 @@ func Delete(paths storepaths.Paths, identityID, keyType string) error {
 
 // DeleteActive is Delete against resolved active-store paths.
 //
-// CONTRACT: caller MUST hold Signer.storeMutationLocks[identityID].
+// CONTRACT: product callers MUST hold Signer.storeMutationLock.
 func DeleteActive(active storepaths.ActivePaths, keyType string) error {
 	keyType, err := normalizeKeyType(keyType)
 	if err != nil {

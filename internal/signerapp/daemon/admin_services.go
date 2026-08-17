@@ -54,37 +54,23 @@ func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
 	}
 	svc := fs.adminServices()
 	return adminserver.SessionDeps{
-		Identity:   svc,
-		Settings:   svc,
-		Keys:       svc,
-		Backups:    svc,
-		Templates:  svc,
-		Inspection: svc,
-		Authorizer: fs.authorizer,
-		Audit:      svc,
+		Identity:    svc,
+		Settings:    svc,
+		Keys:        svc,
+		Backups:     svc,
+		Templates:   svc,
+		Inspection:  svc,
+		Authorizer:  fs.authorizer,
+		Audit:       svc,
+		NodeFailure: fs.nodeFailure,
 	}
 }
 
 func (s signerAdminServices) ProductIdentityRuntime() *identity.Runtime {
+	if s.signer.nodeFailure() != nil {
+		return nil
+	}
 	return s.signer.productIdentityRuntime()
-}
-
-func (s signerAdminServices) ResolveIdentity(identityID string) (*identity.Runtime, error) {
-	if err := s.signer.registry.CloseError(); err != nil {
-		return nil, err
-	}
-	targetIdentityID := identityID
-	if targetIdentityID == "" {
-		targetIdentityID = auth.CurrentProductIdentityID()
-	}
-	// Product-mode admin restrictions live in adminproto.Session's auth
-	// reconciliation. This resolver stays registry-scoped so SSH-prebound
-	// sessions can resolve the identity authenticated by the SSH layer.
-	ir := s.signer.registry.Get(targetIdentityID)
-	if ir == nil {
-		return nil, fmt.Errorf("identity not available: %s", targetIdentityID)
-	}
-	return ir, nil
 }
 
 func (s signerAdminServices) VerifyPassphrase(ir *identity.Runtime, passphrase []byte) error {
@@ -250,8 +236,8 @@ func (s signerAdminServices) LogAuthorizationDenied(ctx adminserver.SessionConte
 	s.signer.auditLog.LogAuthorizationDenied(ctx, action, resource, reason)
 }
 
-func (s signerAdminServices) RevokeTokenForIdentity(ir *identity.Runtime) error {
-	return s.signer.RevokeTokenForIdentity(ir)
+func (s signerAdminServices) RevokeProductToken(ir *identity.Runtime) error {
+	return s.signer.RevokeProductToken(ir)
 }
 
 func (s signerAdminServices) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettings {
@@ -428,7 +414,7 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) (*si
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	if s.signer != nil {
 		if hub := s.signer.adminHub(); hub != nil {
-			hub.NotifyStatus(ir.ID(), ir.GetState().String(), ir.KeyCount())
+			hub.NotifyStatus(ir.GetState().String(), ir.KeyCount())
 		}
 	}
 	return report, true

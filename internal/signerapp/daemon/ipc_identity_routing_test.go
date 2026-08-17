@@ -4,166 +4,133 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
-	"sync"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 )
 
-func addActiveIdentitySession(t *testing.T, server *IPCServer, identityID string) *ipcJSONRecorderConn {
+func addActiveProductSession(t *testing.T, server *IPCServer) *ipcJSONRecorderConn {
 	t.Helper()
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(recorder, nil), adminserver.SessionDeps{})
-	if !server.sessionManager().RegisterPending(identityID, session) {
-		t.Fatalf("RegisterPending(%q) = false, want true", identityID)
+	if !server.sessionManager().RegisterPending(session) {
+		t.Fatal("RegisterPending() = false, want true")
 	}
-	if _, ok := server.sessionManager().PromoteToActive(identityID, session); !ok {
-		t.Fatalf("PromoteToActive(%q) = false, want true", identityID)
+	if _, ok := server.sessionManager().PromoteToActive(session); !ok {
+		t.Fatal("PromoteToActive() = false, want true")
 	}
 	return recorder
 }
 
-func TestIPCSendSignRequestRoutesOnlyToTargetIdentity(t *testing.T) {
+func TestIPCSendSignRequestUsesActiveProductSession(t *testing.T) {
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
-	alice := addActiveIdentitySession(t, ipcServer, "alice")
-	bob := addActiveIdentitySession(t, ipcServer, "bob")
-
-	if !ipcServer.SendSignRequest("alice", &signerapproval.SignRequest{ID: "req-alice", Address: "ADDR"}) {
-		t.Fatal("SendSignRequest(alice) = false, want true")
+	recorder := addActiveProductSession(t, ipcServer)
+	if !ipcServer.SendSignRequest(&signerapproval.SignRequest{ID: "req-1", Address: "ADDR"}) {
+		t.Fatal("SendSignRequest() = false, want true")
 	}
-
-	aliceMsgs := alice.messages(t)
-	if len(aliceMsgs) != 1 {
-		t.Fatalf("alice message count = %d, want 1", len(aliceMsgs))
-	}
-	if !reflectJSONSubset(aliceMsgs[0], map[string]any{
+	messages := recorder.messages(t)
+	if len(messages) != 1 || !reflectJSONSubset(messages[0], map[string]any{
 		"kind": string(protocol.MessageKindNotification),
 		"type": protocol.MsgTypeSignRequest,
-		"id":   "req-alice",
+		"id":   "req-1",
 	}) {
-		t.Fatalf("alice sign_request shape mismatch: %#v", aliceMsgs[0])
-	}
-	if bobMsgs := bob.messages(t); len(bobMsgs) != 0 {
-		t.Fatalf("bob message count = %d, want 0: %#v", len(bobMsgs), bobMsgs)
+		t.Fatalf("sign request shape mismatch: %#v", messages)
 	}
 }
 
-func TestIPCTokenProvisioningRoutesOnlyToTargetIdentity(t *testing.T) {
+func TestIPCTokenProvisioningUsesActiveProductSession(t *testing.T) {
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
-	alice := addActiveIdentitySession(t, ipcServer, "alice")
-	bob := addActiveIdentitySession(t, ipcServer, "bob")
-
-	if !ipcServer.SendTokenProvisioningRequest("bob", &signerapproval.TokenProvisioningRequest{ID: "req-bob", IdentityID: "bob"}) {
-		t.Fatal("SendTokenProvisioningRequest(bob) = false, want true")
+	recorder := addActiveProductSession(t, ipcServer)
+	if !ipcServer.SendTokenProvisioningRequest(&signerapproval.TokenProvisioningRequest{ID: "token-1", IdentityID: "default"}) {
+		t.Fatal("SendTokenProvisioningRequest() = false, want true")
 	}
-
-	if aliceMsgs := alice.messages(t); len(aliceMsgs) != 0 {
-		t.Fatalf("alice message count = %d, want 0: %#v", len(aliceMsgs), aliceMsgs)
-	}
-	bobMsgs := bob.messages(t)
-	if len(bobMsgs) != 1 {
-		t.Fatalf("bob message count = %d, want 1", len(bobMsgs))
-	}
-	if !reflectJSONSubset(bobMsgs[0], map[string]any{
-		"kind":        string(protocol.MessageKindNotification),
+	messages := recorder.messages(t)
+	if len(messages) != 1 || !reflectJSONSubset(messages[0], map[string]any{
 		"type":        protocol.MsgTypeTokenProvisioningRequest,
-		"id":          "req-bob",
-		"identity_id": "bob",
+		"id":          "token-1",
+		"identity_id": "default",
 	}) {
-		t.Fatalf("bob token_provisioning_request shape mismatch: %#v", bobMsgs[0])
+		t.Fatalf("token provisioning shape mismatch: %#v", messages)
 	}
 }
 
-func TestIPCSendSignRequestCanceledRoutesOnlyToTargetIdentity(t *testing.T) {
+func TestIPCSendSignRequestCanceledUsesActiveProductSession(t *testing.T) {
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
-	alice := addActiveIdentitySession(t, ipcServer, "alice")
-	bob := addActiveIdentitySession(t, ipcServer, "bob")
-
-	if !ipcServer.SendSignRequestCanceled("alice", &signerapproval.SignRequestCanceled{
-		ID:     "req-alice",
-		Reason: signerapproval.SignRequestCancelReasonClientCanceled,
+	recorder := addActiveProductSession(t, ipcServer)
+	if !ipcServer.SendSignRequestCanceled(&signerapproval.SignRequestCanceled{
+		ID: "req-1", Reason: signerapproval.SignRequestCancelReasonClientCanceled,
 	}) {
-		t.Fatal("SendSignRequestCanceled(alice) = false, want true")
+		t.Fatal("SendSignRequestCanceled() = false, want true")
 	}
-
-	aliceMsgs := alice.messages(t)
-	if len(aliceMsgs) != 1 {
-		t.Fatalf("alice message count = %d, want 1", len(aliceMsgs))
-	}
-	if !reflectJSONSubset(aliceMsgs[0], map[string]any{
-		"kind":   string(protocol.MessageKindNotification),
-		"type":   protocol.MsgTypeSignRequestCanceled,
-		"id":     "req-alice",
-		"reason": signerapproval.SignRequestCancelReasonClientCanceled,
-	}) {
-		t.Fatalf("alice sign_request_canceled shape mismatch: %#v", aliceMsgs[0])
-	}
-	if bobMsgs := bob.messages(t); len(bobMsgs) != 0 {
-		t.Fatalf("bob message count = %d, want 0: %#v", len(bobMsgs), bobMsgs)
+	messages := recorder.messages(t)
+	if len(messages) != 1 || messages[0]["type"] != protocol.MsgTypeSignRequestCanceled {
+		t.Fatalf("sign cancellation shape mismatch: %#v", messages)
 	}
 }
 
-func TestIPCNotificationsRouteOnlyToTargetIdentity(t *testing.T) {
+func TestIPCNotificationsUseActiveProductSession(t *testing.T) {
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
-	alice := addActiveIdentitySession(t, ipcServer, "alice")
-	bob := addActiveIdentitySession(t, ipcServer, "bob")
-
-	ipcServer.NotifyKeysChanged("alice", adminproto.KeysChangedNotification{KeyCount: 3})
-	ipcServer.NotifyLocked("bob", adminproto.SignerLockedNotification{Reason: "locked"})
-
-	aliceMsgs := alice.messages(t)
-	if len(aliceMsgs) != 1 {
-		t.Fatalf("alice message count = %d, want 1", len(aliceMsgs))
-	}
-	if !reflectJSONSubset(aliceMsgs[0], map[string]any{
-		"kind":      string(protocol.MessageKindNotification),
-		"type":      protocol.MsgTypeKeysChanged,
-		"key_count": float64(3),
-	}) {
-		t.Fatalf("alice keys_changed shape mismatch: %#v", aliceMsgs[0])
-	}
-
-	bobMsgs := bob.messages(t)
-	if len(bobMsgs) != 1 {
-		t.Fatalf("bob message count = %d, want 1", len(bobMsgs))
-	}
-	if !reflectJSONSubset(bobMsgs[0], map[string]any{
-		"kind":   string(protocol.MessageKindNotification),
-		"type":   protocol.MsgTypeSignerLocked,
-		"reason": "locked",
-	}) {
-		t.Fatalf("bob signer_locked shape mismatch: %#v", bobMsgs[0])
+	recorder := addActiveProductSession(t, ipcServer)
+	ipcServer.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: 3})
+	ipcServer.NotifyLocked(adminproto.SignerLockedNotification{Reason: "locked"})
+	ipcServer.NotifyStatus("unlocked", 3)
+	messages := recorder.messages(t)
+	if len(messages) != 3 || messages[0]["type"] != protocol.MsgTypeKeysChanged ||
+		messages[1]["type"] != protocol.MsgTypeSignerLocked || messages[2]["type"] != protocol.MsgTypeStatus {
+		t.Fatalf("notification sequence mismatch: %#v", messages)
 	}
 }
 
-func TestConcurrentIPCSendSignRequestsForDifferentIdentities(t *testing.T) {
+func TestIPCOutboundMessagesExcludePendingAndPreAuthSessions(t *testing.T) {
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
-	alice := addActiveIdentitySession(t, ipcServer, "alice")
-	bob := addActiveIdentitySession(t, ipcServer, "bob")
+	active := addActiveProductSession(t, ipcServer)
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		if !ipcServer.SendSignRequest("alice", &signerapproval.SignRequest{ID: "req-alice", Address: "ADDR-A"}) {
-			t.Error("SendSignRequest(alice) = false, want true")
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		if !ipcServer.SendSignRequest("bob", &signerapproval.SignRequest{ID: "req-bob", Address: "ADDR-B"}) {
-			t.Error("SendSignRequest(bob) = false, want true")
-		}
-	}()
-	wg.Wait()
-
-	if msgs := alice.messages(t); len(msgs) != 1 || msgs[0]["id"] != "req-alice" {
-		t.Fatalf("alice messages = %#v, want req-alice only", msgs)
+	pendingRecorder := &ipcJSONRecorderConn{}
+	pending := adminserver.NewSession(
+		adminproto.NewUnixAdminConn(pendingRecorder, nil),
+		adminserver.SessionDeps{},
+	)
+	if !ipcServer.sessionManager().RegisterPending(pending) {
+		t.Fatal("RegisterPending() = false, want true")
 	}
-	if msgs := bob.messages(t); len(msgs) != 1 || msgs[0]["id"] != "req-bob" {
-		t.Fatalf("bob messages = %#v, want req-bob only", msgs)
+
+	preAuthRecorder := &ipcJSONRecorderConn{}
+	preAuth := adminserver.NewSession(
+		adminproto.NewUnixAdminConn(preAuthRecorder, nil),
+		adminserver.SessionDeps{},
+	)
+	if !ipcServer.sessionManager().RegisterPreAuthPending(preAuth) {
+		t.Fatal("RegisterPreAuthPending() = false, want true")
+	}
+
+	if !ipcServer.SendSignRequest(&signerapproval.SignRequest{ID: "req-1", Address: "ADDR"}) {
+		t.Fatal("SendSignRequest() = false, want true")
+	}
+	if !ipcServer.SendSignRequestCanceled(&signerapproval.SignRequestCanceled{
+		ID: "req-1", Reason: signerapproval.SignRequestCancelReasonClientCanceled,
+	}) {
+		t.Fatal("SendSignRequestCanceled() = false, want true")
+	}
+	if !ipcServer.SendTokenProvisioningRequest(&signerapproval.TokenProvisioningRequest{
+		ID: "token-1", IdentityID: auth.DefaultIdentityID,
+	}) {
+		t.Fatal("SendTokenProvisioningRequest() = false, want true")
+	}
+	ipcServer.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: 3})
+	ipcServer.NotifyLocked(adminproto.SignerLockedNotification{Reason: "locked"})
+	ipcServer.NotifyStatus("unlocked", 3)
+
+	if messages := active.messages(t); len(messages) != 6 {
+		t.Fatalf("active message count = %d, want 6: %#v", len(messages), messages)
+	}
+	if messages := pendingRecorder.messages(t); len(messages) != 0 {
+		t.Fatalf("pending session received outbound messages: %#v", messages)
+	}
+	if messages := preAuthRecorder.messages(t); len(messages) != 0 {
+		t.Fatalf("pre-auth session received outbound messages: %#v", messages)
 	}
 }

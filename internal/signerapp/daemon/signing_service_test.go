@@ -15,8 +15,7 @@ import (
 func TestNewSigningServiceForIdentityCapturesPolicyAndUserAutoApproveSnapshot(t *testing.T) {
 	userAutoApprove := false
 	signer := &Signer{
-		registry: identity.NewRegistry(),
-		config:   &serverconfig.ServerConfig{},
+		config: &serverconfig.ServerConfig{},
 	}
 	ir := identity.New(identity.Config{
 		ID:              auth.DefaultIdentityID,

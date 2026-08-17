@@ -5,6 +5,8 @@ package startup
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -21,6 +23,7 @@ type LifecycleService struct {
 // ServerAuditLogger captures the shutdown hooks needed for audit shutdown.
 type ServerAuditLogger interface {
 	LogServerStop()
+	LogServerStopIncomplete(reason string)
 	Close() error
 }
 
@@ -28,7 +31,6 @@ type ServerAuditLogger interface {
 // configuration and identity assembly are complete.
 type LifecyclePlan struct {
 	Services        []LifecycleService
-	Registry        *identity.Registry
 	ProductRuntime  *identity.Runtime
 	StartWatcher    func(*identity.Runtime)
 	ShutdownTimeout time.Duration
@@ -83,6 +85,8 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	var shutdownErrors []string
+	handlersMayBeRunning := false
 	for i := len(started) - 1; i >= 0; i-- {
 		svc := started[i]
 		if svc.Stop == nil {
@@ -91,23 +95,46 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 		if plan.Info != nil && svc.Name != "" {
 			plan.Info("shutting down " + svc.Name)
 		}
-		if err := svc.Stop(shutdownCtx); err != nil && plan.Warn != nil {
-			plan.Warn(svc.Name + " shutdown error: " + err.Error())
+		if err := svc.Stop(shutdownCtx); err != nil {
+			shutdownErrors = append(shutdownErrors, svc.Name+": "+err.Error())
+			if errors.Is(err, context.DeadlineExceeded) {
+				handlersMayBeRunning = true
+			}
+			if plan.Warn != nil {
+				plan.Warn(svc.Name + " shutdown error: " + err.Error())
+			}
 		}
+	}
+
+	// A timed-out server may still have handlers using the audit logger and
+	// runtime-owned key material. Do not tear either dependency down underneath
+	// those handlers. The signer process returns immediately after this path, so
+	// the operating system performs the final process-memory and descriptor
+	// cleanup without creating an in-process use-after-destroy window.
+	if len(shutdownErrors) != 0 {
+		if plan.AuditLog != nil {
+			plan.AuditLog.LogServerStopIncomplete(strings.Join(shutdownErrors, "; "))
+		}
+	}
+	if handlersMayBeRunning {
+		if plan.Warn != nil {
+			plan.Warn("service shutdown incomplete; retaining audit and runtime state until process exit")
+		}
+		return
 	}
 
 	if plan.AuditLog != nil {
-		plan.AuditLog.LogServerStop()
+		if len(shutdownErrors) == 0 {
+			plan.AuditLog.LogServerStop()
+		}
 		_ = plan.AuditLog.Close()
 	}
 
-	if plan.Registry != nil {
+	if plan.ProductRuntime != nil {
 		if plan.Info != nil {
 			plan.Info("zeroing cached keys and the keyring")
 		}
-		for _, rt := range plan.Registry.All() {
-			rt.Destroy()
-		}
+		plan.ProductRuntime.Destroy()
 	}
 
 	if plan.Info != nil {

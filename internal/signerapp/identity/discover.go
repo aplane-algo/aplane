@@ -7,33 +7,33 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
-// DiscoverIdentities scans the identities/ directory under the given data root
-// and returns the identity IDs found (each subdirectory name is an identity).
-// Returns an empty slice if identities/ does not exist.
-func DiscoverIdentities(dataRoot string) ([]string, error) {
-	usersDir := filepath.Join(dataRoot, "identities")
-	entries, err := os.ReadDir(usersDir)
+// ValidateProductIdentityLayout verifies the single-product identities root
+// without following direct-entry symlinks. A missing identities directory or
+// default directory is the supported blank-store state.
+func ValidateProductIdentityLayout(dataRoot string, productID string) error {
+	identitiesDir := filepath.Join(dataRoot, "identities")
+	entries, err := os.ReadDir(identitiesDir)
 	if os.IsNotExist(err) {
-		return nil, nil
+		return nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read identities directory: %w", err)
+		return fmt.Errorf("read identities directory: %w", err)
 	}
 
-	var ids []string
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+		path := filepath.Join(identitiesDir, entry.Name())
+		if entry.Name() != productID {
+			return fmt.Errorf("unsupported entry %q under identities: APlane supports only the %q product identity", entry.Name(), productID)
 		}
-		name := entry.Name()
-		// Skip hidden directories and names with path-traversal characters
-		if strings.HasPrefix(name, ".") || strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
-			continue
+		info, statErr := os.Lstat(path)
+		if statErr != nil {
+			return fmt.Errorf("inspect product identity entry %q: %w", entry.Name(), statErr)
 		}
-		ids = append(ids, name)
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("product identity %q must be a real directory, not a symlink or other file type", productID)
+		}
 	}
-	return ids, nil
+	return nil
 }

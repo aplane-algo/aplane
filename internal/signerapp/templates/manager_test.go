@@ -179,23 +179,18 @@ func TestRegisterKeystoreTemplatesRegistersGenericAndComposedProviders(t *testin
 	}
 }
 
-func TestTemplateProviderOwnersKeepSharedProviderUntilLastIdentityRelease(t *testing.T) {
-	resetTemplateProviderOwnersForTest()
+func TestProductTemplateProviderRegistersAndUnregisters(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths, "default")
 	masterKey := testTemplateMasterKey()
-	keyType := "test.manager-shared-owner.v1"
+	keyType := "test.manager-product-provider.v1"
 	fingerprint := "1:" + strings.Repeat("a", 64)
 	lsigprovider.Unregister(keyType)
 	t.Cleanup(func() {
-		resetTemplateProviderOwnersForTest()
 		lsigprovider.Unregister(keyType)
 	})
 
-	genstoretest.MintFirst(t, paths, "alice")
-	genstoretest.MintFirst(t, paths, "bob")
-	saveTemplateRecordForIdentity(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, masterKey)
-	saveTemplateRecordForIdentity(t, paths, "bob", keyType, templatestore.TemplateTypeGeneric, masterKey)
+	saveTemplateRecordForIdentity(t, paths, "default", keyType, templatestore.TemplateTypeGeneric, masterKey)
 	manager := &Manager{
 		Paths: paths,
 		Registrars: []TemplateRegistrar{
@@ -218,32 +213,27 @@ func TestTemplateProviderOwnersKeepSharedProviderUntilLastIdentityRelease(t *tes
 		},
 	}
 
-	aliceReport, err := manager.RegisterKeystoreTemplates("alice", cryptotest.Keyring(t, masterKey))
+	report, err := manager.RegisterKeystoreTemplates("default", cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("RegisterKeystoreTemplates(alice) error = %v", err)
+		t.Fatalf("RegisterKeystoreTemplates(default) error = %v", err)
 	}
-	if !containsString(aliceReport.GenericActivatedKeyTypes, keyType) {
-		t.Fatalf("alice GenericActivatedKeyTypes = %#v, want %s", aliceReport.GenericActivatedKeyTypes, keyType)
-	}
-	bobReport, err := manager.RegisterKeystoreTemplates("bob", cryptotest.Keyring(t, masterKey))
-	if err != nil {
-		t.Fatalf("RegisterKeystoreTemplates(bob) error = %v", err)
-	}
-	if !containsString(bobReport.GenericIdempotentKeyTypes, keyType) {
-		t.Fatalf("bob GenericIdempotentKeyTypes = %#v, want %s", bobReport.GenericIdempotentKeyTypes, keyType)
+	if !containsString(report.GenericActivatedKeyTypes, keyType) {
+		t.Fatalf("GenericActivatedKeyTypes = %#v, want %s", report.GenericActivatedKeyTypes, keyType)
 	}
 
-	if unregistered := ReleaseProviderOwner("alice", keyType); unregistered {
-		t.Fatalf("ReleaseProviderOwner(alice) unregistered shared provider")
+	idempotent, err := manager.RegisterKeystoreTemplates("default", cryptotest.Keyring(t, masterKey))
+	if err != nil {
+		t.Fatalf("second RegisterKeystoreTemplates(default) error = %v", err)
 	}
-	if lsigprovider.Get(keyType) == nil {
-		t.Fatalf("provider %s was removed while bob still owns it", keyType)
+	if !containsString(idempotent.GenericIdempotentKeyTypes, keyType) {
+		t.Fatalf("GenericIdempotentKeyTypes = %#v, want %s", idempotent.GenericIdempotentKeyTypes, keyType)
 	}
-	if unregistered := ReleaseProviderOwner("bob", keyType); !unregistered {
-		t.Fatalf("ReleaseProviderOwner(bob) did not unregister final owner")
+
+	if unregistered := UnregisterProductProvider(keyType); !unregistered {
+		t.Fatalf("UnregisterProductProvider() did not unregister provider")
 	}
 	if lsigprovider.Get(keyType) != nil {
-		t.Fatalf("provider %s remained registered after final owner release", keyType)
+		t.Fatalf("provider %s remained registered after product deactivation", keyType)
 	}
 }
 
@@ -634,12 +624,6 @@ func containsString(items []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func resetTemplateProviderOwnersForTest() {
-	templateProviderOwners.mu.Lock()
-	defer templateProviderOwners.mu.Unlock()
-	templateProviderOwners.ownersByKeyType = make(map[string]map[string]struct{})
 }
 
 func registerManagerTestBase(keyType string) {

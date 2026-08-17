@@ -121,9 +121,9 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-func TestCurrentAdminProtocolVersionIncludesBackupCommitWarnings(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 4, Minor: 5}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 4.5", got)
+func TestCurrentAdminProtocolVersionIsSingleIdentityV5(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 5, Minor: 0}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 5.0", got)
 	}
 }
 
@@ -1020,7 +1020,7 @@ func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 	}{
 		{
 			name:       "auth",
-			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","identity_id":"default","protocol_version":{"major":4,"minor":0}}`),
+			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":{"major":5,"minor":0}}`),
 			msg:        &AuthMessage{},
 			fieldNames: []string{"passphrase"},
 			values:     []string{"auth-secret"},

@@ -85,7 +85,7 @@ Generation resolves three distinct Falcon keypairs:
 Visible collisions reject. The generated `.key` stores the resolved public
 parameters, bytecode, and complete signing-metadata version 2
 `bounded_authorization` object. Existing keys therefore remain signable if the
-identity-local template is later disabled or removed.
+installed product template is later disabled or removed.
 
 The repository YAML is an install source only. Fresh signer identities do not
 enable Corridor by default; operators import and enable it through the normal

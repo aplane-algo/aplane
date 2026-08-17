@@ -34,52 +34,52 @@ func (l lazyReloadAuditLogger) LogKeyRejected(identityID, keyFile, reason string
 // test-constructed identity runtimes.
 func (fs *Signer) identityBuildHooks() signerstartup.IdentityBuildHooks {
 	return signerstartup.IdentityBuildHooks{
-		HasAdminClient: func(targetIdentityID string) bool {
+		HasAdminClient: func() bool {
 			hub := fs.adminHub()
 			if hub == nil {
 				return false
 			}
-			return hub.HasClient(targetIdentityID)
+			return hub.HasClient()
 		},
-		SendSignRequest: func(targetIdentityID string, msg *signerapproval.SignRequest) bool {
+		SendSignRequest: func(msg *signerapproval.SignRequest) bool {
 			hub := fs.adminHub()
 			if hub == nil {
 				return false
 			}
-			return hub.SendSignRequest(targetIdentityID, msg)
+			return hub.SendSignRequest(msg)
 		},
-		SendSignRequestCanceled: func(targetIdentityID string, msg *signerapproval.SignRequestCanceled) bool {
+		SendSignRequestCanceled: func(msg *signerapproval.SignRequestCanceled) bool {
 			hub := fs.adminHub()
 			if hub == nil {
 				return false
 			}
-			return hub.SendSignRequestCanceled(targetIdentityID, msg)
+			return hub.SendSignRequestCanceled(msg)
 		},
-		SendTokenProvisioningRequest: func(targetIdentityID string, msg *signerapproval.TokenProvisioningRequest) bool {
+		SendTokenProvisioningRequest: func(msg *signerapproval.TokenProvisioningRequest) bool {
 			hub := fs.adminHub()
 			if hub == nil {
 				return false
 			}
-			return hub.SendTokenProvisioningRequest(targetIdentityID, msg)
+			return hub.SendTokenProvisioningRequest(msg)
 		},
-		NotifyLocked: func(lockedIdentityID string) {
+		NotifyLocked: func() {
 			if hub := fs.adminHub(); hub != nil {
-				hub.NotifyLocked(lockedIdentityID, adminproto.SignerLockedNotification{Reason: "locked"})
+				hub.NotifyLocked(adminproto.SignerLockedNotification{Reason: "locked"})
 			}
 		},
-		NotifyKeysChanged: func(changedIdentityID string, keyCount int) {
+		NotifyKeysChanged: func(keyCount int) {
 			if hub := fs.adminHub(); hub != nil {
-				hub.NotifyKeysChanged(changedIdentityID, adminproto.KeysChangedNotification{KeyCount: keyCount})
+				hub.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: keyCount})
 			}
 		},
 		ReloadAuditLog: lazyReloadAuditLogger{fs: fs},
 		NodeFailClosed: func(err error) {
-			if fs.registry != nil {
-				fs.registry.CloseFailClosed(err)
+			if fs.nodeFailState != nil {
+				fs.nodeFailState.Fail(err)
 			}
 		},
-		ReloadMutationLock: func(identityID string) sync.Locker {
-			return fs.storeMutationLock(identityID)
+		ReloadMutationLock: func() sync.Locker {
+			return &fs.storeMutationLock
 		},
 		Info: func(msg string) {
 			logInfof("%s", msg)

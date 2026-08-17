@@ -10,7 +10,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
@@ -80,7 +79,6 @@ func (s *ConnectionState) ConnectWithTunnel(
 	}
 
 	client := sshtunnel.NewClient(host, sshPort, localPort, signerPort, identityFile, knownHostsPath)
-	client.SetIdentityID(auth.CurrentProductIdentityID())
 	client.SetAPIToken(token)
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
@@ -193,7 +191,7 @@ func (s *ConnectionState) RequestTokenWithContext(
 	if onProvisioningStart != nil {
 		client.SetProvisioningStartCallback(onProvisioningStart)
 	}
-	token, err := client.RequestToken(ctx, auth.CurrentProductIdentityID())
+	token, err := client.RequestToken(ctx)
 	if err != nil {
 		return "", fmt.Errorf("token request failed: %w", err)
 	}

@@ -64,36 +64,33 @@ a key.
 
 ## Identity Model
 
-APlane is a **single-operator, single-exposed-identity product**: one operator
-domain owns the signer, keys, token, approvals, and client devices that connect
-to it. The supported product identity is `default`. Client SSH identities
-distinguish **which enrolled client/device/agent is acting on behalf of that
-same operator domain and identity**; they do not represent separate tenants
-with independent authorization domains. The detailed principal/group/grant
-model is documented in [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+APlane is a **single-operator, single-signing-identity product**. Every
+`apsigner` process owns exactly one `identity.Runtime`, whose fixed ID is
+`default`. That runtime owns the keystore, lock state, approval coordinator,
+token authority, SSH enrollment, configuration, and watcher. IPC and SSH admin
+clients compete for one process-wide admin session.
 
-The codebase uses an internally identity-scoped runtime model: each identity
-has its own `identity.Runtime` owning keystore, session, lock state, approval
-coordinator, token authority, SSH enrollment, config, and watcher. At startup,
-`apsigner` discovers all identity directories under `identities/`, filters out
-decommissioned identities, and builds a runtime for each. The operator surface
-is one effective identity (`"default"`) and one active admin session at a time,
-regardless of whether that session arrives over local IPC or the SSH
-`aplane-admin` subsystem.
+The durable namespace deliberately remains `identities/default/`. This keeps
+storage ownership explicit and leaves room for a future, versioned migration;
+it does not preserve identity discovery, request routing, wildcard grants,
+per-identity session maps, or identity selectors in product APIs. Low-level
+storage helpers may remain parameterized, but product-boundary callers pass the
+fixed product identity.
 
-The signer architecture is multitenant-shaped infrastructure inside that
-single-operator product:
+This contract removes a working internal multi-identity capability, including
+identity-local template activation and the former end-to-end `alice` routing
+scenario. It is not a description of previously dead code. A future tenant
+product must add an explicit composition and authorization layer instead of
+reactivating dormant branches.
 
-- runtime state is identity-scoped,
-- authorization separates principals from signing identities,
-- admin sessions carry principal and target-identity attribution,
-- HTTP and admin operations pass through stable action/resource authorization checks,
-- audit records carry target identity and principal attribution.
+At startup, any direct entry under `identities/` other than a real directory
+named `default` is an unsupported layout and fails closed before tokens, keys,
+policy, or watchers are loaded. HTTP token authentication binds the reserved
+principal `system:product-admin` to the one product runtime. Normal SSH accepts
+only `default`; enrollment accepts only `request-token:default`; product request
+and admin inputs expose no runtime selector.
 
-This plumbing should be read as infrastructure, not as a claim that the
-deployment model is multi-user.
-
-Signer transaction policy is identity-scoped and uses the current verdict model
+Signer transaction policy is product-scoped under `identities/default/` and uses the current verdict model
 documented in [ARCH_POLICY.md](ARCH_POLICY.md): Always Deny, Always Review,
 Always Approve, then Operator Default.
 
@@ -151,7 +148,7 @@ authenticated admin protocol.
 - Generate and recover keys from mnemonics
 - Register explicitly from binary entrypoints
 - Track default-enabled and library-visible key types through the key type catalog
-- Apply identity-scoped key type activation before generation surfaces expose library-visible providers
+- Apply the product key type activation set before generation surfaces expose library-visible providers
 
 ## Directory Structure
 
@@ -282,16 +279,16 @@ client `ssh:` signer routing is not supported by managed startup in this
 endpoint-routed client model.
 
 apsigner also reads per-identity configuration overlays:
-- `identities/<identity>/config.yaml` — identity-scoped settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`, `decommissioned`) that override process-global defaults; node role is configured only in root `node.yaml`
-- `identities/<identity>/unlock.yaml` — identity-scoped passphrase helper configuration
-- `identities/<identity>/policy.yaml` — identity-scoped node-role policy
-- `identities/<identity>/keytypes/<key_type>.json` — identity-scoped state records for optional key types
-- `identities/<identity>/keytypes/<key_type>.template` — encrypted installed YAML templates
+- `identities/default/config.yaml` — product runtime settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`) that override process-global defaults; unknown fields are rejected and node role is configured only in root `node.yaml`
+- `identities/default/unlock.yaml` — product passphrase helper configuration
+- `identities/default/policy.yaml` — product node-role policy
+- `identities/default/keytypes/<key_type>.json` — product state records for optional key types
+- `identities/default/keytypes/<key_type>.template` — encrypted installed YAML templates
 
 The signer data root may also contain `library/templates/*.yaml`, a plaintext
 KeyType Library source copied from release or installer artifacts. Files there
 are reference material until an authenticated admin installs a YAML template or
-enables a library-visible compiled provider for an identity.
+enables a library-visible compiled provider for the product runtime.
 
 See [USER_CONFIG.md](USER_CONFIG.md) for full reference.
 
@@ -355,19 +352,20 @@ process is systemd-managed through `APLANE_SYSTEMD_MANAGED=1` or parent PID 1.
 
 **Startup flow:**
 
-1. Discover all identity directories under `identities/` via `identity.DiscoverIdentities`
-2. Filter out identities whose stored config marks them `decommissioned:true`
-3. Ensure the current product identity is always present
-4. For each discovered identity, `startup.BuildIdentityRuntime` loads the per-identity config overlay, API token, keystore, and wires the approval coordinator and reload function
-5. In headless mode, the product identity is unlocked immediately; in locked mode, unlock happens later via apadmin IPC
+1. Validate that `identities/` is blank or contains only a real `default/`
+   directory, with no extra files, directories, or symlinks.
+2. `startup.BuildProductRuntime` constructs the one product runtime from the
+   default config overlay, API token, and keystore.
+3. In headless mode, the product identity is unlocked immediately; in locked
+   mode, unlock happens later via admin IPC.
 
 Both modes use the identity reload path after unlock:
 `identity.Runtime.Reload` or `ReloadWithPassphrase` delegates through
 `reloadLocked` to `templates.ReloadService.Reload`, wired by
 `startup.WireReloadFunc`. The reload verifies the node role and authenticated
 policy before registering enabled installed templates, scanning keys,
-validating key classes against the node role, and publishing the per-identity
-key indexes. Identity key type activation and disabled records are consulted by
+validating key classes against the node role, and publishing the product
+identity's key indexes. Key type activation and disabled records are consulted by
 inventory and admin key operations when deciding whether an optional key type
 can be discovered, generated, or imported.
 
@@ -380,7 +378,7 @@ Each identity owns an `identity.Runtime` containing:
 - effective policy config
 - lock state
 - file watcher lifecycle
-- identity-scoped config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`)
+- product runtime config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`)
 
 The on-disk layout is identity-scoped: keys under
 `identities/<identityID>/keys/`, encrypted templates and state records under
