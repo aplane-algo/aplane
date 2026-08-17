@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package policytui provides the standalone appolicy terminal UI.
+// Package policytui provides the shared structured policy terminal UI.
 package policytui
 
 import (
@@ -55,7 +55,7 @@ type field struct {
 	cycle  func(*policy.StoredConfig)
 }
 
-// Model is the appolicy Bubble Tea model.
+// Model is the shared policy editor Bubble Tea model.
 type Model struct {
 	store                     policyeditor.Store
 	target                    policyeditor.Target
@@ -150,8 +150,8 @@ type routeEditField struct {
 	value string
 }
 
-// New returns an appolicy model initialized with a verified signer policy.
-// NewWithTarget returns an appolicy model initialized with a verified stored
+// New returns a policy editor model initialized with a verified signer policy.
+// NewWithTarget returns a policy editor model initialized with a verified stored
 // policy document for the selected domain.
 func NewWithTarget(store policyeditor.Store, stored *policy.StoredConfig, dataDir, identityID string, target policyeditor.Target) Model {
 	if target == "" || target == policyeditor.TargetAuto {

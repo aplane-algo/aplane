@@ -21,8 +21,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// Store is the persistence boundary used by appolicy. Future online backends
-// should implement this interface without changing editor state/UI code.
+// Store is the persistence boundary used by the shared policy editor. Online,
+// offline-rescue, and standalone-draft backends implement it without changing
+// editor state or UI code.
 type Store interface {
 	Load(context.Context) (*policy.StoredConfig, error)
 	Save(context.Context, *policy.StoredConfig) error

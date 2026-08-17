@@ -14,9 +14,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
+	"github.com/aplane-algo/aplane/internal/storeinit"
+	"github.com/aplane-algo/aplane/internal/storelock"
+	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/lsig"
 )
 
 type fakeOnlineSession struct {
@@ -213,4 +219,111 @@ func TestDraftDigestUsesExactBytes(t *testing.T) {
 	if got, want := stdout.String(), policy.PolicySHA256(data)+"\n"; got != want {
 		t.Fatalf("digest = %q, want %q", got, want)
 	}
+}
+
+func TestRescueApplyPreservesExactBytesAndProducesVerifiedPolicy(t *testing.T) {
+	root, passphrase := initializedPolicyStore(t)
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, passphrase)
+	draft := filepath.Join(t.TempDir(), "replacement.yaml")
+	want := []byte("# exact rescue replacement\nreject_foreign_rekey: false\n")
+	if err := os.WriteFile(draft, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	err := (RescueRunner{}).Run(context.Background(), Command{
+		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: draft, DataDir: root,
+	}, Streams{Stdout: &stdout, Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := policy.PolicyPath(root, auth.CurrentProductIdentityID())
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("rescue apply changed bytes:\n%s", got)
+	}
+	if err := (RescueRunner{}).Run(context.Background(), Command{
+		Verb: VerbCheck, Target: policyeditor.TargetSigner, DataDir: root,
+	}, Streams{Stdout: io.Discard, Stderr: io.Discard}); err != nil {
+		t.Fatalf("saved policy did not verify: %v", err)
+	}
+}
+
+func TestRescueApplyRefusesBusyStoreBeforeReadingReplacement(t *testing.T) {
+	root, passphrase := initializedPolicyStore(t)
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, passphrase)
+	shared, err := storelock.AcquireShared(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = shared.Close() }()
+	path := policy.PolicyPath(root, auth.CurrentProductIdentityID())
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = (RescueRunner{}).Run(context.Background(), Command{
+		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: filepath.Join(t.TempDir(), "missing.yaml"), DataDir: root,
+	}, Streams{Stdout: io.Discard, Stderr: io.Discard})
+	if !errors.Is(err, storelock.ErrBusy) {
+		t.Fatalf("Run(rescue apply busy) error = %v, want ErrBusy", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("busy rescue apply changed production policy")
+	}
+}
+
+func TestRescueDraftEditWritesOnlyDraftWithoutSidecar(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "draft.yaml")
+	if err := os.WriteFile(path, []byte("reject_foreign_rekey: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	editor := func(store policyeditor.Store, _ *policy.StoredConfig, _, _ string, _ policyeditor.Target) error {
+		replacement, err := policy.ParseStoredConfig([]byte("reject_foreign_rekey: false\n"))
+		if err != nil {
+			return err
+		}
+		return store.Save(context.Background(), replacement)
+	}
+	err := (RescueRunner{Editor: editor}).Run(context.Background(), Command{
+		Verb: VerbEdit, Target: policyeditor.TargetSigner, Source: path,
+	}, Streams{Stdout: io.Discard, Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(got)) != "reject_foreign_rekey: false" {
+		t.Fatalf("draft contents = %q", got)
+	}
+	if _, err := os.Stat(path + ".hmac"); !os.IsNotExist(err) {
+		t.Fatalf("standalone draft created sidecar: %v", err)
+	}
+}
+
+func initializedPolicyStore(t *testing.T) (string, string) {
+	t.Helper()
+	lsig.RegisterClient()
+	root := t.TempDir()
+	passphrase := "policycmd-test-passphrase"
+	_, err := storeinit.Initialize([]byte(passphrase), storeinit.Options{
+		DataDir: root, Paths: storepaths.NewPaths(root), IdentityID: auth.CurrentProductIdentityID(), Role: noderole.RoleSigner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, passphrase
 }
