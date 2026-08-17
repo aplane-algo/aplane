@@ -351,8 +351,8 @@ caller-supplied contract-admin, sentry, or signer-derived values. The frozen
 flow labels are `bounded1` for profiles without a sentry and
 `bounded-sentry1` for profiles with the sentry spend gate. The typed admin
 partial endpoint remains `POST /sign/bounded-admin`; bounded-sentry spend uses
-`POST /sign/bounded-component`, sentry-role `POST /sign/component`, and
-`POST /sign/bounded-assemble` in that order.
+`POST /plan`, bounded-base and sentry targets on `POST /sign/component`, then
+`POST /sign/assemble`.
 
 Signer planning classifies for initial path sizing, finalizes grouping, dummy,
 and fee mutations, then validates the finalized transaction at the single

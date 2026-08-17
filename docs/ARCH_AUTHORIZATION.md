@@ -224,7 +224,7 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile recovery state for the bound identity | `identity` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
-| `sign.component` | Request user-role or sentry-role component signatures for the guarded signing flow | `transaction` | Yes |
+| `sign.component` | Request user, sentry, or bounded-base authorization components over a frozen group | `transaction` | Yes |
 | `sign.assemble` | Assemble verified user and sentry component signatures into signed guarded transactions | `transaction` | Yes |
 | `sign.approve` | Approve or reject signing request | `sign_request` | No |
 | `keys.view` | List keys or view key details | `keys`, `key` | Yes for key list/details |
@@ -285,8 +285,7 @@ response handling, token rotation, or policy/settings changes.
 Enforced callsites:
 
 - `internal/signerapp/daemon/http_runtime.go` wraps HTTP `/sign`,
-  `/sign/component`, `/sign/assemble`, `/sign/bounded-component`,
-  `/sign/bounded-assemble`, `/sign/bounded-admin`, `/plan`, `/status`,
+  `/sign/component`, `/sign/assemble`, `/sign/bounded-admin`, `/plan`, `/status`,
   `/keys`, `/keytypes`, `/admin/generate`, `/admin/sentries/sync`, and
   `/admin/keys` with
   `requireAuth`. `/admin/sentries/sync` uses `sentries.sync` because it

@@ -107,9 +107,9 @@ for spending-key recovery.
 The frozen online flow is:
 
 ```text
-client -> user signer  POST /sign/bounded-component
-client -> sentry node  POST /sign/component (role: sentry)
-client -> user signer  POST /sign/bounded-assemble
+client -> user signer  POST /sign/component (kind=bounded-base)
+client -> sentry node  POST /sign/component (kind=sentry)
+client -> user signer  POST /sign/assemble (kind=bounded-sentry)
 client -> algod         submit or simulate exact signed group
 ```
 

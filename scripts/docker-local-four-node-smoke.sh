@@ -96,7 +96,7 @@ and validate guarded, Corridor, and plain Falcon accounts against the selected
 network. It then
 submits the same guarded 0 ALGO self-send with SDK preparation and guarded
 signing helpers. It also sends an allowlisted Corridor payment through the
-SDK's bounded-component, sentry-component, and bounded-assembly choreography,
+SDK's bounded-base component, sentry component, and shared assembly choreography,
 and proves a non-allowlisted recipient is rejected. The Corridor flow also
 proves that sentry loss blocks spend while its external admin can still rekey
 the account. By default the Python SDK comes from the local aplanesdk repo;

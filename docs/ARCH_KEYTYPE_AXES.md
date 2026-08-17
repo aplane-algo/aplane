@@ -142,7 +142,7 @@ from the presence of a witness key alone.
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient allowlist | `aplane.falcon1024.v1` | none | `bounded1`; spend/rekey through `/sign` as permitted by the profile |
 | `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient/asset/amount allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
 | `aplane.falcon1024-sentry1024.v1` | DSA LogicSig | dedicated guarded verifier | `aplane.falcon1024.v1` | signer-custodied Falcon sentry witness | `sentry1`; user `/sign/component`, sentry `/sign/component`, then `/sign/assemble` |
-| `aplane.corridor.v1` | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist | `aplane.falcon1024.v1` | signer-custodied Falcon sentry on spend; distinct external Falcon admin on rekey | `bounded-sentry1`; `/sign/bounded-component`, sentry `/sign/component`, then `/sign/bounded-assemble` |
+| `aplane.corridor.v1` | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist | `aplane.falcon1024.v1` | signer-custodied Falcon sentry on spend; distinct external Falcon admin on rekey | `bounded-sentry1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL HTLC policy | none | none | empty flow; ordinary LogicSig assembly through `/sign` |
 
 The examples describe the currently implemented architecture. A future change

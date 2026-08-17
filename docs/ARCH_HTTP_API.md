@@ -28,10 +28,8 @@ coverage.
 | `GET` | `/keytypes` | yes | no (but template-backed types appear only after unlock) |
 | `POST` | `/sign` | yes | yes |
 | `POST` | `/sign/bounded-admin` | yes | yes |
-| `POST` | `/sign/bounded-component` | yes | yes |
 | `POST` | `/sign/component` | yes | yes |
 | `POST` | `/sign/assemble` | yes | yes |
-| `POST` | `/sign/bounded-assemble` | yes | yes |
 | `POST` | `/sign/cancel` | yes | no |
 | `POST` | `/plan` | yes | yes |
 | `POST` | `/admin/generate` | yes | yes |
@@ -40,8 +38,8 @@ coverage.
 
 Method enforcement:
 
-- `/sign`, `/sign/bounded-admin`, `/sign/bounded-component`, `/sign/component`,
-  `/sign/assemble`, `/sign/bounded-assemble`, `/sign/cancel`, `/plan`,
+- `/sign`, `/sign/bounded-admin`, `/sign/component`, `/sign/assemble`,
+  `/sign/cancel`, `/plan`,
   `/status`, `/admin/generate`,
   `/admin/sentries/sync`, and `/admin/keys` enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
@@ -90,10 +88,9 @@ Timeout behavior:
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
   mutations including `/admin/sentries/sync` 60 seconds, `/plan` 60 seconds,
-  `/sign/component` 2 minutes for sentry-role requests, `/sign/assemble` and
-  `/sign/bounded-assemble` 2 minutes, and `/sign` or
-  `/sign/bounded-component` based on approval wait. User-role
-  `/sign/component` requests can
+  `/sign/component` 2 minutes for sentry targets, `/sign/assemble` 2 minutes,
+  and `/sign` or approval-bearing `/sign/component` based on approval wait.
+  User and bounded-base `/sign/component` requests can
   block on operator approval and use the same approval-aware deadline as
   `/sign`.
 - caller-provided contexts with earlier deadlines are preserved.
@@ -179,9 +176,8 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
   through `signed[]`.
 - Apsigner has no simulation endpoint or simulation request mode. Full
   simulation obtains an executable group through ordinary `/sign`; guarded
-  groups use `/sign/component` and `/sign/assemble`, while bounded-sentry
-  groups use `/sign/bounded-component`, `/sign/component`, and
-  `/sign/bounded-assemble`. The client
+  and bounded-sentry groups both use `/plan`, `/sign/component`, and
+  `/sign/assemble`. The client
   then sends the exact returned group to its configured algod simulate
   endpoint. Apsigner cannot distinguish this from a request whose result will
   be submitted, so policy, review, approval, signing, and audit semantics are
@@ -251,109 +247,42 @@ The response is not submission-ready. `message_hex` and every other derived
 authorization field must be recomputed by the completing helper from the
 finalized transaction, durable metadata, and program contract.
 
-`/sign/bounded-component` request (`signerapi.BoundedComponentRequest`) carries
-optional `request_id`, frozen TX-prefixed `group_bytes_hex[]`, bounded
-`targets[]`, foreign-only `contextual_positions[]`, and the contiguous
-signer-added `dummy_positions[]` suffix. Targets and contextual positions form
-a closed partition of the original prefix. The signer re-derives bounded paths,
-resource and fee requirements, and durable authorization metadata from those
-exact bytes; this endpoint never plans, mutates, appends, or regroups. It then
-applies signer policy and operator approval and releases base signature
-arguments only for sentry-enabled pure spends. The response contains
-`request_id`, the unchanged TX-prefixed `transactions[]`, and `components[]`.
-Each component carries `target_index`,
-`bounded_account`, `base_signatures[]`, canonical `runtime_args`, an
-`assembly_receipt`, and `signature_scheme`.
+`/sign/component` accepts `signerapi.ComponentRequest`: optional `request_id`,
+frozen TX-prefixed `group_bytes_hex[]`, discriminated `targets[]`, foreign-only
+`contextual_positions[]`, and a contiguous `dummy_positions[]` suffix. The
+three position sets form a closed partition. Target `kind` is `user`, `sentry`,
+or `bounded-base`; kind-specific fields are rejected on other kinds.
 
-The Falcon-signed assembly receipt commits to the bounded account, target TxID,
-normalized durable bounded metadata, and sorted runtime arguments under
-`APLANE_BOUNDED_SENTRY_ASSEMBLY_V1`. It prevents a client from transplanting a
-released base component into a different account, metadata instance, or
-runtime-argument set. The client must complete this user-side call before it
-requests the sentry signature.
-Bounded-component request IDs identify live approval requests and may be
-supplied to `/sign/cancel` while the request is pending.
+The endpoint never plans or mutates a group. User and bounded-base targets are
+policy- and operator-gated and use the live `/sign/cancel` lifecycle. Sentry
+targets use deterministic sentry policy without operator approval. Bounded-base
+authorization is reconstructed from frozen bytes and signer-held metadata,
+including resources, fees, runtime arguments, and the canonical dummy suffix.
+The response is `signerapi.ComponentResponse`, with `request_id` and
+kind-tagged `components[]`. User/sentry components carry `signature`; bounded
+components carry `auth_address`, `base_signatures[]`, canonical `runtime_args`,
+and `assembly_receipt`. Every component carries `target_index`, `kind`, and
+`signature_scheme`.
 
-`/sign/component` request (`signerapi.ComponentSignRequest`):
+The Falcon-signed bounded assembly receipt commits to the account, target TxID,
+normalized durable metadata, and sorted runtime arguments under
+`APLANE_BOUNDED_SENTRY_ASSEMBLY_V1`. It prevents transplanting released base
+material into another account, metadata instance, or runtime-argument set.
 
-- optional `request_id`
-- `role`: `user` or `sentry`
-- `component_key`: guarded account address for `user`, Witness Key ID for
-  `sentry`
-- `group_bytes_hex[]`: final TX-prefixed transaction bytes for the whole group
-- `target_indices[]`: zero-based indices to sign
+`/sign/assemble` accepts `signerapi.AssemblyRequest`: optional `request_id`,
+the frozen group, discriminated `targets[]`, and optional `passthrough[]`.
+Guarded targets carry user and sentry signatures; bounded-sentry targets carry
+base signatures, runtime arguments, an assembly receipt, and a sentry
+signature. Every position is covered exactly once. The response is
+`signerapi.AssemblyResponse` with `request_id` and aligned `signed_group[]`.
 
-For `role:"user"`, `component_key` identifies the local guarded account key to
-use for user-role component signing. The target transaction sender may be the
-guarded account itself or another sender whose effective signer/AuthAddr is
-that guarded account; no separate sender field is supplied because the sender
-is decoded from `group_bytes_hex[]`. User-role component signing runs the
-signer-domain approval gates before any key operation: hard policy rejection,
-always-review rules, and blocking operator approval, with the guarded account
-as the policy key for each target and non-target group positions evaluated as
-foreign context. The request can therefore block for a manual approval
-decision, exactly like `/sign`. For `role:"sentry"`, `component_key`
-identifies the local Witness Key ID and the deterministic sentry policy domain
-applies instead (no operator approval; see
-[ARCH_POLICY.md](ARCH_POLICY.md)). Each target index is signed independently
-using the role-separated sentry message derived from that target's TxID.
-
-`/sign/component` response (`signerapi.ComponentSignResponse`):
-
-- `request_id`
-- optional `component_key`
-- `signatures[]`
-- each signature has `target_index`, `signature`, and `signature_scheme`
-
-If the request omits `request_id`, apsigner returns a generated opaque ID with
-the same syntax limits as `/sign` request IDs. Component request IDs are
-correlation fields only in the current sentry MVP; they are not registered in
-the live `/sign/cancel` registry.
-
-`/sign/assemble` request (`signerapi.GuardedAssemblyRequest`):
-
-- optional `request_id`
-- `group_bytes_hex[]`
-- optional `targets[]`
-- optional `passthrough[]`
-
-Each target has `target_index`, `guarded_account`, `user_signature`,
-`sentry_signature`, optional source request IDs, and optional `runtime_args`.
-Each passthrough item has `target_index` and `signed_txn_hex`.
-
-`/sign/assemble` response (`signerapi.GuardedAssemblyResponse`):
-
-- `request_id`
-- `signed_group[]`
-
-Assembly verifies the sentry signature against the sentry public key
-embedded in the local guarded account key. It also verifies the user signature
-against the local guarded account key, verifies the resulting LogicSig address
-equals `guarded_account`, and, when the decoded target sender differs from
-`guarded_account`, verifies the assembled signed transaction carries
-`AuthAddr == guarded_account`. It does not trust endpoint-provided metadata or
-`/keys` self-reporting as ownership proof.
-
-If the request omits `request_id`, apsigner returns a generated opaque ID.
-Assembly request IDs are response/audit correlation fields only and are not
+Assembly keeps the authorization models distinct. Guarded targets are verified
+against their local guarded account key and both component signatures. Bounded
+targets reload durable metadata, verify receipt and both authorities against
+the frozen TxID, derive only declared signer-generated arguments, and check the
+LogicSig address and authorizer. Contract-admin paths never use this endpoint
+or contact a sentry. Assembly request IDs are correlation-only and are not
 cancelable through `/sign/cancel`.
-
-`/sign/bounded-assemble` request (`signerapi.BoundedAssemblyRequest`) carries
-optional `request_id`, the frozen `group_bytes_hex[]`, `targets[]`, and optional
-guarded-format `passthrough[]`. Each target carries `target_index`,
-`bounded_account`, the exact `base_signatures[]`, `runtime_args`, and
-`assembly_receipt` returned by `/sign/bounded-component`, plus the sentry
-signature returned by sentry-role `/sign/component`; source request IDs are
-optional correlation fields. The response is
-`signerapi.BoundedAssemblyResponse` with `request_id` and aligned
-`signed_group[]`.
-
-Bounded assembly reloads durable metadata, checks it against the receipt,
-verifies the base and sentry signatures against the frozen TxID, derives only
-declared signer-generated arguments, validates every source/path mask and
-maximum, verifies the LogicSig address and authorizer, and returns the final
-submittable bytes. Contract-admin paths never use this endpoint or contact the
-sentry.
 
 `/sign/cancel` request (`signerapi.CancelSignRequest`):
 
@@ -365,13 +294,13 @@ sentry.
 - `state`
 - optional `error`
 
-`/sign/cancel` withdraws a live synchronous `/sign` request. It is idempotent
+`/sign/cancel` withdraws a live synchronous `/sign` or approval-bearing
+`/sign/component` request. It is idempotent
 for client behavior. A valid, authenticated cancel request returns `200` with
 `success:true`; cancellation miss is represented in `state`, not as an HTTP
-error. `/sign/bounded-component` uses the same live cancellation lifecycle as
-`/sign`. `/sign/component`, `/sign/assemble`, and `/sign/bounded-assemble`
-request IDs are correlation fields rather than live cancel handles and return
-`not_found` if supplied to `/sign/cancel`.
+error. Sentry-only `/sign/component` and `/sign/assemble` request IDs are
+correlation fields rather than live cancel handles and return `not_found` if
+supplied to `/sign/cancel`.
 
 Cancel response states:
 

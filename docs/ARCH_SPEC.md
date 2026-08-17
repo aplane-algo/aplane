@@ -1316,9 +1316,9 @@ invalid input. The signer does not assert that those bytes originated at its
 own `/plan` endpoint. Independently constructed canonical bytes may succeed
 when they satisfy the same signer-owned authorization and policy checks.
 
-This changes the bounded-sentry component boundary deliberately. The legacy
-bounded-component route plans an unsigned request and approves the resulting
-group in one call. The unified component route instead reconstructs the
+This changed the bounded-sentry component boundary deliberately. The retired
+bounded-specific route planned and approved in one call. The unified component
+route instead reconstructs the
 bounded authorization envelope from frozen bytes, typed position context, and
 the signer's durable key metadata, then applies policy and operator approval to
 those exact bytes. Every released signature or receipt is derived from the
@@ -1327,10 +1327,8 @@ the authorization models distinct: guarded targets require user and sentry
 component signatures, while bounded-sentry targets require the bounded
 assembly receipt as well as their base and sentry signatures.
 
-During the unreleased migration, the current route taxonomy below remains the
-characterization baseline. `temp/signing-flow-unification.md` owns the staged
-subtraction plan; this section owns the architectural invariants that survive
-the migration.
+The old bounded-specific component and assembly routes are retired and return
+404. This section owns the invariants that survive that migration.
 
 The current guarded choreography is named `sentry1`. Signer `/keys` and
 `/keytypes` inventory label guarded keys with `signing_flow: sentry1` and
@@ -1360,8 +1358,8 @@ fixed before any downstream component or non-guarded signature is produced.
 
 For guarded targets, the client obtains component signatures:
 
-1. user signer `/sign/component` with role `user`,
-2. sentry signer `/sign/component` with role `sentry`.
+1. user signer `/sign/component` with `kind:"user"`,
+2. sentry signer `/sign/component` with `kind:"sentry"`.
 
 The user-role component request proves the user signer controls the
 guarded effective signer and runs the signer-domain approval gates (hard

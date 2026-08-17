@@ -96,10 +96,8 @@ Clients receiving the token should:
 **Protected Endpoints:**
 - `POST /sign` - Submit signing requests
 - `POST /sign/bounded-admin` - Prepare an external contract-admin partial
-- `POST /sign/bounded-component` - Produce approved bounded base components
-- `POST /sign/bounded-assemble` - Assemble bounded-sentry signed groups
-- `POST /sign/component` - Produce guarded-signing component signatures
-- `POST /sign/assemble` - Assemble guarded-account signed groups
+- `POST /sign/component` - Produce guarded or bounded, kind-tagged components
+- `POST /sign/assemble` - Assemble guarded or bounded-sentry signed groups
 - `POST /sign/cancel` - Cancel a live synchronous signing request by request ID
 - `POST /plan` - Preview group building (dummies, fees, group ID) without signing
 - `GET /status` - Return signer status, keyset revision, and approval timing metadata
@@ -110,8 +108,7 @@ Clients receiving the token should:
 - `DELETE /admin/keys` - Delete keys
 
 **Request Size Limits:**
-- JSON POST endpoints (`/sign`, `/sign/bounded-admin`,
-  `/sign/bounded-component`, `/sign/bounded-assemble`, `/sign/component`,
+- JSON POST endpoints (`/sign`, `/sign/bounded-admin`, `/sign/component`,
   `/sign/assemble`, `/sign/cancel`, `/plan`, `/admin/generate`, and
   `/admin/sentries/sync`) enforce a 5 MB request body limit
 - Oversized requests receive HTTP 413 (Payload Too Large)
@@ -633,8 +630,6 @@ server := &Signer{
 // Handler registration with action and resource (internal/signerapp/daemon/http_runtime.go)
 mux.HandleFunc("/sign", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSign))
 mux.HandleFunc("/sign/bounded-admin", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleBoundedAdmin))
-mux.HandleFunc("/sign/bounded-component", server.requireAuth(auth.ActionSignComponent, auth.Resource{Type: "transaction"}, server.handleBoundedComponent))
-mux.HandleFunc("/sign/bounded-assemble", server.requireAuth(auth.ActionSignAssemble, auth.Resource{Type: "transaction"}, server.handleBoundedAssemble))
 mux.HandleFunc("/sign/component", server.requireAuth(auth.ActionSignComponent, auth.Resource{Type: "transaction"}, server.handleSignComponent))
 mux.HandleFunc("/sign/assemble", server.requireAuth(auth.ActionSignAssemble, auth.Resource{Type: "transaction"}, server.handleSignAssemble))
 mux.HandleFunc("/sign/cancel", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSignCancel))

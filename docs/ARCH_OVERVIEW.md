@@ -315,12 +315,11 @@ ordinary signing policy, approval, and audit behavior.
   foreign-context modes; `POST /sign/cancel` cancels a pending manual approval
   prompt by `/sign` request ID; `POST /plan` previews group building without
   signing.
-- Guarded: `POST /sign/component` produces sentry components and
-  `POST /sign/assemble` assembles guarded-account signed groups.
-- Bounded: `POST /sign/bounded-admin` prepares external contract-admin
-  partials, `POST /sign/bounded-component` produces approved bounded base
-  components, and `POST /sign/bounded-assemble` assembles bounded-sentry signed
-  groups.
+- Component flow: `POST /plan` freezes groups, `POST /sign/component` produces
+  guarded or bounded components, and `POST /sign/assemble` assembles guarded or
+  bounded-sentry signed groups.
+- Bounded administration: `POST /sign/bounded-admin` prepares external
+  contract-admin partials outside the ordinary send path.
 
 See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the full REST inventory and wire
 contracts, [ARCH_SENTRY.md](ARCH_SENTRY.md) for guarded choreography, and

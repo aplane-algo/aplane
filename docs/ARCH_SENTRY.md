@@ -119,15 +119,14 @@ assembly.
 Dedicated guarded accounts and sentry keys are never signed through raw
 `/sign`:
 
-- guarded account keys use `/sign/component` with role `user`, then
+- guarded account keys use `/sign/component` with `kind:"user"`, then
   `/sign/assemble`,
-- sentry keys use `/sign/component` with role `sentry`,
+- sentry keys use `/sign/component` with `kind:"sentry"`,
 - ordinary `/sign` rejects all guarded account key types and sentry key types.
 
 Sentry-enabled bounded spends are also rejected by ordinary `/sign`. They use
-`/sign/bounded-component` for the approved base component,
-sentry-role `/sign/component` for the witness signature, and
-`/sign/bounded-assemble` for source-aware final assembly. Their external-admin
+`/plan`, `/sign/component` with bounded-base and sentry targets, and
+`/sign/assemble` for source-aware final assembly. Their external-admin
 rekey path remains `/sign/bounded-admin` and never contacts the sentry.
 
 This preserves the two-party invariant: a guarded account requires both a user
@@ -340,22 +339,27 @@ choreography:
 
 1. Resolve the bounded target from `signing_flow` and durable inventory.
 2. Send the draft group to `/plan`, then pass the exact frozen group plus its
-   closed target/context/dummy position partition to `/sign/bounded-component`.
+   closed target/context/dummy position partition to `/sign/component` with
+   `kind:"bounded-base"`.
    The signer independently reconstructs the durable bounded authorization and
    validates grouping, resources, fees, policy, and operator approval without
-   changing the bytes. It returns those same transactions, base signature args,
-   runtime args, and an assembly receipt.
+   changing the bytes. It returns base signature args, runtime args, and an
+   assembly receipt bound to those bytes.
 3. Route those exact frozen transactions to the sentry endpoint and request a
    sentry-role `/sign/component` signature.
 4. Return the base component, receipt, sentry signature, and exact group to the
-   user signer through `/sign/bounded-assemble`.
+   user signer through `/sign/assemble` with `kind:"bounded-sentry"`.
 5. The signer verifies all sources, derives declared Merkle proofs, constructs
    the metadata-declared argument layout, and returns the executable group.
 
-The first-party client does not ask the sentry first. It also rejects a group
-that mixes `sentry1` and `bounded-sentry1` targets because those flows have
-distinct component and assembly contracts. These are client orchestration
-constraints, not sentry-endpoint or signer-side whole-group security checks.
+The first-party client does not ask the sentry first. It still rejects a group
+that mixes `sentry1` and `bounded-sentry1` targets. The wire contracts are now
+shared, but the account signer does not yet implement the required multi-gate,
+all-target preflight that releases no component unless both guarded-user and
+bounded-base authorization complete. The guard remains fail-closed until that
+atomicity rule is implemented and tested end to end. This is a client
+orchestration constraint, not a sentry-endpoint or signer-side whole-group
+security check.
 Signer endpoints validate the targets they sign or assemble; they do not infer
 the flow of foreign group positions. Non-target positions are carried as exact
 passthrough signed bytes in the final assembly request.
@@ -534,13 +538,13 @@ Primary packages and files:
 - `internal/sentry/verify`: component signature verification (signer-side
   only).
 - `internal/sentry/sentryrefs`: public sentry reference catalog.
-- `internal/signerapp/signing`: component and bounded-component planning, sentry policy
+- `internal/signerapp/signing`: frozen component validation, bounded
+  authorization reconstruction, sentry policy
   evaluation, signer-domain approval gates for user components (`gate.go`,
   `component_gate.go`), user/sentry component signing, assembly, and `/sign`
   rejection gates.
 - `internal/signerapp/rest`: REST service methods backing `/sign/component`,
-  `/sign/assemble`, `/sign/bounded-component`, `/sign/bounded-assemble`,
-  `/keys`, `/keytypes`, and
+  `/sign/assemble`, `/keys`, `/keytypes`, and
   `/admin/sentries/sync`.
 - `internal/signerapp/daemon`: HTTP runtime (`http_runtime.go`) that registers
   these routes on the signer mux and dispatches them to the `rest` service
