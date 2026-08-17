@@ -711,6 +711,10 @@ func passphraseFromEnv() []byte {
 	return nil
 }
 
+var openPolicyTTY = func() (*os.File, error) {
+	return os.OpenFile("/dev/tty", os.O_RDWR, 0)
+}
+
 func readPassphrase(stdin io.Reader, stderr io.Writer, allowStdinFallback bool) ([]byte, error) {
 	if passphrase := passphraseFromEnv(); len(passphrase) > 0 {
 		return passphrase, nil
@@ -738,7 +742,7 @@ func readPassphrase(stdin io.Reader, stderr io.Writer, allowStdinFallback bool) 
 		return passphrase, nil
 	}
 	if !allowStdinFallback {
-		if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+		if tty, err := openPolicyTTY(); err == nil {
 			defer func() { _ = tty.Close() }()
 			writef(tty, "Enter store passphrase: ")
 			passphrase, err := term.ReadPassword(int(tty.Fd()))

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,9 +93,45 @@ func TestAuthenticateAndUnlockOnlinePolicyReportsUnlockFailure(t *testing.T) {
 	}
 }
 
+func TestAuthenticateAndUnlockOnlinePolicyStopsAtAuthenticationFailure(t *testing.T) {
+	want := errors.New("invalid passphrase")
+	conn := &fakeOnlinePolicyAuthenticator{authErr: want}
+	err := authenticateAndUnlockOnlinePolicy(conn, []byte("secret"))
+	if !errors.Is(err, want) {
+		t.Fatalf("authenticateAndUnlockOnlinePolicy() error = %v, want wrapped auth failure", err)
+	}
+	if conn.authCalls != 1 || conn.statusCalls != 0 || conn.unlockCalls != 0 {
+		t.Fatalf("calls auth/status/unlock = %d/%d/%d, want 1/0/0", conn.authCalls, conn.statusCalls, conn.unlockCalls)
+	}
+}
+
 type failingPolicyReader struct{ err error }
 
 func (r failingPolicyReader) Read([]byte) (int, error) { return 0, r.err }
+
+type countingPolicyReader struct{ calls int }
+
+func (r *countingPolicyReader) Read([]byte) (int, error) {
+	r.calls++
+	return 0, io.EOF
+}
+
+func TestReadPassphraseForPipedYAMLFailsBeforeReadingStdinWithoutIndependentSource(t *testing.T) {
+	t.Setenv("APPOLICY_PASSPHRASE", "")
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	originalOpenTTY := openPolicyTTY
+	t.Cleanup(func() { openPolicyTTY = originalOpenTTY })
+	openPolicyTTY = func() (*os.File, error) { return nil, errors.New("no controlling terminal") }
+
+	stdin := &countingPolicyReader{}
+	_, err := readPassphrase(stdin, io.Discard, false)
+	if err == nil || !strings.Contains(err.Error(), "interactive terminal") {
+		t.Fatalf("readPassphrase() error = %v, want independent-source error", err)
+	}
+	if stdin.calls != 0 {
+		t.Fatalf("readPassphrase() read piped YAML %d times, want 0", stdin.calls)
+	}
+}
 
 func TestReadOnlinePolicyYAMLReportsReadFailure(t *testing.T) {
 	want := errors.New("input device failed")
