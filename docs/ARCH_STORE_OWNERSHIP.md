@@ -80,6 +80,7 @@ they do not call the storage packages directly.
 | `apstore rebuild` | Offline mutation into an absent identity |
 | `apstore verify` and offline policy check/verify | Offline read-only recovery inspection |
 | `apstore policy sign` | Offline mutation for a signer that cannot load policy |
+| `apadmin policy rescue` production apply/edit | Offline policy repair for a stopped daemon |
 | `apstore generations prune` | Offline mutation pending a separately authorized live-prune design |
 | `appass` | Offline root/service-owner mutation of startup credentials and `unlock.yaml` |
 
@@ -88,7 +89,7 @@ inventory validation, and the installation-mode owner check. They preserve the
 narrow root-owned `identities/<identity>/passphrase.cred` exception and the
 installer-owned `install/` metadata artifacts.
 
-Root-run offline `appolicy` saves hold one exclusive lock across policy
+Root-run `apadmin policy rescue` saves hold one exclusive lock across policy
 publication and managed-store ownership normalization. The already-held guard
 is passed into the offline policy store so nested save code does not reacquire
 the same flock, and a daemon cannot start between publication and repair.
@@ -102,7 +103,7 @@ operator-owned state outside `APSIGNER_DATA`.
 ### Operator clients
 
 The multi-UID clients `apadmin`, `apapprover`, `approbe`, systemd-attach
-`apconsole`, daemon-backed `apstore`, and online `appolicy` resolve the public
+`apconsole`, and daemon-backed `apstore` resolve the public
 runtime socket without reading signer configuration. Policy editing,
 sentry-reference administration, generation listing, and managed backup
 transfer use typed admin operations. Operator-selected exports are written to

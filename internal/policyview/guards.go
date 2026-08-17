@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package policyview builds read-only policy presentation models shared by
-// appolicy and apadmin.
+// apadmin's guided policy editors.
 package policyview
 
 import (

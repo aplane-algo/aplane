@@ -795,19 +795,19 @@ adding a second field-editing model.
 
 Client-signing and sentry component `transfer_policy` are both persisted in
 `policy.yaml`, with schema validation selected by node role. `apstore policy
-check|sign|verify` operates on the active node-role policy. `appolicy`
-auto-targets the policy domain from `node.yaml`; `--target signer|sentry`
-can explicitly select a domain for standalone-file review, while store-backed
-role-incompatible targets fail closed. `apadmin` uses the same node-role target
-selection online. There is no scalar policy-settings IPC. The shared
-full-document editor renders and saves transfer policy through canonical YAML.
+check|sign|verify` operates on the active node-role policy. `apadmin policy`
+uses the daemon's node-role target online. `apadmin policy rescue` resolves
+`auto` from `node.yaml`; `--target signer|sentry` may select a domain for a
+standalone draft, while store-backed role-incompatible targets fail closed.
+There is no scalar policy-settings IPC. The shared full-document editor renders
+and saves transfer policy through canonical YAML.
 
-`appolicy --online` is the normal production editor. It obtains the active
+`apadmin policy edit` is the normal production editor. It obtains the active
 node-role policy snapshot through authenticated admin IPC, unlocks a locked
 identity with the authenticated passphrase before requesting that snapshot,
 validates the exact YAML through the daemon, and replaces it through the
-daemon-owned mutation path. Bare/offline `appolicy` is a stopped-service rescue tool: it reads root
-`node.yaml`, verifies the HMAC sidecar with the store passphrase, validates
+daemon-owned mutation path. `apadmin policy rescue` is a stopped-service tool:
+it reads root `node.yaml`, verifies the HMAC sidecar with the store passphrase, validates
 changes through the same runtime compiler as `apsigner`, and applies the draft
 by saving the document plus a fresh sidecar while holding the store mutation
 lock. On a systemd store, offline use requires root.
@@ -828,12 +828,12 @@ editor closes; applying the draft to production remains a separate `a` action.
 
 A transfer guard is a UI projection of adjacent stored routes with the
 same derived guard name and network/source/destination/close shape. Note that
-this appolicy "transfer guard" (a grouping of `transfer_policy.routes`) is a
+this editor "transfer guard" (a grouping of `transfer_policy.routes`) is a
 different concept from the `max_*`/`review_*` amount-threshold maps. The UI "Guards" screen
 edits routes, not those maps; the two share a name but not a model. Group-level
 fields edit the shared shape: guard name, description, enabled, networks,
 sources, destinations, and close allowance. The route row table edits one real
-route per asset row: asset term and optional review/reject thresholds. Appolicy
+route per asset row: asset term and optional review/reject thresholds. The editor
 derives stored route IDs as `<guard>_<asset>`, with asset-set references using
 the set name without `@`. Existing route IDs that do not follow that generated
 convention are preserved on no-op guard edits because route IDs are persistent
@@ -844,7 +844,7 @@ and owns an Asset Sets editor for the `asset_sets` map; route asset cells
 accept bare set names and store them as `@name` in YAML. New transfer policies
 and existing transfer policies with no asset sets are seeded with a `usdc` set
 from APlane's built-in mainnet/testnet ASA metadata when the Asset Sets editor
-opens. Thresholds are still stored in raw YAML units, but appolicy edits ALGO,
+opens. Thresholds are still stored in raw YAML units, but the editor uses ALGO,
 concrete ASA, and eligible single-asset-per-network asset-set thresholds in
 display units and uses signer-side ASA metadata to convert ASA values.
 Multi-network asset-set guard rows are written as uniform `limits_by_network`
@@ -852,24 +852,25 @@ entries.
 Advanced routing structures that are not yet surfaced in the guard editor
 still round-trip through YAML and can be edited directly with
 `apstore policy check/sign/verify`. This includes clawback routes using
-`asset_sources` and `clawback.allow`. For non-interactive use,
-`APPOLICY_PASSPHRASE` is checked before `APSIGNER_PASSPHRASE`.
-`appolicy --sha256` verifies the selected sidecar and prints the SHA-256 digest
-of the exact trusted selected document bytes. `appolicy --yaml` verifies the
-sidecar and emits those bytes to stdout. `appolicy --save` reads exact
-replacement YAML bytes from stdin, parses and runtime-validates them in the
+`asset_sources` and `clawback.allow`. Local non-interactive rescue may use
+`APSIGNER_PASSPHRASE`; remote policy commands require the controlling terminal.
+`apadmin policy rescue digest` verifies the selected sidecar and prints the
+SHA-256 digest of the exact trusted selected document bytes.
+`apadmin policy rescue export` verifies the sidecar and emits those bytes to
+stdout. `apadmin policy rescue apply -` reads exact replacement YAML bytes from
+stdin, parses and runtime-validates them in the
 selected policy domain, and writes `policy.yaml` plus a fresh sidecar
 while holding the same lock. `--target signer|sentry` explicitly selects
 the domain when auto-selection is not desired.
-`appolicy --to-sentry` parses and runtime-validates a signing
+`apadmin policy rescue to-sentry` parses and runtime-validates a signing
 `policy.yaml`, projects the deterministic "could allow" envelope into direct
-sentry-domain `policy.yaml`, and prints the result to stdout. The projection preserves
-hard-reject bounds and transfer routes, removes review-only route thresholds,
+sentry-domain `policy.yaml`, and prints the result to stdout. The projection
+preserves hard-reject bounds and transfer routes, removes review-only route thresholds,
 and fails closed for route-miss `review` or `operator_default` behavior because
 sentry policy has no human-review verdict.
-With a positional YAML file, `--check`, `--yaml`, and `--sha256` parse and
-runtime-validate the file without reading the production sidecar or requesting
-the store passphrase.
+With a positional YAML file, the rescue `check`, `export`, and `digest` verbs
+parse and runtime-validate the file without reading the production sidecar or
+requesting the store passphrase.
 Inside the TUI, `a` applies the current in-memory draft to production. `w`
 exports the current draft to an operator-selected YAML file only; it does not
 write a sidecar, update the identity store, or mark the draft clean.
@@ -938,10 +939,11 @@ Implementation source of truth:
   compilation, and validation.
 - `internal/policy/transfer_routing_eval.go`: direct transfer movement
   extraction and route evaluation.
-- `cmd/appolicy`: offline policy checker/editor binary.
-- `internal/signerapp/policyeditor`: offline policy load, validate, save, and lock
-  handling for `appolicy`.
-- `internal/signerapp/policytui`: terminal UI model for offline policy editing.
+- `cmd/apadmin/policy.go`: policy command adapter and local/remote transport selection.
+- `internal/signerapp/policycmd`: online and offline-rescue policy workflows.
+- `internal/signerapp/policyeditor`: online, store-backed rescue, and standalone
+  draft stores.
+- `internal/signerapp/policytui`: shared terminal UI model for policy editing.
 - `internal/signerapp/signing/always_review.go`: Always Review evaluation.
 - `internal/signerapp/signing/approval.go`: approval prompts and operator default behavior.
 - `internal/signerapp/signing/service.go`: phase ordering.

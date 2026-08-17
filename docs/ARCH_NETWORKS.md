@@ -223,8 +223,9 @@ symbol or name. If more than one cached ASA has the same unit name, the editor
 requires the operator to choose by numeric ASA ID.
 
 The guided policy editor exposes the YAML `transfer_policy` route table.
-`apadmin` uses the shared editor online through the admin protocol; `appolicy`
-uses it offline. Threshold-map fields remain part of the YAML policy grammar,
+`apadmin` uses the shared editor online through the admin protocol;
+`apadmin policy rescue` uses it offline. Threshold-map fields remain part of
+the YAML policy grammar,
 but have no separate scalar admin RPC.
 
 ## Admin Protocol

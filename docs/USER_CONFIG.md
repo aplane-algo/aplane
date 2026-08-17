@@ -324,8 +324,8 @@ Day-to-day:
 
 - Use `apadmin` to unlock the signer, approve transactions, change runtime
   admin settings, and edit the node-role policy while `apsigner` is running.
-- Use `appolicy` for offline or scriptable policy inspection, validation, and
-  signing of the node-role policy document: `policy.yaml` for signer nodes or
+- Use `apadmin policy rescue` for offline or scriptable policy inspection,
+  validation, and signing of the node-role policy document: `policy.yaml` for signer nodes or
   sentry-domain `policy.yaml` for sentry nodes.
 - Use `appass` only to switch passphrase auto-handling mode (`prompt`,
   `passfile`, `systemd-creds`).
@@ -597,18 +597,18 @@ configuration reference for the policy fields.
 Use `apadmin` for online guided policy edits while `apsigner` is running; it
 selects the node-role policy document, validates through the signer, writes the
 selected document plus a fresh sidecar, and activates the result immediately.
-Use `appolicy` for offline or scriptable policy edits. It auto-selects the
-policy document from `node.yaml`, verifies the existing sidecar, validates the
+Use `apadmin policy rescue` for offline or scriptable policy edits. It
+auto-selects the policy document from `node.yaml`, verifies the existing sidecar, validates the
 edited policy, and writes the selected document plus a fresh sidecar while
 holding the offline store mutation lock. For deliberate direct YAML edits to
 either policy document, run `apstore policy check`, review the change, then run
 `apstore policy sign`; `apstore policy verify` confirms the signed policy
 documents with the store passphrase.
-For byte-preserving scripted edits, `appolicy --yaml` emits the verified
-selected document bytes and `appolicy --save` reads replacement YAML from
-stdin, validates it in the selected policy domain, and writes a fresh sidecar.
+For byte-preserving scripted edits, `apadmin policy rescue export` emits the
+verified selected document bytes and `apadmin policy rescue apply -` reads
+replacement YAML from stdin, validates it in the selected policy domain, and writes a fresh sidecar.
 Use `--target signer|sentry` to override auto-selection. `apstore policy sign` and
-`appolicy` save modes are offline store mutations, so run them while
+`apadmin policy rescue` save modes are offline store mutations, so run them while
 `apsigner` is stopped or before starting the signer. Direct YAML edits are
 active only after the next
 successful signer reload, unlock, or restart; until then, an already running
@@ -697,12 +697,12 @@ max_asa_amounts:
 
 `transfer_policy` is the route table for direct `pay` and `axfer`
 transactions. Use `apadmin` for online guided editing while the signer is
-running, or `appolicy -d "$APSIGNER_DATA"` for offline guided editing of common
-policy and transfer guards. Advanced routing fields can also be edited directly
+running, or `apadmin -d "$APSIGNER_DATA" policy rescue edit` for offline guided
+editing of common policy and transfer guards. Advanced routing fields can also be edited directly
 in `policy.yaml` or sentry-domain `policy.yaml`; then run `apstore policy check` and
 `apstore policy sign` before starting or reloading the signer. For scripts, use
-`appolicy --yaml` to export the verified selected policy and `appolicy --save`
-to validate, save, and sign replacement YAML from stdin.
+`apadmin policy rescue export` to export the verified selected policy and
+`apadmin policy rescue apply -` to validate, save, and sign replacement YAML from stdin.
 
 For the broader operator policy guide, see [USER_POLICY.md](USER_POLICY.md).
 For the transfer routing deep dive with worked examples, validation rules, and
@@ -710,7 +710,7 @@ troubleshooting, see [USER_TRANSFER_ROUTING.md](USER_TRANSFER_ROUTING.md).
 
 Routes constrain signer-controlled transfer movements by network, source,
 asset, and destination. The stored YAML schema calls these entries `routes`;
-the `appolicy` TUI presents the common one-asset form as transfer guards. A
+the shared policy TUI presents the common one-asset form as transfer guards. A
 matching route means the movement may continue through the normal policy
 pipeline; it is not an auto-approval. Routing can produce Always Deny or
 Always Review verdicts, never Always Approve.
@@ -980,14 +980,14 @@ key_overrides:
 `apadmin` exposes the shared guided policy editor from the main key list with
 `p` and from Settings with the `Policy` row. It edits the active node-role
 policy through the running signer and applies changes immediately on success.
-Use `appolicy` for offline guided policy edits:
+Use `apadmin policy rescue` for offline guided policy edits:
 
 ```bash
-appolicy -d "$APSIGNER_DATA"
+apadmin -d "$APSIGNER_DATA" policy rescue edit
 ```
 
-For scripted flows, `appolicy --yaml` writes the verified selected document bytes to
-stdout, and `appolicy --save` reads replacement YAML from stdin, validates it
+For scripted flows, `apadmin policy rescue export` writes the verified selected
+document bytes to stdout, and `apadmin policy rescue apply -` reads replacement YAML from stdin, validates it
 in the selected policy domain, and writes a fresh sidecar for the selected
 document. Direct YAML
 editing remains available through `apstore policy check`, `apstore policy sign`,
@@ -1004,12 +1004,12 @@ Use the `transfer_policy` route table for operator-managed policy; it expresses
 source, destination, asset, close, clawback, and amount threshold rules in one
 model.
 
-In the `appolicy` Transfer Guards screen, the global blocked-destination list is
-edited next to the route list. Each editable guard contains one or more asset
+In the shared policy editor's Transfer Guards screen, the global
+blocked-destination list is edited next to the route list. Each editable guard contains one or more asset
 rows, and each asset row maps to one stored route with exactly one asset term
 and optional `review_above` / `reject_above` thresholds. The guard editor
 exposes guard-level name and description fields, plus asset and threshold rows.
-Appolicy saves each asset row as one real route whose ID is derived as
+The editor saves each asset row as one real route whose ID is derived as
 `<guard>_<asset>`; asset rows accept bare asset-set names such as `usdc`,
 save them as `@name` in YAML, and drop the `@` in the route ID.
 For `algo` and concrete ASA IDs, threshold fields use display units in the TUI
@@ -1019,7 +1019,7 @@ and are converted back to raw YAML units on save.
 IDs able to query configured algod when the local cache is cold. Routes with
 multiple asset terms, `limits_by_network`, clawback `asset_sources`, wildcard
 or asset-set amount limits, or other advanced YAML-only fields remain supported
-but are edited through the full YAML view or the `--yaml` / `--save` flow.
+but are edited through the full YAML view or the rescue `export` / `apply` flow.
 
 ### Approval vs Policy
 

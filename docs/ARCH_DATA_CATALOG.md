@@ -94,7 +94,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | SSH authorized keys | authoritative enrollment | `identities/<identity>/.ssh/authorized_keys` | SSH identity key set | `internal/sshtunnel`, `internal/signerapp/sshprovision` | Token plus SSH key required; token provisioning writes after admin approval. |
 | Client-signing policy domain | authoritative safety policy | role-selected `policy.yaml` plus `policy.yaml.hmac` on signer nodes | client-signing `policy.Config` runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime` | HMAC over exact YAML; missing/mismatched sidecar fails closed. |
 | Sentry component policy domain | authoritative co-sign policy | role-selected `policy.yaml` plus `policy.yaml.hmac` on sentry nodes | sentry policy runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/signing` | Same durable file contract as signer policy; no review/operator-default outcomes; missing/mismatched sidecar fails closed. |
-| Policy sidecar | authoritative integrity metadata | `policy.yaml.hmac` JSON | HMAC verification result | `internal/policy`, `cmd/appolicy`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
+| Policy sidecar | authoritative integrity metadata | `policy.yaml.hmac` JSON | HMAC verification result | `internal/policy`, `internal/signerapp/policycmd`, `cmd/apadmin`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
 | Key type state record | authoritative generation state | `keytypes/<key_type>.json` | enabled/disabled identity key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | encrypted `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Sealed under the identity's current term key and bound to its key type; disabled state skips registration. |
 | Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` | Explicitly imported public metadata only; not endpoint ownership proof. |
@@ -182,12 +182,12 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 |---|---|---|---|---|---|
 | Client-signing policy config | authoritative policy domain | `policy.yaml` interpreted on signer nodes | effective client-signing policy | `internal/policy`, `internal/signerapp/policyruntime` | Four-tier verdict model with operator default fallback. |
 | Sentry policy config | authoritative policy domain | `policy.yaml` interpreted on sentry nodes | effective sentry component policy | `internal/policy`, `internal/signerapp/signing` | Deterministic reject/sign only; no review or operator default. |
-| Transfer policy | authoritative policy section | `transfer_policy` YAML | route table and movement authorization | `internal/policy`, `internal/policyview`, `cmd/appolicy` | `schema_version:1`; route IDs are audit identifiers. |
+| Transfer policy | authoritative policy section | `transfer_policy` YAML | route table and movement authorization | `internal/policy`, `internal/policyview`, `internal/signerapp/policycmd` | `schema_version:1`; route IDs are audit identifiers. |
 | Transfer route | authoritative policy row | `transfer_policy.routes[]` | route match and rule ID source | `internal/policy` | Dynamic rule IDs use `transfer_policy:<route_id>:<outcome>`. |
 | Policy key override | authoritative sparse override | `key_overrides` map | effective per-key policy | `internal/policy` | Signing overrides keyed by auth address; sentry overrides keyed by Witness Key ID. |
 | Policy verdict | runtime decision | effective policy plus decoded txn facts | approve/review/reject outcome | `internal/policy`, `internal/signerapp/signing` | Sentry rejects if a review verdict would be required. |
-| Policy editor draft | long-lived UI/runtime state | loaded YAML plus in-memory edits | appolicy TUI draft | `cmd/appolicy`, `internal/signerapp/policyeditor` | Applies only on explicit save/apply; save writes exact bytes and sidecar. |
-| Sentry policy conversion output | derived YAML | `appolicy --to-sentry` input policy | deterministic "could allow" sentry-role `policy.yaml` content | `cmd/appolicy`, `internal/policy` | Drops review-only behavior; fails closed for non-deterministic route misses. |
+| Policy editor draft | long-lived UI/runtime state | loaded YAML plus in-memory edits | apadmin policy TUI draft | `cmd/apadmin`, `internal/signerapp/policycmd`, `internal/signerapp/policyeditor` | Applies only on explicit save/apply; production save writes exact bytes and sidecar. |
+| Sentry policy conversion output | derived YAML | `apadmin policy to-sentry` input policy | deterministic "could allow" sentry-role `policy.yaml` content | `internal/signerapp/policycmd`, `internal/policy` | Drops review-only behavior; fails closed for non-deterministic route misses. |
 
 ## Authorization And Authentication
 
@@ -237,7 +237,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Token provisioning prompt | runtime wire model | SSH enrollment request | admin token provisioning messages | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/sshprovision` | Admin approval required before token delivery. |
 | Backup/restore messages | wire contract | admin backup plus preview/recover/list/review/activate/rollback/purge DTOs | backup admin service calls | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/backupadmin` | Review carries typed source context authenticated by the archive's sealed manifest, plus the destination-derived acknowledgement signal; direct live restore is omitted; export passphrases are parsed as `SensitiveBytes`. |
 | Admin settings messages | wire contract | settings get/update messages | process/identity config mutation | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin` | Update paths authorize and apply config-staleness guards. |
-| Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | shared policy editor online store | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin`, `internal/signerapp/policyeditor` | Target-aware signer/sentry writes replace whole documents and sidecars; apadmin and appolicy share the editor model. |
+| Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | shared policy editor online store | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin`, `internal/signerapp/policyeditor` | Target-aware signer/sentry writes replace whole documents and sidecars; interactive and batch apadmin workflows share the editor model. |
 
 ## Transaction And Signing Runtime Models
 
@@ -350,7 +350,8 @@ name a test inline:
   `internal/signerapp/rest/service_test.go`,
   `internal/signerapp/signing/sentry_gate.go`.
 - Policy domains, integrity, and conversion: `internal/policy/*_test.go`,
-  `cmd/appolicy/main_test.go`, `test/contracts/policy/*.yaml`.
+  `internal/signerapp/policycmd/policycmd_test.go`, `cmd/apadmin/policy_test.go`,
+  `test/contracts/policy/*.yaml`.
 - Key payload parsing, scan, backup, and restore: `internal/keys`,
   `internal/backup/service_test.go`, `cmd/apstore/policy_test.go`.
 - Bounded metadata, ceremony, and external witness artifacts:

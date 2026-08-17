@@ -33,14 +33,14 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `cmd/apshell/`: Interactive shell, scripting environment, plugin host, and MCP surface
 - `cmd/aprekey/`: External witness generation and bounded contract-admin rekey/unrekey ceremonies
 - `cmd/apsigner/`: Thin signing-daemon entrypoint for flags and provider registration; `internal/signerapp/daemon` owns the HTTP/IPC/SSH runtime
-- `cmd/apadmin/`: TUI and batch admin client over IPC
+- `cmd/apadmin/`: TUI and batch admin client over IPC or SSH, including live
+  policy administration and explicit offline policy rescue workflows
 - `cmd/apconsole/`: Secure-machine console wrapper for apshell/apadmin/apsigner panes
 - `cmd/apapprover/`: Approval-only admin client over IPC
 - `cmd/apstore/`: Local initialize/policy/verify/rebuild operations and
   admin-protocol clients for daemon-owned backup, restore, changepass,
   template, key type, sentry-reference, generation-list, and backup-transfer
   operations; also owns offline permission audit/migration
-- `cmd/appolicy/`: Policy checker/editor TUI with authenticated `--online` mode and explicit offline rescue mode for the node-role policy document (`policy.yaml`, parsed as signer policy on signer nodes and sentry policy on sentry nodes)
 - `cmd/appass/`: Passphrase auto-unlock setup TUI
 - `cmd/appass-file/`: Dev-only plaintext passphrase helper (insecure)
 - `cmd/appass-systemd-creds/`: Production passphrase helper using systemd-creds (TPM2/host key)

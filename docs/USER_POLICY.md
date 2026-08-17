@@ -48,29 +48,49 @@ signer-domain `policy.yaml`, and sentry nodes edit sentry-domain
 whole-document replacements, writes the fresh sidecar, and activates the
 resulting runtime policy immediately.
 
-Use `appolicy --online` for a standalone guided or scriptable production
-client. It connects through authenticated admin IPC, selects the daemon's node
-role, unlocks the identity when the daemon is in its normal locked-start state,
-and never needs filesystem access to the private signer store.
+Use `apadmin policy` for a standalone guided or scriptable production client.
+It connects through authenticated admin IPC (or SSH with the normal
+`apadmin --remote` flag), selects the daemon's node role, unlocks the identity
+when required, and never needs filesystem access to the private signer store.
 
 ```bash
-appolicy --online
-appolicy --online -check
-appolicy --online --yaml > selected-policy.yaml
-appolicy --online --save < selected-policy.yaml
-appolicy --online draft-policy.yaml
-appolicy draft-policy.yaml
+apadmin policy edit
+apadmin policy check
+apadmin policy export > selected-policy.yaml
+apadmin policy apply - < selected-policy.yaml
+apadmin policy edit draft-policy.yaml
+apadmin policy rescue edit draft-policy.yaml
 ```
 
-With no batch-output flag, the online positional form validates the draft
-through the daemon, loads the current policy snapshot for optimistic
-concurrency, and opens that draft in the online editor. Add `--check`,
-`--yaml`, `--sha256`, or `--to-sentry` for a validation/output-only file
-operation.
+`apadmin policy` with no verb is the same as `apadmin policy edit`. A draft
+passed to `edit` is validated through the daemon and uses the current live
+snapshot as its optimistic-concurrency base. The `check`, `export`, `digest`,
+`apply`, and `to-sentry` verbs are noninteractive batch operations.
 
-Bare `appolicy` remains the stopped-service rescue editor. With `--target
-auto` it reads `$APSIGNER_DATA/node.yaml`. On a systemd store, run this mode as
-root only while `apsigner` is stopped.
+### Migration from the retired policy binary
+
+The former `appolicy` binary is no longer installed. Replace its command shapes
+as follows:
+
+| Former command | Current command |
+|---|---|
+| `appolicy --online` | `apadmin policy edit` |
+| `appolicy --online --check FILE` | `apadmin policy check FILE` |
+| `appolicy --online --yaml FILE` | `apadmin policy export FILE` |
+| `appolicy --online --sha256 FILE` | `apadmin policy digest FILE` |
+| `appolicy --online --save` | `apadmin policy apply -` |
+| `appolicy FILE` | `apadmin policy rescue edit FILE` |
+| `appolicy --check FILE` | `apadmin policy rescue check FILE` |
+| `appolicy --yaml FILE` | `apadmin policy rescue export FILE` |
+| `appolicy --sha256 FILE` | `apadmin policy rescue digest FILE` |
+| `appolicy --save` | `apadmin policy rescue apply -` |
+
+There is no wrapper or automatic online-to-rescue fallback.
+
+`apadmin policy rescue` is the stopped-service rescue command family. With
+`--target auto` it reads `$APSIGNER_DATA/node.yaml`. On a systemd store, run
+store-backed rescue as root only while `apsigner` is stopped. A positional
+standalone draft does not read the signer store or sidecar.
 
 Inside the TUI, `a` applies the current draft to production by writing
 the selected policy document plus a fresh sidecar. `w` writes the current
@@ -78,34 +98,35 @@ in-memory policy draft to a YAML file you choose. This is an export only: it
 does not update production policy, does not write a sidecar, and does not clear
 the modified state.
 
-When `appolicy` opens production policy from `APSIGNER_DATA` or `-d`, it needs
-the store passphrase to verify the sidecar. When it opens a standalone YAML
+When `apadmin policy rescue` opens production policy from `APSIGNER_DATA` or
+`-d`, it needs the store passphrase to verify the sidecar. When it opens a standalone YAML
 file, it validates that file without unlocking the store. If that file-backed
-draft is later applied to production with `a`, `appolicy` asks for the store
+draft is later applied to production with `a`, `apadmin policy rescue` asks for the store
 passphrase at apply time.
 
 For byte-preserving offline rescue edits:
 
 ```bash
-appolicy -d "$APSIGNER_DATA" --yaml > selected-policy.yaml
-APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save < selected-policy.yaml
+apadmin -d "$APSIGNER_DATA" policy rescue export > selected-policy.yaml
+APSIGNER_PASSPHRASE="$passphrase" apadmin -d "$APSIGNER_DATA" policy rescue apply - < selected-policy.yaml
 ```
 
-`appolicy --sha256` verifies the current sidecar and prints the SHA-256 digest
-of the trusted selected document bytes. `appolicy --yaml` verifies the current
-sidecar and emits those trusted bytes. `appolicy --save` reads replacement YAML
+`apadmin policy rescue digest` verifies the current sidecar and prints the
+SHA-256 digest of the trusted selected document bytes.
+`apadmin policy rescue export` verifies the current sidecar and emits those
+trusted bytes. `apadmin policy rescue apply -` reads replacement YAML
 from stdin, validates it in the selected policy domain, writes the selected
 document, and writes a fresh sidecar. Use `--target signer` or
 `--target sentry` to override auto-selection. Because stdin is the
 document stream for save modes, provide the passphrase through the environment
 or an interactive terminal.
 
-With a positional YAML file, `appolicy --check draft.yaml`,
-`appolicy --yaml draft.yaml`, and `appolicy --sha256 draft.yaml` validate the
-file itself and do not verify or update the production sidecar. The same
-batch flags with `--online` validate through the running daemon and then exit;
-bare `appolicy --online draft.yaml` opens the validated draft for online
-editing.
+With a positional YAML file, `apadmin policy rescue check draft.yaml`,
+`apadmin policy rescue export draft.yaml`, and
+`apadmin policy rescue digest draft.yaml` validate the file itself and do not
+verify or update the production sidecar. Their non-rescue equivalents validate
+through the running daemon; `apadmin policy edit draft.yaml` opens the
+validated draft for online editing.
 
 For deliberate direct YAML edits:
 
@@ -117,7 +138,7 @@ apstore -d "$APSIGNER_DATA" policy verify
 
 These direct commands are offline maintenance operations; stop `apsigner` and
 use `sudo` for a systemd store. Normal production edits should use `apadmin` or
-`appolicy --online`.
+`apadmin policy edit`.
 
 Direct YAML edits take effect only after the next successful signer reload,
 unlock, or restart. These are offline store mutations, so the normal workflow
@@ -160,7 +181,7 @@ threshold maps remain accepted compatibility fields.
 Clawback controls are YAML-only in the guided policy editor. `reject_clawback`,
 `transfer_policy.clawback_on_no_route`, and clawback routes using
 `asset_sources` / `clawback.allow` remain valid in `policy.yaml`, but the
-`apadmin` / `appolicy` TUI does not expose controls to change them. Existing
+The shared `apadmin` policy TUI does not expose controls to change them. Existing
 YAML-authored clawback settings are preserved by unrelated guided edits.
 
 Sentry rekey authorization is YAML-only. Set `reject_rekey: true` for a coarse
@@ -280,9 +301,9 @@ transfer_policy:
 With `on_no_route: reject`, any covered transfer movement that does not match
 the route is rejected. Non-transfer policy layers still apply independently.
 
-## Appolicy Guard Shape
+## Guided Editor Guard Shape
 
-The `appolicy` Transfer Guards screen presents the common route shape as a
+The shared policy editor's Transfer Guards screen presents the common route shape as a
 guard with guard-level fields and an asset table.
 
 Guard-level fields include:
@@ -298,7 +319,7 @@ Guard-level fields include:
 Each asset row becomes one stored route in the selected policy document. The
 TUI derives the route ID as `<guard>_<asset>`, for example `test_algo` and
 `test_usdc` for a guard named `test`. Asset-set rows accept either `@usdc` or
-`usdc`; appolicy stores the route asset as `@usdc` and uses `test_usdc` as the
+`usdc`; the editor stores the route asset as `@usdc` and uses `test_usdc` as the
 route ID.
 Field edits validate and save into the in-memory draft when the field editor
 closes. Press `a` from the main policy screens to apply that draft to
@@ -314,7 +335,7 @@ non-uniform `limits_by_network`, clawback `asset_sources` /
 
 ## Key Overrides
 
-`key_overrides` is an advanced YAML-only feature. The appolicy UI does not
+`key_overrides` is an advanced YAML-only feature. The guided editor does not
 edit overrides.
 
 Overrides let one concrete signing key use tighter or looser policy than the
@@ -388,14 +409,14 @@ to audit.
 
 Before relying on a policy:
 
-1. Run `appolicy --online -check` (or an offline rescue check while the daemon
+1. Run `apadmin policy check` (or an offline rescue check while the daemon
    is stopped).
 2. Confirm the route miss behavior is intentional, especially
    `on_no_route: reject`, `close_on_no_route: reject`, and
    `clawback_on_no_route: reject`.
 3. Confirm address and asset set names resolve on the intended networks.
 4. Confirm amount thresholds use raw units in YAML.
-5. Sign the policy sidecar with `appolicy --save` or `apstore policy sign`.
+5. Sign the policy sidecar with `apadmin policy rescue apply -` or `apstore policy sign`.
 6. Reload, unlock, or restart the signer so the new verified policy is active.
 
 ## Troubleshooting

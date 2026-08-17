@@ -57,7 +57,6 @@ a key.
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
 | **apstore** | Keystore management client for local initialize, policy integrity, external backup verification, and rebuild rescue flows; endpoint export and live sentry-reference, backup, restore, template, key type, and passphrase operations use the admin protocol | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
-| **appolicy** | Offline policy checker/editor for the node-role policy document (`policy.yaml` for signer nodes, sentry-domain `policy.yaml` for sentry nodes), plus signing-to-sentry conversion | UI (TUI) + Policy + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
 | **aplocalnet** | LocalNet setup TUI/CLI for client (`apshell`) default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
 | **approbe** | Installer-facing liveness probe for signer IPC reachability before replacing local binaries | Installer helper + admin protocol probe |
@@ -165,7 +164,6 @@ aplane/
 │   ├── apconsole/                 # Secure-machine console wrapper
 │   ├── apapprover/                # Approval-only IPC client
 │   ├── apstore/                   # Keystore management, local flows, IPC-admin flows
-│   ├── appolicy/                  # Offline policy checker/editor
 │   ├── appass/                    # Passphrase auto-unlock configuration TUI
 │   ├── aplocalnet/                # LocalNet setup TUI/CLI
 │   ├── compile_teal/              # Dev/build helper for TEAL bytecode generation

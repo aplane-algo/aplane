@@ -5,19 +5,18 @@ This project builds several first-party commands and developer helpers:
 1. **apshell** - client shell, JavaScript runner, MCP server, and plugin host
 2. **aprekey** - external Falcon contract-admin artifact and bounded ceremony client
 3. **apsigner** - signing daemon, HTTP API, admin protocol, approval coordinator, and SSH tunnel server
-4. **apadmin** - TUI admin client over local IPC or the SSH admin subsystem
+4. **apadmin** - TUI and batch admin client over local IPC or SSH, including policy administration and rescue
 5. **apconsole** - secure-machine unified console for apshell, apadmin, and apsigner panes
 6. **apapprover** - minimal approval-only CLI over local IPC
 7. **apstore** - keystore management client for signer-owned admin flows plus local verify/rebuild rescue
-8. **appolicy** - offline policy checker/editor TUI
-9. **appass** - passphrase auto-unlock setup TUI
-10. **aplocalnet** - LocalNet setup TUI/CLI
-11. **appass-file** - dev-only plaintext passphrase helper
-12. **appass-systemd-creds** - Linux/systemd production passphrase helper using systemd credentials
-13. **approbe** - installer-facing signer liveness probe
-14. **applugin-checksum** - plugin checksum generator
-15. **compile_teal** - TEAL-to-Go bytecode generator used by development workflows
-16. **configdoc** - configuration reference generator
+8. **appass** - passphrase auto-unlock setup TUI
+9. **aplocalnet** - LocalNet setup TUI/CLI
+10. **appass-file** - dev-only plaintext passphrase helper
+11. **appass-systemd-creds** - Linux/systemd production passphrase helper using systemd credentials
+12. **approbe** - installer-facing signer liveness probe
+13. **applugin-checksum** - plugin checksum generator
+14. **compile_teal** - TEAL-to-Go bytecode generator used by development workflows
+15. **configdoc** - configuration reference generator
 
 ## Project Structure
 
@@ -27,11 +26,10 @@ aplane/
 │   ├── apshell/              # Shell, scripting, MCP, and plugin host
 │   ├── aprekey/       # External contract-admin artifact and ceremony CLI
 │   ├── apsigner/            # Signing daemon and admin/HTTP/SSH runtime
-│   ├── apadmin/             # Admin TUI
+│   ├── apadmin/             # Admin TUI and batch policy client
 │   ├── apconsole/            # Secure-machine unified console
 │   ├── apapprover/           # Approval-only CLI
 │   ├── apstore/              # Keystore management, local flows, IPC-admin flows
-│   ├── appolicy/             # Offline policy checker/editor TUI
 │   ├── appass/               # Passphrase auto-unlock TUI
 │   ├── aplocalnet/           # LocalNet setup TUI/CLI
 │   ├── appass-file/            # Dev passphrase helper
@@ -132,7 +130,6 @@ make apadmin
 make apconsole
 make apapprover
 make apstore
-make appolicy
 make appass
 make aplocalnet
 make appass-file
@@ -476,20 +473,18 @@ sudo setcap cap_ipc_lock+ep bin/apsigner
 
 Set `require_memory_protection: true` in signer `config.yaml` when startup
 should fail if memory locking is unavailable. `apadmin`, `apconsole`,
-`apstore`, `appolicy`, `appass`, `aplocalnet`, and `approbe` perform admin, setup, rescue, policy-editing, or liveness-probe
-workflows and do not need this capability.
+`apstore`, `appass`, `aplocalnet`, and `approbe` perform admin, setup, rescue,
+policy-editing, or liveness-probe workflows and do not need this capability.
 
 ## Notes
 
 - **apshell** does not hold signer-managed private keys; signing is delegated to `apsigner`
 - **apsigner** stores all private keys encrypted at rest
-- **apadmin** provides TUI admin, approval, key, and KeyType Library workflows
+- **apadmin** provides TUI admin, approval, key, KeyType Library, online policy,
+  and explicit offline policy-rescue workflows
 - **apconsole** composes shell, signer-admin, and daemon panes on the secure signer machine
 - **apapprover** handles approval-only workflows over local IPC
 - **apstore** performs local initialize, policy integrity, external backup verification, and rebuild rescue flows; endpoint export and signer-owned sentry-reference, backup, restore, passphrase, key type, and template operations use the local admin protocol
-- **appolicy** verifies and edits the node-role policy document offline, can
-  convert deterministic signing policy into sentry-domain `policy.yaml`, and can
-  save/sign either policy document while holding the store mutation lock
 - **appass** edits identity-scoped auto-unlock configuration while `apsigner` is stopped
 - **aplocalnet** configures a running AlgoKit LocalNet as apshell's default network, updates apsigner genesis mapping, enables the LocalNet plugin, and can persist a KMD URL override for plugin processes
 - **appass-systemd-creds** is built for Linux/systemd releases; Darwin release archives omit it

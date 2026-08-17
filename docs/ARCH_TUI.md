@@ -96,8 +96,8 @@ requests the active signer-owned snapshot over the admin protocol, selects
 applies edits as whole-document replacements guarded by
 `expected_current_sha256`. The signer validates draft YAML in the selected
 policy domain, writes the YAML plus a fresh sidecar, and returns a canonical
-snapshot after a successful apply. `appolicy` uses the same editor offline for
-store-locked edits, scriptable save/check/export, and signing-to-sentry
+snapshot after a successful apply. `apadmin policy rescue` uses the same editor
+offline for store-locked edits, scriptable save/check/export, and signing-to-sentry
 conversion.
 
 ## Local Activity And Idle Locking
