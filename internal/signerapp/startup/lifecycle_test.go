@@ -84,9 +84,16 @@ func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntime(t *testing.T)
 }
 
 type lifecycleAuditRecorder struct {
-	mu      sync.Mutex
-	stopped bool
-	closed  bool
+	mu               sync.Mutex
+	stopped          bool
+	incompleteReason string
+	closed           bool
+}
+
+func (r *lifecycleAuditRecorder) LogServerStopIncomplete(reason string) {
+	r.mu.Lock()
+	r.incompleteReason = reason
+	r.mu.Unlock()
 }
 
 func (r *lifecycleAuditRecorder) LogServerStop() {
@@ -102,10 +109,10 @@ func (r *lifecycleAuditRecorder) Close() error {
 	return nil
 }
 
-func (r *lifecycleAuditRecorder) snapshot() (stopped, closed bool) {
+func (r *lifecycleAuditRecorder) snapshot() (stopped bool, incompleteReason string, closed bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.stopped, r.closed
+	return r.stopped, r.incompleteReason, r.closed
 }
 
 func TestShutdownLifecycleDoesNotDestroyRuntimeWhileHandlerOutlivesStopTimeout(t *testing.T) {
@@ -163,8 +170,8 @@ func TestShutdownLifecycleDoesNotDestroyRuntimeWhileHandlerOutlivesStopTimeout(t
 	if _, err := ir.SnapshotKeySession().GetKey("missing"); errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime was destroyed after timed-out handler stop: %v", err)
 	}
-	if stopped, closed := audit.snapshot(); stopped || closed {
-		t.Fatalf("audit teardown = stopped %v closed %v, want retained for active handler", stopped, closed)
+	if stopped, incompleteReason, closed := audit.snapshot(); stopped || incompleteReason == "" || closed {
+		t.Fatalf("audit teardown = stopped %v incomplete %q closed %v, want incomplete record and open logger", stopped, incompleteReason, closed)
 	}
 	warningsMu.Lock()
 	gotWarnings := append([]string(nil), warnings...)

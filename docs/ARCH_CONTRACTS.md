@@ -571,6 +571,7 @@ error-message codes:
 - `invalid_request`
 - `unknown_message_type`
 - `key_not_found`
+- `node_fail_closed`
 - `internal_error`
 
 Consumers should branch on message `type` and `code` first, and use `error` for display or fallback handling.
@@ -2162,6 +2163,7 @@ Events:
 
 - `SERVER_START`
 - `SERVER_STOP`
+- `SERVER_STOP_INCOMPLETE`
 - `SIGN_REQUEST`
 - `SIGN_APPROVED`
 - `SIGN_REJECTED`
@@ -2458,9 +2460,11 @@ drains request servers before destroying runtime key state. Lock, disconnect,
 displacement, and shutdown continue to fail pending approvals through the
 reason-independent coordinator fail-all contract.
 If a request server fails to stop or exceeds the shutdown deadline, lifecycle
-teardown does not close the audit logger or destroy runtime key state
-in-process; the signer returns for process exit without zeroing state beneath a
-still-running handler.
+records `SERVER_STOP_INCOMPLETE` with `outcome:"failed"` and the service error,
+then does not close the audit logger or destroy runtime key state in-process;
+the signer returns for process exit without zeroing state beneath a
+still-running handler. SSH stop uses the same lifecycle deadline and reports a
+deadline error until its accept loop and all connection handlers have exited.
 
 ## Key Watching and Reload
 

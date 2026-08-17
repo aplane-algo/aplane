@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -119,6 +120,31 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	}
 	if _, ok := msgs[1]["error"]; ok {
 		t.Fatalf("successful auth_result should omit error: %#v", msgs[1])
+	}
+}
+
+func TestAuthenticateClientRejectsNewAdminAfterNodeFailure(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	server.nodeFailState.Fail(errors.New("identity role conflict"))
+
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
+	recorder := &ipcJSONRecorderConn{}
+	session := adminserver.NewSession(
+		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine))),
+		server.adminSessionDeps(),
+	)
+	if ok := session.Authenticate(); ok {
+		t.Fatal("Authenticate() = true after node failure")
+	}
+	msgs := recorder.messages(t)
+	if len(msgs) != 2 || !reflectJSONSubset(msgs[1], map[string]any{
+		"kind":    string(protocol.MessageKindResponse),
+		"type":    protocol.MsgTypeAuthResult,
+		"success": false,
+		"code":    protocol.ErrCodeNodeFailClosed,
+	}) {
+		t.Fatalf("node-fail auth result mismatch: %#v", msgs)
 	}
 }
 

@@ -54,14 +54,15 @@ func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
 	}
 	svc := fs.adminServices()
 	return adminserver.SessionDeps{
-		Identity:   svc,
-		Settings:   svc,
-		Keys:       svc,
-		Backups:    svc,
-		Templates:  svc,
-		Inspection: svc,
-		Authorizer: fs.authorizer,
-		Audit:      svc,
+		Identity:    svc,
+		Settings:    svc,
+		Keys:        svc,
+		Backups:     svc,
+		Templates:   svc,
+		Inspection:  svc,
+		Authorizer:  fs.authorizer,
+		Audit:       svc,
+		NodeFailure: fs.nodeFailure,
 	}
 }
 

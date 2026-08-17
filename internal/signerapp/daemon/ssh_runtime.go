@@ -124,7 +124,7 @@ func (fs *Signer) currentSSHServer() *sshtunnel.Server {
 	return fs.sshServer
 }
 
-func (fs *Signer) stopSSHRuntime() error {
+func (fs *Signer) stopSSHRuntime(ctx context.Context) error {
 	fs.sshRuntimeMu.Lock()
 	rt := fs.sshRuntime
 	fs.sshRuntime = nil
@@ -134,10 +134,10 @@ func (fs *Signer) stopSSHRuntime() error {
 	// Stop waits for listener/connection shutdown and may run code paths that
 	// consult the current SSH server. Keep it outside sshRuntimeMu so future
 	// live-restart paths cannot deadlock through currentSSHServer.
-	return stopSSHRuntimeInstance(rt)
+	return stopSSHRuntimeInstance(ctx, rt)
 }
 
-func stopSSHRuntimeInstance(rt *sshRuntime) error {
+func stopSSHRuntimeInstance(ctx context.Context, rt *sshRuntime) error {
 	if rt == nil {
 		return nil
 	}
@@ -145,7 +145,7 @@ func stopSSHRuntimeInstance(rt *sshRuntime) error {
 		rt.cancel()
 	}
 	if rt.server != nil {
-		return rt.server.Stop()
+		return rt.server.StopContext(ctx)
 	}
 	return nil
 }

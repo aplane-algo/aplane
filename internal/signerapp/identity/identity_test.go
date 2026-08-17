@@ -405,6 +405,55 @@ func TestNodeFailStateIsFirstErrorSticky(t *testing.T) {
 	}
 }
 
+func TestNodeFailStateConcurrentPublicationAndReads(t *testing.T) {
+	state := &NodeFailState{}
+	first := errors.New("first role conflict")
+	start := make(chan struct{})
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		state.Fail(first)
+		close(done)
+	}()
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for {
+				err := state.Err()
+				if err != nil && !errors.Is(err, ErrNodeFailClosed) {
+					t.Errorf("Err() exposed non-fail-closed state: %v", err)
+					return
+				}
+				select {
+				case <-done:
+					return
+				default:
+				}
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			state.Fail(errors.New("later role conflict"))
+			if err := state.Err(); !errors.Is(err, first) {
+				t.Errorf("Err() = %v, want sticky first cause", err)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func TestStoredConfigApplyUserAutoApprove(t *testing.T) {
 	userAutoApprove := false
 	cfg := &StoredConfig{

@@ -30,15 +30,48 @@ func TestProductBackupAdaptersRejectNonDefaultRuntimeBeforeCreatingPaths(t *test
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
 	ir := identity.New(identity.Config{ID: "other", Authenticator: auth.NewTokenAuthenticator("token")})
 
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "imported.tar.gz"})
-	if begin.Success || !strings.Contains(begin.Error, "unsupported identity") {
-		t.Fatalf("BeginBackupImport(non-default) = %#v", begin)
+	tests := []struct {
+		name string
+		call func() string
+	}{
+		{"backup", func() string {
+			return service.BackupIdentity(ir, adminproto.BackupIdentityRequest{ExportPassphrase: []byte("passphrase")}).Error
+		}},
+		{"list backups", func() string { return service.ListBackups(ir).Error }},
+		{"delete backup", func() string {
+			return service.DeleteBackup(ir, adminproto.DeleteBackupRequest{ArchivePath: "missing.tar.gz"}).Error
+		}},
+		{"preview restore", func() string {
+			return service.PreviewRestore(ir, adminproto.PreviewRestoreRequest{ArchivePath: "missing.tar.gz", ExportPassphrase: []byte("passphrase")}).Error
+		}},
+		{"restore", func() string {
+			return service.RestoreBackup(ir, adminproto.RestoreBackupRequest{OperationID: "restore-other", ArchivePath: "missing.tar.gz", ExportPassphrase: []byte("passphrase")}).Error
+		}},
+		{"rollback restore", func() string {
+			return service.RollbackRestore(ir, adminproto.RollbackRestoreRequest{OperationID: "rollback-other"}).Error
+		}},
+		{"begin import", func() string {
+			return service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "imported.tar.gz"}).Error
+		}},
+		{"append import", func() string {
+			return service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: "upload", Data: []byte("data")}).Error
+		}},
+		{"commit import", func() string {
+			return service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{UploadID: "upload", ExportPassphrase: []byte("passphrase")}).Error
+		}},
+		{"abort import", func() string {
+			return service.AbortBackupImport(ir, adminproto.AbortBackupImportRequest{UploadID: "upload"}).Error
+		}},
+		{"read backup chunk", func() string {
+			return service.ReadBackupChunk(ir, adminproto.ReadBackupChunkRequest{FileName: "missing.tar.gz"}).Error
+		}},
 	}
-	restore := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
-		OperationID: "restore-other", ArchivePath: "missing.tar.gz", ExportPassphrase: []byte("passphrase"),
-	})
-	if restore.Success || !strings.Contains(restore.Error, "unsupported identity") {
-		t.Fatalf("RestoreBackup(non-default) = %#v", restore)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if errText := tt.call(); !strings.Contains(errText, "unsupported identity") {
+				t.Fatalf("non-default runtime error = %q, want unsupported identity", errText)
+			}
+		})
 	}
 	if _, err := os.Lstat(paths.IdentityDir("other")); !os.IsNotExist(err) {
 		t.Fatalf("non-default identity path was created: %v", err)

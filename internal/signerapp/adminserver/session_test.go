@@ -595,6 +595,30 @@ func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
 	}
 }
 
+func TestSessionDispatchRejectsPreviouslyAuthenticatedAdminAfterNodeFailure(t *testing.T) {
+	ir := identity.New(identity.Config{
+		ID:            auth.DefaultIdentityID,
+		Authenticator: auth.NewTokenAuthenticator("token"),
+	})
+	conn := &queueConn{}
+	svc := &stubServices{}
+	session := NewSession(conn, SessionDeps{
+		Keys: svc,
+		NodeFailure: func() error {
+			return identity.ErrNodeFailClosed
+		},
+	})
+	session.Bind(auth.NewDefaultIdentity("test"), ir)
+
+	if !session.Dispatch([]byte(`{"kind":"request","type":"list_keys","id":"keys-1"}`)) {
+		t.Fatal("Dispatch(list_keys) = false, want handled fail-closed response")
+	}
+	msg := decodeProtocolError(t, conn)
+	if msg.ID != "keys-1" || msg.Code != protocol.ErrCodeNodeFailClosed {
+		t.Fatalf("error = %#v, want node-fail-closed response for keys-1", msg)
+	}
+}
+
 func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 	ir := identity.New(identity.Config{
 		ID:            "alice",

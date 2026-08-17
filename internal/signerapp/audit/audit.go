@@ -30,6 +30,7 @@ const (
 	AuditAuthorizationDenied        AuditEventType = "AUTHORIZATION_DENIED"
 	AuditServerStart                AuditEventType = "SERVER_START"
 	AuditServerStop                 AuditEventType = "SERVER_STOP"
+	AuditServerStopIncomplete       AuditEventType = "SERVER_STOP_INCOMPLETE"
 	AuditKeyReload                  AuditEventType = "KEY_RELOAD"
 	AuditSessionConnected           AuditEventType = "SESSION_CONNECTED"
 	AuditSessionDisconnected        AuditEventType = "SESSION_DISCONNECTED"
@@ -483,6 +484,17 @@ func (a *AuditLogger) LogServerStart(keyCount int) {
 func (a *AuditLogger) LogServerStop() {
 	a.Log(AuditEntry{
 		Event: AuditServerStop,
+	})
+}
+
+// LogServerStopIncomplete records a shutdown that could not prove all service
+// handlers had exited. The logger deliberately remains open after this event
+// because those handlers may still emit audit entries before process exit.
+func (a *AuditLogger) LogServerStopIncomplete(reason string) {
+	a.Log(AuditEntry{
+		Event:   AuditServerStopIncomplete,
+		Outcome: "failed",
+		Reason:  reason,
 	})
 }
 

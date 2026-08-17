@@ -747,7 +747,11 @@ func (s *Server) Start(ctx context.Context) error {
 	fmt.Printf("SSH server listening on %s (forwarding to %s)\n", s.listenAddr, s.targetAddr)
 
 	// Accept connections in background
-	go s.acceptConnections(ctx, listener)
+	s.activeConns.Add(1)
+	go func() {
+		defer s.activeConns.Done()
+		s.acceptConnections(ctx, listener)
+	}()
 
 	return nil
 }
@@ -1300,6 +1304,17 @@ func (s *Server) handleChannel(newChannel ssh.NewChannel) {
 
 // Stop stops the SSH server gracefully, waiting for active connections to close.
 func (s *Server) Stop() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.StopContext(ctx)
+}
+
+// StopContext stops the SSH server and reports when the caller's shutdown
+// deadline expires before every accept/connection handler has returned.
+func (s *Server) StopContext(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s.mu.Lock()
 	if !s.running {
 		s.mu.Unlock()
@@ -1308,16 +1323,17 @@ func (s *Server) Stop() error {
 
 	close(s.closeChan)
 
-	if s.listener != nil {
-		if err := s.listener.Close(); err != nil {
-			s.mu.Unlock()
-			return fmt.Errorf("failed to close listener: %w", err)
-		}
-		s.listener = nil
-	}
-
+	listener := s.listener
+	s.listener = nil
 	s.running = false
 	s.mu.Unlock()
+
+	var listenerErr error
+	if listener != nil {
+		if err := listener.Close(); err != nil && !isClosedConnError(err) {
+			listenerErr = fmt.Errorf("failed to close listener: %w", err)
+		}
+	}
 
 	// Copy active connections (avoid holding lock during close)
 	s.sshConnsMu.Lock()
@@ -1343,12 +1359,11 @@ func (s *Server) Stop() error {
 
 	select {
 	case <-done:
-		// Clean shutdown
-	case <-time.After(5 * time.Second):
-		fmt.Printf("Timeout waiting for %d SSH connections to close\n", len(conns))
+		return listenerErr
+	case <-ctx.Done():
+		waitErr := fmt.Errorf("waiting for SSH handlers to close: %w", ctx.Err())
+		return errors.Join(listenerErr, waitErr)
 	}
-
-	return nil
 }
 
 func (s *Server) connectionStaleLocked(info sshConnInfo) bool {

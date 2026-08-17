@@ -473,3 +473,8 @@ Whole-policy replacement:
 Central protocol error-message codes are defined in
 `internal/protocol/error_codes.go`. Result payloads may also define
 message-specific stable codes.
+
+`node_fail_closed` rejects both new authentication and every request from an
+already-authenticated admin session after a process-wide invariant failure.
+The operator must repair the underlying store/role conflict and restart the
+signer; the session cannot resume administrative work in-process.

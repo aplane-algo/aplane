@@ -20,6 +20,7 @@ const (
 	AuditAuthorizationDenied        = signeraudit.AuditAuthorizationDenied
 	AuditServerStart                = signeraudit.AuditServerStart
 	AuditServerStop                 = signeraudit.AuditServerStop
+	AuditServerStopIncomplete       = signeraudit.AuditServerStopIncomplete
 	AuditKeyReload                  = signeraudit.AuditKeyReload
 	AuditSessionConnected           = signeraudit.AuditSessionConnected
 	AuditSessionDisconnected        = signeraudit.AuditSessionDisconnected

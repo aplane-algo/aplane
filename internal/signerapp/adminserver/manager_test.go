@@ -3,7 +3,10 @@
 
 package adminserver
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
 
 type stubConn struct{}
 
@@ -71,5 +74,61 @@ func TestSessionManagerRejectsSecondPreAuthPending(t *testing.T) {
 	second := NewSession(stubConn{}, SessionDeps{})
 	if !manager.RegisterPreAuthPending(first) || manager.RegisterPreAuthPending(second) {
 		t.Fatal("manager did not enforce one pre-auth pending slot")
+	}
+}
+
+func TestSessionManagerConcurrentOwnershipTransitions(t *testing.T) {
+	manager := NewSessionManager()
+	const contenders = 64
+	sessions := make([]*Session, contenders)
+	for i := range sessions {
+		sessions[i] = NewSession(stubConn{}, SessionDeps{})
+	}
+
+	start := make(chan struct{})
+	winners := make(chan *Session, contenders)
+	var wg sync.WaitGroup
+	for _, session := range sessions {
+		wg.Add(1)
+		go func(session *Session) {
+			defer wg.Done()
+			<-start
+			if manager.RegisterPending(session) {
+				winners <- session
+			}
+			_ = manager.HasClient()
+			_ = manager.ActiveSession()
+		}(session)
+	}
+	close(start)
+	wg.Wait()
+	close(winners)
+
+	var winner *Session
+	for session := range winners {
+		if winner != nil {
+			t.Fatal("more than one concurrent pending registration succeeded")
+		}
+		winner = session
+	}
+	if winner == nil {
+		t.Fatal("no concurrent pending registration succeeded")
+	}
+	if replaced, ok := manager.PromoteToActive(winner); !ok || replaced != nil {
+		t.Fatalf("PromoteToActive() = (%p, %v), want (nil, true)", replaced, ok)
+	}
+
+	for _, session := range sessions {
+		wg.Add(1)
+		go func(session *Session) {
+			defer wg.Done()
+			_ = manager.ClearActive(session)
+			_ = manager.HasClient()
+			_ = manager.ActiveSession()
+		}(session)
+	}
+	wg.Wait()
+	if manager.HasClient() {
+		t.Fatal("winning session was not atomically cleared")
 	}
 }

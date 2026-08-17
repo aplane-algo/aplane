@@ -875,8 +875,13 @@ the one product runtime only after every service reports a clean stop:
 
 If any service stop fails or times out, the lifecycle retains the audit logger
 and runtime state until process exit instead of tearing them down underneath a
-handler that may still be executing. The clean shutdown destroy path stops
-watcher dispatch before draining key operations and zeroing the keyring.
+handler that may still be executing. It writes a synced
+`SERVER_STOP_INCOMPLETE` record with the service error but leaves the logger
+open for any final handler records. The SSH server applies the lifecycle
+deadline to its accept loop and connection handlers and returns the deadline
+error rather than treating an incomplete drain as success. The clean shutdown
+destroy path stops watcher dispatch before draining key operations and zeroing
+the keyring.
 
 #### Passphrase Zeroing Discipline
 

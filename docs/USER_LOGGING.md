@@ -62,6 +62,7 @@ The examples show `"default"` as the identity. See [ARCH_OVERVIEW.md](ARCH_OVERV
 |-------|-------------|
 | `SERVER_START` | Server started; `key_count` shows loaded keys |
 | `SERVER_STOP` | Server shut down gracefully |
+| `SERVER_STOP_INCOMPLETE` | A service failed to drain; `outcome` is `failed` and `reason` names the service error |
 | `KEY_RELOAD` | Keys reloaded from keystore; `key_count` shows new count |
 
 ### Key Management

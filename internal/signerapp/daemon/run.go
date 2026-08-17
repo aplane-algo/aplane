@@ -350,7 +350,7 @@ func Run(dataDir string) int {
 					return nil
 				},
 				Stop: func(ctx context.Context) error {
-					return server.stopSSHRuntime()
+					return server.stopSSHRuntime(ctx)
 				},
 			},
 			{

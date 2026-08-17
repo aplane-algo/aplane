@@ -46,6 +46,7 @@ type Session struct {
 	inspectionServices StoreInspectionServices
 	authorizer         auth.Authorizer
 	audit              AuthorizationAudit
+	nodeFailure        func() error
 
 	mu                  sync.Mutex
 	state               SessionState
@@ -98,6 +99,7 @@ func NewSession(conn adminproto.AdminConn, deps SessionDeps) *Session {
 		inspectionServices: deps.Inspection,
 		authorizer:         deps.Authorizer,
 		audit:              deps.Audit,
+		nodeFailure:        deps.NodeFailure,
 		state:              StateConnected,
 		method:             method,
 		context:            newSessionContext(method, conn),
@@ -213,6 +215,12 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		if err := decoder.Decode(&authMsg); err != nil {
 			authMsg.Passphrase.Zero()
 			s.sendAuthResult(false, protocol.ErrCodeInvalidAuthMessage, "invalid auth message format")
+			return AuthOutcomeFailed
+		}
+
+		if s.nodeFailure != nil && s.nodeFailure() != nil {
+			authMsg.Passphrase.Zero()
+			s.sendAuthResult(false, protocol.ErrCodeNodeFailClosed, "signer node is fail-closed; restart required")
 			return AuthOutcomeFailed
 		}
 

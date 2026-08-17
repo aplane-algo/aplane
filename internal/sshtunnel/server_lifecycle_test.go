@@ -5,6 +5,7 @@ package sshtunnel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -41,6 +42,24 @@ func TestServerCallbackSettersBeforeStart(t *testing.T) {
 		srv.keyEnroller == nil ||
 		srv.adminChannelCallback == nil {
 		t.Fatal("expected all callback setters to apply before Start")
+	}
+}
+
+func TestServerStopContextReportsActiveHandlerTimeout(t *testing.T) {
+	srv, _ := testServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := srv.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	// Model a handler that remains alive after the listener/accept loop exits.
+	srv.activeConns.Add(1)
+	defer srv.activeConns.Done()
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer stopCancel()
+	if err := srv.StopContext(stopCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("StopContext() error = %v, want context deadline exceeded", err)
 	}
 }
 
@@ -147,15 +166,20 @@ func TestProductAuthRejectsNonProductUsernameBeforeKeyCheck(t *testing.T) {
 	}
 	srv.keyEnroller = func(key ssh.PublicKey) error { return nil }
 
-	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "other-identity"}, pub)
-	if perms != nil {
-		t.Fatalf("handlePublicKeyAuth() permissions = %#v, want nil", perms)
-	}
-	if err == nil || !strings.Contains(err.Error(), "unsupported SSH username") {
-		t.Fatalf("handlePublicKeyAuth() error = %v, want unsupported username", err)
-	}
-	if checked {
-		t.Fatal("non-product username reached product key check")
+	for _, username := range []string{"other-identity", "request-token:other-identity"} {
+		t.Run(username, func(t *testing.T) {
+			checked = false
+			perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: username}, pub)
+			if perms != nil {
+				t.Fatalf("handlePublicKeyAuth() permissions = %#v, want nil", perms)
+			}
+			if err == nil || !strings.Contains(err.Error(), "unsupported SSH username") {
+				t.Fatalf("handlePublicKeyAuth() error = %v, want unsupported username", err)
+			}
+			if checked {
+				t.Fatal("non-product username reached product key check")
+			}
+		})
 	}
 }
 

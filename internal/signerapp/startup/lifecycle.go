@@ -5,6 +5,7 @@ package startup
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -21,6 +22,7 @@ type LifecycleService struct {
 // ServerAuditLogger captures the shutdown hooks needed for audit shutdown.
 type ServerAuditLogger interface {
 	LogServerStop()
+	LogServerStopIncomplete(reason string)
 	Close() error
 }
 
@@ -82,7 +84,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	stoppedCleanly := true
+	var shutdownErrors []string
 	for i := len(started) - 1; i >= 0; i-- {
 		svc := started[i]
 		if svc.Stop == nil {
@@ -92,7 +94,7 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 			plan.Info("shutting down " + svc.Name)
 		}
 		if err := svc.Stop(shutdownCtx); err != nil {
-			stoppedCleanly = false
+			shutdownErrors = append(shutdownErrors, svc.Name+": "+err.Error())
 			if plan.Warn != nil {
 				plan.Warn(svc.Name + " shutdown error: " + err.Error())
 			}
@@ -104,7 +106,10 @@ func shutdownLifecycle(started []LifecycleService, plan LifecyclePlan) {
 	// those handlers. The signer process returns immediately after this path, so
 	// the operating system performs the final process-memory and descriptor
 	// cleanup without creating an in-process use-after-destroy window.
-	if !stoppedCleanly {
+	if len(shutdownErrors) != 0 {
+		if plan.AuditLog != nil {
+			plan.AuditLog.LogServerStopIncomplete(strings.Join(shutdownErrors, "; "))
+		}
 		if plan.Warn != nil {
 			plan.Warn("service shutdown incomplete; retaining audit and runtime state until process exit")
 		}

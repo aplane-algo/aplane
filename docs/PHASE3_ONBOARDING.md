@@ -102,9 +102,9 @@ the transition must do, and its header identifies the implementation anchors
 for authority, pinned rewrap, baseline-before-close ordering, and final
 comparison.
 
-Run it with `python3 scripts/run-formal-tests.py`, which runs all 17 recorded
-TLC checks — 13 modules, three additional liveness configurations, and the R5
-negative control — against recorded outcomes and metrics in
+Run it with `python3 scripts/run-formal-tests.py`, which runs all 13 recorded
+TLC checks, including the additional liveness configurations and the R5
+negative control, against recorded outcomes and metrics in
 `formal/metrics.json`. The positive rotation model is 52 distinct states at
 depth 9; the expected R5 violation is 21 distinct states at depth 4. **If you
 change either shape or the expected outcome, the harness will tell you.**

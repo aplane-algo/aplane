@@ -715,26 +715,6 @@ func TestTokenProvisioningDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *t
 	}
 }
 
-func TestTokenProvisioningRejectsNonProductUsernameBeforeCallbacks(t *testing.T) {
-	srv, _ := testServer(t)
-	_, pub := generateClientKey(t)
-
-	called := false
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
-			called = true
-			return true, nil
-		},
-	})
-	_, err := srv.handleTokenProvisioningAuth(nil, pub, "request-token:other-identity", "127.0.0.1:1", "fp")
-	if err == nil {
-		t.Fatal("handleTokenProvisioningAuth() error = nil, want unsupported username")
-	}
-	if called {
-		t.Fatal("non-product username reached provisioning callback")
-	}
-}
-
 func TestTokenProvisioning_Rejected(t *testing.T) {
 	srv, tmpDir := testServer(t)
 

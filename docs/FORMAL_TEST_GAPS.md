@@ -122,10 +122,11 @@ existing store-mutation lock with client-side retry in
 `cmd/apstore/inspection_retry.go`. A failed acquire never becomes in-flight
 work, so it adds no actor and no new fairness obligation.
 
-Otherwise, no actionable test gaps remain. Per-invariant status lives in
-[FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The lifecycle L4-L6
-audit is closed by the explicit lease-release and writer-pending tests
-named in the L4 and L5 rows.
+Otherwise, no actionable formal test gaps remain. Per-invariant status lives
+in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The former L1-L10
+decommission/lease model was retired with that production state; retained
+shutdown, key-session, approval fail-all, and session-ownership contracts are
+covered by their current Go race tests and AP/SO formal invariants.
 
 The former bounded DSA planning/argument-assembly drift entry is closed by
 [formal/bounded_sentry.tla](formal/bounded_sentry.tla): its BS1-BS7 transition

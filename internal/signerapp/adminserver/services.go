@@ -5,8 +5,8 @@ package adminserver
 
 import (
 	"context"
-	"github.com/aplane-algo/aplane/internal/adminproto"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
@@ -79,12 +79,13 @@ type AuthorizationAudit interface {
 }
 
 type SessionDeps struct {
-	Identity   IdentityServices
-	Settings   SettingsServices
-	Keys       KeyServices
-	Backups    BackupServices
-	Templates  TemplateServices
-	Inspection StoreInspectionServices
-	Authorizer auth.Authorizer
-	Audit      AuthorizationAudit
+	Identity    IdentityServices
+	Settings    SettingsServices
+	Keys        KeyServices
+	Backups     BackupServices
+	Templates   TemplateServices
+	Inspection  StoreInspectionServices
+	Authorizer  auth.Authorizer
+	Audit       AuthorizationAudit
+	NodeFailure func() error
 }

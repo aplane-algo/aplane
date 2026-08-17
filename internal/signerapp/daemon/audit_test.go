@@ -390,6 +390,7 @@ func TestAuditProcessLevelEventsOmitIdentityID(t *testing.T) {
 
 	logger.LogServerStart(3)
 	logger.LogServerStop()
+	logger.LogServerStopIncomplete("SSH server: deadline exceeded")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -397,8 +398,8 @@ func TestAuditProcessLevelEventsOmitIdentityID(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 audit entries, got %d", len(lines))
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 audit entries, got %d", len(lines))
 	}
 
 	for i, line := range lines {
@@ -408,6 +409,9 @@ func TestAuditProcessLevelEventsOmitIdentityID(t *testing.T) {
 		}
 		if entry.IdentityID != "" {
 			t.Errorf("line %d (%s): identity_id = %q, want empty", i, entry.Event, entry.IdentityID)
+		}
+		if entry.Event == AuditServerStopIncomplete && (entry.Outcome != "failed" || entry.Reason == "") {
+			t.Errorf("incomplete shutdown entry = %#v, want failed outcome and reason", entry)
 		}
 	}
 }

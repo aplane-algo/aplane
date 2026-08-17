@@ -189,7 +189,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - [FORMAL_TLA_SIGN_BOUNDARY_MODEL.md](docs/FORMAL_TLA_SIGN_BOUNDARY_MODEL.md) - First machine-checkable TLA+ artifact (sign boundary)
 - [FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md](docs/FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md) - Second machine-checkable TLA+ artifact (policy precedence, including real I9)
 - [FORMAL_TLA_COMPOSITION_MODEL.md](docs/FORMAL_TLA_COMPOSITION_MODEL.md) - Third machine-checkable TLA+ artifact (joins sign boundary + policy precedence)
-- [FORMAL_TLA_LIFECYCLE_MODEL.md](docs/FORMAL_TLA_LIFECYCLE_MODEL.md) - Fourth machine-checkable TLA+ artifact (lifecycle lock-ordering, first temporal-transition spec)
+- [FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md](docs/FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md) - Machine-checked single-admin ownership and displacement model
 
 ### User Guides
 - [USER_INSTALL.md](docs/USER_INSTALL.md) - Installation guide
