@@ -169,18 +169,16 @@ func Get(paths storepaths.Paths, identityID, name string) (Record, bool, error) 
 		}
 		return Record{}, false, fmt.Errorf("failed to read sentry reference %s: %w", name, err)
 	}
-	rec, migrate, err := parseRecord(data, name)
+	rec, err := parseRecord(data, name)
 	if err != nil {
 		return Record{}, false, fmt.Errorf("invalid sentry reference %s: %w", name, err)
-	}
-	if migrate {
-		if err := putRecord(paths, identityID, rec); err != nil {
-			return Record{}, false, fmt.Errorf("failed to migrate sentry reference %s: %w", name, err)
-		}
 	}
 	return rec, true, nil
 }
 
+// List returns every independently valid sentry reference. A malformed record
+// is omitted rather than hiding unrelated generation choices; direct Get of
+// that record still returns its validation error.
 func List(paths storepaths.Paths, identityID string) ([]Record, error) {
 	dir := paths.SentryRefsDir(identityID)
 	entries, err := os.ReadDir(dir)
@@ -196,11 +194,15 @@ func List(paths storepaths.Paths, identityID string) ([]Record, error) {
 			continue
 		}
 		name := strings.TrimSuffix(entry.Name(), ".json")
-		rec, ok, err := Get(paths, identityID, name)
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
 		if err != nil {
-			return nil, err
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("failed to read sentry reference %s: %w", name, err)
 		}
-		if !ok {
+		rec, err := parseRecord(data, name)
+		if err != nil {
 			continue
 		}
 		records = append(records, rec)
@@ -286,41 +288,39 @@ func resolveByNameOrComponentKey(paths storepaths.Paths, identityID, value strin
 	return Get(paths, identityID, value)
 }
 
-func parseRecord(data []byte, expectedName string) (Record, bool, error) {
+func parseRecord(data []byte, expectedName string) (Record, error) {
 	var header struct {
 		Schema string `json:"schema"`
 	}
 	if err := json.Unmarshal(data, &header); err != nil {
-		return Record{}, false, fmt.Errorf("failed to parse record: %w", err)
+		return Record{}, fmt.Errorf("failed to parse record: %w", err)
 	}
 	var rec Record
-	var migrate bool
 	switch header.Schema {
 	case recordSchemaV1:
 		legacy, err := decodeRecordV1(data)
 		if err != nil {
-			return Record{}, false, err
+			return Record{}, err
 		}
 		rec, err = recordFromV1(legacy)
 		if err != nil {
-			return Record{}, false, err
+			return Record{}, err
 		}
-		migrate = true
 	case RecordSchema:
 		if err := decodeRecordStrict(data, &rec); err != nil {
-			return Record{}, false, err
+			return Record{}, err
 		}
 	default:
-		return Record{}, false, fmt.Errorf("unsupported schema %q", header.Schema)
+		return Record{}, fmt.Errorf("unsupported schema %q", header.Schema)
 	}
 	rec, err := normalizeRecord(rec)
 	if err != nil {
-		return Record{}, false, err
+		return Record{}, err
 	}
 	if rec.Name != expectedName {
-		return Record{}, false, fmt.Errorf("record name %q does not match filename %q", rec.Name, expectedName)
+		return Record{}, fmt.Errorf("record name %q does not match filename %q", rec.Name, expectedName)
 	}
-	return rec, migrate, nil
+	return rec, nil
 }
 
 func decodeRecordStrict(data []byte, destination any) error {

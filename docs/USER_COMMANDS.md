@@ -683,7 +683,7 @@ endpoints list
 endpoints show <alias>
 endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]
 endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>
-endpoints discover-sentries [--dry-run]
+endpoints discover-sentries
 endpoints default <alias>
 endpoints delete <alias>
 ```

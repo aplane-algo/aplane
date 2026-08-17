@@ -1082,7 +1082,7 @@ Additional client-state notes:
 - `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin IPC. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes the daemon-reported `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
 - `apshell endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]` manually creates or replaces a `role: sentry` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--sentryport` is stored as the endpoint `signer_port` REST port used behind SSH sentry endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover sentry keys, copy tokens, or establish SSH host trust.
-- `apshell endpoints discover-sentries [--dry-run]` is a read-only diagnostic. It scans configured `sentry` endpoints with authenticated `/keys`, validates each advertised Witness Key ID, and prints the live results without mutating `endpoints.yaml` or the signer reference catalog. Temporarily unavailable or locked endpoints are reported and skipped; authentication failures, endpoint configuration errors, malformed responses, duplicate public keys, and SSH host-key mismatches fail closed.
+- `apshell endpoints discover-sentries` is a read-only diagnostic. It scans configured `sentry` endpoints with authenticated `/keys`, validates each advertised Witness Key ID, and prints the live results without mutating `endpoints.yaml` or the signer reference catalog. Temporarily unavailable or locked endpoints are reported and skipped; authentication failures, endpoint configuration errors, malformed responses, duplicate public keys, and SSH host-key mismatches fail closed.
 - `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client routing configuration. `show` is local-only and does not call `/keys`; deletion has no sentry-inventory dependency.
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
 - for interactive `apshell`, token presence and SSH host trust are enforced when the shell attempts `connect`, startup auto-connect, or `request-token` flows; they are not preflight requirements for process startup
@@ -2037,12 +2037,13 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
 ```
 
 The catalog is populated only by explicit operator import. Version-1 records
-remain readable through a bounded adapter and are rewritten as version 2 when
-read. A migrated historical discovery record carries
+remain readable through a bounded adapter and are projected as version 2 in
+memory without rewriting the store. A migrated historical discovery record carries
 `migration_origin: "v1_client_discovery"`; that closed marker is diagnostic
 provenance, not a live discovery source or routing input.
-Human list output treats the Witness Key ID as the primary identifier
-and shows generated endpoint-synced names only in detailed JSON views.
+Human list output treats the Witness Key ID as the primary identifier and shows
+the operator-assigned reference name. Detailed JSON also exposes a closed
+migration marker when present.
 
 The library is a generation convenience and trust-input inventory for the user
 signer. When generating a dedicated guarded account or a sentry-enabled bounded

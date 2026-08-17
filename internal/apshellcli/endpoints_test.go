@@ -6,11 +6,14 @@ package apshellcli
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
@@ -56,6 +59,42 @@ func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
 	}
 	if endpoint.Role != config.ClientEndpointRoleSentry || endpoint.URL != "ssh://127.0.0.1:2223" || endpoint.SignerPort != 12270 {
 		t.Fatalf("endpoint = %#v, want sentry ssh endpoint with signer_port 12270", endpoint)
+	}
+	if live, ok := state.Config.Endpoints.Endpoint("sentry-local"); !ok || live.URL != endpoint.URL {
+		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve sentry-local", live, ok)
+	}
+}
+
+func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
+	dataDir := t.TempDir()
+	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
+		Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 12270,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelopePath := filepath.Join(dataDir, "sentry.endpoint.json")
+	if err := os.WriteFile(envelopePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.DefaultConfig()
+	eng, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := &REPLState{
+		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
+		Config: cfg, currentCommandCtx: context.Background(),
+	}
+
+	if err := state.cmdEndpoints([]string{
+		"import", "--alias", "local-sentry", "--role", "sentry", envelopePath,
+	}, nil); err != nil {
+		t.Fatalf("cmdEndpoints(import) error = %v", err)
+	}
+	endpoint, ok := state.Config.Endpoints.Endpoint("local-sentry")
+	if !ok || endpoint.Role != config.ClientEndpointRoleSentry || endpoint.URL != "ssh://127.0.0.1:2223" {
+		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve local-sentry", endpoint, ok)
 	}
 }
 

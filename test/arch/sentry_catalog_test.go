@@ -20,7 +20,9 @@ func TestSentryCatalogSubtractionDoesNotRegrow(t *testing.T) {
 		filepath.Clean(filepath.Join(root, "internal", "sentry", "sentryrefs", "sentryrefs_v1.go")): true,
 	}
 	forbiddenEverywhere := []string{
-		"SentryEndpoints map[",
+		"SentryEndpoints SentryEndpointConfigs",
+		"type SentryEndpointConfigs",
+		"ClientEndpointPublishedSentry",
 		"SourceClientDiscovery",
 		"SyncedReferenceName",
 		"AdminSyncSentryReferences",
@@ -59,6 +61,14 @@ func TestSentryCatalogSubtractionDoesNotRegrow(t *testing.T) {
 					}
 				}
 			}
+			if strings.Contains(filepath.ToSlash(path), "/internal/sentry/sentryrefs/") &&
+				!legacyAdapters[filepath.Clean(path)] {
+				for _, shape := range []string{`json:"source`, `json:"endpoint_alias`, `json:"last_seen_at`, `json:"synced_at`} {
+					if strings.Contains(text, shape) {
+						t.Errorf("%s contains retired v1 sentry-reference field %q", path, shape)
+					}
+				}
+			}
 			return nil
 		})
 		if err != nil {
@@ -70,7 +80,7 @@ func TestSentryCatalogSubtractionDoesNotRegrow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fixture := range []string{"admin_sync_sentry_references_request.json", "admin_sync_sentry_references_response.json"} {
+	for _, fixture := range []string{"admin_sync_sentries_request.json", "admin_sync_sentries_response.json"} {
 		if strings.Contains(string(manifest), fixture) {
 			t.Errorf("contract manifest contains retired fixture %q", fixture)
 		}

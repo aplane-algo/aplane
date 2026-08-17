@@ -99,6 +99,12 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 		if err != nil {
 			return err
 		}
+		if !result.DryRun {
+			if cfg, err := config.LoadConfig(r.DataDir); err == nil {
+				r.Config = cfg
+				r.app().Config = cfg
+			}
+		}
 		for _, line := range result.RenderLines {
 			r.println(line)
 		}
@@ -114,6 +120,12 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 		result, err := r.app().EndpointImport(r.commandContext(), req)
 		if err != nil {
 			return err
+		}
+		if !result.DryRun {
+			if cfg, err := config.LoadConfig(r.DataDir); err == nil {
+				r.Config = cfg
+				r.app().Config = cfg
+			}
 		}
 		for _, line := range result.RenderLines {
 			r.println(line)

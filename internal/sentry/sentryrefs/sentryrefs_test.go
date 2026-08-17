@@ -4,6 +4,7 @@
 package sentryrefs
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -155,8 +156,11 @@ func TestImportAllowsFormerEndpointDiscoveryNamespace(t *testing.T) {
 	}
 }
 
-func TestListRejectsInvalidReferenceRecord(t *testing.T) {
+func TestListSkipsInvalidReferenceRecordWithoutHidingValidReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
+	if _, err := Import(paths, "default", "valid", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(paths.SentryRefsDir("default"), 0o700); err != nil {
 		t.Fatalf("MkdirAll(sentries) error = %v", err)
 	}
@@ -164,12 +168,15 @@ func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 		t.Fatalf("WriteFile(bad reference) error = %v", err)
 	}
 
-	_, err := List(paths, "default")
-	if err == nil {
-		t.Fatal("List() error = nil, want invalid reference rejection")
+	records, err := List(paths, "default")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "invalid sentry reference bad") {
-		t.Fatalf("List() error = %v, want invalid reference context", err)
+	if len(records) != 1 || records[0].Name != "valid" {
+		t.Fatalf("List() = %#v, want only valid reference", records)
+	}
+	if _, _, err := Get(paths, "default", "bad"); err == nil || !strings.Contains(err.Error(), "invalid sentry reference bad") {
+		t.Fatalf("Get(bad) error = %v, want explicit validation failure", err)
 	}
 }
 
@@ -245,9 +252,18 @@ func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 	}
 }
 
-func TestGetMigratesV1ManualRecordToV2(t *testing.T) {
+func TestGetReadsV1ManualRecordWithoutWriting(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	writeV1Record(t, paths, "default", "manual-v1", recordSourceManualV1)
+	path := paths.SentryRefPath("default", "manual-v1")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(paths.SentryRefsDir("default"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(paths.SentryRefsDir("default"), 0o700) })
 
 	record, found, err := Get(paths, "default", "manual-v1")
 	if err != nil || !found {
@@ -256,12 +272,34 @@ func TestGetMigratesV1ManualRecordToV2(t *testing.T) {
 	if record.Schema != RecordSchema || record.MigrationOrigin != "" {
 		t.Fatalf("migrated record = %#v", record)
 	}
-	assertStoredV2Record(t, paths, "default", "manual-v1", "")
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatalf("Get() rewrote v1 record:\nbefore=%s\nafter=%s", before, after)
+	}
 }
 
-func TestGetMigratesV1DiscoveryRecordToPinnedV2(t *testing.T) {
+func TestGetReadsV1DiscoveryRecordAsPinnedWithoutWriting(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	writeV1Record(t, paths, "default", "endpoint-old", recordSourceDiscoveryV1)
+	path := paths.SentryRefPath("default", "endpoint-old")
+	var raw map[string]any
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	delete(raw, "endpoint_alias")
+	raw["future_compatible_field"] = "ignored"
+	writeRawRecord(t, paths, "default", "endpoint-old", raw)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	record, found, err := Get(paths, "default", "endpoint-old")
 	if err != nil || !found {
@@ -270,7 +308,13 @@ func TestGetMigratesV1DiscoveryRecordToPinnedV2(t *testing.T) {
 	if record.Schema != RecordSchema || record.Name != "endpoint-old" || record.MigrationOrigin != MigrationOriginV1ClientDiscovery {
 		t.Fatalf("migrated record = %#v", record)
 	}
-	assertStoredV2Record(t, paths, "default", "endpoint-old", MigrationOriginV1ClientDiscovery)
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatalf("Get() rewrote v1 discovery record:\nbefore=%s\nafter=%s", before, after)
+	}
 
 	identical, err := Import(paths, "default", "endpoint-old", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
 	if err != nil {
@@ -278,6 +322,13 @@ func TestGetMigratesV1DiscoveryRecordToPinnedV2(t *testing.T) {
 	}
 	if identical.MigrationOrigin != MigrationOriginV1ClientDiscovery {
 		t.Fatalf("identical import erased migration marker: %#v", identical)
+	}
+	unchanged, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(unchanged, before) {
+		t.Fatalf("idempotent Import() rewrote existing v1 record:\nbefore=%s\nafter=%s", before, unchanged)
 	}
 }
 
@@ -352,21 +403,6 @@ func writeV1Record(t *testing.T, paths storepaths.Paths, identityID, name, sourc
 		t.Fatal(err)
 	}
 	writeRawRecordBytes(t, paths, identityID, name, data)
-}
-
-func assertStoredV2Record(t *testing.T, paths storepaths.Paths, identityID, name, migrationOrigin string) {
-	t.Helper()
-	data, err := os.ReadFile(paths.SentryRefPath(identityID, name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(data)
-	if !strings.Contains(text, `"schema": "`+RecordSchema+`"`) || strings.Contains(text, `"source"`) || strings.Contains(text, `"endpoint_alias"`) {
-		t.Fatalf("stored migration = %s", text)
-	}
-	if migrationOrigin != "" && !strings.Contains(text, `"migration_origin": "`+migrationOrigin+`"`) {
-		t.Fatalf("stored migration lacks marker: %s", text)
-	}
 }
 
 func writeRawRecord(t *testing.T, paths storepaths.Paths, identityID, name string, raw map[string]any) {

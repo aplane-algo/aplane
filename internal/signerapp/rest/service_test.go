@@ -764,6 +764,9 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "lab-sentry", data); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
+	if err := os.WriteFile(ir.KeyPaths().SentryRefPath(ir.ID(), "corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile(corrupt sentry reference) error = %v", err)
+	}
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
 		KeyType: keytypes.GuardedFalcon1024Sentry1024V1,
 		Source:  keytypestate.SourceCompiled,
@@ -794,6 +797,74 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	}
 	if len(params[0].Options) != 1 || params[0].Options[0] != componentKey || params[0].Default != componentKey {
 		t.Fatalf("sentry options/default = %#v/%q, want Witness Key ID %s", params[0].Options, params[0].Default, componentKey)
+	}
+}
+
+func TestServiceKeyTypesReadsV1SentryReferencesWithoutWriting(t *testing.T) {
+	ir := setupIdentityRuntime(t, false)
+	publicKey := strings.Repeat("bc", falconfamily.PublicKeySize)
+	publicKeyBytes, err := hex.DecodeString(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKeyBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := json.Marshal(map[string]any{
+		"schema":                  "aplane.sentry-public-key-ref.v1",
+		"name":                    "legacy-sentry",
+		"component_key":           componentKey,
+		"key_type":                witness.Falcon1024V1,
+		"public_key_encoding":     "hex",
+		"public_key_hex":          publicKey,
+		"source":                  "client_discovery",
+		"future_compatible_field": "ignored",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := ir.KeyPaths().SentryRefsDir(ir.ID())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := ir.KeyPaths().SentryRefPath(ir.ID(), "legacy-sentry")
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+		KeyType: keytypes.GuardedFalcon1024Sentry1024V1,
+		Source:  keytypestate.SourceCompiled,
+		State:   keytypestate.StateEnabled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	resp, svcErr := Service{}.KeyTypesForIdentity(ir)
+	if svcErr != nil {
+		t.Fatalf("KeyTypesForIdentity() error = %v", svcErr)
+	}
+	var found bool
+	for _, info := range resp.KeyTypes {
+		for _, param := range info.CreationParams {
+			if param.Name == sentryrefs.ParamSentryName && len(param.Options) == 1 && param.Options[0] == componentKey {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("KeyTypesForIdentity() did not expose legacy Witness Key ID %s", componentKey)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, legacy) {
+		t.Fatalf("KeyTypesForIdentity() rewrote v1 sentry reference:\nbefore=%s\nafter=%s", legacy, after)
 	}
 }
 

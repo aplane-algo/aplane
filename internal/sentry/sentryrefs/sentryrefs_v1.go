@@ -4,6 +4,7 @@
 package sentryrefs
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -35,8 +36,11 @@ type recordV1 struct {
 
 func decodeRecordV1(data []byte) (recordV1, error) {
 	var legacy recordV1
-	if err := decodeRecordStrict(data, &legacy); err != nil {
-		return recordV1{}, err
+	// V1 was historically decoded with encoding/json's forward-compatible
+	// unknown-field behavior. Preserve that bounded read compatibility while
+	// keeping the v2 record strict.
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return recordV1{}, fmt.Errorf("failed to parse record: %w", err)
 	}
 	return legacy, nil
 }
@@ -50,9 +54,6 @@ func recordFromV1(legacy recordV1) (Record, error) {
 	switch source {
 	case recordSourceManualV1:
 	case recordSourceDiscoveryV1:
-		if strings.TrimSpace(legacy.EndpointAlias) == "" {
-			return Record{}, fmt.Errorf("endpoint_alias is required for %s sentry reference", recordSourceDiscoveryV1)
-		}
 		migrationOrigin = MigrationOriginV1ClientDiscovery
 	default:
 		return Record{}, fmt.Errorf("unsupported sentry reference source %q", source)
