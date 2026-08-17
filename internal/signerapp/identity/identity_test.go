@@ -452,6 +452,39 @@ func TestSaveAndLoadStoredConfig(t *testing.T) {
 	}
 }
 
+func TestLoadStoredConfigTreatsEmptyDocumentsAsEmptyConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{name: "empty", data: ""},
+		{name: "whitespace", data: " \n\t\n"},
+		{name: "comments only", data: "# all settings inherit defaults\n# user_auto_approve: true\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := ConfigPath(root, auth.DefaultIdentityID)
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(tt.data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := LoadStoredConfig(root, auth.DefaultIdentityID)
+			if err != nil {
+				t.Fatalf("LoadStoredConfig() error = %v", err)
+			}
+			if cfg.UserAutoApprove != nil || cfg.LockOnDisconnect != nil ||
+				cfg.PassphraseTimeout != "" || cfg.ApprovalWait != "" || cfg.Mode != "" {
+				t.Fatalf("LoadStoredConfig() = %#v, want empty config", cfg)
+			}
+		})
+	}
+}
+
 func TestLoadStoredConfigRejectsDecommissionedField(t *testing.T) {
 	root := t.TempDir()
 	path := ConfigPath(root, "default")
