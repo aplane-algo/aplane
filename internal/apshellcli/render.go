@@ -83,6 +83,9 @@ func renderPluginResult(r *REPLState, pr *PluginResult) {
 		r.renderSubmissionOutput(step.Output)
 		r.renderWarnings(step.Warnings)
 	}
+	if !pr.Success {
+		return
+	}
 	if pr.Presentation != nil {
 		renderPluginPresentation(r, pr.Presentation)
 	} else if pr.Message != "" {

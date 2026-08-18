@@ -302,14 +302,14 @@ func (r *REPLState) executeCommand(cmd Command) error {
 		r.renderErrorSubmissionOutput(err)
 		return err
 	}
-	if terminal, ok := result.(interface{ terminalFailure() error }); ok {
-		if err := terminal.terminalFailure(); err != nil {
+	if result != nil {
+		if err := result.RenderText(r.Out); err != nil {
 			r.renderErrorSubmissionOutput(err)
 			return err
 		}
 	}
-	if result != nil {
-		if err := result.RenderText(r.Out); err != nil {
+	if terminal, ok := result.(interface{ terminalFailure() error }); ok {
+		if err := terminal.terminalFailure(); err != nil {
 			r.renderErrorSubmissionOutput(err)
 			return err
 		}

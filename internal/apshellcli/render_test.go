@@ -82,3 +82,24 @@ func TestPluginRenderTextLabelsTxIDsAsSimulatedWhenSimulateModeIsEnabled(t *test
 		t.Fatalf("RenderText() output used submitted label in simulate mode:\n%s", got)
 	}
 }
+
+func TestPluginFailureRenderPreservesSubmissionDiagnosticsWithoutDuplicatingError(t *testing.T) {
+	var out bytes.Buffer
+	state := &REPLState{Out: &out}
+	result := &PluginResult{
+		Plugin: appresult.Plugin{Plugin: "swap", Success: false, Message: "submission failed"},
+		humanSteps: []pluginHumanStep{{
+			Output:   "node diagnostic\n",
+			Warnings: []apshellapp.Warning{{Message: "partial submission"}},
+		}},
+	}
+
+	renderPluginResult(state, result)
+	got := out.String()
+	if !strings.Contains(got, "node diagnostic") || !strings.Contains(got, "partial submission") {
+		t.Fatalf("failure diagnostics missing: %q", got)
+	}
+	if strings.Contains(got, "submission failed") {
+		t.Fatalf("terminal error message was rendered twice: %q", got)
+	}
+}
