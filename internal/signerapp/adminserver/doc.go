@@ -4,6 +4,7 @@
 // Package adminserver implements the server side of the admin protocol:
 // session lifecycle, request dispatch, message handlers, displacement, and
 // the service interfaces the daemon wires its admin facets into. The wire
-// contract it speaks lives in internal/adminproto, which must remain free of
-// signer-daemon internals.
+// contract it speaks lives in internal/protocol; transport-neutral service
+// requests and results live in internal/adminproto. Both packages must remain
+// free of signer-daemon internals.
 package adminserver

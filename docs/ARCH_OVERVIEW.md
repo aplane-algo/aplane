@@ -202,7 +202,7 @@ aplane/
 │   │   ├── rest/                  # Signer REST service layer
 │   │   ├── sshprovision/          # SSH token provisioning
 │   │   └── templates/             # Template reload and state reporting
-│   ├── adminproto/                # Transport-neutral admin protocol
+│   ├── adminproto/                # Admin service vocabulary and framed server connection
 │   ├── protocol/                  # IPC/admin wire message definitions
 │   ├── transport/                 # IPC/SSH admin client transports
 │   ├── sshtunnel/                 # SSH server and client tunnel support
