@@ -991,7 +991,7 @@ in both modes. See [ARCH_SENTRY.md](ARCH_SENTRY.md).
 | Address/key-type terminal display formatting | `internal/addressdisplay` |
 | Signer connection, tunnel lifecycle, signer-facing HTTP | `internal/engine/connect` |
 | Signer HTTP client (plan, sign, keys) | `internal/signerclient` |
-| Structured result + MCP projection | `internal/appresult` |
+| Semantic result vocabulary | `internal/appresult`, `internal/apshellapp` |
 | Shared ASA metadata, reference, and amount handling | `internal/asa` |
 | Command registry, parsing adapters, rendering, plugin arg normalization | `internal/apshellcli` |
 
@@ -1039,7 +1039,7 @@ UI-specific session state lives mostly in `internal/apshellcli` around that runt
 - terminal output and prompts,
 - plugin argument token normalization,
 - transaction write-mode status notices,
-- MCP output capture/fallback behavior.
+- explicit automation policy and safe machine-result projection.
 
 Rule of thumb:
 
@@ -1085,18 +1085,19 @@ The client treats transport connectivity and signer key availability as separate
 
 ### Rendering Model
 
-The shell has a dual-rendering model:
+The shell has one result-bearing execution contract with two presentations:
 
 - human-oriented text rendering,
 - machine-oriented JSON rendering for MCP and automation.
 
-This is implemented through `CommandResult` types in `internal/apshellcli` and
-semantic result types from `internal/apshellapp`, not by parsing terminal
-output.
+This is implemented through `command.Result`, explicit projections in
+`internal/apshellcli`, and semantic result types from `internal/apshellapp`,
+not by parsing terminal output.
 
 - business operations return structured results first,
-- text rendering is a presentation layer,
-- MCP mode uses stdout capture only as a compatibility fallback.
+- text rendering and machine marshaling are presentation-only,
+- REPL and MCP invoke the same handler once,
+- MCP has no terminal-output capture fallback.
 
 ### Command Surface
 
@@ -1574,9 +1575,9 @@ Key characteristics:
 - plugin integrity checks are mandatory.
 
 Plugin payloads live under `$APCLIENT_DATA/plugins.available`, and
-`$APCLIENT_DATA/plugins.yaml` is the activation source of truth. The supported
-plugin runtime model is command-first even though manifests may also carry typed
-JS function metadata.
+`$APCLIENT_DATA/plugins.yaml` is the activation source of truth. Manifest
+schema 2.0 is command-only: commands are the sole executable and discoverable
+plugin surface, while the JSON-RPC protocol remains `aplane-plugin/2`.
 
 The plugin manager owns:
 
@@ -1598,7 +1599,7 @@ The scripting subsystem gives programmatic access to:
 - assets,
 - app interactions,
 - transactions,
-- plugin commands/functions,
+- plugin commands,
 - shell-level workflow helpers.
 
 MCP mode exposes `apshell` over stdio for LLM tooling. It is an alternate UI surface over the same business logic, not a separate backend.
@@ -1904,7 +1905,7 @@ Weaker or more coupled areas:
   `test/arch`. Remaining follow-up: the client-data lock helper plus the last
   signer-cache `*Locked` split still live on the engine side rather than being
   fully owned by `internal/clientstate`,
-- shell command handling mixes structured results and stdout capture fallback,
+- shell commands execute once and return one result with human and machine presentations,
 - the runtime core is identity-owned, but the operator/control-plane surface is single-identity/single-operator in product mode, even though that product admin workflow may arrive over IPC or the SSH `aplane-admin` subsystem.
 
 Product-level boundaries:
@@ -1913,7 +1914,7 @@ Product-level boundaries:
   with a single-operator deployment model,
 - plugin manifests expose one command-first executable contract,
 - template files are identity-scoped and encrypted; `key_type` is an immutability boundary rather than an override hook,
-- shell command execution supports both structured results and text capture fallback.
+- shell command automation is explicit per primary command, with aliases inheriting policy and no text-capture fallback.
 
 ## Key Entry Points
 

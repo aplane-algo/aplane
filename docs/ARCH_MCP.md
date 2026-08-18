@@ -3,7 +3,7 @@
 MCP mode (`apshell --mcp`) exposes apshell as an MCP server over stdio,
 allowing LLM clients to drive shell commands and JavaScript
 programmatically. It shares the same parsing layer, `apshellapp` workflows,
-and `CommandResult` rendering as the REPL (see [ARCH_REPL.md](ARCH_REPL.md))
+and result-bearing execution as the REPL (see [ARCH_REPL.md](ARCH_REPL.md))
 but produces structured JSON instead of terminal text.
 
 ```
@@ -20,7 +20,7 @@ The MCP server registers eight tools:
 | Tool | Purpose |
 |------|---------|
 | `execute` | Run a shell command (built-in or plugin) |
-| `mcp_reference` | Live command reference (captures `help` output) |
+| `mcp_reference` | Live command reference generated from the registry |
 | `js` | Execute JavaScript in the Goja runtime, returns `{value, output}` |
 | `js_reference` | Embedded `USER_JSAPI.md` reference text (stateless) |
 | `mcp_manual` | Embedded `USER_MCP_MANUAL.md` operating manual (stateless) |
@@ -85,68 +85,38 @@ the config, caches, token, plugin catalog, and plugin activation config.
 
 ## `execute` Routing
 
-`mcpStructured()` routes commands through three tiers:
+MCP and the REPL use the same parser, canonical registry lookup, handler, and
+already-computed command result:
 
 ```
 Command received
     |
     v
 +------------------+
-| Blocked?         |--yes--> Error: "not available via MCP"
-| (js, jssave,     |         (redirected to dedicated MCP tools,
-|  jslist, quit)   |          or interactive commands)
+| Resolve built-in |-------> Aliases inherit their primary command policy
++--------+---------+
+         |
+         v
++------------------+
+| Blocked?         |--yes--> Error before handler invocation
 +--------+---------+
          | no
          v
 +------------------+
-| Structured?      |--yes--> CommandResult.RenderJSON()
-| (keys, verbose,  |
-|  write, ...)     |
+| Execute once     |-------> command.Result
 +--------+---------+
-         | no
+         |
          v
 +------------------+
-| Plugin?          |--yes--> PluginResult.RenderJSON()
-+--------+---------+
-         | no
-         v
-+------------------+
-| Text capture     |-------> Redirect state.Out to buffer,
-| (fallback)       |         execute, return captured text
+| MarshalMachine   |-------> JSON bytes in MCP text-content envelope
 +------------------+
 ```
 
-### Structured Path
-
-Built-in commands that implement `CommandResult` return typed results that
-serialize to stable JSON. The MCP handler invokes the same `exec*()` helper
-that the REPL handler uses, then calls `RenderJSON()` instead of `RenderText()`:
-
-```go
-case "keys":
-    result, err := execKeys(state)
-    return jsonOK(result.RenderJSON())
-```
-
-`internal/apshellcli/render_mcp.go` also defines direct projection helpers for
-commands such as `status`, `accounts`, `balance`, `holders`, `participation`,
-`keytypes`, `info`, `app read`, `alias`, `sets`, and `asa list`.
-
-### Text Capture Fallback
-
-Commands without a `CommandResult` are handled by redirecting `state.Out` to a
-buffer:
-
-```go
-var buf bytes.Buffer
-state.SetOutput(&buf)
-state.executeCommand(cmd)
-state.SetOutput(os.Stderr)
-return mcp.NewToolResultText(buf.String()), nil
-```
-
-This works for every command because output flows through `state.Out`
-(`io.Writer`), not `os.Stdout`.
+Every automation-enabled built-in and external plugin command returns a
+`command.Result`. The REPL calls `RenderText`; MCP calls `MarshalMachine`.
+Machine projections are explicit allowlists and never reconstruct results by
+capturing terminal output. A structured success with nil, empty, or invalid
+JSON is rejected.
 
 ### Blocked Commands
 
@@ -155,9 +125,16 @@ This works for every command because output flows through `state.Out`
 | `js` | Use the `js` MCP tool instead |
 | `jssave` | Use the `jssave` MCP tool instead |
 | `jslist` | Use the `jslist` MCP tool instead |
+| `help` | Use `mcp_reference` instead |
+| `config` | Use the safe `status` command instead |
+| `script` | Issue commands individually or use `js` |
 | `request-token` | Token request requires interactive approval |
-| `quit`, `exit` | Use MCP disconnect instead |
+| `clear` | Terminal clearing has no machine meaning |
+| `quit`, `exit`, `q` | Use MCP disconnect instead |
 | `keyreg` (no args) | Paste mode requires interactive input |
+
+Policies are attached to primary registry commands after alias resolution, so
+aliases cannot bypass a block. Explicit `keyreg` arguments remain structured.
 
 ## stdout/stderr Separation
 
@@ -221,13 +198,13 @@ defer mu.Unlock()
 
 | File | Purpose |
 |------|---------|
-| `internal/apshellcli/mcp.go` | MCP server, routing, tool description, plugin doc loading |
-| `internal/apshellcli/render_mcp.go` | Direct MCP projections for non-`CommandResult` commands |
-| `internal/apshellcli/render.go` | `CommandResult.RenderJSON()` implementations |
+| `internal/apshellcli/mcp.go` | MCP server, policy enforcement, tool description, plugin doc loading |
+| `internal/apshellcli/command_result.go` | Shared human/machine command result implementation |
+| `internal/apshellcli/command_projections.go` | Explicit safe machine projections |
 
 ## Related Documentation
 
-- [ARCH_REPL.md](ARCH_REPL.md) — Shared parsing, dispatch, and `CommandResult`
+- [ARCH_REPL.md](ARCH_REPL.md) — Shared parsing, dispatch, and command results
 - [ARCH_PLUGINS.md](ARCH_PLUGINS.md) — Plugin manifests, `mcp.md`, and lifecycle
 - [USER_JSAPI.md](USER_JSAPI.md) — JavaScript API reference exposed via `js_reference`
 - [USER_MCP_MANUAL.md](USER_MCP_MANUAL.md) — condensed operating manual exposed via `mcp_manual`

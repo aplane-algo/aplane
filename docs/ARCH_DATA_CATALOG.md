@@ -322,7 +322,7 @@ These decisions are part of the current data model and contract surface:
 | `signerapi.SignResponse` is not the live `/sign` wire shape. | Live `/sign` uses `GroupSignResponse`; `SignResponse` is not a separate wire authority. |
 | Admin mnemonic export messages do not release recovery material. | Servers deny `export_key`, `GenerateResultMessage.Mnemonic` is omitted, and recovery material is handled through encrypted backups instead of admin result payloads. |
 | `internal/signerapp/signing` uses SDK DTOs at the service boundary. | It is not a duplicate durable authority; request DTO changes belong in `pkg/signerapi` with fixtures. |
-| Plugin manifest `manifest_format` is the only manifest schema field. | `protocol_version` is rejected before execution; plugin JSON-RPC protocol and manifest schema are separate models. |
+| Plugin manifest schema 2.0 is command-only. | `functions` and `protocol_version` are rejected before execution; plugin JSON-RPC protocol and manifest schema are separate models. |
 | Template `ReloadReport` is a reload projection. | It verifies identity-local activation results but does not persist template authority; encrypted template files and key type state records remain the durable sources. |
 
 ## Representative Test And Fixture Index

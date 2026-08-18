@@ -16,7 +16,7 @@ TUI is a separate client over the admin protocol; see [ARCH_TUI.md](ARCH_TUI.md)
 +--------------------+--------------------------------------+
 |     internal/shellrepl  +  internal/cmdspec  (parsing)    |
 +-----------------------------------------------------------+
-|     internal/apshellcli/render  (CommandResult rendering) |
+| internal/apshellcli (shared result + text/machine rendering) |
 +-----------------------------------------------------------+
 |     internal/addressbook  (alias / set / @signers / @all) |
 +-----------------------------------------------------------+
@@ -52,22 +52,23 @@ type REPLState struct {
 }
 ```
 
-All command output flows through `state.Out` (`io.Writer`), never through
-`os.Stdout` directly. This is what lets MCP redirect output to a capture buffer.
+Command text rendering flows through an injected `io.Writer`. MCP does not
+capture that writer: it marshals the already-computed command result. The
+terminal-only `config` display remains the reviewed process-global-output
+exception and is blocked from MCP automation.
 
 ## Command Handler Pattern
 
 ```go
-func (r *REPLState) cmdSend(args []string, _ interface{}) error {
+func (r *REPLState) cmdSend(args []string, _ interface{}) (command.Result, error) {
     // 1. PARSE: shell tokens to structured params
     params, err := shellrepl.ParseSendCommand(args)
 
     // 2. APP: delegate workflow semantics and engine orchestration
     result, err := r.app().Send(r.commandContext(), apshellapp.SendRequest{...})
 
-    // 3. OUTPUT: format for this UI surface
-    fmt.Fprintf(r.Out, "Transaction %s submitted\n", result.TxID)
-    return nil
+    // 3. RESULT: bind presentation-only renderers to computed data
+    return newShellCommandResult(renderSend(result), projectSend(result))
 }
 ```
 
@@ -123,78 +124,35 @@ set, keyword, number, file, and conditional branching. The `custom` type is
 reserved for plugin-provided completion; the runtime returns no custom
 suggestions.
 
-## CommandResult Rendering
+## Command Result Rendering
 
-Commands that need dual rendering (REPL text and MCP JSON) return a typed
-result that implements `CommandResult` (`internal/apshellcli/render.go`):
+Every registered handler returns a `command.Result`:
 
 ```go
-type CommandResult interface {
-    RenderText(w io.Writer, r *REPLState)
-    RenderJSON() []byte
+type Result interface {
+    RenderText(w io.Writer) error
+    MarshalMachine() ([]byte, error)
 }
 ```
 
-The REPL handler calls `RenderText(r.Out, r)`; the MCP server calls
-`RenderJSON()`. The semantic source of truth is the typed result, not the
-terminal text — machine consumers receive stable structured data rather than
-parsing formatted output.
+The REPL executes once and calls `RenderText`; MCP resolves the canonical
+command, enforces its explicit structured/blocked policy, executes once, and
+calls `MarshalMachine`. Renderers operate only on already-computed data and may
+be called repeatedly without network reads, signing, submission, or mutation.
 
-### Result Types
-
-| Type | Commands | Text Output | JSON Output |
-|------|----------|-------------|-------------|
-| `KeysResult` | `keys` | Numbered list with aliases | `[{address, key_type, template_provenance_status, template_provenance_note}, ...]` |
-| `ToggleResult` | `verbose`, `write` | `Verbose mode: on/off` | `{name, enabled}` |
-| `JSONResult` | JSON-native helper responses | Pretty JSON | Compact JSON |
-| `PluginResult` | External plugins | Message + transaction IDs | `{plugin, success, message, txids, data, presentation, steps}` |
-
-`simulate` has the same app-level toggle shape but the shell command also
-supports one-shot transaction simulation (`simulate send ...`) and uses
-command-specific text rendering. The transaction workflow still performs
-ordinary executable signing and approval before client-side algod simulation.
-It is not part of the MCP structured switch,
-so `simulate` is not a structured (JSON) execute path — MCP captures its text
-output instead.
-
-`PluginResult.RenderJSON()` defensively filters the reserved `localSigners` key
-from `Data` before serialization. Top-level `localSigners` is unsupported and
-rejected before transaction submission.
-
-### Pattern Usage
-
-```go
-// Business logic — returns structured result
-func execKeys(r *REPLState) (*KeysResult, error) {
-    // ... fetch keys from engine ...
-    return &KeysResult{Keys: keys}, nil
-}
-
-// REPL handler — registered as the `keys` command in the command registry
-func (r *REPLState) cmdSigners(_ []string, _ interface{}) error {
-    result, err := execKeys(r)
-    if err != nil {
-        return err
-    }
-    result.RenderText(r.Out, r)
-    return nil
-}
-```
-
-The MCP-side counterpart of this pattern is documented in
-[ARCH_MCP.md](ARCH_MCP.md).
+Machine projections in `command_projections.go` are explicit security
+allowlists. Plugin projection filters the reserved `localSigners` field.
+One-shot `simulate <transaction-command>` invokes the same result-bearing
+executor while simulation is temporarily forced and restores the prior mode
+with deferred cleanup.
 
 ## Command Dispatch
 
 ```go
 func (r *REPLState) executeCommand(cmd Command) error {
-    // Tier 1: built-in command registry
-    registeredCmd, ok := r.CommandRegistry.Lookup(cmd.Name)
-    if !ok {
-        // Tier 2: external plugin fallback
-        return executeExternalPlugin(r, cmd)
-    }
-    // ... execute registered command
+    result, err := r.executeCommandResult(cmd)
+    // ... handle errors, then render result once
+    return result.RenderText(r.Out)
 }
 ```
 
@@ -205,13 +163,14 @@ Built-in commands are registered at startup via `initCommandRegistry()` with
 mustRegister(registry, &command.Command{
     Name:    "send",
     Handler: command.NewInternalHandler(r.cmdSend),
+    Automation: command.StructuredAutomation,
 })
 ```
 
 External plugins are never added to the registry. They are discovered at
 runtime by the plugin manager and matched by command name from their
-`manifest.json`. Plugin results flow through the same `CommandResult`
-rendering system (`PluginResult`) as built-in commands. See
+`manifest.json`. Plugin results flow through the same result-bearing execution
+and presentation system as built-in commands. See
 [ARCH_PLUGINS.md](ARCH_PLUGINS.md) for plugin details.
 
 ## Error Handling
@@ -247,7 +206,9 @@ which defaults to 60 seconds.
 |------|---------|
 | `internal/apshellcli/state.go` | `REPLState` definition |
 | `internal/apshellcli/commands.go` | Command dispatch |
-| `internal/apshellcli/render.go` | `CommandResult` interface and result types |
+| `internal/apshellcli/command_result.go` | Shared command-result implementation |
+| `internal/apshellcli/command_projections.go` | Safe machine projection types |
+| `internal/apshellcli/render.go` | Human presentation helpers |
 | `internal/apshellcli/external_plugins.go` | Plugin execution and `PluginResult` construction |
 | `internal/shellrepl/parser.go` | Top-level tokenization and per-command parsers |
 | `internal/shellrepl/autocomplete.go` | Tab completion |
