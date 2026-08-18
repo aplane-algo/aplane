@@ -66,6 +66,29 @@ func TestShellResultBoundaryRetiredArtifactsStayDeleted(t *testing.T) {
 	}
 }
 
+func TestShellOutputDefaultsStayProcessLocal(t *testing.T) {
+	root := filepath.Join("..", "..")
+	checks := map[string][]string{
+		"internal/command/context.go": {
+			"func (ctx *Context) Out()", "os.Stdout",
+		},
+		"internal/clientsign/submit.go": {
+			"w = os.Stdout", "Defaults to os.Stdout",
+		},
+	}
+	for rel, forbidden := range checks {
+		data, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, token := range forbidden {
+			if strings.Contains(string(data), token) {
+				t.Errorf("%s contains retired process-global output default %q", rel, token)
+			}
+		}
+	}
+}
+
 func TestInTreePluginManifestsStayCommandOnlyV2(t *testing.T) {
 	paths := []string{
 		"plugins/algokit-localnet/manifest.json",

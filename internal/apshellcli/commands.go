@@ -232,7 +232,6 @@ func (r *REPLState) executeRegisteredCommand(cmd Command) (command.Result, bool,
 	internal := &command.InternalContext{
 		REPLState: r, // Provide full REPLState access for internal commands
 	}
-	internal.SetOut(r.Out)
 
 	state := r.app().ExecutionState()
 	ctx := &command.Context{

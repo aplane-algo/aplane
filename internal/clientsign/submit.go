@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -30,7 +29,7 @@ type SubmitOptions struct {
 	LsigArgsMap         []map[string][]byte
 	AppCallInfo         []*signerapi.AppCallInfo
 	Simulate            bool
-	// Out is the writer for progress/status output. Defaults to os.Stdout if nil.
+	// Out is the writer for progress/status output. Nil discards output.
 	Out io.Writer
 	// TxnWriter is called for each original transaction after successful
 	// submission or simulation. If nil, no callback is made.
@@ -69,7 +68,7 @@ func SignAndSubmitViaGroup(
 
 	w := opts.Out
 	if w == nil {
-		w = os.Stdout
+		w = io.Discard
 	}
 	if opts.Ctx == nil {
 		opts.Ctx = context.Background()
