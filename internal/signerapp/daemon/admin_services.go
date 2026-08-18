@@ -4,7 +4,6 @@
 package daemon
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,11 +37,28 @@ type signerAdminServices struct {
 	signer *Signer
 }
 
+type signerBackupServices struct {
+	backupadmin.Service
+	daemon signerAdminServices
+}
+
+type signerTemplateServices struct {
+	templateadmin.Service
+	signer *Signer
+}
+
 var errIdentityStoreBusy = errors.New("identity store mutation is in progress")
 
 type signerAdminAppDeps struct {
 	signer *Signer
 }
+
+var (
+	_ adminserver.SettingsServices = signeradmin.Service{}
+	_ adminserver.KeyServices      = keyadmin.IPCService{}
+	_ adminserver.BackupServices   = signerBackupServices{}
+	_ adminserver.TemplateServices = signerTemplateServices{}
+)
 
 func (fs *Signer) adminServices() signerAdminServices {
 	return signerAdminServices{signer: fs}
@@ -55,10 +71,10 @@ func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
 	svc := fs.adminServices()
 	return adminserver.SessionDeps{
 		Identity:    svc,
-		Settings:    svc,
-		Keys:        svc,
-		Backups:     svc,
-		Templates:   svc,
+		Settings:    svc.adminApp(),
+		Keys:        svc.keyApp(),
+		Backups:     svc.backupServices(),
+		Templates:   svc.templateServices(),
 		Inspection:  svc,
 		Authorizer:  fs.authorizer,
 		Audit:       svc,
@@ -240,111 +256,35 @@ func (s signerAdminServices) RevokeProductToken(ir *identity.Runtime) error {
 	return s.signer.RevokeProductToken(ir)
 }
 
-func (s signerAdminServices) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettings {
-	return s.adminApp().BuildAdminSettings(ir)
-}
-
-func (s signerAdminServices) UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateAdminSettingRequest) error {
-	return s.adminApp().UpdateAdminSetting(ir, req)
-}
-
-func (s signerAdminServices) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
-	return s.adminApp().BuildPolicySnapshot(ir, target)
-}
-
-func (s signerAdminServices) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
-	return s.adminApp().ReplacePolicy(ir, req)
-}
-
-func (s signerAdminServices) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
-	return s.adminApp().ValidatePolicy(ir, req)
-}
-
-func (s signerAdminServices) ListKeys(ir *identity.Runtime) ([]adminproto.KeyInfo, error) {
-	return s.keyApp().ListKeys(ir)
-}
-
-func (s signerAdminServices) GetKeyDetails(ir *identity.Runtime, req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult {
-	return s.keyApp().GetKeyDetails(ir, req)
-}
-
-func (s signerAdminServices) GenerateKey(ctx context.Context, ir *identity.Runtime, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
-	return s.keyApp().GenerateKey(ctx, ir, req)
-}
-
-func (s signerAdminServices) DeleteKey(ir *identity.Runtime, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
-	return s.keyApp().DeleteKey(ir, req)
-}
-
-func (s signerAdminServices) ImportKey(ir *identity.Runtime, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
-	return s.keyApp().ImportKey(ir, req)
-}
-
-func (s signerAdminServices) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
-	return s.backupApp().BackupIdentity(ir, req)
-}
-
-func (s signerAdminServices) ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult {
-	return s.backupApp().ListBackups(ir)
-}
-
-func (s signerAdminServices) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult {
-	return s.backupApp().DeleteBackup(ir, req)
-}
-
-func (s signerAdminServices) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
-	return s.backupApp().BeginBackupImport(ir, req)
-}
-
-func (s signerAdminServices) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
-	return s.backupApp().AppendBackupImport(ir, req)
-}
-
-func (s signerAdminServices) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
-	return s.backupApp().CommitBackupImport(ir, req)
-}
-
-func (s signerAdminServices) AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
-	return s.backupApp().AbortBackupImport(ir, req)
-}
-
-func (s signerAdminServices) ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
-	return s.backupApp().ReadBackupChunk(ir, req)
-}
-
-func (s signerAdminServices) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
-	return s.backupApp().PreviewRestore(ir, req)
-}
-
-func (s signerAdminServices) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
+func (s signerBackupServices) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
 	wasRecovery := ir.IsRecovery()
-	result := s.backupApp().RestoreBackup(ir, req)
+	result := s.Service.RestoreBackup(ir, req)
 	if result.Success && wasRecovery {
-		if report, ok := s.exitRecoveryIfReconciled(ir); ok && report != nil {
+		if report, ok := s.daemon.exitRecoveryIfReconciled(ir); ok && report != nil {
 			result.KeyCount = report.KeyCount
 		}
 	}
-	s.rearmWatcherAfterGenerationFlip(ir)
+	s.daemon.rearmWatcherAfterGenerationFlip(ir)
 	return result
 }
 
-func (s signerAdminServices) RollbackRestore(ir *identity.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
+func (s signerBackupServices) RollbackRestore(ir *identity.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
 	wasRecovery := ir.IsRecovery()
-	result := s.backupApp().RollbackRestore(ir, req)
+	result := s.Service.RollbackRestore(ir, req)
 	if result.Success && wasRecovery {
-		s.exitRecoveryIfReconciled(ir)
+		s.daemon.exitRecoveryIfReconciled(ir)
 	}
-	s.rearmWatcherAfterGenerationFlip(ir)
+	s.daemon.rearmWatcherAfterGenerationFlip(ir)
 	return result
 }
 
-func (s signerAdminServices) ReconcileStore(ir *identity.Runtime) adminproto.ReconcileStoreResult {
+func (s signerBackupServices) ReconcileStore(ir *identity.Runtime) adminproto.ReconcileStoreResult {
 	result := adminproto.ReconcileStoreResult{}
 	// Re-arm on every exit. A recovery session may have inherited a watcher
 	// bound before an uncertain CURRENT flip, including when this attempt
 	// fails before promotion.
-	defer s.rearmWatcherAfterGenerationFlip(ir)
-	report, err := s.reconcileReloadAndPromote(ir)
+	defer s.daemon.rearmWatcherAfterGenerationFlip(ir)
+	report, err := s.daemon.reconcileReloadAndPromote(ir)
 	if err != nil {
 		ir.SetRecovery()
 		result.Code = protocol.ResultCodeRecoveryBlocked
@@ -420,43 +360,7 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) (*si
 	return report, true
 }
 
-func (s signerAdminServices) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibraryTemplatesResult {
-	return s.templateApp().ListLibraryTemplates(ir)
-}
-
-func (s signerAdminServices) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult {
-	return s.templateApp().InstallLibraryTemplate(ir, req)
-}
-
-func (s signerAdminServices) ListInstalledTemplates(ir *identity.Runtime) adminproto.ListInstalledTemplatesResult {
-	return s.templateApp().ListInstalledTemplates(ir)
-}
-
-func (s signerAdminServices) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult {
-	return s.templateApp().ShowInstalledTemplate(ir, req)
-}
-
-func (s signerAdminServices) ShowLibraryTemplate(ir *identity.Runtime, req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
-	return s.templateApp().ShowLibraryTemplate(ir, req)
-}
-
-func (s signerAdminServices) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.ImportInstalledTemplateRequest) adminproto.ImportInstalledTemplateResult {
-	return s.templateApp().ImportInstalledTemplate(ir, req)
-}
-
-func (s signerAdminServices) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult {
-	return s.templateApp().RemoveInstalledTemplate(ir, req)
-}
-
-func (s signerAdminServices) ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult {
-	return s.templateApp().ActivateKeyType(ir, req)
-}
-
-func (s signerAdminServices) DeactivateKeyType(ir *identity.Runtime, req adminproto.DeactivateKeyTypeRequest) adminproto.DeactivateKeyTypeResult {
-	return s.templateApp().DeactivateKeyType(ir, req)
-}
-
-func (s signerAdminServices) ListKeyTypes(ir *identity.Runtime) adminproto.ListKeyTypesResult {
+func (s signerTemplateServices) ListKeyTypes(ir *identity.Runtime) adminproto.ListKeyTypesResult {
 	resp, err := s.signer.restService().KeyTypesForIdentity(ir)
 	if err != nil {
 		return adminproto.ListKeyTypesResult{
@@ -699,8 +603,16 @@ func (s signerAdminServices) backupApp() backupadmin.Service {
 	return backupadmin.Service{Deps: signerAdminAppDeps(s)}
 }
 
+func (s signerAdminServices) backupServices() signerBackupServices {
+	return signerBackupServices{Service: s.backupApp(), daemon: s}
+}
+
 func (s signerAdminServices) templateApp() templateadmin.Service {
 	return templateadmin.Service{Deps: signerAdminAppDeps(s)}
+}
+
+func (s signerAdminServices) templateServices() signerTemplateServices {
+	return signerTemplateServices{Service: s.templateApp(), signer: s.signer}
 }
 
 func (s signerAdminServices) storeApp() storeadmin.Service {
