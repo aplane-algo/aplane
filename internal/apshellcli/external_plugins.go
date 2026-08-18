@@ -68,13 +68,11 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 			submit, err := submitPluginTransactions(r, plugin.Manifest.Name, result, lsigArgs)
 			if err != nil {
 				if submit != nil {
-					r.renderSubmissionOutput(submit.Output)
-					r.renderWarnings(submit.Warnings)
+					pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
 				}
 				return err
 			}
-			r.renderSubmissionOutput(submit.Output)
-			r.renderWarnings(submit.Warnings)
+			pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
 			pr.Steps = append(pr.Steps, appresult.PluginStep{Message: result.Message, TxIDs: submit.TxIDs})
 		}
 
@@ -100,23 +98,6 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 // submitPluginTransactions processes and submits plugin transactions without UI output.
 func submitPluginTransactions(r *REPLState, pluginName string, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*apshellapp.GroupSubmitSummary, error) {
 	return r.app().SubmitPluginTransactions(r.commandContext(), pluginName, result, lsigArgs)
-}
-
-// executeExternalPlugin tries to execute a command as an external plugin
-func executeExternalPlugin(r *REPLState, cmd Command) error {
-	result, handled := execPlugin(r, cmd.Name, cmd.Args)
-	if !handled {
-		r.printf("Unknown command: %s\nType 'help' for available commands\n", cmd.Name)
-		return nil
-	}
-	if !result.Success {
-		if result.Message != "" {
-			return fmt.Errorf("%s", result.Message)
-		}
-		return fmt.Errorf("plugin command failed")
-	}
-	result.RenderText(r.Out, r)
-	return nil
 }
 
 func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {

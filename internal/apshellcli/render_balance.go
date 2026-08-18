@@ -70,14 +70,9 @@ func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, as
 // addresses: list of addresses to show balances for
 // assetRef: optional asset filter (empty = ALGO)
 // holdersOnly: if true, only show accounts with non-zero balance
-func (r *REPLState) showMultiAccountBalances(addresses []string, assetRef string, holdersOnly bool) error {
-	if len(addresses) == 0 {
+func (r *REPLState) showMultiAccountBalances(balances []*apshellapp.BalanceDetails, assetRef string, holdersOnly bool) error {
+	if len(balances) == 0 {
 		return fmt.Errorf("no accounts found")
-	}
-
-	addressSet := make(map[string]bool)
-	for _, addr := range addresses {
-		addressSet[addr] = true
 	}
 
 	isAlgo := assetRef == "" || assetRef == "algo" || assetRef == "ALGO"
@@ -100,12 +95,7 @@ func (r *REPLState) showMultiAccountBalances(addresses []string, assetRef string
 	var results []accountBalance
 	var totalRaw uint64
 
-	for addr := range addressSet {
-		result, err := r.app().BalanceForAddress(r.commandContext(), addr)
-		if err != nil {
-			continue
-		}
-
+	for _, result := range balances {
 		var balanceRaw uint64
 		found := false
 
@@ -127,7 +117,7 @@ func (r *REPLState) showMultiAccountBalances(addresses []string, assetRef string
 
 		if found && (!holdersOnly || balanceRaw > 0) {
 			results = append(results, accountBalance{
-				name: r.app().FormatAddress(addr, ""),
+				name: r.app().FormatAddress(result.Address, ""),
 				raw:  balanceRaw,
 			})
 			totalRaw += balanceRaw

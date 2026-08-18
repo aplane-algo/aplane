@@ -26,13 +26,13 @@ func TestKeysResultRenderTextOmitsCounterAndIndent(t *testing.T) {
 		Out: &out,
 		App: apshellapp.New(eng, cfg, t.TempDir()),
 	}
-	result := &KeysResult{Keys: appresult.Keys{Keys: []appresult.KeyInfo{
+	keys := appresult.Keys{Keys: []appresult.KeyInfo{
 		{Address: "ADDRONE", KeyType: "aplane.falcon1024.v1"},
 		{Address: "ADDRTWO", KeyType: "ed25519"},
 		{Address: "ADDRTHREE", KeyType: "mytemplate-v1", TemplateProvenanceStatus: "conflict"},
-	}}}
+	}}
 
-	result.RenderText(&out, state)
+	renderKeys(state, keys)
 
 	got := out.String()
 	if strings.Contains(got, "Signable accounts:") {
@@ -55,7 +55,7 @@ func TestKeysResultRenderTextOmitsCounterAndIndent(t *testing.T) {
 
 func TestPluginRenderTextLabelsTxIDsAsSimulatedWhenSimulateModeIsEnabled(t *testing.T) {
 	cfg := config.DefaultConfig()
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -72,7 +72,7 @@ func TestPluginRenderTextLabelsTxIDsAsSimulatedWhenSimulateModeIsEnabled(t *test
 		TxIDs:   []string{"TX1"},
 	}}
 
-	result.RenderText(&out, state)
+	renderPluginResult(state, result)
 
 	got := out.String()
 	if !strings.Contains(got, "Transaction(s) simulated successfully") {
@@ -80,5 +80,26 @@ func TestPluginRenderTextLabelsTxIDsAsSimulatedWhenSimulateModeIsEnabled(t *test
 	}
 	if strings.Contains(got, "Transaction(s) submitted successfully") {
 		t.Fatalf("RenderText() output used submitted label in simulate mode:\n%s", got)
+	}
+}
+
+func TestPluginFailureRenderPreservesSubmissionDiagnosticsWithoutDuplicatingError(t *testing.T) {
+	var out bytes.Buffer
+	state := &REPLState{Out: &out}
+	result := &PluginResult{
+		Plugin: appresult.Plugin{Plugin: "swap", Success: false, Message: "submission failed"},
+		humanSteps: []pluginHumanStep{{
+			Output:   "node diagnostic\n",
+			Warnings: []apshellapp.Warning{{Message: "partial submission"}},
+		}},
+	}
+
+	renderPluginResult(state, result)
+	got := out.String()
+	if !strings.Contains(got, "node diagnostic") || !strings.Contains(got, "partial submission") {
+		t.Fatalf("failure diagnostics missing: %q", got)
+	}
+	if strings.Contains(got, "submission failed") {
+		t.Fatalf("terminal error message was rendered twice: %q", got)
 	}
 }

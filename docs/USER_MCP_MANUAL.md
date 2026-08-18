@@ -92,11 +92,10 @@ authoritative source; this manual is the map.
 ### `execute` vs `js` — how to choose
 
 - **`execute`** — a single command in shell grammar
-  (`send 5 usdc from treasury to alice`). Many read commands return structured
-  JSON automatically (`status`, `accounts`, `balance`, `holders`,
-  `participation`, `keytypes`, `info`, `app read`, `keys`, `alias list`,
-  `sets list`, `asa list`, `verbose`, `write`); everything else returns its
-  captured text.
+  (`send 5 usdc from treasury to alice`). Every supported command returns an
+  intentional structured JSON result through the same handler used by the
+  interactive shell. Interactive/process commands are rejected before they
+  run; use the dedicated tool or workflow named in the error.
 - **`js`** — when you need control flow, arithmetic on amounts, or a typed
   result object. The last expression is JSON-serialized into `value`; `print()`
   output is captured into `output`.
@@ -594,7 +593,7 @@ each MCP server instance uses its own:
 ## Related documentation
 
 - [ARCH_MCP.md](ARCH_MCP.md) — MCP server, tool surface, routing
-- [ARCH_REPL.md](ARCH_REPL.md) — command parsing, dispatch, `CommandResult`
+- [ARCH_REPL.md](ARCH_REPL.md) — command parsing, dispatch, and shared results
 - [USER_JSAPI.md](USER_JSAPI.md) — JavaScript API (served by `js_reference`)
 - [USER_COMMANDS.md](USER_COMMANDS.md) — shell command grammar and byte encodings
 - [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) — system architecture and identity model

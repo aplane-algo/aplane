@@ -8,11 +8,13 @@ package apshellcli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
 )
 
@@ -24,38 +26,77 @@ const endpointsUsage = "endpoints list | " +
 	"endpoints default <alias> | " +
 	"endpoints delete <alias>"
 
-func (r *REPLState) cmdNetwork(args []string, _ interface{}) error {
-	return setNetwork(r, args)
+func (r *REPLState) cmdNetwork(args []string, _ interface{}) (command.Result, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("usage: network <network>")
+	}
+	result, err := r.app().SwitchNetwork(r.commandContext(), apshellapp.SwitchNetworkRequest{Network: args[0]})
+	if err != nil {
+		return nil, err
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutputResult(w, func() error { return r.renderSwitchNetworkResult(result) })
+	}, networkProjection{OldNetwork: result.OldNetwork, Network: result.NewNetwork})
 }
 
-func (r *REPLState) cmdWrite(args []string, _ interface{}) error {
-	return toggleWriteMode(r, args)
+func (r *REPLState) cmdWrite(args []string, _ interface{}) (command.Result, error) {
+	result, err := execWrite(r, args)
+	if err != nil {
+		return nil, err
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() { renderToggle(r, result) })
+	}, toggleProjection(result))
 }
 
-func (r *REPLState) cmdVerbose(args []string, _ interface{}) error {
+func (r *REPLState) cmdVerbose(args []string, _ interface{}) (command.Result, error) {
 	result, err := execVerbose(r, args)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	result.RenderText(r.Out, r)
-	return nil
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() { renderToggle(r, result) })
+	}, toggleProjection(result))
 }
 
-func (r *REPLState) cmdSimulate(args []string, _ interface{}) error {
-	return toggleSimulate(r, args)
+func (r *REPLState) cmdSimulate(args []string, _ interface{}) (command.Result, error) {
+	return executeSimulate(r, args)
 }
 
-func (r *REPLState) cmdConnect(args []string, _ interface{}) error {
+func (r *REPLState) cmdConnect(args []string, _ interface{}) (command.Result, error) {
+	var result *apshellapp.ConnectResult
+	var err error
+	alias := ""
 	if len(args) == 0 {
-		return connectConfigured(r)
+		result, err = executeConnectConfigured(r)
+	} else if len(args) == 1 {
+		alias = args[0]
+		result, err = executeConnectEndpointAlias(r, alias)
+	} else {
+		return nil, fmt.Errorf("usage: connect [endpoint-alias]")
 	}
-	if len(args) == 1 {
-		return connectEndpointAlias(r, args[0])
+	if err != nil {
+		return nil, err
 	}
-	return fmt.Errorf("usage: connect [endpoint-alias]")
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutputResult(w, func() error {
+			if alias != "" {
+				r.printf("Connecting to endpoint %s...\n", alias)
+			}
+			r.println("Using SSH public key authentication...")
+			return r.renderConnectResult(result)
+		})
+	}, connectionProjection{
+		Connected: true, Target: result.Target, Port: result.Port, KeyCount: result.KeyCount,
+		Locked: result.Locked, AlreadyConnected: result.AlreadyConnected,
+	})
 }
 
-func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
+func (r *REPLState) cmdRequestToken(args []string, ctx interface{}) (command.Result, error) {
+	return newTerminalCommandResult(nil), r.runRequestToken(args, ctx)
+}
+
+func (r *REPLState) runRequestToken(args []string, _ interface{}) error {
 	if len(args) == 0 {
 		return requestTokenConfigured(r)
 	}
@@ -65,39 +106,45 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 	return fmt.Errorf("usage: request-token [--endpoint <alias>]")
 }
 
-func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
+func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, error) {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: %s", endpointsUsage)
+		return nil, fmt.Errorf("usage: %s", endpointsUsage)
 	}
 	switch args[0] {
 	case "list":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: endpoints list")
+			return nil, fmt.Errorf("usage: endpoints list")
 		}
 		result, err := r.app().EndpointsList(r.commandContext())
 		if err != nil {
-			return err
+			return nil, err
 		}
-		r.renderEndpointsList(result)
-		return nil
+		projection := make([]endpointProjection, len(result.Endpoints))
+		for i, endpoint := range result.Endpoints {
+			projection[i] = projectEndpointEntry(endpoint)
+		}
+		return newShellCommandResult(func(w io.Writer) error {
+			return r.withOutput(w, func() { r.renderEndpointsList(result) })
+		}, projection)
 	case "show":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: endpoints show <alias>")
+			return nil, fmt.Errorf("usage: endpoints show <alias>")
 		}
 		result, err := r.app().EndpointShow(r.commandContext(), args[1])
 		if err != nil {
-			return err
+			return nil, err
 		}
-		r.renderEndpointShow(result)
-		return nil
+		return newShellCommandResult(func(w io.Writer) error {
+			return r.withOutput(w, func() { r.renderEndpointShow(result) })
+		}, projectEndpointEntry(result.Endpoint))
 	case "create", "create-sentry":
 		req, err := parseEndpointCreateSentryArgs(args[1:])
 		if err != nil {
-			return err
+			return nil, err
 		}
 		result, err := r.app().EndpointCreateSentry(r.commandContext(), req)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !result.DryRun {
 			if cfg, err := config.LoadConfig(r.DataDir); err == nil {
@@ -105,21 +152,27 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 				r.app().Config = cfg
 			}
 		}
-		for _, line := range result.RenderLines {
-			r.println(line)
-		}
-		if !result.DryRun {
-			r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
-		}
-		return nil
+		return newShellCommandResult(func(w io.Writer) error {
+			return r.withOutput(w, func() {
+				for _, line := range result.RenderLines {
+					r.println(line)
+				}
+				if !result.DryRun {
+					r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
+				}
+			})
+		}, endpointMutationProjection{
+			Mode: "create", Alias: result.Alias, Role: result.Role, URL: result.URL,
+			Port: result.SentryPort, DryRun: result.DryRun, Created: result.Created, Updated: result.Updated,
+		})
 	case "import":
 		req, err := parseEndpointImportArgs(args[1:])
 		if err != nil {
-			return err
+			return nil, err
 		}
 		result, err := r.app().EndpointImport(r.commandContext(), req)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !result.DryRun {
 			if cfg, err := config.LoadConfig(r.DataDir); err == nil {
@@ -127,72 +180,102 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 				r.app().Config = cfg
 			}
 		}
-		for _, line := range result.RenderLines {
-			r.println(line)
-		}
-		if !result.DryRun {
-			r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
-		}
-		return nil
+		return newShellCommandResult(func(w io.Writer) error {
+			return r.withOutput(w, func() {
+				for _, line := range result.RenderLines {
+					r.println(line)
+				}
+				if !result.DryRun {
+					r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
+				}
+			})
+		}, endpointMutationProjection{
+			Mode: "import", Alias: result.Alias, Role: result.Role, URL: result.URL,
+			Port: result.SignerPort, DryRun: result.DryRun, Created: result.Created,
+			Updated: result.Updated, DefaultChanged: result.DefaultChanged,
+		})
 	case "discover-sentries":
 		req, err := parseEndpointDiscoverSentriesArgs(args[1:])
 		if err != nil {
-			return err
+			return nil, err
 		}
 		result, err := r.app().EndpointDiscoverSentries(r.commandContext(), req)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		for _, line := range result.RenderLines {
-			r.println(line)
+		projection := endpointDiscoveryProjection{PublicKeyCount: result.PublicKeyCount}
+		projection.Endpoints = make([]endpointDiscoveryEntry, len(result.Endpoints))
+		for i, endpoint := range result.Endpoints {
+			entry := endpointDiscoveryEntry{Alias: endpoint.Alias, Skipped: endpoint.Skipped, Error: endpoint.Error}
+			entry.Keys = make([]endpointDiscoveryKey, len(endpoint.Keys))
+			for j, key := range endpoint.Keys {
+				entry.Keys[j] = endpointDiscoveryKey{
+					PublicKey: key.PublicKey, ComponentKey: key.ComponentKey, KeyType: key.KeyType,
+				}
+			}
+			projection.Endpoints[i] = entry
 		}
-		return nil
+		return newShellCommandResult(func(w io.Writer) error {
+			return r.withOutput(w, func() {
+				for _, line := range result.RenderLines {
+					r.println(line)
+				}
+			})
+		}, projection)
 	case "default":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: endpoints default <alias>")
+			return nil, fmt.Errorf("usage: endpoints default <alias>")
 		}
 		result, err := r.app().EndpointDefault(r.commandContext(), args[1])
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if cfg, err := config.LoadConfig(r.DataDir); err == nil {
 			r.Config = cfg
 			r.app().Config = cfg
 		}
-		for _, line := range result.RenderLines {
-			r.println(line)
-		}
-		return nil
+		return endpointRenderLinesResult(r, result.RenderLines, endpointMutationProjection{
+			Mode: "default", Alias: result.Alias, PreviousDefault: result.PreviousAlias, DefaultChanged: true,
+		})
 	case "delete":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: endpoints delete <alias>")
+			return nil, fmt.Errorf("usage: endpoints delete <alias>")
 		}
 		result, err := r.app().EndpointDelete(r.commandContext(), args[1])
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if cfg, err := config.LoadConfig(r.DataDir); err == nil {
 			r.Config = cfg
 			r.app().Config = cfg
 		}
-		for _, line := range result.RenderLines {
-			r.println(line)
-		}
-		return nil
+		return endpointRenderLinesResult(r, result.RenderLines, endpointMutationProjection{
+			Mode: "delete", Alias: result.Alias, Deleted: true,
+		})
 	default:
-		return fmt.Errorf("unknown endpoints subcommand %q", args[0])
+		return nil, fmt.Errorf("unknown endpoints subcommand %q", args[0])
 	}
 }
 
-func (r *REPLState) cmdScript(args []string, _ interface{}) error {
-	return r.runScript(args)
+func endpointRenderLinesResult(r *REPLState, lines []string, projection interface{}) (command.Result, error) {
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() {
+			for _, line := range lines {
+				r.println(line)
+			}
+		})
+	}, projection)
 }
 
-func (r *REPLState) cmdConfig(_ []string, _ interface{}) error {
+func (r *REPLState) cmdScript(args []string, _ interface{}) (command.Result, error) {
+	return newTerminalCommandResult(nil), r.runScript(args)
+}
+
+func (r *REPLState) cmdConfig(_ []string, _ interface{}) (command.Result, error) {
 	// Display current config
 	config.DisplayConfig(r.DataDir)
 	r.println("Note: Config is read-only. Edit config.yaml in the data directory manually.")
-	return nil
+	return newTerminalCommandResult(nil), nil
 }
 
 func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, error) {
@@ -344,56 +427,54 @@ func yesNo(ok bool) string {
 	return "no"
 }
 
-func (r *REPLState) cmdPlugins(args []string, _ interface{}) error {
+func (r *REPLState) cmdPlugins(args []string, _ interface{}) (command.Result, error) {
 	result, err := r.app().PluginsInfo(r.commandContext(), args)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	if result.Mode == "list" && len(result.Plugins) == 0 {
-		r.println("No external plugins found")
-		return nil
-	}
-
-	if result.Mode == "show" && result.Plugin != nil {
-		plugin := result.Plugin
-		r.printf("%s v%s\n", plugin.Name, plugin.Version)
-		if plugin.Description != "" {
-			r.printf("  %s\n", plugin.Description)
-		}
-		if plugin.Author != "" {
-			r.printf("  Author: %s\n", plugin.Author)
-		}
-		if len(plugin.Networks) > 0 {
-			r.printf("  Networks: %s\n", strings.Join(plugin.Networks, ", "))
-		}
-		r.println("  Commands:")
-		for _, cmd := range plugin.Commands {
-			r.printf("    %s - %s\n", cmd.Name, cmd.Description)
-			if cmd.Usage != "" {
-				r.printf("      Usage: %s\n", cmd.Usage)
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() {
+			if result.Mode == "list" && len(result.Plugins) == 0 {
+				r.println("No external plugins found")
+				return
 			}
-		}
-		return nil
-	}
-
-	r.printf("%s:\n", result.Summary.Message)
-	for _, plugin := range result.Plugins {
-		// Collect command names
-		var cmdNames []string
-		for _, cmd := range plugin.Commands {
-			cmdNames = append(cmdNames, cmd.Name)
-		}
-
-		r.printf("  %s v%s", plugin.Name, plugin.Version)
-		if plugin.Description != "" {
-			r.printf(" - %s", plugin.Description)
-		}
-		r.println()
-		r.printf("    Commands: %s\n", strings.Join(cmdNames, ", "))
-		if len(plugin.Networks) > 0 {
-			r.printf("    Networks: %s\n", strings.Join(plugin.Networks, ", "))
-		}
-	}
-	return nil
+			if result.Mode == "show" && result.Plugin != nil {
+				plugin := result.Plugin
+				r.printf("%s v%s\n", plugin.Name, plugin.Version)
+				if plugin.Description != "" {
+					r.printf("  %s\n", plugin.Description)
+				}
+				if plugin.Author != "" {
+					r.printf("  Author: %s\n", plugin.Author)
+				}
+				if len(plugin.Networks) > 0 {
+					r.printf("  Networks: %s\n", strings.Join(plugin.Networks, ", "))
+				}
+				r.println("  Commands:")
+				for _, cmd := range plugin.Commands {
+					r.printf("    %s - %s\n", cmd.Name, cmd.Description)
+					if cmd.Usage != "" {
+						r.printf("      Usage: %s\n", cmd.Usage)
+					}
+				}
+				return
+			}
+			r.printf("%s:\n", result.Summary.Message)
+			for _, plugin := range result.Plugins {
+				var cmdNames []string
+				for _, cmd := range plugin.Commands {
+					cmdNames = append(cmdNames, cmd.Name)
+				}
+				r.printf("  %s v%s", plugin.Name, plugin.Version)
+				if plugin.Description != "" {
+					r.printf(" - %s", plugin.Description)
+				}
+				r.println()
+				r.printf("    Commands: %s\n", strings.Join(cmdNames, ", "))
+				if len(plugin.Networks) > 0 {
+					r.printf("    Networks: %s\n", strings.Join(plugin.Networks, ", "))
+				}
+			}
+		})
+	}, projectPluginsResult(result))
 }

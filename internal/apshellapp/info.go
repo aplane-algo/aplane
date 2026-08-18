@@ -111,9 +111,18 @@ func (a *App) Holders(ctx context.Context, args []string) (*HoldersCommandResult
 			Message: fmt.Sprintf("%d account(s) could not be queried", holders.QueryErrors),
 		})
 	}
+	balances := make([]*BalanceDetails, 0, len(holders.Addresses))
+	for _, address := range holders.Addresses {
+		balance, balanceErr := a.eng.GetBalance(ctx, address)
+		if balanceErr != nil {
+			continue
+		}
+		balances = append(balances, balanceDetailsFromEngine(balance))
+	}
 
 	return &HoldersCommandResult{
 		Addresses: holders.Addresses,
+		Balances:  balances,
 		AssetRef:  assetRef,
 		Warnings:  warnings,
 	}, nil

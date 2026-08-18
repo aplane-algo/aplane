@@ -3,42 +3,42 @@
 
 package apshellcli
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"io"
 
-func (r *REPLState) cmdApp(args []string, _ interface{}) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: app read <info|global|local|box|boxes> | app call raw <app-id> from <account> | app deploy from <account>")
-	}
+	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/command"
+)
 
-	switch args[0] {
-	case "read":
-		result, err := execAppRead(r, args[1:])
-		if err != nil {
-			return err
-		}
-		result.RenderText(r.Out, r)
-		return nil
-	case "call":
-		return r.runAppCall(args[1:])
-	case "deploy":
-		return r.runAppDeploy(args[1:])
-	default:
-		return fmt.Errorf("unknown app command: %s", args[0])
-	}
-}
-
-// execApp is used by MCP for structured JSON responses.
-func execApp(r *REPLState, args []string) (*JSONResult, error) {
+func (r *REPLState) cmdApp(args []string, _ interface{}) (command.Result, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("usage: app read <info|global|local|box|boxes> | app call raw <app-id> from <account> | app deploy from <account>")
 	}
+
 	switch args[0] {
 	case "read":
-		return execAppRead(r, args[1:])
+		result, err := r.app().AppRead(r.commandContext(), apshellapp.AppReadRequest{Args: args[1:]})
+		if err != nil {
+			return nil, err
+		}
+		return newShellCommandResult(func(w io.Writer) error {
+			data, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return err
+			}
+			if _, err := w.Write(data); err != nil {
+				return err
+			}
+			_, err = io.WriteString(w, "\n")
+			return err
+		}, result.Data)
 	case "call":
-		return execAppCall(r, args[1:])
+		return r.executeAppCall(args[1:])
 	case "deploy":
-		return execAppDeploy(r, args[1:])
+		return r.executeAppDeploy(args[1:])
+	default:
+		return nil, fmt.Errorf("unknown app command: %s", args[0])
 	}
-	return nil, fmt.Errorf("app command does not support structured JSON result for this subcommand")
 }

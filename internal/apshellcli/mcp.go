@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/clientenroll"
+	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/docassets"
 	"github.com/aplane-algo/aplane/internal/version"
@@ -101,8 +103,6 @@ func runMCPMode(network string, cfg config.Config, dataDir string) {
 
 		mu.Lock()
 		defer mu.Unlock()
-		state.applyClientCacheUpdates()
-
 		cmd, err := parseShellCommand(cmdStr)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("invalid command: %v", err)), nil
@@ -111,21 +111,7 @@ func runMCPMode(network string, cfg config.Config, dataDir string) {
 			return mcp.NewToolResultError("empty command"), nil
 		}
 
-		// Structured JSON path for supported commands
-		if r, handled := mcpStructured(state, cmd.Name, cmd.Args); handled {
-			return r, nil
-		}
-
-		// Fallback: capture text output
-		var buf bytes.Buffer
-		state.SetOutput(&buf)
-
-		err = state.executeCommand(cmd)
-
-		// Restore output to stderr (stdout is MCP transport)
-		state.SetOutput(os.Stderr)
-
-		return mcpFallbackResult(buf.String(), err), nil
+		return mcpExecuteCommand(state, cmd), nil
 	})
 
 	// Register the "js" tool for JavaScript execution with structured results.
@@ -253,7 +239,7 @@ recently executed JavaScript code instead of providing code.`),
 		mu.Lock()
 		defer mu.Unlock()
 
-		helpText := mcpCaptureHelp(state)
+		helpText := mcpReferenceText(state)
 		if helpText == "" {
 			return mcp.NewToolResultText("No commands available"), nil
 		}
@@ -269,159 +255,69 @@ recently executed JavaScript code instead of providing code.`),
 	}
 }
 
-// mcpBlockedCommands are commands that cannot be used via the execute tool.
-var mcpBlockedCommands = map[string]string{
-	"js":            "Use the js MCP tool instead",
-	"jssave":        "Use the jssave MCP tool instead",
-	"jslist":        "Use the jslist MCP tool instead",
-	"request-token": "Token request requires interactive approval — run via apshell directly",
-	"quit":          "Use MCP disconnect instead",
-	"exit":          "Use MCP disconnect instead",
-}
-
-// mcpStructured handles commands that return structured JSON instead of text.
-// Returns (result, true) if handled, or (nil, false) to fall through to text capture.
-func mcpStructured(state *REPLState, cmdName string, args []string) (*mcp.CallToolResult, bool) {
-	// Block interactive commands
-	if reason, blocked := mcpBlockedCommands[cmdName]; blocked {
-		return mcp.NewToolResultError(fmt.Sprintf("command '%s' not available via MCP: %s", cmdName, reason)), true
+func mcpExecuteCommand(state *REPLState, cmd Command) *mcp.CallToolResult {
+	if state == nil {
+		state = &REPLState{}
 	}
-
-	// Block keyreg paste mode (no args) — requires interactive input
-	if cmdName == "keyreg" && len(args) == 0 {
-		return mcp.NewToolResultError("keyreg paste mode not available via MCP — provide arguments directly (e.g., 'keyreg alice online')"), true
+	if state.CommandRegistry == nil {
+		state.CommandRegistry = state.initCommandRegistry()
 	}
-
-	// Helper: return JSON result or error
-	jsonOK := func(data []byte) (*mcp.CallToolResult, bool) {
-		return mcpJSONTextResult(data), true
-	}
-	jsonErr := func(err error) (*mcp.CallToolResult, bool) {
-		return mcp.NewToolResultError(err.Error()), true
-	}
-
-	switch cmdName {
-	// --- Read-only info commands ---
-	case "keys":
-		result, err := execKeys(state)
-		if err != nil {
-			return jsonErr(err)
+	registered, builtIn := state.CommandRegistry.Lookup(cmd.Name)
+	if builtIn {
+		policy := registered.Automation
+		if policy.Disposition == command.AutomationBlocked {
+			return mcp.NewToolResultError(fmt.Sprintf("command '%s' not available via MCP: %s", registered.Name, policy.Reason))
 		}
-		return jsonOK(result.RenderJSON())
-	case "status":
-		return jsonOK(state.mcpStatus())
-	case "accounts":
-		data, err := state.mcpAccounts()
-		if err != nil {
-			return jsonErr(err)
-		}
-		return jsonOK(data)
-	case "balance":
-		data, err := state.mcpBalance(args)
-		if err != nil {
-			return jsonErr(err)
-		}
-		return jsonOK(data)
-	case "holders":
-		data, err := state.mcpHolders(args)
-		if err != nil {
-			return jsonErr(err)
-		}
-		return jsonOK(data)
-	case "participation":
-		data, err := state.mcpParticipation(args)
-		if err != nil {
-			return jsonErr(err)
-		}
-		return jsonOK(data)
-	case "keytypes":
-		data, err := state.mcpKeytypes()
-		if err != nil {
-			return jsonErr(err)
-		}
-		return jsonOK(data)
-	case "info":
-		data, err := state.mcpInfo(args)
-		if err != nil {
-			return jsonErr(err)
-		}
-		return jsonOK(data)
-	case "app":
-		if len(args) > 0 && args[0] == "read" {
-			result, err := execApp(state, args)
-			if err != nil {
-				return jsonErr(err)
+		if policy.Guard != nil {
+			if err := policy.Guard(cmd.Args); err != nil {
+				return mcp.NewToolResultError(err.Error())
 			}
-			return jsonOK(result.RenderJSON())
-		}
-
-	// --- Alias/set listing (list subcommand returns JSON, mutations fall through to text) ---
-	case "alias":
-		if len(args) == 1 && args[0] == "list" {
-			return jsonOK(state.mcpAliases())
-		}
-	case "sets":
-		if len(args) == 1 && args[0] == "list" {
-			return jsonOK(state.mcpSets())
-		}
-
-	// --- ASA cache (list subcommand returns JSON) ---
-	case "asa":
-		if len(args) == 1 && args[0] == "list" {
-			return jsonOK(state.mcpASAList())
-		}
-
-	// --- Toggle commands ---
-	case "verbose":
-		result, err := execVerbose(state, args)
-		if err != nil {
-			return jsonErr(err)
-		}
-		return jsonOK(result.RenderJSON())
-	case "write":
-		result, err := execWrite(state, args)
-		if err != nil {
-			return jsonErr(err)
-		}
-		return jsonOK(result.RenderJSON())
-	}
-
-	// Check if this is an external plugin command
-	if _, ok := state.CommandRegistry.Lookup(cmdName); !ok {
-		if result, isPlugin := execPlugin(state, cmdName, args); isPlugin {
-			return jsonOK(result.RenderJSON())
 		}
 	}
 
-	return nil, false
+	result, err := state.executeCommandResult(cmd)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error())
+	}
+	if result == nil {
+		name := cmd.Name
+		if builtIn {
+			name = registered.Name
+		}
+		return mcp.NewToolResultError(fmt.Sprintf("structured command %q returned no result", name))
+	}
+	data, err := result.MarshalMachine()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error())
+	}
+	return mcpJSONTextResult(data)
 }
 
 func mcpJSONTextResult(data []byte) *mcp.CallToolResult {
 	return mcp.NewToolResultText(string(data))
 }
 
-func mcpFallbackResult(output string, err error) *mcp.CallToolResult {
-	if err != nil {
-		if output != "" {
-			return mcp.NewToolResultError(output + "\nError: " + err.Error())
+func mcpReferenceText(state *REPLState) string {
+	var builder strings.Builder
+	command.ShowHelp(&builder, state.CommandRegistry)
+	plugins, err := discoverExternalPlugins(state)
+	if err == nil {
+		names := make([]string, 0, len(plugins))
+		for _, plugin := range plugins {
+			if len(plugin.Manifest.Commands) > 0 {
+				names = append(names, plugin.Manifest.Name)
+			}
 		}
-		return mcp.NewToolResultError(err.Error())
+		if len(names) > 0 {
+			sort.Strings(names)
+			_, _ = fmt.Fprintln(&builder, "\nPlugins:")
+			for _, name := range names {
+				_, _ = fmt.Fprintf(&builder, "  %s\n", name)
+			}
+			_, _ = fmt.Fprintln(&builder, "\nFor plugin help, type: help <plugin>")
+		}
 	}
-	if output == "" {
-		output = "OK"
-	}
-	return mcp.NewToolResultText(output)
-}
-
-// mcpCaptureHelp runs the bare "help" command and captures its text output.
-func mcpCaptureHelp(state *REPLState) string {
-	var buf bytes.Buffer
-	oldOut := state.Out
-	state.SetOutput(&buf)
-	cmd := Command{Name: "help", Args: nil, RawArgs: ""}
-	_ = state.executeCommand(cmd)
-	state.SetOutput(oldOut)
-	return strings.TrimSpace(buf.String())
+	return strings.TrimSpace(builder.String())
 }
 
 // mcpJSResult is the structured response from the js MCP tool.

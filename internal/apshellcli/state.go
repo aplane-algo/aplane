@@ -20,8 +20,8 @@ import (
 // It keeps shell-only state locally while delegating command semantics to
 // apshellapp and lower-level client mechanics to engine.
 type REPLState struct {
-	// Output writer for all command output. Defaults to os.Stdout.
-	// MCP mode swaps this to a buffer to capture command output.
+	// Output writer for human command presentation. Defaults to os.Stdout.
+	// MCP execute marshals machine results and does not capture this writer.
 	Out io.Writer
 
 	// Application facade for apshell command use-cases.

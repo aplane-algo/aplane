@@ -2701,7 +2701,7 @@ The host does not send its accepted plugin protocol identifier. A plugin must
 independently declare the hard-coded identifier `"aplane-plugin/2"` in
 `initialize.result.protocol`. A missing or different declaration fails plugin
 startup. The identifier is distinct from the JSON-RPC envelope version
-(`"2.0"`), from `manifest_format` (`"1.0"`), and from the plugin's semantic
+(`"2.0"`), from `manifest_format` (`"2.0"`), and from the plugin's semantic
 package version.
 
 `execute` carries:
@@ -2732,13 +2732,12 @@ Manifest contract:
 
 - plugin directories must contain `manifest.json`
 - required manifest fields: `name`, `version`, `description`, and `executable`
-- `manifest_format` defaults to `1.0`; only `1.0` is accepted
+- `manifest_format` defaults to `2.0`; only `2.0` is accepted
 - `timeout` is seconds and defaults to 30
 - at least one executable command is required
 - each command requires `name` and `description`
-- function-only plugins are rejected
-- `functions` metadata is consumed for AI prompts and JS docs but does not
-  create an executable surface independent of commands
+- the retired `functions` metadata field is rejected; commands are the sole
+  executable and discoverable manifest surface
 - symlinked plugin directories are ignored
 
 Integrity and sandboxing:
@@ -2773,34 +2772,22 @@ Shared behavior:
 - command output is redirected to stderr
 - execution is serialized with an in-process mutex
 - auto-confirm is enabled
+- built-in aliases resolve to their primary command before automation policy is applied
 
 ### `execute` tool
 
 The `execute` tool description is built from a static reference plus plugin `mcp.md` files.
 
-Structured JSON commands:
+Each permitted built-in and plugin command executes through the same handler as
+the REPL and returns one semantic result. The REPL renders its human
+presentation; MCP marshals its explicit safe machine projection. MCP never
+captures terminal output as an `execute` result, and a structured success with
+nil, empty, or invalid JSON is rejected.
 
-- `keys`
-- `status`
-- `accounts`
-- `balance`
-- `holders`
-- `participation`
-- `keytypes`
-- `info`
-- `app read`
-- `alias` with no args
-- `sets` with no args
-- `asa list`
-- `verbose`
-- `write`
-- plugin commands returning `PluginResult`
-
-Fallback behavior:
-
-- all other commands fall back to captured text
-- silent success normalizes to `OK`
-- error results append `Error: ...` after any captured output
+Machine projections are allowlists. They omit secrets, authorization headers,
+credential paths, raw config, signed transaction bytes not deliberately in the
+contract, terminal-only render lines, and the plugin-reserved `localSigners`
+data field.
 
 JSON results are returned as text containing JSON bytes via `mcp.NewToolResultText(string(data))`, not as typed JSON content objects.
 
@@ -2809,14 +2796,16 @@ Blocked commands in `execute`:
 - `js` (use the `js` MCP tool instead)
 - `jssave` (use the `jssave` MCP tool instead)
 - `jslist` (use the `jslist` MCP tool instead)
+- `help` (use `mcp_reference`)
+- `config` (use the safe `status` command)
+- `script`
 - `request-token`
-- `quit`
-- `exit`
+- `clear`
+- `quit`, including aliases `exit` and `q`
 - `keyreg` paste mode
 
-Blocked commands are matched by literal command name before shell alias
-resolution. Blocked exit spellings are `quit` and `exit`; the `q` alias
-is not blocked unless `internal/apshellcli/mcp.go` is updated.
+Blocked commands reject before handler invocation. `keyreg` with explicit
+arguments remains a structured command.
 
 ### `mcp_reference` tool
 

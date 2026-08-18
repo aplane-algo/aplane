@@ -13,13 +13,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/engine"
 )
 
 func testREPLForJS(t *testing.T) *REPLState {
 	t.Helper()
 
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -37,7 +36,7 @@ func TestCmdJSInlineAndFileModes(t *testing.T) {
 		repl := testREPLForJS(t)
 		out := repl.Out.(*bytes.Buffer)
 
-		err := repl.cmdJS([]string{"1", "+", "2"}, &command.Context{RawArgs: "1 + 2"})
+		err := repl.runJS([]string{"1", "+", "2"}, &command.Context{RawArgs: "1 + 2"})
 		if err != nil {
 			t.Fatalf("cmdJS(inline) error = %v", err)
 		}
@@ -58,7 +57,7 @@ func TestCmdJSInlineAndFileModes(t *testing.T) {
 			t.Fatalf("WriteFile() error = %v", err)
 		}
 
-		err := repl.cmdJS([]string{scriptPath}, &command.Context{RawArgs: scriptPath})
+		err := repl.runJS([]string{scriptPath}, &command.Context{RawArgs: scriptPath})
 		if err != nil {
 			t.Fatalf("cmdJS(file) error = %v", err)
 		}
@@ -73,7 +72,7 @@ func TestCmdJSBraceAndMultilineModes(t *testing.T) {
 		repl := testREPLForJS(t)
 		out := repl.Out.(*bytes.Buffer)
 
-		err := repl.cmdJS([]string{"{"}, &command.Context{RawArgs: "{ 6 * 7 }"})
+		err := repl.runJS([]string{"{"}, &command.Context{RawArgs: "{ 6 * 7 }"})
 		if err != nil {
 			t.Fatalf("cmdJS(brace) error = %v", err)
 		}
@@ -92,7 +91,7 @@ func TestCmdJSBraceAndMultilineModes(t *testing.T) {
 			return line, nil
 		}
 
-		err := repl.cmdJS(nil, nil)
+		err := repl.runJS(nil, nil)
 		if err != nil {
 			t.Fatalf("cmdJS(multiline) error = %v", err)
 		}
@@ -106,7 +105,7 @@ func TestCmdJSHelpFlagPrintsAPIDocs(t *testing.T) {
 	repl := testREPLForJS(t)
 	out := repl.Out.(*bytes.Buffer)
 
-	err := repl.cmdJS([]string{"-help"}, &command.Context{RawArgs: "-help"})
+	err := repl.runJS([]string{"-help"}, &command.Context{RawArgs: "-help"})
 	if err != nil {
 		t.Fatalf("cmdJS(-help) error = %v", err)
 	}
@@ -120,7 +119,7 @@ func TestCmdJSSaveAndJSListUseScriptsDirForBareFilename(t *testing.T) {
 	out := repl.Out.(*bytes.Buffer)
 	scriptPath := filepath.Join(repl.DataDir, "scripts", "audit.js")
 
-	err := repl.cmdJSSave(nil, &command.Context{RawArgs: `audit.js print("ok")`})
+	err := repl.runJSSave(nil, &command.Context{RawArgs: `audit.js print("ok")`})
 	if err != nil {
 		t.Fatalf("cmdJSSave() error = %v", err)
 	}
@@ -129,7 +128,7 @@ func TestCmdJSSaveAndJSListUseScriptsDirForBareFilename(t *testing.T) {
 	}
 
 	out.Reset()
-	err = repl.cmdJSList(nil, nil)
+	err = repl.runJSList(nil, nil)
 	if err != nil {
 		t.Fatalf("cmdJSList() error = %v", err)
 	}
@@ -148,7 +147,7 @@ func TestCmdJSSaveAcceptsAbsolutePath(t *testing.T) {
 	out := repl.Out.(*bytes.Buffer)
 	scriptPath := filepath.Join(t.TempDir(), "audit.js")
 
-	err := repl.cmdJSSave(nil, &command.Context{RawArgs: scriptPath + ` print("ok")`})
+	err := repl.runJSSave(nil, &command.Context{RawArgs: scriptPath + ` print("ok")`})
 	if err != nil {
 		t.Fatalf("cmdJSSave() error = %v", err)
 	}
@@ -160,7 +159,7 @@ func TestCmdJSSaveAcceptsAbsolutePath(t *testing.T) {
 func TestCmdJSSaveRejectsRelativePathWithSlash(t *testing.T) {
 	repl := testREPLForJS(t)
 
-	err := repl.cmdJSSave(nil, &command.Context{RawArgs: `nested/audit.js print("ok")`})
+	err := repl.runJSSave(nil, &command.Context{RawArgs: `nested/audit.js print("ok")`})
 	if err == nil {
 		t.Fatal("cmdJSSave() expected error for relative path with slash")
 	}

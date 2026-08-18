@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 )
 
-const CurrentManifestFormat = "1.0"
+const CurrentManifestFormat = "2.0"
 
 // Manifest represents an external plugin's manifest.json
 type Manifest struct {
@@ -30,9 +30,8 @@ type Manifest struct {
 	Args       []string `json:"args,omitempty"`
 
 	// Capabilities and permissions
-	Commands  []Command  `json:"commands"`            // Executable command interface
-	Functions []Function `json:"functions,omitempty"` // Optional typed metadata layered over commands
-	Networks  []string   `json:"networks,omitempty"`  // Network context tokens
+	Commands []Command `json:"commands"`           // Executable command interface
+	Networks []string  `json:"networks,omitempty"` // Network context tokens
 
 	// Resource limits
 	Timeout int `json:"timeout,omitempty"` // seconds, default 30
@@ -52,24 +51,6 @@ type Command struct {
 	ArgSpecs    []cmdspec.ArgSpec `json:"arg_specs,omitempty"`
 }
 
-// FunctionParam describes a parameter for a typed plugin function
-type FunctionParam struct {
-	Name        string `json:"name"`                  // Parameter name (e.g., "addr")
-	Type        string `json:"type"`                  // Type: "string", "number", "address", "asset"
-	Description string `json:"description,omitempty"` // Human-readable description
-}
-
-// Function represents typed plugin metadata for JS/AI surfaces.
-// Runtime execution still routes through plugin commands; this metadata does
-// not by itself make a plugin executable without commands.
-type Function struct {
-	Name        string          `json:"name"`        // JS function name
-	Description string          `json:"description"` // What the function does
-	Params      []FunctionParam `json:"params"`      // Function parameters
-	Returns     string          `json:"returns"`     // Return type description for AI
-	Command     []string        `json:"command"`     // Plugin command args (use $paramName for substitution)
-}
-
 // load reads and parses a manifest.json file
 func load(path string) (*Manifest, error) {
 	data, err := os.ReadFile(path)
@@ -81,7 +62,7 @@ func load(path string) (*Manifest, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("failed to parse manifest: %w", err)
 	}
-	if err := rejectLegacyManifestFields(data); err != nil {
+	if err := rejectRetiredManifestFields(data); err != nil {
 		return nil, fmt.Errorf("invalid manifest: %w", err)
 	}
 
@@ -120,11 +101,8 @@ func (m *Manifest) Validate() error {
 		return err
 	}
 
-	// The runtime is currently command-first. Function metadata is useful for AI
-	// prompt generation and typed documentation, but command dispatch remains the
-	// executable contract.
 	if len(m.Commands) == 0 {
-		return fmt.Errorf("at least one command is required; functions metadata does not replace executable commands")
+		return fmt.Errorf("at least one command is required")
 	}
 
 	for i, cmd := range m.Commands {
@@ -157,13 +135,16 @@ func (m *Manifest) normalizeManifestFormat() error {
 	return nil
 }
 
-func rejectLegacyManifestFields(data []byte) error {
+func rejectRetiredManifestFields(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
 	if _, ok := fields["protocol_version"]; ok {
 		return fmt.Errorf("protocol_version is no longer supported; use manifest_format")
+	}
+	if _, ok := fields["functions"]; ok {
+		return fmt.Errorf("functions is no longer supported in manifest_format 2.0; expose executable commands only")
 	}
 	return nil
 }

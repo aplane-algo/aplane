@@ -13,7 +13,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	pluginmanager "github.com/aplane-algo/aplane/internal/plugin/manager"
@@ -21,7 +20,7 @@ import (
 )
 
 func TestPluginCommandAvailabilityMatchesShellAdapterAndMCP(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -68,12 +67,9 @@ func TestPluginCommandAvailabilityMatchesShellAdapterAndMCP(t *testing.T) {
 		}
 	}
 
-	result, handled := mcpStructured(state, "swap", []string{"--fast"})
-	if !handled {
-		t.Fatal("mcpStructured() did not handle plugin command present in shell adapter list")
-	}
+	result := mcpExecuteCommand(state, Command{Name: "swap", Args: []string{"--fast"}})
 	if result.IsError {
-		t.Fatalf("mcpStructured() returned error: %s", mcpResultText(t, result))
+		t.Fatalf("mcpExecuteCommand() returned error: %s", mcpResultText(t, result))
 	}
 
 	var got map[string]any
@@ -87,9 +83,9 @@ func TestPluginCommandAvailabilityMatchesShellAdapterAndMCP(t *testing.T) {
 		t.Fatalf("message = %#v, want ok", got["message"])
 	}
 
-	missing, handled := mcpStructured(state, "lend", nil)
-	if handled {
-		t.Fatalf("mcpStructured() unexpectedly handled absent plugin command: %s", mcpResultText(t, missing))
+	missing := mcpExecuteCommand(state, Command{Name: "lend"})
+	if !missing.IsError {
+		t.Fatalf("mcpExecuteCommand() unexpectedly accepted absent plugin command: %s", mcpResultText(t, missing))
 	}
 }
 

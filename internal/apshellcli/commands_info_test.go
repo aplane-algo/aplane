@@ -12,7 +12,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/integrity"
 )
 
@@ -31,14 +30,14 @@ func TestCmdHelpIncludesDiscoveredPluginCommands(t *testing.T) {
     "examples": ["reti validator 1"]
   }],
   "networks": ["testnet", "mainnet"],
-  "manifest_format": "1.0"
+  "manifest_format": "2.0"
 }`)
 
 	state := newHelpTestState(t, dataDir)
 	var out bytes.Buffer
 	state.SetOutput(&out)
 
-	if err := state.cmdHelp(nil, nil); err != nil {
+	if err := state.runHelp(nil, nil); err != nil {
 		t.Fatalf("cmdHelp() error = %v", err)
 	}
 
@@ -69,14 +68,14 @@ func TestCmdHelpShowsDetailedPluginCommandHelp(t *testing.T) {
     "examples": ["reti validator 1", "reti validator 25"]
   }],
   "networks": ["testnet", "mainnet"],
-  "manifest_format": "1.0"
+  "manifest_format": "2.0"
 }`)
 
 	state := newHelpTestState(t, dataDir)
 	var out bytes.Buffer
 	state.SetOutput(&out)
 
-	if err := state.cmdHelp([]string{"reti"}, nil); err != nil {
+	if err := state.runHelp([]string{"reti"}, nil); err != nil {
 		t.Fatalf("cmdHelp(reti) error = %v", err)
 	}
 
@@ -98,7 +97,7 @@ func TestCmdHelpShowsDetailedPluginCommandHelp(t *testing.T) {
 func newHelpTestState(t *testing.T, dataDir string) *REPLState {
 	t.Helper()
 
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}

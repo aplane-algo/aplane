@@ -6,6 +6,7 @@ package apshellcli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,13 +15,29 @@ import (
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
-	"github.com/aplane-algo/aplane/internal/engine"
 )
+
+func TestEndpointMachineProjectionOmitsCredentialPaths(t *testing.T) {
+	projection := projectEndpointEntry(apshellapp.EndpointEntry{
+		Alias: "remote", Role: "signer", URL: "ssh://signer.example:22",
+		IdentityFile: "/secret/id", KnownHostsPath: "/secret/known_hosts",
+		TokenFile: "/secret/token", TokenPresent: true,
+	})
+	data, err := json.Marshal(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"identity", "known_hosts", "token_file", "/secret/"} {
+		if bytes.Contains(data, []byte(forbidden)) {
+			t.Fatalf("machine endpoint projection contains %q: %s", forbidden, data)
+		}
+	}
+}
 
 func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := config.DefaultConfig()
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -33,7 +50,7 @@ func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
 		currentCommandCtx: context.Background(),
 	}
 
-	err = state.cmdEndpoints([]string{
+	result, err := state.cmdEndpoints([]string{
 		"create",
 		"--alias", "sentry-local",
 		"--endpoint", "ssh://127.0.0.1:2223",
@@ -41,6 +58,9 @@ func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
 	}, nil)
 	if err != nil {
 		t.Fatalf("cmdEndpoints(create) error = %v", err)
+	}
+	if err := result.RenderText(state.Out); err != nil {
+		t.Fatalf("RenderText() error = %v", err)
 	}
 	rendered := out.String()
 	if !strings.Contains(rendered, "Configured sentry endpoint sentry-local") ||
@@ -78,7 +98,7 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.DefaultConfig()
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,10 +107,14 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 		Config: cfg, currentCommandCtx: context.Background(),
 	}
 
-	if err := state.cmdEndpoints([]string{
+	result, err := state.cmdEndpoints([]string{
 		"import", "--alias", "local-sentry", "--role", "sentry", envelopePath,
-	}, nil); err != nil {
+	}, nil)
+	if err != nil {
 		t.Fatalf("cmdEndpoints(import) error = %v", err)
+	}
+	if err := result.RenderText(state.Out); err != nil {
+		t.Fatalf("RenderText() error = %v", err)
 	}
 	endpoint, ok := state.Config.Endpoints.Endpoint("local-sentry")
 	if !ok || endpoint.Role != config.ClientEndpointRoleSentry || endpoint.URL != "ssh://127.0.0.1:2223" {
@@ -127,7 +151,7 @@ func TestEndpointsUsageListsDiscoverSentries(t *testing.T) {
 		t.Fatalf("endpoints registry usage = %q, contains retired sync-sentries", cmd.Usage)
 	}
 
-	err := state.cmdEndpoints(nil, nil)
+	_, err := state.cmdEndpoints(nil, nil)
 	if err == nil {
 		t.Fatal("cmdEndpoints() error = nil, want usage")
 	}

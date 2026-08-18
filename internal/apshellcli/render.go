@@ -4,43 +4,25 @@
 package apshellcli
 
 import (
-	"encoding/json"
-	"io"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
+	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 )
 
-// CommandResult is returned by commands that support dual rendering.
-// RenderText writes human-friendly output; RenderJSON returns structured data for MCP.
-type CommandResult interface {
-	RenderText(w io.Writer, r *REPLState)
-	RenderJSON() []byte
-}
-
-// JSONResult holds structured output that renders as JSON in both text and MCP modes.
-type JSONResult struct {
-	Data interface{}
-}
-
-// KeysResult holds the output of the "keys" command.
-type KeysResult struct {
-	appresult.Keys
-}
-
-// ToggleResult holds the output of toggle commands (verbose, write, simulate).
-type ToggleResult struct {
+type toggleOutcome struct {
 	appresult.Toggle
+	Warning string
 }
 
-func (kr *KeysResult) RenderText(w io.Writer, r *REPLState) {
-	if len(kr.Keys.Keys) == 0 {
+func renderKeys(r *REPLState, keys appresult.Keys) {
+	if len(keys.Keys) == 0 {
 		r.println("No signable accounts found")
 		return
 	}
-	for _, k := range kr.Keys.Keys {
+	for _, k := range keys.Keys {
 		r.printf("%s [%s]%s\n", r.app().FormatAddress(k.Address, ""), r.app().FormatKeyTypeForDisplay(k.Address, k.KeyType), formatTemplateProvenanceStatusSuffix(k.TemplateProvenanceStatus))
 	}
 }
@@ -52,7 +34,10 @@ func formatTemplateProvenanceStatusSuffix(templateProvenanceStatus string) strin
 	return ""
 }
 
-func (tr *ToggleResult) RenderText(_ io.Writer, r *REPLState) {
+func renderToggle(r *REPLState, tr toggleOutcome) {
+	if tr.Warning != "" {
+		r.printf("Warning: %s\n", tr.Warning)
+	}
 	if !tr.Changed {
 		state := "off"
 		if tr.Enabled {
@@ -68,27 +53,11 @@ func (tr *ToggleResult) RenderText(_ io.Writer, r *REPLState) {
 	}
 }
 
-func (tr *ToggleResult) RenderJSON() []byte {
-	data, _ := json.Marshal(struct {
+func toggleProjection(tr toggleOutcome) interface{} {
+	return struct {
 		Name    string `json:"name"`
 		Enabled bool   `json:"enabled"`
-	}{tr.Name, tr.Enabled})
-	return data
-}
-
-func (jr *JSONResult) RenderText(w io.Writer, _ *REPLState) {
-	data, err := json.MarshalIndent(jr.Data, "", "  ")
-	if err != nil {
-		_, _ = io.WriteString(w, "{}\n")
-		return
-	}
-	_, _ = w.Write(data)
-	_, _ = io.WriteString(w, "\n")
-}
-
-func (jr *JSONResult) RenderJSON() []byte {
-	data, _ := json.Marshal(jr.Data)
-	return data
+	}{tr.Name, tr.Enabled}
 }
 
 func capitalize(s string) string {
@@ -101,9 +70,22 @@ func capitalize(s string) string {
 // PluginResult holds the output of an external plugin execution.
 type PluginResult struct {
 	appresult.Plugin
+	humanSteps []pluginHumanStep
 }
 
-func (pr *PluginResult) RenderText(_ io.Writer, r *REPLState) {
+type pluginHumanStep struct {
+	Output   string
+	Warnings []apshellapp.Warning
+}
+
+func renderPluginResult(r *REPLState, pr *PluginResult) {
+	for _, step := range pr.humanSteps {
+		r.renderSubmissionOutput(step.Output)
+		r.renderWarnings(step.Warnings)
+	}
+	if !pr.Success {
+		return
+	}
 	if pr.Presentation != nil {
 		renderPluginPresentation(r, pr.Presentation)
 	} else if pr.Message != "" {
@@ -129,22 +111,21 @@ func (pr *PluginResult) RenderText(_ io.Writer, r *REPLState) {
 	}
 }
 
-func (pr *PluginResult) RenderJSON() []byte {
+func projectPluginResult(pr *PluginResult) appresult.Plugin {
 	filtered := *pr
 	filtered.Data = appresult.FilterPluginData(pr.Data)
-	data, _ := json.Marshal(filtered)
-	return data
+	return filtered.Plugin
 }
 
-func (kr *KeysResult) RenderJSON() []byte {
+func projectKeys(keys appresult.Keys) interface{} {
 	type mcpKey struct {
 		Address                  string `json:"address"`
 		KeyType                  string `json:"key_type"`
 		TemplateProvenanceStatus string `json:"template_provenance_status,omitempty"`
 		TemplateProvenanceNote   string `json:"template_provenance_note,omitempty"`
 	}
-	result := make([]mcpKey, len(kr.Keys.Keys))
-	for i, k := range kr.Keys.Keys {
+	result := make([]mcpKey, len(keys.Keys))
+	for i, k := range keys.Keys {
 		result[i] = mcpKey{
 			Address:                  k.Address,
 			KeyType:                  k.KeyType,
@@ -152,8 +133,7 @@ func (kr *KeysResult) RenderJSON() []byte {
 			TemplateProvenanceNote:   k.TemplateProvenanceNote,
 		}
 	}
-	data, _ := json.Marshal(result)
-	return data
+	return result
 }
 
 func renderPluginPresentation(r *REPLState, presentation *jsonrpc.Presentation) {

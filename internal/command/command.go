@@ -3,7 +3,11 @@
 
 package command
 
-import "github.com/aplane-algo/aplane/internal/cmdspec"
+import (
+	"io"
+
+	"github.com/aplane-algo/aplane/internal/cmdspec"
+)
 
 // Command represents a REPL command with metadata
 type Command struct {
@@ -16,12 +20,52 @@ type Command struct {
 	IsPlugin    bool              // true = external plugin, false = internal
 	Handler     Handler           // Command execution handler
 	ArgSpecs    []cmdspec.ArgSpec // Argument completion specs (ordered by position)
+	Automation  AutomationPolicy  // Non-interactive execution policy
 }
 
-// Handler is the interface all command handlers must implement
-// This allows both internal Go functions and external plugins
+// Result is an already-computed command outcome with separate human and
+// machine presentations. Neither presentation may execute command behavior.
+type Result interface {
+	RenderText(io.Writer) error
+	MarshalMachine() ([]byte, error)
+}
+
+// Handler is the interface all command handlers must implement.
 type Handler interface {
-	Execute(args []string, ctx *Context) error
+	Execute(args []string, ctx *Context) (Result, error)
+}
+
+// AutomationDisposition controls whether a command may be invoked through a
+// non-interactive command surface such as MCP execute.
+type AutomationDisposition uint8
+
+const (
+	AutomationUnspecified AutomationDisposition = iota
+	AutomationStructured
+	AutomationBlocked
+)
+
+// AutomationPolicy is attached to a primary command. Aliases resolve to that
+// command and therefore inherit the same policy.
+type AutomationPolicy struct {
+	Disposition AutomationDisposition
+	Reason      string
+	Guard       func(args []string) error
+}
+
+// StructuredAutomation permits non-interactive execution.
+var StructuredAutomation = AutomationPolicy{Disposition: AutomationStructured}
+
+// GuardedStructuredAutomation permits non-interactive execution when guard
+// accepts the command arguments.
+func GuardedStructuredAutomation(guard func([]string) error) AutomationPolicy {
+	return AutomationPolicy{Disposition: AutomationStructured, Guard: guard}
+}
+
+// BlockedAutomation rejects non-interactive execution with the supplied
+// operator-facing reason.
+func BlockedAutomation(reason string) AutomationPolicy {
+	return AutomationPolicy{Disposition: AutomationBlocked, Reason: reason}
 }
 
 // Category constants for organizing commands

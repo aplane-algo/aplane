@@ -104,23 +104,9 @@ This file is the entry point for any external plugin.
     }
   ],
 
-  "functions": [
-    {
-      "name": "myPluginDeposit",
-      "description": "Deposit assets into the plugin",
-      "params": [
-        {"name": "amount", "type": "number", "description": "Amount to deposit"},
-        {"name": "asset", "type": "asset", "description": "Asset name or ID"},
-        {"name": "addr", "type": "address", "description": "Account address or alias"}
-      ],
-      "returns": "{txid: string, confirmed: boolean}",
-      "command": ["deposit", "$amount", "$asset", "for", "$addr"]
-    }
-  ],
-
   "networks": ["testnet", "mainnet", "betanet"],
   "timeout": 30,
-  "manifest_format": "1.0"
+  "manifest_format": "2.0"
 }
 ```
 
@@ -136,15 +122,18 @@ This file is the entry point for any external plugin.
 | `executable` | Yes | - | Path to executable (relative to plugin dir, or system command) |
 | `args` | No | `[]` | Command-line arguments to pass to the executable |
 | `commands` | Yes | - | Array of commands the plugin provides (for CLI and tab completion) |
-| `functions` | No | `[]` | Array of typed metadata for docs and automation surfaces (see [Typed Plugin Functions](#typed-plugin-functions)) |
 | `networks` | No | all | Networks the plugin supports (empty = all networks) |
 | `timeout` | No | 30 | Execution timeout in seconds |
-| `manifest_format` | No | "1.0" | Plugin manifest schema format |
+| `manifest_format` | No | "2.0" | Plugin manifest schema format |
 
 `manifest_format` describes the manifest file schema. It is separate from the
 JSON-RPC envelope version, which is always the `jsonrpc: "2.0"` field in
 runtime request and response frames, and from the APlane plugin protocol
 version exchanged in the `initialize` method.
+
+Manifest schema `2.0` removed the unused `functions` metadata field. Plugins
+upgrading from `1.0` delete that field and set `manifest_format` to `2.0`;
+their command declarations and executable JSON-RPC protocol do not change.
 
 **Note:** The `executable` field can reference:
 - A local file: `"./plugin-binary"` or `"./dist/plugin.js"`
@@ -231,196 +220,6 @@ For commands with subcommands that have different argument patterns, use `branch
 | `when.arg` | Argument index to check (0-based) |
 | `when.matches` | Regex pattern to match against the argument value |
 | `specs` | ArgSpecs to use when condition matches |
-
-### Typed Plugin Functions
-
-Plugin behavior is defined by commands; function metadata is supplementary.
-Plugins can expose **typed function metadata** that documents an intended
-JavaScript/automation call shape. Function-only plugins are rejected.
-
-Typed metadata describes a function-style call shape:
-
-- Named, typed parameters
-- Returns data directly (not wrapped)
-- Throws exceptions on error (instead of returning `success: false`)
-- Provides a function-style interface for documentation and automation
-  surfaces
-
-Executable runtime code uses plugin commands:
-```javascript
-let r = plugin("my-plugin", "status", "alice")
-if (r.success) {
-    print(r.data.summary)
-}
-```
-
-#### Function Schema
-
-Add a `functions` array to your manifest alongside `commands`:
-
-```json
-{
-  "name": "my-plugin",
-  "version": "1.0.0",
-  "commands": [...],
-  "functions": [
-    {
-      "name": "myPluginDoSomething",
-      "description": "Does something useful",
-      "params": [
-        {"name": "amount", "type": "number", "description": "Amount in ALGO"},
-        {"name": "addr", "type": "address", "description": "Account address or alias"}
-      ],
-      "returns": "{txid: string, confirmed: boolean}",
-      "command": ["do-something", "$amount", "for", "$addr"]
-    }
-  ]
-}
-```
-
-#### Function Fields
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | Yes | JavaScript function name (camelCase, e.g., `retiDeposit`) |
-| `description` | Yes | What the function does |
-| `params` | Yes | Array of parameter definitions |
-| `returns` | Yes | Return type description for documentation and automation metadata |
-| `command` | Yes | Command template with `$param` placeholders |
-
-#### Parameter Types
-
-| Type | JS Type | Description |
-|------|---------|-------------|
-| `string` | `string` | Generic string |
-| `number` | `number` | Numeric value |
-| `address` | `string` | Algorand address or alias (resolved automatically) |
-| `asset` | `string \| number` | Asset name (e.g., "usdc") or numeric ID (resolved for current network) |
-
-#### Command Template
-
-The `command` array defines how function parameters map to plugin command arguments. Use `$paramName` for substitution:
-
-```json
-{
-  "name": "tinymanSwap",
-  "params": [
-    {"name": "amount", "type": "number"},
-    {"name": "fromAsset", "type": "asset"},
-    {"name": "toAsset", "type": "asset"},
-    {"name": "addr", "type": "address"}
-  ],
-  "command": ["$amount", "$fromAsset", "to", "$toAsset", "for", "$addr"]
-}
-```
-
-When called as `tinymanSwap(100, "usdc", "algo", "alice")`, this generates the command:
-```
-["100", "usdc", "to", "algo", "for", "alice"]
-```
-
-#### Complete Example: Generic Workflow Plugin
-
-```json
-{
-  "name": "workflow-plugin",
-  "version": "1.0.0",
-  "description": "Example workflow plugin for account status and queued actions",
-  "executable": "node",
-  "args": ["dist/workflow-plugin.js"],
-
-  "commands": [
-    {
-      "name": "workflow",
-      "description": "Inspect workflow state and submit actions",
-      "usage": "workflow list | status <addr> | submit <amount> algo for <addr> | cancel <action-id> for <addr>",
-      "category": "ops"
-    }
-  ],
-
-  "functions": [
-    {
-      "name": "workflowList",
-      "description": "List all queued workflow actions",
-      "params": [],
-      "returns": "{actions: [{id: number, state: string, owner: string}]}",
-      "command": ["list"]
-    },
-    {
-      "name": "workflowStatus",
-      "description": "Get workflow status for an account",
-      "params": [
-        {"name": "addr", "type": "address", "description": "Account address or alias"}
-      ],
-      "returns": "{summary: string, pending: number, account: string}",
-      "command": ["status", "$addr"]
-    },
-    {
-      "name": "workflowSubmit",
-      "description": "Submit a new workflow action",
-      "params": [
-        {"name": "amount", "type": "number", "description": "Amount of ALGO to submit"},
-        {"name": "addr", "type": "address", "description": "Account address or alias"}
-      ],
-      "returns": "{txids: string[], actionId: number}",
-      "command": ["submit", "$amount", "algo", "for", "$addr"]
-    },
-    {
-      "name": "workflowCancel",
-      "description": "Cancel a queued workflow action",
-      "params": [
-        {"name": "actionId", "type": "number", "description": "Action ID to cancel"},
-        {"name": "addr", "type": "address", "description": "Account address or alias"}
-      ],
-      "returns": "{txids: string[], actionId: number, cancelled: boolean}",
-      "command": ["cancel", "$actionId", "for", "$addr"]
-    }
-  ],
-
-  "networks": ["testnet", "mainnet"],
-  "timeout": 120
-}
-```
-
-#### How It Works
-
-1. **Discovery**: At startup, `apshell` discovers plugins and parses their manifests
-2. **Metadata loading**: Function metadata is loaded for documentation and automation surfaces
-3. **Execution**: JavaScript calls the command runtime explicitly with `plugin(name, ...args)`
-4. **RPC call**: The plugin's `execute` RPC method receives the selected command and argv-style args
-5. **Result**: JavaScript receives `{success, message, data, presentation}` and decides how to handle it
-
-The `command` array in a `functions` entry documents how a function-shaped call should map to
-command arguments. It is not an independently registered JavaScript function.
-
-#### Metadata Projection
-
-Plugin command metadata is projected in command-first form:
-
-```
-PLUGIN COMMANDS:
-Plugins are executed through plugin(name, ...args). Typed manifest metadata may exist for documentation and automation; executable behavior is command-first.
-
-- workflow(...args: string[]): PluginResult
-  Inspect workflow state and submit actions
-  Usage: workflow list | status <addr> | submit <amount> algo for <addr> | cancel <action-id> for <addr>
-```
-
-This keeps generated or scripted usage aligned with the plugin's
-command-based runtime surface.
-
-#### Adding Typed Functions
-
-If your plugin only has `commands`, you can add `functions` alongside them:
-
-1. Keep `commands` for tab completion and the command interface
-2. Add `functions` array with typed function definitions
-3. Function names should be descriptive (e.g., `workflowStatus` not just `status`)
-4. Keep one plugin `execute` handler for the command interface
-
-Plugins with typed metadata may present the typed shape in documentation or
-automation surfaces; commands are the executable runtime contract and are
-available for direct command-line use.
 
 ### JSON-RPC Protocol
 
@@ -1198,7 +997,7 @@ Use `reti` when you want a concrete example that:
 - talks to the current Réti contracts through the TypeScript/Algokit client stack
 - builds a standalone executable so Node.js and npm are build-time dependencies
 - owns the Réti command surface without importing APlane `internal/` packages
-- includes typed function metadata for documentation and automation surfaces
+- exposes one command-first executable surface
 
 Reti's source lives under `examples/external_plugins/reti/`. The release
 workflow does not build or stage it into production archives; build it only

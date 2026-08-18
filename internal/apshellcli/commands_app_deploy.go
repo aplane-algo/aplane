@@ -5,44 +5,17 @@ package apshellcli
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/appinput"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
+	"github.com/aplane-algo/aplane/internal/command"
 )
 
-func (r *REPLState) runAppDeploy(args []string) error {
-	params, err := parseAppDeployArgs(args)
-	if err != nil {
-		return err
-	}
-
-	result, err := r.app().AppDeploy(r.commandContext(), params.toAppRequest())
-	if err != nil {
-		return err
-	}
-	for _, line := range renderAppCallLines(result.PreSubmitLines, result.FromAddress, r) {
-		r.println(line)
-	}
-	r.renderSubmissionOutput(result.Output)
-	r.renderWarnings(result.Warnings)
-
-	if result.Submitted {
-		r.printf("App deploy submitted: %s\n", result.Structured.TxID)
-	}
-
-	if params.Wait && result.Structured.Confirmed {
-		for _, line := range renderAppCallLines(result.ConfirmedLines, result.FromAddress, r) {
-			r.println(line)
-		}
-	}
-
-	return nil
-}
-
-func execAppDeploy(r *REPLState, args []string) (*JSONResult, error) {
+func (r *REPLState) executeAppDeploy(args []string) (command.Result, error) {
 	params, err := parseAppDeployArgs(args)
 	if err != nil {
 		return nil, err
@@ -52,8 +25,23 @@ func execAppDeploy(r *REPLState, args []string) (*JSONResult, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	return &JSONResult{Data: result.Structured}, nil
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() {
+			for _, line := range renderAppCallLines(result.PreSubmitLines, result.FromAddress, r) {
+				r.println(line)
+			}
+			r.renderSubmissionOutput(result.Output)
+			r.renderWarnings(result.Warnings)
+			if result.Submitted {
+				r.printf("App deploy submitted: %s\n", result.Structured.TxID)
+			}
+			if params.Wait && result.Structured.Confirmed {
+				for _, line := range renderAppCallLines(result.ConfirmedLines, result.FromAddress, r) {
+					r.println(line)
+				}
+			}
+		})
+	}, result.Structured)
 }
 
 type appDeployArgs struct {

@@ -15,9 +15,67 @@ import (
 // mustRegister registers a command and panics if there's an error.
 // Used during initialization where registration errors are programming bugs.
 func mustRegister(registry *command.Registry, cmd *command.Command) {
+	if cmd.Automation.Disposition == command.AutomationUnspecified {
+		policy, ok := builtInAutomationPolicies[cmd.Name]
+		if !ok {
+			panic(fmt.Sprintf("command %q has no automation policy", cmd.Name))
+		}
+		cmd.Automation = policy
+	}
 	if err := registry.Register(cmd); err != nil {
 		panic(fmt.Sprintf("failed to register command %q: %v", cmd.Name, err))
 	}
+}
+
+var builtInAutomationPolicies = map[string]command.AutomationPolicy{
+	"send":          command.StructuredAutomation,
+	"sweep":         command.StructuredAutomation,
+	"sign":          command.StructuredAutomation,
+	"optin":         command.StructuredAutomation,
+	"optout":        command.StructuredAutomation,
+	"keyreg":        command.GuardedStructuredAutomation(guardAutomatedKeyreg),
+	"close":         command.StructuredAutomation,
+	"balance":       command.StructuredAutomation,
+	"holders":       command.StructuredAutomation,
+	"participation": command.StructuredAutomation,
+	"app":           command.StructuredAutomation,
+	"alias":         command.StructuredAutomation,
+	"validate":      command.StructuredAutomation,
+	"sets":          command.StructuredAutomation,
+	"rekey":         command.StructuredAutomation,
+	"unrekey":       command.StructuredAutomation,
+	"status":        command.StructuredAutomation,
+	"accounts":      command.StructuredAutomation,
+	"keys":          command.StructuredAutomation,
+	"keytypes":      command.StructuredAutomation,
+	"generate":      command.StructuredAutomation,
+	"delete":        command.StructuredAutomation,
+	"info":          command.StructuredAutomation,
+	"plugins":       command.StructuredAutomation,
+	"asa":           command.StructuredAutomation,
+	"network":       command.StructuredAutomation,
+	"write":         command.StructuredAutomation,
+	"verbose":       command.StructuredAutomation,
+	"simulate":      command.StructuredAutomation,
+	"connect":       command.StructuredAutomation,
+	"disconnect":    command.StructuredAutomation,
+	"endpoints":     command.StructuredAutomation,
+	"help":          command.BlockedAutomation("use the mcp_reference MCP tool instead"),
+	"config":        command.BlockedAutomation("use the safe status command instead"),
+	"script":        command.BlockedAutomation("issue commands individually or use the js MCP tool"),
+	"js":            command.BlockedAutomation("use the js MCP tool instead"),
+	"jssave":        command.BlockedAutomation("use the jssave MCP tool instead"),
+	"jslist":        command.BlockedAutomation("use the jslist MCP tool instead"),
+	"request-token": command.BlockedAutomation("token enrollment requires an interactive apshell session"),
+	"clear":         command.BlockedAutomation("terminal clearing has no machine meaning"),
+	"quit":          command.BlockedAutomation("Use MCP disconnect instead"),
+}
+
+func guardAutomatedKeyreg(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("keyreg paste mode not available via MCP — provide arguments directly (e.g., 'keyreg alice online')")
+	}
+	return nil
 }
 
 // initCommandRegistry initializes the command registry with all REPL commands

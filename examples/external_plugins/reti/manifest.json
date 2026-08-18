@@ -79,74 +79,7 @@
       ]
     }
   ],
-  "functions": [
-    {
-      "name": "retiList",
-      "description": "List available Reti validators",
-      "params": [],
-      "returns": "{validators: [{id: number, owner: string, commissionPct: number, minEntryStakeAlgo: string, maxAlgoPerPoolAlgo: string, epochRoundLength: number, poolsPerNode: number}]}",
-      "command": ["list"]
-    },
-    {
-      "name": "retiValidator",
-      "description": "Get detailed information for one Reti validator",
-      "params": [
-        {"name": "validatorId", "type": "number", "description": "Validator ID"}
-      ],
-      "returns": "{validator: {id: number, owner: string, manager: string, commissionPct: number, totalStakedAlgo: string, numPools: number, totalStakers: number, minEntryStakeAlgo: string, gatingType: number, rewardTokenId: number, pools: [{poolId: number, appId: number, totalStakers: number, totalStakedAlgo: string}]}}",
-      "command": ["validator", "$validatorId"]
-    },
-    {
-      "name": "retiPools",
-      "description": "Get pools for a specific Reti validator",
-      "params": [
-        {"name": "validatorId", "type": "number", "description": "Validator ID"}
-      ],
-      "returns": "{pools: [{poolId: number, appId: number, totalStakers: number, totalStakedAlgo: string}]}",
-      "command": ["pools", "$validatorId"]
-    },
-    {
-      "name": "retiDeposit",
-      "description": "Deposit ALGO into a Reti validator",
-      "params": [
-        {"name": "amount", "type": "number", "description": "Amount of ALGO to stake"},
-        {"name": "validatorId", "type": "number", "description": "Validator ID"},
-        {"name": "addr", "type": "address", "description": "Account address or alias"}
-      ],
-      "returns": "{validatorId: number, poolAppId: number, poolId: number}",
-      "command": ["deposit", "$amount", "algo", "into", "$validatorId", "for", "$addr"]
-    },
-    {
-      "name": "retiWithdraw",
-      "description": "Withdraw ALGO from a Reti staking pool",
-      "params": [
-        {"name": "amount", "type": "string", "description": "Amount of ALGO to unstake or 'all'"},
-        {"name": "poolAppId", "type": "number", "description": "Pool app ID"},
-        {"name": "addr", "type": "address", "description": "Account address or alias"}
-      ],
-      "returns": "{poolAppId: number, withdrawAmountAlgo: string}",
-      "command": ["withdraw", "$amount", "algo", "from", "app", "$poolAppId", "for", "$addr"]
-    },
-    {
-      "name": "retiBalance",
-      "description": "Get Reti staking balances for an account",
-      "params": [
-        {"name": "addr", "type": "address", "description": "Account address or alias"}
-      ],
-      "returns": "{stakes: [{validatorId: number, poolId: number, poolAppId: number, balanceAlgo: string, rewardTokenBalance: string, totalRewardedAlgo: string}], totalStakedAlgo: string}",
-      "command": ["balance", "$addr"]
-    },
-    {
-      "name": "retiClaim",
-      "description": "Claim available Réti reward tokens for an account",
-      "params": [
-        {"name": "addr", "type": "address", "description": "Account address or alias"}
-      ],
-      "returns": "{claimedPools: [{poolId: number, poolAppId: number, rewardTokenId?: number, rewardTokenBalance: string}], count: number, rewardTokenOptInRequired: boolean, rewardTokenOptIns: number[]}",
-      "command": ["claim", "$addr"]
-    }
-  ],
   "networks": ["testnet", "mainnet", "betanet", "fnet", "localnet", "sandbox"],
   "timeout": 120,
-  "manifest_format": "1.0"
+  "manifest_format": "2.0"
 }

@@ -42,28 +42,3 @@ func checkIncentiveEligibility(r *REPLState, address string, userWantsEligible b
 
 	return result.ChargeFee, nil
 }
-
-// refreshAuthCache refreshes the auth address cache from blockchain.
-// The cache refresh itself lives in apshellapp; this helper only adds shell output.
-func refreshAuthCache(r *REPLState) error {
-	if err := r.app().RefreshAuthCache(r.commandContext()); err != nil {
-		return err
-	}
-	r.println("✓ Auth cache refreshed")
-	return nil
-}
-
-// refreshAuthAddress refreshes the auth address cache for one account.
-func refreshAuthAddress(r *REPLState, account string) error {
-	result, err := r.app().RefreshAuthAddress(r.commandContext(), account)
-	if err != nil {
-		return err
-	}
-	r.printf("✓ Auth cache refreshed for %s\n", r.app().FormatAddress(result.Address, ""))
-	if result.IsRekeyed {
-		r.printf("auth: %s\n", r.app().FormatAddress(result.AuthAddress, ""))
-	} else {
-		r.println("auth: self")
-	}
-	return nil
-}

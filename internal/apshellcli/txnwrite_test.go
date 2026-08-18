@@ -10,13 +10,12 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/engine"
 )
 
 func testREPLForSimulate(t *testing.T) *REPLState {
 	t.Helper()
 
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -30,6 +29,17 @@ func testREPLForSimulate(t *testing.T) *REPLState {
 	return repl
 }
 
+func executeSimulateForTest(r *REPLState, args []string) error {
+	result, err := executeSimulate(r, args)
+	if err != nil {
+		return err
+	}
+	if terminal, ok := result.(interface{ terminalFailure() error }); ok {
+		return terminal.terminalFailure()
+	}
+	return nil
+}
+
 func TestToggleSimulateRejectsNonTransactionCommands(t *testing.T) {
 	repl := testREPLForSimulate(t)
 
@@ -41,7 +51,7 @@ func TestToggleSimulateRejectsNonTransactionCommands(t *testing.T) {
 	}
 
 	for _, args := range tests {
-		err := toggleSimulate(repl, args)
+		err := executeSimulateForTest(repl, args)
 		if err == nil {
 			t.Fatalf("toggleSimulate(%q) error = nil, want rejection", strings.Join(args, " "))
 		}
@@ -57,7 +67,7 @@ func TestToggleSimulateRejectsNonTransactionCommands(t *testing.T) {
 func TestToggleSimulateAllowsTransactionCommandPath(t *testing.T) {
 	repl := testREPLForSimulate(t)
 
-	err := toggleSimulate(repl, []string{"send"})
+	err := executeSimulateForTest(repl, []string{"send"})
 	if err == nil {
 		t.Fatal("toggleSimulate(send) error = nil, want downstream send usage error")
 	}
@@ -72,7 +82,7 @@ func TestToggleSimulateAllowsTransactionCommandPath(t *testing.T) {
 func TestToggleSimulateAllowsExternalPluginCommandPath(t *testing.T) {
 	repl := testREPLForSimulate(t)
 
-	err := toggleSimulate(repl, []string{"reti", "deposit"})
+	err := executeSimulateForTest(repl, []string{"reti", "deposit"})
 	if err == nil {
 		t.Fatal("toggleSimulate(reti deposit) error = nil, want downstream plugin error")
 	}
