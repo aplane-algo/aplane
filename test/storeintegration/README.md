@@ -3,7 +3,7 @@
 This package exercises signer storage independently of algod and the shared
 `/tmp/aplane-test-env` fixture. Every test starts from a genuine blank signer
 data directory, initializes it through `apstore`, and launches real `apsigner`,
-`apstore`, and (where needed) `apadmin` processes.
+offline `apstore`, and live `apadmin` processes.
 
 Run the normal lifecycle and crash matrices with:
 
@@ -47,7 +47,9 @@ make store-release-drill
 ```
 
 Use `STORE_RELEASE_BIN_DIR=/absolute/path` for downloaded or externally staged
-`apsigner`, `apstore`, and `apadmin` binaries. This drill intentionally avoids
+`apsigner`, `apstore`, and `apadmin` binaries. `apstore` performs only offline
+initialization and verification; every running-daemon workflow uses `apadmin`.
+The drill intentionally avoids
 test-only checkpoints and performs initialize, generate, sign, backup, fresh
 restore, rotate, restart, and sign again.
 

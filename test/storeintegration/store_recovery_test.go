@@ -32,7 +32,7 @@ func TestInterruptedRotationResumesOnUnlock(t *testing.T) {
 			mustWaitForAddresses(t, env, address)
 
 			input := strings.Join([]string{oldPass, newPass, newPass, "y", ""}, "\n")
-			change := env.startApstore(input, nil, "changepass")
+			change := env.startApadminBatch(input, "changepass")
 			env.waitForCheckpoint(15 * time.Second)
 			if err := env.crashSigner(); err != nil {
 				t.Fatalf("crash signer at %s: %v", checkpoint, err)
@@ -70,7 +70,7 @@ func TestInterruptedRotationBeforeRootCommitKeepsOldAuthority(t *testing.T) {
 	mustWaitForAddresses(t, env, address)
 
 	input := strings.Join([]string{oldPass, newPass, newPass, "y", ""}, "\n")
-	change := env.startApstore(input, nil, "changepass")
+	change := env.startApadminBatch(input, "changepass")
 	env.waitForCheckpoint(15 * time.Second)
 	if err := env.crashSigner(); err != nil {
 		t.Fatalf("crash signer before rotation root commit: %v", err)
@@ -116,16 +116,14 @@ func TestRestoreCleanupFailureBlocksSigningUntilRollbackPromotes(t *testing.T) {
 	mustWaitForAddresses(t, source, restoredAddress)
 	archive := mustCreateAndExportBackup(t, source, exportPass)
 
-	authEnv := []string{"TEST_PASSPHRASE=" + passphrase}
 	incoming := filepath.Join(env.root, "recovery-"+filepath.Base(archive))
 	copyFile(t, archive, incoming)
-	output, err := env.runApstore(exportPass+"\n", authEnv, "backup", "import", incoming)
+	output, err := env.runApadminBatch(exportPass+"\n", "backup", "import", incoming)
 	if err != nil {
 		t.Fatalf("import recovery fixture: %v\n%s", err, output)
 	}
-	output, err = env.runApstore(
+	output, err = env.runApadminBatch(
 		exportPass+"\n",
-		authEnv,
 		"restore", "apply", filepath.Base(incoming),
 		"--replace-existing",
 	)
@@ -135,7 +133,7 @@ func TestRestoreCleanupFailureBlocksSigningUntilRollbackPromotes(t *testing.T) {
 	assertSignerState(t, env, "recovery")
 	assertSigningBlocked(t, env, address)
 
-	output, err = env.runApstore("y\n", authEnv, "restore", "rollback")
+	output, err = env.runApadminBatch("y\n", "restore", "rollback")
 	if err != nil {
 		t.Fatalf("roll back interrupted restore: %v\n%s", err, output)
 	}
@@ -169,21 +167,20 @@ func TestReconcileCommandPromotesVisibleUncertainRestore(t *testing.T) {
 	destination.initialize()
 	destination.configureCheckpoint("restore.current_flipped", "error")
 	destination.startSigner(destPass)
-	authEnv := []string{"TEST_PASSPHRASE=" + destPass}
 	incoming := filepath.Join(destination.root, "reconcile-"+filepath.Base(archive))
 	copyFile(t, archive, incoming)
-	output, err := destination.runApstore(exportPass+"\n", authEnv, "backup", "import", incoming)
+	output, err := destination.runApadminBatch(exportPass+"\n", "backup", "import", incoming)
 	if err != nil {
 		t.Fatalf("import reconcile fixture: %v\n%s", err, output)
 	}
-	output, err = destination.runApstore(exportPass+"\n", authEnv, "restore", "apply", filepath.Base(incoming))
+	output, err = destination.runApadminBatch(exportPass+"\n", "restore", "apply", filepath.Base(incoming))
 	if err == nil {
 		t.Fatalf("restore checkpoint unexpectedly succeeded:\n%s", output)
 	}
 	assertSignerState(t, destination, "recovery")
 	assertSigningBlocked(t, destination, address)
 
-	output, err = destination.runApstore("", authEnv, "restore", "reconcile")
+	output, err = destination.runApadminBatch("", "restore", "reconcile")
 	if err != nil {
 		t.Fatalf("restore reconcile: %v\n%s", err, output)
 	}
@@ -209,16 +206,14 @@ func TestInterruptedRestoreAfterCurrentFlipLoadsCommittedGeneration(t *testing.T
 	destination.initialize()
 	destination.configureCheckpoint("restore.current_flipped", "block")
 	destination.startSigner(destPass)
-	authEnv := []string{"TEST_PASSPHRASE=" + destPass}
 	incoming := filepath.Join(destination.root, "crash-"+filepath.Base(archive))
 	copyFile(t, archive, incoming)
-	output, err := destination.runApstore(exportPass+"\n", authEnv, "backup", "import", incoming)
+	output, err := destination.runApadminBatch(exportPass+"\n", "backup", "import", incoming)
 	if err != nil {
 		t.Fatalf("import restore crash fixture: %v\n%s", err, output)
 	}
-	restore := destination.startApstore(
+	restore := destination.startApadminBatch(
 		exportPass+"\n",
-		authEnv,
 		"restore", "apply", filepath.Base(incoming),
 	)
 	destination.waitForCheckpoint(15 * time.Second)
@@ -262,15 +257,14 @@ func TestRestoreReloadFailureRollsBackAutomatically(t *testing.T) {
 	destination.initialize()
 	destination.configureCheckpoint("restore.reload_started", "error")
 	destination.startSigner(destPass)
-	authEnv := []string{"TEST_PASSPHRASE=" + destPass}
 	incoming := filepath.Join(destination.root, "reload-"+filepath.Base(archive))
 	copyFile(t, archive, incoming)
-	output, err := destination.runApstore(exportPass+"\n", authEnv, "backup", "import", incoming)
+	output, err := destination.runApadminBatch(exportPass+"\n", "backup", "import", incoming)
 	if err != nil {
 		t.Fatalf("import reload-failure fixture: %v\n%s", err, output)
 	}
-	output, err = destination.runApstore(
-		exportPass+"\n", authEnv, "restore", "apply", filepath.Base(incoming),
+	output, err = destination.runApadminBatch(
+		exportPass+"\n", "restore", "apply", filepath.Base(incoming),
 	)
 	if err == nil || !strings.Contains(output, "restore rolled back") {
 		t.Fatalf("reload failure did not report automatic rollback: err=%v\n%s", err, output)
@@ -315,15 +309,14 @@ func TestRestoreRepairsDamagedCredentialFromRecoveryMode(t *testing.T) {
 	env.startSigner(passphrase)
 	assertSignerState(t, env, "recovery")
 	assertSigningBlocked(t, env, address)
-	authEnv := []string{"TEST_PASSPHRASE=" + passphrase}
 	incoming := filepath.Join(env.root, "repair-"+filepath.Base(archive))
 	copyFile(t, archive, incoming)
-	output, err := env.runApstore(exportPass+"\n", authEnv, "backup", "import", incoming)
+	output, err := env.runApadminBatch(exportPass+"\n", "backup", "import", incoming)
 	if err != nil {
 		t.Fatalf("import repair archive: %v\n%s", err, output)
 	}
-	output, err = env.runApstore(
-		exportPass+"\n", authEnv,
+	output, err = env.runApadminBatch(
+		exportPass+"\n",
 		"restore", "apply", filepath.Base(incoming), "--replace-existing",
 	)
 	if err != nil {

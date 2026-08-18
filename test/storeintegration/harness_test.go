@@ -324,18 +324,31 @@ func (e *storeEnv) runApstore(input string, extraEnv []string, args ...string) (
 	return runCommand(e.t, suiteBinaries.apstore, e.dataDir, input, append([]string{"APSIGNER_DATA=" + e.dataDir}, extraEnv...), cmdArgs...)
 }
 
-func (e *storeEnv) startApstore(input string, extraEnv []string, args ...string) *commandHandle {
-	e.t.Helper()
-	cmdArgs := append([]string{"-d", e.dataDir}, args...)
-	return startCommand(e.t, suiteBinaries.apstore, e.dataDir, input, append([]string{"APSIGNER_DATA=" + e.dataDir}, extraEnv...), cmdArgs...)
-}
-
 func (e *storeEnv) runApadmin(args ...string) (string, error) {
 	return runCommand(e.t, suiteBinaries.apadmin, e.dataDir, "", []string{
 		"APSIGNER_DATA=" + e.dataDir,
 		"TEST_PASSPHRASE=" + e.passphrase,
 		"DISABLE_MEMORY_LOCK=1",
 	}, args...)
+}
+
+func (e *storeEnv) runApadminBatch(input string, args ...string) (string, error) {
+	cmdArgs := append([]string{"-d", e.dataDir}, args...)
+	return runCommand(e.t, suiteBinaries.apadmin, e.dataDir, input, []string{
+		"APSIGNER_DATA=" + e.dataDir,
+		"APSIGNER_PASSPHRASE=" + e.passphrase,
+		"DISABLE_MEMORY_LOCK=1",
+	}, cmdArgs...)
+}
+
+func (e *storeEnv) startApadminBatch(input string, args ...string) *commandHandle {
+	e.t.Helper()
+	cmdArgs := append([]string{"-d", e.dataDir}, args...)
+	return startCommand(e.t, suiteBinaries.apadmin, e.dataDir, input, []string{
+		"APSIGNER_DATA=" + e.dataDir,
+		"APSIGNER_PASSPHRASE=" + e.passphrase,
+		"DISABLE_MEMORY_LOCK=1",
+	}, cmdArgs...)
 }
 
 func runCommand(t *testing.T, binary, dir, input string, extraEnv []string, args ...string) (string, error) {
