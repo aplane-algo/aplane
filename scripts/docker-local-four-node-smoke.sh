@@ -1429,7 +1429,7 @@ import_sentry_reference_to_signer() {
     local public_file out
     public_file="$(mktemp)"
     if ! out="$(docker_exec_as_tester "$SENTRY_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore sentry export \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry export \
         '$SENTRY_COMPONENT_KEY' /tmp/sentry-public.json 2>&1")"; then
         printf '%s\n' "$out" >&2
         rm -f "$public_file"
@@ -1441,7 +1441,7 @@ import_sentry_reference_to_signer() {
     rm -f "$public_file"
     docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sentry-public.json
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore sentry import \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry import \
         /tmp/sentry-public.json '$SENTRY_REFERENCE_NAME' 2>&1")"; then
         printf '%s\n' "$out" >&2
         die "failed to import sentry public reference into signer"
@@ -1454,7 +1454,7 @@ import_sentry_reference_to_signer() {
 enable_guarded_keytype() {
     local out
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore keytype enable aplane.falcon1024-sentry1024.v1 2>&1")"; then
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin keytype enable aplane.falcon1024-sentry1024.v1 2>&1")"; then
         printf '%s\n' "$out" >&2
         die "failed to enable guarded Falcon/Falcon sentry key type on signer"
     fi
@@ -1464,7 +1464,7 @@ enable_guarded_keytype() {
 import_corridor_template() {
     local out
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore template import \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin template import \
         /home/$TEST_USER/aplane/apsigner/library/templates/aplane.corridor.v1.yaml 2>&1")"; then
         printf '%s\n' "$out" >&2
         die "failed to import Corridor template on signer"

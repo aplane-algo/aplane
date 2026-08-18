@@ -41,8 +41,8 @@ func TestGenericAllowlistTemplateAllowsSendAndCloseToFundingAccount(t *testing.T
 	templatePath := writeGenericAllowlistTemplate(t, family)
 
 	t.Setenv("APSIGNER_PASSPHRASE", mustReadPassphrase(t, env.SignerDataDir))
-	apstore := harness.NewApStoreHarness(t, env.SignerDataDir)
-	mustImportTemplateViaApstore(t, env.SignerDataDir, apstore, templatePath, "generic allowlist")
+	apadmin := harness.NewApAdminHarness(t, env.SignerDataDir)
+	mustImportTemplateViaApadmin(t, env.SignerDataDir, apadmin, templatePath, "generic allowlist")
 
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
@@ -50,7 +50,6 @@ func TestGenericAllowlistTemplateAllowsSendAndCloseToFundingAccount(t *testing.T
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 	t.Cleanup(apadmin.Cleanup)
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
@@ -112,8 +111,8 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 	templatePath := writeGenericFundingClosebackTemplate(t, family, funder.GetAddress())
 
 	t.Setenv("APSIGNER_PASSPHRASE", mustReadPassphrase(t, env.SignerDataDir))
-	apstore := harness.NewApStoreHarness(t, env.SignerDataDir)
-	mustImportTemplateViaApstore(t, env.SignerDataDir, apstore, templatePath, "lifecycle")
+	apadmin := harness.NewApAdminHarness(t, env.SignerDataDir)
+	mustImportTemplateViaApadmin(t, env.SignerDataDir, apadmin, templatePath, "lifecycle")
 
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
@@ -121,7 +120,6 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 	t.Cleanup(apadmin.Cleanup)
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
@@ -165,7 +163,7 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 		t.Fatalf("in-use deactivate result = %+v, want %s failure", inUseDisable, protocol.ResultCodeKeyTypeInUse)
 	}
 
-	output, err := apstore.RunWithInput("y\n", "template", "remove", keyType)
+	output, err := apadmin.RunWithInput("y\n", "template", "remove", keyType)
 	if err == nil {
 		t.Fatalf("template remove succeeded while key still existed; output:\n%s", output)
 	}
@@ -203,7 +201,7 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 		t.Fatalf("final deactivate result = %+v, want success with state change", finalDisable)
 	}
 
-	if output, err := apstore.RunWithInput("y\n", "template", "remove", keyType); err != nil {
+	if output, err := apadmin.RunWithInput("y\n", "template", "remove", keyType); err != nil {
 		t.Fatalf("failed to remove unused lifecycle template: %v\noutput:\n%s", err, output)
 	}
 }
@@ -230,8 +228,8 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 	templatePath := writeComposedFundingClosebackTemplate(t, family, funder.GetAddress())
 
 	t.Setenv("APSIGNER_PASSPHRASE", mustReadPassphrase(t, env.SignerDataDir))
-	apstore := harness.NewApStoreHarness(t, env.SignerDataDir)
-	mustImportTemplateViaApstore(t, env.SignerDataDir, apstore, templatePath, "composed DSA lifecycle")
+	apadmin := harness.NewApAdminHarness(t, env.SignerDataDir)
+	mustImportTemplateViaApadmin(t, env.SignerDataDir, apadmin, templatePath, "composed DSA lifecycle")
 
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
@@ -239,7 +237,6 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 	t.Cleanup(apadmin.Cleanup)
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
@@ -283,7 +280,7 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 		t.Fatalf("in-use composed deactivate result = %+v, want %s failure", inUseDisable, protocol.ResultCodeKeyTypeInUse)
 	}
 
-	output, err := apstore.RunWithInput("y\n", "template", "remove", keyType)
+	output, err := apadmin.RunWithInput("y\n", "template", "remove", keyType)
 	if err == nil {
 		t.Fatalf("composed template remove succeeded while key still existed; output:\n%s", output)
 	}
@@ -327,7 +324,7 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 		t.Fatalf("final composed deactivate result = %+v, want success with state change", finalDisable)
 	}
 
-	if output, err := apstore.RunWithInput("y\n", "template", "remove", keyType); err != nil {
+	if output, err := apadmin.RunWithInput("y\n", "template", "remove", keyType); err != nil {
 		t.Fatalf("failed to remove unused composed template: %v\noutput:\n%s", err, output)
 	}
 }

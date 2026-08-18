@@ -496,7 +496,7 @@ setup_appass_file_unlock() {
     # After the apapprover-driven happy path, restart apsigner with the
     # appass-file helper as the unlock command. This validates the production
     # `passphrase_command_argv` runtime path (same plumbing exercised by the
-    # Go integration test in test/integration/apstore_changepass_test.go) but
+    # Go integration test in test/integration/apadmin_changepass_test.go) but
     # under a real systemd-free apsigner process started the way operators
     # actually invoke it.
     local root="/home/$TEST_USER/aplane"

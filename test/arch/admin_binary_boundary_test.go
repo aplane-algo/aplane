@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -48,6 +49,52 @@ func TestApstoreHasNoLiveAdminTransport(t *testing.T) {
 		"apstore backup", "apstore restore", "apstore changepass", "apstore template",
 		"apstore keytype", "apstore sentry", "apstore endpoint", "apstore generations list",
 	)
+}
+
+func TestOperatorGuidanceUsesApadminForLiveOperations(t *testing.T) {
+	root := filepath.Join("..", "..")
+	retired := regexp.MustCompile(`\bapstore(?:\s+-d\s+(?:"[^"]*"|'[^']*'|\S+))?\s+(?:(?:backup|restore|changepass|template|keytype|sentry|endpoint)\b|generations\s+list\b)`)
+	historical := map[string]bool{
+		filepath.Join("docs", "PHASE3_ONBOARDING.md"):         true,
+		filepath.Join("docs", "PROPOSAL_KEYTERM_ROTATION.md"): true,
+	}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "bin", "node_modules", "temp":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if path == filepath.Join(root, "test", "arch", "admin_binary_boundary_test.go") {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		if historical[rel] {
+			return nil
+		}
+		ext := filepath.Ext(path)
+		if ext == "" && entry.Name() != "Makefile" {
+			return nil
+		}
+		if ext != ".go" && ext != ".md" && ext != ".sh" && ext != ".yml" && ext != ".yaml" && ext != ".example" && ext != "" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if match := retired.Find(data); match != nil {
+			t.Errorf("%s retains retired live command %q", rel, match)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertFileOmits(t *testing.T, path string, forbidden ...string) {

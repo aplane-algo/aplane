@@ -90,8 +90,8 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 	if err := apadmin.DeleteKey(childAddress); err != nil {
 		t.Fatalf("delete native Falcon key before restore: %v", err)
 	}
-	apstore := harness.NewApStoreHarness(t, signerd.GetWorkDir())
-	if output, restoreErr := apstore.RunWithInput(exportPassphrase+"\n",
+	t.Setenv("APSIGNER_PASSPHRASE", mustReadPassphrase(t, signerd.GetWorkDir()))
+	if output, restoreErr := apadmin.RunWithInput(exportPassphrase+"\n",
 		"restore", "apply", filepath.Base(backupResult.ArchivePath), "--address", childAddress); restoreErr != nil {
 		t.Fatalf("restore native Falcon key: %v\noutput:\n%s", restoreErr, output)
 	}

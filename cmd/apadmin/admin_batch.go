@@ -203,10 +203,10 @@ func runStoreCommand(command string, args []string, globals adminBatchGlobalOpti
 		Client:  client,
 		Streams: apadminapp.Streams{Stdout: streams.stdout, Stderr: streams.stderr},
 		ReadSecret: func(message string) ([]byte, error) {
-			return prompt.secret(message, !globals.remote)
+			return prompt.secret(message, false)
 		},
 		ReadConfirmed: func(first, second string) ([]byte, error) {
-			return prompt.confirmed(first, second, !globals.remote)
+			return prompt.confirmed(first, second, false)
 		},
 		Confirm: prompt.confirm,
 	}

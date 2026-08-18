@@ -97,6 +97,18 @@ func TestRemoteAdminBatchPromptIgnoresLocalEnvironment(t *testing.T) {
 	}
 }
 
+func TestCommandSecretDoesNotReuseAdminPassphraseEnvironment(t *testing.T) {
+	t.Setenv("APSIGNER_PASSPHRASE", "admin-secret")
+	prompt := newAdminBatchPrompt(strings.NewReader("archive-secret\n"), io.Discard)
+	secret, err := prompt.secret("Archive passphrase: ", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(secret) != "archive-secret" {
+		t.Fatalf("command secret = %q", secret)
+	}
+}
+
 func TestChangePassphraseCancellationUsesExplicitInputAndNeverConnects(t *testing.T) {
 	t.Setenv("APSIGNER_PASSPHRASE", "ambient-must-not-be-used")
 	var stderr bytes.Buffer

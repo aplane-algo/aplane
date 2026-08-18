@@ -45,10 +45,10 @@ func installTemplateLibraryFile(t *testing.T, signerDataDir, filename, descripti
 	t.Helper()
 
 	t.Setenv("APSIGNER_PASSPHRASE", mustReadPassphrase(t, signerDataDir))
-	apstore := harness.NewApStoreHarness(t, signerDataDir)
+	apadmin := harness.NewApAdminHarness(t, signerDataDir)
 	templatePath := syncTemplateLibraryFile(t, signerDataDir, filename)
 	runWithTempSigner(t, func() {
-		if output, err := apstore.Run("template", "import", templatePath); err != nil {
+		if output, err := apadmin.Run("template", "import", templatePath); err != nil {
 			t.Fatalf("failed to add %s template: %v\noutput:\n%s", description, err, output)
 		}
 	})
@@ -69,12 +69,12 @@ func runWithTempSigner(t *testing.T, fn func()) {
 	fn()
 }
 
-func mustImportTemplateViaApstore(t *testing.T, signerDataDir string, apstore *harness.ApStoreHarness, templatePath, description string) {
+func mustImportTemplateViaApadmin(t *testing.T, signerDataDir string, apadmin *harness.ApAdminHarness, templatePath, description string) {
 	t.Helper()
 
 	t.Setenv("APSIGNER_PASSPHRASE", mustReadPassphrase(t, signerDataDir))
 	runWithTempSigner(t, func() {
-		if output, err := apstore.Run("template", "import", templatePath); err != nil {
+		if output, err := apadmin.Run("template", "import", templatePath); err != nil {
 			t.Fatalf("failed to add %s template: %v\noutput:\n%s", description, err, output)
 		}
 	})
