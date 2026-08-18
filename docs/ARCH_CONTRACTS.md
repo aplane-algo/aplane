@@ -2701,7 +2701,7 @@ The host does not send its accepted plugin protocol identifier. A plugin must
 independently declare the hard-coded identifier `"aplane-plugin/2"` in
 `initialize.result.protocol`. A missing or different declaration fails plugin
 startup. The identifier is distinct from the JSON-RPC envelope version
-(`"2.0"`), from `manifest_format` (`"1.0"`), and from the plugin's semantic
+(`"2.0"`), from `manifest_format` (`"2.0"`), and from the plugin's semantic
 package version.
 
 `execute` carries:
@@ -2732,13 +2732,12 @@ Manifest contract:
 
 - plugin directories must contain `manifest.json`
 - required manifest fields: `name`, `version`, `description`, and `executable`
-- `manifest_format` defaults to `1.0`; only `1.0` is accepted
+- `manifest_format` defaults to `2.0`; only `2.0` is accepted
 - `timeout` is seconds and defaults to 30
 - at least one executable command is required
 - each command requires `name` and `description`
-- function-only plugins are rejected
-- `functions` metadata is consumed for AI prompts and JS docs but does not
-  create an executable surface independent of commands
+- the retired `functions` metadata field is rejected; commands are the sole
+  executable and discoverable manifest surface
 - symlinked plugin directories are ignored
 
 Integrity and sandboxing:

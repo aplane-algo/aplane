@@ -150,7 +150,7 @@ func createDiscoveryPlugin(t *testing.T, searchPath, name, commandName, executab
   "description": "test plugin",
   "executable": "` + execName + `",
   "commands": [{"name": "` + commandName + `", "description": "cmd"}],
-  "manifest_format": "1.0"
+  "manifest_format": "2.0"
 }`
 	if err := os.WriteFile(filepath.Join(pluginDir, "manifest.json"), []byte(manifestJSON), 0o644); err != nil {
 		t.Fatalf("WriteFile(manifest) error = %v", err)
@@ -196,7 +196,7 @@ func createChecksumMismatchDiscoveryPlugin(t *testing.T, searchPath, name, comma
   "description": "bad checksum plugin",
   "executable": "` + execName + `",
   "commands": [{"name": "` + commandName + `", "description": "cmd"}],
-  "manifest_format": "1.0"
+  "manifest_format": "2.0"
 }`
 	if err := os.WriteFile(filepath.Join(pluginDir, "manifest.json"), []byte(manifestJSON), 0o644); err != nil {
 		t.Fatalf("WriteFile(manifest) error = %v", err)

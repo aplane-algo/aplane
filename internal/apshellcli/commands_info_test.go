@@ -31,7 +31,7 @@ func TestCmdHelpIncludesDiscoveredPluginCommands(t *testing.T) {
     "examples": ["reti validator 1"]
   }],
   "networks": ["testnet", "mainnet"],
-  "manifest_format": "1.0"
+  "manifest_format": "2.0"
 }`)
 
 	state := newHelpTestState(t, dataDir)
@@ -69,7 +69,7 @@ func TestCmdHelpShowsDetailedPluginCommandHelp(t *testing.T) {
     "examples": ["reti validator 1", "reti validator 25"]
   }],
   "networks": ["testnet", "mainnet"],
-  "manifest_format": "1.0"
+  "manifest_format": "2.0"
 }`)
 
 	state := newHelpTestState(t, dataDir)

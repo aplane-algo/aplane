@@ -43,7 +43,7 @@ func TestManifestValidate(t *testing.T) {
 				Commands:       []Command{{Name: "cmd1", Description: "Command 1"}},
 				Networks:       []string{"testnet", "mainnet"},
 				Timeout:        60,
-				ManifestFormat: "1.0",
+				ManifestFormat: "2.0",
 			},
 			wantErr: false,
 		},
@@ -55,7 +55,7 @@ func TestManifestValidate(t *testing.T) {
 				Description:    "A test plugin",
 				Executable:     "test-plugin",
 				Commands:       []Command{{Name: "test", Description: "Test"}},
-				ManifestFormat: "1.0",
+				ManifestFormat: "2.0",
 			},
 			wantErr: false,
 		},
@@ -113,7 +113,7 @@ func TestManifestValidate(t *testing.T) {
 				Commands:    []Command{},
 			},
 			wantErr: true,
-			errMsg:  "at least one command is required; functions metadata does not replace executable commands",
+			errMsg:  "at least one command is required",
 		},
 		{
 			name: "command missing name",
@@ -140,17 +140,17 @@ func TestManifestValidate(t *testing.T) {
 			errMsg:  "command[0]: description is required",
 		},
 		{
-			name: "unsupported manifest format",
+			name: "retired manifest format",
 			manifest: Manifest{
 				Name:           "test-plugin",
 				Version:        "1.0.0",
 				Description:    "A test plugin",
 				Executable:     "test-plugin",
 				Commands:       []Command{{Name: "test", Description: "Test"}},
-				ManifestFormat: "2.0",
+				ManifestFormat: "1.0",
 			},
 			wantErr: true,
-			errMsg:  `unsupported manifest_format "2.0"`,
+			errMsg:  `unsupported manifest_format "1.0"`,
 		},
 		{
 			name: "negative timeout",
@@ -207,8 +207,8 @@ func TestManifestValidateDefaults(t *testing.T) {
 	if m.Timeout != 30 {
 		t.Errorf("Timeout = %d, want 30 (default)", m.Timeout)
 	}
-	if m.ManifestFormat != "1.0" {
-		t.Errorf("ManifestFormat = %q, want %q (default)", m.ManifestFormat, "1.0")
+	if m.ManifestFormat != "2.0" {
+		t.Errorf("ManifestFormat = %q, want %q (default)", m.ManifestFormat, "2.0")
 	}
 }
 
@@ -387,7 +387,7 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
-			name: "manifest with functions",
+			name: "retired functions field",
 			content: `{
 				"name": "defi-plugin",
 				"version": "2.0.0",
@@ -404,16 +404,8 @@ func TestLoad(t *testing.T) {
 					}
 				]
 			}`,
-			wantErr: false,
-			validate: func(t *testing.T, m *Manifest) {
-				if len(m.Functions) != 1 {
-					t.Errorf("len(Functions) = %d, want 1", len(m.Functions))
-					return
-				}
-				if m.Functions[0].Name != "getPrice" {
-					t.Errorf("Functions[0].Name = %q, want %q", m.Functions[0].Name, "getPrice")
-				}
-			},
+			wantErr: true,
+			errMsg:  "functions is no longer supported in manifest_format 2.0; expose executable commands only",
 		},
 		{
 			name: "legacy protocol version field",
@@ -554,8 +546,7 @@ func TestCommandFields(t *testing.T) {
 	}
 }
 
-func TestFunctionFields(t *testing.T) {
-	// Test that function fields are preserved through JSON round-trip
+func TestRetiredFunctionsFieldRejectedWhenManifestFormatIsOmitted(t *testing.T) {
 	content := `{
 		"name": "typed-plugin",
 		"version": "1.0.0",
@@ -583,26 +574,11 @@ func TestFunctionFields(t *testing.T) {
 		t.Fatalf("failed to write manifest: %v", err)
 	}
 
-	m, err := load(manifestPath)
-	if err != nil {
-		t.Fatalf("failed to load: %v", err)
+	_, err := load(manifestPath)
+	if err == nil {
+		t.Fatal("load() expected retired functions error")
 	}
-
-	if len(m.Functions) != 1 {
-		t.Fatalf("len(Functions) = %d, want 1", len(m.Functions))
-	}
-
-	fn := m.Functions[0]
-	if fn.Name != "transfer" {
-		t.Errorf("Name = %q, want %q", fn.Name, "transfer")
-	}
-	if len(fn.Params) != 3 {
-		t.Errorf("len(Params) = %d, want 3", len(fn.Params))
-	}
-	if fn.Params[0].Type != "address" {
-		t.Errorf("Params[0].Type = %q, want %q", fn.Params[0].Type, "address")
-	}
-	if len(fn.Command) != 4 {
-		t.Errorf("len(Command) = %d, want 4", len(fn.Command))
+	if want := "functions is no longer supported in manifest_format 2.0; expose executable commands only"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("load() error = %q, want containing %q", err, want)
 	}
 }

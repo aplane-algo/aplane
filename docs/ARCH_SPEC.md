@@ -1904,7 +1904,6 @@ Weaker or more coupled areas:
   `test/arch`. Remaining follow-up: the client-data lock helper plus the last
   signer-cache `*Locked` split still live on the engine side rather than being
   fully owned by `internal/clientstate`,
-- plugin manifests carry dual-surface complexity because typed function metadata exists alongside a command-first runtime contract,
 - shell command handling mixes structured results and stdout capture fallback,
 - the runtime core is identity-owned, but the operator/control-plane surface is single-identity/single-operator in product mode, even though that product admin workflow may arrive over IPC or the SSH `aplane-admin` subsystem.
 
@@ -1912,7 +1911,7 @@ Product-level boundaries:
 
 - identity-scoped storage, sessions, approval routing, and token plumbing exist,
   with a single-operator deployment model,
-- plugin manifests expose typed JS metadata, with a command-first executable contract,
+- plugin manifests expose one command-first executable contract,
 - template files are identity-scoped and encrypted; `key_type` is an immutability boundary rather than an override hook,
 - shell command execution supports both structured results and text capture fallback.
 

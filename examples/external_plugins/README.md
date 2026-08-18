@@ -163,11 +163,12 @@ directory. `algokit-localnet` is maintained there rather than as an example.
   ],
   "networks": ["testnet", "mainnet"],
   "timeout": 30,
-  "manifest_format": "1.0"
+  "manifest_format": "2.0"
 }
 ```
 
-`manifest_format` names the manifest schema.
+`manifest_format` names the manifest schema. Schema `2.0` is command-only; the
+retired `functions` metadata field from schema `1.0` is rejected.
 
 ### 2. Implement the JSON-RPC Protocol
 

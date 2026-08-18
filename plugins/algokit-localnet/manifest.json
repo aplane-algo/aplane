@@ -41,33 +41,7 @@
       ]
     }
   ],
-  "functions": [
-    {
-      "name": "localnetStatus",
-      "description": "Show algod and KMD status for AlgoKit LocalNet",
-      "params": [],
-      "returns": "{network: string, algodUrl: string, kmdUrl: string, genesisId: string, genesisHash: string, lastRound: number}",
-      "command": ["status"]
-    },
-    {
-      "name": "localnetAccounts",
-      "description": "List KMD accounts in the configured AlgoKit LocalNet wallet",
-      "params": [],
-      "returns": "{wallet: string, accounts: [{address: string, balance: number, minBalance: number, spendable: number}]}",
-      "command": ["accounts"]
-    },
-    {
-      "name": "localnetFund",
-      "description": "Fund an address from a KMD account in AlgoKit LocalNet",
-      "params": [
-        {"name": "address", "type": "address", "description": "Recipient address or alias"},
-        {"name": "amount", "type": "string", "description": "Amount with optional unit, default 100 ALGO"}
-      ],
-      "returns": "{from: string, to: string, amount: number, txid: string, confirmedRound: number}",
-      "command": ["fund", "$address", "$amount"]
-    }
-  ],
   "networks": ["localnet"],
   "timeout": 60,
-  "manifest_format": "1.0"
+  "manifest_format": "2.0"
 }
