@@ -39,27 +39,6 @@ func dispatchApstoreCommand(args []string) {
 			exitWithError(err)
 		}
 
-	case "backup":
-		if isManagedBackupCommand(args) {
-			if err := cmdBackupManaged(args[1:]); err != nil {
-				exitWithError(err)
-			}
-			return
-		}
-		logErrorf("usage: apstore backup <create|import|list|export|delete>")
-		os.Exit(apstoreExitUsage)
-
-	case "restore":
-		if isManagedRestoreCommand(args) {
-			if err := cmdRestoreManaged(args[1:]); err != nil {
-				exitWithError(err)
-			}
-			return
-		}
-		logErrorf("usage: apstore restore <preview|apply|rollback|reconcile>")
-		logErrorf("use apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...] only for replacement-keystore recovery")
-		os.Exit(apstoreExitUsage)
-
 	case "rebuild":
 		if err := runStoreMutatingCommand(command, func() error {
 			return cmdRebuild(args[1:])
@@ -74,11 +53,6 @@ func dispatchApstoreCommand(args []string) {
 			os.Exit(apstoreExitUsage)
 		}
 		if err := cmdVerify(backupPath); err != nil {
-			exitWithError(err)
-		}
-
-	case "changepass":
-		if err := cmdChangepass(); err != nil {
 			exitWithError(err)
 		}
 

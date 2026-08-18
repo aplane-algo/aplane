@@ -23,6 +23,9 @@ const (
 
 var productionSubcommands = []string{
 	policySubcommand,
+	backupSubcommand,
+	restoreSubcommand,
+	changePassSubcommand,
 	templateSubcommand,
 	keyTypeSubcommand,
 	sentrySubcommand,
@@ -36,6 +39,12 @@ var catalogSubcommands = map[string]bool{
 	sentrySubcommand:      true,
 	endpointSubcommand:    true,
 	generationsSubcommand: true,
+}
+
+var storeSubcommands = map[string]bool{
+	backupSubcommand:     true,
+	restoreSubcommand:    true,
+	changePassSubcommand: true,
 }
 
 var testModeCommandNames = []string{
@@ -59,3 +68,4 @@ func isProductionSubcommand(args []string) bool {
 }
 
 func isCatalogSubcommand(command string) bool { return catalogSubcommands[command] }
+func isStoreSubcommand(command string) bool   { return storeSubcommands[command] }

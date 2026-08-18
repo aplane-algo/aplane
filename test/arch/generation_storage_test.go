@@ -112,7 +112,7 @@ func TestNoHardlinksInStoreCode(t *testing.T) {
 // fallback; neither pathname is part of the signer store or a generation.
 func permittedNonStoreHardlink(path, root string, file *ast.File, pos token.Pos) bool {
 	rel, err := filepath.Rel(root, path)
-	if err != nil || filepath.ToSlash(rel) != "cmd/apstore/ipc_backup.go" {
+	if err != nil || filepath.ToSlash(rel) != "internal/apadminapp/store.go" {
 		return false
 	}
 	for _, declaration := range file.Decls {

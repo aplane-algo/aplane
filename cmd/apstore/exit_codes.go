@@ -35,6 +35,13 @@ type codedError struct {
 	message string
 }
 
+func resultError(prefix, code, message string) error {
+	if message == "" {
+		message = "operation failed"
+	}
+	return codedError{prefix: prefix, code: code, message: message}
+}
+
 func (e codedError) Error() string {
 	switch {
 	case e.prefix != "" && e.code != "" && e.message != "":

@@ -5,9 +5,12 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 func TestValidateFlagSpelling(t *testing.T) {
@@ -91,5 +94,43 @@ func TestRemoteAdminBatchPromptIgnoresLocalEnvironment(t *testing.T) {
 	}
 	if string(secret) != "explicit-remote-secret" {
 		t.Fatalf("remote passphrase = %q", secret)
+	}
+}
+
+func TestChangePassphraseCancellationUsesExplicitInputAndNeverConnects(t *testing.T) {
+	t.Setenv("APSIGNER_PASSPHRASE", "ambient-must-not-be-used")
+	var stderr bytes.Buffer
+	code := runStoreCommand("changepass", nil, adminBatchGlobalOptions{}, adminBatchStreams{
+		stdin: strings.NewReader("current\nnew\nnew\nno\n"), stdout: io.Discard, stderr: &stderr,
+	})
+	if code != 0 || !strings.Contains(stderr.String(), "cancelled") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestChangePassphraseRejectsEqualSecretBeforeConnection(t *testing.T) {
+	var stderr bytes.Buffer
+	code := runStoreCommand("changepass", nil, adminBatchGlobalOptions{}, adminBatchStreams{
+		stdin: strings.NewReader("same\nsame\nsame\n"), stdout: io.Discard, stderr: &stderr,
+	})
+	if code != 1 || !strings.Contains(stderr.String(), "must be different") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestAdminBatchExitCodeUsesStructuredProtocolCode(t *testing.T) {
+	for _, test := range []struct {
+		code string
+		want int
+	}{
+		{protocol.ErrCodeAuthenticationFailed, 3},
+		{protocol.ResultCodeRestoreRateLimited, 4},
+		{protocol.ResultCodeKeyTypeInUse, 5},
+		{"verification_failed", 6},
+	} {
+		err := protocol.WithCode(test.code, fmt.Errorf("opaque failure"))
+		if got := adminBatchExitCode(err); got != test.want {
+			t.Fatalf("code %q mapped to %d, want %d", test.code, got, test.want)
+		}
 	}
 }

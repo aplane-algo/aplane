@@ -82,7 +82,7 @@ func TestExitCodeDoesNotClassifyRemoteOutcomesFromProse(t *testing.T) {
 }
 
 func TestExitCodeForLocalUsageError(t *testing.T) {
-	err := fmt.Errorf("usage: apstore backup <create|import|list|export|delete>")
+	err := fmt.Errorf("usage: apstore keys list")
 	if got := exitCodeForError(err); got != apstoreExitUsage {
 		t.Fatalf("exitCodeForError(%v) = %d, want %d", err, got, apstoreExitUsage)
 	}

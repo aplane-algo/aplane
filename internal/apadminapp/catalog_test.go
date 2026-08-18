@@ -20,6 +20,7 @@ import (
 
 type fakeRequester struct {
 	requests []any
+	timeouts []time.Duration
 	handle   func(any, any) error
 }
 
@@ -27,8 +28,13 @@ func (f *fakeRequester) Request(message, result any) error {
 	return f.RequestWithTimeout(message, result, DefaultTimeout)
 }
 
-func (f *fakeRequester) RequestWithTimeout(message, result any, _ time.Duration) error {
+func (f *fakeRequester) RequestWithTimeout(message, result any, timeout time.Duration) error {
+	return f.requestWithTimeout(message, result, timeout)
+}
+
+func (f *fakeRequester) requestWithTimeout(message, result any, timeout time.Duration) error {
 	f.requests = append(f.requests, message)
+	f.timeouts = append(f.timeouts, timeout)
 	if f.handle == nil {
 		return nil
 	}

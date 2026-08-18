@@ -93,6 +93,15 @@ func main() {
 		}
 		return
 	}
+	if len(positional) > 0 && isStoreSubcommand(positional[0]) {
+		code := runStoreCommand(positional[0], positional[1:], adminBatchGlobalOptions{
+			dataDir: *dataDir, clientDataDir: *clientDataDir, ipcPath: *ipcPathFlag, remote: *remoteMode,
+		}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		if code != 0 {
+			os.Exit(code)
+		}
+		return
+	}
 
 	if *remoteMode {
 		runRemoteMode(*clientDataDir)

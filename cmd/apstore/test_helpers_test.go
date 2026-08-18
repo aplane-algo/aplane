@@ -4,20 +4,15 @@
 package main
 
 import (
-	"bufio"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	apbackup "github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -25,7 +20,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/protocol"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -53,219 +47,6 @@ func writeStandaloneBackup(dir, address string, keyJSON, exportPassphrase []byte
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, address+".apb"), encrypted, 0o600)
-}
-
-type fakeApstoreAdminRequester struct {
-	requestFunc              func(any, any) error
-	requests                 []string
-	previewResult            protocol.RestorePreviewMessage
-	restoreResult            protocol.RestoreBackupResultMessage
-	rollbackRestoreResult    protocol.RollbackRestoreResultMessage
-	reconcileStoreResult     protocol.ReconcileStoreResultMessage
-	backupResult             protocol.BackupResultMessage
-	listBackupsResult        protocol.BackupsListMessage
-	deleteBackupResult       protocol.DeleteBackupResultMessage
-	installedTemplatesResult protocol.InstalledTemplatesMessage
-	showTemplateResult       protocol.ShowInstalledTemplateResultMessage
-	importTemplateResult     protocol.ImportInstalledTemplateResultMessage
-	removeTemplateResult     protocol.RemoveInstalledTemplateResultMessage
-	activateResult           protocol.ActivateKeyTypeResultMessage
-	deactivateResult         protocol.DeactivateKeyTypeResultMessage
-	changePassphraseResult   protocol.ChangeStorePassphraseResultMessage
-	backupExportData         []byte
-	restoreRequest           protocol.RestoreBackupMessage
-	backupRequest            protocol.BackupMessage
-	deleteBackupRequest      protocol.DeleteBackupMessage
-	showTemplateRequest      protocol.ShowInstalledTemplateMessage
-	importTemplateRequest    protocol.ImportInstalledTemplateMessage
-	removeTemplateRequest    protocol.RemoveInstalledTemplateMessage
-	activateRequest          protocol.ActivateKeyTypeMessage
-	deactivateRequest        protocol.DeactivateKeyTypeMessage
-	changePassphraseRequest  protocol.ChangeStorePassphraseMessage
-	adminPassphrase          string
-	lastRequestTimeout       time.Duration
-	closed                   bool
-}
-
-func (f *fakeApstoreAdminRequester) request(msg any, out any) error {
-	return f.requestWithTimeout(msg, out, apstoreIPCTimeout)
-}
-
-func (f *fakeApstoreAdminRequester) requestWithTimeout(msg any, out any, timeout time.Duration) error {
-	f.lastRequestTimeout = timeout
-	if f.requestFunc != nil {
-		return f.requestFunc(msg, out)
-	}
-	switch typed := msg.(type) {
-	case protocol.BackupMessage:
-		f.requests = append(f.requests, typed.Type)
-		f.backupRequest = typed
-		result, ok := out.(*protocol.BackupResultMessage)
-		if !ok {
-			return errors.New("backup output has unexpected type")
-		}
-		*result = f.backupResult
-		return nil
-	case protocol.ListBackupsMessage:
-		f.requests = append(f.requests, typed.Type)
-		result, ok := out.(*protocol.BackupsListMessage)
-		if !ok {
-			return errors.New("list backups output has unexpected type")
-		}
-		*result = f.listBackupsResult
-		return nil
-	case protocol.DeleteBackupMessage:
-		f.requests = append(f.requests, typed.Type)
-		f.deleteBackupRequest = typed
-		result, ok := out.(*protocol.DeleteBackupResultMessage)
-		if !ok {
-			return errors.New("delete backup output has unexpected type")
-		}
-		*result = f.deleteBackupResult
-		return nil
-	case protocol.ReadBackupChunkMessage:
-		f.requests = append(f.requests, typed.Type)
-		result, ok := out.(*protocol.BackupChunkMessage)
-		if !ok {
-			return errors.New("backup chunk output has unexpected type")
-		}
-		if typed.Offset < 0 || typed.Offset > int64(len(f.backupExportData)) {
-			return errors.New("invalid backup chunk offset")
-		}
-		end := typed.Offset + adminproto.BackupTransferChunkBytes
-		if end > int64(len(f.backupExportData)) {
-			end = int64(len(f.backupExportData))
-		}
-		*result = protocol.BackupChunkMessage{Success: true, FileName: typed.FileName, Offset: typed.Offset, Data: append([]byte(nil), f.backupExportData[typed.Offset:end]...), EOF: end == int64(len(f.backupExportData))}
-		return nil
-	case protocol.PreviewRestoreMessage:
-		f.requests = append(f.requests, typed.Type)
-		result, ok := out.(*protocol.RestorePreviewMessage)
-		if !ok {
-			return errors.New("preview restore output has unexpected type")
-		}
-		*result = f.previewResult
-		return nil
-	case protocol.RestoreBackupMessage:
-		f.requests = append(f.requests, typed.Type)
-		f.restoreRequest = typed
-		result, ok := out.(*protocol.RestoreBackupResultMessage)
-		if !ok {
-			return errors.New("restore backup output has unexpected type")
-		}
-		*result = f.restoreResult
-		return nil
-	case protocol.RollbackRestoreMessage:
-		f.requests = append(f.requests, typed.Type)
-		result, ok := out.(*protocol.RollbackRestoreResultMessage)
-		if !ok {
-			return errors.New("rollback restore output has unexpected type")
-		}
-		*result = f.rollbackRestoreResult
-		return nil
-	case protocol.ReconcileStoreMessage:
-		f.requests = append(f.requests, typed.Type)
-		result, ok := out.(*protocol.ReconcileStoreResultMessage)
-		if !ok {
-			return errors.New("reconcile store output has unexpected type")
-		}
-		*result = f.reconcileStoreResult
-		return nil
-	case protocol.ListInstalledTemplatesMessage:
-		f.requests = append(f.requests, typed.Type)
-		result, ok := out.(*protocol.InstalledTemplatesMessage)
-		if !ok {
-			return errors.New("installed templates output has unexpected type")
-		}
-		*result = f.installedTemplatesResult
-		return nil
-	case protocol.ShowInstalledTemplateMessage:
-		f.requests = append(f.requests, typed.Type)
-		f.showTemplateRequest = typed
-		result, ok := out.(*protocol.ShowInstalledTemplateResultMessage)
-		if !ok {
-			return errors.New("show installed template output has unexpected type")
-		}
-		*result = f.showTemplateResult
-		return nil
-	case protocol.ImportInstalledTemplateMessage:
-		f.requests = append(f.requests, typed.Type)
-		f.importTemplateRequest = typed
-		result, ok := out.(*protocol.ImportInstalledTemplateResultMessage)
-		if !ok {
-			return errors.New("import installed template output has unexpected type")
-		}
-		*result = f.importTemplateResult
-		return nil
-	case protocol.RemoveInstalledTemplateMessage:
-		f.requests = append(f.requests, typed.Type)
-		f.removeTemplateRequest = typed
-		result, ok := out.(*protocol.RemoveInstalledTemplateResultMessage)
-		if !ok {
-			return errors.New("remove installed template output has unexpected type")
-		}
-		*result = f.removeTemplateResult
-		return nil
-	case protocol.ActivateKeyTypeMessage:
-		f.requests = append(f.requests, typed.Type)
-		f.activateRequest = typed
-		result, ok := out.(*protocol.ActivateKeyTypeResultMessage)
-		if !ok {
-			return errors.New("activate keytype output has unexpected type")
-		}
-		*result = f.activateResult
-		return nil
-	case protocol.DeactivateKeyTypeMessage:
-		f.requests = append(f.requests, typed.Type)
-		f.deactivateRequest = typed
-		result, ok := out.(*protocol.DeactivateKeyTypeResultMessage)
-		if !ok {
-			return errors.New("deactivate keytype output has unexpected type")
-		}
-		*result = f.deactivateResult
-		return nil
-	case protocol.ChangeStorePassphraseMessage:
-		f.requests = append(f.requests, typed.Type)
-		typed.CurrentPassphrase = protocol.SensitiveBytes(append([]byte(nil), typed.CurrentPassphrase...))
-		typed.NewPassphrase = protocol.SensitiveBytes(append([]byte(nil), typed.NewPassphrase...))
-		f.changePassphraseRequest = typed
-		result, ok := out.(*protocol.ChangeStorePassphraseResultMessage)
-		if !ok {
-			return errors.New("change passphrase output has unexpected type")
-		}
-		*result = f.changePassphraseResult
-		return nil
-	default:
-		return fmt.Errorf("unexpected request type %T", msg)
-	}
-}
-
-func (f *fakeApstoreAdminRequester) close() {
-	f.closed = true
-}
-
-func withFakeApstoreAdminClient(t *testing.T, fake apstoreAdminRequester) {
-	t.Helper()
-	oldNewApstoreAdminClientForCommand := newApstoreAdminClientForCommand
-	oldNewApstoreReadOnlyAdminClientForCommand := newApstoreReadOnlyAdminClientForCommand
-	oldNewApstoreAdminClientWithPassphraseForCommand := newApstoreAdminClientWithPassphraseForCommand
-	newApstoreAdminClientForCommand = func() (apstoreAdminRequester, error) {
-		return fake, nil
-	}
-	newApstoreReadOnlyAdminClientForCommand = func() (apstoreAdminRequester, error) {
-		return fake, nil
-	}
-	newApstoreAdminClientWithPassphraseForCommand = func(passphrase []byte) (apstoreAdminRequester, error) {
-		if typed, ok := fake.(*fakeApstoreAdminRequester); ok {
-			typed.adminPassphrase = string(passphrase)
-		}
-		return fake, nil
-	}
-	t.Cleanup(func() {
-		newApstoreAdminClientForCommand = oldNewApstoreAdminClientForCommand
-		newApstoreReadOnlyAdminClientForCommand = oldNewApstoreReadOnlyAdminClientForCommand
-		newApstoreAdminClientWithPassphraseForCommand = oldNewApstoreAdminClientWithPassphraseForCommand
-	})
 }
 
 func withTestStdin(input string, fn func() error) error {
@@ -316,49 +97,6 @@ func withCapturedStdout(fn func() error) (string, error) {
 		return string(data), readErr
 	}
 	return string(data), nil
-}
-
-func startApstoreIPCTestServer(t *testing.T, handler func(*bufio.Reader, net.Conn) error) (string, <-chan error) {
-	t.Helper()
-	socketPath := filepath.Join(t.TempDir(), "apstore-ipc.sock")
-	listener, err := net.Listen("unix", socketPath)
-	if err != nil {
-		t.Fatalf("Listen(unix) error = %v", err)
-	}
-	done := make(chan error, 1)
-	go func() {
-		defer close(done)
-		conn, err := listener.Accept()
-		if err != nil {
-			done <- err
-			return
-		}
-		defer func() { _ = conn.Close() }()
-		_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-		done <- handler(bufio.NewReader(conn), conn)
-	}()
-	t.Cleanup(func() { _ = listener.Close() })
-	return socketPath, done
-}
-
-func waitApstoreIPCTestServer(t *testing.T, done <-chan error) {
-	t.Helper()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("IPC test server error = %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("IPC test server did not finish")
-	}
-}
-
-func writeAdminTestMessage(w io.Writer, msg any) error {
-	data, err := protocol.MarshalAdminMessage(msg)
-	if err != nil {
-		return err
-	}
-	return protocol.WriteJSONLine(w, data)
 }
 
 func canonicalGenericKeyJSONForApstore(t *testing.T, keyType string, bytecode []byte) []byte {

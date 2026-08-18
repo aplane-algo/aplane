@@ -76,22 +76,6 @@ func TestAcquireOfflineMutationLockRejectsSharedStoreLock(t *testing.T) {
 	}
 }
 
-func TestAcquireOfflineMutationLockForArgsSkipsManagedBackupLock(t *testing.T) {
-	dataDir := t.TempDir()
-
-	guard, err := storelock.AcquireExclusive(dataDir)
-	if err != nil {
-		t.Fatalf("AcquireExclusive() error = %v", err)
-	}
-	defer func() { _ = guard.Close() }()
-
-	release, err := acquireOfflineMutationLockForArgs([]string{"backup", "create", "all"}, dataDir)
-	if err != nil {
-		t.Fatalf("acquireOfflineMutationLockForArgs(managed backup) error = %v", err)
-	}
-	release()
-}
-
 func TestPermissionsPreflightBypassesModeGuardAndStoreLock(t *testing.T) {
 	dataDir := t.TempDir()
 	oldCurrentEUID := currentEUID
@@ -109,19 +93,6 @@ func TestPermissionsPreflightBypassesModeGuardAndStoreLock(t *testing.T) {
 	release()
 	if _, err := os.Lstat(filepath.Join(dataDir, ".apstore.lock")); !os.IsNotExist(err) {
 		t.Fatalf("preflight lock path exists: %v", err)
-	}
-}
-
-func TestManagedRestoreCommandSetMatchesProtocolV4(t *testing.T) {
-	for _, command := range []string{"preview", "apply", "rollback", "reconcile"} {
-		if !isManagedRestoreCommand([]string{"restore", command}) {
-			t.Fatalf("restore %s was not recognized as a managed command", command)
-		}
-	}
-	for _, removed := range []string{"list", "review", "activate", "purge"} {
-		if isManagedRestoreCommand([]string{"restore", removed}) {
-			t.Fatalf("removed restore command %s remains reachable", removed)
-		}
 	}
 }
 
@@ -205,35 +176,6 @@ func TestEnforceApstoreExecutionModeRejectsForeignOwnedLocalDataDir(t *testing.T
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want substring %q", err.Error(), want)
-		}
-	}
-}
-
-func TestEnforceApstoreExecutionModeAllowsDaemonBackedCommandWithoutStoreAccess(t *testing.T) {
-	for _, args := range [][]string{
-		{"changepass"},
-		{"backup", "list"},
-		{"restore", "preview", "archive.tar.gz"},
-	} {
-		if err := enforceApstoreExecutionMode("/deliberately/inaccessible", args); err != nil {
-			t.Fatalf("enforceApstoreExecutionMode(%v) error = %v", args, err)
-		}
-	}
-	if isDaemonBackedCommand([]string{"generations", "prune"}) {
-		t.Fatal("generations prune must remain offline")
-	}
-}
-
-func TestApstoreNoLongerClassifiesMovedCatalogCommandsAsDaemonBacked(t *testing.T) {
-	for _, args := range [][]string{
-		{"template", "list"},
-		{"keytype", "enable", "example-v1"},
-		{"sentry", "list"},
-		{"endpoint", "export"},
-		{"generations", "list"},
-	} {
-		if isDaemonBackedCommand(args) {
-			t.Fatalf("retired apstore command %v remains daemon-backed", args)
 		}
 	}
 }
