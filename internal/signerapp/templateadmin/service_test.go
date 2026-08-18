@@ -106,9 +106,8 @@ func setupServiceWithReload(
 func putInstalledTemplateForServiceTest(t *testing.T, ir *identity.Runtime, keyType string, state keytypestate.State) {
 	t.Helper()
 	err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-		if _, err := templatestore.SaveTemplateForPaths(
-			ir.KeyPaths(),
-			ir.ID(),
+		if _, err := templatestore.SaveTemplateActive(
+			genstoretest.Active(t, ir.KeyPaths(), ir.ID()),
 			[]byte("schema_version: 1\ntemplate_type: generic\n"),
 			keyType,
 			templatestore.TemplateTypeGeneric,

@@ -215,8 +215,8 @@ func TestListInvalidPrecedenceSkipsConflictDetection(t *testing.T) {
 func TestListIncludesInstalledTemplateWithoutLibrarySource(t *testing.T) {
 	paths := newLibraryTestPaths(t)
 	keyType := "falcon1024-installed-only-v2"
-	if _, err := templatestore.SaveTemplateForPaths(paths, testIdentityID, testComposedTemplateYAML("falcon1024-installed-only", "Installed Only"), keyType, templatestore.TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateForPaths() error = %v", err)
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), testComposedTemplateYAML("falcon1024-installed-only", "Installed Only"), keyType, templatestore.TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey())); err != nil {
+		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
 	writeTemplateStateForTest(t, paths, testIdentityID, keyType, templatestore.TemplateTypeComposed, keytypestate.StateDisabled)
 
@@ -241,8 +241,8 @@ func TestListIncludesInstalledTemplateWithoutLibrarySource(t *testing.T) {
 func TestInstalledTemplateStateIsIdentityScoped(t *testing.T) {
 	paths := newLibraryTestPaths(t)
 	keyType := "phase11-identity-template-v1"
-	if _, err := templatestore.SaveTemplateForPaths(paths, "alice", testGenericTemplateYAML("phase11-identity-template", "Alice Template"), keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateForPaths(alice) error = %v", err)
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "alice"), testGenericTemplateYAML("phase11-identity-template", "Alice Template"), keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
+		t.Fatalf("SaveTemplateActive(alice) error = %v", err)
 	}
 	writeTemplateStateForTest(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
@@ -260,12 +260,12 @@ func TestRegisterKeystoreTemplatesReportsCrossIdentityKeyTypeConflict(t *testing
 	aliceYAML := testGenericTemplateYAML("phase11-global-conflict", "Alice Template")
 	bobYAML := bytes.ReplaceAll(aliceYAML, []byte("return"), []byte("int 0\n  pop\n  return"))
 
-	if _, err := templatestore.SaveTemplateForPaths(paths, "alice", aliceYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateForPaths(alice) error = %v", err)
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "alice"), aliceYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
+		t.Fatalf("SaveTemplateActive(alice) error = %v", err)
 	}
 	writeTemplateStateForTest(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-	if _, err := templatestore.SaveTemplateForPaths(paths, "bob", bobYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateForPaths(bob) error = %v", err)
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "bob"), bobYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
+		t.Fatalf("SaveTemplateActive(bob) error = %v", err)
 	}
 	writeTemplateStateForTest(t, paths, "bob", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
@@ -291,12 +291,12 @@ func TestRegisterKeystoreTemplatesAllowsCrossIdentitySameFingerprint(t *testing.
 	keyType := "test.phase11-global-idempotent.v1"
 	yamlData := testGenericTemplateYAML("phase11-global-idempotent", "Shared Template")
 
-	if _, err := templatestore.SaveTemplateForPaths(paths, "alice", yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateForPaths(alice) error = %v", err)
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "alice"), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
+		t.Fatalf("SaveTemplateActive(alice) error = %v", err)
 	}
 	writeTemplateStateForTest(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-	if _, err := templatestore.SaveTemplateForPaths(paths, "bob", yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateForPaths(bob) error = %v", err)
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "bob"), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
+		t.Fatalf("SaveTemplateActive(bob) error = %v", err)
 	}
 	writeTemplateStateForTest(t, paths, "bob", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
@@ -375,8 +375,13 @@ func TestInstallParsedExistingTemplateCanRollbackStateChange(t *testing.T) {
 	if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey())); err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
-	if err := keytypestate.SetState(paths, testIdentityID, parsed.KeyType, keytypestate.StateDisabled); err != nil {
-		t.Fatalf("SetState(disabled) error = %v", err)
+	rec, ok, err := keytypestate.Get(paths, testIdentityID, parsed.KeyType)
+	if err != nil || !ok {
+		t.Fatalf("Get(installed state) = (%+v, %v, %v), want record", rec, ok, err)
+	}
+	rec.State = keytypestate.StateDisabled
+	if err := keytypestate.Put(paths, testIdentityID, rec); err != nil {
+		t.Fatalf("Put(disabled state) error = %v", err)
 	}
 
 	again, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))

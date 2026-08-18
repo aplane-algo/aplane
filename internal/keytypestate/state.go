@@ -147,36 +147,6 @@ func PutActive(active storepaths.ActivePaths, rec Record) error {
 	return nil
 }
 
-// SetState performs a read-modify-write on the state field, preserving all
-// other fields. Returns an error if no record exists for keyType.
-//
-// CONTRACT: product callers MUST hold Signer.storeMutationLock.
-func SetState(paths storepaths.Paths, identityID, keyType string, state State) error {
-	active, err := genstore.ResolveActive(paths, identityID)
-	if err != nil {
-		return err
-	}
-	return SetStateActive(active, keyType, state)
-}
-
-// SetStateActive is SetState against resolved active-store paths.
-//
-// CONTRACT: product callers MUST hold Signer.storeMutationLock.
-func SetStateActive(active storepaths.ActivePaths, keyType string, state State) error {
-	if err := validateState(state); err != nil {
-		return err
-	}
-	rec, ok, err := GetActive(active, keyType)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("key type state not found: %s", keyType)
-	}
-	rec.State = state
-	return PutActive(active, rec)
-}
-
 // Delete removes a state record. It is idempotent when the record is already
 // absent.
 //
@@ -186,14 +156,7 @@ func Delete(paths storepaths.Paths, identityID, keyType string) error {
 	if err != nil {
 		return err
 	}
-	return DeleteActive(active, keyType)
-}
-
-// DeleteActive is Delete against resolved active-store paths.
-//
-// CONTRACT: product callers MUST hold Signer.storeMutationLock.
-func DeleteActive(active storepaths.ActivePaths, keyType string) error {
-	keyType, err := normalizeKeyType(keyType)
+	keyType, err = normalizeKeyType(keyType)
 	if err != nil {
 		return err
 	}
@@ -277,11 +240,6 @@ func ListEnabled(paths storepaths.Paths, identityID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ListEnabledActive(active)
-}
-
-// ListEnabledActive is ListEnabled against resolved active-store paths.
-func ListEnabledActive(active storepaths.ActivePaths) ([]string, error) {
 	if invalid, err := ListInvalidActive(active); err != nil {
 		return nil, err
 	} else if len(invalid) > 0 {
@@ -307,12 +265,7 @@ func RequireUnused(paths storepaths.Paths, identityID, keyType string, kr *apcry
 	if err != nil {
 		return err
 	}
-	return RequireUnusedActive(active, keyType, kr)
-}
-
-// RequireUnusedActive is RequireUnused against resolved active-store paths.
-func RequireUnusedActive(active storepaths.ActivePaths, keyType string, kr *apcrypto.Keyring) error {
-	keyType, err := normalizeKeyType(keyType)
+	keyType, err = normalizeKeyType(keyType)
 	if err != nil {
 		return err
 	}

@@ -1022,15 +1022,12 @@ teal: |
 	}
 	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), yamlData, keyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths(), ir.ID()), yamlData, keyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
-		t.Fatalf("SaveTemplateForPaths() error = %v", err)
+		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
-	writeTemplateStateForRestTest(t, ir.KeyPaths(), ir.ID(), keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-	if err := keytypestate.SetState(ir.KeyPaths(), ir.ID(), keyType, keytypestate.StateDisabled); err != nil {
-		t.Fatalf("SetState() error = %v", err)
-	}
+	writeTemplateStateForRestTest(t, ir.KeyPaths(), ir.ID(), keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
 
 	resp, svcErr := Service{}.KeyTypesForIdentity(ir)
 	if svcErr != nil {
@@ -1074,8 +1071,8 @@ teal: |
 	}
 	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 
-	if _, err := templatestore.SaveTemplateForPaths(paths, "alice", yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateForPaths(alice) error = %v", err)
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "alice"), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
+		t.Fatalf("SaveTemplateActive(alice) error = %v", err)
 	}
 	writeTemplateStateForRestTest(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
@@ -1150,8 +1147,8 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				keyType := "test.generic-rest-matrix-enabled.v1"
 				yamlData := restGenericMatrixTemplateYAML("generic-rest-matrix-enabled", "Generic Rest Matrix Enabled")
 				registerRestGenericTemplateYAML(t, yamlData)
-				if _, err := templatestore.SaveTemplateForPaths(paths, auth.DefaultIdentityID, yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
-					t.Fatalf("SaveTemplateForPaths() error = %v", err)
+				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, auth.DefaultIdentityID), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
+					t.Fatalf("SaveTemplateActive() error = %v", err)
 				}
 				writeTemplateStateForRestTest(t, paths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 				return restMatrixIdentity(paths, auth.DefaultIdentityID)
@@ -1166,13 +1163,10 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				keyType := "test.generic-rest-matrix-disabled.v1"
 				yamlData := restGenericMatrixTemplateYAML("generic-rest-matrix-disabled", "Generic Rest Matrix Disabled")
 				registerRestGenericTemplateYAML(t, yamlData)
-				if _, err := templatestore.SaveTemplateForPaths(paths, auth.DefaultIdentityID, yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
-					t.Fatalf("SaveTemplateForPaths() error = %v", err)
+				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, auth.DefaultIdentityID), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
+					t.Fatalf("SaveTemplateActive() error = %v", err)
 				}
-				writeTemplateStateForRestTest(t, paths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-				if err := keytypestate.SetState(paths, auth.DefaultIdentityID, keyType, keytypestate.StateDisabled); err != nil {
-					t.Fatalf("SetState() error = %v", err)
-				}
+				writeTemplateStateForRestTest(t, paths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
 				return restMatrixIdentity(paths, auth.DefaultIdentityID)
 			},
 		},
@@ -1219,8 +1213,8 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				keyType := "test.generic-rest-matrix-other-identity.v1"
 				yamlData := restGenericMatrixTemplateYAML("generic-rest-matrix-other-identity", "Generic Rest Matrix Other Identity")
 				registerRestGenericTemplateYAML(t, yamlData)
-				if _, err := templatestore.SaveTemplateForPaths(paths, "alice", yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
-					t.Fatalf("SaveTemplateForPaths(alice) error = %v", err)
+				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "alice"), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
+					t.Fatalf("SaveTemplateActive(alice) error = %v", err)
 				}
 				writeTemplateStateForRestTest(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 				return restMatrixIdentity(paths, "bob")
@@ -1452,10 +1446,10 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 	}
 	registerRestGenericTemplate(t)
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), restGenericTemplateYAML(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths(), ir.ID()), restGenericTemplateYAML(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
-		t.Fatalf("SaveTemplateForPaths(rest generic template) error = %v", err)
+		t.Fatalf("SaveTemplateActive(rest generic template) error = %v", err)
 	}
 	writeTemplateStateForRestTest(t, ir.KeyPaths(), ir.ID(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 	_, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: restGenericErrorKeyType})

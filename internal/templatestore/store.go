@@ -201,15 +201,7 @@ func GetTemplateFilePathActive(active storepaths.ActivePaths, keyType string, _ 
 	return active.KeyTypeTemplate(normalizeKeyType(keyType))
 }
 
-func SaveTemplateForPaths(paths storepaths.Paths, identityID string, yamlData []byte, keyType string, templateType TemplateType, kr *crypto.Keyring) (string, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
-	if err != nil {
-		return "", err
-	}
-	return SaveTemplateActive(active, yamlData, keyType, templateType, kr)
-}
-
-// SaveTemplateActive is SaveTemplateForPaths against resolved active-store
+// SaveTemplateActive writes an encrypted template against resolved active-store
 // paths.
 func SaveTemplateActive(active storepaths.ActivePaths, yamlData []byte, keyType string, templateType TemplateType, kr *crypto.Keyring) (string, error) {
 	keyType = normalizeKeyType(keyType)
