@@ -200,6 +200,12 @@ func (c *SSHAdminClient) Authenticate(passphrase string, timeout time.Duration) 
 	return authenticate(c, passphrase, timeout)
 }
 
+// AuthenticateOnly verifies and binds the SSH admin session without changing
+// the runtime's locked state.
+func (c *SSHAdminClient) AuthenticateOnly(passphrase string, timeout time.Duration) error {
+	return authenticateOnly(c, passphrase, timeout)
+}
+
 // Unlock sends an unlock request and waits for the result.
 func (c *SSHAdminClient) Unlock(passphrase string, timeout time.Duration) (*protocol.UnlockResultMessage, error) {
 	return unlockWithDispatcher(c.adminDispatcher(), passphrase, timeout)

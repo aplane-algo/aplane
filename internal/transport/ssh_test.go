@@ -21,6 +21,10 @@ func TestNewSSHAdminStoresConnectionSettings(t *testing.T) {
 	}
 }
 
+func TestSSHAdminImplementsTransportIncludingAuthenticateOnly(t *testing.T) {
+	var _ Transport = NewSSHAdmin("localhost", 22, "token", "identity", "known-hosts")
+}
+
 func TestSSHAdminClientCloseClosesClientWithoutStream(t *testing.T) {
 	c := &SSHAdminClient{
 		client: sshtunnel.NewClient("localhost", 22, 0, 0, "", ""),

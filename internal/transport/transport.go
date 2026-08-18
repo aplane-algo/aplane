@@ -38,6 +38,11 @@ type Transport interface {
 	// Authenticate handles the IPC authentication handshake.
 	Authenticate(passphrase string, timeout time.Duration) error
 
+	// AuthenticateOnly verifies and binds the admin session without changing
+	// the runtime's locked state. Requests remain subject to their normal
+	// authorization and runtime-state gates.
+	AuthenticateOnly(passphrase string, timeout time.Duration) error
+
 	// Unlock sends an unlock request.
 	Unlock(passphrase string, timeout time.Duration) (*protocol.UnlockResultMessage, error)
 }
