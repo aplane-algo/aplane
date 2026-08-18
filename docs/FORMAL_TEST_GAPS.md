@@ -94,7 +94,7 @@ The maintenance fence adds no new concurrency actor because its only caller
 brackets it inside `WithIdentityMutation`, the process-wide writer critical
 section.
 
-**Model extension candidate: authenticate-without-unlock (`auth_only`).**
+**Out of model: non-owning authenticate-without-unlock (`auth_only`).**
 Admin protocol 4.4 added a second pre-auth message. `auth_only`
 (`internal/signerapp/adminserver/session.go` `AuthenticateOutcome`,
 `internal/transport/protocol_flow.go` `authenticateOnly`) verifies the
@@ -104,17 +104,14 @@ endpoint-settings reads use it. `session_ownership.tla`'s `AuthSucceed`
 couples authentication to `unlocked' = TRUE`, so it now models the `auth`
 message only.
 
-No modeled invariant diverged. The new path returns the same
-`AuthOutcomeAuthenticated` and runs the identical ownership sequence
-(`BindPreAuthPending`, displacement offer, `PromoteToActive`) and the
-identical disconnect defer, so SO1 is unaffected by construction; and SO2's
-antecedent requires `unlocked`, which an authenticate-only session never sets,
-while the `Exit` cleanup that re-locks is unchanged. Splitting `AuthSucceed`
-into unlock/no-unlock variants would widen explored behavior without weakening
-any predicate, and is the natural extension if a session-mode distinction ever
-becomes load-bearing — for instance if authenticate-only sessions were ever
-excluded from ownership, which would change the `~othersActive` disjunct's
-meaning.
+The path is deliberately excluded from ownership: after authentication the
+daemon clears its pending slot and serves it as a non-owning observer. It does
+not promote or replace an active owner, receive approval notifications, fail
+pending approvals, or run lock-on-disconnect cleanup. Because it changes none
+of the model's ownership or lock-state variables, adding it as an
+`AuthSucceed` variant would add a stuttering actor rather than widen the SO1/SO2
+state space. Daemon lifecycle tests pin non-displacement and lock preservation;
+adminserver tests pin the explicit server-side request allowlist.
 
 The related non-blocking `identity_busy` result
 (`daemon/server.go` `tryWithIdentityInspection`) is a plain `TryLock` on the

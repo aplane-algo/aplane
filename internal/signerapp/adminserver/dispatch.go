@@ -89,6 +89,18 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeTokenProvisioningResponse: typed("token provisioning response", (*Session).HandleTokenProvisioningResponse),
 }
 
+// authOnlyDispatchTypes is the complete server-enforced capability granted to
+// sessions authenticated with auth_only. Keep this list explicit: adding a
+// normal admin request to dispatchTable must not silently make it available to
+// a non-owning observer session.
+var authOnlyDispatchTypes = map[string]bool{
+	protocol.MsgTypeGetAdminSettings:     true,
+	protocol.MsgTypeListSentryReferences: true,
+	protocol.MsgTypeGetSentryReference:   true,
+	protocol.MsgTypeExportSentryPublic:   true,
+	protocol.MsgTypeListGenerations:      true,
+}
+
 // Dispatch handles the subset of protocol messages that already live entirely
 // within the transport-neutral admin protocol/session layer.
 func (s *Session) Dispatch(raw []byte) bool {
@@ -108,6 +120,10 @@ func (s *Session) Dispatch(raw []byte) bool {
 	}
 	if s.nodeFailure != nil && s.nodeFailure() != nil {
 		_ = s.SendError(base.ID, protocol.ErrCodeNodeFailClosed, "signer node is fail-closed; restart required")
+		return true
+	}
+	if s.AuthenticatedOnly() && !authOnlyDispatchTypes[base.Type] {
+		_ = s.SendError(base.ID, protocol.ErrCodeAuthorizationDenied, "request is not permitted for an auth_only session")
 		return true
 	}
 	handle(s, raw, base.ID)

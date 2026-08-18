@@ -54,20 +54,22 @@ func (p *adminBatchPrompt) secret(message string, allowEnvironment bool) ([]byte
 			return []byte(value), nil
 		}
 	}
+	var secret []byte
 	if file, ok := p.stdin.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
 		_, _ = fmt.Fprint(p.stderr, message)
-		secret, err := term.ReadPassword(int(file.Fd()))
+		var err error
+		secret, err = term.ReadPassword(int(file.Fd()))
 		_, _ = fmt.Fprintln(p.stderr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read passphrase: %w", err)
 		}
-		return secret, nil
+	} else {
+		line, err := p.reader.ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("failed to read passphrase: %w", err)
+		}
+		secret = []byte(strings.TrimSpace(line))
 	}
-	line, err := p.reader.ReadString('\n')
-	if err != nil {
-		return nil, fmt.Errorf("failed to read passphrase: %w", err)
-	}
-	secret := []byte(strings.TrimSpace(line))
 	if len(secret) == 0 {
 		return nil, fmt.Errorf("passphrase cannot be empty")
 	}

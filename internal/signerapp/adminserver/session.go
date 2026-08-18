@@ -50,6 +50,7 @@ type Session struct {
 
 	mu                  sync.Mutex
 	state               SessionState
+	authenticatedOnly   bool
 	identity            *auth.Identity
 	bound               *identity.Runtime
 	method              string
@@ -271,6 +272,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		}
 
 		s.mu.Lock()
+		s.authenticatedOnly = authenticateOnly
 		s.identity = sessionIdentity
 		s.bound = ir
 		s.state = StateAuthenticated
@@ -352,6 +354,15 @@ func (s *Session) BoundRuntime() *identity.Runtime {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bound
+}
+
+// AuthenticatedOnly reports whether the session authenticated without unlock
+// authority. Such sessions are non-owning observers and may dispatch only the
+// explicit public-read request allowlist.
+func (s *Session) AuthenticatedOnly() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.authenticatedOnly
 }
 
 func (s *Session) Identity() *auth.Identity {

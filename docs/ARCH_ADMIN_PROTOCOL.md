@@ -57,7 +57,9 @@ Transport notes:
 - the generic client helpers in `internal/transport` expect `auth_required` for
   a normal handshake and preserve pre-auth protocol `error` messages as
   formatted server rejections,
-- displacement negotiation is handled only by the `apadmin` TUI path and is process-wide,
+- displacement negotiation is process-wide; TUI and batch clients handle the
+  pre-auth `client_exists`/`displace_confirm` exchange, but a later successful
+  `auth_only` handshake remains non-owning and does not replace the owner,
 - generic clients observe some auth/displacement failures as formatted protocol errors rather than stable typed transport errors.
 - admin frames are bounded to 4 MiB before JSON decoding on both transports.
 
@@ -71,13 +73,15 @@ Client to Server:
 
 - `auth` (pre-auth handshake response to `auth_required`; verifies, binds, and unlocks before authenticated dispatch)
 - `auth_only` (pre-auth handshake response intended for bound-runtime reads;
-  verifies and binds without changing locked state, but does not create a
-  server-enforced read-only session)
+  verifies and binds without changing locked state, creates a non-owning
+  observer session, and is restricted by a server-enforced public-read
+  request allowlist)
 - `unlock`
 - `lock_identity`
 - `initialize_store`
 - `change_store_passphrase`
-- `displace_confirm` (apadmin TUI displacement flow only)
+- `displace_confirm` (pre-auth confirmation that permits a later controlling
+  `auth` session to replace the active owner; ignored for `auth_only` ownership)
 
 Server to Client:
 
@@ -245,9 +249,11 @@ identity binding but never authorizes or invokes `identity.unlock`. It is a
 distinct message type so an older server rejects it before processing instead
 of ignoring a new flag and unlocking. First-party clients use it only for
 operations whose handlers require an authenticated bound runtime. It does not
-constrain the authenticated session to a separate read-only capability:
-subsequent messages still pass through their ordinary grant checks and
-locked/unlocked/recovery-state interlocks.
+occupy or replace the active admin-owner slot and cannot receive approval
+notifications or trigger disconnect cleanup. The server permits only
+`get_admin_settings`, sentry-reference list/get/public-export, and generation
+inventory requests; those requests still pass through their ordinary grant
+checks and locked/unlocked/recovery-state interlocks.
 
 ### Key Management
 

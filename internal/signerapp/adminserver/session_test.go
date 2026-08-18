@@ -489,6 +489,45 @@ func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
 	if session.BoundRuntime() != ir {
 		t.Fatal("authenticate-only session was not bound")
 	}
+	if !session.AuthenticatedOnly() {
+		t.Fatal("authenticate-only session did not retain its restricted session mode")
+	}
+}
+
+func TestAuthOnlyDispatchRejectsMutationAndPinsPublicReadAllowlist(t *testing.T) {
+	wantAllowed := map[string]bool{
+		protocol.MsgTypeGetAdminSettings:     true,
+		protocol.MsgTypeListSentryReferences: true,
+		protocol.MsgTypeGetSentryReference:   true,
+		protocol.MsgTypeExportSentryPublic:   true,
+		protocol.MsgTypeListGenerations:      true,
+	}
+	if len(authOnlyDispatchTypes) != len(wantAllowed) {
+		t.Fatalf("auth_only allowlist size = %d, want %d", len(authOnlyDispatchTypes), len(wantAllowed))
+	}
+	for messageType := range wantAllowed {
+		if !authOnlyDispatchTypes[messageType] {
+			t.Errorf("auth_only allowlist missing %q", messageType)
+		}
+	}
+
+	conn := &queueConn{}
+	session := NewSession(conn, SessionDeps{})
+	session.authenticatedOnly = true
+	raw := []byte(`{"kind":"request","type":"activate_key_type","id":"mutate-1"}`)
+	if !session.Dispatch(raw) {
+		t.Fatal("Dispatch() = false, want handled authorization rejection")
+	}
+	if len(conn.writes) != 1 {
+		t.Fatalf("writes = %d, want one authorization error", len(conn.writes))
+	}
+	var result protocol.ErrorMessage
+	if err := json.Unmarshal(conn.writes[0], &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Code != protocol.ErrCodeAuthorizationDenied {
+		t.Fatalf("error code = %q, want %q", result.Code, protocol.ErrCodeAuthorizationDenied)
+	}
 }
 
 func TestSessionAuthenticateOutcomeHandlesLocalInitialize(t *testing.T) {

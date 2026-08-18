@@ -109,6 +109,13 @@ func TestCommandSecretDoesNotReuseAdminPassphraseEnvironment(t *testing.T) {
 	}
 }
 
+func TestAdminBatchPromptRejectsEmptySecretBeforeCommand(t *testing.T) {
+	prompt := newAdminBatchPrompt(strings.NewReader("\n"), io.Discard)
+	if _, err := prompt.secret("Archive passphrase: ", false); err == nil || !strings.Contains(err.Error(), "cannot be empty") {
+		t.Fatalf("secret() error = %v, want empty-passphrase rejection", err)
+	}
+}
+
 func TestChangePassphraseCancellationUsesExplicitInputAndNeverConnects(t *testing.T) {
 	t.Setenv("APSIGNER_PASSPHRASE", "ambient-must-not-be-used")
 	var stderr bytes.Buffer

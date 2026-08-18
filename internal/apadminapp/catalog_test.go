@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -302,6 +303,55 @@ func TestCatalogSentryImportListShowAndRemoveRequests(t *testing.T) {
 	}
 	if err := catalog.Run("sentry", []string{"remove", "lab-sentry"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCatalogSentryExportStdoutIsJSONOnly(t *testing.T) {
+	const witnessKeyID = "6VY7A6IRYQVODHJ7QSLURSEZSYIR5VKMAPSHKNTGTYMH4GTEHA7Q"
+	const envelope = `{"schema":"aplane.sentry-public.v1","witness_key_id":"` + witnessKeyID + `"}`
+	requester := &fakeRequester{handle: func(message, result any) error {
+		request, ok := message.(protocol.ExportSentryPublicMessage)
+		if !ok {
+			return fmt.Errorf("request = %T", message)
+		}
+		if request.WitnessKeyID != witnessKeyID {
+			return fmt.Errorf("witness key ID = %q", request.WitnessKeyID)
+		}
+		*result.(*protocol.ExportSentryPublicResultMessage) = protocol.ExportSentryPublicResultMessage{
+			Success: true, EnvelopeJSON: envelope,
+		}
+		return nil
+	}}
+	var stdout, stderr bytes.Buffer
+	err := (Catalog{Client: requester, Streams: Streams{Stdout: &stdout, Stderr: &stderr}}).Run(
+		"sentry", []string{"export", witnessKeyID},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != envelope {
+		t.Fatalf("stdout = %q, want JSON envelope only", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+		t.Fatalf("stdout is not JSON: %v", err)
+	}
+}
+
+func TestCatalogSentryExportRejectsSpendingKeyBeforeRequest(t *testing.T) {
+	const spendingAddress = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+	requester := &fakeRequester{}
+	err := (Catalog{Client: requester, Streams: Streams{Stdout: io.Discard}}).Run(
+		"sentry", []string{"export", spendingAddress},
+	)
+	if err == nil || !strings.Contains(err.Error(), "invalid Witness Key ID") {
+		t.Fatalf("sentry export error = %v, want Witness Key ID rejection", err)
+	}
+	if len(requester.requests) != 0 {
+		t.Fatalf("requests = %d, want validation before request", len(requester.requests))
 	}
 }
 

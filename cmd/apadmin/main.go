@@ -68,7 +68,9 @@ func main() {
 	flag.Parse()
 
 	positional := flag.Args()
-	if len(positional) > 0 && positional[0] == policySubcommand {
+	kind, productionCommand := classifyProductionSubcommand(positional)
+	switch kind {
+	case productionPolicy:
 		passed := make(map[string]bool)
 		flag.Visit(func(f *flag.Flag) { passed[f.Name] = true })
 		code := runPolicyCommand(context.Background(), positional[1:], policyGlobalOptions{
@@ -83,8 +85,7 @@ func main() {
 			os.Exit(code)
 		}
 		return
-	}
-	if len(positional) > 0 && isCatalogSubcommand(positional[0]) {
+	case productionCatalog:
 		code := runCatalogCommand(positional[0], positional[1:], adminBatchGlobalOptions{
 			dataDir: *dataDir, clientDataDir: *clientDataDir, ipcPath: *ipcPathFlag, remote: *remoteMode,
 		}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
@@ -92,8 +93,7 @@ func main() {
 			os.Exit(code)
 		}
 		return
-	}
-	if len(positional) > 0 && isStoreSubcommand(positional[0]) {
+	case productionStore:
 		code := runStoreCommand(positional[0], positional[1:], adminBatchGlobalOptions{
 			dataDir: *dataDir, clientDataDir: *clientDataDir, ipcPath: *ipcPathFlag, remote: *remoteMode,
 		}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
@@ -101,6 +101,11 @@ func main() {
 			os.Exit(code)
 		}
 		return
+	default:
+		if productionCommand {
+			logErrorf("unsupported production command kind %d", kind)
+			os.Exit(2)
+		}
 	}
 
 	if *remoteMode {

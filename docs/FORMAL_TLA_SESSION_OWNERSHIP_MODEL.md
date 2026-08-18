@@ -95,12 +95,11 @@ The restored spec passes.
   `auth_only` (`adminserver/session.go` `AuthenticateOutcome`,
   `transport/protocol_flow.go` `authenticateOnly`), which verifies the
   passphrase and binds the runtime without authorizing or invoking
-  `identity.unlock`. It returns the same `AuthOutcomeAuthenticated` and runs
-  the same ownership path and disconnect defer, so everything SO1 depends on
-  is already modeled; the only unmodeled difference is that it leaves
-  `unlocked` untouched, which cannot create SO2's antecedent. Widening
-  `AuthSucceed` into an unlock/no-unlock pair is a coverage extension, tracked
-  in [FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md).
+  `identity.unlock`. It is a non-owning, server-enforced public-read observer:
+  it does not enter or replace the active-owner slot and does not run owner
+  disconnect cleanup. It therefore changes none of this model's variables;
+  its lifecycle and request allowlist are pinned by Go tests and documented in
+  [FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md).
 
 ## How to check
 

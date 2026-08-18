@@ -61,11 +61,6 @@ func (a *ApStoreHarness) Build() error {
 	return nil
 }
 
-// Run executes an apstore command and returns the combined output.
-func (a *ApStoreHarness) Run(args ...string) (string, error) {
-	return a.RunWithInput("", args...)
-}
-
 // RunWithInput executes an apstore command with stdin input.
 func (a *ApStoreHarness) RunWithInput(input string, args ...string) (string, error) {
 	if err := a.Build(); err != nil {

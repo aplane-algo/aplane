@@ -21,30 +21,26 @@ const (
 	testModeUnlockCommand   = "unlock"
 )
 
-var productionSubcommands = []string{
-	policySubcommand,
-	backupSubcommand,
-	restoreSubcommand,
-	changePassSubcommand,
-	templateSubcommand,
-	keyTypeSubcommand,
-	sentrySubcommand,
-	endpointSubcommand,
-	generationsSubcommand,
-}
+type productionCommandKind uint8
 
-var catalogSubcommands = map[string]bool{
-	templateSubcommand:    true,
-	keyTypeSubcommand:     true,
-	sentrySubcommand:      true,
-	endpointSubcommand:    true,
-	generationsSubcommand: true,
-}
+const (
+	productionPolicy productionCommandKind = iota + 1
+	productionCatalog
+	productionStore
+)
 
-var storeSubcommands = map[string]bool{
-	backupSubcommand:     true,
-	restoreSubcommand:    true,
-	changePassSubcommand: true,
+// productionSubcommands is the single production command catalog used by both
+// dispatch and the production/testmode collision guard.
+var productionSubcommands = map[string]productionCommandKind{
+	policySubcommand:      productionPolicy,
+	backupSubcommand:      productionStore,
+	restoreSubcommand:     productionStore,
+	changePassSubcommand:  productionStore,
+	templateSubcommand:    productionCatalog,
+	keyTypeSubcommand:     productionCatalog,
+	sentrySubcommand:      productionCatalog,
+	endpointSubcommand:    productionCatalog,
+	generationsSubcommand: productionCatalog,
 }
 
 var testModeCommandNames = []string{
@@ -55,17 +51,15 @@ var testModeCommandNames = []string{
 	testModeUnlockCommand,
 }
 
-func isProductionSubcommand(args []string) bool {
+func classifyProductionSubcommand(args []string) (productionCommandKind, bool) {
 	if len(args) == 0 {
-		return false
+		return 0, false
 	}
-	for _, command := range productionSubcommands {
-		if args[0] == command {
-			return true
-		}
-	}
-	return false
+	kind, ok := productionSubcommands[args[0]]
+	return kind, ok
 }
 
-func isCatalogSubcommand(command string) bool { return catalogSubcommands[command] }
-func isStoreSubcommand(command string) bool   { return storeSubcommands[command] }
+func isProductionSubcommand(args []string) bool {
+	_, ok := classifyProductionSubcommand(args)
+	return ok
+}

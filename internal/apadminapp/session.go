@@ -23,9 +23,9 @@ const (
 type AuthMode uint8
 
 const (
-	// AuthReadOnly authenticates with auth_only and does not unlock. It is for
-	// explicitly public, bound-runtime reads. It is not a server-enforced
-	// read-only capability.
+	// AuthReadOnly authenticates with auth_only and does not unlock. The server
+	// treats it as a non-owning observer and enforces an explicit public-read
+	// request allowlist.
 	AuthReadOnly AuthMode = iota
 	// AuthUnlock authenticates normally and unlocks only when status reports a
 	// locked runtime.

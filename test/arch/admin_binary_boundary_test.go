@@ -4,6 +4,7 @@
 package arch_test
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -40,15 +41,17 @@ func TestApstoreHasNoLiveAdminTransport(t *testing.T) {
 		}
 	}
 
-	assertFileOmits(t, filepath.Join(root, "main.go"), "--ipc-path", "adminSocketPath")
+	assertFlagNotRegistered(t, filepath.Join(root, "main.go"), "ipc-path")
+	assertFileOmits(t, filepath.Join(root, "main.go"), "adminSocketPath")
 	assertFileOmits(t, filepath.Join(root, "dispatch.go"),
 		`case "backup":`, `case "restore":`, `case "changepass":`,
 		`case "template":`, `case "keytype":`, `case "sentry":`, `case "endpoint":`,
 	)
 	assertFileOmits(t, filepath.Join(root, "usage.go"),
 		"apstore backup", "apstore restore", "apstore changepass", "apstore template",
-		"apstore keytype", "apstore sentry", "apstore endpoint", "apstore generations list",
+		"apstore keytype", "apstore sentry", "apstore endpoint", "generations <list",
 	)
+	assertFileOmits(t, filepath.Join(root, "generations.go"), `case "list":`)
 }
 
 func TestOperatorGuidanceUsesApadminForLiveOperations(t *testing.T) {
@@ -108,4 +111,46 @@ func assertFileOmits(t *testing.T, path string, forbidden ...string) {
 			t.Errorf("%s retains retired live-admin surface %q", filepath.Base(path), value)
 		}
 	}
+}
+
+func assertFlagNotRegistered(t *testing.T, path, forbidden string) {
+	t.Helper()
+	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkg, ok := selector.X.(*ast.Ident)
+		if !ok || pkg.Name != "flag" {
+			return true
+		}
+		arg := 0
+		switch selector.Sel.Name {
+		case "String", "Bool", "Int", "Duration":
+		case "StringVar", "BoolVar", "IntVar", "DurationVar":
+			arg = 1
+		default:
+			return true
+		}
+		if len(call.Args) <= arg {
+			return true
+		}
+		literal, ok := call.Args[arg].(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			return true
+		}
+		name, err := strconv.Unquote(literal.Value)
+		if err == nil && name == forbidden {
+			t.Errorf("%s registers retired flag %q", filepath.Base(path), forbidden)
+		}
+		return true
+	})
 }

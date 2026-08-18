@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
@@ -97,6 +98,90 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 				t.Fatalf("IsUnlocked() = %v, want %v", got, tc.wantUnlocked)
 			}
 		})
+	}
+}
+
+func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
+	signer, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	ir := signer.productIdentityRuntime()
+	ir.SetUnlocked()
+	ir.Config().SetLockOnDisconnect(true)
+
+	ipcServer := &IPCServer{
+		signer:  signer,
+		manager: adminserver.NewSessionManager(),
+	}
+	signer.ipcServer = ipcServer
+
+	owner := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
+	owner.Bind(auth.NewDefaultIdentity("test-owner"), ir)
+	if !ipcServer.manager.RegisterPending(owner) {
+		t.Fatal("RegisterPending(owner) = false, want true")
+	}
+	if _, ok := ipcServer.manager.PromoteToActive(owner); !ok {
+		t.Fatal("PromoteToActive(owner) = false, want true")
+	}
+
+	serverConn, clientConn := net.Pipe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ipcServer.acceptAdminSession(
+			adminproto.NewUnixAdminConn(serverConn, nil),
+			adminserver.TransportIPC,
+			"ipc-passphrase",
+		)
+	}()
+
+	reader := bufio.NewReader(clientConn)
+	readAdminMessageType(t, clientConn, reader, protocol.MsgTypeClientExists)
+	writeAdminMessage(t, clientConn, protocol.DisplaceConfirmMessage{
+		BaseMessage: protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeDisplaceConfirm},
+	})
+	readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthRequired)
+	writeAdminMessage(t, clientConn, protocol.AuthMessage{
+		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuthOnly},
+		Passphrase:      protocol.NewSensitiveBytes(string(testPassphrase)),
+		ProtocolVersion: testAdminProtocolVersion(),
+	})
+	rawAuth := readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthResult)
+	var authResult protocol.AuthResultMessage
+	if err := json.Unmarshal(rawAuth, &authResult); err != nil {
+		t.Fatalf("decode auth_result: %v", err)
+	}
+	if !authResult.Success {
+		t.Fatalf("auth_result success = false: %+v", authResult)
+	}
+	writeAdminMessage(t, clientConn, protocol.GetAdminSettingsMessage{
+		BaseMessage: protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeGetAdminSettings, ID: "read-1"},
+	})
+	readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAdminSettings)
+	writeAdminMessage(t, clientConn, protocol.LockIdentityMessage{
+		BaseMessage: protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeLockIdentity, ID: "mutate-1"},
+	})
+	rawDenied := readAdminMessageType(t, clientConn, reader, protocol.MsgTypeError)
+	var denied protocol.ErrorMessage
+	if err := json.Unmarshal(rawDenied, &denied); err != nil {
+		t.Fatalf("decode auth_only mutation rejection: %v", err)
+	}
+	if denied.Code != protocol.ErrCodeAuthorizationDenied {
+		t.Fatalf("auth_only mutation code = %q, want %q", denied.Code, protocol.ErrCodeAuthorizationDenied)
+	}
+
+	_ = clientConn.Close()
+	select {
+	case <-done:
+	case <-time.After(ipcDisconnectTestTimeout):
+		t.Fatal("timed out waiting for auth_only session cleanup")
+	}
+
+	if ipcServer.activeSession() != owner {
+		t.Fatal("auth_only session displaced the active owner")
+	}
+	if !ir.IsUnlocked() {
+		t.Fatal("auth_only disconnect locked the serving signer")
 	}
 }
 

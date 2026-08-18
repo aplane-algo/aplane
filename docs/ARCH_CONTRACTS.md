@@ -564,9 +564,13 @@ clients use a distinct message type so an older server rejects it before
 processing instead of silently unlocking. Bound-only sentry-reference,
 generation-inventory, and endpoint-settings reads use this mode; operations
 whose handlers require unlocked or recovery state continue to use `auth`.
-`auth_only` describes the handshake side effect, not a server-enforced
-read-only session capability: every later request still uses its normal grant
-and runtime-state checks.
+`auth_only` creates a server-enforced public-read capability. The session is a
+non-owning observer: it does not replace the active admin owner, receive
+approval notifications, fail pending approvals, or participate in
+lock-on-disconnect cleanup. The signer accepts only endpoint-settings,
+sentry-reference/public-export, and generation-inventory request types on this
+session; every accepted request still uses its normal grant and runtime-state
+checks.
 
 ## apshell Parsing Contracts
 
