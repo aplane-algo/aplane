@@ -4,7 +4,7 @@
 > For compatibility contracts (wire formats, on-disk formats, error mappings, and behavioral guarantees), see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 > For the system-wide durable/runtime/wire data model, see [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md).
 > For key and key type state machines, see [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
-> For the principal/group/grant authorization model, see [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+> For the product authorization model — the reserved admin principal and the explicit allowed-action list — see [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
 > For the current signer policy verdict model, see [ARCH_POLICY.md](ARCH_POLICY.md).
 > For network context tokens and transaction genesis-hash mapping, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
 > For guarded signing and sentry node architecture, see [ARCH_SENTRY.md](ARCH_SENTRY.md).
@@ -93,7 +93,7 @@ writes, or offline maintenance execution modes.
 Read [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) before changing
 authorization-sensitive behavior:
 
-- principals, groups, grants, and stable actions,
+- the reserved product-admin principal, the explicit allowed-action list, and stable actions,
 - product bootstrap authorization,
 - target identity/resource conventions,
 - admin and HTTP enforcement points.
