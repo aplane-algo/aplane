@@ -60,6 +60,16 @@ User-loaded templates are not built-ins; they become available only for the
 identity whose keystore contains the encrypted `.template` file and has not
 disabled that installed template.
 
+Feature code must not write template files or key-type state records directly.
+Route install, import, enable, disable, and remove transitions through
+`internal/templatelibrary`. Live administrative workflows in
+`internal/signerapp/templateadmin` supply the identity mutation lock and
+runtime reload; new-store defaults in `internal/defaultkeytypes` supply an
+unpublished staged generation and publish it through `internal/genstore`.
+`internal/templatestore` and `internal/keytypestate` expose persistence
+primitives, while `internal/signerapp/templates` is a read-only runtime reload
+owner.
+
 Terminology:
 
 - `family` is the middle segment of `publisher.family.vN`; in YAML templates

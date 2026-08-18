@@ -199,6 +199,32 @@ hiding the normal generation source for a key type still in use. It is not a
 sign-time dependency rule; a valid existing key file remains the signing
 authority.
 
+### Template Mutation Ownership And Publication
+
+`internal/templatelibrary` is the sole production feature-level coordinator
+for writes to encrypted template files and key-type state records.
+`internal/templatestore` and `internal/keytypestate` own their formats and
+primitive persistence operations; feature packages do not call those writers
+directly.
+
+There are two supported mutation contexts:
+
+- live administrative operations are owned by
+  `internal/signerapp/templateadmin`, which holds the identity mutation lock,
+  calls `templatelibrary`, then asks the read-only
+  `internal/signerapp/templates` runtime owner to reload;
+- initial default installation is owned by `internal/defaultkeytypes`, which
+  calls `templatelibrary` while constructing an unpublished generation and
+  makes it visible through the generation `CURRENT` publication. No live
+  identity or reload exists in that context.
+
+Reload failure does not imply one uniform rollback rule. Install, import, and
+installed-YAML enable restore their prior durable state when reload or
+acceptance validation fails. Compiled-provider enable, YAML or compiled
+disable/deactivation, and installed-template removal leave their completed
+durable change in place and report the reload failure; removal still reports
+that it occurred. The lifecycle must not be described as fully transactional.
+
 ## Key File Lifecycle
 
 Key file state answers this question:
@@ -372,12 +398,14 @@ Primary implementation owners:
   `internal/templatestore`
 - node role and key-class gates: signer startup/identity load, keyadmin,
   restore, and signing dispatch paths
-- key type state records: `internal/keytypestate`
+- key type state record format and primitives: `internal/keytypestate`
+- feature-level template/key-type mutation: `internal/templatelibrary`
 - key type catalog: `internal/keytypecatalog`
 - LogicSig provider registry and template loading: `internal/lsigprovider`,
   `internal/signerapp/templates`
 - key generation: `internal/keygen`, `internal/signerapp/keyadmin`
-- key type/template admin: `internal/signerapp/templateadmin`
+- live key type/template admin locking and reload: `internal/signerapp/templateadmin`
+- staged default-template bootstrap: `internal/defaultkeytypes`
 - backup/restore: `internal/backup`, `internal/signerapp/backupadmin`
 - signing execution: `internal/signerapp/signing`
 

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package templatestore provides common utilities for storing and loading
-// encrypted YAML template files in the keystore.
+// Package templatestore owns the encrypted YAML template document format and
+// primitive save, read, scan, and archive operations for identity stores.
+// Feature-level mutation must route through templatelibrary; callers of these
+// primitives are responsible for already holding the appropriate live
+// identity-mutation lock or operating on an unpublished staged generation.
 //
 // This package is used by both:
 //   - lsig/generictemplate: Generic LogicSig templates (TEAL-only)

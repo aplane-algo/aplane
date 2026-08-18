@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package defaultkeytypes installs identity-local key types that are enabled
-// automatically for new signer stores.
+// Package defaultkeytypes owns staged bootstrap installation of the
+// identity-local key types enabled automatically for new signer stores. It
+// mutates the unpublished generation through templatelibrary and does not use
+// a live identity lock or runtime reload.
 package defaultkeytypes
 
 import (
