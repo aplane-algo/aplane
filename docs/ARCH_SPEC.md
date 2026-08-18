@@ -292,8 +292,11 @@ Persistent sensitive state is stored on disk and unlocked into memory only via t
 - key file IO and scanning: `internal/keys`
 - keystore abstraction and file-backed implementation: `internal/keystore`
 - signer-store path ownership, mutation coordination, and cooperative locking: `internal/storepaths`, `internal/signerapp/storemut`, `internal/storelock`
-- template storage: `internal/templatestore`
-- plaintext template library parsing and install preparation: `internal/templatelibrary`
+- primitive encrypted template persistence: `internal/templatestore`
+- primitive key-type activation-record persistence: `internal/keytypestate`
+- plaintext template parsing and all feature-level template/key-type mutation: `internal/templatelibrary`
+- live template mutation locking/reload: `internal/signerapp/templateadmin`
+- staged default-template bootstrap: `internal/defaultkeytypes`
 - template reload/registration outcome reporting: `internal/templatepolicy`
 - backup archives/validation: `internal/backup`
 - generation mint/seal/`CURRENT` commit/reconcile: `internal/genstore`
@@ -318,14 +321,15 @@ deciding where a change belongs:
 | `key*` | `internal/keygen` | Signer-side key generation registry and generation result model. |
 | `key*` | `internal/keymgmt` | Client/shell-facing key management request/result helpers. |
 | `key*` | `internal/signingargs` | Shared internal model for signing-time LogicSig argument metadata projected into key files, signer cache records, and wire DTOs. |
-| `key*` | `internal/keytypestate` | Identity-local key type state records for installed/disabled/activated template or provider definitions. |
+| `key*` | `internal/keytypestate` | Identity-local key type state record format and primitive read/write/delete operations for installed/disabled/activated template or provider definitions. |
 | `key*` | `internal/keytypecatalog` | Key type catalog metadata assembled from registered providers and template records. |
 | `key*` | `internal/keytypefmt` | Presentation-only key type formatting and publisher extraction. |
-| `template*` | `internal/templatelibrary` | Plaintext signer-data template library parsing and install preparation. |
-| `template*` | `internal/templatestore` | Encrypted identity-local `.template` storage, load, remove, and archive behavior. |
+| `template*` | `internal/templatelibrary` | Plaintext signer-data template parsing and sole feature-level coordinator for template files and key-type state mutation. |
+| `template*` | `internal/templatestore` | Encrypted identity-local `.template` format and primitive save, load, scan, remove, and archive operations. |
 | `template*` | `internal/templatepolicy` | Template registration outcome vocabulary and reload/report policy helpers. |
-| `signerapp/templates` | `internal/signerapp/templates` | Runtime reload coordinator that walks installed identity templates and registers provider implementations. |
-| `signerapp/templateadmin` | `internal/signerapp/templateadmin` | Admin/use-case service for template library and installed-template operations. |
+| `signerapp/templates` | `internal/signerapp/templates` | Read-only runtime reload coordinator that walks installed identity templates and registers provider implementations. |
+| `signerapp/templateadmin` | `internal/signerapp/templateadmin` | Live admin/use-case owner for identity locking, library mutation, runtime reload/acceptance, results, and logging. |
+| `defaultkeytypes` | `internal/defaultkeytypes` | Bootstrap use-case owner that installs defaults through `templatelibrary` into an unpublished staged generation. |
 
 Rule of thumb:
 
@@ -334,11 +338,17 @@ Rule of thumb:
 - lock/mutation ordering belongs in `storelock` or `storemut`,
 - key file bytes and encrypted key payload compatibility belong in `internal/keys` and `internal/keystore`,
 - key generation/provider registration belongs in `internal/keygen` and provider packages,
-- installed-template file persistence belongs in `templatestore`; key type
-  state writes belong in `templatelibrary` or `signerapp/templateadmin`,
-- plaintext library import/refresh behavior belongs in `templatelibrary`,
-- runtime template reload behavior belongs in `internal/signerapp/templates`,
-- user/admin template workflows belong in `internal/signerapp/templateadmin`.
+- primitive installed-template persistence belongs in `templatestore`, and
+  primitive key-type record persistence belongs in `keytypestate`,
+- every production feature-level mutation of either persistence format routes
+  through `templatelibrary`; feature packages do not call leaf writers,
+- plaintext library parsing/import behavior belongs in `templatelibrary`,
+- runtime template reload behavior belongs in the read-only
+  `internal/signerapp/templates` package,
+- live user/admin workflows and identity locking belong in
+  `internal/signerapp/templateadmin`, while first-generation bootstrap belongs
+  in `internal/defaultkeytypes` and publishes through `genstore` rather than a
+  live reload.
 
 ### Integration/Protocol Layer
 

@@ -33,3 +33,14 @@ func MintFirst(t testing.TB, paths storepaths.Paths, identityID string) {
 		t.Fatalf("Mint(first generation): %v", err)
 	}
 }
+
+// Active resolves an identity's current generation for tests that exercise an
+// API whose caller already owns active-path resolution.
+func Active(t testing.TB, paths storepaths.Paths, identityID string) storepaths.ActivePaths {
+	t.Helper()
+	active, err := genstore.ResolveActive(paths, identityID)
+	if err != nil {
+		t.Fatalf("ResolveActive(%q): %v", identityID, err)
+	}
+	return active
+}

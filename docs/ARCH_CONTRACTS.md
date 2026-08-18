@@ -1170,12 +1170,18 @@ state record and moves the encrypted `.template` file from `keytypes/` to
 
 #### Key Type Records
 
-Key type state records are written by `internal/keytypestate` through the
-identity-scoped mutation lock. Admin handlers acquire that lock before writing;
-watcher-triggered reloads acquire the same lock before scanning. Record writes
-use the shared atomic write helper (temporary file plus rename). They do not
-fsync the parent directory, so the durability contract is the same as other
-small signer metadata files in this store.
+`internal/keytypestate` owns the record format and primitive filesystem
+operations, but `internal/templatelibrary` is the only production
+feature-level mutation coordinator for these records and encrypted template
+files. Live admin handlers in `internal/signerapp/templateadmin` acquire the
+identity-scoped mutation lock, call the coordinator, and reload before
+reporting success; watcher-triggered reloads acquire the same lock before
+scanning. First-generation defaults use the same coordinator against an
+unpublished generation and become visible through the durable `CURRENT`
+publication, without a live identity lock or reload. Record writes use the
+shared atomic write helper (temporary file plus rename). They do not fsync the
+parent directory, so the durability contract is the same as other small signer
+metadata files in this store.
 
 Records are intentionally plaintext because they contain no key material. The
 fingerprint is a behavior-only compatibility digest of the provider/template
@@ -1241,8 +1247,8 @@ reloads that identity. Installed `.template` files, not the plaintext library fi
 runtime source for key generation and key-type discovery; the installed template is not consulted to sign
 already-created keys. Template enabled state changes discovery and generation only; it is not a
 signing authorization gate for existing key files. The low-level template store
-persists encrypted template bytes only; install/admin code owns the paired key
-type state mutation. Store initialization uses the same encrypted template
+persists encrypted template bytes only; `templatelibrary` coordinates it with
+the paired key-type state mutation. Store initialization uses the same encrypted template
 store and enabled state-record model for default YAML key types, but runs before
 the identity has a live reload surface. Activating a
 `compiled_provider` library entry uses `activate_key_type` and writes only the
@@ -1254,10 +1260,15 @@ for the identity, then sets the record to `disabled`. Calling
 `deactivate_key_type` for a compiled provider uses the same unused-key guard,
 then deletes the state record.
 
-Install is idempotent for an already-installed matching key type/template type. Activation is verified from
-the identity-local reload report before success is returned; activation failure rolls back a newly written
-encrypted template file when possible. Editing or copying files into `<APSIGNER_DATA>/library/templates/`
-does not change available key types until an authenticated admin installs one.
+Install is idempotent for an already-installed matching key type/template type.
+Install, import, and installed-YAML enable compensate their durable changes
+when reload or acceptance validation fails. Other transitions intentionally do
+not share that rollback contract: compiled-provider enable, either form of
+disable/deactivation, and template removal leave the completed durable change
+in place when the subsequent reload fails and return the failure (with removal
+reported accurately). This lifecycle is not a single transactional filesystem
+unit. Editing or copying files into `<APSIGNER_DATA>/library/templates/` does
+not change available key types until an authenticated admin installs one.
 
 Removal helpers distinguish disabling from removal. Disabling a compiled provider removes only the identity
 state record and does not unregister process-global provider code. Disabling a YAML template leaves the

@@ -111,7 +111,7 @@ teal: |
 	keyType := "test.test-template.v1"
 
 	// Save template
-	outputPath, err := SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
+	outputPath, err := SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), yamlData, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
@@ -177,7 +177,7 @@ teal: |
 	keyType := "test.falcon1024-test.v1"
 
 	// Save template
-	outputPath, err := SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey))
+	outputPath, err := SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), yamlData, keyType, TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestTemplateExists(t *testing.T) {
 
 	// Save template
 	yamlData := []byte("test: data")
-	_, err = SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
+	_, err = SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), yamlData, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
@@ -280,8 +280,8 @@ func TestTemplateStoreRejectsUnknownTemplateType(t *testing.T) {
 	keyType := "test.unknown-template-type.v1"
 	unknownType := TemplateType("compiled_provider")
 
-	if _, err := SaveTemplateForPaths(paths, testIdentityID, []byte("test: data"), keyType, unknownType, cryptotest.Keyring(t, testMasterKey)); err == nil {
-		t.Fatal("SaveTemplateForPaths() error = nil, want unsupported template_type")
+	if _, err := SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), []byte("test: data"), keyType, unknownType, cryptotest.Keyring(t, testMasterKey)); err == nil {
+		t.Fatal("SaveTemplateActive() error = nil, want unsupported template_type")
 	}
 	if TemplateExistsForPaths(paths, testIdentityID, keyType, unknownType) {
 		t.Fatal("TemplateExistsForPaths() = true for unsupported template_type")
@@ -295,7 +295,7 @@ func TestTemplateStoreRejectsUnknownTemplateType(t *testing.T) {
 	if _, ok, err := keytypestate.Get(paths, testIdentityID, keyType); err != nil {
 		t.Fatalf("keytypestate.Get() error = %v", err)
 	} else if ok {
-		t.Fatal("SaveTemplateForPaths() wrote state for unsupported template_type")
+		t.Fatal("SaveTemplateActive() wrote state for unsupported template_type")
 	}
 }
 
@@ -319,7 +319,7 @@ func TestLoadAllTemplates(t *testing.T) {
 	}
 
 	for keyType, data := range templates {
-		_, err := SaveTemplateForPaths(paths, testIdentityID, data, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
+		_, err := SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), data, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 		if err != nil {
 			t.Fatalf("SaveTemplate failed for %s: %v", keyType, err)
 		}

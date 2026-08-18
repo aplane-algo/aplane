@@ -106,9 +106,9 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/tealtemplate` | Strict `$variable` constant-block template renderer |
 | `internal/tealtemplate/legacy.go` | Generated-mode restricted list expansion and scalar substitution utilities |
 | `internal/keytypecatalog` | Compiled key type visibility catalog |
-| `internal/keytypestate` | Identity-scoped state records for library-visible compiled providers and installed templates |
-| `internal/templatelibrary` | Optional library list/install workflow |
-| `internal/templatestore` | Encrypted template file storage |
+| `internal/keytypestate` | Identity-scoped state record format and persistence primitives for library-visible compiled providers and installed templates |
+| `internal/templatelibrary` | Library parsing and sole feature-level template/key-type mutation coordinator |
+| `internal/templatestore` | Encrypted template file format and persistence primitives |
 | `internal/signing` | Resource-dummy construction/signing and common transaction helpers |
 | `lsig/composeddsa` | Generic runtime-compiled LogicSig composer used by DSA-backed composed templates, and parser/provider builder for composed DSA YAML templates |
 | `lsig/falcon1024` | Falcon-1024 DSA base provider; `v1/composer.go` is the Falcon-specific wrapper over `lsig/composeddsa` |
@@ -119,7 +119,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `lsig/sentryaccount` | Shared client-safe helpers for guarded sentry-account providers |
 | `lsig/dsafamily` | Client-safe registration descriptor shared by DSA families (signer-side descriptor in `lsig/dsafamily/signerreg`) |
 | `lsig/signerreg` | Registers all built-in LogicSig signer-side providers with their catalog availability |
-| `internal/signerapp/templates` | Keystore template reload coordinator and state/fingerprint policy |
+| `internal/signerapp/templates` | Read-only keystore template reload coordinator and state/fingerprint policy |
 | `lsig/generictemplate` | Parser/provider builder for generic YAML templates |
 | `library/templates/` | Optional importable template library |
 | `lsig/all.go` | Registration entry point |
@@ -505,8 +505,9 @@ teal: |
   assert
 ```
 
-Both composed templates and generic templates are stored by the signer via
-`templatestore` under identity key type state. The template store's storage
+Both composed templates and generic templates are stored by the signer through
+`templatelibrary`, which coordinates the primitive `templatestore` and
+`keytypestate` writes. The template store's storage
 type vocabulary is limited to `generic` and `composed`; compiled providers use
 identity key type state with `SourceCompiled` and are exposed to admin/library
 clients as `compiled_provider` without writing an encrypted `.template` file. At runtime

@@ -861,10 +861,10 @@ func registerServiceGenericTemplate(t *testing.T) {
 func installServiceGenericTemplate(t *testing.T, ir *identity.Runtime) {
 	t.Helper()
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		_, saveErr := templatestore.SaveTemplateForPaths(ir.KeyPaths(), ir.ID(), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths(), ir.ID()), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
-		t.Fatalf("SaveTemplateForPaths(service generic template) error = %v", err)
+		t.Fatalf("SaveTemplateActive(service generic template) error = %v", err)
 	}
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
 		KeyType: serviceGenericKeyType,

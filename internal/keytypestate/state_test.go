@@ -71,34 +71,6 @@ func TestPutGetListAndListEnabled(t *testing.T) {
 	}
 }
 
-func TestSetStatePreservesOtherFields(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
-	rec := Record{
-		KeyType:     "custom-v1",
-		Source:      SourceYAMLGeneric,
-		State:       StateEnabled,
-		Fingerprint: "fp1",
-		ActivatedAt: "2026-05-09T12:34:56Z",
-	}
-	if err := Put(paths, "default", rec); err != nil {
-		t.Fatalf("Put() error = %v", err)
-	}
-	if err := SetState(paths, "default", "custom-v1", StateDisabled); err != nil {
-		t.Fatalf("SetState() error = %v", err)
-	}
-	got, ok, err := Get(paths, "default", "custom-v1")
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-	if !ok {
-		t.Fatal("Get() ok = false, want true")
-	}
-	if got.State != StateDisabled || got.Source != rec.Source || got.Fingerprint != rec.Fingerprint || got.ActivatedAt != rec.ActivatedAt {
-		t.Fatalf("record after SetState = %+v, want only state changed", got)
-	}
-}
-
 func TestDeleteIsIdempotent(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths, "default")

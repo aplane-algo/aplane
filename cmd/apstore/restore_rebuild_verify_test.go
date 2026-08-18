@@ -403,8 +403,8 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SaveTemplateForPaths() error = %v", err)
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, identityID), templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
+		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
 	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
@@ -545,13 +545,10 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
-	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
-		t.Fatalf("SaveTemplateForPaths() error = %v", err)
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, identityID), templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
+		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
-	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-	if err := keytypestate.SetState(paths, identityID, keyType, keytypestate.StateDisabled); err != nil {
-		t.Fatalf("SetState() error = %v", err)
-	}
+	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
 
 	keyJSON := canonicalGenericKeyJSONForApstore(t, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package templatelibrary owns plaintext template library parsing and install
-// into the encrypted identity-scoped template store.
+// Package templatelibrary owns plaintext template-library parsing and is the
+// sole feature-level coordinator for template files and identity key-type
+// state mutation. Live callers provide identity locking and runtime reload;
+// bootstrap callers provide an unpublished staged generation.
 package templatelibrary
 
 import (
@@ -528,10 +530,14 @@ func EnableInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 		result.AlreadyExists = true
 		return result, nil
 	}
+	previousState := rec
 	rec.State = keytypestate.StateEnabled
 	if err := keytypestate.Put(paths, identityID, rec); err != nil {
 		return result, err
 	}
+	result.StateChanged = true
+	result.hadPreviousState = true
+	result.previousState = previousState
 	result.OutputPath = active.KeyTypeRecord(result.KeyType)
 	return result, nil
 }
