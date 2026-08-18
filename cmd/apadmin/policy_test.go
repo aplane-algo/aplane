@@ -94,6 +94,18 @@ func TestPolicyRescueRejectsOnlineTransportFlagsBeforeWork(t *testing.T) {
 	}
 }
 
+func TestPolicyRescueDataDirectoryFailureIsRuntimeError(t *testing.T) {
+	t.Setenv("APPOLICY_PASSPHRASE", "")
+	t.Setenv("APSIGNER_DATA", "")
+	var stderr bytes.Buffer
+	code := runPolicyCommand(context.Background(), []string{"rescue", "check"}, policyGlobalOptions{}, policyStreams{
+		stdin: strings.NewReader(""), stdout: io.Discard, stderr: &stderr,
+	})
+	if code != 1 {
+		t.Fatalf("runPolicyCommand() code=%d stderr=%q, want runtime failure code 1", code, stderr.String())
+	}
+}
+
 func TestPolicyCommandRejectsRetiredPassphraseEnvironment(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", "legacy")
 	var stderr bytes.Buffer

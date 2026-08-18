@@ -56,6 +56,7 @@ type loadedDocument struct {
 	status     string
 	dataDir    string
 	identityID string
+	digest     string
 	editor     Editor
 }
 
@@ -74,7 +75,11 @@ func (d loadedDocument) run() error {
 	case VerbExport:
 		_, _ = d.streams.Stdout.Write(d.exactYAML)
 	case VerbDigest:
-		_, _ = fmt.Fprintln(d.streams.Stdout, policy.PolicySHA256(d.exactYAML))
+		digest := strings.TrimSpace(d.digest)
+		if digest == "" {
+			digest = policy.PolicySHA256(d.exactYAML)
+		}
+		_, _ = fmt.Fprintln(d.streams.Stdout, digest)
 	case VerbToSentry:
 		converted, err := policy.ConvertSigningPolicyToSentryYAML(d.exactYAML)
 		if err != nil {

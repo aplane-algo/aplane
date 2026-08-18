@@ -35,10 +35,14 @@ type fakeOnlineSession struct {
 	replaceRequest   protocol.ReplacePolicyMessage
 	nodeRole         string
 	snapshotTarget   string
+	snapshotPolicy   string
+	snapshotSHA      string
 	authErr          error
 	unlockResult     *protocol.UnlockResultMessage
 	replaceResult    *protocol.ReplacePolicyResultMessage
 	replaceCalls     int
+	snapshotCalls    int
+	validateCalls    int
 }
 
 func (f *fakeOnlineSession) Dial() error { f.dialCalls++; return nil }
@@ -66,9 +70,16 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 	if target == "" {
 		target = role
 	}
-	policyYAML := "reject_foreign_rekey: true\n"
+	policyYAML := f.snapshotPolicy
+	if policyYAML == "" {
+		policyYAML = "reject_foreign_rekey: true\n"
+	}
 	if target == "sentry" {
 		policyYAML = "reject_rekey: true\n"
+	}
+	policySHA := f.snapshotSHA
+	if policySHA == "" {
+		policySHA = "active-sha"
 	}
 	switch request := message.(type) {
 	case protocol.GetAdminSettingsMessage:
@@ -77,15 +88,17 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 			NodeRole:    role,
 		})
 	case protocol.GetPolicySnapshotMessage:
+		f.snapshotCalls++
 		return marshalTestMessage(protocol.PolicySnapshotMessage{
 			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicySnapshot, ID: request.ID},
 			Success:      true,
 			Target:       target,
 			IdentityID:   "default",
 			PolicyYAML:   policyYAML,
-			PolicySHA256: "active-sha",
+			PolicySHA256: policySHA,
 		})
 	case protocol.ValidatePolicyMessage:
+		f.validateCalls++
 		return marshalTestMessage(protocol.ValidatePolicyResultMessage{
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeValidatePolicyResult, ID: request.ID},
 			Success:     true,
@@ -203,6 +216,73 @@ func TestOnlineApplyRejectsConcurrentSnapshotChange(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("failed concurrent apply reported success: %q", stdout.String())
+	}
+}
+
+func TestOnlineEditDraftSeedsExpectedSHAFromActiveSnapshot(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "secret")
+	draft := filepath.Join(t.TempDir(), "draft.yaml")
+	if err := os.WriteFile(draft, []byte("reject_foreign_rekey: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	session := &fakeOnlineSession{status: "unlocked"}
+	editor := func(store policyeditor.Store, _ *policy.StoredConfig, _, _ string, _ policyeditor.Target) error {
+		adminStore, ok := store.(*policyeditor.AdminStore)
+		if !ok {
+			t.Fatalf("editor store = %T, want *policyeditor.AdminStore", store)
+		}
+		if session.snapshotCalls != 1 {
+			t.Fatalf("active snapshot calls before editor = %d, want 1", session.snapshotCalls)
+		}
+		return adminStore.SaveYAML(context.Background(), []byte("reject_foreign_rekey: true\n"))
+	}
+	err := (OnlineRunner{Session: session, Editor: editor}).Run(context.Background(), Command{
+		Verb: VerbEdit, Target: policyeditor.TargetSigner, Source: draft,
+	}, Streams{Stdout: io.Discard, Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.replaceRequest.ExpectedCurrentSHA256 != "active-sha" {
+		t.Fatalf("expected SHA = %q, want active-sha", session.replaceRequest.ExpectedCurrentSHA256)
+	}
+	if session.validateCalls != 2 {
+		t.Fatalf("validation calls = %d, want draft validation plus replacement validation", session.validateCalls)
+	}
+}
+
+func TestOnlineExportUsesExactSnapshotBytes(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "secret")
+	want := "# daemon bytes\nreject_foreign_rekey: true\n"
+	session := &fakeOnlineSession{status: "unlocked", snapshotPolicy: want}
+	var stdout bytes.Buffer
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
+		Verb: VerbExport, Target: policyeditor.TargetSigner,
+	}, Streams{Stdout: &stdout, Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != want {
+		t.Fatalf("export = %q, want exact snapshot %q", stdout.String(), want)
+	}
+}
+
+func TestOnlineDigestUsesDaemonSnapshotSHA(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "secret")
+	session := &fakeOnlineSession{
+		status: "unlocked", snapshotPolicy: "reject_foreign_rekey: true\n", snapshotSHA: "daemon-authoritative-sha",
+	}
+	var stdout bytes.Buffer
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
+		Verb: VerbDigest, Target: policyeditor.TargetSigner,
+	}, Streams{Stdout: &stdout, Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != "daemon-authoritative-sha\n" {
+		t.Fatalf("digest = %q, want daemon snapshot SHA", stdout.String())
 	}
 }
 
@@ -376,6 +456,17 @@ func TestRetiredPassphraseEnvironmentFailsBeforeSession(t *testing.T) {
 	}
 }
 
+func TestRejectRetiredEnvironmentFailsClosedAtCredentialBoundary(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "legacy-secret")
+	if err := RejectRetiredEnvironment(); err == nil || !strings.Contains(err.Error(), retiredPassphraseEnv+" is retired") {
+		t.Fatalf("RejectRetiredEnvironment() error = %v, want retired credential rejection", err)
+	}
+	t.Setenv(retiredPassphraseEnv, "")
+	if err := RejectRetiredEnvironment(); err != nil {
+		t.Fatalf("RejectRetiredEnvironment() with empty variable error = %v", err)
+	}
+}
+
 func TestProductionVerbCatalogIsUnique(t *testing.T) {
 	seen := make(map[Verb]bool)
 	for _, verb := range ProductionVerbs {
@@ -436,6 +527,27 @@ func TestRescueApplyPreservesExactBytesAndProducesVerifiedPolicy(t *testing.T) {
 		Verb: VerbCheck, Target: policyeditor.TargetSigner, DataDir: root,
 	}, Streams{Stdout: io.Discard, Stderr: io.Discard}); err != nil {
 		t.Fatalf("saved policy did not verify: %v", err)
+	}
+}
+
+func TestRescueProductionExportEmitsVerifiedExactBytes(t *testing.T) {
+	root, passphrase := initializedPolicyStore(t)
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, passphrase)
+	want := []byte("# authenticated exact bytes\nreject_foreign_rekey: false\n")
+	store := policyeditor.OfflineStore{DataDir: root, Target: policyeditor.TargetSigner, Passphrase: []byte(passphrase)}
+	if err := store.SaveYAML(context.Background(), want); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	err := (RescueRunner{}).Run(context.Background(), Command{
+		Verb: VerbExport, Target: policyeditor.TargetSigner, DataDir: root,
+	}, Streams{Stdout: &stdout, Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stdout.Bytes(), want) {
+		t.Fatalf("export changed verified bytes:\n%s", stdout.Bytes())
 	}
 }
 

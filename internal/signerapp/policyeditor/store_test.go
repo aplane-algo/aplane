@@ -34,6 +34,25 @@ func TestOfflineStoreLoadVerifiesPolicy(t *testing.T) {
 	}
 }
 
+func TestOfflineStoreLoadVerifiedYAMLReturnsAuthenticatedExactBytes(t *testing.T) {
+	dataDir, passphrase := initializedPolicyStore(t)
+	want := []byte("# exact authenticated policy\nreject_foreign_rekey: false\n")
+	store := OfflineStore{DataDir: dataDir, Target: TargetSigner, Passphrase: passphrase}
+	if err := store.SaveYAML(context.Background(), want); err != nil {
+		t.Fatal(err)
+	}
+	stored, data, err := store.LoadVerifiedYAML(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(want) {
+		t.Fatalf("verified YAML = %q, want %q", data, want)
+	}
+	if stored.RejectForeignRekey == nil || *stored.RejectForeignRekey {
+		t.Fatalf("RejectForeignRekey = %v, want false", stored.RejectForeignRekey)
+	}
+}
+
 func TestOfflineStoreLoadVerifiesSentryTarget(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
 	store := OfflineStore{
@@ -64,6 +83,27 @@ func TestResolveTargetUsesNodeRole(t *testing.T) {
 	}
 	if got, err := ResolveTarget(sentryDir, TargetAuto); err != nil || got != TargetSentry {
 		t.Fatalf("ResolveTarget(sentry) = %q, %v; want %q", got, err, TargetSentry)
+	}
+}
+
+func TestOfflineStoreRejectsPolicyTargetForWrongNodeRole(t *testing.T) {
+	tests := []struct {
+		name       string
+		role       noderole.Role
+		target     Target
+		roleString string
+	}{
+		{name: "sentry policy on signer", role: noderole.RoleSigner, target: TargetSentry, roleString: "signer"},
+		{name: "signer policy on sentry", role: noderole.RoleSentry, target: TargetSigner, roleString: "sentry"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dataDir, passphrase := initializedPolicyStoreWithRole(t, tt.role)
+			_, err := (OfflineStore{DataDir: dataDir, Target: tt.target, Passphrase: passphrase}).Load(context.Background())
+			if err == nil || !strings.Contains(err.Error(), "not allowed on "+tt.roleString+" nodes") {
+				t.Fatalf("Load() error = %v, want target/node-role rejection", err)
+			}
+		})
 	}
 }
 

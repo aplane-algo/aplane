@@ -90,6 +90,7 @@ func (r OnlineRunner) Run(ctx context.Context, command Command, streams Streams)
 		exactYAML: []byte(store.PolicyYAML()), target: target,
 		status:  fmt.Sprintf("%s OK online", target.StatusNoun()),
 		dataDir: "apsigner admin protocol", identityID: store.IdentityID(), editor: r.Editor,
+		digest: store.LastSHA256(),
 	}).run()
 }
 
@@ -117,8 +118,7 @@ func (r OnlineRunner) runDraft(ctx context.Context, command Command, streams Str
 }
 
 func authenticateAndUnlock(session OnlineSession, passphrase []byte) error {
-	secret := string(passphrase)
-	if err := session.Authenticate(secret, OnlineTimeout); err != nil {
+	if err := session.Authenticate(string(passphrase), OnlineTimeout); err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 	status, err := session.WaitForStatus(OnlineTimeout)
@@ -128,7 +128,7 @@ func authenticateAndUnlock(session OnlineSession, passphrase []byte) error {
 	if status.State != "locked" {
 		return nil
 	}
-	result, err := session.Unlock(secret, OnlineTimeout)
+	result, err := session.Unlock(string(passphrase), OnlineTimeout)
 	if err != nil {
 		return fmt.Errorf("unlock signer: %w", err)
 	}

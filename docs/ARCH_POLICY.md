@@ -806,7 +806,10 @@ and saves transfer policy through canonical YAML.
 node-role policy snapshot through authenticated admin IPC, unlocks a locked
 identity with the authenticated passphrase before requesting that snapshot,
 validates the exact YAML through the daemon, and replaces it through the
-daemon-owned mutation path. `apadmin policy rescue` is a stopped-service tool:
+daemon-owned mutation path. All online policy verbs use that authenticated,
+unlock-capable session, including read-only verbs. Online `export` emits the
+exact daemon snapshot bytes, and online `digest` emits the daemon-reported
+snapshot SHA used for optimistic concurrency. `apadmin policy rescue` is a stopped-service tool:
 it reads root `node.yaml`, verifies the HMAC sidecar with the store passphrase, validates
 changes through the same runtime compiler as `apsigner`, and applies the draft
 by saving the document plus a fresh sidecar while holding the store mutation

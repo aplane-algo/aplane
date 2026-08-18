@@ -1690,6 +1690,9 @@ Policy load behavior:
 - reload failure keeps the previous in-memory policy active
 - admin policy writes require an unlocked identity and replace the
   node-role-selected policy document
+- online `apadmin policy` verbs authenticate and may unlock a locked identity;
+  online export emits the exact daemon snapshot bytes and online digest emits
+  the daemon-reported snapshot SHA
 - direct YAML edits require offline `apadmin policy rescue apply -` or `apstore policy sign`
   before the signer trusts them
 - `apadmin policy rescue` defaults to `--target auto`; for store-backed operations, auto

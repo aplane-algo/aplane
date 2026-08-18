@@ -65,7 +65,10 @@ apadmin policy rescue edit draft-policy.yaml
 `apadmin policy` with no verb is the same as `apadmin policy edit`. A draft
 passed to `edit` is validated through the daemon and uses the current live
 snapshot as its optimistic-concurrency base. The `check`, `export`, `digest`,
-`apply`, and `to-sentry` verbs are noninteractive batch operations.
+`apply`, and `to-sentry` verbs are noninteractive batch operations. Every
+online verb authenticates first; if the daemon is locked, even the read-only
+`check`, `export`, and `digest` commands unlock it before reading policy state
+and are therefore not guaranteed to preserve the daemon's lock state.
 
 ### Migration from the retired policy binary
 

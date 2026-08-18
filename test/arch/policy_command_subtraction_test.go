@@ -112,6 +112,17 @@ func literalRead() { _ = os.Getenv("APPOLICY_PASSPHRASE") }
 	}
 }
 
+func TestRescuePolicyOutputCannotBypassVerifiedStoreRead(t *testing.T) {
+	path := filepath.Join("..", "..", "internal", "signerapp", "policycmd", "rescue.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "os.ReadFile(") {
+		t.Error("rescue policy workflow reads output bytes outside OfflineStore verification")
+	}
+}
+
 func retiredCredentialReaders(parsed *ast.File) []string {
 	var readers []string
 	for _, decl := range parsed.Decls {

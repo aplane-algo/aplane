@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -112,7 +111,7 @@ func (r RescueRunner) runProduction(ctx context.Context, command Command, stream
 		}
 	}
 
-	stored, err := store.Load(ctx)
+	stored, data, err := store.LoadVerifiedYAML(ctx)
 	if err != nil {
 		return err
 	}
@@ -122,13 +121,6 @@ func (r RescueRunner) runProduction(ctx context.Context, command Command, stream
 	}
 	identityID := auth.CurrentProductIdentityID()
 	path := target.Path(command.DataDir, identityID)
-	var data []byte
-	if command.Verb == VerbExport || command.Verb == VerbDigest || command.Verb == VerbToSentry {
-		data, err = os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("failed to read %s: %w", target.DocumentName(), err)
-		}
-	}
 	err = (loadedDocument{
 		command: command, streams: streams, store: store, stored: stored,
 		exactYAML: data, target: target,

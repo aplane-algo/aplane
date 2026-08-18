@@ -69,7 +69,7 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 			dataDir, err := signerbootstrap.ResolveDataDir(globals.dataDir)
 			if err != nil {
 				writePolicyError(streams.stderr, err)
-				return 2
+				return 1
 			}
 			command.DataDir = dataDir
 		}
