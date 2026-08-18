@@ -52,19 +52,60 @@ func TestRetiredAppolicyPassphraseCannotBecomeCredentialSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, function := range retiredCredentialReaders(parsed) {
+		t.Errorf("%s reads the retired APPOLICY_PASSPHRASE source", function)
+	}
+}
+
+func TestRetiredCredentialDetectorCatchesIdentifierAndLiteral(t *testing.T) {
+	source := `package policycmd
+import "os"
+const retiredPassphraseEnv = "APPOLICY_PASSPHRASE"
+func RejectRetiredEnvironment() { _ = os.Getenv("APPOLICY_PASSPHRASE") }
+func identifierRead() { _ = os.Getenv(retiredPassphraseEnv) }
+func literalRead() { _ = os.Getenv("APPOLICY_PASSPHRASE") }
+`
+	parsed, err := parser.ParseFile(token.NewFileSet(), "mutation.go", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"identifierRead": true, "literalRead": true}
+	for _, function := range retiredCredentialReaders(parsed) {
+		if !want[function] {
+			t.Errorf("unexpected retired credential reader %q", function)
+		}
+		delete(want, function)
+	}
+	for function := range want {
+		t.Errorf("detector missed retired credential reader %q", function)
+	}
+}
+
+func retiredCredentialReaders(parsed *ast.File) []string {
+	var readers []string
 	for _, decl := range parsed.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Body == nil || fn.Name.Name == "RejectRetiredEnvironment" {
 			continue
 		}
+		found := false
 		ast.Inspect(fn.Body, func(node ast.Node) bool {
-			identifier, ok := node.(*ast.Ident)
-			if ok && identifier.Name == "retiredPassphraseEnv" {
-				t.Errorf("%s reads the retired APPOLICY_PASSPHRASE source", fn.Name.Name)
+			switch node := node.(type) {
+			case *ast.Ident:
+				found = found || node.Name == "retiredPassphraseEnv"
+			case *ast.BasicLit:
+				if node.Kind == token.STRING {
+					value, err := strconv.Unquote(node.Value)
+					found = found || err == nil && value == "APPOLICY_PASSPHRASE"
+				}
 			}
 			return true
 		})
+		if found {
+			readers = append(readers, fn.Name.Name)
+		}
 	}
+	return readers
 }
 
 func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {
