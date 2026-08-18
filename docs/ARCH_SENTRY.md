@@ -553,7 +553,8 @@ Primary packages and files:
 - `library/templates/aplane.corridor.v1.yaml`: the canonical optional Corridor
   profile source.
 - `cmd/apstore/sentry.go`: public sentry export/import/list/show/remove.
-- `cmd/appolicy`: signer-to-sentry policy conversion and offline validation.
+- `internal/signerapp/policycmd`: live and rescue policy workflows, including
+  signer-to-sentry policy conversion and offline validation through `apadmin`.
 
 Representative tests:
 

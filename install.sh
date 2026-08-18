@@ -1922,7 +1922,7 @@ if [ "$CLIENT_MODE" = "1" ]; then
     mkdir -p "$BINDIR" "$APCLIENT_DIR/.ssh" "$APCLIENT_DIR/plugins.available" "$APCLIENT_DIR/scripts"
     install_release_metadata "$CLIENT_PATH/install"
     echo "Installing client binaries to $BINDIR..."
-    rm -f "$BINDIR/apbounded-admin"
+    rm -f "$BINDIR/apbounded-admin" "$BINDIR/appolicy"
     cp "$BIN_SRC/apshell" "$BINDIR/apshell"
     chmod 755 "$BINDIR/apshell"
     repair_macos_binary "$BINDIR/apshell"
@@ -2152,13 +2152,14 @@ if [ "$LOCAL_MODE" = "1" ]; then
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
     chmod 700 "$INSTALL_ROOT"
     rm -f "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/apbounded-admin"
+    rm -f "$CLIENT_BINDIR/appolicy" "$SIGNER_BINDIR/appolicy"
 
     # Copy binaries (apshell/aplocalnet → apclient/bin, everything else → apsigner/bin)
     echo "Installing binaries..."
     for bin in "$BIN_SRC"/*; do
         [ -f "$bin" ] || continue
         name="$(basename "$bin")"
-        if [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
+        if [ "$name" = "appolicy" ] || [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
             echo "  skipping obsolete $name"
             continue
         fi
@@ -2498,10 +2499,11 @@ fi
 
 # Step 2: Copy binaries outside the signer store
 echo "Installing binaries to $BINDIR..."
+rm -f "$BINDIR/appolicy"
 for bin in "$BIN_SRC"/*; do
     [ -f "$bin" ] || continue
     name="$(basename "$bin")"
-    if [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
+    if [ "$name" = "appolicy" ] || [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
         echo "  skipping obsolete $name"
         continue
     fi

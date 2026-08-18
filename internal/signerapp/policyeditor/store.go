@@ -21,12 +21,31 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// Store is the persistence boundary used by appolicy. Future online backends
-// should implement this interface without changing editor state/UI code.
+// Store is the persistence boundary used by the shared policy editor. Online,
+// offline-rescue, and standalone-draft backends implement it without changing
+// editor state or UI code.
 type Store interface {
 	Load(context.Context) (*policy.StoredConfig, error)
 	Save(context.Context, *policy.StoredConfig) error
 	Validate(context.Context, *policy.StoredConfig) error
+	Persistence() Persistence
+}
+
+// PersistenceKind identifies whether an editor save publishes a managed
+// production document or only replaces a standalone draft.
+type PersistenceKind string
+
+const (
+	PersistenceProduction PersistenceKind = "production"
+	PersistenceDraft      PersistenceKind = "draft"
+)
+
+// Persistence describes the destination and security effect of Store.Save.
+// The editor uses this contract for truthful operator-facing prompts and
+// status; it must not infer persistence semantics from concrete store types.
+type Persistence struct {
+	Kind PersistenceKind
+	Path string
 }
 
 // PassphraseProvider supplies the signer store passphrase only when an
@@ -48,6 +67,12 @@ type OfflineStore struct {
 	Config *serverconfig.ServerConfig
 }
 
+// Persistence reports that Save publishes the managed policy document and its
+// integrity sidecar.
+func (s *OfflineStore) Persistence() Persistence {
+	return Persistence{Kind: PersistenceProduction}
+}
+
 // UseExclusiveMutationLock supplies an already-held lock for Save and
 // SaveYAML. The guard must cover this store's data directory. This permits a
 // root rescue workflow to hold one lock across policy publication and
@@ -66,26 +91,33 @@ func (s *OfflineStore) UseExclusiveMutationLock(guard *storelock.Guard) error {
 // Load verifies the selected policy document integrity sidecar, parses the
 // document, and validates the stored content against signer runtime defaults.
 func (s OfflineStore) Load(ctx context.Context) (*policy.StoredConfig, error) {
+	stored, _, err := s.LoadVerifiedYAML(ctx)
+	return stored, err
+}
+
+// LoadVerifiedYAML verifies and validates the selected production policy and
+// returns the exact YAML bytes covered by the verified integrity sidecar.
+func (s OfflineStore) LoadVerifiedYAML(ctx context.Context) (*policy.StoredConfig, []byte, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := s.validateOptions(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	kr, clear, err := s.unlock(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer clear()
 
-	stored, err := s.loadVerifiedWithKeyring(kr)
+	stored, data, err := s.loadVerifiedYAMLWithKeyring(kr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load verified %s: %w", s.target().StatusNoun(), err)
+		return nil, nil, fmt.Errorf("failed to load verified %s: %w", s.target().StatusNoun(), err)
 	}
 	if err := s.Validate(ctx, stored); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return stored, nil
+	return stored, data, nil
 }
 
 // Validate compiles a stored policy using the same runtime defaults as
@@ -379,11 +411,16 @@ func (s OfflineStore) unlock(ctx context.Context) (*apcrypto.Keyring, func(), er
 }
 
 func (s OfflineStore) loadVerifiedWithKeyring(kr *apcrypto.Keyring) (*policy.StoredConfig, error) {
+	stored, _, err := s.loadVerifiedYAMLWithKeyring(kr)
+	return stored, err
+}
+
+func (s OfflineStore) loadVerifiedYAMLWithKeyring(kr *apcrypto.Keyring) (*policy.StoredConfig, []byte, error) {
 	switch s.target() {
 	case TargetSentry:
-		return policy.LoadVerifiedSentryConfigWithKeyring(s.DataDir, s.identityID(), kr)
+		return policy.LoadVerifiedSentryConfigDocument(s.DataDir, s.identityID(), kr)
 	default:
-		return policy.LoadVerifiedStoredConfigWithKeyring(s.DataDir, s.identityID(), kr)
+		return policy.LoadVerifiedStoredConfigDocument(s.DataDir, s.identityID(), kr)
 	}
 }
 

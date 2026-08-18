@@ -12,7 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// Target identifies the policy document domain appolicy is editing.
+// Target identifies the policy document domain the shared editor is editing.
 type Target string
 
 const (
@@ -60,11 +60,11 @@ func ResolveTarget(dataDir string, target Target) (Target, error) {
 	}
 	doc, _, err := noderole.Load(storepaths.NewPaths(dataDir))
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve appolicy target from node role: %w", err)
+		return "", fmt.Errorf("failed to resolve policy target from node role: %w", err)
 	}
 	resolved, err := TargetForNodeRole(doc.Role)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve appolicy target from node role: %w", err)
+		return "", fmt.Errorf("failed to resolve policy target from node role: %w", err)
 	}
 	return resolved, nil
 }

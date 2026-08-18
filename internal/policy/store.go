@@ -18,6 +18,13 @@ type storedConfigParser func([]byte) (*StoredConfig, error)
 // LoadVerifiedStoredConfig reads policy.yaml and policy.yaml.hmac, verifies the
 // sidecar against the policy bytes, then parses the stored policy.
 func LoadVerifiedStoredConfig(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, error) {
+	stored, _, err := LoadVerifiedStoredConfigDocument(dataRoot, identityID, kr)
+	return stored, err
+}
+
+// LoadVerifiedStoredConfigDocument reads, authenticates, and parses policy.yaml,
+// returning the exact document bytes covered by the verified sidecar.
+func LoadVerifiedStoredConfigDocument(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
 	return loadVerifiedStoredConfigAtPath(
 		PolicyPath(dataRoot, identityID),
 		kr,
@@ -31,6 +38,13 @@ func LoadVerifiedStoredConfig(dataRoot, identityID string, kr *crypto.Keyring) (
 // policy.yaml.hmac against the document bytes, then parses the stored sentry
 // policy.
 func LoadVerifiedSentryConfig(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, error) {
+	stored, _, err := LoadVerifiedSentryConfigDocument(dataRoot, identityID, kr)
+	return stored, err
+}
+
+// LoadVerifiedSentryConfigDocument reads, authenticates, and parses the
+// sentry-domain policy.yaml, returning the exact verified document bytes.
+func LoadVerifiedSentryConfigDocument(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
 	return loadVerifiedStoredConfigAtPath(
 		SentryPath(dataRoot, identityID),
 		kr,
@@ -40,26 +54,26 @@ func LoadVerifiedSentryConfig(dataRoot, identityID string, kr *crypto.Keyring) (
 	)
 }
 
-func loadVerifiedStoredConfigAtPath(path string, kr *crypto.Keyring, parser storedConfigParser, docLabel, parseLabel string) (*StoredConfig, error) {
+func loadVerifiedStoredConfigAtPath(path string, kr *crypto.Keyring, parser storedConfigParser, docLabel, parseLabel string) (*StoredConfig, []byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, policyIntegrityWrap(ErrPolicyIntegrityMissingFile, err, "%s %s", docLabel, path)
+			return nil, nil, policyIntegrityWrap(ErrPolicyIntegrityMissingFile, err, "%s %s", docLabel, path)
 		}
-		return nil, policyIntegrityWrap(ErrPolicyIntegrityUnreadable, err, "failed to read %s %s", docLabel, path)
+		return nil, nil, policyIntegrityWrap(ErrPolicyIntegrityUnreadable, err, "failed to read %s %s", docLabel, path)
 	}
 	sidecar, err := LoadPolicyIntegritySidecar(PolicyIntegritySidecarPath(path))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := VerifyPolicyIntegrity(data, sidecar, kr); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	cfg, err := parser(data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", parseLabel, err)
+		return nil, nil, fmt.Errorf("failed to parse %s: %w", parseLabel, err)
 	}
-	return cfg, nil
+	return cfg, data, nil
 }
 
 // LoadVerifiedStoredConfigWithKeyring verifies policy.yaml with the identity

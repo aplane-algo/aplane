@@ -82,7 +82,7 @@ func (m Model) popupContentHeight() int {
 func (m Model) renderHelp(s string) string {
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 	for i, line := range lines {
-		if strings.HasPrefix(line, "keys:") || strings.HasPrefix(line, modifiedProductionWarning) {
+		if strings.HasPrefix(line, "keys:") || strings.HasPrefix(line, modifiedProductionWarning) || strings.HasPrefix(line, modifiedDraftWarning) {
 			lines[i] = helpStyle.Render(line)
 		}
 	}

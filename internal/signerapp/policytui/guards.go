@@ -115,7 +115,7 @@ func (m Model) handleRouteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = "transfer policy yaml"
 		m.err = ""
 	case "a":
-		return m.applyProduction()
+		return m.persistDocument()
 	case "w":
 		return m.openWriteFile()
 	case "v":
@@ -159,7 +159,7 @@ func (m Model) handleRouteYAMLKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "a":
-		return m.applyProduction()
+		return m.persistDocument()
 	case "w":
 		return m.openWriteFile()
 	}
@@ -237,9 +237,9 @@ func (m Model) routeView() string {
 			b.WriteString("\n")
 		}
 	}
-	b.WriteString("\nkeys: up/down move  enter/e edit guard  n new  c clone  d delete  b blocked destinations  u/U reorder  p settings  t asset sets  y yaml  space cycle enabled  v validate  w write draft  a apply production  esc/backspace back  q quit\n")
+	b.WriteString("\nkeys: up/down move  enter/e edit guard  n new  c clone  d delete  b blocked destinations  u/U reorder  p settings  t asset sets  y yaml  space cycle enabled  v validate  w write draft  a " + m.persistenceKeyLabel() + "  esc/backspace back  q quit\n")
 	if m.modified() {
-		b.WriteString(modifiedProductionWarning + "\n")
+		b.WriteString(m.modifiedWarning() + "\n")
 	}
 	return m.renderHelp(b.String())
 }
@@ -271,9 +271,9 @@ func (m Model) routeYAMLView() string {
 		b.WriteString(scrollMoreBelowLine(len(lines) - end))
 		b.WriteString("\n")
 	}
-	b.WriteString("\nkeys: up/down/pgup/pgdown scroll  w write draft  a apply production  esc/b back  q quit\n")
+	b.WriteString("\nkeys: up/down/pgup/pgdown scroll  w write draft  a " + m.persistenceKeyLabel() + "  esc/b back  q quit\n")
 	if m.modified() {
-		b.WriteString(modifiedProductionWarning + "\n")
+		b.WriteString(m.modifiedWarning() + "\n")
 	}
 	return m.renderHelp(b.String())
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package policytui provides the standalone appolicy terminal UI.
+// Package policytui provides the shared structured policy terminal UI.
 package policytui
 
 import (
@@ -44,7 +44,10 @@ const (
 	screenDeleteAssetSetConfirm
 )
 
-const modifiedProductionWarning = "draft differs from production; q can quit without applying to production"
+const (
+	modifiedProductionWarning = "draft differs from production; q can quit without applying to production"
+	modifiedDraftWarning      = "draft has unsaved changes; q can quit without saving the draft"
+)
 
 type field struct {
 	key    string
@@ -55,9 +58,10 @@ type field struct {
 	cycle  func(*policy.StoredConfig)
 }
 
-// Model is the appolicy Bubble Tea model.
+// Model is the shared policy editor Bubble Tea model.
 type Model struct {
 	store                     policyeditor.Store
+	persistence               policyeditor.Persistence
 	target                    policyeditor.Target
 	policy                    *policy.StoredConfig
 	baseline                  []byte
@@ -83,7 +87,7 @@ type Model struct {
 	editAssetSetRows          []assetSetEditRow
 	routeYAMLOffset           int
 	previousScreen            screen
-	quitAfterApply            bool
+	quitAfterPersist          bool
 	writePath                 string
 	applyPassphrase           []rune
 	deleteRouteIndex          int
@@ -97,7 +101,7 @@ type Model struct {
 	fields                    []field
 }
 
-type productionApplyResultMsg struct {
+type persistenceResultMsg struct {
 	baseline []byte
 	err      error
 }
@@ -150,8 +154,8 @@ type routeEditField struct {
 	value string
 }
 
-// New returns an appolicy model initialized with a verified signer policy.
-// NewWithTarget returns an appolicy model initialized with a verified stored
+// New returns a policy editor model initialized with a verified signer policy.
+// NewWithTarget returns a policy editor model initialized with a verified stored
 // policy document for the selected domain.
 func NewWithTarget(store policyeditor.Store, stored *policy.StoredConfig, dataDir, identityID string, target policyeditor.Target) Model {
 	if target == "" || target == policyeditor.TargetAuto {
@@ -159,14 +163,15 @@ func NewWithTarget(store policyeditor.Store, stored *policy.StoredConfig, dataDi
 	}
 	cp, baseline, err := cloneStoredForTarget(stored, target)
 	m := Model{
-		store:      store,
-		target:     target,
-		policy:     cp,
-		baseline:   baseline,
-		dataDir:    dataDir,
-		identityID: identityID,
-		status:     fmt.Sprintf("loaded verified %s", target.StatusNoun()),
-		fields:     policyFieldsForTarget(target),
+		store:       store,
+		persistence: store.Persistence(),
+		target:      target,
+		policy:      cp,
+		baseline:    baseline,
+		dataDir:     dataDir,
+		identityID:  identityID,
+		status:      fmt.Sprintf("loaded verified %s", target.StatusNoun()),
+		fields:      policyFieldsForTarget(target),
 	}
 	if err != nil {
 		m.err = err.Error()
@@ -223,21 +228,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			return m.handleHomeKey(msg)
 		}
-	case productionApplyResultMsg:
+	case persistenceResultMsg:
 		m.busy = false
 		if msg.err != nil {
 			if clearer, ok := m.store.(productionPassphraseClearer); ok {
 				clearer.ClearPassphrase()
 			}
 			m.err = msg.err.Error()
-			m.status = "apply failed"
-			m.quitAfterApply = false
+			m.status = m.persistenceFailedStatus()
+			m.quitAfterPersist = false
 			return m, nil
 		}
 		m.baseline = msg.baseline
 		m.err = ""
-		m.status = fmt.Sprintf("applied %s and %s", m.target.DocumentName(), m.target.SidecarName())
-		if m.quitAfterApply {
+		m.status = m.persistenceSuccessStatus()
+		if m.quitAfterPersist {
 			return m, tea.Quit
 		}
 		return m, nil
@@ -538,9 +543,9 @@ func (m Model) bodyView() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString("\nkeys: up/down move  space/enter cycle  v validate  w write draft  a apply production  q quit\n")
+	b.WriteString("\nkeys: up/down move  space/enter cycle  v validate  w write draft  a " + m.persistenceKeyLabel() + "  q quit\n")
 	if m.modified() {
-		b.WriteString(modifiedProductionWarning + "\n")
+		b.WriteString(m.modifiedWarning() + "\n")
 	}
 	return m.renderHelp(b.String())
 }

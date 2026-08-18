@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 )
 
 func TestModelCyclesBoolFieldAndTracksModified(t *testing.T) {
@@ -189,8 +190,8 @@ func TestModifiedQuitCanApplyAndQuit(t *testing.T) {
 		t.Fatal("apply+quit returned nil apply command")
 	}
 	m = updated.(Model)
-	if !m.quitAfterApply {
-		t.Fatal("quitAfterApply = false, want true")
+	if !m.quitAfterPersist {
+		t.Fatal("quitAfterPersist = false, want true")
 	}
 	msg := cmd()
 	_, quitCmd := m.Update(msg)
@@ -199,6 +200,57 @@ func TestModifiedQuitCanApplyAndQuit(t *testing.T) {
 	}
 	if store.saves != 1 {
 		t.Fatalf("saves = %d, want 1", store.saves)
+	}
+}
+
+func TestStandaloneDraftPersistenceLanguageIsTruthful(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "draft.yaml")
+	store := &fakeStore{persistence: policyeditor.Persistence{
+		Kind: policyeditor.PersistenceDraft,
+		Path: path,
+	}}
+	m := New(store, &policy.StoredConfig{}, "", "default")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = updated.(Model)
+
+	view := stripANSI(m.View())
+	for _, want := range []string{"a save draft", modifiedDraftWarning} {
+		if !strings.Contains(view, want) {
+			t.Errorf("draft editor view missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(strings.ToLower(view), "apply production") {
+		t.Fatalf("draft editor advertised production apply:\n%s", view)
+	}
+
+	updated, cmd := m.Update(keyRunes("q"))
+	if cmd != nil {
+		t.Fatal("modified draft quit returned a command before confirmation")
+	}
+	m = updated.(Model)
+	view = stripANSI(m.View())
+	for _, want := range []string{"Draft Not Saved", "save the draft and quit", "quit without saving the draft"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("draft quit prompt missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(strings.ToLower(view), "production") {
+		t.Fatalf("draft quit prompt mentioned production:\n%s", view)
+	}
+
+	updated, cmd = m.Update(keyRunes("a"))
+	if cmd == nil {
+		t.Fatal("save+quit returned nil save command")
+	}
+	m = updated.(Model)
+	if got := m.status; got != "saving policy draft" {
+		t.Fatalf("in-progress status = %q", got)
+	}
+	msg := cmd()
+	updated, _ = m.Update(msg)
+	m = updated.(Model)
+	if got, want := m.status, "saved policy draft to "+path; got != want {
+		t.Fatalf("success status = %q, want %q", got, want)
 	}
 }
 
@@ -2150,6 +2202,14 @@ type fakeStore struct {
 	validations int
 	saveErr     error
 	validateErr error
+	persistence policyeditor.Persistence
+}
+
+func (f fakeStore) Persistence() policyeditor.Persistence {
+	if f.persistence.Kind == "" {
+		return policyeditor.Persistence{Kind: policyeditor.PersistenceProduction}
+	}
+	return f.persistence
 }
 
 func (f fakeStore) Load(context.Context) (*policy.StoredConfig, error) {

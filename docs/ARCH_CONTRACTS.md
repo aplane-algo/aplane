@@ -737,7 +737,7 @@ unlock/reload before the key scan; a missing policy file or missing/mismatched
 sidecar fails closed instead of falling back to defaults. Authenticated admin
 IPC policy operations are target-aware by policy domain, and role-incompatible
 targets fail closed. Direct YAML edits are checked, signed, and verified
-through `appolicy` or `apstore policy`.
+through `apadmin policy rescue` or `apstore policy`.
 Policy and sidecar bytes are both staged and synced before either path is
 published. HMAC, encoding, or staging failure therefore preserves the prior
 pair. Interruption between the two publication renames can still leave a
@@ -747,8 +747,9 @@ Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
 sentry overrides are keyed by Witness Key ID. These overrides apply to
 policy phases and can be changed through authenticated full-document
-`replace_policy`, or by direct/offline YAML editing followed by `appolicy` or
-`apstore policy` signing before the signer will trust the edited document.
+`replace_policy`, or by direct/offline YAML editing followed by
+`apadmin policy rescue apply` or `apstore policy sign` before the signer will
+trust the edited document.
 There is no scalar policy-settings IPC.
 
 Validation:
@@ -1689,13 +1690,17 @@ Policy load behavior:
 - reload failure keeps the previous in-memory policy active
 - admin policy writes require an unlocked identity and replace the
   node-role-selected policy document
-- direct YAML edits require offline `appolicy --save` or `apstore policy sign`
+- online `apadmin policy` verbs authenticate and may unlock a locked identity;
+  online export emits the exact daemon snapshot bytes and online digest emits
+  the daemon-reported snapshot SHA
+- direct YAML edits require offline `apadmin policy rescue apply -` or `apstore policy sign`
   before the signer trusts them
-- `appolicy` defaults to `--target auto`; for store-backed operations, auto
+- `apadmin policy rescue` defaults to `--target auto`; for store-backed operations, auto
   reads root `node.yaml` and targets the signer or sentry policy domain for
   the single `policy.yaml` file
-- `appolicy --yaml` emits the exact verified selected document bytes;
-  `appolicy --save` reads replacement YAML bytes from stdin, validates them in
+- `apadmin policy rescue export` emits the exact verified selected document bytes;
+  `apadmin policy rescue apply -` reads replacement YAML bytes from stdin,
+  validates them in
   the selected policy domain, and writes those exact bytes plus a fresh sidecar
   under the store mutation lock; `--target signer|sentry` explicitly
   selects the domain; store-backed role-incompatible targets fail closed. A
@@ -1703,7 +1708,7 @@ Policy load behavior:
   root-controlled `install/service-principal.json` before returning
 - `apstore policy check|verify|sign` checks, verifies, or signs the active
   node-role policy
-- `appolicy --online <draft.yaml>` rejects an empty draft, validates it through
+- `apadmin policy edit <draft.yaml>` rejects an empty draft, validates it through
   the daemon, loads the active snapshot as its optimistic-concurrency base,
   and opens the draft in the online editor; batch output/check flags validate
   the positional draft and exit without opening the editor
@@ -2426,13 +2431,13 @@ to run.
 Client-signing and sentry component `transfer_policy` are both persisted in
 `policy.yaml`, with schema selected by node role. Both domains are validated by
 the normal policy load path and by `apstore policy check/sign/verify`.
-`appolicy` auto-targets the node-role domain and `--target signer|sentry`
-can explicitly select a domain for offline
-work; `apadmin` uses the node-role target online through admin IPC. There is no
+`apadmin policy rescue` auto-targets the node-role domain and
+`--target signer|sentry` can explicitly select a domain for offline work;
+`apadmin policy` uses the node-role target online through admin IPC. There is no
 scalar policy-settings IPC; guided edits use the shared full-document editor
-and are saved as whole-document YAML replacements. The `appolicy --yaml` /
-`--save` CLI path remains the scriptable offline editor for byte-preserving
-route-table edits.
+and are saved as whole-document YAML replacements. The rescue `export` and
+`apply` verbs remain the scriptable offline path for byte-preserving route-table
+edits.
 Route matches are allow-to-continue, not approvals.
 
 Transaction-level hard policy skips passthrough and foreign slots because those

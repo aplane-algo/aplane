@@ -113,7 +113,7 @@ func (m Model) guardAmountHint(asset string, networks []string) string {
 		return fmt.Sprintf("Use %s display units. Stored policy YAML remains raw base units.", asa.DisplayRef(meta))
 	}
 	if _, ok := concreteASAIDFromGuardAsset(asset); ok {
-		return "Use ASA display units. appolicy resolves decimals from signer metadata when applying."
+		return "Use ASA display units. The policy editor resolves decimals from signer metadata when applying."
 	}
 	return "Use raw base units for wildcard or asset-set guards. Leave blank for no threshold."
 }

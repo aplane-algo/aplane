@@ -277,15 +277,15 @@ func executeTestCommand(client *testModeClient, args []string) {
 	cmdArgs := args[1:]
 
 	switch cmd {
-	case "list":
+	case testModeListCommand:
 		runTestList(client)
-	case "generate":
+	case testModeGenerateCommand:
 		runTestGenerate(client, cmdArgs)
-	case "import":
+	case testModeImportCommand:
 		runTestImport(client, cmdArgs)
-	case "delete":
+	case testModeDeleteCommand:
 		runTestDelete(client, cmdArgs)
-	case "unlock":
+	case testModeUnlockCommand:
 		runTestUnlock(client)
 	default:
 		logErrorf("unknown command: %s", cmd)

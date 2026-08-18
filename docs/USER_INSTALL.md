@@ -93,7 +93,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 ```
 <install-path>/
 ├── apsigner/             # Signer data directory ($APSIGNER_DATA)
-│   ├── bin/               # apsigner, apadmin, apapprover, apstore, appolicy, appass, approbe, and other signer-side tools
+│   ├── bin/               # apsigner, apadmin, apapprover, apstore, appass, approbe, and other signer-side tools
 │   ├── config.yaml        # Signer config (ports, SSH, algod)
 │   ├── library/           # KeyType Library install sources
 │   │   └── templates/     # Template YAML files for defaults and apstore imports
@@ -601,7 +601,7 @@ For the impatient — build from source and install at `/var/lib/apsigner` as th
 make all
 
 # Install binaries
-sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appolicy bin/appass bin/aplocalnet \
+sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appass bin/aplocalnet \
         bin/appass-file bin/appass-systemd-creds bin/approbe bin/applugin-checksum /usr/local/bin/
 sudo chmod 755 /usr/local/bin/appass-systemd-creds
 
@@ -689,7 +689,6 @@ This produces statically linked binaries in `bin/`:
 | `apconsole` | Unified secure-machine console for shell, signer TUI, and daemon status |
 | `apapprover` | Signing and token provisioning approval interface |
 | `appass` | Offline passphrase auto-unlock configuration TUI |
-| `appolicy` | Offline policy checker/editor TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for apshell default network, signer config, plugin activation, and KMD override persistence |
 | `appass-file` | Development-only plaintext passphrase helper |
 | `approbe` | Installer/helper liveness probe and canonical signer IPC-path resolver |
@@ -706,7 +705,7 @@ you need to rebuild that helper by itself.
 Copy the server-side binaries to a system path:
 
 ```bash
-sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appolicy bin/appass bin/aplocalnet \
+sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appass bin/aplocalnet \
         bin/appass-file bin/appass-systemd-creds bin/approbe bin/applugin-checksum /usr/local/bin/
 sudo chmod 755 /usr/local/bin/appass-systemd-creds
 ```

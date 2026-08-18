@@ -51,7 +51,7 @@ func (m Model) handleHomeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.status = fmt.Sprintf("changed %s to %s", current.key, current.value(m.policy))
 	case "a":
-		return m.applyProduction()
+		return m.persistDocument()
 	case "w":
 		return m.openWriteFile()
 	case "v":

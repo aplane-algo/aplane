@@ -146,11 +146,10 @@ All under `cmd/`:
 | `apshell` | Client shell: REPL, script runner, JS runtime (Goja), MCP server, plugin host |
 | `aprekey` | Dedicated client for generating, inspecting, verifying, and using external Falcon bounded contract-admin credentials; `rekey`/`unrekey` own online orchestration and `prepare-*`/`sign`/`complete` own separated ceremonies |
 | `apsigner` | Signing daemon: HTTP API, admin protocol over IPC and SSH subsystem, key management, approval coordination, SSH tunnel server, audit logging |
-| `apadmin` | TUI admin client over IPC or SSH admin transport |
+| `apadmin` | TUI and batch admin client over IPC or SSH, including live policy administration and explicit offline policy rescue |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
 | `apstore` | Store-management client: local `initialize`, policy integrity check/verify/sign, external-file-only `verify`, `rebuild`, offline generation pruning, and private-store permission audit/migration; endpoint export, daemon-owned sentry references, generation inventory, backup, restore, template, key type, and changepass operations use authenticated admin IPC |
-| `appolicy` | Policy checker/editor TUI with offline rescue mode and `--online` authenticated admin-IPC mode; both support scriptable save/check/export and signer-to-sentry-policy conversion |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, client (`apshell`) default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
 | `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |
@@ -169,11 +168,11 @@ Documentation notes:
 
 | Layer | Packages |
 |-------|----------|
-| UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/signerapp/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
+| UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `internal/signerapp/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyeditor`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
-| Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/rotationinventory`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
+| Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/rotationinventory`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/storeintegration`, `test/registry`, `test/soak`, `internal/testcheckpoint`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
@@ -582,11 +581,11 @@ filename is direct sentry component policy. The default approval fallback is
 `User Auto-Approve`. Policy is verified with a key derived from the identity
 term key and loaded into the bound identity runtime on unlock/reload before
 the key scan. Guided policy editing is implemented once in
-`internal/signerapp/policytui` and used through two stores: `appolicy` can edit
-the selected domain offline while holding the store mutation lock or online
-through authenticated admin IPC, and `apadmin` edits the active document
-online through the same protocol while `apsigner` is running.
-Both surfaces select the policy domain from the node role; store-backed
+`internal/signerapp/policytui`. `apadmin policy` edits the active document
+through authenticated admin IPC or SSH while `apsigner` is running;
+`apadmin policy rescue` edits the selected domain directly while holding the
+store mutation lock. `internal/signerapp/policycmd` owns both workflows.
+Both modes select the policy domain from the node role; store-backed
 role-incompatible targets fail closed. Direct edits to `policy.yaml` are checked
 and signed with `apstore policy`. Admin IPC policy messages are
 target-aware (`signer|sentry`), validate replacements before writing, use

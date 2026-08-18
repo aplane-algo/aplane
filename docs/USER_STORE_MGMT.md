@@ -269,7 +269,7 @@ type, sentry-reference, and generation-list operations run as the operator over
 authenticated IPC. Offline bootstrap/rescue operations and `appass` require a
 stopped service and `sudo`. The tools refuse the wrong mode before prompting or
 touching the store. Root-run `appass` verifies the systemd unit principal
-against `install/service-principal.json`. Offline `appolicy` edits restore the
+against `install/service-principal.json`. Offline `apadmin policy rescue` edits restore the
 recorded service ownership before returning.
 
 ### Auditing and migrating systemd store permissions
@@ -687,10 +687,10 @@ From the key details view:
 ./apstore policy check
 ./apstore policy verify
 ./apstore policy sign
-./appolicy -check
-./appolicy --yaml
-./appolicy --save < selected-policy.yaml
-./appolicy
+./apadmin policy rescue check
+./apadmin policy rescue export
+./apadmin policy rescue apply - < selected-policy.yaml
+./apadmin policy rescue edit
 
 # Template management (for custom LogicSigs)
 ./apstore template list

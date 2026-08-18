@@ -68,7 +68,7 @@ func (m Model) handleAssetSetKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = "transfer policy yaml"
 		m.err = ""
 	case "a":
-		return m.applyProduction()
+		return m.persistDocument()
 	case "w":
 		return m.openWriteFile()
 	case "v":
@@ -175,9 +175,9 @@ func (m Model) assetSetView() string {
 			b.WriteString("\n")
 		}
 	}
-	b.WriteString("\nkeys: up/down move  enter/e edit set  n new  c clone  d delete  y yaml  v validate  w write draft  a apply production  b back  q quit\n")
+	b.WriteString("\nkeys: up/down move  enter/e edit set  n new  c clone  d delete  y yaml  v validate  w write draft  a " + m.persistenceKeyLabel() + "  b back  q quit\n")
 	if m.modified() {
-		b.WriteString(modifiedProductionWarning + "\n")
+		b.WriteString(m.modifiedWarning() + "\n")
 	}
 	return m.renderHelp(b.String())
 }

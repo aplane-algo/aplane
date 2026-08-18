@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -65,6 +66,24 @@ func main() {
 	initTestFlag()
 	remoteMode = flag.Bool("remote", false, "Connect to apsigner over SSH instead of local IPC")
 	flag.Parse()
+
+	positional := flag.Args()
+	if isProductionSubcommand(positional) {
+		passed := make(map[string]bool)
+		flag.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+		code := runPolicyCommand(context.Background(), positional[1:], policyGlobalOptions{
+			dataDir:          *dataDir,
+			clientDataDir:    *clientDataDir,
+			ipcPath:          *ipcPathFlag,
+			remote:           *remoteMode,
+			clientDataPassed: passed["client-data"],
+			ipcPathPassed:    passed["ipc-path"],
+		}, policyStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		if code != 0 {
+			os.Exit(code)
+		}
+		return
+	}
 
 	if *remoteMode {
 		runRemoteMode(*clientDataDir)
@@ -128,7 +147,7 @@ func main() {
 
 	// Check for test mode (only available in test builds with -tags testmode)
 	if isTestMode() {
-		runTestMode(config, flag.Args())
+		runTestMode(config, positional)
 		return
 	}
 

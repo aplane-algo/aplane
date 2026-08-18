@@ -40,11 +40,11 @@ func (m Model) handleQuitConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "y", "ctrl+c":
 		return m, tea.Quit
 	case "a":
-		m.quitAfterApply = true
-		return m.applyProduction()
+		m.quitAfterPersist = true
+		return m.persistDocument()
 	case "esc", "n", "b", "backspace":
 		m.screen = m.previousScreen
-		m.quitAfterApply = false
+		m.quitAfterPersist = false
 		m.status = "exit canceled"
 		m.err = ""
 		return m, nil
@@ -64,7 +64,7 @@ func (m Model) handleApplyPassphraseKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		m.clearApplyPassphrase()
 		m.screen = m.previousScreen
-		m.quitAfterApply = false
+		m.quitAfterPersist = false
 		m.status = "apply canceled"
 		m.err = ""
 		return m, nil
@@ -138,7 +138,7 @@ func (m Model) requestQuit() (tea.Model, tea.Cmd) {
 	}
 	m.previousScreen = m.screen
 	m.screen = screenQuitConfirm
-	m.status = "production not applied"
+	m.status = m.persistenceNotCompletedStatus()
 	m.err = ""
 	return m, nil
 }
@@ -181,7 +181,7 @@ func (m Model) submitApplyPassphrase() (tea.Model, tea.Cmd) {
 	}
 	m.clearApplyPassphrase()
 	m.screen = m.previousScreen
-	return m.applyProduction()
+	return m.persistDocument()
 }
 
 func (m *Model) clearApplyPassphrase() {
@@ -200,6 +200,19 @@ func passphraseRunesBytes(runes []rune) []byte {
 }
 
 func (m Model) quitConfirmView() string {
+	if m.persistence.Kind == policyeditor.PersistenceDraft {
+		return m.renderHelp(renderLines(
+			sectionStyle.Render("Draft Not Saved"),
+			"",
+			statusWarnStyle.Render("This policy draft has unsaved changes."),
+			"",
+			"Press a to save the draft and quit.",
+			"Press q to quit without saving the draft.",
+			"Press esc to return to editing.",
+			"",
+			"keys: a save+quit  q quit without saving  esc cancel",
+		))
+	}
 	return m.renderHelp(renderLines(
 		sectionStyle.Render("Production Not Applied"),
 		"",
@@ -238,25 +251,77 @@ func (m Model) writeFileView() string {
 	return m.renderHelp(m.renderPopup(90, b.String()))
 }
 
-func (m Model) applyProduction() (tea.Model, tea.Cmd) {
+func (m Model) persistDocument() (tea.Model, tea.Cmd) {
 	cp, baseline, err := m.cloneStored(m.policy)
 	if err != nil {
 		m.err = err.Error()
-		m.status = "cannot apply"
+		m.status = m.persistenceCannotStartStatus()
 		return m, nil
 	}
 	if store, ok := m.store.(productionPassphraseStore); ok && store.RequiresPassphraseForSave() {
 		return m.openApplyPassphrase()
 	}
 	m.busy = true
-	m.status = fmt.Sprintf("applying %s", m.target.StatusNoun())
+	m.status = m.persistenceInProgressStatus()
 	m.err = ""
 	return m, func() tea.Msg {
 		if err := m.store.Save(context.Background(), cp); err != nil {
-			return productionApplyResultMsg{err: err}
+			return persistenceResultMsg{err: err}
 		}
-		return productionApplyResultMsg{baseline: baseline}
+		return persistenceResultMsg{baseline: baseline}
 	}
+}
+
+func (m Model) persistenceKeyLabel() string {
+	if m.persistence.Kind == policyeditor.PersistenceDraft {
+		return "save draft"
+	}
+	return "apply production"
+}
+
+func (m Model) modifiedWarning() string {
+	if m.persistence.Kind == policyeditor.PersistenceDraft {
+		return modifiedDraftWarning
+	}
+	return modifiedProductionWarning
+}
+
+func (m Model) persistenceNotCompletedStatus() string {
+	if m.persistence.Kind == policyeditor.PersistenceDraft {
+		return "draft not saved"
+	}
+	return "production not applied"
+}
+
+func (m Model) persistenceCannotStartStatus() string {
+	if m.persistence.Kind == policyeditor.PersistenceDraft {
+		return "cannot save draft"
+	}
+	return "cannot apply"
+}
+
+func (m Model) persistenceInProgressStatus() string {
+	if m.persistence.Kind == policyeditor.PersistenceDraft {
+		return fmt.Sprintf("saving %s draft", m.target.StatusNoun())
+	}
+	return fmt.Sprintf("applying %s", m.target.StatusNoun())
+}
+
+func (m Model) persistenceFailedStatus() string {
+	if m.persistence.Kind == policyeditor.PersistenceDraft {
+		return "draft save failed"
+	}
+	return "apply failed"
+}
+
+func (m Model) persistenceSuccessStatus() string {
+	if m.persistence.Kind == policyeditor.PersistenceDraft {
+		if path := strings.TrimSpace(m.persistence.Path); path != "" {
+			return fmt.Sprintf("saved %s draft to %s", m.target.StatusNoun(), path)
+		}
+		return fmt.Sprintf("saved %s draft", m.target.StatusNoun())
+	}
+	return fmt.Sprintf("applied %s and %s", m.target.DocumentName(), m.target.SidecarName())
 }
 
 func (m Model) writeDraftFile() (tea.Model, tea.Cmd) {

@@ -37,10 +37,9 @@ deploy apps from TEAL source or compiled AVM bytecode, execute grouped flows suc
 | **apshell** | Interactive shell for building and submitting transactions (no private keys) |
 | **apconsole** | Unified TUI console combining apshell, signer admin, and local daemon status |
 | **apsigner** | Signing daemon with HTTP API, admin protocol, and SSH tunnel server |
-| **apadmin** | TUI admin client over IPC or SSH admin transport |
+| **apadmin** | TUI and batch admin client over IPC or SSH, with explicit offline policy rescue |
 | **apapprover** | Optional approval-only admin client over IPC or SSH admin transport |
 | **apstore** | Keystore management (init, backup, restore, passphrase management) |
-| **appolicy** | Offline policy checker/editor TUI |
 | **appass** | Passphrase auto-unlock setup TUI |
 
 ### SDKs

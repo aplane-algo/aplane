@@ -47,6 +47,24 @@ Remote SSH admin mode:
 ./apadmin --remote --client-data /path/to/apclient
 ```
 
+Policy batch and standalone editor commands:
+
+```bash
+./apadmin policy edit
+./apadmin policy check
+./apadmin policy export > policy.yaml
+./apadmin policy apply - < policy.yaml
+./apadmin -d /path/to/signer-data policy rescue edit
+```
+
+Online policy commands use the same local IPC or `--remote` SSH transport as
+the main TUI. They authenticate and unlock before policy access. The explicit
+`policy rescue` namespace accesses a stopped signer's store directly and never
+falls back from a failed online connection. Run `apadmin policy --help` for all
+verbs and stream behavior. Remote commands ignore `APSIGNER_PASSPHRASE`; for
+headless remote apply, use `policy apply FILE` and pipe one passphrase line on
+stdin so the policy document and authentication secret use separate inputs.
+
 `APSIGNER_DATA` and `APCLIENT_DATA` can be used instead of passing `-d` or
 `--client-data`.
 
