@@ -4,12 +4,30 @@
 package adminserver
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
+
+func TestProtocolRestoreBackupResultOmitsProcessLocalCommitState(t *testing.T) {
+	msg := ProtocolRestoreBackupResultMessage("restore-1", adminproto.RestoreBackupResult{
+		Success:         true,
+		OperationID:     "operation-1",
+		CommitUncertain: true,
+	})
+
+	wire, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if strings.Contains(string(wire), "commit_uncertain") {
+		t.Fatalf("restore response exposed process-local commit state: %s", wire)
+	}
+}
 
 func TestProtocolKeyDetailsMessageIncludesPublicKey(t *testing.T) {
 	msg := ProtocolKeyDetailsMessage("details-1", adminproto.GetKeyDetailsResult{

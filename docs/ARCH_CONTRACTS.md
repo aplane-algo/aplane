@@ -540,6 +540,12 @@ both signatures. It performs no automatic retry or approval refresh.
 
 See [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md) for the apsigner admin RPC message catalog, payload shapes, and writable-settings rules.
 
+`internal/protocol` is the source of truth for this compatibility-bearing JSON
+contract. `internal/adminproto` contains transport-neutral service
+requests/results and the framed server connection abstraction; those domain
+types are projected at `internal/signerapp/adminserver` and must not be treated
+as wire DTOs.
+
 The pre-auth `auth` request verifies the passphrase and may also unlock and
 reload the bound identity. Therefore `auth_result{success:false}` does not
 always mean a bad passphrase. If passphrase verification succeeds but unlock or

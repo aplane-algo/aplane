@@ -4,7 +4,11 @@
 package adminproto
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -87,6 +91,77 @@ func TestStreamAdminConnWritesAreSerializedPerConnection(t *testing.T) {
 
 	_ = stalled.Close()
 	<-stalledDone
+}
+
+type byteAtATimeWriter struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (w *byteAtATimeWriter) Read([]byte) (int, error) { return 0, io.EOF }
+
+func (w *byteAtATimeWriter) Write(p []byte) (int, error) {
+	for _, b := range p {
+		w.mu.Lock()
+		_ = w.buffer.WriteByte(b)
+		w.mu.Unlock()
+		runtime.Gosched()
+	}
+	return len(p), nil
+}
+
+func (w *byteAtATimeWriter) Close() error { return nil }
+
+func (w *byteAtATimeWriter) Bytes() []byte {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]byte(nil), w.buffer.Bytes()...)
+}
+
+func TestStreamAdminConnConcurrentWritesRemainWholeJSONFrames(t *testing.T) {
+	const writeCount = 32
+
+	writer := &byteAtATimeWriter{}
+	conn := NewStreamAdminConn(writer, "concurrent")
+	var wg sync.WaitGroup
+	errs := make(chan error, writeCount)
+	for i := 0; i < writeCount; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			payload := []byte(fmt.Sprintf(`{"id":%d,"payload":"frame-%02d"}`, id, id))
+			errs <- conn.WriteMessage(payload)
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("WriteMessage() error = %v", err)
+		}
+	}
+
+	lines := bytes.Split(bytes.TrimSpace(writer.Bytes()), []byte{'\n'})
+	if len(lines) != writeCount {
+		t.Fatalf("frame count = %d, want %d: %q", len(lines), writeCount, writer.Bytes())
+	}
+	seen := make(map[int]bool, writeCount)
+	for _, line := range lines {
+		var frame struct {
+			ID      int    `json:"id"`
+			Payload string `json:"payload"`
+		}
+		if err := json.Unmarshal(line, &frame); err != nil {
+			t.Fatalf("interleaved JSON frame %q: %v", line, err)
+		}
+		if frame.Payload != fmt.Sprintf("frame-%02d", frame.ID) {
+			t.Fatalf("frame = %+v, want matching id and payload", frame)
+		}
+		seen[frame.ID] = true
+	}
+	if len(seen) != writeCount {
+		t.Fatalf("unique frame count = %d, want %d", len(seen), writeCount)
+	}
 }
 
 type nopReadWriteCloser struct{}
