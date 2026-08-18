@@ -475,6 +475,7 @@ func TestInstallParsedRejectsOtherTemplateTypeAndBuiltInConflicts(t *testing.T) 
 	t.Run("registered provider", func(t *testing.T) {
 		keyType := "test.templatelibrary-built-in-conflict.v1"
 		lsigprovider.Register(stubProvider{keyType: keyType})
+		t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 
 		paths := newLibraryTestPaths(t)
 		parsed := mustParseYAML(t, "conflict.yaml", testGenericTemplateYAML("templatelibrary-built-in-conflict", "Built In Conflict"))
@@ -498,6 +499,7 @@ func TestInstallParsedAllowsGloballyRegisteredMatchingTemplate(t *testing.T) {
 	if !lsigprovider.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec)) {
 		t.Fatalf("provider %q already registered", parsed.KeyType)
 	}
+	t.Cleanup(func() { lsigprovider.Unregister(parsed.KeyType) })
 
 	result, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
@@ -536,6 +538,7 @@ func TestListAndActivateCompiledProvider(t *testing.T) {
 	})
 	if !lsigprovider.Has(keyType) {
 		lsigprovider.Register(stubProvider{keyType: keyType})
+		t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 	}
 
 	paths := newLibraryTestPaths(t)
@@ -610,6 +613,7 @@ func TestDeactivateCompiledProviderRejectsKeyTypeInUse(t *testing.T) {
 	})
 	if !lsigprovider.Has(keyType) {
 		lsigprovider.Register(stubProvider{keyType: keyType})
+		t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 	}
 
 	paths := newLibraryTestPaths(t)

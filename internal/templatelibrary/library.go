@@ -528,10 +528,14 @@ func EnableInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 		result.AlreadyExists = true
 		return result, nil
 	}
+	previousState := rec
 	rec.State = keytypestate.StateEnabled
 	if err := keytypestate.Put(paths, identityID, rec); err != nil {
 		return result, err
 	}
+	result.StateChanged = true
+	result.hadPreviousState = true
+	result.previousState = previousState
 	result.OutputPath = active.KeyTypeRecord(result.KeyType)
 	return result, nil
 }

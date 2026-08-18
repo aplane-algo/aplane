@@ -483,7 +483,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyT
 	reloadReport, reloadErr := ir.Reload()
 	if reloadErr != nil {
 		if !installResult.AlreadyExists {
-			if rollbackErr := keytypestate.SetState(s.Deps.KeyPaths(), ir.ID(), installResult.KeyType, keytypestate.StateDisabled); rollbackErr != nil {
+			if rollbackErr := templatelibrary.RollbackTemplateStateChange(s.Deps.KeyPaths(), ir.ID(), installResult); rollbackErr != nil {
 				reloadErr = fmt.Errorf("%w (rollback failed: %v)", reloadErr, rollbackErr)
 			}
 		}
@@ -497,7 +497,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyT
 	if !templateAcceptedByReloadReport(reloadReport, installResult.KeyType, templateType) {
 		err := fmt.Errorf("template %s was enabled but did not activate on reload", installResult.KeyType)
 		if !installResult.AlreadyExists {
-			if rollbackErr := keytypestate.SetState(s.Deps.KeyPaths(), ir.ID(), installResult.KeyType, keytypestate.StateDisabled); rollbackErr != nil {
+			if rollbackErr := templatelibrary.RollbackTemplateStateChange(s.Deps.KeyPaths(), ir.ID(), installResult); rollbackErr != nil {
 				err = fmt.Errorf("%w (rollback failed: %v)", err, rollbackErr)
 			}
 		}
