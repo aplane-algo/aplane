@@ -39,7 +39,7 @@ type ReconcileReport struct {
 // Inspect classifies the generations directory without deleting anything:
 // the same validation and classification Reconcile applies, with
 // DiscardedStaging and DiscardedAttempts reporting what reconciliation
-// WOULD remove. Read-only callers (apstore generations list) use this;
+// WOULD remove. Read-only callers (apadmin generations list) use this;
 // everything else goes through Reconcile.
 func Inspect(paths storepaths.Paths, identityID string, referenced map[string]bool) (ReconcileReport, error) {
 	return reconcile(paths, identityID, referenced, false)

@@ -52,11 +52,11 @@ a key.
 |-------------|---------|-----------------|
 | **apshell** | Interactive shell, scripting runtime, plugin host, and MCP surface | UI + Shell App + Engine + Providers |
 | **aprekey** | External witness custody and bounded contract-admin rekey/unrekey orchestration, including separated ceremonies | Client orchestration + Bounded Admin + Witness Artifact |
-| **apadmin** | Signer admin TUI over IPC or SSH admin transport | UI (TUI) + admin protocol + Providers |
+| **apadmin** | Signer admin TUI and batch client over IPC or SSH, owning all general live administration | UI (TUI/CLI) + admin protocol + Providers |
 | **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes; local sentry nodes show admin plus daemon/status only | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
-| **apstore** | Keystore management client for local initialize, policy integrity, external backup verification, and rebuild rescue flows; endpoint export and live sentry-reference, backup, restore, template, key type, and passphrase operations use the admin protocol | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
+| **apstore** | Stopped-daemon keystore bootstrap, policy integrity, external backup verification, rebuild rescue, permission migration, and generation pruning | Providers (KeyGen) + Crypto + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
 | **aplocalnet** | LocalNet setup TUI/CLI for client (`apshell`) default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
 | **approbe** | Installer-facing liveness probe for signer IPC reachability before replacing local binaries | Installer helper + admin protocol probe |
@@ -163,7 +163,7 @@ aplane/
 │   ├── apadmin/                   # Admin TUI over IPC or SSH admin transport
 │   ├── apconsole/                 # Secure-machine console wrapper
 │   ├── apapprover/                # Approval-only IPC client
-│   ├── apstore/                   # Keystore management, local flows, IPC-admin flows
+│   ├── apstore/                   # Stopped-daemon bootstrap and rescue flows
 │   ├── appass/                    # Passphrase auto-unlock configuration TUI
 │   ├── aplocalnet/                # LocalNet setup TUI/CLI
 │   ├── compile_teal/              # Dev/build helper for TEAL bytecode generation

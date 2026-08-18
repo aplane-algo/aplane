@@ -88,9 +88,9 @@ earlier internal tags, including their stores, backup archives, or admin
 protocols. Initialize a fresh store and create new credential backups with this
 release.
 
-`apstore endpoint export` now reads endpoint defaults through authenticated
+`apadmin endpoint export` now reads endpoint defaults through authenticated
 admin IPC. The signer daemon must be running, and unattended scripts must
-provide the same admin authentication used by other daemon-backed `apstore`
+provide the same admin authentication used by other live `apadmin`
 operations.
 
 Pre-1.0 releases may intentionally make incompatible storage, archive, config,

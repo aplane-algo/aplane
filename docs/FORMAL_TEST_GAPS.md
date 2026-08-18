@@ -99,7 +99,7 @@ Admin protocol 4.4 added a second pre-auth message. `auth_only`
 (`internal/signerapp/adminserver/session.go` `AuthenticateOutcome`,
 `internal/transport/protocol_flow.go` `authenticateOnly`) verifies the
 passphrase and binds the session runtime but never authorizes or invokes
-`identity.unlock`; `apstore`'s read-only sentry, generation-inventory, and
+`identity.unlock`; `apadmin`'s read-only sentry, generation-inventory, and
 endpoint-settings reads use it. `session_ownership.tla`'s `AuthSucceed`
 couples authentication to `unlocked' = TRUE`, so it now models the `auth`
 message only.
@@ -119,7 +119,8 @@ meaning.
 The related non-blocking `identity_busy` result
 (`daemon/server.go` `tryWithIdentityInspection`) is a plain `TryLock` on the
 existing store-mutation lock with client-side retry in
-`cmd/apstore/inspection_retry.go`. A failed acquire never becomes in-flight
+`internal/apadminapp/catalog.go` (`requestInspectionWithRetry`). A failed
+acquire never becomes in-flight
 work, so it adds no actor and no new fairness obligation.
 
 Otherwise, no actionable formal test gaps remain. Per-invariant status lives

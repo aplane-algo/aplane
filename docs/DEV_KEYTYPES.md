@@ -212,7 +212,7 @@ The default-enabled `ed25519`, `falcon1024`, and `aplane.falcon1024.v1` provider
 user-entered mnemonic import without identity-local activation; the
 library-visible `aplane.ed25519.v1` provider allows mnemonic import after it is
 enabled for the identity. YAML templates and the other library-visible compiled
-providers do not allow user-entered mnemonic import. `apstore restore` creates
+providers do not allow user-entered mnemonic import. `apadmin restore` creates
 or enables this state record idempotently when restoring a key for a
 library-visible compiled provider.
 
@@ -254,12 +254,12 @@ Bundled YAML templates, if installed:
 
 | Library key type | Behavior category | Install command | Runtime storage |
 |---|---|---|---|
-| `aplane.htlc.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.htlc.v1.yaml` | `identities/<identity>/keytypes/aplane.htlc.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
-| `aplane.falcon1024-allowlist-alock.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-allowlist-alock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist-alock.v1.{json,template}` |
-| `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
-| `aplane.corridor.v1` | Bounded1 composed DSA template with sentry-gated spend | `apstore template import library/templates/aplane.corridor.v1.yaml` | `identities/<identity>/keytypes/aplane.corridor.v1.{json,template}` |
+| `aplane.htlc.v1` | Generic LogicSig template | `apadmin template import library/templates/aplane.htlc.v1.yaml` | `identities/<identity>/keytypes/aplane.htlc.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
+| `aplane.falcon1024-allowlist-alock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist-alock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist-alock.v1.{json,template}` |
+| `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-timelock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
+| `aplane.corridor.v1` | Bounded1 composed DSA template with sentry-gated spend | `apadmin template import library/templates/aplane.corridor.v1.yaml` | `identities/<identity>/keytypes/aplane.corridor.v1.{json,template}` |
 
 These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed into
@@ -353,7 +353,7 @@ Characteristics:
 - key stores compiled bytecode plus creation params
 
 Typical code areas:
-- `library/templates/*.yaml`, installed with `apstore template import`, or
+- `library/templates/*.yaml`, installed with `apadmin template import`, or
 - `lsig/<template>/template.go` only for a true product built-in
 
 Reference implementation: `library/templates/aplane.htlc.v1.yaml`.
@@ -452,7 +452,7 @@ runtime args.
 
 Files in the top-level `library/templates/` directory are install sources, not
 active key types by presence alone. Installing one of these YAML entries through
-new signer-store initialization, `apstore template import`, or the
+new signer-store initialization, `apadmin template import`, or the
 authenticated KeyType Library flow writes an encrypted `.template` file and
 adjacent enabled state record under the target identity's `keytypes/`
 directory. Enabled installed templates are registered on that identity's

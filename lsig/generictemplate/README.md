@@ -1,13 +1,13 @@
 # Generic Template LogicSig Provider
 
 A declarative YAML-based system for defining generic LogicSig templates. In the
-default build, templates are imported into an identity keystore with `apstore`
+default build, templates are imported into an identity keystore through `apadmin`
 and registered after unlock/reload.
 
 ## Quick Start
 
 1. Create a YAML file in `library/templates/` or another path.
-2. Run `apstore template import <yaml-file>`.
+2. Run `apadmin template import <yaml-file>`.
 3. Unlock or reload `apsigner`; the template appears in the TUI key type selection.
 
 ## YAML Schema (v2)
@@ -152,4 +152,4 @@ teal: |
   return
 ```
 
-Then install: `apstore template import library/templates/mytemplate-v1.yaml`
+Then install: `apadmin template import library/templates/mytemplate-v1.yaml`

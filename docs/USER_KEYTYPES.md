@@ -45,8 +45,8 @@ APlane has two optional key type paths:
 
 | Kind | Example | Where definition lives | How to enable |
 |---|---|---|---|
-| Compiled provider | `aplane.ed25519.v1` | Go code in the current binary | `apstore keytype enable` or apadmin KeyType Library |
-| YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apstore template import` or apadmin KeyType Library |
+| Compiled provider | `aplane.ed25519.v1` | Go code in the current binary | `apadmin keytype enable` or apadmin KeyType Library |
+| YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apadmin template import` or apadmin KeyType Library |
 
 Default-enabled compiled providers, such as `ed25519`, `falcon1024`, and
 `aplane.falcon1024.v1`, are available without extra steps on signer nodes.
@@ -76,7 +76,7 @@ does not mean the key has stopped working; it means the original creation
 template should be reviewed before relying on provenance or creating more keys
 of that type.
 
-The apadmin KeyType Library and `apstore keytype` CLI use `Enable` and
+The apadmin KeyType Library and `apadmin keytype` CLI use `Enable` and
 `Disable` for both compiled providers and installed YAML templates. Internally,
 compiled providers write or remove an identity enablement record, while YAML
 templates keep their encrypted `.template` file installed and toggle the
@@ -88,13 +88,13 @@ details.
 Use `-d <path>` or `APSIGNER_DATA` to select the signer data directory:
 
 ```bash
-apstore -d $APSIGNER_DATA template list
-apstore -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
-apstore -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
-apstore -d $APSIGNER_DATA template import library/templates/aplane.falcon1024-allowlist.v1.yaml
-apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
-apstore -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
-apstore -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
+apadmin -d $APSIGNER_DATA template list
+apadmin -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
+apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
+apadmin -d $APSIGNER_DATA template import library/templates/aplane.falcon1024-allowlist.v1.yaml
+apadmin -d $APSIGNER_DATA template remove example.my_escrow.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
+apadmin -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -143,7 +143,7 @@ enablement.
 Enable a library-visible compiled provider:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
 ```
 
 Another library-visible compiled provider is the guarded account key type
@@ -151,7 +151,7 @@ Another library-visible compiled provider is the guarded account key type
 library instead:
 
 ```bash
-apstore -d $APSIGNER_DATA template import library/templates/aplane.corridor.v1.yaml
+apadmin -d $APSIGNER_DATA template import library/templates/aplane.corridor.v1.yaml
 ```
 
 `aplane.ed25519.v1` is the LogicSig-wrapped Ed25519 provider; native
@@ -179,7 +179,7 @@ with:
 Disable a library-visible compiled provider:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
+apadmin -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
 ```
 
 Disabling removes the identity enablement record after checking that no
@@ -250,7 +250,7 @@ library/templates/*.yaml
 Import a YAML template:
 
 ```bash
-apstore -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
+apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
 ```
 
 Import encrypts the YAML into the identity's keystore and enables the key type
@@ -274,13 +274,13 @@ metadata even when its template is not installed.
 List installed templates:
 
 ```bash
-apstore -d $APSIGNER_DATA template list
+apadmin -d $APSIGNER_DATA template list
 ```
 
 Show installed template YAML:
 
 ```bash
-apstore -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
+apadmin -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
 ```
 
 The explicit flag is required because template source can contain sensitive
@@ -289,7 +289,7 @@ policy material.
 Remove an installed template:
 
 ```bash
-apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
+apadmin -d $APSIGNER_DATA template remove example.my_escrow.v1
 ```
 
 Removal is allowed only when no identity keys use that key type, and it
@@ -300,8 +300,8 @@ templates. Disabling keeps the encrypted `.template` file installed but hides
 the key type from discovery and generation. Like removal, disable is rejected
 when keys of that type exist.
 
-`apstore keytype enable <key-type>` and
-`apstore keytype disable <key-type>` use the same enable/disable vocabulary for
+`apadmin keytype enable <key-type>` and
+`apadmin keytype disable <key-type>` use the same enable/disable vocabulary for
 installed YAML templates as they do for compiled providers. The implementation
 handles the storage difference behind the scenes.
 
@@ -322,7 +322,7 @@ On unlock or reload, `apsigner`:
 The state records are what `apsigner` trusts. A stray encrypted `.template`
 file without a matching state record is ignored on purpose.
 
-After successful template or key type changes through `apstore` or `apadmin`,
+After successful template or key type changes through `apadmin`,
 the daemon reloads the identity runtime.
 
 ## Warnings And Recovery
@@ -345,7 +345,7 @@ fingerprint is treated as benign (re-pinned), not a conflict.
 Refresh the enablement record:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
 ```
 
 This updates the state-record fingerprint. It does not rewrite existing key
@@ -360,7 +360,7 @@ different-version stored fingerprint is treated as benign, not an external edit.
 Recovery is to reinstall through the supported import path:
 
 ```bash
-apstore -d $APSIGNER_DATA template import path/to/template.yaml
+apadmin -d $APSIGNER_DATA template import path/to/template.yaml
 ```
 
 Do not edit installed `.template` files in place.
@@ -368,7 +368,7 @@ Do not edit installed `.template` files in place.
 ### State record without template file
 
 Reload reports this as an orphaned installed template. Reinstall the template
-through `apstore template import` or remove the broken state record through the
+through `apadmin template import` or remove the broken state record through the
 supported template management flow.
 
 ## Compatibility Rules

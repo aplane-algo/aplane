@@ -1079,8 +1079,8 @@ Additional client-state notes:
 - endpoint records carry connection profile fields together: required `role` (`signer` or `sentry`), `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, and `token_file`. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. A registry may contain at most 12 sentry endpoints.
 - endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
 - sentry keys are not persisted in endpoint records. Each guarded or bounded-sentry operation queries authenticated `/keys` on the configured sentry endpoints and builds an operation-scoped route snapshot. Discovery has a 30-second total deadline, a 10-second per-endpoint deadline, at most four workers, and deterministic endpoint-prefix selection once every required key has exactly one route.
-- signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apstore endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`. The daemon projects it and the configured endpoint ports through authenticated admin settings; the client does not traverse the private store.
-- `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin IPC. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes the daemon-reported `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
+- signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apadmin endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`. The daemon projects it and the configured endpoint ports through authenticated admin settings; the client does not traverse the private store.
+- `apadmin endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin transport. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes the daemon-reported `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
 - `apshell endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]` manually creates or replaces a `role: sentry` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--sentryport` is stored as the endpoint `signer_port` REST port used behind SSH sentry endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover sentry keys, copy tokens, or establish SSH host trust.
 - `apshell endpoints discover-sentries` is a read-only diagnostic. It scans configured `sentry` endpoints with authenticated `/keys`, validates each advertised Witness Key ID, and prints the live results without mutating `endpoints.yaml` or the signer reference catalog. Temporarily unavailable or locked endpoints are reported and skipped; authentication failures, endpoint configuration errors, malformed responses, duplicate public keys, and SSH host-key mismatches fail closed.
@@ -1253,7 +1253,7 @@ Removal helpers distinguish disabling from removal. Disabling a compiled provide
 state record and does not unregister process-global provider code. Disabling a YAML template leaves the
 encrypted `.template` installed and sets the identity state record to disabled. Removing an encrypted YAML template
 moves the `.template` source to the identity-local deleted key type archive and deletes the state record; this
-removal is exposed through authenticated local IPC as `apstore template remove`.
+removal is exposed through authenticated admin transport as `apadmin template remove`.
 Disabling or removing an installed YAML template requires that no stored identity
 key depends on that `key_type`; compiled-provider disable has the same
 unused-key guard because it removes the identity's compiled-provider opt-in. The
@@ -1571,7 +1571,7 @@ outgoing generation as `parent_id` and records the content source separately
 as `rollback_source_generation_id`. The superseded baseline is removed
 durably only after the `CURRENT` flip.
 
-`apstore changepass` invokes the durable transition under the identity
+`apadmin changepass` invokes the durable transition under the identity
 mutation lock. It first fences signing and clears the published runtime; only
 verified completion plus reload may republish it, and a racing explicit lock
 wins. Unlock and recovery entrypoints refuse to load or publish authority
@@ -1983,7 +1983,7 @@ while still listing keys that scanned successfully.
 
 #### Sentry Public Key Export Envelope
 
-`apstore sentry export <witness-key-id> [output-json]` emits a public-only JSON
+`apadmin sentry export <witness-key-id> [output-json]` emits a public-only JSON
 envelope for a sentry key. The command reads the
 `keys/<witness-key-id>.wit.json` sidecar, verifies that `<witness-key-id>`
 equals the canonical Witness Key ID derived from the public key, and never reads
@@ -2016,7 +2016,7 @@ trust claim.
 
 #### Sentry Public Key Reference Library
 
-`apstore sentry import <export-json> <name>` imports an
+`apadmin sentry import <export-json> <name>` imports an
 `aplane.witness-key-public.v1` envelope into the target identity's public
 sentry reference library:
 
@@ -2923,7 +2923,7 @@ backup contract and no migration from earlier internal tags is provided.
 
 ### Import and inspection
 
-`apstore backup import` asks the daemon to validate an external tar archive
+`apadmin backup import` asks the daemon to validate an external tar archive
 deeply before publishing it under `backups/<identity>/`. The commit request
 carries the sensitive export passphrase; the daemon authenticates the archive
 inventory and validates every credential payload, then zeros the passphrase
@@ -2947,7 +2947,7 @@ daemon returns committed success with an operator-visible durability warning;
 it must not report an ordinary retryable failure after the destination name is
 already live.
 
-`preview_restore` and `apstore restore preview` authenticate the archive
+`preview_restore` and `apadmin restore preview` authenticate the archive
 before revealing addresses or key types. Preview reports credential identity,
 destination presence, and validation errors; it performs no store mutation.
 Wrong-passphrase and unauthenticated failures share the restore rate limiter.

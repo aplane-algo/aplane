@@ -82,6 +82,8 @@ they do not call the storage packages directly.
 | `apstore policy sign` | Offline mutation for a signer that cannot load policy |
 | `apadmin policy rescue` production apply/edit | Offline policy repair for a stopped daemon |
 | `apstore generations prune` | Offline mutation pending a separately authorized live-prune design |
+| `apstore permissions` | Offline bootstrap, audit, and ownership migration |
+| `apstore keys list` | Offline credential inventory for recovery diagnostics |
 | `appass` | Offline root/service-owner mutation of startup credentials and `unlock.yaml` |
 
 Offline mutations require a stopped daemon, exclusive store lock, no-follow
@@ -102,13 +104,16 @@ operator-owned state outside `APSIGNER_DATA`.
 
 ### Operator clients
 
-The multi-UID clients `apadmin`, `apapprover`, `approbe`, systemd-attach
-`apconsole`, and daemon-backed `apstore` resolve the public
-runtime socket without reading signer configuration. Policy editing,
-sentry-reference administration, generation listing, and managed backup
-transfer use typed admin operations. Operator-selected exports are written to
-operator-owned locations. Same-UID child `apconsole` retains direct config and
-node-role access as an explicit local-mode exception.
+The multi-UID clients `apadmin`, `apapprover`, `approbe`, and systemd-attach
+`apconsole` resolve the public runtime socket without reading signer
+configuration. `apadmin` owns every general running-daemon administration
+workflow: policy editing, template and key-type administration, sentry-reference
+administration, endpoint export, generation listing, managed backup transfer,
+restore, and passphrase rotation. Those workflows use typed admin operations;
+operator-selected exports are written to operator-owned locations. `apstore`
+does not open the admin transport or construct live admin requests. Same-UID
+child `apconsole` retains direct config and node-role access as an explicit
+local-mode exception.
 
 Config-free fallback from an unreadable data root to the singleton
 `/run/apsigner/aplane.sock` is restricted to the conventional

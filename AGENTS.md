@@ -33,14 +33,13 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `cmd/apshell/`: Interactive shell, scripting environment, plugin host, and MCP surface
 - `cmd/aprekey/`: External witness generation and bounded contract-admin rekey/unrekey ceremonies
 - `cmd/apsigner/`: Thin signing-daemon entrypoint for flags and provider registration; `internal/signerapp/daemon` owns the HTTP/IPC/SSH runtime
-- `cmd/apadmin/`: TUI and batch admin client over IPC or SSH, including live
-  policy administration and explicit offline policy rescue workflows
+- `cmd/apadmin/`: TUI and batch admin client over IPC or SSH; owns all general
+  live administration plus explicit offline policy rescue workflows
 - `cmd/apconsole/`: Secure-machine console wrapper for apshell/apadmin/apsigner panes
 - `cmd/apapprover/`: Approval-only admin client over IPC
-- `cmd/apstore/`: Local initialize/policy/verify/rebuild operations and
-  admin-protocol clients for daemon-owned backup, restore, changepass,
-  template, key type, sentry-reference, generation-list, and backup-transfer
-  operations; also owns offline permission audit/migration
+- `cmd/apstore/`: Stopped-daemon initialize/policy/verify/rebuild operations,
+  offline generation pruning and key inventory, and permission audit/migration;
+  it has no live admin transport
 - `cmd/appass/`: Passphrase auto-unlock setup TUI
 - `cmd/appass-file/`: Dev-only plaintext passphrase helper (insecure)
 - `cmd/appass-systemd-creds/`: Production passphrase helper using systemd-creds (TPM2/host key)
@@ -102,7 +101,7 @@ make all              # Build everything
 make apshell           # Build apshell
 make apsigner         # Build signing server
 make apadmin       # Build admin TUI
-make apstore       # Build backup/restore tool
+make apstore       # Build offline bootstrap/rescue tool
 ```
 
 ### Cross-Compilation (ARM64)

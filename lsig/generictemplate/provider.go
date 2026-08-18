@@ -7,7 +7,7 @@
 //
 // To add a template for a user:
 // 1. Create a YAML file in the top-level library/templates/ directory or another path.
-// 2. Install it with apstore template import.
+// 2. Install it with apadmin template import.
 // 3. Unlock or reload apsigner so the keystore template is registered.
 //
 // The YAML schema supports:

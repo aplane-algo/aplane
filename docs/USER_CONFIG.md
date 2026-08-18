@@ -210,13 +210,13 @@ rewrite client config or synthesize endpoint records from `config.yaml`.
 For endpoint aliases, the preferred handoff is for the signer operator to
 export a public endpoint envelope and for the client to import it:
 
-`apstore endpoint export` connects to the running daemon through authenticated
-admin IPC. It reads the configured endpoint defaults without requiring direct
+`apadmin endpoint export` connects to the running daemon through authenticated
+admin transport. It reads the configured endpoint defaults without requiring direct
 access to the private signer store and writes `--out` as the invoking operator.
 
 ```bash
 # signer side
-apstore -d "$APSIGNER_DATA" endpoint export \
+apadmin -d "$APSIGNER_DATA" endpoint export \
   --host signer.example.com \
   --out signer.endpoint.json
 
@@ -240,12 +240,12 @@ endpoints discover-sentries
 
 Discovery is a read-only connectivity diagnostic. To make the sentry key
 available when generating guarded accounts, export it on the sentry node with
-`apstore sentry export` and explicitly import it on the signer node with
-`apstore sentry import`. Signing operations resolve the matching endpoint from
+`apadmin sentry export` and explicitly import it on the signer node with
+`apadmin sentry import`. Signing operations resolve the matching endpoint from
 live authenticated `/keys` responses.
 
 If the signer operator sets a client-reachable advertised URL in
-`$APSIGNER_DATA/config.yaml`, `apstore endpoint export` can omit `--host`:
+`$APSIGNER_DATA/config.yaml`, `apadmin endpoint export` can omit `--host`:
 
 ```yaml
 endpoint:

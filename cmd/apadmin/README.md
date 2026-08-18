@@ -14,7 +14,8 @@ APSigner is the primary interactive surface for:
 
 Adjacent tools:
 - `appass` manages passphrase auto-unlock configuration offline
-- `apstore` handles offline keystore init, backup, restore, verify, and template management
+- `apstore` handles stopped-daemon bootstrap, rescue, verification, permission
+  migration, and generation pruning
 - `apapprover` is the minimal approval-only CLI
 
 ## Architecture
@@ -47,7 +48,7 @@ Remote SSH admin mode:
 ./apadmin --remote --client-data /path/to/apclient
 ```
 
-Policy batch and standalone editor commands:
+Batch commands use the same local IPC or remote SSH transport as the TUI:
 
 ```bash
 ./apadmin policy edit
@@ -55,6 +56,16 @@ Policy batch and standalone editor commands:
 ./apadmin policy export > policy.yaml
 ./apadmin policy apply - < policy.yaml
 ./apadmin -d /path/to/signer-data policy rescue edit
+./apadmin backup create all
+./apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
+./apadmin restore preview aplane-backup-YYYYMMDD-HHMMSS.tar.gz
+./apadmin restore apply aplane-backup-YYYYMMDD-HHMMSS.tar.gz
+./apadmin changepass
+./apadmin template list
+./apadmin keytype enable aplane.falcon1024-sentry1024.v1
+./apadmin sentry list
+./apadmin endpoint export --out endpoint.json
+./apadmin generations list
 ```
 
 Online policy commands use the same local IPC or `--remote` SSH transport as
@@ -136,19 +147,18 @@ endpoints:
 
 ## Backup and Restore
 
-For local managed backup, restore, export, and verification operations, use the
-standalone `apstore` CLI tool on the signer host:
+For live managed backup and restore operations, use `apadmin` locally or with
+`--remote`:
 
 ```bash
-./apstore -d /path/to/signer-data backup create all
-./apstore -d /path/to/signer-data backup list
-./apstore -d /path/to/signer-data backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
-./apstore -d /path/to/signer-data backup import /mnt/usb/aplane-backup.tar.gz
-./apstore -d /path/to/signer-data restore preview aplane-backup.tar.gz
-./apstore -d /path/to/signer-data restore apply aplane-backup.tar.gz
-./apstore -d /path/to/signer-data restore rollback
-./apstore -d /path/to/signer-data restore reconcile
-./apstore -d /path/to/signer-data verify /mnt/usb/aplane-backup.tar.gz
+./apadmin -d /path/to/signer-data backup create all
+./apadmin -d /path/to/signer-data backup list
+./apadmin -d /path/to/signer-data backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
+./apadmin -d /path/to/signer-data backup import /mnt/usb/aplane-backup.tar.gz
+./apadmin -d /path/to/signer-data restore preview aplane-backup.tar.gz
+./apadmin -d /path/to/signer-data restore apply aplane-backup.tar.gz
+./apadmin -d /path/to/signer-data restore rollback
+./apadmin -d /path/to/signer-data restore reconcile
 ```
 
 For a live signer-managed backup, unlock the signer, open the admin/settings
@@ -166,15 +176,16 @@ authenticated and validated before one generation commits the credentials;
 there is no recovered-batch or source-policy review step. Restored credentials
 use the destination's current policy and configuration.
 
-`apadmin` does not verify backups or restore arbitrary external paths. Use
-`apstore` for verification, direct restore/rollback/reconciliation, and the
-separate absent-store `rebuild` rescue path.
+`apadmin` imports external archives into the daemon-owned backup locker before
+restoring them. It does not perform offline recovery. With the daemon stopped,
+use `apstore verify` to inspect an external archive or `apstore rebuild` to
+recover an absent identity store.
 
-See `apstore --help` for more options.
+See `docs/USER_STORE_MGMT.md` for the complete live and offline command split.
 
 ## See Also
 
 - `docs/USER_INSTALL.md` for local and systemd install flows
 - `docs/USER_CONFIG.md` for client and signer configuration formats
 - `appass` for auto-unlock configuration
-- `apstore` for offline keystore and template management
+- `apstore` for offline bootstrap, verification, and rescue

@@ -39,7 +39,7 @@ deploy apps from TEAL source or compiled AVM bytecode, execute grouped flows suc
 | **apsigner** | Signing daemon with HTTP API, admin protocol, and SSH tunnel server |
 | **apadmin** | TUI and batch admin client over IPC or SSH, with explicit offline policy rescue |
 | **apapprover** | Optional approval-only admin client over IPC or SSH admin transport |
-| **apstore** | Keystore management (init, backup, restore, passphrase management) |
+| **apstore** | Stopped-daemon keystore bootstrap, verification, and rescue |
 | **appass** | Passphrase auto-unlock setup TUI |
 
 ### SDKs

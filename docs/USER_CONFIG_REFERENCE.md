@@ -46,7 +46,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 |-------|------|---------|-------------|
 | `schema_version` | int | `1` | Signer config schema version |
 | `endpoint` | object | default endpoint settings | Signer endpoint exposure settings |
-| `endpoint.advertise_url` | string | `(none)` | Client-reachable public endpoint URL used by apstore endpoint export when --host/--url are omitted |
+| `endpoint.advertise_url` | string | `(none)` | Client-reachable public endpoint URL used by apadmin endpoint export when --host/--url are omitted |
 | `endpoint.signer_port` | int | `11270` | Loopback REST API port behind the endpoint |
 | `endpoint.ssh` | object | default SSH settings | SSH tunnel settings for apsigner endpoint access |
 | `endpoint.ssh.listen_address` | string | `127.0.0.1` | SSH listen address to bind |

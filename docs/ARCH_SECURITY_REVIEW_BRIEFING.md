@@ -180,8 +180,8 @@ archive -> validate credentials -> atomic generation -> reload
 
 Credentials do not enter the runtime index until the generation commit and
 successful reload. Reload failure rolls the pointer back to the sealed parent;
-uncertain durability enters recovery mode. Both interactive clients and
-`apstore` use the same server operation. Restore intent/outcome and rollback
+uncertain durability enters recovery mode. The apadmin TUI and batch client use
+the same server operation. Restore intent/outcome and rollback
 carry structured audit events with identity, principal, session, transport,
 operation ID, archive SHA-256, and generation ID.
 

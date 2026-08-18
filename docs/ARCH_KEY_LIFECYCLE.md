@@ -74,7 +74,7 @@ This separation is deliberate:
 | Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; template YAML is not included. |
 
 Witness public sidecars are derived public metadata, not independent signing
-authority. They exist so `apstore sentry export` can work without
+authority. They exist so `apadmin sentry export` can work without
 decrypting private key material. Backup payloads do not need to carry the
 sidecar as a separate authority; restore flows that write sentry keys must
 regenerate the sidecar from the restored sentry key payload.
@@ -163,9 +163,9 @@ subject to the node role gate above.
 | Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
 | Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Examples include native `ed25519`, native `falcon1024`, and LogicSig `aplane.falcon1024.v1`. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
 | Default-enabled sentry key type | Raw sentry-key generator/signing support is registered and cataloged as default-enabled. The current type is `aplane.witness-falcon1024.v1`. | Yes on sentry nodes. | Component-signing only on sentry nodes; never normal spending `/sign`. | None. |
-| Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apstore keytype enable`. |
+| Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apadmin keytype enable`. |
 | Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by node role. | Yes, if the key file is valid and allowed by node role. | Disable, if no stored key uses it. |
-| Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apstore keytype enable <key_type>`. |
+| Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apadmin keytype enable <key_type>`. |
 | Signer library YAML only | Plaintext YAML exists under `library/templates/`; no identity install exists. | No. | No effect on existing keys. | Install/import template into identity. |
 | YAML installed and enabled | Encrypted `.template` exists and state record has `source:"yaml_generic"` or `source:"yaml_composed"` plus `state:"enabled"`. | Yes after successful reload, when allowed by node role. | Existing keys sign from stored key metadata, not the template, when allowed by node role. | Disable or remove, if no stored key uses it. |
 | YAML installed and disabled | Encrypted `.template` exists and state record has `state:"disabled"`. | No. | Existing keys sign from stored key metadata, not the template, when allowed by node role. | Enable, remove, or explicit template restore may re-enable. |
@@ -310,10 +310,10 @@ is not published as valid runtime inventory.
 |---|---|---|---|
 | Initialize node role | Writes root `node.yaml`; each initialized identity writes a matching HMAC sidecar when its term key is available. | None. | Default role is `signer`; sentry role is explicit at initialization. |
 | Verify node role integrity | None. | None. | Required before unlock-dependent key scan, signing, generation, key/store/template/mnemonic import, restore, or sentry component signing. Client endpoint import is routing state and is outside this key lifecycle. |
-| `apstore keytype enable` | Writes/refreshes compiled enabled state, or enables an installed YAML template. | None. | Does not rewrite existing keys. |
-| `apstore keytype disable` | Deletes compiled state or disables an installed YAML template after the unused-key guard. | None. | Provider code and installed template files remain available to the store. |
-| `apstore template import` | Installs encrypted template and enabled state. | None. | Active after reload. |
-| `apstore template remove` | Deletes state and archives `.template` after unused-key guard. | None. | Removed template leaves active scans. |
+| `apadmin keytype enable` | Writes/refreshes compiled enabled state, or enables an installed YAML template. | None. | Does not rewrite existing keys. |
+| `apadmin keytype disable` | Deletes compiled state or disables an installed YAML template after the unused-key guard. | None. | Provider code and installed template files remain available to the store. |
+| `apadmin template import` | Installs encrypted template and enabled state. | None. | Active after reload. |
+| `apadmin template remove` | Deletes state and archives `.template` after unused-key guard. | None. | Removed template leaves active scans. |
 | Key generation | Requires discoverable/generatable key type allowed by node role. | Writes new encrypted key. | LogicSig key stores signing authority at creation time. |
 | Key deletion | None. | Archives active key file. | Archived keys are not signable. |
 | Backup create | Records source node role metadata in the managed archive manifest. | Reads selected active key files into encrypted backup payloads. | Source store unchanged. |
