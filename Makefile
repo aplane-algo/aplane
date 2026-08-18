@@ -282,8 +282,8 @@ bin-windows-amd64: compile-teal compile-docassets
 clean:
 	find bin -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
 	rm -rf internal/docassets/generated
-	rm -f apshell aprekey apbounded-admin apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe migrate-config-v1 applugin-checksum
-	rm -f apshell-arm64 aprekey-arm64 apbounded-admin-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apapprover-arm64 apstore-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 migrate-config-v1-arm64 applugin-checksum-arm64
+	rm -f apshell aprekey apbounded-admin appolicy apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe migrate-config-v1 applugin-checksum
+	rm -f apshell-arm64 aprekey-arm64 apbounded-admin-arm64 appolicy-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apapprover-arm64 apstore-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 migrate-config-v1-arm64 applugin-checksum-arm64
 
 # Local release dry-run (builds archives without publishing)
 # On macOS: also builds darwin archives. On Linux: linux only.

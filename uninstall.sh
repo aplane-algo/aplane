@@ -767,7 +767,7 @@ else
 fi
 
 # Remove binaries
-for binary in apsigner apshell apconsole apadmin apapprover apstore appass appass-file appass-systemd-creds approbe applugin-checksum; do
+for binary in apsigner apshell apconsole apadmin apapprover apstore appolicy appass appass-file appass-systemd-creds approbe applugin-checksum; do
     binary_path="$BINDIR/$binary"
     if [ -e "$binary_path" ]; then
         rm -f "$binary_path"
