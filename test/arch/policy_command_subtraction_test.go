@@ -29,8 +29,6 @@ func TestRetiredAppolicyArtifactDoesNotReturn(t *testing.T) {
 		"AGENTS.md",
 		filepath.Join("cmd", "apadmin", "README.md"),
 		"bootstrap-install.sh",
-		"install.sh",
-		"uninstall.sh",
 	} {
 		assertFileExcludesRetiredAppolicy(t, root, relative)
 	}
@@ -46,14 +44,46 @@ func TestRetiredAppolicyArtifactDoesNotReturn(t *testing.T) {
 	assertProductionSourceExcludesRetiredAppolicy(t, root)
 }
 
-func TestRetiredAppolicyPassphraseCannotBecomeCredentialSource(t *testing.T) {
-	path := filepath.Join("..", "..", "internal", "signerapp", "policycmd", "passphrase.go")
-	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+func TestRetiredAppolicyIsRemovedDuringUpgradeAndUninstall(t *testing.T) {
+	root := filepath.Join("..", "..")
+	installer, err := os.ReadFile(filepath.Join(root, "install.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, function := range retiredCredentialReaders(parsed) {
-		t.Errorf("%s reads the retired APPOLICY_PASSPHRASE source", function)
+	for _, path := range []string{`"$CLIENT_BINDIR/appolicy"`, `"$SIGNER_BINDIR/appolicy"`} {
+		if !strings.Contains(string(installer), path) {
+			t.Errorf("install.sh does not remove retired upgrade artifact %s", path)
+		}
+	}
+
+	uninstaller, err := os.ReadFile(filepath.Join(root, "uninstall.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retiredRemoval := regexp.MustCompile(`(?m)^\s*for binary in [^\n]*\bappolicy\b[^\n]*; do\s*$`)
+	if !retiredRemoval.Match(uninstaller) {
+		t.Error("uninstall.sh does not include appolicy in the signer-binary removal list")
+	}
+}
+
+func TestRetiredAppolicyPassphraseCannotBecomeCredentialSource(t *testing.T) {
+	path := filepath.Join("..", "..", "internal", "signerapp", "policycmd")
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		filename := filepath.Join(path, entry.Name())
+		parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, declaration := range retiredCredentialReaders(parsed) {
+			t.Errorf("%s:%s reads the retired APPOLICY_PASSPHRASE source", filepath.Base(filename), declaration)
+		}
 	}
 }
 
@@ -61,6 +91,7 @@ func TestRetiredCredentialDetectorCatchesIdentifierAndLiteral(t *testing.T) {
 	source := `package policycmd
 import "os"
 const retiredPassphraseEnv = "APPOLICY_PASSPHRASE"
+var packageRead = os.Getenv(retiredPassphraseEnv)
 func RejectRetiredEnvironment() { _ = os.Getenv("APPOLICY_PASSPHRASE") }
 func identifierRead() { _ = os.Getenv(retiredPassphraseEnv) }
 func literalRead() { _ = os.Getenv("APPOLICY_PASSPHRASE") }
@@ -69,7 +100,7 @@ func literalRead() { _ = os.Getenv("APPOLICY_PASSPHRASE") }
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]bool{"identifierRead": true, "literalRead": true}
+	want := map[string]bool{"package declaration": true, "identifierRead": true, "literalRead": true}
 	for _, function := range retiredCredentialReaders(parsed) {
 		if !want[function] {
 			t.Errorf("unexpected retired credential reader %q", function)
@@ -84,28 +115,54 @@ func literalRead() { _ = os.Getenv("APPOLICY_PASSPHRASE") }
 func retiredCredentialReaders(parsed *ast.File) []string {
 	var readers []string
 	for _, decl := range parsed.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Body == nil || fn.Name.Name == "RejectRetiredEnvironment" {
-			continue
-		}
-		found := false
-		ast.Inspect(fn.Body, func(node ast.Node) bool {
-			switch node := node.(type) {
-			case *ast.Ident:
-				found = found || node.Name == "retiredPassphraseEnv"
-			case *ast.BasicLit:
-				if node.Kind == token.STRING {
-					value, err := strconv.Unquote(node.Value)
-					found = found || err == nil && value == "APPOLICY_PASSPHRASE"
+		switch decl := decl.(type) {
+		case *ast.FuncDecl:
+			if decl.Body != nil && decl.Name.Name != "RejectRetiredEnvironment" && containsRetiredCredential(decl.Body) {
+				readers = append(readers, decl.Name.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range decl.Specs {
+				value, ok := spec.(*ast.ValueSpec)
+				if ok && definesRetiredCredentialConstant(decl, value) {
+					continue
+				}
+				if containsRetiredCredential(spec) {
+					readers = append(readers, "package declaration")
+					break
 				}
 			}
-			return true
-		})
-		if found {
-			readers = append(readers, fn.Name.Name)
 		}
 	}
 	return readers
+}
+
+func containsRetiredCredential(root ast.Node) bool {
+	found := false
+	ast.Inspect(root, func(node ast.Node) bool {
+		switch node := node.(type) {
+		case *ast.Ident:
+			found = found || node.Name == "retiredPassphraseEnv"
+		case *ast.BasicLit:
+			if node.Kind == token.STRING {
+				value, err := strconv.Unquote(node.Value)
+				found = found || err == nil && value == "APPOLICY_PASSPHRASE"
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+func definesRetiredCredentialConstant(decl *ast.GenDecl, value *ast.ValueSpec) bool {
+	if decl.Tok != token.CONST || len(value.Names) != 1 || value.Names[0].Name != "retiredPassphraseEnv" || len(value.Values) != 1 {
+		return false
+	}
+	literal, ok := value.Values[0].(*ast.BasicLit)
+	if !ok || literal.Kind != token.STRING {
+		return false
+	}
+	decoded, err := strconv.Unquote(literal.Value)
+	return err == nil && decoded == "APPOLICY_PASSPHRASE"
 }
 
 func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {

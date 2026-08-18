@@ -486,7 +486,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
 
     # Remove installed local binaries but keep signer configuration, identities,
     # token material, audit logs, client config, caches, plugins, and scripts.
-    for binary in apsigner apconsole apadmin apapprover apstore appass appass-file appass-systemd-creds approbe applugin-checksum; do
+    for binary in apsigner apconsole apadmin apapprover apstore appolicy appass appass-file appass-systemd-creds approbe applugin-checksum; do
         binary_path="$SIGNER_BINDIR/$binary"
         if [ -e "$binary_path" ]; then
             rm -f "$binary_path"

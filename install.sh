@@ -2152,6 +2152,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
     chmod 700 "$INSTALL_ROOT"
     rm -f "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/apbounded-admin"
+    rm -f "$CLIENT_BINDIR/appolicy" "$SIGNER_BINDIR/appolicy"
 
     # Copy binaries (apshell/aplocalnet → apclient/bin, everything else → apsigner/bin)
     echo "Installing binaries..."
