@@ -63,6 +63,20 @@ Transport notes:
 - generic clients observe some auth/displacement failures as formatted protocol errors rather than stable typed transport errors.
 - admin frames are bounded to 4 MiB before JSON decoding on both transports.
 
+## Implementation Boundary
+
+`internal/protocol` is the compatibility-bearing IPC/SSH wire contract. It
+owns protocol versions, message types and IDs, JSON field names, envelopes,
+framing primitives, sensitive wire values, and stable error codes.
+
+`internal/adminproto` is the transport-neutral service vocabulary used behind
+that boundary, plus the framed server connection abstraction. Its requests and
+results are internal domain values, not a second JSON schema. The authenticated
+session in `internal/signerapp/adminserver` explicitly adapts between the two.
+Domain services must not construct `protocol.BaseMessage` values or serialize
+their results directly: projections intentionally omit internal state, signer
+paths, and recovery material while retaining compatibility-only wire fields.
+
 ## Message Catalog
 
 Source: `internal/protocol/messages.go`. Unsupported client messages yield a generic `error` response.

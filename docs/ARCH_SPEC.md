@@ -711,7 +711,8 @@ admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
 | Sign request lifecycle, approval queues, cancellation (sign + token) | `internal/signerapp/approval` |
 | Planning, approval flow, execution, signing orchestration | `internal/signerapp/signing` |
 | Template registration, reload coordination | `internal/signerapp/templates` |
-| Admin protocol wire types and framing | `internal/adminproto` |
+| Admin protocol wire types, envelopes, and framing primitives | `internal/protocol` |
+| Admin service request/result vocabulary and framed server connections | `internal/adminproto` |
 | Admin session state, message dispatch, and handlers | `internal/signerapp/adminserver` |
 | Identity runtime, config, token, SSH enrollment, lifecycle | `internal/signerapp/identity` |
 | HTTP contract types (request/response DTOs) | `pkg/signerapi` with `internal/signerapi` aliases |
@@ -1871,8 +1872,10 @@ Strong existing seams:
 - `internal/appresult` for shared shell/MCP structured result and projection ownership
 - `internal/config` for configuration normalization
 - `internal/keystore` for storage/session separation
-- `internal/protocol` for IPC contract centralization
-- `internal/adminproto` for transport-neutral admin wire types and framing
+- `internal/protocol` for the compatibility-bearing IPC/SSH wire contract,
+  envelopes, and framing primitives
+- `internal/adminproto` for transport-neutral admin service requests/results
+  and framed server connections; these are not the external JSON message types
 - `internal/signerapp/adminserver` for server-side admin session state,
   dispatch, and handler ownership
 - `internal/lsigprovider` and provider registries for algorithm extensibility
