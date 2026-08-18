@@ -97,7 +97,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Policy sidecar | authoritative integrity metadata | `policy.yaml.hmac` JSON | HMAC verification result | `internal/policy`, `internal/signerapp/policycmd`, `cmd/apadmin`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
 | Key type state record | authoritative generation state | `keytypes/<key_type>.json` | enabled/disabled identity key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | encrypted `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Sealed under the identity's current term key and bound to its key type; disabled state skips registration. |
-| Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` | Explicitly imported public metadata only; not endpoint ownership proof. |
+| Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `internal/apadminapp` | Explicitly imported public metadata only; not endpoint ownership proof. |
 
 ## Key Material And Key Metadata
 
@@ -113,7 +113,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Sentry witness key | component-sign authority | `.sen` category `witness`, key type `aplane.witness-*` | raw sentry-role witness key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | Selected by Witness Key ID; `/sign` rejects; sentry-role `/sign/component` only; not a spending account. |
 | External contract-admin witness bundle | secret standalone custody | `<WITNESS_KEY_ID>.wit` schema `aplane.witness-key-bundle.v1` | `aprekey` generate/inspect/verify/sign | `internal/witness/artifact`, `cmd/aprekey` | Never a signer-managed `.key`/`.sen`; signer/`apstore` must not import, decrypt, back up, or restore private material. |
 | Witness Key ID | public selector | 52-character uppercase base32 SHA-512/256 of canonical length-prefixed domain, key type, and public key bytes | sentry key row `address`, public reference `witness_key_id`, and role-specific `component_key` fields | `internal/witness` | Txid-shaped but not a valid Algorand address; rejected where an Algorand address is required. |
-| Sentry public metadata sidecar | public metadata | `keys/<witness_key_id>.wit.json` | `apstore sentry export` source | `internal/keys`, `internal/sentry/sentryrefs` | Witness Key ID/key type/public key consistency verified; no private material. |
+| Sentry public metadata sidecar | public metadata | `keys/<witness_key_id>.wit.json` | `apadmin sentry export` source | `internal/keys`, `internal/sentry/sentryrefs` | Witness Key ID/key type/public key consistency verified; no private material. |
 | Key creation parameters | provenance/generation input | key payload `parameters` | `/keys` `parameters`, key details | `internal/keys`, `internal/keymgmt` | Canonical payload parser rejects duplicate object members, unknown fields, and noncanonical aliases. |
 | LogicSig bytecode | signing authority | key payload `lsig_bytecode` | LogicSig address and signing assembly | `internal/keys`, `internal/signerapp/signing` | Bytecode must derive an off-curve address. |
 | Signing args | signing authority | key payload `signing_args` | `internal/signingargs.Info`, `/keys` `signing_args` | `internal/signingargs`, `internal/keys` | Per-key snapshot; distinct from `/keytypes` runtime args. |
@@ -277,8 +277,8 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Endpoint export envelope | public handoff | JSON `schema:"aplane.endpoint.v1"` | `apshell endpoints import` input | `cmd/apstore`, `internal/config`, `internal/apshellapp` | No alias, role, token, known hosts, private key, or sentry inventory; URL comes from `--url`, `--host`, or signer `endpoint.advertise_url`. |
-| Witness public reference | public handoff | JSON `schema:"aplane.witness-key-public.v1"` | manual sentry reference import or contract-admin enrollment | `internal/witness`, `cmd/apstore`, `internal/sentry/sentryrefs` | Contains `key_type`, `witness_key_id`, and full `public_key_hex`; no custody, role, endpoint, or trust claim. |
+| Endpoint export envelope | public handoff | JSON `schema:"aplane.endpoint.v1"` | `apshell endpoints import` input | `internal/apadminapp`, `internal/config`, `internal/apshellapp` | No alias, role, token, known hosts, private key, or sentry inventory; URL comes from `--url`, `--host`, or signer `endpoint.advertise_url`. |
+| Witness public reference | public handoff | JSON `schema:"aplane.witness-key-public.v1"` | manual sentry reference import or contract-admin enrollment | `internal/witness`, `internal/apadminapp`, `internal/sentry/sentryrefs` | Contains `key_type`, `witness_key_id`, and full `public_key_hex`; no custody, role, endpoint, or trust claim. |
 | Public sentry reference record | public signer catalog | JSON `schema:"aplane.sentry-public-key-ref.v2"` | generation select option | `internal/sentry/sentryrefs` | Stored under `sentries/`; populated by explicit operator import. A v1 read adapter preserves closed migration provenance. |
 | Bounded admin ceremony request | short-lived handoff | `*.apbounded-admin-request` schema `aplane.bounded-admin-request.v2` | offline `aprekey sign` input | `internal/boundedadmin/protocol`, `internal/apboundedadminapp`, `cmd/aprekey` | Strict JSON; size-bounded; request-hash binds partial, optional sentry authorization, and network context; mode `0600`, no overwrite. |
 | Bounded admin ceremony signature | short-lived handoff | `*.apbounded-admin-signature` schema `aplane.bounded-admin-signature.v1` | networked `aprekey complete` input | `internal/boundedadmin/protocol`, `internal/apboundedadminapp`, `cmd/aprekey` | Binds `request_hash_hex`, contract admin key ID, and signature; mode `0600`, no overwrite. |
@@ -344,7 +344,7 @@ name a test inline:
   `internal/signerapp/signing/component_test.go`,
   `internal/signerapp/rest/service_test.go`.
 - Sentry references and public metadata:
-  `internal/sentry/sentryrefs`, `cmd/apstore/sentry*.go`,
+  `internal/sentry/sentryrefs`, `internal/apadminapp/catalog.go`,
   related package tests.
 - Node role and key-class gates: signer startup, `internal/signerapp/identity`,
   `internal/signerapp/rest/service_test.go`,

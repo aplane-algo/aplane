@@ -31,28 +31,22 @@ The code's mechanism, modeled here exactly:
     session notified and closed (DisplaceSession) -- so there is no
     window where a confirmed displacement has removed the owner before
     the replacement holds the slot.
-  - The disconnect defer runs owner cleanup iff the session
+  - The disconnect defer runs owner cleanup iff the controlling session
     authenticated AND (it was the active client OR no active client
-    remains): ipc.go "authenticated && (wasActiveClient ||
+    remains): ipc.go "cleanupRuntime && (wasActiveClient ||
     !HasClient())". The second disjunct is the fix: a session
     that unlocked but never became owner still re-locks on its way out
     unless someone else took over.
 
 Scope note (`auth_only`, introduced in admin protocol 4.4 and retained in
-protocol 5): AuthSucceed models the `auth`
-message, which unlocks. The later `auth_only` message (session.go
-AuthenticateOutcome, transport authenticateOnly) verifies the passphrase and
-binds the session runtime WITHOUT authorizing or invoking identity.unlock, then
-returns the same AuthOutcomeAuthenticated and runs the identical ownership path
-(BindPreAuthPending, displacement offer, PromoteToActive) and the identical
-disconnect defer. The ownership machinery modeled here therefore covers it
-unchanged, and an "authenticate without unlock" action would differ from
-AuthSucceed only in leaving `unlocked` untouched. Such an action cannot violate
-SO1 (it changes no ownership step) nor SO2 (SO2's antecedent requires
-`unlocked`, which the action never sets, and the Exit cleanup that re-locks is
-unchanged). It is recorded as a model-extension candidate in
-FORMAL_TEST_GAPS.md rather than left implicit -- adding it would widen
-coverage, not repair a violation.
+protocol 5): AuthSucceed models the controlling `auth` message, which unlocks
+and enters the ownership lifecycle. The `auth_only` message verifies the
+passphrase and binds a server-enforced public-read observer without authorizing
+or invoking identity.unlock. It never enters the active-owner slot and cannot
+replace an owner or run owner disconnect cleanup. It therefore changes none of
+this model's ownership or lock-state variables; its lifecycle and dispatch
+allowlist are pinned by Go tests rather than represented as an AuthSucceed
+variant.
 
 Invariants:
   - SO1 : at most one session is the active owner.

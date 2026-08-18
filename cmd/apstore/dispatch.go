@@ -33,38 +33,11 @@ func dispatchApstoreCommand(args []string) {
 		}
 
 	case "generations":
-		if len(args) == 2 && args[1] == "list" {
-			if err := cmdGenerations(args[1:]); err != nil {
-				exitWithError(err)
-			}
-		} else {
-			if err := runStoreMutatingCommand(command, func() error {
-				return cmdGenerations(args[1:])
-			}); err != nil {
-				exitWithError(err)
-			}
+		if err := runStoreMutatingCommand(command, func() error {
+			return cmdGenerations(args[1:])
+		}); err != nil {
+			exitWithError(err)
 		}
-
-	case "backup":
-		if isManagedBackupCommand(args) {
-			if err := cmdBackupManaged(args[1:]); err != nil {
-				exitWithError(err)
-			}
-			return
-		}
-		logErrorf("usage: apstore backup <create|import|list|export|delete>")
-		os.Exit(apstoreExitUsage)
-
-	case "restore":
-		if isManagedRestoreCommand(args) {
-			if err := cmdRestoreManaged(args[1:]); err != nil {
-				exitWithError(err)
-			}
-			return
-		}
-		logErrorf("usage: apstore restore <preview|apply|rollback|reconcile>")
-		logErrorf("use apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...] only for replacement-keystore recovery")
-		os.Exit(apstoreExitUsage)
 
 	case "rebuild":
 		if err := runStoreMutatingCommand(command, func() error {
@@ -83,11 +56,6 @@ func dispatchApstoreCommand(args []string) {
 			exitWithError(err)
 		}
 
-	case "changepass":
-		if err := cmdChangepass(); err != nil {
-			exitWithError(err)
-		}
-
 	case "policy":
 		run := func() error {
 			return cmdPolicy(args[1:])
@@ -97,26 +65,6 @@ func dispatchApstoreCommand(args []string) {
 				exitWithError(err)
 			}
 		} else if err := run(); err != nil {
-			exitWithError(err)
-		}
-
-	case "template":
-		if err := cmdTemplate(args[1:]); err != nil {
-			exitWithError(err)
-		}
-
-	case "keytype":
-		if err := cmdKeyType(args[1:]); err != nil {
-			exitWithError(err)
-		}
-
-	case "sentry":
-		if err := cmdSentry(args[1:]); err != nil {
-			exitWithError(err)
-		}
-
-	case "endpoint":
-		if err := cmdEndpoint(args[1:]); err != nil {
 			exitWithError(err)
 		}
 

@@ -119,16 +119,16 @@ func (r RegistrationReport) Warnings() []string {
 		warnings = append(warnings, fmt.Sprintf("conflicting compiled key type records ignored on reload: %v (restart apsigner to redefine)", r.CompiledConflictingKeyTypes))
 	}
 	if len(r.GenericExternalEditKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("externally edited generic templates ignored on reload: %v (reinstall via `apstore template import`)", r.GenericExternalEditKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("externally edited generic templates ignored on reload: %v (reinstall via `apadmin template import`)", r.GenericExternalEditKeyTypes))
 	}
 	if len(r.ComposedExternalEditKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("externally edited composed templates ignored on reload: %v (reinstall via `apstore template import`)", r.ComposedExternalEditKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("externally edited composed templates ignored on reload: %v (reinstall via `apadmin template import`)", r.ComposedExternalEditKeyTypes))
 	}
 	if len(r.GenericOrphanedKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("generic template state records without template files ignored on reload: %v (reinstall via `apstore template import`)", r.GenericOrphanedKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("generic template state records without template files ignored on reload: %v (reinstall via `apadmin template import`)", r.GenericOrphanedKeyTypes))
 	}
 	if len(r.ComposedOrphanedKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("composed template state records without template files ignored on reload: %v (reinstall via `apstore template import`)", r.ComposedOrphanedKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("composed template state records without template files ignored on reload: %v (reinstall via `apadmin template import`)", r.ComposedOrphanedKeyTypes))
 	}
 	return warnings
 }

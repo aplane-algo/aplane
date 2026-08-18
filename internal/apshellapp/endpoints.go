@@ -80,7 +80,7 @@ func (a *App) EndpointShow(_ context.Context, alias string) (*EndpointShowResult
 	}, nil
 }
 
-// EndpointImport imports an apstore-exported public endpoint envelope into the
+// EndpointImport imports an apadmin-exported public endpoint envelope into the
 // local client registry. It does not copy tokens or host-key trust.
 func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*EndpointImportResult, error) {
 	if err := config.ValidateClientEndpointAlias(req.Alias); err != nil {

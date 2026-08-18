@@ -518,7 +518,7 @@ Generic templates:
 YAML templates follow this lifecycle:
 
 1. plaintext YAML exists in `library/templates/` or another supplied path
-2. new signer-store initialization or an admin installs it with `apstore template import`
+2. new signer-store initialization or an admin installs it with `apadmin template import`
 3. installation encrypts the YAML into `keytypes/<key_type>.template` and writes an enabled state record
 4. reload/unlock registers enabled installed templates before key scanning
 5. disable sets the state record to `disabled` and keeps the encrypted `.template`

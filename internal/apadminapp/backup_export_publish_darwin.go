@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package main
+package apadminapp
 
 import (
 	"errors"
@@ -14,7 +14,5 @@ func renameBackupExportNoReplace(tmpPath, destination string) error {
 }
 
 func backupExportNoReplaceUnsupported(err error) bool {
-	return errors.Is(err, unix.EINVAL) ||
-		errors.Is(err, unix.ENOSYS) ||
-		errors.Is(err, unix.ENOTSUP)
+	return errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.ENOTSUP)
 }

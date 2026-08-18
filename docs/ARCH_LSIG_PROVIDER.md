@@ -43,7 +43,7 @@ This document describes the LogicSig provider architecture.
 Compiled DSA providers are registered from code and product visibility is
 recorded in `internal/keytypecatalog`. Optional YAML templates are install
 sources under `library/templates/`; generic and composed DSA templates are
-imported with `apstore template import`. Installed templates are stored encrypted
+imported with `apadmin template import`. Installed templates are stored encrypted
 under identity key type state via `internal/templatestore/` and loaded by the
 signer template reload coordinator.
 
@@ -505,7 +505,7 @@ teal: |
   assert
 ```
 
-Both composed templates and generic templates are stored by `apstore` via
+Both composed templates and generic templates are stored by the signer via
 `templatestore` under identity key type state. The template store's storage
 type vocabulary is limited to `generic` and `composed`; compiled providers use
 identity key type state with `SourceCompiled` and are exposed to admin/library

@@ -5,10 +5,10 @@ This project builds several first-party commands and developer helpers:
 1. **apshell** - client shell, JavaScript runner, MCP server, and plugin host
 2. **aprekey** - external Falcon contract-admin artifact and bounded ceremony client
 3. **apsigner** - signing daemon, HTTP API, admin protocol, approval coordinator, and SSH tunnel server
-4. **apadmin** - TUI and batch admin client over local IPC or SSH, including policy administration and rescue
+4. **apadmin** - TUI and batch admin client over local IPC or SSH, owning all general live administration plus policy rescue
 5. **apconsole** - secure-machine unified console for apshell, apadmin, and apsigner panes
 6. **apapprover** - minimal approval-only CLI over local IPC
-7. **apstore** - keystore management client for signer-owned admin flows plus local verify/rebuild rescue
+7. **apstore** - stopped-daemon keystore bootstrap, verification, and rescue client
 8. **appass** - passphrase auto-unlock setup TUI
 9. **aplocalnet** - LocalNet setup TUI/CLI
 10. **appass-file** - dev-only plaintext passphrase helper
@@ -26,10 +26,10 @@ aplane/
 │   ├── apshell/              # Shell, scripting, MCP, and plugin host
 │   ├── aprekey/       # External contract-admin artifact and ceremony CLI
 │   ├── apsigner/            # Signing daemon and admin/HTTP/SSH runtime
-│   ├── apadmin/             # Admin TUI and batch policy client
+│   ├── apadmin/             # Admin TUI and live batch client
 │   ├── apconsole/            # Secure-machine unified console
 │   ├── apapprover/           # Approval-only CLI
-│   ├── apstore/              # Keystore management, local flows, IPC-admin flows
+│   ├── apstore/              # Stopped-daemon bootstrap and rescue flows
 │   ├── appass/               # Passphrase auto-unlock TUI
 │   ├── aplocalnet/           # LocalNet setup TUI/CLI
 │   ├── appass-file/            # Dev passphrase helper
@@ -325,44 +325,44 @@ export APSIGNER_DATA=~/aplane/apsigner
 bin/apapprover
 ```
 
-### apstore (Local And IPC Keystore Management)
+### apadmin and apstore
 
 ```bash
 # Set data directory
 export APSIGNER_DATA=~/aplane/apsigner
 
-# Initialize a store
+# Initialize a stopped store with apstore
 bin/apstore initialize
 
-# Backup all keys into signer-managed backup storage
-bin/apstore backup create all
+# Use apadmin for live signer-managed backup and restore operations
+bin/apadmin backup create all
 
 # Export a managed backup to an external directory
-bin/apstore backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /path/to/backups
+bin/apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /path/to/backups
 
 # Backup specific key
-bin/apstore backup create address ABC123...
+bin/apadmin backup create address ABC123...
 
 # Import and restore credentials. Import prompts for the export passphrase and
 # validates the archive before publishing it in managed backup storage.
 # Restore validates the selected credentials and commits them atomically under
 # the destination's current policy and configuration.
-bin/apstore backup import /path/to/aplane-backup.tar.gz
-bin/apstore restore preview aplane-backup.tar.gz
-bin/apstore restore apply aplane-backup.tar.gz
-bin/apstore restore rollback
-bin/apstore restore reconcile
+bin/apadmin backup import /path/to/aplane-backup.tar.gz
+bin/apadmin restore preview aplane-backup.tar.gz
+bin/apadmin restore apply aplane-backup.tar.gz
+bin/apadmin restore rollback
+bin/apadmin restore reconcile
 
 # Verify backup (accepts an external archive path or backup directory)
 bin/apstore verify /path/to/aplane-backup.tar.gz
 
 # Change passphrase
-bin/apstore changepass
+bin/apadmin changepass
 
 # List, show, or install encrypted identity templates
-bin/apstore template list
-bin/apstore template show aplane.htlc.v1 --show-sensitive-template
-bin/apstore template import library/templates/aplane.htlc.v1.yaml
+bin/apadmin template list
+bin/apadmin template show aplane.htlc.v1 --show-sensitive-template
+bin/apadmin template import library/templates/aplane.htlc.v1.yaml
 ```
 
 ### appass (Auto-Unlock Setup)
@@ -480,11 +480,14 @@ policy-editing, or liveness-probe workflows and do not need this capability.
 
 - **apshell** does not hold signer-managed private keys; signing is delegated to `apsigner`
 - **apsigner** stores all private keys encrypted at rest
-- **apadmin** provides TUI admin, approval, key, KeyType Library, online policy,
-  and explicit offline policy-rescue workflows
+- **apadmin** provides TUI and batch administration over IPC or SSH, including
+  backup/restore, passphrase rotation, catalogs, online policy, and explicit
+  offline policy rescue
 - **apconsole** composes shell, signer-admin, and daemon panes on the secure signer machine
 - **apapprover** handles approval-only workflows over local IPC
-- **apstore** performs local initialize, policy integrity, external backup verification, and rebuild rescue flows; endpoint export and signer-owned sentry-reference, backup, restore, passphrase, key type, and template operations use the local admin protocol
+- **apstore** performs stopped-daemon initialize, policy integrity, external
+  backup verification, rebuild rescue, permission migration, generation
+  pruning, and offline key inventory; it has no live admin transport
 - **appass** edits identity-scoped auto-unlock configuration while `apsigner` is stopped
 - **aplocalnet** configures a running AlgoKit LocalNet as apshell's default network, updates apsigner genesis mapping, enables the LocalNet plugin, and can persist a KMD URL override for plugin processes
 - **appass-systemd-creds** is built for Linux/systemd releases; Darwin release archives omit it

@@ -146,10 +146,10 @@ All under `cmd/`:
 | `apshell` | Client shell: REPL, script runner, JS runtime (Goja), MCP server, plugin host |
 | `aprekey` | Dedicated client for generating, inspecting, verifying, and using external Falcon bounded contract-admin credentials; `rekey`/`unrekey` own online orchestration and `prepare-*`/`sign`/`complete` own separated ceremonies |
 | `apsigner` | Signing daemon: HTTP API, admin protocol over IPC and SSH subsystem, key management, approval coordination, SSH tunnel server, audit logging |
-| `apadmin` | TUI and batch admin client over IPC or SSH, including live policy administration and explicit offline policy rescue |
+| `apadmin` | TUI and batch admin client over IPC or SSH; owns all general live administration, including policy, backup/restore, passphrase rotation, templates, key types, sentry references, endpoint export, and generation inventory, plus explicit offline policy rescue |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
-| `apstore` | Store-management client: local `initialize`, policy integrity check/verify/sign, external-file-only `verify`, `rebuild`, offline generation pruning, and private-store permission audit/migration; endpoint export, daemon-owned sentry references, generation inventory, backup, restore, template, key type, and changepass operations use authenticated admin IPC |
+| `apstore` | Stopped-daemon store tool: local `initialize`, policy integrity check/verify/sign, external-file-only `verify`, `rebuild`, offline generation pruning, private-store permission audit/migration, and offline key inventory; it has no live admin transport |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, client (`apshell`) default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
 | `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |
@@ -509,7 +509,7 @@ or more `sentry` endpoints. Endpoint records carry URL, SSH tunnel ports,
 identity file, `known_hosts`, and token file. Live sentry-key discovery is
 operation-scoped and is not stored in the registry. `internal/endpointrefs`
 owns the public `aplane.endpoint.v1` JSON
-handoff envelope used by `apstore endpoint export` and
+handoff envelope used by `apadmin endpoint export` and
 `apshell endpoints import`.
 
 `internal/config.Config` contains no signer-routing fields. Client signer and
@@ -1427,7 +1427,7 @@ inventory.
 
 Operator handoff and manual endpoint setup use two paths:
 
-- `apstore endpoint export` emits `aplane.endpoint.v1` with portable endpoint
+- `apadmin endpoint export` emits `aplane.endpoint.v1` with portable endpoint
   URL and port data only. The endpoint URL is either explicit CLI input
   (`--url` or `--host`) or the operator-declared signer
   `config.yaml` value `endpoint.advertise_url`; it is not inferred from the
@@ -1956,11 +1956,13 @@ metadata and source node role. They exclude policy, approval defaults,
 genesis-hash mappings, templates, endpoints, and operator settings. Destination
 policy and configuration are always authoritative.
 
-Both `apadmin` and local-IPC `apstore` use the same daemon-owned lifecycle.
-`cmd/apstore` retains local `initialize`, external-backup validation, `verify`,
-policy integrity check/sign/verify, private-store permission migration, and
-`rebuild` replacement-keystore rescue. Managed backup import publication and
-export bytes are streamed through authenticated admin IPC. Imports are capped
+`apadmin` is the sole general-purpose CLI owner of this daemon-owned lifecycle
+over local IPC or strict-known-host SSH. `cmd/apstore` retains local
+`initialize`, external-backup validation, `verify`, policy integrity
+check/sign/verify, private-store permission migration, offline generation
+pruning and key inventory, and `rebuild` replacement-keystore rescue. Managed
+backup import publication and export bytes are streamed through authenticated
+admin transport. Imports are capped
 at 1 GiB, only one incomplete import exists per identity, and startup removes
 unpublished transfer residue. Archive chunk reads require unlocked or recovery
 state but do not take the identity mutation lock.

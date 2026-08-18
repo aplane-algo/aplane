@@ -244,7 +244,7 @@ Signer nodes need public sentry metadata to generate guarded accounts, but they
 do not need sentry private keys.
 
 The signer-side sentry reference catalog is populated by explicit operator
-handoff: `apstore sentry export` on the sentry node followed by `apstore sentry
+handoff: `apadmin sentry export` on the sentry node followed by `apadmin sentry
 import` on the signer node.
 
 Reference aliases are security-bearing generation inputs: resolving
@@ -552,7 +552,8 @@ Primary packages and files:
   fixed/Merkle Layer-3 policies.
 - `library/templates/aplane.corridor.v1.yaml`: the canonical optional Corridor
   profile source.
-- `cmd/apstore/sentry.go`: public sentry export/import/list/show/remove.
+- `internal/apadminapp/catalog.go`: public sentry export/import/list/show/remove
+  workflows used by `apadmin`.
 - `internal/signerapp/policycmd`: live and rescue policy workflows, including
   signer-to-sentry policy conversion and offline validation through `apadmin`.
 
@@ -564,5 +565,5 @@ Representative tests:
 - `internal/policy/transfer_routing_eval_test.go`
 - `internal/engine/guarded/submit_test.go`
 - `internal/apshellapp/endpoints_test.go`
-- `cmd/apstore/sentry_test.go`
+- `internal/apadminapp/catalog_test.go`
 - `scripts/docker-local-four-node-smoke.sh`

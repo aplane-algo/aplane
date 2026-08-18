@@ -689,10 +689,10 @@ endpoints delete <alias>
 ```
 
 `endpoints import` reads a public `aplane.endpoint.v1` envelope produced by
-`apstore endpoint export`. Import writes local endpoint routing only:
+`apadmin endpoint export`. Import writes local endpoint routing only:
 `endpoints.yaml`. Use `role: signer` for the one primary client signer endpoint
 and `role: sentry` for sentry endpoints. Import does not copy tokens or SSH
-host trust. On the signer side, `apstore endpoint export` can derive the URL
+host trust. On the signer side, `apadmin endpoint export` can derive the URL
 from `--host`, use explicit `--url`, or use the running daemon's configured
 `endpoint.advertise_url`; it reads endpoint defaults through authenticated
 admin IPC rather than traversing the private signer store. Without one of

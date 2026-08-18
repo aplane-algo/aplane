@@ -88,9 +88,6 @@ func enforceApstoreExecutionMode(dataDir string, args []string) error {
 	if isExternalFileOnlyCommand(args) {
 		return nil
 	}
-	if isDaemonBackedCommand(args) {
-		return nil
-	}
 	prodManaged, err := signerstartup.IsProductionManagedDataDir(dataDir)
 	if err != nil {
 		return err
@@ -117,28 +114,6 @@ func enforceApstoreExecutionMode(dataDir string, args []string) error {
 
 func isExternalFileOnlyCommand(args []string) bool {
 	return len(args) > 0 && args[0] == "verify"
-}
-
-func isDaemonBackedCommand(args []string) bool {
-	if len(args) == 0 {
-		return false
-	}
-	switch args[0] {
-	case "backup":
-		return isManagedBackupCommand(args)
-	case "restore":
-		return isManagedRestoreCommand(args)
-	case "changepass", "template", "keytype":
-		return true
-	case "sentry":
-		return true
-	case "endpoint":
-		return len(args) >= 2 && args[1] == "export"
-	case "generations":
-		return len(args) == 2 && args[1] == "list"
-	default:
-		return false
-	}
 }
 
 func requireLocalDataDirOwnedByCurrentUser(dataDir string, args []string) error {
@@ -209,34 +184,7 @@ func isOfflineMutatingCommand(command string) bool {
 	}
 }
 
-func isManagedBackupCommand(args []string) bool {
-	if len(args) < 2 || args[0] != "backup" {
-		return false
-	}
-	switch args[1] {
-	case "create", "import", "list", "export", "delete":
-		return true
-	default:
-		return false
-	}
-}
-
-func isManagedRestoreCommand(args []string) bool {
-	if len(args) < 2 || args[0] != "restore" {
-		return false
-	}
-	switch args[1] {
-	case "preview", "apply", "rollback", "reconcile":
-		return true
-	default:
-		return false
-	}
-}
-
 func acquireOfflineMutationLockForArgs(args []string, dataDir string) (func(), error) {
-	if isManagedBackupCommand(args) || isManagedRestoreCommand(args) {
-		return func() {}, nil
-	}
 	if len(args) == 0 {
 		return func() {}, nil
 	}
@@ -248,12 +196,6 @@ func acquireOfflineMutationLockForArgs(args []string, dataDir string) (func(), e
 		if len(args) > 1 && args[1] == "sign" {
 			return acquireOfflineMutationLock("policy", dataDir)
 		}
-		return func() {}, nil
-	}
-	if args[0] == "template" || args[0] == "keytype" {
-		return func() {}, nil
-	}
-	if args[0] == "generations" && len(args) == 2 && args[1] == "list" {
 		return func() {}, nil
 	}
 	return acquireOfflineMutationLock(args[0], dataDir)

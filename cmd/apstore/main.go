@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/auth"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -23,10 +22,6 @@ var config serverconfig.ServerConfig
 
 // dataDirectory holds the resolved data directory path
 var dataDirectory string
-
-// adminSocketPath is resolved independently of private signer configuration
-// for daemon-backed commands.
-var adminSocketPath string
 
 func keystorePaths() storepaths.Paths {
 	return storepaths.NewPaths(dataDirectory)
@@ -48,7 +43,6 @@ func main() {
 	flag.Usage = apstoreUsage
 
 	dataDir := flag.String("d", "", "Data directory (required, or set APSIGNER_DATA)")
-	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()
 	args := flag.Args()
 	if len(args) < 1 {
@@ -57,23 +51,6 @@ func main() {
 	}
 	if isExternalFileOnlyCommand(args) {
 		config = serverconfig.DefaultServerConfig()
-		RegisterProviders()
-		dispatchApstoreCommand(args)
-		return
-	}
-
-	if isDaemonBackedCommand(args) {
-		dataDirectory = serverconfig.GetSignerDataDir(*dataDir)
-		var err error
-		adminSocketPath, err = adminipc.ResolveClientPath(adminipc.ClientPathRequest{
-			DataDir: dataDirectory, IPCPath: *ipcPathFlag, DataDirExplicit: *dataDir != "",
-		})
-		if err != nil {
-			logErrorf("%v", err)
-			os.Exit(apstoreExitUsage)
-		}
-		config = serverconfig.DefaultServerConfig()
-		config.IPCPath = adminSocketPath
 		RegisterProviders()
 		dispatchApstoreCommand(args)
 		return
@@ -96,7 +73,7 @@ func main() {
 		logErrorf("cannot access data directory: %s", dataDirectory)
 		if os.IsPermission(err) {
 			logWarnf("signer stores are private; operating-system group membership grants IPC socket access, not store traversal")
-			logWarnf("use a daemon-backed command, or follow the documented stopped-service rescue procedure as the store owner/root")
+			logWarnf("use apadmin for running-daemon operations, or follow the documented stopped-service rescue procedure as the store owner/root")
 		}
 		os.Exit(apstoreExitUsage)
 	}
@@ -108,8 +85,6 @@ func main() {
 		os.Exit(apstoreExitUsage)
 	}
 	config = startup.Config
-	adminSocketPath = config.IPCPath
-
 	// Register all providers (must be called before using any registries)
 	RegisterProviders()
 

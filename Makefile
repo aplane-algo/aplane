@@ -961,7 +961,7 @@ help:
 	@echo "  make apadmin     - Build apadmin"
 	@echo "  make apconsole    - Build apconsole"
 	@echo "  make apapprover  - Build apapprover"
-	@echo "  make apstore     - Build apstore (init, backup, restore, changepass)"
+	@echo "  make apstore     - Build apstore (offline bootstrap, verify, rescue)"
 	@echo "  make aplocalnet  - Build aplocalnet (LocalNet setup TUI)"
 	@echo "  make approbe     - Build approbe (installer liveness probe)"
 	@echo "  make applugin-checksum - Build applugin-checksum (generate checksums.sha256)"

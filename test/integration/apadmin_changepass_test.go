@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
-func TestApstoreChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testing.T) {
+func TestApadminChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testing.T) {
 	env := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{})
 	currentPassphrase := mustReadPassphrase(t, env.SignerDataDir)
 
@@ -33,7 +33,7 @@ func TestApstoreChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 	}
 
 	newPassphrase := "rotated-passphrase-for-integration"
-	apstore := harness.NewApStoreHarness(t, env.SignerDataDir)
+	apadmin := harness.NewApAdminHarness(t, env.SignerDataDir)
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
 		t.Fatalf("failed to start signer before changepass: %v", err)
@@ -67,10 +67,10 @@ func TestApstoreChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 			t.Fatalf("fund rotation acceptance key: %v", fundErr)
 		}
 	}
-	output, err := apstore.RunWithInput(currentPassphrase+"\n"+newPassphrase+"\n"+newPassphrase+"\ny\n", "changepass")
+	output, err := apadmin.RunWithInput(currentPassphrase+"\n"+newPassphrase+"\n"+newPassphrase+"\ny\n", "changepass")
 	if err != nil {
 		_ = signerd.Stop()
-		t.Fatalf("apstore changepass failed: %v\nOutput: %s", err, output)
+		t.Fatalf("apadmin changepass failed: %v\nOutput: %s", err, output)
 	}
 	if !strings.Contains(output, "passphrase change complete") {
 		_ = signerd.Stop()

@@ -933,7 +933,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 | `apsigner` startup (headless) | `read` | Auto-unlock signer at boot |
 | `appass` setup | `write` | Store the product identity's auto-unlock passphrase |
 | `apstore initialize` | `write` | Store the chosen passphrase when a helper is already configured |
-| `apstore changepass` | `write` | Require manual entry of the old passphrase, then store the new passphrase after atomic key re-encryption |
+| `apadmin changepass` | `write` | Require manual entry of the old passphrase, then store the new passphrase after atomic key re-encryption |
 
 **Round-trip verification (`write`):**
 

@@ -18,88 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/storeinit"
 )
 
-func cmdChangepass() error {
-	logInfof("Signer Passphrase Change Utility")
-	logInfof("=====================================")
-
-	currentPassphrase, err := readCurrentPassphrase()
-	if err != nil {
-		return err
-	}
-	defer crypto.ZeroBytes(currentPassphrase)
-
-	newPassphrase, err := readNewPassphrase(currentPassphrase)
-	if err != nil {
-		return err
-	}
-	defer crypto.ZeroBytes(newPassphrase)
-
-	if !confirmPassphraseChange() {
-		logInfof("passphrase change cancelled")
-		return nil
-	}
-
-	client, err := newApstoreAdminClientWithPassphraseForCommand(currentPassphrase)
-	if err != nil {
-		return err
-	}
-	defer client.close()
-
-	msg := protocol.ChangeStorePassphraseMessage{
-		BaseMessage:       protocol.BaseMessage{Type: protocol.MsgTypeChangeStorePass, ID: newApstoreRequestID("changepass")},
-		CurrentPassphrase: protocol.SensitiveBytes(append([]byte(nil), currentPassphrase...)),
-		NewPassphrase:     protocol.SensitiveBytes(append([]byte(nil), newPassphrase...)),
-	}
-	defer msg.CurrentPassphrase.Zero()
-	defer msg.NewPassphrase.Zero()
-
-	var result protocol.ChangeStorePassphraseResultMessage
-	err = client.request(msg, &result)
-	msg.CurrentPassphrase.Zero()
-	msg.NewPassphrase.Zero()
-	if err != nil {
-		return err
-	}
-	if !result.Success {
-		if result.HelperWarning != "" {
-			logWarnf("%s", result.HelperWarning)
-		}
-		if result.RootCommitted {
-			logWarnf("the new passphrase is authoritative despite the incomplete operation")
-			if result.RotationPending {
-				logWarnf("unlock with the new passphrase to resume the pending rotation")
-			}
-		}
-		return resultError("passphrase change failed", result.Code, result.Error)
-	}
-
-	logInfof("passphrase change complete")
-	if result.KeysMigrated > 0 {
-		logInfof("  - %d key file(s) migrated", result.KeysMigrated)
-	}
-	if result.TemplatesMigrated > 0 {
-		logInfof("  - %d template file(s) migrated", result.TemplatesMigrated)
-	}
-	if result.PolicySidecarsMigrated > 0 {
-		logInfof("  - %d policy sidecar(s) re-signed", result.PolicySidecarsMigrated)
-	}
-	if result.NodeRoleSidecarsMigrated > 0 {
-		logInfof("  - %d node role sidecar(s) re-signed", result.NodeRoleSidecarsMigrated)
-	}
-	logInfof("  - keystore metadata updated")
-	if result.HelperWarning != "" {
-		logWarnf("%s", result.HelperWarning)
-	}
-	if result.PriorGenerations > 0 {
-		logWarnf(
-			"%d prior generation(s) remain readable under historical key terms",
-			result.PriorGenerations,
-		)
-		logWarnf("run 'apstore generations prune --all-priors' when rollback retention is no longer required")
-	}
-	return nil
-}
-
 // cmdInitialize initializes a new keystore with a passphrase.
 // When a passphrase_command_argv helper is configured, the passphrase is
 // stored via the helper after keystore creation.
@@ -170,6 +88,8 @@ func cmdInitialize(args []string) error {
 
 	return nil
 }
+
+var initializeStoreForCommand = initializeStoreLocal
 
 const initializeUsage = "usage: apstore initialize [--role signer|sentry]"
 

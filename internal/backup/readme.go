@@ -61,20 +61,20 @@ The encryption key is derived using Argon2id with the following parameters:
 
 ## Restoring Keys
 
-### Using apstore (Recommended)
+### Using apadmin (Recommended)
 
-Import, preview, and apply through the local signer daemon:
+Import, preview, and apply through the running signer daemon:
 
 ` + "```bash" + `
-apstore backup import /path/to/this/backup.tar.gz
-apstore restore preview this-backup.tar.gz
-apstore restore apply this-backup.tar.gz
+apadmin backup import /path/to/this/backup.tar.gz
+apadmin restore preview this-backup.tar.gz
+apadmin restore apply this-backup.tar.gz
 ` + "```" + `
 
 Or apply only one address:
 
 ` + "```bash" + `
-apstore restore apply this-backup.tar.gz --address <ADDRESS>
+apadmin restore apply this-backup.tar.gz --address <ADDRESS>
 ` + "```" + `
 
 You will be prompted for the export passphrase used to encrypt the backup.
@@ -99,7 +99,7 @@ If you need to decrypt manually, use the Argon2id and AES-256-GCM parameters doc
 - **Multiple copies**: Keep backups in multiple secure locations
 
 ---
-*Backup created by apstore*
+*Backup created by APlane*
 `
 
 // WriteReadme writes the README.md file to the backup directory

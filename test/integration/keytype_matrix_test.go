@@ -828,7 +828,7 @@ func submitSignedTxnGroupExpectFailure(t *testing.T, testnet *harness.TestnetCon
 func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 	t.Helper()
 	t.Setenv("APSIGNER_PASSPHRASE", mustReadPassphrase(t, signerDataDir))
-	apstore := harness.NewApStoreHarness(t, signerDataDir)
+	apadmin := harness.NewApAdminHarness(t, signerDataDir)
 	templateFiles := []string{
 		"aplane.htlc.v1.yaml",
 		"aplane.falcon1024-allowlist.v1.yaml",
@@ -842,7 +842,7 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 	}
 	runWithTempSigner(t, func() {
 		for _, templatePath := range templatePaths {
-			if output, err := apstore.Run("template", "import", templatePath); err != nil {
+			if output, err := apadmin.Run("template", "import", templatePath); err != nil {
 				t.Fatalf("failed to add bundled template %s: %v\noutput:\n%s", templatePath, err, output)
 			}
 		}

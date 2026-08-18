@@ -55,8 +55,13 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 
 func TestProductionAndTestmodeCommandCatalogsAreDisjoint(t *testing.T) {
 	production := make(map[string]bool)
-	for _, command := range productionSubcommands {
+	for command, kind := range productionSubcommands {
 		production[command] = true
+		switch kind {
+		case productionPolicy, productionCatalog, productionStore:
+		default:
+			t.Fatalf("production command %q has unroutable kind %d", command, kind)
+		}
 	}
 	for _, command := range testModeCommandNames {
 		if production[command] {

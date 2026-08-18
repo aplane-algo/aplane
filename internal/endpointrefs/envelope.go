@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package endpointrefs defines public endpoint handoff envelopes used by
-// apstore export and apshell import.
+// apadmin export and apshell import.
 package endpointrefs
 
 import (

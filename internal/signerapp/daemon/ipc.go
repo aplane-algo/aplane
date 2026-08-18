@@ -186,7 +186,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	// If auth unlocks an identity for this session, either the session becomes
 	// the active owner or cleanup must leave the identity locked (when
 	// lock_on_disconnect is set) with no pending approvals stranded.
-	authenticated := false
+	cleanupRuntime := false
 	adminConn := session.Conn()
 
 	defer func() {
@@ -199,7 +199,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 		// Run owner cleanup whenever this authenticated session exits and no
 		// active owner remains. Displaced clients skip cleanup because the
 		// replacement is already active before they are notified and closed.
-		if authenticated && boundIR != nil && (wasActiveClient || !s.sessionManager().HasClient()) {
+		if cleanupRuntime && boundIR != nil && (wasActiveClient || !s.sessionManager().HasClient()) {
 			// Route disconnect cleanup through the bound identity
 			if wasActiveClient && s.signer != nil {
 				s.signer.adminServices().LogSessionDisconnectedContext(session.SessionContext())
@@ -221,7 +221,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	// can also handle one local initialize request before passphrase auth exists.
 	switch session.AuthenticateOutcome() {
 	case adminserver.AuthOutcomeAuthenticated:
-		authenticated = true
+		cleanupRuntime = !session.AuthenticatedOnly()
 	case adminserver.AuthOutcomeBootstrapHandled:
 		return
 	default:
@@ -234,6 +234,14 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	// This ensures NotifyKeysChanged won't send messages during auth
 	boundIR := session.BoundRuntime()
 	if boundIR == nil {
+		return
+	}
+	if session.AuthenticatedOnly() {
+		// auth_only sessions are bounded, server-enforced public-read observers.
+		// They never occupy or replace the active owner slot, receive approval
+		// notifications, fail pending approvals, or run lock-on-disconnect cleanup.
+		s.clearPendingSession(session)
+		s.serveAdminMessages(session, adminConn)
 		return
 	}
 	active, ok := s.sessionManager().BindPreAuthPending(session)
@@ -266,7 +274,10 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	// Send initial status after successful authentication
 	_ = session.SendStatus()
 
-	// Message loop
+	s.serveAdminMessages(session, adminConn)
+}
+
+func (s *IPCServer) serveAdminMessages(session *adminserver.Session, adminConn adminproto.AdminConn) {
 	for {
 		line, err := adminConn.ReadMessage()
 		if err != nil {

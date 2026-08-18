@@ -9,62 +9,22 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/protocol"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // cmdGenerations manages generation-based active storage
-// (docs/ARCH_GENERATIONS.md). Inventory is read through authenticated admin
-// IPC; destructive pruning remains offline and requires the daemon to stop.
+// (docs/ARCH_GENERATIONS.md). Destructive pruning is offline and requires the
+// daemon to stop. Live inventory is owned by `apadmin generations list`.
 //
-//	apstore generations list                 inventory with roles
 //	apstore generations prune               keep current + newest sealed prior
 //	apstore generations prune --all-priors  keep only current (required
 //	                                        before passphrase rotation)
 func cmdGenerations(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore generations <list|prune [--all-priors]>")
+		return fmt.Errorf("usage: apstore generations prune [--all-priors]")
 	}
 	switch args[0] {
-	case "list":
-		if len(args) != 1 {
-			return fmt.Errorf("usage: apstore generations list")
-		}
-		client, err := newApstoreReadOnlyAdminClientForCommand()
-		if err != nil {
-			return err
-		}
-		defer client.close()
-		report, err := requestInspectionWithRetry(client, func() any {
-			return protocol.ListGenerationsMessage{
-				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListGenerations, ID: newApstoreRequestID("generations-list")},
-			}
-		}, func(result *protocol.GenerationsListMessage) string { return result.Code })
-		if err != nil {
-			return err
-		}
-		if report.Error != "" {
-			return codedError{code: report.Code, message: report.Error}
-		}
-		for _, attempt := range report.PendingAttempts {
-			logInfof("uncommitted generation %s (discarded at next unlock or prune)", attempt)
-		}
-		for _, staging := range report.PendingStaging {
-			logInfof("staging residue %s (discarded at next unlock or prune)", staging)
-		}
-		if report.RetainedUnsealedParent != "" {
-			logWarnf("rollback parent %s is missing its seal; pruning is blocked until it is restored or removed", report.RetainedUnsealedParent)
-		}
-		logInfof("current: %s", report.Current)
-		for _, prior := range report.SealedPriors {
-			logInfof("sealed prior: %s", prior)
-		}
-		if len(report.SealedPriors) == 0 && report.RetainedUnsealedParent == "" {
-			logInfof("no prior generations (rotation quiescence satisfied)")
-		}
-		return nil
-
 	case "prune":
 		paths := keystorePaths()
 		identityID := productIdentityID()
@@ -131,7 +91,7 @@ func cmdGenerations(args []string) error {
 		return nil
 
 	default:
-		return fmt.Errorf("unknown generations subcommand %q (use list or prune)", args[0])
+		return fmt.Errorf("unknown generations subcommand %q (use prune; live inventory is `apadmin generations list`)", args[0])
 	}
 }
 

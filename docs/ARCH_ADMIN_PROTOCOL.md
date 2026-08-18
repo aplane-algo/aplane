@@ -57,7 +57,9 @@ Transport notes:
 - the generic client helpers in `internal/transport` expect `auth_required` for
   a normal handshake and preserve pre-auth protocol `error` messages as
   formatted server rejections,
-- displacement negotiation is handled only by the `apadmin` TUI path and is process-wide,
+- displacement negotiation is process-wide; TUI and batch clients handle the
+  pre-auth `client_exists`/`displace_confirm` exchange, but a later successful
+  `auth_only` handshake remains non-owning and does not replace the owner,
 - generic clients observe some auth/displacement failures as formatted protocol errors rather than stable typed transport errors.
 - admin frames are bounded to 4 MiB before JSON decoding on both transports.
 
@@ -71,13 +73,15 @@ Client to Server:
 
 - `auth` (pre-auth handshake response to `auth_required`; verifies, binds, and unlocks before authenticated dispatch)
 - `auth_only` (pre-auth handshake response intended for bound-runtime reads;
-  verifies and binds without changing locked state, but does not create a
-  server-enforced read-only session)
+  verifies and binds without changing locked state, creates a non-owning
+  observer session, and is restricted by a server-enforced public-read
+  request allowlist)
 - `unlock`
 - `lock_identity`
 - `initialize_store`
 - `change_store_passphrase`
-- `displace_confirm` (apadmin TUI displacement flow only)
+- `displace_confirm` (pre-auth confirmation that permits a later controlling
+  `auth` session to replace the active owner; ignored for `auth_only` ownership)
 
 Server to Client:
 
@@ -245,9 +249,11 @@ identity binding but never authorizes or invokes `identity.unlock`. It is a
 distinct message type so an older server rejects it before processing instead
 of ignoring a new flag and unlocking. First-party clients use it only for
 operations whose handlers require an authenticated bound runtime. It does not
-constrain the authenticated session to a separate read-only capability:
-subsequent messages still pass through their ordinary grant checks and
-locked/unlocked/recovery-state interlocks.
+occupy or replace the active admin-owner slot and cannot receive approval
+notifications or trigger disconnect cleanup. The server permits only
+`get_admin_settings`, sentry-reference list/get/public-export, and generation
+inventory requests; those requests still pass through their ordinary grant
+checks and locked/unlocked/recovery-state interlocks.
 
 ### Key Management
 
@@ -278,11 +284,11 @@ locked/unlocked/recovery-state interlocks.
 - `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; accepted over IPC and SSH because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
 - `install_library_template`: `key_type`, `template_type` -> `install_library_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`
 - `list_installed_templates` -> `installed_templates`: `templates[]`, optional `code`, `error`; each template has `key_type`, `template_type`, optional `size`, and `enabled`
-- `show_installed_template`: `key_type` -> `show_installed_template_result`: `success`, optional `key_type`, `template_type`, sensitive `template_yaml`, `code`, `error`; local IPC only because it returns decrypted template source
-- `import_installed_template`: sensitive `template_yaml` -> `import_installed_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`; local IPC only because it carries template source for encrypted installation
-- `remove_installed_template`: `key_type` -> `remove_installed_template_result`: `success`, optional `key_type`, `template_type`, `removed`, `code`, `error`; local IPC only
-- `activate_key_type`: `key_type` -> `activate_key_type_result`: `success`, optional `key_type`, `already_exists`, `code`, `error`; this wire message activates compiled providers and enables installed YAML templates. The `apstore` CLI exposes this as `keytype enable`. For installed YAML templates, `already_exists:true` means the template was already enabled.
-- `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apstore` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
+- `show_installed_template`: `key_type` -> `show_installed_template_result`: `success`, optional `key_type`, `template_type`, sensitive `template_yaml`, `code`, `error`; available through authenticated IPC or SSH admin transport
+- `import_installed_template`: sensitive `template_yaml` -> `import_installed_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`; available through authenticated IPC or SSH admin transport
+- `remove_installed_template`: `key_type` -> `remove_installed_template_result`: `success`, optional `key_type`, `template_type`, `removed`, `code`, `error`; available through authenticated IPC or SSH admin transport
+- `activate_key_type`: `key_type` -> `activate_key_type_result`: `success`, optional `key_type`, `already_exists`, `code`, `error`; this wire message activates compiled providers and enables installed YAML templates. The `apadmin` CLI exposes this as `keytype enable`. For installed YAML templates, `already_exists:true` means the template was already enabled.
+- `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apadmin` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
 - `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror most of the HTTP `/keytypes` schema but omit the guarded-routing fields `signing_flow` and `sentry_component_key_type` (admin clients are not guarded-send routers)
 
 ### Signing Approval and Tokens

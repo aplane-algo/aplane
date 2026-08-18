@@ -1038,7 +1038,7 @@ write_signer_config() {
 
 # Signer endpoint exposure settings.
 endpoint:
-  # Optional client-reachable URL used by "apstore endpoint export" when --host/--url are omitted.
+  # Optional client-reachable URL used by "apadmin endpoint export" when --host/--url are omitted.
   # Set this to a real DNS name or IP clients can reach.
   # advertise_url: ssh://signer.example.com:$ssh_port
   signer_port: $signer_port

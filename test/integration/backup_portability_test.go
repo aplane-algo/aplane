@@ -42,13 +42,13 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 
 	cases := []struct {
 		name               string
-		prepareSource      func(t *testing.T, sourceDataDir string, apstore *harness.ApStoreHarness) (string, map[string]string)
+		prepareSource      func(t *testing.T, sourceDataDir string, apadmin *harness.ApAdminHarness) (string, map[string]string)
 		prepareDestination func(t *testing.T, destDataDir string)
 		buildSignRequest   func(t *testing.T, address string) signerapi.SignRequest
 	}{
 		{
 			name: "ed25519",
-			prepareSource: func(_ *testing.T, _ string, _ *harness.ApStoreHarness) (string, map[string]string) {
+			prepareSource: func(_ *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
 				return "ed25519", nil
 			},
 			buildSignRequest: func(t *testing.T, address string) signerapi.SignRequest {
@@ -60,7 +60,7 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 		},
 		{
 			name: "aplane.falcon1024.v1",
-			prepareSource: func(_ *testing.T, _ string, _ *harness.ApStoreHarness) (string, map[string]string) {
+			prepareSource: func(_ *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
 				return "aplane.falcon1024.v1", nil
 			},
 			buildSignRequest: func(t *testing.T, address string) signerapi.SignRequest {
@@ -72,7 +72,7 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 		},
 		{
 			name: "user-loaded HTLC template",
-			prepareSource: func(t *testing.T, sourceDataDir string, _ *harness.ApStoreHarness) (string, map[string]string) {
+			prepareSource: func(t *testing.T, sourceDataDir string, _ *harness.ApAdminHarness) (string, map[string]string) {
 				installHTLCTemplate(t, sourceDataDir)
 				status, err := testnet.Client.Status().Do(context.Background())
 				if err != nil {
@@ -102,7 +102,7 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 		},
 		{
 			name: "library composed template",
-			prepareSource: func(t *testing.T, sourceDataDir string, _ *harness.ApStoreHarness) (string, map[string]string) {
+			prepareSource: func(t *testing.T, sourceDataDir string, _ *harness.ApAdminHarness) (string, map[string]string) {
 				installFalconAllowlistTemplate(t, sourceDataDir)
 				return "aplane.falcon1024-allowlist.v1", map[string]string{"recipients": integrationBurnAddress}
 			},
@@ -118,7 +118,7 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 		},
 		{
 			name: "custom generic template",
-			prepareSource: func(t *testing.T, sourceDataDir string, apstore *harness.ApStoreHarness) (string, map[string]string) {
+			prepareSource: func(t *testing.T, sourceDataDir string, apadmin *harness.ApAdminHarness) (string, map[string]string) {
 				family := fmt.Sprintf("backup-portability-%d", time.Now().UnixNano())
 				keyType := integrationTemplateKeyType(family)
 				templatePath := filepath.Join(t.TempDir(), "custom-allowlist.yaml")
@@ -183,7 +183,7 @@ teal: |
 					t.Fatalf("failed to write custom template YAML: %v", err)
 				}
 
-				mustImportTemplateViaApstore(t, sourceDataDir, apstore, templatePath, "custom template")
+				mustImportTemplateViaApadmin(t, sourceDataDir, apadmin, templatePath, "custom template")
 
 				return keyType, map[string]string{"recipients": integrationBurnAddress}
 			},
@@ -196,7 +196,7 @@ teal: |
 		},
 		{
 			name: "custom composed template",
-			prepareSource: func(t *testing.T, sourceDataDir string, apstore *harness.ApStoreHarness) (string, map[string]string) {
+			prepareSource: func(t *testing.T, sourceDataDir string, apadmin *harness.ApAdminHarness) (string, map[string]string) {
 				family := fmt.Sprintf("falcon1024-backup-portability-%d", time.Now().UnixNano())
 				keyType := integrationTemplateKeyType(family)
 				templatePath := filepath.Join(t.TempDir(), "custom-composed-allowlist.yaml")
@@ -265,7 +265,7 @@ teal: |
 					t.Fatalf("failed to write custom composed template YAML: %v", err)
 				}
 
-				mustImportTemplateViaApstore(t, sourceDataDir, apstore, templatePath, "custom composed template")
+				mustImportTemplateViaApadmin(t, sourceDataDir, apadmin, templatePath, "custom composed template")
 
 				return keyType, map[string]string{"recipients": integrationBurnAddress}
 			},
@@ -281,8 +281,8 @@ teal: |
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-			sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-			keyType, generateParams := tc.prepareSource(t, sourceClone.SignerDataDir, sourceApstore)
+			sourceApadmin := harness.NewApAdminHarness(t, sourceClone.SignerDataDir)
+			keyType, generateParams := tc.prepareSource(t, sourceClone.SignerDataDir, sourceApadmin)
 
 			sourceSigner := harness.NewSignerHarness(t)
 			if err := sourceSigner.Start(); err != nil {
@@ -312,11 +312,11 @@ teal: |
 			storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 			exportPassphrase := storePassphrase
 			t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
-			archivePath := mustCreateBackupArchive(t, sourceApstore, address, exportPassphrase)
+			archivePath := mustCreateBackupArchive(t, sourceApadmin, address, exportPassphrase)
 			mustAssertCredentialOnlyArchiveEntry(t, archivePath, address, exportPassphrase)
 
 			destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-			destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
+			destApadmin := harness.NewApAdminHarness(t, destClone.SignerDataDir)
 			if tc.prepareDestination != nil {
 				tc.prepareDestination(t, destClone.SignerDataDir)
 			}
@@ -325,7 +325,7 @@ teal: |
 				t.Fatalf("test requires identical source/destination store passphrases, got %q vs %q", exportPassphrase, destStorePassphrase)
 			}
 			t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
-			mustRestoreArchive(t, destApstore, archivePath, exportPassphrase, address)
+			mustRestoreArchive(t, destApadmin, archivePath, exportPassphrase, address)
 
 			destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
 			if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); err != nil {
@@ -403,7 +403,7 @@ teal: |
 func TestBackupRestoreRunsThroughSignerIPC(t *testing.T) {
 	lockOnDisconnect := false
 	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
+	sourceApadmin := harness.NewApAdminHarness(t, sourceClone.SignerDataDir)
 
 	sourceSigner := harness.NewSignerHarness(t)
 	if err := sourceSigner.Start(); err != nil {
@@ -423,7 +423,7 @@ func TestBackupRestoreRunsThroughSignerIPC(t *testing.T) {
 
 	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
-	archivePath := mustCreateBackupArchive(t, sourceApstore, address, storePassphrase)
+	archivePath := mustCreateBackupArchive(t, sourceApadmin, address, storePassphrase)
 
 	if err := sourceSigner.Stop(); err != nil {
 		t.Fatalf("failed to stop source signer before starting destination signer: %v", err)
@@ -436,8 +436,8 @@ func TestBackupRestoreRunsThroughSignerIPC(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = destSigner.Stop() })
 
-	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	if output, err := runRestoreArchiveWithRunningSigner(t, destApstore, archivePath, storePassphrase, address); err != nil {
+	destApadmin := harness.NewApAdminHarness(t, destClone.SignerDataDir)
+	if output, err := runRestoreArchiveWithRunningSigner(t, destApadmin, archivePath, storePassphrase, address); err != nil {
 		t.Fatalf("expected restore through running signer to succeed, got %v\noutput:\n%s", err, output)
 	}
 
@@ -451,7 +451,7 @@ func TestBackupRestoreRunsThroughSignerIPC(t *testing.T) {
 	}
 }
 
-func TestSignerManagedBackupRoundTripViaApstoreRestore(t *testing.T) {
+func TestSignerManagedBackupRoundTripViaApadminRestore(t *testing.T) {
 	lockOnDisconnect := false
 	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 
@@ -473,16 +473,16 @@ func TestSignerManagedBackupRoundTripViaApstoreRestore(t *testing.T) {
 	}
 
 	exportPassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
+	t.Setenv("APSIGNER_PASSPHRASE", exportPassphrase)
 	backupResult, err := sourceApadmin.CreateBackup(exportPassphrase)
 	if err != nil {
 		t.Fatalf("failed to create signer-managed backup: %v", err)
 	}
 	// Managed backup responses intentionally expose only the archive basename.
-	// Export through authenticated apstore IPC before moving the archive to a
+	// Export through authenticated apadmin IPC before moving the archive to a
 	// different signer; clients must never depend on the daemon's store path.
-	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
 	exportDir := t.TempDir()
-	if output, err := sourceApstore.Run("backup", "export", backupResult.ArchivePath, exportDir); err != nil {
+	if output, err := sourceApadmin.Run("backup", "export", backupResult.ArchivePath, exportDir); err != nil {
 		t.Fatalf("failed to export signer-managed backup: %v\noutput:\n%s", err, output)
 	}
 	archivePath := filepath.Join(exportDir, filepath.Base(backupResult.ArchivePath))
@@ -503,10 +503,10 @@ func TestSignerManagedBackupRoundTripViaApstoreRestore(t *testing.T) {
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)
 	}
-	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
+	destApadmin := harness.NewApAdminHarness(t, destClone.SignerDataDir)
 	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
-	mustRestoreArchive(t, destApstore, archivePath, exportPassphrase, address)
+	mustRestoreArchive(t, destApadmin, archivePath, exportPassphrase, address)
 
 	destSigner := harness.NewSignerHarness(t)
 	if err := destSigner.Start(); err != nil {
@@ -514,7 +514,6 @@ func TestSignerManagedBackupRoundTripViaApstoreRestore(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = destSigner.Stop() })
 
-	destApadmin := harness.NewApAdminHarness(t, destSigner.GetWorkDir())
 	t.Cleanup(destApadmin.Cleanup)
 	if err := destApadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock destination signer: %v", err)
@@ -529,7 +528,7 @@ func TestSignerManagedBackupRoundTripViaApstoreRestore(t *testing.T) {
 func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testing.T) {
 	lockOnDisconnect := false
 	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
+	sourceApadmin := harness.NewApAdminHarness(t, sourceClone.SignerDataDir)
 	installHTLCTemplate(t, sourceClone.SignerDataDir)
 
 	sourceSigner := harness.NewSignerHarness(t)
@@ -538,7 +537,6 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	}
 	t.Cleanup(func() { _ = sourceSigner.Stop() })
 
-	sourceApadmin := harness.NewApAdminHarness(t, sourceSigner.GetWorkDir())
 	t.Cleanup(sourceApadmin.Cleanup)
 	if err := sourceApadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock source signer: %v", err)
@@ -564,7 +562,7 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 
 	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
-	archivePath := mustCreateBackupArchive(t, sourceApstore, address, storePassphrase)
+	archivePath := mustCreateBackupArchive(t, sourceApadmin, address, storePassphrase)
 	mustAssertCredentialOnlyArchiveEntry(t, archivePath, address, storePassphrase)
 
 	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
@@ -580,10 +578,10 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)
 	}
-	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
+	destApadmin := harness.NewApAdminHarness(t, destClone.SignerDataDir)
 	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
-	output, err := runRestoreArchive(t, destApstore, archivePath, storePassphrase, address)
+	output, err := runRestoreArchive(t, destApadmin, archivePath, storePassphrase, address)
 	if err != nil {
 		t.Fatalf("expected standalone key restore without local template or bundled definition, got %v\noutput:\n%s", err, output)
 	}
@@ -598,7 +596,7 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 	lockOnDisconnect := false
 	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
+	sourceApadmin := harness.NewApAdminHarness(t, sourceClone.SignerDataDir)
 
 	sourceSigner := harness.NewSignerHarness(t)
 	if err := sourceSigner.Start(); err != nil {
@@ -606,7 +604,6 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sourceSigner.Stop() })
 
-	sourceApadmin := harness.NewApAdminHarness(t, sourceSigner.GetWorkDir())
 	t.Cleanup(sourceApadmin.Cleanup)
 	if err := sourceApadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock source signer: %v", err)
@@ -652,7 +649,7 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 
 	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
-	archivePath := mustCreateBackupArchive(t, sourceApstore, "all", storePassphrase)
+	archivePath := mustCreateBackupArchive(t, sourceApadmin, "all", storePassphrase)
 	extractDir := mustExtractBackupArchive(t, archivePath)
 
 	if _, err := os.Stat(filepath.Join(extractDir, "apb", activeAddress+".apb")); err != nil {
@@ -692,7 +689,7 @@ func mustReadPassphrase(t *testing.T, signerDataDir string) string {
 	return strings.TrimSpace(string(data))
 }
 
-func mustCreateBackupArchive(t *testing.T, apstore *harness.ApStoreHarness, what, exportPassphrase string) string {
+func mustCreateBackupArchive(t *testing.T, apadmin *harness.ApAdminHarness, what, exportPassphrase string) string {
 	t.Helper()
 
 	exportDir := t.TempDir()
@@ -702,13 +699,13 @@ func mustCreateBackupArchive(t *testing.T, apstore *harness.ApStoreHarness, what
 	} else {
 		createArgs = append(createArgs, "address", what)
 	}
-	output, err := apstore.RunWithInput(exportPassphrase+"\n"+exportPassphrase+"\n", createArgs...)
+	output, err := apadmin.RunWithInput(exportPassphrase+"\n"+exportPassphrase+"\n", createArgs...)
 	if err != nil {
 		t.Fatalf("failed to create backup archive for %s: %v\noutput:\n%s", what, err, output)
 	}
 	managedPath := mustParseManagedBackupPath(t, output)
 	archivePath := filepath.Join(exportDir, filepath.Base(managedPath))
-	if output, err := apstore.Run("backup", "export", filepath.Base(managedPath), exportDir); err != nil {
+	if output, err := apadmin.Run("backup", "export", filepath.Base(managedPath), exportDir); err != nil {
 		t.Fatalf("failed to export backup archive for %s: %v\noutput:\n%s", what, err, output)
 	}
 	return archivePath
@@ -732,38 +729,37 @@ func mustParseManagedBackupPath(t *testing.T, output string) string {
 	return ""
 }
 
-func mustRestoreArchive(t *testing.T, apstore *harness.ApStoreHarness, archivePath, exportPassphrase string, addresses ...string) {
+func mustRestoreArchive(t *testing.T, apadmin *harness.ApAdminHarness, archivePath, exportPassphrase string, addresses ...string) {
 	t.Helper()
 
-	output, err := runRestoreArchive(t, apstore, archivePath, exportPassphrase, addresses...)
+	output, err := runRestoreArchive(t, apadmin, archivePath, exportPassphrase, addresses...)
 	if err != nil {
 		t.Fatalf("failed to restore archive %s: %v\noutput:\n%s", archivePath, err, output)
 	}
 }
 
-func runRestoreArchive(t *testing.T, apstore *harness.ApStoreHarness, archivePath, exportPassphrase string, addresses ...string) (string, error) {
+func runRestoreArchive(t *testing.T, apadmin *harness.ApAdminHarness, archivePath, exportPassphrase string, addresses ...string) (string, error) {
 	t.Helper()
 
 	var output string
 	var err error
 	runWithTempSigner(t, func() {
-		output, err = runRestoreArchiveWithRunningSigner(t, apstore, archivePath, exportPassphrase, addresses...)
+		output, err = runRestoreArchiveWithRunningSigner(t, apadmin, archivePath, exportPassphrase, addresses...)
 	})
 	return output, err
 }
 
-func runRestoreArchiveWithRunningSigner(t *testing.T, apstore *harness.ApStoreHarness, archivePath, exportPassphrase string, addresses ...string) (string, error) {
+func runRestoreArchiveWithRunningSigner(t *testing.T, apadmin *harness.ApAdminHarness, archivePath, exportPassphrase string, addresses ...string) (string, error) {
 	t.Helper()
-	t.Setenv("APSIGNER_PASSPHRASE", "")
 
-	if output, err := apstore.RunWithInput(exportPassphrase+"\n", "backup", "import", archivePath); err != nil {
+	if output, err := apadmin.RunWithInput(exportPassphrase+"\n", "backup", "import", archivePath); err != nil {
 		return output, err
 	}
 	args := []string{"restore", "apply", filepath.Base(archivePath)}
 	for _, address := range addresses {
 		args = append(args, "--address", address)
 	}
-	return apstore.RunWithInput(exportPassphrase+"\n", args...)
+	return apadmin.RunWithInput(exportPassphrase+"\n", args...)
 }
 
 func mustAssertCredentialOnlyArchiveEntry(t *testing.T, archivePath, address, exportPassphrase string) {

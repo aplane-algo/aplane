@@ -259,7 +259,7 @@ test/
 │   ├── apstore_initialize_test.go # apstore initialize bootstrap tests
 │   ├── backup_portability_test.go # Backup/restore portability tests
 │   ├── ssh_token_test.go          # SSH enrollment and token provisioning tests
-│   ├── apstore_changepass_test.go # Passphrase rotation restart regression
+│   ├── apadmin_changepass_test.go # Passphrase rotation restart regression
 │   └── passthrough_test.go        # Passthrough/multi-party signing tests
 ```
 
@@ -407,7 +407,12 @@ funded on FNet. The same native address may be used on another v42 ledger, but
 it must hold funds independently there. Never use the mnemonic for production
 funds.
 
-`APSIGNER_PASSPHRASE` is a general-purpose environment variable for non-interactive `apstore` usage (not test-specific). When set, all `apstore` passphrase prompts are answered with its value. The setup script does not export it; instead, it pipes the generated test passphrase into `apstore initialize`. It is not written to `.env.test` and is not needed at test runtime.
+`APSIGNER_PASSPHRASE` is a general-purpose environment variable for
+non-interactive local `apstore` bootstrap and local `apadmin` batch usage (not
+test-specific). Remote apadmin ignores it, and `apadmin changepass` always
+requires explicit current/new input. The setup script does not export it;
+instead, it pipes the generated test passphrase into `apstore initialize`. It
+is not written to `.env.test` and is not needed at test runtime.
 
 ### Running Integration Tests
 
@@ -538,14 +543,14 @@ make soak-test-localnet APLANE_SOAK_DURATION=4h SOAK_GO_ARGS='-count=1 -timeout 
 | `TestFalconGroupTransaction` | Generate two Falcon keys, fund them, sign an atomic payment group, and close accounts back to the funder |
 | `TestFalconPassphraseSigning` | Verify passphrase-protected Falcon signing flow |
 | `TestSignerRestartPreservesUsableKeys` | Generate key, stop signer, restart, verify key remains usable |
-| `TestApstoreChangepassUpdatesIdentityUnlockHelperAndSignerRestarts` | Rotate passphrase through `apstore changepass`, require manual current passphrase entry, update identity unlock helper, and restart via that helper |
+| `TestApadminChangepassUpdatesIdentityUnlockHelperAndSignerRestarts` | Rotate passphrase through `apadmin changepass`, require manual current passphrase entry, update identity unlock helper, and restart via that helper |
 | `TestBackupPortabilityFirstMilestone` | Backup and restore key/template variants across signer stores |
 | `TestAppDeployAndExercise` | Deploy and exercise the test application fixture |
 | `TestPreparedGroupDepositFlow` | Build, sign, and submit prepared payment/app-call groups |
 | `TestJavaScriptTransactionFlows` | Exercise JavaScript transaction helpers against the signer |
 | `TestGenericAllowlistTemplateAllowsSendAndCloseToFundingAccount` | Install and spend with a generic template-backed LogicSig |
 | `TestIncludedKeyTypesSignInBatchedGroups` | Imports bundled templates, activates opt-in compiled key types, generates/funds accounts including `aplane.falcon1024-allowlist.v1`, and signs positive/negative grouped transactions |
-| `TestSignerManagedBackupRoundTripViaApstoreRestore` | Create a signer-managed backup, restore through `apstore`, and verify restored keys remain usable |
+| `TestSignerManagedBackupRoundTripViaApadminRestore` | Create a signer-managed backup, restore through `apadmin`, and verify restored keys remain usable |
 | `TestKeyDerivationRegression` | Pin known-answer addresses for supported Ed25519, DSA LogicSig, and template-backed LogicSig derivation paths |
 | `TestPassthroughMixedGroup` | Sign + passthrough in one group: server signs txn A, pre-signed txn B passes through unchanged |
 | `TestPassthroughResign` | Sign full group, strip one signature, resubmit with mix of sign + passthrough |

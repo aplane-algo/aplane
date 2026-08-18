@@ -100,7 +100,7 @@ func TestStorePassphraseRotationPreservesSigningAndPriorGeneration(t *testing.T)
 	}
 
 	input := strings.Join([]string{oldPass, newPass, newPass, "y", ""}, "\n")
-	output, err := env.runApstore(input, nil, "changepass")
+	output, err := env.runApadminBatch(input, "changepass")
 	if err != nil {
 		t.Fatalf("changepass: %v\n%s", err, output)
 	}
@@ -154,7 +154,7 @@ func TestReleaseArtifactStoreDrill(t *testing.T) {
 	assertCanSign(t, destination, address)
 
 	input := strings.Join([]string{destPass, newPass, newPass, "y", ""}, "\n")
-	output, err := destination.runApstore(input, nil, "changepass")
+	output, err := destination.runApadminBatch(input, "changepass")
 	if err != nil {
 		t.Fatalf("release artifact changepass: %v\n%s", err, output)
 	}
@@ -336,8 +336,7 @@ func offlineSuggestedParams(t *testing.T) types.SuggestedParams {
 
 func mustCreateAndExportBackup(t *testing.T, env *storeEnv, exportPass string) string {
 	t.Helper()
-	authEnv := []string{"TEST_PASSPHRASE=" + env.passphrase}
-	output, err := env.runApstore(exportPass+"\n"+exportPass+"\n", authEnv, "backup", "create", "all")
+	output, err := env.runApadminBatch(exportPass+"\n"+exportPass+"\n", "backup", "create", "all")
 	if err != nil {
 		t.Fatalf("create managed backup: %v\n%s", err, output)
 	}
@@ -356,7 +355,7 @@ func mustCreateAndExportBackup(t *testing.T, env *storeEnv, exportPass string) s
 	if err := os.MkdirAll(exportDir, 0o700); err != nil {
 		t.Fatalf("create backup export directory: %v", err)
 	}
-	output, err = env.runApstore("", authEnv, "backup", "export", filepath.Base(managedPath), exportDir)
+	output, err = env.runApadminBatch("", "backup", "export", filepath.Base(managedPath), exportDir)
 	if err != nil {
 		t.Fatalf("export managed backup: %v\n%s", err, output)
 	}
@@ -365,16 +364,15 @@ func mustCreateAndExportBackup(t *testing.T, env *storeEnv, exportPass string) s
 
 func mustImportAndApplyBackup(t *testing.T, env *storeEnv, archive, exportPass string, extraApplyArgs ...string) {
 	t.Helper()
-	authEnv := []string{"TEST_PASSPHRASE=" + env.passphrase}
 	imported := filepath.Join(env.root, "incoming-"+filepath.Base(archive))
 	copyFile(t, archive, imported)
-	output, err := env.runApstore(exportPass+"\n", authEnv, "backup", "import", imported)
+	output, err := env.runApadminBatch(exportPass+"\n", "backup", "import", imported)
 	if err != nil {
 		t.Fatalf("import backup: %v\n%s", err, output)
 	}
 	args := []string{"restore", "apply", filepath.Base(imported)}
 	args = append(args, extraApplyArgs...)
-	output, err = env.runApstore(exportPass+"\n", authEnv, args...)
+	output, err = env.runApadminBatch(exportPass+"\n", args...)
 	if err != nil {
 		t.Fatalf("apply credential backup: %v\n%s", err, output)
 	}

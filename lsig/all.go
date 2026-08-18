@@ -11,7 +11,7 @@
 //
 // TEMPLATE LIBRARY PROVIDERS:
 // - YAML templates in library/templates/ are optional and identity-scoped
-// - Register from the keystore after apstore template import
+// - Register from the keystore after apadmin template import
 //
 // TO ADD A NEW PROVIDER:
 // 1. Create your provider package in lsig/<provider>/

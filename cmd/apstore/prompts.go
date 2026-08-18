@@ -5,12 +5,10 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"golang.org/x/term"
 )
 
@@ -46,61 +44,6 @@ func readPassword() ([]byte, error) {
 		return []byte(p), nil
 	}
 	return readPromptedPassword()
-}
-
-func readCurrentPassphrase() ([]byte, error) {
-	fmt.Print("Enter current passphrase: ")
-	passphrase, err := readPromptedPassword()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read passphrase: %w", err)
-	}
-	fmt.Println()
-	return passphrase, nil
-}
-
-func readNewPassphrase(oldPassphrase []byte) ([]byte, error) {
-	fmt.Print("Enter new passphrase: ")
-	newPassphrase, err := readPromptedPassword()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read new passphrase: %w", err)
-	}
-	fmt.Println()
-
-	if len(newPassphrase) == 0 {
-		return nil, fmt.Errorf("new passphrase cannot be empty")
-	}
-
-	fmt.Print("Confirm new passphrase: ")
-	confirm, err := readPromptedPassword()
-	if err != nil {
-		crypto.ZeroBytes(newPassphrase)
-		return nil, fmt.Errorf("failed to read confirmation: %w", err)
-	}
-	defer crypto.ZeroBytes(confirm)
-	fmt.Println()
-
-	if !bytes.Equal(newPassphrase, confirm) {
-		crypto.ZeroBytes(newPassphrase)
-		return nil, fmt.Errorf("passphrases do not match")
-	}
-	if bytes.Equal(newPassphrase, oldPassphrase) {
-		crypto.ZeroBytes(newPassphrase)
-		return nil, fmt.Errorf("new passphrase must be different from current passphrase")
-	}
-	return newPassphrase, nil
-}
-
-func confirmPassphraseChange() bool {
-	fmt.Print("Proceed with passphrase change? [y/N]: ")
-	return confirmYesNo("")
-}
-
-func confirmRemoveTemplate(keyType string) bool {
-	return confirmYesNo(fmt.Sprintf("Remove installed template %s? [y/N]: ", displayKeyType(keyType)))
-}
-
-func confirmDeactivateKeyType(keyType string) bool {
-	return confirmYesNo(fmt.Sprintf("Disable key type %s? [y/N]: ", displayKeyType(keyType)))
 }
 
 func confirmYesNo(prompt string) bool {

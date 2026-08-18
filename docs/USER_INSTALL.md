@@ -546,10 +546,11 @@ Users who run `apadmin` must be members of the `aplane` group so they can
 connect to `/run/apsigner/aplane.sock`; group membership does not allow them to
 read `/var/lib/apsigner`. `appass` changes systemd passphrase handling and should be
 run with `sudo appass -d /var/lib/apsigner` while `apsigner` is stopped.
-Daemon-backed `apstore` operations run as the operator through IPC. Offline
-bootstrap, rescue, generation-prune, and permission-migration commands use
-`sudo` on systemd stores. Local data directories do not. The tools refuse the
-wrong mode before prompting or touching the store.
+All general running-daemon operations run through `apadmin` as the operator
+over authenticated IPC. `apstore` is reserved for stopped-daemon bootstrap,
+rescue, verification, generation pruning, and permission migration; those
+commands use `sudo` on systemd stores. Local data directories do not. The tools
+refuse the wrong mode before prompting or touching the store.
 
 For unattended operation, install normally first, stop the service, then use
 `sudo appass -d /var/lib/apsigner` to configure a passphrase helper such as
@@ -684,8 +685,8 @@ This produces statically linked binaries in `bin/`:
 |--------|---------|
 | `apsigner` | Signing server |
 | `appass-systemd-creds` | Passphrase encryption helper (TPM2/host key) |
-| `apstore` | Keystore init, backup, restore, passphrase change |
-| `apadmin` | Key generation and management (TUI) |
+| `apstore` | Offline keystore bootstrap, verification, and rescue |
+| `apadmin` | Live administration over IPC or SSH, in the TUI or batch mode |
 | `apconsole` | Unified secure-machine console for shell, signer TUI, and daemon status |
 | `apapprover` | Signing and token provisioning approval interface |
 | `appass` | Offline passphrase auto-unlock configuration TUI |
@@ -813,7 +814,7 @@ two in sync. Encrypting the credential the first time requires root because
 `appass` is run with `sudo`.
 
 `appass-systemd-creds` helper configurations refuse non-root
-`apstore changepass` before prompting because rewriting the encrypted
+`apadmin changepass` before prompting because rewriting the encrypted
 systemd credential requires root. See [Changing the Passphrase](#changing-the-passphrase)
 below.
 
@@ -920,8 +921,8 @@ Press `g` and select a key type to generate. apsigner auto-detects new keys via 
 ### Backup Keys
 
 ```bash
-apstore backup create all
-apstore backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
+apadmin backup create all
+apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
 ```
 
 See [USER_STORE_MGMT.md](USER_STORE_MGMT.md) for full backup/restore documentation.
@@ -1069,7 +1070,7 @@ Every service start:
 To rotate the keystore passphrase (auto-unlock mode):
 
 ```bash
-apstore changepass
+apadmin changepass
 ```
 
 This asks you to manually enter the current passphrase, generates a fresh key
@@ -1095,15 +1096,15 @@ The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot
 
 1. **On the old machine** — create a backup:
    ```bash
-   apstore backup create all
-   apstore backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
+   apadmin backup create all
+   apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
    ```
 
 2. **On the new machine** — install apsigner (Steps 1–4 above), then restore:
    ```bash
-   apstore backup import /mnt/usb/aplane-backup.tar.gz
-   apstore restore preview aplane-backup.tar.gz
-   apstore restore apply aplane-backup.tar.gz
+   apadmin backup import /mnt/usb/aplane-backup.tar.gz
+   apadmin restore preview aplane-backup.tar.gz
+   apadmin restore apply aplane-backup.tar.gz
    ```
 
    `restore apply` authenticates and validates the complete credential set,

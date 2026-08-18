@@ -28,7 +28,7 @@ type SSHServerConfig struct {
 
 // ServerEndpointConfig holds the signer endpoint surface exposed to clients.
 type ServerEndpointConfig struct {
-	AdvertiseURL string          `yaml:"advertise_url,omitempty" description:"Client-reachable public endpoint URL used by apstore endpoint export when --host/--url are omitted"`
+	AdvertiseURL string          `yaml:"advertise_url,omitempty" description:"Client-reachable public endpoint URL used by apadmin endpoint export when --host/--url are omitted"`
 	SignerPort   int             `yaml:"signer_port" description:"Loopback REST API port behind the endpoint" default:"11270"`
 	SSH          SSHServerConfig `yaml:"ssh" description:"SSH tunnel settings for apsigner endpoint access" default:"default SSH settings"`
 }
