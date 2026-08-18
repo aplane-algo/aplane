@@ -33,16 +33,10 @@ func dispatchApstoreCommand(args []string) {
 		}
 
 	case "generations":
-		if len(args) == 2 && args[1] == "list" {
-			if err := cmdGenerations(args[1:]); err != nil {
-				exitWithError(err)
-			}
-		} else {
-			if err := runStoreMutatingCommand(command, func() error {
-				return cmdGenerations(args[1:])
-			}); err != nil {
-				exitWithError(err)
-			}
+		if err := runStoreMutatingCommand(command, func() error {
+			return cmdGenerations(args[1:])
+		}); err != nil {
+			exitWithError(err)
 		}
 
 	case "backup":
@@ -97,26 +91,6 @@ func dispatchApstoreCommand(args []string) {
 				exitWithError(err)
 			}
 		} else if err := run(); err != nil {
-			exitWithError(err)
-		}
-
-	case "template":
-		if err := cmdTemplate(args[1:]); err != nil {
-			exitWithError(err)
-		}
-
-	case "keytype":
-		if err := cmdKeyType(args[1:]); err != nil {
-			exitWithError(err)
-		}
-
-	case "sentry":
-		if err := cmdSentry(args[1:]); err != nil {
-			exitWithError(err)
-		}
-
-	case "endpoint":
-		if err := cmdEndpoint(args[1:]); err != nil {
 			exitWithError(err)
 		}
 

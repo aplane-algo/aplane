@@ -128,14 +128,8 @@ func isDaemonBackedCommand(args []string) bool {
 		return isManagedBackupCommand(args)
 	case "restore":
 		return isManagedRestoreCommand(args)
-	case "changepass", "template", "keytype":
+	case "changepass":
 		return true
-	case "sentry":
-		return true
-	case "endpoint":
-		return len(args) >= 2 && args[1] == "export"
-	case "generations":
-		return len(args) == 2 && args[1] == "list"
 	default:
 		return false
 	}
@@ -248,12 +242,6 @@ func acquireOfflineMutationLockForArgs(args []string, dataDir string) (func(), e
 		if len(args) > 1 && args[1] == "sign" {
 			return acquireOfflineMutationLock("policy", dataDir)
 		}
-		return func() {}, nil
-	}
-	if args[0] == "template" || args[0] == "keytype" {
-		return func() {}, nil
-	}
-	if args[0] == "generations" && len(args) == 2 && args[1] == "list" {
 		return func() {}, nil
 	}
 	return acquireOfflineMutationLock(args[0], dataDir)

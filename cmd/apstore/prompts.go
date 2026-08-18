@@ -95,14 +95,6 @@ func confirmPassphraseChange() bool {
 	return confirmYesNo("")
 }
 
-func confirmRemoveTemplate(keyType string) bool {
-	return confirmYesNo(fmt.Sprintf("Remove installed template %s? [y/N]: ", displayKeyType(keyType)))
-}
-
-func confirmDeactivateKeyType(keyType string) bool {
-	return confirmYesNo(fmt.Sprintf("Disable key type %s? [y/N]: ", displayKeyType(keyType)))
-}
-
 func confirmYesNo(prompt string) bool {
 	if prompt != "" {
 		fmt.Print(prompt)

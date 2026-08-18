@@ -4,10 +4,15 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
+	"github.com/aplane-algo/aplane/internal/witness"
+	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 )
 
 func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
@@ -49,6 +54,30 @@ func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 			t.Fatalf("list output exposed sentry public key hex: %q", out)
 		}
 	})
+}
+
+func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.GenerationResult, string) {
+	t.Helper()
+	kr := deriveTestKeyring(t, passphrase)
+	generator := &falconkeygen.WitnessFalcon1024Generator{}
+	result, err := generator.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), kr, witness.Falcon1024V1, nil)
+	if err != nil {
+		t.Fatalf("GenerateRandom(sentry-falcon1024) error = %v", err)
+	}
+	if result.PublicKeyHex == "" {
+		t.Fatal("GenerateRandom(sentry-falcon1024) public key is empty")
+	}
+	return result, result.PublicKeyHex
+}
+
+func deriveTestKeyring(t *testing.T, passphrase []byte) *crypto.Keyring {
+	t.Helper()
+	keyring, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), passphrase)
+	if err != nil {
+		t.Fatalf("OpenKeyringStore() error = %v", err)
+	}
+	t.Cleanup(keyring.Zero)
+	return keyring
 }
 
 func TestCmdKeysRejectsUnknownSubcommand(t *testing.T) {

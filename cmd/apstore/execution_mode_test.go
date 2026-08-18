@@ -92,22 +92,6 @@ func TestAcquireOfflineMutationLockForArgsSkipsManagedBackupLock(t *testing.T) {
 	release()
 }
 
-func TestAcquireOfflineMutationLockForArgsSkipsGenerationListLock(t *testing.T) {
-	dataDir := t.TempDir()
-
-	guard, err := storelock.AcquireShared(dataDir)
-	if err != nil {
-		t.Fatalf("AcquireShared() error = %v", err)
-	}
-	defer func() { _ = guard.Close() }()
-
-	release, err := acquireOfflineMutationLockForArgs([]string{"generations", "list"}, dataDir)
-	if err != nil {
-		t.Fatalf("acquireOfflineMutationLockForArgs(generations list) error = %v", err)
-	}
-	release()
-}
-
 func TestPermissionsPreflightBypassesModeGuardAndStoreLock(t *testing.T) {
 	dataDir := t.TempDir()
 	oldCurrentEUID := currentEUID
@@ -138,50 +122,6 @@ func TestManagedRestoreCommandSetMatchesProtocolV4(t *testing.T) {
 		if isManagedRestoreCommand([]string{"restore", removed}) {
 			t.Fatalf("removed restore command %s remains reachable", removed)
 		}
-	}
-}
-
-func TestAcquireOfflineMutationLockForArgsSkipsIPCTemplateCommands(t *testing.T) {
-	dataDir := t.TempDir()
-
-	guard, err := storelock.AcquireExclusive(dataDir)
-	if err != nil {
-		t.Fatalf("AcquireExclusive() error = %v", err)
-	}
-	defer func() { _ = guard.Close() }()
-
-	for _, args := range [][]string{
-		{"template", "list"},
-		{"template", "show", "example-v1", "--show-sensitive-template"},
-		{"template", "import", "template.yaml"},
-		{"template", "remove", "example-v1"},
-	} {
-		release, err := acquireOfflineMutationLockForArgs(args, dataDir)
-		if err != nil {
-			t.Fatalf("acquireOfflineMutationLockForArgs(%v) error = %v", args, err)
-		}
-		release()
-	}
-}
-
-func TestAcquireOfflineMutationLockForArgsDoesNotLockIPCKeyTypeCommands(t *testing.T) {
-	dataDir := t.TempDir()
-
-	guard, err := storelock.AcquireExclusive(dataDir)
-	if err != nil {
-		t.Fatalf("AcquireExclusive() error = %v", err)
-	}
-	defer func() { _ = guard.Close() }()
-
-	for _, args := range [][]string{
-		{"keytype", "enable", "example-v1"},
-		{"keytype", "disable", "example-v1"},
-	} {
-		release, err := acquireOfflineMutationLockForArgs(args, dataDir)
-		if err != nil {
-			t.Fatalf("acquireOfflineMutationLockForArgs(%v) error = %v", args, err)
-		}
-		release()
 	}
 }
 
@@ -272,14 +212,8 @@ func TestEnforceApstoreExecutionModeRejectsForeignOwnedLocalDataDir(t *testing.T
 func TestEnforceApstoreExecutionModeAllowsDaemonBackedCommandWithoutStoreAccess(t *testing.T) {
 	for _, args := range [][]string{
 		{"changepass"},
-		{"template", "list"},
-		{"keytype", "list"},
 		{"backup", "list"},
 		{"restore", "preview", "archive.tar.gz"},
-		{"sentry", "list"},
-		{"sentry", "import", "public.json", "lab"},
-		{"generations", "list"},
-		{"endpoint", "export"},
 	} {
 		if err := enforceApstoreExecutionMode("/deliberately/inaccessible", args); err != nil {
 			t.Fatalf("enforceApstoreExecutionMode(%v) error = %v", args, err)
@@ -287,6 +221,20 @@ func TestEnforceApstoreExecutionModeAllowsDaemonBackedCommandWithoutStoreAccess(
 	}
 	if isDaemonBackedCommand([]string{"generations", "prune"}) {
 		t.Fatal("generations prune must remain offline")
+	}
+}
+
+func TestApstoreNoLongerClassifiesMovedCatalogCommandsAsDaemonBacked(t *testing.T) {
+	for _, args := range [][]string{
+		{"template", "list"},
+		{"keytype", "enable", "example-v1"},
+		{"sentry", "list"},
+		{"endpoint", "export"},
+		{"generations", "list"},
+	} {
+		if isDaemonBackedCommand(args) {
+			t.Fatalf("retired apstore command %v remains daemon-backed", args)
+		}
 	}
 }
 

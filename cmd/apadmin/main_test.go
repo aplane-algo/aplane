@@ -3,7 +3,12 @@
 
 package main
 
-import "testing"
+import (
+	"bytes"
+	"io"
+	"strings"
+	"testing"
+)
 
 func TestValidateFlagSpelling(t *testing.T) {
 	tests := []struct {
@@ -49,5 +54,42 @@ func TestValidateFlagSpelling(t *testing.T) {
 				t.Fatalf("validateFlagSpelling() error = %v, want nil", err)
 			}
 		})
+	}
+}
+
+func TestCatalogCommandRejectsUsageBeforeCredentialOrConnection(t *testing.T) {
+	var stderr bytes.Buffer
+	code := runCatalogCommand("template", []string{"show", "example.v1"}, adminBatchGlobalOptions{}, adminBatchStreams{
+		stdin: strings.NewReader("would-be-passphrase\n"), stdout: io.Discard, stderr: &stderr,
+	})
+	if code != 2 {
+		t.Fatalf("code = %d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--show-sensitive-template") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestAdminBatchPromptUsesOneReaderForPassphraseAndConfirmation(t *testing.T) {
+	var stderr bytes.Buffer
+	prompt := newAdminBatchPrompt(strings.NewReader("secret\nyes\n"), &stderr)
+	secret, err := prompt.passphrase(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(secret) != "secret" || !prompt.confirm("Proceed? ") {
+		t.Fatalf("secret=%q confirmation=false", secret)
+	}
+}
+
+func TestRemoteAdminBatchPromptIgnoresLocalEnvironment(t *testing.T) {
+	t.Setenv("APSIGNER_PASSPHRASE", "ambient-local-secret")
+	prompt := newAdminBatchPrompt(strings.NewReader("explicit-remote-secret\n"), io.Discard)
+	secret, err := prompt.passphrase(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(secret) != "explicit-remote-secret" {
+		t.Fatalf("remote passphrase = %q", secret)
 	}
 }

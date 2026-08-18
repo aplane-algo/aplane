@@ -68,7 +68,7 @@ func main() {
 	flag.Parse()
 
 	positional := flag.Args()
-	if isProductionSubcommand(positional) {
+	if len(positional) > 0 && positional[0] == policySubcommand {
 		passed := make(map[string]bool)
 		flag.Visit(func(f *flag.Flag) { passed[f.Name] = true })
 		code := runPolicyCommand(context.Background(), positional[1:], policyGlobalOptions{
@@ -79,6 +79,15 @@ func main() {
 			clientDataPassed: passed["client-data"],
 			ipcPathPassed:    passed["ipc-path"],
 		}, policyStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		if code != 0 {
+			os.Exit(code)
+		}
+		return
+	}
+	if len(positional) > 0 && isCatalogSubcommand(positional[0]) {
+		code := runCatalogCommand(positional[0], positional[1:], adminBatchGlobalOptions{
+			dataDir: *dataDir, clientDataDir: *clientDataDir, ipcPath: *ipcPathFlag, remote: *remoteMode,
+		}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
 		if code != 0 {
 			os.Exit(code)
 		}

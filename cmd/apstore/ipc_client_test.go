@@ -79,21 +79,21 @@ func TestBackupPassphrasePromptsDoNotWriteStdout(t *testing.T) {
 	}
 }
 
-func TestCmdTemplatesReportsIPCUnavailableWithoutDaemon(t *testing.T) {
+func TestManagedBackupReportsIPCUnavailableWithoutDaemon(t *testing.T) {
 	oldConfig := config
 	defer func() { config = oldConfig }()
 
 	config.IPCPath = filepath.Join(t.TempDir(), "missing.sock")
-	err := cmdTemplates()
+	err := cmdBackupList()
 	if err == nil {
-		t.Fatal("cmdTemplates() error = nil, want IPC connection failure")
+		t.Fatal("cmdBackupList() error = nil, want IPC connection failure")
 	}
 	if !strings.Contains(err.Error(), "failed to connect to IPC socket") {
-		t.Fatalf("cmdTemplates() error = %v, want IPC connection context", err)
+		t.Fatalf("cmdBackupList() error = %v, want IPC connection context", err)
 	}
 }
 
-func TestCmdTemplatesReportsIPCAuthenticationFailure(t *testing.T) {
+func TestManagedBackupReportsIPCAuthenticationFailure(t *testing.T) {
 	oldConfig := config
 	defer func() { config = oldConfig }()
 	t.Setenv("TEST_PASSPHRASE", "wrong-passphrase")
@@ -122,17 +122,17 @@ func TestCmdTemplatesReportsIPCAuthenticationFailure(t *testing.T) {
 	})
 	config.IPCPath = socketPath
 
-	err := cmdTemplates()
+	err := cmdBackupList()
 	if err == nil {
-		t.Fatal("cmdTemplates() error = nil, want authentication failure")
+		t.Fatal("cmdBackupList() error = nil, want authentication failure")
 	}
 	if !strings.Contains(err.Error(), "authentication failed: invalid passphrase") {
-		t.Fatalf("cmdTemplates() error = %v, want authentication failure context", err)
+		t.Fatalf("cmdBackupList() error = %v, want authentication failure context", err)
 	}
 	waitApstoreIPCTestServer(t, done)
 }
 
-func TestCmdTemplatesReportsLockedSignerUnlockFailure(t *testing.T) {
+func TestManagedBackupReportsLockedSignerUnlockFailure(t *testing.T) {
 	oldConfig := config
 	defer func() { config = oldConfig }()
 	t.Setenv("TEST_PASSPHRASE", "wrong-unlock-passphrase")
@@ -184,12 +184,12 @@ func TestCmdTemplatesReportsLockedSignerUnlockFailure(t *testing.T) {
 	})
 	config.IPCPath = socketPath
 
-	err := cmdTemplates()
+	err := cmdBackupList()
 	if err == nil {
-		t.Fatal("cmdTemplates() error = nil, want locked signer unlock failure")
+		t.Fatal("cmdBackupList() error = nil, want locked signer unlock failure")
 	}
 	if !strings.Contains(err.Error(), "signer is locked and could not unlock: invalid passphrase") {
-		t.Fatalf("cmdTemplates() error = %v, want locked signer unlock context", err)
+		t.Fatalf("cmdBackupList() error = %v, want locked signer unlock context", err)
 	}
 	waitApstoreIPCTestServer(t, done)
 }

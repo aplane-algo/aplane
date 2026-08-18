@@ -4,7 +4,15 @@
 package main
 
 const (
-	policySubcommand = "policy"
+	policySubcommand      = "policy"
+	backupSubcommand      = "backup"
+	restoreSubcommand     = "restore"
+	changePassSubcommand  = "changepass"
+	templateSubcommand    = "template"
+	keyTypeSubcommand     = "keytype"
+	sentrySubcommand      = "sentry"
+	endpointSubcommand    = "endpoint"
+	generationsSubcommand = "generations"
 
 	testModeListCommand     = "list"
 	testModeGenerateCommand = "generate"
@@ -13,7 +21,22 @@ const (
 	testModeUnlockCommand   = "unlock"
 )
 
-var productionSubcommands = []string{policySubcommand}
+var productionSubcommands = []string{
+	policySubcommand,
+	templateSubcommand,
+	keyTypeSubcommand,
+	sentrySubcommand,
+	endpointSubcommand,
+	generationsSubcommand,
+}
+
+var catalogSubcommands = map[string]bool{
+	templateSubcommand:    true,
+	keyTypeSubcommand:     true,
+	sentrySubcommand:      true,
+	endpointSubcommand:    true,
+	generationsSubcommand: true,
+}
 
 var testModeCommandNames = []string{
 	testModeListCommand,
@@ -24,5 +47,15 @@ var testModeCommandNames = []string{
 }
 
 func isProductionSubcommand(args []string) bool {
-	return len(args) > 0 && args[0] == policySubcommand
+	if len(args) == 0 {
+		return false
+	}
+	for _, command := range productionSubcommands {
+		if args[0] == command {
+			return true
+		}
+	}
+	return false
 }
+
+func isCatalogSubcommand(command string) bool { return catalogSubcommands[command] }
