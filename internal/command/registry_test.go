@@ -9,14 +9,14 @@ import (
 
 // MockHandler implements Handler interface for testing
 type MockHandler struct {
-	executeFunc func(args []string, ctx *Context) error
+	executeFunc func(args []string, ctx *Context) (Result, error)
 }
 
-func (h *MockHandler) Execute(args []string, ctx *Context) error {
+func (h *MockHandler) Execute(args []string, ctx *Context) (Result, error) {
 	if h.executeFunc != nil {
 		return h.executeFunc(args, ctx)
 	}
-	return nil
+	return nil, nil
 }
 
 func TestNewRegistry(t *testing.T) {
@@ -43,6 +43,7 @@ func TestRegistry_Register(t *testing.T) {
 		Description: "Test command",
 		Category:    CategoryInfo,
 		Handler:     &MockHandler{},
+		Automation:  StructuredAutomation,
 	}
 
 	err := r.Register(cmd)
@@ -73,12 +74,14 @@ func TestRegistry_Register_Duplicate(t *testing.T) {
 	r := NewRegistry()
 
 	cmd1 := &Command{
-		Name:    "test",
-		Handler: &MockHandler{},
+		Name:       "test",
+		Handler:    &MockHandler{},
+		Automation: StructuredAutomation,
 	}
 	cmd2 := &Command{
-		Name:    "test",
-		Handler: &MockHandler{},
+		Name:       "test",
+		Handler:    &MockHandler{},
+		Automation: StructuredAutomation,
 	}
 
 	_ = r.Register(cmd1)
@@ -92,14 +95,16 @@ func TestRegistry_Register_AliasConflict(t *testing.T) {
 	r := NewRegistry()
 
 	cmd1 := &Command{
-		Name:    "test",
-		Aliases: []string{"t"},
-		Handler: &MockHandler{},
+		Name:       "test",
+		Aliases:    []string{"t"},
+		Handler:    &MockHandler{},
+		Automation: StructuredAutomation,
 	}
 	cmd2 := &Command{
-		Name:    "other",
-		Aliases: []string{"t"}, // Conflicts with cmd1's alias
-		Handler: &MockHandler{},
+		Name:       "other",
+		Aliases:    []string{"t"}, // Conflicts with cmd1's alias
+		Handler:    &MockHandler{},
+		Automation: StructuredAutomation,
 	}
 
 	_ = r.Register(cmd1)
@@ -113,14 +118,16 @@ func TestRegistry_Register_AliasConflictIsAtomic(t *testing.T) {
 	r := NewRegistry()
 
 	cmd1 := &Command{
-		Name:    "existing",
-		Aliases: []string{"taken"},
-		Handler: &MockHandler{},
+		Name:       "existing",
+		Aliases:    []string{"taken"},
+		Handler:    &MockHandler{},
+		Automation: StructuredAutomation,
 	}
 	cmd2 := &Command{
-		Name:    "partial",
-		Aliases: []string{"ok", "taken", "later"},
-		Handler: &MockHandler{},
+		Name:       "partial",
+		Aliases:    []string{"ok", "taken", "later"},
+		Handler:    &MockHandler{},
+		Automation: StructuredAutomation,
 	}
 
 	if err := r.Register(cmd1); err != nil {
@@ -156,8 +163,9 @@ func TestRegistry_Register_ValidatesCommandInput(t *testing.T) {
 		{name: "nil command", cmd: nil, wantErr: "command is nil"},
 		{name: "empty name", cmd: &Command{Name: "", Handler: &MockHandler{}}, wantErr: "command name is required"},
 		{name: "nil handler", cmd: &Command{Name: "test"}, wantErr: `command "test" handler is required`},
-		{name: "empty alias", cmd: &Command{Name: "test", Aliases: []string{""}, Handler: &MockHandler{}}, wantErr: `command "test" has empty alias`},
-		{name: "duplicate alias", cmd: &Command{Name: "test", Aliases: []string{"a", "a"}, Handler: &MockHandler{}}, wantErr: `command "test" has duplicate alias "a"`},
+		{name: "missing policy", cmd: &Command{Name: "test", Handler: &MockHandler{}}, wantErr: `command "test" automation policy is required`},
+		{name: "empty alias", cmd: &Command{Name: "test", Aliases: []string{""}, Handler: &MockHandler{}, Automation: StructuredAutomation}, wantErr: `command "test" has empty alias`},
+		{name: "duplicate alias", cmd: &Command{Name: "test", Aliases: []string{"a", "a"}, Handler: &MockHandler{}, Automation: StructuredAutomation}, wantErr: `command "test" has duplicate alias "a"`},
 	}
 
 	for _, tt := range tests {
@@ -178,9 +186,10 @@ func TestRegistry_Lookup(t *testing.T) {
 	r := NewRegistry()
 
 	cmd := &Command{
-		Name:    "test",
-		Aliases: []string{"t", "tst"},
-		Handler: &MockHandler{},
+		Name:       "test",
+		Aliases:    []string{"t", "tst"},
+		Handler:    &MockHandler{},
+		Automation: StructuredAutomation,
 	}
 	_ = r.Register(cmd)
 
@@ -212,9 +221,9 @@ func TestRegistry_Lookup(t *testing.T) {
 func TestRegistry_All(t *testing.T) {
 	r := NewRegistry()
 
-	cmd1 := &Command{Name: "alpha", Handler: &MockHandler{}}
-	cmd2 := &Command{Name: "beta", Handler: &MockHandler{}}
-	cmd3 := &Command{Name: "gamma", Handler: &MockHandler{}}
+	cmd1 := &Command{Name: "alpha", Handler: &MockHandler{}, Automation: StructuredAutomation}
+	cmd2 := &Command{Name: "beta", Handler: &MockHandler{}, Automation: StructuredAutomation}
+	cmd3 := &Command{Name: "gamma", Handler: &MockHandler{}, Automation: StructuredAutomation}
 
 	_ = r.Register(cmd1)
 	_ = r.Register(cmd2)
@@ -229,9 +238,9 @@ func TestRegistry_All(t *testing.T) {
 func TestRegistry_ByCategory(t *testing.T) {
 	r := NewRegistry()
 
-	cmd1 := &Command{Name: "send", Category: CategoryTransaction, Handler: &MockHandler{}}
-	cmd2 := &Command{Name: "balance", Category: CategoryInfo, Handler: &MockHandler{}}
-	cmd3 := &Command{Name: "status", Category: CategoryInfo, Handler: &MockHandler{}}
+	cmd1 := &Command{Name: "send", Category: CategoryTransaction, Handler: &MockHandler{}, Automation: StructuredAutomation}
+	cmd2 := &Command{Name: "balance", Category: CategoryInfo, Handler: &MockHandler{}, Automation: StructuredAutomation}
+	cmd3 := &Command{Name: "status", Category: CategoryInfo, Handler: &MockHandler{}, Automation: StructuredAutomation}
 
 	_ = r.Register(cmd1)
 	_ = r.Register(cmd2)

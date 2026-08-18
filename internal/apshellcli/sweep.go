@@ -6,19 +6,21 @@ package apshellcli
 // Sweep command implementation for consolidating ALGO or ASA balances.
 
 import (
+	"io"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/shellrepl"
 )
 
 // runSweep handles the sweep command by parsing args, delegating workflow to
 // apshellapp, and rendering the result.
-func (r *REPLState) runSweep(args []string) error {
+func (r *REPLState) runSweep(args []string) (command.Result, error) {
 	params, err := shellrepl.ParseSweepCommand(args)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	result, err := r.app().Sweep(r.commandContext(), apshellapp.SweepRequest{
@@ -32,43 +34,47 @@ func (r *REPLState) runSweep(args []string) error {
 		Wait:        params.Wait,
 	})
 	if err != nil && result == nil {
-		return err
+		return nil, err
 	}
-
-	for _, line := range renderSweepLines(result.InfoLines, result, r) {
-		r.println(line)
+	simulated := r.app().IsSimulateEnabled()
+	commandResult, resultErr := newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() {
+			for _, line := range renderSweepLines(result.InfoLines, result, r) {
+				r.println(line)
+			}
+			r.println()
+			r.print(renderSweepLine(result.HeaderLine, result, r))
+			r.println("\n" + strings.Repeat("=", 60))
+			for i, item := range result.Items {
+				r.printf("\n[%d/%d] Processing %s...\n", i+1, len(result.Items), r.app().FormatAddress(item.From, ""))
+				if item.SkippedReason != "" {
+					r.printf("  - Skipping (%s)\n", item.SkippedReason)
+					continue
+				}
+				r.renderSubmissionOutput(item.Output)
+				r.renderWarnings(item.Warnings)
+				if item.Error != "" {
+					r.printf("  ✗ %s\n", item.Error)
+					continue
+				}
+				r.printf("  Sending %s...\n", asa.DisplayString(item.Amount))
+				if !simulated {
+					r.printf("  ✓ Transaction submitted: %s\n", item.TxID)
+				}
+				if item.Confirmed {
+					r.printf("  ✓ Confirmed\n")
+				}
+			}
+			r.println("\n" + strings.Repeat("=", 60))
+			for _, line := range renderSweepLines(result.SummaryLines, result, r) {
+				r.println(line)
+			}
+		})
+	}, projectSweepResult(result, simulated))
+	if resultErr != nil {
+		return nil, resultErr
 	}
-
-	r.println()
-	r.print(renderSweepLine(result.HeaderLine, result, r))
-	r.println("\n" + strings.Repeat("=", 60))
-
-	for i, item := range result.Items {
-		r.printf("\n[%d/%d] Processing %s...\n", i+1, len(result.Items), r.app().FormatAddress(item.From, ""))
-		if item.SkippedReason != "" {
-			r.printf("  - Skipping (%s)\n", item.SkippedReason)
-			continue
-		}
-		r.renderSubmissionOutput(item.Output)
-		r.renderWarnings(item.Warnings)
-		if item.Error != "" {
-			r.printf("  ✗ %s\n", item.Error)
-			continue
-		}
-		r.printf("  Sending %s...\n", asa.DisplayString(item.Amount))
-		if !r.app().IsSimulateEnabled() {
-			r.printf("  ✓ Transaction submitted: %s\n", item.TxID)
-		}
-		if item.Confirmed {
-			r.printf("  ✓ Confirmed\n")
-		}
-	}
-
-	r.println("\n" + strings.Repeat("=", 60))
-	for _, line := range renderSweepLines(result.SummaryLines, result, r) {
-		r.println(line)
-	}
-	return err
+	return commandResult, err
 }
 
 func renderSweepLines(lines []string, result *apshellapp.SweepCommandResult, r *REPLState) []string {

@@ -35,6 +35,9 @@ func (r *Registry) Register(cmd *Command) error {
 	if cmd.Handler == nil {
 		return fmt.Errorf("command %q handler is required", cmd.Name)
 	}
+	if err := validateAutomationPolicy(cmd); err != nil {
+		return err
+	}
 
 	if existing, exists := r.commands[cmd.Name]; exists {
 		return fmt.Errorf("command %q already registered", existing.Name)
@@ -65,6 +68,25 @@ func (r *Registry) Register(cmd *Command) error {
 		r.commands[alias] = cmd
 	}
 
+	return nil
+}
+
+func validateAutomationPolicy(cmd *Command) error {
+	switch cmd.Automation.Disposition {
+	case AutomationStructured:
+		if cmd.Automation.Reason != "" {
+			return fmt.Errorf("command %q structured automation policy cannot have a block reason", cmd.Name)
+		}
+	case AutomationBlocked:
+		if cmd.Automation.Reason == "" {
+			return fmt.Errorf("command %q blocked automation policy requires a reason", cmd.Name)
+		}
+		if cmd.Automation.Guard != nil {
+			return fmt.Errorf("command %q blocked automation policy cannot have an argument guard", cmd.Name)
+		}
+	default:
+		return fmt.Errorf("command %q automation policy is required", cmd.Name)
+	}
 	return nil
 }
 

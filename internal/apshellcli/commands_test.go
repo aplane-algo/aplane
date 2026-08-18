@@ -14,7 +14,7 @@ import (
 
 func TestRequestTokenRejectsPositionalHost(t *testing.T) {
 	r := &REPLState{}
-	err := r.cmdRequestToken([]string{"signer.example"}, nil)
+	err := r.runRequestToken([]string{"signer.example"}, nil)
 	if err == nil {
 		t.Fatal("cmdRequestToken() error = nil, want endpoint-only usage error")
 	}
@@ -266,7 +266,10 @@ func TestMustRegisterPanicsOnDuplicate(t *testing.T) {
 		Usage:       "test",
 		Description: "Test command",
 		Category:    command.CategoryInfo,
-		Handler:     command.NewInternalHandler(func([]string, interface{}) error { return nil }),
+		Handler: command.NewInternalHandler(func([]string, interface{}) (command.Result, error) {
+			return nil, nil
+		}),
+		Automation: command.StructuredAutomation,
 	}
 
 	// This should not panic

@@ -26,13 +26,13 @@ func TestKeysResultRenderTextOmitsCounterAndIndent(t *testing.T) {
 		Out: &out,
 		App: apshellapp.New(eng, cfg, t.TempDir()),
 	}
-	result := &KeysResult{Keys: appresult.Keys{Keys: []appresult.KeyInfo{
+	keys := appresult.Keys{Keys: []appresult.KeyInfo{
 		{Address: "ADDRONE", KeyType: "aplane.falcon1024.v1"},
 		{Address: "ADDRTWO", KeyType: "ed25519"},
 		{Address: "ADDRTHREE", KeyType: "mytemplate-v1", TemplateProvenanceStatus: "conflict"},
-	}}}
+	}}
 
-	result.RenderText(&out, state)
+	renderKeys(state, keys)
 
 	got := out.String()
 	if strings.Contains(got, "Signable accounts:") {
@@ -55,7 +55,7 @@ func TestKeysResultRenderTextOmitsCounterAndIndent(t *testing.T) {
 
 func TestPluginRenderTextLabelsTxIDsAsSimulatedWhenSimulateModeIsEnabled(t *testing.T) {
 	cfg := config.DefaultConfig()
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -72,7 +72,7 @@ func TestPluginRenderTextLabelsTxIDsAsSimulatedWhenSimulateModeIsEnabled(t *test
 		TxIDs:   []string{"TX1"},
 	}}
 
-	result.RenderText(&out, state)
+	renderPluginResult(state, result)
 
 	got := out.String()
 	if !strings.Contains(got, "Transaction(s) simulated successfully") {

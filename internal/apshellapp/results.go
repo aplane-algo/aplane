@@ -401,6 +401,7 @@ type BalanceCommandResult struct {
 	AssetSpecified bool
 	Single         *BalanceDetails
 	Addresses      []string
+	Balances       []*BalanceDetails
 }
 
 // StatusCommandResult describes the semantic outcome of a status command.
@@ -419,6 +420,7 @@ type AccountsCommandResult struct {
 // HoldersCommandResult describes the semantic outcome of a holders command.
 type HoldersCommandResult struct {
 	Addresses []string
+	Balances  []*BalanceDetails
 	AssetRef  string
 	Warnings  []Warning
 }

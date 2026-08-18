@@ -74,11 +74,20 @@ func (a *App) Balance(ctx context.Context, req BalanceRequest) (*BalanceCommandR
 		if assetRef == "" {
 			assetRef = "algo"
 		}
+		balances := make([]*BalanceDetails, 0, len(addresses))
+		for _, address := range addresses {
+			balanceResult, balanceErr := a.eng.GetBalance(ctx, address)
+			if balanceErr != nil {
+				continue
+			}
+			balances = append(balances, balanceDetailsFromEngine(balanceResult))
+		}
 		return &BalanceCommandResult{
 			Mode:           BalanceModeMulti,
 			AssetRef:       assetRef,
 			AssetSpecified: assetSpecified,
 			Addresses:      addresses,
+			Balances:       balances,
 		}, nil
 	}
 

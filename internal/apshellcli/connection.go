@@ -5,52 +5,65 @@ package apshellcli
 
 import (
 	"fmt"
+	"io"
 
+	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
-func connectConfigured(r *REPLState) error {
+func executeConnectConfigured(r *REPLState) (*apshellapp.ConnectResult, error) {
 	hostKeyApproval := buildHostKeyApproval(r)
-
-	r.println("Using SSH public key authentication...")
-
-	result, err := r.app().ConnectConfigured(r.commandContext(), hostKeyApproval, func() {
+	return r.app().ConnectConfigured(r.commandContext(), hostKeyApproval, func() {
 		r.println("⚠️  Disconnected from signer")
 		r.print("> ")
 	})
+}
+
+// connectConfigured is the startup/interactive lifecycle wrapper. Registered
+// command execution uses the result-bearing cmdConnect path instead.
+func connectConfigured(r *REPLState) error {
+	r.println("Using SSH public key authentication...")
+	result, err := executeConnectConfigured(r)
 	if err != nil {
 		return err
 	}
 	return r.renderConnectResult(result)
 }
 
-func connectEndpointAlias(r *REPLState, alias string) error {
+func executeConnectEndpointAlias(r *REPLState, alias string) (*apshellapp.ConnectResult, error) {
 	registry := r.Config.ClientEndpointsOrDefault()
 	endpoint, ok := registry.Endpoint(alias)
 	if !ok {
-		return fmt.Errorf("unknown endpoint alias %q", alias)
+		return nil, fmt.Errorf("unknown endpoint alias %q", alias)
 	}
 	hostKeyApproval := buildHostKeyApproval(r)
-
-	r.printf("Connecting to endpoint %s...\n", alias)
-	r.println("Using SSH public key authentication...")
-
-	result, err := r.app().ConnectEndpoint(r.commandContext(), alias, endpoint, hostKeyApproval, func() {
+	return r.app().ConnectEndpoint(r.commandContext(), alias, endpoint, hostKeyApproval, func() {
 		r.println("⚠️  Disconnected from signer")
 		r.print("> ")
 	})
-	if err != nil {
-		return err
-	}
-	return r.renderConnectResult(result)
 }
 
-func (r *REPLState) cmdDisconnect(args []string, _ interface{}) error {
+func (r *REPLState) cmdDisconnect(args []string, _ interface{}) (command.Result, error) {
 	if len(args) != 0 {
-		return fmt.Errorf("usage: disconnect")
+		return nil, fmt.Errorf("usage: disconnect")
 	}
-	return disconnectTunnel(r)
+	wasConnected := r.app().IsTunnelConnected()
+	result, err := r.app().Disconnect(r.commandContext())
+	if err != nil {
+		return nil, err
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() {
+			if wasConnected {
+				r.println("Closing SSH tunnel...")
+			}
+			if result.WasConnected {
+				r.println("✓ Tunnel disconnected")
+			}
+		})
+	}, disconnectProjection{WasConnected: result.WasConnected})
 }
 
 // disconnectTunnel closes the SSH tunnel connection and reports the shell-visible result.
@@ -104,7 +117,11 @@ func requestTokenEndpointAlias(r *REPLState, alias string) error {
 	}
 	if autoConnect {
 		r.println("Connecting to signer with new token...")
-		return connectEndpointAlias(r, alias)
+		connectResult, err := executeConnectEndpointAlias(r, alias)
+		if err != nil {
+			return err
+		}
+		return r.renderConnectResult(connectResult)
 	}
 	return nil
 }

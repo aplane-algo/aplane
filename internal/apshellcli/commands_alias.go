@@ -7,20 +7,25 @@ package apshellcli
 
 import (
 	"fmt"
+	"io"
+
+	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/command"
 )
 
-func (r *REPLState) cmdAlias(args []string, _ interface{}) error {
-	return r.runAlias(args)
+func (r *REPLState) cmdAlias(args []string, _ interface{}) (command.Result, error) {
+	result, err := r.app().Alias(r.commandContext(), args)
+	if err != nil {
+		return nil, err
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutputResult(w, func() error { return r.renderAliasResult(result) })
+	}, projectAliasResult(result))
 }
 
 // runAlias handles the alias command by delegating semantic work to
 // apshellapp and rendering the result.
-func (r *REPLState) runAlias(args []string) error {
-	result, err := r.app().Alias(r.commandContext(), args)
-	if err != nil {
-		return err
-	}
-
+func (r *REPLState) renderAliasResult(result *apshellapp.AliasCommandResult) error {
 	switch result.Mode {
 	case "usage":
 		for _, line := range result.Usage {
@@ -66,20 +71,21 @@ func (r *REPLState) runAlias(args []string) error {
 	return fmt.Errorf("unsupported alias mode: %s", result.Mode)
 }
 
-func (r *REPLState) cmdSets(args []string, _ interface{}) error {
-	return r.runSets(args)
+func (r *REPLState) cmdSets(args []string, _ interface{}) (command.Result, error) {
+	result, err := r.app().Sets(r.commandContext(), args)
+	if err != nil {
+		return nil, err
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutputResult(w, func() error { return r.renderSetsResult(result) })
+	}, projectSetsResult(result))
 }
 
 // stripBrackets removes bracket notation from an address list.
 // Supports both [ addr1 addr2 ] (standalone) and [addr1 addr2] (attached) styles.
 // runSets handles the sets command by delegating semantic work to apshellapp
 // and rendering the result.
-func (r *REPLState) runSets(args []string) error {
-	result, err := r.app().Sets(r.commandContext(), args)
-	if err != nil {
-		return err
-	}
-
+func (r *REPLState) renderSetsResult(result *apshellapp.SetsCommandResult) error {
 	switch result.Mode {
 	case "usage":
 		for _, line := range result.Usage {

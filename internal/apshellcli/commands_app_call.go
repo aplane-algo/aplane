@@ -5,20 +5,23 @@ package apshellcli
 
 import (
 	"fmt"
+	"io"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/command"
 )
 
-func execAppCall(r *REPLState, args []string) (*JSONResult, error) {
+func (r *REPLState) executeAppCall(args []string) (command.Result, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("usage: app call <app-id> <method> --abi <path> from <account> | app call raw <app-id> from <account>")
 	}
 	if args[0] == "raw" {
-		return execAppCallRaw(r, args)
+		return r.executeAppCallRaw(args)
 	}
-	return execAppCallMethod(r, args)
+	return r.executeAppCallMethod(args)
 }
 
-func execAppCallRaw(r *REPLState, args []string) (*JSONResult, error) {
+func (r *REPLState) executeAppCallRaw(args []string) (command.Result, error) {
 	params, err := parseRawAppCallArgs(args)
 	if err != nil {
 		return nil, err
@@ -28,10 +31,23 @@ func execAppCallRaw(r *REPLState, args []string) (*JSONResult, error) {
 		return nil, err
 	}
 
-	return &JSONResult{Data: result.Structured}, nil
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() {
+			for _, line := range renderAppCallLines(result.PreSubmitLines, result.FromAddress, r) {
+				r.println(line)
+			}
+			r.renderSubmissionOutput(result.Output)
+			r.renderWarnings(result.Warnings)
+			if params.Wait && result.Structured.Confirmed {
+				for _, line := range renderAppCallLines(result.ConfirmedLines, result.FromAddress, r) {
+					r.println(line)
+				}
+			}
+		})
+	}, result.Structured)
 }
 
-func execAppCallMethod(r *REPLState, args []string) (*JSONResult, error) {
+func (r *REPLState) executeAppCallMethod(args []string) (command.Result, error) {
 	params, err := parseMethodAppCallArgs(args)
 	if err != nil {
 		return nil, err
@@ -41,67 +57,20 @@ func execAppCallMethod(r *REPLState, args []string) (*JSONResult, error) {
 		return nil, err
 	}
 
-	return &JSONResult{Data: result.Structured}, nil
-}
-
-func (r *REPLState) runAppCall(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: app call <app-id> <method> --abi <path> from <account> | app call raw <app-id> from <account>")
-	}
-	if args[0] == "raw" {
-		return r.runAppCallRaw(args)
-	}
-	return r.runAppCallMethod(args)
-}
-
-func (r *REPLState) runAppCallRaw(args []string) error {
-	params, err := parseRawAppCallArgs(args)
-	if err != nil {
-		return err
-	}
-	result, err := r.app().AppCallRaw(r.commandContext(), params.toAppRawRequest())
-	if err != nil {
-		return err
-	}
-
-	for _, line := range renderAppCallLines(result.PreSubmitLines, result.FromAddress, r) {
-		r.println(line)
-	}
-	r.renderSubmissionOutput(result.Output)
-	r.renderWarnings(result.Warnings)
-
-	if params.Wait && result.Structured.Confirmed {
-		for _, line := range renderAppCallLines(result.ConfirmedLines, result.FromAddress, r) {
-			r.println(line)
-		}
-	}
-
-	return nil
-}
-
-func (r *REPLState) runAppCallMethod(args []string) error {
-	params, err := parseMethodAppCallArgs(args)
-	if err != nil {
-		return err
-	}
-	result, err := r.app().AppCallMethod(r.commandContext(), params.toAppMethodRequest())
-	if err != nil {
-		return err
-	}
-
-	for _, line := range renderAppCallLines(result.PreSubmitLines, result.FromAddress, r) {
-		r.println(line)
-	}
-	r.renderSubmissionOutput(result.Output)
-	r.renderWarnings(result.Warnings)
-
-	if params.Wait && result.Structured.Confirmed {
-		for _, line := range renderAppCallLines(result.ConfirmedLines, result.FromAddress, r) {
-			r.println(line)
-		}
-	}
-
-	return nil
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() {
+			for _, line := range renderAppCallLines(result.PreSubmitLines, result.FromAddress, r) {
+				r.println(line)
+			}
+			r.renderSubmissionOutput(result.Output)
+			r.renderWarnings(result.Warnings)
+			if params.Wait && result.Structured.Confirmed {
+				for _, line := range renderAppCallLines(result.ConfirmedLines, result.FromAddress, r) {
+					r.println(line)
+				}
+			}
+		})
+	}, result.Structured)
 }
 
 func renderAppCallLines(lines []string, fromAddress string, r *REPLState) []string {

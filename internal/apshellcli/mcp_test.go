@@ -35,59 +35,20 @@ func TestMCPJSONTextResultReturnsTextContent(t *testing.T) {
 	}
 }
 
-func TestMCPFallbackResultSilentSuccessIsOK(t *testing.T) {
-	result := mcpFallbackResult("", nil)
-
-	if result.IsError {
-		t.Fatal("expected success result")
-	}
-	if got := mcpResultText(t, result); got != "OK" {
-		t.Fatalf("text = %q, want OK", got)
-	}
-}
-
-func TestMCPFallbackResultPreservesPlainText(t *testing.T) {
-	result := mcpFallbackResult("done\n", nil)
-
-	if result.IsError {
-		t.Fatal("expected success result")
-	}
-	if got := mcpResultText(t, result); got != "done\n" {
-		t.Fatalf("text = %q, want original fallback text", got)
-	}
-}
-
-func TestMCPFallbackResultErrorIncludesCapturedOutput(t *testing.T) {
-	result := mcpFallbackResult("partial output", errors.New("boom"))
-
-	if !result.IsError {
-		t.Fatal("expected error result")
-	}
-	if got := mcpResultText(t, result); got != "partial output\nError: boom" {
-		t.Fatalf("text = %q, want combined output and error", got)
-	}
-}
-
-func TestMCPStructuredBlockedCommandReturnsError(t *testing.T) {
-	result, handled := mcpStructured(nil, "quit", nil)
-
-	if !handled {
-		t.Fatal("expected blocked command to be handled")
-	}
-	if !result.IsError {
-		t.Fatal("expected error result")
-	}
-	if got := mcpResultText(t, result); got != "command 'quit' not available via MCP: Use MCP disconnect instead" {
-		t.Fatalf("text = %q, want blocked-command error", got)
+func TestMCPStructuredBlockedQuitAliasesReturnErrorBeforeExecution(t *testing.T) {
+	for _, name := range []string{"quit", "exit", "q"} {
+		result := mcpExecuteCommand(nil, Command{Name: name})
+		if !result.IsError {
+			t.Fatalf("%s: expected error result", name)
+		}
+		if got := mcpResultText(t, result); got != "command 'quit' not available via MCP: Use MCP disconnect instead" {
+			t.Fatalf("%s: text = %q, want blocked-command error", name, got)
+		}
 	}
 }
 
 func TestMCPStructuredKeyregPasteBlocked(t *testing.T) {
-	result, handled := mcpStructured(nil, "keyreg", nil)
-
-	if !handled {
-		t.Fatal("expected keyreg paste mode to be handled")
-	}
+	result := mcpExecuteCommand(nil, Command{Name: "keyreg"})
 	if !result.IsError {
 		t.Fatal("expected error result")
 	}
@@ -97,33 +58,33 @@ func TestMCPStructuredKeyregPasteBlocked(t *testing.T) {
 }
 
 func TestMCPBalanceParsesAssetOnlyQueryLikeREPL(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
-
-	account, assetRef, err := state.parseMCPBalanceArgs([]string{"usdc"})
-	if err == nil {
-		if account != "@all" || assetRef != "usdc" {
-			t.Fatalf("parseMCPBalanceArgs() = (%q, %q), want (@all, usdc)", account, assetRef)
-		}
-		return
+	state.CommandRegistry = state.initCommandRegistry()
+	if _, err := eng.AddAliasWithContext(context.Background(), "alice", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"); err != nil {
+		t.Fatalf("AddAlias() error = %v", err)
 	}
-	t.Fatalf("parseMCPBalanceArgs() error = %v", err)
+
+	result, err := state.app().Balance(context.Background(), apshellapp.BalanceRequest{Args: []string{"usdc"}})
+	if err != nil {
+		t.Fatalf("Balance() error = %v", err)
+	}
+	if result.Mode != apshellapp.BalanceModeMulti || result.AssetRef != "usdc" {
+		t.Fatalf("Balance() = %#v, want multi-account usdc query", result)
+	}
 }
 
 func TestMCPStructuredWriteReturnsJSON(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
 
-	result, handled := mcpStructured(state, "write", []string{"on"})
-	if !handled {
-		t.Fatal("expected write command to be handled")
-	}
+	result := mcpExecuteCommand(state, Command{Name: "write", Args: []string{"on"}})
 	if result.IsError {
 		t.Fatal("expected success result")
 	}
@@ -133,7 +94,7 @@ func TestMCPStructuredWriteReturnsJSON(t *testing.T) {
 }
 
 func TestMCPStructuredWritePrefersStructuredResultOverTextRendering(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -145,7 +106,7 @@ func TestMCPStructuredWritePrefersStructuredResultOverTextRendering(t *testing.T
 	}
 	var text bytes.Buffer
 	state.SetOutput(&text)
-	textResult.RenderText(&text, state)
+	renderToggle(state, textResult)
 	if got := text.String(); got != "✓ Write mode enabled\n" {
 		t.Fatalf("RenderText() = %q, want human text output", got)
 	}
@@ -153,10 +114,7 @@ func TestMCPStructuredWritePrefersStructuredResultOverTextRendering(t *testing.T
 	if _, err := state.App.SetWriteMode(false); err != nil {
 		t.Fatalf("SetWriteMode(false) error = %v", err)
 	}
-	mcpResult, handled := mcpStructured(state, "write", []string{"on"})
-	if !handled {
-		t.Fatal("expected write command to be handled")
-	}
+	mcpResult := mcpExecuteCommand(state, Command{Name: "write", Args: []string{"on"}})
 	if mcpResult.IsError {
 		t.Fatal("expected success result")
 	}
@@ -188,7 +146,11 @@ func TestMCPPluginResultProjectionPreservesStructuredJSONAndFiltersShellOnlyData
 		}},
 	}}
 
-	mcpResult := mcpJSONTextResult(result.RenderJSON())
+	machineData, err := json.Marshal(projectPluginResult(result))
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	mcpResult := mcpJSONTextResult(machineData)
 	if mcpResult.IsError {
 		t.Fatal("expected success result")
 	}
@@ -241,7 +203,7 @@ func TestPluginRenderTextPrefersPresentationOverRawMessage(t *testing.T) {
 		},
 	}}
 
-	eng, err := engine.NewEngine("testnet")
+	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
@@ -249,7 +211,7 @@ func TestPluginRenderTextPrefersPresentationOverRawMessage(t *testing.T) {
 	var out bytes.Buffer
 	state.SetOutput(&out)
 
-	result.RenderText(&out, state)
+	renderPluginResult(state, result)
 
 	got := out.String()
 	if !bytes.Contains(out.Bytes(), []byte("Reti Validators")) {
@@ -276,6 +238,7 @@ func TestMCPStructuredConcurrentReadOnlyCommandsReturnIndependentPayloads(t *tes
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
+	state.CommandRegistry = state.initCommandRegistry()
 
 	addr := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 	if _, err := eng.AddAliasWithContext(context.Background(), "alice", addr); err != nil {
@@ -302,11 +265,7 @@ func TestMCPStructuredConcurrentReadOnlyCommandsReturnIndependentPayloads(t *tes
 		wg.Add(1)
 		go func(cmd string, args []string) {
 			defer wg.Done()
-			result, handled := mcpStructured(state, cmd, args)
-			if !handled {
-				results <- outcome{cmd: cmd, err: errors.New("not handled")}
-				return
-			}
+			result := mcpExecuteCommand(state, Command{Name: cmd, Args: args})
 			if result.IsError {
 				results <- outcome{cmd: cmd, err: errors.New(mcpResultText(t, result))}
 				return
@@ -355,11 +314,7 @@ func TestMCPStructuredConcurrentReadOnlyCommandsReturnIndependentPayloads(t *tes
 
 func TestMCPStructuredBlocksJSTool(t *testing.T) {
 	for _, cmd := range []string{"js", "jssave", "jslist"} {
-		result, handled := mcpStructured(nil, cmd, nil)
-
-		if !handled {
-			t.Fatalf("expected %s to be handled (blocked)", cmd)
-		}
+		result := mcpExecuteCommand(nil, Command{Name: cmd})
 		if !result.IsError {
 			t.Fatalf("%s: expected error result", cmd)
 		}
@@ -601,7 +556,8 @@ func TestListJSScriptsMissingDirectory(t *testing.T) {
 }
 
 func TestParseUint64RejectsOverflow(t *testing.T) {
-	if _, err := parseUint64("18446744073709551616"); err == nil {
+	state := &REPLState{}
+	if _, err := state.cmdInfo([]string{"18446744073709551616"}, nil); err == nil {
 		t.Fatal("expected overflow error")
 	}
 }

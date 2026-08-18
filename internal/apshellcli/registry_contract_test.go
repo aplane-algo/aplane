@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/command"
 )
 
 func TestBuiltInCommandAndAliasInventory(t *testing.T) {
@@ -55,6 +57,34 @@ func TestBuiltInCommandAndAliasInventory(t *testing.T) {
 	}
 }
 
+func TestBuiltInAutomationDispositionInventory(t *testing.T) {
+	state := &REPLState{}
+	registry := state.initCommandRegistry()
+	blocked := map[string]bool{
+		"help": true, "config": true, "script": true, "js": true,
+		"jssave": true, "jslist": true, "request-token": true,
+		"clear": true, "quit": true,
+	}
+	for _, cmd := range registry.All() {
+		want := command.AutomationStructured
+		if blocked[cmd.Name] {
+			want = command.AutomationBlocked
+		}
+		if cmd.Automation.Disposition != want {
+			t.Errorf("command %q disposition = %v, want %v", cmd.Name, cmd.Automation.Disposition, want)
+		}
+		for _, alias := range cmd.Aliases {
+			resolved, ok := registry.Lookup(alias)
+			if !ok || resolved != cmd {
+				t.Errorf("alias %q does not resolve to primary command %q", alias, cmd.Name)
+			}
+		}
+	}
+	if len(registry.All()) != len(builtInAutomationPolicies) {
+		t.Fatalf("registered commands = %d, policy inventory = %d", len(registry.All()), len(builtInAutomationPolicies))
+	}
+}
+
 func TestConfigCommandCurrentlySplitsGlobalAndInjectedOutput(t *testing.T) {
 	readPipe, writePipe, err := os.Pipe()
 	if err != nil {
@@ -71,7 +101,7 @@ func TestConfigCommandCurrentlySplitsGlobalAndInjectedOutput(t *testing.T) {
 	var injected bytes.Buffer
 	state := &REPLState{DataDir: t.TempDir()}
 	state.SetOutput(&injected)
-	if err := state.cmdConfig(nil, nil); err != nil {
+	if _, err := state.cmdConfig(nil, nil); err != nil {
 		t.Fatalf("cmdConfig() error = %v", err)
 	}
 

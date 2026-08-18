@@ -7,14 +7,17 @@ package apshellcli
 // Supports single, set-based, and atomic transaction groups.
 
 import (
+	"io"
+
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/shellrepl"
 )
 
-func (r *REPLState) runSend(args []string) error {
+func (r *REPLState) runSend(args []string) (command.Result, error) {
 	params, err := shellrepl.ParseSendCommand(args)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	result, err := r.app().ExecuteSend(r.commandContext(), apshellapp.SendRequest{
@@ -30,7 +33,10 @@ func (r *REPLState) runSend(args []string) error {
 		LsigArgs:   params.LsigArgs,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return r.renderSendResult(result)
+	simulated := r.app().IsSimulateEnabled()
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutputResult(w, func() error { return r.renderSendResult(result) })
+	}, projectSendResult(result, simulated))
 }

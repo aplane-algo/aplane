@@ -4,78 +4,76 @@
 package apshellcli
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/command"
 )
 
-// toggleWriteMode enables/disables write mode for transaction JSON logging
-func toggleWriteMode(r *REPLState, args []string) error {
-	result, err := execWrite(r, args)
-	if err != nil {
-		return err
-	}
-	result.RenderText(r.Out, r)
-	return nil
-}
-
-func execWrite(r *REPLState, args []string) (*ToggleResult, error) {
+func execWrite(r *REPLState, args []string) (toggleOutcome, error) {
 	if len(args) == 0 {
-		return &ToggleResult{Toggle: r.app().WriteMode()}, nil
+		return toggleOutcome{Toggle: r.app().WriteMode()}, nil
 	} else if len(args) == 1 {
 		mode := strings.ToLower(args[0])
 		switch mode {
 		case "on", "true", "1":
 			toggle, err := r.app().SetWriteMode(true)
 			if err != nil {
-				r.printf("Warning: failed to create txnjson directory: %v\n", err)
+				return toggleOutcome{
+					Toggle:  r.app().WriteMode(),
+					Warning: fmt.Sprintf("failed to create txnjson directory: %v", err),
+				}, nil
 			} else {
-				return &ToggleResult{Toggle: toggle}, nil
+				return toggleOutcome{Toggle: toggle}, nil
 			}
 		case "off", "false", "0":
-			return &ToggleResult{Toggle: mustSetWriteModeOff(r)}, nil
+			return toggleOutcome{Toggle: mustSetWriteModeOff(r)}, nil
 		default:
-			return nil, fmt.Errorf("usage: write [on|off]")
+			return toggleOutcome{}, fmt.Errorf("usage: write [on|off]")
 		}
 	} else {
-		return nil, fmt.Errorf("usage: write [on|off]")
+		return toggleOutcome{}, fmt.Errorf("usage: write [on|off]")
 	}
-
-	return &ToggleResult{Toggle: r.app().WriteMode()}, nil
 }
 
 // toggleVerbose enables/disables detailed signing output
-func execVerbose(r *REPLState, args []string) (*ToggleResult, error) {
+func execVerbose(r *REPLState, args []string) (toggleOutcome, error) {
 	if len(args) == 0 {
-		return &ToggleResult{Toggle: r.app().VerboseMode()}, nil
+		return toggleOutcome{Toggle: r.app().VerboseMode()}, nil
 	}
 	if len(args) != 1 {
-		return nil, fmt.Errorf("usage: verbose [on|off]")
+		return toggleOutcome{}, fmt.Errorf("usage: verbose [on|off]")
 	}
 	mode := strings.ToLower(args[0])
 	switch mode {
 	case "on", "true", "1":
-		return &ToggleResult{Toggle: r.app().SetVerboseMode(true)}, nil
+		return toggleOutcome{Toggle: r.app().SetVerboseMode(true)}, nil
 	case "off", "false", "0":
-		return &ToggleResult{Toggle: r.app().SetVerboseMode(false)}, nil
+		return toggleOutcome{Toggle: r.app().SetVerboseMode(false)}, nil
 	default:
-		return nil, fmt.Errorf("usage: verbose [on|off]")
+		return toggleOutcome{}, fmt.Errorf("usage: verbose [on|off]")
 	}
 }
 
 // toggleSimulate enables/disables transaction simulation mode, or executes
 // a one-shot simulated command: simulate send 5 algo from alice to bob
-func toggleSimulate(r *REPLState, args []string) error {
+func executeSimulate(r *REPLState, args []string) (command.Result, error) {
 	if len(args) == 0 {
-		// Show current state
-		if r.app().IsSimulateEnabled() {
-			r.println("Simulate mode: on")
-		} else {
-			r.println("Simulate mode: off")
-		}
-		return nil
+		enabled := r.app().IsSimulateEnabled()
+		return newShellCommandResult(func(w io.Writer) error {
+			state := "off"
+			if enabled {
+				state = "on"
+			}
+			_, err := fmt.Fprintf(w, "Simulate mode: %s\n", state)
+			return err
+		}, struct {
+			Name    string `json:"name"`
+			Enabled bool   `json:"enabled"`
+		}{Name: "simulate", Enabled: enabled})
 	}
 
 	// Check for on/off toggle (single arg only)
@@ -83,17 +81,27 @@ func toggleSimulate(r *REPLState, args []string) error {
 		switch strings.ToLower(args[0]) {
 		case "on", "true", "1":
 			r.app().SetSimulateMode(true)
-			r.println("✓ Simulate mode enabled - transactions will be simulated, not submitted")
-			return nil
+			return newShellCommandResult(func(w io.Writer) error {
+				_, err := fmt.Fprintln(w, "✓ Simulate mode enabled - transactions will be simulated, not submitted")
+				return err
+			}, struct {
+				Name    string `json:"name"`
+				Enabled bool   `json:"enabled"`
+			}{Name: "simulate", Enabled: true})
 		case "off", "false", "0":
 			r.app().SetSimulateMode(false)
-			r.println("✓ Simulate mode disabled")
-			return nil
+			return newShellCommandResult(func(w io.Writer) error {
+				_, err := fmt.Fprintln(w, "✓ Simulate mode disabled")
+				return err
+			}, struct {
+				Name    string `json:"name"`
+				Enabled bool   `json:"enabled"`
+			}{Name: "simulate", Enabled: false})
 		}
 	}
 
 	if registeredCmd, ok := r.CommandRegistry.Lookup(args[0]); ok && registeredCmd.Category != command.CategoryTransaction {
-		return fmt.Errorf("simulate only supports transaction commands")
+		return nil, fmt.Errorf("simulate only supports transaction commands")
 	}
 
 	// One-shot simulate: treat args as a transaction command to execute with simulate on
@@ -106,7 +114,30 @@ func toggleSimulate(r *REPLState, args []string) error {
 		Args:    args[1:],
 		RawArgs: strings.Join(args[1:], " "),
 	}
-	return r.executeCommand(cmd)
+	result, err := r.executeCommandResult(cmd)
+	if err != nil {
+		return result, err
+	}
+	if result == nil {
+		return nil, fmt.Errorf("simulated command returned no result")
+	}
+	data, err := result.MarshalMachine()
+	if err != nil {
+		return nil, err
+	}
+	if !json.Valid(data) {
+		return nil, fmt.Errorf("simulated command returned invalid JSON")
+	}
+	wrapped, err := newShellCommandJSONResult(func(w io.Writer) error {
+		return result.RenderText(w)
+	}, data)
+	if err != nil {
+		return nil, err
+	}
+	if terminal, ok := result.(interface{ terminalFailure() error }); ok {
+		wrapped.(*shellCommandResult).terminalErr = terminal.terminalFailure()
+	}
+	return wrapped, nil
 }
 
 func mustSetWriteModeOff(r *REPLState) appresult.Toggle {

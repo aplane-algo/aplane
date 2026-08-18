@@ -72,7 +72,7 @@ func TestCategories(t *testing.T) {
 func TestHandler_Execute(t *testing.T) {
 	executed := false
 	handler := &MockHandler{
-		executeFunc: func(args []string, ctx *Context) error {
+		executeFunc: func(args []string, ctx *Context) (Result, error) {
 			executed = true
 			if len(args) != 2 {
 				t.Errorf("Execute() args count = %v, want 2", len(args))
@@ -80,12 +80,12 @@ func TestHandler_Execute(t *testing.T) {
 			if args[0] != "arg1" {
 				t.Errorf("Execute() args[0] = %v, want arg1", args[0])
 			}
-			return nil
+			return nil, nil
 		},
 	}
 
 	ctx := &Context{Network: "testnet"}
-	err := handler.Execute([]string{"arg1", "arg2"}, ctx)
+	_, err := handler.Execute([]string{"arg1", "arg2"}, ctx)
 	if err != nil {
 		t.Errorf("Execute() error = %v", err)
 	}
@@ -96,7 +96,7 @@ func TestHandler_Execute(t *testing.T) {
 
 func TestHandler_Execute_NilFunc(t *testing.T) {
 	handler := &MockHandler{} // executeFunc is nil
-	err := handler.Execute([]string{}, &Context{})
+	_, err := handler.Execute([]string{}, &Context{})
 	if err != nil {
 		t.Errorf("Execute() with nil func should return nil, got %v", err)
 	}
