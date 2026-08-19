@@ -37,7 +37,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-const matrixAccountFunding = 500_000
+const matrixAccountFunding = 250_000
 
 func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	assertBundledOpcodeValidationInventory(t)
@@ -169,9 +169,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	generated := make([]includedKeyTypeAccount, 0, len(cases))
 	for _, tc := range cases {
 		address := mustAdminGenerateKey(t, signerClient, signerd, tc.keyType, tc.params)
-		if err := funder.FundMicroAlgosAndWait(address, matrixAccountFunding); err != nil {
-			t.Fatalf("failed to fund %s account %s: %v", tc.keyType, address, err)
-		}
 		generated = append(generated, includedKeyTypeAccount{
 			includedKeyTypeCase: tc,
 			address:             address,
@@ -181,52 +178,21 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	approvalClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	t.Cleanup(approvalClient.Close)
 
-	for _, account := range generated {
-		if account.negative.name == "" {
-			continue
-		}
-		t.Run(account.keyType+"/negative/"+account.negative.name, func(t *testing.T) {
-			sp, err := testnet.GetSuggestedParams()
-			if err != nil {
-				t.Fatalf("failed to get suggested params: %v", err)
-			}
-			req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{
-				account.negativeSignTxn(t, sp, funder.GetAddress()),
-			})
-			status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
-			if status != http.StatusOK {
-				t.Fatalf("expected signer to produce LogicSig for negative case, got %d: %s", status, string(body))
-			}
-			var signResp signerapi.GroupSignResponse
-			if err := json.Unmarshal(body, &signResp); err != nil {
-				t.Fatalf("failed to parse sign response: %v", err)
-			}
-			if signResp.Error != "" {
-				t.Fatalf("unexpected sign error: %s", signResp.Error)
-			}
-			assertMatrixPlannerDummies(t, signResp, len(req.Requests), 0)
-			submitSignedTxnGroupExpectFailure(t, testnet, signResp.Signed)
-		})
-	}
-
-	validateMatrixHTLCAssetOptInOpcodeCeilings(
-		t, compileAlgod, signerd.GetURL(), token, fundingAddress, generated, mustSuggestedParams(t, testnet),
-	)
-	validateMatrixSpendingRekeyOpcodeCeilings(
-		t, compileAlgod, signerd.GetURL(), token, fundingAddress, generated, mustSuggestedParams(t, testnet), approvalClient,
-	)
-
 	for i := 0; i < len(generated); i += 3 {
 		end := i + 3
 		if end > len(generated) {
 			end = len(generated)
 		}
 		batch := generated[i:end]
-		t.Run(fmt.Sprintf("positive/batch-%d", i/3+1), func(t *testing.T) {
+		t.Run(fmt.Sprintf("batch-%d", i/3+1), func(t *testing.T) {
 			sp, err := testnet.GetSuggestedParams()
 			if err != nil {
 				t.Fatalf("failed to get suggested params: %v", err)
 			}
+
+			// Prepare and sign the exact drain group before putting funds at risk.
+			// If a later characterization check fails, cleanup can still submit
+			// this group while the generated signer keys remain available.
 			signTxns := make([]matrixSignTxn, 0, len(batch))
 			for _, account := range batch {
 				signTxns = append(signTxns, account.positiveSignTxn(t, sp, funder.GetAddress()))
@@ -246,8 +212,51 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			}
 			assertMatrixPlannerDummies(t, signResp, len(req.Requests), expectedDummies)
 			assertMatrixAccountsDrainExactly(t, signResp.Signed, len(signTxns))
+
+			drainSubmitted := false
+			t.Cleanup(func() {
+				if !drainSubmitted {
+					bestEffortSubmitMatrixDrain(t, testnet, signResp.Signed)
+				}
+			})
+
+			fundMatrixBatch(t, testnet, funder, sp, batch)
+			waitForMatrixFundingVisibility(t, testnet, batch)
+
+			for _, account := range batch {
+				if account.negative.name == "" {
+					continue
+				}
+				t.Run(account.keyType+"/negative/"+account.negative.name, func(t *testing.T) {
+					negativeReq := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{
+						account.negativeSignTxn(t, sp, funder.GetAddress()),
+					})
+					negativeStatus, negativeBody := postSignRequest(t, signerd.GetURL(), "aplane "+token, negativeReq)
+					if negativeStatus != http.StatusOK {
+						t.Fatalf("expected signer to produce LogicSig for negative case, got %d: %s", negativeStatus, string(negativeBody))
+					}
+					var negativeResp signerapi.GroupSignResponse
+					if err := json.Unmarshal(negativeBody, &negativeResp); err != nil {
+						t.Fatalf("failed to parse sign response: %v", err)
+					}
+					if negativeResp.Error != "" {
+						t.Fatalf("unexpected sign error: %s", negativeResp.Error)
+					}
+					assertMatrixPlannerDummies(t, negativeResp, len(negativeReq.Requests), 0)
+					submitSignedTxnGroupExpectFailure(t, testnet, negativeResp.Signed)
+				})
+			}
+
+			validateMatrixHTLCAssetOptInOpcodeCeilings(
+				t, compileAlgod, signerd.GetURL(), token, fundingAddress, batch, mustSuggestedParams(t, testnet),
+			)
+			validateMatrixSpendingRekeyOpcodeCeilings(
+				t, compileAlgod, signerd.GetURL(), token, fundingAddress, batch, mustSuggestedParams(t, testnet), approvalClient,
+			)
+
 			validateMatrixOpcodeCeilings(t, compileAlgod, batch, signResp.Signed)
 			txids := submitSignedTxnGroup(t, testnet, signResp.Signed)
+			drainSubmitted = true
 			if len(txids) == 0 {
 				t.Fatal("positive batch produced no transaction IDs")
 			}
@@ -636,6 +645,136 @@ func assertMatrixAccountsDrainExactly(t *testing.T, signed []string, accountCoun
 			t.Fatalf("matrix transaction %d spends %d microAlgos, want funded balance %d", i+1, spent, matrixAccountFunding)
 		}
 	}
+}
+
+func fundMatrixBatch(
+	t *testing.T,
+	testnet *harness.TestnetConfig,
+	funder *harness.FundTestAccount,
+	sp types.SuggestedParams,
+	accounts []includedKeyTypeAccount,
+) {
+	t.Helper()
+	txns := make([]types.Transaction, len(accounts))
+	for i, account := range accounts {
+		txn, err := transaction.MakePaymentTxn(
+			funder.GetAddress(), account.address, matrixAccountFunding,
+			[]byte("keytype-matrix-fund"), "", sp,
+		)
+		if err != nil {
+			t.Fatalf("build %s funding transaction: %v", account.keyType, err)
+		}
+		prepared, err := funder.PrepareTransaction(txn, sp.MinFee)
+		if err != nil {
+			t.Fatalf("prepare %s funding transaction: %v", account.keyType, err)
+		}
+		txns[i] = prepared
+	}
+	groupID, err := algocrypto.ComputeGroupID(txns)
+	if err != nil {
+		t.Fatalf("compute matrix funding group ID: %v", err)
+	}
+	rawGroup := make([]byte, 0)
+	firstTxID := ""
+	for i := range txns {
+		txns[i].Group = groupID
+		txid, signed, err := funder.SignTransaction(txns[i])
+		if err != nil {
+			t.Fatalf("sign %s funding transaction: %v", accounts[i].keyType, err)
+		}
+		if firstTxID == "" {
+			firstTxID = txid
+		}
+		rawGroup = append(rawGroup, signed...)
+	}
+	if _, err := testnet.Client.SendRawTransaction(rawGroup).Do(context.Background()); err != nil {
+		t.Fatalf("submit atomic matrix funding group: %v", err)
+	}
+	if _, err := testnet.WaitForConfirmation(firstTxID, 10); err != nil {
+		t.Fatalf("matrix funding group %s failed to confirm: %v", firstTxID, err)
+	}
+}
+
+func waitForMatrixFundingVisibility(
+	t *testing.T,
+	testnet *harness.TestnetConfig,
+	accounts []includedKeyTypeAccount,
+) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	observedOnce := false
+	lastIssue := "funded accounts were not visible"
+	for time.Now().Before(deadline) {
+		allVisible := true
+		for _, account := range accounts {
+			info, err := testnet.Client.AccountInformation(account.address).Do(context.Background())
+			if err != nil {
+				allVisible = false
+				lastIssue = fmt.Sprintf("read %s account %s: %v", account.keyType, account.address, err)
+				break
+			}
+			if info.Amount < matrixAccountFunding {
+				allVisible = false
+				lastIssue = fmt.Sprintf(
+					"%s account %s balance is %d, want at least %d",
+					account.keyType, account.address, info.Amount, matrixAccountFunding,
+				)
+				break
+			}
+		}
+		if !allVisible {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		if observedOnce {
+			return
+		}
+
+		// Public algod endpoints may load-balance account reads and simulation
+		// across nodes. Require the funded state to remain visible across one
+		// additional round before asking a potentially different node to
+		// simulate the group.
+		status, err := testnet.Client.Status().Do(context.Background())
+		if err != nil {
+			lastIssue = fmt.Sprintf("read algod status after funding: %v", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		if _, err := testnet.Client.StatusAfterBlock(status.LastRound).Do(context.Background()); err != nil {
+			lastIssue = fmt.Sprintf("wait for post-funding round: %v", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		observedOnce = true
+	}
+	t.Fatalf("matrix funding did not become consistently visible within 30s: %s", lastIssue)
+}
+
+func bestEffortSubmitMatrixDrain(t *testing.T, testnet *harness.TestnetConfig, signedHexes []string) {
+	t.Helper()
+	rawGroup := make([]byte, 0)
+	for _, signedHex := range signedHexes {
+		signedBytes, err := hex.DecodeString(signedHex)
+		if err != nil {
+			t.Logf("WARNING: matrix cleanup could not decode signed drain group: %v", err)
+			return
+		}
+		rawGroup = append(rawGroup, signedBytes...)
+	}
+	if len(rawGroup) == 0 {
+		t.Log("WARNING: matrix cleanup had no signed drain group to submit")
+		return
+	}
+	txid, err := testnet.Client.SendRawTransaction(rawGroup).Do(context.Background())
+	if err != nil {
+		t.Logf("WARNING: matrix cleanup could not submit signed drain group: %v", err)
+		return
+	}
+	if _, err := testnet.WaitForConfirmation(txid, 10); err != nil {
+		t.Logf("WARNING: matrix cleanup drain group %s did not confirm: %v", txid, err)
+		return
+	}
+	t.Logf("matrix cleanup returned batch funding with drain group %s", txid)
 }
 
 func matrixCompileAlgod(t *testing.T, network *harness.TestnetConfig) *sdkalgod.Client {
