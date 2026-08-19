@@ -16,7 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
-func TestExtraIdentityPreventsSignerStartup(t *testing.T) {
+func TestExtraProductStoreEntryPreventsSignerStartup(t *testing.T) {
 	env := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{})
 	aliceDir := filepath.Join(env.SignerDataDir, "identities", "alice")
 	if err := os.MkdirAll(filepath.Join(aliceDir, ".ssh"), 0o700); err != nil {
@@ -41,8 +41,8 @@ func TestExtraIdentityPreventsSignerStartup(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(logs, `unsupported entry "alice" under identities`) ||
-		!strings.Contains(logs, `supports only the "default" product identity`) {
-		t.Fatalf("startup logs did not report the single-identity boundary:\n%s", logs)
+		!strings.Contains(logs, `supports only the "default" product store`) {
+		t.Fatalf("startup logs did not report the product-store integrity boundary:\n%s", logs)
 	}
 
 	client := &http.Client{Timeout: 250 * time.Millisecond}
