@@ -294,7 +294,7 @@ func TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup(t *testi
 }
 
 func TestExecutorSignCryptoKeyRejectsInvalidAuthAddress(t *testing.T) {
-	keyType := "test-native-auth-decode"
+	keyType := uniqueSigningTestFamily("test-native-auth-decode")
 	coresigning.Register(&testNativeSigningProvider{family: keyType})
 	exec := &Executor{}
 
@@ -325,7 +325,7 @@ func TestExecutorSignCryptoKeyRejectsInvalidAuthAddress(t *testing.T) {
 }
 
 func TestExecutorRejectsUnexpectedTransactionAuthorizerBeforeInvocation(t *testing.T) {
-	keyType := "test-unexpected-transaction-authorizer"
+	keyType := uniqueSigningTestFamily("test-unexpected-transaction-authorizer")
 	provider := &unexpectedTransactionAuthorizerProvider{
 		testNativeSigningProvider: testNativeSigningProvider{family: keyType},
 	}

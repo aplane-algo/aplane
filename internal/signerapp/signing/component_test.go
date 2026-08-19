@@ -612,7 +612,7 @@ func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
 }
 
 func TestSignPreparedUserComponentsSignsGuardedAccountMessages(t *testing.T) {
-	baseKeyType := "test.user-component-signing.v1"
+	baseKeyType := uniqueSigningTestFamily("test.user-component-signing.v1")
 	provider := &componentUserTestProvider{family: baseKeyType}
 	coresigning.Register(provider)
 
@@ -679,7 +679,7 @@ func TestSignPreparedUserComponentsSignsGuardedAccountMessages(t *testing.T) {
 }
 
 func TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages(t *testing.T) {
-	baseKeyType := "test.user-component-authorizer-signing.v1"
+	baseKeyType := uniqueSigningTestFamily("test.user-component-authorizer-signing.v1")
 	provider := &componentUserTestProvider{family: baseKeyType}
 	coresigning.Register(provider)
 

@@ -35,6 +35,7 @@ func TestTemplateFingerprintComparison(t *testing.T) {
 	fpA := "1:" + strings.Repeat("a", 64)
 	fpB := "1:" + strings.Repeat("b", 64)
 	lsigprovider.Register(fingerprintTestProvider{keyType: keyType, fingerprint: fpA})
+	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 
 	if got := TemplateFingerprintForKeyType(keyType); got != fpA {
 		t.Fatalf("TemplateFingerprintForKeyType() = %q, want %q", got, fpA)
@@ -58,6 +59,7 @@ func TestTemplateFingerprintCrossVersionIsBenign(t *testing.T) {
 	keyType := "fingerprint-test-crossversion-v1"
 	fpA := "1:" + strings.Repeat("a", 64)
 	lsigprovider.Register(fingerprintTestProvider{keyType: keyType, fingerprint: fpA})
+	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 
 	status, note := CompareTemplateFingerprint(keyType, "2:"+strings.Repeat("a", 64))
 	if status != TemplateProvenanceStatusUnavailable {

@@ -180,7 +180,7 @@ func userComponentGateRequest(t *testing.T, sender string, txns []types.Transact
 }
 
 func TestSignComponentUserRoleRejectedBySignerPolicy(t *testing.T) {
-	provider := &componentUserTestProvider{family: "test.component-gate-policy-reject.v1"}
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-policy-reject.v1")}
 	coresigning.Register(provider)
 
 	sender := types.Address{21}.String()
@@ -224,7 +224,7 @@ func TestSignComponentUserRoleRejectedBySignerPolicy(t *testing.T) {
 }
 
 func TestSignComponentUserRoleOperatorApproves(t *testing.T) {
-	provider := &componentUserTestProvider{family: "test.component-gate-operator-approve.v1"}
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-operator-approve.v1")}
 	coresigning.Register(provider)
 
 	sender := types.Address{23}.String()
@@ -270,7 +270,7 @@ func TestSignComponentUserRoleOperatorApproves(t *testing.T) {
 }
 
 func TestSignComponentUserRoleOperatorDenies(t *testing.T) {
-	provider := &componentUserTestProvider{family: "test.component-gate-operator-deny.v1"}
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-operator-deny.v1")}
 	coresigning.Register(provider)
 
 	sender := types.Address{25}.String()
@@ -306,7 +306,7 @@ func TestSignComponentUserRoleOperatorDenies(t *testing.T) {
 }
 
 func TestSignComponentUserRoleUserAutoApproveSkipsPrompt(t *testing.T) {
-	provider := &componentUserTestProvider{family: "test.component-gate-user-auto.v1"}
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-user-auto.v1")}
 	coresigning.Register(provider)
 
 	sender := types.Address{27}.String()
@@ -333,7 +333,7 @@ func TestSignComponentUserRoleUserAutoApproveSkipsPrompt(t *testing.T) {
 }
 
 func TestSignComponentUserRoleForeignRekeyLegForcesReview(t *testing.T) {
-	provider := &componentUserTestProvider{family: "test.component-gate-foreign-review.v1"}
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-foreign-review.v1")}
 	coresigning.Register(provider)
 
 	sender := types.Address{29}.String()
