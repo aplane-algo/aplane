@@ -1289,7 +1289,7 @@ lock_on_disconnect: false
 ```
 
 - Default is `true` (signer locks when apadmin disconnects)
-- Identity-scoped `unlock.yaml` forces the effective value to `false`
+- Product-store `unlock.yaml` forces the effective value to `false`
 - Process-global helper configuration must set this to `false`
 - Without this, the signer would lock immediately after startup
 

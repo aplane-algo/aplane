@@ -7,6 +7,11 @@ This document is the source of truth for which process may access or mutate
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and the closed product-principal/action
 model in [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
 
+Each signer or sentry data root contains one product store at
+`identities/default/` and managed backups at `backups/default/`. Store-owning
+APIs accept no identity locator, and live mutation/inspection uses one
+process-wide product-store lock.
+
 ## Trust statement
 
 Membership in the operator-facing `aplane` Unix group grants connectivity to
@@ -61,7 +66,7 @@ moved behind an existing owner.
 
 | Owner | Store access |
 |---|---|
-| `internal/signerapp/identity`, `storemut`, `keyadmin`, `templateadmin`, `templates` | Identity settings, store mutation locking, keys and templates |
+| `internal/signerapp/identity`, `storemut`, `keyadmin`, `templateadmin`, `templates` | Product settings, store mutation locking, keys and templates |
 | `internal/signerapp/backupadmin` and `internal/backup` when invoked by it | Managed backup, restore, rollback, reconciliation |
 | `internal/keystore`, `internal/keys`, `internal/keymgmt` | Active credential state |
 | `internal/genstore`, `internal/rotationinventory`, `internal/storepass` | Generation publication, reconciliation, and key-term rotation |
@@ -71,6 +76,10 @@ moved behind an existing owner.
 
 Normal operators reach these owners through authenticated HTTP or the admin protocol over IPC/SSH;
 they do not call the storage packages directly.
+
+`internal/signerapp/identity` is a historical package name. It owns the useful
+product runtime aggregate; the aggregate has no identity ID or selectable
+runtime registry.
 
 ### Offline bootstrap and rescue
 

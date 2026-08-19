@@ -46,7 +46,7 @@ aplane/
 │   ├── signing/              # Native signing and signer-facing helpers
 │   ├── lsigprovider/         # LogicSig provider interfaces and registry
 │   ├── keytypecatalog/       # Compiled key type availability
-│   ├── keytypestate/         # Identity-scoped key type state records
+│   ├── keytypestate/         # Product-store key type state records
 │   ├── keys/                 # Key file scanning and persistence helpers
 │   ├── keystore/             # Keystore metadata and encrypted key storage
 │   ├── templatestore/        # Encrypted identity template store

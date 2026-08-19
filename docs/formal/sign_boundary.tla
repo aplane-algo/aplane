@@ -31,7 +31,7 @@ The model intentionally omits:
   - approval coordinator state (always-review, operator decision),
   - server shutdown ordering and runtime destruction,
   - LogicSig budget, fee adjustment, group-id recomputation,
-  - HTTP authentication, identity routing,
+  - HTTP authentication and fixed runtime binding,
   - filesystem reload ordering.
 
 If those concerns become security-critical for a particular check,

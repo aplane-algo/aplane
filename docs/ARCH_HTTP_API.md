@@ -1,10 +1,10 @@
 # HTTP API Contract
 
-> Compatibility-bearing wire shapes, identity routing, and cancellation semantics for the apsigner HTTP surface.
+> Compatibility-bearing wire shapes, fixed runtime binding, and cancellation semantics for the apsigner HTTP surface.
 > For overall compatibility scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 > For the explanatory transaction signing flow, see [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md).
 
-This contract is consumed by `apshell`, the in-tree `internal/signerclient`, and external SDK clients in the `aplane-algo/aplanesdk` repo (Go, TypeScript, Python). It documents the request/response wire format, status codes, identity routing, and the `/sign/cancel` lifecycle.
+This contract is consumed by `apshell`, the in-tree `internal/signerclient`, and external SDK clients in the `aplane-algo/aplanesdk` repo (Go, TypeScript, Python). It documents the request/response wire format, status codes, fixed runtime binding, and the `/sign/cancel` lifecycle.
 
 The current signer HTTP protocol is `2.0`. Version 2 removes the signer-owned
 ordinary and guarded simulation endpoints and their DTOs. Simulation-capable
@@ -14,9 +14,9 @@ receive `404` and must be upgraded with apsigner.
 
 The product-facing HTTP API is a single-signer API. Successful token
 authentication maps to the product principal, and every authenticated handler
-targets the one product runtime (`default`). Internal request/resource types
-remain identity-attributed for authorization and audit, but non-default target
-identities are rejected.
+uses the process-owned product runtime. HTTP requests and authorization
+resources carry no runtime or store selector. Compatibility-bearing status and
+audit fields continue to attribute product work to `default`.
 
 ## Endpoints
 
@@ -63,7 +63,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 |------|---------|-------------|
 | `bad_request` | malformed or invalid request input | `400` |
 | `unauthorized` | missing or invalid authentication | `401` |
-| `forbidden` | authenticated request the signer refuses (policy/role/identity) | `403` |
+| `forbidden` | authenticated request the signer refuses (policy or role) | `403` |
 | `locked` | signer keystore is locked | `403` |
 | `not_found` | unknown key or resource | `404` |
 | `invalid_passphrase` | passphrase verification failure | `403` |
@@ -100,16 +100,16 @@ Timeout behavior:
   compatibility bug because it can cancel a valid manual approval flow before
   apsigner's approval timeout expires.
 
-Identity routing:
+Fixed runtime binding:
 
-- HTTP auth uses the presented `aplane` token to authenticate exactly one
-  identity.
-- if an endpoint does not carry a separate target resource identity, the target
-  resource identity is the authenticated identity.
-- if an endpoint does carry a target resource identity, the authenticated
-  identity and target resource identity must match.
-- missing credentials return `401`; authenticated identities with no registered
-  or live runtime return `403`.
+- HTTP auth uses the one product `aplane` token to authenticate the reserved
+  product-admin principal.
+- authenticated handlers use the process-owned product runtime; requests carry
+  no runtime or store selector.
+- `default` remains the compatibility attribution value in status and audit
+  output, not a client-selectable target.
+- missing or invalid credentials return `401`; authorization failures return
+  `403`.
 
 ## Request/Response Shapes
 

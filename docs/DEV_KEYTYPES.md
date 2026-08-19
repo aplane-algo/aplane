@@ -52,14 +52,14 @@ The source model is:
 | Source | Meaning | Registration time | Scope |
 |---|---|---|---|
 | Go-defined | Provider/template implemented directly in Go and registered from code | Process startup | Built into the binary; visibility is governed by `internal/keytypecatalog` |
-| User-loaded YAML | YAML installed into the signer keystore from the template library or a supplied path | Unlock/reload after the identity keyring is open, unless the installed template is disabled for the identity | Identity-scoped runtime capability |
+| User-loaded YAML | YAML installed into the signer keystore from the template library or a supplied path | Unlock/reload after the product keyring is open, unless the installed template is disabled | Product-store runtime capability |
 
 Built-in compiled key types are Go-defined in the default build. Default-enabled
 compiled key types are immediately visible. Library-visible compiled key types
 are binary capabilities exposed through the KeyType Library and require
-identity-scoped enablement before they appear in generation surfaces.
+product-store enablement before they appear in generation surfaces.
 User-loaded templates are not built-ins; they become available only for the
-identity whose keystore contains the encrypted `.template` file and has not
+product store whose keystore contains the encrypted `.template` file and has not
 disabled that installed template.
 
 Feature code must not write template files or key-type state records directly.
@@ -216,8 +216,8 @@ LogicSig DSA provider, distinct from the native `ed25519` signing key. See
 `docs/ARCH_KEYTYPE_AXES.md` for the exact
 split between native `ed25519`, the `aplane.ed25519` LogicSig routing family,
 and the concrete `aplane.ed25519.v1` key type.
-Opt-in state records are plaintext identity-scoped metadata under
-`identities/<identity>/keytypes/<key_type>.json`; they affect discovery and key
+Opt-in state records are plaintext product-store metadata under
+`identities/default/keytypes/<key_type>.json`; they affect discovery and key
 creation, not the ability to sign with keys that already exist. Mnemonic import
 is additionally gated by the provider's explicit mnemonic-import capability.
 The default-enabled `ed25519`, `falcon1024`, and `aplane.falcon1024.v1` providers allow
@@ -235,7 +235,7 @@ Do not route it through `lsig/falcon1024` or reuse the 24-word recovery and
 derivation contract of `aplane.falcon1024.v1`.
 
 Installed YAML templates use the same state-record model. The encrypted
-`.template` file under `identities/<identity>/keytypes/<key_type>.template` is
+`.template` file under `identities/default/keytypes/<key_type>.template` is
 the durable installed source. The adjacent JSON record stores the source
 (`yaml_generic`, `yaml_composed`, or `compiled`), state (`enabled` or
 `disabled`), compatibility fingerprint, and enablement timestamp. Removing a YAML
@@ -254,7 +254,7 @@ Use these terms consistently:
 | **Library-visible** | Compiled providers | Catalog availability `library`; the provider is registered in the binary and appears in the KeyType Library, but an enabled identity state record is required before that identity sees it in generation surfaces. |
 | **Disabled** | Compiled providers | Catalog availability `disabled`; the provider may exist in source but should not be registered or exposed by the runtime path that owns the catalog entry. |
 | **Enabled for identity** | Library-visible compiled providers | The identity has an enabled `source:"compiled"` state record, so that compiled key type is enabled for that identity's discovery and generation surfaces. |
-| **Installed** | YAML templates | The identity has an encrypted `.template` file under `identities/<identity>/keytypes/<key_type>.template`; plaintext files under `library/templates/` are only install sources. |
+| **Installed** | YAML templates | The identity has an encrypted `.template` file under `identities/default/keytypes/<key_type>.template`; plaintext files under `library/templates/` are only install sources. |
 | **Template disabled** | Installed YAML templates | The identity has a `source:"yaml_*"` state record with `state:"disabled"`; the encrypted template remains installed but is hidden from discovery and generation until re-enabled. |
 | **Registered on reload** | Enabled installed YAML templates | On unlock/reload, the signer decrypts enabled installed templates and registers their providers before key scanning. Disabled installed templates are skipped. |
 
@@ -266,12 +266,12 @@ Bundled YAML templates, if installed:
 
 | Library key type | Behavior category | Install command | Runtime storage |
 |---|---|---|---|
-| `aplane.htlc.v1` | Generic LogicSig template | `apadmin template import library/templates/aplane.htlc.v1.yaml` | `identities/<identity>/keytypes/aplane.htlc.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
-| `aplane.falcon1024-allowlist-alock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist-alock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist-alock.v1.{json,template}` |
-| `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-timelock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
-| `aplane.corridor.v1` | Bounded1 composed DSA template with sentry-gated spend | `apadmin template import library/templates/aplane.corridor.v1.yaml` | `identities/<identity>/keytypes/aplane.corridor.v1.{json,template}` |
+| `aplane.htlc.v1` | Generic LogicSig template | `apadmin template import library/templates/aplane.htlc.v1.yaml` | `identities/default/keytypes/aplane.htlc.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | `identities/default/keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | `identities/default/keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
+| `aplane.falcon1024-allowlist-alock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist-alock.v1.yaml` | `identities/default/keytypes/aplane.falcon1024-allowlist-alock.v1.{json,template}` |
+| `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-timelock.v1.yaml` | `identities/default/keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
+| `aplane.corridor.v1` | Bounded1 composed DSA template with sentry-gated spend | `apadmin template import library/templates/aplane.corridor.v1.yaml` | `identities/default/keytypes/aplane.corridor.v1.{json,template}` |
 
 These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed into
@@ -285,19 +285,18 @@ filenames and may not have parameter metadata.
 
 ## Product Filesystem State
 
-The storage helpers remain parameterized by identity ID. In the product, every
-`<identity>` placeholder in this section resolves to the fixed value `default`;
-it is not an operator-selectable tenant or runtime.
+All key-type state in this section belongs to the fixed product store under
+`identities/default/`; there is no operator-selectable tenant or runtime.
 
 Template key type state is represented by one plaintext state record per
 identity/key type, plus an encrypted template body when the source is YAML:
 
 | State | Filesystem representation |
 |---|---|
-| Not installed | No `identities/<identity>/keytypes/<key_type>.json` state record |
+| Not installed | No `identities/default/keytypes/<key_type>.json` state record |
 | Installed and enabled | `keytypes/<key_type>.json` has `source:"yaml_generic"` or `source:"yaml_composed"` and `state:"enabled"`; `keytypes/<key_type>.template` holds the encrypted YAML |
 | Installed and disabled | Same files, but the state record has `state:"disabled"` |
-| Removed | The state record is deleted and the `.template` file has been moved out of active storage to `identities/<identity>/deleted/keytypes/<key_type>.template` |
+| Removed | The state record is deleted and the `.template` file has been moved out of active storage to `identities/default/deleted/keytypes/<key_type>.template` |
 
 Filesystem actions for YAML templates:
 
@@ -311,11 +310,11 @@ Filesystem actions for YAML templates:
 Key deletion uses the same identity-local archive root:
 
 ```text
-identities/<identity>/keys/<address>.key
-  -> identities/<identity>/deleted/keys/<address>.key
+identities/default/keys/<address>.key
+  -> identities/default/deleted/keys/<address>.key
 
-identities/<identity>/keys/<witness_key_id>.sen
-  -> identities/<identity>/deleted/keys/<witness_key_id>.sen
+identities/default/keys/<witness_key_id>.sen
+  -> identities/default/deleted/keys/<witness_key_id>.sen
 ```
 
 Archived keys and templates are outside active key/template scans. A user-requested
@@ -327,8 +326,8 @@ Compiled providers use state records rather than moving provider code:
 
 | Operation | Filesystem action |
 |---|---|
-| Enable library-visible compiled provider | Writes `identities/<identity>/keytypes/<key_type>.json` with `source:"compiled"` and `state:"enabled"` |
-| Disable library-visible compiled provider | Deletes `identities/<identity>/keytypes/<key_type>.json` after the unused-key guard passes |
+| Enable library-visible compiled provider | Writes `identities/default/keytypes/<key_type>.json` with `source:"compiled"` and `state:"enabled"` |
+| Disable library-visible compiled provider | Deletes `identities/default/keytypes/<key_type>.json` after the unused-key guard passes |
 
 ## Step 1: Classify the Key Type
 
@@ -475,10 +474,10 @@ directory. Enabled installed templates are registered on that identity's
 reload/unlock path.
 
 Disabling an installed YAML template is different from removing it. Disable
-writes `state:"disabled"` into `identities/<identity>/keytypes/<key_type>.json`
+writes `state:"disabled"` into `identities/default/keytypes/<key_type>.json`
 and leaves the encrypted `.template` file in place so the template can be
 re-enabled later. Remove deletes the state record and moves the encrypted
-`.template` source to `identities/<identity>/deleted/keytypes/<key_type>.template`.
+`.template` source to `identities/default/deleted/keytypes/<key_type>.template`.
 
 Disabling or removing an installed YAML key type must be treated as
 compatibility-sensitive. Disable is a reversible, state-only hide from discovery
@@ -956,7 +955,7 @@ The exact registries depend on the category.
 - [ ] Go-defined templates register with the unified `internal/lsigprovider` registry
 - [ ] Go-defined templates are reachable from an owning startup path such as `lsig.RegisterClient()` or `lsig/signerreg.RegisterSigner()`
 - [ ] User-loaded YAML parses from `library/templates/*.yaml` or another supplied path
-- [ ] User-loaded YAML installs into the identity-scoped encrypted template store with a key type state record, can be disabled by setting that record to `disabled`, and is not registered directly from startup registration
+- [ ] User-loaded YAML installs into the product encrypted template store with a key type state record, can be disabled by setting that record to `disabled`, and is not registered directly from startup registration
 
 Common paths:
 - `lsig/<template>/template.go`
@@ -993,7 +992,7 @@ Common paths:
 - [ ] Supplies private-key operations through signer-side `signerops` packages when needed
 - [ ] Go-defined templates are reachable from `lsig/composeddsa` or equivalent composed template registration code
 - [ ] Go-defined templates are reachable from an owning startup path such as `lsig.RegisterClient()` or `lsig/signerreg.RegisterSigner()`
-- [ ] User-loaded YAML installs into the identity-scoped encrypted template store with a key type state record, can be disabled by setting that record to `disabled`, and is not registered directly from startup registration
+- [ ] User-loaded YAML installs into the product encrypted template store with a key type state record, can be disabled by setting that record to `disabled`, and is not registered directly from startup registration
 
 ## Parameter Checklist
 

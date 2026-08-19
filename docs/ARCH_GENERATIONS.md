@@ -20,7 +20,7 @@ semantics are retired.
 ## 1. Layout and the generational boundary
 
 ```
-identities/<identity>/
+identities/default/
   keyring.enc                  # cryptographic root (aplane.keyring.v2)
   .keystore                    # static marker: version 5 + keyring/v2
   CURRENT                      # one line: the active generation ID
@@ -46,7 +46,7 @@ and the `internal/keys` file constructors rooted at them
 | Paths | Why they stay outside |
 |---|---|
 | `deleted/keys/`, `deleted/keytypes/` | tombstone namespace, not active state; a deleted key is *supposed* to reappear on generation rollback — the prior generation's copy is the rollback semantic, the tombstone is just an archive |
-| `keyring.enc` and `.keystore` | the cryptographic root and its format marker are identity-scoped, not generation-scoped |
+| `keyring.enc` and `.keystore` | the product store's cryptographic root and format marker are not generation-scoped |
 | `policy.yaml(+.hmac)`, `node.yaml.hmac`, `config.yaml`, `unlock.yaml`, `aplane.token`, `.ssh/`, `sentries/`, `files/`, `passphrase*` | not part of any activation transaction |
 | `<root>/backups`, `<root>/library`, `<root>/node.yaml` | not identity-active state |
 
@@ -329,7 +329,7 @@ See [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
 
 ## 12. Filesystems, crash ordering, ownership
 
-- Supported: Linux and Darwin on a **single filesystem per identity store**
+- Supported: Linux and Darwin on a **single filesystem per product store**
   (already required by cross-directory publish/archive renames). This is a
   documented store requirement, not probed at runtime: a store that violates
   it fails its first commit's publish rename with `EXDEV` before anything

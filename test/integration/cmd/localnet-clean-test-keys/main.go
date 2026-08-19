@@ -38,7 +38,7 @@ func run() error {
 	flag.StringVar(&opts.signerData, "signer-data", envDefault("APSIGNER_DATA", defaultSignerData), "generated integration signer data directory")
 	flag.StringVar(&opts.identity, "identity", defaultIdentity, "identity whose token file should be used")
 	flag.StringVar(&opts.baseURL, "base-url", "", "signer REST URL; defaults to http://localhost:<signer_port> from signer config")
-	flag.StringVar(&opts.tokenFile, "token-file", "", "API token file; defaults to <signer-data>/identities/<identity>/aplane.token")
+	flag.StringVar(&opts.tokenFile, "token-file", "", "API token file; defaults to <signer-data>/identities/default/aplane.token")
 	flag.Parse()
 
 	resolved, err := resolveOptions(opts)

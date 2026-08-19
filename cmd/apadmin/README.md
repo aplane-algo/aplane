@@ -164,7 +164,7 @@ For live managed backup and restore operations, use `apadmin` locally or with
 For a live signer-managed backup, unlock the signer, open the admin/settings
 panel, choose `Create backup`, and enter an export passphrase. `apsigner`
 writes the resulting archive on the signer host under
-`backups/<identity>/aplane-backup-YYYYMMDD-HHMMSS.tar.gz` beneath the signer
+`backups/default/aplane-backup-YYYYMMDD-HHMMSS.tar.gz` beneath the signer
 data root.
 
 For a live signer-managed restore, unlock the signer, open the admin/settings

@@ -314,7 +314,7 @@ See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility detai
 ### Engineering Docs
 - `ARCH_SPEC.md`: Cross-cutting implementation map, ownership model, runtime model, architectural seams, source-of-truth files
 - `ARCH_CONTRACTS.md`: Compatibility-bearing on-disk/config/SDK/plugin/MCP contracts and TOC pointing at extracted contract docs
-- `ARCH_HTTP_API.md`: HTTP request/response wire shapes, status codes, identity routing, and `/sign/cancel` lifecycle
+- `ARCH_HTTP_API.md`: HTTP request/response wire shapes, status codes, fixed runtime binding, and `/sign/cancel` lifecycle
 - `ARCH_ADMIN_PROTOCOL.md`: apsigner admin RPC message catalog, payload shapes, and writable-settings rules
 
 ### Architecture Docs (`docs/`)
