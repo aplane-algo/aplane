@@ -55,7 +55,7 @@ type ProductBuildHooks struct {
 // BuildProductRuntime validates the product layout and constructs the one
 // process-owned identity runtime.
 func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*identity.Runtime, error) {
-	if err := identity.ValidateProductIdentityLayout(opts.DataDir, productmode.IdentityID); err != nil {
+	if err := identity.ValidateProductStoreLayout(opts.DataDir); err != nil {
 		return nil, err
 	}
 	nodeDoc, _, err := noderole.Load(opts.KeyPaths)
@@ -165,20 +165,19 @@ func WireApprovalCoordinator(ir *identity.Runtime, hooks ProductBuildHooks) {
 // directly because reload callers already hold passphraseLock; this function
 // must not call ir.SnapshotKeySession().
 func NewReloadService(ir *identity.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks, session *keystore.KeySession) *signertemplates.ReloadService {
-	identityID := productmode.IdentityID
 	svc := &signertemplates.ReloadService{
 		KeyStore:        ir.KeyStore(),
 		Session:         session,
 		TemplateManager: newTemplateManager(ir.KeyPaths()),
 		BeforeKeyScan: func(kr *crypto.Keyring) error {
 			if verifiedRole, err := noderole.LoadAndVerifyWithKeyring(opts.KeyPaths, kr); err != nil {
-				return fmt.Errorf("node role verification failed for identity %q: %w", identityID, err)
+				return fmt.Errorf("node role verification failed for identity %q: %w", productmode.IdentityID, err)
 			} else if verifiedRole.Role != ir.NodeRole() {
-				return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", identityID, ir.NodeRole(), verifiedRole.Role)
+				return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", productmode.IdentityID, ir.NodeRole(), verifiedRole.Role)
 			}
 			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStored(ir.NodeRole(), opts.DataDir, opts.Config, kr)
 			if err != nil {
-				return fmt.Errorf("policy verification failed for identity %q: %w", identityID, err)
+				return fmt.Errorf("policy verification failed for identity %q: %w", productmode.IdentityID, err)
 			}
 			switch ir.NodeRole() {
 			case noderole.RoleSentry:
@@ -193,7 +192,7 @@ func NewReloadService(ir *identity.Runtime, opts ProductBuildOptions, hooks Prod
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string) error {
 			if err := keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes); err != nil {
 				if errors.Is(err, keyclass.ErrNodeRoleConflict) && hooks.NodeFailClosed != nil {
-					hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict for identity %q: %w", identityID, err))
+					hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict for identity %q: %w", productmode.IdentityID, err))
 				}
 				return err
 			}

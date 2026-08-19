@@ -293,7 +293,7 @@ func RequireUnused(paths storepaths.Paths, keyType string, kr *apcrypto.Keyring)
 	return &InUseError{KeyType: keyType, Addresses: addresses}
 }
 
-// CanGenerate reports whether keyType is generatable by identityID. It returns
+// CanGenerate reports whether keyType is generatable by the product store. It returns
 // an error when state storage is corrupt or unreadable so callers can surface a
 // storage error rather than reporting "invalid key type."
 func CanGenerate(paths storepaths.Paths, keyType string) (bool, error) {

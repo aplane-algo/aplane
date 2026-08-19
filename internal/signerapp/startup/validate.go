@@ -9,7 +9,6 @@ import (
 
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -122,7 +121,7 @@ func Validate(config *serverconfig.ServerConfig, runtime *RuntimeState, keyPaths
 	// Validate the single-product layout before the caller resolves any
 	// passphrase source. BuildProductRuntime repeats this check immediately
 	// before assembly to protect against a concurrent filesystem change.
-	if err := identity.ValidateProductIdentityLayout(keyPaths.Root(), productmode.IdentityID); err != nil {
+	if err := identity.ValidateProductStoreLayout(keyPaths.Root()); err != nil {
 		return nil, fmt.Errorf("invalid product identity layout: %w", err)
 	}
 

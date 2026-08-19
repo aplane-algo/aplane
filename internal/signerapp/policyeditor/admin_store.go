@@ -49,7 +49,6 @@ type AdminStore struct {
 	Client AdminPolicyClient
 	Target Target
 
-	identityID string
 	lastSHA    string
 	policyYAML string
 }
@@ -81,7 +80,6 @@ func (s *AdminStore) Load(ctx context.Context) (*policy.StoredConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse %s snapshot: %w", target.DocumentName(), err)
 	}
-	s.identityID = snapshot.IdentityID
 	s.lastSHA = strings.TrimSpace(snapshot.PolicySHA256)
 	s.policyYAML = snapshot.PolicyYAML
 	return stored, nil
@@ -108,9 +106,6 @@ func (s *AdminStore) Validate(ctx context.Context, stored *policy.StoredConfig) 
 	if result.Target != "" && result.Target != target {
 		return fmt.Errorf("validate returned target %q, want %q", result.Target, target)
 	}
-	if result.IdentityID != "" {
-		s.identityID = result.IdentityID
-	}
 	return nil
 }
 
@@ -132,7 +127,6 @@ func (s *AdminStore) Save(ctx context.Context, stored *policy.StoredConfig) erro
 	if err := requireSnapshotSuccess(snapshot, target, "save"); err != nil {
 		return err
 	}
-	s.identityID = snapshot.IdentityID
 	s.lastSHA = strings.TrimSpace(snapshot.PolicySHA256)
 	s.policyYAML = snapshot.PolicyYAML
 	return nil
@@ -169,7 +163,6 @@ func (s *AdminStore) SaveYAML(ctx context.Context, data []byte) error {
 	if err := requireSnapshotSuccess(snapshot, target, "save"); err != nil {
 		return err
 	}
-	s.identityID = snapshot.IdentityID
 	s.lastSHA = strings.TrimSpace(snapshot.PolicySHA256)
 	s.policyYAML = snapshot.PolicyYAML
 	return nil
@@ -178,15 +171,6 @@ func (s *AdminStore) SaveYAML(ctx context.Context, data []byte) error {
 // ModeLabel identifies this backend in policytui headers.
 func (s *AdminStore) ModeLabel() string {
 	return "online"
-}
-
-// IdentityID returns the identity reported by the last successful admin policy
-// operation, if any.
-func (s *AdminStore) IdentityID() string {
-	if s == nil {
-		return ""
-	}
-	return s.identityID
 }
 
 // LastSHA256 returns the canonical snapshot SHA from the last successful Load

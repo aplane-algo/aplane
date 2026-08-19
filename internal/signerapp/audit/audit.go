@@ -268,10 +268,10 @@ type Attribution struct {
 	RemoteAddr         string
 }
 
-func (attr Attribution) entry(fallbackIdentityID string, includeApprover bool) AuditEntry {
+func (attr Attribution) entry(includeApprover bool) AuditEntry {
 	targetIdentityID := attr.TargetIdentityID
 	if targetIdentityID == "" {
-		targetIdentityID = fallbackIdentityID
+		targetIdentityID = productmode.IdentityID
 	}
 	requester := attr.RequesterPrincipal
 	principal := requester
@@ -326,8 +326,8 @@ func sessionAuditFields(ctx adminserver.SessionContext) AuditEntry {
 	}
 }
 
-func signRequestEntry(attr Attribution, identityID, address, txnSender, txnType, txnDetails string) AuditEntry {
-	entry := attr.entry(identityID, false)
+func signRequestEntry(attr Attribution, address, txnSender, txnType, txnDetails string) AuditEntry {
+	entry := attr.entry(false)
 	entry.Event = AuditSignRequest
 	entry.Outcome = "requested"
 	entry.TxnAuth = address
@@ -337,8 +337,8 @@ func signRequestEntry(attr Attribution, identityID, address, txnSender, txnType,
 	return entry
 }
 
-func signApprovedEntry(attr Attribution, identityID, address, txnSender, txnDetails, policyRuleID string) AuditEntry {
-	entry := attr.entry(identityID, true)
+func signApprovedEntry(attr Attribution, address, txnSender, txnDetails, policyRuleID string) AuditEntry {
+	entry := attr.entry(true)
 	entry.Event = AuditSignApproved
 	entry.Outcome = "approved"
 	entry.TxnAuth = address
@@ -348,8 +348,8 @@ func signApprovedEntry(attr Attribution, identityID, address, txnSender, txnDeta
 	return entry
 }
 
-func signRejectedEntry(attr Attribution, identityID, address, txnSender, reason, policyRuleID string) AuditEntry {
-	entry := attr.entry(identityID, true)
+func signRejectedEntry(attr Attribution, address, txnSender, reason, policyRuleID string) AuditEntry {
+	entry := attr.entry(true)
 	entry.Event = AuditSignRejected
 	entry.Outcome = "rejected"
 	entry.TxnAuth = address
@@ -359,8 +359,8 @@ func signRejectedEntry(attr Attribution, identityID, address, txnSender, reason,
 	return entry
 }
 
-func signFailedEntry(attr Attribution, identityID, address, txnSender, reason string) AuditEntry {
-	entry := attr.entry(identityID, false)
+func signFailedEntry(attr Attribution, address, txnSender, reason string) AuditEntry {
+	entry := attr.entry(false)
 	entry.Event = AuditSignFailed
 	entry.Outcome = "failed"
 	entry.TxnAuth = address
@@ -371,66 +371,66 @@ func signFailedEntry(attr Attribution, identityID, address, txnSender, reason st
 
 // LogSignRequest logs a request to sign a transaction.
 func (a *AuditLogger) LogSignRequest(address, txnSender, txnType, txnDetails string) {
-	a.Log(signRequestEntry(Attribution{TargetIdentityID: productmode.IdentityID}, productmode.IdentityID, address, txnSender, txnType, txnDetails))
+	a.Log(signRequestEntry(Attribution{TargetIdentityID: productmode.IdentityID}, address, txnSender, txnType, txnDetails))
 }
 
 // LogSignRequestAttributed logs a signing request with explicit request attribution.
 func (a *AuditLogger) LogSignRequestAttributed(attr Attribution, address, txnSender, txnType, txnDetails string) {
-	a.Log(signRequestEntry(attr, productmode.IdentityID, address, txnSender, txnType, txnDetails))
+	a.Log(signRequestEntry(attr, address, txnSender, txnType, txnDetails))
 }
 
 // LogSignApproved logs when a signing request is approved.
 func (a *AuditLogger) LogSignApproved(address, txnSender, txnDetails string) {
-	a.Log(signApprovedEntry(Attribution{TargetIdentityID: productmode.IdentityID}, productmode.IdentityID, address, txnSender, txnDetails, ""))
+	a.Log(signApprovedEntry(Attribution{TargetIdentityID: productmode.IdentityID}, address, txnSender, txnDetails, ""))
 }
 
 // LogSignApprovedWithPolicyRule logs a signing approval caused by a policy rule
 // that required manual review.
 func (a *AuditLogger) LogSignApprovedWithPolicyRule(address, txnSender, txnDetails, policyRuleID string) {
-	a.Log(signApprovedEntry(Attribution{TargetIdentityID: productmode.IdentityID}, productmode.IdentityID, address, txnSender, txnDetails, policyRuleID))
+	a.Log(signApprovedEntry(Attribution{TargetIdentityID: productmode.IdentityID}, address, txnSender, txnDetails, policyRuleID))
 }
 
 // LogSignApprovedAttributed logs a signing approval with explicit request attribution.
 func (a *AuditLogger) LogSignApprovedAttributed(attr Attribution, address, txnSender, txnDetails string) {
-	a.Log(signApprovedEntry(attr, productmode.IdentityID, address, txnSender, txnDetails, ""))
+	a.Log(signApprovedEntry(attr, address, txnSender, txnDetails, ""))
 }
 
 // LogSignApprovedAttributedWithPolicyRule logs a signing approval with explicit
 // request attribution and the policy rule that forced manual review.
 func (a *AuditLogger) LogSignApprovedAttributedWithPolicyRule(attr Attribution, address, txnSender, txnDetails, policyRuleID string) {
-	a.Log(signApprovedEntry(attr, productmode.IdentityID, address, txnSender, txnDetails, policyRuleID))
+	a.Log(signApprovedEntry(attr, address, txnSender, txnDetails, policyRuleID))
 }
 
 // LogSignRejected logs when a signing request is rejected by policy or user.
 func (a *AuditLogger) LogSignRejected(address, txnSender, reason string) {
-	a.Log(signRejectedEntry(Attribution{TargetIdentityID: productmode.IdentityID}, productmode.IdentityID, address, txnSender, reason, ""))
+	a.Log(signRejectedEntry(Attribution{TargetIdentityID: productmode.IdentityID}, address, txnSender, reason, ""))
 }
 
 // LogSignRejectedWithPolicyRule logs a signing rejection from a request that
 // entered manual review because of a policy rule.
 func (a *AuditLogger) LogSignRejectedWithPolicyRule(address, txnSender, reason, policyRuleID string) {
-	a.Log(signRejectedEntry(Attribution{TargetIdentityID: productmode.IdentityID}, productmode.IdentityID, address, txnSender, reason, policyRuleID))
+	a.Log(signRejectedEntry(Attribution{TargetIdentityID: productmode.IdentityID}, address, txnSender, reason, policyRuleID))
 }
 
 // LogSignRejectedAttributed logs a signing rejection with explicit request attribution.
 func (a *AuditLogger) LogSignRejectedAttributed(attr Attribution, address, txnSender, reason string) {
-	a.Log(signRejectedEntry(attr, productmode.IdentityID, address, txnSender, reason, ""))
+	a.Log(signRejectedEntry(attr, address, txnSender, reason, ""))
 }
 
 // LogSignRejectedAttributedWithPolicyRule logs a signing rejection with
 // explicit request attribution and the policy rule that forced manual review.
 func (a *AuditLogger) LogSignRejectedAttributedWithPolicyRule(attr Attribution, address, txnSender, reason, policyRuleID string) {
-	a.Log(signRejectedEntry(attr, productmode.IdentityID, address, txnSender, reason, policyRuleID))
+	a.Log(signRejectedEntry(attr, address, txnSender, reason, policyRuleID))
 }
 
 // LogSignFailed logs when a signing attempt fails due to technical errors.
 func (a *AuditLogger) LogSignFailed(address, txnSender, reason string) {
-	a.Log(signFailedEntry(Attribution{TargetIdentityID: productmode.IdentityID}, productmode.IdentityID, address, txnSender, reason))
+	a.Log(signFailedEntry(Attribution{TargetIdentityID: productmode.IdentityID}, address, txnSender, reason))
 }
 
 // LogSignFailedAttributed logs a signing failure with explicit request attribution.
 func (a *AuditLogger) LogSignFailedAttributed(attr Attribution, address, txnSender, reason string) {
-	a.Log(signFailedEntry(attr, productmode.IdentityID, address, txnSender, reason))
+	a.Log(signFailedEntry(attr, address, txnSender, reason))
 }
 
 // LogAuthFailed logs an authentication failure from a remote address.
@@ -500,8 +500,8 @@ func (a *AuditLogger) LogKeyReload(keyCount int) {
 }
 
 // LogSessionConnected logs when a new IPC or API session is established.
-func (a *AuditLogger) LogSessionConnected(identityID, remoteAddr, user string) {
-	entry := identityAuditFields(identityID)
+func (a *AuditLogger) LogSessionConnected(remoteAddr, user string) {
+	entry := identityAuditFields(productmode.IdentityID)
 	entry.Event = AuditSessionConnected
 	entry.Outcome = "connected"
 	entry.RemoteAddr = remoteAddr
@@ -518,8 +518,8 @@ func (a *AuditLogger) LogSessionConnectedContext(ctx adminserver.SessionContext)
 }
 
 // LogSessionDisconnected logs when a session is terminated.
-func (a *AuditLogger) LogSessionDisconnected(identityID, remoteAddr, user string) {
-	entry := identityAuditFields(identityID)
+func (a *AuditLogger) LogSessionDisconnected(remoteAddr, user string) {
+	entry := identityAuditFields(productmode.IdentityID)
 	entry.Event = AuditSessionDisconnected
 	entry.Outcome = "disconnected"
 	entry.RemoteAddr = remoteAddr

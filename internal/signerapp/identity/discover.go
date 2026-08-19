@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
-// ValidateProductIdentityLayout verifies the single-product identities root
+// ValidateProductStoreLayout verifies the fixed product identities root
 // without following direct-entry symlinks. A missing identities directory or
 // default directory is the supported blank-store state.
-func ValidateProductIdentityLayout(dataRoot string, productID string) error {
+func ValidateProductStoreLayout(dataRoot string) error {
 	identitiesDir := filepath.Join(dataRoot, "identities")
 	entries, err := os.ReadDir(identitiesDir)
 	if os.IsNotExist(err) {
@@ -24,15 +26,15 @@ func ValidateProductIdentityLayout(dataRoot string, productID string) error {
 
 	for _, entry := range entries {
 		path := filepath.Join(identitiesDir, entry.Name())
-		if entry.Name() != productID {
-			return fmt.Errorf("unsupported entry %q under identities: APlane supports only the %q product identity", entry.Name(), productID)
+		if entry.Name() != productmode.IdentityID {
+			return fmt.Errorf("unsupported entry %q under identities: APlane supports only the %q product store", entry.Name(), productmode.IdentityID)
 		}
 		info, statErr := os.Lstat(path)
 		if statErr != nil {
 			return fmt.Errorf("inspect product identity entry %q: %w", entry.Name(), statErr)
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return fmt.Errorf("product identity %q must be a real directory, not a symlink or other file type", productID)
+			return fmt.Errorf("product store %q must be a real directory, not a symlink or other file type", productmode.IdentityID)
 		}
 	}
 	return nil

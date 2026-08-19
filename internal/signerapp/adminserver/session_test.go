@@ -341,11 +341,6 @@ func (s *stubServices) ListKeyTypes(ir *identity.Runtime) adminproto.ListKeyType
 	s.listKeyTypesCalls++
 	return s.keyTypesResult
 }
-func (s *stubServices) LogSessionConnected(identityID, remoteAddr, transport string) {
-}
-func (s *stubServices) LogSessionDisconnected(identityID, remoteAddr, transport string) {
-}
-
 func (s stubServices) deps() SessionDeps {
 	return SessionDeps{
 		Identity: &s,

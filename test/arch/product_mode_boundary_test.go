@@ -11,10 +11,9 @@ import (
 	"testing"
 )
 
-// TestSingleIdentityBoundaryShapesDoNotRegrow pins the first simplification
-// boundary while the remaining session/runtime adapters are removed in later
-// slices. Storage identity parameters are intentionally outside this check.
-func TestSingleIdentityBoundaryShapesDoNotRegrow(t *testing.T) {
+// TestRetiredRuntimeAuthorizationShapesDoNotRegrow keeps removed registry,
+// grant, and per-identity ownership machinery out of the product runtime.
+func TestRetiredRuntimeAuthorizationShapesDoNotRegrow(t *testing.T) {
 	root := filepath.Join("..", "..")
 	forbidden := []string{
 		"RegistryAuthenticator",
@@ -45,8 +44,13 @@ func TestSingleIdentityBoundaryShapesDoNotRegrow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
 
-	err = filepath.WalkDir(filepath.Join(root, "cmd"), func(path string, entry fs.DirEntry, walkErr error) error {
+// TestProductCommandsExposeNoIdentitySelector keeps the product CLI fixed to
+// the one product store while preserving explicit rejection of stale flags.
+func TestProductCommandsExposeNoIdentitySelector(t *testing.T) {
+	root := filepath.Join("..", "..")
+	err := filepath.WalkDir(filepath.Join(root, "cmd"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

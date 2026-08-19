@@ -572,18 +572,6 @@ func (s signerAdminServices) SSHFingerprint() string {
 	return sshServer.GetHostKeyFingerprint()
 }
 
-func (s signerAdminServices) LogSessionConnected(identityID, remoteAddr, transport string) {
-	if s.signer.auditLog != nil {
-		s.signer.auditLog.LogSessionConnected(identityID, remoteAddr, transport)
-	}
-}
-
-func (s signerAdminServices) LogSessionDisconnected(identityID, remoteAddr, transport string) {
-	if s.signer.auditLog != nil {
-		s.signer.auditLog.LogSessionDisconnected(identityID, remoteAddr, transport)
-	}
-}
-
 func (s signerAdminServices) LogSessionConnectedContext(ctx adminserver.SessionContext) {
 	if s.signer.auditLog != nil {
 		s.signer.auditLog.LogSessionConnectedContext(ctx)

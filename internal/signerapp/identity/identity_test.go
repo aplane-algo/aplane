@@ -22,9 +22,9 @@ import (
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestValidateProductIdentityLayout(t *testing.T) {
+func TestValidateProductStoreLayout(t *testing.T) {
 	t.Run("missing identities", func(t *testing.T) {
-		if err := ValidateProductIdentityLayout(t.TempDir(), productmode.IdentityID); err != nil {
+		if err := ValidateProductStoreLayout(t.TempDir()); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -33,7 +33,7 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(root, "identities"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := ValidateProductIdentityLayout(root, productmode.IdentityID); err != nil {
+		if err := ValidateProductStoreLayout(root); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -42,7 +42,7 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(root, "identities", productmode.IdentityID), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := ValidateProductIdentityLayout(root, productmode.IdentityID); err != nil {
+		if err := ValidateProductStoreLayout(root); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -75,9 +75,9 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			err := ValidateProductIdentityLayout(root, productmode.IdentityID)
+			err := ValidateProductStoreLayout(root)
 			if err == nil || !strings.Contains(err.Error(), name) {
-				t.Fatalf("ValidateProductIdentityLayout() error = %v, want unexpected entry %q", err, name)
+				t.Fatalf("ValidateProductStoreLayout() error = %v, want unexpected entry %q", err, name)
 			}
 		})
 	}
@@ -90,9 +90,9 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 		if err := os.Symlink(t.TempDir(), filepath.Join(root, "identities", productmode.IdentityID)); err != nil {
 			t.Fatal(err)
 		}
-		err := ValidateProductIdentityLayout(root, productmode.IdentityID)
+		err := ValidateProductStoreLayout(root)
 		if err == nil || !strings.Contains(err.Error(), "real directory") {
-			t.Fatalf("ValidateProductIdentityLayout() error = %v, want real-directory rejection", err)
+			t.Fatalf("ValidateProductStoreLayout() error = %v, want real-directory rejection", err)
 		}
 	})
 }

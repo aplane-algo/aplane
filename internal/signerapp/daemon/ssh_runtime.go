@@ -71,9 +71,9 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 	if auditLog != nil {
 		sshServer.SetSessionCallback(func(remoteAddr string, connected bool) {
 			if connected {
-				auditLog.LogSessionConnected(productmode.IdentityID, remoteAddr, productmode.IdentityID)
+				auditLog.LogSessionConnected(remoteAddr, productmode.IdentityID)
 			} else {
-				auditLog.LogSessionDisconnected(productmode.IdentityID, remoteAddr, productmode.IdentityID)
+				auditLog.LogSessionDisconnected(remoteAddr, productmode.IdentityID)
 			}
 		})
 	}
