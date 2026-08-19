@@ -44,15 +44,15 @@ func ParseBackup(decryptedJSON []byte) ([]byte, error) {
 // It decrypts the key with the store's keyring, then re-encrypts it with the
 // export passphrase using standalone encryption (envelope_version 2).
 // Returns the SHA256 checksum of the written key file and its size.
-func ExportKey(paths storepaths.Paths, identityID, srcDir, destDir, address string, kr *crypto.Keyring, exportPassphrase []byte) (string, int64, error) {
+func ExportKey(paths storepaths.Paths, srcDir, destDir, address string, kr *crypto.Keyring, exportPassphrase []byte) (string, int64, error) {
 	source, err := resolveManagedCredentialFile(srcDir, address)
 	if err != nil {
 		return "", 0, err
 	}
-	return exportManagedCredential(paths, identityID, destDir, source, kr, exportPassphrase)
+	return exportManagedCredential(paths, destDir, source, kr, exportPassphrase)
 }
 
-func exportManagedCredential(paths storepaths.Paths, identityID, destDir string, source keys.ManagedCredentialFile, kr *crypto.Keyring, exportPassphrase []byte) (string, int64, error) {
+func exportManagedCredential(paths storepaths.Paths, destDir string, source keys.ManagedCredentialFile, kr *crypto.Keyring, exportPassphrase []byte) (string, int64, error) {
 	destFile := filepath.Join(destDir, source.Selector+".apb")
 
 	// Read source key file
@@ -161,7 +161,7 @@ func buildExportPayload(keyJSON []byte) ([]byte, error) {
 //
 // The backup is complete or fails: silently omitting damaged authority would
 // make the sealed archive inventory look complete when it is not.
-func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, kr *crypto.Keyring, exportPassphrase []byte) (map[string]string, error) {
+func ExportAllKeys(paths storepaths.Paths, srcDir, destDir string, kr *crypto.Keyring, exportPassphrase []byte) (map[string]string, error) {
 	managedFiles, err := keys.ScanManagedCredentialFiles(srcDir)
 	if err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, k
 	checksums := make(map[string]string)
 	for _, managedFile := range managedFiles {
 		selector := managedFile.Selector
-		checksum, _, err := exportManagedCredential(paths, identityID, keysDestDir, managedFile, kr, exportPassphrase)
+		checksum, _, err := exportManagedCredential(paths, keysDestDir, managedFile, kr, exportPassphrase)
 		if err != nil {
 			return nil, fmt.Errorf("failed to export %s: %w", selector, err)
 		}

@@ -205,7 +205,7 @@ func ParseSnapshot(data []byte) (*Snapshot, error) {
 // publishes the exact encrypted file before any root may reference it.
 func WriteSnapshot(
 	paths storepaths.Paths,
-	identityID string,
+
 	snapshot *Snapshot,
 	kr *crypto.Keyring,
 ) (crypto.RotationSnapshotReference, error) {
@@ -241,7 +241,7 @@ func WriteSnapshot(
 // logical context, and validates the expected transition terms.
 func ReadReferencedSnapshot(
 	paths storepaths.Paths,
-	identityID string,
+
 	ref crypto.RotationSnapshotReference,
 	fromTerm, toTerm int64,
 	kr *crypto.Keyring,

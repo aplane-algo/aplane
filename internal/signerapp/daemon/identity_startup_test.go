@@ -327,9 +327,8 @@ func TestBuildIdentityRuntimeLoadsStoredPolicy(t *testing.T) {
 	passphrase := []byte("policy-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
-		DataDir:    root,
-		Paths:      server.keyPaths,
-		IdentityID: "alice",
+		DataDir: root,
+		Paths:   server.keyPaths,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -388,9 +387,8 @@ func TestBuildIdentityRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 	passphrase := []byte("policy-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
-		DataDir:    root,
-		Paths:      server.keyPaths,
-		IdentityID: "alice",
+		DataDir: root,
+		Paths:   server.keyPaths,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -431,9 +429,8 @@ func TestBuildIdentityRuntimeRejectsTamperedNodeRoleOnUnlock(t *testing.T) {
 	passphrase := []byte("role-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
-		DataDir:    root,
-		Paths:      server.keyPaths,
-		IdentityID: "alice",
+		DataDir: root,
+		Paths:   server.keyPaths,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -472,9 +469,8 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	passphrase := []byte("policy-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
-		DataDir:    root,
-		Paths:      server.keyPaths,
-		IdentityID: "alice",
+		DataDir: root,
+		Paths:   server.keyPaths,
 	}); err != nil {
 		t.Fatal(err)
 	}

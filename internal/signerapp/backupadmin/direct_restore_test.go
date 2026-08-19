@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -403,7 +402,7 @@ func writeCredentialOnlyManagedArchive(t *testing.T, paths storepaths.Paths) (st
 	); err != nil {
 		t.Fatal(err)
 	}
-	archivePath := backup.BuildManagedArchivePath(paths, auth.DefaultIdentityID, "direct-restore")
+	archivePath := backup.BuildManagedArchivePath(paths, "direct-restore")
 	if err := backup.CreateTarGzArchive(root, archivePath); err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +435,7 @@ func writeMixedValidityManagedArchive(t *testing.T, paths storepaths.Paths) (str
 	if err := backup.WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	archivePath := backup.BuildManagedArchivePath(paths, auth.DefaultIdentityID, "mixed-validity")
+	archivePath := backup.BuildManagedArchivePath(paths, "mixed-validity")
 	if err := backup.CreateTarGzArchive(root, archivePath); err != nil {
 		t.Fatal(err)
 	}

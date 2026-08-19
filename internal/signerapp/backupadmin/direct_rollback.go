@@ -83,7 +83,7 @@ func (s Service) RollbackRestore(
 		err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			cutover, err := rotationinventory.EvaluateRollback(
 				paths,
-				ir.ID(),
+
 				current.GenerationID(),
 				inventory,
 				manifest,
@@ -139,7 +139,7 @@ func (s Service) RollbackRestore(
 			mutated = true
 			result.GenerationID = generationID
 			_, reconcileErr := rotationinventory.ReconcileBaselineForPreflight(
-				paths, ir.ID(), generationID, masterKey,
+				paths, generationID, masterKey,
 			)
 			return reconcileErr
 		})

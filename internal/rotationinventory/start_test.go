@@ -51,7 +51,7 @@ func TestStartRotationCommitsSnapshotAnchorsAndRootInOrder(t *testing.T) {
 
 	snapshot, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -81,7 +81,7 @@ func TestStartRotationCommitsSnapshotAnchorsAndRootInOrder(t *testing.T) {
 	}
 	opened, err := ReadReferencedSnapshot(
 		fixture.paths,
-		inventoryIdentity,
+
 		state.Snapshot,
 		state.FromTerm,
 		state.ToTerm,
@@ -107,14 +107,14 @@ func TestStartRotationCommitsSnapshotAnchorsAndRootInOrder(t *testing.T) {
 	if _, ok := fixture.kr.HistoricalGenerationAnchor(inventoryGenB); ok {
 		t.Fatal("pending root anchored the mutable current generation")
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan(pending anchored store) error = %v", err)
 	}
 
 	operations = nil
 	if _, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	); !errors.Is(err, crypto.ErrRotationAlreadyPending) {
@@ -163,7 +163,7 @@ func TestStartRotationPinsPriorBaselineAsEffectiveAuthority(t *testing.T) {
 
 	snapshot, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)

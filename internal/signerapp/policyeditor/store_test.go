@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -321,10 +320,9 @@ func initializedPolicyStoreWithRole(t *testing.T, role noderole.Role) (string, [
 	dataDir := t.TempDir()
 	passphrase := []byte("policyeditor-passphrase")
 	_, err := storeinit.Initialize(passphrase, storeinit.Options{
-		DataDir:    dataDir,
-		Paths:      storepaths.NewPaths(dataDir),
-		IdentityID: auth.CurrentProductIdentityID(),
-		Role:       role,
+		DataDir: dataDir,
+		Paths:   storepaths.NewPaths(dataDir),
+		Role:    role,
 	})
 	if err != nil {
 		t.Fatalf("Initialize() error = %v", err)

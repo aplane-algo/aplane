@@ -18,9 +18,8 @@ import (
 
 func TestHasPartialKeystoreState(t *testing.T) {
 	paths := utilpaths.NewPaths(t.TempDir())
-	identityID := "default"
 
-	if storeinit.HasPartialState(paths, identityID) {
+	if storeinit.HasPartialState(paths) {
 		t.Fatal("empty identity dir should not be partial")
 	}
 
@@ -31,14 +30,14 @@ func TestHasPartialKeystoreState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(identityDir, "orphan.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	if !storeinit.HasPartialState(paths, identityID) {
+	if !storeinit.HasPartialState(paths) {
 		t.Fatal("expected orphaned identity dir state to be detected")
 	}
 
 	if err := os.WriteFile(filepath.Join(identityDir, ".keystore"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.keystore) error = %v", err)
 	}
-	if storeinit.HasPartialState(paths, identityID) {
+	if storeinit.HasPartialState(paths) {
 		t.Fatal("presence of .keystore should not be considered partial initialization")
 	}
 }

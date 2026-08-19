@@ -108,7 +108,7 @@ func TestPreviewRestoreRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 	if err := os.MkdirAll(paths.ProductBackupsDir(), 0o770); err != nil {
 		t.Fatal(err)
 	}
-	archivePath := backup.BuildManagedArchivePath(paths, auth.DefaultIdentityID, "malformed")
+	archivePath := backup.BuildManagedArchivePath(paths, "malformed")
 	if err := os.WriteFile(archivePath, []byte("not an archive"), 0o600); err != nil {
 		t.Fatal(err)
 	}

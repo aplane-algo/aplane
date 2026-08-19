@@ -37,7 +37,7 @@ type inventoryFixture struct {
 
 func TestScanClassifiesEveryK8DurableClass(t *testing.T) {
 	fixture := newInventoryFixture(t)
-	report, err := Scan(fixture.paths, inventoryIdentity, fixture.kr)
+	report, err := Scan(fixture.paths, fixture.kr)
 	if err != nil {
 		t.Fatalf("Scan() error = %v", err)
 	}
@@ -129,7 +129,7 @@ func TestScanClassifiesEveryK8DurableClass(t *testing.T) {
 
 func TestScanRetainsCurrentDecisionInputsFromExactScannedBytes(t *testing.T) {
 	fixture := newInventoryFixture(t)
-	report, err := Scan(fixture.paths, inventoryIdentity, fixture.kr)
+	report, err := Scan(fixture.paths, fixture.kr)
 	if err != nil {
 		t.Fatalf("Scan() error = %v", err)
 	}
@@ -204,7 +204,7 @@ func TestScanRejectsWrongEnvelopeContext(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(gen.KeysDir(), tt.destination), data, fsutil.StoreFilePerm); err != nil {
 				t.Fatalf("WriteFile(destination) error = %v", err)
 			}
-			if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err == nil {
+			if _, err := Scan(fixture.paths, fixture.kr); err == nil {
 				t.Fatal("Scan() error = nil, want logical-context rejection")
 			}
 		})
@@ -230,7 +230,7 @@ func TestScanRejectsUnauthorizedIntegrityTerm(t *testing.T) {
 	if err := os.WriteFile(path, data, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(sidecar) error = %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err == nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err == nil {
 		t.Fatal("Scan() error = nil, want unauthorized integrity-term rejection")
 	}
 }
@@ -241,7 +241,7 @@ func TestScanRejectsMutatedPlaintextRetainedGenerationMember(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{\"mutated\":true}\n"), fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(mutated state) error = %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err == nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err == nil {
 		t.Fatal("Scan() error = nil, want authenticated-seal rejection")
 	}
 }
@@ -255,7 +255,7 @@ func TestScanRejectsUnsupportedInScopeArtifact(t *testing.T) {
 	if err := os.WriteFile(path, []byte("unclassified"), fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(unclassified) error = %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err == nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err == nil {
 		t.Fatal("Scan() error = nil, want unclassified-artifact rejection")
 	}
 }
@@ -271,7 +271,7 @@ func TestScanRejectsTermEnvelopeSubstitutedForPlaintextMember(t *testing.T) {
 	if err := os.WriteFile(path, envelope, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(substituted plaintext member) error = %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err == nil ||
+	if _, err := Scan(fixture.paths, fixture.kr); err == nil ||
 		!strings.Contains(err.Error(), "unexpectedly carries term envelope") {
 		t.Fatalf("Scan() error = %v, want plaintext/envelope classification rejection", err)
 	}
@@ -287,7 +287,7 @@ func TestScanRejectsMalformedRotationBaseline(t *testing.T) {
 	); err != nil {
 		t.Fatalf("write malformed rotation baseline: %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err == nil ||
+	if _, err := Scan(fixture.paths, fixture.kr); err == nil ||
 		!strings.Contains(err.Error(), "rotation inventory baseline") {
 		t.Fatalf("Scan() error = %v, want malformed-baseline rejection", err)
 	}
@@ -302,7 +302,7 @@ func TestScanRejectsOversizedRotationBaseline(t *testing.T) {
 	); err != nil {
 		t.Fatalf("write oversized rotation baseline: %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err == nil ||
+	if _, err := Scan(fixture.paths, fixture.kr); err == nil ||
 		!strings.Contains(err.Error(), "size limit") {
 		t.Fatalf("Scan() error = %v, want baseline size-limit rejection", err)
 	}
@@ -310,7 +310,7 @@ func TestScanRejectsOversizedRotationBaseline(t *testing.T) {
 
 func TestScanForSnapshotExcludesSnapshotButPinsExistingBaseline(t *testing.T) {
 	fixture := newInventoryFixture(t)
-	report, err := ScanForSnapshot(fixture.paths, inventoryIdentity, fixture.kr)
+	report, err := ScanForSnapshot(fixture.paths, fixture.kr)
 	if err != nil {
 		t.Fatalf("ScanForSnapshot() error = %v", err)
 	}
@@ -432,7 +432,7 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 	if err != nil {
 		t.Fatalf("NewBaseline() error = %v", err)
 	}
-	if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); err != nil {
+	if err := WriteBaseline(paths, baseline, kr); err != nil {
 		t.Fatalf("WriteBaseline() error = %v", err)
 	}
 	for relative, data := range map[string]string{

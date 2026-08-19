@@ -56,7 +56,7 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 	}
 
 	configSnapshot := *s.Deps.Config()
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), ir.ID(), &configSnapshot)
+	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), &configSnapshot)
 	if err != nil {
 		s.logStoreInitializeFailed(ir.ID(), err.Error())
 		return adminproto.InitializeStoreResult{
@@ -71,10 +71,9 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		var initErr error
 		initResult, initErr = storeinit.Initialize(req.Passphrase, storeinit.Options{
-			DataDir:    s.Deps.DataDir(),
-			Paths:      s.Deps.KeyPaths(),
-			IdentityID: ir.ID(),
-			Logf:       s.Deps.Logf,
+			DataDir: s.Deps.DataDir(),
+			Paths:   s.Deps.KeyPaths(),
+			Logf:    s.Deps.Logf,
 		})
 		if initErr != nil {
 			return initErr
@@ -126,7 +125,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 			Error: "new passphrase must be different from current passphrase",
 		}
 	}
-	if err := storepass.VerifyCurrentPassphrase(s.Deps.KeyPaths(), ir.ID(), req.CurrentPassphrase); err != nil {
+	if err := storepass.VerifyCurrentPassphrase(s.Deps.KeyPaths(), req.CurrentPassphrase); err != nil {
 		s.logPassphraseChangeFailed(ir.ID(), err.Error())
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  protocol.ErrCodeInvalidPassphrase,
@@ -135,7 +134,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 	}
 
 	configSnapshot := *s.Deps.Config()
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), ir.ID(), &configSnapshot)
+	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), &configSnapshot)
 	if err != nil {
 		s.logPassphraseChangeFailed(ir.ID(), err.Error())
 		return adminproto.ChangeStorePassphraseResult{
@@ -157,7 +156,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 			ir.FinishStoreMaintenance(maintenance, republish)
 		}()
 		var rotateErr error
-		rotation, rotateErr = storepass.Rotate(s.Deps.KeyPaths(), ir.ID(), req.CurrentPassphrase, req.NewPassphrase, storepass.RotateOptions{
+		rotation, rotateErr = storepass.Rotate(s.Deps.KeyPaths(), req.CurrentPassphrase, req.NewPassphrase, storepass.RotateOptions{
 			Logf: s.Deps.Logf,
 			AfterRootCommit: func() error {
 				if passphraseCmdCfg == nil {

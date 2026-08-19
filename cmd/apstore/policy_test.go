@@ -159,10 +159,9 @@ func withPolicyCommandStoreWithRole(t *testing.T, role noderole.Role, fn func(ro
 	stdinReader = nil
 	passphrase := []byte("policy-passphrase")
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
-		DataDir:    root,
-		Paths:      storepaths.NewPaths(root),
-		IdentityID: productIdentityID(),
-		Role:       role,
+		DataDir: root,
+		Paths:   storepaths.NewPaths(root),
+		Role:    role,
 	}); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}

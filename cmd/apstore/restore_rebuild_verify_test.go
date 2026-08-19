@@ -372,7 +372,7 @@ func TestRestoreKeyDoesNotActivateLibraryVisibleCompiledProvider(t *testing.T) {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 
-	if keyTypeEnabled(keystorePaths(), productIdentityID(), keyType) {
+	if keyTypeEnabled(keystorePaths(), keyType) {
 		t.Fatal("test setup unexpectedly has activation record")
 	}
 
@@ -383,7 +383,7 @@ func TestRestoreKeyDoesNotActivateLibraryVisibleCompiledProvider(t *testing.T) {
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if keyTypeEnabled(keystorePaths(), productIdentityID(), keyType) {
+	if keyTypeEnabled(keystorePaths(), keyType) {
 		t.Fatal("credential restore changed destination key-type state")
 	}
 }
@@ -393,7 +393,6 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	genstoretest.MintFirst(t, keystorePaths())
 	backupDir := t.TempDir()
 	paths := keystorePaths()
-	identityID := productIdentityID()
 	masterKey := bytes32(0x8b)
 	keyType := "aplane.htlc.v1"
 	bytecode := saltedLogicSigBytecodeForTest()
@@ -406,7 +405,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
-	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
+	writeTemplateStateForApstoreTest(t, paths, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
 	keyJSON := canonicalGenericKeyJSONForApstore(t, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
@@ -535,7 +534,6 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	genstoretest.MintFirst(t, keystorePaths())
 	backupDir := t.TempDir()
 	paths := keystorePaths()
-	identityID := productIdentityID()
 	masterKey := bytes32(0x8f)
 	keyType := "aplane.htlc.v1"
 	bytecode := saltedLogicSigBytecodeForTest()
@@ -548,7 +546,7 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
-	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
+	writeTemplateStateForApstoreTest(t, paths, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
 
 	keyJSON := canonicalGenericKeyJSONForApstore(t, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
@@ -558,22 +556,22 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	if _, err := restoreKey(backupDir, address, cryptotest.Keyring(t, masterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("restoreKey() error = %v", err)
 	}
-	if !keyTypeDisabled(paths, identityID, keyType) {
+	if !keyTypeDisabled(paths, keyType) {
 		t.Fatal("expected standalone key restore to leave disabled installed template disabled")
 	}
 }
 
-func keyTypeEnabled(paths storepaths.Paths, identityID, keyType string) bool {
+func keyTypeEnabled(paths storepaths.Paths, keyType string) bool {
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }
 
-func keyTypeDisabled(paths storepaths.Paths, identityID, keyType string) bool {
+func keyTypeDisabled(paths storepaths.Paths, keyType string) bool {
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateDisabled
 }
 
-func writeTemplateStateForApstoreTest(t *testing.T, paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
+func writeTemplateStateForApstoreTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
 	t.Helper()
 	var source keytypestate.Source
 	switch templateType {

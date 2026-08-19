@@ -25,7 +25,7 @@ func TestResumeRotationRewrapsOnlyPinnedMutableConsumers(t *testing.T) {
 		before[entry.Path] = readInventoryEntry(t, fixture, entry)
 	}
 
-	report, err := ResumeRotation(fixture.paths, inventoryIdentity, fixture.kr)
+	report, err := ResumeRotation(fixture.paths, fixture.kr)
 	if err != nil {
 		t.Fatalf("ResumeRotation() error = %v", err)
 	}
@@ -78,11 +78,11 @@ func TestResumeRotationRewrapsOnlyPinnedMutableConsumers(t *testing.T) {
 			}
 		}
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan(resumed store) error = %v", err)
 	}
 
-	retry, err := ResumeRotation(fixture.paths, inventoryIdentity, fixture.kr)
+	retry, err := ResumeRotation(fixture.paths, fixture.kr)
 	if err != nil {
 		t.Fatalf("ResumeRotation(retry) error = %v", err)
 	}
@@ -110,13 +110,13 @@ func TestResumeRotationReconcilesCrashOrphanedDurableTemp(t *testing.T) {
 		t.Fatalf("WriteFile(residue) error = %v", err)
 	}
 
-	if _, err := ResumeRotation(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := ResumeRotation(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("ResumeRotation() error = %v", err)
 	}
 	if _, err := os.Stat(residue); !os.IsNotExist(err) {
 		t.Fatalf("durable temp residue survived resume: %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan() after residue reconciliation error = %v", err)
 	}
 }
@@ -152,7 +152,7 @@ func TestResumeRotationRejectsRetiringTermInputThatDiffersFromSnapshot(t *testin
 
 	if _, err := ResumeRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 	); err == nil || !strings.Contains(err.Error(), "does not match snapshot") {
 		t.Fatalf("ResumeRotation() error = %v, want exact snapshot rejection", err)
@@ -183,7 +183,7 @@ func TestResumeRotationRetriesVisibleTargetAfterDirSyncFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { fsutil.TestHook = nil })
 
-	partial, err := ResumeRotation(fixture.paths, inventoryIdentity, fixture.kr)
+	partial, err := ResumeRotation(fixture.paths, fixture.kr)
 	if !errors.Is(err, injected) {
 		t.Fatalf("ResumeRotation() error = %v, want injected failure", err)
 	}
@@ -192,14 +192,14 @@ func TestResumeRotationRetriesVisibleTargetAfterDirSyncFailure(t *testing.T) {
 	}
 	fsutil.TestHook = nil
 
-	retry, err := ResumeRotation(fixture.paths, inventoryIdentity, fixture.kr)
+	retry, err := ResumeRotation(fixture.paths, fixture.kr)
 	if err != nil {
 		t.Fatalf("ResumeRotation(retry) error = %v", err)
 	}
 	if retry.AlreadyTarget == 0 {
 		t.Fatalf("ResumeRotation(retry) did not accept visible target: %#v", retry)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan(retried store) error = %v", err)
 	}
 }
@@ -224,7 +224,7 @@ func TestResumeRotationRejectsChangedPinnedPlaintext(t *testing.T) {
 
 	if _, err := ResumeRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 	); err == nil || !strings.Contains(err.Error(), "does not match snapshot SHA-256") {
 		t.Fatalf("ResumeRotation() error = %v, want pinned digest rejection", err)
@@ -256,7 +256,7 @@ func TestResumeRotationRejectsSymlinkedPinnedInput(t *testing.T) {
 
 	if _, err := ResumeRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 	); err == nil {
 		t.Fatal("ResumeRotation() accepted symlinked pinned input")
@@ -274,7 +274,7 @@ func TestResumeRotationRequiresPendingRoot(t *testing.T) {
 	fixture := newInventoryFixture(t)
 	if report, err := ResumeRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 	); !errors.Is(err, ErrNoRotationPending) || report != nil {
 		t.Fatalf("ResumeRotation() = (%#v, %v), want ErrNoRotationPending", report, err)
@@ -296,7 +296,7 @@ func startResumeFixture(t *testing.T) (inventoryFixture, *Snapshot) {
 	}
 	snapshot, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)

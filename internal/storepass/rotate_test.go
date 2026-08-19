@@ -34,7 +34,6 @@ import (
 
 func TestRotateRejectsPendingTermRotationBeforeScanningTargets(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	identityID := "default"
 	oldPassphrase := []byte("old-passphrase")
 	kr, err := crypto.CreateKeyringStore(
 		paths.KeystoreMetadataDir(),
@@ -63,7 +62,7 @@ func TestRotateRejectsPendingTermRotationBeforeScanningTargets(t *testing.T) {
 
 	result, err := Rotate(
 		paths,
-		identityID,
+
 		oldPassphrase,
 		[]byte("new-passphrase"),
 		RotateOptions{},
@@ -79,7 +78,6 @@ func TestRotateRejectsPendingTermRotationBeforeScanningTargets(t *testing.T) {
 func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths)
-	identityID := "default"
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
@@ -90,13 +88,13 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 
 	keyPath := apkeys.AccountKeyFilePath(paths, "ADDR")
 	sentryPath := apkeys.SentryCredentialFilePath(paths, "WITNESSID")
-	templatePath := mustActiveRotate(t, paths, identityID).KeyTypeTemplate("example-v1")
+	templatePath := mustActiveRotate(t, paths).KeyTypeTemplate("example-v1")
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKeyRing)
 	writeEncryptedForRotateTest(t, sentryPath, []byte(`{"kind":"sentry"}`), oldMasterKeyRing)
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKeyRing)
-	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, &policy.StoredConfig{})
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
-	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{})
+	writePolicyBaselineForRotateTest(t, paths, oldMasterKeyRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, oldMasterKeyRing, noderole.RoleSigner)
+	result, err := Rotate(paths, oldPassphrase, newPassphrase, RotateOptions{})
 	if err != nil {
 		t.Fatalf("Rotate() error = %v", err)
 	}
@@ -113,12 +111,12 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	assertKeyringRejectsPassphrase(t, paths, identityID, oldPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, oldPassphrase)
 	assertDecryptsWithKeyring(t, keyPath, kr)
 	assertDecryptsWithKeyring(t, sentryPath, kr)
 	assertDecryptsWithKeyring(t, templatePath, kr)
-	assertPolicyVerifiesWithKeyring(t, paths, identityID, kr)
-	assertNodeRoleVerifiesWithKeyring(t, paths, identityID, kr, noderole.RoleSigner)
+	assertPolicyVerifiesWithKeyring(t, paths, kr)
+	assertNodeRoleVerifiesWithKeyring(t, paths, kr, noderole.RoleSigner)
 	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(paths.Root(), oldMasterKeyRing); err == nil {
 		t.Fatal("policy sidecar still verifies with old master key after rotation")
 	}
@@ -130,7 +128,6 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 func TestRotatePreservesCanonicalKeyPayloadBytes(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths)
-	identityID := "default"
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
@@ -159,10 +156,10 @@ func TestRotatePreservesCanonicalKeyPayloadBytes(t *testing.T) {
 	}
 	keyPath := apkeys.AccountKeyFilePath(paths, selector)
 	writeEncryptedForRotateTest(t, keyPath, keyJSON, oldMasterKeyRing)
-	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, &policy.StoredConfig{})
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
+	writePolicyBaselineForRotateTest(t, paths, oldMasterKeyRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, oldMasterKeyRing, noderole.RoleSigner)
 
-	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{})
+	result, err := Rotate(paths, oldPassphrase, newPassphrase, RotateOptions{})
 	if err != nil {
 		t.Fatalf("Rotate() error = %v", err)
 	}
@@ -190,7 +187,6 @@ func TestRotatePreservesNativeFalconAddressAndSigning(t *testing.T) {
 	nativefalconsignerreg.RegisterKeyValidator()
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths)
-	identityID := "default"
 	oldPassphrase := []byte("native-falcon-old-passphrase")
 	newPassphrase := []byte("native-falcon-new-passphrase")
 
@@ -225,9 +221,9 @@ func TestRotatePreservesNativeFalconAddressAndSigning(t *testing.T) {
 
 	keyPath := apkeys.AccountKeyFilePath(paths, address.String())
 	writeEncryptedForRotateTest(t, keyPath, keyJSON, oldMasterKeyRing)
-	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, &policy.StoredConfig{})
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
-	if _, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
+	writePolicyBaselineForRotateTest(t, paths, oldMasterKeyRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, oldMasterKeyRing, noderole.RoleSigner)
+	if _, err := Rotate(paths, oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
 		t.Fatalf("Rotate() error = %v", err)
 	}
 
@@ -280,7 +276,6 @@ func TestRotatePreservesNativeFalconAddressAndSigning(t *testing.T) {
 func TestRotateRejectsWrongCurrentPassphraseBeforeMutation(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths)
-	identityID := "default"
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
@@ -290,13 +285,13 @@ func TestRotateRejectsWrongCurrentPassphraseBeforeMutation(t *testing.T) {
 	}
 
 	keyPath := apkeys.AccountKeyFilePath(paths, "ADDR")
-	templatePath := mustActiveRotate(t, paths, identityID).KeyTypeTemplate("example-v1")
+	templatePath := mustActiveRotate(t, paths).KeyTypeTemplate("example-v1")
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKeyRing)
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKeyRing)
-	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, &policy.StoredConfig{})
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
+	writePolicyBaselineForRotateTest(t, paths, oldMasterKeyRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, oldMasterKeyRing, noderole.RoleSigner)
 
-	result, err := Rotate(paths, identityID, []byte("wrong-passphrase"), newPassphrase, RotateOptions{})
+	result, err := Rotate(paths, []byte("wrong-passphrase"), newPassphrase, RotateOptions{})
 	if err == nil {
 		t.Fatal("Rotate() error = nil, want current passphrase failure")
 	}
@@ -307,19 +302,18 @@ func TestRotateRejectsWrongCurrentPassphraseBeforeMutation(t *testing.T) {
 		t.Fatalf("Rotate() result = %+v, want no migrated files", result)
 	}
 
-	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
-	assertKeyringRejectsPassphrase(t, paths, identityID, newPassphrase)
+	assertMetadataAcceptsPassphrase(t, paths, oldPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, newPassphrase)
 	assertDecryptsWithKeyring(t, keyPath, oldMasterKeyRing)
 	assertDecryptsWithKeyring(t, templatePath, oldMasterKeyRing)
-	assertPolicyVerifiesWithKeyring(t, paths, identityID, oldMasterKeyRing)
-	assertNodeRoleVerifiesWithKeyring(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
+	assertPolicyVerifiesWithKeyring(t, paths, oldMasterKeyRing)
+	assertNodeRoleVerifiesWithKeyring(t, paths, oldMasterKeyRing, noderole.RoleSigner)
 	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root())), paths.NodeRoleIntegritySidecar())
 }
 
 func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths)
-	identityID := "default"
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
@@ -329,11 +323,11 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 	}
 
 	keyPath := apkeys.AccountKeyFilePath(paths, "ADDR")
-	templatePath := mustActiveRotate(t, paths, identityID).KeyTypeTemplate("example-v1")
+	templatePath := mustActiveRotate(t, paths).KeyTypeTemplate("example-v1")
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKeyRing)
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKeyRing)
-	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, &policy.StoredConfig{})
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
+	writePolicyBaselineForRotateTest(t, paths, oldMasterKeyRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, oldMasterKeyRing, noderole.RoleSigner)
 
 	tamperedDoc, err := noderole.NewDocument(noderole.RoleSentry, time.Unix(1700000001, 0))
 	if err != nil {
@@ -347,7 +341,7 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 		t.Fatalf("WriteFile(node.yaml) error = %v", err)
 	}
 
-	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{})
+	result, err := Rotate(paths, oldPassphrase, newPassphrase, RotateOptions{})
 	if err == nil {
 		t.Fatal("Rotate() error = nil, want node role integrity failure")
 	}
@@ -358,11 +352,11 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 		t.Fatalf("Rotate() result = %+v, want no node role sidecar migration", result)
 	}
 
-	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
-	assertKeyringRejectsPassphrase(t, paths, identityID, newPassphrase)
+	assertMetadataAcceptsPassphrase(t, paths, oldPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, newPassphrase)
 	assertDecryptsWithKeyring(t, keyPath, oldMasterKeyRing)
 	assertDecryptsWithKeyring(t, templatePath, oldMasterKeyRing)
-	assertPolicyVerifiesWithKeyring(t, paths, identityID, oldMasterKeyRing)
+	assertPolicyVerifiesWithKeyring(t, paths, oldMasterKeyRing)
 	if _, err := noderole.LoadAndVerifyWithKeyring(paths, oldMasterKeyRing); err == nil {
 		t.Fatal("tampered node role unexpectedly verifies after failed rotation")
 	}
@@ -372,7 +366,6 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 func TestRotateTreatsHelperFailureAsPostCommitWarning(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths)
-	identityID := "default"
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
@@ -382,13 +375,13 @@ func TestRotateTreatsHelperFailureAsPostCommitWarning(t *testing.T) {
 	}
 
 	keyPath := apkeys.AccountKeyFilePath(paths, "ADDR")
-	templatePath := mustActiveRotate(t, paths, identityID).KeyTypeTemplate("example-v1")
+	templatePath := mustActiveRotate(t, paths).KeyTypeTemplate("example-v1")
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKeyRing)
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKeyRing)
-	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, &policy.StoredConfig{})
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
+	writePolicyBaselineForRotateTest(t, paths, oldMasterKeyRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, oldMasterKeyRing, noderole.RoleSigner)
 	helperCalls := 0
-	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{
+	result, err := Rotate(paths, oldPassphrase, newPassphrase, RotateOptions{
 		AfterRootCommit: func() error {
 			helperCalls++
 			return errors.New("helper write failed")
@@ -408,8 +401,8 @@ func TestRotateTreatsHelperFailureAsPostCommitWarning(t *testing.T) {
 		t.Fatalf("Rotate() result = %+v, want attempted key, template, policy, and node role migration", result)
 	}
 
-	assertMetadataAcceptsPassphrase(t, paths, identityID, newPassphrase)
-	assertKeyringRejectsPassphrase(t, paths, identityID, oldPassphrase)
+	assertMetadataAcceptsPassphrase(t, paths, newPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, oldPassphrase)
 	newKeyring, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(), newPassphrase)
 	if err != nil {
 		t.Fatalf("OpenKeyringStore(new passphrase) error = %v", err)
@@ -417,8 +410,8 @@ func TestRotateTreatsHelperFailureAsPostCommitWarning(t *testing.T) {
 	defer newKeyring.Zero()
 	assertDecryptsWithKeyring(t, keyPath, newKeyring)
 	assertDecryptsWithKeyring(t, templatePath, newKeyring)
-	assertPolicyVerifiesWithKeyring(t, paths, identityID, newKeyring)
-	assertNodeRoleVerifiesWithKeyring(t, paths, identityID, newKeyring, noderole.RoleSigner)
+	assertPolicyVerifiesWithKeyring(t, paths, newKeyring)
+	assertNodeRoleVerifiesWithKeyring(t, paths, newKeyring, noderole.RoleSigner)
 	assertNoRotationArtifacts(
 		t,
 		keyPath,
@@ -432,7 +425,6 @@ func TestRotateTreatsHelperFailureAsPostCommitWarning(t *testing.T) {
 func TestRotateFailsWhenPolicyBaselineMissing(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths)
-	identityID := "default"
 	oldPassphrase := []byte("old-passphrase")
 	newPassphrase := []byte("new-passphrase")
 
@@ -440,9 +432,9 @@ func TestRotateFailsWhenPolicyBaselineMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
+	writeNodeRoleBaselineForRotateTest(t, paths, oldMasterKeyRing, noderole.RoleSigner)
 
-	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{})
+	result, err := Rotate(paths, oldPassphrase, newPassphrase, RotateOptions{})
 	if err == nil {
 		t.Fatal("Rotate() error = nil, want missing policy baseline failure")
 	}
@@ -452,8 +444,8 @@ func TestRotateFailsWhenPolicyBaselineMissing(t *testing.T) {
 	if result.KeysMigrated != 0 || result.TemplatesMigrated != 0 || result.PolicySidecarsMigrated != 0 {
 		t.Fatalf("Rotate() result = %+v, want no migrations", result)
 	}
-	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
-	assertKeyringRejectsPassphrase(t, paths, identityID, newPassphrase)
+	assertMetadataAcceptsPassphrase(t, paths, oldPassphrase)
+	assertKeyringRejectsPassphrase(t, paths, newPassphrase)
 }
 
 // contextForRotateTest is the object identity the store binds into a managed
@@ -488,14 +480,14 @@ func writeEncryptedForRotateTest(t *testing.T, path string, plaintext []byte, kr
 	}
 }
 
-func writePolicyBaselineForRotateTest(t *testing.T, paths storepaths.Paths, identityID string, kr *crypto.Keyring, cfg *policy.StoredConfig) {
+func writePolicyBaselineForRotateTest(t *testing.T, paths storepaths.Paths, kr *crypto.Keyring, cfg *policy.StoredConfig) {
 	t.Helper()
 	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), cfg, kr, time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 }
 
-func writeNodeRoleBaselineForRotateTest(t *testing.T, paths storepaths.Paths, identityID string, kr *crypto.Keyring, role noderole.Role) {
+func writeNodeRoleBaselineForRotateTest(t *testing.T, paths storepaths.Paths, kr *crypto.Keyring, role noderole.Role) {
 	t.Helper()
 	roleBytes, _, err := noderole.SaveInitial(paths, role, time.Unix(1700000000, 0))
 	if err != nil {
@@ -506,14 +498,14 @@ func writeNodeRoleBaselineForRotateTest(t *testing.T, paths storepaths.Paths, id
 	}
 }
 
-func assertPolicyVerifiesWithKeyring(t *testing.T, paths storepaths.Paths, identityID string, kr *crypto.Keyring) {
+func assertPolicyVerifiesWithKeyring(t *testing.T, paths storepaths.Paths, kr *crypto.Keyring) {
 	t.Helper()
 	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(paths.Root(), kr); err != nil {
 		t.Fatalf("policy sidecar did not verify: %v", err)
 	}
 }
 
-func assertNodeRoleVerifiesWithKeyring(t *testing.T, paths storepaths.Paths, identityID string, kr *crypto.Keyring, want noderole.Role) {
+func assertNodeRoleVerifiesWithKeyring(t *testing.T, paths storepaths.Paths, kr *crypto.Keyring, want noderole.Role) {
 	t.Helper()
 	doc, err := noderole.LoadAndVerifyWithKeyring(paths, kr)
 	if err != nil {
@@ -542,7 +534,7 @@ func decryptForRotateTest(t *testing.T, path string, kr *crypto.Keyring) ([]byte
 	return kr.Open(encrypted, contextForRotateTest(t, path))
 }
 
-func assertMetadataAcceptsPassphrase(t *testing.T, paths storepaths.Paths, identityID string, passphrase []byte) {
+func assertMetadataAcceptsPassphrase(t *testing.T, paths storepaths.Paths, passphrase []byte) {
 	t.Helper()
 	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(), passphrase)
 	if err != nil {
@@ -552,7 +544,7 @@ func assertMetadataAcceptsPassphrase(t *testing.T, paths storepaths.Paths, ident
 
 }
 
-func assertKeyringRejectsPassphrase(t *testing.T, paths storepaths.Paths, identityID string, passphrase []byte) {
+func assertKeyringRejectsPassphrase(t *testing.T, paths storepaths.Paths, passphrase []byte) {
 	t.Helper()
 	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(), passphrase)
 	if err == nil {
@@ -579,7 +571,6 @@ func assertNoRotationArtifacts(t *testing.T, paths ...string) {
 func TestRotatePreservesKeystoreVersionGate(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths)
-	identityID := "default"
 	oldPassphrase := []byte("rotate-generational-old")
 	newPassphrase := []byte("rotate-generational-new")
 
@@ -587,12 +578,12 @@ func TestRotatePreservesKeystoreVersionGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
-	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, &policy.StoredConfig{})
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
+	writePolicyBaselineForRotateTest(t, paths, oldMasterKeyRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, oldMasterKeyRing, noderole.RoleSigner)
 
 	genstoretest.MintFirst(t, paths)
 
-	if _, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
+	if _, err := Rotate(paths, oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
 		t.Fatalf("Rotate() error = %v", err)
 	}
 
@@ -607,15 +598,14 @@ func TestRotatePreservesKeystoreVersionGate(t *testing.T) {
 
 func TestRotateAnchorsPriorGenerationsWithoutPruning(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	identityID := "default"
 	passphrase := []byte("rotate-quiescence")
 
 	masterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), passphrase)
 	if err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
-	writePolicyBaselineForRotateTest(t, paths, identityID, masterKeyRing, &policy.StoredConfig{})
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, masterKeyRing, noderole.RoleSigner)
+	writePolicyBaselineForRotateTest(t, paths, masterKeyRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, masterKeyRing, noderole.RoleSigner)
 
 	first := "gen-1753900000-0badc0de"
 	second := "gen-1753900001-1badc0de"
@@ -632,7 +622,7 @@ func TestRotateAnchorsPriorGenerationsWithoutPruning(t *testing.T) {
 		t.Fatalf("Mint(second): %v", err)
 	}
 
-	result, err := Rotate(paths, identityID, passphrase, []byte("new-pass"), RotateOptions{})
+	result, err := Rotate(paths, passphrase, []byte("new-pass"), RotateOptions{})
 	if err != nil {
 		t.Fatalf("Rotate() error = %v", err)
 	}
@@ -653,7 +643,6 @@ func TestRotateAnchorsPriorGenerationsWithoutPruning(t *testing.T) {
 func TestRotateDurablyWritesRootAndConsumers(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths)
-	identityID := "default"
 	oldPassphrase := []byte("old-passphrase")
 
 	oldMasterKeyRing, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), oldPassphrase)
@@ -662,8 +651,8 @@ func TestRotateDurablyWritesRootAndConsumers(t *testing.T) {
 	}
 	keyPath := apkeys.AccountKeyFilePath(paths, "ADDR")
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKeyRing)
-	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, &policy.StoredConfig{})
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
+	writePolicyBaselineForRotateTest(t, paths, oldMasterKeyRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, oldMasterKeyRing, noderole.RoleSigner)
 
 	fileSyncs := map[string]bool{}
 	dirSyncs := map[string]bool{}
@@ -678,7 +667,7 @@ func TestRotateDurablyWritesRootAndConsumers(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	if _, err := Rotate(paths, identityID, oldPassphrase, []byte("new-passphrase"), RotateOptions{}); err != nil {
+	if _, err := Rotate(paths, oldPassphrase, []byte("new-passphrase"), RotateOptions{}); err != nil {
 		t.Fatalf("Rotate() error = %v", err)
 	}
 
@@ -692,7 +681,7 @@ func TestRotateDurablyWritesRootAndConsumers(t *testing.T) {
 	}
 }
 
-func mustActiveRotate(t *testing.T, paths storepaths.Paths, identityID string) storepaths.ActivePaths {
+func mustActiveRotate(t *testing.T, paths storepaths.Paths) storepaths.ActivePaths {
 	t.Helper()
 	active, err := genstore.ResolveActive(paths)
 	if err != nil {
@@ -710,7 +699,6 @@ func mustActiveRotate(t *testing.T, paths storepaths.Paths, identityID string) s
 // and complete.
 func TestRotateReplacesTheTermKey(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	identityID := "default"
 	genstoretest.MintFirst(t, paths)
 	oldPassphrase := []byte("term-replacement-old")
 	newPassphrase := []byte("term-replacement-new")
@@ -729,10 +717,10 @@ func TestRotateReplacesTheTermKey(t *testing.T) {
 
 	keyPath := apkeys.AccountKeyFilePath(paths, "ADDR")
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), beforeRing)
-	writePolicyBaselineForRotateTest(t, paths, identityID, beforeRing, &policy.StoredConfig{})
-	writeNodeRoleBaselineForRotateTest(t, paths, identityID, beforeRing, noderole.RoleSigner)
+	writePolicyBaselineForRotateTest(t, paths, beforeRing, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, beforeRing, noderole.RoleSigner)
 
-	if _, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
+	if _, err := Rotate(paths, oldPassphrase, newPassphrase, RotateOptions{}); err != nil {
 		t.Fatalf("Rotate() error = %v", err)
 	}
 

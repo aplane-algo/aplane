@@ -34,7 +34,7 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 	}
 
 	timestamp := managedBackupTimestamp(time.Now())
-	archivePath := backup.BuildManagedArchivePath(s.Deps.KeyPaths(), ir.ID(), timestamp)
+	archivePath := backup.BuildManagedArchivePath(s.Deps.KeyPaths(), timestamp)
 
 	var result *backup.ArchiveResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
@@ -42,7 +42,6 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 			var backupErr error
 			result, backupErr = backup.CreateKeysArchive(backup.CreateKeysArchiveRequest{
 				Paths:            s.Deps.KeyPaths(),
-				IdentityID:       ir.ID(),
 				ArchivePath:      archivePath,
 				Addresses:        req.Addresses,
 				Keyring:          masterKey,
@@ -79,7 +78,7 @@ func (s Service) ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult 
 	if err := requireProductRuntime(ir); err != nil {
 		return adminproto.ListBackupsResult{Code: protocol.ResultCodeListBackupsFailed, Error: err.Error()}
 	}
-	items, err := backup.ListManagedBackups(s.Deps.KeyPaths(), ir.ID())
+	items, err := backup.ListManagedBackups(s.Deps.KeyPaths())
 	if err != nil {
 		return adminproto.ListBackupsResult{
 			Code:  protocol.ResultCodeListBackupsFailed,
@@ -104,7 +103,7 @@ func (s Service) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupR
 		return adminproto.DeleteBackupResult{Code: protocol.ResultCodeDeleteBackupFailed, Error: err.Error()}
 	}
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		return backup.DeleteManagedBackup(s.Deps.KeyPaths(), ir.ID(), req.ArchivePath)
+		return backup.DeleteManagedBackup(s.Deps.KeyPaths(), req.ArchivePath)
 	})
 	if err != nil {
 		return adminproto.DeleteBackupResult{
@@ -124,7 +123,7 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 		return adminproto.RestorePreviewResult{Code: protocol.ResultCodeRestorePreviewFailed, Error: err.Error()}
 	}
 
-	archivePath, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), req.ArchivePath)
+	archivePath, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), req.ArchivePath)
 	if err != nil {
 		return adminproto.RestorePreviewResult{
 			Code:  protocol.ResultCodeRestorePreviewFailed,
@@ -140,7 +139,7 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 		}
 	}
 
-	preview, err := backup.PreviewRestoreWithNodeRole(s.Deps.KeyPaths(), ir.ID(), archivePath, passphraseBytes, ir.NodeRole())
+	preview, err := backup.PreviewRestoreWithNodeRole(s.Deps.KeyPaths(), archivePath, passphraseBytes, ir.NodeRole())
 	if err != nil {
 		if backup.ArchiveAuthenticated(err) {
 			limiter.RecordSuccess(archivePath)

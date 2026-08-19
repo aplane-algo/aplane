@@ -112,17 +112,16 @@ func parseInitializeRole(args []string) (noderole.Role, error) {
 
 func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.InitializeStoreResultMessage, error) {
 	var result protocol.InitializeStoreResultMessage
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(dataDirectory, productIdentityID(), &config)
+	unlockCfg, err := signerstartup.ResolveUnlockConfig(dataDirectory, &config)
 	if err != nil {
 		return result, fmt.Errorf("failed to resolve passphrase helper config: %w", err)
 	}
 
 	initResult, err := storeinit.Initialize(passphrase, storeinit.Options{
-		DataDir:    dataDirectory,
-		Paths:      keystorePaths(),
-		IdentityID: productIdentityID(),
-		Role:       role,
-		Logf:       logInfof,
+		DataDir: dataDirectory,
+		Paths:   keystorePaths(),
+		Role:    role,
+		Logf:    logInfof,
 		// New stores use generation-based active storage
 		// (docs/ARCH_GENERATIONS.md); older binaries reject them via the
 		// keystore metadata version gate.

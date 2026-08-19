@@ -209,7 +209,7 @@ func Run(dataDir string) int {
 	server.runtime = ir
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
 	logInfof("product identity runtime initialized")
-	removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths, identityID)
+	removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths)
 	if cleanupErr != nil {
 		logErrorf("failed to clean incomplete backup imports: %v", cleanupErr)
 		return 1

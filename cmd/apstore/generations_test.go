@@ -18,10 +18,9 @@ import (
 
 // newGenerationalTestStore builds a generational store the way initialize
 // does: v3 metadata first, then the authorized first mint.
-func newGenerationalTestStore(t *testing.T, passphrase string) (storepaths.Paths, string) {
+func newGenerationalTestStore(t *testing.T, passphrase string) storepaths.Paths {
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())
-	identityID := "default"
 	if err := fsutil.MkdirAll(paths.KeystoreMetadataDir()); err != nil {
 		t.Fatalf("MkdirAll(metadata): %v", err)
 	}
@@ -41,11 +40,11 @@ func newGenerationalTestStore(t *testing.T, passphrase string) (storepaths.Paths
 	}); err != nil {
 		t.Fatalf("Mint(first) error = %v", err)
 	}
-	return paths, identityID
+	return paths
 }
 
 func TestVerifyCurrentGenerationContentPassesOnCleanStore(t *testing.T) {
-	paths, identityID := newGenerationalTestStore(t, "prune-pass")
+	paths := newGenerationalTestStore(t, "prune-pass")
 	kr, err := crypto.OpenKeyringStore(
 		paths.KeystoreMetadataDir(),
 		[]byte("prune-pass"),
@@ -55,13 +54,13 @@ func TestVerifyCurrentGenerationContentPassesOnCleanStore(t *testing.T) {
 	}
 	defer kr.Zero()
 
-	if err := verifyCurrentGenerationContentWithKeyring(paths, identityID, kr); err != nil {
+	if err := verifyCurrentGenerationContentWithKeyring(paths, kr); err != nil {
 		t.Fatalf("verifyCurrentGenerationContentWithKeyring() error = %v, want clean pass", err)
 	}
 }
 
 func TestVerifyCurrentGenerationContentFailsOnMalformedKey(t *testing.T) {
-	paths, identityID := newGenerationalTestStore(t, "prune-pass")
+	paths := newGenerationalTestStore(t, "prune-pass")
 	kr, err := crypto.OpenKeyringStore(
 		paths.KeystoreMetadataDir(),
 		[]byte("prune-pass"),
@@ -80,7 +79,7 @@ func TestVerifyCurrentGenerationContentFailsOnMalformedKey(t *testing.T) {
 		t.Fatalf("WriteFile(garbage): %v", err)
 	}
 
-	err = verifyCurrentGenerationContentWithKeyring(paths, identityID, kr)
+	err = verifyCurrentGenerationContentWithKeyring(paths, kr)
 	if err == nil || !strings.Contains(err.Error(), "refusing to prune") {
 		t.Fatalf("verifyCurrentGenerationContentWithKeyring() error = %v, want content rejection", err)
 	}
@@ -91,7 +90,7 @@ func TestVerifyCurrentGenerationContentRejectsSymlinkedNamespaceBeforePrompt(t *
 	// structural rejection must happen before any passphrase prompt or
 	// content read could follow the symlink.
 	t.Setenv("APSIGNER_PASSPHRASE", "")
-	paths, identityID := newGenerationalTestStore(t, "prune-pass")
+	paths := newGenerationalTestStore(t, "prune-pass")
 
 	active, err := genstore.ResolveActive(paths)
 	if err != nil {
@@ -108,7 +107,7 @@ func TestVerifyCurrentGenerationContentRejectsSymlinkedNamespaceBeforePrompt(t *
 		t.Fatalf("symlink keys namespace: %v", err)
 	}
 
-	err = validateCurrentGenerationForContent(paths, identityID)
+	err = validateCurrentGenerationForContent(paths)
 	if err == nil || !strings.Contains(err.Error(), "current generation failed validation") {
 		t.Fatalf("validateCurrentGenerationForContent() error = %v, want structural rejection", err)
 	}

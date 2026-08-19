@@ -46,7 +46,7 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 		// Product mode supports one writable upload per identity. Starting a new
 		// transfer supersedes client-disconnect residue, but never a claimed
 		// archive undergoing immutable deep validation.
-		if _, err := cleanupSupersededBackupUploads(s.Deps.KeyPaths(), ir.ID()); err != nil {
+		if _, err := cleanupSupersededBackupUploads(s.Deps.KeyPaths()); err != nil {
 			return err
 		}
 		if _, err := os.Lstat(filepath.Join(dir, fileName)); err == nil {
@@ -298,7 +298,7 @@ func (s Service) ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackup
 	if err != nil {
 		return readChunkError(err, s.Deps.KeyPaths().Root())
 	}
-	path, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), fileName)
+	path, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), fileName)
 	if err != nil {
 		return readChunkError(err, s.Deps.KeyPaths().Root())
 	}
@@ -328,15 +328,15 @@ func (s Service) ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackup
 
 // CleanupIncompleteBackupImports durably removes unpublished upload residue.
 // Callers serialize it with other identity mutations once the daemon is live.
-func CleanupIncompleteBackupImports(paths storepaths.Paths, identityID string) (int, error) {
-	return cleanupBackupImportResidue(paths, identityID, true)
+func CleanupIncompleteBackupImports(paths storepaths.Paths) (int, error) {
+	return cleanupBackupImportResidue(paths, true)
 }
 
-func cleanupSupersededBackupUploads(paths storepaths.Paths, identityID string) (int, error) {
-	return cleanupBackupImportResidue(paths, identityID, false)
+func cleanupSupersededBackupUploads(paths storepaths.Paths) (int, error) {
+	return cleanupBackupImportResidue(paths, false)
 }
 
-func cleanupBackupImportResidue(paths storepaths.Paths, identityID string, includeValidation bool) (int, error) {
+func cleanupBackupImportResidue(paths storepaths.Paths, includeValidation bool) (int, error) {
 	dir := paths.ProductBackupsDir()
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {

@@ -213,7 +213,7 @@ func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Rol
 
 	restored := 0
 	for _, address := range addresses {
-		keyType, err := backup.NewRestorer(keystorePaths(), productIdentityID()).
+		keyType, err := backup.NewRestorer(keystorePaths()).
 			WithNodeRole(role).
 			WithLogger(logInfof).
 			WithActiveNamespace(staged).

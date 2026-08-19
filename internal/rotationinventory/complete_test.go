@@ -29,7 +29,7 @@ func TestCompleteRotationClosesVerifiedTransition(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -54,7 +54,7 @@ func TestCompleteRotationClosesVerifiedTransition(t *testing.T) {
 	); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("non-rollback completion wrote a baseline: %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan(settled store) error = %v", err)
 	}
 }
@@ -87,7 +87,7 @@ func TestCompleteRotationDiscardsPreRootSnapshotOrphan(t *testing.T) {
 
 	if _, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		newPassphrase,
 	); !errors.Is(err, injected) {
@@ -107,7 +107,7 @@ func TestCompleteRotationDiscardsPreRootSnapshotOrphan(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		oldPassphrase,
 	)
@@ -124,7 +124,7 @@ func TestCompleteRotationDiscardsPreRootSnapshotOrphan(t *testing.T) {
 	if _, err := os.Stat(snapshotPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("pre-root snapshot survived cleanup: %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan() after pre-root cleanup error = %v", err)
 	}
 }
@@ -160,7 +160,7 @@ func TestCompleteRotationIgnoresStaleSealOnCurrentGeneration(t *testing.T) {
 
 	snapshot, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -177,7 +177,7 @@ func TestCompleteRotationIgnoresStaleSealOnCurrentGeneration(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -194,7 +194,7 @@ func TestCompleteRotationIgnoresStaleSealOnCurrentGeneration(t *testing.T) {
 	if !bytes.Equal(after, staleSeal) {
 		t.Fatal("rotation rewrote non-authoritative CURRENT seal residue")
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan(settled store with stale CURRENT seal) error = %v", err)
 	}
 }
@@ -208,7 +208,7 @@ func TestCompleteRotationWritesCleanCutoverBaselineBeforeClose(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -221,7 +221,7 @@ func TestCompleteRotationWritesCleanCutoverBaselineBeforeClose(t *testing.T) {
 	}
 	baseline, err := ReadBaseline(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 	)
 	if err != nil {
@@ -257,7 +257,7 @@ func TestCompleteRotationReplacesPinnedPriorBaseline(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -269,7 +269,7 @@ func TestCompleteRotationReplacesPinnedPriorBaseline(t *testing.T) {
 	}
 	baseline, err := ReadBaseline(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 	)
 	if err != nil {
@@ -299,7 +299,7 @@ func TestCompleteRotationDoesNotEraseCutoverDivergence(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -357,7 +357,7 @@ func TestCompleteRotationPublishesBaselineBeforeRootAndSnapshotCleanup(t *testin
 
 	if _, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	); err != nil {
@@ -392,7 +392,7 @@ func TestCompleteRotationRejectsUnpinnedFinalPath(t *testing.T) {
 
 	if _, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	); err == nil || !strings.Contains(err.Error(), "unpinned path") {
@@ -432,7 +432,7 @@ func TestCompleteRotationRetriesBaselineAfterDurabilityFailure(t *testing.T) {
 
 	partial, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -449,7 +449,7 @@ func TestCompleteRotationRetriesBaselineAfterDurabilityFailure(t *testing.T) {
 
 	retry, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -491,7 +491,7 @@ func TestCompleteRotationSecondScanBlocksMutationAfterBaseline(t *testing.T) {
 
 	if _, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	); err == nil {
@@ -524,7 +524,7 @@ func TestCompleteRotationRecoversVisibleCloseBeforeSnapshotCleanup(t *testing.T)
 
 	partial, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -547,7 +547,7 @@ func TestCompleteRotationRecoversVisibleCloseBeforeSnapshotCleanup(t *testing.T)
 
 	recovered, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -584,7 +584,7 @@ func TestCompleteRotationReportsSnapshotCleanupDurabilityFailure(t *testing.T) {
 
 	partial, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -668,7 +668,7 @@ func startCompletionFixture(
 		}
 		if err := WriteBaseline(
 			fixture.paths,
-			inventoryIdentity,
+
 			baseline,
 			fixture.kr,
 		); err != nil {
@@ -678,7 +678,7 @@ func startCompletionFixture(
 
 	snapshot, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)

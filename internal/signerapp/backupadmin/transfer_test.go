@@ -433,7 +433,7 @@ func TestCleanupIncompleteBackupImportsRemovesValidationResidue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	removed, err := CleanupIncompleteBackupImports(paths, auth.DefaultIdentityID)
+	removed, err := CleanupIncompleteBackupImports(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +479,7 @@ func TestCleanupIncompleteBackupImportsRejectsValidationSymlink(t *testing.T) {
 		t.Skipf("symlink unavailable: %v", err)
 	}
 
-	if _, err := CleanupIncompleteBackupImports(paths, auth.DefaultIdentityID); err == nil {
+	if _, err := CleanupIncompleteBackupImports(paths); err == nil {
 		t.Fatal("CleanupIncompleteBackupImports() accepted validation symlink")
 	}
 	if _, err := os.Stat(marker); err != nil {

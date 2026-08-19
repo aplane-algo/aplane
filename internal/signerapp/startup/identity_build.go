@@ -107,7 +107,7 @@ func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, i
 	sessionTimeout := effectiveCfg.SessionTimeout
 	approvalWait := effectiveCfg.ApprovalWait
 
-	unlockCfg, unlockErr := ResolveUnlockConfig(opts.DataDir, identityID, opts.Config)
+	unlockCfg, unlockErr := ResolveUnlockConfig(opts.DataDir, opts.Config)
 	if unlockErr != nil {
 		return nil, fmt.Errorf("failed to load unlock config for identity %q: %w", identityID, unlockErr)
 	}

@@ -42,7 +42,7 @@ func (s Service) RestoreBackup(
 		return result
 	}
 	archivePath, err := backup.ResolveManagedBackupPath(
-		s.Deps.KeyPaths(), ir.ID(), req.ArchivePath,
+		s.Deps.KeyPaths(), req.ArchivePath,
 	)
 	if err != nil {
 		result.Code = protocol.ResultCodeRestoreFailed
@@ -63,7 +63,7 @@ func (s Service) RestoreBackup(
 		prepareErr := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			set, loadErr := backup.LoadManagedRestoreSet(
 				s.Deps.KeyPaths(),
-				ir.ID(),
+
 				archivePath,
 				req.Addresses,
 				passphrase,
@@ -107,7 +107,7 @@ func (s Service) RestoreBackup(
 
 			parent = current.GenerationID()
 			if _, reconcileErr := rotationinventory.ReconcileBaselineForPreflight(
-				s.Deps.KeyPaths(), ir.ID(), parent, masterKey,
+				s.Deps.KeyPaths(), parent, masterKey,
 			); reconcileErr != nil {
 				return fmt.Errorf("restore rotation baseline preflight: %w", reconcileErr)
 			}
@@ -157,7 +157,7 @@ func (s Service) RestoreBackup(
 			result.Restored = projectCredentialEntries(classification.Pending)
 
 			if _, reconcileErr := rotationinventory.ReconcileBaselineForPreflight(
-				s.Deps.KeyPaths(), ir.ID(), generationID, masterKey,
+				s.Deps.KeyPaths(), generationID, masterKey,
 			); reconcileErr != nil {
 				ir.SetRecovery()
 				return restoreFailure(

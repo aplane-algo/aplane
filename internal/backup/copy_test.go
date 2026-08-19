@@ -24,7 +24,6 @@ var testExportMasterKey = []byte("0123456789abcdef0123456789abcdef")
 func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
 	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
 	if err != nil {
@@ -39,7 +38,7 @@ func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
-	if _, _, err := ExportKey(paths, identityID, active.KeysDir(), destination, selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
+	if _, _, err := ExportKey(paths, active.KeysDir(), destination, selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("ExportKey() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(destination, selector+".apb")); err != nil {
@@ -50,7 +49,6 @@ func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
 	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
 	if err != nil {
@@ -64,7 +62,7 @@ func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, _, err = ExportKey(paths, identityID, paths.LegacyKeysDir(), t.TempDir(), selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
+	_, _, err = ExportKey(paths, paths.LegacyKeysDir(), t.TempDir(), selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous managed credential") {
 		t.Fatalf("ExportKey() error = %v, want ambiguity rejection", err)
 	}

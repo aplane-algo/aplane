@@ -25,21 +25,21 @@ import (
 // Scan builds the canonical K8 inventory. The caller holds the store and
 // identity mutation locks. Unpublished generation staging residue must already
 // have been reconciled and is rejected.
-func Scan(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (*Report, error) {
-	return scan(paths, identityID, kr, false)
+func Scan(paths storepaths.Paths, kr *crypto.Keyring) (*Report, error) {
+	return scan(paths, kr, false)
 }
 
 // ScanForSnapshot builds the cutover input inventory. The snapshot file is
 // deliberately excluded so a pending root never recursively inventories the
 // record that contains the inventory. A pre-existing baseline remains an
 // input and is classified normally.
-func ScanForSnapshot(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (*Report, error) {
-	return scan(paths, identityID, kr, true)
+func ScanForSnapshot(paths storepaths.Paths, kr *crypto.Keyring) (*Report, error) {
+	return scan(paths, kr, true)
 }
 
 func scan(
 	paths storepaths.Paths,
-	identityID string,
+
 	kr *crypto.Keyring,
 	excludeSnapshot bool,
 ) (*Report, error) {
@@ -52,7 +52,6 @@ func scan(
 	}
 	scanner := inventoryScanner{
 		paths:             paths,
-		identityID:        identityID,
 		currentGeneration: current,
 		kr:                kr,
 		excludeSnapshot:   excludeSnapshot,
@@ -85,7 +84,6 @@ func scan(
 
 type inventoryScanner struct {
 	paths             storepaths.Paths
-	identityID        string
 	currentGeneration string
 	kr                *crypto.Keyring
 	excludeSnapshot   bool

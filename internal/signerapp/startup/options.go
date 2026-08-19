@@ -73,10 +73,10 @@ func ValidateAndBuildUnlockPlan(opts *Options, runtime *RuntimeState, testPassph
 	return info, plan, nil
 }
 
-// ResolveUnlockConfig returns the passphrase command config for an identity.
-// It checks identity-scoped unlock.yaml first, then falls back to the
+// ResolveUnlockConfig returns the product-store passphrase command config.
+// It checks the product unlock.yaml first, then falls back to the
 // process-global config for backward compatibility.
-func ResolveUnlockConfig(dataDir, identityID string, config *serverconfig.ServerConfig) (*identity.UnlockConfig, error) {
+func ResolveUnlockConfig(dataDir string, config *serverconfig.ServerConfig) (*identity.UnlockConfig, error) {
 	unlockCfg, err := identity.LoadUnlockConfig(dataDir)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 		}, nil
 	}
 
-	unlockCfg, err := ResolveUnlockConfig(opts.DataDir, opts.IdentityID, &opts.Config)
+	unlockCfg, err := ResolveUnlockConfig(opts.DataDir, &opts.Config)
 	if err != nil {
 		return nil, fmt.Errorf("load identity unlock config: %w", err)
 	}

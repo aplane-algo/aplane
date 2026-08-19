@@ -155,7 +155,7 @@ func (s signerAdminServices) completePendingRotation(
 		defer kr.Zero()
 		report, err := rotationinventory.CompleteRotation(
 			ir.KeyPaths(),
-			ir.ID(),
+
 			kr,
 			passphrase,
 		)

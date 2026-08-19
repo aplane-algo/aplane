@@ -52,7 +52,7 @@ type ResumeReport struct {
 // byte on their historical terms.
 func ResumeRotation(
 	paths storepaths.Paths,
-	identityID string,
+
 	kr *crypto.Keyring,
 ) (*ResumeReport, error) {
 	if kr == nil {
@@ -64,7 +64,7 @@ func ResumeRotation(
 	}
 	snapshot, err := ReadReferencedSnapshot(
 		paths,
-		identityID,
+
 		state.Snapshot,
 		state.FromTerm,
 		state.ToTerm,
@@ -73,7 +73,7 @@ func ResumeRotation(
 	if err != nil {
 		return nil, err
 	}
-	historicalPrefixes, err := historicalGenerationPrefixes(paths, identityID, kr)
+	historicalPrefixes, err := historicalGenerationPrefixes(paths, kr)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func ResumeRotation(
 	for _, entry := range snapshot.Inventory {
 		entriesByKind[entry.Kind] = append(entriesByKind[entry.Kind], entry)
 	}
-	if err := validateIntegrityPairs(paths, identityID, entriesByKind); err != nil {
+	if err := validateIntegrityPairs(paths, entriesByKind); err != nil {
 		return nil, err
 	}
 
@@ -424,7 +424,7 @@ func resolveResumePath(paths storepaths.Paths, canonical string) (string, error)
 
 func historicalGenerationPrefixes(
 	paths storepaths.Paths,
-	identityID string,
+
 	kr *crypto.Keyring,
 ) ([]string, error) {
 	anchors := kr.HistoricalGenerationAnchors()
@@ -455,7 +455,7 @@ func hasCanonicalPrefix(path string, prefixes []string) bool {
 
 func validateIntegrityPairs(
 	paths storepaths.Paths,
-	identityID string,
+
 	entries map[ArtifactKind][]Entry,
 ) error {
 	pairs := []struct {

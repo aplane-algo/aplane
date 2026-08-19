@@ -40,7 +40,7 @@ func TestSnapshotWriteReadPinsExactEncryptedFile(t *testing.T) {
 	}
 	t.Cleanup(func() { fsutil.TestHook = nil })
 
-	ref, err := WriteSnapshot(paths, inventoryIdentity, snapshot, kr)
+	ref, err := WriteSnapshot(paths, snapshot, kr)
 	if err != nil {
 		t.Fatalf("WriteSnapshot() error = %v", err)
 	}
@@ -57,7 +57,7 @@ func TestSnapshotWriteReadPinsExactEncryptedFile(t *testing.T) {
 	}
 	opened, err := ReadReferencedSnapshot(
 		paths,
-		inventoryIdentity,
+
 		ref,
 		snapshot.FromTerm,
 		snapshot.ToTerm,
@@ -82,7 +82,7 @@ func TestSnapshotWriteReadPinsExactEncryptedFile(t *testing.T) {
 	}
 	if _, err := ReadReferencedSnapshot(
 		paths,
-		inventoryIdentity,
+
 		ref,
 		snapshot.FromTerm,
 		snapshot.ToTerm,
@@ -151,7 +151,7 @@ func TestSnapshotRejectsWrongContextTermAndTransition(t *testing.T) {
 			}
 			if _, err := ReadReferencedSnapshot(
 				paths,
-				inventoryIdentity,
+
 				ref,
 				tt.expectFrom,
 				tt.expectTo,
@@ -272,7 +272,7 @@ func TestSnapshotReadEnforcesIndependentFileCap(t *testing.T) {
 	}
 	kr := cryptotest.KeyringAtTerm(t, 2, bytes.Repeat([]byte{0x82}, 32))
 	ref := crypto.RotationSnapshotReference{SHA256: strings.Repeat("a", 64), Size: 1}
-	if _, err := ReadReferencedSnapshot(paths, inventoryIdentity, ref, 1, 2, kr); err == nil ||
+	if _, err := ReadReferencedSnapshot(paths, ref, 1, 2, kr); err == nil ||
 		!strings.Contains(err.Error(), "size limit") {
 		t.Fatalf("ReadReferencedSnapshot(oversized) error = %v, want size limit", err)
 	}
@@ -292,7 +292,7 @@ func TestWriteSnapshotReportsDurabilityFailure(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { fsutil.TestHook = nil })
-	if _, err := WriteSnapshot(paths, inventoryIdentity, validSnapshot(t), kr); !errors.Is(err, injected) {
+	if _, err := WriteSnapshot(paths, validSnapshot(t), kr); !errors.Is(err, injected) {
 		t.Fatalf("WriteSnapshot() error = %v, want injected durability error", err)
 	}
 	if _, err := os.Stat(paths.RotationSnapshotPath()); !os.IsNotExist(err) {

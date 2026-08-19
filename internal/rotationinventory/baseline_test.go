@@ -46,7 +46,7 @@ func TestBaselineWriteReadAndAuthority(t *testing.T) {
 	}
 	t.Cleanup(func() { fsutil.TestHook = nil })
 
-	if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); err != nil {
+	if err := WriteBaseline(paths, baseline, kr); err != nil {
 		t.Fatalf("WriteBaseline() error = %v", err)
 	}
 	wantOperations := []fsutil.HookOp{fsutil.OpFileSync, fsutil.OpRename, fsutil.OpDirSync}
@@ -60,7 +60,7 @@ func TestBaselineWriteReadAndAuthority(t *testing.T) {
 	if term, err := crypto.EnvelopeTerm(exact); err != nil || term != 2 {
 		t.Fatalf("baseline envelope term = %d, %v, want 2", term, err)
 	}
-	opened, err := ReadBaseline(paths, inventoryIdentity, kr)
+	opened, err := ReadBaseline(paths, kr)
 	if err != nil {
 		t.Fatalf("ReadBaseline() error = %v", err)
 	}
@@ -81,7 +81,7 @@ func TestBaselineWriteReadAndAuthority(t *testing.T) {
 	if err := os.WriteFile(baselinePath, exact, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(mutated baseline) error = %v", err)
 	}
-	if _, err := ReadBaseline(paths, inventoryIdentity, kr); err == nil {
+	if _, err := ReadBaseline(paths, kr); err == nil {
 		t.Fatal("ReadBaseline() accepted mutated encrypted bytes")
 	}
 }
@@ -187,7 +187,7 @@ func TestBaselineRejectsWrongContextTermAndOversizedFile(t *testing.T) {
 		if err := fsutil.WriteFileDurable(paths.RotationBaselinePath(), sealed); err != nil {
 			t.Fatalf("WriteFileDurable() error = %v", err)
 		}
-		if _, err := ReadBaseline(paths, inventoryIdentity, kr); err == nil ||
+		if _, err := ReadBaseline(paths, kr); err == nil ||
 			!strings.Contains(err.Error(), "open fixed context") {
 			t.Fatalf("ReadBaseline() error = %v, want context rejection", err)
 		}
@@ -206,7 +206,7 @@ func TestBaselineRejectsWrongContextTermAndOversizedFile(t *testing.T) {
 			t.Fatalf("WriteFileDurable() error = %v", err)
 		}
 		multi := cryptotest.KeyringWithTerms(t, 2, map[int64][]byte{1: key1, 2: key2})
-		if _, err := ReadBaseline(paths, inventoryIdentity, multi); err == nil ||
+		if _, err := ReadBaseline(paths, multi); err == nil ||
 			!strings.Contains(err.Error(), "does not match current term") {
 			t.Fatalf("ReadBaseline() error = %v, want current-term rejection", err)
 		}
@@ -222,7 +222,7 @@ func TestBaselineRejectsWrongContextTermAndOversizedFile(t *testing.T) {
 			t.Fatalf("WriteFile() error = %v", err)
 		}
 		kr := cryptotest.KeyringAtTerm(t, 2, bytes.Repeat([]byte{0xa2}, 32))
-		if _, err := ReadBaseline(paths, inventoryIdentity, kr); err == nil ||
+		if _, err := ReadBaseline(paths, kr); err == nil ||
 			!strings.Contains(err.Error(), "size limit") {
 			t.Fatalf("ReadBaseline() error = %v, want size limit", err)
 		}
@@ -244,7 +244,7 @@ func TestWriteBaselineReportsDurabilityFailure(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { fsutil.TestHook = nil })
-	if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); !errors.Is(err, injected) {
+	if err := WriteBaseline(paths, baseline, kr); !errors.Is(err, injected) {
 		t.Fatalf("WriteBaseline() error = %v, want injected durability error", err)
 	}
 	if _, err := os.Stat(paths.RotationBaselinePath()); !os.IsNotExist(err) {
@@ -269,13 +269,13 @@ func TestWriteBaselineReconcilesCrashOrphanedDurableTemp(t *testing.T) {
 		t.Fatalf("WriteFile(residue) error = %v", err)
 	}
 
-	if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); err != nil {
+	if err := WriteBaseline(paths, baseline, kr); err != nil {
 		t.Fatalf("WriteBaseline() error = %v", err)
 	}
 	if _, err := os.Stat(residuePath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("residue still exists after WriteBaseline(): %v", err)
 	}
-	opened, err := ReadBaseline(paths, inventoryIdentity, kr)
+	opened, err := ReadBaseline(paths, kr)
 	if err != nil {
 		t.Fatalf("ReadBaseline() error = %v", err)
 	}
@@ -290,7 +290,7 @@ func TestReconcileBaselineForPreflight(t *testing.T) {
 		kr := cryptotest.KeyringAtTerm(t, 2, bytes.Repeat([]byte{0xc2}, 32))
 		got, err := ReconcileBaselineForPreflight(
 			paths,
-			inventoryIdentity,
+
 			baselineGeneration,
 			kr,
 		)
@@ -305,7 +305,7 @@ func TestReconcileBaselineForPreflight(t *testing.T) {
 		baseline := writeBaselineTest(t, paths, baselineGeneration, kr)
 		got, err := ReconcileBaselineForPreflight(
 			paths,
-			inventoryIdentity,
+
 			baselineGeneration,
 			kr,
 		)
@@ -332,7 +332,7 @@ func TestReconcileBaselineForPreflight(t *testing.T) {
 		t.Cleanup(func() { fsutil.TestHook = nil })
 		got, err := ReconcileBaselineForPreflight(
 			paths,
-			inventoryIdentity,
+
 			baselineGeneration,
 			kr,
 		)
@@ -360,7 +360,7 @@ func TestReconcileBaselineForPreflight(t *testing.T) {
 		}
 		if _, err := ReconcileBaselineForPreflight(
 			paths,
-			inventoryIdentity,
+
 			baselineGeneration,
 			kr,
 		); err == nil {
@@ -381,7 +381,7 @@ func TestReconcileBaselineForPreflight(t *testing.T) {
 		baselinePath := paths.RotationBaselinePath()
 		if _, err := ReconcileBaselineForPreflight(
 			paths,
-			inventoryIdentity,
+
 			baselineGeneration,
 			multi,
 		); err == nil {
@@ -494,7 +494,7 @@ func TestEvaluateRollbackOnlyMatchingAuthenticatedBaselineCanAssertClean(t *test
 		t.Helper()
 		cutover, err := EvaluateRollback(
 			paths,
-			inventoryIdentity,
+
 			baselineGeneration,
 			rewrapped,
 			manifest,
@@ -540,7 +540,7 @@ func TestEvaluateRollbackOnlyMatchingAuthenticatedBaselineCanAssertClean(t *test
 		if err != nil {
 			t.Fatalf("NewBaseline(stale) error = %v", err)
 		}
-		if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); err != nil {
+		if err := WriteBaseline(paths, baseline, kr); err != nil {
 			t.Fatalf("WriteBaseline(stale) error = %v", err)
 		}
 		assertDiverged(t, paths, kr)
@@ -554,7 +554,7 @@ func TestEvaluateRollbackOnlyMatchingAuthenticatedBaselineCanAssertClean(t *test
 		if err != nil {
 			t.Fatalf("NewBaseline() error = %v", err)
 		}
-		if err := WriteBaseline(paths, inventoryIdentity, baseline, old); err != nil {
+		if err := WriteBaseline(paths, baseline, old); err != nil {
 			t.Fatalf("WriteBaseline(old term) error = %v", err)
 		}
 		current := cryptotest.KeyringWithTerms(
@@ -572,12 +572,12 @@ func TestEvaluateRollbackOnlyMatchingAuthenticatedBaselineCanAssertClean(t *test
 		if err != nil {
 			t.Fatalf("NewBaseline() error = %v", err)
 		}
-		if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); err != nil {
+		if err := WriteBaseline(paths, baseline, kr); err != nil {
 			t.Fatalf("WriteBaseline() error = %v", err)
 		}
 		cutover, err := EvaluateRollback(
 			paths,
-			inventoryIdentity,
+
 			baselineGeneration,
 			rewrapped,
 			manifest,
@@ -629,7 +629,7 @@ func writeBaselineTest(
 	if err != nil {
 		t.Fatalf("NewBaseline() error = %v", err)
 	}
-	if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); err != nil {
+	if err := WriteBaseline(paths, baseline, kr); err != nil {
 		t.Fatalf("WriteBaseline() error = %v", err)
 	}
 	return baseline

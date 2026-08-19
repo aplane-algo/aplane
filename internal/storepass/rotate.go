@@ -35,8 +35,8 @@ type RotateResult struct {
 	RotationPending          bool
 }
 
-func VerifyCurrentPassphrase(paths storepaths.Paths, identityID string, passphrase []byte) error {
-	kr, err := loadAndVerifyCurrentKeyring(paths, identityID, passphrase)
+func VerifyCurrentPassphrase(paths storepaths.Paths, passphrase []byte) error {
+	kr, err := loadAndVerifyCurrentKeyring(paths, passphrase)
 	if err != nil {
 		return err
 	}
@@ -52,7 +52,7 @@ func VerifyCurrentPassphrase(paths storepaths.Paths, identityID string, passphra
 // The caller holds the identity mutation lock.
 func Rotate(
 	paths storepaths.Paths,
-	identityID string,
+
 	oldPassphrase, newPassphrase []byte,
 	opts RotateOptions,
 ) (RotateResult, error) {
@@ -65,7 +65,7 @@ func Rotate(
 		return result, fmt.Errorf("current and new passphrases are required")
 	}
 
-	kr, err := loadAndVerifyCurrentKeyring(paths, identityID, oldPassphrase)
+	kr, err := loadAndVerifyCurrentKeyring(paths, oldPassphrase)
 	if err != nil {
 		return result, err
 	}
@@ -82,7 +82,7 @@ func Rotate(
 	logf(opts.Logf, "starting durable key-term rotation")
 	snapshot, startErr := rotationinventory.StartRotation(
 		paths,
-		identityID,
+
 		kr,
 		newPassphrase,
 	)
@@ -132,7 +132,7 @@ func Rotate(
 	)
 	completion, err := rotationinventory.CompleteRotation(
 		paths,
-		identityID,
+
 		kr,
 		newPassphrase,
 	)
@@ -192,7 +192,7 @@ func logf(log Logger, format string, args ...any) {
 // The caller owns the returned keyring and must Zero it.
 func loadAndVerifyCurrentKeyring(
 	paths storepaths.Paths,
-	identityID string,
+
 	passphrase []byte,
 ) (*crypto.Keyring, error) {
 	kr, err := crypto.OpenKeyringStore(

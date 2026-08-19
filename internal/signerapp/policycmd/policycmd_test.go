@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -686,7 +685,7 @@ func initializedPolicyStore(t *testing.T) (string, string) {
 	root := t.TempDir()
 	passphrase := "policycmd-test-passphrase"
 	_, err := storeinit.Initialize([]byte(passphrase), storeinit.Options{
-		DataDir: root, Paths: storepaths.NewPaths(root), IdentityID: auth.CurrentProductIdentityID(), Role: noderole.RoleSigner,
+		DataDir: root, Paths: storepaths.NewPaths(root), Role: noderole.RoleSigner,
 	})
 	if err != nil {
 		t.Fatal(err)

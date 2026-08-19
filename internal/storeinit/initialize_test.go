@@ -26,14 +26,12 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
-	identityID := "default"
 	passphrase := []byte("init-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 
 	result, err := Initialize(passphrase, Options{
-		DataDir:    dataDir,
-		Paths:      paths,
-		IdentityID: identityID,
+		DataDir: dataDir,
+		Paths:   paths,
 	})
 	if err != nil {
 		t.Fatalf("Initialize() error = %v", err)
@@ -102,15 +100,13 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
-	identityID := "default"
 	passphrase := []byte("init-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 
 	if _, err := Initialize(passphrase, Options{
-		DataDir:    dataDir,
-		Paths:      paths,
-		IdentityID: identityID,
-		Role:       noderole.RoleSentry,
+		DataDir: dataDir,
+		Paths:   paths,
+		Role:    noderole.RoleSentry,
 	}); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
@@ -145,17 +141,15 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
-	identityID := "default"
 	identityDir := paths.ProductDir()
 	if err := os.MkdirAll(filepath.Join(identityDir, "aplane.token"), 0o700); err != nil {
 		t.Fatalf("MkdirAll(aplane.token dir) error = %v", err)
 	}
 
 	_, err := Initialize([]byte("init-passphrase"), Options{
-		DataDir:    dataDir,
-		Paths:      paths,
-		IdentityID: identityID,
-		Role:       noderole.RoleSentry,
+		DataDir: dataDir,
+		Paths:   paths,
+		Role:    noderole.RoleSentry,
 	})
 	if err == nil || !strings.Contains(err.Error(), "failed to generate API token") {
 		t.Fatalf("Initialize() error = %v, want token failure", err)
@@ -168,7 +162,6 @@ func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
 func TestInitializeRejectsExistingKeyring(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
-	identityID := "default"
 	kr, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), []byte("existing-passphrase"))
 	if err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
@@ -176,9 +169,8 @@ func TestInitializeRejectsExistingKeyring(t *testing.T) {
 	kr.Zero()
 
 	_, err = Initialize([]byte("new-passphrase"), Options{
-		DataDir:    dataDir,
-		Paths:      paths,
-		IdentityID: identityID,
+		DataDir: dataDir,
+		Paths:   paths,
 	})
 	if err == nil || !strings.Contains(err.Error(), "already initialized") {
 		t.Fatalf("Initialize() error = %v, want already-initialized error", err)
@@ -187,9 +179,8 @@ func TestInitializeRejectsExistingKeyring(t *testing.T) {
 
 func TestHasPartialState(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	identityID := "default"
 
-	if HasPartialState(paths, identityID) {
+	if HasPartialState(paths) {
 		t.Fatal("empty identity dir should not be partial")
 	}
 
@@ -200,20 +191,20 @@ func TestHasPartialState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(identityDir, "aplane.token"), []byte("token"), 0o600); err != nil {
 		t.Fatalf("WriteFile(aplane.token) error = %v", err)
 	}
-	if HasPartialState(paths, identityID) {
+	if HasPartialState(paths) {
 		t.Fatal("token-only identity dir should not be partial")
 	}
 	if err := os.WriteFile(filepath.Join(identityDir, "orphan.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	if !HasPartialState(paths, identityID) {
+	if !HasPartialState(paths) {
 		t.Fatal("expected orphaned identity dir state to be detected")
 	}
 
 	if err := os.WriteFile(filepath.Join(identityDir, ".keystore"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.keystore) error = %v", err)
 	}
-	if HasPartialState(paths, identityID) {
+	if HasPartialState(paths) {
 		t.Fatal("presence of .keystore should not be considered partial initialization")
 	}
 }
@@ -273,7 +264,7 @@ func TestInitializeChecksOwnershipTreeBeforeCreatingKeyring(t *testing.T) {
 	}
 
 	_, err := Initialize([]byte("init-passphrase"), Options{
-		DataDir: dataDir, Paths: paths, IdentityID: "default",
+		DataDir: dataDir, Paths: paths,
 	})
 	if err == nil || !strings.Contains(err.Error(), "prepare initialized identity ownership") {
 		t.Fatalf("Initialize() error = %v, want ownership preflight failure", err)

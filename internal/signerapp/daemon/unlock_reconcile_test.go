@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -90,7 +89,7 @@ func startPendingTestRotation(
 	}
 	if _, err := rotationinventory.StartRotation(
 		server.keyPaths,
-		auth.DefaultIdentityID,
+
 		kr,
 		passphrase,
 	); err != nil {
@@ -178,7 +177,7 @@ func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 	t.Cleanup(func() { fsutil.TestHook = nil })
 	if _, err := rotationinventory.StartRotation(
 		server.keyPaths,
-		auth.DefaultIdentityID,
+
 		kr,
 		[]byte("uncommitted-new-passphrase"),
 	); !errors.Is(err, injected) {

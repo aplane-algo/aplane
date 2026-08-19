@@ -9,7 +9,7 @@ import (
 )
 
 func restoreContextForTest() backup.Restorer {
-	return backup.NewRestorer(keystorePaths(), productIdentityID()).WithLogger(logInfof).WithOverwrite(true)
+	return backup.NewRestorer(keystorePaths()).WithLogger(logInfof).WithOverwrite(true)
 }
 
 func restoreKey(keysDir, address string, kr *crypto.Keyring, exportPassphrase []byte) (string, error) {

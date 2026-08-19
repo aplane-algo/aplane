@@ -51,15 +51,14 @@ type RestoreError struct {
 // entries. Live restores use LoadManagedRestoreSet and a generation mint.
 type Restorer struct {
 	Paths          storepaths.Paths
-	IdentityID     string
 	NodeRole       noderole.Role
 	Overwrite      bool
 	Logf           RestoreLogger
 	ActiveOverride storepaths.ActivePaths
 }
 
-func NewRestorer(paths storepaths.Paths, identityID string) Restorer {
-	return Restorer{Paths: paths, IdentityID: identityID}
+func NewRestorer(paths storepaths.Paths) Restorer {
+	return Restorer{Paths: paths}
 }
 
 func (r Restorer) WithLogger(logf RestoreLogger) Restorer {
@@ -120,7 +119,7 @@ func PrepareRestoreSource(source string) (string, func(), error) {
 	return tmpDir, cleanup, nil
 }
 
-func ResolveManagedBackupPath(paths storepaths.Paths, identityID, archivePath string) (string, error) {
+func ResolveManagedBackupPath(paths storepaths.Paths, archivePath string) (string, error) {
 	return resolveManagedArchivePath(paths.ProductBackupsDir(), archivePath, "backup")
 }
 
@@ -150,7 +149,7 @@ func resolveManagedArchivePath(root, archivePath, label string) (string, error) 
 	return candidate, nil
 }
 
-func ListManagedBackups(paths storepaths.Paths, identityID string) ([]ManagedBackupInfo, error) {
+func ListManagedBackups(paths storepaths.Paths) ([]ManagedBackupInfo, error) {
 	dir := paths.ProductBackupsDir()
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -185,8 +184,8 @@ func ListManagedBackups(paths storepaths.Paths, identityID string) ([]ManagedBac
 	return backups, nil
 }
 
-func DeleteManagedBackup(paths storepaths.Paths, identityID, archivePath string) error {
-	resolved, err := ResolveManagedBackupPath(paths, identityID, archivePath)
+func DeleteManagedBackup(paths storepaths.Paths, archivePath string) error {
+	resolved, err := ResolveManagedBackupPath(paths, archivePath)
 	if err != nil {
 		return err
 	}
@@ -212,11 +211,11 @@ func StatManagedBackupArchive(archivePath string) (os.FileInfo, error) {
 
 func PreviewRestoreWithNodeRole(
 	paths storepaths.Paths,
-	identityID, archivePath string,
+	archivePath string,
 	exportPassphrase []byte,
 	role noderole.Role,
 ) (*RestorePreview, error) {
-	resolved, err := ResolveManagedBackupPath(paths, identityID, archivePath)
+	resolved, err := ResolveManagedBackupPath(paths, archivePath)
 	if err != nil {
 		return nil, err
 	}

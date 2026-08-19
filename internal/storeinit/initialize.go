@@ -21,11 +21,10 @@ import (
 )
 
 type Options struct {
-	DataDir    string
-	Paths      storepaths.Paths
-	IdentityID string
-	Role       noderole.Role
-	Logf       func(format string, args ...any)
+	DataDir string
+	Paths   storepaths.Paths
+	Role    noderole.Role
+	Logf    func(format string, args ...any)
 }
 
 type Result struct {
@@ -39,9 +38,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	}
 	if opts.DataDir == "" {
 		return result, fmt.Errorf("data directory is required")
-	}
-	if opts.IdentityID == "" {
-		return result, fmt.Errorf("identity ID is required")
 	}
 	role := opts.Role
 	if role == "" {
@@ -60,7 +56,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	if crypto.KeyringExistsIn(metadataDir) {
 		return result, fmt.Errorf("keystore already initialized (control file exists in %s)", metadataDir)
 	}
-	if HasPartialState(opts.Paths, opts.IdentityID) {
+	if HasPartialState(opts.Paths) {
 		return result, fmt.Errorf("keystore appears partially initialized in %s; clean up the existing identity directory before re-running initialize", opts.Paths.ProductDir())
 	}
 
@@ -139,7 +135,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	return result, nil
 }
 
-func HasPartialState(paths storepaths.Paths, identityID string) bool {
+func HasPartialState(paths storepaths.Paths) bool {
 	identityDir := paths.ProductDir()
 	entries, err := os.ReadDir(identityDir)
 	if os.IsNotExist(err) {

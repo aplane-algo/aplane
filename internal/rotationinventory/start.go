@@ -24,7 +24,7 @@ import (
 // publication, close, and snapshot cleanup are separate later phases.
 func StartRotation(
 	paths storepaths.Paths,
-	identityID string,
+
 	kr *crypto.Keyring,
 	passphrase []byte,
 ) (*Snapshot, error) {
@@ -44,14 +44,14 @@ func StartRotation(
 	}
 	baseline, err := ReconcileBaselineForPreflight(
 		paths,
-		identityID,
+
 		current,
 		kr,
 	)
 	if err != nil {
 		return nil, err
 	}
-	report, err := ScanForSnapshot(paths, identityID, kr)
+	report, err := ScanForSnapshot(paths, kr)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func StartRotation(
 		}
 	}
 
-	anchors, err := collectHistoricalAnchors(paths, identityID, current, kr)
+	anchors, err := collectHistoricalAnchors(paths, current, kr)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func StartRotation(
 			if buildErr != nil {
 				return crypto.RotationSnapshotReference{}, buildErr
 			}
-			ref, writeErr := WriteSnapshot(paths, identityID, snapshot, target)
+			ref, writeErr := WriteSnapshot(paths, snapshot, target)
 			if writeErr != nil {
 				return crypto.RotationSnapshotReference{}, writeErr
 			}
@@ -115,7 +115,7 @@ func StartRotation(
 
 func collectHistoricalAnchors(
 	paths storepaths.Paths,
-	identityID, current string,
+	current string,
 	kr *crypto.Keyring,
 ) ([]crypto.HistoricalGenerationAnchor, error) {
 	anchors := kr.HistoricalGenerationAnchors()

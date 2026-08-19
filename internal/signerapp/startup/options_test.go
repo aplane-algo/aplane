@@ -32,7 +32,7 @@ func TestResolveUnlockConfigPrefersIdentityScoped(t *testing.T) {
 		t.Fatalf("SaveUnlockConfig() error = %v", err)
 	}
 
-	got, err := ResolveUnlockConfig(root, "alice", &cfg)
+	got, err := ResolveUnlockConfig(root, &cfg)
 	if err != nil {
 		t.Fatalf("ResolveUnlockConfig() error = %v", err)
 	}
@@ -48,7 +48,7 @@ func TestResolveUnlockConfigFallsBackToGlobal(t *testing.T) {
 	cfg.PassphraseCommandArgv = []string{"global-pass", "/tmp/global"}
 	cfg.PassphraseCommandEnv = map[string]string{"GLOBAL": "1"}
 
-	got, err := ResolveUnlockConfig(t.TempDir(), "alice", &cfg)
+	got, err := ResolveUnlockConfig(t.TempDir(), &cfg)
 	if err != nil {
 		t.Fatalf("ResolveUnlockConfig() error = %v", err)
 	}
