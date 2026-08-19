@@ -23,7 +23,7 @@ This document describes durable key and key type states that affect:
 
 - whether an identity can discover or generate a key type,
 - whether an existing key can sign,
-- what restore preview/recover/review/activate may write,
+- what restore preview/apply/rollback/reconcile may write,
 - how disabled or conflicting key type records behave,
 - which warnings are provenance-only.
 
@@ -38,9 +38,11 @@ and signing.**
 
 Templates and key type state records are generation/catalog data. They are not
 signing authority for an already-created key. A current-format LogicSig key file
-stores its bytecode, salt counter, signing metadata, creation parameters, and
-base signing provider reference where needed. The signer must never reconstruct
-missing signing authority from a current template or library entry.
+stores its final bytecode, derivation contract, signing metadata, creation
+parameters, and base signing provider reference where needed. Current
+compiler-auto-salted keys omit `salt_counter`; compatible manual-counter keys
+retain it. The signer must never reconstruct missing signing authority from a
+current template or library entry.
 
 This separation is deliberate:
 
@@ -57,7 +59,7 @@ This separation is deliberate:
 | Object | Durable location | Authority |
 |---|---|---|
 | Native key file | `identities/<identity>/keys/<address>.key` | Native signing authority. |
-| LogicSig key file | `identities/<identity>/keys/<address>.key` | LogicSig bytecode, salt, signing metadata, and any private DSA key material. |
+| LogicSig key file | `identities/<identity>/keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, and any private DSA key material. |
 | Sentry witness credential | `identities/<identity>/keys/<witness_key_id>.sen` | Witness key in sentry custody; component-signing authority for sentry-role `/sign/component`, never an Algorand spending account. |
 | Witness public sidecar | `identities/<identity>/keys/<witness_key_id>.wit.json` | Canonical public witness reference for a local sentry key. |
 | External contract-admin witness | Operator-controlled `<witness_key_id>.wit`, outside signer data | The same Falcon witness form in standalone custody; owned only by `aprekey`, never by signer or `apstore`. |
@@ -69,7 +71,7 @@ This separation is deliberate:
 | Installed YAML template | `identities/<identity>/keytypes/<key_type>.template` | Encrypted generation source for that identity after reload. |
 | Deleted key archive | `identities/<identity>/deleted/keys/` | Removed key files; outside active scans. |
 | Deleted template archive | `identities/<identity>/deleted/keytypes/` | Removed template files; outside active scans. |
-| Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer identities install the bundled Falcon allowlist v1 source during initialization; other entries require identity-local import/enablement. |
+| Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer stores install the bundled Falcon allowlist v1 source into the product identity during initialization; other entries require identity-local import/enablement. |
 | Compiled provider | Go provider registry and key type catalog | Binary capability; identity visibility may be default-enabled or opt-in. |
 | Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; template YAML is not included. |
 
@@ -249,12 +251,12 @@ key is rejected during reload rather than published as a signable key.
 | Role-forbidden key file | Key type is valid, but the node role does not allow that key class. | No; reload rejects the inventory conflict. | Restore/generation should refuse unless the destination node role allows that key class. |
 | Unknown key type | Payload names a key type unsupported by the current binary. | No. | Restore fails for that key unless support exists. |
 | Native key valid | Native key payload has valid key material and canonical key type. | Yes on signer nodes. | Restores directly onto signer nodes. |
-| DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
-| Generic LogicSig key valid | Payload has stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
+| DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
+| Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Sentry key valid | Payload category/type is a sentry key and Witness Key ID is canonical. | Only through sentry-role component signing on sentry nodes; normal `/sign` and spending paths reject it. | Restores as a sentry key on sentry nodes, regenerating the public sidecar; never as a spending account. |
 | Bounded account key valid | DSA LogicSig key whose bytecode embeds an external contract-admin public key and whose v2 metadata derives the matching Contract Admin Key ID and program binding. | Pure spends use signer-held authority; admin-key operations additionally require external completion through `aprekey`. | Restores from durable bounded metadata. The external `.wit` artifact is never part of signer backup or restore. |
 | Guarded account key valid | DSA LogicSig key whose bytecode embeds the sentry public key. | Only on signer nodes through guarded orchestration: user component signature, sentry component signature, local assembly. | Restores from stored bytecode and metadata. |
-| LogicSig missing `salt_counter` | Payload has LogicSig bytecode but no salt counter. | No; scan/verify/restore reject. | Restore rejects. |
+| LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, a manual-counter key omits `salt_counter`, or an `algod_v13_auto_salt` key includes one or stores pre-v13 bytecode. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore rejects instead of reconstructing from template. |
 | DSA key missing supported base provider | DSA LogicSig names a `base_key_type` not registered in the current binary. | No. | Restore fails for that key unless the base provider is supported. |
@@ -265,12 +267,12 @@ key is rejected during reload rather than published as a signable key.
 
 | Transition | Preconditions | Write or runtime action | Result |
 |---|---|---|---|
-| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create canonical account `.key` or sentry witness `.sen`; LogicSig generation stores bytecode, salt, signing metadata, creation params, and optional template fingerprint. | Credential becomes active after reload/scan. |
+| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create canonical account `.key` or sentry witness `.sen`; LogicSig generation stores final bytecode, derivation metadata, signing metadata, creation params, and optional template fingerprint. | Credential becomes active after reload/scan. |
 | Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write the category-selected canonical managed credential. | Credential becomes active after reload/scan. |
 | Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.sen` to `deleted/keys/`. | Credential leaves active scans. |
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
 | Restore preview | Managed archive and passphrase are valid. | Authenticate and inspect complete credential payloads without mutation. | Reports addresses, key types, destination presence, errors, and role mismatches. |
-| Restore apply | Every selected credential validates and replacement conflicts are explicitly accepted. | Mint one generation containing credential changes only, commit it with a single durable `CURRENT` flip, then reload. | All selected credentials become active together; an uncommitted attempt leaves the parent active, and reload failure automatically rolls back to it. |
+| Restore apply | Every selected credential validates and replacement conflicts are explicitly accepted. | Mint one generation containing credential changes only, commit it with a single durable `CURRENT` flip, then reload. | All selected credentials become active together; an uncommitted attempt leaves the parent active, and ordinary reload failure rolls back to it. If rollback, durability confirmation, or reconciliation cannot complete, signing enters recovery mode. |
 | Restore rollback | Current generation is exactly a clean, rollback-eligible `credential-restore`. | Reconstruct the sealed parent into a fresh current-term rollback generation. | Restores the pre-restore credential state without repointing at historical ciphertext; rollback generations are not rollback-eligible. |
 | Unlock/reload | The keyring is open. | Verify node role integrity, register enabled templates, scan key files, validate node inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |

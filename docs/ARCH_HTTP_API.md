@@ -12,11 +12,11 @@ clients must use ordinary signing followed by client-side algod simulation.
 This is a coordinated breaking change: clients that call the removed routes
 receive `404` and must be upgraded with apsigner.
 
-The product-facing HTTP API is a single-signer API. Internally, successful
-token authentication resolves an identity and every authenticated handler routes
-to that identity's runtime. In product use this is the product identity
-(`default`). Non-product identity routing exists as backend plumbing and test
-coverage.
+The product-facing HTTP API is a single-signer API. Successful token
+authentication maps to the product principal, and every authenticated handler
+targets the one product runtime (`default`). Internal request/resource types
+remain identity-attributed for authorization and audit, but non-default target
+identities are rejected.
 
 ## Endpoints
 
@@ -324,8 +324,10 @@ the request context and withdraw any pending manual approval prompt. This
 tracking is not a durable request table, not a polling API, and not an exposed
 async signing state machine.
 
-Only live synchronous `/sign` requests are cancelable. Once a request is no
-longer live, later `/sign/cancel` calls return `state:"not_found"`.
+Only live synchronous `/sign` requests and approval-bearing user or
+bounded-base `/sign/component` requests are cancelable. Sentry-only component
+requests and assembly requests are correlation-only. Once a cancelable request
+is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
 `/plan` response (`signerapi.GroupPlanResponse`):
 
@@ -506,7 +508,7 @@ neither is accepted as a separate creation input.
 | Unknown address / missing key | 400 |
 | Missing key on delete | 404 |
 | LogicSig key file missing `signing_metadata_version` when used for signing | 500 |
-| LogicSig key file missing `salt_counter` | Rejected during scan/restore; may surface as unknown address or restore failure |
+| LogicSig key file has a missing or inconsistent derivation record (`lsig_derivation`, plus `salt_counter` only for compatible manual-counter keys) | Rejected during scan/restore; may surface as unknown address or restore failure |
 | LogicSig key file bytecode derives an on-curve address | Rejected during scan/restore; may surface as unknown address or restore failure; if detected during signing, 500 |
 | Internal provider failure | 500 |
 

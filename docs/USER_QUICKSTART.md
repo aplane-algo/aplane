@@ -141,7 +141,7 @@ Navigate to the admin panel. Since the approval window is small, hit F4 to zoom 
 Approve and zoom back out with F4 again. In the shell, you see the transaction results. If you copy the
 transaction ID and paste it into Lora at https://lora.algokit.io/testnet, you
 will see the transaction. If you click on "Group" you can see the entire Falcon PQ group, including
-the "dummy" transactions that Algorand Falcon transactions require.
+the resource "dummy" transactions that this Falcon LogicSig flow requires.
 
 ![Quickstart screenshot 5](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/qs5.png)
 
@@ -149,11 +149,12 @@ This proves the signer can build, sign, and submit a real testnet transaction wi
 
 ## Further Exploration
 
-By default, APlane exposes the `ed25519`, `aplane.falcon1024.v1`, and
-`aplane.falcon1024-allowlist.v1` key types. To try additional LogicSig templates from
+By default, APlane exposes the native `ed25519` and `falcon1024` key types plus
+the `aplane.falcon1024.v1` and `aplane.falcon1024-allowlist.v1` LogicSig key
+types. To try additional LogicSig templates from
 the bundled library, open the signer admin pane, press `s` for settings, then
 press `k` for key types. The KeyType Library lets you enable additional
-compiled providers and templates for the current identity.
+compiled providers and templates for the product store.
 
 For more detail, see [USER_KEYTYPES.md](USER_KEYTYPES.md).
 
@@ -172,9 +173,9 @@ server without touching `~/.codex`.
 Start your MCP-capable agent in this directory. It will use an instance of the
 shell in "MCP mode" as the MCP server.
 
-If you connect an agent through that MCP server, first ask it to read the
-`mcp_reference` MCP command. That returns the apshell command reference so the
-agent can inspect the available command surface before acting. MCP essentially gives the
+If you connect an agent through that MCP server, first ask it to call
+`mcp_manual` for the operating model, then `mcp_reference` for the live apshell
+command surface. MCP essentially gives the
 agent an `execute` command that acts as a general command-line interface, much as humans execute via the 
 command line.
 

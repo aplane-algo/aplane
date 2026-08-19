@@ -36,7 +36,7 @@ This is a one-shot enumeration in the `sign_boundary.tla` style: `Init`
 enumerates every combination of mode (pregrouped-signed / presign-plan),
 per-slot validation outcomes (plan preservation, byte match, ownership mix),
 group-shape and digest outcomes, and gate decisions (interactive review
-outcome including the non-interactive context; apsigner approval);
+outcome including the non-interactive context; apsigner authorization outcome);
 `Submitted` is a transcription of the code's accept/reject logic
 (`apshellcli/external_plugins.go`, `engine/plugin_pregrouped.go`,
 `engine/plugin_presign.go`, `engine/plugin_signing.go`). TLC verifies that no
@@ -68,9 +68,11 @@ The restored spec passes.
   excludes them from the domain rather than modeling the redirect.
 - **The presign client review is `# "rejected"`, not `= "approved"`**: that
   path deliberately proceeds without a prompt in non-interactive contexts
-  because apsigner's approval is the authoritative gate — the asymmetry with
+  because apsigner's policy/approval pipeline is the authoritative gate — the asymmetry with
   pregrouped-signed (which fails closed) is the deliberate design, and PS7
-  rests on the apsigner approval for this mode.
+  rests on the apsigner authorization outcome for this mode. That abstract
+  `approved` outcome includes explicit policy, operator approval, or the
+  ordinary `user_auto_approve:true` default.
 - **Group-level abstraction for pregrouped.** Reorder, subset, substitution,
   and injection all manifest as the recomputed-digest mismatch, so a single
   `digestOK` boolean is the honest abstraction; the concrete cases are
@@ -101,7 +103,9 @@ module.
 It proves that over every enumerated combination of validation outcomes and
 gate decisions, the modeled decision procedure never lets plugin-produced
 bytes reach submission without group-digest integrity, plan preservation,
-byte-matched plugin slots, and the mode's human gate. It does not prove the
+byte-matched plugin slots, and the mode's authorization gate. The
+pregrouped-signed gate is necessarily human; the presign-plan gate is the
+ordinary signer policy/approval pipeline. It does not prove the
 Go code implements the procedure (code-review responsibility, anchored by
 the PS traceability rows), and it does not claim anything about the honest
 gaps recorded in FORMAL_PLUGIN_SIGNING_MODEL.md (no local signature

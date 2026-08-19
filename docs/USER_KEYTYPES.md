@@ -33,7 +33,7 @@ it is not a dedicated compiled policy.
 | **Contract-admin witness key** | The same witness key form in a standalone `.wit` container, used only for a bounded admin operation. It is not imported into the signer. |
 
 Both roles use `aplane.witness-falcon1024.v1` and the same Witness Key ID
-derivation. Custody keeps their capabilities separate: hot signer `.key`
+derivation. Custody keeps their capabilities separate: hot signer `.sen`
 records use durable category `witness` and can sign only the sentry component
 domain; standalone `.wit` files can sign only the bounded admin domain. Never
 reuse one witness keypair across these roles. Local generation rejects known
@@ -46,28 +46,28 @@ APlane has two optional key type paths:
 | Kind | Example | Where definition lives | How to enable |
 |---|---|---|---|
 | Compiled provider | `aplane.ed25519.v1` | Go code in the current binary | `apadmin keytype enable` or apadmin KeyType Library |
-| YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apadmin template import` or apadmin KeyType Library |
+| YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted product-local `.template` after import | `apadmin template import` or apadmin KeyType Library |
 
 Default-enabled compiled providers, such as `ed25519`, `falcon1024`, and
 `aplane.falcon1024.v1`, are available without extra steps on signer nodes.
-Library-visible compiled providers are present in the binary but require an
-identity-local enablement record before that identity can discover or generate
+Library-visible compiled providers are present in the binary but require a
+product-local enablement record before the signer can discover or generate
 them.
 
 YAML templates are different: a library YAML file is only an install source. It
-does not become an active key type until it is imported into an identity store.
+does not become an active key type until it is imported into the product store.
 Signer stores are initialized with `aplane.falcon1024-allowlist.v1` installed
 and enabled from the bundled library source. Any missing library template can
 be imported explicitly with the template-management commands below.
 
 ## Operator Mental Model
 
-Normal operator screens answer one primary question: can this identity create
+Normal operator screens answer one primary question: can this product runtime create
 new keys of this type right now?
 
 | Display | Meaning |
 |---|---|
-| Enabled | The identity can discover this key type and generate new keys. |
+| Enabled | The signer can discover this key type and generate new keys. |
 | Disabled | The key type needs to be enabled, imported, or repaired before new keys can be generated. |
 | Template mismatch | An existing key has an informational template-provenance note, such as a missing or changed creation template. The precise reason is shown in details. |
 
@@ -78,9 +78,9 @@ of that type.
 
 The apadmin KeyType Library and `apadmin keytype` CLI use `Enable` and
 `Disable` for both compiled providers and installed YAML templates. Internally,
-compiled providers write or remove an identity enablement record, while YAML
+compiled providers write or remove a product enablement record, while YAML
 templates keep their encrypted `.template` file installed and toggle the
-identity state record. Operators do not need separate verbs for those storage
+product state record. Operators do not need separate verbs for those storage
 details.
 
 ## Useful Commands
@@ -137,7 +137,7 @@ stable.
 ## Compiled Providers
 
 Compiled providers are registered from Go code when `apsigner` starts. Some are
-default-enabled; others are library-visible and require identity-local
+default-enabled; others are library-visible and require product-local
 enablement.
 
 Enable a library-visible compiled provider:
@@ -182,7 +182,7 @@ Disable a library-visible compiled provider:
 apadmin -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
 ```
 
-Disabling removes the identity enablement record after checking that no
+Disabling removes the product enablement record after checking that no
 existing keys use that key type.
 
 `keytype enable` can also re-enable an already-installed disabled YAML template.
@@ -253,15 +253,17 @@ Import a YAML template:
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
 ```
 
-Import encrypts the YAML into the identity's keystore and enables the key type
-for that identity.
+Import encrypts the YAML into the product keystore and enables the key type
+for the signer.
 
-Fresh signer identities already include `aplane.falcon1024-allowlist.v1`;
-`template import` remains the path for existing identities that do not have it
+Fresh signer stores already include `aplane.falcon1024-allowlist.v1`;
+`template import` remains the path for stores that do not have it
 and for the other bundled templates such as `aplane.falcon1024-allowlist.v2`.
 
-Generated LogicSig keys store their salted bytecode and selected off-curve
-salt counter in the `.key` file. They also store the signing-argument schema
+Generated LogicSig keys store the final compiler-auto-salted off-curve bytecode
+and its derivation marker in the `.key` file; current auto-salted records omit
+`salt_counter`. Compatible manual-counter records retain the counter. Keys also
+store the signing-argument schema
 as `signing_args`. That schema is captured from the template/provider
 `runtime_args` when the key is created. The installed template is required for
 additional key creation and provenance checks, but not for signing an existing
@@ -292,7 +294,7 @@ Remove an installed template:
 apadmin -d $APSIGNER_DATA template remove example.my_escrow.v1
 ```
 
-Removal is allowed only when no identity keys use that key type, and it
+Removal is allowed only when no product keys use that key type, and it
 archives the encrypted template rather than discarding it.
 
 The apadmin KeyType Library can also disable and re-enable installed YAML
@@ -313,7 +315,7 @@ enable, remove, and reload, see
 
 On unlock or reload, `apsigner`:
 
-1. Reads identity key type state records.
+1. Reads product key type state records.
 2. Skips disabled installed templates.
 3. Decrypts enabled installed YAML templates.
 4. Registers their providers before scanning keys.
@@ -323,7 +325,7 @@ The state records are what `apsigner` trusts. A stray encrypted `.template`
 file without a matching state record is ignored on purpose.
 
 After successful template or key type changes through `apadmin`,
-the daemon reloads the identity runtime.
+the daemon reloads the product runtime.
 
 ## Warnings And Recovery
 
@@ -335,7 +337,7 @@ Example:
 conflicting compiled key type records ignored on reload: [aplane.ed25519.v1]
 ```
 
-This means the identity has an enabled compiled-provider state record whose
+This means the product has an enabled compiled-provider state record whose
 stored fingerprint and the current provider fingerprint are the same fingerprint
 version but differ — a genuine provider-definition (behavior) change. The
 fingerprint is behavior-only and versioned, so a pure rename of a key type,
@@ -400,7 +402,8 @@ Use the full canonical key type in command input. On disk, in backups, in
 policy files, in IPC/HTTP JSON, in SDK-facing fields, and in UI display, the key
 type remains canonical.
 
-Existing key files keep their own stored LogicSig bytecode, off-curve salt
-counter, and signing metadata. Enabling, disabling, importing, or removing a
+Existing key files keep their own stored LogicSig bytecode, derivation metadata
+(including a manual salt counter only for compatible manual-counter records),
+and signing metadata. Enabling, disabling, importing, or removing a
 key type controls subsequent discovery and generation; it does not rewrite
 existing key files.

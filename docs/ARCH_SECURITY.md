@@ -2,19 +2,20 @@
 
 This document describes APlane's security architecture: authentication channels,
 SSH transport security, passphrase and key handling, audit, cache integrity, and
-defense-in-depth controls. The detailed principal/group/grant authorization
-model is defined in [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+defense-in-depth controls. The closed single-product authorization model is
+defined in [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
 
 ## Overview
 
 APlane uses a multi-layer security model designed for distinct use cases.
 
-**Authorization:** Runtime code uses the grant-backed `auth.Authorizer` path.
-Product compatibility maps credentials to the reserved `system:product-admin`
-principal and bootstrap grants. See
+**Authorization:** Runtime code uses the `auth.Authorizer` path. Product
+credentials map to the reserved `system:product-admin` principal, and the
+closed product authorizer requires exact membership in its explicit action
+allowlist. See
 [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) for the detailed model.
 
-**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for identity-scoped signing policy in `policy.yaml` and sentry component policy in sentry-domain `policy.yaml`, with guards such as rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings, and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests.
+**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for product-scoped signing policy in `policy.yaml` and sentry component policy in sentry-domain `policy.yaml`, with guards such as rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings, and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests.
 
 **Deployment scope:** identity model is described in [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model).
 
@@ -51,7 +52,7 @@ Used by apshell and other HTTP clients for signing requests.
 ┌─────────────────────────────────────────────────────────────────┐
 │  Step 2: Authorization (are they allowed?)                      │
 │  Authorizer.Authorize(identity, action, resource)               │
-│  └── Grant-backed authorizer checks bootstrap/product grants    │
+│  └── Product authorizer checks its explicit action allowlist    │
 │  └── Returns nil (allowed) or 403 Forbidden                     │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -71,18 +72,18 @@ Used by apshell and other HTTP clients for signing requests.
 - 32 bytes (256 bits) of cryptographic randomness
 - Hex-encoded (64 characters)
 - Generated on first server startup if not present
-- Stored in `identities/<product identity>/aplane.token` (e.g., `identities/default/aplane.token`) with mode 0600
+- Stored in `identities/default/aplane.token` with mode 0600
 
 **Token Lifecycle and Limitations:**
 
-One token serves each active signer identity. In product mode that is the
-product identity token, so all clients for that identity share the same credential.
+One product token serves the fixed `default` signer runtime, so all clients
+share the same bearer credential.
 
 | Aspect | Behavior |
 |--------|----------|
 | Scope | One product token serves HTTP API and SSH tunnel authentication for `default` |
-| Revocation | Operator can revoke/regenerate the identity token from `apadmin`; clients must re-run `request-token` or otherwise receive the new token |
-| Per-client differentiation | None within an identity; all clients for that identity share the same credential |
+| Revocation | Operator can revoke/regenerate the product token from `apadmin`; clients must re-run `request-token` or otherwise receive the new token |
+| Per-client differentiation | None at the bearer-token layer; all clients share the same credential |
 | Compromise impact | Bearer access to HTTP wherever the signer API is reachable; normal SSH tunnel access also requires an enrolled SSH key |
 
 **Client Token Handling:**
@@ -236,7 +237,7 @@ When apshell connects to a remote apsigner, it uses an SSH tunnel with configura
 ### SSH Authentication Model
 
 SSH authentication requires **both** a valid API token and a valid public key (2FA).
-The SSH username is the non-secret identity ID. The bearer token never appears
+The normal SSH username is the fixed non-secret value `default`. The bearer token never appears
 in SSH metadata; the client proves possession through a programmatic,
 host-key-bound keyboard-interactive exchange after public-key authentication.
 
@@ -245,7 +246,7 @@ host-key-bound keyboard-interactive exchange after public-key authentication.
 ```
 Client                                               Server
   │                                                       │
-  │  1. SSH connect (username=identity, pubkey=KEY)       │
+  │  1. SSH connect (username=default, pubkey=KEY)        │
   │──────────────────────────────────────────────────────>│
   │                                                       │
   │  2. Verify enrolled key possession; partial success  │
@@ -326,8 +327,8 @@ attempt; garbage-collected SDKs cannot guarantee memory zeroization.
 All SSH connections are logged for audit purposes:
 
 ```json
-{"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","identity_id":"default","target_identity_id":"default","principal":"default","requester_principal":"default","remote_addr":"192.168.1.5:54321","reason":"default"}
-{"timestamp":"2026-01-18T11:45:00Z","event":"SESSION_DISCONNECTED","identity_id":"default","target_identity_id":"default","principal":"default","requester_principal":"default","remote_addr":"192.168.1.5:54321","reason":"default"}
+{"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","identity_id":"default","target_identity_id":"default","principal":"system:product-admin","requester_principal":"system:product-admin","remote_addr":"192.168.1.5:54321","reason":"default"}
+{"timestamp":"2026-01-18T11:45:00Z","event":"SESSION_DISCONNECTED","identity_id":"default","target_identity_id":"default","principal":"system:product-admin","requester_principal":"system:product-admin","remote_addr":"192.168.1.5:54321","reason":"default"}
 ```
 
 Logged information:
@@ -335,7 +336,7 @@ Logged information:
 - Key fingerprint (on registration)
 - Connect/disconnect events
 
-**Note:** The SSH username is the non-secret identity ID. The SSH auth-log
+**Note:** The SSH username is the fixed non-secret product identity ID. The SSH auth-log
 callback records only remote address, authentication method, and outcome; it
 does not log the username, interactive responses, or authentication errors.
 
@@ -538,11 +539,11 @@ type Resource struct {
 ```
 
 **Implementation:**
-- `internal/authz.Authorizer` - Grant-backed authorization over principals, groups, grants, identities, and actions
-- `authz.NewProductSingleAuthorizer()` - Product bootstrap mode mapping compatibility credentials to the reserved `system:product-admin` principal and explicit bootstrap grants
+- `internal/authz.ProductAuthorizer` - exact principal, action-allowlist, and product-resource checks with no mutable principal/group/grant graph
+- `authz.NewProductSingleAuthorizer()` - maps product credentials to the reserved `system:product-admin` principal and a copied explicit action allowlist
 
 See [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) for the action vocabulary,
-principal/group/grant model, denial semantics, and enforcement points.
+product-principal model, denial semantics, and enforcement points.
 
 ### Audit Logger
 
@@ -587,7 +588,7 @@ object per line, syncs each write, and rotates around the current 10 MB limit.
 
 Audit entries carry attribution fields:
 
-- `identity_id`: fixed `default` attribution for product identity work
+- `identity_id`: fixed `default` attribution for product-runtime work
 - `target_identity_id`: signing identity targeted by the action
 - `principal`: principal field
 - `requester_principal`: principal requesting the action
@@ -1083,7 +1084,7 @@ submission. See [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 | LogicSig delegation | "Program" prefix blocked (prevents standing spend authorization) |
 | MITM on SSH | TOFU host key verification via known_hosts |
 | Cache tampering | HMAC-signed cache files (see below) |
-| Policy tampering | `policy.yaml.hmac` and `policy.yaml.hmac` authenticate identity-scoped policy documents with keys derived from the identity's current term key; missing or mismatched policy integrity fails closed |
+| Policy tampering | `identities/default/policy.yaml.hmac` authenticates the product policy document with a key derived from the product store's current term key; missing or mismatched policy integrity fails closed |
 | Plugin filesystem access | External plugins require OS sandboxing and checksum verification |
 | Manual production startup | `.prod` signer data marker blocks startup unless systemd-managed |
 
@@ -1158,8 +1159,9 @@ The multi-channel design separates concerns:
 
 **Admin endpoint separation:** `/admin/generate` and `/admin/keys` use
 separate stable actions (`keys.generate`, `keys.delete`) from signing
-(`sign.request`). Key management operations can be granted only to elevated
-principals or groups so signing-only clients cannot generate or delete keys.
+(`sign.request`). The closed product allowlist names each action explicitly, so
+adding a known action does not accidentally expose it; the current product
+token intentionally represents the one full product administrator.
 
 Authorization behavior is documented in
 [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).

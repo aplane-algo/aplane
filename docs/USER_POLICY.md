@@ -1,10 +1,10 @@
 # Signer Policy
 
-Signer policy is the identity-scoped safety layer that decides whether a
+Signer policy is the product-scoped safety layer that decides whether a
 signing request should be rejected, forced through operator review, explicitly
 approved, or left to the operator default.
 
-Policy is stored beside the identity keys:
+Policy is stored beside the product keys at the compatibility `default` path:
 
 ```text
 identities/default/policy.yaml
@@ -50,7 +50,7 @@ resulting runtime policy immediately.
 
 Use `apadmin policy` for a standalone guided or scriptable production client.
 It connects through authenticated admin IPC (or SSH with the normal
-`apadmin --remote` flag), selects the daemon's node role, unlocks the identity
+`apadmin --remote` flag), selects the daemon's node role, unlocks the product
 when required, and never needs filesystem access to the private signer store.
 
 ```bash
@@ -180,7 +180,7 @@ applied.
 
 | Field | Meaning |
 |-------|---------|
-| `reject_foreign_rekey` | Signer-domain only. Reject txns whose non-zero `RekeyTo` target is not held by this signer identity. Defaults to `true`. |
+| `reject_foreign_rekey` | Signer-domain only. Reject txns whose non-zero `RekeyTo` target is not held by this signer product. Defaults to `true`. |
 | `reject_rekey` | Sentry-domain only. Coarse deny-all switch for txns with non-zero `RekeyTo`. Defaults to `false`; missing `rekey_policy` still denies rekeys. |
 | `rekey_policy` | Sentry-domain only. Allow-list for pure 0 ALGO self-payment rekeys by sender and target. YAML-only. |
 | `reject_close_remainder` | Reject payment txns with non-zero `CloseRemainderTo`. Defaults to `false`. |
@@ -360,7 +360,7 @@ non-uniform `limits_by_network`, clawback `asset_sources` /
 edit overrides.
 
 Overrides let one concrete signing key use tighter or looser policy than the
-identity-wide policy. The override is selected by the auth address that will
+product-wide policy. The override is selected by the auth address that will
 actually sign, not necessarily by the transaction sender.
 
 Example:
@@ -401,29 +401,29 @@ Override rules:
 
 | Field kind | If omitted in override | If present in override |
 |------------|------------------------|------------------------|
-| Scalar fields | Inherit identity-wide value | Replace identity-wide value |
+| Scalar fields | Inherit product-wide value | Replace product-wide value |
 | `transfer_policy.enabled` | Invalid if `transfer_policy` is present | Required explicit `true` or `false` |
-| `transfer_policy.on_no_route` | Inherit identity-wide value | Replace identity-wide value |
-| `transfer_policy.close_on_no_route` | Inherit identity-wide value | Replace identity-wide value |
-| `transfer_policy.clawback_on_no_route` | Inherit identity-wide value | Replace identity-wide value |
-| `transfer_policy.routes` | Inherit identity-wide routes | Replace the entire route list |
+| `transfer_policy.on_no_route` | Inherit product-wide value | Replace product-wide value |
+| `transfer_policy.close_on_no_route` | Inherit product-wide value | Replace product-wide value |
+| `transfer_policy.clawback_on_no_route` | Inherit product-wide value | Replace product-wide value |
+| `transfer_policy.routes` | Inherit product-wide routes | Replace the entire route list |
 | `transfer_policy.routes: []` | Not applicable | Clear all inherited routes for that key |
 | `address_sets` and `asset_sets` | Inherit by name | Add new names or replace matching names |
-| `blocked_destinations` | Inherit identity-wide list | Add to the inherited list |
+| `blocked_destinations` | Inherit product-wide list | Add to the inherited list |
 | Nested `key_overrides` | Not applicable | Rejected |
 
 The sharp edge is inheritance. If an override omits `routes`, it still uses the
-identity-wide routes. If it sets `routes`, the listed routes are a replacement,
+product-wide routes. If it sets `routes`, the listed routes are a replacement,
 not an append. If it sets `routes: []` while inheriting `on_no_route: reject`,
 then covered transfer movements for that key have no matching routes and
 are rejected, except for routing-exempt self no-op shapes.
 
 `blocked_destinations` can only become stricter in an override. An override can
-add blocked destinations but cannot remove identity-wide blocked destinations.
+add blocked destinations but cannot remove product-wide blocked destinations.
 
 Use overrides when one key has materially different signing constraints, such
 as a LogicSig account whose TEAL enforces a separate allowlist. Avoid overrides
-when normal identity-wide routes can express the rule; simpler policy is easier
+when normal product-wide routes can express the rule; simpler policy is easier
 to audit.
 
 ## Validation Checklist

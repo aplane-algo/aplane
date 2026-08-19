@@ -58,14 +58,10 @@ aplane/
 │   ├── apshell/
 │   │   └── main.go                    # Thin entrypoint; behavior lives in internal packages
 │   ├── apsigner/
-│   │   ├── audit_test.go              # Signer audit logging tests
-│   │   ├── server_test.go             # HTTP server tests
-│   │   ├── hub_test.go                # Hub state tests
-│   │   ├── admin_test.go              # Admin endpoint tests
-│   │   └── plan_sign_parity_test.go   # Plan/sign parity and group-shaping tests
+│   │   └── deps_test.go               # Thin entrypoint dependency wiring
 │   ├── apstore/
-│   │   ├── ipc_backup_test.go         # Backup IPC command tests
-│   │   ├── ipc_template_keytype_test.go # Template and key type command tests
+│   │   ├── policy_test.go             # Offline policy-integrity commands
+│   │   ├── permissions_test.go        # Store permission commands
 │   │   └── store_commands_test.go     # Local store command tests
 │   ├── appass/
 │   │   ├── actions_test.go            # Passphrase helper setup tests
@@ -117,6 +113,11 @@ aplane/
 │   │   ├── common_test.go            # Common signing tests
 │   │   ├── lsig_helpers_test.go      # LogicSig helper tests
 │   │   └── registry_test.go          # Signing provider registry tests
+│   ├── signerapp/daemon/
+│   │   ├── http_auth_test.go          # Product authentication/authorization tests
+│   │   ├── plan_sign_parity_test.go   # Plan/sign parity and group-shaping tests
+│   │   ├── ipc_backup_test.go         # Admin-protocol backup tests
+│   │   └── ssh_admin_shape_test.go    # Loopback SSH admin transport shape
 │   ├── keystore/
 │   │   ├── file_test.go              # File keystore tests
 │   │   └── session_test.go           # Key session tests
@@ -406,6 +407,12 @@ For either FNet target, set `TEST_FUNDING_MNEMONIC` to a native Falcon account
 funded on FNet. The same native address may be used on another v42 ledger, but
 it must hold funds independently there. Never use the mnemonic for production
 funds.
+
+Corridor integration reuses a clean `Corridor Test Asset` (`CORR`, total 10)
+already created by the funding account on persistent networks. It refuses to
+create another durable asset there. Pre-seed one clean fixture if the account
+has none; LocalNet alone may create the fixture once on its disposable ledger
+and then reuses it for the run.
 
 `APSIGNER_PASSPHRASE` is a general-purpose environment variable for
 non-interactive local `apstore` bootstrap and local `apadmin` batch usage (not

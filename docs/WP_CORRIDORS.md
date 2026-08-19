@@ -4,11 +4,37 @@
 
 *Version 0.4 — Draft*
 
-> Status: This whitepaper is design framing, not the shipped product contract.
+> Status: This whitepaper preserves exploratory design framing, including
+> variants that are not shipped. Normative words below apply to that proposed
+> model, not to the current product contract.
 > See [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md), [ARCH_SENTRY.md](ARCH_SENTRY.md),
 > [USER_KEYTYPES.md](USER_KEYTYPES.md), and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for current behavior and
 > supported key types.
+
+---
+
+## Current product boundary
+
+The shipped Corridor v1 profile is the optional schema-v2 template
+`aplane.corridor.v1`. It has one fixed combination of controls rather than the
+profile matrix explored below:
+
+- the program commits to a fixed-depth Merkle root; a non-self spend supplies
+  a signer-derived proof for a generation-time recipient;
+- every spend requires the Falcon spending signature and a required Falcon
+  sentry signature;
+- pure rekey requires both the spending signature and a distinct offline
+  Falcon contract-admin signature, and does not contact the sentry;
+- close, clawback, hybrid rekey-and-spend, and unsupported transaction forms
+  are rejected; decommissioning is rekey first, then close under the successor;
+- the optional amount/window bounds, optional or Ed25519 guard, direct close,
+  and escape-hatch variants discussed below are not Corridor v1 features.
+
+The frozen wire, program, metadata, custody, and choreography contract is in
+[ARCH_CORRIDOR.md](ARCH_CORRIDOR.md) and
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). The remainder of this paper should
+be read as broader product/design rationale and possible future variants.
 
 ---
 
@@ -75,9 +101,9 @@ configuration and template version.
 
 This document describes the account primitive, the authorization model, the
 corridor and gate layers, topology governance, the security model, and the
-v1 scope. It is grounded in the APlane signing infrastructure, whose
-guarded-signing subsystem provides the production implementation of the
-gate layer. A glossary mapping the corridor vocabulary onto production
+v1 scope as originally proposed. It is grounded in the APlane signing
+infrastructure, but its broader profile set is not the shipped Corridor v1
+contract. A glossary mapping the conceptual corridor vocabulary onto product
 terminology appears in the appendix.
 
 ## 1. Design Principles
@@ -422,10 +448,11 @@ scanning.
 
 ## Appendix: Glossary — The Corridor Model
 
-Production terminology (sentry, guarded account, component signature,
-sentry-domain policy) remains canonical and unchanged. The corridor
-vocabulary is the system's explanatory layer; each term maps exactly onto
-one architectural element, and this document uses both consistently.
+Production terminology (sentry, component signature, sentry-domain policy,
+bounded authorization, and bounded-sentry flow) remains canonical. The
+corridor vocabulary is an explanatory layer; the mappings below are
+conceptual and do not override the shipped v1 differences listed at the top of
+this paper.
 
 | Term | Maps to | Definition |
 |---|---|---|

@@ -78,7 +78,7 @@ server-added dummy slots.
 `PlanningSnapshot` contains the stable runtime data needed for one planning
 attempt:
 
-- signer identity,
+- product-runtime key metadata,
 - key metadata needed to classify signer-owned slots and LogicSig budgets,
 - network genesis-hash resolver,
 - dummy transaction template and size/budget rules,
@@ -90,8 +90,9 @@ affect planning are equal, including key metadata, LogicSig budget inputs, dummy
 template fields, fee-pooling rules, network resolver, and group construction
 rules.
 
-The snapshot abstracts over locks and reload mechanics. Runtime snapshot
-semantics are modeled separately by the policy and lifecycle models.
+The snapshot abstracts over locks and reload mechanics. Policy snapshot
+semantics are modeled separately; runtime lock and reload behavior remains a
+Go-level contract.
 
 ### Planned Group
 
@@ -175,7 +176,7 @@ separate planning snapshots `s_plan` and `s_sign`. The model does not require
 the caller to prove `EquivalentSnapshot(s_plan, s_sign)`; instead it requires
 that `/sign` re-plans against its own snapshot and uses *that* result for
 policy, approval, and signing. A `/sign` request that observed a tighter
-policy or a different lifecycle/lock state since `/plan` may therefore reject,
+policy or a different runtime lock state since `/plan` may therefore reject,
 require review, or produce different mutation metadata even when the
 caller-supplied request bytes are byte-identical to the earlier `/plan` call.
 There is no caller-presented "plan token" that binds a `/plan` snapshot into
@@ -244,7 +245,8 @@ case: the plugin-owned slots arrive as `foreign` entries carrying
 by this signer (see
 Signing Output Rules). The plugin's own signing of those slots, and the fully
 `pregrouped-signed` all-plugin path that bypasses the signer entirely, are out
-of scope (see [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md) Non-Goals).
+of scope here; their trust boundary is modeled in
+[FORMAL_PLUGIN_SIGNING_MODEL.md](FORMAL_PLUGIN_SIGNING_MODEL.md).
 
 ## Policy and Approval Boundary
 
@@ -424,7 +426,7 @@ ClientSimulateSigningStage(snapshot, request, approval_result) =
   Sign(snapshot, request, approval_result)
 ```
 
-An Always Deny rejection, Always Review prompt, operator denial, lifecycle
+An Always Deny rejection, Always Review prompt, operator denial, runtime-lock
 failure, or unresolved signing slot therefore has the same result regardless
 of the client's intended route.
 
@@ -495,7 +497,8 @@ This model does not prove:
 - filesystem reload ordering,
 - server shutdown and runtime destruction ordering,
 - backup/restore behavior,
-- future witness or compliance-sentry semantics.
+- additional compliance-sentry semantics beyond the current guarded and
+  bounded-sentry flows.
 
 Those belong in separate models or assumptions.
 
@@ -544,5 +547,3 @@ machine-checkable version:
 2. Decide whether passthrough `/plan` responses should be modeled as unsigned
    transaction projections only, or whether signed-byte preservation should be a
    `/sign`-only invariant.
-3. Identify all current tests that already cover each invariant before adding
-   new test cases.

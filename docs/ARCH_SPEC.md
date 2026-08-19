@@ -163,7 +163,7 @@ Documentation notes:
 | Layer | Packages |
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `internal/signerapp/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
-| Engine | `internal/apshellapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
+| Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyeditor`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/rotationinventory`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
@@ -179,6 +179,9 @@ The UI layer is split between thin binary adapters and reusable shell/admin UI p
 
 - `cmd/apshell`: thin binary adapter and composition entry point for flags, provider registration, bootstrap, and mode selection
 - `internal/apshellcli`: REPL/session mechanics, command registry, scripting mode adapters, MCP surface, plugin argument normalization, and shell rendering
+- `cmd/apadmin`: TUI/batch adapter and composition entry point;
+  `internal/apadminapp` owns authenticated noninteractive catalog and store
+  workflows over admin transport
 - `cmd/apconsole`: secure-machine Bubble Tea wrapper for shell/admin/daemon panes, with local sentry nodes using admin plus daemon panes only
 - `internal/signerapp/signertui`: Bubble Tea signer admin UI
 - `cmd/appass`: Bubble Tea passphrase setup UI
@@ -545,7 +548,8 @@ Identity-sensitive runtime settings are owned separately by `internal/signerapp/
 
 - `user_auto_approve`,
 - `lock_on_disconnect`,
-- `passphrase_timeout` (admin idle disconnect timeout).
+- `passphrase_timeout` (admin idle disconnect timeout),
+- `approval_wait` (maximum manual signing approval wait).
 
 Those values are persisted per identity at
 `identities/<identity>/config.yaml` via
@@ -987,7 +991,7 @@ in both modes. See [ARCH_SENTRY.md](ARCH_SENTRY.md).
 | Signer HTTP client (plan, sign, keys) | `internal/signerclient` |
 | Semantic result vocabulary | `internal/appresult`, `internal/apshellapp` |
 | Shared ASA metadata, reference, and amount handling | `internal/asa` |
-| Command registry, parsing adapters, rendering, plugin arg normalization | `internal/apshellcli` |
+| Command registry, parsing adapters, rendering, plugin arg normalization, command-specific safe machine projections | `internal/apshellcli` |
 
 Engine inputs are resolved application values, not raw CLI tokens. Engine outputs are structured data, not terminal text.
 
@@ -1047,14 +1051,16 @@ Rule of thumb:
 The practical client-side split is:
 
 - `internal/apshellapp` owns shell-facing command semantics and application orchestration,
-- `internal/apshellcli` owns command syntax, interactive UX, MCP mode, plugin argument normalization, and final shell rendering,
+- `internal/apshellcli` owns command syntax, interactive UX, MCP mode, plugin argument normalization, final shell rendering, and command-specific safe machine projections,
 - `cmd/apshell` owns binary-level composition and startup delegation,
 - `internal/engine` owns business operations and stateful client runtime behavior,
 - `internal/clientstate` owns cache-backed client mutation state,
 - `internal/addressdisplay` owns alias/rekey-aware address and key-type terminal display formatting,
 - `internal/engine/connect` owns signer connectivity and signer-facing request flow,
 - `internal/asa` owns shared ASA metadata/reference/raw-display handling,
-- `internal/appresult` owns shared structured result and MCP projection.
+- `internal/appresult` owns shared structured result vocabulary and reusable
+  machine-projection types/helpers; `internal/apshellcli` owns the one
+  human/machine command-result boundary and its command-specific allowlists.
 
 The engine boundary is partial rather than absolute:
 
@@ -1616,7 +1622,9 @@ Caches include:
 
 These caches are not interchangeable:
 
-- signer-side ASA metadata cache depends on signer-configured algod endpoints, is shared across signer identities, and has no long-lived process-global in-memory map,
+- signer-side ASA metadata cache depends on signer-configured algod endpoints,
+  is process-wide rather than product-identity state, and has no long-lived
+  process-global in-memory map,
 - signer cache depends on remote signer state; interactive and embedded
   apshell sessions poll authenticated `/status` on the configured
   `signer_status_poll_interval` (default `10s`) and refresh `/keys` when
@@ -1669,7 +1677,17 @@ The repo uses:
   `store_permissions_test.go` pins the audited shared-mode allowlist and keeps
   legacy group-bearing modes out of signer-store writers;
   `kdf_confinement_test.go` pins key-derivation, raw-term-key, test-fixture,
-  and historical-term boundaries,
+  and historical-term boundaries; `single_identity_test.go` pins the removed
+  tenant-selection shapes; `admin_binary_boundary_test.go` and
+  `policy_command_subtraction_test.go` keep live administration and policy
+  ownership in `apadmin` rather than regrowing retired command surfaces;
+  `admin_protocol_boundary_test.go` pins wire/domain/transport
+  dependency direction; `sentry_catalog_test.go` separates signer-owned
+  generation references from client routing discovery;
+  `template_mutation_boundary_test.go` makes `templatelibrary` the sole
+  feature-level template/key-type mutation owner; and
+  `shell_result_boundary_test.go` pins command-only plugin metadata, the shared
+  human/machine result path, and process-local output,
 - the opt-in `test/storeintegration` process harness, invoked through
   `make store-lifecycle-test` and `make store-crash-test`, creates genuine
   blank signer roots without algod or the shared integration fixture;
@@ -1872,9 +1890,13 @@ Strong existing seams:
 
 - `internal/engine` as the client business boundary
 - `internal/apshellapp` as the shell application boundary between `cmd/apshell` and `internal/engine`
+- `internal/apadminapp` as the noninteractive admin application boundary
+  between `cmd/apadmin` and admin transport
 - `internal/clientstate` for client-side cache state and mutation ownership
 - `internal/engine/connect` for remote signer connection state, lifecycle, and signer-facing request flow
-- `internal/appresult` for shared shell/MCP structured result and projection ownership
+- `internal/appresult` for shared structured result vocabulary and reusable
+  machine projections, with command-specific safe allowlists and the final
+  result boundary in `internal/apshellcli`
 - `internal/config` for configuration normalization
 - `internal/keystore` for storage/session separation
 - `internal/protocol` for the compatibility-bearing IPC/SSH wire contract,
@@ -1918,6 +1940,7 @@ Product-level boundaries:
 | Client | `cmd/apshell/main.go`, `internal/apshellcli/registry.go`, `internal/apshellcli/mcp.go`, `internal/apshellcli/status_poll.go`, `internal/shellrepl/*.go` |
 | Client Enrollment / Remote Preflight | `internal/clientenroll/preflight.go`, `cmd/apconsole/preflight.go`, `cmd/apadmin/remote.go` |
 | Shell App | `internal/apshellapp/app.go`, `internal/apshellapp/runtime.go`, `internal/apshellapp/connect.go` |
+| Admin Client App | `cmd/apadmin/main.go`, `cmd/apadmin/admin_batch.go`, `internal/apadminapp/catalog.go`, `internal/apadminapp/session.go`, `internal/apadminapp/store.go` |
 | Engine | `internal/engine/engine.go`, `internal/engine/core.go`, `internal/engine/consensus.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go`, `internal/engine/guarded/submit.go` |
 | Signing | `internal/signerapp/signing/service.go`, `internal/signerapp/signing/planner.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/execution.go`, `internal/signerapp/signing/approval.go` |
 | Native Signature Providers | `internal/signing/ed25519`, `internal/signing/falcon1024/address.go`, `internal/signing/falcon1024/register.go`, `internal/signing/falcon1024/signerreg/*.go`, `internal/signing/falcon1024/signerops/*.go`, `internal/falconparams/params.go` |

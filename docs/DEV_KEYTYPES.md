@@ -20,8 +20,10 @@ and disabled/fingerprint-conflict behavior, see
 ## Signing Authority
 
 **Signing authority lives in the key file, not in the template.** Every
-LogicSig key file stores its compiled bytecode, off-curve salt counter, and
-signing metadata at creation time. Sign-time code uses that stored metadata;
+LogicSig key file stores its final compiled bytecode, derivation record, and
+signing metadata at creation time. Current compiler-auto-salted keys record
+`lsig_derivation: algod_v13_auto_salt` and omit `salt_counter`; compatible
+manual-counter records retain the counter. Sign-time code uses that stored metadata;
 DSA-backed keys still use the appropriate base signing provider to produce and
 pack signatures. Templates are used for generation, discovery, lifecycle, and
 provenance, not to reconstruct missing signing metadata. Template provenance
@@ -187,10 +189,10 @@ signing metadata, and the destination must provide any required signer-side
 provider or installed product template through its normal installation flow.
 
 Shipped YAML template sources live under the top-level `library/templates/`
-directory and are installed into an identity before use. Source-tree YAML files
-are install sources only; the runtime form is the encrypted identity-local
-`.template` file plus key type state record. New signer identities install and
-enable `aplane.falcon1024-allowlist.v1` during initialization.
+directory and are installed into the product namespace before use. Source-tree
+YAML files are install sources only; the runtime form is the encrypted
+`.template` file plus key type state record. New signer stores install and
+enable `aplane.falcon1024-allowlist.v1` for `default` during initialization.
 
 Go-defined key types:
 
@@ -281,7 +283,11 @@ identity templates that do not have a matching library YAML source; those
 installed-only rows are derived from encrypted `.template`
 filenames and may not have parameter metadata.
 
-## Identity Filesystem State
+## Product Filesystem State
+
+The storage helpers remain parameterized by identity ID. In the product, every
+`<identity>` placeholder in this section resolves to the fixed value `default`;
+it is not an operator-selectable tenant or runtime.
 
 Template key type state is represented by one plaintext state record per
 identity/key type, plus an encrypted template body when the source is YAML:

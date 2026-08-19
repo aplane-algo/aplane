@@ -4,14 +4,14 @@
 
 This document is the source of truth for which process may access or mutate
 `APSIGNER_DATA`. It complements the on-disk format contract in
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and the authenticated principal/grant
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and the closed product-principal/action
 model in [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
 
 ## Trust statement
 
 Membership in the operator-facing `aplane` Unix group grants connectivity to
 the local administrative IPC socket. It does not grant signer-store authority,
-an authenticated admin session, an application grant, or direct access to
+an authenticated admin session, product authorization, or direct access to
 encrypted custody material.
 
 The systemd deployment has two distinct filesystem roots:
@@ -67,9 +67,9 @@ moved behind an existing owner.
 | `internal/genstore`, `internal/rotationinventory`, `internal/storepass` | Generation publication, reconciliation, and key-term rotation |
 | `internal/policy`, `internal/noderole` when invoked by the daemon | Authenticated policy and node-role state |
 | `internal/sentry/sentryrefs` when invoked by the daemon | Public sentry-reference inventory |
-| `internal/tokenfile` when invoked by signer administration | Identity bearer-token state |
+| `internal/tokenfile` when invoked by signer administration | Product bearer-token state |
 
-Normal operators reach these owners through authenticated HTTP or admin IPC;
+Normal operators reach these owners through authenticated HTTP or the admin protocol over IPC/SSH;
 they do not call the storage packages directly.
 
 ### Offline bootstrap and rescue
@@ -77,7 +77,7 @@ they do not call the storage packages directly.
 | Command | Classification |
 |---|---|
 | `apstore initialize` | Offline mutation; root on systemd or data-root owner in same-UID mode |
-| `apstore rebuild` | Offline mutation into an absent identity |
+| `apstore rebuild` | Offline mutation into an absent product store |
 | `apstore verify` and offline policy check/verify | Offline read-only recovery inspection |
 | `apstore policy sign` | Offline mutation for a signer that cannot load policy |
 | `apadmin policy rescue` production apply/edit | Offline policy repair for a stopped daemon |
@@ -88,7 +88,7 @@ they do not call the storage packages directly.
 
 Offline mutations require a stopped daemon, exclusive store lock, no-follow
 inventory validation, and the installation-mode owner check. They preserve the
-narrow root-owned `identities/<identity>/passphrase.cred` exception and the
+narrow root-owned `identities/default/passphrase.cred` exception and the
 installer-owned `install/` metadata artifacts.
 
 Root-run `apadmin policy rescue` saves hold one exclusive lock across policy

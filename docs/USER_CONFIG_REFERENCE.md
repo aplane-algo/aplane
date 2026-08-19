@@ -69,8 +69,8 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `user_auto_approve` | bool | `false` | User default to sign non-rejected requests without operator approval unless policy forces review |
 | `theme` | string | `auto` | Signer-admin UI theme: auto, dark, or light (auto detects terminal) |
 
-Identity-scoped `identities/<identity>/config.yaml` contains settings
-only. Node role is stored separately in root `node.yaml`.
+Product-local `identities/default/config.yaml` contains settings only.
+Node role is stored separately in root `node.yaml`.
 
 ## Environment Variables
 
@@ -112,5 +112,5 @@ Both apshell and apsigner require a data directory to be specified.
 
 For apsigner passphrase sources:
 1. `TEST_PASSPHRASE` environment variable (highest priority)
-2. identity `unlock.yaml` passphrase command, falling back to process-global `passphrase_command_argv` in config.yaml (headless mode)
+2. product-local `identities/default/unlock.yaml` passphrase command, falling back to process-global `passphrase_command_argv` in config.yaml (headless mode)
 3. Interactive prompt via apadmin IPC (default)

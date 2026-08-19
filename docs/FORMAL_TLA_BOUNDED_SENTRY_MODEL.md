@@ -8,8 +8,9 @@ This model checks the first-party client's stage order and the security-bearing
 final acceptance boundary of the `bounded-sentry1` choreography. It
 complements the legacy guarded assembly model: first-party orchestration
 releases an ordinary bounded base signature, requests the sentry only after
-signer policy and operator approval, and then uses a distinct bounded assembly
-endpoint to derive and place the declared arguments. Its external-admin path
+signer policy and operator approval, and then uses the shared `/sign/assemble`
+route with the distinct `bounded-sentry` target kind to derive and place the
+declared arguments. Its external-admin path
 deliberately bypasses the sentry.
 
 BS1 is an orchestration property, not a sentry-endpoint authorization claim.

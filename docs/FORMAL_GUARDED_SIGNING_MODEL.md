@@ -109,7 +109,7 @@ signer services; clients do not verify component signatures (A10).
 ### Sentry Policy Snapshot
 
 `SentryPolicySnapshot` is the verified effective sentry-domain `policy.yaml` snapshot
-for one sentry identity. It contains transfer routing and sparse
+for the sentry node's product runtime. It contains transfer routing and sparse
 `key_overrides` keyed by Witness Key ID.
 
 Unlike client-signing policy, sentry policy has no manual-review verdict and
@@ -156,7 +156,7 @@ canonical group.
 The client calls the primary signer:
 
 ```text
-POST /sign/component role=user component_key=<guarded_account>
+POST /sign/component target.kind=user target.auth_address=<guarded_account>
 ```
 
 Before any signing, the signer runs the signer-domain approval gates over the
@@ -165,7 +165,7 @@ operator approval (`internal/signerapp/signing/component_gate.go`). This gate
 sequence only narrows the accepted set and is not yet modeled; see the
 guarded-signing entry in [FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md).
 
-The signer loads `component_key` as a local guarded account key. The decoded
+The signer loads `auth_address` as a local guarded account key. The decoded
 target sender may differ from `component_key`; authorizer binding is verified
 during assembly. The signer signs the user-role component message with the user
 component private key stored in that guarded account key.

@@ -22,8 +22,8 @@ Each line is a JSON object with the following fields:
 |-------|------|-------------|
 | `timestamp` | string | UTC timestamp (RFC 3339) |
 | `event` | string | Event type (see below) |
-| `identity_id` | string | Owning signer identity; omitted for process-level events |
-| `target_identity_id` | string | Signer identity targeted by the action |
+| `identity_id` | string | Backward-compatible owning product ID (`default`); omitted for process-level events |
+| `target_identity_id` | string | Backward-compatible target product ID (`default`) |
 | `principal` | string | Principal performing the action |
 | `requester_principal` | string | Principal requesting the action |
 | `approver_principal` | string | Principal approving or rejecting the action |
@@ -38,7 +38,12 @@ Each line is a JSON object with the following fields:
 | `remote_addr` | string | Client IP address (for auth failures, sessions) |
 | `reason` | string | Event-specific detail such as rejection reason, key type, deleted filename, or SSH fingerprint |
 | `policy_rule_id` | string | Policy rule that forced manual review before the operator decision |
+| `witness_key_id` | string | Public witness authority affected by a sentry-reference mutation |
+| `migration_origin` | string | Closed historical origin retained on migrated sentry-reference records |
 | `key_count` | int | Number of keys (for reload/start events) |
+| `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
+| `replace_existing` | bool | Whether a credential restore was authorized to replace existing entries |
+| `operation_id` | string | Durable restore operation identifier |
 
 Fields are omitted when empty.
 
@@ -47,8 +52,8 @@ Fields are omitted when empty.
 ```json
 {"timestamp":"2026-02-28T16:00:00Z","event":"SERVER_START","key_count":3}
 {"timestamp":"2026-02-28T16:00:05Z","event":"SESSION_CONNECTED","identity_id":"default","target_identity_id":"default","principal":"system:product-admin","requester_principal":"system:product-admin","admin_session_id":"admin-1","transport":"ipc","outcome":"connected","remote_addr":"local"}
-{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_REQUEST","identity_id":"default","target_identity_id":"default","requester_principal":"default","transport":"http","outcome":"requested","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_type":"pay","txn_details":"pay 1.5 ALGO to DEF...UVW"}
-{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_APPROVED","identity_id":"default","target_identity_id":"default","requester_principal":"default","approver_principal":"system:product-admin","transport":"http","outcome":"approved","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_details":"txn 1/1 signed"}
+{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_REQUEST","identity_id":"default","target_identity_id":"default","requester_principal":"system:product-admin","transport":"http","outcome":"requested","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_type":"pay","txn_details":"pay 1.5 ALGO to DEF...UVW"}
+{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_APPROVED","identity_id":"default","target_identity_id":"default","requester_principal":"system:product-admin","approver_principal":"system:product-admin","transport":"http","outcome":"approved","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_details":"txn 1/1 signed"}
 {"timestamp":"2026-02-28T16:05:00Z","event":"SERVER_STOP"}
 ```
 
@@ -88,6 +93,7 @@ The examples show `"default"` as the identity. See [ARCH_OVERVIEW.md](ARCH_OVERV
 | `STORE_INITIALIZE_FAILED` | Store initialization failed through authenticated local IPC |
 | `PASSPHRASE_CHANGED` | Store passphrase rotation succeeded through authenticated local IPC |
 | `PASSPHRASE_CHANGE_FAILED` | Store passphrase rotation failed through authenticated local IPC |
+| `SENTRY_REFERENCE_CHANGED` | A product sentry-reference catalog record was imported, promoted, or removed |
 
 Credential restore entries may include `archive_sha256`, `operation_id`,
 `replace_existing`, and `key_count`, in addition to normal identity/session/
@@ -115,7 +121,7 @@ principal/transport attribution.
 |-------|-------------|
 | `SESSION_CONNECTED` | IPC or SSH session established |
 | `SESSION_DISCONNECTED` | Session ended |
-| `IDENTITY_LOCKED` | Identity locked through an authenticated admin session |
+| `IDENTITY_LOCKED` | Product runtime locked through an authenticated admin session (event name retained for compatibility) |
 | `TOKEN_PROVISIONED` | API token provisioned via SSH connection |
 
 ## Log Rotation

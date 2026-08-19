@@ -149,21 +149,20 @@ Already shipped (continued):
   [formal/approval_coordinator.tla](formal/approval_coordinator.tla) models
   serialized delivery, cancellation, timeout, fail-all, and displacement.
 
-Next likely modules, in order of value:
+Subsequent refinements:
 
-1. **Approval-aware composition** — *shipped* as
+1. **Approval-aware composition** — shipped as
    [formal/approval_composition.tla](formal/approval_composition.tla): it
    checks end to end that a failed approval admits no signer output.
-2. **Approval coordinator (M3 prerequisite).** State machine for
-   pending approvals, including timeout and cancellation. Would refine
-   the four-valued `approval` input in `policy_precedence.tla` (and
-   inherited by `composition.tla`).
-3. **Reload-during-request stability.** Adds real transitions to
+2. **Approval coordinator** — shipped as
+   [formal/approval_coordinator.tla](formal/approval_coordinator.tla), refining
+   pending approvals, timeout, cancellation, fail-all, and displacement.
+3. **Reload-during-request stability** — future work adding real transitions to
    composition so that reloads between approval and final-sign do not
    change the snapshot used by the request. This is the P2 leg covered
    by `TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval` in
    Go; promoting it into a TLA+ refinement check is the natural future
    move.
 
-The current `sign_boundary.tla` should not absorb any of these; each
-gets its own module and either composes or refines.
+The current `sign_boundary.tla` should not absorb these refinements; each
+belongs in its own composing or refining module.

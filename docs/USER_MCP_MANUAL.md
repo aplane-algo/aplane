@@ -59,9 +59,9 @@ only an address.
  "write_mode":false,"signer_key_count":0, ...}
 ```
 
-Identity model: APlane is a **single-operator, single-identity** product. The
-exposed signing identity is `default`. Client SSH enrollments distinguish *which
-device/agent* is acting for that one operator — they are not separate tenants.
+Runtime model: APlane exposes one **single-product signing runtime**. The
+compatibility identity ID is `default`; it is not a tenant selector. Client SSH
+enrollments distinguish *which device/agent* is acting for that product runtime.
 
 > Full detail: [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md), [ARCH_MCP.md](ARCH_MCP.md),
 > [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
@@ -160,16 +160,17 @@ Box names also accept `<app-id>:<name>`.
 
 ## 4. The key model
 
-### Three authorization categories
+### Four authorization categories
 
 | Category | What signs | Signature lands in |
 |----------|-----------|--------------------|
 | **Native Ed25519** (`ed25519`) | the key signs the full transaction | `SignedTxn.Sig` (64 bytes) |
+| **Native Falcon-1024** (`falcon1024`) | the key signs the full transaction | top-level `SignedTxn.PQsig` (scheme `f1`) |
 | **DSA-backed LogicSig** (`dsa_lsig`) | a crypto key signs, wrapped in a LogicSig | `LogicSig.Args[0]` (Falcon variable, at most 1,423 bytes) |
 | **Generic LogicSig** (`generic_lsig`) | TEAL logic only — **no key, no signature** | args filled from the key file's stored schema |
 
-Every account key type except native `ed25519` is LogicSig-backed. Witness keys
-are auxiliary non-account keys; signer-custodied instances serve the sentry
+The two native account key types are not LogicSig-backed. Witness keys are
+auxiliary non-account keys; signer-custodied instances serve the sentry
 component role, while standalone `.wit` instances may serve contract admin.
 
 ### Key types (identifiers are `publisher.family.vN`)
@@ -177,9 +178,10 @@ component role, while standalone `.wit` instances may serve contract admin.
 | keyType | Category | Typical availability |
 |---------|----------|----------------------|
 | `ed25519` | native | default-enabled |
+| `falcon1024` | native_pq | **default-enabled** (protocol-native post-quantum) |
 | `aplane.falcon1024.v1` | dsa_lsig | **default-enabled** (post-quantum default) |
 | `aplane.ed25519.v1` | Ed25519 dsa_lsig | library-visible |
-| `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | bundled, installed+enabled on new identities |
+| `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | bundled, installed+enabled on new stores |
 | `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | optional template |
 | `aplane.falcon1024-allowlist-alock.v1` | bounded dsa_lsig (admin-protected rekey) | optional template |
 | `aplane.corridor.v1` | bounded-sentry dsa_lsig (Merkle spend corridor, admin-protected rekey) | optional template |
@@ -189,9 +191,9 @@ component role, while standalone `.wit` instances may serve contract admin.
 | `aplane.witness-falcon1024.v1` | witness key | sentry node `.sen` custody or external `.wit` custody |
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
-availability is identity-scoped. Visibility states: `default_enabled` (every
-identity), `library` (compiled in but needs an enabled state record per
-identity), `disabled`. A library-visible or template key type must be activated
+availability is product-scoped. Visibility states: `default_enabled` (every
+store), `library` (compiled in but needs an enabled state record in the product
+store), `disabled`. A library-visible or template key type must be activated
 by an operator before it appears; an agent cannot install templates (that needs
 the master passphrase over local IPC) — generate the YAML and hand it to the
 user.
@@ -202,9 +204,11 @@ A LogicSig's address is the hash of its compiled program. The program is
 deterministic, so the same key produces the same address on every Algorand
 network. **Generating a key does not bind it to mainnet/testnet/localnet** —
 network only matters when you fund, opt in, or transact. Signing authority lives
-in the key *file* (compiled bytecode, off-curve salt counter, signing metadata
-captured at creation), not in the template — so disabling or changing a key type
-never breaks an existing key's ability to sign.
+in the key *file* (compiled bytecode, derivation metadata, and signing metadata
+captured at creation), not in the template. Salt metadata is derivation-specific:
+compiler-auto-salted records omit `salt_counter`, while compatible manual-salt
+records retain it. Disabling or changing a key type therefore never breaks an
+existing key's ability to sign.
 
 ### Creation params vs runtime args
 
@@ -229,18 +233,22 @@ never breaks an existing key's ability to sign.
 
 ### Corridors
 
-A **corridor** is an allowlisted Falcon key: an `aplane.falcon1024-allowlist.v1`
-LogicSig whose spends are restricted to a fixed, compiled set of destination
-addresses. Because each account's allowed destinations are just a list,
-corridors compose into **graphs** — a directed edge A→B exists wherever B is in
-A's destination set — so you can build chains, hubs, or closed meshes out of
-them.
+A **Corridor v1** account uses the optional `aplane.corridor.v1` bounded-sentry
+LogicSig profile. Its non-self payment and asset-transfer destinations must
+prove membership in the generation-time Merkle recipient set, and every spend
+also needs the enrolled sentry's Falcon authorization. A distinct offline
+contract-admin witness co-authorizes pure rekey operations.
+
+Recipient-constrained accounts can compose into **graphs** — a directed edge
+A→B exists wherever B is in A's recipient set — so operators can build chains,
+hubs, or closed meshes. `aplane.falcon1024-allowlist.v1` is a simpler fixed-list
+template, not the Corridor v1 key type.
 
 You create one by **applying a corridor LogicSig to a regular account**: rekey an
-ordinary account so the corridor program becomes its effective signer (then run
-`rekey refresh`). The address is unchanged; only its permitted transfer paths are
-now constrained — value can never leave except to an allowlisted destination, even
-if the spend key is stolen.
+ordinary account so the Corridor program becomes its effective signer (then run
+`rekey refresh`). The address is unchanged. Corridor-authorized spends are then
+limited to its accepted transfer forms and recipient set; close, clawback, and
+hybrid rekey-and-spend forms are rejected.
 
 > Full detail: [WP_CORRIDORS.md](WP_CORRIDORS.md).
 
@@ -258,7 +266,7 @@ LogicSig templates have no key to import).
 
 > ⚠️ **Rekey gotcha:** after a `rekey`, run `rekey refresh` (or
 > `rekey refresh <addr>`) — otherwise the signer keeps using the *old*
-> authorizer. See [[aplane-rekey-auth-cache]].
+> authorizer. See [USER_COMMANDS.md](USER_COMMANDS.md#rekeying-commands).
 
 > Full detail: [USER_KEYTYPES.md](USER_KEYTYPES.md),
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md),
@@ -278,6 +286,7 @@ signer decides what to sign:
 | Key type | Message signed |
 |----------|----------------|
 | Ed25519 | the full transaction (`"TX"` + msgpack) |
+| Native Falcon | the full transaction (`"TX"` + msgpack), emitted as top-level `PQsig` |
 | LogicSig DSA | the 32-byte transaction ID (`SHA512/256("TX"+msgpack)`) |
 | Generic LogicSig | nothing — TEAL logic authorizes, args come from the stored schema |
 
@@ -287,6 +296,9 @@ signer decides what to sign:
 |----------|---------|
 | `POST /sign` | `signed[]` — hex signed-txn blobs, 1:1 with positions |
 | `POST /plan` | `transactions[]` — TX-prefixed **unsigned** canonical txns (no signing, no approval) |
+| `POST /sign/component` | guarded or bounded component signatures over a frozen group |
+| `POST /sign/assemble` | final guarded or bounded signed group after component verification |
+| `POST /sign/bounded-admin` | partial for an external contract-admin ceremony |
 | `POST /sign/cancel` | cancel a pending approval prompt by request ID |
 
 `plan()` in JS previews the planned group (dummies, fees, group ID) without
@@ -363,7 +375,7 @@ Always Deny  >  Always Review  >  Always Approve  >  Operator Default
 | **Always Approve** | Signed without a prompt. |
 | **Operator Default** | Falls to `user_auto_approve`: `true` signs, `false` requires review. |
 
-The policy document is identity-scoped at `identities/default/policy.yaml`
+The product policy document is at `identities/default/policy.yaml`
 (with an HMAC sidecar; a missing/mismatched sidecar **fails closed**). Runtime
 settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`) live
 in `identities/default/config.yaml`.

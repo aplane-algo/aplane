@@ -47,8 +47,9 @@ ladder and I9:
   precedence.
 - **Transfer routing internals.** A routing-derived deny is just an
   `AlwaysDeny` match from this model's perspective.
-- **Passthrough/foreign slot exclusion (P8).** Naturally checked in
-  `sign_boundary.tla` via slot classes; abstracted away here.
+- **Passthrough/foreign scope (P8).** Sign-boundary checks output slot classes,
+  but the policy distinction between skipped signer-owned rules and the
+  cross-party danger-review guard is abstracted away here.
 - **Approval coordinator state machine.** The approval channel is a
   coarse four-valued input (`approve | reject | timeout | none`).
   Timeouts, cancellations, and fail-all belong to the approval-coordinator
@@ -198,17 +199,17 @@ Already shipped (continued):
   [formal/approval_coordinator.tla](formal/approval_coordinator.tla) models
   serialized delivery, cancellation, timeout, fail-all, and displacement.
 
-Next likely modules, in order of value:
+Subsequent refinements:
 
-1. **Approval-aware composition** — *shipped* as
+1. **Approval-aware composition** — shipped as
    [formal/approval_composition.tla](formal/approval_composition.tla): it
    checks end to end that a failed approval admits no signer output.
-2. **Approval coordinator (M3 prerequisite).** State machine for
-   pending approvals, including timeout and cancellation. Would refine
-   the four-valued `approval` input into a proper transition system.
-3. **Reload-during-request stability.** Adds real transitions to the
+2. **Approval coordinator** — shipped as
+   [formal/approval_coordinator.tla](formal/approval_coordinator.tla), refining
+   pending approvals, timeout, cancellation, fail-all, and displacement.
+3. **Reload-during-request stability** — future work adding real transitions to the
    composition module so that reloads between approval and final-sign
    do not change the snapshot used by the request.
 
-The current `policy_precedence.tla` should not absorb any of these;
-each gets its own module and either composes or refines.
+The current `policy_precedence.tla` should not absorb these refinements; each
+belongs in its own composing or refining module.

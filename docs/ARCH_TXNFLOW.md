@@ -542,14 +542,14 @@ See [ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the plugin group-mode wire contract.
 ## Server Control Flow Trace
 
 The `/sign` endpoint has a single entry point and a single success path. Method
-enforcement, identity extraction, JSON decoding, runtime availability, and
+enforcement, product authentication, JSON decoding, runtime availability, and
 empty-requests checks gate the request before any planning starts. The
 `SignRequest` entries are then validated per mode (sign, passthrough, foreign)
 and decoded — sign and foreign entries from `txn_bytes_hex`, passthrough
 entries from `signed_txn_hex`. Decoded transactions are checked for group
 consistency, recognized genesis network, overlapping validity windows,
 passthrough's pre-grouped requirement, and the presence of at least one
-signable entry under the authenticated identity. Dummy calculation runs next
+signable entry in the bound product runtime. Dummy calculation runs next
 and enforces the maximum group size and pre-grouped immutability; if dummies are
 needed for an immutable passthrough/pre-grouped group, it rejects. Otherwise
 the planner creates them, adjusts fees, and recomputes the group ID. The finalized group passes through
@@ -582,7 +582,10 @@ signing logic it drives.
 
 ## Server-Side Processing by Key Type
 
-When the server processes each transaction, it determines the signing method based on the key type for `auth_address`. Key lookups are scoped by the authenticated identity extracted from the request context and resolved through the bound identity runtime. The normal operational path targets the product identity; `auth.CurrentProductIdentityID()` is a process-boundary/defaulting helper rather than the primary runtime lookup mechanism inside request handling.
+When the server processes each transaction, it determines the signing method
+based on the key type for `auth_address`. Product authentication binds the
+request to the one `default` runtime; it does not select a runtime from caller
+input. Key lookups then use that bound runtime.
 
 ### 1. Ed25519 Signing
 
@@ -788,19 +791,19 @@ The following runtime and policy settings affect server behavior:
 
 | Setting | Location | Default | Description |
 |---------|----------|---------|-------------|
-| `user_auto_approve` | `identities/<identity>/config.yaml` | `false` | Sign requests that are not auto-rejected, forced to review, or explicitly auto-approved without TUI confirmation. |
-| `reject_foreign_rekey` | `identities/<identity>/policy.yaml` | `true` | Reject txns whose non-zero `RekeyTo` target is not held by the current signer before approval. |
-| `reject_close_remainder` | `identities/<identity>/policy.yaml` | `false` | Reject txns with non-zero `CloseRemainderTo` before approval. |
-| `reject_asset_close` | `identities/<identity>/policy.yaml` | `false` | Reject txns with non-zero `AssetCloseTo` before approval. |
-| `reject_clawback` | `identities/<identity>/policy.yaml` | `false` | Reject ASA clawback txns using `AssetSender` before approval. |
-| `always_review_warnings` | `identities/<identity>/policy.yaml` | `false` | Force operator review for warning-level findings before auto-approval or `user_auto_approve:true` can sign. |
-| `auto_approve_self_noop_transfer` | `identities/<identity>/policy.yaml` | `false` | Auto-approve a single 0 ALGO payment to self or 0-unit ASA transfer to self only when it has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and normalized fee is at most 1000 microAlgos. Signer-generated LogicSig-budget dummies are allowed only when they exactly match APlane's dummy transaction shape and fee adjustment. |
-| `max_fee_microalgos` | `identities/<identity>/policy.yaml` | unset | Reject txns whose fee exceeds the raw microAlgo ceiling. |
-| `review_algo_payments` | `identities/<identity>/policy.yaml` | unset | Force review for payment txns whose raw microAlgo amount exceeds the configured per-network threshold. Admin UI/IPC input and review messages use ALGO display units. |
-| `max_algo_payments` | `identities/<identity>/policy.yaml` | unset | Reject payment txns whose raw microAlgo amount exceeds the configured per-network ceiling. Admin UI/IPC input and rejection messages use ALGO display units. |
-| `review_asa_amounts` | `identities/<identity>/policy.yaml` | unset | Force review for ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset threshold. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
-| `max_asa_amounts` | `identities/<identity>/policy.yaml` | unset | Reject ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset ceiling. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
-| `key_overrides` | `identities/<identity>/policy.yaml` | unset | YAML-only sparse policy overrides. Signer-domain overrides are keyed by signing auth address; sentry-domain overrides are keyed by Witness Key ID. Unset fields inherit identity-wide policy, and nested overrides are rejected. |
+| `user_auto_approve` | `identities/default/config.yaml` | `false` | Sign requests that are not auto-rejected, forced to review, or explicitly auto-approved without TUI confirmation. |
+| `reject_foreign_rekey` | `identities/default/policy.yaml` | `true` | Reject txns whose non-zero `RekeyTo` target is not held by the current signer before approval. |
+| `reject_close_remainder` | `identities/default/policy.yaml` | `false` | Reject txns with non-zero `CloseRemainderTo` before approval. |
+| `reject_asset_close` | `identities/default/policy.yaml` | `false` | Reject txns with non-zero `AssetCloseTo` before approval. |
+| `reject_clawback` | `identities/default/policy.yaml` | `false` | Reject ASA clawback txns using `AssetSender` before approval. |
+| `always_review_warnings` | `identities/default/policy.yaml` | `false` | Force operator review for warning-level findings before auto-approval or `user_auto_approve:true` can sign. |
+| `auto_approve_self_noop_transfer` | `identities/default/policy.yaml` | `false` | Auto-approve a single 0 ALGO payment to self or 0-unit ASA transfer to self only when it has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and normalized fee is at most 1000 microAlgos. Signer-generated LogicSig-budget dummies are allowed only when they exactly match APlane's dummy transaction shape and fee adjustment. |
+| `max_fee_microalgos` | `identities/default/policy.yaml` | unset | Reject txns whose fee exceeds the raw microAlgo ceiling. |
+| `review_algo_payments` | `identities/default/policy.yaml` | unset | Force review for payment txns whose raw microAlgo amount exceeds the configured per-network threshold. Admin UI/IPC input and review messages use ALGO display units. |
+| `max_algo_payments` | `identities/default/policy.yaml` | unset | Reject payment txns whose raw microAlgo amount exceeds the configured per-network ceiling. Admin UI/IPC input and rejection messages use ALGO display units. |
+| `review_asa_amounts` | `identities/default/policy.yaml` | unset | Force review for ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset threshold. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
+| `max_asa_amounts` | `identities/default/policy.yaml` | unset | Reject ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset ceiling. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
+| `key_overrides` | `identities/default/policy.yaml` | unset | YAML-only sparse policy overrides. Signer-domain overrides are keyed by signing auth address; sentry-domain overrides are keyed by Witness Key ID. Unset fields inherit the product policy, and nested overrides are rejected. |
 
 **Pre-grouped immutability**: Pre-grouped transactions are always immutable. If
 they require additional resource dummies or fees, the request is rejected.

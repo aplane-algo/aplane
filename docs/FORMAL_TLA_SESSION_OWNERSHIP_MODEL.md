@@ -18,13 +18,13 @@ The spec lives at [formal/session_ownership.tla](formal/session_ownership.tla).
 
 ## The invariant at stake
 
-Admin authentication unlocks the identity as a side effect of verifying the
+Admin authentication unlocks the product runtime as a side effect of verifying the
 passphrase (`adminserver/session.go` `AuthenticateOutcome`), *before* the
 session becomes the active owner. Ownership is only established afterwards
 (`BindPreAuthPending` for IPC, optional displacement offer,
 `PromoteToActive`).
 Any failure in that window — pending-slot contention, displacement rejection,
-promotion failure, connection drop — must not strand the identity unlocked
+promotion failure, connection drop — must not strand the product runtime unlocked
 with no session left whose exit re-locks it. That is exactly the hole the
 second-review audit found in the pre-fix code: `lock_on_disconnect` cleanup
 was gated on `authenticated && wasActiveClient`, so an unlock whose session
@@ -91,11 +91,11 @@ The restored spec passes.
   `PromoteReplace` is the swap.
 - **`lock_on_disconnect` chosen at Init, never changed.** SO2 is vacuous when
   it is FALSE (the operator opted out of re-locking); TLC explores both.
-- **`AuthSucceed` models `auth`, not `auth_only`.** Admin protocol 4.4 added
-  `auth_only` (`adminserver/session.go` `AuthenticateOutcome`,
+- **`AuthSucceed` models `auth`, not `auth_only`.** The current admin protocol
+  v5 retains `auth_only` (`adminserver/session.go` `AuthenticateOutcome`,
   `transport/protocol_flow.go` `authenticateOnly`), which verifies the
   passphrase and binds the runtime without authorizing or invoking
-  `identity.unlock`. It is a non-owning, server-enforced public-read observer:
+  `identity.unlock`. It is a non-owning, authenticated read-only observer:
   it does not enter or replace the active-owner slot and does not run owner
   disconnect cleanup. It therefore changes none of this model's variables;
   its lifecycle and request allowlist are pinned by Go tests and documented in

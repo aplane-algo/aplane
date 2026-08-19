@@ -182,19 +182,23 @@ active only after installation and reload/unlock by the signer.
 
 ### Off-curve LogicSig salting
 
-All APlane-generated LogicSig accounts are kept off the Ed25519 curve at
-generation time. Straight Falcon, composed DSA templates, and generic templates
-reserve a compiler-owned salt slot in generated TEAL. Template-backed programs
-use a stack-neutral generated marker preamble
-(`byte 0x41504c414e455f4c5349475f53414c545f56315f005f454e44; pop`) so algod
-owns constant-block layout; bare compiled DSA programs may use a
-fixed provider-owned `bytecblock 0x00` preamble. After algod compilation,
-`internal/lsigsalt` patches the salt byte through counters `0..255` and keeps
-the first compiled bytecode whose LogicSig address is off-curve. Bytecblock
-salting verifies the fixed preamble location, while marker salting matches
-exactly one APlane-owned marker rather than a generic `pushbytes 0x00`. The
-selected counter is stored in the key file as `salt_counter`; signing
-uses the stored bytecode and does not recompute salting from a live template.
+All newly generated APlane LogicSig accounts are kept off the Ed25519 curve at
+generation time by the TEAL v13 compiler's auto-salting assembler. Straight
+Falcon, Ed25519 LogicSig, guarded sentry, composed DSA, and explicit
+`derivation_version: 3` template paths compile through algod, accept the final
+compiler-produced bytecode only when the reported address matches it, and
+reject an on-curve result. The key file records
+`lsig_derivation: algod_v13_auto_salt` and the authoritative final bytecode; it
+must not also contain `salt_counter`.
+
+Templates that omit `derivation_version` remain unsalted and succeed only when
+their unmodified compiled bytecode already derives an off-curve address. The
+retired marker and bytecblock counter styles remain in `internal/lsigsalt` only
+for compatibility with already-created manual-counter key files and focused
+validation tests. New template definitions reject derivation versions 1 and 2
+and must not author a salt marker, salt preamble, or salt-style selector.
+Signing always uses the stored final bytecode and never recomputes salting from
+a live template.
 
 ## Unified Registry
 
@@ -398,10 +402,12 @@ extension. Compatibility is split across:
 - `envelope_version` for the encryption envelope
 - `format_version` for the decrypted payload schema
 
-LogicSig entries store salted bytecode, `salt_counter`, signing metadata, and
-parameters rather than reconstructing authorization from a live template at
-sign time. DSA-backed entries also carry the base signing metadata needed to
-produce provider-specific signatures.
+LogicSig entries store final bytecode, the `lsig_derivation` contract, signing
+metadata, and parameters rather than reconstructing authorization from a live
+template at sign time. Current compiler-auto-salted entries omit
+`salt_counter`; compatible manual-counter entries retain it. DSA-backed entries
+also carry the base signing metadata needed to produce provider-specific
+signatures.
 
 ### `.template`
 
@@ -497,7 +503,7 @@ Native keys sign transactions directly using the standard Algorand path.
 LogicSig DSA providers:
 
 - generate or import key material
-- derive salted off-curve LogicSig bytecode and address
+- compile and validate final off-curve LogicSig bytecode and address
 - sign the provider-specific message
 - build `LogicSig.Args` in provider-defined order
 
@@ -508,7 +514,8 @@ pooling, and final transaction assembly.
 
 Generic templates:
 
-- compile TEAL-derived bytecode and apply off-curve salting at generation time
+- compile TEAL-derived bytecode and validate compiler-owned off-curve salting at
+  generation time when derivation version 3 is selected
 - validate creation params and runtime args
 - build `LogicSig.Args` from runtime args only
 - do not use cryptographic private signing keys

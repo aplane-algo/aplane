@@ -29,8 +29,8 @@ configuration and state:
 - plugin execution context,
 - SDK config behavior.
 
-This network context token is unrelated to the identity-scoped API bearer
-token used for HTTP authentication and SSH mutual proof. SSH authentication
+This network context token is unrelated to the product API bearer token used
+for HTTP authentication and SSH mutual proof. SSH authentication
 completes before transaction network context is evaluated and does not bind a
 connection to one network token.
 
@@ -260,8 +260,9 @@ Primary files:
 - `internal/signerapp/signing/planner.go` - signer transaction network validation,
 - `internal/policy/lint.go` - policy lookup by transaction genesis hash,
 - `internal/signerapp/asametadata` - signer-wide ASA metadata cache and display formatting,
-- `internal/signerapp/admin/service.go` - target-aware admin policy service, policy snapshots, validation/replacement, and ASA metadata resolution,
-- `internal/protocol/messages.go` - admin IPC wire fields,
+- `internal/signerapp/admin/service.go` - target-aware admin policy service and policy snapshot/validation/replacement,
+- `internal/signerapp/policytui/guard_amounts.go` - guided ASA metadata search, live resolution, and display-unit conversion,
+- `internal/protocol/messages.go` - whole-policy admin IPC wire fields,
 - `internal/signerapp/signertui/policy_editor.go` - apadmin shared policy editor embedding,
 - external `aplane-algo/aplanesdk/go/config.go` - Go SDK config token validation.
 

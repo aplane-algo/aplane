@@ -45,8 +45,10 @@ policy, whether it is:
 ## Signing Authority
 
 **Signing authority lives in the key file, not in the template.** Every
-LogicSig key file stores its compiled bytecode, off-curve salt counter, and
-signing metadata at creation time. Sign-time code uses that stored metadata;
+LogicSig key file stores its final compiled bytecode, derivation metadata, and
+signing metadata at creation time. Current TEAL v13 auto-salted records omit
+`salt_counter`; compatible manual-counter records retain it. Sign-time code
+uses the stored metadata;
 DSA-backed keys invoke the appropriate base signing provider to produce and
 pack signatures. Templates are used for generation, discovery, lifecycle, and
 provenance, not to reconstruct missing signing metadata. Template provenance
@@ -799,7 +801,7 @@ and [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md) for its complete contract.
 ### Template Library
 
 These ship as plaintext YAML templates. Some are installed into new signer
-identities by default; others require explicit installation into an identity
+stores by default; others require explicit installation into the product
 keystore before generation.
 
 #### Generic Templates
@@ -947,7 +949,8 @@ For public generic LogicSigs, APlane resolves this in favor of safety:
 - check `OnCompletion` for companion app calls that must run approval logic
 - keep template TEAL relocatable: do not depend on raw `bytecblock`/`intcblock`
   layout or numeric `bytec`/`intc` references, because APlane owns a generated
-  salt slot to keep generated LogicSig addresses off-curve
+  compiler-owned salt placement used to keep generated LogicSig addresses
+  off-curve
 
 ## Related Documents
 

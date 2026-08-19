@@ -127,6 +127,7 @@ internal/engine/
 ├── asa.go                 # ASA-oriented engine entry points
 ├── assets.go              # ASA info, resolver-backed metadata access
 ├── atomic.go              # Atomic transaction group helpers
+├── bounded_admin.go       # Client-side bounded-admin request plumbing
 ├── cache.go               # Alias and set management
 ├── connect/               # Signer HTTP requests and SSH tunnel lifecycle state
 │   ├── client.go          # Signer client construction and request helpers
@@ -135,6 +136,7 @@ internal/engine/
 │   ├── signing.go         # Signer-facing plan/sign requests
 │   └── state.go           # Mutex-protected ConnectionState
 ├── connection.go          # Core-facing connection facade
+├── consensus.go           # Algod consensus compatibility checks
 ├── group.go               # PreparedGroup, grouped preparation and execution
 ├── guarded.go             # Guarded package wiring and public re-exports
 ├── guarded/               # Isolated guarded-account client orchestration
@@ -225,7 +227,7 @@ The Engine exposes resolver-backed ASA access through methods such as:
 
 - `ASAResolver()`
 - `ResolveASAReference(...)`
-- `GetASAInfo(...)`
+- `GetASAInfoWithContext(...)`
 
 Callers use those entry points or `internal/asa` directly rather than reaching into `AsaCache` for reference resolution or display formatting.
 
@@ -501,11 +503,12 @@ The Engine builds signing contexts that encapsulate all information needed to si
 
 ```go
 type SigningContext struct {
-    Address     string // Resolved address (the account)
-    SigningAddr string // Auth address (may differ if rekeyed)
-    KeyType     string // e.g., "ed25519", "aplane.falcon1024.v1", "aplane.htlc.v1"
-    SigSize     int    // Crypto signature size (for fee calculation), 0 for ed25519 and generic lsigs
-    IsLSig      bool   // true for LSig-based accounts (DSA or generic)
+    Address           string // Resolved address (the account)
+    SigningAddr       string // Auth address (may differ if rekeyed)
+    KeyType           string // e.g., "ed25519", "aplane.falcon1024.v1", "aplane.htlc.v1"
+    SigSize           int    // Crypto signature size (for fee calculation), 0 for ed25519 and generic lsigs
+    IsLSig            bool   // true for LSig-based accounts (DSA or generic)
+    AuthorizationKind algorithm.AuthorizationKind
 }
 
 // BuildSigningContext handles:
@@ -565,7 +568,8 @@ target := engine.GetConnectionTarget()
 err := engine.Disconnect()
 
 // Request a new token through the SSH provisioning flow
-token, err := engine.RequestToken(host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
+token, err := engine.RequestTokenWithContext(ctx, host, sshPort, identityFile,
+    knownHostsPath, hostKeyApproval, onProvisioningStart)
 ```
 
 ## Cache Management API

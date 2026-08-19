@@ -841,7 +841,7 @@ func main() {
             result = map[string]interface{}{
                 "success": true,
                 "message": "Echo plugin initialized",
-                "version": "1.0.0",
+                "protocol": "aplane-plugin/2",
             }
         case "execute":
             args := req.Params["args"].([]interface{})
@@ -1085,11 +1085,11 @@ or
 - Cannot access APlane Shell memory or keys
 - Communication only via stdin/stdout
 
-**No Direct Key Access:**
-- Plugins cannot sign transactions
-- Only propose transaction intents
-- APlane Shell/Signer performs all signing
-- Plugins that need to bring their own signing material must use
+**No Access to APlane-Managed Keys:**
+- Plugins cannot access or invoke signer-managed keys outside the reviewed host flows
+- The default flow only accepts proposed unsigned transaction intents
+- APlane Shell/Signer performs signing for APlane-managed slots
+- Plugins may hold and use their own signing material only through
   `pregrouped-signed` or `presign-plan`; apshell never accepts plugin-supplied
   secret keys.
 

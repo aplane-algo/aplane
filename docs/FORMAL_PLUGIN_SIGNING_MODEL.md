@@ -13,14 +13,16 @@ visible as a missing guard, which is why its central claim is stated first.
 ## Central claim
 
 **PS7 (No Ungated Submission).** No plugin-produced transaction bytes reach
-submission unless they passed exactly one of the two human gates:
+submission unless they passed exactly one of the two authorization gates:
 
 - **pregrouped-signed**: a mandatory interactive review of the *decoded actual
   bytes* on the client, which the plugin cannot waive and which fails closed
   in non-interactive modes; or
-- **presign-plan**: apsigner's approval pipeline over the canonical group,
-  which displays every slot (including the plugin's passthrough slots) and
-  disables auto-approval for such groups.
+- **presign-plan**: apsigner's policy and approval pipeline over the canonical
+  group, which includes every slot (including plugin passthrough slots) in
+  policy/review context. The ordinary product operator default still applies:
+  `user_auto_approve:true` can authorize a group unless an Always Review rule
+  forces a prompt.
 
 The legacy third path (`localSigners`, plugin-supplied keys signing locally
 with a plugin-controlled, content-free prompt) violated this claim and was
@@ -121,9 +123,8 @@ signer-slot matching).
 Managed slots are signed only by apsigner through its normal pipeline over
 the canonical group: plugin-signed and dummy slots ride in the same `/sign`
 request as passthrough, every slot is displayed in the approval prompt
-(passthrough slots labeled `[PASSTHROUGH]` with their decoded fields
-rendered), auto-approval is disabled for any group containing
-passthrough/foreign/pre-grouped slots, and dangerous fields (rekey, close,
+(passthrough slots labeled `[PASSTHROUGH]` with their decoded fields rendered)
+when a prompt is required, and dangerous fields (rekey, close,
 clawback) on a passthrough slot force operator review. Anchors:
 `plugin_presign.go` (slot partitioning into the `/sign` request),
 `internal/signerapp/signing/approval.go` (mixed-mode display, auto-approval
@@ -131,8 +132,10 @@ disable), `always_review.go` (dangerous-field forcing).
 
 ### PS7: No Ungated Submission (central)
 
-Every plugin-produced submission passed PS3's review (pregrouped-signed) or
-PS6's approval pipeline (presign-plan). Mode dispatch is total
+Every plugin-produced submission passed PS3's interactive review
+(pregrouped-signed) or PS6's signer authorization pipeline (presign-plan).
+The latter may resolve through explicit policy, forced review, or the ordinary
+operator default. Mode dispatch is total
 (`external_plugins.go` switches on `GroupMode`; signed intents outside
 pregrouped-signed fail `ProcessTransactionIntents`; `localSigners` is
 rejected at `apshellapp/submission.go`), so there is no third path.

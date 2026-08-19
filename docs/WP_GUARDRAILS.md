@@ -1,12 +1,29 @@
 # Easy Algorand Guardrails
 
 > Status: This whitepaper is design framing, not the shipped product contract.
+> In particular, its generic reconfiguration model and pseudocode must not be
+> used as a description of any one bundled key type.
 > See [ARCH_SENTRY.md](ARCH_SENTRY.md),
 > [USER_KEYTYPES.md](USER_KEYTYPES.md), and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for current behavior and
 > supported key types.
 
 ![Constrained network diagram](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/mesh.png)
+
+## Current product boundary
+
+APlane ships several distinct bounded allowlist templates rather than one
+generic guardrail program. `aplane.falcon1024-allowlist.v1` uses a fixed list
+and permits spending-key-authorized pure rekey; v2 uses a fixed-depth Merkle
+root with signer-derived proofs and the same pure-rekey authority;
+`aplane.falcon1024-allowlist-alock.v1` adds a distinct external contract-admin
+authority for pure rekey; and `aplane.corridor.v1` additionally requires a
+Falcon sentry for spends. Their closed effect sets reject close, clawback,
+hybrid rekey-and-spend, and unsupported transaction forms.
+
+Choose a concrete key type from `keytypes` and review its documented effect and
+admin contracts. The sections below explain the broader graph idea; they do not
+grant close or admin behavior absent from that key type.
 
 ## 1. Overview
 
@@ -21,7 +38,9 @@ stateful application state is necessary, resulting in a smaller attack surface. 
 
 ## 2. Allowlist Falcon LogicSig
 
-The canonical Falcon implementation on Algorand currently uses LogicSigs.
+APlane supports both protocol-native `falcon1024` authorization and
+Falcon-backed LogicSigs. Allowlist enforcement uses the latter because the TEAL
+program carries the structural bounds.
 
 A LogicSig is a cryptographic mechanism that allows
 an account's bounded authorization to be determined by a small

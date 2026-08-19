@@ -34,7 +34,7 @@ another merely because two dimensions currently use the same string.
 | **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `sentry1`, `bounded-sentry1` | Signer-advertised `signing_flow` |
 | **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/bounded-admin` then `aprekey` | Flow contract, transaction classification, and HTTP DTOs |
 | **Provider and routing family** | Which registered implementation performs keygen, derivation, signing, or assembly? | composed provider routed through `aplane.falcon1024`; dedicated guarded provider | Provider registry and `RoutingFamily()` |
-| **Principal authorization** | May the authenticated caller invoke this operation on the target identity/resource? | `sign.request`, `sign.component`, `sign.assemble` | Principal/group/grant model and HTTP/admin enforcement point |
+| **Principal authorization** | May the authenticated caller invoke this operation on the target identity/resource? | `sign.request`, `sign.component`, `sign.assemble` | Reserved product principal, closed action allowlist, and HTTP/admin enforcement point |
 | **Signer policy domain** | Which off-chain rules gate release of a signature that the key and on-chain program could produce? | client-signing policy, sentry policy | Node role, `policy.yaml`, and the selected policy key |
 | **Network context** | Which configured network and network-scoped policy apply to the transaction? | `mainnet`, `voi_mainnet`, `localnet` | Transaction `GenesisHash` resolved to a network context token |
 
@@ -74,9 +74,10 @@ The word **contract** has three related but distinct uses in APlane:
 
 Likewise, account authorization is distinct from principal authorization and
 signer policy. The account key and LogicSig determine what can authorize the
-Algorand account; the grant model determines who may call an APlane endpoint;
-signer or sentry policy determines whether that permitted call may release a
-signature for the particular transaction.
+Algorand account; the fixed product principal and closed action allowlist
+determine whether the caller may invoke an APlane endpoint; signer or sentry
+policy determines whether that permitted call may release a signature for the
+particular transaction.
 
 `bounded1` is always the bounded authorization-contract identifier and is also
 the signing-flow label for bounded profiles that need no online sentry. A
@@ -180,7 +181,7 @@ collapsed into one flat key-type hierarchy.
 |---|---|---|
 | **Native** | A protocol-native account signature, currently Algorand Ed25519. | Encrypted signer `.key` with native private material. |
 | **DSA LogicSig** | A LogicSig verifies one or more digital signatures and may enforce additional transaction policy. | Encrypted signer `.key` with DSA private material, compiled bytecode, and signing metadata. |
-| **Generic LogicSig** | TEAL predicates alone authorize the account; there is no DSA private key. | Encrypted signer `.key` containing bytecode, parameters, salt, and signing metadata but no private signing material. |
+| **Generic LogicSig** | TEAL predicates alone authorize the account; there is no DSA private key. | Encrypted signer `.key` containing final bytecode, parameters, derivation metadata, and signing metadata but no private signing material. |
 
 An account authorization type identifies the account-level mechanism. It does
 not by itself say whether the account is guarded or which transaction effects a
@@ -418,8 +419,8 @@ axis, not a separate resolution mechanism.
   and message contracts.
 - `docs/ARCH_BOUNDED_DSA.md` — the `bounded1` authorization contract and its
   profile, metadata, and path semantics.
-- `docs/ARCH_AUTHORIZATION.md` — principal/group/grant authorization for API
-  and admin operations.
+- `docs/ARCH_AUTHORIZATION.md` — product-principal and closed-action
+  authorization for API and admin operations.
 - `docs/ARCH_POLICY.md` — signer and sentry policy domains that gate signature
   release.
 - `docs/ARCH_NETWORKS.md` — network context and genesis-hash resolution.

@@ -2586,12 +2586,16 @@ Key type immutability:
 - keystore templates may add new non-built-in `key_type` values but must not override built-ins,
 - reload/unlock may activate new key types or ignore idempotent re-loads of the same definition, but must not replace an existing conflicting definition.
 
-Identity filtering:
+Product identity filtering:
 
-- a process-global provider can exist without being visible to every identity,
-- `/keytypes`, admin `list_key_types`, and key generation filter by the target identity's default-enabled key types plus enabled identity state records,
-- a globally registered generic/composed template that is not installed or enabled for an identity is not generatable by that identity,
-- existing keys remain isolated by identity keystore ownership; provider lookup only supplies compatible signing/derivation code for keys already owned by that identity.
+- a process-global provider can exist without being visible to the product identity,
+- `/keytypes`, admin `list_key_types`, and key generation filter by the product
+  identity's default-enabled key types plus enabled identity state records,
+- a globally registered generic/composed template that is not installed or
+  enabled for the product identity is not generatable by that identity,
+- existing keys remain owned by the product identity's keystore; provider
+  lookup only supplies compatible signing/derivation code for keys already
+  owned by that identity.
 
 Key-type and key-instance inventory carry an additive `authorization_kind`
 field whose closed values are `ed25519`, `native_pq`, and `logic_sig`. The

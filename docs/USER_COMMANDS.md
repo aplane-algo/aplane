@@ -1159,7 +1159,7 @@ networks_allowed:
 Create `endpoints.yaml` for signer routing:
 
 ```yaml
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:

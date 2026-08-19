@@ -38,20 +38,21 @@ target transaction in `/sign/component`. Policy is separate from:
 
 ## Storage
 
-Policy is identity-scoped and stored in one role-dependent document:
+Policy is product-scoped and stored in one role-dependent document under the
+retained product namespace:
 
 ```text
-identities/<identity>/policy.yaml
+identities/default/policy.yaml
 ```
 
 The signer keeps a sibling integrity sidecar:
 
 ```text
-identities/<identity>/policy.yaml.hmac
+identities/default/policy.yaml.hmac
 ```
 
 The HMAC covers the exact YAML bytes for the document and uses a key derived
-from the identity's current term key. Sidecar metadata such as signing time,
+from the product store's current term key. Sidecar metadata such as signing time,
 policy SHA-256, and legacy file mtime is diagnostic; current writers omit the
 mtime and the HMAC is the security check. After
 the signed baseline exists, a missing or mismatched sidecar fails closed
@@ -62,11 +63,11 @@ The sidecar authenticates only the YAML bytes. Diagnostic metadata fields in the
 sidecar can be edited without invalidating the policy HMAC; they are not
 security inputs to the verification decision.
 
-Identity-scoped runtime settings such as `user_auto_approve`,
+Product runtime settings such as `user_auto_approve`,
 `lock_on_disconnect`, and `passphrase_timeout` live separately in:
 
 ```text
-identities/<identity>/config.yaml
+identities/default/config.yaml
 ```
 
 `user_auto_approve` is shown in `apadmin` as `User Auto-Approve`. It is not a
@@ -77,11 +78,11 @@ Signing and sentry component policy use the same filename, selected by the
 root `node.yaml` role:
 
 ```text
-identities/<identity>/policy.yaml
-identities/<identity>/policy.yaml.hmac
+identities/default/policy.yaml
+identities/default/policy.yaml.hmac
 ```
 
-The sidecar uses the policy integrity key derived from the identity's current
+The sidecar uses the policy integrity key derived from the product store's current
 term key.
 Unlock/reload verifies the active document before publishing runtime state; a
 missing, malformed, or mismatched sidecar fails closed.
@@ -101,7 +102,7 @@ wrapper. Review-producing fields are invalid in this document, and route
 misses default to deterministic `reject` when `transfer_policy.enabled:true`.
 
 The policy loader validates schema and domain constraints independent of the
-identity's current key inventory. Validation runs at unlock/reload and at any
+product runtime's current key inventory. Validation runs at unlock/reload and at any
 admin replacement attempt; failures fail closed with the previous in-memory
 policy snapshot left active, exactly like sidecar verification failure.
 
@@ -161,7 +162,7 @@ the request fails closed as a policy configuration error rather than waiting
 for a prompt.
 
 `user_auto_approve` is client-signing-only. It lives in
-`identities/<identity>/config.yaml` and has no sentry analog.
+`identities/default/config.yaml` and has no sentry analog.
 
 ## Role Domains
 
@@ -237,7 +238,7 @@ Sentry semantics:
   Bounded-sentry v1 does not invoke sentry policy for rekeys; its sentry slot
   is spend-only and forbidden on administrative paths.
 
-Both policy domains are validated by schema, not by the identity's current key
+Both policy domains are validated by schema, not by the product runtime's current key
 inventory. A sentry node can carry sentry-domain `policy.yaml` before an
 sentry key is installed.
 
@@ -297,7 +298,7 @@ Policy fields by domain:
 
 | Field | Domain | Meaning |
 |-------|--------|---------|
-| `reject_foreign_rekey` | client_signing | Reject transactions whose non-zero `RekeyTo` target is not held by the current signer identity |
+| `reject_foreign_rekey` | client_signing | Reject transactions whose non-zero `RekeyTo` target is not held by the product signer runtime |
 | `reject_rekey` | sentry | Coarse deny-all switch for transactions with non-zero `RekeyTo` |
 | `rekey_policy` | sentry | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
 | `reject_close_remainder` | common | Reject payment transactions with non-zero `CloseRemainderTo` |
@@ -450,7 +451,7 @@ user_auto_approve: false
 Location:
 
 ```text
-identities/<identity>/config.yaml
+identities/default/config.yaml
 ```
 
 Behavior:
@@ -763,7 +764,7 @@ transaction-level policy. They still participate in request planning, group
 context, warning display, and approval rendering.
 
 For sentry, the evaluated slots are the `target_indices` of a
-`/sign/component` request. The sentry identity does not own the sender
+`/sign/component` request. The sentry node does not own the sender
 account; "target" means "transaction this sentry is being asked to authorize"
 rather than "transaction signed by a key this identity holds." Non-target
 group members (including passthrough slots prepared by the user signer and
@@ -894,7 +895,7 @@ after the next successful reload, unlock, or restart.
 
 Credential backups deliberately contain no policy snapshot, approval setting,
 network mapping, or other operational configuration. Restore preserves managed
-credential authority and installs it under the destination identity's current
+credential authority and installs it under the destination product store's current
 policy and configuration. The operator owns that policy decision.
 
 Restore therefore performs no source/destination policy comparison and does

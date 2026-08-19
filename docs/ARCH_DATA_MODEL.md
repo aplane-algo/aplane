@@ -147,7 +147,7 @@ DTOs and contract fixtures.
 | Library template source | Signer data dir or repo | `library/templates/*.yaml` | parsed install candidate | admin KeyType Library | `internal/templatelibrary`, `internal/signerapp/templateadmin` |
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
 | Node-role policy | Signer identity | `policy.yaml` plus `policy.yaml.hmac` | client-signing or sentry component `policy.Config`, selected by node role | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
-| Authorization principal/group/grant | Product bootstrap model | source-defined bootstrap records | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
+| Product authorization | Product single-operator model | reserved `system:product-admin` principal plus the source-defined known-action vocabulary and closed product allowlist | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | API token | Product signer and client | signer `identities/default/aplane.token`, client `aplane.token` | product token authenticator | HTTP auth, SSH mutual proof | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` |
 | SSH enrollment | Product signer | `identities/default/.ssh/authorized_keys` | product SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
 | Admin session | Signer process | none | scalar `adminserver.SessionContext` ownership | admin IPC/SSH JSON envelope | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` |
@@ -205,7 +205,7 @@ The strongest signing authority is:
 
 ```text
 encrypted canonical managed credential (`.key` or `.sen`)
-  -> stored key type, bytecode, signing args, salt counter, base key type
+  -> stored key type, bytecode, derivation record, signing args, base key type
   -> signer-side base provider where cryptographic signing is required
 ```
 
@@ -322,7 +322,8 @@ Durable signing metadata includes:
 - `key_type`,
 - public/private key material where applicable,
 - stored LogicSig bytecode where applicable,
-- `salt_counter` for LogicSig keys,
+- `lsig_derivation` for current compiler-auto-salted LogicSig keys, with
+  compatibility-only `salt_counter` on manual-counter records,
 - `signing_metadata_version` (version 1 non-bounded; version 2 bounded),
 - `base_key_type` for composed DSA keys,
 - stored signing-argument schema in JSON field `signing_args`,
@@ -359,8 +360,8 @@ keys derive from stored public/private key material, and LogicSig keys derive
 from stored bytecode. Payloads do not persist an address field; inventory and
 key state repair recover the selector from key material or bytecode.
 `signing_args`, `signing_metadata_version`, `base_key_type`,
-`template_fingerprint`, and `salt_counter` are not independent address
-derivation inputs.
+`template_fingerprint`, `lsig_derivation`, and any compatibility
+`salt_counter` are not independent address-derivation inputs.
 
 The full durable payload is `keys.Payload` (codec in
 `internal/keys/payload_codec.go`). The signing-argument *schema slice* is
@@ -431,9 +432,10 @@ Identity key type records are plaintext because they are not key material:
 Installed templates are encrypted adjacent `.template` files under the same
 `keytypes/` directory. Library templates under `library/templates/` are
 plaintext install sources only; they are not active key types by presence
-alone. New signer identities initialize with `aplane.falcon1024-allowlist.v1`
-installed and enabled from the bundled library source; otherwise YAML templates
-become active only after identity-local installation and enablement.
+alone. New signer stores initialize the product identity with
+`aplane.falcon1024-allowlist.v1` installed and enabled from the bundled library
+source; otherwise YAML templates become active only after identity-local
+installation and enablement.
 
 ### Policy
 
@@ -730,8 +732,8 @@ The admin protocol projects:
 - sign approval prompts and responses,
 - token provisioning prompts,
 - backup/restore results,
-- admin and policy settings,
-- signer-local ASA metadata search/resolve.
+- sentry-reference and generation inventory,
+- admin and policy settings.
 
 Admin IPC exposes live administration. It is not the same contract as the HTTP
 SDK surface.

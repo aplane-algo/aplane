@@ -197,7 +197,7 @@ focused approval workflows.
 
 Signing and token-provisioning requests share a single FIFO queue. Policy
 violations included in sign requests are shown to the approver. Signing
-approval requests time out after the identity-effective `approval_wait` value,
+approval requests time out after the product runtime's effective `approval_wait` value,
 which defaults to 60 seconds.
 
 ## Key Files

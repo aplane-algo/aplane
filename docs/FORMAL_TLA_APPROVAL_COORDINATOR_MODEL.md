@@ -36,5 +36,5 @@ make formal-test
 make formal-test-deep
 ```
 
-Recorded state counts live in `formal/metrics.json` and
-`formal/metrics_deep.json` and must change in the same commit as model edits.
+Recorded state counts live in `docs/formal/metrics.json` and
+`docs/formal/metrics_deep.json` and must change in the same commit as model edits.

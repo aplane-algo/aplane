@@ -12,7 +12,7 @@ This is the transfer-routing deep dive. For the broader signer policy model,
 editing workflow, top-level fields, and key override overview, start with
 [USER_POLICY.md](USER_POLICY.md).
 
-Routing is configured in the identity policy file:
+Routing is configured in the product policy file:
 
 ```text
 identities/default/policy.yaml
@@ -60,7 +60,7 @@ document plus a fresh sidecar.
 
 Inside the TUI, `a` applies the current draft to production by writing
 the selected policy document plus a fresh sidecar. `w` writes the current
-draft to a YAML file you choose without applying it to the identity store or
+draft to a YAML file you choose without applying it to the product store or
 writing a sidecar. Use this when you want to inspect or hand off a modified
 policy draft before production apply.
 
@@ -227,7 +227,7 @@ If `enabled:false`, routing sits out and current non-routing policy behavior is
 unchanged.
 
 When routing is enabled, `on_no_route` must be explicit unless the block is a
-key override inheriting an identity-wide value.
+key override inheriting a product-wide value.
 
 ## Schema Walkthrough
 
@@ -944,11 +944,11 @@ Inheritance rules:
 - unset scalar fields such as `on_no_route`, `close_on_no_route`, and
   `clawback_on_no_route` inherit,
 - `blocked_destinations` inherit and are unioned; overrides may add blocked
-  destinations but cannot remove identity-wide blocked destinations,
+  destinations but cannot remove product-wide blocked destinations,
 - `address_sets` and `asset_sets` inherit by name,
 - override set names replace inherited set names with the same name,
 - `routes`, when present in the override, replaces the inherited route list,
-- `routes`, when absent, inherits the identity route list,
+- `routes`, when absent, inherits the product route list,
 - nested `key_overrides` are rejected.
 
 The effective override is selected by the auth address that will actually
@@ -1109,4 +1109,4 @@ If the hash cannot be resolved, routing emits
 ### A Key Override Removed My Base Routes
 
 If an override contains a `routes` field, that list replaces inherited routes
-for that key. Omit `routes` to inherit the identity-wide route list.
+for that key. Omit `routes` to inherit the product-wide route list.

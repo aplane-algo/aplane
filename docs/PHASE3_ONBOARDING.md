@@ -33,7 +33,7 @@ keep old terms readable. Mixed-term content stops being a corrupt state and
 becomes the normal one. The root commit is O(1) in the number of store
 objects, followed by a resumable rewrap that can be interrupted safely; the
 authenticated cutover preparation still performs an O(store) inventory scan
-under the identity mutation lock.
+under the process-wide store mutation lock.
 
 ## What is already built
 
@@ -56,7 +56,7 @@ Phases 1 and 2 shipped. They are the foundation, not the fix.
 | Snapshot-pinned resume — idempotent mutable-envelope rewrap, pinned-document sidecar renewal, exact preservation of anchored generations and plaintext, target-output authentication on retry, and partial-progress crash recovery | `internal/rotationinventory/resume.go` |
 | Verified completion — pre/post-baseline final scans, exact path and target-authority comparison, clean-only baseline publication, atomic pending-root close, and post-close snapshot cleanup/recovery | `internal/rotationinventory/complete.go`, `internal/crypto/keyring_store.go` |
 | Rollback consumption — matching authenticated baselines supersede at-mint inventory, divergence remains fail-closed, and restore rollback reconstructs an authenticated target into a fresh current-term generation | `internal/rotationinventory/baseline.go`, `internal/signerapp/backupadmin/rollback_generation.go` |
-| Operator/runtime lifecycle — `changepass` appends and synchronously completes a durable term rotation under the identity mutation lock; helper failure is a post-commit warning; interactive and headless unlock automatically resume before publishing the identity and enter recovery on failure | `internal/storepass/rotate.go`, `internal/signerapp/storeadmin/service.go`, `internal/signerapp/daemon/admin_services.go`, `internal/signerapp/daemon/run.go` |
+| Operator/runtime lifecycle — `changepass` appends and synchronously completes a durable term rotation under the process-wide store mutation lock; helper failure is a post-commit warning; interactive and headless unlock automatically resume before publishing the product runtime and enter recovery on failure | `internal/storepass/rotate.go`, `internal/signerapp/storeadmin/service.go`, `internal/signerapp/daemon/admin_services.go`, `internal/signerapp/daemon/run.go` |
 | Derivation confinement — no code outside `internal/crypto` imports a KDF, holds a raw term key, or wraps raw bytes as a keyring | `test/arch/kdf_confinement_test.go` |
 
 What that gives you: fresh stores begin at term 1; a guarded internal
@@ -130,7 +130,7 @@ modelled it is one entry per object. The root is read under a 1 MiB cap
 credentials and templates would not fit.
 
 **Decision:** write the snapshot body as
-`identities/<identity>/rotation.snapshot.enc`, sealed under the target term
+`identities/default/rotation.snapshot.enc`, sealed under the target term
 with object class `rotation-snapshot` and the fixed logical selector
 `pending`. Its plaintext schema is `aplane.rotation-snapshot.v1`:
 
@@ -143,8 +143,8 @@ with object class `rotation-snapshot` and the fixed logical selector
 Each inventory entry records a signer-data-root-relative slash-separated
 canonical path, one of the artifact kinds defined by K8 below, byte size,
 lowercase SHA-256 digest, and, for a term envelope, its logical object class
-and selector. Root-relative paths cover both identity-local inputs and the
-root `node.yaml` authenticated by the identity's sidecar. Paths are UTF-8,
+and selector. Root-relative paths cover both product-local inputs and the
+root `node.yaml` authenticated by the product sidecar. Paths are UTF-8,
 contain no empty, `.` or `..` component, never begin with `/`, are unique,
 and sort by raw UTF-8 byte order. Digests cover the exact bytes read from the
 regular file, not a parsed or re-encoded form.
@@ -154,7 +154,7 @@ The body is size-limited independently of `keyring.enc`;
 enabled. The root stores only the SHA-256 digest and byte size of the exact
 sealed snapshot file. It never stores the inventory itself.
 
-The identity mutation lock excludes cooperating writers while the snapshot is
+The process-wide store mutation lock excludes cooperating writers while the snapshot is
 built; it does not exclude the direct-filesystem attacker in the threat model.
 For that attacker, an edit before an entry is read is pre-cutover, while an
 edit after the exact bytes are read must cause a digest or final-inventory
@@ -244,7 +244,7 @@ The large and lifecycle-specific state stays outside the root:
 - `snapshot` and `cleanAtCutover` live in the root-pinned sealed snapshot
   described in item 1;
 - the completed post-rewrap baseline, when one is required, lives in
-  `identities/<identity>/rotation.baseline.enc`, sealed under the current
+  `identities/default/rotation.baseline.enc`, sealed under the current
   term with object class `rotation-baseline` and fixed selector `current`.
   Its plaintext schema is `aplane.rotation-baseline.v1` and contains exactly
   one generation ID, the entry count, and the SHA-256 digest of that
@@ -264,7 +264,7 @@ ignored by generation-ID mismatch and removed durably after the `CURRENT`
 flip.
 
 Rotation preflight reconciles any existing `rotation.baseline.enc` under the
-identity mutation lock before constructing the cutover snapshot. A valid
+process-wide store mutation lock before constructing the cutover snapshot. A valid
 baseline for the rollback-eligible current generation is pinned as the
 effective starting authority and consumed when producing the target-term
 completion baseline. A valid baseline naming a superseded generation is stale
@@ -364,7 +364,7 @@ every plaintext file to carry an encryption term:
 | Classification | Durable classes | Phase-3 rule |
 |---|---|---|
 | Term-encrypted | active `.key` and `.sen` credentials; installed `.template` files; deleted key, sentry-credential, and template archives; rotation snapshot and baseline | Envelope carries a term and the class-specific logical context. Mutable and inactive store consumers, including `deleted/`, are snapshot-pinned and rewrapped onto the target term. The snapshot itself is a new target-term record pinned by the root and is not recursively inventoried. A valid matching baseline that exists before cutover is pinned as an input; the baseline written during completion is a target-term output and is not recursively inventoried as another input. |
-| Plaintext plus term integrity | `policy.yaml` and root `node.yaml`, through their identity-local HMAC sidecars | Sidecar v2 carries an explicit integrity term. Snapshot pins the exact document input; completion requires a target-term sidecar. |
+| Plaintext plus term integrity | `policy.yaml` and root `node.yaml`, through their product-local HMAC sidecars | Sidecar v2 carries an explicit integrity term. Snapshot pins the exact document input; completion requires a target-term sidecar. |
 | Plaintext generation member | key-type state records, witness public metadata, generation manifest, and retained-generation seal | No per-file encryption term is invented. Namespace members are covered by the seal inventory; `manifest.json` is covered by the seal's manifest digest; the retained seal MAC, historical anchor, and exact-byte historical open provide the term authority described above. A seal beside `CURRENT` is precommit crash residue: its structure is tolerated but its content is never parsed or inventoried by rotation. |
 | Independent or excluded | `keyring.enc` and `.keystore`; standalone-passphrase backups; audit/config/unlock/token/SSH state; plaintext template library; caches; unpublished staging residue | Not opened as a term-encrypted store object. The KEK-sealed root and static marker keep their own versioned contract; other existing independent validation applies. Staging residue is reconciled or rejected before cutover, never promoted by rewrap. |
 
@@ -520,7 +520,7 @@ mutation, offline passphrase change, policy signing/editing, and generation
 pruning during that window.
 
 `storepass.Rotate` is the operator start path. The service fences signing and
-clears published runtime state before entering the identity mutation lock's
+clears published runtime state before entering the process-wide store mutation lock's
 transition; only verified completion and reload republish it, and a racing
 explicit lock wins. Rotation appends the term, updates any configured
 passphrase helper after the root commit, and calls completion. A helper-write
@@ -566,7 +566,7 @@ may need its own fix rather than only an anchoring rule.
 
 **11. Two things the code would otherwise lose by accident.** Snapshot
 construction must exclude cooperating store and generation mutations.
-`changepass` gets that exclusion from the identity mutation lock. The former
+`changepass` gets that exclusion from the process-wide store mutation lock. The former
 `requireGenerationQuiescence` and prune-all-priors prerequisite are retired;
 retained generations are instead authenticated by historical anchors.
 Direct filesystem writes are handled by the exact-byte and final-inventory

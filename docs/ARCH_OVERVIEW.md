@@ -38,8 +38,10 @@ For a system-wide durable/runtime/wire data model, see
 ## Signing Authority
 
 **Signing authority lives in the key file, not in the template.** Every
-LogicSig key file stores its compiled bytecode, off-curve salt counter, and
-signing metadata at creation time. Sign-time code uses that stored metadata;
+LogicSig key file stores its compiled bytecode, derivation record, and signing
+metadata at creation time. Current TEAL v13-generated keys record
+`lsig_derivation: algod_v13_auto_salt` and do not carry a mutable salt counter;
+legacy manual-salting formats retain their compatibility counter. Sign-time code uses that stored metadata;
 DSA-backed keys use the appropriate base signing provider to produce and
 pack signatures. Templates are used for generation, discovery, lifecycle, and
 provenance, not to reconstruct missing signing metadata. Template provenance
@@ -103,7 +105,7 @@ The system enforces a strict security boundary between APlane Shell (client) and
 │  (shell, sdk, etc)   │          │                      │
 │                      │          │                      │
 │  • Builds txns       │  ──────► │  • Manages keys per  │
-│  • No keys           │  SignReq │    identity runtime  │
+│  • No keys           │  SignReq │    product runtime   │
 │  • Submits txns      │  ◄────── │  • Signs messages    │
 │    to Algorand       │          │                      │
 │                      │          │                      │
@@ -366,9 +368,9 @@ identity's key indexes. Key type activation and disabled records are consulted b
 inventory and admin key operations when deciding whether an optional key type
 can be discovered, generated, or imported.
 
-**Identity-scoped runtime state:**
+**Product runtime state:**
 
-Each identity owns an `identity.Runtime` containing:
+The process owns one `identity.Runtime`, fixed to `default`, containing:
 - key maps (`keys`, `keyTypes`, `keyMetadata`) protected by `keysLock`
 - key session and keyring access protected by `passphraseLock`
 - approval coordinator (atomic pointer)
@@ -377,14 +379,12 @@ Each identity owns an `identity.Runtime` containing:
 - file watcher lifecycle
 - product runtime config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`)
 
-The on-disk layout is identity-scoped: keys under
-`identities/<identityID>/keys/`, encrypted templates and state records under
-`identities/<identityID>/keytypes/`, deleted key/template
-archives under `identities/<identityID>/deleted/`, node-role policy at
-`identities/<identityID>/policy.yaml`, and config at
-`identities/<identityID>/config.yaml`. HTTP handlers extract the authenticated
-identity from request context; admin sessions over IPC or the SSH
-`aplane-admin` subsystem bind to one identity at auth time.
+The retained on-disk namespace is rooted at `identities/default/`: keys live
+under `keys/`, encrypted templates and state records under `keytypes/`, deleted
+key/template archives under `deleted/`, node-role policy at `policy.yaml`, and
+runtime configuration at `config.yaml`. HTTP authentication selects the one
+product runtime; admin sessions over IPC or the SSH `aplane-admin` subsystem
+bind to that same runtime at authentication time.
 
 **Admin protocol architecture:**
 

@@ -51,21 +51,21 @@ means no successful load/sign/restore result exists for that input.
 
 `KeyFile` is an encrypted managed credential payload: account authority uses
 `.key`, and sentry witness authority uses `.sen`. It becomes observable only
-after the identity's current term key decrypts it. The model observes:
+after the product store's current term key decrypts it. The model observes:
 
 - key type,
 - key category,
 - native key material for native keys,
 - LogicSig bytecode for LogicSig keys,
 - `signing_metadata_version`,
-- `salt_counter`,
+- `lsig_derivation` and its format-dependent optional `salt_counter`,
 - `signing_args`,
 - `base_key_type`,
 - optional `template_fingerprint`,
 - creation parameters and provenance data.
 
 The encrypted envelope and KDF are outside this model except for the assumption
-that decryption succeeds only with the identity's current term key and the
+that decryption succeeds only with the product store's current term key and the
 credential's own object context in the envelope's authenticated data.
 
 ### Signing Authority Record
@@ -83,14 +83,14 @@ For generic LogicSig keys:
 
 ```text
 SigningAuthority = stored LogicSig bytecode + stored signing_args
-                   + stored salt_counter
+                   + stored derivation record
 ```
 
 For DSA-backed LogicSig keys:
 
 ```text
 SigningAuthority = stored LogicSig bytecode + stored signing_args
-                   + stored salt_counter + stored base_key_type
+                   + stored derivation record + stored base_key_type
                    + stored private signing material
 ```
 
@@ -195,13 +195,15 @@ address from its stored bytecode.
 
 Rules:
 
-1. `salt_counter` is required for LogicSig keys.
-2. The stored bytecode, not the `salt_counter` metadata field alone, determines
-   the LogicSig address.
-3. Changing `salt_counter` metadata without changing stored bytecode does not
-   change the key address.
-4. Key scan, signer load, backup verify, and restore reject LogicSig key
-   payloads missing `salt_counter` or whose stored bytecode derives an on-curve
+1. The derivation record must be internally consistent. Current
+   `algod_v13_auto_salt` keys omit `salt_counter`; compatible manual-counter
+   records require it.
+2. The stored bytecode, not derivation metadata alone, determines the LogicSig
+   address.
+3. Changing derivation metadata without changing stored bytecode does not
+   change the key address, but an inconsistent record is rejected.
+4. Key scan, signer load, backup verify, and restore reject unknown or
+   inconsistent derivation records and bytecode that derives an on-curve
    address.
 
 ### Address Identity
@@ -215,7 +217,8 @@ Address identity derives from key material:
   but the cryptographic LogicSig address is still derived from stored bytecode.
 
 Signing metadata fields such as `signing_args`, `signing_metadata_version`,
-`base_key_type`, `template_fingerprint`, and `salt_counter` are not independent
+`base_key_type`, `template_fingerprint`, `lsig_derivation`, and
+`salt_counter` are not independent
 address derivation inputs.
 
 ## Signing Rules
@@ -303,13 +306,15 @@ bytecode.
 AcceptedLogicSigKey(key) => OffCurve(AddressOf(key.stored_bytecode))
 ```
 
-### S7: Salt Counter Required But Not Address Authority
+### S7: Derivation Record Consistency, Not Address Authority
 
-`salt_counter` must be present for LogicSig keys, but address identity is still
+The derivation record must match its format, but address identity is still
 derived from bytecode.
 
 ```text
-AcceptedLogicSigKey(key) => HasSaltCounter(key)
+AcceptedLogicSigKey(key) =>
+  (key.lsig_derivation = algod_v13_auto_salt => not HasSaltCounter(key)) and
+  (ManualCounterDerivation(key) => HasSaltCounter(key))
 AddressIdentity(key) = AddressOf(key.stored_bytecode)
 ```
 
@@ -370,7 +375,8 @@ SignMode(entry) and Accepted(entry) =>
 If `Resolve` returns `NotFound`, planning rejects before signing runs. The
 implementation must not silently fall back to a different address or recover
 a key by recomputing addresses from `signing_metadata_version`,
-`base_key_type`, `template_fingerprint`, or `salt_counter` alone.
+`base_key_type`, `template_fingerprint`, `lsig_derivation`, or
+`salt_counter` alone.
 
 ### S12: Auth Address Determines Policy Override
 
@@ -421,7 +427,7 @@ anchors.
 
 This model assumes:
 
-- the identity's current term key correctly decrypts the key payload,
+- the product store's current term key correctly decrypts the key payload,
 - provider registration supplies required base cryptographic providers for DSA
   signing when the stored key references them,
 - transaction planning already selected a sign-mode slot and auth address,
@@ -464,7 +470,8 @@ Implementation areas that should remain aligned with this model:
 High-value test anchors:
 
 - LogicSig keys without `signing_metadata_version` reject for signing/restore,
-- LogicSig keys without `salt_counter` reject,
+- LogicSig keys with unknown or inconsistent derivation records reject,
+- compiler-auto-salted keys omit `salt_counter`, while compatible manual-counter keys require it,
 - on-curve LogicSig bytecode rejects,
 - conflicting key payload aliases reject,
 - generic LogicSig signing uses stored `signing_args`,

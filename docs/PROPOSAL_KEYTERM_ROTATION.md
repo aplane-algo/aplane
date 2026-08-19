@@ -40,9 +40,10 @@ behind it. Amended across six rounds of review by two independent reviewers,
 both of whom now call the design settled.
 
 > The recovered-batch references below describe a retired pre-release restore
-> design. Admin protocol v4 restores validated credentials directly through a
-> generation transaction, so recovered batches are no longer store artifacts
-> or rotation-inventory members. The current contract is in
+> design. Admin protocol v4 introduced direct restoration of validated
+> credentials through a generation transaction; the current admin wire is v5.
+> Recovered batches are therefore no longer store artifacts or
+> rotation-inventory members. The current contract is in
 > [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 Refreshed against the tree after the generation-storage branch merged: the
@@ -209,7 +210,7 @@ term key   --encrypts--> individual store files
     their own scans.
 
   Manifest term data, if recorded at all, is at-mint diagnostics only.
-  Deletion must rescan under the identity mutation lock; a candidate list
+  Deletion must rescan under the process-wide store mutation lock; a candidate list
   recorded earlier by a passphrase-less prune is a hint, never deletion
   authority.
 - **"Referenced" must mean every retained durable object, not every
@@ -328,7 +329,7 @@ generation's authority rule, which nothing rejects today.
 step. Ordering matters because current-term-only authority makes each
 half-finished state visible to the next reader.
 
-1. Under the identity mutation lock, atomically write the keyring under the
+1. Under the process-wide store mutation lock, atomically write the keyring under the
    new KEK with the appended term **already promoted**. Budget this step as
    a full-store scan rather than a metadata write: it hashes every retained
    sealed generation (for anchors) and every mutable consumer (for the
@@ -387,14 +388,14 @@ half-finished state visible to the next reader.
 
 After a crash the new passphrase **resumes the existing transition** — it
 must not append a further term. Resume runs automatically at unlock, before
-the identity is enabled, rather than through an operator command:
+the product runtime is enabled, rather than through an operator command:
 `changepass` rejects an unchanged passphrase
 (`storeadmin/service.go`: "new passphrase must be different from current
 passphrase"), so "re-run changepass" is not actually available as a resume
-path. If resume fails, the identity surfaces a rotation-pending recovery
+path. If resume fails, the product surfaces a rotation-pending recovery
 status.
 
-**An open window blocks every identity mutation, not only signing.** Signing
+**An open window blocks every store mutation, not only signing.** Signing
 is blocked because the window deliberately authorizes retiring terms, which
 is the exposure current-term authority exists to close. But a mint during
 the window would copy mixed-term files into a child under ambiguous write
@@ -506,7 +507,7 @@ the store, which no in-store cryptography detects.
 Three things make that boundary tolerable, and the third is the strongest.
 Root replacement is loud: the operator's new passphrase stops working, since
 the reverted root only opens with the old one. An attacker with write access
-to the identity directory can already substitute the entire store, so root
+to the product data directory can already substitute the entire store, so root
 replacement grants nothing whole-store substitution did not.
 
 And a reverted root is **store-breaking, not quietly subversive**. From step
@@ -686,25 +687,26 @@ exists (open question 3).
 
 ### Version gate
 
-The keyring layout is a store-format change: bump `.keystore` to version 4
-(`keyring/v1`). Old binaries reject v4 exactly as pre-keyring binaries
-reject v3.
+The shipped keyring layout is a store-format change: `.keystore` is version 5
+with layout `keyring/v2`, and `keyring.enc` uses envelope/schema v2. Older
+binaries reject the store at the marker or keyring-version gate.
 
-**There is no v3→v4 migration, and none should be written.** The release
+**There is no in-place migration from an earlier store format, and none should
+be written.** The release
 policy is that a store is readable only by the release that initialized it;
 `internal/storemigrate`, `apstore migrate-layout`, and the
 migration-in-progress completion hook this proposal originally planned to
-reuse were all deleted with it. A v4 store is initialized as v4, and
+reuse were all deleted with it. A v5 store is initialized as v5, and
 existing stores move across by exporting a backup archive and restoring it
 into a fresh store — the same path every other release boundary uses.
 
 That removes the riskiest workstream the proposal originally carried: a
-metadata migration with its own crash matrix. It also means the v4 envelope
-does not need to stay readable by v3 or vice versa, which simplifies the
-header change (see open question 3).
+metadata migration with its own crash matrix. It also means the v2 keyring
+envelope does not need to retain a legacy reader, which simplifies the header
+change (see open question 3).
 
-The operational consequence is worth stating plainly: shipping v4 obsoletes
-every store initialized by an earlier release. That is free today — there
+The operational consequence is worth stating plainly: shipping the v5 store
+format obsoletes every store initialized by an earlier release. That is free today — there
 are no operators — and it is the cost the no-backcompat policy already
 accepts everywhere else.
 
@@ -730,7 +732,7 @@ accepts everywhere else.
    passphrase. Neither touches the store master key, and restore
    re-encrypts under the destination's key on the way in. Archives are
    therefore unaffected by terms, and remain the transfer path across the
-   v4 boundary.
+   store-format boundary.
 2. ~~**Memory handling.**~~ **Decided: the keyring exposes operations, not
    key material. `WithMasterKey` is replaced by `WithKeyring`.**
 
@@ -775,7 +777,7 @@ accepts everywhere else.
      `IntegritySidecar` types already carry `Version` and `KeyID`; add an
      explicit `Term` field and bump the sidecar version rather than
      overloading `KeyID`, which is a constant scheme tag exact-matched on
-     load. Absent `Term` fails closed — with no migration, a v4 sidecar
+     load. Absent `Term` fails closed — with no migration, a current-format sidecar
      always carries one.
 
      Per-term derivation is deliberate: a fixed integrity root would make
@@ -819,7 +821,7 @@ accepts everywhere else.
    is otherwise only emergent (tampering surfaces as a failed decrypt under
    the wrong key), and AAD binding makes it cryptographic for one line in an
    envelope change that is happening anyway. With no migration the envelope
-   need not stay backward-readable: v4 reads only what v4 wrote.
+   need not stay backward-readable: the current format reads only what it wrote.
 
    Correction to the original scoping: **caches are not in the blast
    radius.** `internal/cache` generates its own `.cache_key` and never
@@ -829,7 +831,7 @@ accepts everywhere else.
    nothing records — silent, and only manifesting after the first rotation.
    Sequencing removes that risk:
 
-   1. **Keyring with exactly one term.** The store bumps to v4;
+   1. **Keyring with exactly one term.** The store moves to the new format;
       `keyring.enc` becomes the self-contained root holding term 1, which
       wraps today's master key. Existing call sites keep working through a
       compatibility accessor, because with one term "newest" *is* "the only
@@ -956,8 +958,8 @@ accepts everywhere else.
      this proves callers supplied the right logical identity.
 
    **Phase 1 invariant to state explicitly:** the term stamp belongs to the
-   envelope writer, not to `Keyring.Seal`. Every v4 write stamps `term: 1`
-   regardless of which path produced it, and v4 decrypt fails closed on an
+   envelope writer, not to `Keyring.Seal`. Every new-format write stamps
+   `term: 1` regardless of which path produced it, and decrypt fails closed on an
    absent term. Otherwise files written through the compatibility path in
    phases 1-2 carry no term and become unreadable at phase 3.
 
@@ -1079,7 +1081,7 @@ accepts everywhere else.
    It is finished by the automatic resume at the next unlock, not by
    re-running `changepass`, which rejects an unchanged passphrase. Expect
    that unlock to take longer than usual while the remainder completes
-   before the identity is enabled — long, not hung.
+   before the product runtime is enabled — long, not hung.
 
 ## What phase 1 committed to (implemented)
 
@@ -1147,7 +1149,7 @@ implementation do not yet meet. None invalidates the model; all are work phase
 4. **The snapshot is pinned atomically in the model and cannot be on disk.**
    Enumerating the store races an attacker writing files. The pin must be
    taken where concurrent mutation is excluded — changepass already requires
-   generation quiescence and holds the identity mutation lock; term append
+   generation quiescence and holds the process-wide store mutation lock; term append
    needs the same, and it should be stated rather than inherited by accident.
 
 5. **Term append must not reuse the changepass swap.** The model's root write
@@ -1169,19 +1171,17 @@ retired term key also controls the filename the context is derived from, so
 they can produce a correctly-contexted envelope. The snapshot remains
 necessary, and the model's silence about context stays conservative.
 
-## Rough effort
+## Historical rough effort
 
-- Envelope header + keyring type + v4 metadata: the core, touching
+- Envelope header + keyring type + v5 store metadata: the core, touching
   `internal/crypto` and every encrypt/decrypt call site. Largest and
   riskiest part; needs its own review cycle and crash matrix. Smaller than
   originally scoped, since no migration is written.
 - changepass rewrite: net-negative code (deletes the swap machinery).
 - Daemon/keystore plumbing (keyring in place of master key): mechanical but
   wide.
-- Not a patch: this remains a Phase-4-sized change. Its blocking
-  predecessor — the generation-storage branch — has merged, so this is now
-  the next substantial piece of work rather than something to sequence
-  behind anything.
+- This was correctly treated as a Phase-4-sized change rather than a patch;
+  the status header records the slices that ultimately shipped.
 
 ## Suggested approach
 

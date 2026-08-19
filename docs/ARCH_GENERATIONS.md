@@ -138,9 +138,8 @@ generational paths (it is unsynced, non-atomic, and with copies its blast
 radius is confined to the current generation — but a torn current credential
 is still a defect).
 
-The one repo-wide guard to add: the arch test suite gains a
-`TestNoOsLinkInStoreCode` (mirroring `managed_credential_files_test.go`'s
-AST-walk pattern) proving no `os.Link` call exists in the tree.
+The repo-wide `TestNoHardlinksInStoreCode` architecture guard AST-scans store
+code and rejects `os.Link` calls, with only narrowly named non-store exceptions.
 
 ## 5. Manifest and seal
 
@@ -331,10 +330,10 @@ See [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
 ## 12. Filesystems, crash ordering, ownership
 
 - Supported: Linux and Darwin on a **single filesystem per identity store**
-  (already assumed by five existing cross-directory `os.Rename` sites). This
-  is a documented store requirement, not probed at runtime: a store that
-  violates it fails its first commit's publish rename with `EXDEV` before
-  anything durable refers to the staged generation.
+  (already required by cross-directory publish/archive renames). This is a
+  documented store requirement, not probed at runtime: a store that violates
+  it fails its first commit's publish rename with `EXDEV` before anything
+  durable refers to the staged generation.
 - Durability primitives: `fsutil.WriteFileDurable`/`SyncDir`/`RemoveDurable`
   exclusively for commit-path writes; `fsutil.TestHook` is the crash-matrix
   injection seam.

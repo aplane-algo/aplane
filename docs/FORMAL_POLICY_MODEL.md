@@ -68,11 +68,11 @@ Policy is separate from:
 `PolicySnapshot` is the immutable effective policy observed by one signing
 request. For client-signing requests it includes:
 
-- identity-wide policy fields,
+- product policy fields,
 - YAML-only `key_overrides`,
 - transfer routing configuration,
 - policy defaults for absent fields,
-- the identity's operator default input `user_auto_approve`, even though that
+- the product runtime's operator default input `user_auto_approve`, even though that
   setting is stored outside `policy.yaml`.
 
 The policy YAML is trusted only after sidecar verification. A missing or
@@ -109,21 +109,23 @@ The first three classes are 1:1 with the planning model's `Mode` for caller
 request positions. Dummies have no request index and therefore no `Mode`;
 their slot class is determined by planning.
 
-Transaction-level policy rules evaluate signer-controlled request slots only.
-Passthrough and foreign slots are not governed by this signer's
-transaction-level policy because this signer is not signing them. They still
-participate in group context, approval rendering, warning display, and audit
-visibility. Dummies are signer-generated minimum-effect transactions; they are
-not subject to user-facing transaction-level policy.
+Hard-reject and configured amount/routing rules evaluate signer-controlled
+request slots only. Passthrough and foreign slots are not governed by those
+rules because this signer is not signing them. They still participate in group
+context, approval rendering, audit visibility, and a load-bearing cross-party
+Always Review check: warning-bearing rekey, close, clawback, and related danger
+fields force operator review even when `user_auto_approve:true`. Dummies are
+signer-generated minimum-effect transactions and are not independent
+user-facing policy subjects.
 
 ### Rule Classification
 
 Rules in the current inventory fall into two structural shapes:
 
-- **Per-position transaction-level rules.** All Always Deny rules and all
-  Always Review rules evaluate one signer-controlled slot at a time. P8's
-  `TransactionLevelPolicyCandidate(i)` predicate refers to these rules:
-  passthrough and foreign slots are excluded from candidacy.
+- **Per-position transaction-level rules.** Always Deny and configured
+  signer-policy review rules evaluate signer-controlled slots. The separate
+  cross-party warning-review guard evaluates passthrough and foreign slots so
+  dangerous context cannot ride through the operator default.
 - **Plan-shape predicates.** Always Approve is currently a single rule:
   `auto_approve_self_noop_transfer`, and it is not per-position. It matches
   on the overall planned request: single caller request, no passthrough or
@@ -230,7 +232,7 @@ allows the movement to continue through later phases.
 
 The operator default is not policy. It is reached only when no policy verdict
 matched. It is controlled by `user_auto_approve` in
-`identities/<identity>/config.yaml`.
+`identities/default/config.yaml`.
 
 ## Effective Policy Selection
 
@@ -245,7 +247,7 @@ Client-signing rules:
 3. This matters for rekeyed accounts: the auth address controls the override.
 4. Missing key-type metadata for a signer-controlled slot still fails closed before a
    policy decision can silently fall back to the wrong override.
-5. Override fields are sparse overlays over the identity-wide policy; nested
+5. Override fields are sparse overlays over the product policy; nested
    overrides are rejected.
 
 Sentry overrides are keyed by Witness Key ID and are consumed only by the
@@ -284,7 +286,7 @@ Policy updates are atomic from the perspective of signing requests:
    changed while they waited for approval.
 
 `user_auto_approve` is captured at the same point even though it is sourced
-from identity-scoped config (`identities/<identity>/config.yaml`) rather
+from product config (`identities/default/config.yaml`) rather
 than from `policy.yaml`. Admin RPCs that toggle `user_auto_approve` are
 visible to subsequent signing requests but do not propagate into a request
 that has already captured its snapshot.
@@ -368,15 +370,16 @@ NoPolicyVerdict(policy, planned) and user_auto_approve = true =>
 
 ### P8: Passthrough and Foreign Policy Scope
 
-Transaction-level policy rules do not govern passthrough or foreign slots.
+Signer-owned hard-reject/threshold/routing rules do not govern passthrough or
+foreign slots, but warning-bearing external slots force review.
 
 ```text
 ModeAt(i) in {passthrough, foreign} =>
-  not TransactionLevelPolicyCandidate(i)
+  not SignerOwnedRuleCandidate(i) and
+  (DangerousWarning(i) => Decide(request) = Review(always_review_warnings))
 ```
 
-Those slots may still affect group context, warning display, approval
-rendering, and audit visibility.
+Those slots also affect group context, approval rendering, and audit visibility.
 
 ### P9: Route Verdict Excludes Approve
 
@@ -401,7 +404,7 @@ address.
 
 ```text
 EffectivePolicyForSlot(slot) =
-  Overlay(identity_policy, key_overrides[AuthAddress(slot)])
+  Overlay(product_policy, key_overrides[AuthAddress(slot)])
 ```
 
 ## Assumptions
@@ -457,7 +460,7 @@ High-value test anchors:
 - Always Review blocks `user_auto_approve:true`,
 - Always Approve is evaluated only after deny and review pass,
 - Operator Default is reached only when no policy verdict matched,
-- passthrough and foreign slots are skipped by transaction-level policy,
+- passthrough and foreign slots are skipped by signer-owned policy but warning-bearing danger fields force review,
 - routing matches do not auto-approve,
 - key overrides use auth address rather than transaction sender,
 - network-scoped thresholds use `GenesisHash`, not `GenesisID`.

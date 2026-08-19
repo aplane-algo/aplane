@@ -323,11 +323,8 @@ assert`,
 
 Generated TEAL structure:
 ```
-#pragma version 12
+#pragma version 13
 bytecblock 0x<hash>                // strict template constants
-byte 0x41504c414e455f4c5349475f53414c545f56315f005f454e44
-                                    // generated off-curve salt marker
-pop
 
 // DSA signature verification (Falcon-1024 native opcode)
 txn TxID
@@ -342,6 +339,11 @@ arg 1; sha256; bytec_0; ==; assert
 int 1
 return
 ```
+
+The TEAL above is the semantic renderer output before algod assembly. For
+derivation version 3, algod may reuse generated constants or append a
+semantically inert constant block while finding an off-curve address; APlane
+does not author or patch a salt marker.
 
 The example above is renderer output, not user-authored YAML source. Template
 authors write symbolic `$hash` references; validation rejects raw
@@ -555,7 +557,7 @@ lsig/signerreg.RegisterSigner()
 
 Runtime templates (from keystore) are loaded after unlock:
 ```go
-signertemplates.NewManager(paths).RegisterKeystoreTemplates(identityID, masterKey)
+signertemplates.NewManager(paths).RegisterKeystoreTemplates(identityID, keyring)
 ```
 
 ## Algod Client Configuration
@@ -591,7 +593,7 @@ yields a template key type that signs with Ed25519 inside a LogicSig.
 | `aplane.corridor.v1` | `corridor` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, framework Merkle recipient policy, sentry-gated spend, and external-admin pure rekey |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
-| `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled for new signer identities; Falcon + fixed receiver allowlist |
+| `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled in the product identity for new signer stores; Falcon + fixed receiver allowlist |
 | `aplane.falcon1024-allowlist.v2` | `falcon1024-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Falcon + signer-derived Merkle receiver proof |
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + validity-round gate on spend and rekey |
 

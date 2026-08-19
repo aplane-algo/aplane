@@ -488,13 +488,13 @@ policy-editing, or liveness-probe workflows and do not need this capability.
 - **apstore** performs stopped-daemon initialize, policy integrity, external
   backup verification, rebuild rescue, permission migration, generation
   pruning, and offline key inventory; it has no live admin transport
-- **appass** edits identity-scoped auto-unlock configuration while `apsigner` is stopped
+- **appass** edits the product runtime's auto-unlock configuration while `apsigner` is stopped
 - **aplocalnet** configures a running AlgoKit LocalNet as apshell's default network, updates apsigner genesis mapping, enables the LocalNet plugin, and can persist a KMD URL override for plugin processes
 - **appass-systemd-creds** is built for Linux/systemd releases; Darwin release archives omit it
 - **approbe** checks local signer IPC liveness for installer live-daemon gating
-- Signature operations require admin approval unless the identity has `user_auto_approve:true`
+- Signature operations require admin approval unless policy explicitly approves them or the product runtime has `user_auto_approve:true`
 - Plugin system uses external processes communicating via JSON-RPC
 - Cross-compilation targets Linux ARM64/AMD64 and Darwin ARM64/AMD64
 - Linux CGO binaries use musl static linking; macOS binaries are dynamically linked
-- KeyType Library YAML sources live under `library/templates/` in the repo or `<APSIGNER_DATA>/library/templates/`; installed templates are encrypted under `identities/<identity>/keytypes/` with adjacent state records, new signer identities start with the Falcon allowlist v1 template installed, other templates must be imported/enabled, and removed keys/templates are archived under `identities/<identity>/deleted/`
+- KeyType Library YAML sources live under `library/templates/` in the repo or `<APSIGNER_DATA>/library/templates/`; installed templates are encrypted under `identities/default/keytypes/` with adjacent state records, new signer stores start with the Falcon allowlist v1 template installed in the product namespace, other templates must be imported/enabled, and removed keys/templates are archived under `identities/default/deleted/`
 - See [USER_CONFIG.md](USER_CONFIG.md) for configuration reference

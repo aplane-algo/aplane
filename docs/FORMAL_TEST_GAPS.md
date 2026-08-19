@@ -95,7 +95,8 @@ brackets it inside `WithIdentityMutation`, the process-wide writer critical
 section.
 
 **Out of model: non-owning authenticate-without-unlock (`auth_only`).**
-Admin protocol 4.4 added a second pre-auth message. `auth_only`
+The admin protocol retains a second pre-auth message, `auth_only`, in the
+current v5 surface. `auth_only`
 (`internal/signerapp/adminserver/session.go` `AuthenticateOutcome`,
 `internal/transport/protocol_flow.go` `authenticateOnly`) verifies the
 passphrase and binds the session runtime but never authorizes or invokes
@@ -114,7 +115,7 @@ state space. Daemon lifecycle tests pin non-displacement and lock preservation;
 adminserver tests pin the explicit server-side request allowlist.
 
 The related non-blocking `identity_busy` result
-(`daemon/server.go` `tryWithIdentityInspection`) is a plain `TryLock` on the
+(`internal/signerapp/daemon/server.go` `tryWithIdentityInspection`) is a plain `TryLock` on the
 existing store-mutation lock with client-side retry in
 `internal/apadminapp/catalog.go` (`requestInspectionWithRetry`). A failed
 acquire never becomes in-flight

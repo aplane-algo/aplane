@@ -69,8 +69,8 @@ Sentry keys are raw witness keys held by sentry nodes. They are not
 Algorand accounts and cannot spend funds directly.
 
 Their canonical private record is
-`identities/<identity>/keys/<WitnessKeyID>.sen`. The `.sen` container uses the
-identity's current term key, bound to the credential's Witness Key ID, and a
+`identities/default/keys/<WitnessKeyID>.sen`. The `.sen` container uses the
+product store's current term key, bound to the credential's Witness Key ID, and a
 canonical `category: witness` payload. It is
 distinct from the independently encrypted external `.wit` artifact opened only
 by `aprekey`; signer scanning never opens `.wit` or `.wit.json` as private state.
@@ -205,7 +205,7 @@ the final execution gate, so shutdown or lock transitions cannot
 complete while component key material is in use. In a mixed group the
 operator may be prompted twice — once for the guarded component request and
 once for the ordinary `/sign` legs; both prompts render the full group
-context. The `auto_approve_self_no_op_transfer` rule never fires for guarded
+context. The `auto_approve_self_noop_transfer` rule never fires for guarded
 groups because they are always pre-grouped, matching `/sign` semantics for
 pre-grouped requests.
 
@@ -250,14 +250,14 @@ import` on the signer node.
 Reference aliases are security-bearing generation inputs: resolving
 `sentry=<name>` selects the witness public key embedded into a newly generated
 guarded account. Manual import and removal therefore require an unlocked
-identity in addition to `sentries.manage`. Re-importing the identical authority
+product runtime in addition to `sentries.manage`. Re-importing the identical authority
 is idempotent. Rebinding an existing name to another Witness Key ID is rejected;
 replacement requires an explicit audited remove followed by import.
 
 Public reference records are stored under:
 
 ```text
-identities/<identity>/sentries/
+identities/default/sentries/
 ```
 
 They contain public metadata only: Witness Key ID, key type, sentry public key

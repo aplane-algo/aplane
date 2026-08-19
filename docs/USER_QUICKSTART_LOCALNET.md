@@ -163,11 +163,12 @@ with your new key.
 
 ## Further Exploration
 
-By default, APlane exposes the `ed25519`, `aplane.falcon1024.v1`, and
-`aplane.falcon1024-allowlist.v1` key types. To try additional LogicSig templates from
+By default, APlane exposes the native `ed25519` and `falcon1024` key types plus
+the `aplane.falcon1024.v1` and `aplane.falcon1024-allowlist.v1` LogicSig key
+types. To try additional LogicSig templates from
 the bundled library, open the signer admin pane, press `s` for settings, then
 press `k` for key types. The KeyType Library lets you enable additional
-compiled providers and templates for the current identity.
+compiled providers and templates for the product store.
 
 For more detail, see [USER_KEYTYPES.md](USER_KEYTYPES.md).
 
@@ -186,9 +187,9 @@ server without touching `~/.codex`. Other MCP-capable agents can use
 `.mcp.json`; they will use an instance of the shell in "MCP mode" as the MCP
 server.
 
-If you connect an agent through that MCP server, first ask it to read the
-`mcp_reference` MCP command. That returns the apshell command reference so the
-agent can inspect the available command surface before acting.
+If you connect an agent through that MCP server, first ask it to call
+`mcp_manual` for the operating model, then `mcp_reference` for the live apshell
+command surface.
 
 ## What's next
 

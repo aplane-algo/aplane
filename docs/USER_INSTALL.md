@@ -60,7 +60,7 @@ aliases.
 - [Step 6: Enable and Start](#step-6-enable-and-start)
 - [Managing the Service](#managing-the-service)
 - [Multiple Instances](#multiple-instances)
-- [Identity Runtime Layout](#identity-runtime-layout)
+- [Product Runtime Layout](#product-runtime-layout)
 - [Installer Files Reference](#installer-files-reference)
 - [How Passphrase Encryption Works](#how-passphrase-encryption-works)
 - [Changing the Passphrase](#changing-the-passphrase)
@@ -101,7 +101,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   └── identities/default/ # Keystore (created during install)
 │       ├── keyring.enc
 │       ├── .keystore
-│       └── .ssh/          # Identity-scoped authorized_keys after token enrollment
+│       └── .ssh/          # Product-local authorized_keys after token enrollment
 ├── apclient/              # Client data directory ($APCLIENT_DATA)
 │   ├── bin/               # apshell
 │   ├── config.yaml        # Client config (network and UI defaults)
@@ -530,7 +530,7 @@ Key systemd paths:
 |------|---------|
 | `/var/lib/apsigner/` | Private signer data directory, owned by `aplane:aplane`, mode `0700` |
 | `/var/lib/apsigner/config.yaml` | Private signer configuration, owned by `aplane:aplane`, mode `0600` |
-| `/var/lib/apsigner/identities/default/` | Default identity keystore, keys, policy, and unlock settings |
+| `/var/lib/apsigner/identities/default/` | Product keystore, keys, policy, and unlock settings |
 | `/run/apsigner/aplane.sock` | Group-connectable admin IPC socket (`0660`) in a non-group-writable runtime directory (`0750`) |
 | `/var/lib/apsigner/install/uninstall.sh` | Bundled systemd uninstaller |
 | `/var/lib/apsigner/install/service-principal.json` | Root-controlled service uid/gid used by signer-store permission repair |
@@ -584,7 +584,7 @@ legacy inventory before changing it, refuses symlinks, hardlinks, unexpected
 object types, or unsafe ancestors, and clamps recognized signer state to the
 private ownership contract.
 
-If `identities/<id>/passphrase.cred` exists, the
+If `identities/default/passphrase.cred` exists, the
 installer re-adds the matching `LoadCredentialEncrypted=` directive to the
 new unit so the daemon can auto-unlock without rerunning
 `appass set systemd-creds`.
@@ -784,7 +784,7 @@ sudo apstore -d /var/lib/apsigner initialize
 ```
 
 This creates:
-- `/var/lib/apsigner/identities/default/` — private identity directory with keystore, credentials, policy, and settings
+- `/var/lib/apsigner/identities/default/` — private product directory with keystore, credentials, policy, and settings
 
 Then configure auto-unlock offline:
 
@@ -794,7 +794,7 @@ sudo appass -d /var/lib/apsigner
 sudo systemctl start apsigner
 ```
 
-For `systemd-creds` mode, `appass` writes identity-scoped unlock settings,
+For `systemd-creds` mode, `appass` writes product-local unlock settings,
 creates `identities/default/passphrase.cred`, adds the matching
 `LoadCredentialEncrypted` line to the systemd unit, and reloads systemd.
 The resulting unit gains a line of the form:
@@ -944,20 +944,22 @@ misdirect their admin clients. Select a non-default instance explicitly with
 
 ---
 
-## Identity Runtime Layout
+## Product Runtime Layout
 
-The installer creates `identities/default/` with the keystore. As the signer runs, it populates that identity directory with additional runtime files:
+The installer creates the sole supported product runtime at
+`identities/default/`. As the signer runs, it populates that directory with
+additional runtime files:
 
 ```
 $APSIGNER_DATA/identities/default/
 ├── keyring.enc       # Cryptographic root (KDF header + sealed term set)
 ├── .keystore         # Store format marker (version and layout only)
-├── config.yaml       # Identity-scoped runtime setting overrides
-├── policy.yaml       # Identity-scoped node-role policy
+├── config.yaml       # Product-local runtime setting overrides
+├── policy.yaml       # Product-local node-role policy
 ├── policy.yaml.hmac  # Integrity sidecar for policy.yaml
-├── unlock.yaml       # Identity-scoped passphrase helper settings
+├── unlock.yaml       # Product-local passphrase helper settings
 ├── .ssh/
-│   └── authorized_keys  # Identity-scoped enrolled client public keys
+│   └── authorized_keys  # Product-local enrolled client public keys
 ├── keytypes/
 │   ├── *.json        # Plaintext key type state records
 │   └── *.template    # Encrypted installed template YAML
@@ -965,10 +967,10 @@ $APSIGNER_DATA/identities/default/
 │   ├── *.key         # Algorand account authority
 │   ├── *.sen         # Sentry witness authority
 │   └── *.wit.json    # Public witness references
-├── deleted/          # Identity-local deletion archive
+├── deleted/          # Product-local deletion archive
 │   ├── keys/
 │   └── keytypes/
-├── aplane.token      # Identity API token created by apstore initialize
+├── aplane.token      # Product API token created by apstore initialize
 └── passphrase.cred   # systemd-creds-encrypted passphrase (auto-unlock only)
 ```
 
@@ -1073,10 +1075,11 @@ To rotate the keystore passphrase (auto-unlock mode):
 apadmin changepass
 ```
 
-This asks you to manually enter the current passphrase, generates a fresh key
-for the store, atomically re-encrypts all keys under it, re-signs the policy
-and node-role integrity
-sidecars, and updates `passphrase.cred`. Restart the service afterward:
+This asks you to manually enter the current passphrase, appends a fresh store
+key term, and synchronously completes the durable rewrap of mutable store
+content before returning. It re-signs the policy and node-role integrity
+sidecars and updates `passphrase.cred`. Retained prior generations remain
+readable under pre-change terms until pruned. Restart the service afterward:
 
 Systemd data directories contain a `.prod` marker. Daemon-backed commands use
 the public admin socket and do not require filesystem access. Offline commands
@@ -1152,22 +1155,23 @@ state unless you manually run the printed destructive cleanup commands.
 The "Left behind" output at the end of `uninstall.sh --systemd` enumerates
 every retained path with a one-line label. Security-relevant entries:
 
-- **`identities/<id>/keys/`** -- encrypted private keys. Treat as sensitive at
+- **`identities/default/keys/`** -- encrypted private keys. Treat as sensitive at
   rest; back up before disposing of the host.
-- **`identities/<id>/passphrase.cred`** -- the keystore passphrase encrypted
+- **`identities/default/passphrase.cred`** -- the keystore passphrase encrypted
   to this host's TPM2 and/or host key by `systemd-creds`. **Bound to this
   physical machine.** It is unreadable on a different host, and unreadable on
   this host if the TPM is reset, the disk is moved, or the host key changes.
   See "Migrating to a New Machine" for the safe relocation path.
-- **`identities/<id>/keyring.enc`** -- the store's cryptographic root; without
+- **`identities/default/keyring.enc`** -- the store's cryptographic root; without
   it no key file can be decrypted.
-- **`identities/<id>/.keystore`** -- store format marker.
-- **`identities/<id>/aplane.token`** -- HTTP API token; treat as a credential.
+- **`identities/default/.keystore`** -- store format marker.
+- **`identities/default/aplane.token`** -- HTTP API token; treat as a credential.
 - **`audit.log`** -- the signer's audit trail. Retain for compliance and
   forensics unless you have already exported it.
 - **`backups/`** -- encrypted backup tarballs (same protections as keys).
-- **`config.yaml`** -- operator-edited configuration (algod endpoints, ports,
-  policy). Preserved so uninstall does not silently discard operator state.
+- **`config.yaml`** -- operator-edited process configuration (algod endpoints
+  and ports). Preserved so uninstall does not silently discard operator state;
+  product policy remains under `identities/default/policy.yaml`.
 
 What `uninstall.sh` *removes*: the `apsigner` systemd unit, the
 `/etc/sudoers.d/99-apsigner-systemctl` rule, the installed APlane binaries
@@ -1200,7 +1204,7 @@ journalctl -u apsigner --no-pager -n 50
 
 This only applies to auto-unlock mode. Common causes:
 
-- The identity-scoped `passphrase.cred` file is missing or corrupted:
+- The product-local `passphrase.cred` file is missing or corrupted:
 
   ```bash
   ls -la /var/lib/apsigner/identities/default/passphrase.cred

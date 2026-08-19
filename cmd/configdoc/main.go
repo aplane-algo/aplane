@@ -47,8 +47,8 @@ func main() {
 	fmt.Println()
 	printStructTable(reflect.TypeOf(serverconfig.ServerConfig{}))
 	fmt.Println()
-	fmt.Println("Identity-scoped `identities/<identity>/config.yaml` contains settings")
-	fmt.Println("only. Node role is stored separately in root `node.yaml`.")
+	fmt.Println("Product-local `identities/default/config.yaml` contains settings only.")
+	fmt.Println("Node role is stored separately in root `node.yaml`.")
 	fmt.Println()
 
 	// Environment variables
@@ -236,7 +236,7 @@ func printEnvVars() {
 	fmt.Println()
 	fmt.Println("For apsigner passphrase sources:")
 	fmt.Println("1. `TEST_PASSPHRASE` environment variable (highest priority)")
-	fmt.Println("2. identity `unlock.yaml` passphrase command, falling back to process-global `passphrase_command_argv` in config.yaml (headless mode)")
+	fmt.Println("2. product-local `identities/default/unlock.yaml` passphrase command, falling back to process-global `passphrase_command_argv` in config.yaml (headless mode)")
 	fmt.Println("3. Interactive prompt via apadmin IPC (default)")
 }
 

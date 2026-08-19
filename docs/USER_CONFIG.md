@@ -48,7 +48,7 @@ signer_status_poll_interval: "10s"
 ### Example endpoints.yaml
 
 ```yaml
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -161,7 +161,7 @@ EOF
 
 # Create endpoints.yaml (or start from examples/config/apclient/endpoints.yaml)
 cat > "$APCLIENT_DATA/endpoints.yaml" << 'EOF'
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -272,7 +272,7 @@ that alias's endpoint data.
 The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 
 ```yaml
-schema_version: 1
+schema_version: 2
 default: main
 endpoints:
   main:
@@ -345,12 +345,12 @@ See [USER_CONFIG_REFERENCE.md](USER_CONFIG_REFERENCE.md) for field-level referen
 The top-level `config.yaml` provides defaults for `user_auto_approve`,
 `lock_on_disconnect`, `passphrase_timeout`, and `approval_wait`. When you
 change `user_auto_approve`, `lock_on_disconnect`, or `passphrase_timeout`
-through admin IPC, the signer writes it as an identity-scoped override at
+through admin IPC, the signer writes it as a product-local override at
 `identities/default/config.yaml`. `approval_wait` is process/YAML-only; it is
 not part of the admin settings payload and cannot be changed through admin IPC.
 
 Node role is stored separately in the signer data root `node.yaml`. Standard
-installations initialize as signer nodes; identity config does not carry a role
+installations initialize as signer nodes; product config does not carry a role
 or mode field.
 
 In `apadmin`, the operator-default shortcut is shown as `User Auto-Approve`:
@@ -418,8 +418,8 @@ alive. If the TUI sees no local keyboard input for the effective
 `passphrase_timeout`, it disconnects the admin session. A lock caused by that
 disconnect is controlled by `lock_on_disconnect`.
 
-When identity-scoped `unlock.yaml` is configured by `appass`, the signer starts
-that identity in headless mode and the effective runtime behavior is:
+When product-local `unlock.yaml` is configured by `appass`, the signer starts
+the product runtime in headless mode and the effective runtime behavior is:
 
 - passphrase timeout is disabled (`0`)
 - lock-on-disconnect is disabled
@@ -554,7 +554,7 @@ Inside the `appass` TUI, choose the desired passphrase handling mode and follow 
 
 Use `appass` when you want to change startup unlock behavior. Use `apadmin` when the daemon is already running and you want to manage the live signer session.
 
-If `appass` reports a warning after a successful mode change, the new mode is already active and stored in identity-scoped `unlock.yaml`. The warning means cleanup of the previous mode's leftover files or service settings needs manual follow-up.
+If `appass` reports a warning after a successful mode change, the new mode is already active and stored in product-local `unlock.yaml`. The warning means cleanup of the previous mode's leftover files or service settings needs manual follow-up.
 
 Note: SSH paths are relative to the data directory (`$APSIGNER_DATA`). The `.ssh/` subdirectory is created automatically when needed. `apsigner` always enables SSH using these defaults unless you override them, and keeps its REST API bound to loopback.
 
@@ -562,8 +562,8 @@ Note: SSH paths are relative to the data directory (`$APSIGNER_DATA`). The `.ssh
 
 - Relative paths in config are resolved from the data directory
 - apadmin and apapprover connect via the IPC socket
-- `user_auto_approve` is the `User Auto-Approve` runtime admin setting persisted with identity config
-- signer safety guards live in identity-scoped `policy.yaml`
+- `user_auto_approve` is the `User Auto-Approve` runtime admin setting persisted with product config
+- signer safety guards live in product-local `policy.yaml`
 - See [Headless Operation](#headless-operation) for unattended deployment
 
 ---
@@ -573,7 +573,7 @@ Note: SSH paths are relative to the data directory (`$APSIGNER_DATA`). The `.ssh
 For the full current policy model and phase ordering, see
 [ARCH_POLICY.md](ARCH_POLICY.md).
 
-Signer safety policy is identity-scoped and stored at:
+Signer safety policy is product-local and stored at:
 
 ```text
 $APSIGNER_DATA/identities/default/policy.yaml
@@ -587,7 +587,7 @@ sidecar fails closed instead of falling back to default policy.
 `policy.yaml` controls hard-reject, forced-review, and explicit auto-approval
 rules for signing. It is separate from:
 
-- process/identity runtime settings like `signer_port`, `user_auto_approve`, and SSH
+- process/product runtime settings like `signer_port`, `user_auto_approve`, and SSH
 - approval UI state such as which pending request an operator is viewing
 
 For the operator-facing policy guide, including transfer routing and key type
@@ -650,7 +650,7 @@ increase exactly matches the required dummy fees.
 
 ### Defaults
 
-New identities default to:
+Fresh product policies default to:
 
 - `reject_foreign_rekey: true` (foreign rekey changes account control to an address outside this signer, so it is rejected by default)
 - sentry-domain `reject_rekey: false`, but non-zero `RekeyTo` still fails closed unless `rekey_policy.allowed` authorizes the sender-to-target edge
@@ -949,27 +949,27 @@ For normative implementation details, see
 
 ### Key Overrides
 
-`key_overrides` lets the identity relax or tighten specific guards for one
-concrete signing key without changing the identity-wide defaults. Map keys are
+`key_overrides` lets the product policy relax or tighten specific guards for one
+concrete signing key without changing the product-wide defaults. Map keys are
 Algorand auth addresses. Fields left unset in an override inherit from the
-identity-wide settings. Overrides do not nest. If an override includes a
+product-wide settings. Overrides do not nest. If an override includes a
 `transfer_policy` block, that block still requires `schema_version` and an
 explicit `enabled: true` or `enabled: false`.
 
 When a transaction is linted, the signer picks the override block for the auth
 address that will actually sign it and applies that block on top of the
-identity settings; other keys fall back to the identity defaults.
+product settings; other keys fall back to the product defaults.
 
 ```yaml
 reject_foreign_rekey: true
-reject_asset_close: false  # identity-wide
+reject_asset_close: false  # product-wide
 
 key_overrides:
   SIGNINGAUTHADDRESS...:
     # Generic keys have no LogicSig enforcement, so tighten further.
     reject_asset_close: true
   OTHERAUTHADDRESS...:
-    # Allowlist TEAL already constrains close-to addresses; identity-wide
+    # Allowlist TEAL already constrains close-to addresses; product-wide
     # setting of false is fine, but we can still raise the fee ceiling for
     # this key if it needs more headroom.
     max_fee_microalgos: 5000
@@ -1049,17 +1049,17 @@ user_auto_approve: true
 
 ## Authentication
 
-Signer uses an identity-scoped token for authenticating API requests from apshell and the Python SDK.
+Signer uses one product token for authenticating API requests from apshell and the Python SDK.
 
 ### How It Works
 
-1. **Token generation**: `apstore initialize` creates a cryptographically secure 256-bit random token for the identity
+1. **Token generation**: `apstore initialize` creates a cryptographically secure 256-bit random token for the product
 2. **Token storage**: Saved to `identities/default/aplane.token`, alongside the keys it grants access to
 3. **Token provisioning**: Clients request tokens via SSH (requires operator approval in apadmin)
 4. **Request authentication**: Clients send the token via `Authorization: aplane <token>` HTTP header
 5. **Validation**: apsigner validates using constant-time comparison (prevents timing attacks)
 
-Remote `apadmin --remote` also uses this same identity-scoped token at the SSH layer. Revoking the token disconnects remote admin SSH sessions in addition to invalidating client API access.
+Remote `apadmin --remote` also uses this same product token at the SSH layer. Revoking the token disconnects remote admin SSH sessions in addition to invalidating client API access.
 
 ### Token File
 
@@ -1081,7 +1081,7 @@ Use the `request-token` command to obtain a token securely via SSH:
 > request-token --endpoint main
 
 # In Python SDK
-from aplane import request_token_to_file
+from aplanesdk import request_token_to_file
 request_token_to_file()  # reads APCLIENT_DATA from environment
 ```
 
@@ -1304,7 +1304,7 @@ approval prompt.
 user_auto_approve: true
 ```
 
-This can be a process-global default in `config.yaml` or an identity-scoped
+This can be a process-global default in `config.yaml` or a product-local
 override in `identities/default/config.yaml`.
 
 ### Complete Example

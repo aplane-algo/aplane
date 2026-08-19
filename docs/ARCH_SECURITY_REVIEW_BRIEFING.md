@@ -85,7 +85,7 @@ The configured `passphrase_timeout` is implemented as an apadmin-local idle
 disconnect timer. Keyboard input rearms the timer. When the timer expires,
 apadmin closes its authenticated admin connection. Apsigner then observes the
 disconnect and applies its signer-owned `lock_on_disconnect` setting, which may
-lock the identity and clear the term-key session.
+lock the product runtime and clear the term-key session.
 
 The signer therefore owns the lock transition and key zeroing, but it does not
 own the event that normally initiates idle expiration. As long as the
@@ -100,7 +100,7 @@ connection detection. A modified or malicious client can deliberately retain
 the connection and avoid the client-side timer entirely.
 
 This means `passphrase_timeout` is not currently a hard upper bound on an
-unlocked identity or authenticated admin session. It is a UX-driven idle
+unlocked product runtime or authenticated admin session. It is a UX-driven idle
 disconnect policy implemented by the reference client.
 
 Moving last-activity tracking to the signer is necessary but not sufficient if
@@ -138,7 +138,7 @@ than applying interactive-session assumptions silently.
 
 ### Fixability
 
-This is fully correctable in the admin session and identity lifecycle. The
+This is fully correctable in the admin-session and product-runtime lifecycle. The
 important limitation is conceptual: the signer can enforce time and protocol
 activity, but cannot securely infer human keyboard activity from an untrusted
 client.
@@ -182,12 +182,12 @@ Credentials do not enter the runtime index until the generation commit and
 successful reload. Reload failure rolls the pointer back to the sealed parent;
 uncertain durability enters recovery mode. The apadmin TUI and batch client use
 the same server operation. Restore intent/outcome and rollback
-carry structured audit events with identity, principal, session, transport,
+carry structured audit events with product-runtime, principal, session, transport,
 operation ID, archive SHA-256, and generation ID.
 
 ### Resolution status
 
-Implemented in admin protocol v4. Earlier internal backup formats and recovered
+Implemented in admin protocol v5. Earlier internal backup formats and recovered
 batch operations are unsupported because this is the first supported release.
 Offline `apstore rebuild` remains an explicitly separate, absent-store rescue
 path.
@@ -204,7 +204,7 @@ readers on a coherent last-known-good snapshot.
 
 The architecture currently describes this behavior as fail-closed. Runtime
 health and status do not expose a durable policy-reload failure state. An
-unlocked identity with a retained policy can continue to report ready for
+unlocked product runtime with a retained policy can continue to report ready for
 signing.
 
 ### Security significance
