@@ -424,7 +424,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: BackupsListMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeBackupsList, ID: "backups-1"},
 				Backups: []BackupInfo{{
-					Path:      "/data/identities/default/backups/backup.tar.gz",
+					Path:      "/data/backups/default/backup.tar.gz",
 					FileName:  "backup.tar.gz",
 					CreatedAt: 1710000000,
 					Size:      4096,
@@ -435,7 +435,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"id":   "backups-1",
 				"backups": []any{
 					map[string]any{
-						"path":       "/data/identities/default/backups/backup.tar.gz",
+						"path":       "/data/backups/default/backup.tar.gz",
 						"file_name":  "backup.tar.gz",
 						"created_at": float64(1710000000),
 						"size":       float64(4096),
@@ -447,7 +447,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			name: "restore_preview",
 			msg: RestorePreviewMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeRestorePreview, ID: "restore-preview-1"},
-				ArchivePath: "/data/identities/default/backups/backup.tar.gz",
+				ArchivePath: "/data/backups/default/backup.tar.gz",
 				Keys: []RestoreKeyInfo{{
 					Address:       "ADDR1",
 					KeyType:       "ed25519",
@@ -461,7 +461,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			wantMap: map[string]any{
 				"type":         MsgTypeRestorePreview,
 				"id":           "restore-preview-1",
-				"archive_path": "/data/identities/default/backups/backup.tar.gz",
+				"archive_path": "/data/backups/default/backup.tar.gz",
 				"keys": []any{
 					map[string]any{
 						"address":        "ADDR1",
