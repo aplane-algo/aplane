@@ -38,10 +38,10 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
-	if result.MetadataDir != paths.KeystoreMetadataDir(identityID) {
-		t.Fatalf("MetadataDir = %q, want %q", result.MetadataDir, paths.KeystoreMetadataDir(identityID))
+	if result.MetadataDir != paths.KeystoreMetadataDir() {
+		t.Fatalf("MetadataDir = %q, want %q", result.MetadataDir, paths.KeystoreMetadataDir())
 	}
-	if !crypto.KeyringExistsIn(paths.KeystoreMetadataDir(identityID)) {
+	if !crypto.KeyringExistsIn(paths.KeystoreMetadataDir()) {
 		t.Fatal("keystore metadata missing after initialize")
 	}
 	// New stores are generational: active namespaces live in the first
@@ -53,7 +53,7 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if _, err := os.Stat(active.KeysDir()); err != nil {
 		t.Fatalf("generational keys dir stat error = %v", err)
 	}
-	if _, err := os.Stat(paths.LegacyKeysDir(identityID)); !os.IsNotExist(err) {
+	if _, err := os.Stat(paths.LegacyKeysDir()); !os.IsNotExist(err) {
 		t.Fatalf("legacy keys dir exists on a new store: err = %v", err)
 	}
 	gen, err := genstore.Resolve(paths, identityID)
@@ -63,10 +63,10 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if err := genstore.ValidateCurrent(gen); err != nil {
 		t.Fatalf("initial generation failed validation: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(paths.IdentityDir(identityID), "aplane.token")); err != nil {
+	if _, err := os.Stat(filepath.Join(paths.ProductDir(), "aplane.token")); err != nil {
 		t.Fatalf("token stat error = %v", err)
 	}
-	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(), passphrase)
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
@@ -114,7 +114,7 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
-	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(), passphrase)
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
@@ -146,7 +146,7 @@ func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
 	identityID := "default"
-	identityDir := paths.IdentityDir(identityID)
+	identityDir := paths.ProductDir()
 	if err := os.MkdirAll(filepath.Join(identityDir, "aplane.token"), 0o700); err != nil {
 		t.Fatalf("MkdirAll(aplane.token dir) error = %v", err)
 	}
@@ -169,7 +169,7 @@ func TestInitializeRejectsExistingKeyring(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
 	identityID := "default"
-	kr, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), []byte("existing-passphrase"))
+	kr, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), []byte("existing-passphrase"))
 	if err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
@@ -193,7 +193,7 @@ func TestHasPartialState(t *testing.T) {
 		t.Fatal("empty identity dir should not be partial")
 	}
 
-	identityDir := paths.IdentityDir(identityID)
+	identityDir := paths.ProductDir()
 	if err := os.MkdirAll(identityDir, 0o770); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -222,7 +222,7 @@ func TestChownIdentitiesTreeRejectsSymlinkWithoutTouchingTarget(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
 	identitiesDir := filepath.Join(dataDir, "identities")
-	identityDir := paths.IdentityDir("default")
+	identityDir := paths.ProductDir()
 	if err := os.MkdirAll(identityDir, 0o700); err != nil {
 		t.Fatalf("MkdirAll(identityDir): %v", err)
 	}
@@ -260,7 +260,7 @@ func TestChownIdentitiesTreeRejectsSymlinkWithoutTouchingTarget(t *testing.T) {
 func TestInitializeChecksOwnershipTreeBeforeCreatingKeyring(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
-	otherIdentity := paths.IdentityDir("other")
+	otherIdentity := filepath.Join(dataDir, "identities", "other")
 	if err := os.MkdirAll(otherIdentity, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +278,7 @@ func TestInitializeChecksOwnershipTreeBeforeCreatingKeyring(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "prepare initialized identity ownership") {
 		t.Fatalf("Initialize() error = %v, want ownership preflight failure", err)
 	}
-	if crypto.KeyringExistsIn(paths.KeystoreMetadataDir("default")) {
+	if crypto.KeyringExistsIn(paths.KeystoreMetadataDir()) {
 		t.Fatal("ownership preflight failure left a created keyring")
 	}
 }

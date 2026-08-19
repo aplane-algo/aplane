@@ -66,7 +66,7 @@ func NewFileKeyStoreForPaths(paths storepaths.Paths, identityID string) *FileKey
 // verifier to consult. Callers receive no key material: the keyring hands out
 // operations, not bytes.
 func (f *FileKeyStore) Unlock(passphrase []byte) error {
-	keystoreRoot := f.paths.KeystoreMetadataDir(f.identityID)
+	keystoreRoot := f.paths.KeystoreMetadataDir()
 	kr, err := crypto.OpenKeyringStore(keystoreRoot, passphrase)
 	if err != nil {
 		return fmt.Errorf("failed to unlock keystore: %w", err)

@@ -35,7 +35,7 @@ func TestResolveManagedBackupPathScopesToIdentityBackupDir(t *testing.T) {
 
 func TestListManagedBackupsSortsArchivesAndIgnoresSymlinks(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if err := os.MkdirAll(paths.IdentityBackupsDir("default"), 0o770); err != nil {
+	if err := os.MkdirAll(paths.ProductBackupsDir(), 0o770); err != nil {
 		t.Fatal(err)
 	}
 	older := BuildManagedArchivePath(paths, "default", "older")
@@ -50,7 +50,7 @@ func TestListManagedBackupsSortsArchivesAndIgnoresSymlinks(t *testing.T) {
 	if err := os.Chtimes(older, oldTime, oldTime); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(newer, filepath.Join(paths.IdentityBackupsDir("default"), "link.tar.gz")); err != nil {
+	if err := os.Symlink(newer, filepath.Join(paths.ProductBackupsDir(), "link.tar.gz")); err != nil {
 		t.Fatal(err)
 	}
 	items, err := ListManagedBackups(paths, "default")

@@ -844,7 +844,7 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	// candidate); a pointer flip re-arms the watcher on the new generation's
 	// directories via StopKeyWatcher + EnsureKeyWatcher in the flipping
 	// operation, since fsnotify watches bind to inodes.
-	dirs := []string{ir.keyPaths.IdentityDir(ir.id)}
+	dirs := []string{ir.keyPaths.ProductDir()}
 	if active, err := genstore.ResolveActive(ir.keyPaths, ir.id); err == nil {
 		dirs = append(dirs, active.KeysDir(), active.KeyTypeRecordsDir())
 	} else {
@@ -852,8 +852,8 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 		// repaired CURRENT triggers a reload; reload itself fails closed.
 		dirs = append(
 			dirs,
-			ir.keyPaths.LegacyKeysDir(ir.id),
-			ir.keyPaths.LegacyKeyTypeRecordsDir(ir.id),
+			ir.keyPaths.LegacyKeysDir(),
+			ir.keyPaths.LegacyKeyTypeRecordsDir(),
 		)
 	}
 
@@ -979,7 +979,7 @@ func (ir *Runtime) notifyLocked() {
 
 func (ir *Runtime) performUnlock(passphrase []byte) func() (int, error) {
 	return func() (int, error) {
-		if err := crypto.VerifyPassphraseWithKeyring(passphrase, ir.keyPaths.KeystoreMetadataDir(ir.id)); err != nil {
+		if err := crypto.VerifyPassphraseWithKeyring(passphrase, ir.keyPaths.KeystoreMetadataDir()); err != nil {
 			return 0, fmt.Errorf("invalid passphrase")
 		}
 

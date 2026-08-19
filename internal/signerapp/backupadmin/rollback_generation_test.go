@@ -25,7 +25,7 @@ func TestRollbackMintReconstructsAnchoredSourceUnderCurrentTerm(t *testing.T) {
 	)
 	paths := storepaths.NewPaths(t.TempDir())
 	passphrase := []byte("rollback-generation-passphrase")
-	kr, err := crypto.CreateKeyringStore(paths.IdentityDir(identity), passphrase)
+	kr, err := crypto.CreateKeyringStore(paths.ProductDir(), passphrase)
 	if err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
@@ -76,7 +76,7 @@ func TestRollbackMintReconstructsAnchoredSourceUnderCurrentTerm(t *testing.T) {
 	}
 
 	if err := crypto.StartRotation(
-		paths.IdentityDir(identity),
+		paths.ProductDir(),
 		kr,
 		passphrase,
 		[]crypto.HistoricalGenerationAnchor{anchor},
@@ -114,7 +114,7 @@ func TestRollbackMintReconstructsAnchoredSourceUnderCurrentTerm(t *testing.T) {
 		t.Fatalf("WriteFileDurable(current term 2) error = %v", err)
 	}
 	crypto.ZeroBytes(termTwoEnvelope)
-	if err := crypto.CloseRotation(paths.IdentityDir(identity), kr, passphrase); err != nil {
+	if err := crypto.CloseRotation(paths.ProductDir(), kr, passphrase); err != nil {
 		t.Fatalf("CloseRotation() error = %v", err)
 	}
 

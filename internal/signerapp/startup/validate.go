@@ -138,7 +138,7 @@ func Validate(config *serverconfig.ServerConfig, runtime *RuntimeState, keyPaths
 		return nil, fmt.Errorf("invalid endpoint.ssh configuration: endpoint.ssh.authorized_keys_path is required")
 	}
 
-	if !crypto.KeyringExistsIn(keyPaths.KeystoreMetadataDir(identityID)) {
+	if !crypto.KeyringExistsIn(keyPaths.KeystoreMetadataDir()) {
 		info.KeystoreExists = false
 		warnings = append(warnings, "Keystore not initialized — run 'apstore initialize'")
 	} else {

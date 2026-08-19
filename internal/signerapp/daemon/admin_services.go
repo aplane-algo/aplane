@@ -90,7 +90,7 @@ func (s signerAdminServices) ProductIdentityRuntime() *identity.Runtime {
 }
 
 func (s signerAdminServices) VerifyPassphrase(ir *identity.Runtime, passphrase []byte) error {
-	return crypto.VerifyPassphraseWithKeyring(passphrase, ir.KeyPaths().KeystoreMetadataDir(ir.ID()))
+	return crypto.VerifyPassphraseWithKeyring(passphrase, ir.KeyPaths().KeystoreMetadataDir())
 }
 
 func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string) {
@@ -146,7 +146,7 @@ func (s signerAdminServices) completePendingRotation(
 ) error {
 	complete := func() error {
 		kr, err := crypto.OpenKeyringStore(
-			ir.KeyPaths().KeystoreMetadataDir(ir.ID()),
+			ir.KeyPaths().KeystoreMetadataDir(),
 			passphrase,
 		)
 		if err != nil {

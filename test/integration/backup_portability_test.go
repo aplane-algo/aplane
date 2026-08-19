@@ -621,7 +621,7 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 		t.Fatalf("failed to read active key file: %v", err)
 	}
 
-	deletedDir := filepath.Join(paths.IdentityDir(auth.DefaultIdentityID), "deleted", "keys")
+	deletedDir := filepath.Join(paths.ProductDir(), "deleted", "keys")
 	if err := os.MkdirAll(deletedDir, 0o755); err != nil {
 		t.Fatalf("failed to create deleted keys dir: %v", err)
 	}

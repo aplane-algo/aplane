@@ -230,7 +230,7 @@ func WriteSnapshot(
 	if err != nil {
 		return crypto.RotationSnapshotReference{}, fmt.Errorf("seal rotation snapshot: %w", err)
 	}
-	if err := fsutil.WriteFileDurable(paths.RotationSnapshotPath(identityID), sealed); err != nil {
+	if err := fsutil.WriteFileDurable(paths.RotationSnapshotPath(), sealed); err != nil {
 		return crypto.RotationSnapshotReference{}, fmt.Errorf("write rotation snapshot: %w", err)
 	}
 	return ref, nil
@@ -249,7 +249,7 @@ func ReadReferencedSnapshot(
 	if kr == nil {
 		return nil, fmt.Errorf("read rotation snapshot: keyring is required")
 	}
-	sealed, err := readSnapshotFile(paths.RotationSnapshotPath(identityID))
+	sealed, err := readSnapshotFile(paths.RotationSnapshotPath())
 	if err != nil {
 		return nil, fmt.Errorf("read rotation snapshot: %w", err)
 	}

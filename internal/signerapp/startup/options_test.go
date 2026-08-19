@@ -93,7 +93,7 @@ func TestBuildUnlockPlanUsesTestPassphrase(t *testing.T) {
 	root := t.TempDir()
 	passphrase := []byte("test-passphrase")
 	paths := storepaths.NewPaths(root)
-	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir("default"), passphrase); err != nil {
+	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), passphrase); err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
 
@@ -126,7 +126,7 @@ func TestBuildUnlockPlanUsesPassphraseCommand(t *testing.T) {
 	root := t.TempDir()
 	passphrase := []byte("command-passphrase")
 	paths := storepaths.NewPaths(root)
-	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir("default"), passphrase); err != nil {
+	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), passphrase); err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
 	helper, marker := writePassphraseHelper(t, root, string(passphrase))
@@ -165,7 +165,7 @@ func TestValidateAndBuildUnlockPlanRejectsExtraIdentityBeforePassphraseCommand(t
 	root := t.TempDir()
 	passphrase := []byte("command-passphrase")
 	paths := storepaths.NewPaths(root)
-	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir("default"), passphrase); err != nil {
+	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), passphrase); err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "identities", "other-identity"), 0o700); err != nil {

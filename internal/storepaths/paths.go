@@ -54,20 +54,20 @@ func (p Paths) NodeRolePath() string {
 	return filepath.Join(p.root, "node.yaml")
 }
 
-func (p Paths) NodeRoleIntegritySidecar(identityID string) string {
-	return filepath.Join(p.IdentityDir(identityID), "node.yaml.hmac")
+func (p Paths) NodeRoleIntegritySidecar() string {
+	return filepath.Join(p.ProductDir(), "node.yaml.hmac")
 }
 
 // RotationSnapshotPath is the target-term-sealed cutover inventory pinned by
 // a pending keyring descriptor.
-func (p Paths) RotationSnapshotPath(identityID string) string {
-	return filepath.Join(p.IdentityDir(identityID), "rotation.snapshot.enc")
+func (p Paths) RotationSnapshotPath() string {
+	return filepath.Join(p.ProductDir(), "rotation.snapshot.enc")
 }
 
 // RotationBaselinePath is the current-term-sealed post-rewrap inventory
 // baseline used by generation rollback validation.
-func (p Paths) RotationBaselinePath(identityID string) string {
-	return filepath.Join(p.IdentityDir(identityID), "rotation.baseline.enc")
+func (p Paths) RotationBaselinePath() string {
+	return filepath.Join(p.ProductDir(), "rotation.baseline.enc")
 }
 
 func validatePathComponent(label, s string) {
@@ -101,70 +101,56 @@ func validateKeyTypeComponent(keyType string) {
 	}
 }
 
-func (p Paths) IdentityDir(identityID string) string {
-	validatePathComponent("identity ID", identityID)
-	return filepath.Join(p.root, "identities", identityID)
-}
-
 // LegacyKeysDir returns the pre-generation key namespace. It is not an active
 // store path; normal consumers must resolve storepaths.ActivePaths through
 // genstore.ResolveActive. This path remains available only for recovery probes
 // and tests that verify legacy state is not treated as active.
-func (p Paths) LegacyKeysDir(identityID string) string {
-	return filepath.Join(p.IdentityDir(identityID), "keys")
+func (p Paths) LegacyKeysDir() string {
+	return filepath.Join(p.ProductDir(), "keys")
 }
 
-func (p Paths) DeletedDir(identityID string) string {
-	return filepath.Join(p.IdentityDir(identityID), "deleted")
+func (p Paths) DeletedDir() string {
+	return filepath.Join(p.ProductDir(), "deleted")
 }
 
-func (p Paths) DeletedKeysDir(identityID string) string {
-	return filepath.Join(p.DeletedDir(identityID), "keys")
+func (p Paths) DeletedKeysDir() string {
+	return filepath.Join(p.DeletedDir(), "keys")
 }
 
 func (p Paths) BackupsRootDir() string {
 	return filepath.Join(p.root, "backups")
 }
 
-func (p Paths) IdentityBackupsDir(identityID string) string {
-	return filepath.Join(p.BackupsRootDir(), p.IdentityDirName(identityID))
-}
-
-func (p Paths) IdentityDirName(identityID string) string {
-	validatePathComponent("identity ID", identityID)
-	return identityID
-}
-
 // LegacyKeyTypeRecordsDir returns the pre-generation key-type namespace. It is
 // not an active store path; see LegacyKeysDir.
-func (p Paths) LegacyKeyTypeRecordsDir(identityID string) string {
-	return filepath.Join(p.IdentityDir(identityID), "keytypes")
+func (p Paths) LegacyKeyTypeRecordsDir() string {
+	return filepath.Join(p.ProductDir(), "keytypes")
 }
 
-func (p Paths) SentryRefsDir(identityID string) string {
-	return filepath.Join(p.IdentityDir(identityID), "sentries")
+func (p Paths) SentryRefsDir() string {
+	return filepath.Join(p.ProductDir(), "sentries")
 }
 
-func (p Paths) SentryRefPath(identityID, name string) string {
+func (p Paths) SentryRefPath(name string) string {
 	validatePathComponent("sentry reference name", name)
-	return filepath.Join(p.SentryRefsDir(identityID), name+".json")
+	return filepath.Join(p.SentryRefsDir(), name+".json")
 }
 
-func (p Paths) LegacyKeyTypeRecord(identityID, keyType string) string {
+func (p Paths) LegacyKeyTypeRecord(keyType string) string {
 	validateKeyTypeComponent(keyType)
-	return filepath.Join(p.LegacyKeyTypeRecordsDir(identityID), keyType+".json")
+	return filepath.Join(p.LegacyKeyTypeRecordsDir(), keyType+".json")
 }
 
-func (p Paths) LegacyKeyTypeTemplate(identityID, keyType string) string {
+func (p Paths) LegacyKeyTypeTemplate(keyType string) string {
 	validateKeyTypeComponent(keyType)
-	return filepath.Join(p.LegacyKeyTypeRecordsDir(identityID), keyType+".template")
+	return filepath.Join(p.LegacyKeyTypeRecordsDir(), keyType+".template")
 }
 
-func (p Paths) DeletedKeyTypeTemplate(identityID, keyType string) string {
+func (p Paths) DeletedKeyTypeTemplate(keyType string) string {
 	validateKeyTypeComponent(keyType)
-	return filepath.Join(p.DeletedDir(identityID), "keytypes", keyType+".template")
+	return filepath.Join(p.DeletedDir(), "keytypes", keyType+".template")
 }
 
-func (p Paths) KeystoreMetadataDir(identityID string) string {
-	return p.IdentityDir(identityID)
+func (p Paths) KeystoreMetadataDir() string {
+	return p.ProductDir()
 }

@@ -53,7 +53,7 @@ func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, *crypto.Key
 	paths := utilkeys.NewPaths(tmpDir)
 	genstoretest.MintFirst(t, paths, identityID)
 
-	userDir := paths.IdentityDir(identityID)
+	userDir := paths.ProductDir()
 	if _, err := crypto.CreateKeyringStore(userDir, []byte("test-passphrase-for-storemut")); err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
@@ -120,7 +120,7 @@ func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	if _, err := os.Stat(result.DeletedPath); err != nil {
 		t.Fatalf("expected deleted key at %s: %v", result.DeletedPath, err)
 	}
-	if wantDir := paths.DeletedKeysDir("default"); filepath.Dir(result.DeletedPath) != wantDir {
+	if wantDir := paths.DeletedKeysDir(); filepath.Dir(result.DeletedPath) != wantDir {
 		t.Fatalf("deleted path dir = %s, want %s", filepath.Dir(result.DeletedPath), wantDir)
 	}
 }

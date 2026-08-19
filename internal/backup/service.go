@@ -159,7 +159,7 @@ func FileSHA256(path string) (string, int64, error) {
 func prepareManagedArchiveDestination(paths storepaths.Paths, identityID, archivePath string) error {
 	for _, dir := range []string{
 		paths.BackupsRootDir(),
-		paths.IdentityBackupsDir(identityID),
+		paths.ProductBackupsDir(),
 		filepath.Dir(archivePath),
 	} {
 		if err := ensureStoreDir(dir); err != nil {
@@ -181,5 +181,5 @@ func ensureStoreDir(path string) error {
 
 func BuildManagedArchivePath(paths storepaths.Paths, identityID string, ts string) string {
 	fileName := fmt.Sprintf("aplane-backup-%s.tar.gz", ts)
-	return filepath.Join(paths.IdentityBackupsDir(identityID), fileName)
+	return filepath.Join(paths.ProductBackupsDir(), fileName)
 }

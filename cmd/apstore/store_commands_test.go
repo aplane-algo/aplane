@@ -24,7 +24,7 @@ func TestHasPartialKeystoreState(t *testing.T) {
 		t.Fatal("empty identity dir should not be partial")
 	}
 
-	identityDir := paths.IdentityDir(identityID)
+	identityDir := paths.ProductDir()
 	if err := os.MkdirAll(identityDir, 0o770); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -65,7 +65,7 @@ func TestCmdInitializeInitializes(t *testing.T) {
 		gotRole = role
 		return protocol.InitializeStoreResultMessage{
 			Success:     true,
-			MetadataDir: keystorePaths().KeystoreMetadataDir(productIdentityID()),
+			MetadataDir: keystorePaths().KeystoreMetadataDir(),
 		}, nil
 	}
 

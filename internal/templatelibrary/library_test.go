@@ -21,7 +21,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -235,91 +234,6 @@ func TestListIncludesInstalledTemplateWithoutLibrarySource(t *testing.T) {
 	}
 	if item.FileName != keyType+".template" {
 		t.Fatalf("installed-only FileName = %q, want template filename", item.FileName)
-	}
-}
-
-func TestInstalledTemplateStateIsIdentityScoped(t *testing.T) {
-	paths := newLibraryTestPaths(t)
-	keyType := "phase11-identity-template-v1"
-	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "alice"), testGenericTemplateYAML("phase11-identity-template", "Alice Template"), keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateActive(alice) error = %v", err)
-	}
-	writeTemplateStateForTest(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-
-	if !testKeyTypeEnabled(paths, "alice", keyType) {
-		t.Fatalf("alice enabled state missing for %q", keyType)
-	}
-	if testKeyTypeEnabled(paths, "bob", keyType) {
-		t.Fatalf("bob enabled state exists for %q", keyType)
-	}
-}
-
-func TestRegisterKeystoreTemplatesReportsCrossIdentityKeyTypeConflict(t *testing.T) {
-	paths := newLibraryTestPaths(t)
-	keyType := "test.phase11-global-conflict.v1"
-	aliceYAML := testGenericTemplateYAML("phase11-global-conflict", "Alice Template")
-	bobYAML := bytes.ReplaceAll(aliceYAML, []byte("return"), []byte("int 0\n  pop\n  return"))
-
-	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "alice"), aliceYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateActive(alice) error = %v", err)
-	}
-	writeTemplateStateForTest(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "bob"), bobYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateActive(bob) error = %v", err)
-	}
-	writeTemplateStateForTest(t, paths, "bob", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-
-	aliceOutcome, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates("alice", cryptotest.Keyring(t, testMasterKey()))
-	if err != nil {
-		t.Fatalf("RegisterKeystoreTemplates(alice) error = %v", err)
-	}
-	if !stringSliceContains(aliceOutcome.GenericActivatedKeyTypes, keyType) && !stringSliceContains(aliceOutcome.GenericIdempotentKeyTypes, keyType) {
-		t.Fatalf("alice registration outcome = %+v, want activated or idempotent %q", aliceOutcome, keyType)
-	}
-
-	bobOutcome, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates("bob", cryptotest.Keyring(t, testMasterKey()))
-	if err != nil {
-		t.Fatalf("RegisterKeystoreTemplates(bob) error = %v", err)
-	}
-	if !stringSliceContains(bobOutcome.GenericConflictingKeyTypes, keyType) {
-		t.Fatalf("bob registration outcome = %+v, want conflict for %q", bobOutcome, keyType)
-	}
-}
-
-func TestRegisterKeystoreTemplatesAllowsCrossIdentitySameFingerprint(t *testing.T) {
-	paths := newLibraryTestPaths(t)
-	keyType := "test.phase11-global-idempotent.v1"
-	yamlData := testGenericTemplateYAML("phase11-global-idempotent", "Shared Template")
-
-	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "alice"), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateActive(alice) error = %v", err)
-	}
-	writeTemplateStateForTest(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "bob"), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateActive(bob) error = %v", err)
-	}
-	writeTemplateStateForTest(t, paths, "bob", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-
-	aliceOutcome, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates("alice", cryptotest.Keyring(t, testMasterKey()))
-	if err != nil {
-		t.Fatalf("RegisterKeystoreTemplates(alice) error = %v", err)
-	}
-	if stringSliceContains(aliceOutcome.GenericConflictingKeyTypes, keyType) {
-		t.Fatalf("alice registration outcome = %+v, did not expect conflict for %q", aliceOutcome, keyType)
-	}
-	if !stringSliceContains(aliceOutcome.GenericActivatedKeyTypes, keyType) && !stringSliceContains(aliceOutcome.GenericIdempotentKeyTypes, keyType) {
-		t.Fatalf("alice registration outcome = %+v, want activated or idempotent %q", aliceOutcome, keyType)
-	}
-
-	bobOutcome, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates("bob", cryptotest.Keyring(t, testMasterKey()))
-	if err != nil {
-		t.Fatalf("RegisterKeystoreTemplates(bob) error = %v", err)
-	}
-	if stringSliceContains(bobOutcome.GenericConflictingKeyTypes, keyType) {
-		t.Fatalf("bob registration outcome = %+v, did not expect conflict for %q", bobOutcome, keyType)
-	}
-	if !stringSliceContains(bobOutcome.GenericIdempotentKeyTypes, keyType) {
-		t.Fatalf("bob registration outcome = %+v, want idempotent %q", bobOutcome, keyType)
 	}
 }
 
@@ -664,7 +578,7 @@ func TestRemoveInstalledTemplateMovesUnusedTemplateToDeletedArchive(t *testing.T
 	if !removed.Removed {
 		t.Fatal("RemoveInstalledTemplate().Removed = false, want true")
 	}
-	wantArchive := paths.DeletedKeyTypeTemplate(testIdentityID, parsed.KeyType)
+	wantArchive := paths.DeletedKeyTypeTemplate(parsed.KeyType)
 	if removed.OutputPath != wantArchive {
 		t.Fatalf("RemoveInstalledTemplate().OutputPath = %q, want %q", removed.OutputPath, wantArchive)
 	}
@@ -674,7 +588,7 @@ func TestRemoveInstalledTemplateMovesUnusedTemplateToDeletedArchive(t *testing.T
 	if _, err := os.Stat(removed.OutputPath); err != nil {
 		t.Fatalf("archived template missing after removal: %v", err)
 	}
-	if _, err := os.Stat(paths.DeletedKeysDir(testIdentityID)); err != nil {
+	if _, err := os.Stat(paths.DeletedKeysDir()); err != nil {
 		t.Fatalf("deleted keys dir missing after template removal: %v", err)
 	}
 
@@ -695,7 +609,7 @@ func TestRemoveInstalledTemplateRestoresStateWhenArchiveFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
-	blockingPath := filepath.Join(paths.DeletedDir(testIdentityID), "keytypes")
+	blockingPath := filepath.Join(paths.DeletedDir(), "keytypes")
 	if err := os.MkdirAll(filepath.Dir(blockingPath), 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -1022,8 +936,6 @@ func newLibraryTestPaths(t *testing.T) storepaths.Paths {
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths, "default")
-	genstoretest.MintFirst(t, paths, "alice")
-	genstoretest.MintFirst(t, paths, "bob")
 	if err := EnsureLibraryDir(paths); err != nil {
 		t.Fatalf("EnsureLibraryDir() error = %v", err)
 	}
@@ -1055,15 +967,6 @@ func findLibraryItem(items []LibraryTemplate, keyType string) *LibraryTemplate {
 		}
 	}
 	return nil
-}
-
-func stringSliceContains(items []string, want string) bool {
-	for _, item := range items {
-		if item == want {
-			return true
-		}
-	}
-	return false
 }
 
 func testKeyTypeEnabled(paths storepaths.Paths, identityID, keyType string) bool {
@@ -1127,7 +1030,7 @@ func assertInstalledTemplateProjection(t *testing.T, paths storepaths.Paths, par
 	if got := templatestore.TemplateExistsForPaths(paths, testIdentityID, parsed.KeyType, parsed.TemplateType); got != want.templateExists {
 		t.Fatalf("template exists = %v, want %v", got, want.templateExists)
 	}
-	if _, err := os.Stat(paths.DeletedKeyTypeTemplate(testIdentityID, parsed.KeyType)); (err == nil) != want.archiveExists {
+	if _, err := os.Stat(paths.DeletedKeyTypeTemplate(parsed.KeyType)); (err == nil) != want.archiveExists {
 		t.Fatalf("archive exists = %v, want %v (stat err=%v)", err == nil, want.archiveExists, err)
 	}
 

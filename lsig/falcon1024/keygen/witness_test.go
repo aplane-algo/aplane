@@ -22,10 +22,10 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	genstoretest.MintFirst(t, paths, "default")
 	passphrase := []byte("component-generator-test-passphrase")
-	if _, err := securecrypto.CreateKeyringStore(paths.IdentityDir("default"), passphrase); err != nil {
+	if _, err := securecrypto.CreateKeyringStore(paths.ProductDir(), passphrase); err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
-	kr, err := securecrypto.OpenKeyringStore(paths.IdentityDir("default"), passphrase)
+	kr, err := securecrypto.OpenKeyringStore(paths.ProductDir(), passphrase)
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}

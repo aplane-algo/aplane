@@ -28,7 +28,7 @@ const maxCurrentPointerSize = 128
 // generation directory must exist as a regular directory. Any deviation is
 // an error; callers fail closed into recovery, never guess a generation.
 func ReadCurrent(paths storepaths.Paths, identityID string) (string, error) {
-	pointerPath := paths.CurrentPointerPath(identityID)
+	pointerPath := paths.CurrentPointerPath()
 	info, err := os.Lstat(pointerPath)
 	if err != nil {
 		return "", fmt.Errorf("read CURRENT pointer: %w", err)
@@ -50,7 +50,7 @@ func ReadCurrent(paths storepaths.Paths, identityID string) (string, error) {
 	if err := storepaths.ValidateGenerationID(generationID); err != nil {
 		return "", fmt.Errorf("CURRENT pointer: %w", err)
 	}
-	if err := requireRegularDirectory(paths.GenerationDir(identityID, generationID)); err != nil {
+	if err := requireRegularDirectory(paths.GenerationDir(generationID)); err != nil {
 		return "", fmt.Errorf("selected generation: %w", err)
 	}
 	return generationID, nil
@@ -75,10 +75,10 @@ func WriteCurrent(paths storepaths.Paths, identityID, generationID string) error
 	if err := storepaths.ValidateGenerationID(generationID); err != nil {
 		return err
 	}
-	if err := requireRegularDirectory(paths.GenerationDir(identityID, generationID)); err != nil {
+	if err := requireRegularDirectory(paths.GenerationDir(generationID)); err != nil {
 		return fmt.Errorf("refusing to point CURRENT at %s: %w", generationID, err)
 	}
-	writeErr := fsutil.WriteFileDurable(paths.CurrentPointerPath(identityID), []byte(generationID+"\n"))
+	writeErr := fsutil.WriteFileDurable(paths.CurrentPointerPath(), []byte(generationID+"\n"))
 	if writeErr == nil {
 		return nil
 	}
@@ -100,7 +100,7 @@ func WriteCurrent(paths storepaths.Paths, identityID, generationID string) error
 		// The old pointer is intact and authoritative; nothing committed.
 		return writeErr
 	}
-	if syncErr := fsutil.SyncDir(paths.IdentityDir(identityID)); syncErr == nil {
+	if syncErr := fsutil.SyncDir(paths.ProductDir()); syncErr == nil {
 		return nil
 	}
 	return fmt.Errorf("%w: generation %s: %v", ErrCommitDurabilityUnknown, generationID, writeErr)
@@ -114,7 +114,7 @@ func Resolve(paths storepaths.Paths, identityID string) (storepaths.GenPaths, er
 	if err != nil {
 		return storepaths.GenPaths{}, err
 	}
-	return paths.GenerationPaths(identityID, generationID), nil
+	return paths.GenerationPaths(generationID), nil
 }
 
 // ResolveActive resolves the identity's active namespaces: the generation
@@ -129,7 +129,7 @@ func ResolveActive(paths storepaths.Paths, identityID string) (storepaths.Active
 // uninitialized store from one whose CURRENT pointer is present, so callers
 // can produce a friendly not-initialized error instead of a pointer error.
 func IsGenerational(paths storepaths.Paths, identityID string) (bool, error) {
-	_, err := os.Lstat(paths.CurrentPointerPath(identityID))
+	_, err := os.Lstat(paths.CurrentPointerPath())
 	if err == nil {
 		return true, nil
 	}

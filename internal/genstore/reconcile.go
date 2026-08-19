@@ -79,10 +79,10 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 	// committed once (its seal preceded the flip to current), so if its
 	// seal is now missing that is damage, not an uncommitted attempt, and
 	// it must survive reconciliation for the operator.
-	if err := ValidateCurrent(paths.GenerationPaths(identityID, current)); err != nil {
+	if err := ValidateCurrent(paths.GenerationPaths(current)); err != nil {
 		return report, fmt.Errorf("reconcile: current generation failed validation, nothing deleted: %w", err)
 	}
-	manifest, err := ReadManifest(paths.GenerationPaths(identityID, current))
+	manifest, err := ReadManifest(paths.GenerationPaths(current))
 	if err != nil {
 		return report, fmt.Errorf("reconcile: %w", err)
 	}
@@ -96,7 +96,7 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 		// could silently revert. Reconciliation is the designated healing
 		// point: fsync the identity directory so the pointer read above is
 		// durably the pointer.
-		if err := fsutil.SyncDir(paths.IdentityDir(identityID)); err != nil {
+		if err := fsutil.SyncDir(paths.ProductDir()); err != nil {
 			return report, fmt.Errorf("reconcile: confirm CURRENT durability: %w", err)
 		}
 	}
@@ -106,7 +106,7 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 	// generation root; the committing rename is atomic, so residue never
 	// carries state). Structural validation tolerates them; this is where
 	// they are removed.
-	currentDir := paths.GenerationPaths(identityID, current).Dir()
+	currentDir := paths.GenerationPaths(current).Dir()
 	residueDirs := []string{currentDir}
 	for _, namespace := range generationNamespaces {
 		residueDirs = append(residueDirs, filepath.Join(currentDir, namespace))
@@ -137,7 +137,7 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 		}
 	}
 
-	generationsDir := paths.GenerationsDir(identityID)
+	generationsDir := paths.GenerationsDir()
 	entries, err := os.ReadDir(generationsDir)
 	if err != nil {
 		return report, err
@@ -148,7 +148,7 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 		switch {
 		case strings.HasPrefix(name, storepaths.GenerationStagingPrefix):
 			if remove {
-				if err := os.RemoveAll(paths.GenerationsDir(identityID) + "/" + name); err != nil {
+				if err := os.RemoveAll(paths.GenerationsDir() + "/" + name); err != nil {
 					return report, fmt.Errorf("discard staging %s: %w", name, err)
 				}
 				removedAny = true
@@ -162,7 +162,7 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 				// Unknown entries are not ours to delete; fail closed.
 				return report, fmt.Errorf("unexpected entry %q in generations directory", name)
 			}
-			gen := paths.GenerationPaths(identityID, name)
+			gen := paths.GenerationPaths(name)
 			sealed, err := HasSeal(gen)
 			if err != nil {
 				return report, err
@@ -237,7 +237,7 @@ func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[st
 		}
 	}
 	if retainRollbackParent {
-		manifest, err := ReadManifest(paths.GenerationPaths(identityID, report.Current))
+		manifest, err := ReadManifest(paths.GenerationPaths(report.Current))
 		if err != nil {
 			return nil, fmt.Errorf("collect: read current generation manifest: %w", err)
 		}
@@ -246,7 +246,7 @@ func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[st
 			// a parent that fails seal validation cannot serve that role,
 			// and deleting the alternatives would destroy the only other
 			// recovery material. Abort the prune before removing anything.
-			parent := paths.GenerationPaths(identityID, manifest.ParentID)
+			parent := paths.GenerationPaths(manifest.ParentID)
 			var validateErr error
 			if anchor, anchored := kr.HistoricalGenerationAnchor(manifest.ParentID); anchored {
 				validateErr = ValidateAnchoredSealed(parent, anchor, kr)
@@ -270,8 +270,8 @@ func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[st
 		// Rename to a staging tombstone first — atomic, and staging
 		// residue is unconditionally garbage to reconciliation — so a
 		// crashed prune retries as a no-op instead of wedging.
-		tombstone := filepath.Join(paths.GenerationsDir(identityID), storepaths.GenerationStagingPrefix+"prune-"+name)
-		if err := os.Rename(paths.GenerationPaths(identityID, name).Dir(), tombstone); err != nil {
+		tombstone := filepath.Join(paths.GenerationsDir(), storepaths.GenerationStagingPrefix+"prune-"+name)
+		if err := os.Rename(paths.GenerationPaths(name).Dir(), tombstone); err != nil {
 			return removed, fmt.Errorf("collect generation %s: %w", name, err)
 		}
 		if err := os.RemoveAll(tombstone); err != nil {
@@ -280,7 +280,7 @@ func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[st
 		removed = append(removed, name)
 	}
 	if len(removed) > 0 {
-		if err := fsutil.SyncDir(paths.GenerationsDir(identityID)); err != nil {
+		if err := fsutil.SyncDir(paths.GenerationsDir()); err != nil {
 			return removed, err
 		}
 	}

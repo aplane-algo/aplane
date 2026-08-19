@@ -102,7 +102,7 @@ type historicalGenerationAuthority struct {
 }
 
 func (s *inventoryScanner) scanGenerations(current string) error {
-	root := s.paths.GenerationsDir(s.identityID)
+	root := s.paths.GenerationsDir()
 	if err := requireDirectory(root); err != nil {
 		return fmt.Errorf("rotation inventory generations: %w", err)
 	}
@@ -129,7 +129,7 @@ func (s *inventoryScanner) scanGenerations(current string) error {
 		return fmt.Errorf("rotation inventory CURRENT generation %s is missing", current)
 	}
 	for _, name := range names {
-		gen := s.paths.GenerationPaths(s.identityID, name)
+		gen := s.paths.GenerationPaths(name)
 		var contentSeal *genstore.Seal
 		var historicalAnchor *crypto.HistoricalGenerationAnchor
 		var historical *historicalGenerationAuthority
@@ -295,7 +295,7 @@ func (s *inventoryScanner) scanIntegrityDocuments() error {
 	if err != nil {
 		return err
 	}
-	nodeSidecarPath := s.paths.NodeRoleIntegritySidecar(s.identityID)
+	nodeSidecarPath := s.paths.NodeRoleIntegritySidecar()
 	nodeSidecarBytes, _, err := fsutil.ReadRegularFile(nodeSidecarPath)
 	if err != nil {
 		return fmt.Errorf("rotation inventory node role sidecar: %w", err)
@@ -355,7 +355,7 @@ func (s *inventoryScanner) scanIntegrityDocuments() error {
 }
 
 func (s *inventoryScanner) scanDeleted() error {
-	root := s.paths.DeletedDir(s.identityID)
+	root := s.paths.DeletedDir()
 	present, err := directoryExists(root)
 	if err != nil || !present {
 		return err
@@ -441,8 +441,8 @@ func (s *inventoryScanner) scanOptionalRotationRecords() error {
 		kind ArtifactKind
 		ctx  crypto.ObjectContext
 	}{
-		{s.paths.RotationSnapshotPath(s.identityID), KindRotationSnapshot, crypto.RotationSnapshotContext()},
-		{s.paths.RotationBaselinePath(s.identityID), KindRotationBaseline, crypto.RotationBaselineContext()},
+		{s.paths.RotationSnapshotPath(), KindRotationSnapshot, crypto.RotationSnapshotContext()},
+		{s.paths.RotationBaselinePath(), KindRotationBaseline, crypto.RotationBaselineContext()},
 	} {
 		if s.excludeSnapshot && record.kind == KindRotationSnapshot {
 			continue
@@ -588,7 +588,7 @@ func (s *inventoryScanner) addBytes(path string, kind ArtifactKind, data []byte,
 		ObjectClass:    ctx.Class,
 		ObjectSelector: ctx.Selector,
 	})
-	currentGen := s.paths.GenerationPaths(s.identityID, s.currentGeneration)
+	currentGen := s.paths.GenerationPaths(s.currentGeneration)
 	generationRelative, err := filepath.Rel(currentGen.Dir(), path)
 	if err != nil {
 		return err

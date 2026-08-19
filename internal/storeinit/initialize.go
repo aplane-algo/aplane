@@ -55,13 +55,13 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, err
 	}
 
-	metadataDir := opts.Paths.KeystoreMetadataDir(opts.IdentityID)
+	metadataDir := opts.Paths.KeystoreMetadataDir()
 	result.MetadataDir = metadataDir
 	if crypto.KeyringExistsIn(metadataDir) {
 		return result, fmt.Errorf("keystore already initialized (control file exists in %s)", metadataDir)
 	}
 	if HasPartialState(opts.Paths, opts.IdentityID) {
-		return result, fmt.Errorf("keystore appears partially initialized in %s; clean up the existing identity directory before re-running initialize", opts.Paths.IdentityDir(opts.IdentityID))
+		return result, fmt.Errorf("keystore appears partially initialized in %s; clean up the existing identity directory before re-running initialize", opts.Paths.ProductDir())
 	}
 
 	logf(opts.Logf, "keystore directory: %s", metadataDir)
@@ -140,7 +140,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 }
 
 func HasPartialState(paths storepaths.Paths, identityID string) bool {
-	identityDir := paths.IdentityDir(identityID)
+	identityDir := paths.ProductDir()
 	entries, err := os.ReadDir(identityDir)
 	if os.IsNotExist(err) {
 		return false

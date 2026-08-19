@@ -42,7 +42,7 @@ func TestCmdRebuildRejectsExistingIdentityBeforePrompt(t *testing.T) {
 		stdinReader = oldReader
 	}()
 
-	if err := os.MkdirAll(keystorePaths().IdentityDir(productIdentityID()), 0o755); err != nil {
+	if err := os.MkdirAll(keystorePaths().ProductDir(), 0o755); err != nil {
 		t.Fatalf("MkdirAll(identity) error = %v", err)
 	}
 
@@ -89,13 +89,13 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
-	if !apcrypto.KeyringExistsIn(keystorePaths().KeystoreMetadataDir(productIdentityID())) {
+	if !apcrypto.KeyringExistsIn(keystorePaths().KeystoreMetadataDir()) {
 		t.Fatal("keystore metadata missing after rebuild")
 	}
 	if _, err := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)); err != nil {
 		t.Fatalf("rebuilt key file missing: %v", err)
 	}
-	kr, err := apcrypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), []byte("new-store-passphrase"))
+	kr, err := apcrypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), []byte("new-store-passphrase"))
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
@@ -142,7 +142,7 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
 
-	kr, err := apcrypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), []byte("new-store-passphrase"))
+	kr, err := apcrypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), []byte("new-store-passphrase"))
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}

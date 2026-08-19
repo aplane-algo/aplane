@@ -137,7 +137,7 @@ func TestScanRetainsCurrentDecisionInputsFromExactScannedBytes(t *testing.T) {
 		t.Fatal("Scan() did not retain the parsed current manifest")
 	}
 	accountPath := filepath.Join(
-		fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB).KeysDir(),
+		fixture.paths.GenerationPaths(inventoryGenB).KeysDir(),
 		"ACCOUNT.key",
 	)
 	account := findEntry(
@@ -162,7 +162,7 @@ func TestScanRetainsCurrentDecisionInputsFromExactScannedBytes(t *testing.T) {
 		t.Fatalf("substitute account after scan: %v", err)
 	}
 	manifestPath := fixture.paths.GenerationPaths(
-		inventoryIdentity,
+
 		inventoryGenB,
 	).ManifestPath()
 	if err := os.WriteFile(manifestPath, []byte("{\"substituted\":true}"), fsutil.StoreFilePerm); err != nil {
@@ -196,7 +196,7 @@ func TestScanRejectsWrongEnvelopeContext(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fixture := newInventoryFixture(t)
-			gen := fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB)
+			gen := fixture.paths.GenerationPaths(inventoryGenB)
 			data, err := os.ReadFile(filepath.Join(gen.KeysDir(), tt.source))
 			if err != nil {
 				t.Fatalf("ReadFile(source) error = %v", err)
@@ -237,7 +237,7 @@ func TestScanRejectsUnauthorizedIntegrityTerm(t *testing.T) {
 
 func TestScanRejectsMutatedPlaintextRetainedGenerationMember(t *testing.T) {
 	fixture := newInventoryFixture(t)
-	path := fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenA).KeyTypeRecord("example.type.v1")
+	path := fixture.paths.GenerationPaths(inventoryGenA).KeyTypeRecord("example.type.v1")
 	if err := os.WriteFile(path, []byte("{\"mutated\":true}\n"), fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(mutated state) error = %v", err)
 	}
@@ -249,7 +249,7 @@ func TestScanRejectsMutatedPlaintextRetainedGenerationMember(t *testing.T) {
 func TestScanRejectsUnsupportedInScopeArtifact(t *testing.T) {
 	fixture := newInventoryFixture(t)
 	path := filepath.Join(
-		fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB).KeysDir(),
+		fixture.paths.GenerationPaths(inventoryGenB).KeysDir(),
 		"unclassified.bin",
 	)
 	if err := os.WriteFile(path, []byte("unclassified"), fsutil.StoreFilePerm); err != nil {
@@ -262,7 +262,7 @@ func TestScanRejectsUnsupportedInScopeArtifact(t *testing.T) {
 
 func TestScanRejectsTermEnvelopeSubstitutedForPlaintextMember(t *testing.T) {
 	fixture := newInventoryFixture(t)
-	gen := fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB)
+	gen := fixture.paths.GenerationPaths(inventoryGenB)
 	envelope, err := os.ReadFile(filepath.Join(gen.KeysDir(), "ACCOUNT.key"))
 	if err != nil {
 		t.Fatalf("ReadFile(account envelope) error = %v", err)
@@ -280,7 +280,7 @@ func TestScanRejectsTermEnvelopeSubstitutedForPlaintextMember(t *testing.T) {
 func TestScanRejectsMalformedRotationBaseline(t *testing.T) {
 	fixture := newInventoryFixture(t)
 	if err := writeEnvelope(
-		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		fixture.paths.RotationBaselinePath(),
 		[]byte(`{"schema":"broken"}`),
 		crypto.RotationBaselineContext(),
 		fixture.kr,
@@ -296,7 +296,7 @@ func TestScanRejectsMalformedRotationBaseline(t *testing.T) {
 func TestScanRejectsOversizedRotationBaseline(t *testing.T) {
 	fixture := newInventoryFixture(t)
 	if err := os.WriteFile(
-		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		fixture.paths.RotationBaselinePath(),
 		bytes.Repeat([]byte{'x'}, int(MaxRotationBaselineBytes)+1),
 		fsutil.StoreFilePerm,
 	); err != nil {
@@ -394,10 +394,10 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 		t.Fatalf("Mint(second) error = %v", err)
 	}
 
-	if err := fsutil.MkdirAll(paths.DeletedKeysDir(inventoryIdentity)); err != nil {
+	if err := fsutil.MkdirAll(paths.DeletedKeysDir()); err != nil {
 		t.Fatalf("MkdirAll(deleted keys) error = %v", err)
 	}
-	if err := fsutil.MkdirAll(filepath.Dir(paths.DeletedKeyTypeTemplate(inventoryIdentity, "archived.type.v1"))); err != nil {
+	if err := fsutil.MkdirAll(filepath.Dir(paths.DeletedKeyTypeTemplate("archived.type.v1"))); err != nil {
 		t.Fatalf("MkdirAll(deleted keytypes) error = %v", err)
 	}
 	for _, artifact := range []struct {
@@ -405,9 +405,9 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 		plaintext string
 		ctx       crypto.ObjectContext
 	}{
-		{filepath.Join(paths.DeletedKeysDir(inventoryIdentity), "ARCHIVED.key"), "archived account", crypto.AccountKeyContext("ARCHIVED")},
-		{filepath.Join(paths.DeletedKeysDir(inventoryIdentity), "ARCHWIT.sen"), "archived sentry", crypto.SentryCredentialContext("ARCHWIT")},
-		{paths.DeletedKeyTypeTemplate(inventoryIdentity, "archived.type.v1"), "archived template", crypto.KeyTypeTemplateContext("archived.type.v1")},
+		{filepath.Join(paths.DeletedKeysDir(), "ARCHIVED.key"), "archived account", crypto.AccountKeyContext("ARCHIVED")},
+		{filepath.Join(paths.DeletedKeysDir(), "ARCHWIT.sen"), "archived sentry", crypto.SentryCredentialContext("ARCHWIT")},
+		{paths.DeletedKeyTypeTemplate("archived.type.v1"), "archived template", crypto.KeyTypeTemplateContext("archived.type.v1")},
 	} {
 		if err := writeEnvelope(artifact.path, []byte(artifact.plaintext), artifact.ctx, kr); err != nil {
 			t.Fatalf("writeEnvelope(%s) error = %v", artifact.path, err)
@@ -415,7 +415,7 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 	}
 
 	if err := writeEnvelope(
-		paths.RotationSnapshotPath(inventoryIdentity),
+		paths.RotationSnapshotPath(),
 		[]byte("snapshot"),
 		crypto.RotationSnapshotContext(),
 		kr,
@@ -423,7 +423,7 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 		t.Fatalf("write rotation snapshot: %v", err)
 	}
 	currentInventory, err := genstore.BuildInventory(
-		paths.GenerationPaths(inventoryIdentity, inventoryGenB),
+		paths.GenerationPaths(inventoryGenB),
 	)
 	if err != nil {
 		t.Fatalf("BuildInventory(current) error = %v", err)

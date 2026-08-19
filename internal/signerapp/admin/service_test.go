@@ -85,7 +85,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *iden
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	if err := os.MkdirAll(keyPaths.LegacyKeysDir(auth.DefaultIdentityID), 0o750); err != nil {
+	if err := os.MkdirAll(keyPaths.LegacyKeysDir(), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}
 
@@ -112,7 +112,7 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *identity.Runtim
 	t.Helper()
 
 	passphrase := []byte("admin-policy-test-passphrase")
-	if _, err := securecrypto.CreateKeyringStore(ir.KeyPaths().KeystoreMetadataDir(ir.ID()), passphrase); err != nil {
+	if _, err := securecrypto.CreateKeyringStore(ir.KeyPaths().KeystoreMetadataDir(), passphrase); err != nil {
 		t.Fatalf("CreateKeyringStore(): %v", err)
 	}
 	if err := ir.KeyStore().Unlock(passphrase); err != nil {

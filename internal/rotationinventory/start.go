@@ -87,7 +87,7 @@ func StartRotation(
 	}
 	var snapshot *Snapshot
 	err = crypto.StartRotation(
-		paths.IdentityDir(identityID),
+		paths.ProductDir(),
 		kr,
 		passphrase,
 		anchors,
@@ -124,7 +124,7 @@ func collectHistoricalAnchors(
 		byGeneration[anchor.GenerationID] = anchor
 	}
 
-	entries, err := os.ReadDir(paths.GenerationsDir(identityID))
+	entries, err := os.ReadDir(paths.GenerationsDir())
 	if err != nil {
 		return nil, fmt.Errorf("collect historical anchors: %w", err)
 	}
@@ -156,7 +156,7 @@ func collectHistoricalAnchors(
 			continue
 		}
 		anchor, err := genstore.BuildHistoricalAnchor(
-			paths.GenerationPaths(identityID, generationID),
+			paths.GenerationPaths(generationID),
 			kr,
 		)
 		if err != nil {

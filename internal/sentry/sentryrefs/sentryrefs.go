@@ -141,7 +141,7 @@ func putRecord(paths storepaths.Paths, identityID string, rec Record) error {
 	if err != nil {
 		return err
 	}
-	path := paths.SentryRefPath(identityID, normalized.Name)
+	path := paths.SentryRefPath(normalized.Name)
 	if err := fsutil.MkdirAllPrivate(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("failed to create sentry reference directory: %w", err)
 	}
@@ -161,7 +161,7 @@ func Get(paths storepaths.Paths, identityID, name string) (Record, bool, error) 
 	if err != nil {
 		return Record{}, false, err
 	}
-	path := paths.SentryRefPath(identityID, name)
+	path := paths.SentryRefPath(name)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -180,7 +180,7 @@ func Get(paths storepaths.Paths, identityID, name string) (Record, bool, error) 
 // is omitted rather than hiding unrelated generation choices; direct Get of
 // that record still returns its validation error.
 func List(paths storepaths.Paths, identityID string) ([]Record, error) {
-	dir := paths.SentryRefsDir(identityID)
+	dir := paths.SentryRefsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -218,7 +218,7 @@ func Delete(paths storepaths.Paths, identityID, name string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := os.Remove(paths.SentryRefPath(identityID, name)); err != nil {
+	if err := os.Remove(paths.SentryRefPath(name)); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}

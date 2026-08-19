@@ -39,7 +39,7 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 	}
 	var uploadID string
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		dir := s.Deps.KeyPaths().IdentityBackupsDir(ir.ID())
+		dir := s.Deps.KeyPaths().ProductBackupsDir()
 		if err := fsutil.MkdirAllPrivate(dir); err != nil {
 			return err
 		}
@@ -90,7 +90,7 @@ func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendB
 	}
 	var next int64
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		path, err := backupUploadPath(s.Deps.KeyPaths().IdentityBackupsDir(ir.ID()), req.UploadID)
+		path, err := backupUploadPath(s.Deps.KeyPaths().ProductBackupsDir(), req.UploadID)
 		if err != nil {
 			return err
 		}
@@ -147,7 +147,7 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		}
 		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
-	dir := s.Deps.KeyPaths().IdentityBackupsDir(ir.ID())
+	dir := s.Deps.KeyPaths().ProductBackupsDir()
 	claimPath, err := s.claimBackupImport(ir.ID(), dir, req.UploadID, fileName, req.ExpectedSize)
 	if err != nil {
 		return commitImportError(err, s.Deps.KeyPaths().Root())
@@ -275,7 +275,7 @@ func (s Service) AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBac
 		return adminproto.AbortBackupImportResult{Code: "backup_import_abort_failed", Error: backupTransferErrorText(err, s.Deps.KeyPaths().Root())}
 	}
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		path, err := backupUploadPath(s.Deps.KeyPaths().IdentityBackupsDir(ir.ID()), req.UploadID)
+		path, err := backupUploadPath(s.Deps.KeyPaths().ProductBackupsDir(), req.UploadID)
 		if err != nil {
 			return err
 		}
@@ -337,7 +337,7 @@ func cleanupSupersededBackupUploads(paths storepaths.Paths, identityID string) (
 }
 
 func cleanupBackupImportResidue(paths storepaths.Paths, identityID string, includeValidation bool) (int, error) {
-	dir := paths.IdentityBackupsDir(identityID)
+	dir := paths.ProductBackupsDir()
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return 0, nil

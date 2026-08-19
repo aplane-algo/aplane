@@ -121,7 +121,7 @@ func PrepareRestoreSource(source string) (string, func(), error) {
 }
 
 func ResolveManagedBackupPath(paths storepaths.Paths, identityID, archivePath string) (string, error) {
-	return resolveManagedArchivePath(paths.IdentityBackupsDir(identityID), archivePath, "backup")
+	return resolveManagedArchivePath(paths.ProductBackupsDir(), archivePath, "backup")
 }
 
 func resolveManagedArchivePath(root, archivePath, label string) (string, error) {
@@ -151,7 +151,7 @@ func resolveManagedArchivePath(root, archivePath, label string) (string, error) 
 }
 
 func ListManagedBackups(paths storepaths.Paths, identityID string) ([]ManagedBackupInfo, error) {
-	dir := paths.IdentityBackupsDir(identityID)
+	dir := paths.ProductBackupsDir()
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil

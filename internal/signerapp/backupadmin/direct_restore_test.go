@@ -165,7 +165,7 @@ func TestDirectRestoreRollbackCannotRollbackItself(t *testing.T) {
 	if !rolledBack.Success {
 		t.Fatalf("RollbackRestore() = %+v", rolledBack)
 	}
-	manifest, err := genstore.ReadManifest(paths.GenerationPaths(auth.DefaultIdentityID, rolledBack.GenerationID))
+	manifest, err := genstore.ReadManifest(paths.GenerationPaths(rolledBack.GenerationID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestDirectRestoreReportsVisibleDurabilityUnknownAsUncertain(t *testing.T) {
 	service := directRestoreTestService(paths)
 
 	injected := errors.New("simulated identity-directory sync failure")
-	identityDir := paths.IdentityDir(auth.DefaultIdentityID)
+	identityDir := paths.ProductDir()
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if op == fsutil.OpDirSync && path == identityDir {
 			return injected
@@ -229,7 +229,7 @@ func TestDirectRollbackReportsVisibleDurabilityUnknownAndEntersRecovery(t *testi
 	}
 
 	injected := errors.New("simulated rollback identity-directory sync failure")
-	identityDir := paths.IdentityDir(auth.DefaultIdentityID)
+	identityDir := paths.ProductDir()
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if op == fsutil.OpDirSync && path == identityDir {
 			return injected

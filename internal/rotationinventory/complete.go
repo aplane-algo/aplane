@@ -142,7 +142,7 @@ func CompleteRotation(
 	report.FinalEntries = len(after.Entries)
 
 	if err := crypto.CloseRotation(
-		paths.IdentityDir(identityID),
+		paths.ProductDir(),
 		kr,
 		passphrase,
 	); err != nil {
@@ -157,7 +157,7 @@ func CompleteRotation(
 	}
 
 	if err := fsutil.RemoveDurable(
-		paths.RotationSnapshotPath(identityID),
+		paths.RotationSnapshotPath(),
 	); err != nil {
 		return report, fmt.Errorf("remove completed rotation snapshot: %w", err)
 	}
@@ -209,14 +209,14 @@ func verifyCompletionInventory(
 	}
 	snapshotPath, err := canonicalPathFor(
 		paths,
-		paths.RotationSnapshotPath(identityID),
+		paths.RotationSnapshotPath(),
 	)
 	if err != nil {
 		return err
 	}
 	baselinePath, err := canonicalPathFor(
 		paths,
-		paths.RotationBaselinePath(identityID),
+		paths.RotationBaselinePath(),
 	)
 	if err != nil {
 		return err
@@ -278,7 +278,7 @@ func verifyCompletionInventory(
 	}
 
 	if desiredBaseline != nil {
-		_, statErr := os.Lstat(paths.RotationBaselinePath(identityID))
+		_, statErr := os.Lstat(paths.RotationBaselinePath())
 		switch {
 		case statErr == nil:
 			matches, err := readMatchingCompletionBaseline(
@@ -381,7 +381,7 @@ func cleanupUnreferencedRotationSnapshot(
 	passphrase []byte,
 ) (*CompletionReport, error) {
 	report := &CompletionReport{}
-	snapshotPath := paths.RotationSnapshotPath(identityID)
+	snapshotPath := paths.RotationSnapshotPath()
 	sealed, err := readSnapshotFile(snapshotPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNoRotationPending
@@ -395,7 +395,7 @@ func cleanupUnreferencedRotationSnapshot(
 	}
 
 	onDisk, err := crypto.OpenKeyringStore(
-		paths.IdentityDir(identityID),
+		paths.ProductDir(),
 		passphrase,
 	)
 	if err != nil {
@@ -460,7 +460,7 @@ func cleanupUnreferencedRotationSnapshot(
 		)
 	}
 
-	if err := fsutil.SyncDir(paths.IdentityDir(identityID)); err != nil {
+	if err := fsutil.SyncDir(paths.ProductDir()); err != nil {
 		return report, fmt.Errorf("sync settled rotation root directory: %w", err)
 	}
 	if err := fsutil.RemoveDurable(snapshotPath); err != nil {

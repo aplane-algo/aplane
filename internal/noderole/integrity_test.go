@@ -28,7 +28,7 @@ func TestSaveInitialAndVerifyWithKeyring(t *testing.T) {
 	if err := SaveIdentitySidecarWithKeyring(paths, "default", roleBytes, cryptotest.Keyring(t, masterKey), time.Unix(100, 0)); err != nil {
 		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
-	sidecar, err := LoadSidecar(paths.NodeRoleIntegritySidecar("default"))
+	sidecar, err := LoadSidecar(paths.NodeRoleIntegritySidecar())
 	if err != nil {
 		t.Fatalf("LoadSidecar() error = %v", err)
 	}

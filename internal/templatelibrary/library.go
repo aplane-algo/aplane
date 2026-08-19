@@ -655,8 +655,8 @@ func archiveInstalled(paths storepaths.Paths, identityID, keyType string, templa
 	if err != nil {
 		return "", err
 	}
-	deletedKeysDir := paths.DeletedKeysDir(identityID)
-	deletedTemplatePath := paths.DeletedKeyTypeTemplate(identityID, keyType)
+	deletedKeysDir := paths.DeletedKeysDir()
+	deletedTemplatePath := paths.DeletedKeyTypeTemplate(keyType)
 	if err := fsutil.MkdirAllPrivate(deletedKeysDir); err != nil {
 		return "", fmt.Errorf("failed to create deleted keys directory: %w", err)
 	}

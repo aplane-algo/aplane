@@ -146,7 +146,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Rol
 	genstoretest.MintFirst(t, keyPaths, "alice")
 	genstoretest.MintFirst(t, keyPaths, "bob")
 	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
-	keysDir := keyPaths.LegacyKeysDir(auth.DefaultIdentityID)
+	keysDir := keyPaths.LegacyKeysDir()
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}
@@ -764,7 +764,7 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "lab-sentry", data); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
-	if err := os.WriteFile(ir.KeyPaths().SentryRefPath(ir.ID(), "corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
+	if err := os.WriteFile(ir.KeyPaths().SentryRefPath("corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
 		t.Fatalf("WriteFile(corrupt sentry reference) error = %v", err)
 	}
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
@@ -824,11 +824,11 @@ func TestServiceKeyTypesReadsV1SentryReferencesWithoutWriting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := ir.KeyPaths().SentryRefsDir(ir.ID())
+	dir := ir.KeyPaths().SentryRefsDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	path := ir.KeyPaths().SentryRefPath(ir.ID(), "legacy-sentry")
+	path := ir.KeyPaths().SentryRefPath("legacy-sentry")
 	if err := os.WriteFile(path, legacy, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1040,72 +1040,6 @@ teal: |
 	}
 }
 
-func TestServiceKeyTypesForIdentityHidesTemplateInstalledForOtherIdentity(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
-	genstoretest.MintFirst(t, paths, "alice")
-	genstoretest.MintFirst(t, paths, "bob")
-	keyType := "test.generic-rest-identity-scoped.v1"
-	yamlData := []byte(`schema_version: 1
-template_type: generic
-template_mode: generated
-publisher: test
-family: generic-rest-identity-scoped
-version: 1
-display_name: Generic Rest Identity Scoped
-description: Test identity-scoped template
-max_opcode_cost: 20000
-parameters: []
-runtime_args: []
-teal: |
-  #pragma version 8
-  int 1
-  return
-`)
-	spec, err := generictemplate.ParseTemplateSpec(yamlData)
-	if err != nil {
-		t.Fatalf("ParseTemplateSpec() error = %v", err)
-	}
-	if err := generictemplate.ValidateSpec(spec); err != nil {
-		t.Fatalf("ValidateSpec() error = %v", err)
-	}
-	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
-
-	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "alice"), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
-		t.Fatalf("SaveTemplateActive(alice) error = %v", err)
-	}
-	writeTemplateStateForRestTest(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-
-	alice := identity.New(identity.Config{
-		ID:            "alice",
-		KeyPaths:      paths,
-		Authenticator: auth.NewTokenAuthenticator("alice-token"),
-		NodeRole:      noderole.RoleSigner,
-	})
-	bob := identity.New(identity.Config{
-		ID:            "bob",
-		KeyPaths:      paths,
-		Authenticator: auth.NewTokenAuthenticator("bob-token"),
-		NodeRole:      noderole.RoleSigner,
-	})
-
-	aliceResp, svcErr := Service{}.KeyTypesForIdentity(alice)
-	if svcErr != nil {
-		t.Fatalf("KeyTypesForIdentity(alice) error = %v", svcErr)
-	}
-	if !keyTypesResponseContains(aliceResp.KeyTypes, keyType) {
-		t.Fatalf("KeyTypesForIdentity(alice) did not include installed template %q", keyType)
-	}
-
-	bobResp, svcErr := Service{}.KeyTypesForIdentity(bob)
-	if svcErr != nil {
-		t.Fatalf("KeyTypesForIdentity(bob) error = %v", svcErr)
-	}
-	if keyTypesResponseContains(bobResp.KeyTypes, keyType) {
-		t.Fatalf("KeyTypesForIdentity(bob) included template %q installed only for alice", keyType)
-	}
-}
-
 func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 	type matrixCase struct {
 		name        string
@@ -1205,29 +1139,12 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				return restMatrixIdentity(paths, auth.DefaultIdentityID)
 			},
 		},
-		{
-			name:    "template installed for another identity is hidden",
-			keyType: "test.generic-rest-matrix-other-identity.v1",
-			setup: func(t *testing.T, paths storepaths.Paths) *identity.Runtime {
-				t.Helper()
-				keyType := "test.generic-rest-matrix-other-identity.v1"
-				yamlData := restGenericMatrixTemplateYAML("generic-rest-matrix-other-identity", "Generic Rest Matrix Other Identity")
-				registerRestGenericTemplateYAML(t, yamlData)
-				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, "alice"), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
-					t.Fatalf("SaveTemplateActive(alice) error = %v", err)
-				}
-				writeTemplateStateForRestTest(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-				return restMatrixIdentity(paths, "bob")
-			},
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
 			genstoretest.MintFirst(t, paths, "default")
-			genstoretest.MintFirst(t, paths, "alice")
-			genstoretest.MintFirst(t, paths, "bob")
 			ir := tt.setup(t, paths)
 
 			resp, svcErr := Service{}.KeyTypesForIdentity(ir)

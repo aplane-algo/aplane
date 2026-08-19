@@ -78,7 +78,7 @@ func (s Service) RollbackRestore(
 		if err != nil {
 			return err
 		}
-		target := paths.GenerationPaths(ir.ID(), manifest.ParentID)
+		target := paths.GenerationPaths(manifest.ParentID)
 		var source *rollbackGenerationSource
 		err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			cutover, err := rotationinventory.EvaluateRollback(

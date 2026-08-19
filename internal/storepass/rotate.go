@@ -57,7 +57,7 @@ func Rotate(
 	opts RotateOptions,
 ) (RotateResult, error) {
 	var result RotateResult
-	metaDir := paths.KeystoreMetadataDir(identityID)
+	metaDir := paths.KeystoreMetadataDir()
 	if !crypto.KeyringExistsIn(metaDir) {
 		return result, fmt.Errorf("no keyring found in %s - store not initialized", metaDir)
 	}
@@ -196,7 +196,7 @@ func loadAndVerifyCurrentKeyring(
 	passphrase []byte,
 ) (*crypto.Keyring, error) {
 	kr, err := crypto.OpenKeyringStore(
-		paths.KeystoreMetadataDir(identityID),
+		paths.KeystoreMetadataDir(),
 		passphrase,
 	)
 	if err != nil {

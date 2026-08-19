@@ -73,7 +73,7 @@ func TestProductBackupAdaptersRejectNonDefaultRuntimeBeforeCreatingPaths(t *test
 			}
 		})
 	}
-	if _, err := os.Lstat(paths.IdentityDir("other")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(paths.ProductDir()); !os.IsNotExist(err) {
 		t.Fatalf("non-default identity path was created: %v", err)
 	}
 }
@@ -170,7 +170,7 @@ func TestBackupImportReportsCommittedWarningAfterDirectorySyncFailure(t *testing
 	if !strings.Contains(result.Warning, "directory durability could not be confirmed") {
 		t.Fatalf("CommitBackupImport() warning = %q, want durability warning", result.Warning)
 	}
-	if _, err := os.Lstat(filepath.Join(paths.IdentityBackupsDir(ir.ID()), "sync-warning.tar.gz")); err != nil {
+	if _, err := os.Lstat(filepath.Join(paths.ProductBackupsDir(), "sync-warning.tar.gz")); err != nil {
 		t.Fatalf("published backup missing after warning: %v", err)
 	}
 }
@@ -223,7 +223,7 @@ func TestBackupTransferRejectsWrongPassphraseBeforePublication(t *testing.T) {
 	if result.Success {
 		t.Fatalf("CommitBackupImport(wrong passphrase) = %#v", result)
 	}
-	if _, err := os.Lstat(filepath.Join(paths.IdentityBackupsDir(ir.ID()), "wrong-passphrase.tar.gz")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(filepath.Join(paths.ProductBackupsDir(), "wrong-passphrase.tar.gz")); !os.IsNotExist(err) {
 		t.Fatalf("unauthenticated archive was published: %v", err)
 	}
 }
@@ -324,7 +324,7 @@ func TestBackupTransferRejectsExtractableInvalidContentsBeforePublication(t *tes
 	if result.Success {
 		t.Fatalf("CommitBackupImport(invalid contents) = %#v", result)
 	}
-	if _, err := os.Lstat(filepath.Join(paths.IdentityBackupsDir(ir.ID()), "invalid.tar.gz")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(filepath.Join(paths.ProductBackupsDir(), "invalid.tar.gz")); !os.IsNotExist(err) {
 		t.Fatalf("invalid archive was published: %v", err)
 	}
 }
@@ -388,7 +388,7 @@ func TestBackupTransferCapsIncompleteUploadSize(t *testing.T) {
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
-	path := filepath.Join(paths.IdentityBackupsDir(ir.ID()), begin.UploadID)
+	path := filepath.Join(paths.ProductBackupsDir(), begin.UploadID)
 	if err := os.Truncate(path, adminproto.MaxBackupImportBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestBeginBackupImportRemovesAbandonedUpload(t *testing.T) {
 	if !first.Success {
 		t.Fatalf("first BeginBackupImport() = %#v", first)
 	}
-	firstPath := filepath.Join(paths.IdentityBackupsDir(ir.ID()), first.UploadID)
+	firstPath := filepath.Join(paths.ProductBackupsDir(), first.UploadID)
 	second := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "second.tar.gz"})
 	if !second.Success {
 		t.Fatalf("second BeginBackupImport() = %#v", second)
@@ -420,7 +420,7 @@ func TestBeginBackupImportRemovesAbandonedUpload(t *testing.T) {
 
 func TestCleanupIncompleteBackupImportsRemovesValidationResidue(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	dir := paths.IdentityBackupsDir(auth.DefaultIdentityID)
+	dir := paths.ProductBackupsDir()
 	residue := filepath.Join(dir, backupValidationPrefix+"crash")
 	if err := os.MkdirAll(residue, 0o700); err != nil {
 		t.Fatal(err)
@@ -465,7 +465,7 @@ func (d *lockingBackupTransferDeps) Logf(string, ...interface{}) {}
 
 func TestCleanupIncompleteBackupImportsRejectsValidationSymlink(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	dir := paths.IdentityBackupsDir(auth.DefaultIdentityID)
+	dir := paths.ProductBackupsDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}

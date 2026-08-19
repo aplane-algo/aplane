@@ -118,7 +118,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	// self-parent and parent-must-exist checks: CURRENT's generation
 	// directory is verified by ReadCurrent, and a self-parent request
 	// would collide with the existing current directory below.
-	if _, err := os.Lstat(paths.CurrentPointerPath(identityID)); err != nil {
+	if _, err := os.Lstat(paths.CurrentPointerPath()); err != nil {
 		if !os.IsNotExist(err) {
 			return storepaths.GenPaths{}, err
 		}
@@ -144,11 +144,11 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 		}
 	}
 
-	generationsDir := paths.GenerationsDir(identityID)
+	generationsDir := paths.GenerationsDir()
 	if err := fsutil.MkdirAllPrivate(generationsDir); err != nil {
 		return storepaths.GenPaths{}, err
 	}
-	finalDir := paths.GenerationDir(identityID, req.GenerationID)
+	finalDir := paths.GenerationDir(req.GenerationID)
 	if _, err := os.Lstat(finalDir); err == nil {
 		return storepaths.GenPaths{}, fmt.Errorf("generation %s already exists", req.GenerationID)
 	} else if !os.IsNotExist(err) {
@@ -176,7 +176,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	// later in-place write must be unable to reach an inode a prior
 	// generation shares.
 	if req.Parent != "" && !req.StartEmpty {
-		parent := paths.GenerationPaths(identityID, req.Parent)
+		parent := paths.GenerationPaths(req.Parent)
 		if err := copyNamespaces(parent, staged); err != nil {
 			return storepaths.GenPaths{}, fmt.Errorf("copy parent generation: %w", err)
 		}
@@ -235,7 +235,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	// Seal the outgoing generation while it is still current: the last
 	// write it ever receives, and what makes it a valid rollback target.
 	if req.Parent != "" {
-		if err := WriteSeal(paths.GenerationPaths(identityID, req.Parent), req.CreatedAt.Unix(), req.Integrity); err != nil {
+		if err := WriteSeal(paths.GenerationPaths(req.Parent), req.CreatedAt.Unix(), req.Integrity); err != nil {
 			return storepaths.GenPaths{}, fmt.Errorf("seal outgoing generation: %w", err)
 		}
 	}
@@ -243,7 +243,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	if err := WriteCurrent(paths, identityID, req.GenerationID); err != nil {
 		return storepaths.GenPaths{}, err
 	}
-	return paths.GenerationPaths(identityID, req.GenerationID), nil
+	return paths.GenerationPaths(req.GenerationID), nil
 }
 
 // RollbackTo repoints CURRENT at a previous sealed generation after
@@ -261,11 +261,11 @@ func RollbackTo(paths storepaths.Paths, identityID, targetID string, now time.Ti
 		// manifest validation for the same reason).
 		return fmt.Errorf("rollback target %s is already the current generation", targetID)
 	}
-	target := paths.GenerationPaths(identityID, targetID)
+	target := paths.GenerationPaths(targetID)
 	if err := ValidateSealed(target, kr); err != nil {
 		return fmt.Errorf("rollback target: %w", err)
 	}
-	if err := WriteSeal(paths.GenerationPaths(identityID, current), now.Unix(), kr); err != nil {
+	if err := WriteSeal(paths.GenerationPaths(current), now.Unix(), kr); err != nil {
 		return fmt.Errorf("seal outgoing generation: %w", err)
 	}
 	return WriteCurrent(paths, identityID, targetID)
@@ -278,7 +278,7 @@ func RollbackTo(paths storepaths.Paths, identityID, targetID string, now time.Ti
 // directories from a crashed earlier mint — atomic-rename leftovers that
 // reconciliation treats as unconditional garbage.
 func verifyFirstMintPreconditions(paths storepaths.Paths, identityID string) error {
-	entries, err := os.ReadDir(paths.GenerationsDir(identityID))
+	entries, err := os.ReadDir(paths.GenerationsDir())
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -298,7 +298,7 @@ func verifyFirstMintPreconditions(paths storepaths.Paths, identityID string) err
 // reuses the public constructor's shape by construction: staging and final
 // directories have identical internal layout.
 func stagedGenPaths(paths storepaths.Paths, identityID, generationID, stagingDir string) storepaths.GenPaths {
-	return storepaths.StagedGenerationPaths(identityID, generationID, stagingDir)
+	return storepaths.StagedGenerationPaths(generationID, stagingDir)
 }
 
 func copyNamespaces(from, to storepaths.GenPaths) error {

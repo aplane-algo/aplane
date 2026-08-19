@@ -59,7 +59,7 @@ func TestMintFirstGenerationCommits(t *testing.T) {
 		t.Fatalf("manifest = %+v", manifest)
 	}
 	// No staging residue.
-	entries, err := os.ReadDir(paths.GenerationsDir(testIdentity))
+	entries, err := os.ReadDir(paths.GenerationsDir())
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("generations dir entries = %d (%v), want 1", len(entries), err)
 	}
@@ -128,7 +128,7 @@ func TestMintApplyFailureLeavesOldGenerationAuthoritative(t *testing.T) {
 	if resolveErr != nil || resolved.GenerationID() != first.GenerationID() {
 		t.Fatalf("CURRENT after failed mint = %s (%v), want untouched %s", resolved.GenerationID(), resolveErr, first.GenerationID())
 	}
-	entries, err := os.ReadDir(paths.GenerationsDir(testIdentity))
+	entries, err := os.ReadDir(paths.GenerationsDir())
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("staging residue after failed mint: %d entries (%v)", len(entries), err)
 	}
@@ -193,7 +193,7 @@ func TestMintCrashMatrix(t *testing.T) {
 			// The published-but-uncommitted attempt, if any, is identifiable
 			// structurally: non-current and unsealed. (Reconciliation
 			// discards it; it is never resumed.)
-			attempt := paths.GenerationPaths(testIdentity, testGenB)
+			attempt := paths.GenerationPaths(testGenB)
 			if _, statErr := os.Lstat(attempt.Dir()); statErr == nil {
 				sealed, sealErr := HasSeal(attempt)
 				if sealErr != nil || sealed {
@@ -228,7 +228,7 @@ func TestRollbackToRequiresSealAndSealsOutgoing(t *testing.T) {
 	}
 	// The rolled-away generation was sealed on the way out, so rolling
 	// forward validates too.
-	second := paths.GenerationPaths(testIdentity, testGenB)
+	second := paths.GenerationPaths(testGenB)
 	if err := ValidateSealed(second, testKeyring(t)); err != nil {
 		t.Fatalf("outgoing generation not sealed by rollback: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestMintPointerFlipDirSyncFailureIsCommittedButUnverified(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	first := mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
 
-	identityDirBase := filepath.Base(paths.IdentityDir(testIdentity))
+	identityDirBase := filepath.Base(paths.ProductDir())
 	injected := errors.New("simulated crash: post-rename dir sync")
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if op == fsutil.OpDirSync && filepath.Base(path) == identityDirBase {
@@ -293,7 +293,7 @@ func TestWriteCurrentRetriesDirSyncOnce(t *testing.T) {
 	gen := mintTestGeneration(t, paths, testGenC, nil)
 	_ = gen
 
-	identityDirBase := filepath.Base(paths.IdentityDir(testIdentity))
+	identityDirBase := filepath.Base(paths.ProductDir())
 	failures := 0
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if op == fsutil.OpDirSync && filepath.Base(path) == identityDirBase && failures == 0 {

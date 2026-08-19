@@ -43,7 +43,7 @@ func TestResumeRotationRewrapsOnlyPinnedMutableConsumers(t *testing.T) {
 		t.Fatal("ResumeRotation() prematurely closed the pending root")
 	}
 	if _, err := os.Stat(
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
 	); err != nil {
 		t.Fatalf("rotation snapshot removed before completion: %v", err)
 	}
@@ -287,8 +287,8 @@ func startResumeFixture(t *testing.T) (inventoryFixture, *Snapshot) {
 	passphrase := []byte("rotation-resume-passphrase")
 	prepareInventoryFixtureKeyringStore(t, fixture, passphrase)
 	for _, path := range []string{
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
-		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
+		fixture.paths.RotationBaselinePath(),
 	} {
 		if err := fsutil.RemoveDurable(path); err != nil {
 			t.Fatalf("RemoveDurable(%s) error = %v", path, err)

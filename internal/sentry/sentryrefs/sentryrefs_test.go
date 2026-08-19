@@ -161,10 +161,10 @@ func TestListSkipsInvalidReferenceRecordWithoutHidingValidReferences(t *testing.
 	if _, err := Import(paths, "default", "valid", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(paths.SentryRefsDir("default"), 0o700); err != nil {
+	if err := os.MkdirAll(paths.SentryRefsDir(), 0o700); err != nil {
 		t.Fatalf("MkdirAll(sentries) error = %v", err)
 	}
-	if err := os.WriteFile(paths.SentryRefPath("default", "bad"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
+	if err := os.WriteFile(paths.SentryRefPath("bad"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
 		t.Fatalf("WriteFile(bad reference) error = %v", err)
 	}
 
@@ -255,15 +255,15 @@ func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 func TestGetReadsV1ManualRecordWithoutWriting(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	writeV1Record(t, paths, "default", "manual-v1", recordSourceManualV1)
-	path := paths.SentryRefPath("default", "manual-v1")
+	path := paths.SentryRefPath("manual-v1")
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(paths.SentryRefsDir("default"), 0o500); err != nil {
+	if err := os.Chmod(paths.SentryRefsDir(), 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(paths.SentryRefsDir("default"), 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(paths.SentryRefsDir(), 0o700) })
 
 	record, found, err := Get(paths, "default", "manual-v1")
 	if err != nil || !found {
@@ -284,7 +284,7 @@ func TestGetReadsV1ManualRecordWithoutWriting(t *testing.T) {
 func TestGetReadsV1DiscoveryRecordAsPinnedWithoutWriting(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	writeV1Record(t, paths, "default", "endpoint-old", recordSourceDiscoveryV1)
-	path := paths.SentryRefPath("default", "endpoint-old")
+	path := paths.SentryRefPath("endpoint-old")
 	var raw map[string]any
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -416,10 +416,10 @@ func writeRawRecord(t *testing.T, paths storepaths.Paths, identityID, name strin
 
 func writeRawRecordBytes(t *testing.T, paths storepaths.Paths, identityID, name string, data []byte) {
 	t.Helper()
-	if err := os.MkdirAll(paths.SentryRefsDir(identityID), 0o700); err != nil {
+	if err := os.MkdirAll(paths.SentryRefsDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(paths.SentryRefPath(identityID, name), data, 0o600); err != nil {
+	if err := os.WriteFile(paths.SentryRefPath(name), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

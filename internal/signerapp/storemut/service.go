@@ -71,7 +71,7 @@ func (s *Service) RevokeToken() (string, error) {
 
 // DeleteKey moves a key file out of the active key set into the identity archive.
 func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, error) {
-	return keymgmt.DeleteKey(address, keyFile, s.keyPaths.DeletedKeysDir(s.identityID))
+	return keymgmt.DeleteKey(address, keyFile, s.keyPaths.DeletedKeysDir())
 }
 
 // GenerateKeyWithActivatedContext creates and persists a key type using the

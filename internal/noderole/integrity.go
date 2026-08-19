@@ -92,7 +92,7 @@ func SaveIdentitySidecar(paths storepaths.Paths, identityID string, roleBytes []
 	if err != nil {
 		return err
 	}
-	path := paths.NodeRoleIntegritySidecar(identityID)
+	path := paths.NodeRoleIntegritySidecar()
 	if err := fsutil.MkdirAllPrivate(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("failed to create node role sidecar directory: %w", err)
 	}
@@ -111,7 +111,7 @@ func LoadAndVerify(paths storepaths.Paths, identityID string, kr *apcrypto.Keyri
 	if err != nil {
 		return Document{}, err
 	}
-	sidecar, err := LoadSidecar(paths.NodeRoleIntegritySidecar(identityID))
+	sidecar, err := LoadSidecar(paths.NodeRoleIntegritySidecar())
 	if err != nil {
 		return Document{}, err
 	}

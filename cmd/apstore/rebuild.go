@@ -51,7 +51,7 @@ func cmdRebuild(args []string) error {
 }
 
 func cmdRebuildFromBackup(source string, addresses []string, explicitRole noderole.Role, explicitRoleSet bool) error {
-	identityDir := keystorePaths().IdentityDir(productIdentityID())
+	identityDir := keystorePaths().ProductDir()
 	if _, err := os.Stat(identityDir); err == nil {
 		return fmt.Errorf("rebuild requires a missing identity directory; move or archive the existing directory first: %s", identityDir)
 	} else if !os.IsNotExist(err) {
@@ -118,7 +118,7 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	// Rebuilt stores use generation-based active storage: a fresh keyring
 	// root plus the restored keys committed as the first generation behind a
 	// durable CURRENT flip.
-	kr, err := crypto.CreateKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), storePassphrase)
+	kr, err := crypto.CreateKeyringStore(keystorePaths().KeystoreMetadataDir(), storePassphrase)
 	if err != nil {
 		return fmt.Errorf("failed to create keyring store: %w", err)
 	}

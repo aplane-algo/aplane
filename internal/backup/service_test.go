@@ -30,7 +30,7 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 
@@ -62,7 +62,7 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	}
 
 	assertStoreDirMode(t, paths.BackupsRootDir())
-	assertStoreDirMode(t, paths.IdentityBackupsDir(identityID))
+	assertStoreDirMode(t, paths.ProductBackupsDir())
 	assertFileMode(t, archivePath, fsutil.StoreFilePerm)
 
 	extractDir := t.TempDir()
@@ -101,7 +101,7 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
 		t.Fatal(err)
 	}
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
@@ -203,7 +203,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	const badAddress = "BADCANONICALKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 
@@ -266,7 +266,7 @@ func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 	const badAddress = "ONLYINVALIDKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"

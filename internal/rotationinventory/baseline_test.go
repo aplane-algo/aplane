@@ -27,7 +27,7 @@ const (
 
 func TestBaselineWriteReadAndAuthority(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if err := fsutil.MkdirAll(paths.IdentityDir(inventoryIdentity)); err != nil {
+	if err := fsutil.MkdirAll(paths.ProductDir()); err != nil {
 		t.Fatalf("MkdirAll(identity) error = %v", err)
 	}
 	kr := cryptotest.KeyringAtTerm(t, 2, bytes.Repeat([]byte{0x92}, 32))
@@ -37,7 +37,7 @@ func TestBaselineWriteReadAndAuthority(t *testing.T) {
 	}
 
 	var operations []fsutil.HookOp
-	baselinePath := paths.RotationBaselinePath(inventoryIdentity)
+	baselinePath := paths.RotationBaselinePath()
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if path == baselinePath || path == filepath.Dir(baselinePath) {
 			operations = append(operations, op)
@@ -184,7 +184,7 @@ func TestBaselineRejectsWrongContextTermAndOversizedFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Seal() error = %v", err)
 		}
-		if err := fsutil.WriteFileDurable(paths.RotationBaselinePath(inventoryIdentity), sealed); err != nil {
+		if err := fsutil.WriteFileDurable(paths.RotationBaselinePath(), sealed); err != nil {
 			t.Fatalf("WriteFileDurable() error = %v", err)
 		}
 		if _, err := ReadBaseline(paths, inventoryIdentity, kr); err == nil ||
@@ -202,7 +202,7 @@ func TestBaselineRejectsWrongContextTermAndOversizedFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Seal() error = %v", err)
 		}
-		if err := fsutil.WriteFileDurable(paths.RotationBaselinePath(inventoryIdentity), sealed); err != nil {
+		if err := fsutil.WriteFileDurable(paths.RotationBaselinePath(), sealed); err != nil {
 			t.Fatalf("WriteFileDurable() error = %v", err)
 		}
 		multi := cryptotest.KeyringWithTerms(t, 2, map[int64][]byte{1: key1, 2: key2})
@@ -215,7 +215,7 @@ func TestBaselineRejectsWrongContextTermAndOversizedFile(t *testing.T) {
 	t.Run("oversized encrypted file", func(t *testing.T) {
 		paths := baselineTestPaths(t)
 		if err := os.WriteFile(
-			paths.RotationBaselinePath(inventoryIdentity),
+			paths.RotationBaselinePath(),
 			bytes.Repeat([]byte{'x'}, int(MaxRotationBaselineBytes)+1),
 			fsutil.StoreFilePerm,
 		); err != nil {
@@ -238,7 +238,7 @@ func TestWriteBaselineReportsDurabilityFailure(t *testing.T) {
 	}
 	injected := errors.New("injected baseline rename failure")
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
-		if op == fsutil.OpRename && path == paths.RotationBaselinePath(inventoryIdentity) {
+		if op == fsutil.OpRename && path == paths.RotationBaselinePath() {
 			return injected
 		}
 		return nil
@@ -247,7 +247,7 @@ func TestWriteBaselineReportsDurabilityFailure(t *testing.T) {
 	if err := WriteBaseline(paths, inventoryIdentity, baseline, kr); !errors.Is(err, injected) {
 		t.Fatalf("WriteBaseline() error = %v, want injected durability error", err)
 	}
-	if _, err := os.Stat(paths.RotationBaselinePath(inventoryIdentity)); !os.IsNotExist(err) {
+	if _, err := os.Stat(paths.RotationBaselinePath()); !os.IsNotExist(err) {
 		t.Fatalf("baseline exists after pre-rename failure: %v", err)
 	}
 }
@@ -259,7 +259,7 @@ func TestWriteBaselineReconcilesCrashOrphanedDurableTemp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBaseline() error = %v", err)
 	}
-	baselinePath := paths.RotationBaselinePath(inventoryIdentity)
+	baselinePath := paths.RotationBaselinePath()
 	residuePath := baselinePath + ".tmp-crash"
 	if err := os.WriteFile(
 		residuePath,
@@ -312,7 +312,7 @@ func TestReconcileBaselineForPreflight(t *testing.T) {
 		if err != nil || got == nil || *got != *baseline {
 			t.Fatalf("ReconcileBaselineForPreflight() = (%#v, %v), want %#v", got, err, baseline)
 		}
-		if _, err := os.Stat(paths.RotationBaselinePath(inventoryIdentity)); err != nil {
+		if _, err := os.Stat(paths.RotationBaselinePath()); err != nil {
 			t.Fatalf("matching baseline was removed: %v", err)
 		}
 	})
@@ -324,7 +324,7 @@ func TestReconcileBaselineForPreflight(t *testing.T) {
 		var synced bool
 		fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 			if op == fsutil.OpDirSync &&
-				path == filepath.Dir(paths.RotationBaselinePath(inventoryIdentity)) {
+				path == filepath.Dir(paths.RotationBaselinePath()) {
 				synced = true
 			}
 			return nil
@@ -342,7 +342,7 @@ func TestReconcileBaselineForPreflight(t *testing.T) {
 		if !synced {
 			t.Fatal("stale baseline removal did not sync its directory")
 		}
-		if _, err := os.Stat(paths.RotationBaselinePath(inventoryIdentity)); !os.IsNotExist(err) {
+		if _, err := os.Stat(paths.RotationBaselinePath()); !os.IsNotExist(err) {
 			t.Fatalf("stale baseline still exists: %v", err)
 		}
 	})
@@ -354,7 +354,7 @@ func TestReconcileBaselineForPreflight(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Seal() error = %v", err)
 		}
-		baselinePath := paths.RotationBaselinePath(inventoryIdentity)
+		baselinePath := paths.RotationBaselinePath()
 		if err := fsutil.WriteFileDurable(baselinePath, sealed); err != nil {
 			t.Fatalf("WriteFileDurable() error = %v", err)
 		}
@@ -378,7 +378,7 @@ func TestReconcileBaselineForPreflight(t *testing.T) {
 		old := cryptotest.Keyring(t, key1)
 		writeBaselineTest(t, paths, baselineGeneration, old)
 		multi := cryptotest.KeyringWithTerms(t, 2, map[int64][]byte{1: key1, 2: key2})
-		baselinePath := paths.RotationBaselinePath(inventoryIdentity)
+		baselinePath := paths.RotationBaselinePath()
 		if _, err := ReconcileBaselineForPreflight(
 			paths,
 			inventoryIdentity,
@@ -525,7 +525,7 @@ func TestEvaluateRollbackOnlyMatchingAuthenticatedBaselineCanAssertClean(t *test
 			t.Fatalf("Seal(malformed baseline) error = %v", err)
 		}
 		if err := fsutil.WriteFileDurable(
-			paths.RotationBaselinePath(inventoryIdentity),
+			paths.RotationBaselinePath(),
 			sealed,
 		); err != nil {
 			t.Fatalf("WriteFileDurable(malformed baseline) error = %v", err)
@@ -612,7 +612,7 @@ func baselineInventory() []genstore.InventoryEntry {
 func baselineTestPaths(t *testing.T) storepaths.Paths {
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())
-	if err := fsutil.MkdirAll(paths.IdentityDir(inventoryIdentity)); err != nil {
+	if err := fsutil.MkdirAll(paths.ProductDir()); err != nil {
 		t.Fatalf("MkdirAll(identity) error = %v", err)
 	}
 	return paths

@@ -321,21 +321,6 @@ func TestCanGenerateLifecycleMatrix(t *testing.T) {
 			want: true,
 		},
 		{
-			name:    "enabled state for another identity is not generatable",
-			keyType: "keytypestate-matrix-cross-identity-v1",
-			setup: func(t *testing.T, paths storepaths.Paths) {
-				t.Helper()
-				genstoretest.MintFirst(t, paths, "alice")
-				if err := Put(paths, "alice", Record{
-					KeyType: "keytypestate-matrix-cross-identity-v1",
-					Source:  SourceYAMLGeneric,
-					State:   StateEnabled,
-				}); err != nil {
-					t.Fatalf("Put(alice) error = %v", err)
-				}
-			},
-		},
-		{
 			name:    "corrupt state record surfaces storage error",
 			keyType: "keytypestate-matrix-corrupt-v1",
 			setup: func(t *testing.T, paths storepaths.Paths) {

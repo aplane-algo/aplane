@@ -432,7 +432,7 @@ func historicalGenerationPrefixes(
 	for _, anchor := range anchors {
 		relative, err := filepath.Rel(
 			paths.Root(),
-			paths.GenerationDir(identityID, anchor.GenerationID),
+			paths.GenerationDir(anchor.GenerationID),
 		)
 		if err != nil {
 			return nil, err
@@ -479,7 +479,7 @@ func validateIntegrityPairs(
 			documentKind: KindNodeRoleDocument,
 			sidecarKind:  KindNodeRoleSidecar,
 			documentPath: paths.NodeRolePath(),
-			sidecarPath:  paths.NodeRoleIntegritySidecar(identityID),
+			sidecarPath:  paths.NodeRoleIntegritySidecar(),
 		},
 	}
 	for _, pair := range pairs {

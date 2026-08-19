@@ -401,7 +401,7 @@ func (s OfflineStore) unlock(ctx context.Context) (*apcrypto.Keyring, func(), er
 		return nil, func() {}, fmt.Errorf("passphrase is required")
 	}
 
-	metadataDir := storepaths.NewPaths(s.DataDir).KeystoreMetadataDir(s.identityID())
+	metadataDir := storepaths.NewPaths(s.DataDir).KeystoreMetadataDir()
 	kr, err := apcrypto.OpenKeyringStore(metadataDir, passphrase)
 	clearPassphrase()
 	if err != nil {

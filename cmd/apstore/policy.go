@@ -203,7 +203,7 @@ func readStoreKeyring() (*crypto.Keyring, error) {
 	defer crypto.ZeroBytes(passphrase)
 	fmt.Fprintln(os.Stderr)
 
-	kr, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), passphrase)
+	kr, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), passphrase)
 	if err != nil {
 		return nil, codedError{code: protocol.ErrCodeInvalidPassphrase, message: fmt.Sprintf("passphrase verification failed: %v", err)}
 	}

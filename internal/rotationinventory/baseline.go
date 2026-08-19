@@ -257,7 +257,7 @@ func WriteBaseline(
 			MaxRotationBaselineBytes,
 		)
 	}
-	baselinePath := paths.RotationBaselinePath(identityID)
+	baselinePath := paths.RotationBaselinePath()
 	if err := fsutil.RemoveDurableWriteTemps(baselinePath); err != nil {
 		return fmt.Errorf("reconcile rotation baseline durable-write residue: %w", err)
 	}
@@ -278,7 +278,7 @@ func ReadBaseline(
 		return nil, fmt.Errorf("read rotation baseline: keyring is required")
 	}
 	sealed, _, err := fsutil.ReadRegularFileLimited(
-		paths.RotationBaselinePath(identityID),
+		paths.RotationBaselinePath(),
 		MaxRotationBaselineBytes,
 	)
 	if err != nil {
@@ -341,7 +341,7 @@ func ReconcileBaselineForPreflight(
 	if baseline.GenerationID == currentGeneration {
 		return baseline, nil
 	}
-	if err := fsutil.RemoveDurable(paths.RotationBaselinePath(identityID)); err != nil {
+	if err := fsutil.RemoveDurable(paths.RotationBaselinePath()); err != nil {
 		return nil, fmt.Errorf("remove stale rotation baseline: %w", err)
 	}
 	return nil, nil

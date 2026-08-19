@@ -517,7 +517,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 
 func testKeyringForIdentity(t *testing.T, paths utilkeys.Paths, identityID string, passphrase []byte) *crypto.Keyring {
 	t.Helper()
-	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(identityID), passphrase)
+	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(), passphrase)
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}

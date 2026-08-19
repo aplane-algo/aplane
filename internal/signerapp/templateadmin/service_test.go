@@ -68,7 +68,7 @@ func setupServiceWithReload(
 	keyPaths := storepaths.NewPaths(tmpDir)
 	genstoretest.MintFirst(t, keyPaths, "default")
 	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
-	if err := os.MkdirAll(keyPaths.LegacyKeysDir(auth.DefaultIdentityID), 0o750); err != nil {
+	if err := os.MkdirAll(keyPaths.LegacyKeysDir(), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}
 	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {
@@ -354,7 +354,7 @@ func TestRemoveInstalledTemplateReloadFailureLeavesArchivedState(t *testing.T) {
 	} else if ok {
 		t.Fatal("template state restored after reload failure, want removal retained")
 	}
-	if _, err := os.Stat(ir.KeyPaths().DeletedKeyTypeTemplate(ir.ID(), keyType)); err != nil {
+	if _, err := os.Stat(ir.KeyPaths().DeletedKeyTypeTemplate(keyType)); err != nil {
 		t.Fatalf("archived template stat error = %v", err)
 	}
 	assertReloadInsideMutation(t, reloadCount, deps)

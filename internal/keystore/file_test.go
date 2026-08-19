@@ -543,7 +543,7 @@ func TestFileKeyStoreScanRejectsPendingRotation(t *testing.T) {
 	defer cleanup()
 
 	passphrase := []byte("pending-rotation-passphrase")
-	keystoreDir := paths.KeystoreMetadataDir(testIdentityID)
+	keystoreDir := paths.KeystoreMetadataDir()
 	kr, err := crypto.CreateKeyringStore(keystoreDir, passphrase)
 	if err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)

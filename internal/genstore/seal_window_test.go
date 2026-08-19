@@ -35,7 +35,7 @@ func TestMintSealFlipCrashWindowIsRecoverable(t *testing.T) {
 			return os.WriteFile(filepath.Join(staged.KeysDir(), "AAA.key"), []byte("k1"), 0o660)
 		},
 	})
-	g1p := paths.GenerationPaths(identity, g1)
+	g1p := paths.GenerationPaths(g1)
 
 	// Fail the CURRENT pointer write: everything up to and including the
 	// outgoing generation's seal has happened; the flip has not.
@@ -73,7 +73,7 @@ func TestMintSealFlipCrashWindowIsRecoverable(t *testing.T) {
 	if _, err := os.Stat(g1p.SealPath()); err != nil {
 		t.Fatalf("outgoing generation's precommit seal missing: %v", err)
 	}
-	if _, err := os.Stat(paths.GenerationDir(identity, g2)); err != nil {
+	if _, err := os.Stat(paths.GenerationDir(g2)); err != nil {
 		t.Fatalf("published uncommitted generation missing: %v", err)
 	}
 	// The precommit seal must not fail current-generation validation.
@@ -96,7 +96,7 @@ func TestMintSealFlipCrashWindowIsRecoverable(t *testing.T) {
 	if !found {
 		t.Fatalf("uncommitted generation %s not discarded: %+v", g2, report)
 	}
-	if _, err := os.Stat(paths.GenerationDir(identity, g2)); !os.IsNotExist(err) {
+	if _, err := os.Stat(paths.GenerationDir(g2)); !os.IsNotExist(err) {
 		t.Fatalf("uncommitted generation survived reconciliation: %v", err)
 	}
 	if _, err := os.Stat(g1p.SealPath()); err != nil {

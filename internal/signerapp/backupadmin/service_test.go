@@ -105,7 +105,7 @@ func TestBackupIdentityArchiveOmitsOperationalAuthority(t *testing.T) {
 
 func TestPreviewRestoreRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if err := os.MkdirAll(paths.IdentityBackupsDir(auth.DefaultIdentityID), 0o770); err != nil {
+	if err := os.MkdirAll(paths.ProductBackupsDir(), 0o770); err != nil {
 		t.Fatal(err)
 	}
 	archivePath := backup.BuildManagedArchivePath(paths, auth.DefaultIdentityID, "malformed")
@@ -150,7 +150,7 @@ func TestPreviewRestoreDoesNotRateLimitAuthenticatedCredentialFailure(t *testing
 
 func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *identity.Runtime {
 	t.Helper()
-	if _, err := crypto.CreateKeyringStore(paths.IdentityDir(auth.DefaultIdentityID), backupAdminTestPassphrase); err != nil {
+	if _, err := crypto.CreateKeyringStore(paths.ProductDir(), backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
 	}
 	convertToGenerationalStore(t, paths)

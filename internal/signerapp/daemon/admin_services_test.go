@@ -80,13 +80,13 @@ func TestChangeStorePassphraseCompletesRotationAndRepublishesRuntime(t *testing.
 	}
 	if err := crypto.VerifyPassphraseWithKeyring(
 		newPassphrase,
-		server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID),
+		server.keyPaths.KeystoreMetadataDir(),
 	); err != nil {
 		t.Fatalf("new passphrase does not open rotated root: %v", err)
 	}
 	if err := crypto.VerifyPassphraseWithKeyring(
 		testPassphrase,
-		server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID),
+		server.keyPaths.KeystoreMetadataDir(),
 	); err == nil {
 		t.Fatal("old passphrase still opens rotated root")
 	}

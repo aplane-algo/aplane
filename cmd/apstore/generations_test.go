@@ -22,10 +22,10 @@ func newGenerationalTestStore(t *testing.T, passphrase string) (storepaths.Paths
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
-	if err := fsutil.MkdirAll(paths.KeystoreMetadataDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.KeystoreMetadataDir()); err != nil {
 		t.Fatalf("MkdirAll(metadata): %v", err)
 	}
-	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(identityID), []byte(passphrase)); err != nil {
+	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), []byte(passphrase)); err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
 	generationID, err := genstore.NewGenerationID(time.Unix(1_785_100_000, 0))
@@ -47,7 +47,7 @@ func newGenerationalTestStore(t *testing.T, passphrase string) (storepaths.Paths
 func TestVerifyCurrentGenerationContentPassesOnCleanStore(t *testing.T) {
 	paths, identityID := newGenerationalTestStore(t, "prune-pass")
 	kr, err := crypto.OpenKeyringStore(
-		paths.KeystoreMetadataDir(identityID),
+		paths.KeystoreMetadataDir(),
 		[]byte("prune-pass"),
 	)
 	if err != nil {
@@ -63,7 +63,7 @@ func TestVerifyCurrentGenerationContentPassesOnCleanStore(t *testing.T) {
 func TestVerifyCurrentGenerationContentFailsOnMalformedKey(t *testing.T) {
 	paths, identityID := newGenerationalTestStore(t, "prune-pass")
 	kr, err := crypto.OpenKeyringStore(
-		paths.KeystoreMetadataDir(identityID),
+		paths.KeystoreMetadataDir(),
 		[]byte("prune-pass"),
 	)
 	if err != nil {

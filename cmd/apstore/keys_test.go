@@ -72,7 +72,7 @@ func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.Ge
 
 func deriveTestKeyring(t *testing.T, passphrase []byte) *crypto.Keyring {
 	t.Helper()
-	keyring, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), passphrase)
+	keyring, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), passphrase)
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}

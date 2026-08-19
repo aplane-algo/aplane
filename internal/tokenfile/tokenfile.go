@@ -28,7 +28,7 @@ const (
 // GetAPlaneTokenPathForRoot returns the path to the signer token for an
 // explicit keystore root.
 func GetAPlaneTokenPathForRoot(root, identityID string) string {
-	return filepath.Join(storepaths.NewPaths(root).IdentityDir(identityID), APlaneTokenFile)
+	return filepath.Join(storepaths.NewPaths(root).ProductDir(), APlaneTokenFile)
 }
 
 // GetApshellTokenPathForDataDir returns the path to the client token file for
