@@ -16,6 +16,42 @@ func TestTemplateLibraryDirUsesLibraryTemplatesSubdirectory(t *testing.T) {
 	}
 }
 
+func TestCanonicalProductStorePathMatrix(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "srv", "aplane")
+	paths := NewPaths(root)
+	identityDir := filepath.Join(root, "identities", "default")
+	generationID := "gen-1700000000-0123abcd"
+
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"identity", paths.IdentityDir("default"), identityDir},
+		{"metadata", paths.KeystoreMetadataDir("default"), identityDir},
+		{"legacy keys", paths.LegacyKeysDir("default"), filepath.Join(identityDir, "keys")},
+		{"deleted", paths.DeletedDir("default"), filepath.Join(identityDir, "deleted")},
+		{"deleted keys", paths.DeletedKeysDir("default"), filepath.Join(identityDir, "deleted", "keys")},
+		{"backups", paths.IdentityBackupsDir("default"), filepath.Join(root, "backups", "default")},
+		{"legacy key types", paths.LegacyKeyTypeRecordsDir("default"), filepath.Join(identityDir, "keytypes")},
+		{"sentry references", paths.SentryRefsDir("default"), filepath.Join(identityDir, "sentries")},
+		{"sentry reference", paths.SentryRefPath("default", "primary"), filepath.Join(identityDir, "sentries", "primary.json")},
+		{"node role sidecar", paths.NodeRoleIntegritySidecar("default"), filepath.Join(identityDir, "node.yaml.hmac")},
+		{"rotation snapshot", paths.RotationSnapshotPath("default"), filepath.Join(identityDir, "rotation.snapshot.enc")},
+		{"rotation baseline", paths.RotationBaselinePath("default"), filepath.Join(identityDir, "rotation.baseline.enc")},
+		{"current", paths.CurrentPointerPath("default"), filepath.Join(identityDir, CurrentPointerName)},
+		{"generations", paths.GenerationsDir("default"), filepath.Join(identityDir, GenerationsDirName)},
+		{"generation", paths.GenerationDir("default", generationID), filepath.Join(identityDir, GenerationsDirName, generationID)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Fatalf("path = %q, want %q", tt.got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNodeRolePaths(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	if got, want := paths.NodeRolePath(), filepath.Join("/tmp/test-keystore", "node.yaml"); got != want {
