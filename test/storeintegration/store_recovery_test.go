@@ -227,7 +227,7 @@ func TestInterruptedRestoreAfterCurrentFlipLoadsCommittedGeneration(t *testing.T
 	assertSignerState(t, destination, "unlocked")
 	mustWaitForAddresses(t, destination, address)
 	assertCanSign(t, destination, address)
-	active, err := genstore.Resolve(storepaths.NewPaths(destination.dataDir), "default")
+	active, err := genstore.Resolve(storepaths.NewPaths(destination.dataDir))
 	if err != nil {
 		t.Fatalf("resolve committed restore after restart: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestRestoreRepairsDamagedCredentialFromRecoveryMode(t *testing.T) {
 	}
 
 	paths := storepaths.NewPaths(env.dataDir)
-	active, err := genstore.ResolveActive(paths, "default")
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("resolve current generation: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestRestoreRepairsDamagedCredentialFromRecoveryMode(t *testing.T) {
 	assertSignerState(t, env, "unlocked")
 	mustWaitForAddresses(t, env, address)
 	assertCanSign(t, env, address)
-	current, err := genstore.Resolve(paths, "default")
+	current, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatalf("resolve repaired generation: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestMalformedCurrentCredentialRemainsRecoveryBlocked(t *testing.T) {
 	}
 
 	paths := storepaths.NewPaths(env.dataDir)
-	active, err := genstore.ResolveActive(paths, "default")
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("resolve current generation: %v", err)
 	}

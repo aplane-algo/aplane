@@ -106,7 +106,7 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 	var publishedKeys map[string]string
 	var publishedKeyTypes map[string]string
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	saveTemplateRecord(t, paths, "new-generic", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 	saveTemplateRecord(t, paths, "conflicting-generic", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 	saveTemplateRecord(t, paths, "invalid-composed", templatestore.TemplateTypeComposed, testTemplateMasterKey())
@@ -176,7 +176,7 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 	}
 	session := &fakeSession{}
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	saveTemplateRecord(t, paths, "hook-order", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 
 	service := &ReloadService{
@@ -229,7 +229,7 @@ func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
 	}
 	session := &fakeSession{}
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
 	var prepared bool
 	var published bool
@@ -609,7 +609,7 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 	session := &fakeSession{}
 	audit := &fakeAuditLog{}
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
 	service := &ReloadService{
 		KeyStore:        store,
@@ -654,6 +654,6 @@ func testNoopRegistrar() TemplateRegistrar {
 func mintedPathsForReloadTest(t *testing.T) utilkeys.Paths {
 	t.Helper()
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	return paths
 }

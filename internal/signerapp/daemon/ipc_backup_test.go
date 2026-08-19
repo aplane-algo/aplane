@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -127,7 +126,7 @@ func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	}) {
 		t.Fatalf("restore response = %#v", restoreMessages)
 	}
-	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, generated.Address)); err != nil {
+	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, generated.Address)); err != nil {
 		t.Fatalf("restored key stat error = %v", err)
 	}
 	if ir.KeyCount() != 1 {

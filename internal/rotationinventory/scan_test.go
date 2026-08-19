@@ -348,7 +348,7 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 
-	if _, err := genstore.Mint(paths, inventoryIdentity, genstore.MintRequest{
+	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:    inventoryGenA,
 		FirstGeneration: true,
 		Operation:       "inventory-fixture",
@@ -383,7 +383,7 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 	}); err != nil {
 		t.Fatalf("Mint(first) error = %v", err)
 	}
-	if _, err := genstore.Mint(paths, inventoryIdentity, genstore.MintRequest{
+	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID: inventoryGenB,
 		Parent:       inventoryGenA,
 		Operation:    "inventory-fixture",

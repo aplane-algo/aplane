@@ -51,7 +51,7 @@ func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, *crypto.Key
 
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, identityID)
+	genstoretest.MintFirst(t, paths)
 
 	userDir := paths.ProductDir()
 	if _, err := crypto.CreateKeyringStore(userDir, []byte("test-passphrase-for-storemut")); err != nil {
@@ -69,7 +69,7 @@ func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, *crypto.Key
 func TestRevokeTokenWritesAndUpdatesDependents(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
 	httpUpdater := &recordingUpdater{}
 	sshUpdater := &recordingUpdater{}
@@ -98,9 +98,9 @@ func TestRevokeTokenWritesAndUpdatesDependents(t *testing.T) {
 func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
-	keyPath := keys.AccountKeyFilePath(paths, "default", "ADDR")
+	keyPath := keys.AccountKeyFilePath(paths, "ADDR")
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -197,7 +197,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		t.Fatalf("SaveGenericLSig() error = %v", err)
 	}
 
-	keyPath := keys.AccountKeyFilePath(paths, "default", salted.Address.String())
+	keyPath := keys.AccountKeyFilePath(paths, salted.Address.String())
 	if _, err := os.Stat(keyPath); err != nil {
 		t.Fatalf("expected generic lsig file at %s: %v", keyPath, err)
 	}
@@ -272,7 +272,7 @@ func TestSaveIdentitySettingPersistsIdentityConfigValue(t *testing.T) {
 
 func mustActiveKeysDirStoremut(t *testing.T, paths utilkeys.Paths, identityID string) string {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive: %v", err)
 	}

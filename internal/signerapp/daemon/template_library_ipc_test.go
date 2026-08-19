@@ -438,7 +438,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
 			return profileErr
 		}
-		_, saveErr := apkeys.SavePayload(server.keyPaths, ir.ID(), payload, masterKey)
+		_, saveErr := apkeys.SavePayload(server.keyPaths, payload, masterKey)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
@@ -637,12 +637,12 @@ func testTemplateKeyType(family string) string {
 }
 
 func keyTypeStateEnabled(server *Signer, identityID, keyType string) bool {
-	rec, ok, err := keytypestate.Get(server.keyPaths, identityID, keyType)
+	rec, ok, err := keytypestate.Get(server.keyPaths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }
 
 func keyTypeStateDisabled(server *Signer, identityID, keyType string) bool {
-	rec, ok, err := keytypestate.Get(server.keyPaths, identityID, keyType)
+	rec, ok, err := keytypestate.Get(server.keyPaths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateDisabled
 }
 

@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
@@ -197,13 +196,13 @@ func saveGenericTemplateForTest(t *testing.T, server *Signer, keyType string, ya
 
 	ir := server.productIdentityRuntime()
 	err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-		_, err := templatestore.SaveTemplateActive(genstoretest.Active(t, server.keyPaths, auth.DefaultIdentityID), yamlData, keyType, templatestore.TemplateTypeGeneric, masterKey)
+		_, err := templatestore.SaveTemplateActive(genstoretest.Active(t, server.keyPaths), yamlData, keyType, templatestore.TemplateTypeGeneric, masterKey)
 		return err
 	})
 	if err != nil {
 		t.Fatalf("SaveTemplate(%q) error = %v", keyType, err)
 	}
-	if err := keytypestate.Put(server.keyPaths, auth.DefaultIdentityID, keytypestate.Record{
+	if err := keytypestate.Put(server.keyPaths, keytypestate.Record{
 		KeyType: keyType,
 		Source:  keytypestate.SourceYAMLGeneric,
 		State:   keytypestate.StateEnabled,

@@ -23,7 +23,7 @@ func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntime(t *testing.T)
 	root := t.TempDir()
 	ir := identity.New(identity.Config{
 		ID:            auth.DefaultIdentityID,
-		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root), auth.DefaultIdentityID),
+		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root)),
 		KeyPaths:      storepaths.NewPaths(root),
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -121,7 +121,7 @@ func TestShutdownLifecycleDoesNotDestroyRuntimeWhileHandlerOutlivesStopTimeout(t
 	root := t.TempDir()
 	ir := identity.New(identity.Config{
 		ID:            auth.DefaultIdentityID,
-		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root), auth.DefaultIdentityID),
+		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root)),
 		KeyPaths:      storepaths.NewPaths(root),
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -189,7 +189,7 @@ func TestShutdownLifecycleDestroysRuntimeAfterNonDeadlineStopError(t *testing.T)
 	root := t.TempDir()
 	ir := identity.New(identity.Config{
 		ID:            auth.DefaultIdentityID,
-		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root), auth.DefaultIdentityID),
+		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root)),
 		KeyPaths:      storepaths.NewPaths(root),
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})

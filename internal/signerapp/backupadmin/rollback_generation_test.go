@@ -37,7 +37,7 @@ func TestRollbackMintReconstructsAnchoredSourceUnderCurrentTerm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seal(term 1) error = %v", err)
 	}
-	first, err := genstore.Mint(paths, identity, genstore.MintRequest{
+	first, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:    genA,
 		FirstGeneration: true,
 		Operation:       "test-init",
@@ -59,7 +59,7 @@ func TestRollbackMintReconstructsAnchoredSourceUnderCurrentTerm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Mint(first) error = %v", err)
 	}
-	second, err := genstore.Mint(paths, identity, genstore.MintRequest{
+	second, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID: genB,
 		Parent:       first.GenerationID(),
 		Operation:    genstore.OperationCredentialRestore,
@@ -122,7 +122,7 @@ func TestRollbackMintReconstructsAnchoredSourceUnderCurrentTerm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadRollbackGenerationSource() error = %v", err)
 	}
-	third, err := genstore.Mint(paths, identity, genstore.MintRequest{
+	third, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:               genC,
 		Parent:                     second.GenerationID(),
 		Operation:                  genstore.OperationCredentialRestoreRollback,

@@ -156,7 +156,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	if activationErr != nil {
 		return nil, activationErr
 	}
-	canGenerate, stateErr := keytypestate.CanGenerate(ir.KeyPaths(), ir.ID(), keyType)
+	canGenerate, stateErr := keytypestate.CanGenerate(ir.KeyPaths(), keyType)
 	if stateErr != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}
@@ -269,7 +269,7 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 }
 
 func activatedKeyTypes(ir *identity.Runtime) ([]string, *Error) {
-	records, err := keytypestate.List(ir.KeyPaths(), ir.ID())
+	records, err := keytypestate.List(ir.KeyPaths())
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}

@@ -130,13 +130,13 @@ func setupIdentityRuntimeWithRole(t *testing.T, role noderole.Role) *identity.Ru
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, keyPaths, auth.DefaultIdentityID)
+	genstoretest.MintFirst(t, keyPaths)
 	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
 	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {
 		t.Fatalf("CreateKeyringStore(): %v", err)
 	}
 
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
+	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
 	if err := ks.Unlock(testPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
@@ -280,7 +280,7 @@ teal: |
 		t.Fatal(err)
 	}
 	logicsigdsa.RegisterIfAbsent(provider)
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType, Source: keytypestate.SourceYAMLComposed, State: keytypestate.StateEnabled,
 	}); err != nil {
 		t.Fatal(err)
@@ -415,14 +415,14 @@ func TestServiceGenerateKeyRereadsActivationAfterDeactivation(t *testing.T) {
 	svc := Service{}
 	keyType := "aplane.ed25519.v1"
 
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
 		t.Fatalf("Put() error = %v", err)
 	}
-	if err := keytypestate.Delete(ir.KeyPaths(), ir.ID(), keyType); err != nil {
+	if err := keytypestate.Delete(ir.KeyPaths(), keyType); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 
@@ -575,7 +575,7 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 		t.Fatal(err)
 	}
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		result, saveErr := keys.SavePayload(ir.KeyPaths(), ir.ID(), payload, mk)
+		result, saveErr := keys.SavePayload(ir.KeyPaths(), payload, mk)
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
 		}
@@ -792,12 +792,12 @@ func registerServiceGenericTemplate(t *testing.T) {
 func installServiceGenericTemplate(t *testing.T, ir *identity.Runtime) {
 	t.Helper()
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths(), ir.ID()), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateActive(service generic template) error = %v", err)
 	}
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: serviceGenericKeyType,
 		Source:  keytypestate.SourceYAMLGeneric,
 		State:   keytypestate.StateEnabled,

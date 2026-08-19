@@ -25,7 +25,7 @@ type NativeFalconGenerator struct{}
 
 func (*NativeFalconGenerator) RoutingFamily() string { return nativefalcon.KeyType }
 
-func (g *NativeFalconGenerator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, entropy []byte, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
+func (g *NativeFalconGenerator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, entropy []byte, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
 	if keyType != nativefalcon.KeyType {
 		return nil, fmt.Errorf("native Falcon generator only supports keyType %q, got %q", nativefalcon.KeyType, keyType)
@@ -38,10 +38,10 @@ func (g *NativeFalconGenerator) GenerateFromSeed(ctx context.Context, paths stor
 	}
 	ownedEntropy := append([]byte(nil), entropy...)
 	defer securecrypto.ZeroBytes(ownedEntropy)
-	return g.generate(paths, identityID, ownedEntropy, kr, "")
+	return g.generate(paths, ownedEntropy, kr, "")
 }
 
-func (g *NativeFalconGenerator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID, words string, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
+func (g *NativeFalconGenerator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, words string, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
 	if len(strings.Fields(words)) != nativefalcon.MnemonicWordCount {
 		return nil, fmt.Errorf("native Falcon requires exactly %d mnemonic words", nativefalcon.MnemonicWordCount)
 	}
@@ -50,7 +50,7 @@ func (g *NativeFalconGenerator) GenerateFromMnemonic(ctx context.Context, paths 
 		return nil, fmt.Errorf("decode native Falcon mnemonic: %w", err)
 	}
 	defer securecrypto.ZeroBytes(entropy)
-	result, err := g.GenerateFromSeed(ctx, paths, identityID, entropy, kr, keyType, params)
+	result, err := g.GenerateFromSeed(ctx, paths, entropy, kr, keyType, params)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (g *NativeFalconGenerator) GenerateFromMnemonic(ctx context.Context, paths 
 	return result, nil
 }
 
-func (g *NativeFalconGenerator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
+func (g *NativeFalconGenerator) GenerateRandom(ctx context.Context, paths storepaths.Paths, kr *securecrypto.Keyring, keyType string, params map[string]string) (*GenerationResult, error) {
 	entropy := make([]byte, nativefalcon.RecoveryEntropySize)
 	if _, err := rand.Read(entropy); err != nil {
 		return nil, fmt.Errorf("generate native Falcon recovery entropy: %w", err)
@@ -68,7 +68,7 @@ func (g *NativeFalconGenerator) GenerateRandom(ctx context.Context, paths storep
 	if err != nil {
 		return nil, fmt.Errorf("encode native Falcon mnemonic: %w", err)
 	}
-	result, err := g.GenerateFromSeed(ctx, paths, identityID, entropy, kr, keyType, params)
+	result, err := g.GenerateFromSeed(ctx, paths, entropy, kr, keyType, params)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (g *NativeFalconGenerator) GenerateRandom(ctx context.Context, paths storep
 	return result, nil
 }
 
-func (g *NativeFalconGenerator) generate(paths storepaths.Paths, identityID string, entropy []byte, kr *securecrypto.Keyring, mnemonicWords string) (*GenerationResult, error) {
+func (g *NativeFalconGenerator) generate(paths storepaths.Paths, entropy []byte, kr *securecrypto.Keyring, mnemonicWords string) (*GenerationResult, error) {
 	seedInput := make([]byte, 0, len("PQK")+len(nativefalcon.Scheme)+len(entropy))
 	seedInput = append(seedInput, "PQK"...)
 	seedInput = append(seedInput, nativefalcon.Scheme...)
@@ -96,7 +96,7 @@ func (g *NativeFalconGenerator) generate(paths storepaths.Paths, identityID stri
 	}
 	payload := keys.NewNativeFalconPayload(publicKey[:], privateKey[:], salt)
 	defer payload.ZeroSecrets()
-	keyFiles, err := keys.SavePayload(paths, identityID, payload, kr)
+	keyFiles, err := keys.SavePayload(paths, payload, kr)
 	if err != nil {
 		return nil, fmt.Errorf("save native Falcon key: %w", err)
 	}

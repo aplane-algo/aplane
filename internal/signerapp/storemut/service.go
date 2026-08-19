@@ -77,7 +77,7 @@ func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, err
 // GenerateKeyWithActivatedContext creates and persists a key type using the
 // identity-scoped activated compiled key type set.
 func (s *Service) GenerateKeyWithActivatedContext(ctx context.Context, keyType string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.GenerateResult, error) {
-	return keymgmt.GenerateKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, kr, params, activated)
+	return keymgmt.GenerateKeyWithActivatedContext(ctx, s.keyPaths, keyType, kr, params, activated)
 }
 
 // ImportKeyFromMnemonicWithActivated imports and persists a standard key using
@@ -89,7 +89,7 @@ func (s *Service) ImportKeyFromMnemonicWithActivated(keyType, mnemonic string, k
 // ImportKeyFromMnemonicWithActivatedContext imports and persists a standard key
 // using the identity-scoped activated compiled key type set.
 func (s *Service) ImportKeyFromMnemonicWithActivatedContext(ctx context.Context, keyType, mnemonic string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.ImportResult, error) {
-	return keymgmt.ImportKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, mnemonic, kr, params, activated)
+	return keymgmt.ImportKeyWithActivatedContext(ctx, s.keyPaths, keyType, mnemonic, kr, params, activated)
 }
 
 // SaveGenericLSig persists a generated generic LogicSig key file.
@@ -109,7 +109,7 @@ func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, 
 	if err := payload.SetLogicSigOpcodeProfile(opcodeProfile, false); err != nil {
 		return err
 	}
-	_, err := keys.SavePayload(s.keyPaths, s.identityID, payload, kr)
+	_, err := keys.SavePayload(s.keyPaths, payload, kr)
 	return err
 }
 

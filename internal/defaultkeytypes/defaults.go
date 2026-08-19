@@ -42,7 +42,7 @@ var signerDefaultTemplates = []bundledTemplate{
 // have already registered built-in LogicSig providers. Sentry nodes skip signer
 // account key types.
 func InstallForNewIdentity(paths storepaths.Paths, identityID string, role noderole.Role, kr *crypto.Keyring, logf func(format string, args ...any)) error {
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return err
 	}

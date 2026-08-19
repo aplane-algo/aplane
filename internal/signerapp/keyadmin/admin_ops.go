@@ -152,7 +152,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 	if activationErr != nil {
 		return nil, activationErr
 	}
-	canGenerate, stateErr := keytypestate.CanGenerate(ir.KeyPaths(), ir.ID(), keyType)
+	canGenerate, stateErr := keytypestate.CanGenerate(ir.KeyPaths(), keyType)
 	if stateErr != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}

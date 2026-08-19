@@ -59,7 +59,7 @@ func TestFreshStoreBackupRestoreAndSign(t *testing.T) {
 	assertCanSign(t, destination, generated)
 	assertCanSign(t, destination, imported)
 
-	active, err := genstore.Resolve(storepaths.NewPaths(destination.dataDir), "default")
+	active, err := genstore.Resolve(storepaths.NewPaths(destination.dataDir))
 	if err != nil {
 		t.Fatalf("resolve restored destination generation: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestStorePassphraseRotationPreservesSigningAndPriorGeneration(t *testing.T)
 	mustImportAndApplyBackup(t, env, archive, exportPass)
 
 	paths := storepaths.NewPaths(env.dataDir)
-	before, err := genstore.Resolve(paths, "default")
+	before, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatalf("resolve pre-rotation generation: %v", err)
 	}

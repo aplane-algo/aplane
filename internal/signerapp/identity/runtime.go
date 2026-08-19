@@ -845,7 +845,7 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	// directories via StopKeyWatcher + EnsureKeyWatcher in the flipping
 	// operation, since fsnotify watches bind to inodes.
 	dirs := []string{ir.keyPaths.ProductDir()}
-	if active, err := genstore.ResolveActive(ir.keyPaths, ir.id); err == nil {
+	if active, err := genstore.ResolveActive(ir.keyPaths); err == nil {
 		dirs = append(dirs, active.KeysDir(), active.KeyTypeRecordsDir())
 	} else {
 		// An unresolvable layout still gets the identity-dir watch so a

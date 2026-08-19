@@ -66,10 +66,10 @@ func TestCurrentPointerRoundTripAndResolve(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
 
-	if err := WriteCurrent(paths, testIdentity, testGenA); err != nil {
+	if err := WriteCurrent(paths, testGenA); err != nil {
 		t.Fatalf("WriteCurrent() error = %v", err)
 	}
-	gen, err := Resolve(paths, testIdentity)
+	gen, err := Resolve(paths)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestWriteCurrentRefusesMissingGeneration(t *testing.T) {
 	if err := os.MkdirAll(paths.ProductDir(), 0o770); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := WriteCurrent(paths, testIdentity, testGenA); err == nil {
+	if err := WriteCurrent(paths, testGenA); err == nil {
 		t.Fatal("WriteCurrent pointed CURRENT at a generation that does not exist")
 	}
 }
@@ -112,7 +112,7 @@ func TestReadCurrentFailsClosedOnMalformedPointer(t *testing.T) {
 			if err := os.WriteFile(paths.CurrentPointerPath(), []byte(content), 0o660); err != nil {
 				t.Fatalf("WriteFile: %v", err)
 			}
-			if _, err := ReadCurrent(paths, testIdentity); err == nil {
+			if _, err := ReadCurrent(paths); err == nil {
 				t.Fatalf("ReadCurrent accepted malformed pointer %q", content)
 			}
 		})
@@ -129,7 +129,7 @@ func TestReadCurrentRejectsSymlinkPointer(t *testing.T) {
 	if err := os.Symlink(target, paths.CurrentPointerPath()); err != nil {
 		t.Fatalf("Symlink: %v", err)
 	}
-	if _, err := ReadCurrent(paths, testIdentity); err == nil {
+	if _, err := ReadCurrent(paths); err == nil {
 		t.Fatal("ReadCurrent followed a symlinked CURRENT pointer")
 	}
 }
@@ -582,15 +582,15 @@ func TestIsGenerational(t *testing.T) {
 	if err := os.MkdirAll(paths.ProductDir(), 0o770); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	generational, err := IsGenerational(paths, testIdentity)
+	generational, err := IsGenerational(paths)
 	if err != nil || generational {
 		t.Fatalf("IsGenerational(legacy) = (%v, %v), want (false, nil)", generational, err)
 	}
 	mintTestGeneration(t, paths, testGenA, nil)
-	if err := WriteCurrent(paths, testIdentity, testGenA); err != nil {
+	if err := WriteCurrent(paths, testGenA); err != nil {
 		t.Fatalf("WriteCurrent() error = %v", err)
 	}
-	generational, err = IsGenerational(paths, testIdentity)
+	generational, err = IsGenerational(paths)
 	if err != nil || !generational {
 		t.Fatalf("IsGenerational(migrated) = (%v, %v), want (true, nil)", generational, err)
 	}
@@ -615,15 +615,15 @@ func TestResolveActiveResolvesGeneration(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 
 	// An uninitialized store (no CURRENT) is an error, never a fallback.
-	if _, err := ResolveActive(paths, testIdentity); err == nil {
+	if _, err := ResolveActive(paths); err == nil {
 		t.Fatal("ResolveActive resolved a store with no CURRENT pointer")
 	}
 
 	gen := mintTestGeneration(t, paths, testGenA, nil)
-	if err := WriteCurrent(paths, testIdentity, testGenA); err != nil {
+	if err := WriteCurrent(paths, testGenA); err != nil {
 		t.Fatalf("WriteCurrent: %v", err)
 	}
-	active, err := ResolveActive(paths, testIdentity)
+	active, err := ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
@@ -635,7 +635,7 @@ func TestResolveActiveResolvesGeneration(t *testing.T) {
 	if err := os.WriteFile(paths.CurrentPointerPath(), []byte("garbage"+"\n"), 0o660); err != nil {
 		t.Fatalf("corrupt CURRENT: %v", err)
 	}
-	if _, err := ResolveActive(paths, testIdentity); err == nil {
+	if _, err := ResolveActive(paths); err == nil {
 		t.Fatal("ResolveActive accepted an invalid CURRENT pointer")
 	}
 }
@@ -665,7 +665,7 @@ func TestWriteCurrentUnreadablePointerIsUnknownNotUncommitted(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	err := WriteCurrent(paths, testIdentity, testGenA)
+	err := WriteCurrent(paths, testGenA)
 	if !errors.Is(err, ErrCommitDurabilityUnknown) {
 		t.Fatalf("WriteCurrent error = %v, want ErrCommitDurabilityUnknown (unreadable pointer proves nothing)", err)
 	}

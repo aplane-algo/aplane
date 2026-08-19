@@ -39,7 +39,7 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
@@ -109,7 +109,7 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(apkeys.SentryCredentialFilePath(paths, identityID, selector), encrypted, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.SentryCredentialFilePath(paths, selector), encrypted, fsutil.StoreFilePerm); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSentry, timeForBackupTest()); err != nil {
@@ -212,7 +212,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 
@@ -224,7 +224,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seal(bad) error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
 
@@ -274,7 +274,7 @@ func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seal(bad) error = %v", err)
 	}
-	badFile := apkeys.AccountKeyFilePath(paths, identityID, badAddress)
+	badFile := apkeys.AccountKeyFilePath(paths, badAddress)
 	if err := os.WriteFile(badFile, encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
@@ -298,12 +298,12 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
 	srcDir := active.KeysDir()
-	corruptFile := apkeys.AccountKeyFilePath(paths, identityID, "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	corruptFile := apkeys.AccountKeyFilePath(paths, "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	if err := os.WriteFile(corruptFile, []byte("not encrypted data"), fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}

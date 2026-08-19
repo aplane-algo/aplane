@@ -131,7 +131,7 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	if err != nil {
 		return err
 	}
-	if _, err := genstore.Mint(keystorePaths(), productIdentityID(), genstore.MintRequest{
+	if _, err := genstore.Mint(keystorePaths(), genstore.MintRequest{
 		GenerationID:    generationID,
 		FirstGeneration: true,
 		Operation:       "store-rebuild",

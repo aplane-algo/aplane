@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -97,8 +98,8 @@ func appendKeyType(types []string, seen map[string]bool, keyType string) []strin
 // GetValidKeyTypesForIdentity returns default-enabled key types plus
 // identity-enabled opt-in compiled providers. Provider registries are
 // process-global; the enabled state records on disk are the identity boundary.
-func GetValidKeyTypesForIdentity(paths storepaths.Paths, identityID string) ([]string, error) {
-	enabled, err := keytypestate.ListEnabled(paths, identityID)
+func GetValidKeyTypesForIdentity(paths storepaths.Paths) ([]string, error) {
+	enabled, err := keytypestate.ListEnabled(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -168,11 +169,11 @@ func keyTypeEnabledForGeneration(keyType string, activated map[string]bool) bool
 // GenerateKey creates a new random key with mnemonic backup.
 // keyType must be explicitly specified (e.g., "ed25519", "aplane.falcon1024.v1").
 // kr is the derived encryption key from the keystore (not raw passphrase).
-func GenerateKey(paths storepaths.Paths, identityID string, keyType string, kr *crypto.Keyring, params map[string]string) (*GenerateResult, error) {
-	return GenerateKeyWithActivatedContext(context.Background(), paths, identityID, keyType, kr, params, nil)
+func GenerateKey(paths storepaths.Paths, keyType string, kr *crypto.Keyring, params map[string]string) (*GenerateResult, error) {
+	return GenerateKeyWithActivatedContext(context.Background(), paths, keyType, kr, params, nil)
 }
 
-func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, identityID string, keyType string, kr *crypto.Keyring, params map[string]string, activated []string) (*GenerateResult, error) {
+func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, keyType string, kr *crypto.Keyring, params map[string]string, activated []string) (*GenerateResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -185,11 +186,11 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		return nil, fmt.Errorf("invalid key type: %s (must be one of: %s)", keyType, strings.Join(validTypes, ", "))
 	}
 	var resolveErr error
-	params, resolveErr = sentryrefs.ResolveCreationParams(paths, identityID, keyType, params)
+	params, resolveErr = sentryrefs.ResolveCreationParams(paths, productmode.IdentityID, keyType, params)
 	if resolveErr != nil {
 		return nil, fmt.Errorf("%w: sentry reference resolution failed: %v", keygen.ErrInvalidParams, resolveErr)
 	}
-	if err := validateKnownWitnessRoleExclusivity(paths, identityID, keyType, params, kr); err != nil {
+	if err := validateKnownWitnessRoleExclusivity(paths, keyType, params, kr); err != nil {
 		return nil, fmt.Errorf("%w: %v", keygen.ErrInvalidParams, err)
 	}
 
@@ -198,7 +199,7 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		return nil, fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	genResult, err := generator.GenerateRandom(ctx, paths, identityID, kr, keyType, params)
+	genResult, err := generator.GenerateRandom(ctx, paths, kr, keyType, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate key: %w", err)
 	}
@@ -218,16 +219,16 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 	return result, nil
 }
 
-func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, identityID, keyType string, params map[string]string, kr *crypto.Keyring) error {
+func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, keyType string, params map[string]string, kr *crypto.Keyring) error {
 	if adminPublicKeyHex := strings.ToLower(strings.TrimSpace(params[boundedmeta.AdminPublicKeyParameter])); adminPublicKeyHex != "" {
 		if _, err := boundedmeta.ParseAdminPublicKey(adminPublicKeyHex); err != nil {
 			return nil // The provider owns the detailed parameter error.
 		}
-		references, err := sentryrefs.List(paths, identityID)
+		references, err := sentryrefs.List(paths, productmode.IdentityID)
 		if err != nil {
 			return fmt.Errorf("check sentry witness references: %w", err)
 		}
-		scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, identityID, kr)
+		scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
 		if err != nil {
 			return fmt.Errorf("check local sentry witness keys: %w", err)
 		}
@@ -251,7 +252,7 @@ func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, identityID, key
 	if err != nil {
 		return nil // The guarded provider owns the detailed parameter error.
 	}
-	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, identityID, kr)
+	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
 	if err != nil {
 		return fmt.Errorf("check existing contract-admin enrollments: %w", err)
 	}
@@ -284,11 +285,11 @@ func rejectSentryWitnessKnownAsAdmin(sentryPublicKeyHex, sentryWitnessID string,
 
 // ImportKey imports a key from a mnemonic phrase.
 // kr is the derived encryption key from the keystore (not raw passphrase).
-func ImportKey(paths storepaths.Paths, identityID string, keyType string, mnemonicStr string, kr *crypto.Keyring, params map[string]string) (*ImportResult, error) {
-	return ImportKeyWithActivatedContext(context.Background(), paths, identityID, keyType, mnemonicStr, kr, params, nil)
+func ImportKey(paths storepaths.Paths, keyType string, mnemonicStr string, kr *crypto.Keyring, params map[string]string) (*ImportResult, error) {
+	return ImportKeyWithActivatedContext(context.Background(), paths, keyType, mnemonicStr, kr, params, nil)
 }
 
-func ImportKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, identityID string, keyType string, mnemonicStr string, kr *crypto.Keyring, params map[string]string, activated []string) (*ImportResult, error) {
+func ImportKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, keyType string, mnemonicStr string, kr *crypto.Keyring, params map[string]string, activated []string) (*ImportResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -306,7 +307,7 @@ func ImportKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths, 
 		return nil, fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	genResult, err := generator.GenerateFromMnemonic(ctx, paths, identityID, mnemonicStr, kr, keyType, params)
+	genResult, err := generator.GenerateFromMnemonic(ctx, paths, mnemonicStr, kr, keyType, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import key: %w", err)
 	}

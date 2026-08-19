@@ -203,7 +203,7 @@ func (s signerAdminServices) reconcileGenerations(ir *identity.Runtime) error {
 // identity mutation lock. Callers either use reconcileGenerations or hold the
 // lock across a larger validate/reload/state-transition sequence.
 func (s signerAdminServices) reconcileGenerationsLocked(ir *identity.Runtime) error {
-	report, err := genstore.Reconcile(ir.KeyPaths(), ir.ID(), nil)
+	report, err := genstore.Reconcile(ir.KeyPaths(), nil)
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *identity.Runtime) er
 	for _, staging := range report.DiscardedStaging {
 		logInfof("discarded generation staging residue %s", staging)
 	}
-	gen, err := genstore.Resolve(ir.KeyPaths(), ir.ID())
+	gen, err := genstore.Resolve(ir.KeyPaths())
 	if err != nil {
 		return err
 	}
@@ -292,7 +292,7 @@ func (s signerBackupServices) ReconcileStore(ir *identity.Runtime) adminproto.Re
 		result.State = ir.GetState().String()
 		return result
 	}
-	if current, err := genstore.ReadCurrent(ir.KeyPaths(), ir.ID()); err == nil {
+	if current, err := genstore.ReadCurrent(ir.KeyPaths()); err == nil {
 		result.GenerationID = current
 	}
 	if report != nil {
@@ -454,7 +454,7 @@ func (s signerAdminServices) ExportSentryPublic(ir *identity.Runtime, req adminp
 	var found bool
 	err = s.withIdentityStoreInspection(ir.ID(), func() error {
 		var err error
-		envelope, found, err = apkeys.ReadWitnessPublicMetadata(ir.KeyPaths(), ir.ID(), componentKey)
+		envelope, found, err = apkeys.ReadWitnessPublicMetadata(ir.KeyPaths(), componentKey)
 		return err
 	})
 	if err != nil {
@@ -475,14 +475,14 @@ func (s signerAdminServices) ExportSentryPublic(ir *identity.Runtime, req adminp
 func (s signerAdminServices) ListGenerations(ir *identity.Runtime) adminproto.GenerationInventory {
 	var report genstore.ReconcileReport
 	err := s.withIdentityStoreInspection(ir.ID(), func() error {
-		generational, err := genstore.IsGenerational(ir.KeyPaths(), ir.ID())
+		generational, err := genstore.IsGenerational(ir.KeyPaths())
 		if err != nil {
 			return err
 		}
 		if !generational {
 			return fmt.Errorf("store does not use generation-based storage")
 		}
-		report, err = genstore.Inspect(ir.KeyPaths(), ir.ID(), nil)
+		report, err = genstore.Inspect(ir.KeyPaths(), nil)
 		return err
 	})
 	if err != nil {

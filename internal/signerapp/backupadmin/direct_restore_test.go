@@ -39,7 +39,7 @@ func TestDirectRestoreCommitsCredentialsAndIsPlaintextIdempotent(t *testing.T) {
 	if !first.Success || len(first.Restored) != 1 || first.Restored[0].Selector != selector {
 		t.Fatalf("RestoreBackup(first) = %+v", first)
 	}
-	current, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	current, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -120,7 +120,7 @@ func TestDirectRestoreTreatsUnreadableDestinationAsReplaceableConflict(t *testin
 	if !first.Success {
 		t.Fatalf("initial restore = %+v", first)
 	}
-	current, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	current, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestDirectRestoreReportsVisibleDurabilityUnknownAsUncertain(t *testing.T) {
 	if !ir.IsRecovery() {
 		t.Fatal("durability-unknown restore did not enter recovery")
 	}
-	current, err := genstore.ReadCurrent(paths, auth.DefaultIdentityID)
+	current, err := genstore.ReadCurrent(paths)
 	if err != nil || current != result.GenerationID {
 		t.Fatalf("visible current = %q, %v; want uncertain generation %q", current, err, result.GenerationID)
 	}
@@ -248,7 +248,7 @@ func TestDirectRollbackReportsVisibleDurabilityUnknownAndEntersRecovery(t *testi
 	if !ir.IsRecovery() {
 		t.Fatal("durability-unknown rollback did not enter recovery")
 	}
-	current, err := genstore.ReadCurrent(paths, auth.DefaultIdentityID)
+	current, err := genstore.ReadCurrent(paths)
 	if err != nil || current != result.GenerationID {
 		t.Fatalf("visible current = %q, %v; want uncertain rollback generation %q", current, err, result.GenerationID)
 	}
@@ -259,7 +259,7 @@ func TestRecoveryRestoreRejectsInvalidCurrentGenerationBeforeMint(t *testing.T) 
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
-	before, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	before, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestRecoveryRestoreRejectsInvalidCurrentGenerationBeforeMint(t *testing.T) 
 	if !strings.Contains(result.Error, "validate recovery-mode current generation") {
 		t.Fatalf("restore error = %q, want recovery parent validation context", result.Error)
 	}
-	after, err := genstore.ReadCurrent(paths, auth.DefaultIdentityID)
+	after, err := genstore.ReadCurrent(paths)
 	if err != nil || after != before.GenerationID() {
 		t.Fatalf("CURRENT after rejected recovery restore = %q, %v; want %q", after, err, before.GenerationID())
 	}
@@ -299,7 +299,7 @@ func TestDirectRollbackRefusesDivergedRestoreGeneration(t *testing.T) {
 	if !restored.Success {
 		t.Fatalf("RestoreBackup() = %+v", restored)
 	}
-	current, err := genstore.Resolve(paths, auth.DefaultIdentityID)
+	current, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestDirectRestoreOneBadCredentialWritesNothing(t *testing.T) {
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, validSelector := writeMixedValidityManagedArchive(t, paths)
-	before, err := genstore.ReadCurrent(paths, auth.DefaultIdentityID)
+	before, err := genstore.ReadCurrent(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,11 +359,11 @@ func TestDirectRestoreOneBadCredentialWritesNothing(t *testing.T) {
 	if result.Success || !strings.Contains(result.Error, "validate backup credential") {
 		t.Fatalf("RestoreBackup(one bad) = %+v", result)
 	}
-	after, err := genstore.ReadCurrent(paths, auth.DefaultIdentityID)
+	after, err := genstore.ReadCurrent(paths)
 	if err != nil || after != before {
 		t.Fatalf("CURRENT after failed whole-archive validation = %q, %v; want %q", after, err, before)
 	}
-	active, err := genstore.ResolveActive(paths, auth.DefaultIdentityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatal(err)
 	}

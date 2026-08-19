@@ -214,7 +214,7 @@ func TestListInvalidPrecedenceSkipsConflictDetection(t *testing.T) {
 func TestListIncludesInstalledTemplateWithoutLibrarySource(t *testing.T) {
 	paths := newLibraryTestPaths(t)
 	keyType := "falcon1024-installed-only-v2"
-	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), testComposedTemplateYAML("falcon1024-installed-only", "Installed Only"), keyType, templatestore.TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey())); err != nil {
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), testComposedTemplateYAML("falcon1024-installed-only", "Installed Only"), keyType, templatestore.TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey())); err != nil {
 		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
 	writeTemplateStateForTest(t, paths, testIdentityID, keyType, templatestore.TemplateTypeComposed, keytypestate.StateDisabled)
@@ -289,12 +289,12 @@ func TestInstallParsedExistingTemplateCanRollbackStateChange(t *testing.T) {
 	if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey())); err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
-	rec, ok, err := keytypestate.Get(paths, testIdentityID, parsed.KeyType)
+	rec, ok, err := keytypestate.Get(paths, parsed.KeyType)
 	if err != nil || !ok {
 		t.Fatalf("Get(installed state) = (%+v, %v, %v), want record", rec, ok, err)
 	}
 	rec.State = keytypestate.StateDisabled
-	if err := keytypestate.Put(paths, testIdentityID, rec); err != nil {
+	if err := keytypestate.Put(paths, rec); err != nil {
 		t.Fatalf("Put(disabled state) error = %v", err)
 	}
 
@@ -341,7 +341,7 @@ func TestInstallParsedRollsBackTemplateWhenStateWriteFails(t *testing.T) {
 	if _, statErr := os.Stat(templatePath); !os.IsNotExist(statErr) {
 		t.Fatalf("installed template stat error = %v, want removed rollback file", statErr)
 	}
-	if _, ok, stateErr := keytypestate.Get(paths, testIdentityID, parsed.KeyType); stateErr != nil || ok {
+	if _, ok, stateErr := keytypestate.Get(paths, parsed.KeyType); stateErr != nil || ok {
 		t.Fatalf("key type state exists=%v err=%v, want rollback to remove state", ok, stateErr)
 	}
 }
@@ -487,7 +487,7 @@ func TestListAndActivateCompiledProvider(t *testing.T) {
 	if !testKeyTypeEnabled(paths, testIdentityID, keyType) {
 		t.Fatal("enabled state was not written")
 	}
-	if rec, ok, err := keytypestate.Get(paths, testIdentityID, keyType); err != nil {
+	if rec, ok, err := keytypestate.Get(paths, keyType); err != nil {
 		t.Fatalf("keytypestate.Get() error = %v", err)
 	} else if !ok || rec.Source != keytypestate.SourceCompiled {
 		t.Fatalf("compiled provider state = %#v, exists=%v; want SourceCompiled", rec, ok)
@@ -546,7 +546,7 @@ func TestDeactivateCompiledProviderRejectsKeyTypeInUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer payload.ZeroSecrets()
-	if _, err := apkeys.SavePayload(paths, testIdentityID, payload, cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := apkeys.SavePayload(paths, payload, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
 	}
 
@@ -935,7 +935,7 @@ func TestParseFileAsRejectsMismatchedDeclaredTemplateType(t *testing.T) {
 func newLibraryTestPaths(t *testing.T) storepaths.Paths {
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	if err := EnsureLibraryDir(paths); err != nil {
 		t.Fatalf("EnsureLibraryDir() error = %v", err)
 	}
@@ -970,7 +970,7 @@ func findLibraryItem(items []LibraryTemplate, keyType string) *LibraryTemplate {
 }
 
 func testKeyTypeEnabled(paths storepaths.Paths, identityID, keyType string) bool {
-	rec, ok, err := keytypestate.Get(paths, identityID, keyType)
+	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }
 
@@ -980,7 +980,7 @@ func writeTemplateStateForTest(t *testing.T, paths storepaths.Paths, identityID,
 	if err != nil {
 		t.Fatalf("stateSourceForTemplateType() error = %v", err)
 	}
-	if err := keytypestate.Put(paths, identityID, keytypestate.Record{
+	if err := keytypestate.Put(paths, keytypestate.Record{
 		KeyType: keyType,
 		Source:  source,
 		State:   state,
@@ -990,7 +990,7 @@ func writeTemplateStateForTest(t *testing.T, paths storepaths.Paths, identityID,
 }
 
 func testKeyTypeDisabled(paths storepaths.Paths, identityID, keyType string) bool {
-	rec, ok, err := keytypestate.Get(paths, identityID, keyType)
+	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateDisabled
 }
 
@@ -1002,7 +1002,7 @@ func writeTemplateKeyInUse(t *testing.T, paths storepaths.Paths, keyType string,
 	if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := apkeys.SavePayload(paths, testIdentityID, payload, cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := apkeys.SavePayload(paths, payload, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
 	}
 }
@@ -1034,7 +1034,7 @@ func assertInstalledTemplateProjection(t *testing.T, paths storepaths.Paths, par
 		t.Fatalf("archive exists = %v, want %v (stat err=%v)", err == nil, want.archiveExists, err)
 	}
 
-	rec, ok, err := keytypestate.Get(paths, testIdentityID, parsed.KeyType)
+	rec, ok, err := keytypestate.Get(paths, parsed.KeyType)
 	if err != nil {
 		t.Fatalf("Get(state) error = %v", err)
 	}

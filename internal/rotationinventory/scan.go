@@ -46,7 +46,7 @@ func scan(
 	if kr == nil {
 		return nil, fmt.Errorf("rotation inventory requires an open keyring")
 	}
-	current, err := genstore.ReadCurrent(paths, identityID)
+	current, err := genstore.ReadCurrent(paths)
 	if err != nil {
 		return nil, fmt.Errorf("rotation inventory CURRENT: %w", err)
 	}

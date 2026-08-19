@@ -32,7 +32,7 @@ func newGenerationalTestStore(t *testing.T, passphrase string) (storepaths.Paths
 	if err != nil {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
-	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
+	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:    generationID,
 		FirstGeneration: true,
 		Operation:       "store-initialize",
@@ -71,7 +71,7 @@ func TestVerifyCurrentGenerationContentFailsOnMalformedKey(t *testing.T) {
 	}
 	defer kr.Zero()
 
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
@@ -93,7 +93,7 @@ func TestVerifyCurrentGenerationContentRejectsSymlinkedNamespaceBeforePrompt(t *
 	t.Setenv("APSIGNER_PASSPHRASE", "")
 	paths, identityID := newGenerationalTestStore(t, "prune-pass")
 
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}

@@ -30,12 +30,12 @@ func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := keys.SentryCredentialFilePath(paths, identityID, selector)
+	source := keys.SentryCredentialFilePath(paths, selector)
 	if err := os.WriteFile(source, encrypted, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	destination := t.TempDir()
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
@@ -129,7 +129,7 @@ func mintFirstGenerationForBackupTest(t *testing.T, paths storepaths.Paths) {
 	if err != nil {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
-	if _, err := genstore.Mint(paths, "default", genstore.MintRequest{
+	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:    generationID,
 		FirstGeneration: true,
 		Operation:       "store-initialize",

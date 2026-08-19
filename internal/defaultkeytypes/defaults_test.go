@@ -32,7 +32,7 @@ func TestInstallForNewIdentityInstallsDefaultAllowlistTemplatesForSigner(t *test
 	}
 
 	for _, keyType := range []string{Falcon1024AllowlistKeyType} {
-		rec, ok, err := keytypestate.Get(paths, identityID, keyType)
+		rec, ok, err := keytypestate.Get(paths, keyType)
 		if err != nil {
 			t.Fatalf("keytypestate.Get(%s) error = %v", keyType, err)
 		}
@@ -76,7 +76,7 @@ func TestInstallForNewIdentitySkipsSentryRole(t *testing.T) {
 	if err := InstallForNewIdentity(paths, "default", noderole.RoleSentry, cryptotest.Keyring(t, masterKey), nil); err != nil {
 		t.Fatalf("InstallForNewIdentity() error = %v", err)
 	}
-	if rec, ok, err := keytypestate.Get(paths, "default", Falcon1024AllowlistKeyType); err != nil {
+	if rec, ok, err := keytypestate.Get(paths, Falcon1024AllowlistKeyType); err != nil {
 		t.Fatalf("keytypestate.Get() error = %v", err)
 	} else if ok {
 		t.Fatalf("sentry role installed signer default key type: %+v", rec)
@@ -96,7 +96,7 @@ func TestInstallForNewIdentityIsIdempotent(t *testing.T) {
 	if err := InstallForNewIdentity(paths, "default", noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
 		t.Fatalf("second InstallForNewIdentity() error = %v", err)
 	}
-	rec, ok, err := keytypestate.Get(paths, "default", Falcon1024AllowlistKeyType)
+	rec, ok, err := keytypestate.Get(paths, Falcon1024AllowlistKeyType)
 	if err != nil {
 		t.Fatalf("keytypestate.Get() error = %v", err)
 	}
@@ -111,7 +111,7 @@ func mintFirstGenerationForTest(t *testing.T, paths storepaths.Paths, identityID
 	if err != nil {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
-	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
+	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:    generationID,
 		FirstGeneration: true,
 		Operation:       "store-initialize",

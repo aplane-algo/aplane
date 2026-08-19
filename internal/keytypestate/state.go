@@ -83,8 +83,8 @@ func (e *InUseError) Unwrap() error {
 //   - (Record{}, false, error): record file exists but is empty, malformed, or
 //     contains unknown source/state values. Treat this as corruption, not as an
 //     absent record.
-func Get(paths storepaths.Paths, identityID, keyType string) (Record, bool, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
+func Get(paths storepaths.Paths, keyType string) (Record, bool, error) {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return Record{}, false, err
 	}
@@ -116,8 +116,8 @@ func GetActive(active storepaths.ActivePaths, keyType string) (Record, bool, err
 // Put atomically writes a state record.
 //
 // CONTRACT: product callers MUST hold Signer.storeMutationLock.
-func Put(paths storepaths.Paths, identityID string, rec Record) error {
-	active, err := genstore.ResolveActive(paths, identityID)
+func Put(paths storepaths.Paths, rec Record) error {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return err
 	}
@@ -155,8 +155,8 @@ func PutActive(active storepaths.ActivePaths, rec Record) error {
 // absent.
 //
 // CONTRACT: product callers MUST hold Signer.storeMutationLock.
-func Delete(paths storepaths.Paths, identityID, keyType string) error {
-	active, err := genstore.ResolveActive(paths, identityID)
+func Delete(paths storepaths.Paths, keyType string) error {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return err
 	}
@@ -175,8 +175,8 @@ func Delete(paths storepaths.Paths, identityID, keyType string) error {
 // Corrupt records (empty, malformed, unknown enum values) are silently skipped;
 // callers that need to alert operators about corruption use ListInvalid to
 // enumerate the affected key types separately.
-func List(paths storepaths.Paths, identityID string) ([]Record, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
+func List(paths storepaths.Paths) ([]Record, error) {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -239,8 +239,8 @@ func ListInvalidActive(active storepaths.ActivePaths) ([]string, error) {
 
 // ListEnabled returns the key types whose record state is StateEnabled.
 // Lock-free.
-func ListEnabled(paths storepaths.Paths, identityID string) ([]string, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
+func ListEnabled(paths storepaths.Paths) ([]string, error) {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -264,8 +264,8 @@ func ListEnabled(paths storepaths.Paths, identityID string) ([]string, error) {
 
 // RequireUnused scans existing identity keys and returns ErrKeyTypeInUse if any
 // key uses keyType.
-func RequireUnused(paths storepaths.Paths, identityID, keyType string, kr *apcrypto.Keyring) error {
-	active, err := genstore.ResolveActive(paths, identityID)
+func RequireUnused(paths storepaths.Paths, keyType string, kr *apcrypto.Keyring) error {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return err
 	}
@@ -296,7 +296,7 @@ func RequireUnused(paths storepaths.Paths, identityID, keyType string, kr *apcry
 // CanGenerate reports whether keyType is generatable by identityID. It returns
 // an error when state storage is corrupt or unreadable so callers can surface a
 // storage error rather than reporting "invalid key type."
-func CanGenerate(paths storepaths.Paths, identityID, keyType string) (bool, error) {
+func CanGenerate(paths storepaths.Paths, keyType string) (bool, error) {
 	keyType, err := normalizeKeyType(keyType)
 	if err != nil {
 		return false, err
@@ -304,7 +304,7 @@ func CanGenerate(paths storepaths.Paths, identityID, keyType string) (bool, erro
 	if entry, ok := keytypecatalog.Get(keyType); ok && entry.Availability == keytypecatalog.AvailabilityDefaultEnabled {
 		return true, nil
 	}
-	rec, ok, err := Get(paths, identityID, keyType)
+	rec, ok, err := Get(paths, keyType)
 	if err != nil {
 		return false, err
 	}

@@ -70,7 +70,7 @@ func TestBackupIdentityArchiveOmitsOperationalAuthority(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address), sealed, 0o600)
+		return os.WriteFile(keys.AccountKeyFilePath(paths, address), sealed, 0o600)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 		t.Fatal(err)
 	}
 	convertToGenerationalStore(t, paths)
-	keyStore := keystore.NewFileKeyStoreForPaths(paths, auth.DefaultIdentityID)
+	keyStore := keystore.NewFileKeyStoreForPaths(paths)
 	if err := keyStore.Unlock(backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
 	}
@@ -174,14 +174,14 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 
 func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 	t.Helper()
-	if current, err := genstore.ReadCurrent(paths, auth.DefaultIdentityID); err == nil {
+	if current, err := genstore.ReadCurrent(paths); err == nil {
 		return current
 	}
 	generationID, err := genstore.NewGenerationID(time.Unix(1_753_700_000, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := genstore.Mint(paths, auth.DefaultIdentityID, genstore.MintRequest{
+	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID: generationID, FirstGeneration: true, Operation: "test-init",
 		OperationID: "init-" + generationID, CreatedAt: time.Unix(1_753_700_000, 0),
 	}); err != nil {

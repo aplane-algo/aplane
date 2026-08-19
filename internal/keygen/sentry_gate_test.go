@@ -20,15 +20,15 @@ type registryTestGenerator struct {
 
 func (g *registryTestGenerator) RoutingFamily() string { return g.family }
 
-func (g *registryTestGenerator) GenerateFromSeed(context.Context, storepaths.Paths, string, []byte, *crypto.Keyring, string, map[string]string) (*GenerationResult, error) {
+func (g *registryTestGenerator) GenerateFromSeed(context.Context, storepaths.Paths, []byte, *crypto.Keyring, string, map[string]string) (*GenerationResult, error) {
 	return nil, nil
 }
 
-func (g *registryTestGenerator) GenerateFromMnemonic(context.Context, storepaths.Paths, string, string, *crypto.Keyring, string, map[string]string) (*GenerationResult, error) {
+func (g *registryTestGenerator) GenerateFromMnemonic(context.Context, storepaths.Paths, string, *crypto.Keyring, string, map[string]string) (*GenerationResult, error) {
 	return nil, nil
 }
 
-func (g *registryTestGenerator) GenerateRandom(context.Context, storepaths.Paths, string, *crypto.Keyring, string, map[string]string) (*GenerationResult, error) {
+func (g *registryTestGenerator) GenerateRandom(context.Context, storepaths.Paths, *crypto.Keyring, string, map[string]string) (*GenerationResult, error) {
 	return nil, nil
 }
 

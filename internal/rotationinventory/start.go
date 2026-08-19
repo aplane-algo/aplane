@@ -38,7 +38,7 @@ func StartRotation(
 		return nil, fmt.Errorf("start rotation: current term is exhausted")
 	}
 
-	current, err := genstore.ReadCurrent(paths, identityID)
+	current, err := genstore.ReadCurrent(paths)
 	if err != nil {
 		return nil, fmt.Errorf("start rotation CURRENT: %w", err)
 	}

@@ -261,7 +261,7 @@ func validateBaseImportableSchema(base templatestore.BaseTemplateSpec, templateM
 }
 
 func InstallParsed(paths storepaths.Paths, identityID string, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return InstallResult{KeyType: tmpl.KeyType, TemplateType: tmpl.TemplateType}, err
 	}
@@ -387,9 +387,9 @@ func RollbackTemplateStateChange(paths storepaths.Paths, identityID string, resu
 		return nil
 	}
 	if result.hadPreviousState {
-		return keytypestate.Put(paths, identityID, result.previousState)
+		return keytypestate.Put(paths, result.previousState)
 	}
-	return keytypestate.Delete(paths, identityID, result.KeyType)
+	return keytypestate.Delete(paths, result.KeyType)
 }
 
 func stateSourceForTemplateType(templateType templatestore.TemplateType) (keytypestate.Source, error) {
@@ -430,13 +430,13 @@ func ActivateCompiledProvider(paths storepaths.Paths, identityID, keyType string
 	if !lsigprovider.Has(result.KeyType) {
 		return result, fmt.Errorf("key type %s is not registered", result.KeyType)
 	}
-	rec, ok, err := keytypestate.Get(paths, identityID, result.KeyType)
+	rec, ok, err := keytypestate.Get(paths, result.KeyType)
 	if err != nil {
 		return result, err
 	}
 	// The record path reported back must be the one the writes actually
 	// use: the active namespace, never the flat legacy path.
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return result, err
 	}
@@ -452,13 +452,13 @@ func ActivateCompiledProvider(paths storepaths.Paths, identityID, keyType string
 		}
 		rec.State = keytypestate.StateEnabled
 		rec.Fingerprint = fingerprint
-		if err := keytypestate.Put(paths, identityID, rec); err != nil {
+		if err := keytypestate.Put(paths, rec); err != nil {
 			return result, err
 		}
 		result.OutputPath = active.KeyTypeRecord(result.KeyType)
 		return result, nil
 	}
-	if err := keytypestate.Put(paths, identityID, keytypestate.Record{
+	if err := keytypestate.Put(paths, keytypestate.Record{
 		KeyType:     result.KeyType,
 		Source:      keytypestate.SourceCompiled,
 		State:       keytypestate.StateEnabled,
@@ -477,22 +477,22 @@ func DeactivateCompiledProvider(paths storepaths.Paths, identityID, keyType stri
 	if result.KeyType == "" {
 		return result, fmt.Errorf("key type is required")
 	}
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return result, err
 	}
 	result.OutputPath = active.KeyTypeRecord(result.KeyType)
-	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, kr); err != nil {
+	if err := keytypestate.RequireUnused(paths, result.KeyType, kr); err != nil {
 		return result, err
 	}
-	_, ok, err := keytypestate.Get(paths, identityID, result.KeyType)
+	_, ok, err := keytypestate.Get(paths, result.KeyType)
 	if err != nil {
 		return result, err
 	}
 	if !ok {
 		return result, nil
 	}
-	if err := keytypestate.Delete(paths, identityID, result.KeyType); err != nil {
+	if err := keytypestate.Delete(paths, result.KeyType); err != nil {
 		return result, err
 	}
 	result.Removed = true
@@ -512,14 +512,14 @@ func EnableInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 		return result, err
 	}
 	result.OutputPath = outputPath
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return result, err
 	}
 	if !templatestore.TemplateExistsForPaths(paths, identityID, result.KeyType, templateType) {
 		return result, fmt.Errorf("template %s is not installed", result.KeyType)
 	}
-	rec, ok, err := keytypestate.Get(paths, identityID, result.KeyType)
+	rec, ok, err := keytypestate.Get(paths, result.KeyType)
 	if err != nil {
 		return result, err
 	}
@@ -532,7 +532,7 @@ func EnableInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 	}
 	previousState := rec
 	rec.State = keytypestate.StateEnabled
-	if err := keytypestate.Put(paths, identityID, rec); err != nil {
+	if err := keytypestate.Put(paths, rec); err != nil {
 		return result, err
 	}
 	result.StateChanged = true
@@ -555,14 +555,14 @@ func DisableInstalledTemplate(paths storepaths.Paths, identityID, keyType string
 		return result, err
 	}
 	result.OutputPath = outputPath
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return result, err
 	}
 	if !templatestore.TemplateExistsForPaths(paths, identityID, result.KeyType, templateType) {
 		return result, fmt.Errorf("template %s is not installed", result.KeyType)
 	}
-	rec, ok, err := keytypestate.Get(paths, identityID, result.KeyType)
+	rec, ok, err := keytypestate.Get(paths, result.KeyType)
 	if err != nil {
 		return result, err
 	}
@@ -573,11 +573,11 @@ func DisableInstalledTemplate(paths storepaths.Paths, identityID, keyType string
 		result.OutputPath = active.KeyTypeRecord(result.KeyType)
 		return result, nil
 	}
-	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, kr); err != nil {
+	if err := keytypestate.RequireUnused(paths, result.KeyType, kr); err != nil {
 		return result, err
 	}
 	rec.State = keytypestate.StateDisabled
-	if err := keytypestate.Put(paths, identityID, rec); err != nil {
+	if err := keytypestate.Put(paths, rec); err != nil {
 		return result, err
 	}
 	result.OutputPath = active.KeyTypeRecord(result.KeyType)
@@ -607,20 +607,20 @@ func RemoveInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 	if !templatestore.TemplateExistsForPaths(paths, identityID, result.KeyType, templateType) {
 		return result, nil
 	}
-	if err := keytypestate.RequireUnused(paths, identityID, result.KeyType, kr); err != nil {
+	if err := keytypestate.RequireUnused(paths, result.KeyType, kr); err != nil {
 		return result, err
 	}
-	rec, hadState, err := keytypestate.Get(paths, identityID, result.KeyType)
+	rec, hadState, err := keytypestate.Get(paths, result.KeyType)
 	if err != nil {
 		return result, err
 	}
-	if err := keytypestate.Delete(paths, identityID, result.KeyType); err != nil {
+	if err := keytypestate.Delete(paths, result.KeyType); err != nil {
 		return result, err
 	}
 	archivePath, err := archiveInstalled(paths, identityID, result.KeyType, templateType)
 	if err != nil {
 		if hadState {
-			if rollbackErr := keytypestate.Put(paths, identityID, rec); rollbackErr != nil {
+			if rollbackErr := keytypestate.Put(paths, rec); rollbackErr != nil {
 				return result, fmt.Errorf("%w (state rollback failed: %v)", err, rollbackErr)
 			}
 		}
@@ -635,7 +635,7 @@ func RemoveInstalledTemplate(paths storepaths.Paths, identityID, keyType string,
 // template file. It deliberately leaves key type state rollback to
 // RollbackTemplateStateChange.
 func RollbackInstalledTemplateFile(paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType) error {
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return err
 	}
@@ -821,7 +821,7 @@ func libraryItemFromParsed(parsed ParsedTemplate) LibraryTemplate {
 }
 
 func compiledProviderLibraryItems(paths storepaths.Paths, identityID string) ([]LibraryTemplate, error) {
-	records, err := keytypestate.List(paths, identityID)
+	records, err := keytypestate.List(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -861,7 +861,7 @@ func compiledProviderLibraryItems(paths storepaths.Paths, identityID string) ([]
 }
 
 func installedRecordEnabled(paths storepaths.Paths, identityID, keyType string) bool {
-	rec, ok, err := keytypestate.Get(paths, identityID, keyType)
+	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }
 

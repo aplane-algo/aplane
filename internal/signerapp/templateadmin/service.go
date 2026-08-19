@@ -666,7 +666,7 @@ func rollbackFailedTemplateInstall(paths storepaths.Paths, identityID string, re
 }
 
 func installedTemplateFromRecord(paths storepaths.Paths, identityID, keyType string) (templatestore.TemplateType, keytypestate.Record, bool, error) {
-	rec, ok, err := keytypestate.Get(paths, identityID, keyType)
+	rec, ok, err := keytypestate.Get(paths, keyType)
 	if err != nil {
 		return "", keytypestate.Record{}, false, err
 	}
@@ -714,7 +714,7 @@ func recordWireTemplateType(rec keytypestate.Record) string {
 }
 
 func installedTemplateEnabled(paths storepaths.Paths, identityID, keyType string) bool {
-	rec, ok, err := keytypestate.Get(paths, identityID, keyType)
+	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }
 

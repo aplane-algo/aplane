@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -42,7 +41,7 @@ func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 	}
 	// New stores are generational: the keys namespace lives in the first
 	// generation behind CURRENT.
-	active, err := genstore.ResolveActive(paths, auth.DefaultIdentityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}

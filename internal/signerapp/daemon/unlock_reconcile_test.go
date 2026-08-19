@@ -23,14 +23,14 @@ import (
 // first generation and removes the legacy directories.
 func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 	t.Helper()
-	if current, err := genstore.ReadCurrent(server.keyPaths, auth.DefaultIdentityID); err == nil {
+	if current, err := genstore.ReadCurrent(server.keyPaths); err == nil {
 		return current
 	}
 	generationID, err := genstore.NewGenerationID(time.Unix(1_753_800_000, 0))
 	if err != nil {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
-	if _, err := genstore.Mint(server.keyPaths, auth.DefaultIdentityID, genstore.MintRequest{
+	if _, err := genstore.Mint(server.keyPaths, genstore.MintRequest{
 		GenerationID:    generationID,
 		FirstGeneration: true,
 		Operation:       "test-init",

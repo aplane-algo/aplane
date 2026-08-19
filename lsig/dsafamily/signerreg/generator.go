@@ -76,7 +76,7 @@ type keygenOpts struct {
 // generateKey is the internal helper that handles the common keygen logic:
 // keypair generation, LSig derivation, key file saving, and result building.
 // All sensitive data (seed, priv) is zeroed by this function.
-func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, kr *crypto.Keyring, keyType string, params map[string]string, opts *keygenOpts) (*keygen.GenerationResult, error) {
+func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Paths, seed []byte, kr *crypto.Keyring, keyType string, params map[string]string, opts *keygenOpts) (*keygen.GenerationResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -182,7 +182,7 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	}
 
 	// Save key file
-	keyFiles, err := keys.SavePayload(paths, identityID, payload, kr)
+	keyFiles, err := keys.SavePayload(paths, payload, kr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save keys: %w", err)
 	}
@@ -215,19 +215,19 @@ func deriveSaltedLogicSig(ctx context.Context, dsa logicsigdsa.LogicSigDSA, publ
 
 // GenerateFromSeed generates a Falcon key from a deterministic seed.
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
-func (g *LogicSigGenerator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
+func (g *LogicSigGenerator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, seed []byte, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
 	// Make a copy of seed since generateKey will zero it
 	seedCopy := make([]byte, len(seed))
 	copy(seedCopy, seed)
 
-	return g.generateKey(ctx, paths, identityID, seedCopy, kr, keyType, params, nil)
+	return g.generateKey(ctx, paths, seedCopy, kr, keyType, params, nil)
 }
 
 // GenerateFromMnemonic generates a Falcon key from mnemonic words.
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
 // Seed and entropy derivation route through the family's registered mnemonic
 // handler so families with a non-BIP-39 scheme derive correctly.
-func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
+func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, mnemonic string, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
 	handler, err := mnemonicreg.GetHandler(g.RoutingFamily())
 	if err != nil {
 		return nil, err
@@ -240,7 +240,7 @@ func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths stor
 		return nil, fmt.Errorf("failed to derive seed from mnemonic: %w", err)
 	}
 
-	return g.generateKey(ctx, paths, identityID, seed, kr, keyType, params, &keygenOpts{
+	return g.generateKey(ctx, paths, seed, kr, keyType, params, &keygenOpts{
 		mnemonic: mnemonic,
 	})
 }
@@ -249,7 +249,7 @@ func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths stor
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
 // Mnemonic, seed, and entropy come from the family's registered mnemonic
 // handler so families with a non-BIP-39 scheme derive correctly.
-func (g *LogicSigGenerator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
+func (g *LogicSigGenerator) GenerateRandom(ctx context.Context, paths storepaths.Paths, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
 	handler, err := mnemonicreg.GetHandler(g.RoutingFamily())
 	if err != nil {
 		return nil, err
@@ -261,7 +261,7 @@ func (g *LogicSigGenerator) GenerateRandom(ctx context.Context, paths storepaths
 	}
 	defer crypto.ZeroBytes(entropy)
 
-	return g.generateKey(ctx, paths, identityID, seed, kr, keyType, params, &keygenOpts{
+	return g.generateKey(ctx, paths, seed, kr, keyType, params, &keygenOpts{
 		mnemonic: mnemonic,
 	})
 }

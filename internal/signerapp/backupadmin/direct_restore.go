@@ -77,7 +77,7 @@ func (s Service) RestoreBackup(
 			defer set.ZeroSecrets()
 			result.ArchiveSHA256 = set.ArchiveSHA256
 
-			current, resolveErr := genstore.Resolve(s.Deps.KeyPaths(), ir.ID())
+			current, resolveErr := genstore.Resolve(s.Deps.KeyPaths())
 			if resolveErr != nil {
 				return fmt.Errorf("resolve current generation: %w", resolveErr)
 			}
@@ -115,7 +115,7 @@ func (s Service) RestoreBackup(
 			if generationErr != nil {
 				return generationErr
 			}
-			_, mintErr := genstore.Mint(s.Deps.KeyPaths(), ir.ID(), genstore.MintRequest{
+			_, mintErr := genstore.Mint(s.Deps.KeyPaths(), genstore.MintRequest{
 				GenerationID:            generationID,
 				Parent:                  parent,
 				Operation:               genstore.OperationCredentialRestore,
@@ -137,7 +137,7 @@ func (s Service) RestoreBackup(
 				},
 			})
 			if mintErr != nil {
-				visible, visibleErr := genstore.ReadCurrent(s.Deps.KeyPaths(), ir.ID())
+				visible, visibleErr := genstore.ReadCurrent(s.Deps.KeyPaths())
 				if errors.Is(mintErr, genstore.ErrCommitDurabilityUnknown) ||
 					(visibleErr == nil && visible == generationID) {
 					committedGeneration = generationID
@@ -216,7 +216,7 @@ func (s Service) RestoreBackup(
 		}
 		rollbackErr := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			return genstore.RollbackTo(
-				s.Deps.KeyPaths(), ir.ID(), parent, time.Now(), masterKey,
+				s.Deps.KeyPaths(), parent, time.Now(), masterKey,
 			)
 		})
 		if rollbackErr != nil {

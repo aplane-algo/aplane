@@ -190,7 +190,7 @@ func (m *Manager) RegisterKeystoreTemplates(identityID string, kr *crypto.Keyrin
 	// Resolve the active layout once for the whole registration pass; on a
 	// generational store this binds every record and template read to the
 	// generation CURRENT names right now.
-	active, err := genstore.ResolveActive(m.Paths, identityID)
+	active, err := genstore.ResolveActive(m.Paths)
 	if err != nil {
 		return report, fmt.Errorf("failed to resolve active key store layout: %w", err)
 	}

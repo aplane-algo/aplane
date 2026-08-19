@@ -191,7 +191,7 @@ func ActiveTemplateTypes() []TemplateType {
 }
 
 func GetTemplateFilePathForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) (string, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return "", err
 	}
@@ -260,7 +260,7 @@ func TemplateContextForFile(path string) (crypto.ObjectContext, error) {
 }
 
 func TemplateExistsForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) bool {
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return false
 	}
@@ -294,7 +294,7 @@ func ScanTemplateDirectoryForPaths(paths storepaths.Paths, identityID string, te
 	if !ok {
 		return nil, fmt.Errorf("unsupported template_type %q", templateType)
 	}
-	records, err := keytypestate.List(paths, identityID)
+	records, err := keytypestate.List(paths)
 	if err != nil {
 		return nil, err
 	}

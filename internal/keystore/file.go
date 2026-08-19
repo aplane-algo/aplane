@@ -26,8 +26,7 @@ import (
 
 // FileKeyStore implements KeyStore using encrypted files on disk
 type FileKeyStore struct {
-	paths      storepaths.Paths
-	identityID string // Identity used for scanning (e.g., "default")
+	paths storepaths.Paths
 
 	// Cache of address -> KeyScanInfo (populated by Scan)
 	// Contains both file path and key type from single decrypt
@@ -51,11 +50,10 @@ type SigningSummary struct {
 }
 
 // NewFileKeyStoreForPaths creates a new file-based key store rooted at the provided keystore paths.
-func NewFileKeyStoreForPaths(paths storepaths.Paths, identityID string) *FileKeyStore {
+func NewFileKeyStoreForPaths(paths storepaths.Paths) *FileKeyStore {
 	return &FileKeyStore{
-		paths:      paths,
-		identityID: identityID,
-		cache:      make(map[string]keys.KeyScanInfo),
+		paths: paths,
+		cache: make(map[string]keys.KeyScanInfo),
 	}
 }
 
@@ -114,7 +112,7 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 	// binds the scan (and the absolute KeyFile paths it caches) to the
 	// generation CURRENT names right now, so every reload after a pointer
 	// flip rebuilds the cache against the new generation.
-	active, resolveErr := genstore.ResolveActive(f.paths, f.identityID)
+	active, resolveErr := genstore.ResolveActive(f.paths)
 	if resolveErr != nil {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("failed to resolve active key store layout: %w", resolveErr)

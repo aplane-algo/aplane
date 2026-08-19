@@ -215,12 +215,12 @@ func (s Service) Keys(ir *identity.Runtime) (*signerapi.KeysResponse, *signersig
 }
 
 func (s Service) BuildKeyTypesForIdentity(ir *identity.Runtime) ([]signerapi.KeyTypeInfo, error) {
-	validTypes, err := keymgmt.GetValidKeyTypesForIdentity(ir.KeyPaths(), ir.ID())
+	validTypes, err := keymgmt.GetValidKeyTypesForIdentity(ir.KeyPaths())
 	if err != nil {
 		return nil, err
 	}
 	validTypes = filterKeyTypesForNodeRole(validTypes, ir.NodeRole())
-	enabled, err := keytypestate.ListEnabled(ir.KeyPaths(), ir.ID())
+	enabled, err := keytypestate.ListEnabled(ir.KeyPaths())
 	if err != nil {
 		return nil, err
 	}

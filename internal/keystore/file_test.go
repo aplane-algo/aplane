@@ -41,9 +41,6 @@ type testKeyPair struct {
 	PrivateKeyHex string `json:"private_key"`
 }
 
-// testIdentityID is the identity used in tests
-const testIdentityID = "default"
-
 // setupTestKeysDir creates a temporary keys directory and explicit keystore paths.
 // Returns the identity-scoped keys directory, path helper, and a cleanup function.
 func setupTestKeysDir(t *testing.T) (string, utilkeys.Paths, func()) {
@@ -51,8 +48,8 @@ func setupTestKeysDir(t *testing.T) (string, utilkeys.Paths, func()) {
 
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, testIdentityID)
-	active, err := genstore.ResolveActive(paths, testIdentityID)
+	genstoretest.MintFirst(t, paths)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive: %v", err)
 	}
@@ -107,12 +104,12 @@ func TestFileKeyStore_NewFileKeyStore(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	switch {
 	case store == nil:
 		t.Fatal("NewFileKeyStoreForPaths returned nil")
-	case store.identityID != testIdentityID:
-		t.Errorf("identityID = %s, want %s", store.identityID, testIdentityID)
+	case store.paths.Root() != paths.Root():
+		t.Errorf("store root = %s, want %s", store.paths.Root(), paths.Root())
 	case store.cache == nil:
 		t.Error("cache should be initialized")
 	}
@@ -123,14 +120,13 @@ func TestFileKeyStore_NewFileKeyStore_DefaultPath(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	// Create with default identity - scanning resolves the identity-scoped
-	// active layout per operation.
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	// Scanning resolves the fixed product store's active layout per operation.
+	store := NewFileKeyStoreForPaths(paths)
 	if store == nil {
 		t.Fatal("NewFileKeyStoreForPaths returned nil")
 	}
-	if store.identityID != testIdentityID {
-		t.Errorf("identityID = %s, want %s", store.identityID, testIdentityID)
+	if store.paths.ProductDir() != paths.ProductDir() {
+		t.Errorf("product dir = %s, want %s", store.paths.ProductDir(), paths.ProductDir())
 	}
 }
 
@@ -139,7 +135,7 @@ func TestFileKeyStore_List_EmptyCache(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	ctx := context.Background()
 
 	keys, err := store.List(ctx)
@@ -157,7 +153,7 @@ func TestFileKeyStore_List_WithCache(t *testing.T) {
 	keysDir, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	ctx := context.Background()
 
 	// Create a test file
@@ -194,7 +190,7 @@ func TestFileKeyStore_Get_KeyNotFound(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	ctx := context.Background()
 
 	_, err := store.Get(ctx, "NONEXISTENT")
@@ -207,7 +203,7 @@ func TestFileKeyStore_GetDecryptFailureIsNotInvalidPassphrase(t *testing.T) {
 	keysDir, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	if err := store.setKeyringForTest(testMasterKey); err != nil {
 		t.Fatalf("setKeyringForTest(): %v", err)
 	}
@@ -258,7 +254,7 @@ func TestFileKeyStore_GetMetadata(t *testing.T) {
 	keysDir, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	ctx := context.Background()
 
 	// Add key to cache
@@ -289,7 +285,7 @@ func TestFileKeyStore_GetMetadata_NotFound(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	ctx := context.Background()
 
 	_, err := store.GetMetadata(ctx, "NONEXISTENT")
@@ -304,7 +300,7 @@ func TestFileKeyStore_Delete_Success(t *testing.T) {
 	keysDir, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	store.keyring = cryptotest.Keyring(t, testMasterKey)
 	ctx := context.Background()
 
@@ -334,7 +330,7 @@ func TestFileKeyStore_Delete_NotFound(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	store.keyring = cryptotest.Keyring(t, testMasterKey)
 	ctx := context.Background()
 
@@ -348,7 +344,7 @@ func TestFileKeyStoreDeleteKeepsCacheWhenRemoveFails(t *testing.T) {
 	keysDir, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	store.keyring = cryptotest.Keyring(t, testMasterKey)
 	ctx := context.Background()
 
@@ -374,8 +370,8 @@ func TestFileKeyStoreDeleteKeepsCacheWhenRemoveFails(t *testing.T) {
 // TestFileKeyStore_Type tests Type returns "file"
 func TestFileKeyStore_Type(t *testing.T) {
 	dummyPaths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, dummyPaths, "dummy-identity")
-	store := NewFileKeyStoreForPaths(dummyPaths, "dummy-identity")
+	genstoretest.MintFirst(t, dummyPaths)
+	store := NewFileKeyStoreForPaths(dummyPaths)
 	if store.Type() != "file" {
 		t.Errorf("Type = %s, want 'file'", store.Type())
 	}
@@ -386,7 +382,7 @@ func TestFileKeyStore_GetCache(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 
 	// Add some entries to cache
 	store.cache["addr1"] = keys.KeyScanInfo{KeyFile: "/path/to/key1", KeyType: "ed25519"}
@@ -416,7 +412,7 @@ func TestFileKeyStore_GetKeyTypes(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 
 	// Add some entries to cache
 	store.cache["addr1"] = keys.KeyScanInfo{KeyFile: "/path/to/key1", KeyType: "ed25519"}
@@ -442,7 +438,7 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	store.cache["addr1"] = keys.KeyScanInfo{
 		Category:               keys.CategoryDSALsig,
 		Parameters:             map[string]string{"sentry_public_key": "abc123"},
@@ -522,11 +518,11 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(keys.SentryCredentialFilePath(paths, testIdentityID, componentKey), encrypted, 0o600); err != nil {
+	if err := os.WriteFile(keys.SentryCredentialFilePath(paths, componentKey), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(component key) error = %v", err)
 	}
 
-	report, err := keys.ScanKeysDirectoryWithKeyringReport(paths, testIdentityID, cryptotest.Keyring(t, testMasterKey))
+	report, err := keys.ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
 	}
@@ -566,7 +562,7 @@ func TestFileKeyStoreScanRejectsPendingRotation(t *testing.T) {
 	}
 	kr.Zero()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	if err := store.Unlock(passphrase); err != nil {
 		t.Fatalf("Unlock() error = %v", err)
 	}
@@ -605,7 +601,7 @@ func TestFileKeyStoreDeleteRejectsLockedStoreWithCachedEntry(t *testing.T) {
 	keysDir, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	keyPath := createTestKeyFile(t, keysDir, "LOCKEDDELETE", nil)
 	store.cache["LOCKEDDELETE"] = keys.KeyScanInfo{
 		KeyFile: keyPath,
@@ -625,7 +621,7 @@ func TestFileKeyStore_CacheConcurrency(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store := NewFileKeyStoreForPaths(paths)
 	ctx := context.Background()
 
 	const numGoroutines = 50

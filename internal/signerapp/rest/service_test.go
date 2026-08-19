@@ -73,7 +73,7 @@ func writeTemplateStateForRestTest(t *testing.T, paths storepaths.Paths, identit
 	default:
 		t.Fatalf("unsupported template type in test: %q", templateType)
 	}
-	if err := keytypestate.Put(paths, identityID, keytypestate.Record{
+	if err := keytypestate.Put(paths, keytypestate.Record{
 		KeyType: keyType,
 		Source:  source,
 		State:   state,
@@ -142,9 +142,9 @@ func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Rol
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, keyPaths, "default")
-	genstoretest.MintFirst(t, keyPaths, "alice")
-	genstoretest.MintFirst(t, keyPaths, "bob")
+	genstoretest.MintFirst(t, keyPaths)
+	genstoretest.MintFirst(t, keyPaths)
+	genstoretest.MintFirst(t, keyPaths)
 	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
 	keysDir := keyPaths.LegacyKeysDir()
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
@@ -154,7 +154,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Rol
 		t.Fatalf("CreateKeyringStore(): %v", err)
 	}
 
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
+	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
 	if err := ks.Unlock(restTestPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
@@ -767,7 +767,7 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	if err := os.WriteFile(ir.KeyPaths().SentryRefPath("corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
 		t.Fatalf("WriteFile(corrupt sentry reference) error = %v", err)
 	}
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keytypes.GuardedFalcon1024Sentry1024V1,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
@@ -832,7 +832,7 @@ func TestServiceKeyTypesReadsV1SentryReferencesWithoutWriting(t *testing.T) {
 	if err := os.WriteFile(path, legacy, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keytypes.GuardedFalcon1024Sentry1024V1,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
@@ -899,7 +899,7 @@ func TestServiceKeyTypesUsesSentryReferenceForBoundedProvider(t *testing.T) {
 			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}})
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType, Source: keytypestate.SourceCompiled, State: keytypestate.StateEnabled,
 	}); err != nil {
 		t.Fatal(err)
@@ -928,7 +928,7 @@ func TestServiceKeyTypesUsesSentryReferenceForBoundedProvider(t *testing.T) {
 func TestServiceKeyTypesIncludesActivatedCompiledProvider(t *testing.T) {
 	ir := setupIdentityRuntime(t, false)
 	const keyType = "aplane.ed25519.v1"
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
@@ -957,7 +957,7 @@ func TestServiceKeyTypesIncludesEnabledYAMLComposedProvider(t *testing.T) {
 	keyType := "rest-composed-enabled-v1"
 	logicsigdsa.RegisterIfAbsent(restTestDSAProvider{keyType: keyType})
 
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType,
 		Source:  keytypestate.SourceYAMLComposed,
 		State:   keytypestate.StateEnabled,
@@ -976,7 +976,7 @@ func TestServiceKeyTypesIncludesEnabledYAMLComposedProvider(t *testing.T) {
 
 func TestServiceKeyTypesForIdentityReportsCorruptStateRecord(t *testing.T) {
 	ir := setupIdentityRuntime(t, false)
-	active, err := genstore.ResolveActive(ir.KeyPaths(), ir.ID())
+	active, err := genstore.ResolveActive(ir.KeyPaths())
 	if err != nil {
 		t.Fatalf("ResolveActive: %v", err)
 	}
@@ -1022,7 +1022,7 @@ teal: |
 	}
 	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths(), ir.ID()), yamlData, keyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), yamlData, keyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateActive() error = %v", err)
@@ -1062,7 +1062,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 			keyType: "aplane.ed25519.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *identity.Runtime {
 				t.Helper()
-				if err := keytypestate.Put(paths, auth.DefaultIdentityID, keytypestate.Record{
+				if err := keytypestate.Put(paths, keytypestate.Record{
 					KeyType: "aplane.ed25519.v1",
 					Source:  keytypestate.SourceCompiled,
 					State:   keytypestate.StateEnabled,
@@ -1081,7 +1081,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				keyType := "test.generic-rest-matrix-enabled.v1"
 				yamlData := restGenericMatrixTemplateYAML("generic-rest-matrix-enabled", "Generic Rest Matrix Enabled")
 				registerRestGenericTemplateYAML(t, yamlData)
-				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, auth.DefaultIdentityID), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
+				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
 					t.Fatalf("SaveTemplateActive() error = %v", err)
 				}
 				writeTemplateStateForRestTest(t, paths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
@@ -1097,7 +1097,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				keyType := "test.generic-rest-matrix-disabled.v1"
 				yamlData := restGenericMatrixTemplateYAML("generic-rest-matrix-disabled", "Generic Rest Matrix Disabled")
 				registerRestGenericTemplateYAML(t, yamlData)
-				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths, auth.DefaultIdentityID), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
+				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
 					t.Fatalf("SaveTemplateActive() error = %v", err)
 				}
 				writeTemplateStateForRestTest(t, paths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
@@ -1111,7 +1111,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				t.Helper()
 				keyType := "test.composed-rest-matrix-enabled.v1"
 				logicsigdsa.RegisterIfAbsent(restTestDSAProvider{keyType: keyType})
-				if err := keytypestate.Put(paths, auth.DefaultIdentityID, keytypestate.Record{
+				if err := keytypestate.Put(paths, keytypestate.Record{
 					KeyType: keyType,
 					Source:  keytypestate.SourceYAMLComposed,
 					State:   keytypestate.StateEnabled,
@@ -1129,7 +1129,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				t.Helper()
 				keyType := "test.composed-rest-matrix-disabled.v1"
 				logicsigdsa.RegisterIfAbsent(restTestDSAProvider{keyType: keyType})
-				if err := keytypestate.Put(paths, auth.DefaultIdentityID, keytypestate.Record{
+				if err := keytypestate.Put(paths, keytypestate.Record{
 					KeyType: keyType,
 					Source:  keytypestate.SourceYAMLComposed,
 					State:   keytypestate.StateDisabled,
@@ -1144,7 +1144,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			genstoretest.MintFirst(t, paths, "default")
+			genstoretest.MintFirst(t, paths)
 			ir := tt.setup(t, paths)
 
 			resp, svcErr := Service{}.KeyTypesForIdentity(ir)
@@ -1363,7 +1363,7 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 	}
 	registerRestGenericTemplate(t)
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths(), ir.ID()), restGenericTemplateYAML(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), restGenericTemplateYAML(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateActive(rest generic template) error = %v", err)

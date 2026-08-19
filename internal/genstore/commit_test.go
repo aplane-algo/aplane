@@ -16,7 +16,7 @@ import (
 
 func mintFirst(t *testing.T, paths storepaths.Paths, files map[string]string) storepaths.GenPaths {
 	t.Helper()
-	gen, err := Mint(paths, testIdentity, MintRequest{
+	gen, err := Mint(paths, MintRequest{
 		GenerationID:    testGenA,
 		FirstGeneration: true,
 		Operation:       "test-init",
@@ -41,7 +41,7 @@ func TestMintFirstGenerationCommits(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	gen := mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
 
-	resolved, err := Resolve(paths, testIdentity)
+	resolved, err := Resolve(paths)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -69,7 +69,7 @@ func TestMintSecondGenerationSealsParentAndCopiesIndependently(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	first := mintFirst(t, paths, map[string]string{"keys/A.key": "original"})
 
-	second, err := Mint(paths, testIdentity, MintRequest{
+	second, err := Mint(paths, MintRequest{
 		GenerationID: testGenB,
 		Parent:       first.GenerationID(),
 		Integrity:    testKeyring(t),
@@ -112,7 +112,7 @@ func TestMintApplyFailureLeavesOldGenerationAuthoritative(t *testing.T) {
 	first := mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
 
 	injected := errors.New("apply failed")
-	_, err := Mint(paths, testIdentity, MintRequest{
+	_, err := Mint(paths, MintRequest{
 		GenerationID: testGenB,
 		Parent:       first.GenerationID(),
 		Integrity:    testKeyring(t),
@@ -124,7 +124,7 @@ func TestMintApplyFailureLeavesOldGenerationAuthoritative(t *testing.T) {
 	if !errors.Is(err, injected) {
 		t.Fatalf("Mint error = %v, want injected apply failure", err)
 	}
-	resolved, resolveErr := Resolve(paths, testIdentity)
+	resolved, resolveErr := Resolve(paths)
 	if resolveErr != nil || resolved.GenerationID() != first.GenerationID() {
 		t.Fatalf("CURRENT after failed mint = %s (%v), want untouched %s", resolved.GenerationID(), resolveErr, first.GenerationID())
 	}
@@ -163,7 +163,7 @@ func TestMintCrashMatrix(t *testing.T) {
 				}
 				return nil
 			}
-			_, err := Mint(paths, testIdentity, MintRequest{
+			_, err := Mint(paths, MintRequest{
 				GenerationID: testGenB,
 				Parent:       first.GenerationID(),
 				Integrity:    testKeyring(t),
@@ -180,7 +180,7 @@ func TestMintCrashMatrix(t *testing.T) {
 			}
 
 			// The old generation must still be selected and valid.
-			resolved, resolveErr := Resolve(paths, testIdentity)
+			resolved, resolveErr := Resolve(paths)
 			if resolveErr != nil {
 				t.Fatalf("Resolve after crash: %v", resolveErr)
 			}
@@ -207,7 +207,7 @@ func TestMintCrashMatrix(t *testing.T) {
 func TestRollbackToRequiresSealAndSealsOutgoing(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	first := mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
-	_, err := Mint(paths, testIdentity, MintRequest{
+	_, err := Mint(paths, MintRequest{
 		GenerationID: testGenB,
 		Parent:       first.GenerationID(),
 		Integrity:    testKeyring(t),
@@ -219,10 +219,10 @@ func TestRollbackToRequiresSealAndSealsOutgoing(t *testing.T) {
 		t.Fatalf("Mint(second) error = %v", err)
 	}
 
-	if err := RollbackTo(paths, testIdentity, first.GenerationID(), time.Unix(1_753_500_200, 0), testKeyring(t)); err != nil {
+	if err := RollbackTo(paths, first.GenerationID(), time.Unix(1_753_500_200, 0), testKeyring(t)); err != nil {
 		t.Fatalf("RollbackTo() error = %v", err)
 	}
-	resolved, err := Resolve(paths, testIdentity)
+	resolved, err := Resolve(paths)
 	if err != nil || resolved.GenerationID() != first.GenerationID() {
 		t.Fatalf("CURRENT after rollback = %s (%v), want %s", resolved.GenerationID(), err, first.GenerationID())
 	}
@@ -237,7 +237,7 @@ func TestRollbackToRequiresSealAndSealsOutgoing(t *testing.T) {
 	if err := os.Remove(second.SealPath()); err != nil {
 		t.Fatalf("remove seal: %v", err)
 	}
-	if err := RollbackTo(paths, testIdentity, testGenB, time.Unix(1_753_500_300, 0), testKeyring(t)); err == nil {
+	if err := RollbackTo(paths, testGenB, time.Unix(1_753_500_300, 0), testKeyring(t)); err == nil {
 		t.Fatal("RollbackTo accepted an unsealed target")
 	}
 }
@@ -258,7 +258,7 @@ func TestMintPointerFlipDirSyncFailureIsCommittedButUnverified(t *testing.T) {
 		}
 		return nil
 	}
-	_, err := Mint(paths, testIdentity, MintRequest{
+	_, err := Mint(paths, MintRequest{
 		GenerationID: testGenB,
 		Parent:       first.GenerationID(),
 		Integrity:    testKeyring(t),
@@ -273,7 +273,7 @@ func TestMintPointerFlipDirSyncFailureIsCommittedButUnverified(t *testing.T) {
 
 	// The flip is visible: CURRENT names the new generation and it
 	// validates; the parent is sealed.
-	resolved, resolveErr := Resolve(paths, testIdentity)
+	resolved, resolveErr := Resolve(paths)
 	if resolveErr != nil || resolved.GenerationID() != testGenB {
 		t.Fatalf("CURRENT after unverified commit = %s (%v), want %s", resolved.GenerationID(), resolveErr, testGenB)
 	}
@@ -304,10 +304,10 @@ func TestWriteCurrentRetriesDirSyncOnce(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	if err := WriteCurrent(paths, testIdentity, testGenC); err != nil {
+	if err := WriteCurrent(paths, testGenC); err != nil {
 		t.Fatalf("WriteCurrent() error = %v, want retried success", err)
 	}
-	current, err := ReadCurrent(paths, testIdentity)
+	current, err := ReadCurrent(paths)
 	if err != nil || current != testGenC {
 		t.Fatalf("CURRENT = %s (%v), want %s", current, err, testGenC)
 	}

@@ -88,7 +88,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	}
 
 	// Initialize FileKeyStore and derive master key
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
+	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
 	err = ks.Unlock(testPassphrase)
 	if err != nil {
 		t.Fatalf("Failed to initialize master key: %v", err)

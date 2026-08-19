@@ -81,7 +81,7 @@ type MintRequest struct {
 // Commit order (docs/ARCH_GENERATIONS.md §2):
 // stage → copy parent → apply → validate → manifest → fsync all →
 // publish rename → fsync generations/ → seal outgoing → flip CURRENT.
-func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepaths.GenPaths, error) {
+func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) {
 	if err := storepaths.ValidateGenerationID(req.GenerationID); err != nil {
 		return storepaths.GenPaths{}, err
 	}
@@ -128,14 +128,14 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 		if req.Parent != "" {
 			return storepaths.GenPaths{}, fmt.Errorf("mint parent %s: store has no current generation; the first mint must be parentless", req.Parent)
 		}
-		if err := verifyFirstMintPreconditions(paths, identityID); err != nil {
+		if err := verifyFirstMintPreconditions(paths); err != nil {
 			return storepaths.GenPaths{}, err
 		}
 	} else {
 		if req.FirstGeneration {
 			return storepaths.GenPaths{}, fmt.Errorf("mint: store already has a current generation; a first mint is not applicable")
 		}
-		current, err := ReadCurrent(paths, identityID)
+		current, err := ReadCurrent(paths)
 		if err != nil {
 			return storepaths.GenPaths{}, fmt.Errorf("mint: %w", err)
 		}
@@ -170,7 +170,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 	}
 
 	// GenPaths bound to the staging directory: same shape, unpublished root.
-	staged := stagedGenPaths(paths, identityID, req.GenerationID, stagingDir)
+	staged := stagedGenPaths(paths, req.GenerationID, stagingDir)
 
 	// Independent copies of the parent's live content — never hardlinks: a
 	// later in-place write must be unable to reach an inode a prior
@@ -240,7 +240,7 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 		}
 	}
 
-	if err := WriteCurrent(paths, identityID, req.GenerationID); err != nil {
+	if err := WriteCurrent(paths, req.GenerationID); err != nil {
 		return storepaths.GenPaths{}, err
 	}
 	return paths.GenerationPaths(req.GenerationID), nil
@@ -249,8 +249,8 @@ func Mint(paths storepaths.Paths, identityID string, req MintRequest) (storepath
 // RollbackTo repoints CURRENT at a previous sealed generation after
 // validating it, sealing the outgoing generation first: a rollback is a
 // pointer flip like any other. The caller holds the identity mutation lock.
-func RollbackTo(paths storepaths.Paths, identityID, targetID string, now time.Time, kr *crypto.Keyring) error {
-	current, err := ReadCurrent(paths, identityID)
+func RollbackTo(paths storepaths.Paths, targetID string, now time.Time, kr *crypto.Keyring) error {
+	current, err := ReadCurrent(paths)
 	if err != nil {
 		return err
 	}
@@ -268,7 +268,7 @@ func RollbackTo(paths storepaths.Paths, identityID, targetID string, now time.Ti
 	if err := WriteSeal(paths.GenerationPaths(current), now.Unix(), kr); err != nil {
 		return fmt.Errorf("seal outgoing generation: %w", err)
 	}
-	return WriteCurrent(paths, identityID, targetID)
+	return WriteCurrent(paths, targetID)
 }
 
 // verifyFirstMintPreconditions rejects an authorized first mint on any store
@@ -277,7 +277,7 @@ func RollbackTo(paths storepaths.Paths, identityID, targetID string, now time.Ti
 // hold no generation at all. The only tolerated residue is staging
 // directories from a crashed earlier mint — atomic-rename leftovers that
 // reconciliation treats as unconditional garbage.
-func verifyFirstMintPreconditions(paths storepaths.Paths, identityID string) error {
+func verifyFirstMintPreconditions(paths storepaths.Paths) error {
 	entries, err := os.ReadDir(paths.GenerationsDir())
 	if os.IsNotExist(err) {
 		return nil
@@ -297,7 +297,7 @@ func verifyFirstMintPreconditions(paths storepaths.Paths, identityID string) err
 // stagedGenPaths builds a GenPaths whose root is the staging directory. It
 // reuses the public constructor's shape by construction: staging and final
 // directories have identical internal layout.
-func stagedGenPaths(paths storepaths.Paths, identityID, generationID, stagingDir string) storepaths.GenPaths {
+func stagedGenPaths(paths storepaths.Paths, generationID, stagingDir string) storepaths.GenPaths {
 	return storepaths.StagedGenerationPaths(generationID, stagingDir)
 }
 

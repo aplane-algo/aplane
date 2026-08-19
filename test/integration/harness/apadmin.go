@@ -476,7 +476,7 @@ func (v *ApAdminHarness) Cleanup() {
 // removeKeyFile removes a managed credential directly from the keystore directory.
 // Returns true if the file was found and removed.
 func (v *ApAdminHarness) removeKeyFile(addr string) bool {
-	active, err := genstore.ResolveActive(storepaths.NewPaths(v.dataDir), "default")
+	active, err := genstore.ResolveActive(storepaths.NewPaths(v.dataDir))
 	if err != nil {
 		return false
 	}

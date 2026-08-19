@@ -41,8 +41,8 @@ type ReconcileReport struct {
 // DiscardedStaging and DiscardedAttempts reporting what reconciliation
 // WOULD remove. Read-only callers (apadmin generations list) use this;
 // everything else goes through Reconcile.
-func Inspect(paths storepaths.Paths, identityID string, referenced map[string]bool) (ReconcileReport, error) {
-	return reconcile(paths, identityID, referenced, false)
+func Inspect(paths storepaths.Paths, referenced map[string]bool) (ReconcileReport, error) {
+	return reconcile(paths, referenced, false)
 }
 
 // Reconcile enforces CURRENT as the sole commit record. Run at
@@ -60,13 +60,13 @@ func Inspect(paths storepaths.Paths, identityID string, referenced map[string]bo
 // recovery metadata still points at; those survive regardless of seal
 // state. Eligibility is reachability-based, not parentage-based: a stale
 // attempt whose parent has since been superseded is still collected.
-func Reconcile(paths storepaths.Paths, identityID string, referenced map[string]bool) (ReconcileReport, error) {
-	return reconcile(paths, identityID, referenced, true)
+func Reconcile(paths storepaths.Paths, referenced map[string]bool) (ReconcileReport, error) {
+	return reconcile(paths, referenced, true)
 }
 
-func reconcile(paths storepaths.Paths, identityID string, referenced map[string]bool, remove bool) (ReconcileReport, error) {
+func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) (ReconcileReport, error) {
 	report := ReconcileReport{}
-	current, err := ReadCurrent(paths, identityID)
+	current, err := ReadCurrent(paths)
 	if err != nil {
 		return report, fmt.Errorf("reconcile: %w", err)
 	}
@@ -210,8 +210,8 @@ func reconcile(paths storepaths.Paths, identityID string, referenced map[string]
 // migration; the caller holds the mutation locks. Reconcile runs first
 // (staging and unsealed attempts are discarded, an invalid CURRENT aborts
 // with nothing deleted).
-func CollectGarbage(paths storepaths.Paths, identityID string, referenced map[string]bool, retainRollbackParent bool, kr *crypto.Keyring) ([]string, error) {
-	report, err := Reconcile(paths, identityID, referenced)
+func CollectGarbage(paths storepaths.Paths, referenced map[string]bool, retainRollbackParent bool, kr *crypto.Keyring) ([]string, error) {
+	report, err := Reconcile(paths, referenced)
 	if err != nil {
 		return nil, err
 	}

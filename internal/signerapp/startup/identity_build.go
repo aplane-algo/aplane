@@ -118,7 +118,7 @@ func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, i
 
 	ir := identity.New(identity.Config{
 		ID:               identityID,
-		KeyStore:         keystore.NewFileKeyStoreForPaths(opts.KeyPaths, identityID),
+		KeyStore:         keystore.NewFileKeyStoreForPaths(opts.KeyPaths),
 		KeyPaths:         opts.KeyPaths,
 		Authenticator:    auth.NewTokenAuthenticator(token),
 		SessionTimeout:   sessionTimeout,

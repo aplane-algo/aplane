@@ -94,7 +94,7 @@ func TestRestoreKeyWritesCredentialOnlyAndRequiresOverwrite(t *testing.T) {
 	if _, err := restorer.RestoreKey(keysDir, address, kr, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	active, err := genstore.ResolveActive(paths, "default")
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestCredentialEntryZeroSecrets(t *testing.T) {
 func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	active, err := genstore.ResolveActive(paths, "default")
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 func TestClassifyRestoreSetReportsReadableDifferentCredential(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	active, err := genstore.ResolveActive(paths, "default")
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatal(err)
 	}

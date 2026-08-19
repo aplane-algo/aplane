@@ -93,7 +93,7 @@ func (r Restorer) activeNamespace() (storepaths.ActivePaths, error) {
 	if r.ActiveOverride != nil {
 		return r.ActiveOverride, nil
 	}
-	return genstore.ResolveActive(r.Paths, r.IdentityID)
+	return genstore.ResolveActive(r.Paths)
 }
 
 // ResolveBackupKeysDir returns the credential directory in an extracted
@@ -243,7 +243,7 @@ func PreviewRestoreWithNodeRole(
 	if err != nil {
 		return nil, authenticatedArchiveError(err)
 	}
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return nil, authenticatedArchiveError(err)
 	}

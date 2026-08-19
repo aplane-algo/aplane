@@ -114,7 +114,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		if err != nil {
 			return result, err
 		}
-		if _, err := genstore.Mint(opts.Paths, opts.IdentityID, genstore.MintRequest{
+		if _, err := genstore.Mint(opts.Paths, genstore.MintRequest{
 			GenerationID:    generationID,
 			FirstGeneration: true,
 			Operation:       "store-initialize",

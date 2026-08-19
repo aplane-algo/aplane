@@ -46,7 +46,7 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	}
 	// New stores are generational: active namespaces live in the first
 	// generation behind CURRENT, and the metadata carries the layout gate.
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
@@ -56,7 +56,7 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if _, err := os.Stat(paths.LegacyKeysDir()); !os.IsNotExist(err) {
 		t.Fatalf("legacy keys dir exists on a new store: err = %v", err)
 	}
-	gen, err := genstore.Resolve(paths, identityID)
+	gen, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -129,7 +129,7 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 	if _, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, identityID, kr); err != nil {
 		t.Fatalf("sentry policy integrity baseline did not verify: %v", err)
 	}
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}

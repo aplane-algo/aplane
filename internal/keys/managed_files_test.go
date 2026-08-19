@@ -65,12 +65,12 @@ func TestCanonicalManagedCredentialFilename(t *testing.T) {
 	}
 
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
-	path, err := CanonicalManagedCredentialPath(paths, "default", witnessID, CategoryWitness)
+	genstoretest.MintFirst(t, paths)
+	path, err := CanonicalManagedCredentialPath(paths, witnessID, CategoryWitness)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(activeKeysDirForTest(t, paths, "default"), witnessName); path != want {
+	if want := filepath.Join(activeKeysDirForTest(t, paths), witnessName); path != want {
 		t.Fatalf("path = %q, want %q", path, want)
 	}
 
@@ -147,17 +147,16 @@ func TestScanManagedCredentialFiles(t *testing.T) {
 
 func TestManagedCredentialDestinationRejectsContradictoryClass(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
-	identityID := "default"
+	genstoretest.MintFirst(t, paths)
 	account := types.Address{4}.String()
-	if err := os.MkdirAll(activeKeysDirForTest(t, paths, identityID), 0o700); err != nil {
+	if err := os.MkdirAll(activeKeysDirForTest(t, paths), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	contradictory := filepath.Join(activeKeysDirForTest(t, paths, identityID), account+SentryCredentialExtension)
+	contradictory := filepath.Join(activeKeysDirForTest(t, paths), account+SentryCredentialExtension)
 	if err := os.WriteFile(contradictory, []byte("corrupt"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := ManagedCredentialDestination(paths, identityID, account, CategoryEd25519); !errors.Is(err, ErrManagedCredentialClassConflict) {
+	if _, _, err := ManagedCredentialDestination(paths, account, CategoryEd25519); !errors.Is(err, ErrManagedCredentialClassConflict) {
 		t.Fatalf("ManagedCredentialDestination() error = %v, want class conflict", err)
 	}
 }

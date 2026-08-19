@@ -14,8 +14,8 @@ import (
 
 // SavePayload validates and saves a canonical payload under the selector
 // derived from its authoritative key material.
-func SavePayload(paths storepaths.Paths, identityID string, payload *Payload, kr *crypto.Keyring) (*ImportKeyResult, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
+func SavePayload(paths storepaths.Paths, payload *Payload, kr *crypto.Keyring) (*ImportKeyResult, error) {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return nil, err
 	}

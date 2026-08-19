@@ -66,7 +66,7 @@ func setupServiceWithReload(
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, keyPaths, "default")
+	genstoretest.MintFirst(t, keyPaths)
 	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
 	if err := os.MkdirAll(keyPaths.LegacyKeysDir(), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
@@ -74,7 +74,7 @@ func setupServiceWithReload(
 	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {
 		t.Fatalf("CreateKeystoreMetadata: %v", err)
 	}
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
+	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
 	if err := ks.Unlock(testPassphrase); err != nil {
 		t.Fatalf("InitializeMasterKey: %v", err)
 	}
@@ -107,7 +107,7 @@ func putInstalledTemplateForServiceTest(t *testing.T, ir *identity.Runtime, keyT
 	t.Helper()
 	err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		if _, err := templatestore.SaveTemplateActive(
-			genstoretest.Active(t, ir.KeyPaths(), ir.ID()),
+			genstoretest.Active(t, ir.KeyPaths()),
 			[]byte("schema_version: 1\ntemplate_type: generic\n"),
 			keyType,
 			templatestore.TemplateTypeGeneric,
@@ -115,7 +115,7 @@ func putInstalledTemplateForServiceTest(t *testing.T, ir *identity.Runtime, keyT
 		); err != nil {
 			return err
 		}
-		return keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+		return keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 			KeyType: keyType,
 			Source:  keytypestate.SourceYAMLGeneric,
 			State:   state,
@@ -165,7 +165,7 @@ func TestActivateKeyTypeDoesNotInferPublisher(t *testing.T) {
 	if result.KeyType != "ed25519.v1" {
 		t.Fatalf("KeyType = %q, want ed25519.v1", result.KeyType)
 	}
-	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.ed25519.v1"); err != nil {
+	if _, ok, err := keytypestate.Get(ir.KeyPaths(), "aplane.ed25519.v1"); err != nil {
 		t.Fatalf("Get after Activate: %v", err)
 	} else if ok {
 		t.Fatal("canonical state record was created for unqualified key type")
@@ -195,7 +195,7 @@ func TestDeactivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 		t.Fatalf("reloadCount = %d, want >= 1 (admin handler missed ir.Reload after state-record delete)", got)
 	}
 
-	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.ed25519.v1"); err != nil {
+	if _, ok, err := keytypestate.Get(ir.KeyPaths(), "aplane.ed25519.v1"); err != nil {
 		t.Fatalf("Get after Deactivate: %v", err)
 	} else if ok {
 		t.Fatal("state record still present after Deactivate; record should have been removed")
@@ -220,7 +220,7 @@ func TestDeactivateKeyTypeDoesNotInferPublisher(t *testing.T) {
 	if result.Removed {
 		t.Fatal("DeactivateKeyType(unqualified).Removed = true, want false")
 	}
-	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.ed25519.v1"); err != nil {
+	if _, ok, err := keytypestate.Get(ir.KeyPaths(), "aplane.ed25519.v1"); err != nil {
 		t.Fatalf("Get after Deactivate: %v", err)
 	} else if !ok {
 		t.Fatal("canonical state record was removed by unqualified deactivation")
@@ -237,7 +237,7 @@ func TestActivateCompiledProviderReloadFailureLeavesStateRecord(t *testing.T) {
 	if result.Success || result.Code != protocol.ResultCodeReloadFailed {
 		t.Fatalf("ActivateKeyType() = %+v, want reload_failed", result)
 	}
-	rec, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.ed25519.v1")
+	rec, ok, err := keytypestate.Get(ir.KeyPaths(), "aplane.ed25519.v1")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
@@ -253,7 +253,7 @@ func TestDeactivateCompiledProviderReloadFailureLeavesStateRemoved(t *testing.T)
 		return nil, reloadErr
 	})
 	keyType := "aplane.ed25519.v1"
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
@@ -265,7 +265,7 @@ func TestDeactivateCompiledProviderReloadFailureLeavesStateRemoved(t *testing.T)
 	if result.Success || result.Code != protocol.ResultCodeReloadFailed || !result.Removed {
 		t.Fatalf("DeactivateKeyType() = %+v, want reload_failed with removed=true", result)
 	}
-	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), keyType); err != nil {
+	if _, ok, err := keytypestate.Get(ir.KeyPaths(), keyType); err != nil {
 		t.Fatalf("Get() error = %v", err)
 	} else if ok {
 		t.Fatal("compiled state record restored after reload failure, want removal retained")
@@ -305,7 +305,7 @@ func TestActivateInstalledTemplateFailureRestoresDisabledState(t *testing.T) {
 			if result.Success || result.Code != tt.wantCode {
 				t.Fatalf("ActivateKeyType() = %+v, want code %q", result, tt.wantCode)
 			}
-			rec, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), keyType)
+			rec, ok, err := keytypestate.Get(ir.KeyPaths(), keyType)
 			if err != nil {
 				t.Fatalf("Get() error = %v", err)
 			}
@@ -328,7 +328,7 @@ func TestDeactivateInstalledTemplateReloadFailureLeavesDisabledState(t *testing.
 	if result.Success || result.Code != protocol.ResultCodeReloadFailed || !result.Removed {
 		t.Fatalf("DeactivateKeyType() = %+v, want reload_failed with removed=true", result)
 	}
-	rec, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), keyType)
+	rec, ok, err := keytypestate.Get(ir.KeyPaths(), keyType)
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
@@ -349,7 +349,7 @@ func TestRemoveInstalledTemplateReloadFailureLeavesArchivedState(t *testing.T) {
 	if result.Success || result.Code != protocol.ResultCodeReloadFailed || !result.Removed {
 		t.Fatalf("RemoveInstalledTemplate() = %+v, want reload_failed with removed=true", result)
 	}
-	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), keyType); err != nil {
+	if _, ok, err := keytypestate.Get(ir.KeyPaths(), keyType); err != nil {
 		t.Fatalf("Get() error = %v", err)
 	} else if ok {
 		t.Fatal("template state restored after reload failure, want removal retained")

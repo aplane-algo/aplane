@@ -97,7 +97,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *iden
 		keyPaths: keyPaths,
 		theme:    cfg.Theme,
 	}
-	keyStore := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
+	keyStore := keystore.NewFileKeyStoreForPaths(keyPaths)
 	ir := identity.New(identity.Config{
 		ID:            auth.DefaultIdentityID,
 		KeyStore:      keyStore,

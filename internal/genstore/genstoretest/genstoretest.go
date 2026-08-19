@@ -14,16 +14,16 @@ import (
 
 // MintFirst mints an identity's first (empty) generation the way initialize
 // does, so tests operate on the only supported store layout. Idempotent.
-func MintFirst(t testing.TB, paths storepaths.Paths, identityID string) {
+func MintFirst(t testing.TB, paths storepaths.Paths) {
 	t.Helper()
-	if _, err := genstore.ReadCurrent(paths, identityID); err == nil {
+	if _, err := genstore.ReadCurrent(paths); err == nil {
 		return
 	}
 	generationID, err := genstore.NewGenerationID(time.Unix(1_785_200_000, 0))
 	if err != nil {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
-	if _, err := genstore.Mint(paths, identityID, genstore.MintRequest{
+	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:    generationID,
 		FirstGeneration: true,
 		Operation:       "store-initialize",
@@ -36,11 +36,11 @@ func MintFirst(t testing.TB, paths storepaths.Paths, identityID string) {
 
 // Active resolves an identity's current generation for tests that exercise an
 // API whose caller already owns active-path resolution.
-func Active(t testing.TB, paths storepaths.Paths, identityID string) storepaths.ActivePaths {
+func Active(t testing.TB, paths storepaths.Paths) storepaths.ActivePaths {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
-		t.Fatalf("ResolveActive(%q): %v", identityID, err)
+		t.Fatalf("ResolveActive: %v", err)
 	}
 	return active
 }

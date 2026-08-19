@@ -34,7 +34,7 @@ func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T)
 	}
 	ir := identity.New(identity.Config{
 		ID:            auth.DefaultIdentityID,
-		KeyStore:      keystore.NewFileKeyStoreForPaths(paths, auth.DefaultIdentityID),
+		KeyStore:      keystore.NewFileKeyStoreForPaths(paths),
 		KeyPaths:      paths,
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})

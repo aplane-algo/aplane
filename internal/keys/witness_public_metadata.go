@@ -22,8 +22,8 @@ const WitnessPublicMetadataSuffix = ".wit.json"
 
 // WitnessPublicMetadataPath returns the public-only metadata sidecar path for
 // a signer-custodied witness key.
-func WitnessPublicMetadataPath(paths storepaths.Paths, identityID, witnessKeyID string) string {
-	return WitnessPublicMetadataPathActive(mustResolveActive(paths, identityID), witnessKeyID)
+func WitnessPublicMetadataPath(paths storepaths.Paths, witnessKeyID string) string {
+	return WitnessPublicMetadataPathActive(mustResolveActive(paths), witnessKeyID)
 }
 
 // WitnessPublicMetadataPathActive is WitnessPublicMetadataPath against
@@ -34,8 +34,8 @@ func WitnessPublicMetadataPathActive(active storepaths.ActivePaths, witnessKeyID
 
 // ReadWitnessPublicMetadata reads and validates a witness public metadata
 // sidecar. The boolean is false when the sidecar is absent.
-func ReadWitnessPublicMetadata(paths storepaths.Paths, identityID, witnessKeyID string) (sentryrefs.ExportEnvelope, bool, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
+func ReadWitnessPublicMetadata(paths storepaths.Paths, witnessKeyID string) (sentryrefs.ExportEnvelope, bool, error) {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return sentryrefs.ExportEnvelope{}, false, err
 	}
