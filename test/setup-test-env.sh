@@ -102,6 +102,7 @@ LOCALNET_WALLET_PASSWORD="${APLANE_LOCALNET_WALLET_PASSWORD:-}"
 FNET_INDEXER_URL=""
 INTEGRATION_GENESIS_ID=""
 INTEGRATION_GENESIS_HASH=""
+FUNDING_ADDRESS=""
 
 if [ "$INTEGRATION_NETWORK" = "localnet" ]; then
     ALGOD_URL="${ALGOD_URL:-${APLANE_LOCALNET_ALGOD_URL:-http://localhost:4001}}"
@@ -118,8 +119,8 @@ if [ "$INTEGRATION_NETWORK" = "localnet" ]; then
         key="${line%%=*}"
         value="${line#*=}"
         case "$key" in
-            TEST_FUNDING_ACCOUNT)
-                TEST_FUNDING_ACCOUNT="$value"
+            FUNDING_ADDRESS)
+                FUNDING_ADDRESS="$value"
                 ;;
             TEST_FUNDING_MNEMONIC)
                 TEST_FUNDING_MNEMONIC="$value"
@@ -133,11 +134,11 @@ if [ "$INTEGRATION_NETWORK" = "localnet" ]; then
         esac
     done <<< "$LOCALNET_FUNDING_OUTPUT"
 
-    if [ -z "${TEST_FUNDING_MNEMONIC:-}" ] || [ -z "${TEST_FUNDING_ACCOUNT:-}" ] || [ -z "$LOCALNET_GENESIS_HASH" ]; then
+    if [ -z "${TEST_FUNDING_MNEMONIC:-}" ] || [ -z "$FUNDING_ADDRESS" ] || [ -z "$LOCALNET_GENESIS_HASH" ]; then
         echo "ERROR: failed to discover complete LocalNet funding/genesis metadata" >&2
         exit 1
     fi
-    echo "  Selected LocalNet funding account $TEST_FUNDING_ACCOUNT"
+    echo "  Selected LocalNet funding account $FUNDING_ADDRESS"
     echo "  LocalNet genesis: ${LOCALNET_GENESIS_ID:-unknown}"
     INTEGRATION_GENESIS_ID="$LOCALNET_GENESIS_ID"
     INTEGRATION_GENESIS_HASH="$LOCALNET_GENESIS_HASH"
@@ -148,15 +149,15 @@ elif [ "$INTEGRATION_NETWORK" = "fnet" ]; then
     INTEGRATION_GENESIS_ID="fnet-v1"
     INTEGRATION_GENESIS_HASH="kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA="
 
-    TEST_FUNDING_ACCOUNT="$(TEST_FUNDING_MNEMONIC="$TEST_FUNDING_MNEMONIC" go run "$PROJECT_ROOT/test/integration/cmd/native-funding-address")"
-    echo "  Using native Falcon FNet funding account $TEST_FUNDING_ACCOUNT"
+    FUNDING_ADDRESS="$(TEST_FUNDING_MNEMONIC="$TEST_FUNDING_MNEMONIC" go run "$PROJECT_ROOT/test/integration/cmd/native-funding-address")"
+    echo "  Using native Falcon FNet funding account $FUNDING_ADDRESS"
 else
     ALGOD_URL="${ALGOD_URL:-https://testnet-api.4160.nodely.dev}"
     ALGOD_TOKEN="${ALGOD_TOKEN:-}"
     INTEGRATION_GENESIS_ID="testnet-v1.0"
     INTEGRATION_GENESIS_HASH="SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI="
-    TEST_FUNDING_ACCOUNT="$(TEST_FUNDING_MNEMONIC="$TEST_FUNDING_MNEMONIC" go run "$PROJECT_ROOT/test/integration/cmd/native-funding-address")"
-    echo "  Using native Falcon TestNet funding account $TEST_FUNDING_ACCOUNT"
+    FUNDING_ADDRESS="$(TEST_FUNDING_MNEMONIC="$TEST_FUNDING_MNEMONIC" go run "$PROJECT_ROOT/test/integration/cmd/native-funding-address")"
+    echo "  Using native Falcon TestNet funding account $FUNDING_ADDRESS"
 fi
 
 ENV_LOCALNET_ALGOD_URL=""
@@ -336,7 +337,6 @@ cat > "$PROJECT_ROOT/.env.test" << EOF
 APLANE_INTEGRATION_NETWORK="$INTEGRATION_NETWORK"
 APLANE_INTEGRATION_GENESIS_ID="$INTEGRATION_GENESIS_ID"
 APLANE_INTEGRATION_GENESIS_HASH="$INTEGRATION_GENESIS_HASH"
-TEST_FUNDING_ACCOUNT="${TEST_FUNDING_ACCOUNT:-}"
 TEST_FUNDING_MNEMONIC="$TEST_FUNDING_MNEMONIC"
 TEST_PASSPHRASE="$TEST_PASSPHRASE"
 APSIGNER_DATA="$SIGNER_DATA"

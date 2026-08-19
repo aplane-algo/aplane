@@ -288,7 +288,8 @@ make integration-test
 LocalNet mode requires an already running v42-capable AlgoKit LocalNet with
 algod and KMD reachable. It does not require a user-provided funding mnemonic;
 setup creates a disposable native Falcon account, funds it from KMD, and
-exports it as `TEST_FUNDING_MNEMONIC` and `TEST_FUNDING_ACCOUNT`:
+exports it as `TEST_FUNDING_MNEMONIC`. Tests derive the funding address from
+that mnemonic:
 
 ```bash
 APLANE_INTEGRATION_NETWORK=localnet make integration-test
@@ -380,7 +381,6 @@ All per-test temp directories (binary builds, apshell work dirs) use Go's `t.Tem
 |----------|-------------|----------|
 | `APLANE_INTEGRATION_NETWORK` | Integration profile: `testnet`, `localnet`, or `fnet` | Always, before setup |
 | `TEST_FUNDING_MNEMONIC` | 25-word native Falcon-1024 funding mnemonic. Provided by the operator on TestNet/FNet; generated and funded from KMD on LocalNet. | TestNet/FNet input; LocalNet auto |
-| `TEST_FUNDING_ACCOUNT` | Native Falcon funding address derived by setup. | Optional before setup |
 | `ALGOD_URL` | Algod endpoint. Defaults by profile. | Optional |
 | `ALGOD_TOKEN` | Algod token. Defaults empty for testnet and the AlgoKit token for localnet. | Optional |
 | `APLANE_FNET_ALGOD_URL` | FNet algod override; defaults to the Nodely FNet endpoint. | Optional |
@@ -408,11 +408,12 @@ funded on FNet. The same native address may be used on another v42 ledger, but
 it must hold funds independently there. Never use the mnemonic for production
 funds.
 
-Corridor integration reuses a clean `Corridor Test Asset` (`CORR`, total 10)
-already created by the funding account on persistent networks. It refuses to
-create another durable asset there. Pre-seed one clean fixture if the account
-has none; LocalNet alone may create the fixture once on its disposable ledger
-and then reuses it for the run.
+Corridor integration reuses the oldest clean `Corridor Test Asset` (`CORR`,
+total 10) created by the funding account. If none exists, the test creates one
+on the selected network. If a matching fixture exists but the funding account
+does not hold its complete supply, the test fails instead of creating a
+replacement. This keeps persistent-network reruns from accumulating assets
+when an earlier run did not restore the fixture.
 
 `APSIGNER_PASSPHRASE` is a general-purpose environment variable for
 non-interactive local `apstore` bootstrap and local `apadmin` batch usage (not

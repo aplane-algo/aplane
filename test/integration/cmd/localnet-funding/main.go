@@ -120,7 +120,7 @@ func main() {
 		fatalf("%v", err)
 	}
 
-	fmt.Printf("TEST_FUNDING_ACCOUNT=%s\n", nativeAddress)
+	fmt.Printf("FUNDING_ADDRESS=%s\n", nativeAddress)
 	fmt.Printf("TEST_FUNDING_MNEMONIC=%s\n", mn)
 	fmt.Printf("LOCALNET_GENESIS_ID=%s\n", version.GenesisID)
 	fmt.Printf("LOCALNET_GENESIS_HASH=%s\n", genesisHash)

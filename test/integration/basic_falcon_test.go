@@ -70,8 +70,8 @@ func TestMain(m *testing.M) {
 // TestBasicFalconTransaction tests a simple Falcon-signed payment
 func TestBasicFalconTransaction(t *testing.T) {
 	// Skip if no funding account
-	if os.Getenv("TEST_FUNDING_ACCOUNT") == "" && os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
-		t.Skip("TEST_FUNDING_ACCOUNT or TEST_FUNDING_MNEMONIC not set, skipping integration test")
+	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
+		t.Skip("TEST_FUNDING_MNEMONIC not set, skipping integration test")
 	}
 
 	// Connect to testnet

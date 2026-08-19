@@ -9,7 +9,9 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
@@ -582,13 +584,18 @@ const (
 	corridorTestAssetTotal = uint64(10)
 )
 
+var corridorTestAssetMu sync.Mutex
+
 // corridorTestAssetID reuses a clean asset already created by the funding
-// account. Persistent networks must be explicitly pre-seeded: integration
-// tests never create another durable asset there. LocalNet remains
-// self-contained by creating one asset only when its disposable ledger has no
-// reusable fixture yet; later tests in the same run reuse that asset.
+// account. If no compatible asset exists, it creates one fixture on the
+// selected network. An existing but depleted fixture is never replaced: that
+// state signals failed cleanup and must be repaired rather than accumulating
+// another durable asset.
 func corridorTestAssetID(t *testing.T, testnet *harness.TestnetConfig, funder *harness.FundTestAccount) uint64 {
 	t.Helper()
+	corridorTestAssetMu.Lock()
+	defer corridorTestAssetMu.Unlock()
+
 	account, err := testnet.Client.AccountInformation(funder.GetAddress()).Do(context.Background())
 	if err != nil {
 		t.Fatalf("failed to inspect funding account for reusable corridor test asset: %v", err)
@@ -632,16 +639,16 @@ func corridorTestAssetID(t *testing.T, testnet *harness.TestnetConfig, funder *h
 	return info.AssetIndex
 }
 
-func corridorTestAssetCreationAllowed(network string) bool {
-	return network == harness.IntegrationNetworkLocalnet
-}
-
 func resolveCorridorTestAsset(network string, account models.Account) (assetID uint64, needsCreation bool, err error) {
 	if assetID, ok := selectReusableCorridorTestAsset(account); ok {
 		return assetID, false, nil
 	}
-	if !corridorTestAssetCreationAllowed(network) {
-		return 0, false, fmt.Errorf("funding account has no clean reusable %q asset; persistent-network tests refuse to create one", corridorTestAssetName)
+	dirty := dirtyCorridorTestAssets(account)
+	if len(dirty) > 0 {
+		return 0, false, fmt.Errorf(
+			"funding account has existing but depleted %q asset on %s (%s); refusing to create a replacement",
+			corridorTestAssetName, network, strings.Join(dirty, ", "),
+		)
 	}
 	return 0, true, nil
 }
@@ -654,12 +661,7 @@ func selectReusableCorridorTestAsset(account models.Account) (uint64, bool) {
 
 	var selected uint64
 	for _, asset := range account.CreatedAssets {
-		if asset.Deleted ||
-			asset.Params.Name != corridorTestAssetName ||
-			asset.Params.UnitName != corridorTestAssetUnit ||
-			asset.Params.Total != corridorTestAssetTotal ||
-			asset.Params.Decimals != 0 ||
-			holdings[asset.Index] != asset.Params.Total {
+		if !isCorridorTestAsset(asset) || holdings[asset.Index] != asset.Params.Total {
 			continue
 		}
 		if selected == 0 || asset.Index < selected {
@@ -667,6 +669,30 @@ func selectReusableCorridorTestAsset(account models.Account) (uint64, bool) {
 		}
 	}
 	return selected, selected != 0
+}
+
+func dirtyCorridorTestAssets(account models.Account) []string {
+	holdings := make(map[uint64]uint64, len(account.Assets))
+	for _, holding := range account.Assets {
+		holdings[holding.AssetId] = holding.Amount
+	}
+	dirty := make([]string, 0)
+	for _, asset := range account.CreatedAssets {
+		if !isCorridorTestAsset(asset) || holdings[asset.Index] == asset.Params.Total {
+			continue
+		}
+		dirty = append(dirty, fmt.Sprintf("%d holds %d/%d", asset.Index, holdings[asset.Index], asset.Params.Total))
+	}
+	sort.Strings(dirty)
+	return dirty
+}
+
+func isCorridorTestAsset(asset models.Asset) bool {
+	return !asset.Deleted &&
+		asset.Params.Name == corridorTestAssetName &&
+		asset.Params.UnitName == corridorTestAssetUnit &&
+		asset.Params.Total == corridorTestAssetTotal &&
+		asset.Params.Decimals == 0
 }
 
 func TestSelectReusableCorridorTestAsset(t *testing.T) {
@@ -700,22 +726,7 @@ func TestSelectReusableCorridorTestAsset(t *testing.T) {
 	}
 }
 
-func TestCorridorTestAssetCreationAllowedOnlyOnLocalNet(t *testing.T) {
-	for _, network := range []string{
-		harness.IntegrationNetworkFNet,
-		harness.IntegrationNetworkTestnet,
-		"",
-	} {
-		if corridorTestAssetCreationAllowed(network) {
-			t.Fatalf("corridorTestAssetCreationAllowed(%q) = true on persistent/unknown network", network)
-		}
-	}
-	if !corridorTestAssetCreationAllowed(harness.IntegrationNetworkLocalnet) {
-		t.Fatal("corridorTestAssetCreationAllowed(localnet) = false")
-	}
-}
-
-func TestResolveCorridorTestAssetNeverCreatesOnPersistentNetwork(t *testing.T) {
+func TestResolveCorridorTestAssetCreatesOnlyWhenAbsent(t *testing.T) {
 	matching := models.Asset{
 		Index: 52,
 		Params: models.AssetParams{
@@ -728,20 +739,27 @@ func TestResolveCorridorTestAssetNeverCreatesOnPersistentNetwork(t *testing.T) {
 		Assets:        []models.AssetHolding{{AssetId: matching.Index, Amount: corridorTestAssetTotal}},
 	}
 
-	for _, network := range []string{harness.IntegrationNetworkFNet, harness.IntegrationNetworkTestnet} {
+	for _, network := range []string{
+		harness.IntegrationNetworkFNet,
+		harness.IntegrationNetworkTestnet,
+		harness.IntegrationNetworkLocalnet,
+	} {
 		assetID, needsCreation, err := resolveCorridorTestAsset(network, account)
 		if err != nil || needsCreation || assetID != matching.Index {
 			t.Fatalf("resolveCorridorTestAsset(%q, reusable) = (%d, %v, %v), want (%d, false, nil)", network, assetID, needsCreation, err, matching.Index)
 		}
 
 		assetID, needsCreation, err = resolveCorridorTestAsset(network, models.Account{})
-		if err == nil || needsCreation || assetID != 0 {
-			t.Fatalf("resolveCorridorTestAsset(%q, empty) = (%d, %v, %v), want refusal without creation", network, assetID, needsCreation, err)
+		if err != nil || !needsCreation || assetID != 0 {
+			t.Fatalf("resolveCorridorTestAsset(%q, empty) = (%d, %v, %v), want creation", network, assetID, needsCreation, err)
 		}
 	}
 
-	if assetID, needsCreation, err := resolveCorridorTestAsset(harness.IntegrationNetworkLocalnet, models.Account{}); err != nil || !needsCreation || assetID != 0 {
-		t.Fatalf("resolveCorridorTestAsset(localnet, empty) = (%d, %v, %v), want (0, true, nil)", assetID, needsCreation, err)
+	dirty := account
+	dirty.Assets = []models.AssetHolding{{AssetId: matching.Index, Amount: corridorTestAssetTotal - 1}}
+	assetID, needsCreation, err := resolveCorridorTestAsset(harness.IntegrationNetworkTestnet, dirty)
+	if err == nil || needsCreation || assetID != 0 || !strings.Contains(err.Error(), "refusing to create a replacement") {
+		t.Fatalf("resolveCorridorTestAsset(dirty) = (%d, %v, %v), want refusal without creation", assetID, needsCreation, err)
 	}
 }
 

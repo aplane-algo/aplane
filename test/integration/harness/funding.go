@@ -21,8 +21,8 @@ type FundingAccount struct {
 }
 
 // NewFundingAccount creates a funding account checker from the native Falcon
-// TEST_FUNDING_MNEMONIC. TEST_FUNDING_ACCOUNT may repeat the derived address,
-// but may not select a different account.
+// TEST_FUNDING_MNEMONIC. The funding address is always derived from the
+// mnemonic; there is no separate address selector.
 func NewFundingAccount() (*FundingAccount, error) {
 	mn := os.Getenv("TEST_FUNDING_MNEMONIC")
 	if mn == "" {
@@ -32,10 +32,6 @@ func NewFundingAccount() (*FundingAccount, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid native Falcon TEST_FUNDING_MNEMONIC: %w", err)
 	}
-	if configured := os.Getenv("TEST_FUNDING_ACCOUNT"); configured != "" && configured != addr {
-		return nil, fmt.Errorf("TEST_FUNDING_ACCOUNT %s does not match native Falcon mnemonic address %s", configured, addr)
-	}
-
 	return &FundingAccount{
 		Address:     addr,
 		MinALGO:     1_000_000, // 1 ALGO minimum

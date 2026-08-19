@@ -41,12 +41,12 @@ account. It is never interpreted as Ed25519. Public-network runs therefore
 require v42; this branch is not intended to merge until TestNet and MainNet
 have activated native Falcon authorization.
 
-Corridor/ALock asset vectors never create assets on persistent networks.
-They reuse the oldest `Corridor Test Asset` created by the funding account for
-which the account still holds the complete 10-unit supply. If no clean fixture
-exists, the test fails before submitting an asset-creation transaction.
-LocalNet creates one fixture on its disposable ledger when necessary and
-reuses it for the rest of that test run.
+Corridor/ALock asset vectors reuse the oldest clean `Corridor Test Asset`
+created by the funding account for which the account still holds the complete
+10-unit supply. If the account has no such fixture, the test creates one on the
+selected network. If a matching fixture exists but is depleted, the test fails
+instead of creating a replacement, preventing repeated runs from accumulating
+assets when cleanup is incomplete.
 
 This creates configs, SSH keys, token, and keystore, then writes `.env.test`
 in the project root with all required environment variables.
@@ -117,9 +117,10 @@ defaults to:
 - wallet: `unencrypted-default-wallet`
 
 The localnet setup path creates and funds a disposable native Falcon account,
-exports it as `TEST_FUNDING_ACCOUNT` and `TEST_FUNDING_MNEMONIC`, writes
+exports its mnemonic as `TEST_FUNDING_MNEMONIC`, writes
 `networks.localnet.genesis_hash` into signer config, and seeds the integration
-burn address so tests that send small payments to it behave like testnet.
+burn address so tests that send small payments to it behave like testnet. Tests
+derive the funding address from the mnemonic.
 
 If an interrupted LocalNet soak leaves generated signer keys in the test
 fixture, run `go run ./test/integration/cmd/localnet-clean-test-keys` after
@@ -239,8 +240,8 @@ App interaction fixture smoke test:
 
 ```go
 func TestMyFeature(t *testing.T) {
-    if os.Getenv("TEST_FUNDING_ACCOUNT") == "" {
-        t.Skip("TEST_FUNDING_ACCOUNT not set")
+    if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
+        t.Skip("TEST_FUNDING_MNEMONIC not set")
     }
 
     network, err := harness.NewTestnetConfig()
@@ -284,7 +285,6 @@ func TestMyAppFeature(t *testing.T) {
 | `APCLIENT_DATA` | Client data directory | (from setup-test-env.sh) |
 | `TEST_PASSPHRASE` | Keystore passphrase | (from setup-test-env.sh) |
 | `TEST_FUNDING_MNEMONIC` | Native Falcon-1024 funding mnemonic; operator-supplied for TestNet/FNet and generated/funded from KMD on LocalNet | required for TestNet/FNet setup |
-| `TEST_FUNDING_ACCOUNT` | Native Falcon address derived by setup | (optional before setup) |
 | `ALGOD_URL` | Algod API endpoint | testnet Nodely URL or `http://localhost:4001` |
 | `ALGOD_TOKEN` | Algod API token | empty for testnet, AlgoKit token for localnet |
 | `APLANE_LOCALNET_KMD_URL` | LocalNet KMD endpoint | `http://localhost:4002` |
