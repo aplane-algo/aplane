@@ -16,6 +16,17 @@ func TestTemplateLibraryDirUsesLibraryTemplatesSubdirectory(t *testing.T) {
 	}
 }
 
+func TestProductPathsAreBoundAtConstruction(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "srv", "aplane")
+	paths := NewPaths(root)
+	if got, want := paths.ProductDir(), filepath.Join(root, "identities", "default"); got != want {
+		t.Fatalf("ProductDir() = %q, want %q", got, want)
+	}
+	if got, want := paths.ProductBackupsDir(), filepath.Join(root, "backups", "default"); got != want {
+		t.Fatalf("ProductBackupsDir() = %q, want %q", got, want)
+	}
+}
+
 func TestCanonicalProductStorePathMatrix(t *testing.T) {
 	root := filepath.Join(string(filepath.Separator), "srv", "aplane")
 	paths := NewPaths(root)

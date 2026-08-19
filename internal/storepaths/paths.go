@@ -10,10 +10,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 type Paths struct {
-	root string
+	root           string
+	productDir     string
+	productBackups string
 }
 
 var (
@@ -21,7 +25,21 @@ var (
 )
 
 func NewPaths(root string) Paths {
-	return Paths{root: root}
+	return Paths{
+		root:           root,
+		productDir:     filepath.Join(root, "identities", productmode.IdentityID),
+		productBackups: filepath.Join(root, "backups", productmode.IdentityID),
+	}
+}
+
+// ProductDir is the one product signing store at identities/default.
+func (p Paths) ProductDir() string {
+	return p.productDir
+}
+
+// ProductBackupsDir is the one managed backup namespace at backups/default.
+func (p Paths) ProductBackupsDir() string {
+	return p.productBackups
 }
 
 func (p Paths) Root() string {

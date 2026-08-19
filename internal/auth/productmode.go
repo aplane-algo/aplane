@@ -8,9 +8,6 @@ import (
 	"fmt"
 )
 
-// ProductModeSingleOperator describes the currently supported operator model.
-const ProductModeSingleOperator = "single-operator"
-
 // ErrUnsupportedProductIdentity indicates a caller requested an identity outside
 // the currently supported single-operator product mode.
 var ErrUnsupportedProductIdentity = errors.New("unsupported identity")

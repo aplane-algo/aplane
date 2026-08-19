@@ -5,10 +5,12 @@ package auth
 
 import "context"
 
+import "github.com/aplane-algo/aplane/internal/productmode"
+
 // DefaultIdentityID is the storage/request model default identity.
 // Product-facing code should prefer CurrentProductIdentityID so the
 // single-operator product assumption stays explicit.
-const DefaultIdentityID = "default"
+const DefaultIdentityID = productmode.IdentityID
 
 // contextKey is an unexported type for context keys in this package.
 type contextKey struct{}
