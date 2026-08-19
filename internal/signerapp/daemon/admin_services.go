@@ -378,7 +378,7 @@ func (s signerAdminServices) ListSentryReferences(ir *identity.Runtime) adminpro
 	var records []sentryrefs.Record
 	err := s.withIdentityStoreInspection(ir.ID(), func() error {
 		var err error
-		records, err = sentryrefs.List(ir.KeyPaths(), ir.ID())
+		records, err = sentryrefs.List(ir.KeyPaths())
 		return err
 	})
 	if err != nil {
@@ -397,7 +397,7 @@ func (s signerAdminServices) GetSentryReference(ir *identity.Runtime, req adminp
 	var found bool
 	err := s.withIdentityStoreInspection(ir.ID(), func() error {
 		var err error
-		record, found, err = sentryrefs.Get(ir.KeyPaths(), ir.ID(), req.Name)
+		record, found, err = sentryrefs.Get(ir.KeyPaths(), req.Name)
 		return err
 	})
 	if err != nil {
@@ -414,7 +414,7 @@ func (s signerAdminServices) ImportSentryReference(ir *identity.Runtime, req adm
 	var record *sentryrefs.Record
 	err := s.withIdentityStoreMutation(ir.ID(), func() error {
 		var err error
-		record, err = sentryrefs.Import(ir.KeyPaths(), ir.ID(), req.Name, []byte(req.EnvelopeJSON))
+		record, err = sentryrefs.Import(ir.KeyPaths(), req.Name, []byte(req.EnvelopeJSON))
 		return err
 	})
 	if err != nil {
@@ -427,14 +427,14 @@ func (s signerAdminServices) RemoveSentryReference(ir *identity.Runtime, req adm
 	var removed bool
 	var componentKey string
 	err := s.withIdentityStoreMutation(ir.ID(), func() error {
-		existing, found, err := sentryrefs.Get(ir.KeyPaths(), ir.ID(), req.Name)
+		existing, found, err := sentryrefs.Get(ir.KeyPaths(), req.Name)
 		if err != nil {
 			return err
 		}
 		if found {
 			componentKey = existing.ComponentKey
 		}
-		removed, err = sentryrefs.Delete(ir.KeyPaths(), ir.ID(), req.Name)
+		removed, err = sentryrefs.Delete(ir.KeyPaths(), req.Name)
 		return err
 	})
 	if err != nil {

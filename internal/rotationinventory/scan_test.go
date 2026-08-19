@@ -213,7 +213,7 @@ func TestScanRejectsWrongEnvelopeContext(t *testing.T) {
 
 func TestScanRejectsUnauthorizedIntegrityTerm(t *testing.T) {
 	fixture := newInventoryFixture(t)
-	path := policy.PolicyIntegritySidecarPath(policy.PolicyPath(fixture.paths.Root(), inventoryIdentity))
+	path := policy.PolicyIntegritySidecarPath(policy.PolicyPath(fixture.paths.Root()))
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile(sidecar) error = %v", err)
@@ -335,12 +335,12 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 	if err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(paths, inventoryIdentity, nodeBytes, kr, time.Unix(1_785_200_000, 0)); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(paths, nodeBytes, kr, time.Unix(1_785_200_000, 0)); err != nil {
 		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
 	if err := policy.SaveStoredConfigWithKeyring(
 		paths.Root(),
-		inventoryIdentity,
+
 		&policy.StoredConfig{},
 		kr,
 		time.Unix(1_785_200_000, 0),

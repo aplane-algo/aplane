@@ -194,7 +194,7 @@ func installBackupAdminPolicy(t *testing.T, ir *identity.Runtime, paths storepat
 	t.Helper()
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 		return policy.SaveStoredConfigWithKeyring(
-			paths.Root(), auth.DefaultIdentityID, stored, kr, time.Unix(1_700_000_000, 0),
+			paths.Root(), stored, kr, time.Unix(1_700_000_000, 0),
 		)
 	}); err != nil {
 		t.Fatal(err)

@@ -21,7 +21,7 @@ func TestImportGetListDelete(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	export := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
 
-	rec, err := Import(paths, "default", "Lab-Sentry", export)
+	rec, err := Import(paths, "Lab-Sentry", export)
 	if err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
@@ -35,7 +35,7 @@ func TestImportGetListDelete(t *testing.T) {
 		t.Fatal("ImportedAt is empty")
 	}
 
-	got, ok, err := Get(paths, "default", "lab-sentry")
+	got, ok, err := Get(paths, "lab-sentry")
 	if err != nil || !ok {
 		t.Fatalf("Get() = (%#v, %v, %v), want record", got, ok, err)
 	}
@@ -43,7 +43,7 @@ func TestImportGetListDelete(t *testing.T) {
 		t.Fatalf("PublicKeyHex = %q, want %q", got.PublicKeyHex, rec.PublicKeyHex)
 	}
 
-	list, err := List(paths, "default")
+	list, err := List(paths)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -51,11 +51,11 @@ func TestImportGetListDelete(t *testing.T) {
 		t.Fatalf("List() = %#v, want one lab-sentry record", list)
 	}
 
-	removed, err := Delete(paths, "default", "lab-sentry")
+	removed, err := Delete(paths, "lab-sentry")
 	if err != nil || !removed {
 		t.Fatalf("Delete() = (%v, %v), want removed", removed, err)
 	}
-	_, ok, err = Get(paths, "default", "lab-sentry")
+	_, ok, err = Get(paths, "lab-sentry")
 	if err != nil || ok {
 		t.Fatalf("Get(after delete) = (_, %v, %v), want absent", ok, err)
 	}
@@ -64,11 +64,11 @@ func TestImportGetListDelete(t *testing.T) {
 func TestImportIsIdempotentAndRejectsNameReplacement(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	firstExport := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
-	first, err := Import(paths, "default", "prod-sentry", firstExport)
+	first, err := Import(paths, "prod-sentry", firstExport)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idempotent, err := Import(paths, "default", "prod-sentry", firstExport)
+	idempotent, err := Import(paths, "prod-sentry", firstExport)
 	if err != nil {
 		t.Fatalf("identical Import() error = %v", err)
 	}
@@ -77,11 +77,11 @@ func TestImportIsIdempotentAndRejectsNameReplacement(t *testing.T) {
 	}
 
 	secondExport := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xcd))
-	_, err = Import(paths, "default", "prod-sentry", secondExport)
+	_, err = Import(paths, "prod-sentry", secondExport)
 	if err == nil || !strings.Contains(err.Error(), "remove it explicitly") {
 		t.Fatalf("replacement Import() error = %v, want explicit removal requirement", err)
 	}
-	stored, found, getErr := Get(paths, "default", "prod-sentry")
+	stored, found, getErr := Get(paths, "prod-sentry")
 	if getErr != nil || !found {
 		t.Fatalf("Get() after rejected replacement = (%#v, %v, %v)", stored, found, getErr)
 	}
@@ -134,10 +134,10 @@ func TestImportRejectsMismatchedWitnessIdentity(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if _, err := Import(paths, "default", "invalid", data); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, err := Import(paths, "invalid", data); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Import() error = %v, want %q", err, tt.want)
 			}
-			if _, found, err := Get(paths, "default", "invalid"); err != nil || found {
+			if _, found, err := Get(paths, "invalid"); err != nil || found {
 				t.Fatalf("invalid reference persisted: found=%v err=%v", found, err)
 			}
 		})
@@ -147,7 +147,7 @@ func TestImportRejectsMismatchedWitnessIdentity(t *testing.T) {
 func TestImportAllowsFormerEndpointDiscoveryNamespace(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	export := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
-	record, err := Import(paths, "default", "endpoint-manual-planted", export)
+	record, err := Import(paths, "endpoint-manual-planted", export)
 	if err != nil {
 		t.Fatalf("Import(endpoint-* name) error = %v", err)
 	}
@@ -158,7 +158,7 @@ func TestImportAllowsFormerEndpointDiscoveryNamespace(t *testing.T) {
 
 func TestListSkipsInvalidReferenceRecordWithoutHidingValidReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if _, err := Import(paths, "default", "valid", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(paths.SentryRefsDir(), 0o700); err != nil {
@@ -168,14 +168,14 @@ func TestListSkipsInvalidReferenceRecordWithoutHidingValidReferences(t *testing.
 		t.Fatalf("WriteFile(bad reference) error = %v", err)
 	}
 
-	records, err := List(paths, "default")
+	records, err := List(paths)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
 	if len(records) != 1 || records[0].Name != "valid" {
 		t.Fatalf("List() = %#v, want only valid reference", records)
 	}
-	if _, _, err := Get(paths, "default", "bad"); err == nil || !strings.Contains(err.Error(), "invalid sentry reference bad") {
+	if _, _, err := Get(paths, "bad"); err == nil || !strings.Contains(err.Error(), "invalid sentry reference bad") {
 		t.Fatalf("Get(bad) error = %v, want explicit validation failure", err)
 	}
 }
@@ -187,11 +187,11 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("witness.ID() error = %v", err)
 	}
-	if _, err := Import(paths, "default", "lab-sentry", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
+	if _, err := Import(paths, "lab-sentry", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 
-	resolved, err := ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
+	resolved, err := ResolveCreationParams(paths, keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		ParamSentryName: "lab-sentry",
 	})
 	if err != nil {
@@ -204,7 +204,7 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		t.Fatalf("resolved params still contain %s: %#v", ParamSentryName, resolved)
 	}
 
-	resolved, err = ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
+	resolved, err = ResolveCreationParams(paths, keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		ParamSentryName: componentKey,
 	})
 	if err != nil {
@@ -218,12 +218,12 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 func TestResolveCreationParamsForBoundedProvider(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0x7c)
-	if _, err := Import(paths, "default", "bounded-sentry", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
+	if _, err := Import(paths, "bounded-sentry", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
 		t.Fatal(err)
 	}
 	resolved, err := ResolveCreationParamsForComponent(
 		paths,
-		"default",
+
 		"aplane.custom-bounded-sentry.v1",
 		witness.Falcon1024V1,
 		map[string]string{ParamSentryName: "bounded-sentry", "limit": "10"},
@@ -240,7 +240,7 @@ func TestResolveCreationParamsForBoundedProvider(t *testing.T) {
 }
 
 func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
-	_, err := ResolveCreationParams(storepaths.NewPaths(t.TempDir()), "default", keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
+	_, err := ResolveCreationParams(storepaths.NewPaths(t.TempDir()), keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		ParamSentryName:                   "lab-sentry",
 		keytypes.ParameterSentryPublicKey: strings.Repeat("ab", falconfamily.PublicKeySize),
 	})
@@ -254,7 +254,7 @@ func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 
 func TestGetReadsV1ManualRecordWithoutWriting(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	writeV1Record(t, paths, "default", "manual-v1", recordSourceManualV1)
+	writeV1Record(t, paths, "manual-v1", recordSourceManualV1)
 	path := paths.SentryRefPath("manual-v1")
 	before, err := os.ReadFile(path)
 	if err != nil {
@@ -265,7 +265,7 @@ func TestGetReadsV1ManualRecordWithoutWriting(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(paths.SentryRefsDir(), 0o700) })
 
-	record, found, err := Get(paths, "default", "manual-v1")
+	record, found, err := Get(paths, "manual-v1")
 	if err != nil || !found {
 		t.Fatalf("Get() = (%#v, %v, %v)", record, found, err)
 	}
@@ -283,7 +283,7 @@ func TestGetReadsV1ManualRecordWithoutWriting(t *testing.T) {
 
 func TestGetReadsV1DiscoveryRecordAsPinnedWithoutWriting(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	writeV1Record(t, paths, "default", "endpoint-old", recordSourceDiscoveryV1)
+	writeV1Record(t, paths, "endpoint-old", recordSourceDiscoveryV1)
 	path := paths.SentryRefPath("endpoint-old")
 	var raw map[string]any
 	data, err := os.ReadFile(path)
@@ -295,13 +295,13 @@ func TestGetReadsV1DiscoveryRecordAsPinnedWithoutWriting(t *testing.T) {
 	}
 	delete(raw, "endpoint_alias")
 	raw["future_compatible_field"] = "ignored"
-	writeRawRecord(t, paths, "default", "endpoint-old", raw)
+	writeRawRecord(t, paths, "endpoint-old", raw)
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	record, found, err := Get(paths, "default", "endpoint-old")
+	record, found, err := Get(paths, "endpoint-old")
 	if err != nil || !found {
 		t.Fatalf("Get() = (%#v, %v, %v)", record, found, err)
 	}
@@ -316,7 +316,7 @@ func TestGetReadsV1DiscoveryRecordAsPinnedWithoutWriting(t *testing.T) {
 		t.Fatalf("Get() rewrote v1 discovery record:\nbefore=%s\nafter=%s", before, after)
 	}
 
-	identical, err := Import(paths, "default", "endpoint-old", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
+	identical, err := Import(paths, "endpoint-old", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
 	if err != nil {
 		t.Fatalf("identical Import() error = %v", err)
 	}
@@ -348,15 +348,15 @@ func TestV2RejectsRetiredDiscoveryFieldsAndUnknownMigrationOrigin(t *testing.T) 
 		t.Fatal(err)
 	}
 	raw["source"] = recordSourceDiscoveryV1
-	writeRawRecord(t, paths, "default", "strict", raw)
-	if _, _, err := Get(paths, "default", "strict"); err == nil || !strings.Contains(err.Error(), "unknown field") {
+	writeRawRecord(t, paths, "strict", raw)
+	if _, _, err := Get(paths, "strict"); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("Get(v2 source) error = %v, want unknown-field rejection", err)
 	}
 
 	delete(raw, "source")
 	raw["migration_origin"] = "future"
-	writeRawRecord(t, paths, "default", "strict", raw)
-	if _, _, err := Get(paths, "default", "strict"); err == nil || !strings.Contains(err.Error(), "unsupported sentry reference migration_origin") {
+	writeRawRecord(t, paths, "strict", raw)
+	if _, _, err := Get(paths, "strict"); err == nil || !strings.Contains(err.Error(), "unsupported sentry reference migration_origin") {
 		t.Fatalf("Get(unknown migration origin) error = %v", err)
 	}
 }
@@ -368,16 +368,16 @@ func TestV2PreservesClosedMigrationMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	record.MigrationOrigin = MigrationOriginV1ClientDiscovery
-	if err := putRecord(paths, "default", *record); err != nil {
+	if err := putRecord(paths, *record); err != nil {
 		t.Fatal(err)
 	}
-	got, found, err := Get(paths, "default", "preserved")
+	got, found, err := Get(paths, "preserved")
 	if err != nil || !found || got.MigrationOrigin != MigrationOriginV1ClientDiscovery {
 		t.Fatalf("Get() = (%#v, %v, %v)", got, found, err)
 	}
 }
 
-func writeV1Record(t *testing.T, paths storepaths.Paths, identityID, name, source string) {
+func writeV1Record(t *testing.T, paths storepaths.Paths, name, source string) {
 	t.Helper()
 	record, err := ParseImport(name, testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
 	if err != nil {
@@ -402,19 +402,19 @@ func writeV1Record(t *testing.T, paths storepaths.Paths, identityID, name, sourc
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeRawRecordBytes(t, paths, identityID, name, data)
+	writeRawRecordBytes(t, paths, name, data)
 }
 
-func writeRawRecord(t *testing.T, paths storepaths.Paths, identityID, name string, raw map[string]any) {
+func writeRawRecord(t *testing.T, paths storepaths.Paths, name string, raw map[string]any) {
 	t.Helper()
 	data, err := json.Marshal(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeRawRecordBytes(t, paths, identityID, name, data)
+	writeRawRecordBytes(t, paths, name, data)
 }
 
-func writeRawRecordBytes(t *testing.T, paths storepaths.Paths, identityID, name string, data []byte) {
+func writeRawRecordBytes(t *testing.T, paths storepaths.Paths, name string, data []byte) {
 	t.Helper()
 	if err := os.MkdirAll(paths.SentryRefsDir(), 0o700); err != nil {
 		t.Fatal(err)

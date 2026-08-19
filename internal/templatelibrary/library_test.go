@@ -37,11 +37,11 @@ func TestListProjectsLibraryTemplatesAndInstalledStatus(t *testing.T) {
 	writeLibraryFile(t, paths, "README.md", []byte("ignored"))
 
 	installed := mustParseYAML(t, "installed.yaml", testGenericTemplateYAML("library-generic", "Library Generic"))
-	if _, err := InstallParsed(paths, testIdentityID, installed, cryptotest.Keyring(t, testMasterKey())); err != nil {
+	if _, err := InstallParsed(paths, installed, cryptotest.Keyring(t, testMasterKey())); err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
 
-	items, err := List(paths, testIdentityID)
+	items, err := List(paths)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -67,7 +67,7 @@ func TestListMarksDuplicateLibraryDeclarationsAsConflict(t *testing.T) {
 	writeLibraryFile(t, paths, "one.yaml", testGenericTemplateYAML("duplicate-library", "Duplicate One"))
 	writeLibraryFile(t, paths, "two.yaml", testGenericTemplateYAML("duplicate-library", "Duplicate Two"))
 
-	items, err := List(paths, testIdentityID)
+	items, err := List(paths)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -167,7 +167,7 @@ teal: |
 	if parsed.KeyType != "test.bounded-library.v1" || parsed.TemplateType != templatestore.TemplateTypeComposed {
 		t.Fatalf("ParseYAML() = %#v", parsed)
 	}
-	installed, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))
+	installed, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
@@ -188,7 +188,7 @@ func TestListInvalidPrecedenceSkipsConflictDetection(t *testing.T) {
 	paths := newLibraryTestPaths(t)
 	writeLibraryFile(t, paths, "invalid.yaml", []byte("not: valid: yaml: ["))
 
-	items, err := List(paths, testIdentityID)
+	items, err := List(paths)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -217,9 +217,9 @@ func TestListIncludesInstalledTemplateWithoutLibrarySource(t *testing.T) {
 	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), testComposedTemplateYAML("falcon1024-installed-only", "Installed Only"), keyType, templatestore.TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey())); err != nil {
 		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
-	writeTemplateStateForTest(t, paths, testIdentityID, keyType, templatestore.TemplateTypeComposed, keytypestate.StateDisabled)
+	writeTemplateStateForTest(t, paths, keyType, templatestore.TemplateTypeComposed, keytypestate.StateDisabled)
 
-	items, err := List(paths, testIdentityID)
+	items, err := List(paths)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -242,7 +242,7 @@ func TestInstallFromLibraryRejectsAmbiguousTemplateRef(t *testing.T) {
 	writeLibraryFile(t, paths, "one.yaml", testGenericTemplateYAML("ambiguous-library", "Ambiguous One"))
 	writeLibraryFile(t, paths, "two.yaml", testGenericTemplateYAML("ambiguous-library", "Ambiguous Two"))
 
-	_, err := InstallFromLibrary(paths, testIdentityID, TemplateRef{
+	_, err := InstallFromLibrary(paths, TemplateRef{
 		KeyType:      "test.ambiguous-library.v1",
 		TemplateType: templatestore.TemplateTypeGeneric,
 	}, cryptotest.Keyring(t, testMasterKey()))
@@ -255,7 +255,7 @@ func TestInstallParsedWritesEncryptedTemplateAndDoesNotUseLibraryDir(t *testing.
 	paths := newLibraryTestPaths(t)
 	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("install-library", "Install Library"))
 
-	result, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))
+	result, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
@@ -273,7 +273,7 @@ func TestInstallParsedWritesEncryptedTemplateAndDoesNotUseLibraryDir(t *testing.
 		t.Fatalf("installed template stat error = %v", err)
 	}
 
-	again, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))
+	again, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("InstallParsed(second) error = %v", err)
 	}
@@ -286,7 +286,7 @@ func TestInstallParsedExistingTemplateCanRollbackStateChange(t *testing.T) {
 	paths := newLibraryTestPaths(t)
 	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("install-disabled-existing", "Install Disabled Existing"))
 
-	if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey())); err != nil {
+	if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey())); err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
 	rec, ok, err := keytypestate.Get(paths, parsed.KeyType)
@@ -298,7 +298,7 @@ func TestInstallParsedExistingTemplateCanRollbackStateChange(t *testing.T) {
 		t.Fatalf("Put(disabled state) error = %v", err)
 	}
 
-	again, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))
+	again, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("InstallParsed(second) error = %v", err)
 	}
@@ -308,14 +308,14 @@ func TestInstallParsedExistingTemplateCanRollbackStateChange(t *testing.T) {
 	if !again.StateChanged {
 		t.Fatal("InstallParsed(second).StateChanged = false, want true")
 	}
-	if !testKeyTypeEnabled(paths, testIdentityID, parsed.KeyType) {
+	if !testKeyTypeEnabled(paths, parsed.KeyType) {
 		t.Fatalf("key type %q was not enabled by reinstall", parsed.KeyType)
 	}
 
-	if err := RollbackTemplateStateChange(paths, testIdentityID, again); err != nil {
+	if err := RollbackTemplateStateChange(paths, again); err != nil {
 		t.Fatalf("RollbackTemplateStateChange() error = %v", err)
 	}
-	if !testKeyTypeDisabled(paths, testIdentityID, parsed.KeyType) {
+	if !testKeyTypeDisabled(paths, parsed.KeyType) {
 		t.Fatalf("key type %q = enabled, want disabled restored", parsed.KeyType)
 	}
 }
@@ -330,11 +330,11 @@ func TestInstallParsedRollsBackTemplateWhenStateWriteFails(t *testing.T) {
 		YAMLData: []byte("template_type: generic\nteal: ["),
 	}
 
-	_, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))
+	_, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
 	if err == nil {
 		t.Fatal("InstallParsed() error = nil, want fingerprint/state failure")
 	}
-	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, testIdentityID, parsed.KeyType, parsed.TemplateType)
+	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, parsed.KeyType, parsed.TemplateType)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -349,7 +349,7 @@ func TestInstallParsedRollsBackTemplateWhenStateWriteFails(t *testing.T) {
 func TestInstallParsedRejectsExistingTemplateDefinitionMismatch(t *testing.T) {
 	paths := newLibraryTestPaths(t)
 	original := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("install-conflict", "Install Conflict"))
-	if _, err := InstallParsed(paths, testIdentityID, original, cryptotest.Keyring(t, testMasterKey())); err != nil {
+	if _, err := InstallParsed(paths, original, cryptotest.Keyring(t, testMasterKey())); err != nil {
 		t.Fatalf("InstallParsed(original) error = %v", err)
 	}
 
@@ -367,7 +367,7 @@ teal: |
   int 0
 `)
 	conflicting := mustParseYAML(t, "conflict.yaml", conflictingYAML)
-	_, err := InstallParsed(paths, testIdentityID, conflicting, cryptotest.Keyring(t, testMasterKey()))
+	_, err := InstallParsed(paths, conflicting, cryptotest.Keyring(t, testMasterKey()))
 	if err == nil {
 		t.Fatal("InstallParsed(conflicting) error = nil, want template conflict")
 	}
@@ -381,11 +381,11 @@ func TestInstallParsedRejectsOtherTemplateTypeAndBuiltInConflicts(t *testing.T) 
 		falcon.RegisterClient()
 		paths := newLibraryTestPaths(t)
 		generic := mustParseYAML(t, "generic.yaml", testGenericTemplateYAML("cross-type", "Cross Type"))
-		if _, err := InstallParsed(paths, testIdentityID, generic, cryptotest.Keyring(t, testMasterKey())); err != nil {
+		if _, err := InstallParsed(paths, generic, cryptotest.Keyring(t, testMasterKey())); err != nil {
 			t.Fatalf("InstallParsed(generic) error = %v", err)
 		}
 		composed := mustParseYAML(t, "composed.yaml", testComposedTemplateYAML("cross-type", "Cross Type Composed"))
-		_, err := InstallParsed(paths, testIdentityID, composed, cryptotest.Keyring(t, testMasterKey()))
+		_, err := InstallParsed(paths, composed, cryptotest.Keyring(t, testMasterKey()))
 		if err == nil || !strings.Contains(err.Error(), "already exists as a generic template") {
 			t.Fatalf("InstallParsed(composed) error = %v, want other-type conflict", err)
 		}
@@ -398,7 +398,7 @@ func TestInstallParsedRejectsOtherTemplateTypeAndBuiltInConflicts(t *testing.T) 
 
 		paths := newLibraryTestPaths(t)
 		parsed := mustParseYAML(t, "conflict.yaml", testGenericTemplateYAML("templatelibrary-built-in-conflict", "Built In Conflict"))
-		_, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))
+		_, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
 		if err == nil || !strings.Contains(err.Error(), "built-in provider") {
 			t.Fatalf("InstallParsed() error = %v, want built-in conflict", err)
 		}
@@ -420,7 +420,7 @@ func TestInstallParsedAllowsGloballyRegisteredMatchingTemplate(t *testing.T) {
 	}
 	t.Cleanup(func() { lsigprovider.Unregister(parsed.KeyType) })
 
-	result, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))
+	result, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("InstallParsed() error = %v, want matching global provider to be allowed", err)
 	}
@@ -428,7 +428,7 @@ func TestInstallParsedAllowsGloballyRegisteredMatchingTemplate(t *testing.T) {
 		t.Fatal("InstallParsed().AlreadyExists = true, want fresh install")
 	}
 
-	items, err := List(paths, testIdentityID)
+	items, err := List(paths)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -461,7 +461,7 @@ func TestListAndActivateCompiledProvider(t *testing.T) {
 	}
 
 	paths := newLibraryTestPaths(t)
-	items, err := List(paths, testIdentityID)
+	items, err := List(paths)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -477,14 +477,14 @@ func TestListAndActivateCompiledProvider(t *testing.T) {
 		t.Fatal("compiled provider starts installed")
 	}
 
-	result, err := ActivateCompiledProvider(paths, testIdentityID, keyType)
+	result, err := ActivateCompiledProvider(paths, keyType)
 	if err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
 	if result.AlreadyExists {
 		t.Fatal("ActivateCompiledProvider().AlreadyExists = true, want false")
 	}
-	if !testKeyTypeEnabled(paths, testIdentityID, keyType) {
+	if !testKeyTypeEnabled(paths, keyType) {
 		t.Fatal("enabled state was not written")
 	}
 	if rec, ok, err := keytypestate.Get(paths, keyType); err != nil {
@@ -493,7 +493,7 @@ func TestListAndActivateCompiledProvider(t *testing.T) {
 		t.Fatalf("compiled provider state = %#v, exists=%v; want SourceCompiled", rec, ok)
 	}
 
-	items, err = List(paths, testIdentityID)
+	items, err = List(paths)
 	if err != nil {
 		t.Fatalf("List(after activate) error = %v", err)
 	}
@@ -502,18 +502,18 @@ func TestListAndActivateCompiledProvider(t *testing.T) {
 		t.Fatalf("compiled provider after activation = %+v, want installed", item)
 	}
 
-	removed, err := DeactivateCompiledProvider(paths, testIdentityID, keyType, cryptotest.Keyring(t, testMasterKey()))
+	removed, err := DeactivateCompiledProvider(paths, keyType, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("DeactivateCompiledProvider() error = %v", err)
 	}
 	if !removed.Removed {
 		t.Fatal("DeactivateCompiledProvider().Removed = false, want true")
 	}
-	if testKeyTypeEnabled(paths, testIdentityID, keyType) {
+	if testKeyTypeEnabled(paths, keyType) {
 		t.Fatal("enabled state still exists after deactivate")
 	}
 
-	items, err = List(paths, testIdentityID)
+	items, err = List(paths)
 	if err != nil {
 		t.Fatalf("List(after deactivate) error = %v", err)
 	}
@@ -537,7 +537,7 @@ func TestDeactivateCompiledProviderRejectsKeyTypeInUse(t *testing.T) {
 
 	paths := newLibraryTestPaths(t)
 	masterKey := testMasterKey()
-	if _, err := ActivateCompiledProvider(paths, testIdentityID, keyType); err != nil {
+	if _, err := ActivateCompiledProvider(paths, keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
@@ -550,14 +550,14 @@ func TestDeactivateCompiledProviderRejectsKeyTypeInUse(t *testing.T) {
 		t.Fatalf("SavePayload() error = %v", err)
 	}
 
-	_, err := DeactivateCompiledProvider(paths, testIdentityID, keyType, cryptotest.Keyring(t, masterKey))
+	_, err := DeactivateCompiledProvider(paths, keyType, cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("DeactivateCompiledProvider() error = nil, want in-use rejection")
 	}
 	if !strings.Contains(err.Error(), "key(s) still use it") {
 		t.Fatalf("DeactivateCompiledProvider() error = %v, want in-use context", err)
 	}
-	if !testKeyTypeEnabled(paths, testIdentityID, keyType) {
+	if !testKeyTypeEnabled(paths, keyType) {
 		t.Fatal("enabled state was removed despite in-use rejection")
 	}
 }
@@ -566,12 +566,12 @@ func TestRemoveInstalledTemplateMovesUnusedTemplateToDeletedArchive(t *testing.T
 	paths := newLibraryTestPaths(t)
 	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("remove-unused", "Remove Unused"))
 
-	installed, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))
+	installed, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
 
-	removed, err := RemoveInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, testMasterKey()))
+	removed, err := RemoveInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("RemoveInstalledTemplate() error = %v", err)
 	}
@@ -592,7 +592,7 @@ func TestRemoveInstalledTemplateMovesUnusedTemplateToDeletedArchive(t *testing.T
 		t.Fatalf("deleted keys dir missing after template removal: %v", err)
 	}
 
-	again, err := RemoveInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, testMasterKey()))
+	again, err := RemoveInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("RemoveInstalledTemplate(second) error = %v", err)
 	}
@@ -605,7 +605,7 @@ func TestRemoveInstalledTemplateRestoresStateWhenArchiveFails(t *testing.T) {
 	paths := newLibraryTestPaths(t)
 	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("remove-archive-fails", "Remove Archive Fails"))
 
-	installed, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, testMasterKey()))
+	installed, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
@@ -617,11 +617,11 @@ func TestRemoveInstalledTemplateRestoresStateWhenArchiveFails(t *testing.T) {
 		t.Fatalf("WriteFile(blocking archive dir) error = %v", err)
 	}
 
-	_, err = RemoveInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, testMasterKey()))
+	_, err = RemoveInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, testMasterKey()))
 	if err == nil {
 		t.Fatal("RemoveInstalledTemplate() error = nil, want archive failure")
 	}
-	if !testKeyTypeEnabled(paths, testIdentityID, parsed.KeyType) {
+	if !testKeyTypeEnabled(paths, parsed.KeyType) {
 		t.Fatalf("key type state for %q was not restored", parsed.KeyType)
 	}
 	if _, statErr := os.Stat(installed.OutputPath); statErr != nil {
@@ -636,12 +636,12 @@ func TestDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 	writeLibraryFile(t, paths, "disable-template.yaml", yamlData)
 	parsed := mustParseYAML(t, "source.yaml", yamlData)
 
-	installed, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey))
+	installed, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
 
-	disabled, err := DisableInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey))
+	disabled, err := DisableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("DisableInstalledTemplate() error = %v", err)
 	}
@@ -651,11 +651,11 @@ func TestDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 	if _, err := os.Stat(installed.OutputPath); err != nil {
 		t.Fatalf("template file missing after disable: %v", err)
 	}
-	if !testKeyTypeDisabled(paths, testIdentityID, parsed.KeyType) {
+	if !testKeyTypeDisabled(paths, parsed.KeyType) {
 		t.Fatal("disabled state was not written")
 	}
 
-	items, err := List(paths, testIdentityID)
+	items, err := List(paths)
 	if err != nil {
 		t.Fatalf("List(disabled) error = %v", err)
 	}
@@ -664,14 +664,14 @@ func TestDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 		t.Fatalf("disabled template list item = %+v, want installed but not enabled", item)
 	}
 
-	enabled, err := EnableInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType)
+	enabled, err := EnableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType)
 	if err != nil {
 		t.Fatalf("EnableInstalledTemplate() error = %v", err)
 	}
 	if enabled.AlreadyExists {
 		t.Fatal("EnableInstalledTemplate().AlreadyExists = true, want false after state change")
 	}
-	if testKeyTypeDisabled(paths, testIdentityID, parsed.KeyType) {
+	if testKeyTypeDisabled(paths, parsed.KeyType) {
 		t.Fatal("disabled state still exists after enable")
 	}
 }
@@ -681,27 +681,27 @@ func TestRemoveInstalledTemplateClearsDisabledMarker(t *testing.T) {
 	masterKey := testMasterKey()
 	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("remove-disabled", "Remove Disabled"))
 
-	if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
-	if _, err := DisableInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := DisableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("DisableInstalledTemplate() error = %v", err)
 	}
-	if !testKeyTypeDisabled(paths, testIdentityID, parsed.KeyType) {
+	if !testKeyTypeDisabled(paths, parsed.KeyType) {
 		t.Fatal("disabled state was not written")
 	}
 
-	removed, err := RemoveInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey))
+	removed, err := RemoveInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RemoveInstalledTemplate() error = %v", err)
 	}
 	if !removed.Removed {
 		t.Fatal("RemoveInstalledTemplate().Removed = false, want true")
 	}
-	if testKeyTypeDisabled(paths, testIdentityID, parsed.KeyType) {
+	if testKeyTypeDisabled(paths, parsed.KeyType) {
 		t.Fatal("disabled state still exists after template removal")
 	}
-	if templatestore.TemplateExistsForPaths(paths, testIdentityID, parsed.KeyType, parsed.TemplateType) {
+	if templatestore.TemplateExistsForPaths(paths, parsed.KeyType, parsed.TemplateType) {
 		t.Fatal("template still exists after removal")
 	}
 }
@@ -711,13 +711,13 @@ func TestRemoveInstalledTemplateRejectsKeyTypeInUse(t *testing.T) {
 	masterKey := testMasterKey()
 	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("remove-in-use", "Remove In Use"))
 
-	installed, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey))
+	installed, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
 	writeTemplateKeyInUse(t, paths, parsed.KeyType, masterKey)
 
-	_, err = RemoveInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey))
+	_, err = RemoveInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("RemoveInstalledTemplate() error = nil, want in-use rejection")
 	}
@@ -734,22 +734,22 @@ func TestDisableInstalledTemplateRejectsKeyTypeInUse(t *testing.T) {
 	masterKey := testMasterKey()
 	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("disable-in-use", "Disable In Use"))
 
-	if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
 	writeTemplateKeyInUse(t, paths, parsed.KeyType, masterKey)
 
-	_, err := DisableInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey))
+	_, err := DisableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey))
 	if err == nil {
 		t.Fatal("DisableInstalledTemplate() error = nil, want in-use rejection")
 	}
 	if !strings.Contains(err.Error(), "key(s) still use it") {
 		t.Fatalf("DisableInstalledTemplate() error = %v, want in-use context", err)
 	}
-	if !testKeyTypeEnabled(paths, testIdentityID, parsed.KeyType) {
+	if !testKeyTypeEnabled(paths, parsed.KeyType) {
 		t.Fatal("enabled state was removed despite in-use rejection")
 	}
-	if !templatestore.TemplateExistsForPaths(paths, testIdentityID, parsed.KeyType, parsed.TemplateType) {
+	if !templatestore.TemplateExistsForPaths(paths, parsed.KeyType, parsed.TemplateType) {
 		t.Fatal("template file was removed by disable")
 	}
 }
@@ -774,7 +774,7 @@ func TestInstalledTemplateLifecycleMatrix(t *testing.T) {
 			name: "install creates enabled identity-local state",
 			run: func(t *testing.T, paths storepaths.Paths, parsed ParsedTemplate, masterKey []byte) {
 				t.Helper()
-				if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("InstallParsed() error = %v", err)
 				}
 			},
@@ -791,10 +791,10 @@ func TestInstalledTemplateLifecycleMatrix(t *testing.T) {
 			name: "disable keeps template but hides enabled projection",
 			run: func(t *testing.T, paths storepaths.Paths, parsed ParsedTemplate, masterKey []byte) {
 				t.Helper()
-				if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("InstallParsed() error = %v", err)
 				}
-				if _, err := DisableInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := DisableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("DisableInstalledTemplate() error = %v", err)
 				}
 			},
@@ -811,13 +811,13 @@ func TestInstalledTemplateLifecycleMatrix(t *testing.T) {
 			name: "enable restores enabled projection",
 			run: func(t *testing.T, paths storepaths.Paths, parsed ParsedTemplate, masterKey []byte) {
 				t.Helper()
-				if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("InstallParsed() error = %v", err)
 				}
-				if _, err := DisableInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := DisableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("DisableInstalledTemplate() error = %v", err)
 				}
-				if _, err := EnableInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType); err != nil {
+				if _, err := EnableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType); err != nil {
 					t.Fatalf("EnableInstalledTemplate() error = %v", err)
 				}
 			},
@@ -834,10 +834,10 @@ func TestInstalledTemplateLifecycleMatrix(t *testing.T) {
 			name: "remove enabled archives template and clears state",
 			run: func(t *testing.T, paths storepaths.Paths, parsed ParsedTemplate, masterKey []byte) {
 				t.Helper()
-				if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("InstallParsed() error = %v", err)
 				}
-				if _, err := RemoveInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := RemoveInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("RemoveInstalledTemplate() error = %v", err)
 				}
 			},
@@ -849,13 +849,13 @@ func TestInstalledTemplateLifecycleMatrix(t *testing.T) {
 			name: "remove disabled archives template and clears state",
 			run: func(t *testing.T, paths storepaths.Paths, parsed ParsedTemplate, masterKey []byte) {
 				t.Helper()
-				if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("InstallParsed() error = %v", err)
 				}
-				if _, err := DisableInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := DisableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("DisableInstalledTemplate() error = %v", err)
 				}
-				if _, err := RemoveInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := RemoveInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("RemoveInstalledTemplate() error = %v", err)
 				}
 			},
@@ -867,11 +867,11 @@ func TestInstalledTemplateLifecycleMatrix(t *testing.T) {
 			name: "disable in use rejects without mutating file or state",
 			run: func(t *testing.T, paths storepaths.Paths, parsed ParsedTemplate, masterKey []byte) {
 				t.Helper()
-				if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("InstallParsed() error = %v", err)
 				}
 				writeTemplateKeyInUse(t, paths, parsed.KeyType, masterKey)
-				if _, err := DisableInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err == nil {
+				if _, err := DisableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err == nil {
 					t.Fatal("DisableInstalledTemplate() error = nil, want in-use rejection")
 				}
 			},
@@ -888,11 +888,11 @@ func TestInstalledTemplateLifecycleMatrix(t *testing.T) {
 			name: "remove in use rejects without mutating file or state",
 			run: func(t *testing.T, paths storepaths.Paths, parsed ParsedTemplate, masterKey []byte) {
 				t.Helper()
-				if _, err := InstallParsed(paths, testIdentityID, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
+				if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("InstallParsed() error = %v", err)
 				}
 				writeTemplateKeyInUse(t, paths, parsed.KeyType, masterKey)
-				if _, err := RemoveInstalledTemplate(paths, testIdentityID, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err == nil {
+				if _, err := RemoveInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err == nil {
 					t.Fatal("RemoveInstalledTemplate() error = nil, want in-use rejection")
 				}
 			},
@@ -969,12 +969,12 @@ func findLibraryItem(items []LibraryTemplate, keyType string) *LibraryTemplate {
 	return nil
 }
 
-func testKeyTypeEnabled(paths storepaths.Paths, identityID, keyType string) bool {
+func testKeyTypeEnabled(paths storepaths.Paths, keyType string) bool {
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }
 
-func writeTemplateStateForTest(t *testing.T, paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
+func writeTemplateStateForTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
 	t.Helper()
 	source, err := stateSourceForTemplateType(templateType)
 	if err != nil {
@@ -989,7 +989,7 @@ func writeTemplateStateForTest(t *testing.T, paths storepaths.Paths, identityID,
 	}
 }
 
-func testKeyTypeDisabled(paths storepaths.Paths, identityID, keyType string) bool {
+func testKeyTypeDisabled(paths storepaths.Paths, keyType string) bool {
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateDisabled
 }
@@ -1027,7 +1027,7 @@ func assertInstalledTemplateProjection(t *testing.T, paths storepaths.Paths, par
 	enabled        bool
 }) {
 	t.Helper()
-	if got := templatestore.TemplateExistsForPaths(paths, testIdentityID, parsed.KeyType, parsed.TemplateType); got != want.templateExists {
+	if got := templatestore.TemplateExistsForPaths(paths, parsed.KeyType, parsed.TemplateType); got != want.templateExists {
 		t.Fatalf("template exists = %v, want %v", got, want.templateExists)
 	}
 	if _, err := os.Stat(paths.DeletedKeyTypeTemplate(parsed.KeyType)); (err == nil) != want.archiveExists {
@@ -1045,7 +1045,7 @@ func assertInstalledTemplateProjection(t *testing.T, paths storepaths.Paths, par
 		t.Fatalf("state = %q, want %q", rec.State, want.state)
 	}
 
-	items, err := List(paths, testIdentityID)
+	items, err := List(paths)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}

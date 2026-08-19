@@ -107,7 +107,7 @@ func validateCurrentGenerationForContent(paths storepaths.Paths, identityID stri
 }
 
 func verifyCurrentGenerationContentWithKeyring(paths storepaths.Paths, identityID string, kr *crypto.Keyring) error {
-	templateReport, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates(identityID, kr)
+	templateReport, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates(kr)
 	if err != nil {
 		return fmt.Errorf("template validation failed: %w", err)
 	}

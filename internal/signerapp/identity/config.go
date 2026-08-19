@@ -15,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"gopkg.in/yaml.v3"
 )
 
@@ -127,14 +128,14 @@ func (c *IdentityConfig) SetApprovalWait(d time.Duration) {
 }
 
 // ConfigPath returns the path to an identity's persisted settings file.
-func ConfigPath(dataRoot, identityID string) string {
-	return filepath.Join(dataRoot, "identities", identityID, "config.yaml")
+func ConfigPath(dataRoot string) string {
+	return filepath.Join(storepaths.NewPaths(dataRoot).ProductDir(), "config.yaml")
 }
 
 // LoadStoredConfig reads the per-identity settings overlay.
 // Returns an empty config if the file does not exist.
-func LoadStoredConfig(dataRoot, identityID string) (*StoredConfig, error) {
-	path := ConfigPath(dataRoot, identityID)
+func LoadStoredConfig(dataRoot string) (*StoredConfig, error) {
+	path := ConfigPath(dataRoot)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return &StoredConfig{}, nil
@@ -156,8 +157,8 @@ func LoadStoredConfig(dataRoot, identityID string) (*StoredConfig, error) {
 }
 
 // SaveStoredSetting writes a single per-identity setting atomically.
-func SaveStoredSetting(dataRoot, identityID, key string, value interface{}) error {
-	path := ConfigPath(dataRoot, identityID)
+func SaveStoredSetting(dataRoot, key string, value interface{}) error {
+	path := ConfigPath(dataRoot)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create identity config directory: %w", err)

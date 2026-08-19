@@ -101,7 +101,7 @@ func (s Streams) normalized() Streams {
 	return s
 }
 
-type Editor func(policyeditor.Store, *policy.StoredConfig, string, string, policyeditor.Target) error
+type Editor func(policyeditor.Store, *policy.StoredConfig, string, policyeditor.Target) error
 
 type OnlineSession interface {
 	Dial() error

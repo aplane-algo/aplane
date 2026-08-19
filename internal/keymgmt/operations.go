@@ -22,7 +22,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -186,7 +185,7 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		return nil, fmt.Errorf("invalid key type: %s (must be one of: %s)", keyType, strings.Join(validTypes, ", "))
 	}
 	var resolveErr error
-	params, resolveErr = sentryrefs.ResolveCreationParams(paths, productmode.IdentityID, keyType, params)
+	params, resolveErr = sentryrefs.ResolveCreationParams(paths, keyType, params)
 	if resolveErr != nil {
 		return nil, fmt.Errorf("%w: sentry reference resolution failed: %v", keygen.ErrInvalidParams, resolveErr)
 	}
@@ -224,7 +223,7 @@ func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, keyType string,
 		if _, err := boundedmeta.ParseAdminPublicKey(adminPublicKeyHex); err != nil {
 			return nil // The provider owns the detailed parameter error.
 		}
-		references, err := sentryrefs.List(paths, productmode.IdentityID)
+		references, err := sentryrefs.List(paths)
 		if err != nil {
 			return fmt.Errorf("check sentry witness references: %w", err)
 		}

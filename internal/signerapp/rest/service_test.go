@@ -761,7 +761,7 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
-	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "lab-sentry", data); err != nil {
+	if _, err := sentryrefs.Import(ir.KeyPaths(), "lab-sentry", data); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 	if err := os.WriteFile(ir.KeyPaths().SentryRefPath("corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
@@ -887,7 +887,7 @@ func TestServiceKeyTypesUsesSentryReferenceForBoundedProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "bounded-sentry", data); err != nil {
+	if _, err := sentryrefs.Import(ir.KeyPaths(), "bounded-sentry", data); err != nil {
 		t.Fatal(err)
 	}
 

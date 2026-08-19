@@ -93,7 +93,7 @@ func TestServiceApproveContextUsesContextRequester(t *testing.T) {
 
 func TestServiceIssueLoadsExistingToken(t *testing.T) {
 	root := t.TempDir()
-	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(root, "alice")
+	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(root)
 	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestServiceIssueDoesNotGenerateMissingToken(t *testing.T) {
 	if _, err := svc.Issue("alice"); err == nil {
 		t.Fatal("Issue() error = nil, want missing-token error")
 	}
-	if _, err := os.Stat(tokenfile.GetAPlaneTokenPathForRoot(root, "alice")); !os.IsNotExist(err) {
+	if _, err := os.Stat(tokenfile.GetAPlaneTokenPathForRoot(root)); !os.IsNotExist(err) {
 		t.Fatalf("Issue() generated a token, stat error = %v", err)
 	}
 }

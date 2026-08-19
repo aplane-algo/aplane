@@ -94,14 +94,14 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to create node role: %w", err)
 	}
 	createdNodeRole = true
-	if err := noderole.SaveIdentitySidecarWithKeyring(opts.Paths, opts.IdentityID, roleBytes, keyring, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(opts.Paths, roleBytes, keyring, time.Now()); err != nil {
 		return result, fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 	}
 	var policyErr error
 	if role == noderole.RoleSentry {
-		policyErr = policy.SaveStoredSentryConfigWithKeyring(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, keyring, time.Now())
+		policyErr = policy.SaveStoredSentryConfigWithKeyring(opts.DataDir, &policy.StoredConfig{}, keyring, time.Now())
 	} else {
-		policyErr = policy.SaveStoredConfigWithKeyring(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, keyring, time.Now())
+		policyErr = policy.SaveStoredConfigWithKeyring(opts.DataDir, &policy.StoredConfig{}, keyring, time.Now())
 	}
 	if policyErr != nil {
 		return result, fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)
@@ -128,7 +128,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		}
 	}
 
-	if _, err := tokenfile.LoadAPlaneToken(opts.Paths.Root(), opts.IdentityID); err != nil {
+	if _, err := tokenfile.LoadAPlaneToken(opts.Paths.Root()); err != nil {
 		return result, fmt.Errorf("failed to generate API token: %w", err)
 	}
 

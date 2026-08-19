@@ -23,14 +23,14 @@ func TestSaveAndLoadVerifiedStoredConfig(t *testing.T) {
 	wantFee := uint64(7000)
 	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &wantReject, MaxFeeMicroAlgos: &wantFee}}
 
-	if err := SaveStoredConfigWithIntegrity(root, "alice", want, key, time.Unix(1700000000, 0)); err != nil {
+	if err := SaveStoredConfigWithIntegrity(root, want, key, time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveStoredConfigWithIntegrity() error = %v", err)
 	}
-	if _, err := os.Stat(PolicyIntegritySidecarPath(PolicyPath(root, "alice"))); err != nil {
+	if _, err := os.Stat(PolicyIntegritySidecarPath(PolicyPath(root))); err != nil {
 		t.Fatalf("sidecar stat error = %v", err)
 	}
 
-	got, err := LoadVerifiedStoredConfig(root, "alice", key)
+	got, err := LoadVerifiedStoredConfig(root, key)
 	if err != nil {
 		t.Fatalf("LoadVerifiedStoredConfig() error = %v", err)
 	}
@@ -50,10 +50,10 @@ func TestSaveAndLoadVerifiedStoredConfigWithKeyring(t *testing.T) {
 	wantReject := false
 	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &wantReject}}
 
-	if err := SaveStoredConfigWithKeyring(root, "alice", want, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+	if err := SaveStoredConfigWithKeyring(root, want, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
-	got, err := LoadVerifiedStoredConfigWithKeyring(root, "alice", cryptotest.Keyring(t, masterKey))
+	got, err := LoadVerifiedStoredConfigWithKeyring(root, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadVerifiedStoredConfigWithKeyring() error = %v", err)
 	}
@@ -66,10 +66,10 @@ func TestSavePolicyPreparationFailureLeavesExistingPairUntouched(t *testing.T) {
 	root := t.TempDir()
 	key := policyIntegrityTestKey(t)
 	oldConfig := &StoredConfig{}
-	if err := SaveStoredConfigWithIntegrity(root, "alice", oldConfig, key, time.Unix(1700000000, 0)); err != nil {
+	if err := SaveStoredConfigWithIntegrity(root, oldConfig, key, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
-	policyPath := PolicyPath(root, "alice")
+	policyPath := PolicyPath(root)
 	sidecarPath := PolicyIntegritySidecarPath(policyPath)
 	oldPolicy, err := os.ReadFile(policyPath)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestSavePolicyPreparationFailureLeavesExistingPairUntouched(t *testing.T) {
 	defer func() { fsutil.TestHook = nil }()
 
 	reject := false
-	err = SaveStoredConfigWithIntegrity(root, "alice", &StoredConfig{
+	err = SaveStoredConfigWithIntegrity(root, &StoredConfig{
 		StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &reject},
 	}, key, time.Unix(1800000000, 0))
 	if !errors.Is(err, injected) {
@@ -114,10 +114,10 @@ func TestSaveAndLoadVerifiedSentryConfigWithKeyring(t *testing.T) {
 	rejectRekey := true
 	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectRekey: &rejectRekey}}
 
-	if err := SaveStoredSentryConfigWithKeyring(root, "alice", want, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+	if err := SaveStoredSentryConfigWithKeyring(root, want, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveStoredSentryConfigWithKeyring() error = %v", err)
 	}
-	got, err := LoadVerifiedSentryConfigWithKeyring(root, "alice", cryptotest.Keyring(t, masterKey))
+	got, err := LoadVerifiedSentryConfigWithKeyring(root, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadVerifiedSentryConfigWithKeyring() error = %v", err)
 	}
@@ -129,7 +129,7 @@ func TestSaveAndLoadVerifiedSentryConfigWithKeyring(t *testing.T) {
 func TestSignPolicyFileIntegrityPreservesPolicyBytes(t *testing.T) {
 	root := t.TempDir()
 	key := policyIntegrityTestKey(t)
-	path := PolicyPath(root, "alice")
+	path := PolicyPath(root)
 	policyBytes := []byte("# direct edit\nreject_foreign_rekey: false\n")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll(identity) error = %v", err)
@@ -138,7 +138,7 @@ func TestSignPolicyFileIntegrityPreservesPolicyBytes(t *testing.T) {
 		t.Fatalf("WriteFile(policy) error = %v", err)
 	}
 
-	if err := SignPolicyFileIntegrity(root, "alice", key, time.Unix(1700000000, 0)); err != nil {
+	if err := SignPolicyFileIntegrity(root, key, time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SignPolicyFileIntegrity() error = %v", err)
 	}
 	gotBytes, err := os.ReadFile(path)
@@ -148,7 +148,7 @@ func TestSignPolicyFileIntegrityPreservesPolicyBytes(t *testing.T) {
 	if string(gotBytes) != string(policyBytes) {
 		t.Fatalf("policy bytes changed during signing:\ngot  %q\nwant %q", string(gotBytes), string(policyBytes))
 	}
-	got, err := LoadVerifiedStoredConfig(root, "alice", key)
+	got, err := LoadVerifiedStoredConfig(root, key)
 	if err != nil {
 		t.Fatalf("LoadVerifiedStoredConfig() error = %v", err)
 	}
@@ -159,7 +159,7 @@ func TestSignPolicyFileIntegrityPreservesPolicyBytes(t *testing.T) {
 
 func TestSignPolicyFileIntegrityRejectsMalformedPolicy(t *testing.T) {
 	root := t.TempDir()
-	path := PolicyPath(root, "alice")
+	path := PolicyPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll(identity) error = %v", err)
 	}
@@ -167,7 +167,7 @@ func TestSignPolicyFileIntegrityRejectsMalformedPolicy(t *testing.T) {
 		t.Fatalf("WriteFile(policy) error = %v", err)
 	}
 
-	err := SignPolicyFileIntegrity(root, "alice", policyIntegrityTestKey(t), time.Time{})
+	err := SignPolicyFileIntegrity(root, policyIntegrityTestKey(t), time.Time{})
 	if err == nil || !strings.Contains(err.Error(), "failed to parse policy config") {
 		t.Fatalf("SignPolicyFileIntegrity() error = %v, want parse failure", err)
 	}
@@ -177,7 +177,7 @@ func TestSignPolicyFileIntegrityRejectsMalformedPolicy(t *testing.T) {
 }
 
 func TestLoadVerifiedStoredConfigMissingPolicy(t *testing.T) {
-	_, err := LoadVerifiedStoredConfig(t.TempDir(), "alice", policyIntegrityTestKey(t))
+	_, err := LoadVerifiedStoredConfig(t.TempDir(), policyIntegrityTestKey(t))
 	if !errors.Is(err, ErrPolicyIntegrityMissingFile) {
 		t.Fatalf("LoadVerifiedStoredConfig() error = %v, want ErrPolicyIntegrityMissingFile", err)
 	}
@@ -185,12 +185,12 @@ func TestLoadVerifiedStoredConfigMissingPolicy(t *testing.T) {
 
 func TestLoadVerifiedStoredConfigUnreadablePolicyWrapsIntegrityError(t *testing.T) {
 	root := t.TempDir()
-	path := PolicyPath(root, "alice")
+	path := PolicyPath(root)
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		t.Fatalf("MkdirAll(policy path) error = %v", err)
 	}
 
-	_, err := LoadVerifiedStoredConfig(root, "alice", policyIntegrityTestKey(t))
+	_, err := LoadVerifiedStoredConfig(root, policyIntegrityTestKey(t))
 	if !errors.Is(err, ErrPolicyIntegrity) || !errors.Is(err, ErrPolicyIntegrityUnreadable) {
 		t.Fatalf("LoadVerifiedStoredConfig() error = %v, want integrity unreadable error", err)
 	}
@@ -198,10 +198,10 @@ func TestLoadVerifiedStoredConfigUnreadablePolicyWrapsIntegrityError(t *testing.
 
 func TestLoadVerifiedStoredConfigMissingSidecar(t *testing.T) {
 	root := t.TempDir()
-	if err := SaveStoredConfig(root, "alice", &StoredConfig{}); err != nil {
+	if err := SaveStoredConfig(root, &StoredConfig{}); err != nil {
 		t.Fatalf("SaveStoredConfig() error = %v", err)
 	}
-	_, err := LoadVerifiedStoredConfig(root, "alice", policyIntegrityTestKey(t))
+	_, err := LoadVerifiedStoredConfig(root, policyIntegrityTestKey(t))
 	if !errors.Is(err, ErrPolicyIntegrityMissingSidecar) {
 		t.Fatalf("LoadVerifiedStoredConfig() error = %v, want ErrPolicyIntegrityMissingSidecar", err)
 	}
@@ -210,14 +210,14 @@ func TestLoadVerifiedStoredConfigMissingSidecar(t *testing.T) {
 func TestLoadVerifiedStoredConfigRejectsTamperedPolicy(t *testing.T) {
 	root := t.TempDir()
 	key := policyIntegrityTestKey(t)
-	if err := SaveStoredConfigWithIntegrity(root, "alice", &StoredConfig{}, key, time.Time{}); err != nil {
+	if err := SaveStoredConfigWithIntegrity(root, &StoredConfig{}, key, time.Time{}); err != nil {
 		t.Fatalf("SaveStoredConfigWithIntegrity() error = %v", err)
 	}
-	if err := os.WriteFile(PolicyPath(root, "alice"), []byte("reject_foreign_rekey: false\n"), 0o600); err != nil {
+	if err := os.WriteFile(PolicyPath(root), []byte("reject_foreign_rekey: false\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := LoadVerifiedStoredConfig(root, "alice", key)
+	_, err := LoadVerifiedStoredConfig(root, key)
 	if !errors.Is(err, ErrPolicyIntegrityMismatch) {
 		t.Fatalf("LoadVerifiedStoredConfig() error = %v, want ErrPolicyIntegrityMismatch", err)
 	}
@@ -227,7 +227,7 @@ func TestLoadVerifiedStoredConfigRejectsMalformedSignedPolicy(t *testing.T) {
 	root := t.TempDir()
 	key := policyIntegrityTestKey(t)
 	policyBytes := []byte("reject_foreign_rekey: [\n")
-	path := PolicyPath(root, "alice")
+	path := PolicyPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll(identity) error = %v", err)
 	}
@@ -246,7 +246,7 @@ func TestLoadVerifiedStoredConfigRejectsMalformedSignedPolicy(t *testing.T) {
 		t.Fatalf("WriteFile(sidecar) error = %v", err)
 	}
 
-	_, err = LoadVerifiedStoredConfig(root, "alice", key)
+	_, err = LoadVerifiedStoredConfig(root, key)
 	if err == nil {
 		t.Fatal("LoadVerifiedStoredConfig() error = nil, want parse failure")
 	}
@@ -257,12 +257,12 @@ func TestLoadVerifiedStoredConfigRejectsMalformedSignedPolicy(t *testing.T) {
 
 func TestSignPolicyFileIntegrityUnreadablePolicyWrapsIntegrityError(t *testing.T) {
 	root := t.TempDir()
-	path := PolicyPath(root, "alice")
+	path := PolicyPath(root)
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		t.Fatalf("MkdirAll(policy path) error = %v", err)
 	}
 
-	err := SignPolicyFileIntegrity(root, "alice", policyIntegrityTestKey(t), time.Time{})
+	err := SignPolicyFileIntegrity(root, policyIntegrityTestKey(t), time.Time{})
 	if !errors.Is(err, ErrPolicyIntegrity) || !errors.Is(err, ErrPolicyIntegrityUnreadable) {
 		t.Fatalf("SignPolicyFileIntegrity() error = %v, want integrity unreadable error", err)
 	}
@@ -271,11 +271,11 @@ func TestSignPolicyFileIntegrityUnreadablePolicyWrapsIntegrityError(t *testing.T
 func TestLoadVerifiedStoredConfigRejectsWrongKey(t *testing.T) {
 	root := t.TempDir()
 	key := policyIntegrityTestKey(t)
-	if err := SaveStoredConfigWithIntegrity(root, "alice", &StoredConfig{}, key, time.Time{}); err != nil {
+	if err := SaveStoredConfigWithIntegrity(root, &StoredConfig{}, key, time.Time{}); err != nil {
 		t.Fatalf("SaveStoredConfigWithIntegrity() error = %v", err)
 	}
 	wrongKeyring := cryptotest.Keyring(t, []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
-	_, err := LoadVerifiedStoredConfig(root, "alice", wrongKeyring)
+	_, err := LoadVerifiedStoredConfig(root, wrongKeyring)
 	if !errors.Is(err, ErrPolicyIntegrityMismatch) {
 		t.Fatalf("LoadVerifiedStoredConfig() error = %v, want ErrPolicyIntegrityMismatch", err)
 	}

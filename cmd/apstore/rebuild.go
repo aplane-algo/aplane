@@ -192,7 +192,7 @@ func initializeRebuildNodeRole(role noderole.Role, kr *crypto.Keyring) error {
 	if err != nil {
 		return fmt.Errorf("failed to create node role: %w", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(keystorePaths(), productIdentityID(), roleBytes, kr, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(keystorePaths(), roleBytes, kr, time.Now()); err != nil {
 		return fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 	}
 	return nil

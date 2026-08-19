@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
@@ -89,7 +88,7 @@ func (r OnlineRunner) Run(ctx context.Context, command Command, streams Streams)
 		command: command, streams: streams, store: store, stored: stored,
 		exactYAML: []byte(store.PolicyYAML()), target: target,
 		status:  fmt.Sprintf("%s OK online", target.StatusNoun()),
-		dataDir: "apsigner admin protocol", identityID: store.IdentityID(), editor: r.Editor,
+		dataDir: "apsigner admin protocol", editor: r.Editor,
 		digest: store.LastSHA256(),
 	}).run()
 }
@@ -113,7 +112,7 @@ func (r OnlineRunner) runDraft(ctx context.Context, command Command, streams Str
 		command: command, streams: streams, store: store, stored: stored,
 		exactYAML: data, target: parseTarget,
 		status:  fmt.Sprintf("%s OK: %s", parseTarget.StatusNoun(), command.Source),
-		dataDir: "apsigner admin protocol", identityID: store.IdentityID(), editor: r.Editor,
+		dataDir: "apsigner admin protocol", editor: r.Editor,
 	}).run()
 }
 
@@ -177,11 +176,4 @@ func onlineTarget(requester interface {
 		return policyeditor.TargetSentry, nil
 	}
 	return policyeditor.TargetSigner, nil
-}
-
-func identityOrDefault(identityID string) string {
-	if strings.TrimSpace(identityID) == "" {
-		return auth.CurrentProductIdentityID()
-	}
-	return identityID
 }

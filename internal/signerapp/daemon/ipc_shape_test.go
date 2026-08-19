@@ -268,7 +268,7 @@ func TestHandleUpdateAdminSettingPersistsIdentityScopedConfigSeparately(t *testi
 		t.Fatal("global config.yaml was modified for identity-scoped user_auto_approve")
 	}
 
-	storedCfg, err := identity.LoadStoredConfig(server.dataDir, auth.CurrentProductIdentityID())
+	storedCfg, err := identity.LoadStoredConfig(server.dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

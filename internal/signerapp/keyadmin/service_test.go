@@ -299,7 +299,7 @@ teal: |
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "bounded-sentry", referenceJSON); err != nil {
+	if _, err := sentryrefs.Import(ir.KeyPaths(), "bounded-sentry", referenceJSON); err != nil {
 		t.Fatal(err)
 	}
 

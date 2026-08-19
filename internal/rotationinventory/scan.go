@@ -314,7 +314,7 @@ func (s *inventoryScanner) scanIntegrityDocuments() error {
 		return err
 	}
 
-	policyPath := policy.PolicyPath(s.paths.Root(), s.identityID)
+	policyPath := policy.PolicyPath(s.paths.Root())
 	policyBytes, _, err := fsutil.ReadRegularFile(policyPath)
 	if err != nil {
 		return fmt.Errorf("rotation inventory policy: %w", err)

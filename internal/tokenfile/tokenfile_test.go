@@ -153,7 +153,7 @@ func TestLoadAPlaneTokenConcurrentBootstrapUsesSingleToken(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			tokens[i], errs[i] = LoadAPlaneToken(root, "alice")
+			tokens[i], errs[i] = LoadAPlaneToken(root)
 		}(i)
 	}
 
@@ -170,7 +170,7 @@ func TestLoadAPlaneTokenConcurrentBootstrapUsesSingleToken(t *testing.T) {
 			t.Fatalf("worker %d token differs from worker 0", i)
 		}
 	}
-	tokenPath := GetAPlaneTokenPathForRoot(root, "alice")
+	tokenPath := GetAPlaneTokenPathForRoot(root)
 	diskToken, err := ReadToken(tokenPath)
 	if err != nil {
 		t.Fatalf("ReadToken() error = %v", err)

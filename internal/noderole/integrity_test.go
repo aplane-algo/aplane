@@ -25,7 +25,7 @@ func TestSaveInitialAndVerifyWithKeyring(t *testing.T) {
 	if doc.Role != RoleSigner {
 		t.Fatalf("Role = %q, want %q", doc.Role, RoleSigner)
 	}
-	if err := SaveIdentitySidecarWithKeyring(paths, "default", roleBytes, cryptotest.Keyring(t, masterKey), time.Unix(100, 0)); err != nil {
+	if err := SaveIdentitySidecarWithKeyring(paths, roleBytes, cryptotest.Keyring(t, masterKey), time.Unix(100, 0)); err != nil {
 		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
 	sidecar, err := LoadSidecar(paths.NodeRoleIntegritySidecar())
@@ -35,7 +35,7 @@ func TestSaveInitialAndVerifyWithKeyring(t *testing.T) {
 	if sidecar.Version != IntegritySidecarVersion || sidecar.IntegrityTerm != 1 {
 		t.Fatalf("sidecar version/term = %d/%d, want %d/1", sidecar.Version, sidecar.IntegrityTerm, IntegritySidecarVersion)
 	}
-	verified, err := LoadAndVerifyWithKeyring(paths, "default", cryptotest.Keyring(t, masterKey))
+	verified, err := LoadAndVerifyWithKeyring(paths, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
@@ -63,13 +63,13 @@ func TestVerifyRejectsTamperedNodeRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
-	if err := SaveIdentitySidecarWithKeyring(paths, "default", roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
+	if err := SaveIdentitySidecarWithKeyring(paths, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
 		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
 	if err := os.WriteFile(paths.NodeRolePath(), []byte("schema_version: 1\nrole: sentry\n"), 0o660); err != nil {
 		t.Fatalf("WriteFile(tamper) error = %v", err)
 	}
-	_, err = LoadAndVerifyWithKeyring(paths, "default", cryptotest.Keyring(t, masterKey))
+	_, err = LoadAndVerifyWithKeyring(paths, cryptotest.Keyring(t, masterKey))
 	if !errors.Is(err, ErrRoleMismatch) {
 		t.Fatalf("LoadAndVerifyWithKeyring(tampered) error = %v, want ErrRoleMismatch", err)
 	}
@@ -85,10 +85,10 @@ func TestVerifyRejectsWrongMasterKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
-	if err := SaveIdentitySidecarWithKeyring(paths, "default", roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
+	if err := SaveIdentitySidecarWithKeyring(paths, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
 		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
-	_, err = LoadAndVerifyWithKeyring(paths, "default", cryptotest.Keyring(t, wrongKey))
+	_, err = LoadAndVerifyWithKeyring(paths, cryptotest.Keyring(t, wrongKey))
 	if !errors.Is(err, ErrRoleMismatch) {
 		t.Fatalf("LoadAndVerifyWithKeyring(wrong key) error = %v, want ErrRoleMismatch", err)
 	}

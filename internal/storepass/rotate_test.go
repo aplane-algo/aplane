@@ -119,10 +119,10 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	assertDecryptsWithKeyring(t, templatePath, kr)
 	assertPolicyVerifiesWithKeyring(t, paths, identityID, kr)
 	assertNodeRoleVerifiesWithKeyring(t, paths, identityID, kr, noderole.RoleSigner)
-	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(paths.Root(), identityID, oldMasterKeyRing); err == nil {
+	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(paths.Root(), oldMasterKeyRing); err == nil {
 		t.Fatal("policy sidecar still verifies with old master key after rotation")
 	}
-	if _, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, oldMasterKeyRing); err == nil {
+	if _, err := noderole.LoadAndVerifyWithKeyring(paths, oldMasterKeyRing); err == nil {
 		t.Fatal("node role sidecar still verifies with old master key after rotation")
 	}
 }
@@ -313,7 +313,7 @@ func TestRotateRejectsWrongCurrentPassphraseBeforeMutation(t *testing.T) {
 	assertDecryptsWithKeyring(t, templatePath, oldMasterKeyRing)
 	assertPolicyVerifiesWithKeyring(t, paths, identityID, oldMasterKeyRing)
 	assertNodeRoleVerifiesWithKeyring(t, paths, identityID, oldMasterKeyRing, noderole.RoleSigner)
-	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), paths.NodeRoleIntegritySidecar())
+	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root())), paths.NodeRoleIntegritySidecar())
 }
 
 func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
@@ -363,10 +363,10 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 	assertDecryptsWithKeyring(t, keyPath, oldMasterKeyRing)
 	assertDecryptsWithKeyring(t, templatePath, oldMasterKeyRing)
 	assertPolicyVerifiesWithKeyring(t, paths, identityID, oldMasterKeyRing)
-	if _, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, oldMasterKeyRing); err == nil {
+	if _, err := noderole.LoadAndVerifyWithKeyring(paths, oldMasterKeyRing); err == nil {
 		t.Fatal("tampered node role unexpectedly verifies after failed rotation")
 	}
-	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), paths.NodeRoleIntegritySidecar())
+	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root())), paths.NodeRoleIntegritySidecar())
 }
 
 func TestRotateTreatsHelperFailureAsPostCommitWarning(t *testing.T) {
@@ -424,7 +424,7 @@ func TestRotateTreatsHelperFailureAsPostCommitWarning(t *testing.T) {
 		keyPath,
 		templatePath,
 		filepath.Join(paths.KeystoreMetadataDir(), ".keystore"),
-		policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)),
+		policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root())),
 		paths.NodeRoleIntegritySidecar(),
 	)
 }
@@ -490,7 +490,7 @@ func writeEncryptedForRotateTest(t *testing.T, path string, plaintext []byte, kr
 
 func writePolicyBaselineForRotateTest(t *testing.T, paths storepaths.Paths, identityID string, kr *crypto.Keyring, cfg *policy.StoredConfig) {
 	t.Helper()
-	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, cfg, kr, time.Unix(1700000000, 0)); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), cfg, kr, time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 }
@@ -501,21 +501,21 @@ func writeNodeRoleBaselineForRotateTest(t *testing.T, paths storepaths.Paths, id
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(paths, identityID, roleBytes, kr, time.Unix(1700000000, 0)); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(paths, roleBytes, kr, time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
 	}
 }
 
 func assertPolicyVerifiesWithKeyring(t *testing.T, paths storepaths.Paths, identityID string, kr *crypto.Keyring) {
 	t.Helper()
-	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(paths.Root(), identityID, kr); err != nil {
+	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(paths.Root(), kr); err != nil {
 		t.Fatalf("policy sidecar did not verify: %v", err)
 	}
 }
 
 func assertNodeRoleVerifiesWithKeyring(t *testing.T, paths storepaths.Paths, identityID string, kr *crypto.Keyring, want noderole.Role) {
 	t.Helper()
-	doc, err := noderole.LoadAndVerifyWithKeyring(paths, identityID, kr)
+	doc, err := noderole.LoadAndVerifyWithKeyring(paths, kr)
 	if err != nil {
 		t.Fatalf("node role sidecar did not verify: %v", err)
 	}

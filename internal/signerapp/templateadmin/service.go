@@ -37,7 +37,7 @@ type Service struct {
 }
 
 func (s Service) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibraryTemplatesResult {
-	items, err := templatelibrary.List(s.Deps.KeyPaths(), ir.ID())
+	items, err := templatelibrary.List(s.Deps.KeyPaths())
 	if err != nil {
 		return adminproto.ListLibraryTemplatesResult{
 			Code:  protocol.ResultCodeListFailed,
@@ -83,7 +83,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var installErr error
-			installResult, installErr = templatelibrary.InstallFromLibrary(s.Deps.KeyPaths(), ir.ID(), ref, masterKey)
+			installResult, installErr = templatelibrary.InstallFromLibrary(s.Deps.KeyPaths(), ref, masterKey)
 			return installErr
 		}); err != nil {
 			out = adminproto.InstallLibraryTemplateResult{
@@ -98,7 +98,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 
 		reloadReport, reloadErr := ir.Reload()
 		if reloadErr != nil {
-			reloadErr = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), ir.ID(), installResult, reloadErr)
+			reloadErr = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), installResult, reloadErr)
 			out = adminproto.InstallLibraryTemplateResult{
 				Success:       false,
 				KeyType:       installResult.KeyType,
@@ -112,7 +112,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 
 		if !templateAcceptedByReloadReport(reloadReport, installResult.KeyType, installResult.TemplateType) {
 			err := fmt.Errorf("template %s was saved but did not activate on reload", installResult.KeyType)
-			err = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), ir.ID(), installResult, err)
+			err = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), installResult, err)
 			out = adminproto.InstallLibraryTemplateResult{
 				Success:       false,
 				KeyType:       installResult.KeyType,
@@ -151,7 +151,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 func (s Service) ListInstalledTemplates(ir *identity.Runtime) adminproto.ListInstalledTemplatesResult {
 	var out []adminproto.InstalledTemplateInfo
 	for _, templateType := range templatestore.ActiveTemplateTypes() {
-		files, err := templatestore.ScanTemplateDirectoryForPaths(s.Deps.KeyPaths(), ir.ID(), templateType)
+		files, err := templatestore.ScanTemplateDirectoryForPaths(s.Deps.KeyPaths(), templateType)
 		if err != nil {
 			return adminproto.ListInstalledTemplatesResult{
 				Code:  protocol.ResultCodeListFailed,
@@ -167,7 +167,7 @@ func (s Service) ListInstalledTemplates(ir *identity.Runtime) adminproto.ListIns
 				KeyType:      file.KeyType,
 				TemplateType: installedWireTemplateType(templateType),
 				Size:         size,
-				Enabled:      installedTemplateEnabled(s.Deps.KeyPaths(), ir.ID(), file.KeyType),
+				Enabled:      installedTemplateEnabled(s.Deps.KeyPaths(), file.KeyType),
 			})
 		}
 	}
@@ -232,7 +232,7 @@ func (s Service) ShowLibraryTemplate(ir *identity.Runtime, req adminproto.ShowLi
 
 func (s Service) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
-	templateType, rec, ok, err := installedTemplateFromRecord(s.Deps.KeyPaths(), ir.ID(), keyType)
+	templateType, rec, ok, err := installedTemplateFromRecord(s.Deps.KeyPaths(), keyType)
 	if err != nil {
 		return adminproto.ShowInstalledTemplateResult{
 			Success: false,
@@ -250,7 +250,7 @@ func (s Service) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.Show
 		}
 	}
 
-	path, err := templatestore.GetTemplateFilePathForPaths(s.Deps.KeyPaths(), ir.ID(), keyType, templateType)
+	path, err := templatestore.GetTemplateFilePathForPaths(s.Deps.KeyPaths(), keyType, templateType)
 	if err != nil {
 		return adminproto.ShowInstalledTemplateResult{
 			Code:  protocol.ResultCodeTemplateStateFailed,
@@ -303,7 +303,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var installErr error
-			installResult, installErr = templatelibrary.InstallParsed(s.Deps.KeyPaths(), ir.ID(), parsed, masterKey)
+			installResult, installErr = templatelibrary.InstallParsed(s.Deps.KeyPaths(), parsed, masterKey)
 			return installErr
 		}); err != nil {
 			out = adminproto.ImportInstalledTemplateResult{
@@ -318,7 +318,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 
 		reloadReport, reloadErr := ir.Reload()
 		if reloadErr != nil {
-			reloadErr = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), ir.ID(), installResult, reloadErr)
+			reloadErr = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), installResult, reloadErr)
 			out = adminproto.ImportInstalledTemplateResult{
 				Success:       false,
 				KeyType:       installResult.KeyType,
@@ -332,7 +332,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 
 		if !templateAcceptedByReloadReport(reloadReport, installResult.KeyType, installResult.TemplateType) {
 			err := fmt.Errorf("template %s was saved but did not activate on reload", installResult.KeyType)
-			err = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), ir.ID(), installResult, err)
+			err = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), installResult, err)
 			out = adminproto.ImportInstalledTemplateResult{
 				Success:       false,
 				KeyType:       installResult.KeyType,
@@ -370,7 +370,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 
 func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
-	templateType, rec, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), ir.ID(), keyType)
+	templateType, rec, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), keyType)
 	if stateErr != nil {
 		return adminproto.RemoveInstalledTemplateResult{
 			Success: false,
@@ -393,7 +393,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var removeErr error
-			removeResult, removeErr = templatelibrary.RemoveInstalledTemplate(s.Deps.KeyPaths(), ir.ID(), keyType, templateType, masterKey)
+			removeResult, removeErr = templatelibrary.RemoveInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType, masterKey)
 			return removeErr
 		}); err != nil {
 			return err
@@ -443,7 +443,7 @@ func (s Service) ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKe
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	var out adminproto.ActivateKeyTypeResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
-		if templateType, _, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), ir.ID(), keyType); stateErr != nil {
+		if templateType, _, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), keyType); stateErr != nil {
 			out = adminproto.ActivateKeyTypeResult{
 				Success: false,
 				KeyType: keyType,
@@ -471,7 +471,7 @@ func (s Service) ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKe
 }
 
 func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyType string, templateType templatestore.TemplateType) adminproto.ActivateKeyTypeResult {
-	installResult, err := templatelibrary.EnableInstalledTemplate(s.Deps.KeyPaths(), ir.ID(), keyType, templateType)
+	installResult, err := templatelibrary.EnableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType)
 	if err != nil {
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
@@ -483,7 +483,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyT
 	reloadReport, reloadErr := ir.Reload()
 	if reloadErr != nil {
 		if !installResult.AlreadyExists {
-			if rollbackErr := templatelibrary.RollbackTemplateStateChange(s.Deps.KeyPaths(), ir.ID(), installResult); rollbackErr != nil {
+			if rollbackErr := templatelibrary.RollbackTemplateStateChange(s.Deps.KeyPaths(), installResult); rollbackErr != nil {
 				reloadErr = fmt.Errorf("%w (rollback failed: %v)", reloadErr, rollbackErr)
 			}
 		}
@@ -497,7 +497,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyT
 	if !templateAcceptedByReloadReport(reloadReport, installResult.KeyType, templateType) {
 		err := fmt.Errorf("template %s was enabled but did not activate on reload", installResult.KeyType)
 		if !installResult.AlreadyExists {
-			if rollbackErr := templatelibrary.RollbackTemplateStateChange(s.Deps.KeyPaths(), ir.ID(), installResult); rollbackErr != nil {
+			if rollbackErr := templatelibrary.RollbackTemplateStateChange(s.Deps.KeyPaths(), installResult); rollbackErr != nil {
 				err = fmt.Errorf("%w (rollback failed: %v)", err, rollbackErr)
 			}
 		}
@@ -517,7 +517,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyT
 }
 
 func (s Service) activateCompiledProviderKeyTypeLocked(ir *identity.Runtime, keyType string) adminproto.ActivateKeyTypeResult {
-	installResult, err := templatelibrary.ActivateCompiledProvider(s.Deps.KeyPaths(), ir.ID(), keyType)
+	installResult, err := templatelibrary.ActivateCompiledProvider(s.Deps.KeyPaths(), keyType)
 	if err != nil {
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
@@ -550,7 +550,7 @@ func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.Deactiva
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var removeErr error
-			if templateType, _, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), ir.ID(), keyType); stateErr != nil {
+			if templateType, _, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), keyType); stateErr != nil {
 				return stateErr
 			} else if ok {
 				disabledTemplate = true
@@ -604,11 +604,11 @@ func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.Deactiva
 }
 
 func (s Service) disableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyType string, templateType templatestore.TemplateType, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
-	return templatelibrary.DisableInstalledTemplate(s.Deps.KeyPaths(), ir.ID(), keyType, templateType, masterKey)
+	return templatelibrary.DisableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType, masterKey)
 }
 
 func (s Service) deactivateCompiledProviderKeyTypeLocked(ir *identity.Runtime, keyType string, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
-	return templatelibrary.DeactivateCompiledProvider(s.Deps.KeyPaths(), ir.ID(), keyType, masterKey)
+	return templatelibrary.DeactivateCompiledProvider(s.Deps.KeyPaths(), keyType, masterKey)
 }
 
 func templateAcceptedByReloadReport(report *signertemplates.ReloadReport, keyType string, templateType templatestore.TemplateType) bool {
@@ -644,14 +644,14 @@ func templateAcceptedByReloadReport(report *signertemplates.ReloadReport, keyTyp
 	return false
 }
 
-func rollbackFailedTemplateInstall(paths storepaths.Paths, identityID string, result templatelibrary.InstallResult, cause error) error {
+func rollbackFailedTemplateInstall(paths storepaths.Paths, result templatelibrary.InstallResult, cause error) error {
 	var rollbackErr error
 	if !result.AlreadyExists {
-		rollbackErr = templatelibrary.RollbackInstalledTemplateFile(paths, identityID, result.KeyType, result.TemplateType)
+		rollbackErr = templatelibrary.RollbackInstalledTemplateFile(paths, result.KeyType, result.TemplateType)
 		signertemplates.UnregisterProductProvider(result.KeyType)
 	}
 	if result.StateChanged {
-		if err := templatelibrary.RollbackTemplateStateChange(paths, identityID, result); err != nil {
+		if err := templatelibrary.RollbackTemplateStateChange(paths, result); err != nil {
 			if rollbackErr != nil {
 				rollbackErr = fmt.Errorf("%v; state rollback failed: %w", rollbackErr, err)
 			} else {
@@ -665,7 +665,7 @@ func rollbackFailedTemplateInstall(paths storepaths.Paths, identityID string, re
 	return cause
 }
 
-func installedTemplateFromRecord(paths storepaths.Paths, identityID, keyType string) (templatestore.TemplateType, keytypestate.Record, bool, error) {
+func installedTemplateFromRecord(paths storepaths.Paths, keyType string) (templatestore.TemplateType, keytypestate.Record, bool, error) {
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	if err != nil {
 		return "", keytypestate.Record{}, false, err
@@ -677,7 +677,7 @@ func installedTemplateFromRecord(paths storepaths.Paths, identityID, keyType str
 	if !ok {
 		return "", keytypestate.Record{}, false, nil
 	}
-	if !templatestore.TemplateExistsForPaths(paths, identityID, rec.KeyType, templateType) {
+	if !templatestore.TemplateExistsForPaths(paths, rec.KeyType, templateType) {
 		return "", keytypestate.Record{}, false, nil
 	}
 	return templateType, rec, true, nil
@@ -713,7 +713,7 @@ func recordWireTemplateType(rec keytypestate.Record) string {
 	return wire
 }
 
-func installedTemplateEnabled(paths storepaths.Paths, identityID, keyType string) bool {
+func installedTemplateEnabled(paths storepaths.Paths, keyType string) bool {
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }

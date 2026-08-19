@@ -469,9 +469,9 @@ func validateIntegrityPairs(
 			label:        "policy",
 			documentKind: KindPolicyDocument,
 			sidecarKind:  KindPolicySidecar,
-			documentPath: policy.PolicyPath(paths.Root(), identityID),
+			documentPath: policy.PolicyPath(paths.Root()),
 			sidecarPath: policy.PolicyIntegritySidecarPath(
-				policy.PolicyPath(paths.Root(), identityID),
+				policy.PolicyPath(paths.Root()),
 			),
 		},
 		{

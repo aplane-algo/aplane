@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
@@ -40,7 +39,7 @@ func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 	unlockCfg := &identity.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(server.dataDir, auth.DefaultIdentityID, unlockCfg); err != nil {
+	if err := identity.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
@@ -151,7 +150,7 @@ func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 	unlockCfg := &identity.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(server.dataDir, auth.DefaultIdentityID, unlockCfg); err != nil {
+	if err := identity.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
@@ -187,7 +186,7 @@ func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) 
 	unlockCfg := &identity.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(server.dataDir, auth.DefaultIdentityID, unlockCfg); err != nil {
+	if err := identity.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -233,7 +232,7 @@ func TestUpdateAdminSetting_RejectsPassphraseTimeoutInHeadlessMode(t *testing.T)
 	unlockCfg := &identity.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(server.dataDir, auth.DefaultIdentityID, unlockCfg); err != nil {
+	if err := identity.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -398,7 +397,7 @@ func TestConcurrentProductConfigUpdatesAreSerialized(t *testing.T) {
 		}
 	}
 
-	stored, err := identity.LoadStoredConfig(server.dataDir, productRuntime.ID())
+	stored, err := identity.LoadStoredConfig(server.dataDir)
 	if err != nil {
 		t.Fatalf("LoadStoredConfig(product) error = %v", err)
 	}
@@ -436,7 +435,7 @@ func TestReplacePolicy_PersistsUploadedBytesAndApplies(t *testing.T) {
 		t.Fatalf("canonical policy missing uploaded settings:\n%s", result.PolicyYAML)
 	}
 
-	onDisk, err := os.ReadFile(policy.PolicyPath(server.dataDir, auth.DefaultIdentityID))
+	onDisk, err := os.ReadFile(policy.PolicyPath(server.dataDir))
 	if err != nil {
 		t.Fatalf("ReadFile(policy.yaml) error = %v", err)
 	}
@@ -484,7 +483,7 @@ func TestReplacePolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 	if result.Code != "policy_validation_failed" {
 		t.Fatalf("ReplacePolicy(invalid) code = %q, want policy_validation_failed; error %q", result.Code, result.Error)
 	}
-	onDisk, err := os.ReadFile(policy.PolicyPath(server.dataDir, auth.DefaultIdentityID))
+	onDisk, err := os.ReadFile(policy.PolicyPath(server.dataDir))
 	if err != nil {
 		t.Fatalf("ReadFile(policy.yaml) error = %v", err)
 	}
@@ -522,7 +521,7 @@ func TestReplacePolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
 	if result.Code != "policy_snapshot_changed" {
 		t.Fatalf("ReplacePolicy(stale) code = %q, want policy_snapshot_changed; error %q", result.Code, result.Error)
 	}
-	onDisk, err := os.ReadFile(policy.PolicyPath(server.dataDir, auth.DefaultIdentityID))
+	onDisk, err := os.ReadFile(policy.PolicyPath(server.dataDir))
 	if err != nil {
 		t.Fatalf("ReadFile(policy.yaml) error = %v", err)
 	}
@@ -558,7 +557,7 @@ func TestReplacePolicyFailsWhenLocked(t *testing.T) {
 func assertPolicySidecarVerifies(t *testing.T, ir *identity.Runtime, dataDir string) {
 	t.Helper()
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-		_, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, ir.ID(), masterKey)
+		_, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, masterKey)
 		return err
 	}); err != nil {
 		t.Fatalf("policy sidecar did not verify: %v", err)

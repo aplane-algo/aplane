@@ -464,7 +464,7 @@ func TestCompleteRotationRetriesBaselineAfterDurabilityFailure(t *testing.T) {
 
 func TestCompleteRotationSecondScanBlocksMutationAfterBaseline(t *testing.T) {
 	fixture, _, passphrase := startCompletionFixture(t, true, false, false)
-	policyPath := policy.PolicyPath(fixture.paths.Root(), inventoryIdentity)
+	policyPath := policy.PolicyPath(fixture.paths.Root())
 	mutated := false
 	baselineRenamed := false
 	baselinePath := fixture.paths.RotationBaselinePath()

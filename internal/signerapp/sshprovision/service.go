@@ -44,7 +44,7 @@ func (s Service) ApproveContext(ctx context.Context, identityID, sshFingerprint,
 }
 
 func (s Service) Issue(identityID string) (string, error) {
-	path := tokenfile.GetAPlaneTokenPathForRoot(s.TokenRoot, identityID)
+	path := tokenfile.GetAPlaneTokenPathForRoot(s.TokenRoot)
 	token, err := tokenfile.ReadToken(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to load token: %w", err)

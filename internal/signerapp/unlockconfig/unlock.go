@@ -10,25 +10,26 @@ import (
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"gopkg.in/yaml.v3"
 )
 
-// UnlockConfig holds per-identity passphrase helper configuration.
-// Stored at identities/<identity>/unlock.yaml.
+// UnlockConfig holds product-store passphrase helper configuration.
+// Stored at identities/default/unlock.yaml.
 type UnlockConfig struct {
 	PassphraseCommandArgv []string          `yaml:"passphrase_command_argv,omitempty"`
 	PassphraseCommandEnv  map[string]string `yaml:"passphrase_command_env,omitempty"`
 }
 
-// UnlockConfigPath returns the path to an identity's unlock config file.
-func UnlockConfigPath(dataRoot, identityID string) string {
-	return filepath.Join(dataRoot, "identities", identityID, "unlock.yaml")
+// UnlockConfigPath returns the fixed product unlock config path.
+func UnlockConfigPath(dataRoot string) string {
+	return filepath.Join(storepaths.NewPaths(dataRoot).ProductDir(), "unlock.yaml")
 }
 
-// LoadUnlockConfig reads the per-identity unlock config.
+// LoadUnlockConfig reads the product-store unlock config.
 // Returns an empty config (not an error) if the file does not exist.
-func LoadUnlockConfig(dataRoot, identityID string) (*UnlockConfig, error) {
-	path := UnlockConfigPath(dataRoot, identityID)
+func LoadUnlockConfig(dataRoot string) (*UnlockConfig, error) {
+	path := UnlockConfigPath(dataRoot)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return &UnlockConfig{}, nil
@@ -45,20 +46,20 @@ func LoadUnlockConfig(dataRoot, identityID string) (*UnlockConfig, error) {
 }
 
 // SaveUnlockConfig writes the per-identity unlock config atomically.
-func SaveUnlockConfig(dataRoot, identityID string, cfg *UnlockConfig) error {
-	return saveUnlockConfig(dataRoot, identityID, cfg, nil)
+func SaveUnlockConfig(dataRoot string, cfg *UnlockConfig) error {
+	return saveUnlockConfig(dataRoot, cfg, nil)
 }
 
 // SaveUnlockConfigForService writes a private unlock configuration owned by
 // the resolved signer service account. It is used by root-run appass without
 // any post-publication pathname chown or chmod.
-func SaveUnlockConfigForService(dataRoot, identityID string, cfg *UnlockConfig, uid, gid int) error {
+func SaveUnlockConfigForService(dataRoot string, cfg *UnlockConfig, uid, gid int) error {
 	owner := [2]int{uid, gid}
-	return saveUnlockConfig(dataRoot, identityID, cfg, &owner)
+	return saveUnlockConfig(dataRoot, cfg, &owner)
 }
 
-func saveUnlockConfig(dataRoot, identityID string, cfg *UnlockConfig, owner *[2]int) error {
-	path := UnlockConfigPath(dataRoot, identityID)
+func saveUnlockConfig(dataRoot string, cfg *UnlockConfig, owner *[2]int) error {
+	path := UnlockConfigPath(dataRoot)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -82,8 +83,8 @@ func saveUnlockConfig(dataRoot, identityID string, cfg *UnlockConfig, owner *[2]
 }
 
 // ClearUnlockConfig removes the per-identity unlock config file.
-func ClearUnlockConfig(dataRoot, identityID string) error {
-	path := UnlockConfigPath(dataRoot, identityID)
+func ClearUnlockConfig(dataRoot string) error {
+	path := UnlockConfigPath(dataRoot)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove unlock config: %w", err)
 	}

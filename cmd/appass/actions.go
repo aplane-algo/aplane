@@ -16,18 +16,19 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 const systemdCredentialName = "aplane-passphrase"
 
 // executeSetPassfile sets up appass-file auto-unlock.
 // passphrase is the raw passphrase bytes. svc and isLocal describe the environment.
-func executeSetPassfile(dataDir, identityID string, passphrase []byte, svc *serviceInfo, isLocal bool) (string, error) {
+func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isLocal bool) (string, error) {
 	if err := requireSignerStopped(dataDir); err != nil {
 		return "", err
 	}
 
-	currentMethod, err := currentAutoUnlockMethod(dataDir, identityID)
+	currentMethod, err := currentAutoUnlockMethod(dataDir)
 	if err != nil {
 		return "", err
 	}
@@ -49,7 +50,7 @@ func executeSetPassfile(dataDir, identityID string, passphrase []byte, svc *serv
 	}
 
 	// Write passphrase file to identity-scoped directory
-	identityDir := filepath.Join(dataDir, "identities", identityID)
+	identityDir := storepaths.NewPaths(dataDir).ProductDir()
 	if err := os.MkdirAll(identityDir, 0700); err != nil {
 		return "", fmt.Errorf("creating identity directory: %w", err)
 	}
@@ -69,9 +70,9 @@ func executeSetPassfile(dataDir, identityID string, passphrase []byte, svc *serv
 		PassphraseCommandArgv: []string{passFileBin, passphrasePath},
 	}
 	if !isLocal {
-		err = unlockconfig.SaveUnlockConfigForService(dataDir, identityID, unlockCfg, serviceUID, serviceGID)
+		err = unlockconfig.SaveUnlockConfigForService(dataDir, unlockCfg, serviceUID, serviceGID)
 	} else {
-		err = unlockconfig.SaveUnlockConfig(dataDir, identityID, unlockCfg)
+		err = unlockconfig.SaveUnlockConfig(dataDir, unlockCfg)
 	}
 	if err != nil {
 		return "", fmt.Errorf("saving unlock config: %w", err)
@@ -79,7 +80,7 @@ func executeSetPassfile(dataDir, identityID string, passphrase []byte, svc *serv
 
 	var warning string
 	if currentMethod == "systemd-creds" {
-		if err := cleanupSystemdCreds(dataDir, identityID, isProdMode()); err != nil {
+		if err := cleanupSystemdCreds(dataDir, isProdMode()); err != nil {
 			warning = fmt.Sprintf("switched to passfile, but failed to remove old systemd-creds state: %v", err)
 		}
 	}
@@ -89,12 +90,12 @@ func executeSetPassfile(dataDir, identityID string, passphrase []byte, svc *serv
 
 // executeSetSystemcreds sets up systemd-creds auto-unlock.
 // This always requires root and a systemd service installation.
-func executeSetSystemcreds(dataDir, identityID string, passphrase []byte, svc *serviceInfo) (string, error) {
+func executeSetSystemcreds(dataDir string, passphrase []byte, svc *serviceInfo) (string, error) {
 	if err := requireSignerStopped(dataDir); err != nil {
 		return "", err
 	}
 
-	currentMethod, err := currentAutoUnlockMethod(dataDir, identityID)
+	currentMethod, err := currentAutoUnlockMethod(dataDir)
 	if err != nil {
 		return "", err
 	}
@@ -110,7 +111,7 @@ func executeSetSystemcreds(dataDir, identityID string, passphrase []byte, svc *s
 		return "", fmt.Errorf("appass-systemd-creds not found at %s; ensure it is installed alongside apsigner", passCredsBin)
 	}
 
-	identityDir := filepath.Join(dataDir, "identities", identityID)
+	identityDir := storepaths.NewPaths(dataDir).ProductDir()
 	if err := os.MkdirAll(identityDir, 0700); err != nil {
 		return "", fmt.Errorf("creating identity directory: %w", err)
 	}
@@ -158,7 +159,7 @@ func executeSetSystemcreds(dataDir, identityID string, passphrase []byte, svc *s
 		PassphraseCommandArgv: []string{passCredsBin, credFile},
 	}
 	serviceUID, serviceGID := svc.StoreUID, svc.StoreGID
-	if err := unlockconfig.SaveUnlockConfigForService(dataDir, identityID, unlockCfg, serviceUID, serviceGID); err != nil {
+	if err := unlockconfig.SaveUnlockConfigForService(dataDir, unlockCfg, serviceUID, serviceGID); err != nil {
 		return "", fmt.Errorf("saving unlock config: %w", err)
 	}
 
@@ -176,7 +177,7 @@ func executeSetSystemcreds(dataDir, identityID string, passphrase []byte, svc *s
 }
 
 // executeClear removes auto-unlock configuration and associated files.
-func executeClear(dataDir, identityID string) (string, error) {
+func executeClear(dataDir string) (string, error) {
 	if err := requireSignerStopped(dataDir); err != nil {
 		return "", err
 	}
@@ -188,7 +189,7 @@ func executeClear(dataDir, identityID string) (string, error) {
 		return "", fmt.Errorf("systemd mode: must be run as root (use sudo)")
 	}
 
-	method, err := currentAutoUnlockMethod(dataDir, identityID)
+	method, err := currentAutoUnlockMethod(dataDir)
 	if err != nil {
 		return "", err
 	}
@@ -198,12 +199,12 @@ func executeClear(dataDir, identityID string) (string, error) {
 	}
 
 	// Remove identity-scoped unlock config
-	if err := unlockconfig.ClearUnlockConfig(dataDir, identityID); err != nil {
+	if err := unlockconfig.ClearUnlockConfig(dataDir); err != nil {
 		return "", fmt.Errorf("clearing unlock config: %w", err)
 	}
 
 	// Method-specific cleanup
-	identityDir := filepath.Join(dataDir, "identities", identityID)
+	identityDir := storepaths.NewPaths(dataDir).ProductDir()
 	var warning string
 	switch method {
 	case "passfile":
@@ -215,7 +216,7 @@ func executeClear(dataDir, identityID string) (string, error) {
 		}
 
 	case "systemd-creds":
-		if err := cleanupSystemdCreds(dataDir, identityID, prodMode); err != nil {
+		if err := cleanupSystemdCreds(dataDir, prodMode); err != nil {
 			warning = fmt.Sprintf("switched to prompt mode, but failed to remove old systemd-creds state: %v", err)
 		}
 	}
@@ -223,22 +224,22 @@ func executeClear(dataDir, identityID string) (string, error) {
 	return warning, nil
 }
 
-func currentAutoUnlockMethod(dataDir, identityID string) (string, error) {
-	unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir, identityID)
+func currentAutoUnlockMethod(dataDir string) (string, error) {
+	unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir)
 	if err == nil && unlockCfg.HasPassphraseCommand() {
 		return detectMethod(unlockCfg.PassphraseCommandArgv), nil
 	}
 	return "none", nil
 }
 
-func cleanupSystemdCreds(dataDir, identityID string, prodMode bool) error {
+func cleanupSystemdCreds(dataDir string, prodMode bool) error {
 	if prodMode {
 		if err := removeLoadCredentialFromService(); err != nil {
 			return err
 		}
 	}
 
-	credFile := filepath.Join(dataDir, "identities", identityID, "passphrase.cred")
+	credFile := filepath.Join(storepaths.NewPaths(dataDir).ProductDir(), "passphrase.cred")
 	if _, err := os.Stat(credFile); err == nil {
 		if err := os.Remove(credFile); err != nil {
 			return fmt.Errorf("removing credential file: %w", err)

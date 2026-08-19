@@ -79,11 +79,7 @@ func (m Model) handlePolicyEditorLoaded(msg policyEditorLoadedMsg) (tea.Model, t
 		m.lastError = "Policy editor failed: " + msg.err.Error()
 		return m, nil
 	}
-	identityID := msg.store.IdentityID()
-	if identityID == "" {
-		identityID = "default"
-	}
-	editor := policytui.NewWithTarget(msg.store, msg.stored, "apsigner admin protocol", identityID, msg.target)
+	editor := policytui.NewWithTarget(msg.store, msg.stored, "apsigner admin protocol", msg.target)
 	editorModel, cmd := editor.Update(tea.WindowSizeMsg{Width: m.width, Height: m.policyEditorHeight()})
 	m.policyEd.editor = editorModel
 	return m, wrapPolicyEditorCmd(cmd)

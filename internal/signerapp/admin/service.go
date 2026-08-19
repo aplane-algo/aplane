@@ -240,8 +240,8 @@ type policyTargetOps struct {
 	snapshotUnavailableErr  string
 	marshal                 func(*policy.StoredConfig) ([]byte, error)
 	parse                   func([]byte) (*policy.StoredConfig, error)
-	loadVerified            func(dataDir, identityID string, kr *crypto.Keyring) (*policy.StoredConfig, error)
-	saveBytes               func(dataDir, identityID string, data []byte, kr *crypto.Keyring, signedAt time.Time) error
+	loadVerified            func(dataDir string, kr *crypto.Keyring) (*policy.StoredConfig, error)
+	saveBytes               func(dataDir string, data []byte, kr *crypto.Keyring, signedAt time.Time) error
 	apply                   func(dataDir string, cfg *serverconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error)
 	activeSnapshot          func(*identity.Runtime) (*policy.StoredConfig, *policy.Config)
 	setState                func(*identity.Runtime, *policy.StoredConfig, *policy.Config)
@@ -444,7 +444,7 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 		}
 
 		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
-			if _, err := ops.loadVerified(s.Deps.DataDir(), ir.ID(), kr); err != nil {
+			if _, err := ops.loadVerified(s.Deps.DataDir(), kr); err != nil {
 				return newPolicyReplaceError(
 					"policy_verify_failed",
 					fmt.Errorf("failed to verify existing %s: %w", policyTargetFileName(), err),
@@ -453,11 +453,11 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 			if _, err := ops.apply(s.Deps.DataDir(), s.Deps.Config(), stored); err != nil {
 				return newPolicyReplaceError("policy_validation_failed", fmt.Errorf("invalid policy: %w", err))
 			}
-			if err := ops.saveBytes(s.Deps.DataDir(), ir.ID(), data, kr, time.Now()); err != nil {
+			if err := ops.saveBytes(s.Deps.DataDir(), data, kr, time.Now()); err != nil {
 				return newPolicyReplaceError("policy_save_failed", fmt.Errorf("failed to save %s: %w", policyTargetFileName(), err))
 			}
 
-			verified, err := ops.loadVerified(s.Deps.DataDir(), ir.ID(), kr)
+			verified, err := ops.loadVerified(s.Deps.DataDir(), kr)
 			if err != nil {
 				return newPolicyReplaceError("policy_verify_failed", fmt.Errorf("saved policy failed verification: %w", err))
 			}
@@ -528,7 +528,7 @@ func policyTargetFileName() string {
 }
 
 func (s Service) detectPassphraseMethodForIdentity(ir *identity.Runtime, cfg *serverconfig.ServerConfig) string {
-	unlockCfg, _ := identity.LoadUnlockConfig(s.Deps.DataDir(), ir.ID())
+	unlockCfg, _ := identity.LoadUnlockConfig(s.Deps.DataDir())
 	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
 		return DetectPassphraseMethod(unlockCfg.PassphraseCommandArgv)
 	}

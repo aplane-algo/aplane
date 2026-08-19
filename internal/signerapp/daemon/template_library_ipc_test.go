@@ -127,7 +127,7 @@ func TestIPCDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 	if !keyTypeStateDisabled(server, auth.CurrentProductIdentityID(), keyType) {
 		t.Fatalf("disabled state not written for %s", keyType)
 	}
-	if !templatestore.TemplateExistsForPaths(server.keyPaths, auth.CurrentProductIdentityID(), keyType, templatestore.TemplateTypeGeneric) {
+	if !templatestore.TemplateExistsForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric) {
 		t.Fatalf("installed template file was removed during disable")
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); ok {
@@ -328,7 +328,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 	if !removed.Success || !removed.Removed {
 		t.Fatalf("RemoveInstalledTemplate() = %+v, want disabled template removal", removed)
 	}
-	if templatestore.TemplateExistsForPaths(server.keyPaths, ir.ID(), keyType, templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric) {
 		t.Fatalf("template %s still exists after removal", keyType)
 	}
 	if keyTypeStateDisabled(server, ir.ID(), keyType) {
@@ -384,7 +384,7 @@ func TestIPCDeactivateKeyTypeDisablesUnusedCompiledProvider(t *testing.T) {
 
 	keyType := "aplane.ed25519.v1"
 	ir := server.productIdentityRuntime()
-	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, ir.ID(), keyType); err != nil {
+	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
 
@@ -428,7 +428,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 
 	keyType := "aplane.ed25519.v1"
 	ir := server.productIdentityRuntime()
-	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, ir.ID(), keyType); err != nil {
+	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
@@ -516,7 +516,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	if !initial.Success || initial.AlreadyExists {
 		t.Fatalf("initial InstallLibraryTemplate result = %+v, want fresh success", initial)
 	}
-	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, auth.CurrentProductIdentityID(), keyType, templatestore.TemplateTypeGeneric)
+	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -577,12 +577,12 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	}
 	ir := server.productIdentityRuntime()
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-		_, installErr := templatelibrary.InstallParsed(server.keyPaths, ir.ID(), parsed, masterKey)
+		_, installErr := templatelibrary.InstallParsed(server.keyPaths, parsed, masterKey)
 		return installErr
 	}); err != nil {
 		t.Fatalf("preinstall template: %v", err)
 	}
-	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, ir.ID(), keyType, templatestore.TemplateTypeGeneric)
+	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -623,7 +623,7 @@ func writeLibraryTemplateForTest(t *testing.T, server *Signer, filename string, 
 
 func assertInstalledTemplateRemoved(t *testing.T, server *Signer, keyType string, templateType templatestore.TemplateType) {
 	t.Helper()
-	path, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, auth.CurrentProductIdentityID(), keyType, templateType)
+	path, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, keyType, templateType)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}

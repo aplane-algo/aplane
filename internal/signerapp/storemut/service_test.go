@@ -258,7 +258,7 @@ func TestSaveIdentitySettingPersistsIdentityConfigValue(t *testing.T) {
 		t.Fatalf("SaveIdentitySetting() error = %v", err)
 	}
 
-	cfg, err := identity.LoadStoredConfig(dir, "default")
+	cfg, err := identity.LoadStoredConfig(dir)
 	if err != nil {
 		t.Fatalf("LoadStoredConfig() error = %v", err)
 	}

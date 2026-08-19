@@ -39,7 +39,7 @@ transfer_policy:
       assets: ["algo"]
       destinations: ["` + addr + `"]
 `)
-		if err := os.WriteFile(policy.PolicyPath(root, productIdentityID()), raw, 0o600); err != nil {
+		if err := os.WriteFile(policy.PolicyPath(root), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		if err := cmdPolicy([]string{"check"}); err != nil {
@@ -50,7 +50,7 @@ transfer_policy:
 
 func TestCmdPolicySignRepairsDirectEdit(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, passphrase []byte) {
-		policyPath := policy.PolicyPath(root, productIdentityID())
+		policyPath := policy.PolicyPath(root)
 		policyBytes := []byte("# direct policy edit\nreject_foreign_rekey: false\n")
 		if err := os.WriteFile(policyPath, policyBytes, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
@@ -88,7 +88,7 @@ func TestCmdPolicySignRepairsDirectEdit(t *testing.T) {
 
 func TestCmdPolicyCheckRejectsMalformedPolicy(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, _ []byte) {
-		if err := os.WriteFile(policy.PolicyPath(root, productIdentityID()), []byte("reject_foreign_rekey: [\n"), 0o600); err != nil {
+		if err := os.WriteFile(policy.PolicyPath(root), []byte("reject_foreign_rekey: [\n"), 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
@@ -112,7 +112,7 @@ transfer_policy:
       assets: ["algo"]
       destinations: ["*"]
 `)
-		if err := os.WriteFile(policy.PolicyPath(root, productIdentityID()), raw, 0o600); err != nil {
+		if err := os.WriteFile(policy.PolicyPath(root), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
@@ -125,7 +125,7 @@ transfer_policy:
 func TestCmdPolicyCheckRejectsInvalidSentryReviewPolicy(t *testing.T) {
 	withPolicyCommandStoreWithRole(t, noderole.RoleSentry, func(root string, _ []byte) {
 		raw := []byte("always_review_warnings: true\n")
-		if err := os.WriteFile(policy.PolicyPath(root, productIdentityID()), raw, 0o600); err != nil {
+		if err := os.WriteFile(policy.PolicyPath(root), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})

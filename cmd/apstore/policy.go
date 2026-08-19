@@ -124,8 +124,7 @@ func cmdPolicySign() error {
 }
 
 func policyCommandDocuments() ([]policyCommandDocument, error) {
-	identityID := productIdentityID()
-	policyPath := policy.PolicyPath(dataDirectory, identityID)
+	policyPath := policy.PolicyPath(dataDirectory)
 	nodeDoc, _, err := noderole.Load(storepaths.NewPaths(dataDirectory))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load node role: %w", err)
@@ -143,13 +142,13 @@ func policyCommandDocuments() ([]policyCommandDocument, error) {
 			})
 		}
 		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedSentryConfigWithKeyring(dataDirectory, identityID, kr)
+			return policy.LoadVerifiedSentryConfigWithKeyring(dataDirectory, kr)
 		}
 		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
 			return policyruntime.ApplySentryStoredConfig(dataDirectory, &config, stored)
 		}
 		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
-			return policy.SignSentryFileIntegrityWithKeyring(dataDirectory, identityID, kr, signedAt)
+			return policy.SignSentryFileIntegrityWithKeyring(dataDirectory, kr, signedAt)
 		}
 	case noderole.RoleSigner:
 		doc.loadCheck = func() (*policy.StoredConfig, error) {
@@ -158,13 +157,13 @@ func policyCommandDocuments() ([]policyCommandDocument, error) {
 			})
 		}
 		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedStoredConfigWithKeyring(dataDirectory, identityID, kr)
+			return policy.LoadVerifiedStoredConfigWithKeyring(dataDirectory, kr)
 		}
 		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
 			return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
 		}
 		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
-			return policy.SignPolicyFileIntegrityWithKeyring(dataDirectory, identityID, kr, signedAt)
+			return policy.SignPolicyFileIntegrityWithKeyring(dataDirectory, kr, signedAt)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported node role %q", nodeDoc.Role)

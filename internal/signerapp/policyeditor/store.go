@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -126,9 +125,6 @@ func (s OfflineStore) Validate(ctx context.Context, stored *policy.StoredConfig)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if s.identityID() == "" {
-		return fmt.Errorf("identity ID is required")
-	}
 	if stored == nil {
 		stored = &policy.StoredConfig{}
 	}
@@ -185,7 +181,7 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 	case TargetSentry:
 		if _, err := policyruntime.SaveStoredSentryConfigWithKeyring(
 			s.DataDir,
-			s.identityID(),
+
 			&serverCfg,
 			stored,
 			kr,
@@ -196,7 +192,7 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 	default:
 		if _, err := policyruntime.SaveStoredConfigWithKeyring(
 			s.DataDir,
-			s.identityID(),
+
 			&serverCfg,
 			stored,
 			kr,
@@ -326,9 +322,6 @@ func (s OfflineStore) validateOptionsWithoutPassphrase() error {
 	if s.DataDir == "" {
 		return fmt.Errorf("data directory is required")
 	}
-	if s.identityID() == "" {
-		return fmt.Errorf("identity ID is required")
-	}
 	if target := s.target(); target != TargetAuto {
 		nodeDoc, _, err := noderole.Load(storepaths.NewPaths(s.DataDir))
 		if err != nil {
@@ -343,10 +336,6 @@ func (s OfflineStore) validateOptionsWithoutPassphrase() error {
 		}
 	}
 	return nil
-}
-
-func (s OfflineStore) identityID() string {
-	return auth.CurrentProductIdentityID()
 }
 
 func (s OfflineStore) target() Target {
@@ -418,17 +407,17 @@ func (s OfflineStore) loadVerifiedWithKeyring(kr *apcrypto.Keyring) (*policy.Sto
 func (s OfflineStore) loadVerifiedYAMLWithKeyring(kr *apcrypto.Keyring) (*policy.StoredConfig, []byte, error) {
 	switch s.target() {
 	case TargetSentry:
-		return policy.LoadVerifiedSentryConfigDocument(s.DataDir, s.identityID(), kr)
+		return policy.LoadVerifiedSentryConfigDocument(s.DataDir, kr)
 	default:
-		return policy.LoadVerifiedStoredConfigDocument(s.DataDir, s.identityID(), kr)
+		return policy.LoadVerifiedStoredConfigDocument(s.DataDir, kr)
 	}
 }
 
 func (s OfflineStore) saveBytesWithKeyring(data []byte, kr *apcrypto.Keyring) error {
 	switch s.target() {
 	case TargetSentry:
-		return policy.SaveSentryBytesWithKeyring(s.DataDir, s.identityID(), data, kr, s.now())
+		return policy.SaveSentryBytesWithKeyring(s.DataDir, data, kr, s.now())
 	default:
-		return policy.SavePolicyBytesWithKeyring(s.DataDir, s.identityID(), data, kr, s.now())
+		return policy.SavePolicyBytesWithKeyring(s.DataDir, data, kr, s.now())
 	}
 }

@@ -464,7 +464,7 @@ func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeI
 	if ir == nil {
 		return
 	}
-	refs, err := sentryrefs.List(ir.KeyPaths(), ir.ID())
+	refs, err := sentryrefs.List(ir.KeyPaths())
 	if err != nil || len(refs) == 0 {
 		return
 	}

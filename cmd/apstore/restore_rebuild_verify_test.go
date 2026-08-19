@@ -100,7 +100,7 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), kr)
+	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), kr)
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
@@ -147,7 +147,7 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), productIdentityID(), kr)
+	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), kr)
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
@@ -486,7 +486,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryGenericTemplateWithoutBundle(t *t
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if templatestore.TemplateExistsForPaths(keystorePaths(), productIdentityID(), keyType, templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsForPaths(keystorePaths(), keyType, templatestore.TemplateTypeGeneric) {
 		t.Fatal("expected standalone key restore not to materialize shipped library generic template")
 	}
 }
@@ -525,7 +525,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if templatestore.TemplateExistsForPaths(keystorePaths(), productIdentityID(), keyType, templatestore.TemplateTypeComposed) {
+	if templatestore.TemplateExistsForPaths(keystorePaths(), keyType, templatestore.TemplateTypeComposed) {
 		t.Fatal("expected standalone key restore not to materialize shipped library composed template")
 	}
 }

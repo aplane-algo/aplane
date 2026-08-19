@@ -51,7 +51,7 @@ func (s *Service) RevokeToken() (string, error) {
 		return "", fmt.Errorf("failed to generate new token: %w", err)
 	}
 
-	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(s.keyPaths.Root(), s.identityID)
+	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(s.keyPaths.Root())
 	if err := fsutil.MkdirAllPrivate(filepath.Dir(tokenPath)); err != nil {
 		return "", fmt.Errorf("failed to create token directory: %w", err)
 	}
@@ -120,5 +120,5 @@ func (s *Service) SaveServerSetting(dataDir, key string, value interface{}) erro
 
 // SaveIdentitySetting persists a single identity-scoped setting.
 func (s *Service) SaveIdentitySetting(dataDir, key string, value interface{}) error {
-	return identity.SaveStoredSetting(dataDir, s.identityID, key, value)
+	return identity.SaveStoredSetting(dataDir, key, value)
 }

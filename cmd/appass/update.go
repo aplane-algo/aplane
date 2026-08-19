@@ -214,11 +214,11 @@ func (m Model) dispatchAction(passphrase []byte) (tea.Model, tea.Cmd) {
 		)
 		switch action {
 		case "set-passfile":
-			warning, err = executeSetPassfile(dataDir, productIdentityID(), passphrase, svcInfo, isLocal)
+			warning, err = executeSetPassfile(dataDir, passphrase, svcInfo, isLocal)
 		case "set-systemd-creds":
-			warning, err = executeSetSystemcreds(dataDir, productIdentityID(), passphrase, svcInfo)
+			warning, err = executeSetSystemcreds(dataDir, passphrase, svcInfo)
 		case "set-none":
-			warning, err = executeClear(dataDir, productIdentityID())
+			warning, err = executeClear(dataDir)
 		}
 		return ActionDoneMsg{err: err, warning: warning}
 	}

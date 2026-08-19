@@ -123,19 +123,19 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *identity.Runtim
 	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
 		switch target {
 		case adminproto.PolicyTargetSentry:
-			if err := policy.SaveStoredSentryConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
+			if err := policy.SaveStoredSentryConfigWithKeyring(svc.Deps.DataDir(), stored, masterKey, testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedSentryWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
+			verified, effective, err := policyruntime.LoadVerifiedSentryWithStored(svc.Deps.DataDir(), svc.Deps.Config(), masterKey)
 			if err != nil {
 				return err
 			}
 			ir.SetSentryPolicyState(verified, effective)
 		default:
-			if err := policy.SaveStoredConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
+			if err := policy.SaveStoredConfigWithKeyring(svc.Deps.DataDir(), stored, masterKey, testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
+			verified, effective, err := policyruntime.LoadVerifiedWithStored(svc.Deps.DataDir(), svc.Deps.Config(), masterKey)
 			if err != nil {
 				return err
 			}
@@ -187,7 +187,7 @@ func TestServiceDetectPassphraseMethodForIdentityReadsUnlockYAML(t *testing.T) {
 	unlockCfg := &identity.UnlockConfig{
 		PassphraseCommandArgv: []string{"/usr/local/bin/appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(deps.dataDir, auth.DefaultIdentityID, unlockCfg); err != nil {
+	if err := identity.SaveUnlockConfig(deps.dataDir, unlockCfg); err != nil {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
@@ -215,7 +215,7 @@ func TestServiceDetectPassphraseMethodForIdentityIdentityScopedOverridesGlobal(t
 	unlockCfg := &identity.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(deps.dataDir, auth.DefaultIdentityID, unlockCfg); err != nil {
+	if err := identity.SaveUnlockConfig(deps.dataDir, unlockCfg); err != nil {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
@@ -491,7 +491,7 @@ func TestReplaceSentryPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 	var verified *policy.StoredConfig
 	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
 		var err error
-		verified, err = policy.LoadVerifiedSentryConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), masterKey)
+		verified, err = policy.LoadVerifiedSentryConfigWithKeyring(svc.Deps.DataDir(), masterKey)
 		return err
 	})
 	if err != nil {

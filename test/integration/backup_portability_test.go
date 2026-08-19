@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -495,7 +494,7 @@ func TestSignerManagedBackupRoundTripViaApadminRestore(t *testing.T) {
 	if err := os.Remove(libraryPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination aplane.htlc.v1 library template: %v", err)
 	}
-	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -570,7 +569,7 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if err := os.Remove(libraryPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination aplane.htlc.v1 library template: %v", err)
 	}
-	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -587,7 +586,7 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, address)); statErr != nil {
 		t.Fatalf("expected restored key file without local template, got stat err=%v", statErr)
 	}
-	if templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsForPaths(destPaths, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
 		t.Fatal("expected standalone restore not to materialize missing aplane.htlc.v1 template")
 	}
 }

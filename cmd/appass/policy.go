@@ -11,10 +11,12 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func managedModePolicyPaths(dataDir, identityID string) []string {
-	identityDir := filepath.Join(dataDir, "identities", identityID)
+func managedModePolicyPaths(dataDir string) []string {
+	identityDir := storepaths.NewPaths(dataDir).ProductDir()
 	return []string{
 		filepath.Join(dataDir, "config.yaml"),
 		filepath.Join(identityDir, "unlock.yaml"),
@@ -23,8 +25,8 @@ func managedModePolicyPaths(dataDir, identityID string) []string {
 	}
 }
 
-func enforceModeOwnershipPolicy(dataDir, identityID string, isLocal bool, svc *serviceInfo) error {
-	for _, path := range managedModePolicyPaths(dataDir, identityID) {
+func enforceModeOwnershipPolicy(dataDir string, isLocal bool, svc *serviceInfo) error {
+	for _, path := range managedModePolicyPaths(dataDir) {
 		owner, err := lookupFileOwner(path)
 		if err != nil {
 			if os.IsNotExist(err) {

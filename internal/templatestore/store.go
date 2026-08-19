@@ -190,7 +190,7 @@ func ActiveTemplateTypes() []TemplateType {
 	return []TemplateType{TemplateTypeGeneric, TemplateTypeComposed}
 }
 
-func GetTemplateFilePathForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) (string, error) {
+func GetTemplateFilePathForPaths(paths storepaths.Paths, keyType string, templateType TemplateType) (string, error) {
 	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return "", err
@@ -259,7 +259,7 @@ func TemplateContextForFile(path string) (crypto.ObjectContext, error) {
 	return crypto.KeyTypeTemplateContext(normalizeKeyType(keyType)), nil
 }
 
-func TemplateExistsForPaths(paths storepaths.Paths, identityID, keyType string, templateType TemplateType) bool {
+func TemplateExistsForPaths(paths storepaths.Paths, keyType string, templateType TemplateType) bool {
 	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return false
@@ -289,7 +289,7 @@ type TemplateFileInfo struct {
 	FilePath string // Full path to the file
 }
 
-func ScanTemplateDirectoryForPaths(paths storepaths.Paths, identityID string, templateType TemplateType) ([]TemplateFileInfo, error) {
+func ScanTemplateDirectoryForPaths(paths storepaths.Paths, templateType TemplateType) ([]TemplateFileInfo, error) {
 	source, ok := sourceForTemplateType(templateType)
 	if !ok {
 		return nil, fmt.Errorf("unsupported template_type %q", templateType)
@@ -304,7 +304,7 @@ func ScanTemplateDirectoryForPaths(paths storepaths.Paths, identityID string, te
 		if rec.Source != source {
 			continue
 		}
-		path, err := GetTemplateFilePathForPaths(paths, identityID, rec.KeyType, templateType)
+		path, err := GetTemplateFilePathForPaths(paths, rec.KeyType, templateType)
 		if err != nil {
 			return nil, err
 		}
@@ -323,8 +323,8 @@ func ScanTemplateDirectoryForPaths(paths storepaths.Paths, identityID string, te
 	return files, nil
 }
 
-func LoadAllTemplatesForPaths(paths storepaths.Paths, identityID string, templateType TemplateType, kr *crypto.Keyring) (map[string][]byte, error) {
-	files, err := ScanTemplateDirectoryForPaths(paths, identityID, templateType)
+func LoadAllTemplatesForPaths(paths storepaths.Paths, templateType TemplateType, kr *crypto.Keyring) (map[string][]byte, error) {
+	files, err := ScanTemplateDirectoryForPaths(paths, templateType)
 	if err != nil {
 		return nil, err
 	}

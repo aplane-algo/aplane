@@ -27,7 +27,7 @@ const (
 
 // GetAPlaneTokenPathForRoot returns the path to the signer token for an
 // explicit keystore root.
-func GetAPlaneTokenPathForRoot(root, identityID string) string {
+func GetAPlaneTokenPathForRoot(root string) string {
 	return filepath.Join(storepaths.NewPaths(root).ProductDir(), APlaneTokenFile)
 }
 
@@ -145,8 +145,8 @@ func writeTokenIfAbsent(path, token string) (bool, error) {
 
 // LoadAPlaneToken loads the server token for an identity, generating one if it
 // does not exist.
-func LoadAPlaneToken(root, identityID string) (string, error) {
-	path := GetAPlaneTokenPathForRoot(root, identityID)
+func LoadAPlaneToken(root string) (string, error) {
+	path := GetAPlaneTokenPathForRoot(root)
 
 	token, err := ReadToken(path)
 	if err != nil {

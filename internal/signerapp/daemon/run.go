@@ -217,7 +217,7 @@ func Run(dataDir string) int {
 	if removed != 0 {
 		logInfof("removed %d incomplete backup import(s)", removed)
 	}
-	logInfof("API token loaded from %s", tokenfile.GetAPlaneTokenPathForRoot(startupOpts.Paths.Root(), identityID))
+	logInfof("API token loaded from %s", tokenfile.GetAPlaneTokenPathForRoot(startupOpts.Paths.Root()))
 
 	// Configure algod client on all DSA providers that need it (for TEAL compilation)
 	configureAlgodOnDSAs(&config)

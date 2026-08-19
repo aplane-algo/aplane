@@ -45,7 +45,7 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSentry, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.SaveStoredSentryConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredSentryConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -231,7 +231,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 

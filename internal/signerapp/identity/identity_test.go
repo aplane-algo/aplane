@@ -476,17 +476,17 @@ func TestStoredConfigApplyUserAutoApprove(t *testing.T) {
 
 func TestSaveAndLoadStoredConfig(t *testing.T) {
 	root := t.TempDir()
-	if err := SaveStoredSetting(root, "default", "user_auto_approve", true); err != nil {
+	if err := SaveStoredSetting(root, "user_auto_approve", true); err != nil {
 		t.Fatalf("SaveStoredSetting() error = %v", err)
 	}
-	if err := SaveStoredSetting(root, "default", "lock_on_disconnect", false); err != nil {
+	if err := SaveStoredSetting(root, "lock_on_disconnect", false); err != nil {
 		t.Fatalf("SaveStoredSetting() error = %v", err)
 	}
-	if err := SaveStoredSetting(root, "default", "approval_wait", "10m"); err != nil {
+	if err := SaveStoredSetting(root, "approval_wait", "10m"); err != nil {
 		t.Fatalf("SaveStoredSetting() error = %v", err)
 	}
 
-	cfg, err := LoadStoredConfig(root, "default")
+	cfg, err := LoadStoredConfig(root)
 	if err != nil {
 		t.Fatalf("LoadStoredConfig() error = %v", err)
 	}
@@ -514,7 +514,7 @@ func TestLoadStoredConfigTreatsEmptyDocumentsAsEmptyConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
-			path := ConfigPath(root, auth.DefaultIdentityID)
+			path := ConfigPath(root)
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -522,7 +522,7 @@ func TestLoadStoredConfigTreatsEmptyDocumentsAsEmptyConfig(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			cfg, err := LoadStoredConfig(root, auth.DefaultIdentityID)
+			cfg, err := LoadStoredConfig(root)
 			if err != nil {
 				t.Fatalf("LoadStoredConfig() error = %v", err)
 			}
@@ -536,7 +536,7 @@ func TestLoadStoredConfigTreatsEmptyDocumentsAsEmptyConfig(t *testing.T) {
 
 func TestLoadStoredConfigRejectsDecommissionedField(t *testing.T) {
 	root := t.TempDir()
-	path := ConfigPath(root, "default")
+	path := ConfigPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -544,7 +544,7 @@ func TestLoadStoredConfigRejectsDecommissionedField(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := LoadStoredConfig(root, "default"); err == nil || !strings.Contains(err.Error(), "decommissioned") {
+	if _, err := LoadStoredConfig(root); err == nil || !strings.Contains(err.Error(), "decommissioned") {
 		t.Fatalf("LoadStoredConfig() error = %v, want unknown decommissioned field", err)
 	}
 }

@@ -62,16 +62,16 @@ func ApplySentryStoredConfig(dataDir string, serverCfg *serverconfig.ServerConfi
 
 // LoadVerified loads policy.yaml only after verifying its integrity sidecar
 // with the identity keyring, then applies runtime defaults.
-func LoadVerified(dataDir, identityID string, serverCfg *serverconfig.ServerConfig, kr *crypto.Keyring) (*policy.Config, error) {
-	_, effective, err := LoadVerifiedWithStored(dataDir, identityID, serverCfg, kr)
+func LoadVerified(dataDir string, serverCfg *serverconfig.ServerConfig, kr *crypto.Keyring) (*policy.Config, error) {
+	_, effective, err := LoadVerifiedWithStored(dataDir, serverCfg, kr)
 	return effective, err
 }
 
 // LoadVerifiedWithStored loads policy.yaml only after verifying its integrity
 // sidecar with the identity keyring, then returns both the stored policy
 // snapshot and the applied runtime policy.
-func LoadVerifiedWithStored(dataDir, identityID string, serverCfg *serverconfig.ServerConfig, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
-	stored, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, identityID, kr)
+func LoadVerifiedWithStored(dataDir string, serverCfg *serverconfig.ServerConfig, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
+	stored, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, kr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -86,8 +86,8 @@ func LoadVerifiedWithStored(dataDir, identityID string, serverCfg *serverconfig.
 // after verifying its integrity sidecar with the identity keyring, then
 // returns both the stored policy snapshot and the applied runtime sentry
 // policy.
-func LoadVerifiedSentryWithStored(dataDir, identityID string, serverCfg *serverconfig.ServerConfig, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
-	stored, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, identityID, kr)
+func LoadVerifiedSentryWithStored(dataDir string, serverCfg *serverconfig.ServerConfig, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
+	stored, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, kr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -101,15 +101,15 @@ func LoadVerifiedSentryWithStored(dataDir, identityID string, serverCfg *serverc
 // LoadVerifiedForNodeRoleWithStored loads and applies the active policy domain
 // for role. Single-mode nodes store the selected role policy in policy.yaml;
 // role decides which schema and runtime defaults are used.
-func LoadVerifiedForNodeRoleWithStored(role noderole.Role, dataDir, identityID string, serverCfg *serverconfig.ServerConfig, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
+func LoadVerifiedForNodeRoleWithStored(role noderole.Role, dataDir string, serverCfg *serverconfig.ServerConfig, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
 	if role == "" {
 		role = noderole.DefaultRole()
 	}
 	switch role {
 	case noderole.RoleSentry:
-		return LoadVerifiedSentryWithStored(dataDir, identityID, serverCfg, kr)
+		return LoadVerifiedSentryWithStored(dataDir, serverCfg, kr)
 	case noderole.RoleSigner:
-		return LoadVerifiedWithStored(dataDir, identityID, serverCfg, kr)
+		return LoadVerifiedWithStored(dataDir, serverCfg, kr)
 	default:
 		return nil, nil, fmt.Errorf("unsupported node role %q", role)
 	}
@@ -117,12 +117,12 @@ func LoadVerifiedForNodeRoleWithStored(role noderole.Role, dataDir, identityID s
 
 // SaveStoredConfigWithKeyring writes policy.yaml plus policy.yaml.hmac and
 // returns the effective runtime policy for the stored content.
-func SaveStoredConfigWithKeyring(dataDir, identityID string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig, kr *crypto.Keyring, signedAt time.Time) (*policy.Config, error) {
+func SaveStoredConfigWithKeyring(dataDir string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig, kr *crypto.Keyring, signedAt time.Time) (*policy.Config, error) {
 	effective, err := ApplyStoredConfig(dataDir, serverCfg, stored)
 	if err != nil {
 		return nil, err
 	}
-	if err := policy.SaveStoredConfigWithKeyring(dataDir, identityID, stored, kr, signedAt); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(dataDir, stored, kr, signedAt); err != nil {
 		return nil, fmt.Errorf("failed to save policy.yaml: %w", err)
 	}
 	return effective, nil
@@ -131,12 +131,12 @@ func SaveStoredConfigWithKeyring(dataDir, identityID string, serverCfg *serverco
 // SaveStoredSentryConfigWithKeyring writes policy.yaml plus
 // policy.yaml.hmac and returns the effective runtime sentry policy for the
 // stored content.
-func SaveStoredSentryConfigWithKeyring(dataDir, identityID string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig, kr *crypto.Keyring, signedAt time.Time) (*policy.Config, error) {
+func SaveStoredSentryConfigWithKeyring(dataDir string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig, kr *crypto.Keyring, signedAt time.Time) (*policy.Config, error) {
 	effective, err := ApplySentryStoredConfig(dataDir, serverCfg, stored)
 	if err != nil {
 		return nil, err
 	}
-	if err := policy.SaveStoredSentryConfigWithKeyring(dataDir, identityID, stored, kr, signedAt); err != nil {
+	if err := policy.SaveStoredSentryConfigWithKeyring(dataDir, stored, kr, signedAt); err != nil {
 		return nil, fmt.Errorf("failed to save policy.yaml: %w", err)
 	}
 	return effective, nil

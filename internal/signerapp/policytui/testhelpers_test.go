@@ -14,8 +14,8 @@ import (
 // Test-only conveniences: production constructs the editor with
 // NewWithTarget and marshals through target-aware helpers.
 
-func New(store policyeditor.Store, stored *policy.StoredConfig, dataDir, identityID string) Model {
-	return NewWithTarget(store, stored, dataDir, identityID, policyeditor.TargetSigner)
+func New(store policyeditor.Store, stored *policy.StoredConfig, dataDir string) Model {
+	return NewWithTarget(store, stored, dataDir, policyeditor.TargetSigner)
 }
 
 func transferGuardRows(routes []policy.StoredTransferRoute) []transferGuardRow {

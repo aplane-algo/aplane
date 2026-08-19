@@ -69,11 +69,11 @@ func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, i
 		return nil, fmt.Errorf("failed to load node role for identity %q: %w", identityID, err)
 	}
 
-	storedCfg, err := identity.LoadStoredConfig(opts.DataDir, identityID)
+	storedCfg, err := identity.LoadStoredConfig(opts.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config for identity %q: %w", identityID, err)
 	}
-	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(opts.KeyPaths.Root(), identityID)
+	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(opts.KeyPaths.Root())
 	token, err := tokenfile.ReadToken(tokenPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read token for identity %q: %w", identityID, err)
@@ -82,7 +82,7 @@ func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, i
 		if identityID != opts.ProductIdentityID {
 			return nil, fmt.Errorf("identity %q is missing token file: %s", identityID, tokenPath)
 		}
-		token, err = tokenfile.LoadAPlaneToken(opts.KeyPaths.Root(), identityID)
+		token, err = tokenfile.LoadAPlaneToken(opts.KeyPaths.Root())
 		if err != nil {
 			return nil, fmt.Errorf("failed to load token for identity %q: %w", identityID, err)
 		}
@@ -181,12 +181,12 @@ func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ide
 		Session:         session,
 		TemplateManager: newTemplateManager(ir.KeyPaths()),
 		BeforeKeyScan: func(kr *crypto.Keyring) error {
-			if verifiedRole, err := noderole.LoadAndVerifyWithKeyring(opts.KeyPaths, identityID, kr); err != nil {
+			if verifiedRole, err := noderole.LoadAndVerifyWithKeyring(opts.KeyPaths, kr); err != nil {
 				return fmt.Errorf("node role verification failed for identity %q: %w", identityID, err)
 			} else if verifiedRole.Role != ir.NodeRole() {
 				return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", identityID, ir.NodeRole(), verifiedRole.Role)
 			}
-			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStored(ir.NodeRole(), opts.DataDir, identityID, opts.Config, kr)
+			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStored(ir.NodeRole(), opts.DataDir, opts.Config, kr)
 			if err != nil {
 				return fmt.Errorf("policy verification failed for identity %q: %w", identityID, err)
 			}
@@ -227,7 +227,7 @@ func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ide
 func WireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks IdentityBuildHooks) {
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		svc := NewReloadService(ir, opts, hooks, session)
-		return svc.Reload(ir.ID(), passphrase)
+		return svc.Reload(passphrase)
 	})
 	if hooks.ReloadMutationLock != nil {
 		ir.SetReloadMutationLock(func() sync.Locker {

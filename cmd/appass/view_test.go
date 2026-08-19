@@ -33,7 +33,7 @@ func TestRenderHomeViewWarnsNonRootProduction(t *testing.T) {
 func TestStatusHelperInfoLabelsIdentityScopedPassphraseFile(t *testing.T) {
 	dataDir := t.TempDir()
 	passPath := filepath.Join(dataDir, "identities", "default", "passphrase")
-	if err := unlockconfig.SaveUnlockConfig(dataDir, "default", &unlockconfig.UnlockConfig{
+	if err := unlockconfig.SaveUnlockConfig(dataDir, &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"/usr/local/bin/appass-file", passPath},
 	}); err != nil {
 		t.Fatalf("save unlock config: %v", err)

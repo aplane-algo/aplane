@@ -72,17 +72,17 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	if err != nil {
 		t.Fatalf("Failed to create keystore metadata: %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(tmpDir, auth.DefaultIdentityID, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(tmpDir, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
 		t.Fatalf("Failed to create policy baseline: %v", err)
 	}
 	roleBytes, _, err := noderole.SaveInitial(keyPaths, noderole.RoleSigner, time.Now())
 	if err != nil {
 		t.Fatalf("Failed to create node role: %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(keyPaths, auth.DefaultIdentityID, roleBytes, masterKeyRing, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(keyPaths, roleBytes, masterKeyRing, time.Now()); err != nil {
 		t.Fatalf("Failed to create node role sidecar: %v", err)
 	}
-	initialPolicy, err := policyruntime.LoadVerified(tmpDir, auth.DefaultIdentityID, serverConfigForTest(), masterKeyRing)
+	initialPolicy, err := policyruntime.LoadVerified(tmpDir, serverConfigForTest(), masterKeyRing)
 	if err != nil {
 		t.Fatalf("Failed to verify policy baseline: %v", err)
 	}

@@ -113,7 +113,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
 	}
 	if keytypes.IsGuardedAccountKeyType(keyType) {
-		resolved, err := sentryrefs.ResolveCreationParams(ir.KeyPaths(), ir.ID(), keyType, params)
+		resolved, err := sentryrefs.ResolveCreationParams(ir.KeyPaths(), keyType, params)
 		if err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
@@ -122,7 +122,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
 			if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil && metadata.Sentry != nil {
 				resolved, err := sentryrefs.ResolveCreationParamsForComponent(
-					ir.KeyPaths(), ir.ID(), keyType, metadata.Sentry.ComponentKeyType, params,
+					ir.KeyPaths(), keyType, metadata.Sentry.ComponentKeyType, params,
 				)
 				if err != nil {
 					return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}

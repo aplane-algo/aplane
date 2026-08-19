@@ -10,16 +10,16 @@ import (
 	"testing"
 )
 
-func TestManagedModePolicyPathsAreIdentityScoped(t *testing.T) {
+func TestManagedModePolicyPathsUseProductStore(t *testing.T) {
 	dataDir := filepath.Join("store", "root")
-	identityDir := filepath.Join(dataDir, "identities", "secondary")
+	identityDir := filepath.Join(dataDir, "identities", "default")
 	want := []string{
 		filepath.Join(dataDir, "config.yaml"),
 		filepath.Join(identityDir, "unlock.yaml"),
 		filepath.Join(identityDir, "passphrase"),
 		filepath.Join(identityDir, "passphrase.cred"),
 	}
-	if got := managedModePolicyPaths(dataDir, "secondary"); !reflect.DeepEqual(got, want) {
+	if got := managedModePolicyPaths(dataDir); !reflect.DeepEqual(got, want) {
 		t.Fatalf("managedModePolicyPaths() = %#v, want %#v", got, want)
 	}
 }

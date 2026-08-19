@@ -77,7 +77,7 @@ func ValidateAndBuildUnlockPlan(opts *Options, runtime *RuntimeState, testPassph
 // It checks identity-scoped unlock.yaml first, then falls back to the
 // process-global config for backward compatibility.
 func ResolveUnlockConfig(dataDir, identityID string, config *serverconfig.ServerConfig) (*identity.UnlockConfig, error) {
-	unlockCfg, err := identity.LoadUnlockConfig(dataDir, identityID)
+	unlockCfg, err := identity.LoadUnlockConfig(dataDir)
 	if err != nil {
 		return nil, err
 	}

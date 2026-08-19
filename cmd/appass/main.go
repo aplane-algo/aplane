@@ -89,7 +89,7 @@ func main() {
 	} else {
 		svc = localServiceInfo()
 	}
-	if err := enforceModeOwnershipPolicy(dataDir, productIdentityID(), isLocal, svc); err != nil {
+	if err := enforceModeOwnershipPolicy(dataDir, isLocal, svc); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

@@ -28,7 +28,7 @@ func TestResolveUnlockConfigPrefersIdentityScoped(t *testing.T) {
 		PassphraseCommandArgv: []string{"identity-pass", "/tmp/identity"},
 		PassphraseCommandEnv:  map[string]string{"IDENTITY": "1"},
 	}
-	if err := identity.SaveUnlockConfig(root, "alice", want); err != nil {
+	if err := identity.SaveUnlockConfig(root, want); err != nil {
 		t.Fatalf("SaveUnlockConfig() error = %v", err)
 	}
 
