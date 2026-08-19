@@ -4,7 +4,6 @@
 package signing
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -13,26 +12,6 @@ import (
 )
 
 const algodResponseHeaderTimeout = 30 * time.Second
-
-// GetMinFeeFromAlgod fetches the current minimum fee from an algod node.
-// Returns DefaultMinFee (1000) if the client is nil or the request fails.
-func GetMinFeeFromAlgod(client *algod.Client) uint64 {
-	return GetMinFeeFromAlgodWithContext(context.Background(), client)
-}
-
-func GetMinFeeFromAlgodWithContext(ctx context.Context, client *algod.Client) uint64 {
-	if client == nil {
-		return DefaultMinFee
-	}
-
-	sp, err := client.SuggestedParams().Do(ctx)
-	if err != nil {
-		// Fall back to default if we can't reach algod
-		return DefaultMinFee
-	}
-
-	return sp.MinFee
-}
 
 // CreateAlgodClient creates an algod client from URL and optional token.
 // Returns nil if the URL is empty.

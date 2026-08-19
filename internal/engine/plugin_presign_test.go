@@ -240,9 +240,13 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 			}
 			planned[i] = txn
 		}
-		if _, err := signing.AssignGroupID(planned); err != nil {
+		groupID, err := crypto.ComputeGroupID(planned)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		for i := range planned {
+			planned[i].Group = groupID
 		}
 		encoded := make([]string, len(planned))
 		for i, txn := range planned {

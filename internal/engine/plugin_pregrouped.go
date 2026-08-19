@@ -8,7 +8,7 @@ package engine
 // the group is self-consistent and submits the exact signed bytes verbatim.
 //
 // This path is for fully plugin-owned/foreign-signed groups (e.g. a Mithras
-// spend). apsigner is NOT involved: no /plan, /sign, AssignGroupID, fee
+// spend). apsigner is NOT involved: no /plan, /sign, group assignment, fee
 // adjustment, dummy insertion, regrouping, or reordering. The bytes submitted
 // are exactly the bytes the plugin produced.
 

@@ -232,10 +232,6 @@ The server automatically:
 | `CreateDummyTransactions()` | `internal/signing/dummy_transactions.go` | Creates zero-fee dummy transactions |
 | `SignDummyTransactions()` | `internal/signing/dummy_transactions.go` | Signs dummies with embedded LogicSig |
 | `lsigresource.Solve()` | `internal/lsigresource` | Solves the minimum group from program, argument, and opcode resources |
-| `CalculateDummyFees()` | `internal/signing/common.go` | Calculates total dummy fees and approximate per-LSig share |
-| `ApplyDummyFees()` | `internal/signing/common.go` | Planner-facing dummy fee application helper |
-| `AdjustLSigFeesForDummies()` | `internal/signing/common.go` | Lower-level even split helper used by `ApplyDummyFees()` |
-| `AssignGroupID()` | `internal/signing/common.go` | Helper for all-local/plugin paths that compute and assign a group ID |
 
 ## Usage Patterns
 

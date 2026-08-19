@@ -116,7 +116,6 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `lsig/falcon1024_guarded` | Falcon/Falcon guarded-account DSA provider (`aplane.falcon1024-sentry1024.v1`) |
 | `internal/boundedadmin` | External Falcon contract-admin identity, transcript, artifact, and ceremony validation |
 | `library/templates/aplane.corridor.v1.yaml` | Optional schema-v2 bounded-sentry Corridor profile; compiled by `lsig/composeddsa` after identity-local install |
-| `lsig/sentryaccount` | Shared client-safe helpers for guarded sentry-account providers |
 | `lsig/dsafamily` | Client-safe registration descriptor shared by DSA families (signer-side descriptor in `lsig/dsafamily/signerreg`) |
 | `lsig/signerreg` | Registers all built-in LogicSig signer-side providers with their catalog availability |
 | `internal/signerapp/templates` | Read-only keystore template reload coordinator and state/fingerprint policy |
